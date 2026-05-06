@@ -1,0 +1,56 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.base64-encode",
+  "name": "Base64 编码",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "把剪贴板里的文本 Base64 编码（API token / Auth header 用）"
+  },
+  "icon": "Lock",
+  "category": "developer",
+  "tags": [
+    "base64",
+    "encode",
+    "auth"
+  ],
+  "permissions": [
+    "clipboard"
+  ],
+  "actions": [
+    {
+      "id": "encode-clipboard",
+      "name": "Base64 编码剪贴板",
+      "description": "UTF-8 → Base64 标准编码",
+      "input": "clipboard",
+      "output": "clipboard",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "capture-clipboard",
+          "as": "raw"
+        },
+        {
+          "type": "transform",
+          "op": "base64encode",
+          "input": "{{raw}}",
+          "as": "b64"
+        },
+        {
+          "type": "write-clipboard",
+          "value": "{{b64}}"
+        },
+        {
+          "type": "notify",
+          "message": "→ Base64 编码已写入剪贴板"
+        }
+      ]
+    }
+  ],
+  "chord": "be"
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.markdown-codeblock",
+  "name": "Markdown 代码块",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "把剪贴板内容包裹为 Markdown 代码块"
+  },
+  "icon": "Code2",
+  "category": "markdown-document",
+  "tags": [
+    "markdown",
+    "code"
+  ],
+  "permissions": [
+    "clipboard"
+  ],
+  "actions": [
+    {
+      "id": "wrap-code",
+      "name": "包裹为代码块",
+      "description": "前后加 ``` 三反引号",
+      "input": "clipboard",
+      "output": "clipboard",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "capture-clipboard",
+          "as": "code"
+        },
+        {
+          "type": "template",
+          "template": "```\n{{code}}\n```",
+          "as": "wrapped"
+        },
+        {
+          "type": "write-clipboard",
+          "value": "{{wrapped}}"
+        },
+        {
+          "type": "notify",
+          "message": "→ 代码块已写入剪贴板"
+        }
+      ]
+    }
+  ],
+  "chord": "mc"
+}

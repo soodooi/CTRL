@@ -1,0 +1,55 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.uppercase",
+  "name": "大写转换",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "把剪贴板里的文本全部转大写"
+  },
+  "icon": "CaseUpper",
+  "category": "text-utility",
+  "tags": [
+    "case",
+    "transform"
+  ],
+  "permissions": [
+    "clipboard"
+  ],
+  "actions": [
+    {
+      "id": "to-upper",
+      "name": "剪贴板转大写",
+      "description": "HELLO WORLD",
+      "input": "clipboard",
+      "output": "clipboard",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "capture-clipboard",
+          "as": "raw"
+        },
+        {
+          "type": "transform",
+          "op": "uppercase",
+          "input": "{{raw}}",
+          "as": "upper"
+        },
+        {
+          "type": "write-clipboard",
+          "value": "{{upper}}"
+        },
+        {
+          "type": "notify",
+          "message": "→ 大写已写入剪贴板"
+        }
+      ]
+    }
+  ],
+  "chord": "cu"
+}

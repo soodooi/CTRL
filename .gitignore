@@ -1,0 +1,36 @@
+# Node
+node_modules/
+dist/
+*.log
+.npm/
+.pnpm-store/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+src-tauri/gen/
+
+# macOS
+.DS_Store
+*.xcuserstate
+*.app
+*.dmg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Build
+build/
+out/
+
+# Ephemeral / scratch
+_temp/
+.claude/scheduled_tasks.lock

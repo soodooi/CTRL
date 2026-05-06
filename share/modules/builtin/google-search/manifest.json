@@ -1,0 +1,49 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.google-search",
+  "name": "Google 搜索",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "用剪贴板内容在 Google 搜索"
+  },
+  "icon": "Globe",
+  "category": "web-browser",
+  "tags": [
+    "search",
+    "browser"
+  ],
+  "permissions": [],
+  "actions": [
+    {
+      "id": "search-clipboard",
+      "name": "搜索剪贴板",
+      "description": "把剪贴板内容当作搜索词，开浏览器跳 Google",
+      "input": "clipboard",
+      "output": "browser",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "capture-clipboard",
+          "as": "raw"
+        },
+        {
+          "type": "transform",
+          "op": "urlencode",
+          "input": "{{raw}}",
+          "as": "q"
+        },
+        {
+          "type": "open-url",
+          "url": "https://www.google.com/search?q={{q}}"
+        }
+      ]
+    }
+  ],
+  "chord": "sw"
+}

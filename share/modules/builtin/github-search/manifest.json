@@ -1,0 +1,50 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.github-search",
+  "name": "GitHub 搜索",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "用剪贴板内容在 GitHub 搜仓库"
+  },
+  "icon": "FolderGit2",
+  "category": "developer",
+  "tags": [
+    "search",
+    "github",
+    "code"
+  ],
+  "permissions": [],
+  "actions": [
+    {
+      "id": "search-repos",
+      "name": "GitHub 搜仓库",
+      "description": "打开 github.com 搜 repos",
+      "input": "clipboard",
+      "output": "browser",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "capture-clipboard",
+          "as": "raw"
+        },
+        {
+          "type": "transform",
+          "op": "urlencode",
+          "input": "{{raw}}",
+          "as": "q"
+        },
+        {
+          "type": "open-url",
+          "url": "https://github.com/search?q={{q}}&type=repositories"
+        }
+      ]
+    }
+  ],
+  "chord": "sg"
+}

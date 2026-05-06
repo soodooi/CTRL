@@ -1,0 +1,54 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.markdown-quote",
+  "name": "Markdown 引用",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "把剪贴板里的文本包裹为 Markdown blockquote 写回剪贴板"
+  },
+  "icon": "Quote",
+  "category": "markdown-document",
+  "tags": [
+    "markdown",
+    "format"
+  ],
+  "permissions": [
+    "clipboard"
+  ],
+  "actions": [
+    {
+      "id": "wrap-clipboard",
+      "name": "包裹剪贴板为引用",
+      "description": "复制文本后调用 → 行首加 > → 写回剪贴板",
+      "input": "clipboard",
+      "output": "clipboard",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "capture-clipboard",
+          "as": "clip"
+        },
+        {
+          "type": "template",
+          "template": "> {{clip}}",
+          "as": "quoted"
+        },
+        {
+          "type": "write-clipboard",
+          "value": "{{quoted}}"
+        },
+        {
+          "type": "notify",
+          "message": "已写入剪贴板"
+        }
+      ]
+    }
+  ],
+  "chord": "mq"
+}

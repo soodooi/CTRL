@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CTRL · Keycap · 高保真原型</title>
+  <style>
+    /* CTRL · Keycap Direction · Design Tokens */
+    :root {
+      --bg: #f5f5f7;
+      --bg-elev: #ffffff;
+      --card: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+      --border-strong: rgba(0, 0, 0, 0.14);
+      --text: #1d1d1f;
+      --text-muted: #6e6e73;
+      --text-subtle: #98989d;
+      --primary: #3b5bdb;
+      --primary-soft: rgba(59, 91, 219, 0.1);
+      --primary-ring: rgba(59, 91, 219, 0.18);
+      --warm: #f59f00;
+      --cool: #0ca678;
+      --destructive: #e03131;
+      --destructive-soft: rgba(224, 49, 49, 0.08);
+
+      --r-sm: 6px;
+      --r-md: 8px;
+      --r-lg: 10px;
+      --r-window: 14px;
+
+      /* 3D keycap: top highlight + bottom bevel + 3-layer drop */
+      --shadow-keycap:
+        inset 0 1px 0 rgba(255, 255, 255, 0.95),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.06),
+        0 1px 0 rgba(0, 0, 0, 0.04),
+        0 2px 4px rgba(0, 0, 0, 0.06),
+        0 4px 12px rgba(0, 0, 0, 0.08);
+      --shadow-keycap-hover:
+        inset 0 1px 0 rgba(255, 255, 255, 1),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.07),
+        0 1px 0 rgba(0, 0, 0, 0.04),
+        0 4px 8px rgba(0, 0, 0, 0.09),
+        0 12px 28px rgba(0, 0, 0, 0.14);
+      --shadow-keycap-press:
+        inset 0 2px 5px rgba(0, 0, 0, 0.12),
+        inset 0 1px 0 rgba(0, 0, 0, 0.06),
+        0 0 0 1px rgba(0, 0, 0, 0.05);
+      --shadow-window: 0 0 0 1px rgba(0, 0, 0, 0.04),
+        0 18px 56px rgba(0, 0, 0, 0.16), 0 4px 12px rgba(0, 0, 0, 0.06);
+      --card-deep: #f0f0f3;
+      --grad-keycap: linear-gradient(180deg, var(--card) 0%, var(--card-deep) 100%);
+      --grad-keycap-press: linear-gradient(180deg, var(--card-deep) 0%, var(--card) 100%);
+    }
+
+    [data-theme='dark'] {
+      --bg: #1d1d1f;
+      --bg-elev: #2c2c2e;
+      --card: #2c2c2e;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text: #f5f5f7;
+      --text-muted: #98989d;
+      --text-subtle: #6e6e73;
+      --primary: #5c7cfa;
+      --primary-soft: rgba(92, 124, 250, 0.14);
+      --primary-ring: rgba(92, 124, 250, 0.28);
+      --warm: #ffd43b;
+      --cool: #51cf66;
+      --destructive: #ff6b6b;
+      --destructive-soft: rgba(255, 107, 107, 0.1);
+
+      --card-deep: #262628;
+      --shadow-keycap:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+        0 1px 0 rgba(0, 0, 0, 0.5),
+        0 2px 4px rgba(0, 0, 0, 0.4),
+        0 4px 12px rgba(0, 0, 0, 0.5);
+      --shadow-keycap-hover:
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+        0 1px 0 rgba(0, 0, 0, 0.5),
+        0 4px 8px rgba(0, 0, 0, 0.5),
+        0 12px 28px rgba(0, 0, 0, 0.6);
+      --shadow-keycap-press:
+        inset 0 2px 5px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(0, 0, 0, 0.5);
+      --shadow-window: 0 0 0 1px rgba(0, 0, 0, 0.5),
+        0 24px 64px rgba(0, 0, 0, 0.6), 0 6px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, 'Inter', 'PingFang SC', 'Source Han Sans SC', system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 48px 32px 96px;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .demo-wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand { display: flex; align-items: center; gap: 12px; }
+
+    .keycap-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      background: var(--grad-keycap);
+      border: 1px solid var(--border-strong);
+      border-radius: 8px 8px 6px 10px;
+      box-shadow: var(--shadow-keycap);
+      font-family: 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: -0.04em;
+      position: relative;
+    }
+    .keycap-logo::after {
+      content: '↑';
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      font-size: 9px;
+      color: var(--warm);
+      font-weight: 600;
+    }
+
+    .brand h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+    .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.02em; }
+
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      background: var(--grad-keycap);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      box-shadow: var(--shadow-keycap);
+      font-family: 'SF Mono', monospace;
+      font-size: 11px;
+      color: var(--text);
+      cursor: pointer;
+      transition: transform 0.14s cubic-bezier(0.34, 1.56, 0.64, 1),
+        box-shadow 0.14s ease, background 0.14s ease;
+    }
+    .theme-toggle:hover { box-shadow: var(--shadow-keycap-hover); transform: translateY(-2px); }
+    .theme-toggle:active { box-shadow: var(--shadow-keycap-press); background: var(--grad-keycap-press); transform: translateY(1px); }
+
+    .demo-label {
+      font-family: 'SF Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .demo-label::before { content: ''; width: 18px; height: 1px; background: var(--border-strong); }
+
+    .ctrl-window {
+      width: 600px;
+      max-width: 100%;
+      background: var(--bg);
+      border-radius: var(--r-window);
+      box-shadow: var(--shadow-window);
+      overflow: hidden;
+    }
+
+    .ctrl-titlebar {
+      height: 30px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 6px;
+      background: var(--bg-elev);
+      border-bottom: 1px solid var(--border);
+    }
+    .traffic-light { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.15) inset; }
+    .traffic-light.red { background: #ff5f57; }
+    .traffic-light.yellow { background: #febc2e; }
+    .traffic-light.green { background: #28c840; }
+    .ctrl-titlebar-title {
+      flex: 1; text-align: center;
+      font-size: 11px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.02em;
+    }
+
+    .ctrl-body { padding: 14px; }
+
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 4px 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+    .panel-title {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 600; letter-spacing: -0.005em;
+    }
+    .panel-title-keycap {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px;
+      background: var(--grad-keycap); border: 1px solid var(--border-strong); border-radius: 6px;
+      font-family: 'SF Mono', monospace; font-size: 12px; font-weight: 700; color: var(--primary);
+      box-shadow: var(--shadow-keycap);
+    }
+    .panel-status {
+      font-family: 'SF Mono', monospace; font-size: 11px; color: var(--text-muted);
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .panel-status .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--cool);
+      box-shadow: 0 0 0 2px rgba(12, 166, 120, 0.18);
+    }
+
+    .tool-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+
+    .tool-item {
+      display: flex; align-items: center; gap: 14px;
+      padding: 11px 12px;
+      background: var(--grad-keycap);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      box-shadow: var(--shadow-keycap);
+      cursor: pointer;
+      transition: transform 0.14s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .tool-item:hover, .tool-item.is-hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-keycap-hover);
+      border-color: var(--primary-ring);
+    }
+    .tool-item.is-focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-ring), var(--shadow-keycap);
+    }
+    .tool-item.is-press { transform: translateY(1px); background: var(--grad-keycap-press); box-shadow: var(--shadow-keycap-press); }
+    .tool-item.is-loading { pointer-events: none; }
+    .tool-item.is-loading::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, var(--primary-soft) 50%, transparent);
+      animation: shimmer 1.4s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    .tool-item.is-disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+
+    .tool-keycap {
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      width: 30px; height: 30px;
+      background: var(--grad-keycap);
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      font-family: 'SF Mono', 'JetBrains Mono', monospace;
+      font-size: 12px; font-weight: 700; color: var(--text);
+      box-shadow: var(--shadow-keycap);
+      letter-spacing: -0.04em;
+    }
+    .tool-item.is-press .tool-keycap {
+      background: var(--grad-keycap-press);
+      box-shadow: var(--shadow-keycap-press);
+    }
+
+    .tool-icon { flex-shrink: 0; width: 28px; font-size: 22px; line-height: 1; text-align: center; color: var(--text); }
+
+    .tool-meta { flex: 1; min-width: 0; }
+    .tool-name { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.005em; }
+    .tool-desc {
+      margin-top: 2px;
+      font-size: 11px; color: var(--text-muted); line-height: 1.45;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tool-action-meta {
+      flex-shrink: 0;
+      font-family: 'SF Mono', monospace; font-size: 10px;
+      color: var(--text-subtle); letter-spacing: 0.02em;
+    }
+    .tool-arrow {
+      flex-shrink: 0; width: 16px;
+      color: var(--text-muted); opacity: 0;
+      transform: translateX(-4px);
+      transition: opacity 0.12s, transform 0.12s;
+      font-family: 'SF Mono', monospace;
+    }
+    .tool-item:hover .tool-arrow,
+    .tool-item.is-hover .tool-arrow,
+    .tool-item.is-focus .tool-arrow {
+      opacity: 1; transform: translateX(0);
+    }
+
+    .panel-empty { padding: 44px 20px 36px; text-align: center; }
+    .panel-empty-mark {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 48px; height: 48px;
+      background: var(--grad-keycap); border: 1px solid var(--border-strong);
+      border-radius: 11px 11px 9px 14px;
+      box-shadow: var(--shadow-keycap);
+      font-family: 'SF Mono', monospace; font-size: 16px; color: var(--text-subtle);
+      margin-bottom: 14px;
+    }
+    .panel-empty-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .panel-empty-hint { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+    .panel-error {
+      padding: 12px 14px;
+      background: var(--destructive-soft);
+      border: 1px solid var(--destructive);
+      border-radius: var(--r-md);
+      display: flex; gap: 12px; align-items: flex-start;
+    }
+    .panel-error-mark { flex-shrink: 0; font-size: 14px; color: var(--destructive); font-weight: 700; line-height: 1; padding-top: 2px; }
+    .panel-error-title { font-size: 12px; font-weight: 600; color: var(--destructive); margin-bottom: 2px; }
+    .panel-error-detail { font-family: 'SF Mono', monospace; font-size: 10px; color: var(--text-muted); word-break: break-all; }
+
+    .states-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+    .state-card { padding: 16px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-lg); }
+    .state-card.span-2 { grid-column: 1 / -1; }
+    .state-name {
+      font-family: 'SF Mono', monospace;
+      font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--text-muted); font-weight: 600; margin-bottom: 12px;
+    }
+
+    .token-table {
+      display: grid;
+      grid-template-columns: 220px 1fr 120px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      overflow: hidden;
+      font-family: 'SF Mono', monospace;
+      font-size: 11px;
+    }
+    .token-table > div { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
+    .token-table > div:nth-last-child(-n + 3) { border-bottom: none; }
+    .token-name { color: var(--text); font-weight: 500; }
+    .token-value { color: var(--text-muted); }
+    .token-swatch { width: 28px; height: 18px; border-radius: 4px; border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+
+    .logo-gallery {
+      display: flex; align-items: flex-end; gap: 28px;
+      padding: 24px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+    }
+    .logo-gallery .keycap-logo.lg { width: 64px; height: 64px; border-radius: 12px 12px 9px 16px; font-size: 18px; }
+    .logo-gallery .keycap-logo.lg::after { top: 5px; right: 9px; font-size: 13px; }
+    .logo-gallery .keycap-logo.md { width: 36px; height: 36px; font-size: 11px; }
+    .logo-gallery .keycap-logo.sm { width: 22px; height: 22px; font-size: 8px; border-radius: 5px 5px 4px 6px; }
+    .logo-gallery .keycap-logo.sm::after { top: 1px; right: 2px; font-size: 6px; }
+    .logo-gallery-meta { flex: 1; font-size: 12px; line-height: 1.6; color: var(--text-muted); }
+    .logo-gallery-meta strong { color: var(--text); font-weight: 600; }
+    .logo-gallery-meta code {
+      font-family: 'SF Mono', monospace; font-size: 11px;
+      background: var(--card); border: 1px solid var(--border); border-radius: 4px;
+      padding: 1px 6px; color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-wrap">
+    <header class="page-header">
+      <div class="brand">
+        <span class="keycap-logo">CTL</span>
+        <div>
+          <h1>CTRL · Keycap Direction</h1>
+          <div class="brand-sub">高保真原型 · v0.1 · 5 状态 + 空 + 错误</div>
+        </div>
+      </div>
+      <button class="theme-toggle" onclick="toggleTheme()">
+        <span id="theme-icon">◐</span>
+        <span id="theme-label">light</span>
+      </button>
+    </header>
+
+    <section>
+      <div class="demo-label">Logo · 三档尺寸</div>
+      <div class="logo-gallery">
+        <span class="keycap-logo lg">CTL</span>
+        <span class="keycap-logo md">CTL</span>
+        <span class="keycap-logo sm">CTL</span>
+        <div class="logo-gallery-meta">
+          <strong>Keycap 字标</strong>：左下大圆角 <code>10px</code> + 右下小圆角 <code>6px</code>，
+          模仿真实键帽的磨损方向（手指反复按压形成的物理印记）。<br />
+          右上角 <strong style="color: var(--warm);">↑</strong>
+          琥珀色微标隐喻"唤出 / 弹起"。<br />
+          字符 <code>CTL</code> 是 <code>CTRL</code> 的简写键帽印字（参考真实 Mac 键盘 Control 键标记）。
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="demo-label">默认状态 · default panel</div>
+      <div class="ctrl-window">
+        <div class="ctrl-titlebar">
+          <span class="traffic-light red"></span>
+          <span class="traffic-light yellow"></span>
+          <span class="traffic-light green"></span>
+          <span class="ctrl-titlebar-title">CTRL</span>
+        </div>
+        <div class="ctrl-body">
+          <div class="panel-header">
+            <span class="panel-title">
+              <span class="panel-title-keycap">⌃</span>
+              工具面板
+            </span>
+            <span class="panel-status">
+              <span class="dot"></span>
+              3 工具 · ready
+            </span>
+          </div>
+          <ul class="tool-list">
+            <li class="tool-item">
+              <span class="tool-keycap">1</span>
+              <span class="tool-icon">❝</span>
+              <div class="tool-meta">
+                <div class="tool-name">Markdown 引用</div>
+                <div class="tool-desc">把剪贴板里的文本包裹为 Markdown blockquote</div>
+              </div>
+              <span class="tool-action-meta">clipboard→clipboard</span>
+              <span class="tool-arrow">→</span>
+            </li>
+            <li class="tool-item is-hover">
+              <span class="tool-keycap">2</span>
+              <span class="tool-icon">🔎</span>
+              <div class="tool-meta">
+                <div class="tool-name">Google 搜索</div>
+                <div class="tool-desc">用剪贴板内容在 Google 搜索</div>
+              </div>
+              <span class="tool-action-meta">clipboard→browser</span>
+              <span class="tool-arrow">→</span>
+            </li>
+            <li class="tool-item is-focus">
+              <span class="tool-keycap">3</span>
+              <span class="tool-icon">🔢</span>
+              <div class="tool-meta">
+                <div class="tool-name">字数统计</div>
+                <div class="tool-desc">统计剪贴板里文本的字符 / 单词 / 行数</div>
+              </div>
+              <span class="tool-action-meta">clipboard→modal</span>
+              <span class="tool-arrow">→</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="demo-label">5 种状态 · interaction states</div>
+      <div class="states-grid">
+        <div class="state-card">
+          <div class="state-name">DEFAULT</div>
+          <div class="tool-item">
+            <span class="tool-keycap">1</span>
+            <span class="tool-icon">❝</span>
+            <div class="tool-meta"><div class="tool-name">Markdown 引用</div><div class="tool-desc">未交互态</div></div>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-name">HOVER · 鼠标悬停</div>
+          <div class="tool-item is-hover">
+            <span class="tool-keycap">2</span>
+            <span class="tool-icon">🔎</span>
+            <div class="tool-meta"><div class="tool-name">Google 搜索</div><div class="tool-desc">浮起 1px + 阴影增强 + 出现 →</div></div>
+            <span class="tool-arrow">→</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-name">FOCUS · 键盘聚焦</div>
+          <div class="tool-item is-focus">
+            <span class="tool-keycap">3</span>
+            <span class="tool-icon">🔢</span>
+            <div class="tool-meta"><div class="tool-name">字数统计</div><div class="tool-desc">主色描边 + halo 光晕</div></div>
+            <span class="tool-arrow">→</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-name">PRESS · 按下中</div>
+          <div class="tool-item is-press">
+            <span class="tool-keycap">1</span>
+            <span class="tool-icon">❝</span>
+            <div class="tool-meta"><div class="tool-name">Markdown 引用</div><div class="tool-desc">键帽下沉 + 阴影内陷</div></div>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-name">LOADING · 运行中</div>
+          <div class="tool-item is-loading">
+            <span class="tool-keycap">2</span>
+            <span class="tool-icon">🔎</span>
+            <div class="tool-meta"><div class="tool-name">Google 搜索</div><div class="tool-desc">扫光 shimmer + 禁交互</div></div>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-name">DISABLED · 不可用</div>
+          <div class="tool-item is-disabled">
+            <span class="tool-keycap">5</span>
+            <span class="tool-icon">📡</span>
+            <div class="tool-meta"><div class="tool-name">Coze Runner</div><div class="tool-desc">权限未授（network 缺失）</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="demo-label">空状态 · empty</div>
+      <div class="ctrl-window">
+        <div class="ctrl-titlebar">
+          <span class="traffic-light red"></span>
+          <span class="traffic-light yellow"></span>
+          <span class="traffic-light green"></span>
+          <span class="ctrl-titlebar-title">CTRL</span>
+        </div>
+        <div class="ctrl-body">
+          <div class="panel-empty">
+            <div class="panel-empty-mark">⌨</div>
+            <div class="panel-empty-title">还没装工具</div>
+            <div class="panel-empty-hint">从市场装一个，或自己写一个 manifest.json 放进 share/modules/</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="demo-label">错误状态 · manifest 加载失败</div>
+      <div class="ctrl-window">
+        <div class="ctrl-titlebar">
+          <span class="traffic-light red"></span>
+          <span class="traffic-light yellow"></span>
+          <span class="traffic-light green"></span>
+          <span class="ctrl-titlebar-title">CTRL</span>
+        </div>
+        <div class="ctrl-body">
+          <div class="panel-error">
+            <span class="panel-error-mark">⚠</span>
+            <div>
+              <div class="panel-error-title">2 个 manifest 加载失败</div>
+              <div class="panel-error-detail">
+                share/modules/builtin/markdown-quote/manifest.json: parse error at line 12<br />
+                share/modules/community-xxx/manifest.json: missing required field "actions"
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="demo-label">设计 token · color</div>
+      <div class="token-table">
+        <div class="token-name">--primary</div>
+        <div class="token-value" id="tk-primary">#3B5BDB · cobalt</div>
+        <div class="token-swatch" style="background: var(--primary);"></div>
+        <div class="token-name">--warm</div>
+        <div class="token-value" id="tk-warm">#F59F00 · amber</div>
+        <div class="token-swatch" style="background: var(--warm);"></div>
+        <div class="token-name">--cool</div>
+        <div class="token-value" id="tk-cool">#0CA678 · jade</div>
+        <div class="token-swatch" style="background: var(--cool);"></div>
+        <div class="token-name">--destructive</div>
+        <div class="token-value" id="tk-dest">#E03131 · alert red</div>
+        <div class="token-swatch" style="background: var(--destructive);"></div>
+        <div class="token-name">--bg</div>
+        <div class="token-value" id="tk-bg">#F5F5F7 · platinum</div>
+        <div class="token-swatch" style="background: var(--bg);"></div>
+        <div class="token-name">--card</div>
+        <div class="token-value" id="tk-card">#FFFFFF · keycap face</div>
+        <div class="token-swatch" style="background: var(--card);"></div>
+        <div class="token-name">--text</div>
+        <div class="token-value" id="tk-text">#1D1D1F · ink</div>
+        <div class="token-swatch" style="background: var(--text);"></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    function toggleTheme() {
+      const root = document.documentElement;
+      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      document.getElementById('theme-icon').textContent = next === 'dark' ? '◑' : '◐';
+      document.getElementById('theme-label').textContent = next;
+      updateTokenLabels(next);
+    }
+
+    function updateTokenLabels(theme) {
+      const dark = theme === 'dark';
+      document.getElementById('tk-primary').textContent = dark ? '#5C7CFA · cobalt-light' : '#3B5BDB · cobalt';
+      document.getElementById('tk-warm').textContent = dark ? '#FFD43B · amber-light' : '#F59F00 · amber';
+      document.getElementById('tk-cool').textContent = dark ? '#51CF66 · jade-light' : '#0CA678 · jade';
+      document.getElementById('tk-dest').textContent = dark ? '#FF6B6B · alert-light' : '#E03131 · alert red';
+      document.getElementById('tk-bg').textContent = dark ? '#1D1D1F · graphite' : '#F5F5F7 · platinum';
+      document.getElementById('tk-card').textContent = dark ? '#2C2C2E · keycap face dark' : '#FFFFFF · keycap face';
+      document.getElementById('tk-text').textContent = dark ? '#F5F5F7 · ink-light' : '#1D1D1F · ink';
+    }
+
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      toggleTheme();
+    }
+  </script>
+</body>
+</html>

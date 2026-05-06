@@ -1,0 +1,76 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CTRL",
+  "version": "0.1.0",
+  "identifier": "app.ctrl.spike",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "CTRL",
+        "width": 480,
+        "height": 420,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "skipTaskbar": false,
+        "focus": true,
+        "visible": true,
+        "resizable": false,
+        "url": "index.html"
+      },
+      {
+        "label": "pool",
+        "title": "CTRL Pool",
+        "width": 240,
+        "height": 420,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "visible": false,
+        "resizable": false,
+        "url": "pool.html"
+      },
+      {
+        "label": "workspace",
+        "title": "CTRL Workspace",
+        "width": 360,
+        "height": 420,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "visible": false,
+        "resizable": false,
+        "url": "workspace.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "app",
+    "icon": [],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}
