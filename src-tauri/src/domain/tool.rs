@@ -1,5 +1,11 @@
 // Tool / Action / Step domain types — match the JSON schema in share/modules/SCHEMA.md.
+//
+// `permissions: Vec<String>` is the v0 manifest field (coarse-grained labels:
+// "clipboard" / "network"). Use `typed_capabilities()` to get the type-safe
+// `Vec<CapToken>` for kernel enforcement. v1 manifest schema (post-P2.5) will
+// move to `capabilities` field directly per .olym/specs/tool-manifest/spec.md.
 
+use crate::kernel::capability::CapToken;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +28,72 @@ pub struct Tool {
     /// Optional: chord-less tools are still reachable via 1-9 hotkey or click.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chord: Option<String>,
+}
+
+impl Tool {
+    /// Translate v0 string-based permissions to type-safe kernel CapTokens.
+    /// Used by kernel-side actor spawning to enforce capability gate.
+    ///
+    /// Coarse-grained legacy labels are expanded to the most permissive
+    /// fine-grained set so old manifests keep working:
+    ///   "clipboard"      → [ClipboardRead, ClipboardWrite]
+    ///   "network"        → [HttpGet { "*" }, HttpPost { "*" }]
+    ///   "llm"            → inferred per action.steps (LlmCall with model)
+    ///   "filesystem-read"  → [FsRead { "*" }]
+    ///   "filesystem-write" → [FsWrite { "*" }]
+    ///   "shell"          → ignored for v0 (use scripts in steps explicitly)
+    ///
+    /// Unknown labels are silently dropped — manifest authors should migrate
+    /// to v1 `capabilities` field for fine-grained control.
+    pub fn typed_capabilities(&self) -> Vec<CapToken> {
+        let mut out: Vec<CapToken> = Vec::new();
+        for perm in &self.permissions {
+            match perm.as_str() {
+                "clipboard" => {
+                    out.push(CapToken::ClipboardRead);
+                    out.push(CapToken::ClipboardWrite);
+                }
+                "clipboard-read" => out.push(CapToken::ClipboardRead),
+                "clipboard-write" => out.push(CapToken::ClipboardWrite),
+                "network" => {
+                    out.push(CapToken::HttpGet {
+                        url_glob: "*".into(),
+                    });
+                    out.push(CapToken::HttpPost {
+                        url_glob: "*".into(),
+                    });
+                }
+                "filesystem-read" => out.push(CapToken::FsRead {
+                    path_glob: "*".into(),
+                }),
+                "filesystem-write" => out.push(CapToken::FsWrite {
+                    path_glob: "*".into(),
+                }),
+                other => {
+                    tracing::warn!(
+                        permission = other,
+                        tool = %self.id,
+                        "unknown permission string, migrate to typed capabilities"
+                    );
+                }
+            }
+        }
+
+        // Walk steps to infer LlmCall capability automatically.
+        for action in &self.actions {
+            for step in &action.steps {
+                if let Step::Llm { model, .. } = step {
+                    let model_name = model.clone().unwrap_or_else(|| "*".into());
+                    out.push(CapToken::LlmCall {
+                        model: model_name,
+                        max_tokens: None,
+                    });
+                }
+            }
+        }
+
+        out
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

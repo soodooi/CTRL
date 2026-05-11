@@ -9,7 +9,7 @@ use crate::application::ports::{
 use crate::domain::detector::{
     DetectionState, SingleCtrlDetector, SINGLE_CTRL_MAX_DURATION_MS,
 };
-use crate::domain::events::{HotkeyEvent, PermissionState};
+use crate::domain::events::{HotkeyEvent, HotkeyKind, PermissionState};
 use crate::domain::tool::Tool;
 use crate::error::Result;
 
@@ -36,11 +36,12 @@ pub fn start_hotkey_pipeline(
             // No auto-capture. Just emit "open-panel" so the UI can render the tool list,
             // and surface the window. Each tool fetches its own input per its manifest.
             let event = HotkeyEvent {
-                kind: "open-panel".into(),
+                kind: HotkeyKind::OpenPanel,
                 captured_text: None,
                 cursor_x: 0,
                 cursor_y: 0,
                 latency_ms: 0,
+                ts_ms: now,
             };
             if let Err(err) = event_bus.emit_hotkey(&event) {
                 tracing::warn!(?err, "emit_hotkey failed");
