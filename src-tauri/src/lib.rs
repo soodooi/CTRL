@@ -6,6 +6,7 @@
 // macOS-specific adapters in adapters/outbound/macos/ remain target-gated (see Cargo.toml).
 // Windows adapters added incrementally in P2.5 (full rewrite of adapter layer).
 
+mod actors;
 mod adapters;
 mod application;
 mod domain;

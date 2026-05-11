@@ -178,3 +178,45 @@ pub enum Step {
         temperature: Option<f32>,
     },
 }
+
+impl Step {
+    /// The kernel capability token required to execute this step. Used by
+    /// step_runner / actor handler to verify the parent Capability bundle
+    /// holds the required permission before execution.
+    ///
+    /// Pure-computation steps (Template / Transform) require no capability —
+    /// returns None. Steps with multiple permission needs (e.g., LLM needs
+    /// network + model auth) return the most-restrictive token; secondary
+    /// checks happen at the adapter boundary.
+    pub fn required_capability(&self) -> Option<CapToken> {
+        match self {
+            Step::CaptureSelection { .. } => Some(CapToken::ClipboardRead),
+            Step::CaptureClipboard { .. } => Some(CapToken::ClipboardRead),
+            Step::Template { .. } => None,
+            Step::Transform { .. } => None,
+            Step::WriteClipboard { .. } => Some(CapToken::ClipboardWrite),
+            Step::OpenUrl { url } => Some(CapToken::HttpGet {
+                url_glob: url.clone(),
+            }),
+            Step::Notify { .. } => None,
+            Step::Llm { model, .. } => Some(CapToken::LlmCall {
+                model: model.clone().unwrap_or_else(|| "*".into()),
+                max_tokens: None,
+            }),
+        }
+    }
+
+    /// Human-readable kind tag for logging / tracing.
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            Step::CaptureSelection { .. } => "capture-selection",
+            Step::CaptureClipboard { .. } => "capture-clipboard",
+            Step::Template { .. } => "template",
+            Step::Transform { .. } => "transform",
+            Step::WriteClipboard { .. } => "write-clipboard",
+            Step::OpenUrl { .. } => "open-url",
+            Step::Notify { .. } => "notify",
+            Step::Llm { .. } => "llm",
+        }
+    }
+}
