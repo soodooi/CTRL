@@ -17,11 +17,16 @@ use std::sync::Arc;
 
 use tauri::Manager;
 
+use crate::adapters::inbound::kernel_commands::{
+    kernel_health, mcp_connect, mcp_disconnect, mcp_invoke, mcp_list_installed, mcp_list_tools,
+    mcp_register_server, KernelAppState,
+};
 use crate::adapters::inbound::tauri_commands::{
     bootstrap_minimax, capture_selected_text, check_accessibility, get_llm_settings,
     hide_all_panels, hide_if_unfocused, hide_window, list_tools, open_accessibility_settings,
     peek_clipboard, run_action, run_chat, set_llm_key, set_panel_visible, AppState,
 };
+use crate::kernel::runtime::KernelRuntime;
 #[cfg(target_os = "macos")]
 use crate::adapters::outbound::browser::MacBrowser;
 use crate::adapters::outbound::clipboard::ArboardClipboard;
@@ -99,6 +104,16 @@ pub fn run() {
     let permission_state = use_cases::ensure_accessibility(&*accessibility);
     tracing::info!("CTRL starting; permission state = {:?}", permission_state);
 
+    // 2b. Boot L1 kernel runtime (Scheduler, McpHost, EventStore, etc).
+    let kernel = match KernelRuntime::boot_default() {
+        Ok(rt) => Arc::new(rt),
+        Err(err) => {
+            tracing::error!(?err, "kernel boot failed; running without kernel features");
+            return;
+        }
+    };
+    tracing::info!("L1 kernel runtime online");
+
     tauri::Builder::default()
         .setup({
             let accessibility = accessibility.clone();
@@ -111,6 +126,7 @@ pub fn run() {
             let llm = llm.clone();
             let config_store = config_store.clone();
             let secret_store = secret_store.clone();
+            let kernel = kernel.clone();
             move |app| {
                 // 3. Tauri-bound adapters need an AppHandle — build them inside setup.
                 let event_bus: Arc<dyn EventBusPort> =
@@ -131,6 +147,9 @@ pub fn run() {
                     secret_store: secret_store.clone(),
                 };
                 app.manage(app_state);
+                app.manage(KernelAppState {
+                    runtime: kernel.clone(),
+                });
 
                 // 5. Start the hotkey pipeline. Returns immediately.
                 if let Err(err) = use_cases::start_hotkey_pipeline(
@@ -158,6 +177,14 @@ pub fn run() {
             hide_window,
             peek_clipboard,
             run_chat,
+            // L1 Kernel commands (P2.8)
+            kernel_health,
+            mcp_register_server,
+            mcp_connect,
+            mcp_list_tools,
+            mcp_invoke,
+            mcp_list_installed,
+            mcp_disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -232,9 +259,10 @@ fn build_llm_gateway(
     }
 }
 
-// Windows stub — full Windows adapter rewrite lands in P2.5 (actor model migration).
-// For now, lets cargo check + tauri dev compile on Windows so cross-platform development
-// proceeds in parallel with macOS spike.
+// Windows stub — full Windows adapter rewrite lands in P2.9.
+// Win11 currently runs L1 kernel (MCP host, event store) but lacks hotkey /
+// accessibility / pasteboard integration. cargo check + tauri dev work
+// cross-platform; Win functional features land in P2.9 cross-platform adapters.
 #[cfg(target_os = "windows")]
 pub fn run() {
     let _ = tracing_subscriber::fmt()
@@ -243,12 +271,40 @@ pub fn run() {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .try_init();
+
+    let kernel = match KernelRuntime::boot_default() {
+        Ok(rt) => Arc::new(rt),
+        Err(err) => {
+            tracing::error!(?err, "kernel boot failed on Windows; running without kernel features");
+            return;
+        }
+    };
+    tracing::info!("L1 kernel runtime online (Windows)");
     tracing::warn!(
-        "CTRL Windows runtime is stubbed pending P2.5 cross-platform adapter rewrite. \
-         Hotkey capture / accessibility / pasteboard not yet wired."
+        "CTRL Windows hotkey / pasteboard / accessibility adapters pending P2.9. \
+         Kernel + MCP host fully operational."
     );
-    // Minimal Tauri shell so the window can open and frontend dev work proceeds.
+
     tauri::Builder::default()
+        .setup({
+            let kernel = kernel.clone();
+            move |app| {
+                app.manage(KernelAppState {
+                    runtime: kernel.clone(),
+                });
+                Ok(())
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            // L1 Kernel commands operate cross-platform
+            kernel_health,
+            mcp_register_server,
+            mcp_connect,
+            mcp_list_tools,
+            mcp_invoke,
+            mcp_list_installed,
+            mcp_disconnect,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

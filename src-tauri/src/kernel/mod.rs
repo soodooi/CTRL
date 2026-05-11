@@ -22,6 +22,7 @@ pub mod event;
 pub mod llm_port;
 pub mod mcp_host;
 pub mod persistence;
+pub mod runtime;
 pub mod sandbox;
 pub mod scheduler;
 
@@ -33,5 +34,6 @@ pub use event::{Cell, CellKind, Event, EventBus, EventFilter, Op, OpKind};
 pub use llm_port::{LlmAdapter, LlmChunk, LlmError, LlmMessage, LlmPortRouter, LlmPrompt};
 pub use mcp_host::{McpHost, McpServerDescriptor, McpServerSource, McpToolDescriptor};
 pub use persistence::EventStore;
+pub use runtime::{KernelBootError, KernelRuntime};
 pub use sandbox::{SandboxConfig, WasmSandbox};
 pub use scheduler::{ActorEntry, Scheduler};
