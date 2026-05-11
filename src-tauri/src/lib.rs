@@ -2,8 +2,9 @@
 // Every other module talks to traits, not concrete types. This is the only file that
 // names both ports and adapters.
 
-#[cfg(not(target_os = "macos"))]
-compile_error!("Phase 1 spike supports macOS only. Win sibling lives in a separate plan.");
+// Cross-platform support: lifted macOS-only restriction per ADR-001 cross-platform target.
+// macOS-specific adapters in adapters/outbound/macos/ remain target-gated (see Cargo.toml).
+// Windows adapters added incrementally in P2.5 (full rewrite of adapter layer).
 
 mod adapters;
 mod application;
@@ -20,11 +21,13 @@ use crate::adapters::inbound::tauri_commands::{
     hide_all_panels, hide_if_unfocused, hide_window, list_tools, open_accessibility_settings,
     peek_clipboard, run_action, run_chat, set_llm_key, set_panel_visible, AppState,
 };
+#[cfg(target_os = "macos")]
 use crate::adapters::outbound::browser::MacBrowser;
 use crate::adapters::outbound::clipboard::ArboardClipboard;
 use crate::adapters::outbound::clock::InstantClock;
 use crate::adapters::outbound::config::{FileConfigStore, KeychainSecretStore};
 use crate::adapters::outbound::llm::{LlmGateway, ProviderConfig, ProviderKind};
+#[cfg(target_os = "macos")]
 use crate::adapters::outbound::macos::{
     accessibility::MacAccessibility, capture::PasteboardCapture, keyboard::CgEventTapKeyboard,
 };
@@ -39,6 +42,7 @@ use crate::application::ports::{
 use crate::application::use_cases;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(target_os = "macos")]
 pub fn run() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -225,4 +229,30 @@ fn build_llm_gateway(
             None
         }
     }
+}
+
+// Windows stub — full Windows adapter rewrite lands in P2.5 (actor model migration).
+// For now, lets cargo check + tauri dev compile on Windows so cross-platform development
+// proceeds in parallel with macOS spike.
+#[cfg(target_os = "windows")]
+pub fn run() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .try_init();
+    tracing::warn!(
+        "CTRL Windows runtime is stubbed pending P2.5 cross-platform adapter rewrite. \
+         Hotkey capture / accessibility / pasteboard not yet wired."
+    );
+    // Minimal Tauri shell so the window can open and frontend dev work proceeds.
+    tauri::Builder::default()
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn run() {
+    panic!("CTRL only supports macOS (full) + Windows (stub) currently");
 }
