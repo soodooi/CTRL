@@ -32,6 +32,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 ciborium = "0.2"           # CBOR encoding (ST-SS wire format)
 rusqlite = { version = "0.32", features = ["bundled"] }  # event store
 wasmtime = { version = "27", default-features = false, features = ["async", "cranelift"] }  # WASM sandbox (P2.7)
+rmcp = { version = "1.6", features = ["client", "transport-child-process"] }  # MCP host (Anthropic official Rust SDK)
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"

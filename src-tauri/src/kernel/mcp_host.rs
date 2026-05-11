@@ -1,13 +1,28 @@
 // MCP Host — discovery + invocation of Anthropic Model Context Protocol servers.
 //
-// Phase: P2.1 skeleton + P4 full integration.
-// Each MCP server runs inside WASM/process sandbox (see sandbox.rs).
+// Uses the official rmcp Rust SDK (https://github.com/modelcontextprotocol/rust-sdk).
+// Day-1 advantage: 10,000+ public MCP servers usable without writing any
+// CTRL-specific adapter. See https://registry.modelcontextprotocol.io/
 //
-// Day-1 advantage: 10,000+ public MCP servers usable without writing
-// any CTRL-specific adapter. See https://registry.modelcontextprotocol.io/
+// Each MCP server runs as a child process (rmcp transport-child-process):
+//   - npm  package -> `node` spawn
+//   - pypi package -> `python` / `uvx` spawn
+//   - local binary -> direct exec
+//   - http endpoint -> HTTP transport (not yet wired here)
+//
+// Capability mediation: every McpInvoke effect from a userland actor is
+// checked against the actor's Capability before reaching this host. See
+// kernel::capability::CapabilityBroker.
 
+use rmcp::model::{CallToolRequestParam, Tool};
+use rmcp::service::RunningService;
+use rmcp::transport::TokioChildProcess;
+use rmcp::{RoleClient, ServiceExt};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use tokio::process::Command;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerDescriptor {
@@ -31,28 +46,194 @@ pub struct McpToolDescriptor {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum McpServerSource {
     /// npm package, spawn via node.
-    Npm { package: String },
-    /// pypi package, spawn via python.
-    Pypi { package: String },
+    Npm {
+        package: String,
+        #[serde(default)]
+        args: Vec<String>,
+    },
+    /// pypi package, spawn via uvx.
+    Pypi {
+        package: String,
+        #[serde(default)]
+        args: Vec<String>,
+    },
     /// Binary executable on user's machine.
-    Local { command: String, args: Vec<String> },
-    /// HTTP endpoint (remote MCP server).
+    Local {
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+    },
+    /// HTTP endpoint (remote MCP server). Wiring in P4.
     Http { url: String },
 }
 
+impl McpServerSource {
+    /// Build the spawn Command for child-process transports.
+    /// Returns None for Http source.
+    pub fn to_command(&self) -> Option<Command> {
+        match self {
+            McpServerSource::Npm { package, args } => {
+                let mut cmd = Command::new("npx");
+                cmd.arg("-y").arg(package);
+                for a in args {
+                    cmd.arg(a);
+                }
+                Some(cmd)
+            }
+            McpServerSource::Pypi { package, args } => {
+                let mut cmd = Command::new("uvx");
+                cmd.arg(package);
+                for a in args {
+                    cmd.arg(a);
+                }
+                Some(cmd)
+            }
+            McpServerSource::Local { command, args } => {
+                let mut cmd = Command::new(command);
+                for a in args {
+                    cmd.arg(a);
+                }
+                Some(cmd)
+            }
+            McpServerSource::Http { .. } => None,
+        }
+    }
+}
+
+/// Connected MCP server instance — owns the rmcp service handle.
+struct McpConnection {
+    descriptor: McpServerDescriptor,
+    service: RunningService<RoleClient, ()>,
+}
+
 pub struct McpHost {
-    installed: BTreeMap<String, McpServerDescriptor>,
+    installed: Arc<RwLock<BTreeMap<String, McpServerDescriptor>>>,
+    connections: Arc<RwLock<BTreeMap<String, McpConnection>>>,
 }
 
 impl McpHost {
     pub fn new() -> Self {
         Self {
-            installed: BTreeMap::new(),
+            installed: Arc::new(RwLock::new(BTreeMap::new())),
+            connections: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
-    pub fn list_installed(&self) -> impl Iterator<Item = &McpServerDescriptor> {
-        self.installed.values()
+    /// Register an MCP server descriptor (without spawning yet).
+    pub async fn register(&self, desc: McpServerDescriptor) {
+        let mut installed = self.installed.write().await;
+        installed.insert(desc.id.clone(), desc);
+    }
+
+    /// Spawn the MCP server child process and complete the handshake.
+    /// Caches the connection so subsequent `invoke` calls reuse it.
+    pub async fn connect(&self, server_id: &str) -> Result<(), McpHostError> {
+        // Already connected?
+        {
+            let conns = self.connections.read().await;
+            if conns.contains_key(server_id) {
+                return Ok(());
+            }
+        }
+
+        let desc = {
+            let installed = self.installed.read().await;
+            installed
+                .get(server_id)
+                .cloned()
+                .ok_or_else(|| McpHostError::NotInstalled(server_id.into()))?
+        };
+
+        let cmd = desc
+            .source
+            .to_command()
+            .ok_or_else(|| McpHostError::TransportUnsupported("http (P4)".into()))?;
+
+        let transport = TokioChildProcess::new(cmd)
+            .map_err(|e| McpHostError::SpawnFailed(e.to_string()))?;
+
+        let service = ()
+            .serve(transport)
+            .await
+            .map_err(|e| McpHostError::HandshakeFailed(e.to_string()))?;
+
+        let conn = McpConnection {
+            descriptor: desc.clone(),
+            service,
+        };
+
+        let mut conns = self.connections.write().await;
+        conns.insert(server_id.into(), conn);
+        Ok(())
+    }
+
+    /// List tools advertised by a connected MCP server.
+    pub async fn list_tools(&self, server_id: &str) -> Result<Vec<Tool>, McpHostError> {
+        self.connect(server_id).await?;
+        let conns = self.connections.read().await;
+        let conn = conns
+            .get(server_id)
+            .ok_or_else(|| McpHostError::NotConnected(server_id.into()))?;
+        let result = conn
+            .service
+            .list_all_tools()
+            .await
+            .map_err(|e| McpHostError::ListFailed(e.to_string()))?;
+        Ok(result)
+    }
+
+    /// Invoke a tool on a connected MCP server.
+    pub async fn invoke(
+        &self,
+        server_id: &str,
+        tool_name: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, McpHostError> {
+        self.connect(server_id).await?;
+        let conns = self.connections.read().await;
+        let conn = conns
+            .get(server_id)
+            .ok_or_else(|| McpHostError::NotConnected(server_id.into()))?;
+
+        let arguments = match args {
+            serde_json::Value::Object(map) => Some(map),
+            serde_json::Value::Null => None,
+            other => {
+                return Err(McpHostError::InvalidArgs(format!(
+                    "expected object, got {other:?}"
+                )))
+            }
+        };
+
+        let mut param = CallToolRequestParam::default();
+        param.name = tool_name.to_string().into();
+        param.arguments = arguments;
+
+        let result = conn
+            .service
+            .call_tool(param)
+            .await
+            .map_err(|e| McpHostError::InvokeFailed(e.to_string()))?;
+
+        serde_json::to_value(&result).map_err(|e| McpHostError::SerializationFailed(e.to_string()))
+    }
+
+    /// Iterator over installed descriptors (sync snapshot).
+    pub async fn list_installed(&self) -> Vec<McpServerDescriptor> {
+        let installed = self.installed.read().await;
+        installed.values().cloned().collect()
+    }
+
+    /// Shut down a connected server.
+    pub async fn disconnect(&self, server_id: &str) -> Result<(), McpHostError> {
+        let mut conns = self.connections.write().await;
+        if let Some(conn) = conns.remove(server_id) {
+            conn.service
+                .cancel()
+                .await
+                .map_err(|e| McpHostError::ShutdownFailed(e.to_string()))?;
+        }
+        Ok(())
     }
 }
 
@@ -60,4 +241,28 @@ impl Default for McpHost {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum McpHostError {
+    #[error("server not installed: {0}")]
+    NotInstalled(String),
+    #[error("server not connected: {0}")]
+    NotConnected(String),
+    #[error("transport not supported: {0}")]
+    TransportUnsupported(String),
+    #[error("failed to spawn child process: {0}")]
+    SpawnFailed(String),
+    #[error("MCP handshake failed: {0}")]
+    HandshakeFailed(String),
+    #[error("list tools failed: {0}")]
+    ListFailed(String),
+    #[error("tool invocation failed: {0}")]
+    InvokeFailed(String),
+    #[error("invalid arguments: {0}")]
+    InvalidArgs(String),
+    #[error("serialization failed: {0}")]
+    SerializationFailed(String),
+    #[error("server shutdown failed: {0}")]
+    ShutdownFailed(String),
 }
