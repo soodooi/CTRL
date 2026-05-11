@@ -9,6 +9,7 @@ mod adapters;
 mod application;
 mod domain;
 mod error;
+mod kernel;
 
 use std::sync::Arc;
 
