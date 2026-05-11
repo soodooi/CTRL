@@ -99,3 +99,7 @@ Output: `src-tauri/target/debug/bundle/macos/CTRL.app`
 ## Status
 
 Phase 1 spike, in progress. Decision A/B/C will be recorded in `doc/SPIKE_RESULTS_MAC.md` at the end of week.
+
+## License
+
+**All Rights Reserved.** See [LICENSE](./LICENSE). Private repository; no part of this source may be used, copied, or distributed without prior written permission.
