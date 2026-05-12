@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using CTRL.Bindings;
+using CTRL.Services;
 using Microsoft.UI.Xaml;
 
 namespace CTRL;
@@ -9,10 +11,12 @@ namespace CTRL;
 /// <summary>
 /// CTRL application entry point. Kicks off Rust kernel auto-boot in background
 /// before activating the main window so the UI never blocks on FFI work.
+/// Installs the global Ctrl-tap hotkey listener after the window is up.
 /// </summary>
 public partial class App : Application
 {
     private Window? _window;
+    private HotkeyService? _hotkey;
 
     /// <summary>
     /// Local data directory passed to the Rust kernel on boot. SQLite event
@@ -43,6 +47,27 @@ public partial class App : Application
 
         _window = new MainWindow();
         _window.Activate();
+
+        InstallHotkey();
+    }
+
+    private void InstallHotkey()
+    {
+        try
+        {
+            _hotkey = new HotkeyService(_window!.DispatcherQueue);
+            _hotkey.HotkeyTriggered += OnHotkeyTriggered;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[HOTKEY] install failed: {ex.Message}");
+        }
+    }
+
+    private static void OnHotkeyTriggered(object? sender, EventArgs e)
+    {
+        // W3.2 stub: log only. Window show/hide wiring lands in W3.5.
+        Debug.WriteLine($"[HOTKEY] {DateTime.Now:HH:mm:ss.fff} Ctrl tap detected");
     }
 
     private static string? BootKernel()
