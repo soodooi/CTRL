@@ -18,8 +18,13 @@ public sealed partial class MainPage : Page
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
         var error = await App.BootTask;
-        StatusText.Text = error is null
-            ? $"Kernel booted.\nData dir: {App.KernelDataDir}"
-            : error;
+        if (error is null)
+        {
+            Frame.Navigate(typeof(KeycapPoolPage));
+        }
+        else
+        {
+            StatusText.Text = error;
+        }
     }
 }
