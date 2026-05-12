@@ -1,44 +1,71 @@
-﻿using Windows.ApplicationModel;
-using Windows.ApplicationModel.Activation;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
+﻿using System;
+using System.IO;
+using System.Threading.Tasks;
+using CTRL.Bindings;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Xaml.Shapes;
-
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
 
 namespace CTRL;
 
 /// <summary>
-/// Provides application-specific behavior to supplement the default Application class.
+/// CTRL application entry point. Kicks off Rust kernel auto-boot in background
+/// before activating the main window so the UI never blocks on FFI work.
 /// </summary>
 public partial class App : Application
 {
     private Window? _window;
-    
+
     /// <summary>
-    /// Initializes the singleton application object.  This is the first line of authored code
-    /// executed, and as such is the logical equivalent of main() or WinMain().
+    /// Local data directory passed to the Rust kernel on boot. SQLite event
+    /// store, manifest cache, and AI memory live here.
     /// </summary>
+    public static string KernelDataDir { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Background kernel-boot task. Result is null on success or a
+    /// user-readable error message on failure.
+    /// </summary>
+    public static Task<string?> BootTask { get; private set; } =
+        Task.FromResult<string?>(null);
+
     public App()
     {
         InitializeComponent();
     }
 
-    /// <summary>
-    /// Invoked when the application is launched.
-    /// </summary>
-    /// <param name="args">Details about the launch request and process.</param>
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
+        KernelDataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ctrl");
+        Directory.CreateDirectory(KernelDataDir);
+
+        BootTask = Task.Run<string?>(BootKernel);
+
         _window = new MainWindow();
         _window.Activate();
+    }
+
+    private static string? BootKernel()
+    {
+        try
+        {
+            Kernel.Boot(KernelDataDir);
+            return null;
+        }
+        catch (KernelException kex)
+        {
+            return $"Kernel boot failed (code {kex.Code}): {kex.Message}";
+        }
+        catch (DllNotFoundException)
+        {
+            return
+                "ctrl_lib.dll not found. Build the Rust core first:\n" +
+                "  cd src-tauri\n" +
+                "  cargo build --release";
+        }
+        catch (Exception ex)
+        {
+            return $"Unexpected boot error ({ex.GetType().Name}): {ex.Message}";
+        }
     }
 }
