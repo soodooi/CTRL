@@ -54,6 +54,7 @@ export class WebSocketTransport implements Transport {
   private _state: TransportState = 'connecting';
   private messageHandler: ((bytes: Uint8Array) => void) | null = null;
   private stateHandler: ((state: TransportState) => void) | null = null;
+  private errorHandler: ((error: unknown) => void) | null = null;
 
   constructor(private readonly ws: WebSocketLike) {
     if ('binaryType' in ws && ws.binaryType !== 'arraybuffer') {
@@ -75,11 +76,24 @@ export class WebSocketTransport implements Transport {
   }
 
   onMessage(handler: (bytes: Uint8Array) => void): void {
+    if (this.messageHandler !== null) {
+      throw new Error('WebSocketTransport: onMessage handler already registered');
+    }
     this.messageHandler = handler;
   }
 
   onStateChange(handler: (state: TransportState) => void): void {
+    if (this.stateHandler !== null) {
+      throw new Error('WebSocketTransport: onStateChange handler already registered');
+    }
     this.stateHandler = handler;
+  }
+
+  onError(handler: (error: unknown) => void): void {
+    if (this.errorHandler !== null) {
+      throw new Error('WebSocketTransport: onError handler already registered');
+    }
+    this.errorHandler = handler;
   }
 
   close(reason?: string): void {
@@ -92,7 +106,10 @@ export class WebSocketTransport implements Transport {
     this.ws.addEventListener('open', () => this.setState('open'));
     this.ws.addEventListener('close', () => this.setState('closed'));
     this.ws.addEventListener('message', (event) => this.onWsMessage(event));
-    this.ws.addEventListener('error', () => this.setState('closed'));
+    this.ws.addEventListener('error', (event) => {
+      this.errorHandler?.(event);
+      this.setState('closed');
+    });
   }
 
   private setState(next: TransportState): void {

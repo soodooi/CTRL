@@ -9,11 +9,14 @@
  *   payload.ops where `kind === 'delete'` as structural removal;
  *   return remaining ops as `semanticOps` for the consumer's audit
  *   handler
- * - `heartbeat` / `control` / `error` / `hello` / `welcome` / `bye`
- *   — return current snapshot unchanged
+ * - `error` — return the envelope on `errors` so the consumer can
+ *   react; snapshot unchanged
+ * - `heartbeat` / `control` / `hello` / `welcome` / `bye` — return
+ *   current snapshot unchanged with empty `semanticOps` / `errors`
  *
  * Throws {@link MissingKeyframeError} if a delta arrives before any
- * keyframe has been applied.
+ * keyframe has been applied. Throws {@link EnvelopeInvalidError} on
+ * cross-source delta or a malformed `'delete'` op missing target.
  *
  * @packageDocumentation
  */
@@ -21,7 +24,9 @@
 import type { Cell } from '../protocol/cell.js';
 import {
   type Envelope,
+  type ErrorEnvelope,
   isDelta,
+  isError,
   isKeyframe,
 } from '../protocol/envelope.js';
 import {
@@ -43,6 +48,7 @@ function emptySnapshot(): CellTreeSnapshot {
 }
 
 const NO_OPS: readonly Op[] = [];
+const NO_ERRORS: readonly ErrorEnvelope[] = [];
 
 /**
  * Default CTRL cell-tree reducer.
@@ -68,7 +74,7 @@ export class DefaultReducer implements Reducer {
         source: envelope.source,
         updatedAtMs: envelope.ts_ms,
       };
-      return { snapshot: this.snapshot, semanticOps: NO_OPS };
+      return { snapshot: this.snapshot, semanticOps: NO_OPS, errors: NO_ERRORS };
     }
 
     if (isDelta(envelope)) {
@@ -112,10 +118,18 @@ export class DefaultReducer implements Reducer {
         source: envelope.source,
         updatedAtMs: envelope.ts_ms,
       };
-      return { snapshot: this.snapshot, semanticOps };
+      return { snapshot: this.snapshot, semanticOps, errors: NO_ERRORS };
     }
 
-    return { snapshot: this.snapshot, semanticOps: NO_OPS };
+    if (isError(envelope)) {
+      return {
+        snapshot: this.snapshot,
+        semanticOps: NO_OPS,
+        errors: [envelope],
+      };
+    }
+
+    return { snapshot: this.snapshot, semanticOps: NO_OPS, errors: NO_ERRORS };
   }
 
   current(): CellTreeSnapshot {

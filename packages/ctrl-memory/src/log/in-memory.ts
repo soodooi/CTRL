@@ -16,14 +16,30 @@ import type { AppendSink, LineSource } from './types.js';
  * Implements both {@link AppendSink} (write side) and {@link LineSource}
  * (read side) so dev / test setups need only one instance.
  *
+ * Bounded capacity: defaults to 100_000 entries. Once full,
+ * {@link append} throws. Callers that genuinely need an unbounded
+ * log opt in explicitly via `{ maxEntries: Number.POSITIVE_INFINITY }`
+ * — the explicit opt-in flags the production-OOM risk at the call
+ * site.
+ *
  * @public
  */
 export class InMemoryLog implements AppendSink, LineSource {
   private readonly entries: Envelope[] = [];
+  private readonly maxEntries: number;
   private closed = false;
+
+  constructor(options: { readonly maxEntries?: number } = {}) {
+    this.maxEntries = options.maxEntries ?? 100_000;
+  }
 
   async append(envelope: Envelope): Promise<void> {
     if (this.closed) throw new Error('InMemoryLog is closed');
+    if (this.entries.length >= this.maxEntries) {
+      throw new Error(
+        `InMemoryLog capacity exceeded (max=${this.maxEntries}). Drain via open() or raise maxEntries.`,
+      );
+    }
     this.entries.push(envelope);
   }
 

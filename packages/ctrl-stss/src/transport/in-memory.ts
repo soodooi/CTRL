@@ -24,6 +24,7 @@ export class InMemoryTransport implements Transport {
   private _state: TransportState = 'idle';
   private messageHandler: ((bytes: Uint8Array) => void) | null = null;
   private stateHandler: ((state: TransportState) => void) | null = null;
+  private errorHandler: ((error: unknown) => void) | null = null;
   private peer: InMemoryTransport | null = null;
 
   get state(): TransportState {
@@ -35,20 +36,39 @@ export class InMemoryTransport implements Transport {
       throw new TransportClosedError(`Cannot send in state "${this._state}"`);
     }
     const peer = this.peer;
-    if (peer === null) return;
+    if (peer === null) {
+      throw new Error(
+        'InMemoryTransport: peer not attached — use createInMemoryTransportPair()',
+      );
+    }
     const copy = new Uint8Array(bytes);
     queueMicrotask(() => peer.deliver(copy));
   }
 
   onMessage(handler: (bytes: Uint8Array) => void): void {
+    if (this.messageHandler !== null) {
+      throw new Error('InMemoryTransport: onMessage handler already registered');
+    }
     this.messageHandler = handler;
   }
 
   onStateChange(handler: (state: TransportState) => void): void {
+    if (this.stateHandler !== null) {
+      throw new Error('InMemoryTransport: onStateChange handler already registered');
+    }
     this.stateHandler = handler;
   }
 
-  close(reason?: string): void {
+  onError(handler: (error: unknown) => void): void {
+    if (this.errorHandler !== null) {
+      throw new Error('InMemoryTransport: onError handler already registered');
+    }
+    // Loopback transport has no native error path; the handler is
+    // stored to satisfy the Transport contract but never invoked.
+    this.errorHandler = handler;
+  }
+
+  close(_reason?: string): void {
     if (this._state === 'closed' || this._state === 'closing') return;
     this.setState('closing');
     const peer = this.peer;
@@ -56,7 +76,6 @@ export class InMemoryTransport implements Transport {
     if (peer !== null && peer._state !== 'closed') {
       peer.setState('closed');
     }
-    void reason;
   }
 
   /** @internal — pair-factory wires peers symmetrically. */

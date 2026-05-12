@@ -74,19 +74,45 @@ export function decodeFrame(
  * Stateful streaming decoder — buffers between calls and emits one
  * payload per complete frame.
  *
+ * Bounded-buffer guard: a stream that sends valid length-prefix
+ * headers followed by no payload bytes (slow-loris pattern) would
+ * grow `this.buf` indefinitely without ever satisfying the
+ * per-frame `maxBytes` check. {@link push} additionally guards the
+ * cumulative buffered size against {@link maxBufferedBytes}. On
+ * breach, the decoder is reset and {@link FramingOversizedError}
+ * is thrown.
+ *
  * @public
  */
 export class FrameDecoder {
   private buf: Uint8Array;
   private readonly maxBytes: number;
+  private readonly maxBufferedBytes: number;
 
-  constructor(options: { readonly maxBytes?: number } = {}) {
+  constructor(
+    options: {
+      readonly maxBytes?: number;
+      /**
+       * Cumulative buffer cap across partial-frame pushes. Defaults
+       * to `maxBytes + 4` — one full frame's worth of bytes plus the
+       * 4-byte length prefix. Set higher only when the transport
+       * legitimately pipelines multiple complete frames per push.
+       */
+      readonly maxBufferedBytes?: number;
+    } = {},
+  ) {
     this.buf = new Uint8Array(0);
     this.maxBytes = options.maxBytes ?? DEFAULT_MAX_FRAME_BYTES;
+    this.maxBufferedBytes = options.maxBufferedBytes ?? this.maxBytes + 4;
   }
 
   push(chunk: Uint8Array): readonly Uint8Array[] {
     this.buf = concat(this.buf, chunk);
+    if (this.buf.byteLength > this.maxBufferedBytes) {
+      const buffered = this.buf.byteLength;
+      this.reset();
+      throw new FramingOversizedError(buffered, this.maxBufferedBytes);
+    }
     const out: Uint8Array[] = [];
 
     while (true) {

@@ -16,11 +16,16 @@
  */
 
 import type { Cell } from '../protocol/cell.js';
-import type { Envelope } from '../protocol/envelope.js';
+import type { Envelope, ErrorEnvelope } from '../protocol/envelope.js';
 import type { Op } from '../protocol/op.js';
 
 /**
  * Receiver-side cell tree snapshot.
+ *
+ * **Note**: `snapshot` returned from {@link Reducer.apply} and
+ * {@link Reducer.current} is a snapshot in time. The reducer is free
+ * to replace the snapshot reference on the next apply — callers that
+ * retain a reference will observe stale state, not future mutation.
  *
  * @public
  */
@@ -38,18 +43,22 @@ export interface CellTreeSnapshot {
 }
 
 /**
- * Side-effect output of {@link Reducer.apply} for ops that did NOT
- * mutate the cell tree (every op other than `'delete'`).
+ * Output of {@link Reducer.apply}. Three channels:
  *
- * Consumers route these to their audit log / event handler. Bundling
- * them in the return saves the reducer from owning a callback.
+ * - `snapshot` — current cell-tree state after applying this envelope
+ * - `semanticOps` — ops the reducer did not apply structurally (every
+ *   op other than well-formed `'delete'`). Route to audit / event
+ *   handler.
+ * - `errors` — error envelopes from the peer. The remote signalled a
+ *   protocol-level problem; consumers MUST surface these instead of
+ *   discarding (the reducer otherwise no-ops on `'error'` type).
  *
  * @public
  */
 export interface ReducerResult {
   readonly snapshot: CellTreeSnapshot;
-  /** Ops the reducer did not apply structurally. Empty on keyframe / heartbeat / control / handshake. */
   readonly semanticOps: readonly Op[];
+  readonly errors: readonly ErrorEnvelope[];
 }
 
 /**
