@@ -53,6 +53,19 @@ describe('length-prefix framing', () => {
     expect(decoder.bufferedBytes()).toBe(0);
   });
 
+  it('FrameDecoder push returns independent slices that survive subsequent pushes', () => {
+    const decoder = new FrameDecoder();
+    const f1 = encodeFrame(encoder.encode('first'));
+    const f2 = encodeFrame(encoder.encode('second'));
+    const [returned1] = decoder.push(f1);
+    const snapshot1 = new TextDecoder().decode(returned1);
+    // Next push reassigns the internal buffer — the previously
+    // returned payload MUST NOT be a live view into it.
+    decoder.push(f2);
+    expect(new TextDecoder().decode(returned1)).toBe(snapshot1);
+    expect(snapshot1).toBe('first');
+  });
+
   it('FrameDecoder buffers across partial chunks', () => {
     const payload = encoder.encode('streamed');
     const frame = encodeFrame(payload);

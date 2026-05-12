@@ -200,12 +200,26 @@ function buildBase<T extends EnvelopeType>(
   params: EnvelopeCommon,
   type: T,
 ): BaseFields<T> {
+  if (typeof params.source !== 'string' || params.source.length === 0) {
+    throw new RangeError('Envelope.source must be a non-empty string');
+  }
+  if (!Number.isFinite(params.seq) || params.seq < 0 || !Number.isInteger(params.seq)) {
+    throw new RangeError(
+      `Envelope.seq must be a non-negative integer, got ${params.seq}`,
+    );
+  }
+  const ts_ms = params.ts_ms ?? Date.now();
+  if (!Number.isFinite(ts_ms) || ts_ms < 0) {
+    throw new RangeError(
+      `Envelope.ts_ms must be a non-negative finite number, got ${ts_ms}`,
+    );
+  }
   return {
     v: PROTOCOL_VERSION,
     type,
     source: params.source,
     seq: params.seq,
-    ts_ms: params.ts_ms ?? Date.now(),
+    ts_ms,
   };
 }
 
@@ -231,8 +245,19 @@ export function createDelta(
     readonly ops?: readonly Op[];
   },
 ): DeltaEnvelope {
+  const base = buildBase(params, 'delta');
+  if (!Number.isInteger(params.ref) || params.ref < 0) {
+    throw new RangeError(
+      `Delta.ref must be a non-negative integer, got ${params.ref}`,
+    );
+  }
+  if (params.ref >= params.seq) {
+    throw new RangeError(
+      `Delta.ref (${params.ref}) must be < seq (${params.seq})`,
+    );
+  }
   return {
-    ...buildBase(params, 'delta'),
+    ...base,
     ref: params.ref,
     payload: {
       ...(params.cells !== undefined && { cells: params.cells }),

@@ -105,8 +105,14 @@ export function isCell(value: unknown): value is Cell {
 }
 
 /**
- * Constructor with defaulting. `ts_ms` defaults to `Date.now()` when
- * omitted.
+ * Constructor with defaulting + validation.
+ *
+ * - `ts_ms` defaults to `Date.now()` when omitted; must be a
+ *   non-negative finite number.
+ * - `id` must be a non-empty string — empty ids silently corrupt
+ *   the reducer's `id → cell` map.
+ *
+ * Throws {@link RangeError} on invariant violation.
  *
  * @public
  */
@@ -117,10 +123,19 @@ export function createCell(params: {
   readonly ts_ms?: number;
   readonly attrs?: Readonly<Record<string, unknown>>;
 }): Cell {
+  if (typeof params.id !== 'string' || params.id.length === 0) {
+    throw new RangeError('createCell: id must be a non-empty string');
+  }
+  const ts_ms = params.ts_ms ?? Date.now();
+  if (!Number.isFinite(ts_ms) || ts_ms < 0) {
+    throw new RangeError(
+      `createCell: ts_ms must be a non-negative finite number, got ${ts_ms}`,
+    );
+  }
   return {
     id: params.id,
     kind: params.kind,
-    ts_ms: params.ts_ms ?? Date.now(),
+    ts_ms,
     payload: params.payload,
     ...(params.attrs !== undefined && { attrs: params.attrs }),
   };

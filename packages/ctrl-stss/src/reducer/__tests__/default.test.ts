@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DefaultReducer,
+  EnvelopeInvalidError,
   MissingKeyframeError,
   createCell,
   createDelta,
@@ -170,5 +171,80 @@ describe('DefaultReducer', () => {
     r.reset();
     expect(r.current().cells.size).toBe(0);
     expect(r.current().lastKeyframeSeq).toBeNull();
+  });
+
+  it('reset gives each reducer its own fresh cell map (no shared module-level state)', () => {
+    const a = new DefaultReducer();
+    const b = new DefaultReducer();
+    // Force both reducers through reset()
+    a.reset();
+    b.reset();
+    const aSnap = a.current();
+    const bSnap = b.current();
+    expect(aSnap).not.toBe(bSnap);
+    expect(aSnap.cells).not.toBe(bSnap.cells);
+  });
+
+  it('rejects a cross-source delta with EnvelopeInvalidError', () => {
+    const r = new DefaultReducer();
+    r.apply(
+      createKeyframe({
+        source: 's1',
+        seq: 10,
+        ts_ms: 1_000,
+        cells: [createCell({ id: 'a', kind: 'user_input', payload: {}, ts_ms: 900 })],
+      }),
+    );
+    const wrongSource = createDelta({
+      source: 's2',
+      seq: 11,
+      ref: 10,
+      ts_ms: 1_100,
+      cells: [createCell({ id: 'b', kind: 'user_input', payload: {}, ts_ms: 1_050 })],
+    });
+    expect(() => r.apply(wrongSource)).toThrow(EnvelopeInvalidError);
+  });
+
+  it('rejects a delete op missing target with EnvelopeInvalidError', () => {
+    const r = new DefaultReducer();
+    r.apply(
+      createKeyframe({
+        source: SOURCE,
+        seq: 10,
+        ts_ms: 1_000,
+        cells: [createCell({ id: 'a', kind: 'user_input', payload: {}, ts_ms: 900 })],
+      }),
+    );
+    // Craft a delete with missing target — must bypass createDeleteOp's own guard
+    const malformed = createOp({ kind: 'delete', ts_ms: 1_100 });
+    const df = createDelta({
+      source: SOURCE,
+      seq: 11,
+      ref: 10,
+      ts_ms: 1_100,
+      ops: [malformed],
+    });
+    expect(() => r.apply(df)).toThrow(EnvelopeInvalidError);
+  });
+
+  it('delete on a missing target is idempotent (Map.delete no-op)', () => {
+    const r = new DefaultReducer();
+    r.apply(
+      createKeyframe({
+        source: SOURCE,
+        seq: 10,
+        ts_ms: 1_000,
+        cells: [createCell({ id: 'a', kind: 'user_input', payload: {}, ts_ms: 900 })],
+      }),
+    );
+    const df = createDelta({
+      source: SOURCE,
+      seq: 11,
+      ref: 10,
+      ops: [createOp({ kind: 'delete', target: 'never-existed', ts_ms: 1_100 })],
+    });
+    const { snapshot } = r.apply(df);
+    expect(snapshot.cells.size).toBe(1);
+    expect(snapshot.cells.has('a')).toBe(true);
   });
 });

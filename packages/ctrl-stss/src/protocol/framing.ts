@@ -92,7 +92,9 @@ export class FrameDecoder {
     while (true) {
       const frame = decodeFrame(this.buf, { maxBytes: this.maxBytes });
       if (!frame) break;
-      out.push(frame.payload);
+      // Detach payload from `this.buf` — the next concat / subarray
+      // assignment would otherwise mutate the returned view.
+      out.push(frame.payload.slice());
       this.buf = this.buf.subarray(frame.nextOffset);
     }
 

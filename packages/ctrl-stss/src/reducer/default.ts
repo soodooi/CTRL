@@ -24,28 +24,38 @@ import {
   isDelta,
   isKeyframe,
 } from '../protocol/envelope.js';
-import { MissingKeyframeError } from '../protocol/error.js';
-import type { Op } from '../protocol/op.js';
+import {
+  EnvelopeInvalidError,
+  MissingKeyframeError,
+} from '../protocol/error.js';
+import { type Op, isDeleteOp } from '../protocol/op.js';
 
 import type { CellTreeSnapshot, Reducer, ReducerResult } from './types.js';
 
-const EMPTY_SNAPSHOT: CellTreeSnapshot = {
-  cells: new Map(),
-  lastSeq: -1,
-  lastKeyframeSeq: null,
-  source: null,
-  updatedAtMs: 0,
-};
+function emptySnapshot(): CellTreeSnapshot {
+  return {
+    cells: new Map(),
+    lastSeq: -1,
+    lastKeyframeSeq: null,
+    source: null,
+    updatedAtMs: 0,
+  };
+}
 
 const NO_OPS: readonly Op[] = [];
 
 /**
  * Default CTRL cell-tree reducer.
  *
+ * Single-source: a delta whose `envelope.source` does not match the
+ * source of the last applied keyframe is rejected with
+ * {@link EnvelopeInvalidError}. Apps that aggregate multiple streams
+ * keep one reducer per source.
+ *
  * @public
  */
 export class DefaultReducer implements Reducer {
-  private snapshot: CellTreeSnapshot = EMPTY_SNAPSHOT;
+  private snapshot: CellTreeSnapshot = emptySnapshot();
 
   apply(envelope: Envelope): ReducerResult {
     if (isKeyframe(envelope)) {
@@ -65,6 +75,15 @@ export class DefaultReducer implements Reducer {
       if (this.snapshot.lastKeyframeSeq === null) {
         throw new MissingKeyframeError(envelope.ref);
       }
+      if (
+        this.snapshot.source !== null &&
+        this.snapshot.source !== envelope.source
+      ) {
+        throw new EnvelopeInvalidError(
+          `Cross-source delta: snapshot source="${this.snapshot.source}", ` +
+            `delta source="${envelope.source}". Use one reducer per source.`,
+        );
+      }
       const next = new Map(this.snapshot.cells);
       const semanticOps: Op[] = [];
 
@@ -73,7 +92,12 @@ export class DefaultReducer implements Reducer {
       }
       if (envelope.payload.ops) {
         for (const op of envelope.payload.ops) {
-          if (op.kind === 'delete' && typeof op.target === 'string') {
+          if (op.kind === 'delete') {
+            if (!isDeleteOp(op)) {
+              throw new EnvelopeInvalidError(
+                `Delete op missing non-empty target at seq ${envelope.seq}`,
+              );
+            }
             next.delete(op.target);
           } else {
             semanticOps.push(op);
@@ -99,6 +123,6 @@ export class DefaultReducer implements Reducer {
   }
 
   reset(): void {
-    this.snapshot = EMPTY_SNAPSHOT;
+    this.snapshot = emptySnapshot();
   }
 }
