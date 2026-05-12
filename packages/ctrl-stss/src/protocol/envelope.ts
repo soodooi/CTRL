@@ -375,21 +375,34 @@ const VALID_TYPES = new Set<EnvelopeType>([
 ]);
 
 /**
- * Cheap structural shape check. For full payload-aware validation
- * use a Zod schema layered on top.
+ * Upper bound on the `source` field length when accepted via
+ * {@link isEnvelope}. Generous for typical `<publisher>:<instance>`
+ * ids (publisher ~30 chars + UUID 36 chars + slop) while denying
+ * pathological inputs (a malicious peer sending a 10 MB `source`).
+ *
+ * @public
+ */
+export const SOURCE_MAX_LENGTH = 256;
+
+/**
+ * Cheap structural shape check used at wire ingress. Beyond shape,
+ * checks the numeric fields are finite and non-negative, the source
+ * is bounded, and the payload is a non-null object.
+ *
+ * For full payload-aware validation layer a Zod schema on top.
  *
  * @public
  */
 export function isEnvelope(value: unknown): value is Envelope {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
-  return (
-    v.v === PROTOCOL_VERSION &&
-    typeof v.type === 'string' &&
-    VALID_TYPES.has(v.type as EnvelopeType) &&
-    typeof v.source === 'string' &&
-    typeof v.seq === 'number' &&
-    typeof v.ts_ms === 'number' &&
-    'payload' in v
-  );
+  if (v.v !== PROTOCOL_VERSION) return false;
+  if (typeof v.type !== 'string') return false;
+  if (!VALID_TYPES.has(v.type as EnvelopeType)) return false;
+  if (typeof v.source !== 'string') return false;
+  if (v.source.length === 0 || v.source.length > SOURCE_MAX_LENGTH) return false;
+  if (typeof v.seq !== 'number' || !Number.isFinite(v.seq) || v.seq < 0) return false;
+  if (typeof v.ts_ms !== 'number' || !Number.isFinite(v.ts_ms) || v.ts_ms < 0) return false;
+  if (typeof v.payload !== 'object' || v.payload === null) return false;
+  return true;
 }
