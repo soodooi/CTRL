@@ -1,12 +1,12 @@
-// FFI module — exposes Rust kernel to platform-native UIs (WinUI 3 / SwiftUI /
-// future mobile) via UniFFI-generated bindings.
+// FFI module — exposes Rust kernel to platform-native UIs:
+//   * UniFFI bindings (Swift / Kotlin / Python via Mozilla official)  — see ctrl.udl
+//   * Raw C ABI for C# / C++ (cbindgen → ctrl_native.h)               — see ffi/native.rs
 //
-// The IDL lives in src/ctrl.udl. build.rs invokes uniffi to generate the
-// scaffolding; lib.rs includes it via `uniffi::include_scaffolding!`.
-//
-// Status: P2.10 — surface scaffolded, all methods sync from FFI perspective.
-// Internally drives async Tokio runtime via block_on. Streaming APIs
-// (LLM chunks, event subscriptions) deferred to P2.11+ with callback interface.
+// Both paths call into the same sync wrappers defined here. UI shells call
+// platform-appropriate binding; Rust core block_on's a Tokio runtime
+// internally to drive async kernel methods.
+
+pub mod native;
 
 use crate::kernel::mcp_host::McpServerDescriptor;
 use crate::kernel::runtime::KernelRuntime;

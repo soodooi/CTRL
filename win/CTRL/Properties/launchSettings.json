@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "CTRL (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "CTRL (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
