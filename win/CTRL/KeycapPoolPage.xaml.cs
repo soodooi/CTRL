@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Tasks;
 using CTRL.Bindings;
 using CTRL.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace CTRL;
 
@@ -26,10 +28,19 @@ public sealed partial class KeycapPoolPage : Page
 
     private async void KeycapButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: string id }) return;
+        try
+        {
+            if (sender is not Button { Tag: string id }) return;
 
-        var text = await InvokeEcho(id);
-        await ShowResultDialog(id, text);
+            var text = await InvokeEcho(id);
+            await ShowResultDialog(id, text);
+        }
+        catch (Exception ex)
+        {
+            // Last-resort guard: an unhandled exception inside an async void
+            // handler crashes the XAML root with 0xc000027b. Log and swallow.
+            Debug.WriteLine($"[KEYCAP] click handler crashed: {ex}");
+        }
     }
 
     private static async Task<string> InvokeEcho(string keycapId)
@@ -42,7 +53,7 @@ public sealed partial class KeycapPoolPage : Page
             var argsJson = JsonSerializer.Serialize(new { message = $"hello from keycap '{keycapId}'" });
             var result = await Task.Run(() =>
                 Mcp.Invoke(App.DemoMcpServerId, "echo", argsJson));
-            return result;
+            return string.IsNullOrEmpty(result) ? "(empty response)" : result;
         }
         catch (KernelException kex)
         {
@@ -56,6 +67,13 @@ public sealed partial class KeycapPoolPage : Page
 
     private async Task ShowResultDialog(string keycapId, string body)
     {
+        var root = XamlRoot;
+        if (root is null)
+        {
+            Debug.WriteLine($"[KEYCAP] no XamlRoot for {keycapId}; body=\n{body}");
+            return;
+        }
+
         var dialog = new ContentDialog
         {
             Title = $"echo({keycapId})",
@@ -64,12 +82,21 @@ public sealed partial class KeycapPoolPage : Page
                 Text = body,
                 TextWrapping = TextWrapping.Wrap,
                 IsTextSelectionEnabled = true,
-                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas, 'JetBrains Mono', monospace"),
+                FontFamily = new FontFamily("Consolas"),
                 FontSize = 12,
             },
             CloseButtonText = "Close",
-            XamlRoot = XamlRoot,
+            XamlRoot = root,
         };
-        await dialog.ShowAsync();
+
+        App.IsModalShowing = true;
+        try
+        {
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            App.IsModalShowing = false;
+        }
     }
 }
