@@ -139,9 +139,13 @@ public partial class App : Application
     {
         try
         {
-            // Anthropic reference MCP server. Run via `npx -y` per the Npm
-            // source variant in src-tauri/src/kernel/mcp_host.rs. First call
-            // downloads the package; subsequent calls reuse the npm cache.
+            // Anthropic reference MCP server. The Npm source variant in
+            // src-tauri/src/kernel/mcp_host.rs would call `Command::new("npx")`
+            // directly, which on Windows fails to resolve npx.cmd via plain
+            // CreateProcess. Use the Local source variant to wrap the spawn
+            // in cmd.exe so the batch wrapper is interpreted correctly.
+            // Switch back to the Npm source once mcp_host learns this on
+            // its own (separate Rust-core handoff).
             const string descriptorJson = """
             {
               "id": "everything",
@@ -150,9 +154,9 @@ public partial class App : Application
               "description": "Anthropic reference MCP server for end-to-end testing",
               "tools": [],
               "source": {
-                "kind": "npm",
-                "package": "@modelcontextprotocol/server-everything",
-                "args": []
+                "kind": "local",
+                "command": "cmd.exe",
+                "args": ["/d", "/c", "npx", "-y", "@modelcontextprotocol/server-everything"]
               }
             }
             """;
