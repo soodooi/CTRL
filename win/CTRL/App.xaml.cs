@@ -33,6 +33,22 @@ public partial class App : Application
     public static Task<string?> BootTask { get; private set; } =
         Task.FromResult<string?>(null);
 
+    /// <summary>
+    /// Background readiness task: BootTask + demo MCP server register/connect.
+    /// Resolves to null when keycap click can safely route through Mcp.Invoke,
+    /// otherwise to a user-readable failure reason. Hard-coded to register
+    /// @modelcontextprotocol/server-everything for the W3.6 walkthrough; real
+    /// MCP server config moves into SettingsPage once that UI lands.
+    /// </summary>
+    public static Task<string?> ReadyTask { get; private set; } =
+        Task.FromResult<string?>(null);
+
+    /// <summary>
+    /// MCP server id used for the W3.6 demo wiring. Keycap clicks invoke
+    /// the `echo` tool on this server.
+    /// </summary>
+    public const string DemoMcpServerId = "everything";
+
     public App()
     {
         InitializeComponent();
@@ -46,6 +62,7 @@ public partial class App : Application
         Directory.CreateDirectory(KernelDataDir);
 
         BootTask = Task.Run<string?>(BootKernel);
+        ReadyTask = SetupAfterBoot();
 
         _window = new MainWindow();
         _window.Activated += OnWindowActivated;
@@ -108,6 +125,53 @@ public partial class App : Application
         {
             _window.AppWindow.Show();
             _window.Activate();
+        }
+    }
+
+    private static async Task<string?> SetupAfterBoot()
+    {
+        var bootErr = await BootTask;
+        if (bootErr is not null) return bootErr;
+        return await Task.Run(SetupDemoMcp);
+    }
+
+    private static string? SetupDemoMcp()
+    {
+        try
+        {
+            // Anthropic reference MCP server. Run via `npx -y` per the Npm
+            // source variant in src-tauri/src/kernel/mcp_host.rs. First call
+            // downloads the package; subsequent calls reuse the npm cache.
+            const string descriptorJson = """
+            {
+              "id": "everything",
+              "name": "MCP Everything (demo)",
+              "version": "1.0",
+              "description": "Anthropic reference MCP server for end-to-end testing",
+              "tools": [],
+              "source": {
+                "kind": "npm",
+                "package": "@modelcontextprotocol/server-everything",
+                "args": []
+              }
+            }
+            """;
+            Mcp.Register(descriptorJson);
+            Mcp.Connect(DemoMcpServerId);
+            return null;
+        }
+        catch (KernelException kex)
+        {
+            return $"MCP setup failed (code {kex.Code}): {kex.Message}";
+        }
+        catch (DllNotFoundException)
+        {
+            // BootKernel already covered this; included for completeness.
+            return "ctrl_lib.dll not found.";
+        }
+        catch (Exception ex)
+        {
+            return $"MCP setup error ({ex.GetType().Name}): {ex.Message}";
         }
     }
 
