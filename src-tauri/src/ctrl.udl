@@ -1,0 +1,43 @@
+// CTRL FFI Interface Description Language (UniFFI).
+//
+// Cross-language contract between Rust kernel and platform UIs
+// (WinUI 3 / SwiftUI). UniFFI generates Swift / Kotlin (+ C# via community).
+//
+// First iteration: all methods are sync from the FFI perspective.
+// Internally Rust block_on's a Tokio runtime to drive async work
+// (MCP host, LLM port, etc).
+
+namespace ctrl {
+    [Throws=KernelError]
+    void kernel_boot(string data_dir);
+
+    [Throws=KernelError]
+    string kernel_health();
+
+    [Throws=KernelError]
+    void mcp_register(string descriptor_json);
+
+    [Throws=KernelError]
+    void mcp_connect(string server_id);
+
+    [Throws=KernelError]
+    string mcp_list_tools(string server_id);
+
+    [Throws=KernelError]
+    string mcp_invoke(string server_id, string tool_name, string arguments_json);
+
+    [Throws=KernelError]
+    string mcp_list_installed();
+
+    [Throws=KernelError]
+    void mcp_disconnect(string server_id);
+};
+
+[Error]
+enum KernelError {
+    "NotInitialized",
+    "AlreadyInitialized",
+    "BootFailed",
+    "McpError",
+    "InternalError",
+};

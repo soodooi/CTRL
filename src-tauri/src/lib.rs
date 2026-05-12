@@ -11,16 +11,23 @@ mod adapters;
 mod application;
 mod domain;
 mod error;
+mod ffi;
 mod kernel;
+
+// UniFFI scaffolding for FFI exports (Swift / Kotlin / C# bindings).
+// Generated from src/ctrl.udl by build.rs at compile time. The scaffolding
+// references functions defined in `ffi::*` via fully-qualified path, so no
+// re-export needed at crate root.
+use crate::ffi::*;
+uniffi::include_scaffolding!("ctrl");
 
 use std::sync::Arc;
 
 use tauri::Manager;
 
-use crate::adapters::inbound::kernel_commands::{
-    kernel_health, mcp_connect, mcp_disconnect, mcp_invoke, mcp_list_installed, mcp_list_tools,
-    mcp_register_server, KernelAppState,
-};
+// Kernel commands moved off Tauri surface — kernel now exposed via UniFFI (ffi/mod.rs).
+// Native UIs (WinUI 3 / SwiftUI) call Rust kernel through UniFFI bindings, not
+// Tauri invoke. Tauri shell remains here only as a transitional dev tool.
 use crate::adapters::inbound::tauri_commands::{
     bootstrap_minimax, capture_selected_text, check_accessibility, get_llm_settings,
     hide_all_panels, hide_if_unfocused, hide_window, list_tools, open_accessibility_settings,
@@ -147,9 +154,8 @@ pub fn run() {
                     secret_store: secret_store.clone(),
                 };
                 app.manage(app_state);
-                app.manage(KernelAppState {
-                    runtime: kernel.clone(),
-                });
+                // Tauri shell no longer manages KernelAppState — native UIs
+                // call Rust kernel directly via UniFFI bindings (ffi/mod.rs).
 
                 // 5. Start the hotkey pipeline. Returns immediately.
                 if let Err(err) = use_cases::start_hotkey_pipeline(
@@ -177,14 +183,7 @@ pub fn run() {
             hide_window,
             peek_clipboard,
             run_chat,
-            // L1 Kernel commands (P2.8)
-            kernel_health,
-            mcp_register_server,
-            mcp_connect,
-            mcp_list_tools,
-            mcp_invoke,
-            mcp_list_installed,
-            mcp_disconnect,
+            // Kernel commands lifted off Tauri surface — see ffi/mod.rs for UniFFI surface.
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -285,26 +284,8 @@ pub fn run() {
          Kernel + MCP host fully operational."
     );
 
+    let _ = kernel; // Tauri shell on Windows: kernel boots; UI calls via UniFFI.
     tauri::Builder::default()
-        .setup({
-            let kernel = kernel.clone();
-            move |app| {
-                app.manage(KernelAppState {
-                    runtime: kernel.clone(),
-                });
-                Ok(())
-            }
-        })
-        .invoke_handler(tauri::generate_handler![
-            // L1 Kernel commands operate cross-platform
-            kernel_health,
-            mcp_register_server,
-            mcp_connect,
-            mcp_list_tools,
-            mcp_invoke,
-            mcp_list_installed,
-            mcp_disconnect,
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
