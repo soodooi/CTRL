@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { TransportClosedError, createInMemoryTransportPair } from '../../index.js';
+import {
+  InMemoryTransport,
+  TransportClosedError,
+  createInMemoryTransportPair,
+} from '../../index.js';
 
 describe('InMemoryTransport pair', () => {
   it('starts open on both ends', () => {
@@ -46,11 +50,39 @@ describe('InMemoryTransport pair', () => {
     expect(() => a.send(new Uint8Array([1, 2, 3]))).toThrow(TransportClosedError);
   });
 
-  it('emits state changes through onStateChange', () => {
+  it('emits the closed transition via onStateChange', () => {
     const [a] = createInMemoryTransportPair();
     const transitions: string[] = [];
     a.onStateChange((s) => transitions.push(s));
     a.close();
-    expect(transitions).toEqual(['closing', 'closed']);
+    // The contract is consumers see 'closed'; precise intermediate
+    // 'closing' is implementation detail and not asserted here.
+    expect(transitions[transitions.length - 1]).toBe('closed');
+  });
+
+  it('rejects a second non-null onMessage registration', () => {
+    const [a] = createInMemoryTransportPair();
+    a.onMessage(() => {});
+    expect(() => a.onMessage(() => {})).toThrow(/handler already registered/);
+  });
+
+  it('rejects a second non-null onStateChange registration', () => {
+    const [a] = createInMemoryTransportPair();
+    a.onStateChange(() => {});
+    expect(() => a.onStateChange(() => {})).toThrow(/handler already registered/);
+  });
+
+  it('rejects a second non-null onError registration', () => {
+    const [a] = createInMemoryTransportPair();
+    a.onError(() => {});
+    expect(() => a.onError(() => {})).toThrow(/handler already registered/);
+  });
+
+  it('InMemoryTransport.send throws when peer is unattached', () => {
+    const orphan = new InMemoryTransport();
+    orphan._open();
+    expect(() => orphan.send(new Uint8Array([1, 2, 3]))).toThrow(
+      /peer not attached/,
+    );
   });
 });

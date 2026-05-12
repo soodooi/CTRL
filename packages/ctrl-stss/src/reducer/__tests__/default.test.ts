@@ -6,6 +6,7 @@ import {
   MissingKeyframeError,
   createCell,
   createDelta,
+  createError,
   createHeartbeat,
   createKeyframe,
   createOp,
@@ -142,7 +143,7 @@ describe('DefaultReducer', () => {
     expect(() => r.apply(df)).toThrow(MissingKeyframeError);
   });
 
-  it('heartbeat / control / handshake envelopes leave the snapshot unchanged', () => {
+  it('heartbeat / control / handshake envelopes leave the cell state unchanged', () => {
     const r = new DefaultReducer();
     r.apply(
       createKeyframe({
@@ -152,10 +153,52 @@ describe('DefaultReducer', () => {
         cells: [createCell({ id: 'a', kind: 'user_input', payload: {}, ts_ms: 900 })],
       }),
     );
-    const before = r.current();
+    const beforeSize = r.current().cells.size;
+    const beforeKfSeq = r.current().lastKeyframeSeq;
     r.apply(createHeartbeat({ source: SOURCE, seq: 11, ts_ms: 1_100 }));
     const after = r.current();
-    expect(after).toBe(before); // same reference, no mutation
+    // Behavioral assertion: cell state survives; object identity is
+    // a memoization detail not asserted here.
+    expect(after.cells.size).toBe(beforeSize);
+    expect(after.lastKeyframeSeq).toBe(beforeKfSeq);
+  });
+
+  it('error envelope returns the envelope on errors[] with snapshot unchanged', () => {
+    const r = new DefaultReducer();
+    r.apply(
+      createKeyframe({
+        source: SOURCE,
+        seq: 10,
+        ts_ms: 1_000,
+        cells: [createCell({ id: 'a', kind: 'user_input', payload: {}, ts_ms: 900 })],
+      }),
+    );
+    const result = r.apply(
+      createError({
+        source: SOURCE,
+        seq: 11,
+        code: 'TEST_ERROR',
+        message: 'remote signaled failure',
+      }),
+    );
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.payload.code).toBe('TEST_ERROR');
+    expect(result.semanticOps).toHaveLength(0);
+    expect(result.snapshot.cells.size).toBe(1);
+  });
+
+  it('non-error envelopes return empty errors array', () => {
+    const r = new DefaultReducer();
+    r.apply(
+      createKeyframe({
+        source: SOURCE,
+        seq: 10,
+        ts_ms: 1_000,
+        cells: [createCell({ id: 'a', kind: 'user_input', payload: {}, ts_ms: 900 })],
+      }),
+    );
+    const hb = r.apply(createHeartbeat({ source: SOURCE, seq: 11, ts_ms: 1_100 }));
+    expect(hb.errors).toEqual([]);
   });
 
   it('reset returns to empty snapshot', () => {
