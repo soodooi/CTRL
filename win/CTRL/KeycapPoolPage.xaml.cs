@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using CTRL.Bindings;
@@ -53,7 +54,7 @@ public sealed partial class KeycapPoolPage : Page
             var argsJson = JsonSerializer.Serialize(new { message = $"hello from keycap '{keycapId}'" });
             var result = await Task.Run(() =>
                 Mcp.Invoke(App.DemoMcpServerId, "echo", argsJson));
-            return string.IsNullOrEmpty(result) ? "(empty response)" : result;
+            return string.IsNullOrEmpty(result) ? "(empty response)" : ExtractText(result);
         }
         catch (KernelException kex)
         {
@@ -62,6 +63,41 @@ public sealed partial class KeycapPoolPage : Page
         catch (Exception ex)
         {
             return $"Unexpected ({ex.GetType().Name}):\n{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Unwrap the MCP CallToolResult envelope and concatenate any text-typed
+    /// content blocks. Falls back to the raw JSON if the shape is anything
+    /// else (image / binary / error variants for now).
+    /// </summary>
+    private static string ExtractText(string raw)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (!doc.RootElement.TryGetProperty("content", out var content)
+                || content.ValueKind != JsonValueKind.Array)
+            {
+                return raw;
+            }
+
+            var sb = new StringBuilder();
+            foreach (var item in content.EnumerateArray())
+            {
+                if (item.TryGetProperty("type", out var type)
+                    && type.GetString() == "text"
+                    && item.TryGetProperty("text", out var text))
+                {
+                    if (sb.Length > 0) sb.AppendLine();
+                    sb.Append(text.GetString());
+                }
+            }
+            return sb.Length > 0 ? sb.ToString() : raw;
+        }
+        catch (JsonException)
+        {
+            return raw;
         }
     }
 
