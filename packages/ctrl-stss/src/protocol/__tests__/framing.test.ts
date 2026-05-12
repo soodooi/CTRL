@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  DEFAULT_MAX_FRAME_BYTES,
   FrameDecoder,
   FramingOversizedError,
   decodeFrame,
@@ -81,7 +80,17 @@ describe('length-prefix framing', () => {
     expect(new TextDecoder().decode(b[0])).toBe('streamed');
   });
 
-  it('exposes a sane default frame size limit', () => {
-    expect(DEFAULT_MAX_FRAME_BYTES).toBe(16 * 1024 * 1024);
+  it('FrameDecoder enforces maxBufferedBytes against slow-loris partial frames', () => {
+    const decoder = new FrameDecoder({ maxBufferedBytes: 32 });
+    // Header announces a 1000-byte payload but body arrives in dribs.
+    // Each chunk passes the per-frame maxBytes check (1000 < default
+    // 16 MiB) but cumulative buffering crosses the slow-loris cap.
+    const header = new Uint8Array(4 + 20);
+    new DataView(header.buffer).setUint32(0, 1000, false);
+    decoder.push(header); // 24 buffered, still <32 — no throw
+    expect(decoder.bufferedBytes()).toBe(24);
+    expect(() => decoder.push(new Uint8Array(20))).toThrow(FramingOversizedError);
+    // Decoder resets itself after the throw — subsequent pushes start clean.
+    expect(decoder.bufferedBytes()).toBe(0);
   });
 });

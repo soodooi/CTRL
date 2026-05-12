@@ -41,4 +41,13 @@ describe('InMemoryLog', () => {
       log.append(createHeartbeat({ source: 's', seq: 1, ts_ms: 1 })),
     ).rejects.toThrow(/closed/);
   });
+
+  it('rejects appends past maxEntries', async () => {
+    const log = new InMemoryLog({ maxEntries: 2 });
+    await log.append(createHeartbeat({ source: 's', seq: 1, ts_ms: 1 }));
+    await log.append(createHeartbeat({ source: 's', seq: 2, ts_ms: 2 }));
+    await expect(
+      log.append(createHeartbeat({ source: 's', seq: 3, ts_ms: 3 })),
+    ).rejects.toThrow(/capacity exceeded/);
+  });
 });

@@ -147,6 +147,34 @@ describe('envelope round-trip', () => {
     );
   });
 
+  it('isEnvelope rejects oversized source', () => {
+    const oversized = 'A'.repeat(300);
+    expect(
+      isEnvelope({ v: 1, type: 'heartbeat', source: oversized, seq: 0, ts_ms: 0, payload: {} }),
+    ).toBe(false);
+  });
+
+  it('isEnvelope rejects empty source', () => {
+    expect(
+      isEnvelope({ v: 1, type: 'heartbeat', source: '', seq: 0, ts_ms: 0, payload: {} }),
+    ).toBe(false);
+  });
+
+  it('isEnvelope rejects NaN / negative / Infinity in seq + ts_ms', () => {
+    const baseGood = { v: 1, type: 'heartbeat', source: 's', payload: {} } as const;
+    expect(isEnvelope({ ...baseGood, seq: Number.NaN, ts_ms: 0 })).toBe(false);
+    expect(isEnvelope({ ...baseGood, seq: -1, ts_ms: 0 })).toBe(false);
+    expect(isEnvelope({ ...baseGood, seq: Number.POSITIVE_INFINITY, ts_ms: 0 })).toBe(false);
+    expect(isEnvelope({ ...baseGood, seq: 0, ts_ms: Number.NaN })).toBe(false);
+    expect(isEnvelope({ ...baseGood, seq: 0, ts_ms: -1 })).toBe(false);
+  });
+
+  it('isEnvelope rejects null payload', () => {
+    expect(
+      isEnvelope({ v: 1, type: 'heartbeat', source: 's', seq: 0, ts_ms: 0, payload: null }),
+    ).toBe(false);
+  });
+
   it('defaults ts_ms via Date.now when omitted', () => {
     const before = Date.now();
     const env = createHeartbeat({ source: 's', seq: 0 });
