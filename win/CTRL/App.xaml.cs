@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -11,12 +11,14 @@ namespace CTRL;
 /// <summary>
 /// CTRL application entry point. Kicks off Rust kernel auto-boot in background
 /// before activating the main window so the UI never blocks on FFI work.
-/// Installs the global Ctrl-tap hotkey listener after the window is up.
+/// Wires the global Ctrl-tap hotkey, the system tray icon, and the focus-loss
+/// auto-hide so the window behaves like an ambient launcher.
 /// </summary>
 public partial class App : Application
 {
     private Window? _window;
     private HotkeyService? _hotkey;
+    private TrayService? _tray;
 
     /// <summary>
     /// Local data directory passed to the Rust kernel on boot. SQLite event
@@ -46,9 +48,11 @@ public partial class App : Application
         BootTask = Task.Run<string?>(BootKernel);
 
         _window = new MainWindow();
+        _window.Activated += OnWindowActivated;
         _window.Activate();
 
         InstallHotkey();
+        InstallTray();
     }
 
     private void InstallHotkey()
@@ -56,7 +60,7 @@ public partial class App : Application
         try
         {
             _hotkey = new HotkeyService(_window!.DispatcherQueue);
-            _hotkey.HotkeyTriggered += OnHotkeyTriggered;
+            _hotkey.HotkeyTriggered += (_, _) => ToggleWindow();
         }
         catch (Exception ex)
         {
@@ -64,10 +68,47 @@ public partial class App : Application
         }
     }
 
-    private static void OnHotkeyTriggered(object? sender, EventArgs e)
+    private void InstallTray()
     {
-        // W3.2 stub: log only. Window show/hide wiring lands in W3.5.
-        Debug.WriteLine($"[HOTKEY] {DateTime.Now:HH:mm:ss.fff} Ctrl tap detected");
+        try
+        {
+            var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
+            _tray = new TrayService(_window!.DispatcherQueue, iconPath);
+            _tray.ShowToggleRequested += (_, _) => ToggleWindow();
+            _tray.SettingsRequested += (_, _) =>
+            {
+                // W3.5 stub: SettingsPage navigation lands in W3.6.
+                Debug.WriteLine("[TRAY] settings requested");
+            };
+            _tray.ExitRequested += (_, _) => Exit();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[TRAY] install failed: {ex.Message}");
+        }
+    }
+
+    private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
+    {
+        if (args.WindowActivationState != WindowActivationState.Deactivated) return;
+        // Keep the window visible while a debugger is attached so dev cycles
+        // are not interrupted by focus-loss auto-hide.
+        if (Debugger.IsAttached) return;
+        _window?.AppWindow.Hide();
+    }
+
+    private void ToggleWindow()
+    {
+        if (_window is null) return;
+        if (_window.AppWindow.IsVisible)
+        {
+            _window.AppWindow.Hide();
+        }
+        else
+        {
+            _window.AppWindow.Show();
+            _window.Activate();
+        }
     }
 
     private static string? BootKernel()
