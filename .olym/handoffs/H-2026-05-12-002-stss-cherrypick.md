@@ -2,12 +2,15 @@
 id: H-2026-05-12-002
 title: ST-SS protocol cherry-pick + CTRL profile (research + dev)
 severity: P1
-status: open
+status: merged
 reporter: bao
 assigned_to: athena (parallel session in worktree)
 lane: athena-stss
-worktree: D:/code-space/ctrl-h002-stss
-branch: feat/h-002-stss-cherrypick
+worktree: D:/code-space/ctrl-h002-stss (registration removed, physical dir TBD)
+branch: feat/h-002-stss-cherrypick (preserved post-merge)
+merged_at: 2026-05-12
+merge_commits: [29274f3, c55a026]
+final_test_count: 93 (63 stss + 16 memory + 14 olym-core)
 touches:
   - packages/ctrl-stss/**
   - packages/ctrl-memory/**
