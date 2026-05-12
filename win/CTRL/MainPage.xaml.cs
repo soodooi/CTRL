@@ -21,6 +21,8 @@ public sealed partial class MainPage : Page
         if (error is null)
         {
             Frame.Navigate(typeof(KeycapPoolPage));
+            // Don't let the user back-navigate to the boot screen.
+            Frame.BackStack.Clear();
         }
         else
         {

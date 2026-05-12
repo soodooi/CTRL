@@ -49,13 +49,6 @@ public partial class App : Application
     /// </summary>
     public const string DemoMcpServerId = "everything";
 
-    /// <summary>
-    /// Set by code that pops a modal surface (ContentDialog) so the
-    /// focus-loss auto-hide handler does not hide the window out from
-    /// under the modal, which crashes the XAML root.
-    /// </summary>
-    public static bool IsModalShowing { get; set; }
-
     public App()
     {
         InitializeComponent();
@@ -118,9 +111,6 @@ public partial class App : Application
         // Keep the window visible while a debugger is attached so dev cycles
         // are not interrupted by focus-loss auto-hide.
         if (Debugger.IsAttached) return;
-        // A ContentDialog steals window activation; hiding the host window
-        // mid-dialog crashes the XAML root (0xc000027b).
-        if (IsModalShowing) return;
         _window?.AppWindow.Hide();
     }
 
