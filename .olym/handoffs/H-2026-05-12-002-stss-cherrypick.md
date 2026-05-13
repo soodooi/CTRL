@@ -9,8 +9,10 @@ lane: athena-stss
 worktree: D:/code-space/ctrl-h002-stss (registration removed, physical dir TBD)
 branch: feat/h-002-stss-cherrypick (preserved post-merge)
 merged_at: 2026-05-12
-merge_commits: [29274f3, c55a026]
-final_test_count: 93 (63 stss + 16 memory + 14 olym-core)
+merge_commits: [29274f3, efc3d12, c55a026, 67e107b]
+final_test_count: 99 (69 stss + 16 memory + 14 olym-core)
+multi_agent_collision: zeus intervened during athena's late work; merged her uncommitted source + tests by hand (4ab5c61 / 298a6b3) before she had a chance to commit; her e2d285b on the branch tip ended up describing the full hardening but only diffing eight test cases (the rest already on main). 67e107b cherry-picks those eight tests with corrected scope and keeps the log honest.
+followups: [A5 test gap-fills (non-UTF-8 / EnvelopeFilter combo / empty-log seekTo), A6 over-engineered test cleanup, A8 tsconfig noUncheckedIndexedAccess, A9 JSDoc clarifications, B7 ws-integration smoke, Result section iteration log] — open new handoff if any of these become blockers; otherwise lane is closed.
 touches:
   - packages/ctrl-stss/**
   - packages/ctrl-memory/**
