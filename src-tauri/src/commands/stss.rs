@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::kernel::event::{Cell, Op, OpKind};
+use crate::kernel::event::{Op, OpKind};
 use crate::shell::KernelHandle;
 
 #[derive(Debug, Deserialize)]
@@ -25,14 +25,27 @@ pub struct StreamHandle {
 #[tauri::command]
 pub async fn subscribe(
     args: SubscribeArgs,
-    _kernel: State<'_, KernelHandle>,
+    kernel: State<'_, KernelHandle>,
 ) -> Result<StreamHandle, String> {
-    // The kernel bridge always serves on the canonical local URL. PWA running
-    // in-Tauri can either connect directly to this URL or push through publish().
+    // Bridge URL carries the per-process auth token as a query string. The
+    // PWA must use exactly this URL — connections without it (or with a
+    // stale token from a previous boot) get 401.
     Ok(StreamHandle {
         stream_id: args.stream_id,
-        bridge_url: format!("ws://{}", crate::kernel::STSS_LISTEN_ADDR),
+        bridge_url: format!(
+            "ws://{}?token={}",
+            crate::kernel::STSS_LISTEN_ADDR,
+            kernel.bridge.auth_token()
+        ),
     })
+}
+
+/// Returns the current bridge token. PWA reads this once and passes it on
+/// every WS reconnect attempt. Token rotates every kernel boot — viewers
+/// must re-fetch on reconnect failure (401).
+#[tauri::command]
+pub async fn get_bridge_token(kernel: State<'_, KernelHandle>) -> Result<String, String> {
+    Ok(kernel.bridge.auth_token().to_string())
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,14 +60,24 @@ pub async fn publish(
     args: PublishArgs,
     kernel: State<'_, KernelHandle>,
 ) -> Result<(), String> {
-    // Map free-form `kind` string to OpKind. Unknown kinds become KeycapInvoked
-    // for now (matches the lone-Ctrl summon UX). Strict mapping in sub-PR e.
+    // Strict OpKind mapping — pre-merge review flagged the previous silent
+    // fallback to KeycapInvoked. Unknown kinds now return an error so caller
+    // bugs (typo in the kind string) surface instead of producing
+    // semantically wrong events.
     let kind = match args.kind.as_str() {
         "hotkey_triggered" => OpKind::HotkeyTriggered,
         "keycap_invoked" => OpKind::KeycapInvoked,
         "keycap_completed" => OpKind::KeycapCompleted,
+        "keycap_failed" => OpKind::KeycapFailed,
+        "actor_spawned" => OpKind::ActorSpawned,
+        "actor_terminated" => OpKind::ActorTerminated,
+        "llm_call_started" => OpKind::LlmCallStarted,
+        "llm_call_chunk" => OpKind::LlmCallChunk,
+        "llm_call_finished" => OpKind::LlmCallFinished,
         "app_focus_changed" => OpKind::AppFocusChanged,
-        _ => OpKind::KeycapInvoked,
+        "file_saved" => OpKind::FileSaved,
+        "cursor_moved" => OpKind::CursorMoved,
+        other => return Err(format!("unknown op kind: {other}")),
     };
     let op = Op {
         kind,
@@ -80,6 +103,3 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-// Allow Cell to be referenced (used by future publish_cell wrapper).
-#[allow(dead_code)]
-fn _retain_cell_import(_c: Cell) {}

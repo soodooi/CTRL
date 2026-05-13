@@ -23,9 +23,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
+use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
+use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{accept_async, WebSocketStream};
+use tokio_tungstenite::{accept_hdr_async, WebSocketStream};
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use crate::kernel::event::{Cell, Event, Op};
 
@@ -44,14 +47,28 @@ pub type CapabilityCheck = Arc<dyn Fn(&Op) -> Result<(), String> + Send + Sync>;
 #[derive(Clone)]
 pub struct StssBridge {
     events: broadcast::Sender<Event>,
+    /// Per-process auth token. Required as `?token=<value>` on the WS upgrade
+    /// URL. Generated fresh on every kernel boot, never persisted. PWA inside
+    /// Tauri WebView fetches it via the `get_bridge_token` invoke command;
+    /// mobile/tunnel clients must be paired (separate handoff).
+    auth_token: Arc<String>,
 }
 
 impl StssBridge {
     /// Create the bridge handle (does not bind yet — call `serve()` to start
-    /// accepting connections).
+    /// accepting connections). Generates a fresh auth token per process.
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel::<Event>(BROADCAST_BUFFER);
-        Self { events: tx }
+        Self {
+            events: tx,
+            auth_token: Arc::new(Uuid::new_v4().to_string()),
+        }
+    }
+
+    /// Return the auth token. PWA receives it through a Tauri command before
+    /// opening its WebSocket; mobile pairing flow does the same out-of-band.
+    pub fn auth_token(&self) -> &str {
+        &self.auth_token
     }
 
     /// Publish a Cell. Used by event_bus to forward kernel events to viewers.
@@ -88,9 +105,17 @@ impl StssBridge {
                         let bridge_for_conn = bridge.clone();
                         let on_op = on_op_arc.clone();
                         let cap = allow_all.clone();
+                        let expected_token = bridge.auth_token.clone();
                         tokio::spawn(async move {
-                            if let Err(e) =
-                                handle_connection(bridge_for_conn, stream, peer, on_op, cap).await
+                            if let Err(e) = handle_connection(
+                                bridge_for_conn,
+                                stream,
+                                peer,
+                                on_op,
+                                cap,
+                                expected_token,
+                            )
+                            .await
                             {
                                 warn!("[{peer}] connection ended: {e}");
                             }
@@ -119,9 +144,27 @@ async fn handle_connection(
     peer: SocketAddr,
     on_op: Arc<dyn Fn(Op) + Send + Sync>,
     cap: CapabilityCheck,
+    expected_token: Arc<String>,
 ) -> Result<()> {
-    let ws = accept_async(stream).await?;
-    info!("[{peer}] WS handshake OK");
+    // Validate `?token=<expected>` on the WS upgrade. tokio-tungstenite gives
+    // the full Request URI in the callback; we extract the query string and
+    // match the token byte-for-byte. Wrong / missing token => 401.
+    let ws = accept_hdr_async(
+        stream,
+        move |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
+            let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("");
+            let provided = extract_query_param(path_and_query, "token").unwrap_or_default();
+            if provided == expected_token.as_str() {
+                Ok(resp)
+            } else {
+                let mut err = ErrorResponse::new(Some("missing or invalid token".into()));
+                *err.status_mut() = StatusCode::UNAUTHORIZED;
+                Err(err)
+            }
+        },
+    )
+    .await?;
+    info!("[{peer}] WS handshake OK (authenticated)");
 
     let mut events_rx = bridge.events.subscribe();
     let (mut sink, mut source) = ws.split();
@@ -189,7 +232,12 @@ fn handle_inbound(
         warn!("[{peer}] op denied: {e}");
         return;
     }
-    info!("[{peer}] op {:?} payload={}", op.kind, op.payload);
+    // Payload may carry clipboard text / partial LLM prompt / session
+    // identifiers; only `kind` is safe to log at info level. Full payload
+    // is debug-only to avoid leaking through tracing log shippers (pre-merge
+    // review M1).
+    info!("[{peer}] op kind={:?}", op.kind);
+    tracing::debug!("[{peer}] op payload={}", op.payload);
     on_op(op);
 }
 
@@ -201,4 +249,32 @@ async fn send_event(
     ciborium::into_writer(&event, &mut buf)?;
     sink.send(Message::Binary(buf)).await?;
     Ok(())
+}
+
+/// Minimal URL query string parser — pulls the first `key=value` pair whose
+/// key matches `name`. Avoids pulling in the `url` crate for a single use.
+fn extract_query_param<'a>(path_and_query: &'a str, name: &str) -> Option<&'a str> {
+    let query = path_and_query.split_once('?').map(|p| p.1)?;
+    for pair in query.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == name {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_query_param_basic() {
+        assert_eq!(extract_query_param("/socket?token=abc", "token"), Some("abc"));
+        assert_eq!(extract_query_param("/socket?x=1&token=abc&y=2", "token"), Some("abc"));
+        assert_eq!(extract_query_param("/socket?token=", "token"), Some(""));
+        assert_eq!(extract_query_param("/socket", "token"), None);
+        assert_eq!(extract_query_param("/socket?other=1", "token"), None);
+    }
 }

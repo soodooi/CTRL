@@ -11,7 +11,10 @@
 
 use anyhow::{Context, Result};
 
-const SERVICE: &str = "app.ctrl.spike";
+// Production service identifier. Was `app.ctrl.spike` during the P0/P1 spike;
+// renamed before any user-stored BYOK key shipped so we don't strand secrets
+// in a deprecated namespace later (pre-merge review M3).
+const SERVICE: &str = "app.ctrl";
 
 pub struct KeychainStore;
 

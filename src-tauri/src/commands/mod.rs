@@ -35,6 +35,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::stss::subscribe,
             $crate::commands::stss::publish,
             $crate::commands::stss::list_streams,
+            $crate::commands::stss::get_bridge_token,
             // memory
             $crate::commands::memory::read_log,
             $crate::commands::memory::append_event,

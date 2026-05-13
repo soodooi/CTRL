@@ -47,6 +47,10 @@ let nextRequestId = 0;
 const pending = new Map<number, (value: unknown) => void>();
 const rejected = new Map<number, (reason: unknown) => void>();
 
+/** Per-invoke timeout. Mobile networks routinely stall mid-roundtrip; without
+ *  a deadline, dead promises and their map entries accumulate forever. */
+const WS_INVOKE_TIMEOUT_MS = 15_000;
+
 const openWs = async (): Promise<WebSocket> => {
   if (wsConn && wsConn.readyState === WebSocket.OPEN) return wsConn;
   if (wsConnPromise) return wsConnPromise;
@@ -56,9 +60,16 @@ const openWs = async (): Promise<WebSocket> => {
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
       wsConn = ws;
+      // Clear the promise so a future CLOSING transition forces a fresh
+      // connection attempt instead of reusing a stale resolved Promise.
+      wsConnPromise = null;
       resolve(ws);
     };
-    ws.onerror = (e) => reject(e);
+    ws.onerror = (e) => {
+      wsConn = null;
+      wsConnPromise = null;
+      reject(e);
+    };
     ws.onclose = () => {
       wsConn = null;
       wsConnPromise = null;
@@ -92,8 +103,19 @@ const wsInvoke = async <T>(command: string, args?: InvokeArgs): Promise<T> => {
   const id = nextRequestId++;
   const payload = JSON.stringify({ id, command, args: args ?? {} });
   return new Promise<T>((resolve, reject) => {
-    pending.set(id, (v) => resolve(v as T));
-    rejected.set(id, (e) => reject(e));
+    const timer = window.setTimeout(() => {
+      pending.delete(id);
+      rejected.delete(id);
+      reject(new Error(`ws invoke timeout (${WS_INVOKE_TIMEOUT_MS}ms): ${command}`));
+    }, WS_INVOKE_TIMEOUT_MS);
+    pending.set(id, (v) => {
+      window.clearTimeout(timer);
+      resolve(v as T);
+    });
+    rejected.set(id, (e) => {
+      window.clearTimeout(timer);
+      reject(e);
+    });
     ws.send(payload);
   });
 };

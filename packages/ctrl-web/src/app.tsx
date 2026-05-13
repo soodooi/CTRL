@@ -1,6 +1,7 @@
 // App root — TanStack Router setup + React Query provider.
+// Outlet is referenced inside rootRoute.component below; the linter sees it
+// embedded in JSX.
 
-import { useMemo } from 'react';
 import {
   RouterProvider,
   createRouter,
@@ -52,33 +53,30 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([indexRoute, workspaceRoute, settingsRoute]);
 
+// Singleton router so `Register.router = typeof router` is concrete (gives
+// type-safe Link path autocompletion). Erased `ReturnType<typeof createRouter>`
+// would degrade `to` props to `string`.
+const router = createRouter({
+  routeTree,
+  defaultPreload: 'intent',
+});
+
 declare module '@tanstack/react-router' {
   interface Register {
-    router: ReturnType<typeof createCtrlRouter>;
+    router: typeof router;
   }
 }
 
-const createCtrlRouter = (): ReturnType<typeof createRouter> =>
-  createRouter({
-    routeTree,
-    defaultPreload: 'intent',
-  });
+// Singleton — created at module load so React Strict Mode dev double-mount
+// doesn't construct two QueryClients.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 30_000, refetchOnWindowFocus: false },
+  },
+});
 
-export const App = (): React.ReactElement => {
-  const router = useMemo(() => createCtrlRouter(), []);
-  const queryClient = useMemo(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: { staleTime: 30_000, refetchOnWindowFocus: false },
-        },
-      }),
-    [],
-  );
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  );
-};
+export const App = (): React.ReactElement => (
+  <QueryClientProvider client={queryClient}>
+    <RouterProvider router={router} />
+  </QueryClientProvider>
+);

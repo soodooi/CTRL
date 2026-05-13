@@ -15,9 +15,10 @@ export const PoolRoute = (): React.ReactElement => {
     queryFn: listKeycaps,
   });
 
-  const handleActivate = (id: string): void => {
-    // Sub-PR c/2: route to /workspace with keycap_id query param, kick off run_keycap.
-    console.info('activate keycap', id);
+  const handleActivate = (_id: string): void => {
+    // sub-PR f wires this to runKeycap(id) + navigates to /workspace with the
+    // keycap_id query param. Intentionally silent for now (no console noise
+    // in shipped builds — pre-merge review M3).
   };
 
   return (

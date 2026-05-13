@@ -26,13 +26,14 @@ export const ClockStrip = (): React.ReactElement => {
     const tick = (): void => setNow(new Date());
     // Round next interval to the 30s boundary so all clients tick together.
     const ms = 30_000 - (Date.now() % 30_000);
-    const initial = window.setTimeout(() => {
+    let intervalId: number | undefined;
+    const initialId = window.setTimeout(() => {
       tick();
-      const id = window.setInterval(tick, 30_000);
-      return id;
+      intervalId = window.setInterval(tick, 30_000);
     }, ms);
     return () => {
-      window.clearTimeout(initial);
+      window.clearTimeout(initialId);
+      if (intervalId !== undefined) window.clearInterval(intervalId);
     };
   }, []);
 

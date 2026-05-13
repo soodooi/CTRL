@@ -260,13 +260,13 @@ fn build_llm_gateway(
     }
 }
 
-// Windows path — H-2026-05-13-001 sub-PR b.
+// Windows path — H-2026-05-13-001 sub-PR b + d + e.
 //
-// Tauri 2 native shell + PWA invoke surface, per ADR-002 §6. Replaces the
-// earlier "boot kernel and idle" stub. The W3 WinUI 3 surface (win/) still
-// works alongside this until sub-PR e removes it (HARD GATE: sub-PR d E2E
-// validation must pass first). Two UIs coexisting during the migration is
-// intentional and expected.
+// Tauri 2 native shell + PWA invoke surface. Kernel boot happens inside
+// ShellLifecycle::boot -> KernelSupervisor::start (one place); the previous
+// stub also booted a runtime here, but the supervisor was the canonical
+// owner — keeping both bootstraps caused a second event-store handle that
+// would later race the supervisor's. Removed per pre-merge review.
 #[cfg(target_os = "windows")]
 pub fn run() {
     let _ = tracing_subscriber::fmt()
@@ -275,16 +275,6 @@ pub fn run() {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .try_init();
-
-    let kernel = match KernelRuntime::boot_default() {
-        Ok(rt) => Arc::new(rt),
-        Err(err) => {
-            tracing::error!(?err, "kernel boot failed on Windows; aborting Tauri shell");
-            return;
-        }
-    };
-    tracing::info!("L1 kernel runtime online (Windows)");
-    let _ = kernel; // sub-PR c wires AppState exposing the kernel handle.
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
