@@ -10,24 +10,46 @@
 // first Ctrl tap can't reach a not-yet-listening kernel (ADR-002 §11 risk #2).
 
 use anyhow::Result;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
-use super::{KernelSupervisor, TrayController};
+use super::{HotkeyController, KernelSupervisor, TrayController, WindowController};
 
 pub struct ShellLifecycle;
 
 impl ShellLifecycle {
     /// Boot the shell. Runs inside `tauri::Builder::setup`.
+    ///
+    /// Order is load-bearing:
+    /// 1. KernelSupervisor starts the kernel daemon so commands have something
+    ///    to route to.
+    /// 2. KernelSupervisor::wait_ready blocks until the daemon reports ready
+    ///    (prevents the first Ctrl tap landing before mcp_host is up).
+    /// 3. Tray icon installs (cheap; user-visible feedback that we're alive).
+    /// 4. Lone-Ctrl hotkey installs LAST.
     pub fn boot(app: &AppHandle) -> Result<()> {
         tracing::info!("ShellLifecycle::boot — starting kernel daemon");
         KernelSupervisor::start(app)?;
+        KernelSupervisor::wait_ready(5_000)?;
 
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;
 
-        // sub-PR b commit 2: install lone-Ctrl hotkey after KernelSupervisor
-        // reports ready (currently fires synchronously since supervisor is in
-        // the same process).
+        tracing::info!("ShellLifecycle::boot — installing lone-Ctrl hotkey");
+        let app_for_hotkey = app.clone();
+        let _hotkey = HotkeyController::install(move || {
+            // Runs on the OS dispatch thread — hop to Tauri's main loop before
+            // touching window state.
+            let app = app_for_hotkey.clone();
+            let app_for_closure = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if let Err(err) = WindowController::toggle(&app_for_closure) {
+                    tracing::error!(?err, "WindowController::toggle failed");
+                }
+            });
+        })?;
+        // Leak the HotkeyController for the process lifetime — Drop tears down
+        // the OS hook on exit anyway via the Tauri shutdown path.
+        std::mem::forget(_hotkey);
 
         tracing::info!("ShellLifecycle::boot — complete");
         Ok(())

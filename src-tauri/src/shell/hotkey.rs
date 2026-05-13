@@ -1,33 +1,21 @@
-// Global hotkey controller.
+// Global hotkey controller — lone-`Ctrl` single-tap detector.
 //
-// Two layers:
+// tauri-plugin-global-shortcut (like Win32 RegisterHotKey before it) rejects
+// bare modifier keys, so for the "Ctrl-tap to summon CTRL" UX we install a
+// low-level keyboard hook and run the detection state machine ourselves.
 //
-//   1. Lone-modifier `Ctrl` single-tap detector — ports W3's
-//      `win/CTRL/Services/HotkeyService.cs` state machine to Rust.
-//      tauri-plugin-global-shortcut (like Win32 RegisterHotKey before it)
-//      rejects bare modifier keys, so we install a low-level keyboard hook
-//      and run the detection state machine ourselves.
+// State machine (ports W3 `win/CTRL/Services/HotkeyService.cs`):
 //
-//   2. Configurable user-defined fallback hotkey (e.g. `Ctrl+Space`) — routed
-//      through tauri-plugin-global-shortcut. Users who can't make lone-Ctrl
-//      work (macOS Karabiner conflicts, Wayland) fall back to this.
-//
-// State machine for the lone-Ctrl path:
-//
-//   Ctrl KEYDOWN (no other modifier already down)  -> arm pending, record T0
+//   Ctrl KEYDOWN (no other modifier already down) -> arm pending, record T0
 //   any non-Ctrl KEYDOWN while pending             -> mark other_seen
 //   Ctrl KEYUP                                     -> if pending && !other_seen
-//                                                       && elapsed < 400ms
-//                                                      -> fire HotkeyTriggered
+//                                                       && elapsed < TAP_THRESHOLD_MS
+//                                                      -> fire callback
 //
-// The hook callback runs in the OS message dispatch path and MUST return
-// promptly (Microsoft guidance: <30ms or the OS unmaps the hook), so the hot
-// path stays allocation-free.
-//
-// Full Win + Mac implementations land in sub-PR b commit 2. This file is the
-// public API contract.
-
-use anyhow::Result;
+// Hook callback runs in the OS message dispatch path; it must return promptly
+// (<30ms per Microsoft guidance, or the OS unmaps the hook silently). The hot
+// path stays allocation-free: only one `try_lock` + integer math + a single
+// `Arc::clone` on the rare success case.
 
 /// Threshold (ms) within which Ctrl-down and Ctrl-up must occur, with no
 /// intermediate key press, to be recognized as a single tap. Crate-private
@@ -35,39 +23,192 @@ use anyhow::Result;
 /// own copy, `SINGLE_CTRL_MAX_DURATION_MS`).
 pub(crate) const TAP_THRESHOLD_MS: u64 = 400;
 
-/// Public surface for the shell to drive hotkey enable/disable + listen for
-/// the "Ctrl single-tap" event.
+use anyhow::Result;
+use std::sync::Arc;
+
+/// Callback fired when a lone Ctrl tap is detected. Invoked on the OS
+/// dispatch thread — hop to a UI thread inside the closure if needed.
+pub type OnTap = Arc<dyn Fn() + Send + Sync + 'static>;
+
 pub struct HotkeyController {
-    // Real handle (HHOOK on Win / CGEventTapRef on Mac) lands in commit 2.
-    _placeholder: (),
+    #[cfg(target_os = "windows")]
+    _win: win_impl::WinHook,
+    #[cfg(not(target_os = "windows"))]
+    _phantom: (),
 }
 
 impl HotkeyController {
-    /// Install the low-level keyboard hook (lone-Ctrl detection) and register
-    /// the configurable fallback shortcut via Tauri's plugin.
-    ///
-    /// `on_tap` is invoked on a background thread when a lone Ctrl tap is
-    /// detected; the shell is responsible for hopping to the UI thread.
-    pub fn install<F>(_on_tap: F) -> Result<Self>
+    /// Install the low-level keyboard hook. Returns immediately; the callback
+    /// fires on the OS dispatch thread when a lone Ctrl tap is detected.
+    pub fn install<F>(on_tap: F) -> Result<Self>
     where
         F: Fn() + Send + Sync + 'static,
     {
-        // sub-PR b commit 2: install hook here.
-        // Win path: SetWindowsHookExW(WH_KEYBOARD_LL, ...) — port from
-        //   win/CTRL/Services/HotkeyService.cs + HotkeyInterop.cs.
-        // Mac path: CGEventTapCreate(...) — already have core-graphics dep.
-        tracing::info!("HotkeyController::install — skeleton (sub-PR b commit 2)");
-        Ok(Self { _placeholder: () })
-    }
-
-    /// Uninstall the hook. Idempotent.
-    pub fn uninstall(&mut self) {
-        tracing::info!("HotkeyController::uninstall — skeleton");
+        let cb: OnTap = Arc::new(on_tap);
+        #[cfg(target_os = "windows")]
+        {
+            let win = win_impl::WinHook::install(cb)?;
+            Ok(Self { _win: win })
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Mac path: a parallel CGEventTap-based detector already lives in
+            // `adapters/outbound/macos/keyboard.rs`. Sub-PR e unifies it into
+            // this module; until then the legacy adapter pipeline handles macOS
+            // lone-Ctrl detection.
+            let _ = cb;
+            tracing::warn!("HotkeyController::install — macOS path uses legacy adapter pipeline (port deferred to sub-PR e)");
+            Ok(Self { _phantom: () })
+        }
     }
 }
 
-impl Drop for HotkeyController {
-    fn drop(&mut self) {
-        self.uninstall();
+#[cfg(target_os = "windows")]
+mod win_impl {
+    use super::{OnTap, TAP_THRESHOLD_MS};
+    use anyhow::{anyhow, Result};
+    use std::sync::{Mutex, OnceLock};
+    use std::time::Instant;
+    use windows_sys::Win32::Foundation::{HMODULE, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LCONTROL, VK_LWIN, VK_MENU, VK_RCONTROL, VK_RWIN, VK_SHIFT,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK,
+        KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    };
+
+    static STATE: OnceLock<Mutex<HookState>> = OnceLock::new();
+
+    struct HookState {
+        hook: HHOOK, // null = not installed
+        callback: OnTap,
+        ctrl_pending: bool,
+        other_seen: bool,
+        ctrl_down_at: Option<Instant>,
+    }
+
+    // SAFETY: HHOOK is a `*mut c_void` raw handle that windows-sys does not
+    // implement Send/Sync for. We only ever read/write it on the main thread
+    // (install + drop both run on the Tauri main thread that owns the message
+    // pump). Wrapping in a Mutex still requires Send because OnceLock<T>
+    // demands T: Send. The handle is opaque and treated as an integer-equivalent
+    // identifier; no dereferencing happens on this side.
+    unsafe impl Send for HookState {}
+
+    pub(crate) struct WinHook;
+
+    impl WinHook {
+        pub fn install(callback: OnTap) -> Result<Self> {
+            // SAFETY: GetModuleHandleW(NULL) returns the current process's
+            // module handle; no allocation, no ownership transfer.
+            let module: HMODULE = unsafe { GetModuleHandleW(std::ptr::null()) };
+
+            let new_state = HookState {
+                hook: std::ptr::null_mut(),
+                callback,
+                ctrl_pending: false,
+                other_seen: false,
+                ctrl_down_at: None,
+            };
+            STATE
+                .set(Mutex::new(new_state))
+                .map_err(|_| anyhow!("HotkeyController is a process-singleton; install() called twice"))?;
+
+            // SAFETY: hook_proc has the required `unsafe extern "system" fn`
+            // ABI; module is valid; dwThreadId = 0 installs a system-wide hook.
+            let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), module, 0) };
+            if hook.is_null() {
+                return Err(anyhow!(
+                    "SetWindowsHookExW failed (error {})",
+                    std::io::Error::last_os_error()
+                ));
+            }
+            STATE.get().expect("just set").lock().unwrap().hook = hook;
+            tracing::info!("WH_KEYBOARD_LL installed for lone-Ctrl detection");
+            Ok(Self)
+        }
+    }
+
+    impl Drop for WinHook {
+        fn drop(&mut self) {
+            if let Some(state) = STATE.get() {
+                if let Ok(mut s) = state.lock() {
+                    if !s.hook.is_null() {
+                        // SAFETY: hook was returned by SetWindowsHookExW and not previously unhooked.
+                        unsafe { UnhookWindowsHookEx(s.hook) };
+                        s.hook = std::ptr::null_mut();
+                    }
+                }
+            }
+        }
+    }
+
+    unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
+        let pass_through = || unsafe { CallNextHookEx(std::ptr::null_mut(), n_code, w_param, l_param) };
+
+        if n_code != HC_ACTION as i32 {
+            return pass_through();
+        }
+        let msg = w_param as u32;
+        let is_keydown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+        let is_keyup = msg == WM_KEYUP || msg == WM_SYSKEYUP;
+        if !is_keydown && !is_keyup {
+            return pass_through();
+        }
+
+        // SAFETY: l_param points to a KBDLLHOOKSTRUCT during a WH_KEYBOARD_LL
+        // callback (OS contract). Reading the first field doesn't require a
+        // full marshal — minimizes hot-path cost.
+        let kbd: *const KBDLLHOOKSTRUCT = l_param as *const KBDLLHOOKSTRUCT;
+        let vk = unsafe { (*kbd).vkCode };
+        let is_ctrl = vk == VK_LCONTROL as u32 || vk == VK_RCONTROL as u32;
+
+        let Some(state_cell) = STATE.get() else {
+            return pass_through();
+        };
+        // try_lock: if a callback dispatch is mid-flight, drop this event
+        // rather than block — hot path must return in <30ms.
+        let mut state = match state_cell.try_lock() {
+            Ok(s) => s,
+            Err(_) => return pass_through(),
+        };
+
+        let mut fire_callback: Option<OnTap> = None;
+        if is_ctrl && is_keydown && !state.ctrl_pending {
+            if !is_any_other_modifier_down() {
+                state.ctrl_pending = true;
+                state.other_seen = false;
+                state.ctrl_down_at = Some(Instant::now());
+            }
+        } else if is_ctrl && is_keyup && state.ctrl_pending {
+            let elapsed_ok = state
+                .ctrl_down_at
+                .map(|t| t.elapsed().as_millis() < TAP_THRESHOLD_MS as u128)
+                .unwrap_or(false);
+            if elapsed_ok && !state.other_seen {
+                fire_callback = Some(state.callback.clone());
+            }
+            state.ctrl_pending = false;
+            state.other_seen = false;
+            state.ctrl_down_at = None;
+        } else if is_keydown && state.ctrl_pending && !is_ctrl {
+            state.other_seen = true;
+        }
+        drop(state); // release lock before invoking user callback
+
+        if let Some(cb) = fire_callback {
+            cb();
+        }
+        pass_through()
+    }
+
+    fn is_any_other_modifier_down() -> bool {
+        let down = |vk: u16| -> bool {
+            // SAFETY: GetAsyncKeyState is read-only and always safe to call.
+            (unsafe { GetAsyncKeyState(vk as i32) } as u16) & 0x8000 != 0
+        };
+        down(VK_SHIFT) || down(VK_MENU) || down(VK_LWIN) || down(VK_RWIN)
     }
 }
