@@ -9,10 +9,17 @@
 mod actors;
 mod adapters;
 mod application;
+// sub-PR b skeleton modules — `#[allow(dead_code)]` until sub-PR b commit 2
+// (hotkey/tray/window wired) + sub-PR c (commands wired to kernel) connect
+// real call sites. Drop the allow then.
+#[allow(dead_code)]
+mod commands;
 mod domain;
 mod error;
 mod ffi;
 mod kernel;
+#[allow(dead_code)]
+mod shell;
 
 // UniFFI scaffolding for FFI exports (Swift / Kotlin / C# bindings).
 // Generated from src/ctrl.udl by build.rs at compile time. The scaffolding
@@ -258,10 +265,13 @@ fn build_llm_gateway(
     }
 }
 
-// Windows stub — full Windows adapter rewrite lands in P2.9.
-// Win11 currently runs L1 kernel (MCP host, event store) but lacks hotkey /
-// accessibility / pasteboard integration. cargo check + tauri dev work
-// cross-platform; Win functional features land in P2.9 cross-platform adapters.
+// Windows path — H-2026-05-13-001 sub-PR b.
+//
+// Tauri 2 native shell + PWA invoke surface, per ADR-002 §6. Replaces the
+// earlier "boot kernel and idle" stub. The W3 WinUI 3 surface (win/) still
+// works alongside this until sub-PR e removes it (HARD GATE: sub-PR d E2E
+// validation must pass first). Two UIs coexisting during the migration is
+// intentional and expected.
 #[cfg(target_os = "windows")]
 pub fn run() {
     let _ = tracing_subscriber::fmt()
@@ -274,18 +284,21 @@ pub fn run() {
     let kernel = match KernelRuntime::boot_default() {
         Ok(rt) => Arc::new(rt),
         Err(err) => {
-            tracing::error!(?err, "kernel boot failed on Windows; running without kernel features");
+            tracing::error!(?err, "kernel boot failed on Windows; aborting Tauri shell");
             return;
         }
     };
     tracing::info!("L1 kernel runtime online (Windows)");
-    tracing::warn!(
-        "CTRL Windows hotkey / pasteboard / accessibility adapters pending P2.9. \
-         Kernel + MCP host fully operational."
-    );
+    let _ = kernel; // sub-PR c wires AppState exposing the kernel handle.
 
-    let _ = kernel; // Tauri shell on Windows: kernel boots; UI calls via UniFFI.
     tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            shell::ShellLifecycle::boot(app.handle())?;
+            Ok(())
+        })
+        .invoke_handler(pwa_invoke_handler!())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

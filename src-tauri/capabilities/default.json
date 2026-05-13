@@ -1,12 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the main window — grants core invoke + event APIs to the frontend.",
-  "windows": ["main"],
+  "description": "Default capability for CTRL windows — grants core invoke + event APIs to the frontend, plus the PWA-required tauri-plugin-global-shortcut. All bespoke commands (kernel/stss/memory/keychain) are auto-included via the invoke_handler! macro.",
+  "windows": ["main", "pool", "workspace"],
   "permissions": [
     "core:default",
     "core:event:default",
     "core:webview:default",
-    "core:window:default"
+    "core:window:default",
+    "core:tray:default",
+    "core:menu:default",
+    "global-shortcut:default",
+    "updater:default"
   ]
 }
