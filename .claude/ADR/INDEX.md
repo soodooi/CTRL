@@ -7,7 +7,7 @@ Architecture Decision Records (ADR) — chronological, never deleted, supersede 
 | # | Title | Status | Date | Supersedes |
 |---|---|---|---|---|
 | [001](./001-system-architecture.md) | CTRL System Architecture — AI-native Agent OS Kernel | **Accepted** | 2026-05-11 | (prior Tauri DDD framing in `src-tauri/`) |
-| [002](./002-pwa-pivot.md) | PWA UI Pivot — Tauri 2 Native Shell + Shared Web Codebase | **Proposed** | 2026-05-13 | ADR-001 §3.1 (UI rendering layer), §6 items #1/#7-9/#13/#15 (delivery surface), §10 (15 keycap delivery shape) — partial only; ADR-001 spine preserved |
+| [002](./002-pwa-pivot.md) | PWA UI Pivot — Tauri 2 Native Shell + Shared Web Codebase | **Accepted** (2026-05-13) | 2026-05-13 | ADR-001 §3.1 (UI rendering layer), §6 items #1/#7-9/#13/#15 (delivery surface), §10 (15 keycap delivery shape) — partial only; ADR-001 spine preserved |
 
 ---
 
@@ -28,4 +28,4 @@ Architecture Decision Records (ADR) — chronological, never deleted, supersede 
 
 ## Pending decisions
 
-- **ADR-002** awaiting bao Accept (gate for handoff H-2026-05-13-001)
+(none — ADR-002 accepted 2026-05-13)

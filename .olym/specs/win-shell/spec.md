@@ -1,10 +1,11 @@
 # Win Shell — WinUI 3 / C# UI Layer Specification
 
-- **Status**: Draft v0.1
-- **Date**: 2026-05-11
-- **Parent**: `.claude/ADR/001-system-architecture.md` (revised: native UI dual-stack + Rust core)
-- **Sibling**: `.olym/specs/mac-shell/spec.md` (SwiftUI Mac UI)
-- **Target audience**: this Win11 machine, primary development here
+- **Status**: **Superseded** by `.olym/specs/pwa-shell/spec.md` (per ADR-002, accepted 2026-05-13)
+- **Date**: 2026-05-11 (draft), 2026-05-13 (superseded)
+- **Parent**: `.claude/ADR/001-system-architecture.md` (revised by ADR-002)
+- **Successor**: `.olym/specs/pwa-shell/spec.md` (Tauri 2 native shell + PWA)
+- **Disposition**: W3.1–W3.7 deliverables remain in `win/` tree until H-2026-05-13-001 step e (HARD GATE: step d end-to-end demo must pass first). Hotkey/tray/lifecycle logic ports to `src-tauri/src/shell/`.
+- **Note**: this spec preserved as history; do not extend or implement against it.
 
 ---
 

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CTRL — primary wordmark
+  Design: 4 stencil letters + 4 LED bars (one per letter, top-aligned)
+  Color: ctrl-blue oklch(0.45 0.19 264) ≈ #1E3FB0
+  Reference: doc/reference/logo-reference.png
+  Token-canonical: --ctrl-blue (defined in brand-tokens.md)
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100" role="img" aria-label="CTRL">
+  <title>CTRL</title>
+  <defs>
+    <style>
+      .ctrl-fill { fill: #1E3FB0; }
+      .ctrl-letter {
+        font-family: "Inter", "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+        font-weight: 900;
+        font-size: 80px;
+        letter-spacing: -2px;
+        fill: #1E3FB0;
+        font-variant-ligatures: none;
+      }
+    </style>
+  </defs>
+
+  <!-- LED indicator bars: one above each letter -->
+  <rect class="ctrl-fill" x="14"  y="6" width="42" height="6" rx="1"/>
+  <rect class="ctrl-fill" x="92"  y="6" width="42" height="6" rx="1"/>
+  <rect class="ctrl-fill" x="170" y="6" width="42" height="6" rx="1"/>
+  <rect class="ctrl-fill" x="248" y="6" width="42" height="6" rx="1"/>
+
+  <!-- Wordmark -->
+  <text class="ctrl-letter" x="0" y="92" textLength="320" lengthAdjust="spacingAndGlyphs">CTRL</text>
+</svg>

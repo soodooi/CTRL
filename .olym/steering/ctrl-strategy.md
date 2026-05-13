@@ -86,19 +86,24 @@ Local Ollama (privacy geek)
 
 ---
 
-## Architecture (lock, see ADR-001)
+## Architecture (lock, see ADR-001 + ADR-002)
 
 ```
 L3 Userland (WASM sandboxed actors)
     ↑↓ typed message passing
 L2 SDK (@ctrl/{kernel-sdk, stss, memory, desktop})
-    ↑↓ syscall-like API  
+    ↑↓ syscall-like API
 L1 Kernel (Rust microkernel: Actor / Capability / Event / Channel / Effect)
-    ↑↓ native OS calls
-L0 Tauri (Hotkey / Window / Tray / FS / Keychain)
+                                                  daemon @ localhost:17872 (WS bridge)
+    ↑↓ Tauri 2 invoke() on desktop / WS on mobile
+L0 Tauri 2 Native Shell (~500 LOC: Hotkey / Tray / Keychain / Kernel supervisor)
+    ↑↓ embeds WebView2 (Win) / WKWebView (Mac)
+PWA (packages/ctrl-web) — single web codebase, runs in Tauri WebView on desktop, browser on mobile
 ```
 
 5 primitives only. AI-native Agent OS pattern (AIOS-inspired + IronClaw capability + LiveStore event sourcing).
+Mobile = pure browser PWA (no React Native, no Capacitor).
+Kernel binary target ≤ 15 MB; desktop installer ≤ 25 MB (default) / ≤ 15 MB (slim).
 
 ---
 
@@ -144,20 +149,24 @@ D:/code-space/screi/        ← ARCHIVE after P3 cherry-pick
 
 ## Phase plan (no time, sequence only)
 
-| Phase | Content | Status |
+| Phase | Content | Status / version |
 |---|---|---|
 | **P0** | Legal cleanup (screi 撤 Apache, CTRL +LICENSE) | ✅ 2026-05-11 |
-| P1 | CTRL workspaces + copy olym-core | next |
-| P2 | L1 Kernel skeleton (Rust, 5 primitives) ⭐ RFC first | depends P1 |
-| P3 | L2 SDK (@ctrl/stss + @ctrl/memory cherry-pick from screi) | depends P2 |
-| P4 | MCP host integration | depends P2 |
-| P5 | Tool manifest spec implementation | parallel P3-P4 |
-| P6 | AI 创作助手 (manifest generator) | depends P5 |
-| P7 | WASM sandbox + 5 P0 built-in keycaps | depends P2 |
-| P8 | ctrl-cloud + ctrl-auth + ctrl-billing | parallel P7 |
-| P9 | ctrl-market + creator revenue share | depends P8 |
-| P10 | Closed beta (内测) | depends P7-P9 |
-| P11+ | Hardware SDK + E-ink demo | post-launch |
+| **P1** | CTRL workspaces + copy olym-core | ✅ done |
+| **P2** | L1 Kernel skeleton (Rust, 5 primitives) | ✅ done (W3.1–W3.6, 1232 LOC) |
+| **P3** | L2 SDK (@ctrl/stss + @ctrl/memory cherry-pick) | ✅ done (99 tests, P3.5 hardening) |
+| **P3.7** | Tauri 2 shell migration + W3 deprecation + kernel-as-daemon | next (sub-PR b of H-2026-05-13-001) |
+| **P3.8** | packages/ctrl-web PWA scaffold + 3 routes | depends P3.7 (sub-PR c) |
+| **P3.9** | Kernel hardening (scheduler deadline-aware / sandbox WASM / mcp_host cache / persistence index / 15 MB budget) | parallel P3.8 |
+| P4 | MCP host integration | partially done (W3.6) |
+| P5 | Tool manifest spec implementation | depends P3.8 |
+| **P6** | AI 创作向导 (NL → manifest, 4-path onboarding A/B/C/D) | **v1.0 mandatory** (gate for "客户能 0 代码集成 1 个键帽" SC) |
+| P7 | 5 P0 built-in keycaps | depends P3.9 + P5 |
+| P8 | ctrl-cloud + ctrl-auth + ctrl-billing + ctrl-push | parallel P7 |
+| P9 | ctrl-market + creator revenue share (seed, no affiliate) | v1.0 |
+| **P9.5** | ctrl-affiliate + 智识 + 比价 keycap + 联盟归因 (Q2 电商) | **v1.1** |
+| P10 | Closed beta (v1.0) | depends P7–P9 |
+| P11+ | Hardware actor SDK + E-ink demo + optional ctrl-relay | post-launch |
 
 ---
 
@@ -186,12 +195,18 @@ CTRL v1.0 must achieve:
 
 ## Specs index
 
-- `.claude/ADR/001-system-architecture.md` — master ADR (decisions locked)
+- `.claude/ADR/INDEX.md` — ADR registry (chronological)
+- `.claude/ADR/001-system-architecture.md` — master ADR (spine — never amend)
+- `.claude/ADR/002-pwa-pivot.md` — UI rendering layer (accepted 2026-05-13)
 - `.olym/specs/kernel/spec.md` — L1 Rust microkernel RFC
+- `.olym/specs/pwa-shell/spec.md` — Tauri 2 native shell (active)
 - `.olym/specs/stss-protocol/spec.md` — ST-SS CTRL profile + hardware + E-ink
 - `.olym/specs/tool-manifest/spec.md` — manifest schema, 5 source types
 - `.olym/specs/creator-economy/spec.md` — market + 分润 + 审核
 - `.olym/specs/hardware-strategy/spec.md` — ambient OS roadmap, post-launch
+- ~~`.olym/specs/win-shell/spec.md`~~ — **Superseded** by pwa-shell (history only)
+- ~~`.olym/specs/mac-shell/spec.md`~~ — **Superseded** by pwa-shell (history only)
+- `doc/visual-identity/` — logo SVG + design tokens (VI single source of truth)
 
 ---
 
