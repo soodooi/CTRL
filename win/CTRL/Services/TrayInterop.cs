@@ -1,17 +1,11 @@
-// SPDX-License-Identifier: All-Rights-Reserved
-//
-// Win32 interop for the system tray (notification area) icon. Hand-rolled
-// instead of pulling in H.NotifyIcon — zero third-party deps, total Win32
-// surface area for the tray sits at ~120 lines we own.
-//
-// The tray icon talks back to the app via a message-only hidden HWND
-// (parent = HWND_MESSAGE), so we never need to keep the launcher window
-// alive to receive callbacks.
-
 using System;
 using System.Runtime.InteropServices;
 
 namespace CTRL.Services;
+
+// Hand-rolled tray icon interop (zero third-party deps). The icon
+// receives callbacks via a message-only hidden HWND (parent = HWND_MESSAGE)
+// so the launcher window does not need to stay alive to listen for clicks.
 
 internal static class TrayInterop
 {

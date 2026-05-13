@@ -1,32 +1,20 @@
-// SPDX-License-Identifier: All-Rights-Reserved
-//
-// Global single-Ctrl-tap detector. Required since RegisterHotKey cannot
-// bind a lone modifier — we install a low-level keyboard hook and run
-// the detection state machine ourselves.
-//
-// State machine:
-//   Ctrl KEYDOWN (no other modifier already down)  -> arm pending, record T0
-//   any non-Ctrl KEYDOWN while pending             -> mark otherSeen
-//   Ctrl KEYUP                                     -> if pending && !otherSeen
-//                                                       && elapsed < ThresholdMs
-//                                                      -> raise HotkeyTriggered
-//
-// HotkeyTriggered is dispatched onto the UI thread via DispatcherQueue,
-// since the hook callback runs in the OS message dispatch path and must
-// return immediately.
-
 using System;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 
 namespace CTRL.Services;
 
+// Global single-Ctrl-tap detector. RegisterHotKey cannot bind a lone
+// modifier, so we install a low-level keyboard hook. The callback runs
+// in the OS message dispatch path for every keystroke system-wide and
+// must return promptly (Microsoft guidance: <30ms or the OS unmaps the
+// hook), so the hot path stays free of allocations and managed marshal.
 public sealed class HotkeyService : IDisposable
 {
     private const long ThresholdMs = 400;
 
     private readonly DispatcherQueue _dispatcher;
-    // Keep a managed reference to the callback so the GC does not collect
+    // Keep a managed reference to the delegate so the GC does not collect
     // it while the OS still holds the native function pointer.
     private readonly HotkeyInterop.HookProc _callback;
     private IntPtr _hookHandle;
@@ -36,8 +24,7 @@ public sealed class HotkeyService : IDisposable
     private long _ctrlDownTimeMs;
 
     /// <summary>
-    /// Fires on the UI thread when a lone Ctrl tap is detected (key down,
-    /// no other key pressed, key up within ThresholdMs).
+    /// Fires on the UI thread when a lone Ctrl tap is detected.
     /// </summary>
     public event EventHandler? HotkeyTriggered;
 
@@ -46,56 +33,52 @@ public sealed class HotkeyService : IDisposable
         _dispatcher = dispatcher;
         _callback = HookCallback;
 
-        var moduleHandle = HotkeyInterop.GetModuleHandleW(null);
+        var moduleHandle = Win32.GetModuleHandleW(null);
         _hookHandle = HotkeyInterop.SetWindowsHookExW(
             HotkeyInterop.WH_KEYBOARD_LL, _callback, moduleHandle, 0);
 
-        if (_hookHandle == IntPtr.Zero)
-        {
-            var err = Marshal.GetLastWin32Error();
-            throw new InvalidOperationException(
-                $"Failed to install low-level keyboard hook (Win32 error {err}).");
-        }
+        if (_hookHandle == IntPtr.Zero) Win32.ThrowLast("Install low-level keyboard hook");
     }
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode == HotkeyInterop.HC_ACTION)
+        if (nCode != HotkeyInterop.HC_ACTION)
+            return HotkeyInterop.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+
+        int msg = wParam.ToInt32();
+        bool isKeyDown = msg == HotkeyInterop.WM_KEYDOWN || msg == HotkeyInterop.WM_SYSKEYDOWN;
+        bool isKeyUp = msg == HotkeyInterop.WM_KEYUP || msg == HotkeyInterop.WM_SYSKEYUP;
+        if (!isKeyDown && !isKeyUp)
+            return HotkeyInterop.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+
+        // VkCode is the first DWORD of KBDLLHOOKSTRUCT — read directly to
+        // skip a full struct marshal on every keystroke.
+        uint vk = unchecked((uint)Marshal.ReadInt32(lParam));
+        bool isCtrl = vk == HotkeyInterop.VK_LCONTROL || vk == HotkeyInterop.VK_RCONTROL;
+
+        if (isCtrl && isKeyDown && !_ctrlPending)
         {
-            var data = Marshal.PtrToStructure<HotkeyInterop.KBDLLHOOKSTRUCT>(lParam);
-            int msg = wParam.ToInt32();
-            uint vk = data.VkCode;
-
-            bool isCtrl = vk == HotkeyInterop.VK_LCONTROL || vk == HotkeyInterop.VK_RCONTROL;
-            bool isKeyDown = msg == HotkeyInterop.WM_KEYDOWN || msg == HotkeyInterop.WM_SYSKEYDOWN;
-            bool isKeyUp = msg == HotkeyInterop.WM_KEYUP || msg == HotkeyInterop.WM_SYSKEYUP;
-
-            if (isCtrl && isKeyDown && !_ctrlPending)
+            if (!IsAnyOtherModifierDown())
             {
-                // Don't arm if user is starting a chord that already has
-                // another modifier held (e.g. Alt+Ctrl).
-                if (!IsAnyOtherModifierDown())
-                {
-                    _ctrlPending = true;
-                    _otherSeen = false;
-                    _ctrlDownTimeMs = Environment.TickCount64;
-                }
-            }
-            else if (isCtrl && isKeyUp && _ctrlPending)
-            {
-                var elapsed = Environment.TickCount64 - _ctrlDownTimeMs;
-                if (!_otherSeen && elapsed < ThresholdMs)
-                {
-                    _dispatcher.TryEnqueue(() =>
-                        HotkeyTriggered?.Invoke(this, EventArgs.Empty));
-                }
-                _ctrlPending = false;
+                _ctrlPending = true;
                 _otherSeen = false;
+                _ctrlDownTimeMs = Environment.TickCount64;
             }
-            else if (isKeyDown && _ctrlPending && !isCtrl)
+        }
+        else if (isCtrl && isKeyUp && _ctrlPending)
+        {
+            var elapsed = Environment.TickCount64 - _ctrlDownTimeMs;
+            if (!_otherSeen && elapsed < ThresholdMs)
             {
-                _otherSeen = true;
+                _dispatcher.TryEnqueue(() =>
+                    HotkeyTriggered?.Invoke(this, EventArgs.Empty));
             }
+            _ctrlPending = false;
+            _otherSeen = false;
+        }
+        else if (isKeyDown && _ctrlPending && !isCtrl)
+        {
+            _otherSeen = true;
         }
 
         return HotkeyInterop.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);

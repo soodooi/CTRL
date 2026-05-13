@@ -1,13 +1,3 @@
-// SPDX-License-Identifier: All-Rights-Reserved
-//
-// Win32 interop for the low-level keyboard hook (WH_KEYBOARD_LL).
-// Required because RegisterHotKey rejects bare modifier keys, so we cannot
-// register a lone Ctrl tap through the normal hotkey API.
-//
-// The hook callback runs in the kernel-driven message dispatch path and
-// MUST return quickly (< 30ms per Microsoft guidance) or the OS unmaps
-// the hook silently.
-
 using System;
 using System.Runtime.InteropServices;
 
@@ -53,9 +43,6 @@ internal static class HotkeyInterop
     [DllImport("user32.dll")]
     public static extern IntPtr CallNextHookEx(
         IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern IntPtr GetModuleHandleW(string? lpModuleName);
 
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int vKey);
