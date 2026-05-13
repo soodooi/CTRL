@@ -31,16 +31,18 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 
 ## Architecture overview
 
-详细见 `.claude/ADR/001-system-architecture.md`.
+详细见 `.claude/ADR/001-system-architecture.md` (spine) + `.claude/ADR/002-pwa-pivot.md` (UI layer, accepted 2026-05-13).
 
 ```
 L3 Userland (WASM sandboxed actors, 键帽 / 硬件 / LLM call / OAuth flow)
        ↑↓
 L2 SDK (@ctrl/{kernel-sdk, stss, memory, desktop})
        ↑↓
-L1 CTRL Kernel (Rust microkernel, 5 primitives)
+L1 CTRL Kernel (Rust microkernel, 5 primitives, ST-SS WS @ 17872)
        ↑↓
-L0 Tauri Native Shell
+L0 Tauri 2 Native Shell (~500 LOC Rust shell)
+       ↑↓ embeds WebView2 / WKWebView
+PWA (packages/ctrl-web) — single web codebase, runs in Tauri WebView (desktop) + any browser (mobile)
 ```
 
 **5 kernel primitives**: Actor / Capability / Event / Channel / Effect.
@@ -58,25 +60,35 @@ L0 Tauri Native Shell
 
 ```
 CTRL/                           ← THIS REPO (deliverable)
-├── src-tauri/                  L0 Tauri + L1 Kernel
-│   └── src/kernel/             ← Rust microkernel (P2)
-├── src/                        React UI (Pool + Workspace)
+├── src-tauri/                  L0 Tauri 2 shell + L1 Kernel
+│   └── src/
+│       ├── shell/              ← Tauri 2 native shell (hotkey/tray/window/keychain/kernel_supervisor)
+│       ├── commands/           ← #[tauri::command] handlers (kernel/stss/memory/keychain)
+│       ├── kernel/             ← Rust microkernel (5 primitives + mcp_host + stss_bridge + persistence)
+│       └── bin/                helper binaries (stss_spike, setup_llm_key)
 ├── packages/
+│   ├── ctrl-web/               ← PWA (React + Vite + vite-plugin-pwa) — SINGLE UI codebase
 │   ├── olym-core/              copy from hello-olym (SSOT)
 │   ├── olym-desktop/           桌面 olym 派生
-│   ├── ctrl-stss/              cherry-pick from screi
-│   ├── ctrl-memory/            cherry-pick from screi
-│   └── ctrl-kernel-sdk/        L2 syscall surface
+│   ├── ctrl-stss/              ST-SS protocol TS (99 tests)
+│   ├── ctrl-memory/            client-side event log TS
+│   └── ctrl-kernel-sdk/        L2 syscall surface (mirrors Rust kernel)
+├── share/
+│   └── stss-spike/             standalone WS server + browser viewer (reference)
+├── doc/
+│   ├── visual-identity/        logo SVG + brand-tokens.md (single source of truth)
+│   └── reference/              design references
 ├── .claude/
-│   └── ADR/                    architectural decisions
+│   ├── ADR/                    architectural decisions (numbered, never deleted)
+│   └── PRPs/                   legacy PRP docs (historical)
 └── .olym/
     ├── steering/               ctrl-strategy.md (5min navigator)
-    ├── specs/                  domain specs (5 currently)
-    └── handoffs/               work items
+    ├── specs/                  domain specs (kernel, pwa-shell, stss, tool-manifest, …)
+    └── handoffs/               work items (H-YYYY-MM-DD-NNN)
 
-ctrl-cloud/  (separate repo)    CF Workers backend (auth/billing/market)
+ctrl-cloud/  (separate repo)    CF Workers backend (auth/billing/market/push)
 hello-olym/                     olym-core SSOT (also serves mamamiya)
-screi/                          ARCHIVE after P3 cherry-pick
+screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12-002)
 ```
 
 ---
@@ -85,20 +97,24 @@ screi/                          ARCHIVE after P3 cherry-pick
 
 | Layer | Tech |
 |---|---|
-| Desktop shell | Tauri v2 |
-| Kernel (L1) | Rust stable, Tokio async runtime |
-| Sandbox | WASM (wasmtime preferred), capability-based |
-| UI (L3) | React 18 + Vite 5 |
-| Package manager | npm workspaces (跟 mamamiya 一致) |
-| State persistence | SQLite (event-sourced), optional CRDT |
+| Desktop shell | Tauri 2 (~500 LOC Rust shell: hotkey / tray / keychain / kernel daemon supervisor) |
+| Kernel (L1) | Rust stable, Tokio async runtime, ST-SS WS bridge @ 127.0.0.1:17872 |
+| Sandbox | WASM (wasmtime, cranelift) |
+| UI | Single PWA (`packages/ctrl-web`) — React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa |
+| Web ↔ Rust bridge | Tauri 2 `invoke()` on desktop, WebSocket on mobile |
+| Stream protocol | ST-SS (CBOR Cell/Op) |
+| Package manager | npm workspaces |
+| State persistence | SQLite (event-sourced) |
 | LLM (default) | CF Workers AI (Qwen / Llama) |
 | LLM (BYOK) | Anthropic Claude / OpenAI GPT-4 |
-| MCP | Anthropic MCP SDK |
-| Backend (cloud) | Cloudflare Workers + D1 + Wrangler v3 |
+| MCP | Anthropic rmcp Rust SDK |
+| Backend (cloud) | Cloudflare Workers + D1 (separate `ctrl-cloud` repo) |
 | Payments | Stripe |
-| Min platform | macOS 13+ primary, Windows 11+ secondary |
+| Min platform | Windows 11+ (primary dev), macOS 13+ (secondary), WebView2 / WKWebView evergreen |
+| Mobile | Pure browser PWA (no React Native, no Capacitor) |
 | Node | 20.x LTS |
-| Rust | 1.75+ stable |
+| Rust | 1.77+ stable |
+| Binary size | kernel ≤ 15 MB, installer ≤ 25 MB default / ≤ 15 MB slim (P3.9 CI gate) |
 
 ---
 

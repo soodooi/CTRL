@@ -28,4 +28,18 @@ Architecture Decision Records (ADR) — chronological, never deleted, supersede 
 
 ## Pending decisions
 
-(none — ADR-002 accepted 2026-05-13)
+(none — ADR-002 accepted 2026-05-13; sub-PRs b/c/d/e on stacked branches awaiting bao smoke validation + merge)
+
+## Sub-PR map (H-2026-05-13-001)
+
+| sub | Branch | Status |
+|---|---|---|
+| a | merged into main | ✅ ADR + phase + VI + INDEX |
+| b | `feat/h-001-b-tauri2-shell` | ✅ Tauri 2 plugins + Rust shell + lone-Ctrl hotkey port |
+| c | `feat/h-001-c-pwa-scaffold` (stacked on b) | ✅ packages/ctrl-web + 3 routes + bridge + ClockStrip + KeycapCard |
+| d | `feat/h-001-d-e2e-integration` (stacked on c) | ✅ stss_bridge promoted + commands wired to KernelHandle + tauri.conf swap |
+| e | `feat/h-001-e-cleanup` (stacked on d) | ⚠️ open — HARD GATE: bao smoke test of d before merging |
+
+## Related spike
+
+- `feat/h-003-stss-spike` (H-2026-05-13-002) — ST-SS double-direction validation. Promoted into `kernel::stss_bridge` in sub-PR d; spike binary + viewer retained in `share/stss-spike/` as reference.
