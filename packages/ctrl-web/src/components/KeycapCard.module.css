@@ -1,0 +1,61 @@
+.card {
+  --card-color: var(--keycap-platinum);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-1);
+  width: 88px;
+  height: 88px;
+  padding: var(--space-3);
+  background: var(--card-color);
+  color: var(--paper);
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 -3px 0 0 rgb(0 0 0 / 0.18),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.12);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition:
+    box-shadow var(--duration-fast) var(--ease-out-expo),
+    background var(--duration-fast) var(--ease-out-expo);
+}
+
+.card:hover {
+  box-shadow:
+    var(--shadow-lg),
+    inset 0 -3px 0 0 rgb(0 0 0 / 0.22),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.16);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+}
+
+.led {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 3px;
+  border-radius: 1px;
+  background: rgb(255 255 255 / 0.55);
+  box-shadow: 0 0 8px rgb(255 255 255 / 0.4);
+}
+
+.icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}

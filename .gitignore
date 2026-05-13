@@ -34,3 +34,4 @@ out/
 # Ephemeral / scratch
 _temp/
 .claude/scheduled_tasks.lock
+packages/*/tsconfig.tsbuildinfo

@@ -1,0 +1,126 @@
+/*
+ * CTRL design tokens — exported from doc/visual-identity/brand-tokens.md v0.1.
+ * SINGLE source of truth in CSS. Do NOT hardcode color hex / spacing px
+ * anywhere else; always reference via var(--token-name).
+ *
+ * Default theme = dark (deliberate, not auto-OS — per CLAUDE.md and brand-tokens.md §2).
+ */
+
+:root {
+  /* === Brand color === */
+  --ctrl-blue: oklch(0.45 0.19 264);
+  --ctrl-blue-dark: oklch(0.32 0.16 264);
+  --ctrl-blue-light: oklch(0.65 0.16 252);
+
+  /* === Keycap palette (per tool-manifest spec §2) === */
+  --keycap-cobalt: var(--ctrl-blue);
+  --keycap-amber: oklch(0.78 0.16 80);
+  --keycap-jade: oklch(0.65 0.15 162);
+  --keycap-platinum: oklch(0.85 0.005 264);
+  --keycap-graphite: oklch(0.32 0.005 264);
+
+  /* === Neutrals (dark default) === */
+  --ink: oklch(0.18 0 0);
+  --ink-soft: oklch(0.42 0 0);
+  --ink-faint: oklch(0.65 0 0);
+  --paper: oklch(0.98 0 0);
+  --paper-soft: oklch(0.95 0 0);
+  --graphite: oklch(0.13 0.005 264);
+  --graphite-soft: oklch(0.17 0.005 264);
+  --graphite-soft-2: oklch(0.22 0.005 264);
+
+  /* === Semantic === */
+  --status-success: oklch(0.65 0.15 162);
+  --status-warning: oklch(0.78 0.16 80);
+  --status-danger: oklch(0.55 0.22 27);
+  --status-info: oklch(0.65 0.16 252);
+
+  /* === Surfaces (dark default) === */
+  --color-background: var(--graphite);
+  --color-surface: var(--graphite-soft);
+  --color-surface-elevated: var(--graphite-soft-2);
+  --color-text: var(--paper);
+  --color-text-muted: var(--ink-faint);
+  --color-text-soft: var(--ink-soft);
+  --color-border: var(--graphite-soft-2);
+  --color-accent: var(--ctrl-blue-light);
+
+  /* === Typography === */
+  --font-sans: 'Inter', 'SF Pro Text', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Roboto Mono', monospace;
+  --font-display: 'Inter', 'SF Pro Display', system-ui, sans-serif;
+
+  --text-xs: clamp(0.75rem, 0.7rem + 0.1vw, 0.8125rem);
+  --text-sm: clamp(0.875rem, 0.83rem + 0.2vw, 0.9375rem);
+  --text-base: clamp(1rem, 0.95rem + 0.2vw, 1.0625rem);
+  --text-lg: clamp(1.125rem, 1.05rem + 0.4vw, 1.25rem);
+  --text-xl: clamp(1.5rem, 1.3rem + 0.8vw, 1.875rem);
+  --text-2xl: clamp(2rem, 1.6rem + 1.6vw, 2.75rem);
+  --text-clock: clamp(2.5rem, 2rem + 2.5vw, 3.5rem);
+  --text-hero: clamp(3rem, 2rem + 4vw, 5.5rem);
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-black: 900;
+
+  /* === Spacing (4px base) === */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+  --space-32: 128px;
+  --space-section: clamp(4rem, 3rem + 5vw, 10rem);
+
+  /* === Radius === */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  /* === Shadows === */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow-md: 0 4px 12px oklch(0 0 0 / 0.10);
+  --shadow-lg: 0 8px 32px oklch(0 0 0 / 0.16);
+  --shadow-xl: 0 24px 64px oklch(0 0 0 / 0.24);
+  --shadow-glow-blue: 0 0 24px oklch(0.45 0.19 264 / 0.35);
+
+  /* === Motion === */
+  --duration-instant: 80ms;
+  --duration-fast: 150ms;
+  --duration-normal: 220ms;
+  --duration-slow: 380ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+}
+
+/* Light mode opt-in only (not auto via prefers-color-scheme) */
+:root[data-theme='light'] {
+  --color-background: var(--paper);
+  --color-surface: var(--paper-soft);
+  --color-surface-elevated: oklch(0.92 0 0);
+  --color-text: var(--ink);
+  --color-text-muted: var(--ink-faint);
+  --color-text-soft: var(--ink-soft);
+  --color-border: oklch(0.88 0 0);
+  --color-accent: var(--ctrl-blue);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-normal: 50ms;
+    --duration-slow: 50ms;
+  }
+}
