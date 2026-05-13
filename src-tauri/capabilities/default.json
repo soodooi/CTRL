@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability for CTRL windows — grants core invoke + event APIs to the frontend, plus the PWA-required tauri-plugin-global-shortcut. All bespoke commands (kernel/stss/memory/keychain) are auto-included via the invoke_handler! macro.",
-  "windows": ["main", "pool", "workspace"],
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:event:default",

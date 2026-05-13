@@ -9,16 +9,11 @@
 mod actors;
 mod adapters;
 mod application;
-// sub-PR b skeleton modules — `#[allow(dead_code)]` until sub-PR b commit 2
-// (hotkey/tray/window wired) + sub-PR c (commands wired to kernel) connect
-// real call sites. Drop the allow then.
-#[allow(dead_code)]
 mod commands;
 mod domain;
 mod error;
 mod ffi;
 mod kernel;
-#[allow(dead_code)]
 mod shell;
 
 // UniFFI scaffolding for FFI exports (Swift / Kotlin / C# bindings).

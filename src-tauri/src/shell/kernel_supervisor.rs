@@ -1,44 +1,72 @@
 // Kernel daemon supervisor.
 //
-// Per ADR-002 §3 + §6, the L1 kernel becomes a localhost daemon exposing a WS
-// bridge on :17872. The shell spawns + supervises it.
+// Sub-PR d: real wire. Boots KernelRuntime + spawns StssBridge listening on
+// 127.0.0.1:17872. Exposes both via Tauri's `manage()` so commands can pull
+// them as `tauri::State<Arc<KernelRuntime>>` / `State<StssBridge>`.
 //
-// Two deployment modes:
-//
-//   • In-process (current sub-PR b stage) — kernel runs as a tokio task inside
-//     the Tauri main process; "supervision" is just a JoinHandle. This keeps
-//     development friction low.
-//
-//   • Out-of-process (later, when binary-size budget needs the split) — kernel
-//     runs as a child process; supervisor restarts on crash, reads stderr,
-//     enforces health-check timeouts.
-//
-// The public API is shaped for both: callers don't care which mode is active.
+// Future out-of-process mode (when binary-size budget needs the split) keeps
+// the same public API; only the start() body swaps to a child process spawn.
 
-use anyhow::Result;
-use tauri::AppHandle;
+use anyhow::{anyhow, Result};
+use std::sync::Arc;
+use tauri::{AppHandle, Manager};
+
+use crate::kernel::runtime::KernelRuntime;
+use crate::kernel::stss_bridge::StssBridge;
+use crate::kernel::STSS_LISTEN_ADDR;
+
+/// Shared kernel handle managed by Tauri. Commands pull this via `State`.
+#[derive(Clone)]
+pub struct KernelHandle {
+    pub runtime: Arc<KernelRuntime>,
+    pub bridge: StssBridge,
+}
 
 pub struct KernelSupervisor;
 
 impl KernelSupervisor {
-    /// Start the kernel daemon (in-process for sub-PR b).
-    pub fn start(_app: &AppHandle) -> Result<()> {
-        // sub-PR b commit 2 wires this to crate::kernel::runtime::KernelRuntime::boot_default()
-        // + spawn the ST-SS WS bridge (port from share/stss-spike/).
-        tracing::info!("KernelSupervisor::start — skeleton (sub-PR b commit 2 wires to KernelRuntime)");
+    /// Boot the kernel + start the ST-SS WS bridge. Registers both with
+    /// `app.manage()` so commands can resolve them as Tauri State.
+    pub fn start(app: &AppHandle) -> Result<()> {
+        tracing::info!("KernelSupervisor::start — booting L1 kernel");
+        let runtime = KernelRuntime::boot_default()
+            .map_err(|e| anyhow!("kernel boot failed: {e:?}"))?;
+        let runtime = Arc::new(runtime);
+
+        let bridge = StssBridge::new();
+        let bridge_for_handle = bridge.clone();
+
+        let handle = KernelHandle {
+            runtime: runtime.clone(),
+            bridge: bridge_for_handle,
+        };
+        app.manage(handle);
+
+        // Spawn the WS bridge on the Tauri tokio runtime. The on_op callback
+        // is currently a no-op log; sub-PR d/2 routes it to scheduler::dispatch.
+        let bridge_for_serve = bridge.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = bridge_for_serve
+                .serve(STSS_LISTEN_ADDR, |op| {
+                    tracing::info!("kernel received op kind={:?} (dispatch TBD sub-PR d/2)", op.kind);
+                })
+                .await
+            {
+                tracing::error!("StssBridge::serve failed: {e}");
+            }
+        });
+
+        tracing::info!("KernelSupervisor::start — ready (kernel + WS bridge on {STSS_LISTEN_ADDR})");
         Ok(())
     }
 
-    /// Wait until the kernel reports ready. Currently a no-op since the kernel
-    /// boots synchronously; future out-of-process mode will block on an IPC
-    /// ready signal with a configurable timeout.
     pub fn wait_ready(_timeout_ms: u64) -> Result<()> {
+        // In-process: kernel boots synchronously, ready returns immediately.
         Ok(())
     }
 
-    /// Request a graceful shutdown.
     pub fn shutdown() -> Result<()> {
-        tracing::info!("KernelSupervisor::shutdown — skeleton");
+        tracing::info!("KernelSupervisor::shutdown");
         Ok(())
     }
 }

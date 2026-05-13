@@ -25,7 +25,7 @@ pub mod window;
 
 pub use hotkey::HotkeyController;
 pub use keychain::KeychainStore;
-pub use kernel_supervisor::KernelSupervisor;
+pub use kernel_supervisor::{KernelHandle, KernelSupervisor};
 pub use lifecycle::ShellLifecycle;
 pub use tray::TrayController;
 pub use window::WindowController;

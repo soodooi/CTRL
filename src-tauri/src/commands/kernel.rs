@@ -1,10 +1,15 @@
 // Kernel commands — keycap CRUD + MCP introspection/invocation.
 //
-// Skeleton stage. Sub-PR c connects each to `crate::kernel::*` modules.
+// Sub-PR d: real wire via `tauri::State<KernelHandle>`. Stub data lives in
+// a fallback path while the manifest registry + persistence schema lands
+// in sub-PR e (which also removes win/ and consolidates the tool registry).
 
 use serde::{Deserialize, Serialize};
+use tauri::State;
 
-#[derive(Debug, Serialize, Deserialize)]
+use crate::shell::KernelHandle;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeycapSummary {
     pub id: String,
     pub name: String,
@@ -12,10 +17,48 @@ pub struct KeycapSummary {
     pub icon: String,
 }
 
+/// Built-in seed keycaps so a fresh install isn't empty. The real manifest
+/// registry replaces this in sub-PR e once `win/` is removed and the manifest
+/// loader becomes the single source of truth.
+fn seed_keycaps() -> Vec<KeycapSummary> {
+    vec![
+        KeycapSummary {
+            id: "ctrl-chat".into(),
+            name: "CTRL Chat".into(),
+            keycap_color: "cobalt".into(),
+            icon: "💬".into(),
+        },
+        KeycapSummary {
+            id: "clipboard-ai".into(),
+            name: "改写粘贴".into(),
+            keycap_color: "amber".into(),
+            icon: "✦".into(),
+        },
+        KeycapSummary {
+            id: "ai-translate".into(),
+            name: "AI 翻译".into(),
+            keycap_color: "jade".into(),
+            icon: "译".into(),
+        },
+        KeycapSummary {
+            id: "ai-ocr".into(),
+            name: "AI OCR".into(),
+            keycap_color: "platinum".into(),
+            icon: "◫".into(),
+        },
+        KeycapSummary {
+            id: "ai-text".into(),
+            name: "文本处理".into(),
+            keycap_color: "graphite".into(),
+            icon: "Aa".into(),
+        },
+    ]
+}
+
 #[tauri::command]
-pub async fn list_keycaps() -> Result<Vec<KeycapSummary>, String> {
-    // sub-PR c: read from kernel persistence + manifest registry.
-    Ok(Vec::new())
+pub async fn list_keycaps(_kernel: State<'_, KernelHandle>) -> Result<Vec<KeycapSummary>, String> {
+    // sub-PR e: read from kernel::persistence + manifest registry.
+    Ok(seed_keycaps())
 }
 
 #[derive(Debug, Deserialize)]
@@ -28,12 +71,19 @@ pub struct McpInstallArgs {
 }
 
 #[tauri::command]
-pub async fn install_keycap_from_mcp(args: McpInstallArgs) -> Result<KeycapSummary, String> {
-    // sub-PR c: kernel::mcp_host::list_tools + derive manifest + persist.
-    Err(format!(
-        "install_keycap_from_mcp not implemented yet (would install {}/{})",
-        args.server_url, args.tool_name
-    ))
+pub async fn install_keycap_from_mcp(
+    args: McpInstallArgs,
+    _kernel: State<'_, KernelHandle>,
+) -> Result<KeycapSummary, String> {
+    // sub-PR e: kernel.mcp_host.list_tools(server_url) -> derive manifest ->
+    // persist in event store. For now, fabricate a summary so the wizard UI
+    // flow at least has a confirmation shape to render.
+    Ok(KeycapSummary {
+        id: format!("mcp-{}-{}", slugify(&args.server_url), slugify(&args.tool_name)),
+        name: args.display_name,
+        keycap_color: args.keycap_color.unwrap_or_else(|| "cobalt".into()),
+        icon: args.icon.unwrap_or_else(|| "◆".into()),
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,9 +99,22 @@ pub struct RunKeycapResult {
 }
 
 #[tauri::command]
-pub async fn run_keycap(args: RunKeycapArgs) -> Result<RunKeycapResult, String> {
-    // sub-PR c: route to kernel::scheduler::run_actor + Effect dispatch.
-    Err(format!("run_keycap not implemented yet (id={})", args.keycap_id))
+pub async fn run_keycap(
+    args: RunKeycapArgs,
+    _kernel: State<'_, KernelHandle>,
+) -> Result<RunKeycapResult, String> {
+    let started = std::time::Instant::now();
+    // sub-PR e: route to scheduler::run_actor + Effect dispatch + ST-SS stream.
+    let output = serde_json::json!({
+        "stub": true,
+        "keycap_id": args.keycap_id,
+        "echo_input": args.input,
+        "note": "wired to scheduler in sub-PR e",
+    });
+    Ok(RunKeycapResult {
+        output,
+        duration_ms: started.elapsed().as_millis() as u64,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,16 +125,24 @@ pub struct McpCallArgs {
 }
 
 #[tauri::command]
-pub async fn mcp_call(args: McpCallArgs) -> Result<serde_json::Value, String> {
-    // sub-PR c: kernel::mcp_host::invoke + capability check.
-    Err(format!(
-        "mcp_call not implemented yet (server={}, tool={})",
-        args.server_url, args.tool_name
-    ))
+pub async fn mcp_call(
+    _args: McpCallArgs,
+    _kernel: State<'_, KernelHandle>,
+) -> Result<serde_json::Value, String> {
+    // sub-PR e: kernel.mcp_host.call_tool(server_url, tool_name, args).
+    Err("mcp_call wired in sub-PR e".into())
 }
 
 #[tauri::command]
-pub async fn list_mcp_servers() -> Result<Vec<String>, String> {
-    // sub-PR c: read kernel::mcp_host::list_servers + cache.
+pub async fn list_mcp_servers(_kernel: State<'_, KernelHandle>) -> Result<Vec<String>, String> {
+    // sub-PR e: kernel.mcp_host.list_servers().
     Ok(Vec::new())
+}
+
+fn slugify(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
 }
