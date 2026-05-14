@@ -63,6 +63,17 @@ pub enum OpKind {
     AppFocusChanged,
     FileSaved,
     CursorMoved,
+    // ADR-003 mesh layer events — added in ctrl-mesh baseline before athena Sprint 2.
+    // Emitted by the mesh sync layer when remote peers contribute Automerge
+    // changes to a document; consumed by the same kernel event bus that all
+    // local Ops flow through (preserves ADR-001 §3.2 invariant "Op is the
+    // only mutation message").
+    MeshDeviceJoined,
+    MeshDeviceLeft,
+    MeshKeycapAdded,
+    MeshKeycapRemoved,
+    MeshKeycapUsedAt,
+    MeshPreferenceUpdated,
 }
 
 /// Filter for subscribing to a subset of events on the bus.

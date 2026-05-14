@@ -1,0 +1,16 @@
+{
+  "name": "@ctrl/mesh",
+  "version": "0.0.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "TS twin of ctrl-mesh Rust crate — placeholder until Sprint 2+ wires wasm-bindgen build.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "echo 'ctrl-mesh TS twin generated via wasm-bindgen in Sprint 2+ (see H-2026-05-14-001)' && exit 0"
+  }
+}
