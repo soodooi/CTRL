@@ -215,3 +215,25 @@ commit `e68950b` (push 到 `origin/feat/h-001-mac-migration`).
 
 `git ls-tree HEAD -- win/` 空 (sub-PR e 已删), 但 working tree 有 `win/CTRL`. 大概率是更早 checkout 的物理残留 (clone → 第一次 ff 到 `6ed5cf9` 时 `win/` 还在 tracked 里, 后续 reset 到 `fe9ac18` 没物理清).
 不影响 build, 不阻塞 mac/* 任何 sub-PR. 收尾时统一 `rm -rf win/` 或 zeus 那边没事就忽略.
+
+### 2026-05-14 — mac/b 完成 (lib.rs macOS run() rewrite)
+
+commit `296e820` (push 到 `origin/feat/h-001-mac-migration`).
+
+变化: `src-tauri/src/lib.rs` macOS path 从 ~130 行 hexagonal 拼装收成 5 行 mirror, 跟 Win 同 shape (Tauri 2 plugin → `ShellLifecycle::boot` → `pwa_invoke_handler!`). diff: +30 / -233.
+
+删掉 (no longer referenced):
+- 整个 W3-era `Arc<dyn Port>` 拼装管道
+- `adapters/inbound/tauri_commands::*` 所有 `use`
+- `adapters/outbound/macos::{CGEventTap, PasteboardCapture, MacAccessibility}` `use` (mac/a 的 `shell::HotkeyController` 接管 hotkey; Pasteboard + Accessibility 在 mac/d 切到 Tauri 2 plugin/prompts)
+- `adapters/outbound/{browser, clipboard, clock, config, llm, manifest_loader, notifier, tauri::event_bus}` `use`
+- `application::{ports, use_cases}` `use`
+- `build_llm_gateway` 私有 helper
+- `AppState` (commands 现在用 `KernelHandle`, 由 `KernelSupervisor` `manage()`)
+
+保留 (mac/c 删):
+- `mod actors / application / domain / ffi` 声明 + UniFFI scaffolding 行 — 互相 `mod` ref 还在编译, mac/c 整批删
+
+验证: `cargo check --all-targets` 178 warnings 0 errors. warnings 全集中在 mac/c 要删的目录, 删完归零.
+
+下一步: mac/c (删 UniFFI + `ffi/` + `tauri_commands` + 老 `adapters/macos` + `actors/application/domain`).
