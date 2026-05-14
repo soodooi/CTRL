@@ -186,3 +186,32 @@ bao 2026-05-14 钦定:
 ## Discussion / 备注 / 决策日志
 
 (你工作时往这里写: 选型, blocker, 给 zeus 的疑问. zeus 周期 fetch 看, 30 min 内同步)
+
+### 2026-05-14 — athena 启动 + base 校正
+
+启动时 main 还是 `6ed5cf9` (Win e 未 merge), 跟 handoff §"跟 zeus 协调" 写的「Win e 已 merge」不符。
+错走了一步 rebase 到 e-cleanup, 后 bao 通知 main 已推进到 `32cef51` (Win e merged + ADR-002/003 amended + mesh skeleton merged), `git reset --hard origin/main` 对齐, 干净。
+
+OpKind 锁定 ack — 6 个 mesh variants (`MeshDeviceJoined/Left/KeycapAdded/Removed/UsedAt/PreferenceUpdated`) 在 `kernel/event.rs`, 我不会动。
+
+### 2026-05-14 — mac/a 完成 (CGEventTap port)
+
+commit `e68950b` (push 到 `origin/feat/h-001-mac-migration`).
+
+变化: `src-tauri/src/shell/hotkey.rs` 加 `mac_impl` 模块, mirror `win_impl` 1:1 (state machine + struct shape + OnceLock 单例守卫).
+
+实现要点:
+- `CGEventTap` Session/HeadInsert/ListenOnly, 不消费事件
+- 专属 `ctrl-hotkey-runloop` 线程跑 CFRunLoop, Tauri 主线程不被占
+- 裸 Ctrl 走 `FlagsChanged` (不是 KeyDown/KeyUp), 用 `CGEventFlagControl` mask 推断 up/down
+- `KeyDown` 仍订阅, 给"non-Ctrl 键按下→取消 arm"用
+- Tap 创建失败 → `Err`, 等 `lifecycle.rs` 后续 prompt Accessibility (mac/b 接)
+
+未触碰: `lib.rs`, `application/use_cases::start_hotkey_pipeline`, 老 `adapters/outbound/macos/keyboard.rs`. 编译期共存, mac/b 切 lib.rs 后老路径 dead, mac/c 删除.
+
+验证: `cargo check` 通过 (124 warnings 全是 "never used" — shell/* 整套在 macOS 还没接到 lib.rs, 预期).
+
+### 备注: 残留 untracked `win/` 目录
+
+`git ls-tree HEAD -- win/` 空 (sub-PR e 已删), 但 working tree 有 `win/CTRL`. 大概率是更早 checkout 的物理残留 (clone → 第一次 ff 到 `6ed5cf9` 时 `win/` 还在 tracked 里, 后续 reset 到 `fe9ac18` 没物理清).
+不影响 build, 不阻塞 mac/* 任何 sub-PR. 收尾时统一 `rm -rf win/` 或 zeus 那边没事就忽略.
