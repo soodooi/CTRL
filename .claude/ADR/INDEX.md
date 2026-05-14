@@ -45,10 +45,11 @@ Architecture Decision Records (ADR) — chronological, never deleted, supersede 
 
 | Lane | Owner | Branch / location | Handoff |
 |---|---|---|---|
-| Win11 PWA pivot | zeus (Win) | merged into main 2026-05-14 | H-2026-05-13-001 (done) |
-| macOS migration | athena (MacBook physical) | `feat/h-001-mac-migration` (cloned on Mac, ~1.5 day) | H-2026-05-14-002 |
-| Multi-device mesh foundation | zeus | `feat/h-001-mesh-baseline` (after Win merge) | H-2026-05-14-001 Sprint 1 done; foundation prep before athena Sprint 2 |
-| Multi-device mesh implementation | athena (Sprint 2+) | `feat/h-003-mesh-comm` worktree `D:/code-space/ctrl-h003-mesh` | H-2026-05-14-001 (resumes after foundation) |
+| Win11 backend (zeus) | zeus (Win) | `main` direct — Win UX bugs + P5/P6 backend + mesh foundation iteration | H-2026-05-13-001 (closed); P5/P6 specs WIP |
+| PWA frontend polish | athena-frontend | `feat/h-001-pwa-polish` worktree `D:/code-space/ctrl-pwa-polish` | H-2026-05-14-003 |
+| macOS migration | athena (MacBook physical) | `feat/h-001-mac-migration` (cloned on Mac) | H-2026-05-14-002 |
+| Multi-device mesh foundation | done | merged into main (`32cef51`) — ctrl-mesh skeleton + 6 OpKind | H-2026-05-14-001 Sprint 1 done |
+| Multi-device mesh implementation | athena (Sprint 2+, paused) | `feat/h-003-mesh-comm` worktree `D:/code-space/ctrl-h003-mesh` | H-2026-05-14-001 (resumes when bao starts mesh Sprint 2) |
 
 ## Related spike
 
