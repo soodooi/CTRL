@@ -33,7 +33,8 @@ Architecture Decision Records (ADR) — chronological, never deleted, supersede 
 
 ## Parallel lanes
 
-| Lane | Owner | Branch / worktree | Handoff |
+| Lane | Owner | Branch / location | Handoff |
 |---|---|---|---|
-| Main PWA pivot | zeus | `feat/h-001-e-cleanup` (in review/merge) | H-2026-05-13-001 |
-| Multi-device mesh | athena | `feat/h-003-mesh-comm` in worktree `D:/code-space/ctrl-h003-mesh` | H-2026-05-14-001 |
+| Win11 PWA pivot | zeus (Win) | `feat/h-001-e-cleanup` (in review/merge) | H-2026-05-13-001 |
+| macOS migration | athena (MacBook physical) | `feat/h-001-mac-migration` (clone on Mac, ~1.5 day) | H-2026-05-14-002 |
+| Multi-device mesh | paused | `feat/h-003-mesh-comm` worktree `D:/code-space/ctrl-h003-mesh` | H-2026-05-14-001 (on hold) |
