@@ -12,26 +12,18 @@
 // the four PWA-impossible responsibilities (hotkey / tray / kernel daemon
 // supervision / keychain) for both OSes.
 //
-// `mod actors` / `application` / `domain` / `ffi` + `ctrl.udl` are W3-era
-// hexagonal-architecture residue from the macOS-only spike. They are
-// unreferenced by the run() entry points after mac/b and get deleted in
-// mac/c (they pre-date ADR-002's PWA pivot).
+// W3-era hexagonal-architecture (`actors/`, `adapters/`, `application/`,
+// `domain/`) and the UniFFI bindings layer (`ffi/`, `ctrl.udl`) were
+// deleted in H-2026-05-14-002 mac/c. ADR-002 retired both:
+//   • PWA — not native UI — is the surface, so SwiftUI / WinUI 3 / C#
+//     bindings have no consumer
+//   • `commands::*` (Tauri 2 invoke) replaces the port-shaped tauri_commands
+//     adapter; `shell::*` replaces the macOS-only outbound adapters.
 
-mod actors;
-mod adapters;
-mod application;
 mod commands;
-mod domain;
 mod error;
-mod ffi;
 mod kernel;
 mod shell;
-
-// UniFFI scaffolding for FFI exports — deleted in mac/c (PWA pivot
-// removed the SwiftUI / Kotlin / C# native UI plan; PWA reaches the
-// kernel via Tauri 2 invoke handlers in `commands::*`).
-use crate::ffi::*;
-uniffi::include_scaffolding!("ctrl");
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(target_os = "macos")]
