@@ -31,10 +31,25 @@ Architecture Decision Records (ADR) — chronological, never deleted, supersede 
 
 (none — ADR-003 accepted 2026-05-14, choice "A": full mesh + mobile lane in v1.0; phase plan P4.5/4.6/4.7/4.8 added to v1.0 mandatory; ADR-002 §5/§10/§13/§16 amended in-place)
 
+## Sub-PR map (H-2026-05-13-001 — Win PWA pivot, **merged 2026-05-14**)
+
+| sub | Branch | Status |
+|---|---|---|
+| a | merged into main (c7cd54c) | ✅ ADR + phase + VI + INDEX |
+| b | `feat/h-001-b-tauri2-shell` | ✅ Tauri 2 plugins + Rust shell + lone-Ctrl hotkey port — merged via e |
+| c | `feat/h-001-c-pwa-scaffold` (stacked on b) | ✅ packages/ctrl-web + 3 routes + bridge + ClockStrip + KeycapCard — merged via e |
+| d | `feat/h-001-d-e2e-integration` (stacked on c) | ✅ stss_bridge promoted + commands wired to KernelHandle + tauri.conf swap — merged via e |
+| e | `feat/h-001-e-cleanup` (stacked on d) | ✅ merged 2026-05-14 — Win path now on main |
+
 ## Parallel lanes
 
 | Lane | Owner | Branch / location | Handoff |
 |---|---|---|---|
-| Win11 PWA pivot | zeus (Win) | `feat/h-001-e-cleanup` (in review/merge) | H-2026-05-13-001 |
-| macOS migration | athena (MacBook physical) | `feat/h-001-mac-migration` (clone on Mac, ~1.5 day) | H-2026-05-14-002 |
-| Multi-device mesh | paused | `feat/h-003-mesh-comm` worktree `D:/code-space/ctrl-h003-mesh` | H-2026-05-14-001 (on hold) |
+| Win11 PWA pivot | zeus (Win) | merged into main 2026-05-14 | H-2026-05-13-001 (done) |
+| macOS migration | athena (MacBook physical) | `feat/h-001-mac-migration` (cloned on Mac, ~1.5 day) | H-2026-05-14-002 |
+| Multi-device mesh foundation | zeus | `feat/h-001-mesh-baseline` (after Win merge) | H-2026-05-14-001 Sprint 1 done; foundation prep before athena Sprint 2 |
+| Multi-device mesh implementation | athena (Sprint 2+) | `feat/h-003-mesh-comm` worktree `D:/code-space/ctrl-h003-mesh` | H-2026-05-14-001 (resumes after foundation) |
+
+## Related spike
+
+- `feat/h-003-stss-spike` (H-2026-05-13-002) — ST-SS double-direction validation. Promoted into `kernel::stss_bridge` in sub-PR d (now on main); spike binary + viewer retained in `share/stss-spike/` as reference.

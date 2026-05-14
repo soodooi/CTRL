@@ -9,10 +9,12 @@
 mod actors;
 mod adapters;
 mod application;
+mod commands;
 mod domain;
 mod error;
 mod ffi;
 mod kernel;
+mod shell;
 
 // UniFFI scaffolding for FFI exports (Swift / Kotlin / C# bindings).
 // Generated from src/ctrl.udl by build.rs at compile time. The scaffolding
@@ -258,10 +260,13 @@ fn build_llm_gateway(
     }
 }
 
-// Windows stub — full Windows adapter rewrite lands in P2.9.
-// Win11 currently runs L1 kernel (MCP host, event store) but lacks hotkey /
-// accessibility / pasteboard integration. cargo check + tauri dev work
-// cross-platform; Win functional features land in P2.9 cross-platform adapters.
+// Windows path — H-2026-05-13-001 sub-PR b + d + e.
+//
+// Tauri 2 native shell + PWA invoke surface. Kernel boot happens inside
+// ShellLifecycle::boot -> KernelSupervisor::start (one place); the previous
+// stub also booted a runtime here, but the supervisor was the canonical
+// owner — keeping both bootstraps caused a second event-store handle that
+// would later race the supervisor's. Removed per pre-merge review.
 #[cfg(target_os = "windows")]
 pub fn run() {
     let _ = tracing_subscriber::fmt()
@@ -271,21 +276,16 @@ pub fn run() {
         )
         .try_init();
 
-    let kernel = match KernelRuntime::boot_default() {
-        Ok(rt) => Arc::new(rt),
-        Err(err) => {
-            tracing::error!(?err, "kernel boot failed on Windows; running without kernel features");
-            return;
-        }
-    };
-    tracing::info!("L1 kernel runtime online (Windows)");
-    tracing::warn!(
-        "CTRL Windows hotkey / pasteboard / accessibility adapters pending P2.9. \
-         Kernel + MCP host fully operational."
-    );
-
-    let _ = kernel; // Tauri shell on Windows: kernel boots; UI calls via UniFFI.
     tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
+        // static manifest host + production signing key). The dep stays in
+        // Cargo.toml so the surface is wired for fast turn-on once those land.
+        .setup(|app| {
+            shell::ShellLifecycle::boot(app.handle())?;
+            Ok(())
+        })
+        .invoke_handler(pwa_invoke_handler!())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

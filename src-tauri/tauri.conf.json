@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "app.ctrl.spike",
   "build": {
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "frontendDist": "../packages/ctrl-web/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm --workspace @ctrl/web run dev",
+    "beforeBuildCommand": "npm --workspace @ctrl/web run build"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -15,50 +15,20 @@
       {
         "label": "main",
         "title": "CTRL",
-        "width": 480,
-        "height": 420,
-        "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "alwaysOnTop": true,
-        "visibleOnAllWorkspaces": true,
+        "width": 920,
+        "height": 560,
+        "minWidth": 480,
+        "minHeight": 420,
+        "decorations": true,
+        "transparent": false,
+        "shadow": true,
+        "alwaysOnTop": false,
         "skipTaskbar": false,
         "focus": true,
         "visible": true,
-        "resizable": false,
-        "url": "index.html"
-      },
-      {
-        "label": "pool",
-        "title": "CTRL Pool",
-        "width": 240,
-        "height": 420,
-        "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "alwaysOnTop": true,
-        "visibleOnAllWorkspaces": true,
-        "skipTaskbar": true,
-        "focus": false,
-        "visible": false,
-        "resizable": false,
-        "url": "pool.html"
-      },
-      {
-        "label": "workspace",
-        "title": "CTRL Workspace",
-        "width": 360,
-        "height": 420,
-        "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "alwaysOnTop": true,
-        "visibleOnAllWorkspaces": true,
-        "skipTaskbar": true,
-        "focus": false,
-        "visible": false,
-        "resizable": false,
-        "url": "workspace.html"
+        "center": true,
+        "resizable": true,
+        "url": "/"
       }
     ],
     "security": {

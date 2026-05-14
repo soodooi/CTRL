@@ -1,104 +1,127 @@
-# CTRL — Phase 1 Spike (macOS)
+# CTRL
 
-5–6 day technical spike validating **single-Ctrl press as a global hotkey on macOS**, plus a selection-text proof of concept (Cmd+C + NSPasteboard).
+> AI-native ambient OS 中枢 — 按 `Ctrl` 唤起, ephemeral workspace, 1 键帽 = 1 AI 工具.
 
-This repo is the macOS sibling of the Windows-first PRD. See:
-- PRD: `.claude/PRPs/prds/ctrl-platform.prd.md`
-- Mac plan: `.claude/PRPs/plans/phase-1-spike-single-ctrl-mac.plan.md`
-- Win plan: `.claude/PRPs/plans/phase-1-spike-single-ctrl.plan.md`
+Private repository. Single deliverable: this repo (`soodooi/CTRL`). All Rights Reserved (see [LICENSE](./LICENSE)).
 
-## Architecture — Hexagonal (Ports & Adapters)
+For full context read in order:
+1. [`CLAUDE.md`](./CLAUDE.md) — project entry, rules, do-not-do list
+2. [`.olym/steering/ctrl-strategy.md`](./.olym/steering/ctrl-strategy.md) — 5-minute navigator: positioning, 15 keycaps, phase plan
+3. [`.claude/ADR/INDEX.md`](./.claude/ADR/INDEX.md) — architecture decisions registry
 
-The Rust crate is laid out as a hexagonal/Clean architecture so the OS-specific code can be replaced (or a Windows sibling added) without touching domain or application layers.
+## Stack
 
-```
-src-tauri/src/
-  main.rs                     binary entry → ctrl_lib::run()
-  lib.rs                      composition root (only place that names both ports and adapters)
-  error.rs                    cross-cutting SpikeError + Result alias
+Per [ADR-001](./.claude/ADR/001-system-architecture.md) (architecture spine) + [ADR-002](./.claude/ADR/002-pwa-pivot.md) (UI layer, accepted 2026-05-13):
 
-  domain/                     pure business rules — no framework, no I/O
-    detector.rs               SingleCtrlDetector state machine
-    events.rs                 HotkeyEvent, PermissionState (value types)
-
-  application/                use cases + port traits they depend on
-    ports.rs                  KeyboardListenerPort / SelectionCapturePort /
-                              AccessibilityPort / ClockPort / EventBusPort
-    use_cases.rs              start_hotkey_pipeline / capture_selection /
-                              ensure_accessibility
-
-  adapters/                   concrete implementations of ports
-    inbound/
-      tauri_commands.rs       Tauri IPC → use-case calls
-    outbound/
-      clock.rs                std::time::Instant → ClockPort
-      macos/
-        keyboard.rs           CGEventTap + CFRunLoop → KeyboardListenerPort
-        capture.rs            Cmd+C synth + arboard → SelectionCapturePort
-        accessibility.rs      AX trust check → AccessibilityPort
-      tauri/
-        event_bus.rs          tauri::Emitter → EventBusPort
-```
-
-Dependency rule: `adapters → application → domain`. Domain never imports anything from outside itself; application only imports its own ports + domain; adapters import application ports + domain.
-
-The Windows sibling (Phase 1 Win plan) plugs in by adding `adapters/outbound/windows/{keyboard,capture,accessibility}.rs` — domain and application stay untouched.
+| Layer | Tech |
+|---|---|
+| L3 Userland (keycaps) | WASM sandbox (wasmtime), declarative manifests |
+| L2 SDK | TypeScript (`@ctrl/{kernel-sdk, stss, memory}`) + Rust |
+| L1 Kernel | Rust microkernel (5 primitives: Actor / Capability / Event / Channel / Effect) |
+| L0 Native shell | Tauri 2 + ~500 LOC Rust shell (hotkey / tray / keychain / kernel daemon supervisor) |
+| Product UI | Single PWA codebase (`packages/ctrl-web`) — React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa |
+| Web bridge | Tauri 2 `invoke()` on desktop, WebSocket fallback on mobile (`packages/ctrl-web/src/lib/bridge.ts`) |
+| Stream protocol | ST-SS (CBOR Cell/Op over WS @ 17872) — `kernel::stss_bridge` |
+| LLM (Pattern D) | CF Workers AI (subscription default) + BYOK Anthropic/OpenAI + local Ollama |
+| Backend | Cloudflare Workers (`ctrl-auth`, `ctrl-billing`, `ctrl-market`, `ctrl-push`) — separate `ctrl-cloud` repo |
 
 ## Prerequisites
 
-- macOS 13+ (Ventura or later)
-- Rust ≥ 1.77 (`rustup show`)
-- Node ≥ 20, npm ≥ 10
-- Xcode Command Line Tools (`xcode-select --install`)
+| Tool | Min version |
+|---|---|
+| Rust | 1.77+ stable (`rustup show`) |
+| Node | 20 LTS, npm 10+ |
+| Tauri CLI | 2.x (`cargo install tauri-cli --version "^2"` or via npm devDeps) |
+| Platform | Windows 11 (primary dev) / macOS 13+ (secondary) |
+| WebView | Win 10 1809+ (WebView2 evergreen) / macOS 13+ (WKWebView) — no extra install |
 
 ## First-time setup
 
 ```bash
-npm install
-npm run tauri dev   # first build pulls all Rust crates — 5–10 minutes
+git clone git@github.com:soodooi/CTRL.git
+cd CTRL
+npm install                  # installs all workspaces (ctrl-web, ctrl-stss, ctrl-memory, ctrl-kernel-sdk, olym-core)
 ```
 
-On first launch macOS will prompt for **Accessibility** permission. After granting:
-
-1. **Quit CTRL** (the dev binary keeps the CGEventTap alive in a CFRunLoop thread; restart is required for a fresh tap on a freshly-trusted bundle).
-2. Re-run `npm run tauri dev`.
-
-> Development gotcha: each `cargo run` re-signs the binary with a new ad-hoc identity, which can void the existing TCC entry. Stick to `npm run tauri dev` — Tauri preserves a stable bundle id, so the granted permission carries across runs.
-
-## Verifying the detector
-
-The state machine has zero OS dependencies and runs anywhere:
+## Run (development)
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml detector
+# Tauri 2 desktop shell + PWA dev server (vite HMR), one command:
+npm run tauri:dev
 ```
 
-Expect 5 tests green.
+Tauri spawns the Rust shell, which boots the L1 kernel, opens the ST-SS WS bridge on `127.0.0.1:17872`, installs the tray icon, registers the low-level keyboard hook for lone-Ctrl detection, and loads the PWA from `http://localhost:5173` in the WebView.
 
-## Verifying the listener (manual)
-
-After `tauri dev` is running with permission granted:
-
-1. Single-tap **Control** → terminal logs `single-ctrl triggered`.
-2. Hold Control >250 ms → no trigger.
-3. Press Ctrl+A → no trigger.
-4. Select text in TextEdit, single-tap Control → in-app pill shows the captured text.
-
-## Test matrix
-
-Track all 35 cases in `doc/SPIKE_RESULTS_MAC.md`.
-
-## Build (debug)
+**To run only the PWA in a regular browser (mobile testing):**
 
 ```bash
-npm run tauri build -- --debug
+npm run dev                  # @ctrl/web vite dev server on :5173
+# then open http://localhost:5173 (desktop) or http://<lan-ip>:5173 (mobile)
 ```
 
-Output: `src-tauri/target/debug/bundle/macos/CTRL.app`
+PWA in a browser falls back to the WebSocket bridge on `ws://127.0.0.1:17872`; for mobile across a router, tunnel the bridge with `cloudflared tunnel --url ws://localhost:17872`.
 
-## Status
+## Build (release)
 
-Phase 1 spike, in progress. Decision A/B/C will be recorded in `doc/SPIKE_RESULTS_MAC.md` at the end of week.
+```bash
+npm run tauri:build
+```
+
+Outputs:
+- Win: `src-tauri/target/release/bundle/msi/CTRL_*_x64_en-US.msi`
+- macOS: `src-tauri/target/release/bundle/dmg/CTRL_*.dmg`
+
+Binary size budget (per ADR-002 §16 + P3.9 hardening gate): kernel ≤ 15 MB, installer total ≤ 25 MB default / ≤ 15 MB slim.
+
+## Architecture
+
+```
+L3 Userland (WASM sandboxed actors)
+    ↑↓ typed message passing
+L2 SDK (@ctrl/{kernel-sdk, stss, memory, desktop})
+    ↑↓ syscall-like API
+L1 Kernel (Rust microkernel: Actor / Capability / Event / Channel / Effect)
+                                                      daemon @ 127.0.0.1:17872 (ST-SS WS)
+    ↑↓ Tauri 2 invoke() on desktop / WS on mobile
+L0 Tauri 2 Native Shell (~500 LOC: Hotkey / Tray / Keychain / Kernel supervisor)
+    ↑↓ embeds WebView2 (Win) / WKWebView (Mac)
+PWA (packages/ctrl-web) — single web codebase
+    ├ desktop: runs in Tauri WebView
+    └ mobile : runs in any browser (Add to Home Screen)
+```
+
+5 primitives only at L1. See [`.olym/specs/kernel/spec.md`](./.olym/specs/kernel/spec.md) for the Rust API surface.
+
+## Repository layout
+
+```
+CTRL/
+├── src-tauri/                          L0 Tauri shell + L1 Rust kernel + commands
+│   └── src/
+│       ├── shell/                      Tauri 2 native shell (hotkey/tray/window/kernel_supervisor/keychain)
+│       ├── commands/                   #[tauri::command] handlers (kernel/stss/memory/keychain)
+│       ├── kernel/                     L1 microkernel (5 primitives + mcp_host + stss_bridge + persistence)
+│       └── bin/                        helper binaries (stss spike, keychain seeder)
+├── packages/
+│   ├── ctrl-web/                       PWA (React + Vite + vite-plugin-pwa)
+│   ├── ctrl-stss/                      ST-SS protocol TS impl (99 tests)
+│   ├── ctrl-memory/                    client-side event log TS impl
+│   ├── ctrl-kernel-sdk/                L2 syscall surface (TS, mirrors Rust kernel)
+│   ├── olym-core/                      olym-core SSOT (copy from hello-olym)
+│   └── olym-desktop/                   desktop olym variant
+├── share/
+│   └── stss-spike/                     standalone WS server + browser viewer (reference)
+├── doc/
+│   ├── visual-identity/                logo SVGs + brand-tokens.md (single source of truth)
+│   └── reference/                      design references (logo png, etc)
+├── .claude/
+│   ├── ADR/                            architecture decisions (numbered, never deleted)
+│   └── PRPs/                           legacy PRP docs (historical; superseded by ADR + specs)
+└── .olym/
+    ├── steering/                       ctrl-strategy.md (5-minute navigator)
+    ├── specs/                          domain specs (kernel, pwa-shell, stss, tool-manifest, …)
+    └── handoffs/                       work items (H-YYYY-MM-DD-NNN)
+```
 
 ## License
 

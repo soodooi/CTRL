@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="CTRL">
+  <title>CTRL keycap mark</title>
+  <defs>
+    <linearGradient id="keycapFace" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#2A52D8"/>
+      <stop offset="100%" stop-color="#1E3FB0"/>
+    </linearGradient>
+    <linearGradient id="keycapBevel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#3D6BE8"/>
+      <stop offset="100%" stop-color="#16267D"/>
+    </linearGradient>
+  </defs>
+  <rect x="14" y="22" width="100" height="92" rx="12" fill="url(#keycapBevel)"/>
+  <rect x="20" y="28" width="88" height="78" rx="9" fill="url(#keycapFace)"/>
+  <rect x="42" y="8" width="44" height="6" rx="1" fill="#1E3FB0"/>
+  <text
+    x="64" y="84"
+    text-anchor="middle"
+    font-family="Inter, SF Pro Display, Helvetica Neue, system-ui, sans-serif"
+    font-weight="900"
+    font-size="58"
+    fill="#FAFAFA"
+    letter-spacing="-2">C</text>
+</svg>
