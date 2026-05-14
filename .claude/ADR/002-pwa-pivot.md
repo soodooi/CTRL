@@ -118,7 +118,7 @@ If any future PWA web standard collapses one of these (e.g. permanent SharedHotk
 | PWA tooling | **Vite PWA plugin** (`vite-plugin-pwa`) | service worker, manifest, push subscription, offline cache |
 | Push transport | **Web Push (VAPID)** via new `ctrl-push` worker | iOS 16.4+ and Android both support |
 | Bridge (web ↔ Rust kernel) | **Tauri 2 `invoke()`** on desktop, **WebSocket** when running in mobile browser | One JS API, two transports underneath |
-| Bundle budget | **< 300 kB gzipped** for app shell, lazy-load market + manifest editor | Per web/performance.md app page budget |
+| Bundle budget | **< 500 kB gzipped** for full app shell (was 300 kB pre-ADR-003); critical-path shell < 200 kB still loads first; mesh modules (vodozemac-wasm + automerge-wasm + thin client) lazy-load on first cross-device action | Revised by [ADR-003 §7 / §12](./003-multi-device-mesh.md). 300 kB was the pre-mesh budget; mesh client adds ~330 kB and is the core differentiator |
 
 **Anti-template guardrails** (per `web/design-quality.md`):
 - No default Tailwind+shadcn cards-grid look
@@ -235,8 +235,12 @@ Three workers per ADR-001 §7. PWA pivot adds one and unchains another:
 | P3 | L2 SDK (@ctrl/stss + @ctrl/memory cherry-pick) | ✅ done (P3.5 hardening complete) | unchanged |
 | **P3.7 (NEW)** | **Tauri 2 shell migration + W3 deprecation + kernel-as-daemon refactor** | next, this handoff | NEW between P3 and P4 |
 | **P3.8 (NEW)** | **`packages/ctrl-web` PWA scaffold + first 3 routes (Pool / Workspace / Settings)** | depends P3.7 | NEW |
-| **P3.9 (NEW)** | **Kernel hardening** — scheduler deadline-aware + priority; sandbox WASM (advanced from P7); mcp_host introspection cache; persistence indexed query + retention; binary size budget gate (≤ 15 MB) | parallel with P3.8 | NEW |
+| **P3.9 (NEW)** | **Kernel hardening** — scheduler deadline-aware + priority; sandbox WASM (advanced from P7); mcp_host introspection cache; persistence indexed query + retention; binary size budget gate (≤ 18 MB slim incl. mesh) | parallel with P3.8 | NEW |
 | P4 | MCP host integration | ✅ partially done (W3.6 MCP roundtrip) | preserved |
+| **P4.5 (NEW)** | **mesh-core** — Identity (curve25519) + Peer state machine + vodozemac Olm 1:1 session establishment + signaling client (HTTPS WSS to ctrl-relay) — per [ADR-003](./003-multi-device-mesh.md) | v1.0 mandatory | NEW |
+| **P4.6 (NEW)** | **mesh-transport** — WebRTC datachannel (webrtc-rs v0.17.x) + relay forwarding fallback | v1.0 mandatory | NEW |
+| **P4.7 (NEW)** | **mesh-sync** — Automerge v0.7.x integration + 3 v1.0 documents (mesh.devices / mesh.keycaps / mesh.preferences) | v1.0 mandatory | NEW |
+| **P4.8 (NEW)** | **ctrl-relay worker** — CF Worker (HTTPS WSS, zero-knowledge signaling + TURN-style fallback). Promoted from P11+ per ADR-003 §1 supersession | v1.0 mandatory | NEW |
 | P5 | Tool manifest spec implementation | depends P3.8 | UI now in PWA |
 | **P6** | **AI 创作向导 (manifest generator)** | depends P5 | **v1.0 mandatory** — gate for "客户能 0 代码集成 1 个键帽" success criterion |
 | P7 | 5 P0 built-in keycaps (sandbox dependency satisfied by P3.9) | depends P3.9 + P5 | keycap UI now in PWA; WASM sandbox moved into P3.9 |
@@ -244,7 +248,8 @@ Three workers per ADR-001 §7. PWA pivot adds one and unchains another:
 | P9 | ctrl-market + creator revenue share | depends P8 | manifest editor now in PWA; **v1.0 includes seed marketplace (no affiliate yet)** |
 | **P9.5 (NEW)** | **`ctrl-affiliate` worker + 智识 + 比价 keycap + 联盟归因** | depends P9 | **v1.1** — electronic commerce extension; ADR-001 spine untouched, all source via MCP |
 | P10 | Closed beta (v1.0) | depends P7-P9 | unchanged |
-| P11+ | Hardware actor SDK + 1-2 hardware demos + optional ctrl-relay | post-launch | +relay deferred |
+| **P4.9 (NEW)** | **mesh-extras** — mDNS LAN accelerator (mdns-sd v1.71+) + mesh.history + mesh.clipboard documents | v1.1 | NEW |
+| P11+ | Hardware actor SDK + 1-2 hardware demos (relay no longer optional — folded into P4.8 v1.0) | post-launch | mesh-extras unblocks AI glasses as a peer |
 
 ---
 
@@ -280,8 +285,8 @@ This ADR is the first to formalize the protocol. Apply retroactively to ADR-001 
 
 ## 13. Success criteria (validate ADR-002 acceptance)
 
-- ✅ `Ctrl` hotkey wakes Tauri 2 shell ≤ 80 ms cold, ≤ 30 ms warm (matches current W3 latency)
-- ✅ PWA loads inside Tauri 2 WebView in < 500 ms warm cache
+- ✅ `Ctrl` hotkey wakes Tauri 2 shell ≤ 100 ms cold (revised from 80 ms per [ADR-003](./003-multi-device-mesh.md)), ≤ 30 ms warm. First-tap stays ≤ 80 ms when mesh is lazy-loaded; first cross-device action incurs +200 ms initial mesh setup
+- ✅ PWA loads inside Tauri 2 WebView in < 500 ms warm cache (excluding lazy-loaded mesh modules)
 - ✅ Same `packages/ctrl-web` build runs unchanged in mobile Safari/Chrome
 - ✅ Kernel daemon survives shell crash and reconnects on shell restart (supervision)
 - ✅ MCP roundtrip from PWA → kernel daemon → MCP server → back to PWA in < 200 ms (matches W3.6 baseline)
@@ -329,5 +334,5 @@ Anyone reading ADR-002 in isolation should re-read ADR-001 §1, §4, §5, §6, �
 Acceptance scope:
 - §1–§15 locks confirmed; mobile lane = pure browser PWA; desktop = Tauri 2 + ~500 LOC Rust shell + Rust kernel daemon.
 - Phase plan (§10) **revised on acceptance** to add P3.9 (Kernel hardening), mark P6 as v1.0-mandatory, add P9.5 (ctrl-affiliate, v1.1).
-- Kernel binary size budget: **≤ 15 MB stripped+LTO release** (enforced by P3.9 CI gate). Total desktop installer target: **≤ 25 MB** (P2 default) / **≤ 15 MB** (P2-slim).
+- Kernel binary size budget: **≤ 18 MB stripped+LTO release** (revised from 15 MB per [ADR-003](./003-multi-device-mesh.md); +3 MB headroom for webrtc-rs + vodozemac + automerge). Enforced by P3.9 CI gate. Total desktop installer target: **≤ 25 MB** (default, unchanged) / **≤ 18 MB** (slim, was 15 MB; mesh is core differentiator and remains in slim).
 - H-2026-05-13-001 moves from `proposed` → `open`; execution divided into 5 sub-PR gates (a/b/c/d/e per handoff §讨论), HARD GATE on `git rm -r win/` (step e) is end-to-end demo passing in step d.

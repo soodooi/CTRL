@@ -86,24 +86,34 @@ Local Ollama (privacy geek)
 
 ---
 
-## Architecture (lock, see ADR-001 + ADR-002)
+## Architecture (lock, see ADR-001 + ADR-002 + ADR-003)
 
 ```
 L3 Userland (WASM sandboxed actors)
     ↑↓ typed message passing
-L2 SDK (@ctrl/{kernel-sdk, stss, memory, desktop})
+L2 SDK (@ctrl/{kernel-sdk, stss, memory, mesh, desktop})
     ↑↓ syscall-like API
 L1 Kernel (Rust microkernel: Actor / Capability / Event / Channel / Effect)
                                                   daemon @ localhost:17872 (WS bridge)
-    ↑↓ Tauri 2 invoke() on desktop / WS on mobile
+    ↑↓ Tauri 2 invoke() on desktop / WS on mobile (intra-device)
 L0 Tauri 2 Native Shell (~500 LOC: Hotkey / Tray / Keychain / Kernel supervisor)
     ↑↓ embeds WebView2 (Win) / WKWebView (Mac)
 PWA (packages/ctrl-web) — single web codebase, runs in Tauri WebView on desktop, browser on mobile
+
+   Cross-device mesh (ADR-003, all devices same user):
+                       │
+                       ├ ctrl-relay (CF Worker, HTTPS WSS, signaling + TURN-style fallback)
+                       │   ↓ ICE candidates / encrypted forward
+                       ├ WebRTC datachannel (P2P, webrtc-rs v0.17.x, primary)
+                       ├ mDNS (same-LAN accelerator, v1.1)
+                       │
+                       └ vodozemac (Olm 1:1, E2E) + Automerge CRDT (offline-first)
 ```
 
-5 primitives only. AI-native Agent OS pattern (AIOS-inspired + IronClaw capability + LiveStore event sourcing).
-Mobile = pure browser PWA (no React Native, no Capacitor).
-Kernel binary target ≤ 15 MB; desktop installer ≤ 25 MB (default) / ≤ 15 MB (slim).
+5 kernel primitives + 5 mesh primitives (Identity / Peer / Document / Channel / Signaling Beacon).
+Mobile = pure browser PWA (no React Native, no Capacitor) + WebRTC + WASM vodozemac + WASM Automerge.
+Kernel binary target ≤ 18 MB; desktop installer ≤ 25 MB (default) / ≤ 18 MB (slim, mesh-included).
+PWA bundle ≤ 500 KB gzip (mesh modules lazy-load); zero local listening port (ctrl-relay is outbound WSS).
 
 ---
 
@@ -157,16 +167,21 @@ D:/code-space/screi/        ← ARCHIVE after P3 cherry-pick
 | **P3** | L2 SDK (@ctrl/stss + @ctrl/memory cherry-pick) | ✅ done (99 tests, P3.5 hardening) |
 | **P3.7** | Tauri 2 shell migration + W3 deprecation + kernel-as-daemon | next (sub-PR b of H-2026-05-13-001) |
 | **P3.8** | packages/ctrl-web PWA scaffold + 3 routes | depends P3.7 (sub-PR c) |
-| **P3.9** | Kernel hardening (scheduler deadline-aware / sandbox WASM / mcp_host cache / persistence index / 15 MB budget) | parallel P3.8 |
+| **P3.9** | Kernel hardening (scheduler deadline-aware / sandbox WASM / mcp_host cache / persistence index / **18 MB binary budget** per ADR-003 revision) | parallel P3.8 |
 | P4 | MCP host integration | partially done (W3.6) |
+| **P4.5** | **mesh-core** — Identity + Peer + vodozemac Olm 1:1 + ctrl-relay signaling client | **v1.0 mandatory** (ADR-003) |
+| **P4.6** | **mesh-transport** — webrtc-rs v0.17.x datachannel + relay forwarding fallback | **v1.0 mandatory** |
+| **P4.7** | **mesh-sync** — Automerge v0.7.x + 3 docs (mesh.devices / .keycaps / .preferences) | **v1.0 mandatory** |
+| **P4.8** | **ctrl-relay worker** — CF Worker (signaling + TURN-style fallback) | **v1.0 mandatory** |
 | P5 | Tool manifest spec implementation | depends P3.8 |
 | **P6** | AI 创作向导 (NL → manifest, 4-path onboarding A/B/C/D) | **v1.0 mandatory** (gate for "客户能 0 代码集成 1 个键帽" SC) |
 | P7 | 5 P0 built-in keycaps | depends P3.9 + P5 |
 | P8 | ctrl-cloud + ctrl-auth + ctrl-billing + ctrl-push | parallel P7 |
 | P9 | ctrl-market + creator revenue share (seed, no affiliate) | v1.0 |
 | **P9.5** | ctrl-affiliate + 智识 + 比价 keycap + 联盟归因 (Q2 电商) | **v1.1** |
-| P10 | Closed beta (v1.0) | depends P7–P9 |
-| P11+ | Hardware actor SDK + E-ink demo + optional ctrl-relay | post-launch |
+| **P4.9** | **mesh-extras** — mDNS LAN accelerator + mesh.history + mesh.clipboard | v1.1 |
+| P10 | Closed beta (v1.0) | depends P7–P9 + P4.5/6/7/8 mesh ready |
+| P11+ | Hardware actor SDK + AI glasses as mesh peer + E-ink demo (ctrl-relay no longer optional — folded into P4.8) | post-launch |
 
 ---
 

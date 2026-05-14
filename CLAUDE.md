@@ -85,20 +85,25 @@ screi/                          ARCHIVE after P3 cherry-pick
 
 | Layer | Tech |
 |---|---|
-| Desktop shell | Tauri v2 |
-| Kernel (L1) | Rust stable, Tokio async runtime |
-| Sandbox | WASM (wasmtime preferred), capability-based |
-| UI (L3) | React 18 + Vite 5 |
-| Package manager | npm workspaces (跟 mamamiya 一致) |
-| State persistence | SQLite (event-sourced), optional CRDT |
+| Desktop shell | Tauri v2 (~500 LOC Rust shell) |
+| Kernel (L1) | Rust stable 1.77+, Tokio async runtime |
+| Sandbox | WASM (wasmtime, cranelift), capability-based |
+| UI (L3) | React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion |
+| Package manager | npm workspaces |
+| State persistence | SQLite (event-sourced) + Automerge CRDT (cross-device) |
+| **Mesh comm (ADR-003)** | **vodozemac (Olm 1:1) + webrtc-rs v0.17.x + Automerge v0.7.x + mdns-sd v1.71+ + ctrl-relay CF Worker** |
 | LLM (default) | CF Workers AI (Qwen / Llama) |
 | LLM (BYOK) | Anthropic Claude / OpenAI GPT-4 |
-| MCP | Anthropic MCP SDK |
-| Backend (cloud) | Cloudflare Workers + D1 + Wrangler v3 |
+| MCP | Anthropic rmcp Rust SDK |
+| Backend (cloud) | Cloudflare Workers + D1 (ctrl-auth / ctrl-billing / ctrl-market / **ctrl-relay** / ctrl-push) |
 | Payments | Stripe |
-| Min platform | macOS 13+ primary, Windows 11+ secondary |
+| Min platform | Windows 11+ (primary dev), macOS 13+ (secondary), iOS 16.4+ PWA, Android Chrome PWA |
+| Mobile | Pure browser PWA (no React Native, no Capacitor) + WebRTC + WASM vodozemac + WASM Automerge |
 | Node | 20.x LTS |
-| Rust | 1.75+ stable |
+| Rust | 1.77+ stable |
+| Binary size | kernel ≤ 18 MB (revised by ADR-003), installer ≤ 25 MB default / ≤ 18 MB slim (mesh-included) |
+| PWA bundle | ≤ 500 KB gzip (revised by ADR-003); critical-path shell ≤ 200 KB, mesh modules lazy-load |
+| Local ports | **0 listening** (ctrl-relay is outbound WSS only) |
 
 ---
 

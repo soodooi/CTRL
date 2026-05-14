@@ -1,8 +1,8 @@
 # ADR-003: Multi-device Mesh Communication Architecture
 
-- **Status**: Proposed
-- **Date**: 2026-05-14
-- **Decision makers**: bao (architecture call), zeus (proposer), athena (implementer lane)
+- **Status**: **Accepted** (bao 2026-05-14, choice "A" — full mesh, mobile lane in v1.0)
+- **Date**: 2026-05-14 (proposed), 2026-05-14 (accepted)
+- **Decision makers**: bao (architecture call + accept), zeus (proposer + foundation builder), athena (Sprint 2+ implementer)
 - **Supersedes (partial)**:
   - ADR-002 §8 (Mobile lane) — replaced by mesh-native mobile model
   - ADR-002 §9 (Optional `ctrl-relay`) — promoted from P11+ to mandatory v1.0 (signaling-only) and v1.1 (CRDT sync coordinator)
@@ -29,9 +29,9 @@ Discovery → Transport → Encryption → Sync
 | Layer | Primary | Fallback | Same-LAN accelerator |
 |---|---|---|---|
 | Discovery | ctrl-relay signaling (HTTPS WSS) | — | mDNS (`_ctrl._tcp.local`) |
-| Transport | WebRTC datachannel (P2P, STUN/TURN) | ctrl-relay forwarding (encrypted payload) | mDNS-direct TCP |
-| Encryption | libsignal double-ratchet (vodozemac in Rust, libsignal-wasm in PWA) | — | — |
-| Sync | Automerge CRDT (Rust + WASM) | — | — |
+| Transport | WebRTC datachannel (P2P, STUN/TURN) — **webrtc-rs v0.17.x in v1.0**, v0.20+ Sans-IO migration tracked as v1.1 tech-debt | ctrl-relay forwarding (encrypted payload) | mDNS-direct TCP |
+| Encryption | **vodozemac (Matrix.org fork of Olm)** — Olm 1:1 sessions only, **no Megolm**. Rust on desktop + `wasm-bindgen` build on PWA. Signal's libsignal-rust is explicitly rejected (upstream policy "use outside Signal is not yet recommended"). | — | — |
+| Sync | Automerge CRDT v0.7.x (Rust + `@automerge/automerge` WASM, same wire format) | — | — |
 
 **Brand promise**: 任何设备 (Win / Mac 桌面, iOS / Android PWA, 未来 AI 眼镜) 一次配对, 永久无配置 mesh; 零本地常驻端口 (除 mDNS 可选); 端到端加密; 离线优先。
 
@@ -68,18 +68,22 @@ ADR-002 §8 specified PWA on mobile + cloudflared tunnel as bridge. Three produc
                          │ application-level Cell/Op (unchanged from ADR-001)
                          ↓
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ SYNC layer — Automerge CRDT                                            │
+│ Sync layer — Automerge CRDT v0.7.x                                     │
 │  - Each device holds full local copy of shared documents               │
 │  - Op-based merge (commutative, idempotent, conflict-free)             │
-│  - Documents: keycap_history / cross_device_memory / device_registry   │
+│  - Documents: mesh.devices / mesh.keycaps / mesh.preferences (v1.0)    │
+│              + mesh.history / mesh.clipboard (v1.1)                    │
 └────────────────────────┬────────────────────────────────────────────────┘
                          │ Automerge change frames (binary, ~50 bytes/op typical)
                          ↓
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ ENCRYPTION layer — libsignal double-ratchet                            │
-│  - Per-peer session, forward secrecy, post-compromise recovery         │
-│  - Pre-shared device key established via QR pairing                    │
+│ Sync layer — vodozemac (Olm 1:1 only, NO Megolm)                       │
+│  - Per-peer double-ratchet session, forward secrecy, post-compromise   │
+│  - Pre-shared device key established via QR pairing (X3DH)             │
 │  - Relay sees only ciphertext + ICE candidates (zero-knowledge)        │
+│  - vodozemac vendored via `cargo vendor`; pinned to post-2026-02 fix   │
+│    release that addresses Soatok's non-contributory DH key disclosure  │
+│  - Own DH-validity check at wrapper layer (defense-in-depth)           │
 └────────────────────────┬────────────────────────────────────────────────┘
                          │ encrypted payload + control frames
                          ↓
@@ -220,13 +224,13 @@ Both devices on boot open a persistent WSS to `/signal`. They see each other's "
 
 ### 6.1 Document inventory (v1.0)
 
-| Document | Owner | Purpose |
-|---|---|---|
-| `mesh.devices` | implicit | Roster of paired devices + their capabilities |
-| `mesh.keycaps` | each device contributes | Pool of installed keycaps (manifests + last-used) |
-| `mesh.history` | append-only | Cross-device AI memory log (Cell stream excerpts) |
-| `mesh.clipboard` | append-only, capped | Optional cross-device clipboard (user-toggled) |
-| `mesh.preferences` | LWW | User settings (theme, default LLM, etc) |
+| Document | Owner | Purpose | v target |
+|---|---|---|---|
+| `mesh.devices` | implicit | Roster of paired devices + their capabilities | v1.0 |
+| `mesh.keycaps` | each device contributes | Pool of installed keycaps (manifests + last-used) | v1.0 |
+| `mesh.preferences` | LWW | User settings (theme, default LLM, etc) | v1.0 |
+| `mesh.history` | append-only | Cross-device AI memory log (Cell stream excerpts) — **uses per-peer Olm 1:1 sessions only, no Megolm** (CTRL is single-user, no group encryption needed; Megolm would add ~80 KB to bundle for zero benefit) | v1.1 |
+| `mesh.clipboard` | append-only, capped | Optional cross-device clipboard (user-toggled) | v1.1 |
 
 ### 6.2 Why Automerge
 
@@ -366,12 +370,19 @@ If any fail measurably, ADR-003 returns to review before v1.0 ship.
 
 ## 14. Acceptance
 
-bao to mark Status → Accepted upon review. Until then, athena starts spike work in worktree `D:/code-space/ctrl-h003-mesh` against branch `feat/h-003-mesh-comm`. No production code on the main pivot path (feat/h-001-e-cleanup) is affected.
+**Status: Accepted by bao on 2026-05-14 (choice "A" — full mesh, mobile lane in v1.0).**
 
-athena's first deliverables (per handoff H-2026-05-14-001) are:
-1. Library evaluation (webrtc-rs vs alternatives; vodozemac vs libsignal-rust; automerge-rs surface)
-2. Wire format spec (extends ST-SS Cell/Op for mesh routing)
-3. Pairing flow proof-of-concept (QR → relay → libsignal session, no actual transport yet)
-4. Risk-down spikes for the three 🔴 risks in §10
+Acceptance scope:
+- All 14 sections lock as written, with 4 amendments applied in-place during accept (encryption wording §1/§3.1, WebRTC version pin §1/§3.1/§10, no-Megolm clarification §1/§3.1/§6.1, layer naming "Sync" globally).
+- Library locks confirmed: webrtc-rs v0.17.x / vodozemac (Olm 1:1) / automerge v0.7.x / mdns-sd v1.71+ (Sprint 1 evidence in H-2026-05-14-001 Discussion).
+- Bundle / size budgets revised (cross-referenced into ADR-002 amend):
+  - PWA bundle: ADR-002 §5 raised from 300 → 500 KB gzip
+  - Desktop installer: ADR-002 §16 unchanged at 25 MB (mesh fits in +3 MB headroom)
+  - Slim installer: ADR-002 §16 raised from 15 → 18 MB (mesh-included slim); a separate "no-mesh slim" path is NOT supported in v1.0 (mesh is core differentiator per §1)
+  - Cold-launch latency: ADR-002 §13 SC #1 raised from 80 → 100 ms; lazy-load mesh path keeps first-tap at 80 ms with first cross-device action incurring +200 ms initial mesh setup (acceptable per §12)
+- Phase plan revised (added to ADR-002 §10): P4.5 (mesh-core), P4.6 (mesh-transport), P4.7 (mesh-sync), P4.8 (ctrl-relay worker), all v1.0 mandatory. P4.9 (mesh-extras: mDNS + history/clipboard docs) stays v1.1.
 
-Implementation gates back to zeus for review at each library-choice decision.
+Implementation lanes:
+- **Foundation (zeus, 2026-05-14)**: ADR amendments + ctrl-strategy + CLAUDE updates + packages/ctrl-mesh skeleton + Cargo deps + 4 new OpKind variants. Lands on a new branch `feat/h-001-mesh-baseline` from main.
+- **Sprint 2+ (athena, 2026-05-14 onward)**: implementation per H-2026-05-14-001. Worktree at `D:/code-space/ctrl-h003-mesh` (currently empty after Sprint 1 evidence captured in handoff Discussion). Athena resumes once foundation lands.
+- Sprint 1 evidence (background subagent transcript) preserved in H-2026-05-14-001 Discussion section; do not redo library evaluation.
