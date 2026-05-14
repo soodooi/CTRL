@@ -6,7 +6,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ClockStrip } from '@/components/ClockStrip';
 import { KeycapCard } from '@/components/KeycapCard';
-import { listKeycaps } from '@/lib/kernel';
+import { listKeycaps, openWorkspace } from '@/lib/kernel';
 import styles from './pool.module.css';
 
 export const PoolRoute = (): React.ReactElement => {
@@ -15,10 +15,14 @@ export const PoolRoute = (): React.ReactElement => {
     queryFn: listKeycaps,
   });
 
-  const handleActivate = (_id: string): void => {
-    // sub-PR f wires this to runKeycap(id) + navigates to /workspace with the
-    // keycap_id query param. Intentionally silent for now (no console noise
-    // in shipped builds — pre-merge review M3).
+  const handleActivate = (id: string): void => {
+    // Open the dedicated workspace WINDOW (not a tab in this window)
+    // per bao 2026-05-14: 工作区不应该在主窗口, 应该是独立窗口.
+    void openWorkspace(id).catch((err) => {
+      // Silent in shipped — surface via in-window toast in sub-PR f.
+      // For now, swallow so a transient bridge failure doesn't crash the pool.
+      void err;
+    });
   };
 
   return (

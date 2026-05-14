@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability for CTRL windows. Core invoke + window/event/menu/tray APIs and PWA plugins. BYOK keychain access lives in a SEPARATE capability (see keychain.json) so it can be gated independently once WASM keycaps land — they must NOT inherit BYOK reach via this default scope.",
-  "windows": ["main"],
+  "windows": ["main", "workspace"],
   "permissions": [
     "core:default",
     "core:event:default",

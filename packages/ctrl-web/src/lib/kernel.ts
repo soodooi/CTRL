@@ -43,6 +43,17 @@ export const mcpCall = (
 
 export const listMcpServers = (): Promise<string[]> => invoke('list_mcp_servers');
 
+/**
+ * Open the dedicated workspace window for a keycap activation.
+ *
+ * Per bao 2026-05-14: workspace is a SECOND window, separate from the
+ * launcher pool, opened on demand per selected keycap. The workspace
+ * window reuses across activations (single window, route reflects the
+ * latest keycap).
+ */
+export const openWorkspace = (keycap_id: string): Promise<void> =>
+  invoke('open_workspace', { keycapId: keycap_id });
+
 export interface StreamHandle {
   stream_id: string;
   bridge_url: string;
