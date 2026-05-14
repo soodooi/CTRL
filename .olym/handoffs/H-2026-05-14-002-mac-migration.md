@@ -237,3 +237,35 @@ commit `296e820` (push 到 `origin/feat/h-001-mac-migration`).
 验证: `cargo check --all-targets` 178 warnings 0 errors. warnings 全集中在 mac/c 要删的目录, 删完归零.
 
 下一步: mac/c (删 UniFFI + `ffi/` + `tauri_commands` + 老 `adapters/macos` + `actors/application/domain`).
+
+### 2026-05-14 — mac/c 完成 (delete W3 hexagonal + UniFFI)
+
+commit `067c203` (push 到 `origin/feat/h-001-mac-migration`). 38 文件改动, +19 / -2611.
+
+删除 (无外部 reference, grep `use crate::(adapters|application|actors|domain|ffi)` 验证仅 lib.rs UniFFI scaffolding 一处, 也删了):
+- `actors/` (KeycapActor + scheduler hooks)
+- `adapters/inbound/` (W3 `tauri_commands.rs`)
+- `adapters/outbound/` 整片 (clipboard / clock / browser / notifier / config / llm / manifest_loader / tauri::event_bus / macos::*) — 全 Port 实现
+- `application/` (ports + use_cases + step_runner)
+- `domain/` (detector + events + tool)
+- `ffi/` + `ctrl.udl` (UniFFI bridge)
+- `cbindgen.toml` (cbindgen step 同删)
+
+`build.rs` 缩到只剩 `tauri_build::build()`. `lib.rs` 进一步收紧, `mod` 声明 9 → 4 (commands / error / kernel / shell).
+
+替代映射:
+- W3 `tauri_commands` → `commands::{kernel,stss,memory,keychain}`
+- W3 `outbound/macos/keyboard` → `shell::hotkey.rs mac_impl` (mac/a)
+- W3 `outbound/macos/{capture,accessibility}` → Tauri 2 plugins / prompts (mac/d 接)
+- W3 `outbound/config/keychain` → `shell::keychain.rs`
+- W3 `application::use_cases::start_hotkey_pipeline` → `shell::ShellLifecycle::boot`
+- UniFFI `ctrl.udl` → Tauri 2 invoke handlers (`commands::pwa_invoke_handler!`)
+
+验证: `cargo check --all-targets` 64 warnings 0 errors. 剩余 warnings 在 `kernel/` 内部 (sandbox / scheduler / persistence 后续 P2.x 接) + `shell/` 几个 sub-PR f hardening 留的方法 — 都是 zeus 的代码, 不是我清理范畴.
+
+未触碰 (留给后续):
+- `Cargo.toml` deps cleanup → mac/d
+- `bin/setup_llm_key.rs` 独立 (只用 keyring crate). 注意它的 `SERVICE = "app.ctrl.spike"` 跟 `shell/keychain.rs` 的 `"app.ctrl"` 不一致, 不在我 scope, 留 zeus 看
+- `share/modules/builtin/*.yaml` manifest 数据文件 — 现在没 consumer, P5 manifest schema 实施时再决定
+
+下一步: mac/d (Cargo.toml mac deps cleanup — 删 uniffi build/runtime + cbindgen build + macos-accessibility-client runtime).
