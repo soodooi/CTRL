@@ -1,0 +1,53 @@
+[package]
+name = "ctrl-mesh"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+description = "CTRL multi-device mesh communication primitives (ADR-003). Skeleton; full implementation lands in H-2026-05-14-001 Sprint 2+."
+license = "UNLICENSED"
+
+[lib]
+name = "ctrl_mesh"
+# Future: also "cdylib" for wasm-bindgen TS twin, but Sprint 2 wires that
+crate-type = ["rlib"]
+
+[dependencies]
+# Library locks per ADR-003 §3.1 + H-2026-05-14-001 Sprint 1 evaluation.
+# Versions are upper bounds on what we audit; athena Sprint 2 pins exact patch.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+async-trait = "0.1"
+
+# Crypto — vodozemac (Olm 1:1), not libsignal-rust.
+# Disabled by feature gate until Sprint 2 wires vendored copy + DH validity check.
+# vodozemac = { version = "0.9", optional = true }
+
+# WebRTC — webrtc-rs v0.17.x feature-frozen, locked for v1.0 (ADR-003 §3.1 amendment).
+# Sprint 3 enables this.
+# webrtc = { version = "0.17", optional = true }
+
+# CRDT — Automerge v0.7.x, Rust + WASM same wire format.
+# Sprint 4 enables this.
+# automerge = { version = "0.7", optional = true }
+
+# mDNS LAN accelerator (v1.1).
+# mdns-sd = { version = "0.11", optional = true }
+
+[dev-dependencies]
+# CBOR for round-trip serialization tests on wire types. Same crate the
+# kernel uses (src-tauri/Cargo.toml ciborium 0.2).
+ciborium = "0.2"
+tokio = { version = "1", features = ["macros", "rt"] }
+
+[features]
+default = []
+# All real implementations gated behind features so the skeleton builds
+# cleanly without pulling 200+ MB of webrtc-rs / vodozemac source.
+# crypto = ["vodozemac"]
+# transport = ["webrtc"]
+# sync = ["automerge"]
+# discovery-lan = ["mdns-sd"]
