@@ -186,3 +186,30 @@ bao 2026-05-14 钦定:
 ## Discussion / 备注 / 决策日志
 
 (你工作时往这里写: 选型, blocker, 给 zeus 的疑问. zeus 周期 fetch 看, 30 min 内同步)
+
+### 2026-05-14 — zeus 后端协调 + 接口稳定承诺
+
+**4 个 fix 已 commit 到 main `a61df6f`** (在你 base 的 `6ed5cf9` 之后):
+
+- `shell::WindowController::toggle` 加 `set_skip_taskbar(true)` on hide / reverse on show — 修复 Win11 decorated 窗口 `hide()` 不让窗口从 taskbar/alt-tab 消失的 quirk. **跨平台, 你 rebase 后 Mac 自动有.**
+- `shell::TrayController` 内嵌 `icons/32x32.png` via `include_bytes!` + `show_menu_on_left_click(true)` (Win11 左/右键都弹菜单, right-click default 在 Tauri 2 不稳). **跨平台.**
+- 新 workspace window (label `workspace`, 640×480, visible:false) — per bao "工作区是独立窗口". **跨平台.**
+- 新 `commands::kernel::open_workspace` 命令 + `pwa_invoke_handler!` 注册. **跨平台.**
+
+**接口稳定承诺**:
+- `HotkeyController::install(callback)` signature 不再 breaking change
+- `WindowController::toggle(app)` / `WindowController::open_workspace(app, keycap_id)` / `WindowController::close_workspace(app)` public API 锁定
+- `TrayController::install(app)` API 锁定
+- `commands::*` 现有 15 个命令 signature 锁定 (加新可以, 改老我先预告)
+- `lib.rs` Mac path 模板锁定 (5 行: Builder + plugin + setup + invoke_handler + run)
+
+如果 zeus 必须 breaking change, 我先在本 Discussion 写一条 `### YYYY-MM-DD breaking change preview`, 你暂停 mac/X 等接口稳定再续.
+
+**Rebase 推荐节奏**: 每完成一个 sub-PR (mac/a / mac/b / ...) push 前 `git fetch origin && git rebase origin/main`. 不要 6 个 sub-PR 攒一起 rebase.
+
+**当前 base 升级**: 你的 6ed5cf9 → 推荐 rebase 到 a61df6f, 拿到全部 Win pivot merge + mesh skeleton + 4 个 fix.
+
+**zeus 后续 lanes (跟你不冲突)**:
+- 前端 PWA polish lane 即将开 (bao 拍板分前后端分工) — handoff H-2026-05-14-003 在 main 上线, 新前端 athena 接, 跟你 mac/a-f 零重叠 (她改 packages/ctrl-web/, 你改 src-tauri/)
+- mesh impl lane 在 ctrl-h003-mesh worktree paused, 不影响你
+- zeus 自己: P5 (tool manifest spec) + P6 (AI 创作向导 backend) — 都在 src-tauri/src/, 跟你 mac path 大概率零冲突
