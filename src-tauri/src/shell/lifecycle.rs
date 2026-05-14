@@ -37,8 +37,10 @@ impl ShellLifecycle {
         tracing::info!("ShellLifecycle::boot — installing lone-Ctrl hotkey");
         let app_for_hotkey = app.clone();
         let _hotkey = HotkeyController::install(move || {
-            // Runs on the OS dispatch thread — hop to Tauri's main loop before
-            // touching window state.
+            // Fires on the OS dispatch thread; the trace log gives us
+            // immediate evidence that the hook + state machine work even when
+            // the toggle itself silently no-ops (Win11 Mica quirk territory).
+            tracing::info!("hotkey: lone-Ctrl tap detected");
             let app = app_for_hotkey.clone();
             let app_for_closure = app.clone();
             let _ = app.run_on_main_thread(move || {
