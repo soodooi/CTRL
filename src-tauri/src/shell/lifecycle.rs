@@ -10,7 +10,7 @@
 // first Ctrl tap can't reach a not-yet-listening kernel (ADR-002 §11 risk #2).
 
 use anyhow::Result;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WindowEvent};
 
 use super::{HotkeyController, KernelSupervisor, TrayController, WindowController};
 
@@ -25,7 +25,8 @@ impl ShellLifecycle {
     /// 2. KernelSupervisor::wait_ready blocks until the daemon reports ready
     ///    (prevents the first Ctrl tap landing before mcp_host is up).
     /// 3. Tray icon installs (cheap; user-visible feedback that we're alive).
-    /// 4. Lone-Ctrl hotkey installs LAST.
+    /// 4. Window close-button interception (X = hide, not destroy).
+    /// 5. Lone-Ctrl hotkey installs LAST.
     pub fn boot(app: &AppHandle) -> Result<()> {
         tracing::info!("ShellLifecycle::boot — starting kernel daemon");
         KernelSupervisor::start(app)?;
@@ -33,6 +34,40 @@ impl ShellLifecycle {
 
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;
+
+        // Intercept the OS close button (X) on every webview window. Tauri 2
+        // default CloseRequested destroys the window — that turns it into a
+        // one-shot, lose-it-forever surface (lone-Ctrl after user clicks X
+        // returns "main window not found"). For a launcher app we want X to
+        // hide, so the app stays alive in tray + hotkey for re-summoning.
+        // Workspace window X = close the workspace (different intent than
+        // toggling main).
+        tracing::info!("ShellLifecycle::boot — wiring close-to-hide on main + workspace");
+        for label in ["main", "workspace"] {
+            if let Some(window) = app.get_webview_window(label) {
+                let app_for_event = app.clone();
+                let label_owned = label.to_string();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        tracing::info!("close requested on window={label_owned} — intercepted, hiding");
+                        api.prevent_close();
+                        let app = app_for_event.clone();
+                        let app_for_closure = app.clone();
+                        let label_for_call = label_owned.clone();
+                        let _ = app.run_on_main_thread(move || {
+                            let result = if label_for_call == "main" {
+                                WindowController::toggle(&app_for_closure)
+                            } else {
+                                WindowController::close_workspace(&app_for_closure)
+                            };
+                            if let Err(err) = result {
+                                tracing::error!(?err, "close intercept hide failed");
+                            }
+                        });
+                    }
+                });
+            }
+        }
 
         tracing::info!("ShellLifecycle::boot — installing lone-Ctrl hotkey");
         let app_for_hotkey = app.clone();

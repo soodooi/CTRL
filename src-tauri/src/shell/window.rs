@@ -20,6 +20,33 @@
 use anyhow::Result;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
+/// Force-hide the window on Win11 via direct Win32 ShowWindow.
+///
+/// Tauri 2.x `WebviewWindow::hide()` on Win11 + decorated + alwaysOnTop:false
+/// returns Ok but the OS window remains visible in some 2.x stable builds
+/// (verified by bao 2026-05-14 smoke test, persists after set_skip_taskbar
+/// belt-and-braces). Going around the abstraction with a raw `ShowWindow(hwnd,
+/// SW_HIDE)` is the reliable hammer. show() rebuilds visibility via Tauri's
+/// path which works.
+#[cfg(target_os = "windows")]
+fn force_hide_win(w: &WebviewWindow) -> Result<()> {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+    let raw = w.hwnd()?;
+    let hwnd: HWND = raw.0 as _;
+    // SAFETY: hwnd is owned by the live WebviewWindow we just borrowed; ShowWindow
+    // is documented safe to call on any valid HWND from any thread; SW_HIDE is a
+    // well-defined constant. Return value is the previous visibility state — we
+    // do not need it.
+    unsafe { ShowWindow(hwnd, SW_HIDE) };
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn force_hide_win(_w: &WebviewWindow) -> Result<()> {
+    Ok(())
+}
+
 pub struct WindowController;
 
 impl WindowController {
@@ -53,14 +80,16 @@ impl WindowController {
             if user_visible { "HIDE" } else { "SHOW" }
         );
         if user_visible {
-            // Tauri 2 + Win11 + decorated window: `hide()` alone reliably
-            // hides the window itself but leaves it visible in taskbar +
-            // alt-tab on some Win11 builds, which feels like "didn't hide"
-            // to a user. Belt + braces: also flag skip_taskbar so the
-            // window vanishes from the taskbar at the same time. show()
-            // below reverses both.
+            // Tauri 2 + Win11 hide() returns Ok but the OS window stays
+            // visible on some 2.x stable builds. Real fix is to call
+            // Win32 ShowWindow(SW_HIDE) directly via windows-sys; we
+            // also flag skip_taskbar so the window vanishes from
+            // taskbar/alt-tab in the same frame. Tauri's hide() is left
+            // in as a no-op-if-it-works belt; the winapi call is the
+            // load-bearing one.
             let _ = w.set_skip_taskbar(true);
-            w.hide()?;
+            let _ = w.hide();
+            force_hide_win(&w)?;
         } else {
             if minimized {
                 w.unminimize()?;
@@ -110,7 +139,8 @@ impl WindowController {
             return Ok(());
         };
         let _ = w.set_skip_taskbar(true);
-        w.hide()?;
+        let _ = w.hide();
+        force_hide_win(&w)?;
         Ok(())
     }
 
@@ -125,7 +155,9 @@ impl WindowController {
         }
         // sub-PR f: enumerate child webviews + skip hide if any are
         // visible+focused. For now, hide unconditionally.
-        w.hide()?;
+        let _ = w.set_skip_taskbar(true);
+        let _ = w.hide();
+        force_hide_win(&w)?;
         Ok(())
     }
 }
