@@ -33,7 +33,9 @@ pub type OnTap = Arc<dyn Fn() + Send + Sync + 'static>;
 pub struct HotkeyController {
     #[cfg(target_os = "windows")]
     _win: win_impl::WinHook,
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    _mac: mac_impl::MacTap,
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     _phantom: (),
 }
 
@@ -50,15 +52,15 @@ impl HotkeyController {
             let win = win_impl::WinHook::install(cb)?;
             Ok(Self { _win: win })
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         {
-            // Mac path: a parallel CGEventTap-based detector already lives in
-            // `adapters/outbound/macos/keyboard.rs`. Sub-PR e unifies it into
-            // this module; until then the legacy adapter pipeline handles macOS
-            // lone-Ctrl detection.
+            let mac = mac_impl::MacTap::install(cb)?;
+            Ok(Self { _mac: mac })
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
             let _ = cb;
-            tracing::warn!("HotkeyController::install — macOS path uses legacy adapter pipeline (port deferred to sub-PR e)");
-            Ok(Self { _phantom: () })
+            anyhow::bail!("HotkeyController: unsupported OS")
         }
     }
 }
@@ -210,5 +212,210 @@ mod win_impl {
             (unsafe { GetAsyncKeyState(vk as i32) } as u16) & 0x8000 != 0
         };
         down(VK_SHIFT) || down(VK_MENU) || down(VK_LWIN) || down(VK_RWIN)
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod mac_impl {
+    // CGEventTap-based lone-Ctrl detector. Mirrors `win_impl` 1:1 in state
+    // machine semantics, so behavior across Win/Mac is identical from the
+    // user's perspective (TAP_THRESHOLD_MS, "any non-Ctrl key cancels"
+    // guard, "another modifier already down cancels arming" guard).
+    //
+    // Differences from the Win path are environmental, not behavioral:
+    //   • CGEventTap requires the Accessibility privilege; tap creation
+    //     fails until the user grants it. Bootstrap responsibility lives in
+    //     `shell::lifecycle` — here we surface the failure as Err so the
+    //     supervisor can prompt + retry.
+    //   • The tap callback runs on whatever thread runs the CFRunLoop. We
+    //     spawn a dedicated thread for that loop so the Tauri main thread
+    //     stays free for IPC + UI; the user-supplied callback fires on the
+    //     hotkey thread (same hop expectation as Windows).
+    //   • Bare-modifier transitions arrive as `FlagsChanged`, not KeyDown /
+    //     KeyUp — we synthesize Ctrl up/down from the current modifier mask.
+    //
+    // Ports the working CGEventTap setup from
+    // `adapters/outbound/macos/keyboard.rs` (which only emitted raw events
+    // for an external state machine in `application::use_cases`); this file
+    // collapses both into the same shape `win_impl` uses.
+
+    use super::{OnTap, TAP_THRESHOLD_MS};
+    use anyhow::{anyhow, Result};
+    use std::sync::{Mutex, OnceLock};
+    use std::thread;
+    use std::time::Instant;
+
+    use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
+    use core_graphics::event::{
+        CGEvent, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions,
+        CGEventTapPlacement, CGEventType, EventField,
+    };
+
+    /// macOS virtual key codes for left + right Control (HIToolbox / Events.h).
+    const KVK_CONTROL: i64 = 0x3B;
+    const KVK_RIGHT_CONTROL: i64 = 0x3E;
+
+    static STATE: OnceLock<Mutex<TapState>> = OnceLock::new();
+
+    struct TapState {
+        callback: OnTap,
+        ctrl_pending: bool,
+        other_seen: bool,
+        ctrl_down_at: Option<Instant>,
+    }
+
+    pub(crate) struct MacTap;
+
+    impl MacTap {
+        pub fn install(callback: OnTap) -> Result<Self> {
+            STATE
+                .set(Mutex::new(TapState {
+                    callback,
+                    ctrl_pending: false,
+                    other_seen: false,
+                    ctrl_down_at: None,
+                }))
+                .map_err(|_| anyhow!(
+                    "HotkeyController is a process-singleton; install() called twice"
+                ))?;
+
+            // CGEventTap only delivers events on a thread that runs a
+            // CFRunLoop. We dedicate one — the Tauri main thread already
+            // owns the AppKit run loop and we don't want to share.
+            thread::Builder::new()
+                .name("ctrl-hotkey-runloop".into())
+                .spawn(|| {
+                    if let Err(err) = run_loop() {
+                        // Failure is almost always Accessibility permission
+                        // missing; lifecycle.rs surfaces a prompt + retry.
+                        tracing::error!(?err, "CGEventTap run loop exited");
+                    }
+                })
+                .map_err(|e| anyhow!("spawn hotkey runloop thread: {e}"))?;
+
+            tracing::info!("CGEventTap install requested for lone-Ctrl detection");
+            Ok(Self)
+        }
+    }
+
+    fn run_loop() -> Result<()> {
+        let event_types = vec![
+            CGEventType::KeyDown,
+            CGEventType::KeyUp,
+            CGEventType::FlagsChanged,
+        ];
+
+        // ListenOnly: we observe events but never consume them, so other
+        // apps see Ctrl exactly as the user pressed it.
+        let tap = CGEventTap::new(
+            CGEventTapLocation::Session,
+            CGEventTapPlacement::HeadInsertEventTap,
+            CGEventTapOptions::ListenOnly,
+            event_types,
+            |_proxy, event_type, event| {
+                process_event(event_type, event);
+                None
+            },
+        )
+        .map_err(|_| {
+            anyhow!("CGEventTap creation failed — Accessibility permission likely missing")
+        })?;
+
+        let runloop_source = tap
+            .mach_port
+            .create_runloop_source(0)
+            .map_err(|_| anyhow!("CGEventTap create_runloop_source failed"))?;
+
+        // SAFETY: kCFRunLoopCommonModes is a CFString constant exposed by
+        // core-foundation; CFRunLoop::add_source retains the source via CF
+        // semantics, so dropping `runloop_source` after this call is safe.
+        unsafe {
+            CFRunLoop::get_current().add_source(&runloop_source, kCFRunLoopCommonModes);
+        }
+        tap.enable();
+        tracing::info!("CGEventTap enabled, entering CFRunLoop");
+        CFRunLoop::run_current();
+        Ok(())
+    }
+
+    fn process_event(event_type: CGEventType, event: &CGEvent) {
+        let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
+        let is_ctrl = keycode == KVK_CONTROL || keycode == KVK_RIGHT_CONTROL;
+
+        // Decode the raw event into a state-machine input. CGEvent reports
+        // bare-modifier transitions as `FlagsChanged`, not KeyDown/KeyUp,
+        // so the modifier mask in `CGEventFlags` is the source of truth for
+        // Ctrl up vs down. KeyDown/KeyUp still fire for non-modifier keys
+        // and are how we observe "any other key was pressed while pending".
+        let edge = match (event_type, is_ctrl) {
+            (CGEventType::FlagsChanged, true) => {
+                if event.get_flags().contains(CGEventFlags::CGEventFlagControl) {
+                    Some(Edge::CtrlDown(event.get_flags()))
+                } else {
+                    Some(Edge::CtrlUp)
+                }
+            }
+            (CGEventType::KeyDown, false) => Some(Edge::OtherDown),
+            _ => None,
+        };
+        let Some(edge) = edge else {
+            return;
+        };
+
+        let Some(state_cell) = STATE.get() else {
+            return;
+        };
+        // try_lock keeps the tap thread responsive — if a user callback
+        // is mid-flight we drop this event rather than block.
+        let Ok(mut state) = state_cell.try_lock() else {
+            return;
+        };
+
+        let mut fire_callback: Option<OnTap> = None;
+        match edge {
+            Edge::CtrlDown(flags) if !state.ctrl_pending => {
+                if !is_any_other_modifier_down(flags) {
+                    state.ctrl_pending = true;
+                    state.other_seen = false;
+                    state.ctrl_down_at = Some(Instant::now());
+                }
+            }
+            Edge::CtrlUp if state.ctrl_pending => {
+                let elapsed_ok = state
+                    .ctrl_down_at
+                    .map(|t| t.elapsed().as_millis() < TAP_THRESHOLD_MS as u128)
+                    .unwrap_or(false);
+                if elapsed_ok && !state.other_seen {
+                    fire_callback = Some(state.callback.clone());
+                }
+                state.ctrl_pending = false;
+                state.other_seen = false;
+                state.ctrl_down_at = None;
+            }
+            Edge::OtherDown if state.ctrl_pending => {
+                state.other_seen = true;
+            }
+            _ => {}
+        }
+        drop(state);
+
+        if let Some(cb) = fire_callback {
+            cb();
+        }
+    }
+
+    enum Edge {
+        CtrlDown(CGEventFlags),
+        CtrlUp,
+        OtherDown,
+    }
+
+    /// Mirrors `win_impl::is_any_other_modifier_down` — at Ctrl-down time,
+    /// reject arming if Shift / Option / Command are already held. (Pure
+    /// Ctrl chord like Ctrl-S still cancels via `OtherDown`.)
+    fn is_any_other_modifier_down(flags: CGEventFlags) -> bool {
+        flags.contains(CGEventFlags::CGEventFlagShift)
+            || flags.contains(CGEventFlags::CGEventFlagAlternate)
+            || flags.contains(CGEventFlags::CGEventFlagCommand)
     }
 }
