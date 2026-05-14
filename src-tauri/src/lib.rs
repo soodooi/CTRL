@@ -278,7 +278,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
+        // static manifest host + production signing key). The dep stays in
+        // Cargo.toml so the surface is wired for fast turn-on once those land.
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
