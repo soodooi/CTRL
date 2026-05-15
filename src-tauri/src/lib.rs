@@ -276,7 +276,7 @@ pub fn run() {
         )
         .try_init();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
         // static manifest host + production signing key). The dep stays in
@@ -286,8 +286,23 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(pwa_invoke_handler!())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Launcher app contract: destroying the main window does NOT exit the
+    // process. Tauri 2 default behavior is to exit when the last webview
+    // window closes, but our destroy + rebuild toggle pattern would then
+    // kill kernel + hotkey + tray after a single lone-Ctrl tap. Prevent the
+    // exit and let the process stay alive in tray for re-summoning.
+    app.run(|_app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+            // code = None means user-initiated (last window closed / Quit).
+            // code = Some(_) means explicit shutdown (tray Quit menu) — let it through.
+            if code.is_none() {
+                api.prevent_exit();
+            }
+        }
+    });
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]

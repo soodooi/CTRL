@@ -10,8 +10,9 @@
 // first Ctrl tap can't reach a not-yet-listening kernel (ADR-002 §11 risk #2).
 
 use anyhow::Result;
-use tauri::{AppHandle, Manager, WindowEvent};
+use tauri::{AppHandle, Manager};
 
+use super::window::install_close_intercept;
 use super::{HotkeyController, KernelSupervisor, TrayController, WindowController};
 
 pub struct ShellLifecycle;
@@ -35,38 +36,12 @@ impl ShellLifecycle {
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;
 
-        // Intercept the OS close button (X) on every webview window. Tauri 2
-        // default CloseRequested destroys the window — that turns it into a
-        // one-shot, lose-it-forever surface (lone-Ctrl after user clicks X
-        // returns "main window not found"). For a launcher app we want X to
-        // hide, so the app stays alive in tray + hotkey for re-summoning.
-        // Workspace window X = close the workspace (different intent than
-        // toggling main).
-        tracing::info!("ShellLifecycle::boot — wiring close-to-hide on main + workspace");
-        for label in ["main", "workspace"] {
-            if let Some(window) = app.get_webview_window(label) {
-                let app_for_event = app.clone();
-                let label_owned = label.to_string();
-                window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { api, .. } = event {
-                        tracing::info!("close requested on window={label_owned} — intercepted, hiding");
-                        api.prevent_close();
-                        let app = app_for_event.clone();
-                        let app_for_closure = app.clone();
-                        let label_for_call = label_owned.clone();
-                        let _ = app.run_on_main_thread(move || {
-                            let result = if label_for_call == "main" {
-                                WindowController::toggle(&app_for_closure)
-                            } else {
-                                WindowController::close_workspace(&app_for_closure)
-                            };
-                            if let Err(err) = result {
-                                tracing::error!(?err, "close intercept hide failed");
-                            }
-                        });
-                    }
-                });
-            }
+        // Install close-intercept (X button -> destroy via canonical path)
+        // on the initial main window. Workspace window is built lazily by
+        // open_workspace and installs its own intercept there.
+        tracing::info!("ShellLifecycle::boot — installing close intercept on main");
+        if let Some(main) = app.get_webview_window("main") {
+            install_close_intercept(&main, app, "main");
         }
 
         tracing::info!("ShellLifecycle::boot — installing lone-Ctrl hotkey");

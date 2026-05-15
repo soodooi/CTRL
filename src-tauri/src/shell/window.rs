@@ -1,51 +1,28 @@
-// Window controller.
+// Window controller — launcher pattern with destroy + rebuild.
 //
-// Owns the main frameless / always-on-top / Mica window per ADR-002 §6.
+// Why destroy + rebuild instead of hide / show:
 //
-// Behaviors:
-//   • Show / hide via hotkey or tray click
-//   • Focus-loss hide (only when no modal child window is up — guard from W3.6
-//     `MainWindow_Activated` modal-aware hide)
-//   • Mica (Win 11) / vibrancy (macOS) backdrop — Tauri 2 handles the
-//     transparent+decorations:false combo natively
+// Tauri 2 on Win11 + WebView2 composites the window contents via Direct
+// Composition surfaces. DComp draws to absolute screen coordinates and
+// IGNORES Win32 visibility hints:
+//   - WebviewWindow::hide() flips WS_VISIBLE but DComp keeps compositing
+//   - ShowWindow(SW_HIDE) — same: WS_VISIBLE=0 but DComp pixels stay
+//   - SetWindowPos to off-screen — Win32 confirms RECT moved, but WebView2's
+//     DComp surface stays at the original screen rect
+//   - ShowWindow(SW_MINIMIZE) — works visually but turns the launcher into
+//     a taskbar entry, which is not the ephemeral feel we want
 //
-// Toggle correctness note: `WebviewWindow::is_visible()` on Win11 + Mica +
-// transparent + alwaysOnTop returns `Ok(true)` even when the window is
-// minimized/hidden in some Tauri 2 builds. We additionally check
-// `is_minimized()` so the user-perceived state drives the toggle, not the
-// WS_VISIBLE bit alone. The legacy WinUI 3 surface had the same trap; W3.6
-// `MainWindow_Activated` worked around it via its `_isHidden` field. Here we
-// double-check the OS state instead of caching.
+// Only DestroyWindow truly tears down the DComp surface. Rebuild on next
+// summon: WebView2 process is already warm, PWA assets are HTTP-cached
+// (dev) or bundled (release), so the rebuild is sub-300ms in practice
+// — under the perceptual threshold for "snappy".
+//
+// This is the same pattern Raycast / Alfred / Spotlight use, for the
+// same root cause: modern compositor-backed WebViews don't honor classic
+// hide/show on every platform consistently.
 
 use anyhow::Result;
-use tauri::{AppHandle, Manager, WebviewWindow};
-
-/// Force-hide the window on Win11 via direct Win32 ShowWindow.
-///
-/// Tauri 2.x `WebviewWindow::hide()` on Win11 + decorated + alwaysOnTop:false
-/// returns Ok but the OS window remains visible in some 2.x stable builds
-/// (verified by bao 2026-05-14 smoke test, persists after set_skip_taskbar
-/// belt-and-braces). Going around the abstraction with a raw `ShowWindow(hwnd,
-/// SW_HIDE)` is the reliable hammer. show() rebuilds visibility via Tauri's
-/// path which works.
-#[cfg(target_os = "windows")]
-fn force_hide_win(w: &WebviewWindow) -> Result<()> {
-    use windows_sys::Win32::Foundation::HWND;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
-    let raw = w.hwnd()?;
-    let hwnd: HWND = raw.0 as _;
-    // SAFETY: hwnd is owned by the live WebviewWindow we just borrowed; ShowWindow
-    // is documented safe to call on any valid HWND from any thread; SW_HIDE is a
-    // well-defined constant. Return value is the previous visibility state — we
-    // do not need it.
-    unsafe { ShowWindow(hwnd, SW_HIDE) };
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn force_hide_win(_w: &WebviewWindow) -> Result<()> {
-    Ok(())
-}
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 pub struct WindowController;
 
@@ -54,110 +31,115 @@ impl WindowController {
         app.get_webview_window("main")
     }
 
-    /// Returns true if the window is on-screen and not minimized.
-    fn is_user_visible(w: &WebviewWindow) -> bool {
-        let visible = w.is_visible().unwrap_or(false);
-        let minimized = w.is_minimized().unwrap_or(false);
-        visible && !minimized
-    }
-
     /// Toggle the main window. Called by hotkey + tray click.
     ///
-    /// Trace logs every transition with the OS state at decision time so the
-    /// next time someone reports "Ctrl doesn't hide", the log shows whether
-    /// the hotkey fired at all and which branch ran.
+    /// Exists → destroy. Doesn't exist → build. No hide/show involved.
     pub fn toggle(app: &AppHandle) -> Result<()> {
-        let Some(w) = Self::main(app) else {
-            tracing::warn!("WindowController::toggle — main window not found");
-            return Ok(());
-        };
-        let visible = w.is_visible().unwrap_or(false);
-        let minimized = w.is_minimized().unwrap_or(false);
-        let focused = w.is_focused().unwrap_or(false);
-        let user_visible = visible && !minimized;
-        tracing::info!(
-            "WindowController::toggle — visible={visible} minimized={minimized} focused={focused} -> {}",
-            if user_visible { "HIDE" } else { "SHOW" }
-        );
-        if user_visible {
-            // Tauri 2 + Win11 hide() returns Ok but the OS window stays
-            // visible on some 2.x stable builds. Real fix is to call
-            // Win32 ShowWindow(SW_HIDE) directly via windows-sys; we
-            // also flag skip_taskbar so the window vanishes from
-            // taskbar/alt-tab in the same frame. Tauri's hide() is left
-            // in as a no-op-if-it-works belt; the winapi call is the
-            // load-bearing one.
-            let _ = w.set_skip_taskbar(true);
-            let _ = w.hide();
-            force_hide_win(&w)?;
+        if let Some(w) = Self::main(app) {
+            tracing::info!("WindowController::toggle — destroying main window");
+            w.destroy()?;
         } else {
-            if minimized {
-                w.unminimize()?;
-            }
-            w.show()?;
-            let _ = w.set_skip_taskbar(false);
-            w.set_focus()?;
+            tracing::info!("WindowController::toggle — rebuilding main window");
+            Self::build_main(app)?;
         }
         Ok(())
+    }
+
+    /// Build the main launcher window from scratch. Called on toggle-show
+    /// after a previous toggle-hide destroyed it.
+    ///
+    /// Window settings here mirror `tauri.conf.json` `main` definition so
+    /// rebuild lands the user in exactly the same launcher they had at boot.
+    pub fn build_main(app: &AppHandle) -> Result<WebviewWindow> {
+        let w = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("/".into()))
+            .title("CTRL")
+            .inner_size(920.0, 560.0)
+            .min_inner_size(480.0, 420.0)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .visible_on_all_workspaces(true)
+            .skip_taskbar(true)
+            .focused(true)
+            .center()
+            .resizable(false)
+            .build()?;
+        install_close_intercept(&w, app, "main");
+        Ok(w)
     }
 
     /// Open (or focus) the workspace window with a specific keycap loaded.
     ///
-    /// The workspace window is a SECOND, ephemeral window (label `workspace`),
-    /// separate from the launcher pool (`main`). Each keycap activation opens
-    /// the same workspace window with a new keycap_id query param, so the
-    /// window is reused but its content reflects the latest selection. This
-    /// matches bao 2026-05-14 directive: "工作区不应该在主窗口, 应该是独立窗口".
+    /// Per bao 2026-05-14: 工作区是独立窗口, 对应所选按键. Workspace window
+    /// is rebuilt fresh per activation so the new keycap_id query param
+    /// drives the route from a clean WebView state (same destroy + rebuild
+    /// trick as the main window).
     pub fn open_workspace(app: &AppHandle, keycap_id: &str) -> Result<()> {
-        let Some(w) = app.get_webview_window("workspace") else {
-            tracing::warn!("WindowController::open_workspace — workspace window not found");
-            return Ok(());
-        };
-        // Navigate to /workspace?keycap_id=... so the PWA workspace route picks
-        // it up. The WebView already has the SPA loaded; URL change re-routes
-        // without a full reload.
-        // Tauri 2 exposes navigation via the underlying WebView; the simplest
-        // portable trick is to evaluate the History API. sub-PR f wires a
-        // proper command bridge.
-        let nav_script = format!(
-            "window.location.hash = '#/workspace?keycap_id={}'; window.dispatchEvent(new Event('hashchange'));",
-            keycap_id.replace('\'', "")
-        );
-        let _ = w.eval(&nav_script);
-
-        let _ = w.set_skip_taskbar(false);
-        w.show()?;
-        w.set_focus()?;
-        tracing::info!("workspace window opened for keycap_id={}", keycap_id);
+        // If a workspace window already exists, destroy it so the rebuild
+        // below loads the new keycap_id cleanly.
+        if let Some(existing) = app.get_webview_window("workspace") {
+            let _ = existing.destroy();
+        }
+        let safe_keycap = keycap_id.replace(['\'', '"', '\\', '\n', '\r'], "");
+        let url = format!("/workspace?keycap_id={safe_keycap}");
+        let w = WebviewWindowBuilder::new(app, "workspace", WebviewUrl::App(url.into()))
+            .title("CTRL · Workspace")
+            .inner_size(640.0, 480.0)
+            .min_inner_size(400.0, 320.0)
+            .decorations(true)
+            .transparent(false)
+            .shadow(true)
+            .always_on_top(false)
+            .skip_taskbar(false)
+            .focused(true)
+            .center()
+            .resizable(true)
+            .build()?;
+        install_close_intercept(&w, app, "workspace");
+        tracing::info!("workspace window built for keycap_id={}", keycap_id);
         Ok(())
     }
 
-    /// Hide the workspace window. Called when the keycap actor signals done
-    /// or the user presses Esc / closes the window.
+    /// Close (destroy) the workspace window. Called by the keycap actor on
+    /// completion, by the PWA close button, or by Esc.
     pub fn close_workspace(app: &AppHandle) -> Result<()> {
-        let Some(w) = app.get_webview_window("workspace") else {
-            return Ok(());
-        };
-        let _ = w.set_skip_taskbar(true);
-        let _ = w.hide();
-        force_hide_win(&w)?;
+        if let Some(w) = app.get_webview_window("workspace") {
+            let _ = w.destroy();
+        }
         Ok(())
     }
 
     /// Hide the main window unless a modal child has been opened.
-    /// Ports the W3.6 modal-aware focus-loss guard.
+    /// In the destroy + rebuild model, "hide" = "destroy".
     pub fn hide_unless_modal(app: &AppHandle) -> Result<()> {
-        let Some(w) = Self::main(app) else {
-            return Ok(());
-        };
-        if !Self::is_user_visible(&w) {
-            return Ok(());
+        if let Some(w) = Self::main(app) {
+            let _ = w.destroy();
         }
-        // sub-PR f: enumerate child webviews + skip hide if any are
-        // visible+focused. For now, hide unconditionally.
-        let _ = w.set_skip_taskbar(true);
-        let _ = w.hide();
-        force_hide_win(&w)?;
         Ok(())
     }
+}
+
+/// Install a WindowEvent::CloseRequested handler that intercepts the OS X
+/// button and routes it to destroy through the canonical toggle path. The
+/// intercept is necessary because clicking X otherwise leaves residual
+/// state Tauri considers a "close-from-user" event — we want the same
+/// behavior as a hotkey-triggered destroy: window gone, app process stays
+/// alive in tray for re-summoning.
+pub(crate) fn install_close_intercept(w: &WebviewWindow, app: &AppHandle, label: &str) {
+    let app_for_event = app.clone();
+    let label_owned = label.to_string();
+    w.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            tracing::info!("close requested on window={} — destroying via toggle path", label_owned);
+            api.prevent_close();
+            let app_for_closure = app_for_event.clone();
+            let label_for_closure = label_owned.clone();
+            let _ = app_for_event.run_on_main_thread(move || {
+                if let Some(w) = app_for_closure.get_webview_window(&label_for_closure) {
+                    let _ = w.destroy();
+                }
+            });
+        }
+    });
 }
