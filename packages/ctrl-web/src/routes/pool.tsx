@@ -3,31 +3,51 @@
 // Replaces W3 win/CTRL/Pages/KeycapPoolPage.xaml. Same 8-col grid contract
 // (sub-PR e migrates Win users to PWA, this route becomes the canonical UI).
 
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ClockStrip } from '@/components/ClockStrip';
 import { KeycapCard } from '@/components/KeycapCard';
 import { listKeycaps, openWorkspace } from '@/lib/kernel';
 import styles from './pool.module.css';
 
+const ACTIVATION_ERROR_TTL_MS = 4000;
+
+const formatActivationError = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return 'Unexpected error';
+};
+
 export const PoolRoute = (): React.ReactElement => {
   const { data: keycaps = [], isLoading } = useQuery({
     queryKey: ['keycaps'],
     queryFn: listKeycaps,
   });
+  const [activationError, setActivationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activationError) return;
+    const timer = window.setTimeout(() => setActivationError(null), ACTIVATION_ERROR_TTL_MS);
+    return () => window.clearTimeout(timer);
+  }, [activationError]);
 
   const handleActivate = (id: string): void => {
     // Open the dedicated workspace WINDOW (not a tab in this window)
     // per bao 2026-05-14: 工作区不应该在主窗口, 应该是独立窗口.
-    void openWorkspace(id).catch((err) => {
-      // Silent in shipped — surface via in-window toast in sub-PR f.
-      // For now, swallow so a transient bridge failure doesn't crash the pool.
-      void err;
+    void openWorkspace(id).catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error('[ctrl/web] openWorkspace failed', err);
+      setActivationError(formatActivationError(err));
     });
   };
 
   return (
     <div className={styles.layout}>
       <ClockStrip />
+      {activationError && (
+        <div role="alert" className={styles.banner}>
+          {activationError}
+        </div>
+      )}
       <main className={styles.grid} role="main" aria-label="Keycap pool">
         {isLoading && <p className={styles.empty}>Loading…</p>}
         {!isLoading && keycaps.length === 0 && (

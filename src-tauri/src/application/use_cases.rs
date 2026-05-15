@@ -23,7 +23,17 @@ pub fn start_hotkey_pipeline(
     keyboard.start(Box::new(move |raw| {
         let now = clock.now_ms();
         let state = {
-            let mut d = detector.lock().expect("detector poisoned");
+            // Recover from a poisoned mutex instead of panicking on a stray
+            // panic inside an earlier callback. The detector is a pure state
+            // machine over u64 timestamps — there is no partially-mutated
+            // invariant that observing the inner state could violate.
+            let mut d = match detector.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    tracing::warn!("detector mutex poisoned — recovering inner state");
+                    poisoned.into_inner()
+                }
+            };
             match raw {
                 RawKeyEvent::CtrlDown => d.on_ctrl_down(now),
                 RawKeyEvent::CtrlUp => d.on_ctrl_up(now),

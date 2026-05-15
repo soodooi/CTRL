@@ -121,3 +121,23 @@ const wsInvoke = async <T>(command: string, args?: InvokeArgs): Promise<T> => {
 };
 
 export const platform = (): 'tauri' | 'web' => (isTauri() ? 'tauri' : 'web');
+
+// Best-effort cleanup so mobile browsers (and Tauri WebView reloads) don't
+// accumulate WebSocket connections on tab close / hide. Tauri intra-process
+// invoke does not go through this path, so the listener is a no-op on
+// desktop apart from a single close() call at shutdown.
+if (typeof window !== 'undefined') {
+  const closeWs = (): void => {
+    if (wsConn && wsConn.readyState !== WebSocket.CLOSED) {
+      try {
+        wsConn.close(1000, 'pwa shutdown');
+      } catch {
+        // ignore: socket may already be closing.
+      }
+    }
+    wsConn = null;
+    wsConnPromise = null;
+  };
+  window.addEventListener('beforeunload', closeWs);
+  window.addEventListener('pagehide', closeWs);
+}

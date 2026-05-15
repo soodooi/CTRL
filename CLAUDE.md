@@ -70,7 +70,7 @@ CTRL/                           ← THIS REPO (deliverable)
 │   ├── ctrl-web/               ← PWA (React + Vite + vite-plugin-pwa) — SINGLE UI codebase
 │   ├── olym-core/              copy from hello-olym (SSOT)
 │   ├── olym-desktop/           桌面 olym 派生
-│   ├── ctrl-stss/              ST-SS protocol TS (99 tests)
+│   ├── ctrl-stss/              ST-SS protocol TS (69 tests; 99 workspace-wide)
 │   ├── ctrl-memory/            client-side event log TS
 │   └── ctrl-kernel-sdk/        L2 syscall surface (mirrors Rust kernel)
 ├── share/
@@ -111,7 +111,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | MCP | Anthropic rmcp Rust SDK |
 | Backend (cloud) | Cloudflare Workers + D1 (ctrl-auth / ctrl-billing / ctrl-market / **ctrl-relay** / ctrl-push) |
 | Payments | Stripe |
-| Min platform | Windows 11+ (primary dev), macOS 13+ (secondary), iOS 16.4+ PWA, Android Chrome PWA, WebView2 / WKWebView evergreen |
+| Min platform | Windows 10 1809+ (primary Win 11+ dev; ADR-002 §6 WebView2 bootstrapper covers 10), macOS 13+ (secondary), iOS 16.4+ PWA, Android Chrome PWA, WebView2 / WKWebView evergreen |
 | Mobile | Pure browser PWA (no React Native, no Capacitor) + WebRTC + WASM vodozemac + WASM Automerge |
 | Node | 20.x LTS |
 | Rust | 1.77+ stable |

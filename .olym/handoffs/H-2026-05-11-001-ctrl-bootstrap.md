@@ -2,7 +2,8 @@
 id: H-2026-05-11-001
 title: CTRL Kernel bootstrap — workspaces + olym-core + ST-SS cherry-pick
 severity: P0
-status: open
+status: merged
+merged_at: 2026-05-12
 reporter: bao
 assigned_to: zeus
 lane: zeus-bootstrap

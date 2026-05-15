@@ -14,6 +14,14 @@
 // yet. Existing application/use_cases.rs path keeps running independently.
 // Full integration in P2.4-P2.7.
 
+// dead-code allow is scoped to this module tree: the kernel primitives and
+// adjacent runtime/sandbox stubs are intentionally unwired in P2.1; the
+// Tauri command surface starts dispatching through them in P2.4. Without
+// this allow, `cargo check` emits ~120 warnings that drown the signal from
+// the legacy hexagonal modules during the macOS migration (H-2026-05-14-002).
+// Re-evaluate this allow when P2.4 lands.
+#![allow(dead_code)]
+
 pub mod actor;
 pub mod capability;
 pub mod channel;

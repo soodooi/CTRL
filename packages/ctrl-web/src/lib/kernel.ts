@@ -52,7 +52,7 @@ export const listMcpServers = (): Promise<string[]> => invoke('list_mcp_servers'
  * latest keycap).
  */
 export const openWorkspace = (keycap_id: string): Promise<void> =>
-  invoke('open_workspace', { keycapId: keycap_id });
+  invoke('open_workspace', { keycap_id });
 
 export interface StreamHandle {
   stream_id: string;

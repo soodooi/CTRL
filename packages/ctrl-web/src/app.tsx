@@ -11,6 +11,7 @@ import {
   Link,
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { PoolRoute } from './routes/pool';
 import { WorkspaceRoute } from './routes/workspace';
 import { SettingsRoute } from './routes/settings';
@@ -76,7 +77,9 @@ const queryClient = new QueryClient({
 });
 
 export const App = (): React.ReactElement => (
-  <QueryClientProvider client={queryClient}>
-    <RouterProvider router={router} />
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  </ErrorBoundary>
 );

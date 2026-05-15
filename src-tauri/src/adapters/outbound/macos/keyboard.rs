@@ -89,6 +89,14 @@ impl KeyboardListenerPort for CgEventTapKeyboard {
                 }
             };
 
+            // SAFETY: `CFRunLoop::get_current()` returns the run loop bound to
+            // the *current* thread — this closure runs on the dedicated thread
+            // we just spawned, so the returned run loop reference is valid for
+            // the lifetime of this thread. `runloop_source` was created by
+            // `create_runloop_source` and is owned for the duration of this
+            // closure, so the add_source call cannot observe a freed source.
+            // `kCFRunLoopCommonModes` is a static immutable CFString from the
+            // CoreFoundation library and is always valid.
             unsafe {
                 CFRunLoop::get_current().add_source(&runloop_source, kCFRunLoopCommonModes);
             }
