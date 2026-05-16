@@ -4,8 +4,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
 
 // ADR-002 §5 stack lock: React 18 + Vite 5 + TanStack Router/Query +
-// Zustand + Framer Motion + vite-plugin-pwa. CSS modules + design tokens
-// (no Tailwind by default — protects against template look).
+// Zustand + vite-plugin-pwa. CSS modules + design tokens (no Tailwind by
+// default — protects against template look). framer-motion stayed in the
+// stack lock for future surfaces but is currently removed from the bundle
+// — KeycapCard is pure CSS, ClockStrip is static text.
 export default defineConfig({
   resolve: {
     alias: {
@@ -26,7 +28,6 @@ export default defineConfig({
         manualChunks: {
           'react-vendor': ['react', 'react-dom'],
           'tanstack': ['@tanstack/react-router', '@tanstack/react-query'],
-          'motion': ['framer-motion'],
         },
       },
     },

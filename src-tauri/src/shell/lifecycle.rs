@@ -36,9 +36,17 @@ impl ShellLifecycle {
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;
 
-        // Install close-intercept (X button -> destroy via canonical path)
-        // on the initial main window. Workspace window is built lazily by
-        // open_workspace and installs its own intercept there.
+        // Prewarm: teleport the auto-built main window off-screen as the very
+        // first thing after kernel ready. Tauri's window-config `x`/`y` is
+        // unreliable on Win11 (often centered regardless), so do it from
+        // Rust to guarantee the user never sees the launcher until they
+        // press Ctrl. WebView2 spins up in the background, PWA mounts off-
+        // screen — first hotkey tap becomes a sub-30ms teleport.
+        tracing::info!("ShellLifecycle::boot — prewarming main window off-screen");
+        WindowController::prewarm(app)?;
+
+        // Install close intercept on the prewarmed main so the X button also
+        // teleports off-screen rather than destroying state.
         tracing::info!("ShellLifecycle::boot — installing close intercept on main");
         if let Some(main) = app.get_webview_window("main") {
             install_close_intercept(&main, app, "main");

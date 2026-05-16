@@ -2,6 +2,7 @@
 // Outlet is referenced inside rootRoute.component below; the linter sees it
 // embedded in JSX.
 
+import { lazy, Suspense } from 'react';
 import {
   RouterProvider,
   createRouter,
@@ -13,9 +14,23 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PoolRoute } from './routes/pool';
-import { WorkspaceRoute } from './routes/workspace';
-import { SettingsRoute } from './routes/settings';
 import styles from './app.module.css';
+
+// Workspace pulls in cbor-x + the stream feed renderer; both are only needed
+// once a keycap activation routes to /workspace. Lazy-load to keep the Pool
+// critical path tiny on first paint after a destroy + rebuild summon.
+const WorkspaceRoute = lazy(() =>
+  import('./routes/workspace').then((m) => ({ default: m.WorkspaceRoute })),
+);
+const SettingsRoute = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsRoute })),
+);
+
+const LazyFallback = (): React.ReactElement => (
+  <div style={{ padding: 'var(--space-6)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+    Loading…
+  </div>
+);
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -44,12 +59,20 @@ const indexRoute = createRoute({
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/workspace',
-  component: WorkspaceRoute,
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <WorkspaceRoute />
+    </Suspense>
+  ),
 });
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
-  component: SettingsRoute,
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsRoute />
+    </Suspense>
+  ),
 });
 
 const routeTree = rootRoute.addChildren([indexRoute, workspaceRoute, settingsRoute]);
