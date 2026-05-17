@@ -1,5 +1,9 @@
 # ADR-003: Multi-device Mesh Communication Architecture
 
+> ✅ **CURRENT / EFFECTIVE** —— 现行架构，可据此实现。
+> ⚠️ **内部矛盾未解**：§3.1 写 vodozemac 为加密层，§7 跨平台表里 iOS PWA / Android Chrome PWA 写 libsignal-wasm。这两者不等价。**待 zeus 在 ADR-007 (vodozemac vs libsignal 二选一) 决议**。在此之前，实现层以 §3.1 的 vodozemac 为准。
+> §5 配对协议详细流程已 BLOAT 抽到 `.olym/specs/stss-protocol/mesh-profile.md`（参见该节内联标记）。
+
 - **Status**: **Accepted** (bao 2026-05-14, choice "A" — full mesh, mobile lane in v1.0)
 - **Date**: 2026-05-14 (proposed), 2026-05-14 (accepted)
 - **Decision makers**: bao (architecture call + accept), zeus (proposer + foundation builder), athena (Sprint 2+ implementer)
@@ -181,6 +185,10 @@ For a typical user with 2 devices and P2P success: ~500 KB/month relay traffic, 
 
 ## 5. Pairing flow
 
+> 🚫 **本节存在 BLOAT**：详细握手序列图、QR 编码格式、X3DH 步骤是 spec 内容不是架构决策。
+> 已抽到 [`.olym/specs/stss-protocol/mesh-profile.md`](../../.olym/specs/stss-protocol/mesh-profile.md)。
+> 此处保留原图作历史。架构决策只剩一句：**QR + 6-digit 回退 + X3DH 握手 + 5 分钟过期**。
+
 ### 5.1 Initial pair (any two devices)
 
 ```
@@ -290,6 +298,10 @@ The mesh layer wraps stss_bridge: the bridge already handles local WS connection
 ---
 
 ## 9. Phase plan (revises ADR-002 §10)
+
+> 🚫 **本节存在 BLOAT**：阶段规划不属于 ADR。
+> **现行阶段计划唯一来源 → `.olym/steering/ctrl-strategy.md`**。
+> 此处保留原表作历史。
 
 | Phase | Content | v target |
 |---|---|---|

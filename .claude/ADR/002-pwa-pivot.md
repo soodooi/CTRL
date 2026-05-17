@@ -1,12 +1,29 @@
 # ADR-002: PWA UI Pivot — Tauri 2 Native Shell + Shared Web Codebase
 
-- **Status**: **Accepted** (bao 2026-05-13)
+- **Status**: **Accepted** (bao 2026-05-13) — with partial supersedes by ADR-003
 - **Date**: 2026-05-13 (proposed), 2026-05-13 (accepted)
 - **Decision makers**: bao
 - **Supersedes (partial)**: `.claude/ADR/001-system-architecture.md` §3.1 (UI rendering layer), §6 items #1/#7-9/#13/#15 (delivery surface), §10 (15 keycap delivery shape)
+- **Partially superseded by**: [ADR-003](./003-multi-device-mesh.md) — §8 mobile lane (now full mesh node), §9 ctrl-relay (promoted v1.0 mandatory), §10 phase plan (mesh phases added), §13 SC + §16 binary budgets (revised)
 - **Preserves (untouched)**: ADR-001 5 primitives, 5 keycap sources, Pattern D LLM strategy, creator economy, repository topology, 不做清单, 18 底座 protocol/data/commercial layers
 - **Triggers**: Session `079eb101` (2026-05-13 09:55–10:47), bao confirm `好，按照P2方向做规划` (2026-05-13)
 - **References**: ADR-001, `.olym/specs/win-shell/spec.md` (partial deprecate), `.olym/specs/mac-shell/spec.md` (partial deprecate), `.olym/specs/pwa-shell/spec.md` (new)
+
+---
+
+> ⚠️ **PARTIALLY SUPERSEDED — 不要把本 ADR 当现行架构读**
+>
+> 本文档以下章节已被 ADR-003 替换或修订（正文保留作历史）：
+> - **§5 bundle 预算** 300 kB → 500 kB gzip（修订）
+> - **§7 W3 资产处置** → BLOAT，详细迁移见 `.olym/handoffs/H-2026-05-13-001-pwa-pivot.md`
+> - **§8 移动端瘦客户端** → **全替**，移动端现为完整 mesh 节点（[ADR-003 §1](./003-multi-device-mesh.md#1-decision)）
+> - **§9 ctrl-relay 延期 P11+** → 已提升至 **v1.0 mandatory**（[ADR-003 §1](./003-multi-device-mesh.md#1-decision)）
+> - **§10 阶段规划** → 已被 ADR-003 §9 修订（新增 P4.5–P4.9 mesh 相关）；现行版本在 `.olym/steering/ctrl-strategy.md`
+> - **§13 success criteria** Hotkey 80 ms → 100 ms 冷启动（修订）
+> - **§16 binary size** slim 15 MB → 18 MB（修订）
+>
+> **要看现行有效架构，请读 [EFFECTIVE.md](./EFFECTIVE.md)**。
+> **保留不变的核心决策**：§1 PWA pivot、§3-§4 4 责任划分、§5 stack lock（除 bundle 预算外）、§6 Tauri 2 stack、§12 amendment process。
 
 ---
 
@@ -157,6 +174,10 @@ If any future PWA web standard collapses one of these (e.g. permanent SharedHotk
 
 ## 7. W3 (Win shell) asset disposition
 
+> 🚫 **本节存在 BLOAT**：文件级迁移表是 handoff 内容，不是架构决策。
+> 详细落地见 `.olym/handoffs/H-2026-05-13-001-pwa-pivot.md`。
+> 此处保留原表作历史。
+
 Current state per recent commits (`450cbda`, `0ec0bc2`, `793d36a`, `cf40993`, `5b651fc`, `dc8518a` etc.) and uncommitted hotkey refactor.
 
 ### Preserve (move/refactor into Tauri 2 shell)
@@ -192,6 +213,11 @@ Current state per recent commits (`450cbda`, `0ec0bc2`, `793d36a`, `cf40993`, `5
 
 ## 8. Mobile lane (PWA only)
 
+> 🚫 **本节已完全失效（superseded）**：移动端不再是瘦客户端。
+> [ADR-003 §1](./003-multi-device-mesh.md#1-decision) 把移动端升级为**完整 mesh 节点**：跑 vodozemac-wasm + automerge-wasm + browser WebRTC。
+> 看现行设计 → [EFFECTIVE.md §7 多设备 Mesh](./EFFECTIVE.md#7-多设备-mesh)。
+> 原"thin client"表保留作历史。
+
 Per ADR-001 5 keycap sources, mobile cannot host MCP stdio processes or local agents. Mobile is therefore a **thin client** in v1:
 
 | Capability | Mobile PWA | Justification |
@@ -226,6 +252,10 @@ Three workers per ADR-001 §7. PWA pivot adds one and unchains another:
 ---
 
 ## 10. Phase plan (revises ADR-001 §9)
+
+> 🚫 **本节已 BLOAT + 失效**：阶段规划不属于 ADR；本表已被 [ADR-003 §9](./003-multi-device-mesh.md#9-phase-plan-revises-adr-002-10) 再次修订（加 P4.5–P4.9）。
+> **现行阶段计划唯一来源 → `.olym/steering/ctrl-strategy.md`**。
+> 此处保留原表作历史。
 
 | Phase | Content | Status | Change |
 |---|---|---|---|

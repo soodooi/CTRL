@@ -1,56 +1,67 @@
 # ADR Index
 
-Architecture Decision Records (ADR) — chronological, never deleted, supersede via new ADR.
+Architecture Decision Records — never deleted, supersede via new ADR.
 
-> Lifecycle codified in [ADR-002 §12](./002-pwa-pivot.md#12-decision-amendment-process).
-
-| # | Title | Status | Date | Supersedes |
-|---|---|---|---|---|
-| [001](./001-system-architecture.md) | CTRL System Architecture — AI-native Agent OS Kernel | **Accepted** | 2026-05-11 | (prior Tauri DDD framing in `src-tauri/`) |
-| [002](./002-pwa-pivot.md) | PWA UI Pivot — Tauri 2 Native Shell + Shared Web Codebase | **Accepted** (2026-05-13) | 2026-05-13 | ADR-001 §3.1 (UI rendering layer), §6 items #1/#7-9/#13/#15 (delivery surface), §10 (15 keycap delivery shape) — partial only; ADR-001 spine preserved |
-| [003](./003-multi-device-mesh.md) | Multi-device Mesh Communication Architecture | **Accepted** (2026-05-14) | 2026-05-14 | ADR-002 §5/§10/§13/§16 (bundle/phase/SC/binary budgets revised), ADR-002 §8/§9 (mobile lane + ctrl-relay deferral superseded), ADR-001 §6 item #18 / §11 (CRDT promoted, lib chosen) — partial only; primitives + sources preserved |
+> **找现行架构** → [EFFECTIVE.md](./EFFECTIVE.md)
+> **写新 ADR** → [TEMPLATE.md](./TEMPLATE.md) + [PROCESS.md](./PROCESS.md)
+> **谁能提哪类** → [ROLES.md](./ROLES.md)
 
 ---
 
-## Status legend
+## Accepted ADRs
 
-- **Proposed** — written, awaiting bao Accept
-- **Accepted** — bao confirmed, code may follow
-- **Superseded** — later ADR amends/replaces (kept in tree, never deleted)
-- **Rejected** — bao declined (kept in tree as history)
+| # | Title | Status | Date | Notes |
+|---|-------|--------|------|-------|
+| [001](./001-system-architecture.md) | System Architecture — AI-native Agent OS Kernel | **Accepted (partial supersedes)** | 2026-05-11 | Spine 保留；§3.1/§6/§9/§10/§11 已部分被 002/003 替换；§9/§10/§6 内容已抽到 specs / steering / roadmap |
+| [002](./002-pwa-pivot.md) | PWA UI Pivot — Tauri 2 Native Shell + Shared Web Codebase | **Accepted (partial supersedes)** | 2026-05-13 | §8/§9/§10/§13/§16 已部分被 003 修订或替换 |
+| [003](./003-multi-device-mesh.md) | Multi-device Mesh Communication Architecture | **Accepted (current)** | 2026-05-14 | 现行；但 §3.1 vs §7 加密库矛盾未解，待 ADR-007 决议；§5 配对协议已抽到 specs |
 
-## Process (one-line summary of ADR-002 §12)
+---
 
-1. New ADR = monotonic id (`00N`), header lists `Supersedes` / `Preserves` from prior ADRs
-2. Status starts `Proposed`; only bao moves to `Accepted` / `Rejected`
-3. Steering doc (`.olym/steering/ctrl-strategy.md`) updates in **same PR** as Accept, never lags
-4. Specs under `.olym/specs/` declare their parent ADR; spec lifecycle `Draft v0.x` → `Stable v1.0`
-5. Handoffs (`.olym/handoffs/H-YYYY-MM-DD-NNN-*.md`) reference parent ADR + spec; one handoff per discrete deliverable
+## Proposed / Pending
 
-## Pending decisions
+| # | Title | Owner | Status | 触发 |
+|---|-------|-------|--------|------|
+| ADR-004 | v1.0 键帽 scope 砍量（15 → 8）补登 | hephaestus | TODO | EFFECTIVE.md §3 警告 |
+| ADR-005 | LLM provider 终选（Minimax / Claude CLI / Hermes） | zeus | TODO | EFFECTIVE.md §6 警告 |
+| ADR-006 | OPC 平台 vs 工具集合定位 | bao | TODO | README-OPC-PLATFORM 与 ADR-001 §2 并存 |
+| [ADR-007](./007-encryption-library.md) | 加密库 vodozemac vs libsignal-wasm 二选一 | zeus | **Proposed** (2026-05-16) | ADR-003 §3.1 vs §7 内部矛盾 |
+| ADR-008 | Cloudflare + Aliyun 部署策略 | zeus | TODO | DEPLOYMENT_DECISION.md 未走 ADR |
+| ADR-009 | Hermes Agent 框架最终采纳 | athena | TODO | doc/ctrl-agent-selection-summary.md 未走 ADR |
 
-(none — ADR-003 accepted 2026-05-14, choice "A": full mesh + mobile lane in v1.0; phase plan P4.5/4.6/4.7/4.8 added to v1.0 mandatory; ADR-002 §5/§10/§13/§16 amended in-place)
+---
 
-## Sub-PR map (H-2026-05-13-001 — Win PWA pivot, **merged 2026-05-14**)
+## Rejected
 
-| sub | Branch | Status |
-|---|---|---|
-| a | merged into main (c7cd54c) | ✅ ADR + phase + VI + INDEX |
-| b | `feat/h-001-b-tauri2-shell` | ✅ Tauri 2 plugins + Rust shell + lone-Ctrl hotkey port — merged via e |
-| c | `feat/h-001-c-pwa-scaffold` (stacked on b) | ✅ packages/ctrl-web + 3 routes + bridge + ClockStrip + KeycapCard — merged via e |
-| d | `feat/h-001-d-e2e-integration` (stacked on c) | ✅ stss_bridge promoted + commands wired to KernelHandle + tauri.conf swap — merged via e |
-| e | `feat/h-001-e-cleanup` (stacked on d) | ✅ merged 2026-05-14 — Win path now on main |
+（暂无）
 
-## Parallel lanes
+> **Note**: 历史上拒绝的方案（如 swift-bridge / SwiftUI 一度被探索后放弃），应有 Rejected ADR 记录，**目前补登优先级低，待精力允许**。
 
-| Lane | Owner | Branch / location | Handoff |
-|---|---|---|---|
-| Win11 backend (zeus) | zeus (Win) | `main` direct — Win UX bugs + P5/P6 backend + mesh foundation iteration | H-2026-05-13-001 (closed); P5/P6 specs WIP |
-| PWA frontend polish | athena-frontend | `feat/h-001-pwa-polish` worktree `D:/code-space/ctrl-pwa-polish` | H-2026-05-14-003 |
-| macOS migration | athena (MacBook physical) | `feat/h-001-mac-migration` (cloned on Mac) | H-2026-05-14-002 |
-| Multi-device mesh foundation | done | merged into main (`32cef51`) — ctrl-mesh skeleton + 6 OpKind | H-2026-05-14-001 Sprint 1 done |
-| Multi-device mesh implementation | athena (Sprint 2+, paused) | `feat/h-003-mesh-comm` worktree `D:/code-space/ctrl-h003-mesh` | H-2026-05-14-001 (resumes when bao starts mesh Sprint 2) |
+---
 
-## Related spike
+## Lifecycle
 
-- `feat/h-003-stss-spike` (H-2026-05-13-002) — ST-SS double-direction validation. Promoted into `kernel::stss_bridge` in sub-PR d (now on main); spike binary + viewer retained in `share/stss-spike/` as reference.
+- **Proposed** —— 写了，等 bao Accept
+- **Accepted** —— bao confirmed，可写代码
+- **Accepted (partial supersedes)** —— 部分内容已失效，spine 仍有效，看 EFFECTIVE.md
+- **Superseded** —— 整体被替代（保留作历史）
+- **Rejected** —— bao 拒绝（保留作历史）
+
+完整流程见 [PROCESS.md](./PROCESS.md)。
+
+---
+
+## 治理文档
+
+| 文件 | 用途 |
+|------|------|
+| [EFFECTIVE.md](./EFFECTIVE.md) | 当前真理 / 现行有效架构合成视图 |
+| [PROCESS.md](./PROCESS.md) | ADR 编写规则、生命周期、反 bloat 检查 |
+| [TEMPLATE.md](./TEMPLATE.md) | 新 ADR 模板（MADR 3.0 风格 + 单决策约束） |
+| [ROLES.md](./ROLES.md) | zeus / athena / hephaestus / bao 角色映射 |
+
+---
+
+## 子 PR / 工作流
+
+历史 sub-PR map 与 parallel lanes 已搬到 `.olym/steering/ctrl-strategy.md` 与 `.olym/handoffs/`。本 INDEX 只保留 ADR 列表。

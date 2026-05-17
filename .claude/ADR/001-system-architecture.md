@@ -1,10 +1,26 @@
 # ADR-001: CTRL System Architecture — AI-native Agent OS Kernel
 
-- **Status**: Accepted
+- **Status**: Accepted (with partial supersedes; spine intact)
 - **Date**: 2026-05-11
 - **Decision makers**: bao (solo operator)
 - **Supersedes**: prior Tauri DDD framing in `src-tauri/` (kept as L0 native shell)
+- **Partially superseded by**: ADR-002 (UI layer + delivery), ADR-003 (mesh + CRDT)
 - **References**: AIOS (Rutgers COLM 2025), Anthropic Sandbox Runtime, IronClaw seL4-inspired sandbox, MCP OASIS security, LiveStore/TanStack DB, Yjs CRDT
+
+---
+
+> ⚠️ **PARTIALLY SUPERSEDED — 不要把本 ADR 当现行架构读**
+>
+> 本文档的以下章节已被后续 ADR 替换或修订，**正文保留作历史**：
+> - **§3.1** 渲染层 → 被 [ADR-002 §3](./002-pwa-pivot.md#3-new-4-layer-rendering-revises-adr-001-31) 替换（PWA 一统 + L0 daemon 化）
+> - **§6 #1/#7-9/#13/#15** 交付面 → 被 ADR-002 §6 修订
+> - **§6 #18** 跨设备同步 → 被 [ADR-003](./003-multi-device-mesh.md) 提升至 v1.1
+> - **§9** 阶段规划 → 被 ADR-002 §10 + ADR-003 §9 多次修订；现行版本在 `.olym/steering/ctrl-strategy.md`
+> - **§10** 15 键帽清单 → 已砍至 v1.0 = 8，**待 ADR-004 正式登记**
+> - **§11** Open questions 中 CRDT 项 → 被 [ADR-003 §6](./003-multi-device-mesh.md#6-crdt-layer-automerge) 解决（Automerge v0.7.x）
+>
+> **要看现行有效架构，请读 [EFFECTIVE.md](./EFFECTIVE.md)**。
+> **保留不变的"spine"**：§3.2（5 原语）、§4（5 键帽源）、§5（LLM Pattern D）、§8（repo 拓扑）、§12（风险）、§13（不做清单）。
 
 ---
 
@@ -40,9 +56,10 @@ CTRL adopts an **AI-native Agent OS Kernel architecture** with 4 layers and 5 co
 
 ### 3.1 Layer diagram
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ L3 Userland (sandboxed, WASM)                          │
+> 🚫 **本节已部分失效**：UI 渲染层被 [ADR-002 §3](./002-pwa-pivot.md#3-new-4-layer-rendering-revises-adr-001-31) 替换为 PWA 一统 + L0 daemon。原 L0 包含 UI；现行 L0 仅 ~500 LOC 壳。**当前层图见 [EFFECTIVE.md §1](./EFFECTIVE.md#1-四层架构基石)**。
+> 5 原语 / capability 模型 / event-sourced persistence **保留不变**。
+
+
 │  键帽 actors / 硬件 source actors / LLM call actors /   │
 │  OAuth flow actors / Tool runtime actors                │
 └─────────────────────┬───────────────────────────────────┘
@@ -150,6 +167,10 @@ Local Ollama / private models
 
 ## 6. Eighteen底座 infrastructure items
 
+> 🚫 **本节存在 BLOAT**：18 项基础设施是 spec 不是 ADR 决策。已抽到 [`.olym/specs/infrastructure.md`](../../.olym/specs/infrastructure.md)。
+> 此处保留原列表作历史；**新代码请直接读 spec**。
+> 部分项已被后续 ADR 修订：#1/#7-9/#13/#15 ([ADR-002 §6](./002-pwa-pivot.md#9-ctrl-cloud-delta))、#18 ([ADR-003](./003-multi-device-mesh.md))。
+
 ### Protocol layer (5)
 1. MCP client + server discovery
 2. ST-SS receiver/sender (custom protocol)
@@ -236,6 +257,10 @@ D:/code-space/screi/                    ARCHIVE after ST-SS cherry-pick
 
 ## 9. Phase plan
 
+> 🚫 **本节已 BLOAT 抽走 + 失效**：阶段规划不属于 ADR，且本表已被 [ADR-002 §10](./002-pwa-pivot.md#10-phase-plan-revises-adr-001-9) + [ADR-003 §9](./003-multi-device-mesh.md#9-phase-plan-revises-adr-002-10) 多次修订。
+> **现行阶段计划见 `.olym/steering/ctrl-strategy.md`**。
+> 此处保留原表作历史。
+
 | Phase | Content | Status |
 |---|---|---|
 | **P0** | Legal cleanup (screi Apache→Reserved, CTRL +LICENSE) | ✅ done 2026-05-11 |
@@ -256,6 +281,11 @@ D:/code-space/screi/                    ARCHIVE after ST-SS cherry-pick
 ---
 
 ## 10. Top 15 built-in keycaps (v1 scope)
+
+> 🚫 **本节已失效 + 抽走**：
+> 1. 数量已砍：v1.0 实际 = 8（不是 15）。决策已在 `.olym/steering/ctrl-strategy.md` 发生但未走 ADR 流程，**待 ADR-004 补登**。
+> 2. 键帽清单属于产品 roadmap 不属于 ADR，已抽到 [`doc/keycap-roadmap.md`](../../doc/keycap-roadmap.md)（Hephaestus 维护）。
+> 此处保留原 15 项清单作历史。
 
 ### 5 P0 (launch v1.0)
 1. Clipboard 增强 (AI 改写粘贴)
@@ -281,6 +311,13 @@ D:/code-space/screi/                    ARCHIVE after ST-SS cherry-pick
 ---
 
 ## 11. Open questions (deferred decisions)
+
+> ⚠️ **本节部分已解决**：
+> - **CRDT 库选型** → [ADR-003 §6](./003-multi-device-mesh.md#6-crdt-layer-automerge) 已锁 Automerge v0.7.x
+> - **Persistence 选型** → 已锁 SQLite + 自定义 event store（spec 落地）
+> - **WASM 沙箱** → 仍 deferred 至 P3.9 RFC
+> - **Actor runtime** → 已隐式选 tokio + 自造
+> - **定价 / 国际化** → 仍 deferred
 
 | Question | Defer until |
 |---|---|
