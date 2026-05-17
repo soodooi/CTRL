@@ -158,3 +158,55 @@ impl Default for CapabilityBroker {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oauth_access_serde_roundtrip() {
+        let t = CapToken::OAuthAccess {
+            provider: "feishu".into(),
+            scopes: vec!["im:message".into(), "drive:doc:read".into()],
+        };
+        let j = serde_json::to_string(&t).unwrap();
+        assert!(j.contains("OAuthAccess"));
+        assert!(j.contains("feishu"));
+        assert!(j.contains("im:message"));
+        let back: CapToken = serde_json::from_str(&j).unwrap();
+        match back {
+            CapToken::OAuthAccess { provider, scopes } => {
+                assert_eq!(provider, "feishu");
+                assert_eq!(scopes, vec!["im:message", "drive:doc:read"]);
+            }
+            other => panic!("roundtrip wrong variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn capability_contains_oauth_access() {
+        let oauth = CapToken::OAuthAccess {
+            provider: "notion".into(),
+            scopes: vec!["pages:read".into()],
+        };
+        let cap = Capability::new(vec![oauth.clone()]);
+        assert!(cap.contains(&oauth));
+
+        let different_provider = CapToken::OAuthAccess {
+            provider: "slack".into(),
+            scopes: vec!["pages:read".into()],
+        };
+        assert!(!cap.contains(&different_provider));
+    }
+
+    #[test]
+    fn broker_check_rejects_missing_oauth() {
+        let broker = CapabilityBroker::new();
+        let cap = Capability::empty();
+        let required = CapToken::OAuthAccess {
+            provider: "feishu".into(),
+            scopes: vec!["im:message".into()],
+        };
+        assert!(broker.check(&cap, &required).is_err());
+    }
+}

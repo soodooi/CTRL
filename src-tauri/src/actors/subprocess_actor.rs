@@ -108,3 +108,57 @@ impl Actor for SubprocessActor {
         ActorPriority::UserAction
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lifecycle_default_is_on_demand_60s() {
+        match SubprocessLifecycle::default() {
+            SubprocessLifecycle::OnDemand { idle_ms } => assert_eq!(idle_ms, 60_000),
+            other => panic!("expected OnDemand, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lifecycle_serde_roundtrip_on_demand() {
+        let l = SubprocessLifecycle::OnDemand { idle_ms: 5000 };
+        let j = serde_json::to_string(&l).unwrap();
+        assert!(j.contains("on_demand"));
+        assert!(j.contains("5000"));
+        let back: SubprocessLifecycle = serde_json::from_str(&j).unwrap();
+        match back {
+            SubprocessLifecycle::OnDemand { idle_ms } => assert_eq!(idle_ms, 5000),
+            other => panic!("roundtrip lost data: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lifecycle_serde_persistent() {
+        let l = SubprocessLifecycle::Persistent;
+        let j = serde_json::to_string(&l).unwrap();
+        assert_eq!(j, "\"persistent\"");
+    }
+
+    #[test]
+    fn lifecycle_serde_boot_managed() {
+        let l = SubprocessLifecycle::BootManaged;
+        let j = serde_json::to_string(&l).unwrap();
+        assert_eq!(j, "\"boot_managed\"");
+    }
+
+    #[test]
+    fn new_initializes_cold() {
+        let a = SubprocessActor::new(
+            "echo",
+            vec!["hello".into()],
+            SubprocessLifecycle::Persistent,
+            "echo-bot",
+        );
+        assert_eq!(a.command, "echo");
+        assert_eq!(a.args, vec!["hello"]);
+        assert!(a.pid.is_none());
+        assert_eq!(a.name(), "echo-bot");
+    }
+}

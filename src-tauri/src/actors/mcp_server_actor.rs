@@ -83,3 +83,61 @@ impl Actor for McpServerActor {
         ActorPriority::UserAction
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::actor::ActorId;
+    use crate::kernel::capability::Capability;
+    use crate::kernel::event::Op;
+    use serde_json::json;
+
+    fn ctx() -> ActorContext {
+        ActorContext {
+            self_id: ActorId::from_str("test-actor"),
+            parent_id: None,
+            capability: Capability::empty(),
+            deadline_ms: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_keycap_invoked_emits_mcp_invoke_effect() {
+        let mut actor = McpServerActor::new("bazi-mcp", "Bazi MCP");
+        let op = Op {
+            kind: OpKind::KeycapInvoked,
+            ts_ms: 0,
+            stream_id: None,
+            payload: json!({"tool": "compute_chart", "args": {"date": "2026-05-17"}}),
+        };
+        let effects = actor.handle(Event::Op(op), &ctx()).await;
+        assert_eq!(effects.len(), 1);
+        match &effects[0] {
+            Effect::McpInvoke { server, tool, args, .. } => {
+                assert_eq!(server, "bazi-mcp");
+                assert_eq!(tool, "compute_chart");
+                assert_eq!(args["date"], "2026-05-17");
+            }
+            other => panic!("expected McpInvoke, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_unrelated_op_emits_nothing() {
+        let mut actor = McpServerActor::new("bazi-mcp", "Bazi MCP");
+        let op = Op {
+            kind: OpKind::HotkeyTriggered,
+            ts_ms: 0,
+            stream_id: None,
+            payload: json!({}),
+        };
+        let effects = actor.handle(Event::Op(op), &ctx()).await;
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn name_returns_display_name() {
+        let actor = McpServerActor::new("id-x", "Display Name");
+        assert_eq!(actor.name(), "Display Name");
+    }
+}
