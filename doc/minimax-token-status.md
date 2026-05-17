@@ -4,7 +4,7 @@
 
 ### ✅ **Token 验证通过**
 
-**Token**: `<redacted-rotated-2026-05-16>`
+**Token**: `<redacted — stored in .env.local, never commit>`
 
 **验证状态**: ✅ **有效且可用**
 
@@ -58,7 +58,7 @@
 #### 方案1：环境变量（推荐）
 ```bash
 # .env 文件
-MINIMAX_API_KEY=<redacted-rotated-2026-05-16>
+MINIMAX_API_KEY=<your-minimax-api-key>
 MINIMAX_MODEL=MiniMax-M2.7-highspeed
 ```
 
@@ -78,7 +78,7 @@ async fn save_minimax_token(token: &str) -> Result<(), String> {
 ```json
 // config/minimax.json
 {
-  "api_key": "<redacted-rotated-2026-05-16>",
+  "api_key": "<read from env: MINIMAX_API_KEY>",
   "model": "MiniMax-M2.7-highspeed",
   "base_url": "https://api.minimax.chat/v1",
   "timeout": 30000,
@@ -143,7 +143,7 @@ async fn save_minimax_token(token: &str) -> Result<(), String> {
 ### 今天可以开始：
 1. **创建环境变量文件**
    ```bash
-   echo "MINIMAX_API_KEY=<redacted-rotated-2026-05-16>" > .env.local
+   echo "MINIMAX_API_KEY=<your-minimax-api-key>" > .env.local
    echo "MINIMAX_MODEL=MiniMax-M2.7-highspeed" >> .env.local
    ```
 

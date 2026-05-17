@@ -14,7 +14,7 @@ hermes --version
 ### 2. 配置Minimax API Key
 ```bash
 # 创建环境变量文件
-echo "MINIMAX_API_KEY=<redacted-rotated-2026-05-16>" > .env.local
+echo "MINIMAX_API_KEY=<your-minimax-api-key>" > .env.local
 echo "MINIMAX_MODEL=MiniMax-M2.7-highspeed" >> .env.local
 
 # 测试Minimax连接
@@ -340,7 +340,7 @@ demo().catch(console.error);
 ### 2. 运行演示
 ```bash
 # 设置环境变量
-export MINIMAX_API_KEY="<redacted-rotated-2026-05-16>"
+export MINIMAX_API_KEY="<your-minimax-api-key>"
 
 # 编译和运行
 npx tsx demo/hermes-integration-demo.ts
