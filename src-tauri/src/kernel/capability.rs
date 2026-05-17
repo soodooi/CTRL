@@ -47,6 +47,16 @@ pub enum CapToken {
         server: String,
         tool_glob: String,
     },
+    // OAuth — Pattern E (ADR-010 §5.2)
+    // Grants a keycap permission to obtain and use OAuth tokens for a given
+    // provider. Token issuance + storage handled by kernel OAuth runtime;
+    // keycap never touches the raw token, only the Effect dispatches through
+    // a provider-scoped client.
+    OAuthAccess {
+        provider: String,
+        #[serde(default)]
+        scopes: Vec<String>,
+    },
     // ST-SS
     StssEmit {
         stream_id: String,
