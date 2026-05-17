@@ -126,3 +126,85 @@ CTRL/
 ## License
 
 **All Rights Reserved.** See [LICENSE](./LICENSE). Private repository; no part of this source may be used, copied, or distributed without prior written permission.
+
+
+## Latest Updates (2026-05-16)
+
+### Key Decisions
+1. **Platform Repositioning**: CTRL is now an **OPC成品承载平台** (OPC product hosting platform)
+2. **New Positioning**: Not building tools ourselves, but **hosting existing OPC products**
+3. **AI Model Selection**: Using **Minimax 2.7 Highspeed** as primary LLM for Chinese OPC market
+4. **Market Strategy**: Domestic market first, focusing on Chinese OPC users
+5. **Development Priority**: Lightweight integration + AI agent auto-integration
+
+### New Platform Positioning
+- **Not building tools**: Hosting existing OPC products
+- **Not integrating with Feishu**: Becoming a lightweight alternative to Feishu for OPC
+- **Not requiring coding**: AI agent fully automatic integration
+- **Not requiring 24/7 uptime**: On-demand startup, use and exit
+
+### Current Status
+- ✅ Hotkey system fixed (single Ctrl activation working, fast open/close)
+- ✅ L1 Kernel running with WS bridge at 127.0.0.1:17872
+- ✅ 99 tests passing across packages
+- ✅ GitHub push successful (hotkey fixes)
+- ✅ Business assessment completed
+- ✅ AI model selection finalized (Minimax 2.7 Highspeed)
+- ✅ Platform positioning clarified
+- ⚠️ Frontend PWA needs completion
+- ⚠️ Lightweight integration layer needs implementation
+- ⚠️ AI agent auto-integration needs development
+- ⚠️ Sharing and collaboration features needed
+
+### Next Steps
+1. **Week 1**: Complete frontend PWA + CLI wrapper implementation
+2. **Week 2**: Integrate Minimax 2.7 API + AI agent prototype
+3. **Week 3**: Validate 3 OPC product integrations
+4. **Week 4**: Launch lightweight platform with seed user community
+
+### Key Documents
+- [Product Spec](./doc/product-spec.md) - Updated with latest decisions and new positioning
+- [Commercial Assessment](./doc/commercial-assessment-market-strategy.md) - Market analysis with new positioning
+- [Minimax Integration Plan](./doc/minimax-integration-plan.md) - Technical implementation with AI agent
+- [Next Action Plan](./doc/next-action-plan.md) - Detailed roadmap for lightweight platform
+- [Current Status & Business Modules](./doc/current-status-business-modules.md) - Updated status and modules
+- [Keycap Ideas Record](./doc/keycap-ideas-record.md) - Record of tool ideas for keycap development
+- [Flomo Integration Guide](./doc/flomo-integration-guide.md) - Guide for integrating flomo notes with CTRL
+
+## Getting Started
+
+See [CLAUDE.md](./CLAUDE.md) for development rules and workflow.
+
+**Note**: This is a private repository. All packages are `private: true` with `license: UNLICENSED`. No npm publishing allowed.
+
+
+## AI选型状态更新（2026-05-16）
+
+### ✅ **Minimax 2.7 Highspeed 验证完成**
+
+**Token状态**: ✅ **有效且可用**
+- Token已通过全面API测试
+- 支持所有必需功能：聊天、流式、工具调用、JSON输出
+- 7个模型可用，包括我们需要的 `MiniMax-M2.7-highspeed`
+
+**测试结果**:
+- ✅ 模型列表获取成功
+- ✅ 聊天完成功能正常
+- ✅ 流式响应支持确认
+- ✅ 工具调用（function calling）工作正常
+- ✅ CTRL集成能力验证通过
+
+**立即可用**:
+- 可以开始 `packages/ctrl-llm` 包开发
+- 可以开始AI agent自动集成实现
+- 可以开始八字算命工具集成验证
+
+**详细报告**: [Minimax Token Status](./doc/minimax-token-status.md)
+
+### 🚀 **下一步行动**
+1. **今天**: 创建Minimax客户端基础包
+2. **明天**: 实现AI agent原型
+3. **本周**: 完成Minimax基础集成
+4. **下周**: 验证3个OPC成品自动集成
+
+**AI选型工作状态**: ✅ **完成 - 可以开始实施**
