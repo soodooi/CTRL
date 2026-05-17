@@ -1,0 +1,83 @@
+{
+  "id": "com.d4vinci.scrapling",
+  "name": "Scrapling - 网页抓取工具",
+  "version": "1.0.0",
+  "type": "cli",
+  "description": "快速、自适应的Python网页抓取工具，支持动态内容抓取",
+  "author": {
+    "name": "D4Vinci",
+    "url": "https://github.com/D4Vinci"
+  },
+  "input": {
+    "type": "text",
+    "description": "目标URL或URL列表（每行一个）"
+  },
+  "output": {
+    "type": "json",
+    "description": "抓取结果，包含页面内容和元数据"
+  },
+  "startup_policy": "on_demand",
+  "resource_limits": {
+    "memory_mb": 512,
+    "cpu_percent": 50,
+    "timeout_seconds": 120,
+    "network_mbps": 10
+  },
+  "permissions": ["network", "filesystem"],
+  "extensions": {
+    "cli": {
+      "command": "python",
+      "args": ["-m", "scrapling", "scrape", "--url", "{input}", "--output", "json"],
+      "env": {
+        "PYTHONPATH": "/path/to/scrapling",
+        "SCRAPLING_LOG_LEVEL": "info"
+      },
+      "working_dir": "./scrapes",
+      "shell": false
+    }
+  },
+  "settings": {
+    "output_format": {
+      "type": "string",
+      "required": false,
+      "description": "输出格式",
+      "default": "json",
+      "options": ["json", "csv", "html", "markdown"]
+    },
+    "concurrent_requests": {
+      "type": "number",
+      "required": false,
+      "description": "并发请求数",
+      "default": 5,
+      "min": 1,
+      "max": 20
+    },
+    "delay_ms": {
+      "type": "number",
+      "required": false,
+      "description": "请求延迟（毫秒）",
+      "default": 1000,
+      "min": 0,
+      "max": 10000
+    },
+    "user_agent": {
+      "type": "string",
+      "required": false,
+      "description": "User-Agent头",
+      "default": "Mozilla/5.0 (compatible; Scrapling/1.0)"
+    },
+    "use_proxy": {
+      "type": "boolean",
+      "required": false,
+      "description": "是否使用代理",
+      "default": false
+    }
+  },
+  "dependencies": [
+    "python>=3.7",
+    "scrapling>=1.0.0"
+  ],
+  "repository": "https://github.com/D4Vinci/Scrapling",
+  "license": "MIT",
+  "tags": ["web-scraping", "crawler", "python", "data-extraction", "automation"]
+}
