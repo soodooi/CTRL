@@ -1,0 +1,49 @@
+/* Home — 2-pane layout (keyboard 左, workspace 右). Irisy lives in workspace. */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.keyboardPane {
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspacePane {
+  background: var(--color-background);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;          /* prevent flex/grid overflow */
+}
+
+.paneLabel {
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+/* Mobile: vertical stack — keyboard top short, workspace fills below. */
+@media (max-width: 720px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .keyboardPane {
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    max-height: 45vh;
+  }
+}
