@@ -15,12 +15,32 @@
   flex-direction: column;
 }
 
+/* Constrain Pool grid inside the narrower left pane.
+   Pool's own breakpoints kick in only at viewport width; container is
+   wider than max viewport breakpoint, so we re-target with a descendant
+   override. Same 88px cells, just fewer columns. */
+.keyboardPane :global(.layout > main[role="main"]) {
+  grid-template-columns: repeat(3, 88px) !important;
+  padding: var(--space-3) !important;
+  gap: var(--space-2) !important;
+}
+
 .workspacePane {
   background: var(--color-background);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-width: 0;          /* prevent flex/grid overflow */
+}
+
+/* Irisy assumes top nav (56 px); inside workspace pane already has paneLabel,
+   so let it fill the remaining pane height instead of 100vh-56px. */
+.workspacePane > :global(div) {
+  flex: 1;
+  min-height: 0;
+}
+.workspacePane :global(.layout) {
+  height: 100% !important;
 }
 
 .paneLabel {
