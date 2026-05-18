@@ -2,7 +2,7 @@
 
 - **Status**: Draft v0.1
 - **Date**: 2026-05-11
-- **Parent**: `.claude/ADR/001-system-architecture.md` §4, §6 item 9
+- **Parent**: `.olym/decisions/001-system-architecture.md` §4, §6 item 9
 - **Audience**: AI 创作助手 (generates manifests), L1 Kernel (instantiates actors), ctrl-market (审核 + 分发)
 
 ---

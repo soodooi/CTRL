@@ -2,7 +2,7 @@
 
 - **Status**: Draft v0.1
 - **Date**: 2026-05-13
-- **Parent**: `.claude/ADR/002-pwa-pivot.md`
+- **Parent**: `.olym/decisions/002-pwa-pivot.md`
 - **Supersedes**: `.olym/specs/win-shell/spec.md` (full deprecation), `.olym/specs/mac-shell/spec.md` (full deprecation — UI portion)
 - **Sibling**: `.olym/specs/kernel/spec.md` (kernel internal design — unchanged, only deployment shape changes)
 

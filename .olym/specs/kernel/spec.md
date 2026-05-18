@@ -2,7 +2,7 @@
 
 - **Status**: Draft (RFC, awaiting P2 implementation review)
 - **Date**: 2026-05-11
-- **Parent**: `.claude/ADR/001-system-architecture.md` §3
+- **Parent**: `.olym/decisions/001-system-architecture.md` §3
 - **Language**: Rust (Tauri host process)
 
 ---

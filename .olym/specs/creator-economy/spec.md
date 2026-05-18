@@ -2,7 +2,7 @@
 
 - **Status**: Draft v0.1
 - **Date**: 2026-05-11
-- **Parent**: `.claude/ADR/001-system-architecture.md` §6 layer 4 (market layer), §10 differentiation
+- **Parent**: `.olym/decisions/001-system-architecture.md` §6 layer 4 (market layer), §10 differentiation
 - **Implementation**: P9 of phase plan
 
 ---
