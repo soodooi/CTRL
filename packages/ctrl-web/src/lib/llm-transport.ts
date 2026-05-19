@@ -34,6 +34,7 @@ export interface LLMChunk {
 export interface LLMStreamOptions {
   model?: string;
   temperature?: number;
+  max_tokens?: number;
   signal?: AbortSignal;
 }
 
@@ -145,10 +146,13 @@ export class ChatStreamTransport implements LLMTransport {
 
     try {
       await invoke('chat_stream', {
-        request_id: requestId,
-        messages,
-        model: opts.model,
-        temperature: opts.temperature,
+        args: {
+          request_id: requestId,
+          messages,
+          model: opts.model,
+          temperature: opts.temperature,
+          max_tokens: opts.max_tokens,
+        },
       });
       while (true) {
         if (opts.signal?.aborted) {

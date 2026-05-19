@@ -24,6 +24,7 @@ import {
   IRISY_KEYCAP_CREATOR_PROMPT,
 } from '@/personas/irisy/keycap-creator';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
+import { invoke } from '@/lib/bridge';
 import styles from './irisy.module.css';
 
 type IrisyMode = 'create-keycap' | 'chat';
@@ -126,19 +127,30 @@ export const IrisyRoute = (): React.ReactElement => {
   };
 
   const handleInstall = async (): Promise<void> => {
-    if (!BACKEND_INSTALL_READY) {
-      setToast({
-        kind: 'error',
-        text: 'install_keycap command not yet available — waiting on zeus Z2.',
-      });
+    const state = useKeycapCreatorStore.getState();
+    const manifest = state.validated;
+    const serverCode = state.serverTs;
+    if (!manifest || !serverCode) {
+      setToast({ kind: 'error', text: 'Manifest or server code missing — finish creation first.' });
       return;
     }
-    // TODO(zeus Z2 lands): real invoke('install_keycap', { manifest, server_ts })
-    setToast({
-      kind: 'error',
-      text: 'install_keycap not implemented in this build.',
-    });
-    queryClient.invalidateQueries({ queryKey: ['keycaps'] });
+    useKeycapCreatorStore.getState().setInstalling();
+    try {
+      await invoke('install_keycap', {
+        args: {
+          manifest,
+          server_code: serverCode,
+          server_code_filename: 'server.ts',
+        },
+      });
+      useKeycapCreatorStore.getState().setInstalled();
+      setToast({ kind: 'success', text: `Installed ${manifest.name} · keyboard refreshed` });
+      queryClient.invalidateQueries({ queryKey: ['keycaps'] });
+    } catch (e: unknown) {
+      useKeycapCreatorStore.getState().setInstallFailed();
+      const message = e instanceof Error ? e.message : 'install_keycap failed';
+      setToast({ kind: 'error', text: message });
+    }
   };
 
   const handleDiscardConfirm = (): void => {
