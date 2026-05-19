@@ -1,0 +1,184 @@
+// [H-2026-05-18-001] LLMTransport — Volc-default, OpenAI-shape messages,
+// transport-agnostic.
+//
+// v1 production impl: RunKeycapTransport — single-shot via the kernel
+// builtin `ctrl.builtin.text-chat` (zeus Z3a). UI fake-streams the result
+// by chunking 5 chars / 25ms so the chat pane reads like a stream until
+// zeus Z3b ships true streaming.
+//
+// v1.x impl: ChatStreamTransport — true streaming via Tauri command
+// `chat_stream` + `chat.stream.delta` event (zeus Z3b). Skeleton present
+// so the call sites compile and the swap is a one-liner.
+//
+// Zero legacy-provider strings in this file — per ADR-005 + memory
+// `feedback_no_claude_in_production`. The PWA never sees an apiKey; auth
+// stays inside the Rust process by going through `run_keycap` /
+// `chat_stream` Tauri commands.
+
+import { invoke } from './bridge';
+import { runKeycap, type RunKeycapResult } from './kernel';
+
+export type LLMRole = 'system' | 'user' | 'assistant';
+
+export interface LLMMessage {
+  role: LLMRole;
+  content: string;
+}
+
+export interface LLMChunk {
+  delta: string;
+  done: boolean;
+  error?: string;
+}
+
+export interface LLMStreamOptions {
+  model?: string;
+  temperature?: number;
+  signal?: AbortSignal;
+}
+
+export interface LLMTransport {
+  stream(messages: LLMMessage[], opts?: LLMStreamOptions): AsyncIterable<LLMChunk>;
+}
+
+// ── C: single-shot via runKeycap('ctrl.builtin.text-chat', ...) ──────────
+// The kernel builtin reads `volc-credentials.json` for default model + key
+// (zeus Z3a). Pseudo-streams the returned content so the chat pane animates
+// while we wait for Z3b.
+
+interface RunKeycapTextChatInput extends Record<string, unknown> {
+  messages: LLMMessage[];
+  model?: string;
+  temperature?: number;
+}
+
+interface RunKeycapTextChatOutput {
+  content: string;
+}
+
+const PSEUDO_STREAM_CHUNK = 5;
+const PSEUDO_STREAM_TICK_MS = 25;
+
+export class RunKeycapTransport implements LLMTransport {
+  async *stream(
+    messages: LLMMessage[],
+    opts: LLMStreamOptions = {},
+  ): AsyncIterable<LLMChunk> {
+    const input: RunKeycapTextChatInput = { messages };
+    if (opts.model !== undefined) input.model = opts.model;
+    if (opts.temperature !== undefined) input.temperature = opts.temperature;
+
+    let result: RunKeycapResult;
+    try {
+      result = await runKeycap('ctrl.builtin.text-chat', input);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'unknown error';
+      yield { delta: '', done: true, error: message };
+      return;
+    }
+
+    const output = result.output as RunKeycapTextChatOutput | null | undefined;
+    const full = typeof output?.content === 'string' ? output.content : '';
+
+    for (let i = 0; i < full.length; i += PSEUDO_STREAM_CHUNK) {
+      if (opts.signal?.aborted) {
+        yield { delta: '', done: true, error: 'aborted' };
+        return;
+      }
+      yield { delta: full.slice(i, i + PSEUDO_STREAM_CHUNK), done: false };
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, PSEUDO_STREAM_TICK_MS);
+      });
+    }
+    yield { delta: '', done: true };
+  }
+}
+
+// ── B: true streaming via chat_stream + chat.stream.delta ─────────────────
+// Contract per bao 2026-05-18:
+//   invoke('chat_stream', { request_id, messages, model, temperature })
+//   listen('chat.stream.delta', payload => { request_id, delta, done, error? })
+// Skeleton compiles today; flip `enabled` to true once zeus Z3b lands.
+
+interface ChatStreamDelta {
+  request_id: string;
+  delta: string;
+  done: boolean;
+  error?: string;
+}
+
+interface UnlistenFn {
+  (): void;
+}
+
+export class ChatStreamTransport implements LLMTransport {
+  constructor(private readonly enabled: boolean = false) {}
+
+  async *stream(
+    messages: LLMMessage[],
+    opts: LLMStreamOptions = {},
+  ): AsyncIterable<LLMChunk> {
+    if (!this.enabled) {
+      yield {
+        delta: '',
+        done: true,
+        error: 'ChatStreamTransport disabled (waiting on zeus Z3b)',
+      };
+      return;
+    }
+    const requestId = crypto.randomUUID();
+    const { listen } = await import('@tauri-apps/api/event');
+
+    const queue: ChatStreamDelta[] = [];
+    let resolveNext: (() => void) | null = null;
+    const unlisten: UnlistenFn = await listen<ChatStreamDelta>(
+      'chat.stream.delta',
+      (event) => {
+        if (event.payload.request_id !== requestId) return;
+        queue.push(event.payload);
+        if (resolveNext) {
+          resolveNext();
+          resolveNext = null;
+        }
+      },
+    );
+
+    try {
+      await invoke('chat_stream', {
+        request_id: requestId,
+        messages,
+        model: opts.model,
+        temperature: opts.temperature,
+      });
+      while (true) {
+        if (opts.signal?.aborted) {
+          yield { delta: '', done: true, error: 'aborted' };
+          return;
+        }
+        if (queue.length === 0) {
+          await new Promise<void>((resolve) => {
+            resolveNext = resolve;
+          });
+          continue;
+        }
+        const next = queue.shift();
+        if (!next) continue;
+        if (next.error) {
+          yield { delta: '', done: true, error: next.error };
+          return;
+        }
+        if (next.delta) yield { delta: next.delta, done: false };
+        if (next.done) {
+          yield { delta: '', done: true };
+          return;
+        }
+      }
+    } finally {
+      unlisten();
+    }
+  }
+}
+
+export function defaultTransport(): LLMTransport {
+  return new RunKeycapTransport();
+}
