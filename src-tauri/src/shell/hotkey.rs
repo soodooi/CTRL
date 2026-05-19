@@ -18,9 +18,9 @@
 // `Arc::clone` on the rare success case.
 
 /// Threshold (ms) within which Ctrl-down and Ctrl-up must occur, with no
-/// intermediate key press, to be recognized as a single tap. Crate-private
-/// so cbindgen doesn't surface it on the C ABI (the W3 .NET path has its
-/// own copy, `SINGLE_CTRL_MAX_DURATION_MS`).
+/// intermediate key press, to be recognized as a single tap. Matches the
+/// retired W3 .NET path's `SINGLE_CTRL_MAX_DURATION_MS` — same user feel
+/// across Win and Mac.
 pub(crate) const TAP_THRESHOLD_MS: u64 = 400;
 
 use anyhow::Result;
