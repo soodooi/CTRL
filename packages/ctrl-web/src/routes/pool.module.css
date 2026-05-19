@@ -1,7 +1,13 @@
 .layout {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* Fill the parent. The parent is either viewport (standalone /pool route)
+   * or the iPhone frame screen (dual-panel home route). The container query
+   * below adds dynamic-island clearance only when nested in the frame. */
+  flex: 1;
+  min-height: 100%;
+  background: var(--color-background);
+  overflow-y: auto;
 }
 
 .grid {
@@ -25,6 +31,21 @@
 
 @media (max-width: 480px) {
   .grid { grid-template-columns: repeat(3, 88px); }
+}
+
+/* Container-scoped overrides for the iPhone-frame nested case.
+ * Mirrors the @media breakpoints above but keyed to the parent container
+ * width so the home view stays iPhone-shaped regardless of viewport. */
+@container iphone-screen (max-width: 480px) {
+  .layout {
+    padding-top: var(--space-12);
+    padding-bottom: var(--space-8);
+  }
+  .grid {
+    grid-template-columns: repeat(3, 88px);
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-3);
+  }
 }
 
 .banner {

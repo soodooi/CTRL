@@ -1,8 +1,12 @@
 .layout {
   display: grid;
   grid-template-rows: auto 1fr;
-  min-height: 100vh;
+  /* Fill parent — viewport (standalone /workspace window) or iPhone frame
+   * (dual-panel home view). Container query below handles the narrow case. */
+  flex: 1;
+  min-height: 100%;
   background: var(--color-background);
+  overflow: hidden;
 }
 
 .header {
@@ -27,6 +31,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .code {
@@ -123,3 +128,18 @@
 .opComplete { border-left: 3px solid var(--color-success, #2dbf6c); opacity: 0.85; }
 .opFailed { border-left: 3px solid var(--color-danger, #b00020); }
 .opDefault { border-left: 3px solid var(--color-text-soft); opacity: 0.85; }
+
+/* Container-scoped overrides for iPhone-frame nested case.
+ * The status bar / dynamic island already eats ~48px; pull the header
+ * down so it does not collide. */
+@container iphone-screen (max-width: 480px) {
+  .header {
+    padding: calc(var(--space-12) + var(--space-1)) var(--space-4) var(--space-3);
+  }
+  .feed {
+    padding: var(--space-3) var(--space-4) calc(var(--space-8) + var(--space-2));
+  }
+  .title {
+    font-size: var(--text-lg);
+  }
+}
