@@ -1,4 +1,4 @@
-# Lane Ownership — multi-agent fleet authority data source (TEMPLATE)
+# Lane Ownership — CTRL local override (forked from olym v0.3.0-template)
 #
 # Consumed by:
 #   - .claude/hooks/pretool-lane-guard.js   (PreToolUse — block writes outside lane)
@@ -11,75 +11,56 @@
 #
 # Path semantics:
 #   - Glob patterns relative to repo root
-#   - First-match wins inside lanes[] (so put more specific entries first)
+#   - First-match wins inside lanes[]
 #   - allowlist applies to ALL roles (always allowed)
 #   - denylist_explicit applies to ALL non-zeus roles (always blocked)
-#   - warnlist allowed but flagged (so worker thinks twice)
+#   - warnlist allowed but flagged
 #
-# Specs policy (lane-scoped write):
-#   - Each lane owns spec prefixes matching their domain
-#   - Cross-lane / architectural specs remain zeus-only
-#   - Lane owner writes lane specs without approval; zeus reviews all specs at verified stage
-#
-# Cold-storage schema (G-030):
-#
-# Per-lane optional fields for cold-storage retirement (default omit = active):
-#   status: frozen          # status field (active by default; frozen = cold-storage)
-#   freeze_date: YYYY-MM-DD # when lane was frozen
-#   freeze_reason: "..."    # short reason
-#
-# lane-guard hook behavior (.claude/hooks/pretool-lane-guard.js):
-#   - active lane: normal allowlist/denylist enforcement
-#   - frozen lane: BLOCK writes + BLOCK new handoff create (assigned_to)
-#                  grandfathered: existing in_progress handoffs allowed close-out
-#   - SessionStart hook: frozen lanes NOT counted in active fleet
-#
-# Hard-retire (vs cold-storage): delete lane entry entirely; record in olympus-roster.md.
+# CTRL-specific override notes:
+#   - lane-A reassigned daedalus (frontend hard rule per memory decision_lane_a_is_frontend.md)
+#   - lane-G ADDED beyond 6-lane convention — bao verbal-go 2026-05-19 "我可以开多个窗口 同时干"
+#   - hephaestus holds 3 lanes (B+D+E) — per "1 persona N lane" rule
 
-version: 0.3.0-template
-last_updated: 2026-05-17
+version: 0.3.0-ctrl-2026-05-19
+last_updated: 2026-05-19
 
-# ── Ownership slots (lane-A/B/C/...) ──────────────────────
-# Abstract slot 命名, decouple persona / lane / business 三轴.
-#
-# - Persona = 人物 (跨项目, 有 skills/memory/persona/growth-log)
-# - Slot = 抽象工位 (lane-A 到 lane-F, 持久不变命名)
-# - Business = 工位绑定的业务域 (project-specific, consumer-replace OK)
-# - role_alias = 跨文化沟通角色描述 (Greek persona name + role 双标识)
-#
-# Slot 名 stable cross-project. Consumer fork olym 时改 persona / business mapping
-# 不动 slot 名, hook constants 也不需要改.
+# ── Ownership slots (CTRL filled) ─────────────────────────
 
 ownership_slots:
   lane-A:
-    persona: athena              # Greek identity (跨项目 stable)
-    role_alias: backend-owner    # 角色描述 (跨文化沟通, consumer 可改)
-    business: <consumer-fill>    # project-specific business domain
-    alias_lanes: []              # 旧 file-scope lane name aliases
-  lane-B:
     persona: daedalus
     role_alias: frontend-owner
-    business: <consumer-fill>
+    business: irisy-ui-llm-transport-persona-assets
+    alias_lanes: []
+  lane-B:
+    persona: hephaestus
+    role_alias: capability-spike-owner
+    business: kernel-capability-surface-spike
     alias_lanes: []
   lane-C:
     persona: apollo
     role_alias: marketing-owner
-    business: <consumer-fill>
+    business: ctrlapplab-marketing-site
     alias_lanes: []
   lane-D:
     persona: hephaestus
-    role_alias: platform-owner
-    business: <consumer-fill>
+    role_alias: keycap-integration-owner
+    business: keycap-integration-spec
     alias_lanes: []
   lane-E:
-    persona: null                # reserved
-    role_alias: null
-    business: null
+    persona: hephaestus
+    role_alias: mesh-comm-owner
+    business: mesh-comm-impl
     alias_lanes: []
   lane-F:
-    persona: null                # reserved
-    role_alias: null
-    business: null
+    persona: athena
+    role_alias: mac-shell-owner
+    business: mac-shell-tauri2-migration
+    alias_lanes: [athena-mac]
+  lane-G:
+    persona: zeus
+    role_alias: code-space-owner
+    business: subprocess-actor-pty-code-space
     alias_lanes: []
 
 scratch:
@@ -89,37 +70,80 @@ scratch:
 
 main:
   persona: zeus
-  worktree: <project-root>/   # main tree, no .lane file
+  worktree: /Users/mac/Documents/coding/CTRL/
   role: orchestrator + cross-cutting + stewardship
 
-# ── Application surfaces (consumer fork 替换为真实业务 lane) ──
-# Template ships with 1 placeholder lane. Consumer fork 时复制 + 改名 + 填业务 path
-# glob, 增加到 N 个 (typically 4-6 lanes matching ownership_slots active 数).
+# ── Application surfaces (real CTRL business lanes) ───────
 
 lanes:
 
-  # ── Placeholder business lane (consumer fork 替换) ──────────
-  <business-domain-A>:
-    description: <Consumer 业务描述 — e.g., admin web app + admin worker business routes>
+  lane-A:
+    description: Irisy keycap-creator UI + LLMTransport no-Claude refactor + persona assets
     files:
-      - <path/to/business/code>/**
-      - .olym/specs/<business-domain-A>-*/**
+      - packages/ctrl-web/src/routes/irisy.tsx
+      - packages/ctrl-web/src/lib/llm-transport.ts
+      - packages/ctrl-web/src/lib/irisy/**
+      - packages/ctrl-web/src/components/irisy/**
+      - packages/ctrl-web/src/components/poster/**
+      - packages/ctrl-web/src/persona/**
+      - packages/ctrl-web/public/persona/**
+      - .olym/specs/irisy/**
 
+  lane-B:
+    description: kernel capability surface spike (Q1 Q2 Q3 RESULT.md to feed ADR-004)
+    files:
+      - .worktrees/scratch/spike-jiazuo-capability/**
+      - doc/keycap-integration-research/06-jiazuo-result.md
 
-# ── Always-allowed for all roles (worker + zeus) ───────────
-# Handoffs are the inter-role communication channel. Workers MUST be able to
-# write here even when their lane has nothing else to touch — otherwise they
-# can't ask zeus for help.
+  lane-C:
+    description: ctrlapplab.com Astro marketing site v0
+    files:
+      - packages/ctrl-marketing-site/**
+      - .olym/specs/marketing/**
+
+  lane-D:
+    description: keycap integration spec — 7 pattern × MCP tool contract + 39 intent buckets
+    files:
+      - doc/keycap-integration-research/02-pattern-*.md
+      - doc/keycap-integration-research/03-mcp-tool-contract.md
+      - doc/keycap-integration-research/04-intent-buckets.md
+      - .olym/specs/tool-manifest/spec.md
+
+  lane-E:
+    description: mesh comm impl — vodozemac + webrtc-rs + Automerge + ctrl-relay worker
+    files:
+      - packages/ctrl-mesh/**
+      - src-tauri/src/mesh/**
+      - .olym/specs/mesh-comm/**
+
+  lane-F:
+    description: macOS shell Tauri 2 migration (parity with Win sub-PR b/c/d/e)
+    files:
+      - src-tauri/src/shell/**
+      - src-tauri/src/lib.rs
+      - src-tauri/tauri.conf.json
+      - .olym/specs/mac-shell/spec.md
+
+  lane-G:
+    description: SubprocessActor + portable-pty kernel landing (Code Space path C)
+    files:
+      - src-tauri/src/kernel/actor.rs
+      - src-tauri/src/kernel/runtime.rs
+      - src-tauri/src/kernel/scheduler.rs
+      - src-tauri/src/kernel/subprocess_actor.rs
+      - src-tauri/src/kernel/pty/**
+      - src-tauri/Cargo.toml
+      - doc/code-space-path-c/**
+      - .olym/specs/code-space/**
+
+# ── Always-allowed for all roles (worker + zeus) ──────────
 
 allowlist:
   - .olym/handoffs/*.md
   - .olym/handoffs/archive/*.md
+  - .olym/handoffs/INDEX.md
 
-
-# ── Allowed but warn (shared files) ────────────────────────
-# Worker can edit but the hook surfaces a warning. Two workers editing
-# package.json simultaneously will produce merge conflicts — better to
-# coordinate via zeus.
+# ── Allowed but warn (shared files) ───────────────────────
 
 warnlist:
   - package.json
@@ -131,21 +155,14 @@ warnlist:
   - .gitignore
   - .env.example
 
-
-# ── Forbidden for all non-zeus roles ───────────────────────
-# These files shape how the fleet operates. Workers editing them concurrently
-# would race to break their own runtime. zeus is single-writer.
-#
-# Note: .olym/specs/** is NO LONGER a blanket block. Each lane owns its
-# spec prefix via the files[] list above. Only specs matching zeus-reserved
-# prefixes (cross-lane / architecture) stay here.
+# ── Forbidden for all non-zeus roles ──────────────────────
 
 denylist_explicit:
   # Class 1: Entry rules
   - CLAUDE.md
   # Class 2: Memory
   - MEMORY.md
-  # Class 3: Olym 主架构 specs (cross-cutting / architecture)
+  # Class 3: Olym main architecture specs
   - .olym/specs/multi-agent-fleet/**
   - .olym/specs/olympus/**
   - .olym/specs/olym-*/**
@@ -156,7 +173,7 @@ denylist_explicit:
   - .olym/decisions/**
   # Class 6: Audits
   - .olym/audits/**
-  # Class 7: Cross-cutting Skills (lane-specific skills 仍 lane-owner editable)
+  # Class 7: Cross-cutting Skills
   - .olym/best-practice/**
   - .olym/skills/**
   # Class 8: MCP / Tooling
@@ -165,20 +182,10 @@ denylist_explicit:
   - .claude/hooks/**
   - .olym/settings/mcp.json
   - .husky/**
-  # CI / olym-infra workflows (zeus-only). Lane owner 维护 lane-specific workflows.
+  # CI workflows (zeus-only)
   - .github/workflows/_reusable-*.yml
   - .github/workflows/ci-*.yml
   - .github/workflows/handbook-*.yml
   - .github/workflows/legacy-*.yml
-  # Identity (worktree-local)
+  # Identity
   - .lane
-
-
-# ── Notes for hook authors ─────────────────────────────────
-# - When evaluating a write, check in this order:
-#     1. denylist_explicit (block)
-#     2. allowlist (approve)
-#     3. lanes[<my-lane>].files (approve)
-#     4. active handoff with assigned_to == <my-lane>, target in handoff.touches (approve)
-#     5. warnlist (approve + warn)
-#     6. fall-through (block; suggest opening a handoff)
