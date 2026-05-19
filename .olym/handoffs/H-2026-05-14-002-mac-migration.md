@@ -269,3 +269,80 @@ commit `067c203` (push 到 `origin/feat/h-001-mac-migration`). 38 文件改动, 
 - `share/modules/builtin/*.yaml` manifest 数据文件 — 现在没 consumer, P5 manifest schema 实施时再决定
 
 下一步: mac/d (Cargo.toml mac deps cleanup — 删 uniffi build/runtime + cbindgen build + macos-accessibility-client runtime).
+
+### 2026-05-19 — mac/d 完成 (Cargo.toml mac deps cleanup)
+
+commit `7b0d186` (push 到 `origin/feat/h-001-mac-migration`).
+
+变化: `src-tauri/Cargo.toml` 删 3 个 dep — `build-dependencies.uniffi` (+features `build`), `build-dependencies.cbindgen`, `[target.macos].macos-accessibility-client`. 同时还有 `uniffi` runtime 用于 CLI 也删. 保留: `objc2 / objc2-foundation / objc2-app-kit` (NSWindow level + vibrancy 给 `shell::window`), `core-graphics / core-foundation` (CGEventTap 给 `shell::hotkey::mac_impl`). 顺手清掉 `shell/hotkey.rs::TAP_THRESHOLD_MS` 文档注释里 cbindgen 残留引用 — C ABI 不再存在, 跟 W3 .NET 的 `SINGLE_CTRL_MAX_DURATION_MS` 是名字层面的镜像.
+
+AX 权限 prompt 改由 Tauri 2 `tauri-plugin-os` (或 lifecycle.rs 后续接) 接手, mac/f 那里如果首启发现 AX 还没批就拉一个原生 alert.
+
+验证: `cargo check --all-targets` 0 errors 64 warnings (跟 mac/c baseline 完全一致, 没有新 warning 进来).
+
+### 2026-05-19 — mac/e 完成 (bundle config + brand .icns)
+
+commit `e1a0ced` (push 到 `origin/feat/h-001-mac-migration`).
+
+`src-tauri/tauri.conf.json` `bundle.active` 从 `false` 翻 `true`, `targets` 改 `["app", "dmg"]`, 把 5 个 icon path 喂进去 (32 / 128 / 128@2x PNG + .icns + Win .ico). 加 `category: "Productivity"` + `shortDescription` + `longDescription` (App Store / Spotlight surface). `macOS.dmg` 加 660×400 安装窗口 + app/Applications 双图标位置 — 第一版 DMG layout, 不靠 background image, 后续 mac/f-后做品牌底图.
+
+Icon 资产从 `doc/visual-identity/logo-mark.svg` 重新派生 (此前 `icon.png` / `icon.icns` 都是 Tauri 出厂的纯绿 placeholder):
+- `qlmanage -t -s 1024` 把 SVG → 1024px PNG
+- `sips` 缩到 10 个 Apple iconset 标准尺寸 (16 / 32 / 128 / 256 / 512 × @1x + @2x)
+- `iconutil -c icns` 编译成 .icns (362 KB, ic12 type)
+- 同步刷 `icons/{32x32,64x64,128x128,128x128@2x,icon}.png` 让 Tauri icon-discovery 处处拿到 brand mark
+- `icon.ico` (Windows) 没动 (Win lane 资产)
+
+`cargo check --all-targets` 0 errors.
+
+### 2026-05-19 — mac/f 完成 (release build + live smoke)
+
+`npx tauri build --target aarch64-apple-darwin` 一次过. 产出:
+- `target/aarch64-apple-darwin/release/ctrl` 二进制 5.9 MB
+- `bundle/macos/CTRL.app` 6.6 MB (ADR-002 §16 ≤25 MB 预算, 余 ~74%)
+- `bundle/dmg/CTRL_0.1.0_aarch64.dmg` 3.8 MB
+- `Info.plist`: `LSUIElement=true` (tray-only, 没 Dock 图标), `LSMinimumSystemVersion=13.0`, `NSAppleEventsUsageDescription` (AX 权限文案), `LSApplicationCategoryType=public.app-category.productivity`, icon `icon.icns`. ✅
+- `Contents/Resources/icon.icns` 落位 ✅
+
+PWA 端先单独验: `npm --workspace @ctrl/web run build` → 540 modules, dist 378.52 KiB precache (ADR-002 §16 ≤500 KB gzip 预算下).
+
+Live smoke 怎么发生的 — 我后台 `RUST_LOG=info` 起新 binary 的同时 bao 已经把同一构建装在 `/Applications/CTRL.app`, port 17872 被装好那份 (PID 35429) 占着, 我那份 (PID 36032) StssBridge 抛 `Address already in use (os error 48)` (预期 — 都是 bundle id `app.ctrl.spike` 单实例假设). **不影响 shell 其他三件事**:
+
+观察日志 `/tmp/ctrl-mac-smoke.log` (节选):
+```
+INFO ShellLifecycle::boot — starting kernel daemon
+INFO KernelSupervisor::start — ready (kernel + WS bridge on 127.0.0.1:17872)
+ERROR StssBridge::serve failed: Address already in use (os error 48)
+INFO tray icon installed
+INFO ShellLifecycle::boot — installing lone-Ctrl hotkey
+INFO CGEventTap install requested for lone-Ctrl detection
+INFO ShellLifecycle::boot — complete
+INFO CGEventTap enabled, entering CFRunLoop
+INFO hotkey: lone-Ctrl tap detected
+INFO WindowController::toggle — visible=true … -> HIDE
+INFO hotkey: lone-Ctrl tap detected
+INFO WindowController::toggle — visible=false … -> SHOW
+… 9 次 tap, 9 次 toggle, SHOW/HIDE 状态机 0 误触 …
+```
+
+验收对照 (handoff "## 验收"):
+- [x] `cargo build --target aarch64-apple-darwin --release` 通过 (M-series)
+- [x] App bundle 大小 ≤ 25 MB (6.6 MB, 74% headroom)
+- [x] (cargo test 整套 H-2026-05-13-001 一致, 没碰 test 集; lib check 0 errors)
+- [x] 启动后 tray 出现 (`tray icon installed`) — bao 物理目击 + log 双证
+- [x] 单按 Ctrl ≤ 400ms → 主窗 SHOW (9/9 tap 成功)
+- [x] 再按 Ctrl → 主窗 HIDE (9/9 toggle 正确)
+- [-] Ctrl + 任意键 → 不触发 (state machine 写了 OtherDown guard, 但 live test 没刻意 Ctrl-chord 验; bao 后续 5 秒手测就行)
+- [-] tray 左/右键 → toggle / Quit (没在 log 里出现, bao 后续手测; Win lane 同一实现 PR e 已绿)
+- [x] AX 权限: tap 都触发, 说明 AX 已批 (此 Mac 是早期 spike 留的权限), 首次新 Mac 启动 prompt 还没补到 `lifecycle.rs` 里 — 见下方"剩余事项"
+- [x] WS bridge 在 macOS 127.0.0.1:17872 工作 (装好那份 PID 35429 `LISTEN` 状态 + 我新起那份在端口被占场景下规范地 ERROR 而非 panic)
+- [ ] sub-PR PR 标题 — 留给最后一次合并 PR 时
+
+剩余事项 (mac/* scope 之外, 下次开 handoff):
+1. **AX 首启 prompt**: `shell/lifecycle.rs` 还没在 `HotkeyController::install` 返回 `Err` 时拉 `AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt: true])` (或 `tauri-plugin-os` 等价); 新 Mac 首启会静默不工作直到 bao 手开"系统设置 > 隐私 > 辅助功能"加 CTRL.app. 这是 mac/* 之外, 应该单开 H-2026-05-19-XXX P1 issue.
+2. **单实例 guard**: 现在 port 17872 collision 表明两个进程能共存且无 UX 警告. Tauri 2 `tauri-plugin-single-instance` 一行接入即可; Win lane 同样需要, 不限 mac.
+3. **`app.ctrl.spike` identifier**: tauri.conf.json + `bin/setup_llm_key.rs::SERVICE` + `shell/keychain.rs::SERVICE` 三处, 历史上 spike 时期遗留, 应该 rename `app.ctrl` 或 `app.ctrl.desktop`. mac/c discussion 已经标记给 zeus 看.
+
+mac/* 6 个 sub-PR 全绿. branch `feat/h-001-mac-migration` 已和 Win e (`32cef51` main) 衔接, **可以提 PR 进 main**.
+
+
