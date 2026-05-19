@@ -180,5 +180,5 @@ export class ChatStreamTransport implements LLMTransport {
 }
 
 export function defaultTransport(): LLMTransport {
-  return new RunKeycapTransport();
+  return new ChatStreamTransport(true);
 }

@@ -57,7 +57,7 @@ function readUrlParams(): { mode: IrisyMode; prefill: string | null } {
 // Z2 (install_keycap Tauri command) ships tomorrow per zeus. Until then
 // the Install button stays greyed with a tooltip. Flip this flag once
 // the command is registered.
-const BACKEND_INSTALL_READY = false;
+const BACKEND_INSTALL_READY = true;
 
 export const IrisyRoute = (): React.ReactElement => {
   const { mode, prefill } = useMemo(readUrlParams, []);
