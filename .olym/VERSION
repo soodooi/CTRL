@@ -1,0 +1,9 @@
+# Olym install provenance — written by Zeus (CTRL adopting hello-olym).
+# CTRL is olym's first real production consumer.
+
+olym_version: 0.3.1-alpha
+plugin_sha: cbb2a564b749e58f1758b82597dda1d720ff00ad
+marketplace_source: github.com/soodooi/hello-olym
+installed_at: 2026-05-18
+installed_by: zeus (CTRL adoption)
+schema_version: 1

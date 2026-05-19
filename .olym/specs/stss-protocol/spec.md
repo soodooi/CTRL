@@ -2,7 +2,7 @@
 
 - **Status**: Draft v0.6 (CTRL profile)
 - **Date**: 2026-05-11
-- **Parent**: `.claude/ADR/001-system-architecture.md` §3, §4 source #4, §7
+- **Parent**: `.olym/decisions/001-system-architecture.md` §3, §4 source #4, §7
 - **Source**: Cherry-picked from screi `@screi/protocol-ts` + `@screi/core`
 
 ---

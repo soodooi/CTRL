@@ -2,7 +2,7 @@
 
 - **Status**: **Superseded** by `.olym/specs/pwa-shell/spec.md` (per ADR-002, accepted 2026-05-13)
 - **Date**: 2026-05-11 (draft), 2026-05-13 (superseded)
-- **Parent**: `.claude/ADR/001-system-architecture.md` (revised by ADR-002)
+- **Parent**: `.olym/decisions/001-system-architecture.md` (revised by ADR-002)
 - **Successor**: `.olym/specs/pwa-shell/spec.md` (Tauri 2 native shell + PWA — single shell across Win/Mac)
 - **Disposition**: never implemented. SwiftUI dual-stack approach abandoned before any Mac code shipped — PWA pivot avoids the duplicate-UI cost ADR-002 §2 cites.
 - **Note**: this spec preserved as history; do not extend or implement against it.

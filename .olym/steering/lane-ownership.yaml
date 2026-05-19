@@ -1,0 +1,184 @@
+# Lane Ownership — multi-agent fleet authority data source (TEMPLATE)
+#
+# Consumed by:
+#   - .claude/hooks/pretool-lane-guard.js   (PreToolUse — block writes outside lane)
+#   - .claude/hooks/session-handoff-snapshot.js (SessionStart — three-column injection)
+#   - scripts/fleet-status.sh               (operator dashboard)
+#
+# Lane resolution order at hook runtime:
+#   1. cwd has .lane file → that lane (worker mode)
+#   2. cwd is main tree (no .lane) → "zeus" (orchestrator, no lane restriction)
+#
+# Path semantics:
+#   - Glob patterns relative to repo root
+#   - First-match wins inside lanes[] (so put more specific entries first)
+#   - allowlist applies to ALL roles (always allowed)
+#   - denylist_explicit applies to ALL non-zeus roles (always blocked)
+#   - warnlist allowed but flagged (so worker thinks twice)
+#
+# Specs policy (lane-scoped write):
+#   - Each lane owns spec prefixes matching their domain
+#   - Cross-lane / architectural specs remain zeus-only
+#   - Lane owner writes lane specs without approval; zeus reviews all specs at verified stage
+#
+# Cold-storage schema (G-030):
+#
+# Per-lane optional fields for cold-storage retirement (default omit = active):
+#   status: frozen          # status field (active by default; frozen = cold-storage)
+#   freeze_date: YYYY-MM-DD # when lane was frozen
+#   freeze_reason: "..."    # short reason
+#
+# lane-guard hook behavior (.claude/hooks/pretool-lane-guard.js):
+#   - active lane: normal allowlist/denylist enforcement
+#   - frozen lane: BLOCK writes + BLOCK new handoff create (assigned_to)
+#                  grandfathered: existing in_progress handoffs allowed close-out
+#   - SessionStart hook: frozen lanes NOT counted in active fleet
+#
+# Hard-retire (vs cold-storage): delete lane entry entirely; record in olympus-roster.md.
+
+version: 0.3.0-template
+last_updated: 2026-05-17
+
+# ── Ownership slots (lane-A/B/C/...) ──────────────────────
+# Abstract slot 命名, decouple persona / lane / business 三轴.
+#
+# - Persona = 人物 (跨项目, 有 skills/memory/persona/growth-log)
+# - Slot = 抽象工位 (lane-A 到 lane-F, 持久不变命名)
+# - Business = 工位绑定的业务域 (project-specific, consumer-replace OK)
+# - role_alias = 跨文化沟通角色描述 (Greek persona name + role 双标识)
+#
+# Slot 名 stable cross-project. Consumer fork olym 时改 persona / business mapping
+# 不动 slot 名, hook constants 也不需要改.
+
+ownership_slots:
+  lane-A:
+    persona: athena              # Greek identity (跨项目 stable)
+    role_alias: backend-owner    # 角色描述 (跨文化沟通, consumer 可改)
+    business: <consumer-fill>    # project-specific business domain
+    alias_lanes: []              # 旧 file-scope lane name aliases
+  lane-B:
+    persona: daedalus
+    role_alias: frontend-owner
+    business: <consumer-fill>
+    alias_lanes: []
+  lane-C:
+    persona: apollo
+    role_alias: marketing-owner
+    business: <consumer-fill>
+    alias_lanes: []
+  lane-D:
+    persona: hephaestus
+    role_alias: platform-owner
+    business: <consumer-fill>
+    alias_lanes: []
+  lane-E:
+    persona: null                # reserved
+    role_alias: null
+    business: null
+    alias_lanes: []
+  lane-F:
+    persona: null                # reserved
+    role_alias: null
+    business: null
+    alias_lanes: []
+
+scratch:
+  namespace: .worktrees/scratch/<type>-<topic>/
+  types: [spike, proposal, poc, hotfix]
+  lifetime: short (timebox 1-5 day per .olym/protocols/evolution.md §5)
+
+main:
+  persona: zeus
+  worktree: <project-root>/   # main tree, no .lane file
+  role: orchestrator + cross-cutting + stewardship
+
+# ── Application surfaces (consumer fork 替换为真实业务 lane) ──
+# Template ships with 1 placeholder lane. Consumer fork 时复制 + 改名 + 填业务 path
+# glob, 增加到 N 个 (typically 4-6 lanes matching ownership_slots active 数).
+
+lanes:
+
+  # ── Placeholder business lane (consumer fork 替换) ──────────
+  <business-domain-A>:
+    description: <Consumer 业务描述 — e.g., admin web app + admin worker business routes>
+    files:
+      - <path/to/business/code>/**
+      - .olym/specs/<business-domain-A>-*/**
+
+
+# ── Always-allowed for all roles (worker + zeus) ───────────
+# Handoffs are the inter-role communication channel. Workers MUST be able to
+# write here even when their lane has nothing else to touch — otherwise they
+# can't ask zeus for help.
+
+allowlist:
+  - .olym/handoffs/*.md
+  - .olym/handoffs/archive/*.md
+
+
+# ── Allowed but warn (shared files) ────────────────────────
+# Worker can edit but the hook surfaces a warning. Two workers editing
+# package.json simultaneously will produce merge conflicts — better to
+# coordinate via zeus.
+
+warnlist:
+  - package.json
+  - package-lock.json
+  - pnpm-lock.yaml
+  - yarn.lock
+  - tsconfig.json
+  - tsconfig.*.json
+  - .gitignore
+  - .env.example
+
+
+# ── Forbidden for all non-zeus roles ───────────────────────
+# These files shape how the fleet operates. Workers editing them concurrently
+# would race to break their own runtime. zeus is single-writer.
+#
+# Note: .olym/specs/** is NO LONGER a blanket block. Each lane owns its
+# spec prefix via the files[] list above. Only specs matching zeus-reserved
+# prefixes (cross-lane / architecture) stay here.
+
+denylist_explicit:
+  # Class 1: Entry rules
+  - CLAUDE.md
+  # Class 2: Memory
+  - MEMORY.md
+  # Class 3: Olym 主架构 specs (cross-cutting / architecture)
+  - .olym/specs/multi-agent-fleet/**
+  - .olym/specs/olympus/**
+  - .olym/specs/olym-*/**
+  - .olym/specs/architecture-*
+  # Class 4: Steering
+  - .olym/steering/**
+  # Class 5: Decisions (ADR)
+  - .olym/decisions/**
+  # Class 6: Audits
+  - .olym/audits/**
+  # Class 7: Cross-cutting Skills (lane-specific skills 仍 lane-owner editable)
+  - .olym/best-practice/**
+  - .olym/skills/**
+  # Class 8: MCP / Tooling
+  - .claude/settings.json
+  - .claude/settings.local.json
+  - .claude/hooks/**
+  - .olym/settings/mcp.json
+  - .husky/**
+  # CI / olym-infra workflows (zeus-only). Lane owner 维护 lane-specific workflows.
+  - .github/workflows/_reusable-*.yml
+  - .github/workflows/ci-*.yml
+  - .github/workflows/handbook-*.yml
+  - .github/workflows/legacy-*.yml
+  # Identity (worktree-local)
+  - .lane
+
+
+# ── Notes for hook authors ─────────────────────────────────
+# - When evaluating a write, check in this order:
+#     1. denylist_explicit (block)
+#     2. allowlist (approve)
+#     3. lanes[<my-lane>].files (approve)
+#     4. active handoff with assigned_to == <my-lane>, target in handoff.touches (approve)
+#     5. warnlist (approve + warn)
+#     6. fall-through (block; suggest opening a handoff)

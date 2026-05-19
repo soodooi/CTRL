@@ -5,5 +5,10 @@
 // around existing use_cases. P5+: full actor-driven keycap execution.
 
 pub mod keycap_actor;
+// ADR-010 well-known actor subclasses
+pub mod mcp_server_actor;
+pub mod subprocess_actor;
 
 pub use keycap_actor::KeycapActor;
+pub use mcp_server_actor::McpServerActor;
+pub use subprocess_actor::{SubprocessActor, SubprocessLifecycle};

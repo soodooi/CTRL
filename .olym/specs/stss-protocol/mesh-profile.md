@@ -6,7 +6,7 @@ last_updated: 2026-05-16
 
 # Mesh Profile (ST-SS extension for cross-device)
 
-抽自 [ADR-003 §5 Pairing flow](../../../.claude/ADR/003-multi-device-mesh.md#5-pairing-flow)，因属协议实现细节不属架构决策。**本文档是真实来源**；ADR-003 §5 仅保留作历史。
+抽自 [ADR-003 §5 Pairing flow](../../../.olym/decisions/003-multi-device-mesh.md#5-pairing-flow)，因属协议实现细节不属架构决策。**本文档是真实来源**；ADR-003 §5 仅保留作历史。
 
 详见 `stss-protocol/spec.md` 主 spec（本文件是其 mesh profile 扩展）。
 
@@ -84,7 +84,7 @@ Device A (already in mesh)                 Device B (joining)
 
 ## 4. 关联
 
-- 上游：[ADR-003](../../../.claude/ADR/003-multi-device-mesh.md)
+- 上游：[ADR-003](../../../.olym/decisions/003-multi-device-mesh.md)
 - 协议主 spec：[stss-protocol/spec.md](./spec.md)
 - 实现：`packages/ctrl-mesh/`（skeleton 已存在，P4.5 进行中）
 
