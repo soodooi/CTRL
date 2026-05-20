@@ -65,22 +65,23 @@ const sortByActivity = <T extends Pick<RemoteEnv, 'last_activity_iso'>>(
       new Date(b.last_activity_iso).getTime() - new Date(a.last_activity_iso).getTime(),
   );
 
-const statusVariantClass = (status: EnvStatus): string => {
-  switch (status) {
-    case 'running':
-      return styles.statusRunning ?? '';
-    case 'idle':
-      return styles.statusIdle ?? '';
-    case 'crashed':
-      return styles.statusCrashed ?? '';
-    case 'stopped':
-      return styles.statusStopped ?? '';
-  }
+// Record-typed table forces the TS compiler to loud-fail if EnvStatus
+// gains a new variant without a matching class. Cheaper than a switch +
+// noFallthroughCasesInSwitch for the same exhaustiveness guarantee.
+const STATUS_CLASS: Record<EnvStatus, string> = {
+  running: styles.statusRunning ?? '',
+  idle: styles.statusIdle ?? '',
+  crashed: styles.statusCrashed ?? '',
+  stopped: styles.statusStopped ?? '',
 };
+
+const statusVariantClass = (status: EnvStatus): string => STATUS_CLASS[status];
 
 const isRunning = (status: EnvStatus): boolean => status === 'running' || status === 'idle';
 
-const agentBadge = (agent: AgentType): string => agent.replace('-', ' ');
+// Global replace — agent_type values like "cursor-agent" / "gpt-engineer"
+// can carry more than one dash in future variants.
+const agentBadge = (agent: AgentType): string => agent.replace(/-/g, ' ');
 
 export const RemoteEnvList = ({ envs, onOpen, onToggle }: Props): ReactElement => {
   const [groupBy, setGroupBy] = useState<GroupBy>('all');
@@ -108,7 +109,16 @@ export const RemoteEnvList = ({ envs, onOpen, onToggle }: Props): ReactElement =
 
       <div className={styles.scroll}>
         {groups.map((group) => (
-          <section key={group.key} className={styles.group} aria-labelledby={`group-${group.key}`}>
+          // aria-labelledby is only wired when the header (and thus its id)
+          // is actually rendered — otherwise we'd point at a non-existent
+          // node, which AT clients handle inconsistently. React omits
+          // attributes with undefined values entirely, so this is a no-op
+          // attribute in 'all' mode.
+          <section
+            key={group.key}
+            className={styles.group}
+            aria-labelledby={groupBy !== 'all' ? `group-${group.key}` : undefined}
+          >
             {groupBy !== 'all' && (
               <header className={styles.groupHead}>
                 <h2 id={`group-${group.key}`} className={styles.groupLabel}>

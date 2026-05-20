@@ -122,14 +122,11 @@ const codeSpaceRoute = createRoute({
 const codeSpaceDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/code-space/$envId',
-  component: () => {
-    const params = codeSpaceDetailRoute.useParams();
-    return (
-      <Suspense fallback={<LazyFallback />}>
-        <CodeSpaceDetailRoute params={params} />
-      </Suspense>
-    );
-  },
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <CodeSpaceDetailRoute />
+    </Suspense>
+  ),
 });
 
 const routeTree = rootRoute.addChildren([

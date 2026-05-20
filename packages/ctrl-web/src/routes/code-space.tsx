@@ -6,7 +6,7 @@
 // arrive when zeus exposes the start_env / stop_env commands.
 
 import { useCallback, useState, type ReactElement } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { RemoteEnvList } from '@/components/RemoteEnvList';
 import { MOCK_ENVS, type EnvStatus, type RemoteEnv } from '@/lib/mock-envs';
 import styles from './code-space.module.css';
@@ -53,16 +53,11 @@ export const CodeSpaceRoute = (): ReactElement => {
   );
 };
 
-interface DetailParams {
-  envId: string;
-}
-
-interface DetailProps {
-  params: DetailParams;
-}
-
-export const CodeSpaceDetailRoute = ({ params }: DetailProps): ReactElement => {
+export const CodeSpaceDetailRoute = (): ReactElement => {
   const navigate = useNavigate();
+  // `from` anchors the params type to this exact route so envId is
+  // string (not string | undefined) per TanStack Router's contract.
+  const { envId } = useParams({ from: '/code-space/$envId' });
   return (
     <div className={styles.detail}>
       <button
@@ -72,7 +67,7 @@ export const CodeSpaceDetailRoute = ({ params }: DetailProps): ReactElement => {
       >
         ‹ Code Space
       </button>
-      <h1 className={styles.title}>Env {params.envId}</h1>
+      <h1 className={styles.title}>Env {envId}</h1>
       <p className={styles.subtitle}>
         Detail view placeholder. Cell stream + controls land when the
         kernel exposes <code className={styles.code}>list_remote_envs</code>

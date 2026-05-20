@@ -29,8 +29,15 @@ export interface RemoteEnv {
 
 const MINUTES = 60_000;
 
+// Anchor every mock timestamp to the module-load instant so all 10 envs
+// share the same "now". If Date.now() were called per env, the cards
+// would drift by a few microseconds — harmless today, but the fixed
+// anchor also makes the mock data stable across HMR re-evaluations
+// during dev (otherwise relative times shift on every save).
+const MODULE_LOAD_MS = Date.now();
+
 const minutesAgo = (n: number): string =>
-  new Date(Date.now() - n * MINUTES).toISOString();
+  new Date(MODULE_LOAD_MS - n * MINUTES).toISOString();
 
 export const MOCK_ENVS: ReadonlyArray<RemoteEnv> = [
   {
