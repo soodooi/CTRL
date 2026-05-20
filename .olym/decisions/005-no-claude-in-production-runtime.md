@@ -1,7 +1,7 @@
 ---
 adr_id: 005
 title: No Claude / Anthropic SDK in CTRL production runtime
-status: proposed
+status: accepted
 date: 2026-05-18
 deciders: [bao, zeus]
 related:
@@ -76,3 +76,4 @@ CTRL production runtime **仅**通过 LLMTransport → 用户配置的 AI provid
 | Date | Change |
 |---|---|
 | 2026-05-18 | Initial proposed (zeus); evidence: grep `llm-transport.ts:108` default model = `claude-haiku-4-5`; memory `feedback_no_claude_in_production.md` captures bao 2026-05-18 directive |
+| 2026-05-19 | **Accepted** (bao verbal-go + zeus). De-facto already enforced via memory + handoffs; status flipped to align with reality. |

@@ -1,7 +1,7 @@
 ---
 adr_id: 007
 title: Adopt vodozemac (Matrix Olm) for E2E crypto on all platforms
-status: proposed
+status: accepted
 date: 2026-05-16
 deciders: [bao, zeus]
 related:
@@ -58,3 +58,4 @@ Adopt **vodozemac** (Matrix.org's Rust Olm fork) on all platforms — Tauri 2 de
 |---|---|
 | 2026-05-16 | Initial proposed (zeus); awaiting bao Accept for mesh sprint kickoff |
 | 2026-05-18 | Rewrite to olym 0.3.1 ADR format |
+| 2026-05-19 | **Accepted** (bao verbal-go + zeus). CLAUDE.md stack table already locked vodozemac; lane-E mesh impl unblocked. |

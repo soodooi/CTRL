@@ -1,7 +1,7 @@
 ---
 adr_id: 011
 title: Tauri 2 updater + three-mirror channel for global + CN delivery
-status: proposed
+status: accepted
 date: 2026-05-17
 deciders: [bao, zeus]
 related:
@@ -65,3 +65,4 @@ Self-update = **Tauri 2 native updater** + **three-mirror endpoint array (ordere
 |---|---|
 | 2026-05-17 | Initial proposed (zeus); awaiting bao Accept to unblock implementation gates |
 | 2026-05-18 | Rewrite to olym 0.3.1 ADR format; implementation gates moved into Acceptance checklist (was separate "Implementation gates" section) |
+| 2026-05-19 | **Accepted** (bao verbal-go + zeus). Was P0 超时 5/3d, v1 ship blocker — unblocked. |
