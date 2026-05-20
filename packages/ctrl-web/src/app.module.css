@@ -1,35 +1,27 @@
+/*
+ * Shell layout — mobile-pattern chrome: StatusBar (top) / Outlet (middle) /
+ * BottomTab (bottom). The middle slot owns its own scrolling so the
+ * chrome stays pinned, mirroring what every mobile app does on iOS/Android.
+ *
+ * dvh (dynamic viewport height) is used so the layout reflows correctly
+ * when the iOS address bar hides on scroll. Plain vh fallback for browsers
+ * without dvh support; the gap is small (the bottom-tab might be partially
+ * obscured under the URL bar in those engines until first scroll).
+ */
+
 .shell {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  min-height: 100vh;
-}
-
-.nav {
   display: flex;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--color-background);
+  overflow: hidden;
 }
 
-.navItem {
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--color-text-muted);
-  text-decoration: none;
-  transition: background var(--duration-fast) var(--ease-out-expo);
-}
-
-.navItem:hover {
-  background: var(--color-surface-elevated);
-  color: var(--color-text);
-}
-
-.navItemActive {
-  background: var(--ctrl-blue);
-  color: var(--paper);
+.outlet {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }

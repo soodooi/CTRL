@@ -50,7 +50,11 @@
 
 .compactBack {
   position: fixed;
-  top: env(safe-area-inset-top, 12px);
+  /* Clear the StatusBar chrome (A3 nav redesign): bar height +
+     safe-area-inset-top + a small breathing space. Reading from the
+     --statusbar-height token keeps this offset honest if the bar is
+     retuned. */
+  top: calc(env(safe-area-inset-top, 0px) + var(--statusbar-height) + var(--space-2));
   left: var(--space-3);
   z-index: 10;
   /* 44pt min touch target per mobile design tokens. */

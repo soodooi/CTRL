@@ -1,0 +1,83 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  /* Mobile UX: clear the notch / dynamic island when running as a PWA
+     on iOS. Falls back to 0 on desktop. */
+  padding-top: max(var(--space-2), env(safe-area-inset-top));
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  min-height: var(--statusbar-height);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+  color: var(--color-text);
+  /* 44pt-safe tap target — the visual chrome is short but the hit
+     area extends via padding. */
+  padding: var(--space-1) var(--space-2);
+  margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1);
+  border-radius: var(--radius-md);
+  transition: background var(--duration-fast) var(--ease-out-expo);
+}
+
+.brand:hover {
+  background: var(--color-surface-elevated);
+}
+
+.brand:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-black);
+  letter-spacing: 1px;
+  color: var(--color-text);
+}
+
+.time {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  letter-spacing: 0.5px;
+}
+
+.led {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-text-soft);
+  flex-shrink: 0;
+}
+
+.led_connected {
+  background: var(--color-success);
+  box-shadow: 0 0 8px color-mix(in oklab, var(--color-success) 60%, transparent);
+}
+
+.led_connecting {
+  background: var(--color-warning);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.led_offline {
+  background: var(--color-danger);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .led_connecting { animation: none; }
+}
