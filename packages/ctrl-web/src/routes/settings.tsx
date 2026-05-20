@@ -18,8 +18,9 @@ export const SettingsRoute = (): React.ReactElement => (
       <section className={styles.section}>
         <h2 className={styles.h2}>BYOK</h2>
         <p className={styles.body}>
-          Bring your own Anthropic / OpenAI key for higher-quality creator
-          flows. Stored in OS keychain — never crosses the network from this device.
+          Bring your own AI key (Volc / Anthropic / OpenAI / Ollama) for
+          higher-quality creator flows. Stored in OS keychain — never crosses
+          the network from this device.
         </p>
       </section>
     </main>

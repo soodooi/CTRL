@@ -13,6 +13,7 @@ import {
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { HomeRoute } from './routes/home';
 import { PoolRoute } from './routes/pool';
 import styles from './app.module.css';
 
@@ -28,6 +29,12 @@ const SettingsRoute = lazy(() =>
 const IrisyRoute = lazy(() =>
   import('./routes/irisy').then((m) => ({ default: m.IrisyRoute })),
 );
+const CodeSpaceRoute = lazy(() =>
+  import('./routes/code-space').then((m) => ({ default: m.CodeSpaceRoute })),
+);
+const CodeSpaceDetailRoute = lazy(() =>
+  import('./routes/code-space').then((m) => ({ default: m.CodeSpaceDetailRoute })),
+);
 
 const LazyFallback = (): React.ReactElement => (
   <div style={{ padding: 'var(--space-6)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
@@ -40,7 +47,13 @@ const rootRoute = createRootRoute({
     <div className={styles.shell}>
       <nav className={styles.nav} aria-label="Primary">
         <Link to="/" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
+          Home
+        </Link>
+        <Link to="/pool" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
           Pool
+        </Link>
+        <Link to="/code-space" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
+          Code Space
         </Link>
         <Link to="/workspace" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
           Workspace
@@ -57,9 +70,17 @@ const rootRoute = createRootRoute({
   ),
 });
 
+// `/` = the dual iPhone-frame home view (decision_pc_mirrors_mobile_layout).
+// `/pool` and `/workspace` remain as standalone routes — used by the Tauri
+// dedicated workspace window (per workspace.tsx header) and as deep-links.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  component: HomeRoute,
+});
+const poolRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/pool',
   component: PoolRoute,
 });
 const workspaceRoute = createRoute({
@@ -89,8 +110,34 @@ const irisyRoute = createRoute({
     </Suspense>
   ),
 });
+const codeSpaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/code-space',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <CodeSpaceRoute />
+    </Suspense>
+  ),
+});
+const codeSpaceDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/code-space/$envId',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <CodeSpaceDetailRoute />
+    </Suspense>
+  ),
+});
 
-const routeTree = rootRoute.addChildren([indexRoute, workspaceRoute, irisyRoute, settingsRoute]);
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  poolRoute,
+  workspaceRoute,
+  settingsRoute,
+  irisyRoute,
+  codeSpaceRoute,
+  codeSpaceDetailRoute,
+]);
 
 // Singleton router so `Register.router = typeof router` is concrete (gives
 // type-safe Link path autocompletion). Erased `ReturnType<typeof createRouter>`

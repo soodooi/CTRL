@@ -1,6 +1,6 @@
 # CTRL — Claude Code Project Entry
 
-> **新 session 必读**: `.olym/steering/ctrl-strategy.md` (5 min navigator) + `.claude/ADR/001-system-architecture.md` (architecture lock)
+> **新 session 必读**: `.olym/steering/ctrl-strategy.md` (5 min navigator) + `.olym/decisions/001-system-architecture.md` (architecture lock)
 
 ---
 
@@ -31,7 +31,7 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 
 ## Architecture overview
 
-详细见 `.claude/ADR/001-system-architecture.md` (spine) + `.claude/ADR/002-pwa-pivot.md` (UI layer, accepted 2026-05-13).
+详细见 `.olym/decisions/001-system-architecture.md` (spine) + `.olym/decisions/002-pwa-pivot.md` (UI layer, accepted 2026-05-13).
 
 ```
 L3 Userland (WASM sandboxed actors, 键帽 / 硬件 / LLM call / OAuth flow)
@@ -171,7 +171,7 @@ Current open:
 When you need to make any non-trivial decision:
 
 1. **Read** `.olym/steering/ctrl-strategy.md` (5 min)
-2. **Check** `.claude/ADR/001-system-architecture.md` for lock points
+2. **Check** `.olym/decisions/001-system-architecture.md` for lock points
 3. **Drill** into relevant spec under `.olym/specs/`
 4. **Ask** bao if conflict between docs or decision absent
 

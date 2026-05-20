@@ -71,6 +71,14 @@ impl StssBridge {
         &self.auth_token
     }
 
+    /// Subscribe to all bus events. The receiver gets each Cell/Op the
+    /// kernel publishes, mirroring what WS clients receive on the wire.
+    /// Used by in-process consumers (e.g. tests, adapter tasks, future
+    /// effect executor) that want to observe without going through WS.
+    pub fn subscribe_events(&self) -> broadcast::Receiver<Event> {
+        self.events.subscribe()
+    }
+
     /// Publish a Cell. Used by event_bus to forward kernel events to viewers.
     pub fn publish_cell(&self, cell: Cell) {
         let _ = self.events.send(Event::Cell(cell));

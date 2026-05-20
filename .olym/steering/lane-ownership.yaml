@@ -1,0 +1,191 @@
+# Lane Ownership — CTRL local override (forked from olym v0.3.0-template)
+#
+# Consumed by:
+#   - .claude/hooks/pretool-lane-guard.js   (PreToolUse — block writes outside lane)
+#   - .claude/hooks/session-handoff-snapshot.js (SessionStart — three-column injection)
+#   - scripts/fleet-status.sh               (operator dashboard)
+#
+# Lane resolution order at hook runtime:
+#   1. cwd has .lane file → that lane (worker mode)
+#   2. cwd is main tree (no .lane) → "zeus" (orchestrator, no lane restriction)
+#
+# Path semantics:
+#   - Glob patterns relative to repo root
+#   - First-match wins inside lanes[]
+#   - allowlist applies to ALL roles (always allowed)
+#   - denylist_explicit applies to ALL non-zeus roles (always blocked)
+#   - warnlist allowed but flagged
+#
+# CTRL-specific override notes:
+#   - lane-A reassigned daedalus (frontend hard rule per memory decision_lane_a_is_frontend.md)
+#   - lane-G ADDED beyond 6-lane convention — bao verbal-go 2026-05-19 "我可以开多个窗口 同时干"
+#   - hephaestus holds 3 lanes (B+D+E) — per "1 persona N lane" rule
+
+version: 0.3.0-ctrl-2026-05-19
+last_updated: 2026-05-19
+
+# ── Ownership slots (CTRL filled) ─────────────────────────
+
+ownership_slots:
+  lane-A:
+    persona: daedalus
+    role_alias: frontend-owner
+    business: irisy-ui-llm-transport-persona-assets
+    alias_lanes: []
+  lane-B:
+    persona: hephaestus
+    role_alias: capability-spike-owner
+    business: kernel-capability-surface-spike
+    alias_lanes: []
+  lane-C:
+    persona: apollo
+    role_alias: marketing-owner
+    business: ctrlapplab-marketing-site
+    alias_lanes: []
+  lane-D:
+    persona: hephaestus
+    role_alias: keycap-integration-owner
+    business: keycap-integration-spec
+    alias_lanes: [hephaestus-keycap-spec]
+  lane-E:
+    persona: hephaestus
+    role_alias: mesh-comm-owner
+    business: mesh-comm-impl
+    alias_lanes: [athena-mesh, hephaestus-mesh]
+  lane-F:
+    persona: athena
+    role_alias: mac-shell-owner
+    business: mac-shell-tauri2-migration
+    alias_lanes: [athena-mac]
+  lane-G:
+    persona: zeus
+    role_alias: code-space-owner
+    business: subprocess-actor-pty-code-space
+    alias_lanes: []
+
+scratch:
+  namespace: .worktrees/scratch/<type>-<topic>/
+  types: [spike, proposal, poc, hotfix]
+  lifetime: short (timebox 1-5 day per .olym/protocols/evolution.md §5)
+
+main:
+  persona: zeus
+  worktree: /Users/mac/Documents/coding/CTRL/
+  role: orchestrator + cross-cutting + stewardship
+
+# ── Application surfaces (real CTRL business lanes) ───────
+
+lanes:
+
+  lane-A:
+    description: Irisy keycap-creator UI + LLMTransport no-Claude refactor + persona assets
+    files:
+      - packages/ctrl-web/src/routes/irisy.tsx
+      - packages/ctrl-web/src/lib/llm-transport.ts
+      - packages/ctrl-web/src/lib/irisy/**
+      - packages/ctrl-web/src/components/irisy/**
+      - packages/ctrl-web/src/components/poster/**
+      - packages/ctrl-web/src/persona/**
+      - packages/ctrl-web/public/persona/**
+      - .olym/specs/irisy/**
+
+  lane-B:
+    description: kernel capability surface spike (Q1 Q2 Q3 RESULT.md to feed ADR-004)
+    files:
+      - .worktrees/scratch/spike-jiazuo-capability/**
+      - doc/keycap-integration-research/06-jiazuo-result.md
+
+  lane-C:
+    description: ctrlapplab.com Astro marketing site v0
+    files:
+      - packages/ctrl-marketing-site/**
+      - .olym/specs/marketing/**
+
+  lane-D:
+    description: keycap integration spec — 7 pattern × MCP tool contract + 39 intent buckets
+    files:
+      - doc/keycap-integration-research/02-pattern-*.md
+      - doc/keycap-integration-research/03-mcp-tool-contract.md
+      - doc/keycap-integration-research/04-intent-buckets.md
+      - .olym/specs/tool-manifest/spec.md
+
+  lane-E:
+    description: mesh comm impl — vodozemac + webrtc-rs + Automerge + ctrl-relay worker
+    files:
+      - packages/ctrl-mesh/**
+      - src-tauri/src/mesh/**
+      - .olym/specs/mesh-comm/**
+
+  lane-F:
+    description: macOS shell Tauri 2 migration (parity with Win sub-PR b/c/d/e)
+    files:
+      - src-tauri/src/shell/**
+      - src-tauri/src/lib.rs
+      - src-tauri/tauri.conf.json
+      - .olym/specs/mac-shell/spec.md
+
+  lane-G:
+    description: SubprocessActor + portable-pty kernel landing (Code Space path C)
+    files:
+      - src-tauri/src/kernel/actor.rs
+      - src-tauri/src/kernel/runtime.rs
+      - src-tauri/src/kernel/scheduler.rs
+      - src-tauri/src/kernel/subprocess_actor.rs
+      - src-tauri/src/kernel/pty/**
+      - src-tauri/Cargo.toml
+      - doc/code-space-path-c/**
+      - .olym/specs/code-space/**
+
+# ── Always-allowed for all roles (worker + zeus) ──────────
+
+allowlist:
+  - .olym/handoffs/*.md
+  - .olym/handoffs/archive/*.md
+  - .olym/handoffs/INDEX.md
+
+# ── Allowed but warn (shared files) ───────────────────────
+
+warnlist:
+  - package.json
+  - package-lock.json
+  - pnpm-lock.yaml
+  - yarn.lock
+  - tsconfig.json
+  - tsconfig.*.json
+  - .gitignore
+  - .env.example
+
+# ── Forbidden for all non-zeus roles ──────────────────────
+
+denylist_explicit:
+  # Class 1: Entry rules
+  - CLAUDE.md
+  # Class 2: Memory
+  - MEMORY.md
+  # Class 3: Olym main architecture specs
+  - .olym/specs/multi-agent-fleet/**
+  - .olym/specs/olympus/**
+  - .olym/specs/olym-*/**
+  - .olym/specs/architecture-*
+  # Class 4: Steering
+  - .olym/steering/**
+  # Class 5: Decisions (ADR)
+  - .olym/decisions/**
+  # Class 6: Audits
+  - .olym/audits/**
+  # Class 7: Cross-cutting Skills
+  - .olym/best-practice/**
+  - .olym/skills/**
+  # Class 8: MCP / Tooling
+  - .claude/settings.json
+  - .claude/settings.local.json
+  - .claude/hooks/**
+  - .olym/settings/mcp.json
+  - .husky/**
+  # CI workflows (zeus-only)
+  - .github/workflows/_reusable-*.yml
+  - .github/workflows/ci-*.yml
+  - .github/workflows/handbook-*.yml
+  - .github/workflows/legacy-*.yml
+  # Identity
+  - .lane

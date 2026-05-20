@@ -14,6 +14,7 @@
 // Skeleton stage (sub-PR b): each handler returns NotImplementedYet so the
 // JS bridge can be wired before kernel integration in sub-PR c.
 
+pub mod code_space;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
@@ -45,6 +46,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::keychain::store_key,
             $crate::commands::keychain::get_key,
             $crate::commands::keychain::delete_key,
+            // code_space — coding 远程桌面 (ST-SS spec v0.7 wire)
+            $crate::commands::code_space::cs_spawn,
+            $crate::commands::code_space::cs_stdin,
+            $crate::commands::code_space::cs_signal,
+            $crate::commands::code_space::cs_resize,
+            $crate::commands::code_space::cs_kill,
+            $crate::commands::code_space::cs_list,
         ]
     };
 }

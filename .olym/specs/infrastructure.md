@@ -6,7 +6,7 @@ last_updated: 2026-05-16
 
 # CTRL 18 底座基础设施（spec）
 
-抽自 [ADR-001 §6](../../.claude/ADR/001-system-architecture.md#6-eighteen底座-infrastructure-items)，因属实现细节不属架构决策。**本文档是真实来源**；ADR-001 §6 仅保留作历史。
+抽自 [ADR-001 §6](../../.olym/decisions/001-system-architecture.md#6-eighteen底座-infrastructure-items)，因属实现细节不属架构决策。**本文档是真实来源**；ADR-001 §6 仅保留作历史。
 
 后续这 18 项每一项落地时各自有独立 spec 文档（`.olym/specs/<domain>/spec.md`），本文档负责索引 + 现行状态。
 
