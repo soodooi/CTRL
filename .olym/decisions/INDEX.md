@@ -14,6 +14,7 @@
 | [007](./007-encryption-library.md) | Adopt vodozemac (Matrix Olm) for E2E crypto on all platforms | accepted | 2026-05-16 | bao, zeus | framework | — |
 | [010](./010-keycap-execution-model.md) | Keycap execution model — MCP outward, Actor inward | accepted | 2026-05-17 | bao, zeus, hephaestus | framework | — |
 | [011](./011-update-channel-and-delivery.md) | Tauri 2 updater + three-mirror channel for global + CN delivery | accepted | 2026-05-17 | bao, zeus | framework | — |
+| [012](./012-subprocess-actor-pty.md) | SubprocessActor + portable-pty execution model for Code Space coding companion | 🟡 proposed | 2026-05-19 | bao, zeus | framework | **P0, 0/3d** |
 
 > SLA 列 = "已挂天数 / SLA 上限"。P0 超时 → bao 决策顶；详见 PROCESS.md §1。
 
@@ -27,7 +28,6 @@
 | 006 | AI provider gateway | zeus | ADR-004 accepted | 2026-05-17 |
 | 008 | Tokyo VPS primary topology | hephaestus | VPS deploy verification 完成 | 2026-05-17 |
 | 009 | Multi-tenant baseline | zeus | 第 2 个商业项目签约 | 2026-05-17 |
-| 012 | SubprocessActor + portable-pty (Code Space path C) | zeus | lane-G H-2026-05-19-001 启动（drafted） | 2026-05-19 |
 
 ## Superseded / Deprecated
 
@@ -35,6 +35,6 @@
 
 ---
 
-**Index version**: 0.3 (2026-05-19, ADR-005/007/011 → accepted)
+**Index version**: 0.4 (2026-05-19, +ADR-012 proposed)
 **Process**: see [PROCESS.md](./PROCESS.md)
 **Template**: see [_template.md](./_template.md)
