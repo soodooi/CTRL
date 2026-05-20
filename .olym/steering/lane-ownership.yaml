@@ -46,12 +46,12 @@ ownership_slots:
     persona: hephaestus
     role_alias: keycap-integration-owner
     business: keycap-integration-spec
-    alias_lanes: []
+    alias_lanes: [hephaestus-keycap-spec]
   lane-E:
     persona: hephaestus
     role_alias: mesh-comm-owner
     business: mesh-comm-impl
-    alias_lanes: []
+    alias_lanes: [athena-mesh, hephaestus-mesh]
   lane-F:
     persona: athena
     role_alias: mac-shell-owner
