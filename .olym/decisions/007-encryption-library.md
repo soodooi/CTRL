@@ -59,3 +59,4 @@ Adopt **vodozemac** (Matrix.org's Rust Olm fork) on all platforms — Tauri 2 de
 | 2026-05-16 | Initial proposed (zeus); awaiting bao Accept for mesh sprint kickoff |
 | 2026-05-18 | Rewrite to olym 0.3.1 ADR format |
 | 2026-05-19 | **Accepted** (bao verbal-go + zeus). CLAUDE.md stack table already locked vodozemac; lane-E mesh impl unblocked. |
+| 2026-05-20 | **Amend (no status flip)**: lane-D mesh spike (PR #8) confirms vodozemac 0.10 ships NonContributoryKey DH-validity check natively (Soatok disclosure fix). Original §Defense-in-depth wrapper-layer check downgrades from "primary" to "belt-and-braces" — keep code but acknowledge upstream covers the case. No re-acceptance needed (clarification of implementation reality, not decision change). |
