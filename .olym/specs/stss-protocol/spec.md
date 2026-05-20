@@ -1,9 +1,14 @@
 # ST-SS Protocol — CTRL Integration Specification
 
-- **Status**: Draft v0.6 (CTRL profile)
-- **Date**: 2026-05-11
+- **Status**: Draft v0.7 (CTRL profile — adds coding-env vocabulary, H-2026-05-20-001)
+- **Date**: 2026-05-11 (v0.6) / 2026-05-20 (v0.7)
 - **Parent**: `.olym/decisions/001-system-architecture.md` §3, §4 source #4, §7
 - **Source**: Cherry-picked from screi `@screi/protocol-ts` + `@screi/core`
+- **v0.7 changes** (H-2026-05-20-001, hephaestus lane-C, bao 2026-05-20 钦定):
+  - §2.1: +6 CellKind (terminal_output / terminal_exit / lsp_state / agent_thinking / agent_action / env_status)
+  - §2.1: +4 OpKind (agent_prompt / agent_interrupt / env_signal / file_request)
+  - §2.1.1 (new): per-kind payload schema reference (coding-specific)
+  - Companion contract: `doc/st-ss/coding-env-publisher-contract.md`
 
 ---
 
@@ -47,23 +52,69 @@ interface Op {
   payload: any;
 }
 
-type CellKind = 
+type CellKind =
+  // ─── v0.6 base ───
   | 'user_input'          // typed text, voice transcript, click
   | 'clipboard_snapshot'
   | 'screen_snapshot'     // not pixels, semantic: current_function/current_file/...
   | 'hardware_reading'    // sensor data, AI-summarized
   | 'llm_response'
   | 'tool_result'
-  | 'context_snapshot';   // app-defined context blob
+  | 'context_snapshot'    // app-defined context blob
+  // ─── v0.7 coding-env (H-2026-05-20-001) ───
+  | 'terminal_output'     // stdout/stderr chunk from a PTY/subprocess in a coding env
+  | 'terminal_exit'       // PTY/subprocess exit (code + signal + duration)
+  | 'lsp_state'           // LSP diagnostics + symbols snapshot per file URI
+  | 'agent_thinking'      // chain-of-thought delta from a coding agent (streaming)
+  | 'agent_action'        // tool_call / file_edit / shell_command / plan_update planned-or-done
+  | 'env_status';         // env health: cpu/mem/build_status/test_status
 
 type OpKind =
+  // ─── v0.6 base ───
   | 'keycap_invoked'
   | 'keycap_completed'
   | 'hotkey_triggered'
   | 'app_focus_changed'
   | 'file_saved'
-  | 'cursor_moved';
+  | 'cursor_moved'
+  // ─── v0.7 coding-env (H-2026-05-20-001) ───
+  | 'agent_prompt'        // user/zeus → agent prompt sent into the env
+  | 'agent_interrupt'     // abort the agent's current action
+  | 'env_signal'          // SIGINT/SIGTERM/restart/reload_config sent to env
+  | 'file_request';       // pull a specific file from the env (request_id correlates)
 ```
+
+### 2.1.1 Coding-env payload schemas (v0.7)
+
+> Every coding-env publisher (PTY wrapper / Claude Code session / cursor-agent / ST-SS bridge) MUST emit these `payload` shapes. Receivers MAY index custom fields but MUST NOT depend on them.
+
+**Cells**:
+
+| kind | payload fields | example |
+|---|---|---|
+| `terminal_output` | `terminal_id: string`, `stream: 'stdout' \| 'stderr'`, `bytes: string` (utf-8 or base64 if `encoding='base64'`), `encoding?: 'utf8' \| 'base64'` (default `utf8`), `seq?: number` (monotonic per terminal) | `{terminal_id:"t1", stream:"stdout", bytes:"running tests...\n"}` |
+| `terminal_exit` | `terminal_id: string`, `exit_code: number \| null`, `signal?: string`, `duration_ms?: number` | `{terminal_id:"t1", exit_code:0, duration_ms:4280}` |
+| `lsp_state` | `uri: string` (file://...), `language_id: string`, `version?: number`, `diagnostics: Array<{severity:'error'\|'warn'\|'info'\|'hint', message:string, range:{start:{line,character}, end:{line,character}}, source?:string}>`, `symbols?: Array<{name:string, kind:string, range:{...}}>` | `{uri:"file:///src/app.ts", language_id:"typescript", diagnostics:[{severity:"error", message:"Cannot find name 'foo'", range:{start:{line:10,character:4}, end:{line:10,character:7}}}]}` |
+| `agent_thinking` | `agent_id: string`, `delta: string`, `done: boolean`, `token_count?: number`, `turn_id?: string` (correlates with `agent_prompt`) | `{agent_id:"claude-1", delta:"Let me check the file...", done:false}` |
+| `agent_action` | `agent_id: string`, `action_kind: 'tool_call' \| 'file_edit' \| 'shell_command' \| 'plan_update' \| 'task_update'`, `summary: string` (≤200 chars), `status: 'planned' \| 'in_progress' \| 'done' \| 'failed'`, `payload: unknown` (kind-specific blob; SHOULD be CBOR-encodable), `correlates_with?: string` (prior `agent_prompt` id) | `{agent_id:"claude-1", action_kind:"file_edit", summary:"edit src/app.ts:10", status:"done", payload:{path:"src/app.ts", lines_added:3, lines_removed:1}}` |
+| `env_status` | `env_id: string`, `cpu_pct?: number` (0-100), `mem_mb?: number`, `build: 'idle' \| 'building' \| 'ok' \| 'failed'`, `tests: 'idle' \| 'running' \| 'ok' \| 'failing'`, `last_changed_at_ms: number` | `{env_id:"lane-C", build:"ok", tests:"running", cpu_pct:42, mem_mb:1230, last_changed_at_ms:1716200000000}` |
+
+**Ops**:
+
+| kind | payload fields | example |
+|---|---|---|
+| `agent_prompt` | `agent_id: string`, `prompt_id: string` (uuid), `content: string`, `attachments?: Array<{kind:'file'\|'image', uri?:string, base64?:string, mime?:string}>` | `{agent_id:"claude-1", prompt_id:"p-9af2", content:"fix the failing test in app.spec.ts"}` |
+| `agent_interrupt` | `agent_id: string`, `reason?: string` | `{agent_id:"claude-1", reason:"user pressed Esc"}` |
+| `env_signal` | `env_id: string`, `signal: 'SIGINT' \| 'SIGTERM' \| 'SIGKILL' \| 'restart' \| 'reload_config'` | `{env_id:"lane-C", signal:"SIGINT"}` |
+| `file_request` | `env_id: string`, `request_id: string` (uuid), `path: string`, `max_bytes?: number` (default 256 KB) | `{env_id:"lane-C", request_id:"r-1a", path:"src/app.ts", max_bytes:65536}` |
+
+**Notes**:
+
+- `terminal_id` / `env_id` / `agent_id` are publisher-scoped opaque strings; receivers MUST treat them as cookies, not parse semantics
+- `agent_thinking` is streaming-friendly: emit many cells with `done:false`, terminal one with `done:true` + same `turn_id`. Coalesce policy (§3.4) MAY merge by `turn_id` if subscriber buffer overflows
+- `agent_action.payload` is intentionally `unknown` — the shape depends on `action_kind`. Stable enough for v0.7; if a publisher needs strong typing it MAY narrow via custom kind (`(string & {})` extension)
+- `env_status.build` / `tests` enums are 4-state and DELIBERATELY not extended; richer telemetry goes through custom cells the receiver opts in to
+- `file_request` is an op (one-shot), the response comes back as a `tool_result` cell correlated by `request_id`
 
 ### 2.2 Transport
 
