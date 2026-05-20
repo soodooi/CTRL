@@ -9,10 +9,11 @@ import {
   createRootRoute,
   createRoute,
   Outlet,
-  Link,
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { StatusBar } from './components/StatusBar';
+import { BottomTab } from './components/BottomTab';
 import { HomeRoute } from './routes/home';
 import { PoolRoute } from './routes/pool';
 import styles from './app.module.css';
@@ -45,27 +46,11 @@ const LazyFallback = (): React.ReactElement => (
 const rootRoute = createRootRoute({
   component: () => (
     <div className={styles.shell}>
-      <nav className={styles.nav} aria-label="Primary">
-        <Link to="/" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Home
-        </Link>
-        <Link to="/pool" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Pool
-        </Link>
-        <Link to="/code-space" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Code Space
-        </Link>
-        <Link to="/workspace" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Workspace
-        </Link>
-        <Link to="/irisy" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Irisy
-        </Link>
-        <Link to="/settings" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Settings
-        </Link>
-      </nav>
-      <Outlet />
+      <StatusBar />
+      <main className={styles.outlet}>
+        <Outlet />
+      </main>
+      <BottomTab />
     </div>
   ),
 });

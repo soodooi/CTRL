@@ -64,6 +64,14 @@
   --container-wide: 1280px;
   --container-full: 100%;
 
+  /* === Shell chrome heights ===
+     StatusBar and BottomTab heights are kept as tokens so any consumer
+     that needs to clear / offset the chrome (e.g. fixed-positioned
+     overlays inside a route) reads from the same source of truth and
+     stays aligned when the bars are retuned. */
+  --statusbar-height: 32px;
+  --bottomtab-height: 56px;
+
   /* === Typography === */
   --font-sans: 'Inter', 'SF Pro Text', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Roboto Mono', monospace;
