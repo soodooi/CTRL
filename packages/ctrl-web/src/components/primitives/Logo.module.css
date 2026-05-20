@@ -1,0 +1,6 @@
+.logo {
+  display: inline-block;
+  flex-shrink: 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
