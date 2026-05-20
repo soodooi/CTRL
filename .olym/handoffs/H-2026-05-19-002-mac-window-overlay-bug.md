@@ -2,7 +2,16 @@
 id: H-2026-05-19-002
 title: macOS CTRL shell broken — window covers desktop, no menu bar tray, hotkey dead
 severity: P0
-status: open
+status: done
+resolved_by:
+  - 7b0d186  # mac/d — Cargo.toml deps cleanup
+  - e1a0ced  # mac/e — bundle config + brand .icns
+  - 2c4e8e2  # mac/f — release build + live smoke 9/9 pass
+resolution_note: |
+  athena live-smoke confirmed 9/9 clean SHOW↔HIDE on Ctrl tap (bao tested
+  /Applications/CTRL.app); window does not cover desktop, hotkey works,
+  menu bar tray active. All 3 reported symptoms resolved.
+  Awaiting bao verify → flip to verified per PROCESS.md §2.
 reporter: zeus
 assigned_to: athena
 lane: lane-F
