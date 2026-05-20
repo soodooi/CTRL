@@ -5,6 +5,7 @@
 // control internal layout themselves.
 
 import type { HTMLAttributes, ReactElement } from 'react';
+import { cx } from './cx';
 import styles from './Card.module.css';
 
 type Elevation = 'flat' | 'raised';
@@ -12,9 +13,6 @@ type Elevation = 'flat' | 'raised';
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   elevation?: Elevation;
 }
-
-const cx = (...parts: Array<string | undefined | false>): string =>
-  parts.filter(Boolean).join(' ');
 
 export const Card = ({
   elevation = 'flat',

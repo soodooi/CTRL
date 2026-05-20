@@ -8,6 +8,7 @@
 // 'submit' surprise in forms.
 
 import { forwardRef, type ButtonHTMLAttributes, type ReactElement } from 'react';
+import { cx } from './cx';
 import styles from './Button.module.css';
 
 type Variant = 'primary' | 'ghost' | 'danger';
@@ -20,9 +21,6 @@ interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'cla
   /** Optional className for layout-only overrides; visual styles stay token-driven. */
   className?: string;
 }
-
-const cx = (...parts: Array<string | undefined | false>): string =>
-  parts.filter(Boolean).join(' ');
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (

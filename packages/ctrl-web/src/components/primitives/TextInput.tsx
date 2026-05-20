@@ -3,6 +3,7 @@
 // drive purely off CSS; no JS state needed.
 
 import { forwardRef, type InputHTMLAttributes, type ReactElement } from 'react';
+import { cx } from './cx';
 import styles from './TextInput.module.css';
 
 interface TextInputProps
@@ -11,9 +12,6 @@ interface TextInputProps
   type?: 'text' | 'password' | 'email' | 'search' | 'url' | 'tel';
   className?: string;
 }
-
-const cx = (...parts: Array<string | undefined | false>): string =>
-  parts.filter(Boolean).join(' ');
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
   ({ type = 'text', className, ...rest }, ref): ReactElement => (
