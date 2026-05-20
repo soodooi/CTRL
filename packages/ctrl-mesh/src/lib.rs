@@ -17,6 +17,11 @@ pub mod peer;
 pub mod signaling;
 pub mod wire;
 
+// `crypto` feature wires vodozemac (Olm 1:1 only — no Megolm; ADR-003 §3.1 / §6.1).
+// Disabled by default to keep the skeleton lean; enabled by tests and Sprint 2+.
+#[cfg(feature = "crypto")]
+pub mod session;
+
 pub use channel::{ChannelError, ChannelKind, MeshChannel};
 pub use document::{DocumentId, MeshDocument, V1_DOCUMENTS};
 pub use identity::{DeviceId, DeviceIdentity, IdentityError};
