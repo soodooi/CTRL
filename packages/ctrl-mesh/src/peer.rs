@@ -1,7 +1,7 @@
-// Peer — remote DeviceIdentity + transport state + libsignal session handle.
+// Peer — remote DeviceIdentity + transport state + vodozemac Olm session handle.
 //
 // One Peer per remote device in the mesh. State machine matches the standard
-// libsignal flow: Unpaired -> Pairing -> Paired -> (Online | Offline).
+// Olm 1:1 flow: Unpaired -> Pairing -> Paired -> (Online | Offline).
 //
 // Sprint 2 implements the session establishment + ratchet rotation.
 
@@ -58,6 +58,6 @@ pub enum PeerError {
     NotPaired(PeerState),
     #[error("peer revoked")]
     Revoked,
-    #[error("libsignal session error: {0}")]
+    #[error("vodozemac session error: {0}")]
     SessionError(String),
 }
