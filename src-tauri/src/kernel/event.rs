@@ -74,6 +74,15 @@ pub enum OpKind {
     MeshKeycapRemoved,
     MeshKeycapUsedAt,
     MeshPreferenceUpdated,
+    // ADR-012 §3 — SubprocessActor 6 lifecycle events.
+    // Inbound (PWA → kernel → actor):
+    SubprocessStdin,    // payload = { data_b64: String }
+    SubprocessResize,   // payload = { cols: u16, rows: u16 }
+    SubprocessSignal,   // payload = { signal: "SIGINT"|"SIGTERM"|"SIGKILL" }
+    // Outbound (actor → kernel → PWA via outbox Channel):
+    SubprocessStdout,   // payload = { actor, pid, data_b64, len }
+    SubprocessExit,     // payload = { actor, pid, code: Option<i32>, signal?: i32 }
+    SubprocessSpawned,  // payload = { actor, pid, command, mem_cap_bytes }
 }
 
 /// Filter for subscribing to a subset of events on the bus.
