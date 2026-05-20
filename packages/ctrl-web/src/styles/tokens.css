@@ -45,6 +45,20 @@
   --color-border: var(--graphite-soft-2);
   --color-accent: var(--ctrl-blue-light);
 
+  /* Semantic color aliases — route/component CSS should reference these,
+     not the --status-* primitives, so light/dark can rebalance contrast
+     in one place if perceptual tuning is needed later. */
+  --color-success: var(--status-success);
+  --color-warning: var(--status-warning);
+  --color-danger: var(--status-danger);
+  --color-info: var(--status-info);
+
+  /* === Containers (per brand-tokens.md §8) === */
+  --container-narrow: 640px;
+  --container-content: 920px;
+  --container-wide: 1280px;
+  --container-full: 100%;
+
   /* === Typography === */
   --font-sans: 'Inter', 'SF Pro Text', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Roboto Mono', monospace;
