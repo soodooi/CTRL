@@ -8,6 +8,7 @@
   - §2.1: +6 CellKind (terminal_output / terminal_exit / lsp_state / agent_thinking / agent_action / env_status)
   - §2.1: +4 OpKind (agent_prompt / agent_interrupt / env_signal / file_request)
   - §2.1.1 (new): per-kind payload schema reference (coding-specific)
+  - §2.1.2 (new): cross-language wire naming divergence note + ADR-{TBD} pointer (themis tier B H2)
   - Companion contract: `doc/st-ss/coding-env-publisher-contract.md`
 
 ---
@@ -115,6 +116,23 @@ type OpKind =
 - `agent_action.payload` is intentionally `unknown` — the shape depends on `action_kind`. Stable enough for v0.7; if a publisher needs strong typing it MAY narrow via custom kind (`(string & {})` extension)
 - `env_status.build` / `tests` enums are 4-state and DELIBERATELY not extended; richer telemetry goes through custom cells the receiver opts in to
 - `file_request` is an op (one-shot), the response comes back as a `tool_result` cell correlated by `request_id`
+
+### 2.1.2 Cross-language wire naming divergence (v0.7 known gap)
+
+**The wire string for a given semantic cell kind is not yet unified between the TS and Rust implementations.** Known divergence as of v0.7:
+
+| Semantic kind | TS wire string (`packages/ctrl-stss/src/protocol/kind.ts`) | Rust wire string (`src-tauri/src/kernel/...` serde-tagged enum) |
+|---|---|---|
+| MCP tool result   | `tool_result`        | `mcp_tool_result` (`CellKind::McpToolResult` default serde name) |
+
+**Subscribers consuming streams from mixed-language publishers MUST tolerate both spellings** until alignment lands. Two viable resolutions, tracked in **ADR-{TBD} (v1.0 ST-SS cross-language alignment)** — owner zeus to open:
+
+1. Rename Rust enum's serde tag to `tool_result` (matches TS, breaks any in-flight Rust publishers)
+2. Rename TS literal to `mcp_tool_result` (matches Rust, breaks any in-flight TS subscribers)
+
+Either way, the migration window MUST include a forward-compat shim that accepts both. v0.7 explicitly does NOT pick a winner — picking is part of the v1.0 cross-language stability gate.
+
+**Same risk applies to the v0.7 additions**: when zeus mirrors the 6 new `CellKind` + 4 new `OpKind` into Rust, prefer plain snake_case matching the TS literals (`terminal_output`, `agent_prompt`, etc.) without `mcp_`-style prefixes. If Rust enum naming forces a prefix (per Rust crate convention), the `#[serde(rename = "...")]` attribute MUST keep the wire string aligned with TS.
 
 ### 2.2 Transport
 
