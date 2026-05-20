@@ -1,0 +1,213 @@
+/*
+ * IPhoneFrame — iOS Pro Max device mockup chrome.
+ *
+ * Magic numbers are deliberately local: this file IS the device-mockup spec.
+ * They describe the physical iPhone 15 Pro Max (390 x 844 CSS px,
+ * ~19.5:9 portrait), not the brand system, so they do NOT belong in
+ * tokens.css. Scoping them with @property would be overkill; @scope is
+ * not yet broadly supported. Plain locally-named custom properties on the
+ * top-level class work without leaking outside this component.
+ */
+
+.device {
+  /* iPhone metric vars — scoped to this component subtree. */
+  --iphone-width: 390px;
+  --iphone-bezel: 12px;
+  --iphone-radius-outer: 56px;
+  --iphone-radius-inner: 44px;
+  --iphone-frame-color: oklch(0.18 0.005 264);
+  --iphone-frame-shine: oklch(0.32 0.008 264);
+  --iphone-island-color: oklch(0.04 0 0);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  /* Allow the device to scale down gracefully on narrow viewports. */
+  width: 100%;
+  max-width: var(--iphone-width);
+}
+
+.caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+}
+
+.captionTitle {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--color-text-muted);
+}
+
+.captionSubtitle {
+  font-size: var(--text-xs);
+  color: var(--color-text-soft);
+}
+
+.bezel {
+  position: relative;
+  width: var(--iphone-width);
+  /* Aspect 9:19.5 portrait ≈ iPhone Pro Max. Height computed for fidelity. */
+  aspect-ratio: 9 / 19.5;
+  background: linear-gradient(
+    160deg,
+    var(--iphone-frame-shine) 0%,
+    var(--iphone-frame-color) 30%,
+    oklch(0.08 0 0) 80%,
+    var(--iphone-frame-shine) 100%
+  );
+  border-radius: var(--iphone-radius-outer);
+  padding: var(--iphone-bezel);
+  box-shadow:
+    var(--shadow-xl),
+    inset 0 0 0 1px oklch(0.35 0.008 264 / 0.7),
+    inset 0 -2px 2px oklch(0 0 0 / 0.5),
+    inset 0 2px 2px oklch(1 0 0 / 0.08);
+}
+
+/* Side buttons — purely decorative, hint at the device materiality. */
+
+.sideButtonsLeft,
+.sideButtonsRight {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.sideButtonsLeft {
+  left: -3px;
+  gap: 22px;
+  padding-top: 96px;
+}
+
+.sideButtonsRight {
+  right: -3px;
+  padding-top: 132px;
+}
+
+.btnMute,
+.btnVolUp,
+.btnVolDown,
+.btnPower {
+  display: block;
+  width: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--iphone-frame-shine) 0%,
+    var(--iphone-frame-color) 60%
+  );
+  border-radius: 1.5px 0 0 1.5px;
+  box-shadow: inset -1px 0 0 oklch(0 0 0 / 0.5);
+}
+
+.sideButtonsRight .btnPower {
+  border-radius: 0 1.5px 1.5px 0;
+  box-shadow: inset 1px 0 0 oklch(0 0 0 / 0.5);
+}
+
+.btnMute { height: 26px; }
+.btnVolUp { height: 56px; }
+.btnVolDown { height: 56px; }
+.btnPower { height: 96px; }
+
+/* === Screen surface === */
+
+.screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--color-background);
+  border-radius: var(--iphone-radius-inner);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.6);
+}
+
+.dynamicIsland {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 110px;
+  height: 32px;
+  background: var(--iphone-island-color);
+  border-radius: 18px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.homeIndicator {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 132px;
+  height: 4px;
+  background: var(--paper);
+  opacity: 0.6;
+  border-radius: 2px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.screenInner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Establish an inline-size container so nested routes (pool, workspace)
+   * can use @container queries to mirror their mobile breakpoint regardless
+   * of the outer viewport width. This is how the same code looks identical
+   * in DevTools mobile mode and PC Tauri WebView. */
+  container-type: inline-size;
+  container-name: iphone-screen;
+}
+
+/* === Bare mode — used on real mobile where the device IS the device === */
+
+.bare {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+/* === Responsive: drop the bezel chrome below the iPhone width === */
+
+@media (max-width: 480px) {
+  .device {
+    gap: 0;
+  }
+  .caption {
+    display: none;
+  }
+  .bezel {
+    width: 100%;
+    max-width: 100vw;
+    aspect-ratio: auto;
+    height: 100dvh;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .sideButtonsLeft,
+  .sideButtonsRight {
+    display: none;
+  }
+  .screen {
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .dynamicIsland,
+  .homeIndicator {
+    display: none;
+  }
+}
