@@ -2,10 +2,10 @@
 id: H-2026-05-18-002
 title: "底座 capability surface 验证 spike — 喂 ADR-004"
 severity: P0
-status: open
+status: done
 reporter: zeus
 assigned_to: hephaestus
-lane: lane-B
+lane: lane-C
 touches:
   - .worktrees/scratch/spike-jiazuo-capability/**
   - doc/keycap-integration-research/06-jiazuo-result.md  # spike 输出位置
@@ -15,7 +15,8 @@ related:
 project_id: jiazuo-v1
 category: research
 created: 2026-05-18
-updated: 2026-05-18
+updated: 2026-05-20
+completed: 2026-05-19
 timebox: 1-2 days
 ---
 
@@ -107,3 +108,17 @@ bao 提醒"匹配 skill"。本 spike 用 hephaestus 的：
 - ADR-004 → `.olym/specs/kernel/capability-surface.md` (Q2 schema 落 spec)
 - spike 工区可归档到 `.olym/digests/` 或直接删除（RESULT.md 已留底）
 - 不留 dangling 文件 / dangling 决策
+
+---
+
+### 2026-05-19 hephaestus (lane-C) — spike DONE
+
+- **Commit**: `3488c45` on `feat/h-2026-05-18-002-jiazuo-spike` (pushed, no PR per spike timebox convention)
+- **Deliverable**: `doc/keycap-integration-research/06-jiazuo-result.md` (575 行, outcome-focused)
+
+**3 句结论**:
+1. **Q1** — 100 (keycap, capability) 消费行覆盖 23 keycap (16 starter + 7 pattern ref + screenshot + v1 top-15); 频次规则 ≥3=底座 / <3=keycap-local 实证有效, 无反例; **v1 必造底座 14 项 (8 namespace) + v1.1 bucket-projection 5 项 (5 namespace 已 reserve)**.
+2. **Q2** — Capability surface = **10 namespaces (v1 暴露 8: clipboard/text/network/keyring/screen/file/mcp/platform; v1.1 promote 5: process/network.local_rpc/oauth.broker/stss/image)**, 每 method 给 Zod input/output 草稿 + manifest 声明例; mcp.* 是 Pattern D 10K MCP 生态的 infra exception (即使 v1 单实例也必须底座).
+3. **Q3** — Production code 27 处提到 claude/anthropic, **0 个违反** (17 = 合法 BYOK Anthropic adapter, 5 = 合法 doc/enum/MCP 引用, 0 个 hardcoded `claude-*` 模型字符串); 唯一 3 处可改 = `kernel/runtime.rs:53` + `kernel/llm_port.rs:4` 默认 fallback chain 应改 Volc-first (per ADR-011) + `settings.tsx:21` BYOK 文案漏 Volc (路 Apollo per memory).
+
+**@zeus ready for ADR-004 drafting** — RESULT §"Hand-off to Zeus" 段给了 ADR-004 每 § 的 lift 清单 + anti-orphan 自查 + 给 daedalus / Apollo 的下游 ask.
