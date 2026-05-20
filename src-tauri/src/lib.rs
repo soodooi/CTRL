@@ -36,6 +36,10 @@ pub fn run() {
         .try_init();
 
     tauri::Builder::default()
+        // single-instance MUST be the first plugin so a second launch is
+        // caught before kernel/hotkey/tray start fighting over port 17872 or
+        // the global Ctrl hook (H-2026-05-19-003).
+        .plugin(tauri_plugin_single_instance::init(focus_existing_on_second_launch))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
         // static manifest host + production signing key). The dep stays in
@@ -66,6 +70,10 @@ pub fn run() {
         .try_init();
 
     let app = tauri::Builder::default()
+        // single-instance MUST be the first plugin so a second launch is
+        // caught before kernel/hotkey/tray start fighting over port 17872 or
+        // the global Ctrl hook (H-2026-05-19-003).
+        .plugin(tauri_plugin_single_instance::init(focus_existing_on_second_launch))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
         // static manifest host + production signing key). The dep stays in
@@ -97,4 +105,19 @@ pub fn run() {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn run() {
     panic!("CTRL only supports macOS + Windows currently");
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn focus_existing_on_second_launch(
+    app: &tauri::AppHandle,
+    _args: Vec<String>,
+    _cwd: String,
+) {
+    use tauri::Manager;
+    tracing::info!("single-instance: second launch detected, focusing existing main window");
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.unminimize();
+        let _ = main.set_focus();
+    }
 }

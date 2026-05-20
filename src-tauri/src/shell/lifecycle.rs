@@ -52,6 +52,21 @@ impl ShellLifecycle {
             install_close_intercept(&main, app, "main");
         }
 
+        // macOS: CGEventTap silently no-ops without Accessibility trust. Show
+        // the system prompt + open the Privacy pane on the first cold launch
+        // where trust is missing; second launch finds the user has granted
+        // and HotkeyController::install succeeds (H-2026-05-19-003).
+        #[cfg(target_os = "macos")]
+        {
+            if !ax::ensure_trusted_with_prompt() {
+                tracing::warn!(
+                    "macOS Accessibility trust not granted — system prompt shown. \
+                     Hotkey will not fire until the user adds CTRL to \
+                     System Settings > Privacy & Security > Accessibility."
+                );
+            }
+        }
+
         tracing::info!("ShellLifecycle::boot — installing lone-Ctrl hotkey");
         let app_for_hotkey = app.clone();
         let _hotkey = HotkeyController::install(move || {
@@ -73,5 +88,42 @@ impl ShellLifecycle {
 
         tracing::info!("ShellLifecycle::boot — complete");
         Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod ax {
+    // ApplicationServices framework AX trust check. Inline FFI keeps the dep
+    // surface tight (we already link core-graphics + core-foundation for the
+    // CGEventTap hotkey; ApplicationServices is the umbrella that also exports
+    // the AX bits, no extra crate needed).
+    use core_foundation::base::TCFType;
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
+    use core_foundation::string::{CFString, CFStringRef};
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        static kAXTrustedCheckOptionPrompt: CFStringRef;
+        fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
+    }
+
+    /// Returns `true` if the current process holds Accessibility trust.
+    ///
+    /// When trust is missing, macOS shows its own "X would like to control
+    /// this computer using accessibility features" alert and links to the
+    /// Privacy & Security pane. The user grants once; future launches return
+    /// `true` without re-prompting.
+    pub fn ensure_trusted_with_prompt() -> bool {
+        // SAFETY: ApplicationServices is linked statically; the constants and
+        // function are part of its public ABI. `wrap_under_get_rule` increments
+        // the CF retain count, balanced by the CFDictionary's drop.
+        unsafe {
+            let key = CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt);
+            let value = CFBoolean::true_value();
+            let opts: CFDictionary<CFString, CFBoolean> =
+                CFDictionary::from_CFType_pairs(&[(key, value)]);
+            AXIsProcessTrustedWithOptions(opts.as_concrete_TypeRef())
+        }
     }
 }

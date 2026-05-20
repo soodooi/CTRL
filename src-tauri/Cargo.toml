@@ -18,6 +18,7 @@ tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-pn
 # tray + fs are built-in to Tauri 2 (no separate plugin). Updater added as
 # spec'd by pwa-shell/spec.md §2; stronghold deferred until BYOK lands (P8).
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
