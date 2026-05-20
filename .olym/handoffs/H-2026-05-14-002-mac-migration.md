@@ -372,3 +372,22 @@ INFO WindowController::toggle — visible=false … -> SHOW
 
 mac/* 6 个 sub-PR 全绿. branch `feat/h-001-mac-migration` 已和 Win e (`32cef51` main) 衔接, **可以提 PR 进 main**.
 
+### 2026-05-19 — PR #4 conflict resolution (athena, lane-E)
+
+PR #4 (`feat/h-001-mac-migration` → `main`) 在 bao 通知时 `DIRTY/CONFLICTING` — main 后续进了 2 个 PR（mesh skeleton 等），mac branch 15 commits 落后。
+
+`git merge origin/main --no-edit` 出 7 个 conflict，按 mac/c 删除 intent + content union 取舍：
+
+| 文件 | 决策 |
+|---|---|
+| `src-tauri/src/actors/mod.rs` | 取 HEAD 删除（mac/c W3-era 清理 intent）|
+| `src-tauri/src/adapters/outbound/macos/keyboard.rs` | 同上 |
+| `src-tauri/src/application/use_cases.rs` | 同上 |
+| `src-tauri/build.rs` | 取 HEAD（UniFFI + cbindgen 已删）|
+| `src-tauri/tauri.conf.json` | 取 HEAD（bundle active + macOS shortDescription mac/e 工作）|
+| `src-tauri/src/shell/hotkey.rs` | **union** — HEAD 的 `mac_impl` 模块 + origin/main 的 `win_impl::reset_hotkey_state` fn 都保留 |
+| `.olym/handoffs/H-2026-05-14-002-mac-migration.md` | **union** — zeus 接口承诺 entry + athena mac/a-f narrative 都保留，按时序 zeus → athena |
+| `package-lock.json` | 取 origin/main（main 加了 ctrl-claude-shim / ctrl-cli / ctrl-flomo-integration 等 packages）|
+
+`cargo check --target aarch64-apple-darwin` 0 errors / 26 warnings（跟 pre-merge baseline 一致）。Merge commit `7bcf694` pushed origin。PR #4 `mergeable` 等 GitHub 重算。
+
