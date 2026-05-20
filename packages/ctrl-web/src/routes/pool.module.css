@@ -51,10 +51,10 @@
 .banner {
   margin: 0 var(--space-6);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-danger, #b00020);
+  border: 1px solid var(--color-danger);
   border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--color-danger, #b00020) 12%, transparent);
-  color: var(--color-danger, #b00020);
+  background: color-mix(in oklab, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   text-align: center;

@@ -54,14 +54,14 @@
   color: var(--color-text-soft);
 }
 
-.status_open { color: var(--color-success, #2dbf6c); }
-.status_connecting { color: var(--color-warning, #d4a017); }
+.status_open { color: var(--color-success); }
+.status_connecting { color: var(--color-warning); }
 .status_error,
-.status_closed { color: var(--color-danger, #b00020); }
+.status_closed { color: var(--color-danger); }
 
 .error {
   margin: var(--space-2) 0 0;
-  color: var(--color-danger, #b00020);
+  color: var(--color-danger);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
@@ -121,12 +121,12 @@
 }
 
 .cellUser { border-left: 3px solid var(--ctrl-blue); }
-.cellLlm { border-left: 3px solid var(--color-accent, #c8a23a); }
-.cellMcp { border-left: 3px solid var(--color-success, #2dbf6c); }
+.cellLlm { border-left: 3px solid var(--color-llm-accent); }
+.cellMcp { border-left: 3px solid var(--color-success); }
 .cellDefault { border-left: 3px solid var(--color-border); }
 
-.opComplete { border-left: 3px solid var(--color-success, #2dbf6c); opacity: 0.85; }
-.opFailed { border-left: 3px solid var(--color-danger, #b00020); }
+.opComplete { border-left: 3px solid var(--color-success); opacity: 0.85; }
+.opFailed { border-left: 3px solid var(--color-danger); }
 .opDefault { border-left: 3px solid var(--color-text-soft); opacity: 0.85; }
 
 /* Container-scoped overrides for iPhone-frame nested case.
