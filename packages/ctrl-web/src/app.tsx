@@ -2,7 +2,7 @@
 // Outlet is referenced inside rootRoute.component below; the linter sees it
 // embedded in JSX.
 
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ReactElement } from 'react';
 import {
   RouterProvider,
   createRouter,
@@ -37,7 +37,7 @@ const CodeSpaceDetailRoute = lazy(() =>
   import('./routes/code-space').then((m) => ({ default: m.CodeSpaceDetailRoute })),
 );
 
-const LazyFallback = (): React.ReactElement => (
+const LazyFallback = (): ReactElement => (
   <div style={{ padding: 'var(--space-6)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
     Loading…
   </div>
@@ -146,7 +146,7 @@ const queryClient = new QueryClient({
   },
 });
 
-export const App = (): React.ReactElement => (
+export const App = (): ReactElement => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />

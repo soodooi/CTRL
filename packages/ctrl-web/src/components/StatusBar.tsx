@@ -26,12 +26,24 @@ interface StatusBarProps {
   connection?: ConnectionState;
 }
 
+// Exhaustive lookup — if ConnectionState gains a variant the literal
+// must add the key or typecheck breaks. Cheaper than a switch + still
+// the loud-fail safety the themis Record pattern wants.
+const LED_CLASS: Record<ConnectionState, string> = {
+  connected: styles.led_connected ?? '',
+  connecting: styles.led_connecting ?? '',
+  offline: styles.led_offline ?? '',
+};
+
 export const StatusBar = ({ connection }: StatusBarProps): ReactElement => {
   const now = useWallClock();
   return (
     <header className={styles.bar} aria-label="Status bar">
+      {/* Logo is decorative inside this Link — the surrounding
+          aria-label="CTRL home" already announces the destination.
+          ariaLabel="" suppresses the second img alt announce. */}
       <Link to="/" className={styles.brand} aria-label="CTRL home">
-        <Logo size="sm" />
+        <Logo size="sm" ariaLabel="" />
         <span className={styles.wordmark}>CTRL</span>
       </Link>
       <time className={styles.time} dateTime={now.toISOString()}>
@@ -39,7 +51,7 @@ export const StatusBar = ({ connection }: StatusBarProps): ReactElement => {
       </time>
       {connection && (
         <span
-          className={cx(styles.led, styles[`led_${connection}`])}
+          className={cx(styles.led, LED_CLASS[connection])}
           role="img"
           aria-label={`Kernel ${connection}`}
           title={`Kernel ${connection}`}

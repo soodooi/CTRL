@@ -53,7 +53,7 @@
 
 .tabActive {
   color: var(--color-accent);
-  border-top-color: var(--ctrl-blue);
+  border-top-color: var(--color-accent);
 }
 
 .tabActive .icon {

@@ -62,15 +62,19 @@ const TABS: ReadonlyArray<TabDef> = [
   { to: '/settings', label: 'Settings', icon: <GearIcon /> },
 ];
 
+// Routing nav is a landmark + aria-current="page" pattern — NOT a tablist.
+// tablist/tab/aria-selected is reserved for in-page tab-panel widgets
+// where panels swap without a URL change; the route-driven bottom nav
+// drives navigation, so screen readers should hear "current page" not
+// "selected tab" + the surrounding <nav> already provides the landmark.
 export const BottomTab = (): ReactElement => (
-  <nav className={styles.bar} role="tablist" aria-label="Primary navigation">
+  <nav className={styles.bar} aria-label="Primary navigation">
     {TABS.map((tab) => (
       <Link
         key={tab.to}
         to={tab.to}
-        role="tab"
         className={styles.tab}
-        activeProps={{ className: cx(styles.tab, styles.tabActive), 'aria-selected': 'true' }}
+        activeProps={{ className: cx(styles.tab, styles.tabActive), 'aria-current': 'page' }}
       >
         <span className={styles.icon}>{tab.icon}</span>
         <span className={styles.label}>{tab.label}</span>
