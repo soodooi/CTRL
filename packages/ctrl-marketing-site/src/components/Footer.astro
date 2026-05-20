@@ -1,0 +1,54 @@
+---
+const year = new Date().getFullYear();
+---
+
+<footer class="ftr">
+  <div class="container ftr__inner">
+    <p class="ftr__brand">
+      <span class="ftr__bar" aria-hidden="true"></span>
+      CTRL
+    </p>
+    <p class="ftr__copy">
+      © {year} CTRL App Lab. All rights reserved.
+    </p>
+  </div>
+</footer>
+
+<style>
+  .ftr {
+    padding-block: var(--space-12);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  .ftr__inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .ftr__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-family: var(--font-display);
+    font-weight: var(--weight-black);
+    color: var(--paper);
+    letter-spacing: 0.04em;
+  }
+
+  .ftr__bar {
+    display: inline-block;
+    width: 20px;
+    height: 3px;
+    background: var(--ctrl-blue);
+    border-radius: 1px;
+  }
+
+  .ftr__copy {
+    font-size: var(--text-sm);
+    color: var(--ink-faint);
+  }
+</style>

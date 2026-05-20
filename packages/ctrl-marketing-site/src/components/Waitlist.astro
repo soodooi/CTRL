@@ -1,0 +1,149 @@
+---
+---
+
+<section id="waitlist" class="wl">
+  <div class="container">
+    <p class="eyebrow">Get early access</p>
+    <h2 class="wl__title">Be there when the first keycap ships.</h2>
+    <p class="wl__sub">Drop an email. We'll write when CTRL opens.</p>
+
+    <form class="wl__form" action="/api/waitlist" method="post" novalidate>
+      <label class="wl__label" for="email">Email</label>
+      <div class="wl__row">
+        <input
+          id="email"
+          name="email"
+          type="email"
+          autocomplete="email"
+          required
+          placeholder="you@somewhere.com"
+          class="wl__input"
+        />
+        <button type="submit" class="wl__submit">Notify me</button>
+      </div>
+      <p class="wl__hint" role="status" aria-live="polite" data-wl-status></p>
+    </form>
+  </div>
+</section>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>(".wl__form");
+  const status = document.querySelector<HTMLParagraphElement>("[data-wl-status]");
+
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!status) return;
+
+    const data = new FormData(form);
+    const email = String(data.get("email") ?? "").trim();
+    if (!email) {
+      status.textContent = "Please enter an email.";
+      return;
+    }
+
+    status.textContent = "Sending…";
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (res.ok) {
+        status.textContent = "Thanks — you're on the list.";
+        form.reset();
+      } else {
+        status.textContent = "Something went wrong. Try again in a moment.";
+      }
+    } catch {
+      status.textContent = "Network error. Try again in a moment.";
+    }
+  });
+</script>
+
+<style>
+  .wl {
+    padding-block: var(--space-section);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .wl__title {
+    font-size: var(--text-2xl);
+    line-height: 1.05;
+    max-width: 22ch;
+    margin-bottom: var(--space-3);
+  }
+
+  .wl__sub {
+    color: var(--paper-soft);
+    margin-bottom: var(--space-8);
+    max-width: 38ch;
+  }
+
+  .wl__form {
+    max-width: var(--container-narrow);
+  }
+
+  .wl__label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-faint);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-bottom: var(--space-2);
+  }
+
+  .wl__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .wl__input {
+    flex: 1 1 240px;
+    padding: 0.85em 1em;
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    color: var(--paper);
+    background: var(--graphite-soft);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    transition: border-color var(--duration-fast) var(--ease-out-quart);
+  }
+
+  .wl__input::placeholder {
+    color: var(--ink-faint);
+  }
+
+  .wl__input:focus {
+    outline: none;
+    border-color: var(--ctrl-blue-light);
+  }
+
+  .wl__submit {
+    padding: 0.85em 1.6em;
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    font-weight: var(--weight-semibold);
+    color: var(--paper);
+    background: var(--ctrl-blue);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition:
+      background var(--duration-fast) var(--ease-out-quart),
+      transform var(--duration-fast) var(--ease-out-quart);
+  }
+
+  .wl__submit:hover {
+    background: var(--ctrl-blue-dark);
+    transform: translateY(-1px);
+  }
+
+  .wl__hint {
+    margin-top: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--ink-faint);
+    min-height: 1.4em;
+  }
+</style>
