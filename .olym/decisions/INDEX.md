@@ -10,10 +10,10 @@
 | [001](./001-system-architecture.md) | Adopt 4-layer AI-native Agent OS kernel architecture | accepted | 2026-05-11 | bao, zeus | framework | — |
 | [002](./002-pwa-pivot.md) | Pivot UI to single PWA codebase under thin Tauri 2 native shell | accepted | 2026-05-13 | bao, zeus | framework | — |
 | [003](./003-multi-device-mesh.md) | Mesh cross-device communication with E2E crypto + CRDT | accepted | 2026-05-14 | bao, zeus | framework | — |
-| [005](./005-no-claude-in-production-runtime.md) | No Claude / Anthropic SDK in CTRL production runtime | 🟡 proposed | 2026-05-18 | bao, zeus | framework | **P1, 6/7d** |
-| [007](./007-encryption-library.md) | Adopt vodozemac (Matrix Olm) for E2E crypto on all platforms | 🟡 proposed | 2026-05-16 | bao, zeus | framework | **P1, 4/7d** |
+| [005](./005-no-claude-in-production-runtime.md) | No Claude / Anthropic SDK in CTRL production runtime | accepted | 2026-05-18 | bao, zeus | framework | — |
+| [007](./007-encryption-library.md) | Adopt vodozemac (Matrix Olm) for E2E crypto on all platforms | accepted | 2026-05-16 | bao, zeus | framework | — |
 | [010](./010-keycap-execution-model.md) | Keycap execution model — MCP outward, Actor inward | accepted | 2026-05-17 | bao, zeus, hephaestus | framework | — |
-| [011](./011-update-channel-and-delivery.md) | Tauri 2 updater + three-mirror channel for global + CN delivery | 🔴 proposed | 2026-05-17 | bao, zeus | framework | **P0, 5/3d ⚠️ 超时** |
+| [011](./011-update-channel-and-delivery.md) | Tauri 2 updater + three-mirror channel for global + CN delivery | accepted | 2026-05-17 | bao, zeus | framework | — |
 
 > SLA 列 = "已挂天数 / SLA 上限"。P0 超时 → bao 决策顶；详见 PROCESS.md §1。
 
@@ -35,6 +35,6 @@
 
 ---
 
-**Index version**: 0.2 (2026-05-19, 增 Reserved + SLA 列)
+**Index version**: 0.3 (2026-05-19, ADR-005/007/011 → accepted)
 **Process**: see [PROCESS.md](./PROCESS.md)
 **Template**: see [_template.md](./_template.md)
