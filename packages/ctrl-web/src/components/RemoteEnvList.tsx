@@ -13,7 +13,7 @@
 import { useMemo, useState, type ReactElement } from 'react';
 import type { AgentType, EnvStatus, RemoteEnv } from '@/lib/mock-envs';
 import { formatRelativeTime } from '@/lib/mock-envs';
-import { Button } from '@/components/primitives';
+import { Button, cx } from '@/components/primitives';
 import styles from './RemoteEnvList.module.css';
 
 type GroupBy = 'all' | 'project' | 'lane' | 'agent';
@@ -97,7 +97,7 @@ export const RemoteEnvList = ({ envs, onOpen, onToggle }: Props): ReactElement =
               type="button"
               role="tab"
               aria-selected={active}
-              className={`${styles.tab} ${active ? styles.tabActive : ''}`}
+              className={cx(styles.tab, active && styles.tabActive)}
               onClick={() => setGroupBy(tab.id)}
             >
               {tab.label}
@@ -128,7 +128,7 @@ export const RemoteEnvList = ({ envs, onOpen, onToggle }: Props): ReactElement =
                       aria-label={`Open ${env.stream_id}`}
                     >
                       <header className={styles.cardHead}>
-                        <span className={`${styles.statusPill} ${statusVariantClass(env.status)}`}>
+                        <span className={cx(styles.statusPill, statusVariantClass(env.status))}>
                           {env.status}
                         </span>
                         <span className={styles.streamId}>{env.stream_id}</span>

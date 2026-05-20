@@ -6,6 +6,7 @@
 // outline correct.
 
 import type { HTMLAttributes, ReactElement } from 'react';
+import { cx } from './cx';
 import styles from './Section.module.css';
 
 type HeadingTag = 'h2' | 'h3' | 'h4';
@@ -15,9 +16,6 @@ interface SectionProps extends HTMLAttributes<HTMLElement> {
   hint?: string;
   as?: HeadingTag;
 }
-
-const cx = (...parts: Array<string | undefined | false>): string =>
-  parts.filter(Boolean).join(' ');
 
 export const Section = ({
   title,

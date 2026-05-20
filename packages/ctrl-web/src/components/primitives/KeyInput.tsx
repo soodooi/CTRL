@@ -9,6 +9,7 @@
 // via the onChange callback).
 
 import { useState, type KeyboardEvent, type ReactElement } from 'react';
+import { cx } from './cx';
 import styles from './KeyInput.module.css';
 
 interface KeyInputProps {
@@ -70,7 +71,7 @@ export const KeyInput = ({
       tabIndex={0}
       aria-readonly="true"
       aria-label={placeholder}
-      className={`${styles.field} ${recording ? styles.recording : ''}`}
+      className={cx(styles.field, recording && styles.recording)}
       onFocus={() => setRecording(true)}
       onBlur={() => setRecording(false)}
       onKeyDown={handleKeyDown}
@@ -79,7 +80,13 @@ export const KeyInput = ({
       <span className={styles.value}>
         {value || <span className={styles.placeholder}>{placeholder}</span>}
       </span>
-      <span className={styles.badge}>{recording ? 'recording' : 'idle'}</span>
+      {/* aria-live so screen readers announce the recording state flip
+          when the field is focused / blurred — the visual badge change
+          alone is invisible to AT users. polite (not assertive) so the
+          announcement queues behind any active speech. */}
+      <span className={styles.badge} aria-live="polite">
+        {recording ? 'recording' : 'idle'}
+      </span>
     </div>
   );
 };
