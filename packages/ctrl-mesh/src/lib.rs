@@ -5,7 +5,7 @@
 //
 // 5 mesh primitives mirroring kernel's 5 primitives:
 //   - Identity  : per-device curve25519 keypair + advertised metadata
-//   - Peer      : remote Identity + transport state + libsignal session
+//   - Peer      : remote Identity + transport state + vodozemac Olm session
 //   - Document  : Automerge document replicated across mesh (mesh.devices, etc)
 //   - Channel   : encrypted transport between two Peers (WebRTC / relay / mDNS)
 //   - SignalingBeacon : ctrl-relay endpoint each device polls for presence

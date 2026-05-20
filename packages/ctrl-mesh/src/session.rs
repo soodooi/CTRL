@@ -9,7 +9,7 @@
 // build of ctrl-mesh free of the vodozemac dependency tree.
 
 use thiserror::Error;
-use vodozemac::olm::{Account, OlmMessage, PreKeyMessage, Session, SessionConfig};
+use vodozemac::olm::{Account, OlmMessage, Session, SessionConfig};
 use vodozemac::Curve25519PublicKey;
 
 /// Errors surfaced by the spike-level session wrapper.
@@ -134,7 +134,3 @@ impl OlmSession {
 /// Re-export of the relevant vodozemac types so tests + Sprint 2 callers can
 /// match on `OlmMessage::PreKey` etc. without depending on vodozemac directly.
 pub use vodozemac::olm::{OlmMessage as Message, PreKeyMessage as PreKey};
-// Silence the unused-import warning on `PreKeyMessage` — kept in scope for
-// clarity at the top of the file and re-exported above with a friendlier name.
-#[allow(dead_code)]
-fn _prekey_message_kept_in_scope(_: PreKeyMessage) {}

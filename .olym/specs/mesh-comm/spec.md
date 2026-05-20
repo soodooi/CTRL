@@ -179,7 +179,7 @@ Both: Olm 1:1 session is now live; subsequent frames use Double-Ratchet via sess
 | QR replay (attacker re-uses old QR) | one-time key marked published after step 14 — second use of QR fails X3DH | step 14 |
 | Pairing code phishing | QR carries A's identity public key; man-in-the-middle would have to substitute key, which mismatches once user verifies SAS (optional but offered) | step 4 + UI |
 | Relay impersonates A | relay never holds A's private key; signed challenge from B is verified by A's account, not relay | step 12 |
-| Stolen QR after expiry | `expires_at` enforced at step 10 (account_a rejects inbound session if QR > 5 min old) | step 10 |
+| Stolen QR after expiry | `expires_at` enforced at step 10 (account_a rejects inbound session if QR > 5 min old) *(TTL enforcement + test land in Sprint 2; v1.0 spike does not exercise this code path)* | step 10 |
 
 ### 3.3 Anti-flows (forbidden)
 
@@ -205,21 +205,8 @@ pub struct OlmSession {
 }
 
 impl OlmSession {
-    /// Initiator side. Establishes outbound session against peer's prekey bundle.
-    pub fn establish_outbound(
-        local: &mut OlmAccount,
-        peer_identity: Curve25519PublicKey,
-        peer_one_time: Curve25519PublicKey,
-    ) -> Result<Self, SessionError>;
-
-    /// Responder side. Establishes inbound session from initiator's first message.
-    pub fn establish_inbound(
-        local: &mut OlmAccount,
-        first_message: &OlmMessage,
-    ) -> Result<Self, SessionError>;
-
     /// Encrypt a frame payload. Increments ratchet counter.
-    pub fn encrypt(&mut self, plaintext: &[u8]) -> OlmMessage;
+    pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<OlmMessage, SessionError>;
 
     /// Decrypt a frame payload. Validates ratchet counter (replay defense).
     pub fn decrypt(&mut self, msg: &OlmMessage) -> Result<Vec<u8>, SessionError>;
@@ -231,10 +218,13 @@ impl OlmSession {
     pub fn unpickle(bytes: &[u8], key: &PickleKey) -> Result<Self, SessionError>;
 
     pub fn peer_identity(&self) -> Curve25519PublicKey;
+    pub fn session_id(&self) -> String;
 }
 ```
 
 ### 4.2 `OlmAccount` (Rust)
+
+`OlmAccount` is the **factory** for new sessions — both `establish_outbound` (initiator) and `establish_inbound` (responder) are methods on the account, not on the session, because session creation consumes one-time-key state held by the account.
 
 ```rust
 pub struct OlmAccount {
@@ -246,11 +236,27 @@ impl OlmAccount {
 
     pub fn identity_public_key(&self) -> Curve25519PublicKey;
 
-    /// Generate N fresh one-time keys (default 50).
-    pub fn rotate_one_time_keys(&mut self, count: usize);
+    /// Generate N fresh one-time keys (default 50). Returns the first generated
+    /// key for callers that need to advertise a single prekey synchronously.
+    pub fn generate_one_time_keys(&mut self, count: usize) -> Curve25519PublicKey;
 
-    /// Mark a one-time key as published (cannot be reused).
+    /// Mark all currently-generated one-time keys as published (cannot be reused).
     pub fn mark_keys_as_published(&mut self);
+
+    /// Initiator side. Establishes outbound session against peer's prekey bundle.
+    pub fn establish_outbound(
+        &self,
+        peer_identity: Curve25519PublicKey,
+        peer_one_time: Curve25519PublicKey,
+    ) -> Result<OlmSession, SessionError>;
+
+    /// Responder side. Establishes inbound session from initiator's first message
+    /// (PreKey variant only). Returns the new session and the decrypted first plaintext.
+    pub fn establish_inbound(
+        &mut self,
+        initiator_identity: Curve25519PublicKey,
+        first_message: &OlmMessage,
+    ) -> Result<(OlmSession, Vec<u8>), SessionError>;
 
     pub fn pickle(&self, key: &PickleKey) -> Vec<u8>;
     pub fn unpickle(bytes: &[u8], key: &PickleKey) -> Result<Self, SessionError>;
@@ -261,15 +267,20 @@ impl OlmAccount {
 
 | Variant | When |
 |---|---|
-| `VodozemacError(String)` | underlying vodozemac error (wrapped, never leak internals) |
-| `InvalidPrekey` | DH-validity check failed |
-| `ReplayDetected { expected, got }` | ratchet step regression |
-| `PickleKeyMismatch` | wrong key for stored session |
-| `ExpiredPairOffer` | pair offer past TTL |
+| `Vodozemac(String)` | underlying vodozemac error (wrapped, never leaks internals; covers `NonContributoryKey`, encryption / decryption / session-creation failures) |
+| `NotPreKeyMessage` | `establish_inbound` was handed a `Normal` Olm message (caller bug) |
+| `InvalidPrekey` *(Sprint 2)* | wrapper-level DH-validity check failed (belt-and-braces; see §4.4) |
+| `ReplayDetected { expected, got }` *(Sprint 2)* | ratchet step regression |
+| `PickleKeyMismatch` *(Sprint 2)* | wrong key for stored session |
+| `ExpiredPairOffer` *(Sprint 2)* | pair offer past TTL |
+
+v1.0 spike lands only `Vodozemac` + `NotPreKeyMessage` — the four `Sprint 2` variants are reserved here so callers can match exhaustively without churning when Sprint 2 wires the rest.
 
 ### 4.4 DH-validity check (defense-in-depth)
 
-Before passing a peer identity key into vodozemac, validate that it is not the low-order subgroup point. Code path: `Curve25519PublicKey::from_bytes` → reject if `bytes` matches any of the 11 known low-order points. This protects against the Soatok disclosure regardless of which vodozemac patch level is in use.
+**Status (2026-05-19 update)**: vodozemac **0.10+ enforces non-contributory-DH rejection natively** inside `Account::create_outbound_session` + `create_inbound_session` (post-2026-02 fix for the Soatok disclosure). The check below therefore becomes **belt-and-braces / redundant guard** rather than the sole defense — useful only if a future vodozemac regression slips through, or if a caller bypasses the account-level constructor.
+
+Sprint 2 implementation: before passing a peer identity key into vodozemac, validate that it is not the low-order subgroup point. Code path: `Curve25519PublicKey::from_bytes` → reject if `bytes` matches any of the 11 known low-order points. ADR-007 §Defense-in-depth carries the matching amend footnote.
 
 ### 4.5 WASM binding (v1.1 build, surface locked here)
 

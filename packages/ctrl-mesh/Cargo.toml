@@ -26,7 +26,9 @@ async-trait = "0.1"
 # Opt-in via `crypto` feature; the v1.0 spike (H-2026-05-14-001 lane-D)
 # enables it for the in-memory pair smoke. Sprint 2 swaps in the vendored
 # copy + adds the DH-validity wrapper check (§4.4 of mesh-comm spec).
-vodozemac = { version = "0.10", optional = true }
+# Pinned to =0.10.0 (themis review L): the post-2026-02 NonContributoryKey
+# fix is in 0.10.0; any future 0.10.x must be re-audited before bumping.
+vodozemac = { version = "=0.10.0", optional = true }
 
 # WebRTC — webrtc-rs v0.17.x feature-frozen, locked for v1.0 (ADR-003 §3.1 amendment).
 # Sprint 3 enables this.
