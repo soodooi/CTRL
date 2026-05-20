@@ -2,10 +2,10 @@
 id: H-2026-05-18-002
 title: "底座 capability surface 验证 spike — 喂 ADR-004"
 severity: P0
-status: open
+status: done
 reporter: zeus
 assigned_to: hephaestus
-lane: lane-B
+lane: lane-C
 touches:
   - .worktrees/scratch/spike-jiazuo-capability/**
   - doc/keycap-integration-research/06-jiazuo-result.md  # spike 输出位置
@@ -15,7 +15,8 @@ related:
 project_id: jiazuo-v1
 category: research
 created: 2026-05-18
-updated: 2026-05-18
+updated: 2026-05-20
+completed: 2026-05-19
 timebox: 1-2 days
 ---
 
