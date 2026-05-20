@@ -12,6 +12,7 @@
 use anyhow::Result;
 use tauri::{AppHandle, Manager};
 
+use super::window::install_close_intercept;
 use super::{HotkeyController, KernelSupervisor, TrayController, WindowController};
 
 pub struct ShellLifecycle;
@@ -25,7 +26,8 @@ impl ShellLifecycle {
     /// 2. KernelSupervisor::wait_ready blocks until the daemon reports ready
     ///    (prevents the first Ctrl tap landing before mcp_host is up).
     /// 3. Tray icon installs (cheap; user-visible feedback that we're alive).
-    /// 4. Lone-Ctrl hotkey installs LAST.
+    /// 4. Window close-button interception (X = hide, not destroy).
+    /// 5. Lone-Ctrl hotkey installs LAST.
     pub fn boot(app: &AppHandle) -> Result<()> {
         tracing::info!("ShellLifecycle::boot — starting kernel daemon");
         KernelSupervisor::start(app)?;
@@ -33,6 +35,22 @@ impl ShellLifecycle {
 
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;
+
+        // Prewarm: teleport the auto-built main window off-screen as the very
+        // first thing after kernel ready. Tauri's window-config `x`/`y` is
+        // unreliable on Win11 (often centered regardless), so do it from
+        // Rust to guarantee the user never sees the launcher until they
+        // press Ctrl. WebView2 spins up in the background, PWA mounts off-
+        // screen — first hotkey tap becomes a sub-30ms teleport.
+        tracing::info!("ShellLifecycle::boot — prewarming main window off-screen");
+        WindowController::prewarm(app)?;
+
+        // Install close intercept on the prewarmed main so the X button also
+        // teleports off-screen rather than destroying state.
+        tracing::info!("ShellLifecycle::boot — installing close intercept on main");
+        if let Some(main) = app.get_webview_window("main") {
+            install_close_intercept(&main, app, "main");
+        }
 
         tracing::info!("ShellLifecycle::boot — installing lone-Ctrl hotkey");
         let app_for_hotkey = app.clone();

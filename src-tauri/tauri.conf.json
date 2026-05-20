@@ -19,20 +19,21 @@
         "height": 560,
         "minWidth": 480,
         "minHeight": 420,
-        "decorations": true,
+        "decorations": false,
         "transparent": false,
         "shadow": true,
-        "alwaysOnTop": false,
-        "skipTaskbar": false,
-        "focus": true,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "skipTaskbar": true,
+        "focus": false,
         "visible": true,
         "center": true,
-        "resizable": true,
+        "resizable": false,
         "url": "/"
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:17872 ws://localhost:5173 http://localhost:5173; frame-src 'none'; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {

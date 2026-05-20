@@ -1,6 +1,6 @@
 # CTRL — Claude Code Project Entry
 
-> **新 session 必读**: `.olym/steering/ctrl-strategy.md` (5 min navigator) + `.claude/ADR/001-system-architecture.md` (architecture lock)
+> **新 session 必读**: `.olym/steering/ctrl-strategy.md` (5 min navigator) + `.olym/decisions/001-system-architecture.md` (architecture lock)
 
 ---
 
@@ -31,7 +31,7 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 
 ## Architecture overview
 
-详细见 `.claude/ADR/001-system-architecture.md` (spine) + `.claude/ADR/002-pwa-pivot.md` (UI layer, accepted 2026-05-13).
+详细见 `.olym/decisions/001-system-architecture.md` (spine) + `.olym/decisions/002-pwa-pivot.md` (UI layer, accepted 2026-05-13).
 
 ```
 L3 Userland (WASM sandboxed actors, 键帽 / 硬件 / LLM call / OAuth flow)
@@ -70,7 +70,7 @@ CTRL/                           ← THIS REPO (deliverable)
 │   ├── ctrl-web/               ← PWA (React + Vite + vite-plugin-pwa) — SINGLE UI codebase
 │   ├── olym-core/              copy from hello-olym (SSOT)
 │   ├── olym-desktop/           桌面 olym 派生
-│   ├── ctrl-stss/              ST-SS protocol TS (99 tests)
+│   ├── ctrl-stss/              ST-SS protocol TS (69 tests; 99 workspace-wide)
 │   ├── ctrl-memory/            client-side event log TS
 │   └── ctrl-kernel-sdk/        L2 syscall surface (mirrors Rust kernel)
 ├── share/
@@ -111,7 +111,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | MCP | Anthropic rmcp Rust SDK |
 | Backend (cloud) | Cloudflare Workers + D1 (ctrl-auth / ctrl-billing / ctrl-market / **ctrl-relay** / ctrl-push) |
 | Payments | Stripe |
-| Min platform | Windows 11+ (primary dev), macOS 13+ (secondary), iOS 16.4+ PWA, Android Chrome PWA, WebView2 / WKWebView evergreen |
+| Min platform | Windows 10 1809+ (primary Win 11+ dev; ADR-002 §6 WebView2 bootstrapper covers 10), macOS 13+ (secondary), iOS 16.4+ PWA, Android Chrome PWA, WebView2 / WKWebView evergreen |
 | Mobile | Pure browser PWA (no React Native, no Capacitor) + WebRTC + WASM vodozemac + WASM Automerge |
 | Node | 20.x LTS |
 | Rust | 1.77+ stable |
@@ -171,7 +171,7 @@ Current open:
 When you need to make any non-trivial decision:
 
 1. **Read** `.olym/steering/ctrl-strategy.md` (5 min)
-2. **Check** `.claude/ADR/001-system-architecture.md` for lock points
+2. **Check** `.olym/decisions/001-system-architecture.md` for lock points
 3. **Drill** into relevant spec under `.olym/specs/`
 4. **Ask** bao if conflict between docs or decision absent
 

@@ -1,0 +1,73 @@
+{
+  "id": "com.code-yeongyu.oh-my-openagent",
+  "name": "Oh My OpenAgent",
+  "version": "1.0.0",
+  "type": "cli",
+  "description": "多代理框架，支持.agents-based技能、工作流和标准感知的代理团队",
+  "author": {
+    "name": "code-yeongyu",
+    "url": "https://github.com/code-yeongyu"
+  },
+  "input": {
+    "type": "text",
+    "description": "代理任务描述或工作流定义"
+  },
+  "output": {
+    "type": "text",
+    "description": "代理执行结果或工作流输出"
+  },
+  "startup_policy": "on_demand",
+  "resource_limits": {
+    "memory_mb": 1024,
+    "cpu_percent": 80,
+    "timeout_seconds": 300
+  },
+  "permissions": ["network", "filesystem"],
+  "extensions": {
+    "cli": {
+      "command": "omo",
+      "args": ["run", "--task", "{input}"],
+      "env": {
+        "OMO_CONFIG_PATH": "./config/omo.yaml",
+        "OMO_LOG_LEVEL": "info"
+      },
+      "working_dir": "./workspace",
+      "shell": true
+    }
+  },
+  "settings": {
+    "model_provider": {
+      "type": "string",
+      "required": true,
+      "description": "模型提供商",
+      "default": "openai",
+      "options": ["openai", "anthropic", "google", "azure"]
+    },
+    "api_key": {
+      "type": "password",
+      "required": true,
+      "description": "API密钥"
+    },
+    "max_tokens": {
+      "type": "number",
+      "required": false,
+      "description": "最大token数",
+      "default": 4096
+    },
+    "temperature": {
+      "type": "number",
+      "required": false,
+      "description": "温度参数",
+      "default": 0.7,
+      "min": 0,
+      "max": 2
+    }
+  },
+  "dependencies": [
+    "nodejs>=18.0.0",
+    "python>=3.8"
+  ],
+  "repository": "https://github.com/code-yeongyu/oh-my-openagent",
+  "license": "MIT",
+  "tags": ["ai", "agent", "workflow", "automation", "multi-agent"]
+}

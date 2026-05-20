@@ -139,6 +139,17 @@ pub async fn list_mcp_servers(_kernel: State<'_, KernelHandle>) -> Result<Vec<St
     Ok(Vec::new())
 }
 
+/// Open the dedicated workspace window for a keycap activation.
+///
+/// Per bao 2026-05-14 directive: the workspace is a SECOND window separate
+/// from the launcher pool. PWA pool.tsx handleActivate calls this on every
+/// keycap click; the workspace window navigates to /workspace?keycap_id=...
+/// and is shown / focused. Closing the workspace doesn't quit the app.
+#[tauri::command]
+pub async fn open_workspace(keycap_id: String, app: tauri::AppHandle) -> Result<(), String> {
+    crate::shell::WindowController::open_workspace(&app, &keycap_id).map_err(|e| e.to_string())
+}
+
 fn slugify(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })

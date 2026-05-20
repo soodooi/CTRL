@@ -63,6 +63,13 @@ impl HotkeyController {
             anyhow::bail!("HotkeyController: unsupported OS")
         }
     }
+
+    /// Reset the hotkey state machine. Call this when the window is shown
+    /// to clear any partial state that might interfere with closing.
+    pub fn reset_state() {
+        #[cfg(target_os = "windows")]
+        win_impl::reset_hotkey_state();
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -89,7 +96,11 @@ mod win_impl {
         ctrl_pending: bool,
         other_seen: bool,
         ctrl_down_at: Option<Instant>,
+        /// Last time the callback fired. Used for debugging.
+        last_fire_at: Option<Instant>,
     }
+
+    // No cooldown period - injected events are filtered by LLKHF_INJECTED flag
 
     // SAFETY: HHOOK is a `*mut c_void` raw handle that windows-sys does not
     // implement Send/Sync for. We only ever read/write it on the main thread
@@ -113,6 +124,7 @@ mod win_impl {
                 ctrl_pending: false,
                 other_seen: false,
                 ctrl_down_at: None,
+                last_fire_at: None,
             };
             STATE
                 .set(Mutex::new(new_state))
@@ -161,11 +173,24 @@ mod win_impl {
         }
 
         // SAFETY: l_param points to a KBDLLHOOKSTRUCT during a WH_KEYBOARD_LL
-        // callback (OS contract). Reading the first field doesn't require a
-        // full marshal — minimizes hot-path cost.
+        // callback (OS contract).
         let kbd: *const KBDLLHOOKSTRUCT = l_param as *const KBDLLHOOKSTRUCT;
         let vk = unsafe { (*kbd).vkCode };
+        let flags = unsafe { (*kbd).flags };
         let is_ctrl = vk == VK_LCONTROL as u32 || vk == VK_RCONTROL as u32;
+
+        // Drop software-injected events. Win11 synthesizes phantom key
+        // up/down pairs during focus transitions (after SetForegroundWindow
+        // / window cloak-uncloak); they carry LLKHF_INJECTED. Without this
+        // filter the state machine accepts the phantom Ctrl-down as a new
+        // tap start, then the user's real second Ctrl looks like "still
+        // held from before" and never fires the callback (perceived as
+        // "Ctrl-close doesn't work, must click outside first").
+        // Reference: KBDLLHOOKSTRUCT.flags, LLKHF_INJECTED bit (= 0x10).
+        const LLKHF_INJECTED: u32 = 0x10;
+        if flags & LLKHF_INJECTED != 0 {
+            return pass_through();
+        }
 
         let Some(state_cell) = STATE.get() else {
             return pass_through();
@@ -176,6 +201,8 @@ mod win_impl {
             Ok(s) => s,
             Err(_) => return pass_through(),
         };
+
+        // No cooldown period - injected events are filtered by LLKHF_INJECTED flag
 
         let mut fire_callback: Option<OnTap> = None;
         if is_ctrl && is_keydown && !state.ctrl_pending {
@@ -191,6 +218,7 @@ mod win_impl {
                 .unwrap_or(false);
             if elapsed_ok && !state.other_seen {
                 fire_callback = Some(state.callback.clone());
+                state.last_fire_at = Some(Instant::now());
             }
             state.ctrl_pending = false;
             state.other_seen = false;
@@ -212,6 +240,21 @@ mod win_impl {
             (unsafe { GetAsyncKeyState(vk as i32) } as u16) & 0x8000 != 0
         };
         down(VK_SHIFT) || down(VK_MENU) || down(VK_LWIN) || down(VK_RWIN)
+    }
+
+    /// Reset the hotkey state machine. Call this when the window is shown
+    /// to clear any partial state that might interfere with closing.
+    pub(crate) fn reset_hotkey_state() {
+        let Some(state_cell) = STATE.get() else {
+            return;
+        };
+        if let Ok(mut state) = state_cell.try_lock() {
+            tracing::info!("Hotkey state reset (window shown)");
+            state.ctrl_pending = false;
+            state.other_seen = false;
+            state.ctrl_down_at = None;
+            // Don't reset last_fire_at - we still want to know when the last callback fired
+        }
     }
 }
 

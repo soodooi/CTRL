@@ -2,7 +2,7 @@
 
 - **Status**: Roadmap (v1 不动, ST-SS hardware-ready 是 Day 1 contract)
 - **Date**: 2026-05-11
-- **Parent**: `.claude/ADR/001-system-architecture.md` §1 strategic frame, §9 phase P11+
+- **Parent**: `.olym/decisions/001-system-architecture.md` §1 strategic frame, §9 phase P11+
 - **Implementation**: Post-launch (P11+)
 
 ---

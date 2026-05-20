@@ -1,0 +1,62 @@
+{
+  "id": "com.cantian-ai.bazi-fortune",
+  "name": "AI八字算命",
+  "version": "1.0.0",
+  "type": "mcp",
+  "description": "基于八字命理的AI算命工具，使用cantian-ai/bazi-mcp MCP服务器",
+  "author": {
+    "name": "cantian-ai",
+    "url": "https://github.com/cantian-ai"
+  },
+  "input": {
+    "type": "text",
+    "description": "输入生辰八字（格式：YYYY-MM-DD HH:mm:ss）",
+    "schema": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$"
+    }
+  },
+  "output": {
+    "type": "text",
+    "description": "算命结果，包含八字分析、五行、运势等"
+  },
+  "startup_policy": "on_demand",
+  "resource_limits": {
+    "memory_mb": 256,
+    "cpu_percent": 30,
+    "timeout_seconds": 60
+  },
+  "permissions": ["network"],
+  "extensions": {
+    "mcp": {
+      "server": "bazi-mcp",
+      "config": {
+        "command": "npx",
+        "args": ["-y", "@cantian-ai/bazi-mcp"],
+        "env": {
+          "BAZI_MCP_LOG_LEVEL": "info"
+        }
+      },
+      "tools": ["calculate_bazi", "analyze_fortune", "get_compatibility"]
+    }
+  },
+  "settings": {
+    "language": {
+      "type": "string",
+      "required": false,
+      "description": "输出语言",
+      "default": "zh-CN",
+      "options": ["zh-CN", "en-US"]
+    },
+    "detail_level": {
+      "type": "string",
+      "required": false,
+      "description": "详细程度",
+      "default": "normal",
+      "options": ["simple", "normal", "detailed"]
+    }
+  },
+  "repository": "https://github.com/cantian-ai/bazi-mcp",
+  "license": "MIT",
+  "tags": ["ai", "fortune", "bazi", "chinese", "mcp"]
+}

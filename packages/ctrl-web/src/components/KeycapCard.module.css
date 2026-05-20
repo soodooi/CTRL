@@ -19,16 +19,24 @@
     inset 0 1px 0 0 rgb(255 255 255 / 0.12);
   cursor: pointer;
   font-family: var(--font-mono);
+  transform: translateY(0) scale(1);
   transition:
     box-shadow var(--duration-fast) var(--ease-out-expo),
-    background var(--duration-fast) var(--ease-out-expo);
+    background var(--duration-fast) var(--ease-out-expo),
+    transform var(--duration-fast) var(--ease-out-expo);
 }
 
 .card:hover {
+  transform: translateY(-2px);
   box-shadow:
     var(--shadow-lg),
     inset 0 -3px 0 0 rgb(0 0 0 / 0.22),
     inset 0 1px 0 0 rgb(255 255 255 / 0.16);
+}
+
+.card:active {
+  transform: translateY(1px) scale(0.98);
+  transition-duration: 80ms;
 }
 
 .card:focus-visible {

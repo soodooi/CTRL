@@ -31,6 +31,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::run_keycap,
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
+            $crate::commands::kernel::open_workspace,
             // stss
             $crate::commands::stss::subscribe,
             $crate::commands::stss::publish,

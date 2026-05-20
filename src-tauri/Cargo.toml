@@ -60,6 +60,7 @@ objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder"] }
 # keyring/tauri; this is just the explicit feature surface we use.
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_System_LibraryLoader",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",

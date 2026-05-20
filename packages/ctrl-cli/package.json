@@ -1,0 +1,20 @@
+{
+  "name": "@ctrl/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ctrl CLI — scaffold / dev / publish keycaps.",
+  "type": "module",
+  "bin": {
+    "ctrl": "./bin/ctrl.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ctrl/keycap-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.3"
+  }
+}
