@@ -97,11 +97,22 @@ impl Scheduler {
 
         tokio::spawn(async move {
             // on_spawn — wrapped in catch_unwind to honor supervisor #1.
+            // themis HIGH: if on_spawn panics, actor may be in partially-
+            // initialized state (e.g. SubprocessActor child spawned but
+            // self.state.killer not assigned). Continuing into the mailbox
+            // loop would serve handle() on a corrupt actor. Instead: run
+            // on_shutdown (best-effort cleanup of whatever state was wired)
+            // and exit the task. No further messages get processed.
             let spawn_fut = std::panic::AssertUnwindSafe(actor.on_spawn(&ctx)).catch_unwind();
             if let Err(_panic) = spawn_fut.await {
-                tracing::error!(actor = %actor_name, "on_spawn panicked");
+                tracing::error!(
+                    actor = %actor_name,
+                    "on_spawn panicked — running shutdown and terminating actor task"
+                );
+                actor.on_shutdown().await;
+                return;
             }
-            // Mailbox loop.
+            // Mailbox loop — only entered if on_spawn succeeded.
             loop {
                 let Some(msg) = mailbox_rx.recv().await else {
                     break; // all senders dropped

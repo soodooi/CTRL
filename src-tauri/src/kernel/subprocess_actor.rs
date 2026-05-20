@@ -125,7 +125,8 @@ impl SubprocessActor {
 
     /// 拉起子进程 + 启动 reader / waiter task. 不 panic — 错误经
     /// outbox 以 `subprocess_exit` 投递, 由 caller 决定是否复用 actor.
-    fn spawn_child(&mut self) -> Result<u32, SubprocessSpawnError> {
+    /// PID 返回 Option — portable-pty 在某些平台不能立即拿到 PID.
+    fn spawn_child(&mut self) -> Result<Option<u32>, SubprocessSpawnError> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -154,7 +155,9 @@ impl SubprocessActor {
         // 父进程不再持 slave fd, 由 child 独占.
         drop(pair.slave);
 
-        let pid = child.process_id().unwrap_or(0);
+        // PID is Option — kernel sentinel (0) collides with real PIDs on Linux
+        // idle process. Carry None all the way to event payload (serializes as null).
+        let pid: Option<u32> = child.process_id();
         let killer: Box<dyn portable_pty::ChildKiller + Send + Sync> = child.clone_killer();
 
         // Reader / writer 必须在 master 移入 Arc<Mutex> 前取出.
@@ -196,8 +199,22 @@ impl SubprocessActor {
                                     "data_b64": B64.encode(chunk),
                                 }),
                             });
-                            if outbox.blocking_send(ev).is_err() {
-                                break; // receiver dropped
+                            // try_send (non-blocking): if outbox is full or closed,
+                            // drop the chunk + WARN. blocking_send was a silent-failure
+                            // path — slow consumer could hang the OS thread + freeze
+                            // the child PTY indefinitely (themis CRITICAL).
+                            match outbox.try_send(ev) {
+                                Ok(_) => {}
+                                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                    tracing::warn!(
+                                        actor = %actor_name,
+                                        bytes = n,
+                                        "outbox full — stdout chunk dropped"
+                                    );
+                                }
+                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                    break; // receiver dropped, exit reader cleanly
+                                }
                             }
                         }
                         Err(e) => {
@@ -225,7 +242,9 @@ impl SubprocessActor {
                     (None, true)
                 }
             };
-            let _ = outbox_w.blocking_send(Event::Op(Op {
+            // try_send to align with reader task — Exit event must reach consumer
+            // even if outbox is briefly full, but never block the OS thread.
+            let exit_ev = Event::Op(Op {
                 kind: OpKind::SubprocessExit,
                 ts_ms: now_ms(),
                 stream_id: Some(actor_name_w.clone()),
@@ -235,10 +254,17 @@ impl SubprocessActor {
                     "code": code,
                     "panic": panicked,
                 }),
-            }));
+            });
+            if let Err(e) = outbox_w.try_send(exit_ev) {
+                tracing::warn!(
+                    actor = %actor_name_w,
+                    error = ?e,
+                    "outbox closed or full — exit event dropped"
+                );
+            }
         });
 
-        self.state.pid = Some(pid);
+        self.state.pid = pid;
         self.state.master = Some(master_arc);
         self.state.writer = Some(writer_arc);
         self.state.killer = Some(Arc::new(Mutex::new(killer)));
@@ -272,11 +298,13 @@ pub enum SubprocessSpawnError {
 #[async_trait]
 impl Actor for SubprocessActor {
     async fn on_spawn(&mut self, _ctx: &ActorContext) -> Vec<Effect> {
-        // 三约束 #1: spawn_child 内部已 catch_unwind reader/waiter task panic;
-        // 此处再裹一层 catch_unwind 防 native_pty_system / openpty 路径 panic.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.spawn_child()));
-        match result {
-            Ok(Ok(pid)) => {
+        // 三约束 #1: reader / waiter task 内部各自 catch_unwind (panic 局部).
+        // 此处 NOT wrap in catch_unwind — themis CRITICAL: catch_unwind 包
+        // spawn_child 会留下半初始化 actor (child 已 spawn 但 self.state.killer
+        // 未写), 导致 on_shutdown 漏 kill. Scheduler 的 on_spawn catch_unwind
+        // 兜底 panic + on_shutdown 路径退出.
+        match self.spawn_child() {
+            Ok(pid) => {
                 let _ = self.outbox.try_send(Event::Op(Op {
                     kind: OpKind::SubprocessSpawned,
                     ts_ms: now_ms(),
@@ -289,7 +317,7 @@ impl Actor for SubprocessActor {
                     }),
                 }));
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 tracing::error!(actor = %self.name, error = %e, "subprocess spawn failed");
                 let _ = self.outbox.try_send(Event::Op(Op {
                     kind: OpKind::SubprocessExit,
@@ -297,23 +325,9 @@ impl Actor for SubprocessActor {
                     stream_id: Some(self.name.clone()),
                     payload: serde_json::json!({
                         "actor": self.name,
-                        "pid": 0,
-                        "code": null,
+                        "pid": Option::<u32>::None,
+                        "code": Option::<i32>::None,
                         "spawn_error": e.to_string(),
-                    }),
-                }));
-            }
-            Err(_) => {
-                tracing::error!(actor = %self.name, "subprocess spawn panicked");
-                let _ = self.outbox.try_send(Event::Op(Op {
-                    kind: OpKind::SubprocessExit,
-                    ts_ms: now_ms(),
-                    stream_id: Some(self.name.clone()),
-                    payload: serde_json::json!({
-                        "actor": self.name,
-                        "pid": 0,
-                        "code": null,
-                        "panic": true,
                     }),
                 }));
             }
