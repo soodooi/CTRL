@@ -35,6 +35,7 @@ pub mod sandbox;
 pub mod scheduler;
 pub mod stss_bridge;
 pub mod subprocess_actor;
+pub mod subprocess_stss_adapter;
 
 pub use actor::{Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority};
 pub use capability::{CapToken, Capability, CapabilityBroker, CapabilityError};
