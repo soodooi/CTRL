@@ -194,6 +194,15 @@ export const useSubprocessChannel = (
           if (cancelled) return;
           setStatus('error');
           setError('Bridge connection error');
+          // WebSocket fires `error` without auto-closing for some transport
+          // failures; without an explicit close the socket lingers in a
+          // half-open state and the FD doesn't free until GC. Close so
+          // onclose fires deterministically and the cleanup path runs.
+          try {
+            ws.close(4000, 'transport error');
+          } catch {
+            // ignore — close on an already-closed socket throws
+          }
         };
 
         ws.onclose = (ev) => {

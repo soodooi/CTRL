@@ -192,13 +192,24 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
     term.open(terminalHostRef.current);
     fit.fit();
 
+    // Surface cs_* invoke failures into the rail log instead of letting
+    // unhandled-promise-rejection warnings hit the console silently. The
+    // user otherwise sees "I typed but nothing happened" with no signal.
+    const reportErr = (label: string, tone: RailEntry['tone'] = 'error') =>
+      (err: unknown): void => {
+        pushLog(
+          `${label} · ${err instanceof Error ? err.message : String(err)}`,
+          tone,
+        );
+      };
+
     term.onData((chunk: string) => {
       const bytes = new TextEncoder().encode(chunk);
-      void writeStdinRef.current(bytes);
+      writeStdinRef.current(bytes).catch(reportErr('stdin error'));
     });
 
     term.onResize(({ cols, rows }) => {
-      void resizeRef.current(cols, rows);
+      resizeRef.current(cols, rows).catch(reportErr('resize error', 'warn'));
     });
 
     terminalRef.current = term;
@@ -227,13 +238,23 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
     // until that lands we forward the prompt as stdin so the running
     // subprocess receives it directly.
     const bytes = new TextEncoder().encode(`${trimmed}\n`);
-    void channel.writeStdin(bytes);
+    channel.writeStdin(bytes).catch((err: unknown) => {
+      pushLog(
+        `stdin error · ${err instanceof Error ? err.message : String(err)}`,
+        'error',
+      );
+    });
     setDraft('');
   }, [channel, draft, pushLog]);
 
   const onSignal = useCallback(
     (sig: SubprocessSignal): void => {
-      void channel.signal(sig);
+      channel.signal(sig).catch((err: unknown) => {
+        pushLog(
+          `signal error · ${err instanceof Error ? err.message : String(err)}`,
+          'error',
+        );
+      });
       pushLog(`signal · ${sig}`, sig === 'SIGKILL' ? 'error' : 'warn');
     },
     [channel, pushLog],
