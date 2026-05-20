@@ -1,7 +1,7 @@
 ---
 adr_id: 012
 title: SubprocessActor + portable-pty execution model for Code Space coding companion
-status: proposed
+status: accepted
 date: 2026-05-19
 deciders: [bao, zeus]
 related:
@@ -117,3 +117,4 @@ Irisy 的 Code Space 已经有 PWA 端 3×4 tile UI（lane-A daedalus 已 ship�
 | Date | Change |
 |---|---|
 | 2026-05-19 | Initial proposed (zeus); drafted in main tree for lane-G H-2026-05-19-001 启动依据 |
+| 2026-05-19 | **Accepted** (bao verbal-go "干" + zeus). lane-G 可 rebase main 启动 impl。|
