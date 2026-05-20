@@ -26,6 +26,9 @@ const WorkspaceRoute = lazy(() =>
 const SettingsRoute = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsRoute })),
 );
+const IrisyRoute = lazy(() =>
+  import('./routes/irisy').then((m) => ({ default: m.IrisyRoute })),
+);
 
 const LazyFallback = (): React.ReactElement => (
   <div style={{ padding: 'var(--space-6)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
@@ -45,6 +48,9 @@ const rootRoute = createRootRoute({
         </Link>
         <Link to="/workspace" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
           Workspace
+        </Link>
+        <Link to="/irisy" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
+          Irisy
         </Link>
         <Link to="/settings" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
           Settings
@@ -86,8 +92,17 @@ const settingsRoute = createRoute({
     </Suspense>
   ),
 });
+const irisyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/irisy',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <IrisyRoute />
+    </Suspense>
+  ),
+});
 
-const routeTree = rootRoute.addChildren([indexRoute, poolRoute, workspaceRoute, settingsRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, poolRoute, workspaceRoute, irisyRoute, settingsRoute]);
 
 // Singleton router so `Register.router = typeof router` is concrete (gives
 // type-safe Link path autocompletion). Erased `ReturnType<typeof createRouter>`

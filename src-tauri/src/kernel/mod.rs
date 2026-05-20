@@ -34,6 +34,7 @@ pub mod runtime;
 pub mod sandbox;
 pub mod scheduler;
 pub mod stss_bridge;
+pub mod subprocess_actor;
 
 pub use actor::{Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority};
 pub use capability::{CapToken, Capability, CapabilityBroker, CapabilityError};
@@ -45,5 +46,9 @@ pub use mcp_host::{McpHost, McpServerDescriptor, McpServerSource, McpToolDescrip
 pub use persistence::EventStore;
 pub use runtime::{KernelBootError, KernelRuntime};
 pub use sandbox::{SandboxConfig, WasmSandbox};
-pub use scheduler::{ActorEntry, Scheduler};
+pub use scheduler::{ActorEntry, Scheduler, SchedulerError, SpawnResult};
 pub use stss_bridge::{StssBridge, DEFAULT_LISTEN_ADDR as STSS_LISTEN_ADDR};
+pub use subprocess_actor::{
+    PtySpec, SubprocessActor, SubprocessOutbox, SubprocessSpawnError, SubprocessSpec,
+    DEFAULT_MEM_CAP_BYTES, DEFAULT_OUTBOX_CAPACITY,
+};

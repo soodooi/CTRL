@@ -41,6 +41,9 @@ wasmtime = { version = "27", default-features = false, features = ["async", "cra
 rmcp = { version = "1.6", features = ["client", "transport-child-process"] }  # MCP host (Anthropic official Rust SDK)
 # H-2026-05-13-001 sub-PR d — ST-SS WS bridge promoted from spike.
 tokio-tungstenite = "0.24"
+# H-2026-05-19-001 / ADR-012 — SubprocessActor PTY substrate for Code Space tiles.
+# Unix forkpty + Windows ConPTY 自动适配, wezterm 在生产用.
+portable-pty = "0.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # H-2026-05-14-002 mac/a — CGEventTap port lives in shell/hotkey.rs::mac_impl,
