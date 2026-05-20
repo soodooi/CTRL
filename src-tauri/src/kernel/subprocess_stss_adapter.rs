@@ -19,7 +19,6 @@
 
 use crate::kernel::event::{Cell, CellKind, Event, Op, OpKind};
 use crate::kernel::stss_bridge::StssBridge;
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
@@ -30,9 +29,12 @@ use tracing::{debug, warn};
 ///
 /// `stream_id` is what PWA subscribers filter on (typically the actor's
 /// name, mirrored from the manifest).
+///
+/// `StssBridge` is `Clone` and internally `Arc`-backed (broadcast::Sender),
+/// so we take ownership of a clone rather than re-wrapping in `Arc<...>`.
 pub async fn forward_subprocess_outbox(
     mut outbox: mpsc::Receiver<Event>,
-    bridge: Arc<StssBridge>,
+    bridge: StssBridge,
     stream_id: String,
 ) {
     debug!(stream_id = %stream_id, "subprocess_stss_adapter: forwarder started");
@@ -45,7 +47,7 @@ pub async fn forward_subprocess_outbox(
 /// Translate one kernel-internal Event into the spec-v0.7 wire shape and
 /// publish via the bridge. Unknown / non-translatable Ops are dropped with
 /// a debug log (forward-compat: receivers tolerate unknown kinds).
-fn translate_and_publish(event: Event, bridge: &Arc<StssBridge>, stream_id: &str) {
+fn translate_and_publish(event: Event, bridge: &StssBridge, stream_id: &str) {
     match event {
         Event::Op(op) => translate_op(op, bridge, stream_id),
         Event::Cell(cell) => {
@@ -61,7 +63,7 @@ fn translate_and_publish(event: Event, bridge: &Arc<StssBridge>, stream_id: &str
     }
 }
 
-fn translate_op(op: Op, bridge: &Arc<StssBridge>, stream_id: &str) {
+fn translate_op(op: Op, bridge: &StssBridge, stream_id: &str) {
     match op.kind {
         OpKind::SubprocessStdout => {
             // Internal Op → spec v0.7 Cell { kind: terminal_output }.
@@ -106,9 +108,20 @@ fn translate_op(op: Op, bridge: &Arc<StssBridge>, stream_id: &str) {
         }
         // Inbound-only kinds (PWA → kernel → actor); the actor never emits
         // these outbound. Defensive log + drop.
+        //
+        // Two families: (a) kernel-internal Subprocess* family routed by
+        // commands::code_space; (b) v0.7 wire-facing family that PWA may
+        // re-emit if it echoes its own ops (forward-compat). Both share
+        // the same "outbound from actor outbox = bug or future-future"
+        // contract, so we drop both with a single arm to prevent silent
+        // wire-spec violations (themis HIGH).
         OpKind::SubprocessStdin
         | OpKind::SubprocessResize
-        | OpKind::SubprocessSignal => {
+        | OpKind::SubprocessSignal
+        | OpKind::AgentPrompt
+        | OpKind::AgentInterrupt
+        | OpKind::EnvSignal
+        | OpKind::FileRequest => {
             warn!(
                 stream_id = %stream_id,
                 kind = ?op.kind,
@@ -134,8 +147,8 @@ mod tests {
 
     /// Helper: instantiate a bridge and capture the next published Event
     /// from its broadcast channel.
-    async fn bridge_with_receiver() -> (Arc<StssBridge>, broadcast::Receiver<Event>) {
-        let bridge = Arc::new(StssBridge::new());
+    async fn bridge_with_receiver() -> (StssBridge, broadcast::Receiver<Event>) {
+        let bridge = StssBridge::new();
         // Subscribe BEFORE any publish (broadcast has zero-buffer for new
         // subscribers).
         let rx = bridge.subscribe_events();

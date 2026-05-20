@@ -18,7 +18,6 @@
 // `kernel::subprocess_stss_adapter::forward_subprocess_outbox`.
 
 use crate::kernel::event::{Event, Op, OpKind};
-use crate::kernel::stss_bridge::StssBridge;
 use crate::kernel::subprocess_stss_adapter::forward_subprocess_outbox;
 use crate::shell::kernel_supervisor::KernelHandle;
 use serde::{Deserialize, Serialize};
@@ -102,10 +101,11 @@ pub async fn cs_spawn(
         initial_state,
     };
 
-    // Scheduler is single-threaded per session. The simplest correct option
-    // is per-invocation: spawn_from_manifest only touches the scheduler's
-    // own actors map briefly, then returns SpawnResult. The actor task
-    // lives outside the scheduler instance via tokio::spawn.
+    // TODO(zeus, P5): wire to shared Scheduler from KernelHandle for
+    // supervisor visibility per ADR-012 §5. Per-invocation Scheduler::new()
+    // works today (actor task lives outside via tokio::spawn, so no leak)
+    // but cuts code-space actors off from future preemption / deadline
+    // supervisor logic. Refactor when EffectExecutor wiring lands.
     let scheduler = crate::kernel::scheduler::Scheduler::new();
     let result = scheduler
         .spawn_from_manifest(manifest)
@@ -113,15 +113,17 @@ pub async fn cs_spawn(
         .map_err(|e| format!("scheduler.spawn_from_manifest failed: {e}"))?;
 
     let stream_id = result.actor_id.as_str().to_string();
-    let bridge_arc = Arc::new(kernel.bridge.clone());
 
     // Forwarder task: drains the actor's outbox into the ST-SS bridge with
     // spec-v0.7 wire translation. Exits cleanly when the actor's outbox
     // closes (i.e. when on_shutdown finishes).
+    //
+    // StssBridge is Clone + internally Arc-backed; no need to re-wrap.
     let stream_id_for_task = stream_id.clone();
+    let bridge_for_task = kernel.bridge.clone();
     tauri::async_runtime::spawn(forward_subprocess_outbox(
         result.outbox,
-        bridge_arc,
+        bridge_for_task,
         stream_id_for_task,
     ));
 
@@ -162,11 +164,23 @@ pub struct SignalArgs {
     pub signal: String, // "SIGINT" | "SIGTERM" | "SIGKILL"
 }
 
+/// Allowlist of POSIX signal names this command accepts. Fails fast at the
+/// Tauri boundary rather than letting a typo / malicious payload flow into
+/// SubprocessActor as a no-op or worse.
+const ALLOWED_SIGNALS: &[&str] = &["SIGINT", "SIGTERM", "SIGKILL"];
+
 #[tauri::command]
 pub async fn cs_signal(
     args: SignalArgs,
     registry: State<'_, CodeSpaceRegistry>,
 ) -> Result<(), String> {
+    if !ALLOWED_SIGNALS.contains(&args.signal.as_str()) {
+        return Err(format!(
+            "invalid signal '{}'; allowed: {}",
+            args.signal,
+            ALLOWED_SIGNALS.join(", ")
+        ));
+    }
     post_op(
         &registry,
         &args.stream_id,
@@ -261,9 +275,3 @@ fn now_ms() -> u64 {
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }
-
-// Bridge is required to be Clone for the adapter; StssBridge already is
-// (broadcast::Sender + Arc internally). Keep the unused import warning
-// quiet now while we wait for the wiring PR to land.
-#[allow(unused_imports)]
-use StssBridge as _;
