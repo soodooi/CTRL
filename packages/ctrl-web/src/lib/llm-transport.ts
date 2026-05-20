@@ -127,22 +127,39 @@ export class ChatStreamTransport implements LLMTransport {
       };
       return;
     }
+    // Early-out before any listener registration / invoke if the caller
+    // already aborted — otherwise we'd register a Tauri listener and fire
+    // chat_stream just to throw the result away.
+    if (opts.signal?.aborted) {
+      yield { delta: '', done: true, error: 'aborted' };
+      return;
+    }
     const requestId = crypto.randomUUID();
     const { listen } = await import('@tauri-apps/api/event');
 
     const queue: ChatStreamDelta[] = [];
     let resolveNext: (() => void) | null = null;
+    const wakeWaiter = (): void => {
+      const w = resolveNext;
+      if (w) {
+        resolveNext = null;
+        w();
+      }
+    };
     const unlisten: UnlistenFn = await listen<ChatStreamDelta>(
       'chat.stream.delta',
       (event) => {
         if (event.payload.request_id !== requestId) return;
         queue.push(event.payload);
-        if (resolveNext) {
-          resolveNext();
-          resolveNext = null;
-        }
+        wakeWaiter();
       },
     );
+    // Abort listener wakes any pending Promise so the while-loop's
+    // signal.aborted check fires immediately instead of hanging forever
+    // when no further chat.stream.delta arrives (e.g. user cancelled
+    // before the first chunk).
+    const onAbort = (): void => wakeWaiter();
+    opts.signal?.addEventListener('abort', onAbort);
 
     try {
       await invoke('chat_stream', {
@@ -178,6 +195,11 @@ export class ChatStreamTransport implements LLMTransport {
         }
       }
     } finally {
+      // Drain any pending deltas the listener queued after the consumer
+      // stopped pulling — otherwise an aborted/early-returning stream
+      // leaves them dangling in the closure until GC.
+      queue.length = 0;
+      opts.signal?.removeEventListener('abort', onAbort);
       unlisten();
     }
   }

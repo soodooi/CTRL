@@ -44,24 +44,34 @@ async function streamOnce(opts: ChatTurnOptions): Promise<void> {
   const messages = composeHistory(opts.systemPrompt, opts.fewShots, chatRawTurns);
 
   const assistant = store.beginAssistantMessage();
-  for await (const chunk of opts.transport.stream(messages, {
-    model: opts.model,
-    signal: opts.signal,
-  })) {
-    if (chunk.error) {
-      store.appendAssistantDelta(
-        assistant.id,
-        `\n\n[transport error: ${chunk.error}]`,
-      );
-      store.finishAssistantMessage(assistant.id);
-      return;
+  try {
+    for await (const chunk of opts.transport.stream(messages, {
+      model: opts.model,
+      signal: opts.signal,
+    })) {
+      if (chunk.error) {
+        store.appendAssistantDelta(
+          assistant.id,
+          `\n\n[transport error: ${chunk.error}]`,
+        );
+        store.finishAssistantMessage(assistant.id);
+        return;
+      }
+      if (chunk.delta) {
+        store.appendAssistantDelta(assistant.id, chunk.delta);
+      }
+      if (chunk.done) break;
     }
-    if (chunk.delta) {
-      store.appendAssistantDelta(assistant.id, chunk.delta);
-    }
-    if (chunk.done) break;
+    store.finishAssistantMessage(assistant.id);
+  } catch (err: unknown) {
+    // A transport that throws mid-stream (network failure, AbortError,
+    // CBOR decode panic) used to leave the assistant message stuck in
+    // `streaming=true`; the store would never settle and the Send button
+    // stayed disabled. Annotate + finish so the UI recovers.
+    const message = err instanceof Error ? err.message : String(err);
+    store.appendAssistantDelta(assistant.id, `\n\n[transport error: ${message}]`);
+    store.finishAssistantMessage(assistant.id);
   }
-  store.finishAssistantMessage(assistant.id);
 }
 
 export async function runChatTurn(opts: ChatTurnOptions): Promise<void> {
