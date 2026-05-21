@@ -1,6 +1,9 @@
 // /code-space — two surfaces:
-//   - CodeSpaceRoute (list, lane-A PR #14): MOCK_ENVS + RemoteEnvList until
-//     `list_remote_envs` and the relay session lookup land.
+//   - CodeSpaceRoute (list): real cs_list → RemoteEnvList. A "+ New" button
+//     opens NewEnvModal which calls cs_spawn and navigates to the detail
+//     view on success. No mock data — `cs_list` currently returns just
+//     `string[]` (active stream_ids); status / started_at / command will
+//     light up the card once the kernel extends the envelope.
 //   - CodeSpaceDetailRoute (lane-B, ADR-012 §7 tile wire): live xterm
 //     viewer for one running SubprocessActor, with structured-cell rail
 //     and stdin/resize/signal/kill controls via Tauri cs_* commands.
@@ -14,11 +17,15 @@ import {
   type ReactElement,
 } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Terminal, type ITerminalOptions } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { RemoteEnvList } from '@/components/RemoteEnvList';
-import { MOCK_ENVS, type EnvStatus, type RemoteEnv } from '@/lib/mock-envs';
+import { RemoteEnvList, type ListedEnv } from '@/components/RemoteEnvList';
+import { NewEnvModal } from '@/components/NewEnvModal';
+import { Button } from '@/components/primitives';
+import { csList, csSpawn, type CsSpawnArgs } from '@/lib/kernel';
+import { formatHHMMSS } from '@/hooks/useWallClock';
 import {
   useSubprocessChannel,
   type EnvStatusPayload,
@@ -28,61 +35,110 @@ import {
 } from '@/hooks/useSubprocessChannel';
 import styles from './code-space.module.css';
 
-const nextStatus = (status: EnvStatus, action: 'start' | 'stop'): EnvStatus => {
-  if (action === 'start') return 'running';
-  // stop preserves crashed (an explicit stop on a crashed env is a no-op
-  // from the UI's perspective; the kernel may clear the crash flag).
-  return status === 'crashed' ? 'crashed' : 'stopped';
+const CS_LIST_KEY = ['cs', 'list'] as const;
+
+const listRemoteEnvs = async (): Promise<ListedEnv[]> => {
+  // Today cs_list returns `Vec<String>`. The mapping below is defensive
+  // so a future kernel-side envelope extension (status / started_at /
+  // command per env) lights up the card UI without a frontend rewrite.
+  const result = await csList();
+  if (!Array.isArray(result)) return [];
+  return result.map((item) =>
+    typeof item === 'string' ? { stream_id: item } : (item as ListedEnv),
+  );
+};
+
+const spawnEnv = async (args: CsSpawnArgs): Promise<string> => {
+  const reply = await csSpawn(args);
+  return reply.stream_id;
 };
 
 export const CodeSpaceRoute = (): ReactElement => {
   const navigate = useNavigate();
-  const [envs, setEnvs] = useState<ReadonlyArray<RemoteEnv>>(MOCK_ENVS);
+  const queryClient = useQueryClient();
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const envsQuery = useQuery({
+    queryKey: CS_LIST_KEY,
+    queryFn: listRemoteEnvs,
+  });
+
+  const spawnMutation = useMutation({
+    mutationFn: spawnEnv,
+    onSuccess: async (streamId) => {
+      await queryClient.invalidateQueries({ queryKey: CS_LIST_KEY });
+      setModalOpen(false);
+      void navigate({ to: '/code-space/$envId', params: { envId: streamId } });
+    },
+  });
+
+  const envs = envsQuery.data ?? [];
 
   const handleOpen = useCallback(
-    (envId: string): void => {
-      void navigate({ to: '/code-space/$envId', params: { envId } });
+    (streamId: string): void => {
+      void navigate({ to: '/code-space/$envId', params: { envId: streamId } });
     },
     [navigate],
   );
 
-  const handleToggle = useCallback(
-    (envId: string, action: 'start' | 'stop'): void => {
-      setEnvs((prev) =>
-        prev.map((env) =>
-          env.id === envId
-            ? {
-                ...env,
-                status: nextStatus(env.status, action),
-                last_activity_iso: new Date().toISOString(),
-              }
-            : env,
-        ),
-      );
+  const openModal = useCallback((): void => setModalOpen(true), []);
+  const closeModal = useCallback((): void => {
+    if (!spawnMutation.isPending) setModalOpen(false);
+  }, [spawnMutation.isPending]);
+
+  const handleSubmit = useCallback(
+    async (values: CsSpawnArgs): Promise<void> => {
+      spawnMutation.mutate(values);
     },
-    [],
+    [spawnMutation],
   );
+
+  const spawnError = spawnMutation.error
+    ? spawnMutation.error instanceof Error
+      ? spawnMutation.error.message
+      : String(spawnMutation.error)
+    : null;
 
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Code Space</h1>
-        <p className={styles.subtitle}>Remote coding environments across all projects.</p>
+        <div className={styles.headerRow}>
+          <div>
+            <h1 className={styles.title}>Code Space</h1>
+            <p className={styles.subtitle}>Active remote coding environments.</p>
+          </div>
+          <Button size="sm" onClick={openModal} aria-label="Spawn new environment">
+            + New
+          </Button>
+        </div>
+        {envsQuery.error && (
+          <p className={styles.headerError} role="alert">
+            Failed to load envs · {envsQuery.error instanceof Error ? envsQuery.error.message : 'unknown error'}
+          </p>
+        )}
       </header>
-      <RemoteEnvList envs={envs} onOpen={handleOpen} onToggle={handleToggle} />
+      <RemoteEnvList
+        envs={envs}
+        onOpen={handleOpen}
+        onNew={openModal}
+        emptyMessage={
+          envsQuery.isLoading
+            ? 'Loading active environments…'
+            : 'No active environments. Spawn one to get started.'
+        }
+      />
+      <NewEnvModal
+        open={modalOpen}
+        onClose={closeModal}
+        onSubmit={handleSubmit}
+        pending={spawnMutation.isPending}
+        error={spawnError}
+      />
     </div>
   );
 };
 
 // ── Detail viewer ────────────────────────────────────────────────────────
-
-const formatTime = (tsMs: number): string => {
-  const d = new Date(tsMs);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
-};
 
 const STATUS_LABEL: Record<SubprocessChannelStatus, string> = {
   idle: 'idle',
@@ -337,7 +393,7 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
                         : undefined,
                 }}
               >
-                <span className={styles.csdAgentLogTime}>{formatTime(entry.ts_ms)}</span>
+                <span className={styles.csdAgentLogTime}>{formatHHMMSS(entry.ts_ms)}</span>
                 <span>{entry.text}</span>
               </div>
             ))}

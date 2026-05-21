@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useCellStream, type EventRecord } from '@/hooks/useCellStream';
+import { formatHHMMSS } from '@/hooks/useWallClock';
 import styles from './workspace.module.css';
 
 const readKeycapId = (): string | null => {
@@ -20,14 +21,6 @@ const readKeycapId = (): string | null => {
   const hash = url.hash;
   const hashQs = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
   return new URLSearchParams(hashQs).get('keycap_id');
-};
-
-const formatTime = (tsMs: number): string => {
-  const d = new Date(tsMs);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
 };
 
 const renderPayload = (payload: unknown): string => {
@@ -116,7 +109,7 @@ export const WorkspaceRoute = ({
               <span className={styles.eventKind}>
                 {event.type === 'cell' ? '·' : '◆'} {event.kind}
               </span>
-              <time className={styles.eventTime}>{formatTime(event.ts_ms)}</time>
+              <time className={styles.eventTime}>{formatHHMMSS(event.ts_ms)}</time>
             </header>
             <pre className={styles.eventBody}>{renderPayload(event.payload)}</pre>
           </article>
