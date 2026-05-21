@@ -75,6 +75,27 @@ pub async fn forward_subprocess_outbox(
         translate_and_publish(event, &bridge, &stream_id);
     }
     debug!(stream_id = %stream_id, "subprocess_stss_adapter: forwarder ended (outbox closed)");
+
+    // themis CRITICAL: if the loop exits with status still Running, the
+    // forwarder task died unexpectedly (panic in translate_and_publish, or
+    // tokio cancellation, or some path that didn't emit SubprocessExit).
+    // Without this fixup the registry would report the env as Running
+    // forever and cs_list would serve stale state to the PWA. Promote to
+    // Crashed so the UI surfaces the failure.
+    {
+        let mut guard = status.lock().await;
+        if matches!(*guard, EnvLifeStatus::Running) {
+            warn!(
+                stream_id = %stream_id,
+                "subprocess_stss_adapter: forwarder ended while status was still Running — \
+                 promoting to Crashed (outbox closed without SubprocessExit event)"
+            );
+            *guard = EnvLifeStatus::Crashed {
+                exit_code: None,
+                detail: Some("forwarder exited without exit event".into()),
+            };
+        }
+    }
 }
 
 /// Inspect the event and, when it is a SubprocessExit op, update the env's
@@ -92,12 +113,26 @@ async fn update_status_from_exit(event: &Event, status: &Arc<Mutex<EnvLifeStatus
         .map(|s| s.to_string());
 
     let new_status = match (exit_code, spawn_error) {
+        // exit 0 with no spawn_error = clean termination (user kill via cs_kill
+        // sends SIGTERM that bash/POSIX shells convert to exit 0, or process
+        // exited normally).
         (Some(0), None) => EnvLifeStatus::Stopped { exit_code: Some(0) },
+        // No exit code AND a spawn_error string = openpty/spawn_command failed
+        // before child ran. Crashed with the error detail.
         (None, Some(detail)) => EnvLifeStatus::Crashed {
             exit_code: None,
             detail: Some(detail),
         },
-        (None, None) => EnvLifeStatus::Stopped { exit_code: None },
+        // No exit code, no spawn_error — child was killed by an unhandled
+        // signal (SIGKILL from OOM killer, external kill -9, parent crash).
+        // Semantically Crashed, NOT Stopped (themis CRITICAL: signal-killed
+        // process should never show a clean "stopped" pill in the UI).
+        (None, None) => EnvLifeStatus::Crashed {
+            exit_code: None,
+            detail: None,
+        },
+        // Non-zero exit code = process exited with error (panic, intentional
+        // exit 1, signal-killed shells reporting 128+signal).
         (Some(code), _) => EnvLifeStatus::Crashed {
             exit_code: Some(code),
             detail: None,
@@ -344,6 +379,23 @@ mod tests {
                 exit_code: None,
                 detail: Some("command not found".into())
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn no_exit_code_no_spawn_error_marks_crashed_signal_kill() {
+        // themis CRITICAL: signal-killed process (SIGKILL/OOM/external)
+        // reports no exit code and no spawn error → must be Crashed, not
+        // Stopped (signal-killed != clean termination).
+        let status = Arc::new(Mutex::new(EnvLifeStatus::Running));
+        let ev = Event::Op(fake_op(
+            OpKind::SubprocessExit,
+            serde_json::json!({"actor": "x", "pid": 42, "code": null}),
+        ));
+        update_status_from_exit(&ev, &status).await;
+        assert_eq!(
+            *status.lock().await,
+            EnvLifeStatus::Crashed { exit_code: None, detail: None }
         );
     }
 

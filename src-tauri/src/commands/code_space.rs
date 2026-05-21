@@ -6,12 +6,12 @@
 // actions (prompt / signal / resize) come through here.
 //
 // Wire shape (PWA invoke API):
-//   cs_spawn(command, args, cwd?) -> { stream_id }      // start env
-//   cs_stdin(stream_id, data_b64) -> ok                 // user keystroke
-//   cs_signal(stream_id, signal)  -> ok                 // SIGINT/SIGTERM/SIGKILL
-//   cs_resize(stream_id, cols, rows) -> ok              // terminal resize
-//   cs_kill(stream_id)            -> ok                 // explicit terminate
-//   cs_list()                     -> [stream_id, ...]   // active envs
+//   cs_spawn(command, args, cwd?) -> { stream_id }              // start env
+//   cs_stdin(stream_id, data_b64) -> ok                         // user keystroke
+//   cs_signal(stream_id, signal)  -> ok                         // SIGINT/SIGTERM/SIGKILL
+//   cs_resize(stream_id, cols, rows) -> ok                      // terminal resize
+//   cs_kill(stream_id)            -> ok                         // explicit terminate
+//   cs_list()                     -> EnvSummary[]               // Z2 envelope (stream_id+status+started_at_iso+command)
 //
 // The bridge between SubprocessActor's internal OpKind names and the
 // ST-SS wire vocabulary (spec v0.7) lives in
@@ -32,7 +32,10 @@ use tokio::sync::{mpsc, Mutex};
 /// `status` is shared with the env's forwarder task so the latter can mark
 /// the env Stopped / Crashed when SubprocessExit lands without going
 /// through the registry lock.
-pub struct EnvEntry {
+/// EnvEntry is intentionally pub(crate) — only the commands::code_space
+/// module + tests in the same crate construct or read it. Tauri State only
+/// needs the parent CodeSpaceRegistry to be pub.
+pub(crate) struct EnvEntry {
     mailbox: mpsc::Sender<Event>,
     command: String,
     spawned_at_ms: u64,
@@ -297,18 +300,31 @@ pub async fn cs_kill(
 pub async fn cs_list(
     registry: State<'_, CodeSpaceRegistry>,
 ) -> Result<Vec<EnvSummary>, String> {
-    let guard = registry.inner.lock().await;
-    let mut out = Vec::with_capacity(guard.len());
-    for (stream_id, entry) in guard.iter() {
-        let status = entry.status.lock().await.clone();
+    // themis HIGH: snapshot the registry under the inner lock, then RELEASE
+    // it before awaiting per-entry status locks. Holding inner across the
+    // status awaits would block cs_spawn / cs_kill for the duration of the
+    // N-entry walk + every per-entry lock contention with the forwarder.
+    let snapshots: Vec<(String, Arc<Mutex<EnvLifeStatus>>, u64, String)> = {
+        let guard = registry.inner.lock().await;
+        guard
+            .iter()
+            .map(|(id, e)| (id.clone(), Arc::clone(&e.status), e.spawned_at_ms, e.command.clone()))
+            .collect()
+    }; // inner lock released here
+
+    let mut out = Vec::with_capacity(snapshots.len());
+    for (stream_id, status_arc, spawned_at_ms, command) in snapshots {
+        let status = status_arc.lock().await.clone();
         out.push(EnvSummary {
-            stream_id: stream_id.clone(),
+            stream_id,
             status,
-            started_at_iso: now_iso(entry.spawned_at_ms),
-            command: entry.command.clone(),
+            started_at_iso: now_iso(spawned_at_ms),
+            command,
         });
     }
-    // Stable ordering: most-recently-spawned first.
+    // Stable ordering: most-recently-spawned first. Lexicographic sort on
+    // ISO 8601 UTC strings is chronologically correct because the format
+    // is fixed-width with 4-digit years (guaranteed by `{y:04}` in now_iso).
     out.sort_by(|a, b| b.started_at_iso.cmp(&a.started_at_iso));
     Ok(out)
 }
@@ -350,4 +366,54 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn now_iso_epoch_zero() {
+        assert_eq!(now_iso(0), "1970-01-01T00:00:00.000Z");
+    }
+
+    #[test]
+    fn now_iso_y2k() {
+        // 2000-01-01T00:00:00Z = 946684800000 ms since epoch
+        assert_eq!(now_iso(946_684_800_000), "2000-01-01T00:00:00.000Z");
+    }
+
+    #[test]
+    fn now_iso_leap_day_2024() {
+        // 2024-02-29T00:00:00Z = 1709164800000 ms since epoch (leap year)
+        assert_eq!(now_iso(1_709_164_800_000), "2024-02-29T00:00:00.000Z");
+    }
+
+    #[test]
+    fn now_iso_sub_millisecond_padding() {
+        // 1 second + 0 ms after epoch = 1000 ms → .000 padding
+        assert_eq!(now_iso(1000), "1970-01-01T00:00:01.000Z");
+        // 1 second + 7 ms after epoch = 1007 ms → .007 padding (3 digits)
+        assert_eq!(now_iso(1007), "1970-01-01T00:00:01.007Z");
+        // 1 second + 42 ms after epoch = 1042 ms → .042 padding
+        assert_eq!(now_iso(1042), "1970-01-01T00:00:01.042Z");
+    }
+
+    #[test]
+    fn now_iso_2026_recent() {
+        // 2026-05-21T00:00:00Z = 1779321600000 ms since epoch
+        assert_eq!(now_iso(1_779_321_600_000), "2026-05-21T00:00:00.000Z");
+    }
+
+    #[test]
+    fn now_iso_chronological_sort_via_string() {
+        // Lexicographic sort on ISO strings must equal chronological sort
+        // (this is the property cs_list relies on for sort_by).
+        let a = now_iso(1_700_000_000_000); // 2023-11-14
+        let b = now_iso(1_750_000_000_000); // 2025-06-15
+        let c = now_iso(1_800_000_000_000); // 2027-01-15
+        let mut s = vec![c.clone(), a.clone(), b.clone()];
+        s.sort();
+        assert_eq!(s, vec![a, b, c]);
+    }
 }
