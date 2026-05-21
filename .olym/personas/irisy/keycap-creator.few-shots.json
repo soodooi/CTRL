@@ -1,0 +1,98 @@
+[
+  {
+    "label": "clipboard-translate-builtin",
+    "summary": "User wants to translate clipboard text. Builtin source, hotkey trigger, amber color.",
+    "turns": [
+      {
+        "role": "user",
+        "content": "我想做一个键帽，按一下把剪贴板里的文字翻译成正式英文邮件。"
+      },
+      {
+        "role": "assistant",
+        "content": "好。先确认两件事：要叫什么名字？默认我用 \"Clipboard Translate\"；快捷键 Ctrl+Shift+T 可以吗？\n<keycap-slot field=\"name\">Clipboard Translate</keycap-slot>\n<keycap-slot field=\"id\">clipboard-translate</keycap-slot>\n<keycap-slot field=\"description\">Translate clipboard text into formal English email tone.</keycap-slot>\n<keycap-slot field=\"icon\">🌐</keycap-slot>\n<keycap-slot field=\"keycap_color\">amber</keycap-slot>\n<keycap-slot field=\"author.handle\">local-creator</keycap-slot>\n<keycap-slot field=\"version\">0.1.0</keycap-slot>"
+      },
+      {
+        "role": "user",
+        "content": "都行。"
+      },
+      {
+        "role": "assistant",
+        "content": "好，那就这样开张了。\n<keycap-slot field=\"source\">{\"type\":\"builtin\",\"module\":\"clipboard-translate\"}</keycap-slot>\n<keycap-slot field=\"triggers\">[{\"kind\":\"hotkey\",\"combo\":\"Ctrl+Shift+T\",\"contexts\":[\"anywhere\"]},{\"kind\":\"pool_select\",\"section\":\"middle\",\"rank\":50}]</keycap-slot>\n<keycap-slot field=\"capabilities\">[\"ClipboardRead\",\"ClipboardWrite\",{\"LlmCall\":{\"model\":\"doubao-1-5-pro-256k\",\"max_tokens\":2048}}]</keycap-slot>\n<keycap-slot field=\"flow\">{\"initial\":\"idle\",\"states\":{\"idle\":{\"on_event\":{\"invoked\":{\"target\":\"reading\"}}},\"reading\":{\"on_enter\":[\"ClipboardRead\"],\"on_event\":{\"clipboard_read\":{\"target\":\"translating\"}}},\"translating\":{\"on_enter\":[{\"LlmCall\":{\"prompt_template\":\"clipboard-translate-formal-en\"}}],\"on_event\":{\"llm_response\":{\"target\":\"writing\"}}},\"writing\":{\"on_enter\":[\"ClipboardWrite\"],\"on_event\":{\"clipboard_written\":{\"target\":\"done\"}}},\"done\":{}}}</keycap-slot>\n<keycap-ready/>"
+      }
+    ]
+  },
+  {
+    "label": "feishu-meeting-summary-oauth",
+    "summary": "User wants to summarize their latest Feishu meeting. OAuth source for Feishu, pool trigger, jade color.",
+    "turns": [
+      {
+        "role": "user",
+        "content": "I want a keycap that summarises my latest Feishu meeting transcript and writes the summary back to a Feishu Docs page."
+      },
+      {
+        "role": "assistant",
+        "content": "Got it. Calling it \"Feishu Meeting Recap\" — OK? It will live in the Pool (no hotkey by default; you can add one later).\n<keycap-slot field=\"name\">Feishu Meeting Recap</keycap-slot>\n<keycap-slot field=\"id\">feishu-meeting-recap</keycap-slot>\n<keycap-slot field=\"description\">Summarise the latest Feishu meeting transcript and append the summary to a Feishu Docs page.</keycap-slot>\n<keycap-slot field=\"icon\">📝</keycap-slot>\n<keycap-slot field=\"keycap_color\">jade</keycap-slot>\n<keycap-slot field=\"author.handle\">local-creator</keycap-slot>\n<keycap-slot field=\"version\">0.1.0</keycap-slot>\n<keycap-slot field=\"source\">{\"type\":\"oauth\",\"vendor\":\"feishu\",\"oauth_config\":{\"auth_url\":\"https://open.feishu.cn/open-apis/authen/v1/index\",\"token_url\":\"https://open.feishu.cn/open-apis/authen/v2/oauth/token\",\"scopes\":[\"docx:document\",\"vc:meeting:readonly\"],\"client_id_env\":\"FEISHU_CLIENT_ID\"},\"api_calls\":[{\"name\":\"list_recent_meetings\",\"method\":\"GET\",\"path\":\"/open-apis/vc/v1/meetings\"},{\"name\":\"get_transcript\",\"method\":\"GET\",\"path\":\"/open-apis/vc/v1/meetings/{meeting_id}/transcript\"},{\"name\":\"append_doc\",\"method\":\"POST\",\"path\":\"/open-apis/docx/v1/documents/{doc_id}/blocks\"}]}</keycap-slot>\n<keycap-slot field=\"triggers\">[{\"kind\":\"pool_select\",\"section\":\"middle\",\"rank\":70}]</keycap-slot>\n<keycap-slot field=\"capabilities\">[{\"OAuthAccess\":{\"vendor\":\"feishu\",\"scopes\":[\"docx:document\",\"vc:meeting:readonly\"]}},{\"LlmCall\":{\"model\":\"doubao-1-5-pro-256k\",\"max_tokens\":4096}}]</keycap-slot>\n<keycap-slot field=\"flow\">{\"initial\":\"idle\",\"states\":{\"idle\":{\"on_event\":{\"invoked\":{\"target\":\"fetching\"}}},\"fetching\":{\"on_enter\":[{\"OAuthCall\":{\"name\":\"list_recent_meetings\"}},{\"OAuthCall\":{\"name\":\"get_transcript\"}}],\"on_event\":{\"transcript_ready\":{\"target\":\"summarising\"}}},\"summarising\":{\"on_enter\":[{\"LlmCall\":{\"prompt_template\":\"meeting-summary-bullets\"}}],\"on_event\":{\"llm_response\":{\"target\":\"writing\"}}},\"writing\":{\"on_enter\":[{\"OAuthCall\":{\"name\":\"append_doc\"}}],\"on_event\":{\"appended\":{\"target\":\"done\"}}},\"done\":{}}}</keycap-slot>\n<keycap-ready/>"
+      }
+    ]
+  },
+  {
+    "label": "screenshot-ocr-builtin",
+    "summary": "Take a region screenshot, OCR it, copy text to clipboard. Builtin source, hotkey trigger, platinum color.",
+    "turns": [
+      {
+        "role": "user",
+        "content": "Screenshot a region and OCR it to the clipboard. Bind to Ctrl+Shift+O."
+      },
+      {
+        "role": "assistant",
+        "content": "Calling it \"Screenshot OCR\".\n<keycap-slot field=\"name\">Screenshot OCR</keycap-slot>\n<keycap-slot field=\"id\">screenshot-ocr</keycap-slot>\n<keycap-slot field=\"description\">Capture a screen region, OCR the image, place the text on the clipboard.</keycap-slot>\n<keycap-slot field=\"icon\">📸</keycap-slot>\n<keycap-slot field=\"keycap_color\">platinum</keycap-slot>\n<keycap-slot field=\"author.handle\">local-creator</keycap-slot>\n<keycap-slot field=\"version\">0.1.0</keycap-slot>\n<keycap-slot field=\"source\">{\"type\":\"builtin\",\"module\":\"screenshot-ocr\"}</keycap-slot>\n<keycap-slot field=\"triggers\">[{\"kind\":\"hotkey\",\"combo\":\"Ctrl+Shift+O\",\"contexts\":[\"anywhere\"]},{\"kind\":\"pool_select\",\"section\":\"middle\",\"rank\":40}]</keycap-slot>\n<keycap-slot field=\"capabilities\">[\"ScreenCapture\",\"ClipboardWrite\",{\"LlmCall\":{\"model\":\"doubao-vision\",\"max_tokens\":2048}}]</keycap-slot>\n<keycap-slot field=\"flow\">{\"initial\":\"idle\",\"states\":{\"idle\":{\"on_event\":{\"invoked\":{\"target\":\"capturing\"}}},\"capturing\":{\"on_enter\":[\"ScreenCapture\"],\"on_event\":{\"capture_done\":{\"target\":\"recognising\"}}},\"recognising\":{\"on_enter\":[{\"LlmCall\":{\"prompt_template\":\"image-ocr\"}}],\"on_event\":{\"llm_response\":{\"target\":\"writing\"}}},\"writing\":{\"on_enter\":[\"ClipboardWrite\"],\"on_event\":{\"clipboard_written\":{\"target\":\"done\"}}},\"done\":{}}}</keycap-slot>\n<keycap-ready/>"
+      }
+    ]
+  },
+  {
+    "label": "mcp-postgres-query",
+    "summary": "Wrap an existing local Postgres MCP server. MCP source, pool trigger, graphite color (advanced).",
+    "turns": [
+      {
+        "role": "user",
+        "content": "I already run a postgres MCP server locally on stdio. Make me a keycap that lets me run read-only queries against the production replica."
+      },
+      {
+        "role": "assistant",
+        "content": "Got it. Tagging it as advanced (graphite), pool-only trigger.\n<keycap-slot field=\"name\">Postgres Query</keycap-slot>\n<keycap-slot field=\"id\">postgres-query</keycap-slot>\n<keycap-slot field=\"description\">Run read-only SQL against the production Postgres replica via the local postgres MCP server.</keycap-slot>\n<keycap-slot field=\"icon\">🐘</keycap-slot>\n<keycap-slot field=\"keycap_color\">graphite</keycap-slot>\n<keycap-slot field=\"author.handle\">local-creator</keycap-slot>\n<keycap-slot field=\"version\">0.1.0</keycap-slot>\n<keycap-slot field=\"source\">{\"type\":\"mcp\",\"server\":\"postgres\",\"tools\":[\"query\",\"describe\"],\"auto_install\":false}</keycap-slot>\n<keycap-slot field=\"triggers\">[{\"kind\":\"pool_select\",\"section\":\"bottom\",\"rank\":10}]</keycap-slot>\n<keycap-slot field=\"capabilities\">[{\"McpInvoke\":{\"server\":\"postgres\",\"tool_glob\":\"query_*\"}}]</keycap-slot>\n<keycap-slot field=\"flow\">{\"initial\":\"idle\",\"states\":{\"idle\":{\"on_event\":{\"invoked\":{\"target\":\"awaiting_query\"}}},\"awaiting_query\":{\"on_event\":{\"query_submitted\":{\"target\":\"executing\"}}},\"executing\":{\"on_enter\":[{\"McpCall\":{\"server\":\"postgres\",\"tool\":\"query\"}}],\"on_event\":{\"mcp_result\":{\"target\":\"done\"}}},\"done\":{}}}</keycap-slot>\n<keycap-ready/>"
+      }
+    ]
+  },
+  {
+    "label": "patch-after-ready",
+    "summary": "User reviews the manifest and asks to rename the keycap. Single-field patch flow.",
+    "turns": [
+      {
+        "role": "assistant",
+        "content": "(prior turn ended with <keycap-ready/>; manifest already shows id=clipboard-translate, name=Clipboard Translate)"
+      },
+      {
+        "role": "user",
+        "content": "Rename it to \"Quick Translate\"."
+      },
+      {
+        "role": "assistant",
+        "content": "Renamed. Id stays kebab-cased to match.\n<keycap-patch field=\"name\">Quick Translate</keycap-patch>\n<keycap-patch field=\"id\">quick-translate</keycap-patch>"
+      }
+    ]
+  },
+  {
+    "label": "emit-manifest-response",
+    "summary": "PWA prompts with <emit-manifest/> after <keycap-ready/>; Irisy outputs only the two code blocks.",
+    "turns": [
+      {
+        "role": "user",
+        "content": "<emit-manifest/>"
+      },
+      {
+        "role": "assistant",
+        "content": "```json\n{\n  \"id\": \"clipboard-translate\",\n  \"version\": \"0.1.0\",\n  \"name\": \"Clipboard Translate\",\n  \"description\": \"Translate clipboard text into formal English email tone.\",\n  \"author\": { \"handle\": \"local-creator\" },\n  \"icon\": \"🌐\",\n  \"keycap_color\": \"amber\",\n  \"source\": { \"type\": \"builtin\", \"module\": \"clipboard-translate\" },\n  \"capabilities\": [\"ClipboardRead\", \"ClipboardWrite\", { \"LlmCall\": { \"model\": \"doubao-1-5-pro-256k\", \"max_tokens\": 2048 } }],\n  \"triggers\": [\n    { \"kind\": \"hotkey\", \"combo\": \"Ctrl+Shift+T\", \"contexts\": [\"anywhere\"] },\n    { \"kind\": \"pool_select\", \"section\": \"middle\", \"rank\": 50 }\n  ],\n  \"flow\": {\n    \"initial\": \"idle\",\n    \"states\": {\n      \"idle\": { \"on_event\": { \"invoked\": { \"target\": \"reading\" } } },\n      \"reading\": { \"on_enter\": [\"ClipboardRead\"], \"on_event\": { \"clipboard_read\": { \"target\": \"translating\" } } },\n      \"translating\": { \"on_enter\": [{ \"LlmCall\": { \"prompt_template\": \"clipboard-translate-formal-en\" } }], \"on_event\": { \"llm_response\": { \"target\": \"writing\" } } },\n      \"writing\": { \"on_enter\": [\"ClipboardWrite\"], \"on_event\": { \"clipboard_written\": { \"target\": \"done\" } } },\n      \"done\": {}\n    }\n  }\n}\n```\n\n```typescript\nimport { Server } from '@modelcontextprotocol/sdk/server/index.js';\nimport { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';\nimport { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';\n\nconst server = new Server(\n  { name: 'clipboard-translate', version: '0.1.0' },\n  { capabilities: { tools: {} } },\n);\n\nserver.setRequestHandler(ListToolsRequestSchema, async () => ({\n  tools: [{\n    name: 'translate',\n    description: 'Translate clipboard text into formal English email tone.',\n    inputSchema: {\n      type: 'object',\n      properties: { text: { type: 'string' } },\n      required: ['text'],\n    },\n  }],\n}));\n\nserver.setRequestHandler(CallToolRequestSchema, async (req) => {\n  const { text } = req.params.arguments as { text: string };\n  // The kernel injects an llm capability via the host bridge.\n  const translated = await globalThis.ctrl.llm.call('clipboard-translate-formal-en', { input: text });\n  return { content: [{ type: 'text', text: translated }] };\n});\n\nconst transport = new StdioServerTransport();\nawait server.connect(transport);\n```"
+      }
+    ]
+  }
+]

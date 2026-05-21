@@ -17,7 +17,18 @@ const formatActivationError = (error: unknown): string => {
   return 'Unexpected error';
 };
 
-export const PoolRoute = (): React.ReactElement => {
+interface PoolRouteProps {
+  /**
+   * Override the default keycap activation behavior. When omitted the route
+   * calls `openWorkspace(id)` to drive the dedicated workspace window
+   * (per bao 2026-05-14). The dual-panel home view (decision_pc_mirrors_mobile_layout)
+   * passes its own handler so the right-hand iPhone panel reflects the
+   * activation immediately without spawning a second Tauri window.
+   */
+  onActivate?: (id: string) => void;
+}
+
+export const PoolRoute = ({ onActivate }: PoolRouteProps = {}): React.ReactElement => {
   const { data: keycaps = [], isLoading } = useQuery({
     queryKey: ['keycaps'],
     queryFn: listKeycaps,
@@ -31,6 +42,10 @@ export const PoolRoute = (): React.ReactElement => {
   }, [activationError]);
 
   const handleActivate = (id: string): void => {
+    if (onActivate) {
+      onActivate(id);
+      return;
+    }
     // Open the dedicated workspace WINDOW (not a tab in this window)
     // per bao 2026-05-14: 工作区不应该在主窗口, 应该是独立窗口.
     void openWorkspace(id).catch((err: unknown) => {

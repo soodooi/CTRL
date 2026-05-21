@@ -11,8 +11,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-uniffi = { version = "0.28", features = ["build"] }
-cbindgen = "0.27"
 
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
@@ -41,14 +39,20 @@ ciborium = "0.2"           # CBOR encoding (ST-SS wire format)
 rusqlite = { version = "0.32", features = ["bundled"] }  # event store
 wasmtime = { version = "27", default-features = false, features = ["async", "cranelift"] }  # WASM sandbox (P2.7)
 rmcp = { version = "1.6", features = ["client", "transport-child-process"] }  # MCP host (Anthropic official Rust SDK)
-uniffi = { version = "0.28", features = ["cli"] }  # Cross-language bindings (Swift / Kotlin / C# via community)
 # H-2026-05-13-001 sub-PR d — ST-SS WS bridge promoted from spike.
 tokio-tungstenite = "0.24"
+# H-2026-05-19-001 / ADR-012 — SubprocessActor PTY substrate for Code Space tiles.
+# Unix forkpty + Windows ConPTY 自动适配, wezterm 在生产用.
+portable-pty = "0.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# H-2026-05-14-002 mac/a — CGEventTap port lives in shell/hotkey.rs::mac_impl,
+# powered by core-graphics + core-foundation. AX permission prompts are now
+# handled by Tauri 2 (`tauri-plugin-os`) instead of macos-accessibility-client,
+# so that crate was retired in mac/d. objc2-* stays for NSWindow level/vibrancy
+# work in shell/window.rs.
 core-graphics = "0.24"
 core-foundation = "0.10"
-macos-accessibility-client = "0.0.1"
 objc2 = "0.5"
 objc2-foundation = { version = "0.2", features = ["NSGeometry"] }
 objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder"] }

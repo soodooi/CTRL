@@ -1,0 +1,56 @@
+.field {
+  /* Match TextInput height + radius so the two stack cleanly in forms. */
+  min-height: 44px;
+  width: 100%;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-out-expo),
+    background var(--duration-fast) var(--ease-out-expo),
+    box-shadow var(--duration-fast) var(--ease-out-expo);
+}
+
+.field:hover {
+  border-color: var(--color-text-muted);
+}
+
+.field:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 25%, transparent);
+}
+
+.recording {
+  border-color: var(--ctrl-blue);
+  background: color-mix(in oklab, var(--ctrl-blue) 8%, transparent);
+}
+
+.value { letter-spacing: 0.5px; }
+
+.placeholder { color: var(--color-text-soft); }
+
+.badge {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-muted);
+}
+
+.recording .badge {
+  background: var(--ctrl-blue);
+  color: var(--paper);
+}

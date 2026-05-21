@@ -4,7 +4,7 @@
 }
 
 .main {
-  max-width: var(--container-content, 920px);
+  max-width: var(--container-content);
   margin: 0 auto;
   padding: var(--space-8) var(--space-6);
   display: flex;

@@ -61,14 +61,30 @@ const eventKindClass = (event: EventRecord): string => {
   return cls(styles.opDefault);
 };
 
-export const WorkspaceRoute = (): React.ReactElement => {
-  const [keycapId, setKeycapId] = useState<string | null>(() => readKeycapId());
+interface WorkspaceRouteProps {
+  /**
+   * Override the keycap id source. When omitted the route reads the id from
+   * the URL (default behavior used by the dedicated Tauri workspace window).
+   * The dual-panel home view passes its own state so left/right panels stay
+   * in sync without round-tripping through hashchange.
+   */
+  keycapId?: string | null;
+}
+
+export const WorkspaceRoute = ({
+  keycapId: keycapIdProp,
+}: WorkspaceRouteProps = {}): React.ReactElement => {
+  const [urlKeycapId, setUrlKeycapId] = useState<string | null>(() => readKeycapId());
+  const keycapId = keycapIdProp !== undefined ? keycapIdProp : urlKeycapId;
 
   useEffect(() => {
-    const onHashChange = (): void => setKeycapId(readKeycapId());
+    // Skip the hashchange wiring when an explicit id is provided — the parent
+    // owns the lifecycle and we should not race it.
+    if (keycapIdProp !== undefined) return;
+    const onHashChange = (): void => setUrlKeycapId(readKeycapId());
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  }, [keycapIdProp]);
 
   const streamId = useMemo(() => (keycapId ? `keycap-${keycapId}` : null), [keycapId]);
   const { events, status, error } = useCellStream(streamId);

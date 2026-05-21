@@ -2,17 +2,19 @@
 // Outlet is referenced inside rootRoute.component below; the linter sees it
 // embedded in JSX.
 
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ReactElement } from 'react';
 import {
   RouterProvider,
   createRouter,
   createRootRoute,
   createRoute,
   Outlet,
-  Link,
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { StatusBar } from './components/StatusBar';
+import { BottomTab } from './components/BottomTab';
+import { HomeRoute } from './routes/home';
 import { PoolRoute } from './routes/pool';
 import styles from './app.module.css';
 
@@ -28,8 +30,14 @@ const SettingsRoute = lazy(() =>
 const IrisyRoute = lazy(() =>
   import('./routes/irisy').then((m) => ({ default: m.IrisyRoute })),
 );
+const CodeSpaceRoute = lazy(() =>
+  import('./routes/code-space').then((m) => ({ default: m.CodeSpaceRoute })),
+);
+const CodeSpaceDetailRoute = lazy(() =>
+  import('./routes/code-space').then((m) => ({ default: m.CodeSpaceDetailRoute })),
+);
 
-const LazyFallback = (): React.ReactElement => (
+const LazyFallback = (): ReactElement => (
   <div style={{ padding: 'var(--space-6)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
     Loading…
   </div>
@@ -38,28 +46,26 @@ const LazyFallback = (): React.ReactElement => (
 const rootRoute = createRootRoute({
   component: () => (
     <div className={styles.shell}>
-      <nav className={styles.nav} aria-label="Primary">
-        <Link to="/" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Pool
-        </Link>
-        <Link to="/workspace" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Workspace
-        </Link>
-        <Link to="/irisy" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Irisy
-        </Link>
-        <Link to="/settings" className={styles.navItem} activeProps={{ className: styles.navItemActive }}>
-          Settings
-        </Link>
-      </nav>
-      <Outlet />
+      <StatusBar />
+      <main className={styles.outlet}>
+        <Outlet />
+      </main>
+      <BottomTab />
     </div>
   ),
 });
 
+// `/` = the dual iPhone-frame home view (decision_pc_mirrors_mobile_layout).
+// `/pool` and `/workspace` remain as standalone routes — used by the Tauri
+// dedicated workspace window (per workspace.tsx header) and as deep-links.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  component: HomeRoute,
+});
+const poolRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/pool',
   component: PoolRoute,
 });
 const workspaceRoute = createRoute({
@@ -89,8 +95,34 @@ const irisyRoute = createRoute({
     </Suspense>
   ),
 });
+const codeSpaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/code-space',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <CodeSpaceRoute />
+    </Suspense>
+  ),
+});
+const codeSpaceDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/code-space/$envId',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <CodeSpaceDetailRoute />
+    </Suspense>
+  ),
+});
 
-const routeTree = rootRoute.addChildren([indexRoute, workspaceRoute, irisyRoute, settingsRoute]);
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  poolRoute,
+  workspaceRoute,
+  settingsRoute,
+  irisyRoute,
+  codeSpaceRoute,
+  codeSpaceDetailRoute,
+]);
 
 // Singleton router so `Register.router = typeof router` is concrete (gives
 // type-safe Link path autocompletion). Erased `ReturnType<typeof createRouter>`
@@ -114,7 +146,7 @@ const queryClient = new QueryClient({
   },
 });
 
-export const App = (): React.ReactElement => (
+export const App = (): ReactElement => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
