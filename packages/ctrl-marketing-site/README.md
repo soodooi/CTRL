@@ -30,3 +30,11 @@ Cloudflare Pages. Settings in `.olym/handoffs/H-2026-05-17-apollo-marketing-v0.m
 - Copy is English-only v0; Chinese bilingual = v0.1.
 - No weight claims (`fast`, `tiny`, MB / startup time) without Zeus sign-off.
 - v1.1 features (multi-model routing, screenshot → Irisy, doubao perf) NOT in copy.
+
+## v0 themis deferrals (bao-waived 2026-05-21 → tracked in H-2026-05-19-004)
+
+- **HIGH-1** `functions/api/waitlist.ts` — `onRequest` catch-all returns 405 for OPTIONS preflight.
+  v0 is same-origin only; cross-origin embed will need an explicit OPTIONS handler.
+- **HIGH-2** `functions/api/waitlist.ts` — `console.log` with PII (email + IP + UA).
+  v0 "log only, no DB" trade-off; CF Worker log retention ≤ 7d. v0.1 replaces with structured
+  Tail Worker sink + D1 / KV with at-rest encryption before real traffic lands.
