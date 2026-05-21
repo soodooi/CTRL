@@ -1,0 +1,96 @@
+---
+const steps = [
+  {
+    n: "01",
+    title: "Summon a workspace",
+    body: "Tap Ctrl. An ephemeral surface drops in. Done with it? Tap again and it's gone.",
+  },
+  {
+    n: "02",
+    title: "Pick a keycap",
+    body: "Each keycap is one AI tool — MCP server, OAuth platform, local agent, or a shared window from another app.",
+  },
+  {
+    n: "03",
+    title: "Ship your own",
+    body: "Fill in fields, no code needed to publish a keycap. Share it with the community.",
+  },
+];
+---
+
+<section id="how" class="how">
+  <div class="container">
+    <p class="eyebrow">How it works</p>
+    <h2 class="how__title">One key. Many tools. Your stack.</h2>
+
+    <ol class="how__steps" role="list">
+      {
+        steps.map((s) => (
+          <li class="how__step">
+            <span class="how__num">{s.n}</span>
+            <h3 class="how__step-title">{s.title}</h3>
+            <p class="how__step-body">{s.body}</p>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .how {
+    padding-block: var(--space-section);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .how__title {
+    font-size: var(--text-2xl);
+    line-height: 1.05;
+    max-width: 20ch;
+    margin-bottom: var(--space-12);
+  }
+
+  .how__steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--space-6);
+  }
+
+  .how__step {
+    padding: var(--space-6);
+    background: var(--graphite-soft);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-lg);
+    transition: border-color var(--duration-fast) var(--ease-out-quart);
+  }
+
+  .how__step:hover {
+    border-color: rgba(90, 138, 239, 0.35);
+  }
+
+  .how__num {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    color: var(--ctrl-blue-light);
+    letter-spacing: 0.16em;
+    margin-bottom: var(--space-4);
+  }
+
+  .how__step-title {
+    font-size: var(--text-xl);
+    font-weight: var(--weight-bold);
+    line-height: 1.1;
+    margin-bottom: var(--space-3);
+  }
+
+  .how__step-body {
+    font-size: var(--text-base);
+    color: var(--paper-soft);
+    line-height: 1.6;
+  }
+</style>
