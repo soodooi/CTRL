@@ -95,3 +95,54 @@ export const getKey = (account: string): Promise<string | null> =>
 
 export const deleteKey = (account: string): Promise<void> =>
   invoke('delete_key', { account });
+
+// === Code Space (remote coding envs) ===
+//
+// All cs_* commands live behind these typed wrappers so the rest of the
+// app never strings-types the Rust command names. Mirrors the Rust
+// signatures in src-tauri/src/commands/code_space.rs.
+
+/** Default PTY geometry. cs_spawn applies the same fallbacks server-side
+    if omitted, but supplying them here keeps the frontend honest about
+    what it asked for and gives the NewEnvModal a single place to override. */
+export const DEFAULT_PTY_COLS = 80;
+export const DEFAULT_PTY_ROWS = 24;
+
+export interface CsSpawnArgs {
+  command: string;
+  args?: ReadonlyArray<string>;
+  cwd?: string;
+  env?: Readonly<Record<string, string>>;
+  cols?: number;
+  rows?: number;
+}
+
+export interface CsSpawnReply {
+  stream_id: string;
+}
+
+export const csSpawn = (spec: CsSpawnArgs): Promise<CsSpawnReply> =>
+  invoke('cs_spawn', {
+    args: {
+      cols: DEFAULT_PTY_COLS,
+      rows: DEFAULT_PTY_ROWS,
+      ...spec,
+    },
+  });
+
+/** Today returns `string[]` of active stream_ids. Defensive `unknown`
+    return type lets callers map into a richer envelope when the kernel
+    extends cs_list without breaking this typed surface. */
+export const csList = (): Promise<unknown> => invoke('cs_list');
+
+export const csStdin = (stream_id: string, data_b64: string): Promise<void> =>
+  invoke('cs_stdin', { args: { stream_id, data_b64 } });
+
+export const csResize = (stream_id: string, cols: number, rows: number): Promise<void> =>
+  invoke('cs_resize', { args: { stream_id, cols, rows } });
+
+export const csSignal = (stream_id: string, signal: string): Promise<void> =>
+  invoke('cs_signal', { args: { stream_id, signal } });
+
+export const csKill = (stream_id: string): Promise<void> =>
+  invoke('cs_kill', { args: { stream_id } });

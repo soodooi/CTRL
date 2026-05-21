@@ -1,115 +1,13 @@
-.layout {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  background: var(--color-background);
-}
-
-/* === Top tab bar — horizontal scroll if needed, sticky === */
-
-.tabs {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.tabs::-webkit-scrollbar { display: none; }
-
-.tab {
-  flex-shrink: 0;
-  /* 44pt min touch target — bao 2026-05-18 钦定. */
-  min-height: 44px;
-  padding: 0 var(--space-3);
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  cursor: pointer;
-  transition:
-    background var(--duration-fast) var(--ease-out-expo),
-    color var(--duration-fast) var(--ease-out-expo);
-}
-
-.tab:hover {
-  background: var(--color-surface-elevated);
-  color: var(--color-text);
-}
-
-.tabActive {
-  background: var(--ctrl-blue);
-  color: var(--paper);
-}
-
-.tab:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-/* === Scroll surface for the grouped list === */
-
-.scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
-
-/* === Group block (project / lane / agent header + grid) === */
-
-.group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.groupHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--space-1);
-}
-
-.groupLabel {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--color-text-muted);
-}
-
-.groupCount {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--color-text-soft);
-  background: var(--color-surface-elevated);
-  border-radius: var(--radius-pill);
-  padding: 2px var(--space-2);
-}
-
-/* === Grid: 1 col mobile, 2 col tablet, 3 col wide === */
-
 .grid {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: var(--space-4);
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--space-3);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 @media (min-width: 720px) {
@@ -124,12 +22,19 @@
 /* === Card === */
 
 .card {
+  appearance: none;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
   display: flex;
   flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  font-family: var(--font-sans);
+  color: var(--color-text);
   transition:
     border-color var(--duration-fast) var(--ease-out-expo),
     background var(--duration-fast) var(--ease-out-expo);
@@ -139,28 +44,16 @@
   border-color: var(--color-text-muted);
 }
 
-.cardBody {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  cursor: pointer;
-  padding: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  /* 44pt-safe — body alone is ≥ 44px because of the stack inside. */
-}
-
-.cardBody:focus-visible {
+.card:focus-visible {
   outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 .cardHead {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .streamId {
@@ -171,25 +64,12 @@
   word-break: break-all;
 }
 
-.meta {
+.command {
   margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  align-items: center;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--color-text-muted);
-}
-
-.agent {
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--color-text);
-}
-
-.dot {
-  color: var(--color-text-soft);
+  word-break: break-word;
 }
 
 .footer {
@@ -218,10 +98,6 @@
   background: color-mix(in oklab, var(--color-success) 18%, transparent);
   color: var(--color-success);
 }
-.statusIdle {
-  background: color-mix(in oklab, var(--color-warning) 16%, transparent);
-  color: var(--color-warning);
-}
 .statusCrashed {
   background: color-mix(in oklab, var(--color-danger) 18%, transparent);
   color: var(--color-danger);
@@ -231,12 +107,48 @@
   color: var(--color-text-muted);
 }
 
-/* === Card actions (Start / Stop) === */
+/* === Empty state === */
 
-.cardActions {
+.empty {
+  flex: 1;
   display: flex;
-  justify-content: flex-end;
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+}
+
+.emptyMessage {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.emptyAction {
+  /* 44pt touch target — mobile rule (bao 2026-05-18 钦定). */
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  background: var(--ctrl-blue);
+  color: var(--paper);
+  border: none;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-expo);
+}
+
+.emptyAction:hover {
+  background: var(--ctrl-blue-light);
+}
+
+.emptyAction:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }

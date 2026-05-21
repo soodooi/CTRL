@@ -44,3 +44,14 @@ export const formatHHMM = (d: Date): string => {
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
 };
+
+/** Two-digit zero-padded HH:MM:SS — same source as formatHHMM, extra
+    seconds segment for callers that pin cell timestamps (workspace feed,
+    code-space rail log). Pass a Date or a ms timestamp. */
+export const formatHHMMSS = (input: Date | number): string => {
+  const d = typeof input === 'number' ? new Date(input) : input;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+};

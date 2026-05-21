@@ -20,6 +20,20 @@
   background: var(--color-surface);
 }
 
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.headerError {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
 .title {
   margin: 0;
   font-family: var(--font-display);

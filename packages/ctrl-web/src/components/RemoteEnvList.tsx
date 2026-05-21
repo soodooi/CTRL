@@ -1,175 +1,99 @@
-// RemoteEnvList — mobile-first list of remote coding environments,
-// grouped by project / lane / agent or shown flat.
+// RemoteEnvList — flat list of active remote coding environments.
 //
-// Top tab bar drives the grouping mode; each env card surfaces stream_id,
-// agent type, project / lane, status pill, last activity, and a primary
-// Start/Stop action. Tapping the card body invokes `onOpen(envId)` — the
-// caller is responsible for routing.
-//
-// Mobile-first layout: 1-col stack below 720px, 2-col 720-1080, 3-col
-// above. Touch targets ≥ 44pt. Status colors flow through tokens.css
-// (--color-success / --color-warning / --color-danger / --color-text-muted).
+// The kernel's `cs_list` currently returns just `string[]` of stream_ids.
+// This component renders the minimal display the contract supports today:
+// each row shows the stream id and (when the eventual envelope extension
+// lands) an optional status pill and relative-time footer. The
+// project/lane/agent grouping that lived in the mock data is removed —
+// it will return when the C2 metadata contract surfaces those fields.
 
-import { useMemo, useState, type ReactElement } from 'react';
-import type { AgentType, EnvStatus, RemoteEnv } from '@/lib/mock-envs';
-import { formatRelativeTime } from '@/lib/mock-envs';
-import { Button, cx } from '@/components/primitives';
+import type { ReactElement } from 'react';
+import { formatRelativeShort } from '@/lib/relative-time';
+import { cx } from './primitives/cx';
 import styles from './RemoteEnvList.module.css';
 
-type GroupBy = 'all' | 'project' | 'lane' | 'agent';
+/**
+ * Process-life status for a remote env. Models kernel-side actor state
+ * (does the SubprocessActor still exist on disk?), NOT the frontend's
+ * WebSocket bridge state. See `SubprocessChannelStatus` in
+ * `@/hooks/useSubprocessChannel` for the channel-lifecycle counterpart —
+ * the detail view shows that one because it cares whether the bridge
+ * socket is attached, not whether the env actor is alive.
+ */
+export type EnvLifeStatus = 'running' | 'crashed' | 'stopped';
 
-const TABS: ReadonlyArray<{ id: GroupBy; label: string }> = [
-  { id: 'all', label: 'All' },
-  { id: 'project', label: 'By Project' },
-  { id: 'lane', label: 'By Lane' },
-  { id: 'agent', label: 'By Agent' },
-];
+export interface ListedEnv {
+  /** Stable id used by ST-SS / Tauri cs_* commands. */
+  stream_id: string;
+  /** Optional — present once kernel extends cs_list to an envelope. */
+  status?: EnvLifeStatus;
+  /** Optional — ISO-8601 spawn moment, when the envelope ships. */
+  started_at_iso?: string;
+  /** Optional — the command that started this env, for human display. */
+  command?: string;
+}
 
 interface Props {
-  envs: ReadonlyArray<RemoteEnv>;
+  envs: ReadonlyArray<ListedEnv>;
   /** Tapping a card body. */
-  onOpen: (envId: string) => void;
-  /** Start / stop the env. UI optimistically renders the toggle; the caller
-      decides whether to flip the local store. */
-  onToggle: (envId: string, action: 'start' | 'stop') => void;
+  onOpen: (streamId: string) => void;
+  /** Rendered when the list is empty so the caller can route the user to
+      a spawn affordance. Optional — if omitted a plain message renders. */
+  onNew?: () => void;
+  /** Override the empty-state copy. */
+  emptyMessage?: string;
 }
 
-interface Group {
-  key: string;
-  label: string;
-  envs: ReadonlyArray<RemoteEnv>;
-}
-
-const groupEnvs = (envs: ReadonlyArray<RemoteEnv>, mode: GroupBy): Group[] => {
-  if (mode === 'all') {
-    return [{ key: 'all', label: 'All environments', envs: sortByActivity(envs) }];
-  }
-  const buckets = new Map<string, RemoteEnv[]>();
-  for (const env of envs) {
-    const key =
-      mode === 'project' ? env.project : mode === 'lane' ? env.lane : env.agent_type;
-    const list = buckets.get(key) ?? [];
-    list.push(env);
-    buckets.set(key, list);
-  }
-  return Array.from(buckets.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, list]) => ({ key, label: key, envs: sortByActivity(list) }));
-};
-
-const sortByActivity = <T extends Pick<RemoteEnv, 'last_activity_iso'>>(
-  items: ReadonlyArray<T>,
-): T[] =>
-  [...items].sort(
-    (a, b) =>
-      new Date(b.last_activity_iso).getTime() - new Date(a.last_activity_iso).getTime(),
-  );
-
-// Record-typed table forces the TS compiler to loud-fail if EnvStatus
-// gains a new variant without a matching class. Cheaper than a switch +
-// noFallthroughCasesInSwitch for the same exhaustiveness guarantee.
-const STATUS_CLASS: Record<EnvStatus, string> = {
+const STATUS_CLASS: Record<EnvLifeStatus, string> = {
   running: styles.statusRunning ?? '',
-  idle: styles.statusIdle ?? '',
   crashed: styles.statusCrashed ?? '',
   stopped: styles.statusStopped ?? '',
 };
 
-const statusVariantClass = (status: EnvStatus): string => STATUS_CLASS[status];
-
-const isRunning = (status: EnvStatus): boolean => status === 'running' || status === 'idle';
-
-// Global replace — agent_type values like "cursor-agent" / "gpt-engineer"
-// can carry more than one dash in future variants.
-const agentBadge = (agent: AgentType): string => agent.replace(/-/g, ' ');
-
-export const RemoteEnvList = ({ envs, onOpen, onToggle }: Props): ReactElement => {
-  const [groupBy, setGroupBy] = useState<GroupBy>('all');
-  const groups = useMemo(() => groupEnvs(envs, groupBy), [envs, groupBy]);
+export const RemoteEnvList = ({
+  envs,
+  onOpen,
+  onNew,
+  emptyMessage = 'No active environments yet.',
+}: Props): ReactElement => {
+  if (envs.length === 0) {
+    return (
+      <div className={styles.empty} role="status">
+        <p className={styles.emptyMessage}>{emptyMessage}</p>
+        {onNew && (
+          <button type="button" className={styles.emptyAction} onClick={onNew}>
+            + New environment
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className={styles.layout}>
-      <div className={styles.tabs} role="tablist" aria-label="Group remote environments by">
-        {TABS.map((tab) => {
-          const active = tab.id === groupBy;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className={cx(styles.tab, active && styles.tabActive)}
-              onClick={() => setGroupBy(tab.id)}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className={styles.scroll}>
-        {groups.map((group) => (
-          // aria-labelledby is only wired when the header (and thus its id)
-          // is actually rendered — otherwise we'd point at a non-existent
-          // node, which AT clients handle inconsistently. React omits
-          // attributes with undefined values entirely, so this is a no-op
-          // attribute in 'all' mode.
-          <section
-            key={group.key}
-            className={styles.group}
-            aria-labelledby={groupBy !== 'all' ? `group-${group.key}` : undefined}
+    <ul className={styles.grid} aria-label="Active remote environments">
+      {envs.map((env) => (
+        <li key={env.stream_id} className={styles.cell}>
+          <button
+            type="button"
+            className={styles.card}
+            onClick={() => onOpen(env.stream_id)}
+            aria-label={`Open ${env.stream_id}`}
           >
-            {groupBy !== 'all' && (
-              <header className={styles.groupHead}>
-                <h2 id={`group-${group.key}`} className={styles.groupLabel}>
-                  {group.label}
-                </h2>
-                <span className={styles.groupCount}>{group.envs.length}</span>
-              </header>
+            <header className={styles.cardHead}>
+              {env.status && (
+                <span className={cx(styles.statusPill, STATUS_CLASS[env.status])}>
+                  {env.status}
+                </span>
+              )}
+              <span className={styles.streamId}>{env.stream_id}</span>
+            </header>
+            {env.command && <p className={styles.command}>{env.command}</p>}
+            {env.started_at_iso && (
+              <p className={styles.footer}>{formatRelativeShort(env.started_at_iso)}</p>
             )}
-            <ul className={styles.grid}>
-              {group.envs.map((env) => (
-                <li key={env.id} className={styles.cell}>
-                  <article className={styles.card}>
-                    <button
-                      type="button"
-                      className={styles.cardBody}
-                      onClick={() => onOpen(env.id)}
-                      aria-label={`Open ${env.stream_id}`}
-                    >
-                      <header className={styles.cardHead}>
-                        <span className={cx(styles.statusPill, statusVariantClass(env.status))}>
-                          {env.status}
-                        </span>
-                        <span className={styles.streamId}>{env.stream_id}</span>
-                      </header>
-                      <p className={styles.meta}>
-                        <span className={styles.agent}>{agentBadge(env.agent_type)}</span>
-                        <span className={styles.dot} aria-hidden="true">·</span>
-                        <span>{env.project}</span>
-                        <span className={styles.dot} aria-hidden="true">/</span>
-                        <span>{env.lane}</span>
-                      </p>
-                      <p className={styles.footer}>
-                        {env.host ?? 'no host'} · {formatRelativeTime(env.last_activity_iso)}
-                      </p>
-                    </button>
-                    <div className={styles.cardActions}>
-                      <Button
-                        size="sm"
-                        variant={isRunning(env.status) ? 'ghost' : 'primary'}
-                        onClick={() => onToggle(env.id, isRunning(env.status) ? 'stop' : 'start')}
-                      >
-                        {isRunning(env.status) ? 'Stop' : 'Start'}
-                      </Button>
-                    </div>
-                  </article>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
-    </div>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 };
