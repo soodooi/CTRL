@@ -66,9 +66,16 @@ impl HotkeyController {
 
     /// Reset the hotkey state machine. Call this when the window is shown
     /// to clear any partial state that might interfere with closing.
+    ///
+    /// Critical on macOS: CGEventTap state can desync after Cmd-Tab app
+    /// switches (modifier-flag races), leaving ctrl_pending stuck. Without
+    /// reset, the 3rd+ Ctrl tap silently no-ops because the state machine
+    /// thinks Ctrl is still down from a previous cycle.
     pub fn reset_state() {
         #[cfg(target_os = "windows")]
         win_impl::reset_hotkey_state();
+        #[cfg(target_os = "macos")]
+        mac_impl::reset_hotkey_state();
     }
 }
 
@@ -451,6 +458,22 @@ mod mac_impl {
         CtrlDown(CGEventFlags),
         CtrlUp,
         OtherDown,
+    }
+
+    /// Reset the tap state machine. Called by WindowController::toggle when
+    /// the window is shown to prevent stuck ctrl_pending state caused by
+    /// Cmd-Tab app switches dropping FlagsChanged events asymmetrically
+    /// (CtrlDown observed but CtrlUp delivered to the other app).
+    pub(crate) fn reset_hotkey_state() {
+        let Some(state_cell) = STATE.get() else {
+            return;
+        };
+        if let Ok(mut state) = state_cell.try_lock() {
+            tracing::info!("Hotkey state reset (macOS, window shown)");
+            state.ctrl_pending = false;
+            state.other_seen = false;
+            state.ctrl_down_at = None;
+        }
     }
 
     /// Mirrors `win_impl::is_any_other_modifier_down` — at Ctrl-down time,

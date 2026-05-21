@@ -92,13 +92,22 @@ impl WindowController {
         }
         #[cfg(not(target_os = "windows"))]
         {
-            // Non-Windows: fall back to hide/show; the cloak bug is Win11-specific.
+            // macOS: cloak bug is Win11-specific, native hide/show works.
+            // BUT: CGEventTap modifier-flag race after Cmd-Tab app switches
+            // can leave ctrl_pending stuck. Reset hotkey state on show so the
+            // 3rd+ Ctrl tap doesn't silently no-op.
             let visible = w.is_visible().unwrap_or(false);
             if visible {
+                tracing::info!("WindowController::toggle — hide (macOS)");
                 let _ = w.hide();
             } else {
+                tracing::info!("WindowController::toggle — show (macOS)");
                 let _ = w.show();
                 let _ = w.set_focus();
+                // Mirror Win path: clear hotkey state so the next Ctrl tap
+                // starts fresh regardless of what FlagsChanged events were
+                // dropped while the window was off-screen.
+                super::hotkey::HotkeyController::reset_state();
             }
         }
         Ok(())
