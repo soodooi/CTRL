@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>CTRL — home layout variants (A–E)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --ctrl-blue: oklch(0.45 0.19 264);
+    --ctrl-blue-light: oklch(0.65 0.16 252);
+    --paper: oklch(0.98 0 0);
+    --ink: oklch(0.18 0 0);
+    --ink-faint: oklch(0.65 0 0);
+    --graphite: oklch(0.13 0.005 264);
+    --graphite-soft: oklch(0.17 0.005 264);
+    --graphite-soft-2: oklch(0.22 0.005 264);
+    --keycap-amber: oklch(0.78 0.16 80);
+    --keycap-jade: oklch(0.65 0.15 162);
+    --status-success: oklch(0.65 0.15 162);
+    --status-warning: oklch(0.78 0.16 80);
+    --status-danger: oklch(0.55 0.22 27);
+    --color-accent: var(--ctrl-blue-light);
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+    --space-6: 24px; --space-8: 32px; --space-12: 48px;
+    --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px; --radius-pill: 9999px;
+    --font-sans: "Inter", "SF Pro Text", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    --font-display: "Inter", "SF Pro Display", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--graphite);
+    color: var(--paper);
+    min-height: 100vh;
+    padding: var(--space-8);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Page chrome */
+  .page { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-6); }
+  .header h1 { margin: 0; font-family: var(--font-display); font-size: 28px; font-weight: 900; letter-spacing: -0.5px; }
+  .header p { margin: 4px 0 0; color: var(--ink-faint); font-family: var(--font-mono); font-size: 13px; }
+  .tweaks { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+  .tweak {
+    min-width: 80px; min-height: 44px; padding: 0 var(--space-3);
+    background: transparent; border: 1px solid var(--graphite-soft-2);
+    border-radius: var(--radius-pill); color: var(--ink-faint);
+    font-family: var(--font-mono); font-size: 13px; letter-spacing: 1px; text-transform: uppercase;
+    cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-2);
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  }
+  .tweak:hover { background: var(--graphite-soft); color: var(--paper); }
+  .tweakActive { background: var(--ctrl-blue); border-color: var(--ctrl-blue); color: var(--paper); }
+  .tweak b { font-weight: 700; }
+  .tweak span { font-weight: 400; text-transform: none; letter-spacing: 0.5px; font-size: 12px; }
+  /* Two-col stage */
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--space-6); align-items: start; }
+  @media (max-width: 1100px) { .stage { grid-template-columns: 1fr; } }
+
+  /* Floating window — clean edge, NO device bezel */
+  .window {
+    width: 920px; height: 560px; max-width: 100%;
+    background: var(--graphite);
+    border: 1px solid var(--graphite-soft-2);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 24px 64px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.3);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .windowWrap { display: flex; align-items: flex-start; justify-content: center; padding: var(--space-2); background: oklch(0.10 0.005 264); border-radius: var(--radius-lg); }
+  /* Faint window chrome line (replaces device bezel) — just a 1px tinted edge */
+  .windowEdge { position: absolute; inset: 0; pointer-events: none; border: 1px solid rgb(255 255 255 / 0.04); border-radius: inherit; }
+
+  /* === Shared mini-components used by multiple variants === */
+  .statusBar {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-2) var(--space-4); min-height: 32px;
+    background: var(--graphite-soft);
+    border-bottom: 1px solid var(--graphite-soft-2);
+  }
+  .logoMark { width: 20px; height: 20px; flex-shrink: 0; }
+  .wordmark { font-family: var(--font-display); font-weight: 900; font-size: 13px; letter-spacing: 1px; }
+  .barTime { margin-left: auto; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: 0.5px; }
+  .ledDot { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--status-success); box-shadow: 0 0 8px color-mix(in oklab, var(--status-success) 60%, transparent); }
+  .ledIdle { background: var(--ink-faint); box-shadow: none; }
+
+  .bottomTab { display: flex; background: var(--graphite-soft); border-top: 1px solid var(--graphite-soft-2); }
+  .bottomTabItem { flex: 1; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--ink-faint); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; border-top: 2px solid transparent; }
+  .bottomTabActive { color: var(--color-accent); border-top-color: var(--color-accent); }
+  .bottomTabItem svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* Body area between status + bottom tab */
+  .body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+
+  /* Variant A — command palette */
+  .palStage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: var(--space-4); padding: var(--space-12) var(--space-8) var(--space-6); }
+  .palInput { width: 100%; max-width: 640px; background: var(--graphite-soft-2); border: 1px solid var(--graphite-soft-2); border-radius: var(--radius-lg); padding: 18px var(--space-6); display: flex; align-items: center; gap: var(--space-3); }
+  .palInputBox { color: var(--ink-faint); font-family: var(--font-mono); font-size: 16px; flex: 1; }
+  .palInputCaret { width: 1px; height: 18px; background: var(--paper); animation: caret 1s steps(2) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+  .palResults { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: var(--space-4); }
+  .palGroupTitle { color: var(--ink-faint); font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; padding: 0 var(--space-2); }
+  .palRow { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: transparent; transition: background 150ms ease; }
+  .palRowActive { background: var(--graphite-soft); }
+  .palRowIcon { width: 22px; height: 22px; border-radius: var(--radius-sm); background: var(--ctrl-blue); display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .palRowText { flex: 1; font-family: var(--font-mono); font-size: 13px; }
+  .palRowHint { color: var(--ink-faint); font-family: var(--font-mono); font-size: 11px; }
+
+  /* Variant B — Code Space first */
+  .csHeader { display: flex; justify-content: space-between; align-items: flex-start; padding: var(--space-4) var(--space-4); border-bottom: 1px solid var(--graphite-soft-2); background: var(--graphite-soft); }
+  .csTitle { font-family: var(--font-display); font-size: 18px; font-weight: 900; letter-spacing: -0.5px; margin: 0; }
+  .csSubtitle { margin: 2px 0 0; color: var(--ink-faint); font-family: var(--font-mono); font-size: 11px; }
+  .csNew { background: var(--ctrl-blue); color: var(--paper); border: 0; border-radius: var(--radius-pill); padding: 0 var(--space-4); min-height: 44px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+  .csGrid { padding: var(--space-4); display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); overflow-y: auto; flex: 1; }
+  .csCard { padding: var(--space-4); border: 1px solid var(--graphite-soft-2); border-radius: var(--radius-lg); background: var(--graphite-soft); display: flex; flex-direction: column; gap: var(--space-2); }
+  .csCardHead { display: flex; align-items: center; gap: var(--space-2); }
+  .csPill { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 2px var(--space-2); border-radius: var(--radius-pill); }
+  .csPillRunning { background: color-mix(in oklab, var(--status-success) 18%, transparent); color: var(--status-success); }
+  .csPillIdle { background: color-mix(in oklab, var(--status-warning) 16%, transparent); color: var(--status-warning); }
+  .csStream { font-family: var(--font-mono); font-size: 12px; color: var(--paper); letter-spacing: 0.5px; }
+  .csCmd { margin: 0; font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+  .csFoot { margin: 0; font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+
+  /* Variant C — dashboard tiles */
+  .dashStage { padding: var(--space-6) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); flex: 1; overflow-y: auto; }
+  .dashGreeting { font-family: var(--font-display); font-size: 22px; font-weight: 900; letter-spacing: -0.5px; margin: 0; }
+  .dashGreetSub { margin: 4px 0 var(--space-3); color: var(--ink-faint); font-family: var(--font-mono); font-size: 12px; }
+  .tileRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); }
+  .tile { padding: var(--space-4); border-radius: var(--radius-lg); border: 1px solid var(--graphite-soft-2); background: var(--graphite-soft); display: flex; flex-direction: column; gap: var(--space-2); min-height: 150px; }
+  .tileLabel { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-faint); }
+  .tileTitle { margin: 0; font-family: var(--font-display); font-size: 16px; font-weight: 700; }
+  .tileMeta { margin: auto 0 0; font-family: var(--font-mono); font-size: 11px; color: var(--color-accent); }
+  .tileAccent { color: var(--keycap-amber); }
+  .tileAccentJade { color: var(--keycap-jade); }
+
+  /* Variant E — hybrid overlay */
+  .overlay { position: absolute; inset: 0; background: rgb(0 0 0 / 0.5); display: flex; align-items: flex-start; justify-content: center; padding-top: 90px; }
+  .overlayCard { width: 540px; background: var(--graphite-soft-2); border: 1px solid var(--graphite-soft-2); border-radius: var(--radius-lg); box-shadow: 0 24px 64px rgb(0 0 0 / 0.45); }
+
+  /* Metadata sidebar */
+  .meta { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--graphite-soft-2); border-radius: var(--radius-lg); background: var(--graphite-soft); }
+  .metaKey { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 var(--space-2); }
+  .metaBody { font-family: var(--font-sans); font-size: 13px; line-height: 1.6; color: var(--paper); }
+  .metaBody code { font-family: var(--font-mono); font-size: 12px; color: var(--color-accent); }
+  .metaList { margin: 0; padding-left: var(--space-4); font-size: 13px; line-height: 1.6; }
+  .metaList.pros li::marker { color: var(--status-success); }
+  .metaList.cons li::marker { color: var(--status-danger); }
+
+  /* Floating callouts on the mock — anchored by absolute positioning relative to .windowWrap */
+  .calloutLayer { position: absolute; inset: 0; pointer-events: none; }
+  .callout { position: absolute; background: var(--graphite-soft-2); color: var(--paper); border: 1px solid var(--graphite-soft-2); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); font-family: var(--font-mono); font-size: 11px; max-width: 240px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.5); }
+  .calloutLine { position: absolute; border-left: 1px dashed var(--color-accent); }
+  .calloutDot { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--color-accent); position: absolute; box-shadow: 0 0 8px var(--color-accent); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useState } = React;
+
+const LogoMark = () => (
+  <svg className="logoMark" viewBox="0 0 128 128" aria-hidden="true">
+    <rect x="14" y="22" width="100" height="92" rx="12" fill="#16267D" />
+    <rect x="20" y="28" width="88" height="78" rx="9" fill="#1E3FB0" />
+    <rect x="42" y="8" width="44" height="6" rx="1" fill="#1E3FB0" />
+  </svg>
+);
+
+const StatusBar = ({ irisyChip }) => (
+  <header className="statusBar">
+    <LogoMark />
+    <span className="wordmark">CTRL</span>
+    {irisyChip && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-faint)', padding: '2px 10px', border: '1px solid var(--graphite-soft-2)', borderRadius: 9999 }}>● {irisyChip}</span>}
+    <span className="barTime">17:42</span>
+    <span className="ledDot" title="Kernel connected" />
+  </header>
+);
+
+const Icon = {
+  Keyboard: () => (<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" /></svg>),
+  Code:     () => (<svg viewBox="0 0 24 24"><path d="M8 6L2 12l6 6M16 6l6 6-6 6" /></svg>),
+  Spark:    () => (<svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" /></svg>),
+  Gear:     () => (<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .3 1.8 2 2 0 1 1-2.8 2.8 1.65 1.65 0 0 0-1.8-.3 1.65 1.65 0 0 0-1 1.5 2 2 0 1 1-4 0 1.65 1.65 0 0 0-1-1.5 1.65 1.65 0 0 0-1.8.3 2 2 0 1 1-2.8-2.8 1.65 1.65 0 0 0 .3-1.8 1.65 1.65 0 0 0-1.5-1 2 2 0 1 1 0-4 1.65 1.65 0 0 0 1.5-1 1.65 1.65 0 0 0-.3-1.8 2 2 0 1 1 2.8-2.8 1.65 1.65 0 0 0 1.8.3 1.65 1.65 0 0 0 1-1.5 2 2 0 1 1 4 0 1.65 1.65 0 0 0 1 1.5 1.65 1.65 0 0 0 1.8-.3 2 2 0 1 1 2.8 2.8 1.65 1.65 0 0 0-.3 1.8 1.65 1.65 0 0 0 1.5 1 2 2 0 1 1 0 4 1.65 1.65 0 0 0-1.5 1z" /></svg>),
+};
+
+const BottomTab = ({ active = 'code' }) => {
+  const tabs = [
+    { id: 'code',     label: 'Code',     icon: <Icon.Code /> },
+    { id: 'pool',     label: 'Pool',     icon: <Icon.Keyboard /> },
+    { id: 'irisy',    label: 'Irisy',    icon: <Icon.Spark /> },
+    { id: 'settings', label: 'Settings', icon: <Icon.Gear /> },
+  ];
+  return (
+    <nav className="bottomTab" aria-label="Primary">
+      {tabs.map((t) => (
+        <div key={t.id} className={`bottomTabItem ${active === t.id ? 'bottomTabActive' : ''}`}>
+          {t.icon}<span>{t.label}</span>
+        </div>
+      ))}
+    </nav>
+  );
+};
+
+// === Mock surfaces ===
+
+const PaletteSurface = () => (
+  <div className="palStage">
+    <div className="palInput">
+      <span style={{ color: 'var(--ink-faint)' }}>⌕</span>
+      <span className="palInputBox">Run anything…</span>
+      <span className="palInputCaret" />
+    </div>
+    <div className="palResults">
+      <span className="palGroupTitle">Recent</span>
+      <div className="palRowActive palRow">
+        <span className="palRowIcon">CS</span>
+        <span className="palRowText">claude · ~/code/ctrl</span>
+        <span className="palRowHint">↵</span>
+      </div>
+      <div className="palRow">
+        <span className="palRowIcon" style={{ background: 'var(--keycap-amber)' }}>AI</span>
+        <span className="palRowText">Irisy · poster prompt</span>
+        <span className="palRowHint">2m ago</span>
+      </div>
+      <span className="palGroupTitle">Pinned</span>
+      <div className="palRow">
+        <span className="palRowIcon" style={{ background: 'var(--keycap-jade)' }}>KP</span>
+        <span className="palRowText">Translate selection</span>
+        <span className="palRowHint">⌘1</span>
+      </div>
+      <div className="palRow">
+        <span className="palRowIcon">CS</span>
+        <span className="palRowText">aider · last project</span>
+        <span className="palRowHint">⌘2</span>
+      </div>
+    </div>
+  </div>
+);
+
+const CodeSpaceSurface = ({ heroCta }) => (
+  <>
+    <header className="csHeader">
+      <div>
+        <h1 className="csTitle">Code Space</h1>
+        <p className="csSubtitle">Active remote coding environments.</p>
+      </div>
+      {heroCta && <button className="csNew">+ New</button>}
+    </header>
+    <div className="csGrid">
+      {[
+        { id: 'stream-a8f3c2', cmd: 'claude', state: 'running', host: 'macbook · 2m' },
+        { id: 'stream-7b1de9', cmd: 'aider',  state: 'idle',    host: 'macbook · 18m' },
+        { id: 'stream-4c92ab', cmd: 'bash',   state: 'running', host: 'tokyo-vps · 1m' },
+      ].map((e) => (
+        <div key={e.id} className="csCard">
+          <div className="csCardHead">
+            <span className={`csPill ${e.state === 'running' ? 'csPillRunning' : 'csPillIdle'}`}>{e.state}</span>
+            <span className="csStream">{e.id}</span>
+          </div>
+          <p className="csCmd">{e.cmd}</p>
+          <p className="csFoot">{e.host}</p>
+        </div>
+      ))}
+    </div>
+  </>
+);
+
+const DashboardSurface = () => (
+  <div className="dashStage">
+    <div>
+      <h1 className="dashGreeting">Pick up where you left off.</h1>
+      <p className="dashGreetSub">3 active envs · 2 unread Irisy threads · 15 keycaps</p>
+    </div>
+    <div className="tileRow">
+      <div className="tile">
+        <span className="tileLabel">Code Space</span>
+        <h2 className="tileTitle">3 running</h2>
+        <p style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-faint)' }}>claude · aider · bash</p>
+        <span className="tileMeta">Resume →</span>
+      </div>
+      <div className="tile">
+        <span className="tileLabel">Keyboard Pool</span>
+        <h2 className="tileTitle">15 keycaps</h2>
+        <p style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-faint)' }}>Translate · OCR · Chat · Email · …</p>
+        <span className="tileMeta tileAccent">Browse →</span>
+      </div>
+      <div className="tile">
+        <span className="tileLabel">Irisy</span>
+        <h2 className="tileTitle">"Make a poster for…"</h2>
+        <p style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-faint)' }}>last session · 5m ago</p>
+        <span className="tileMeta tileAccentJade">Continue →</span>
+      </div>
+    </div>
+  </div>
+);
+
+// === Variants ===
+
+const Variant = ({ id }) => {
+  switch (id) {
+    case 'A': return (
+      <div className="window">
+        <span className="windowEdge" />
+        <header className="statusBar"><LogoMark /><span className="wordmark">CTRL</span><span className="barTime">17:42</span></header>
+        <div className="body"><PaletteSurface /></div>
+      </div>
+    );
+    case 'B': return (
+      <div className="window">
+        <span className="windowEdge" />
+        <StatusBar />
+        <div className="body"><CodeSpaceSurface heroCta /></div>
+        <BottomTab active="code" />
+      </div>
+    );
+    case 'C': return (
+      <div className="window">
+        <span className="windowEdge" />
+        <StatusBar irisyChip="Irisy thread · 2m" />
+        <div className="body"><DashboardSurface /></div>
+        <BottomTab active={null} />
+      </div>
+    );
+    case 'D': return (
+      <div className="window">
+        <span className="windowEdge" />
+        <StatusBar />
+        <div className="body"><CodeSpaceSurface heroCta={false} /></div>
+        <BottomTab active="code" />
+      </div>
+    );
+    case 'E': return (
+      <div className="window">
+        <span className="windowEdge" />
+        <StatusBar />
+        <div className="body"><CodeSpaceSurface heroCta={false} /></div>
+        <BottomTab active="code" />
+        <div className="overlay">
+          <div className="overlayCard">
+            <div style={{ padding: 'var(--space-4) var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <span style={{ color: 'var(--ink-faint)' }}>⌕</span>
+              <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--ink-faint)' }}>Run anything…</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-faint)', padding: '2px 8px', border: '1px solid var(--graphite-soft-2)', borderRadius: 4 }}>Esc</span>
+            </div>
+            <div style={{ borderTop: '1px solid var(--graphite-soft-2)' }}>
+              {['claude · ~/code/ctrl', 'Irisy · poster prompt', 'Translate selection'].map((t, i) => (
+                <div key={t} className={i === 0 ? 'palRowActive palRow' : 'palRow'}>
+                  <span className="palRowIcon">{i === 0 ? 'CS' : i === 1 ? 'AI' : 'KP'}</span>
+                  <span className="palRowText">{t}</span>
+                  <span className="palRowHint">{i === 0 ? '↵' : ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+    default: return null;
+  }
+};
+
+// === Metadata per variant ===
+
+const META = {
+  A: { name: 'Command palette', ref: 'Raycast · Alfred · uTools — search as the only entry surface.',
+       pros: ['0-click → typing: fastest path to action', 'Scales to ∞ commands without UI growth', 'Keyboard-native, mouse optional'],
+       cons: ['No browse / discovery for new users', 'Code Space, Irisy hidden behind a query', 'Empty state is intimidating ("what do I type?")'],
+       notes: 'Search input autofocus on summon. Fuzzy match across recent envs, keycaps, Irisy actions, and free-form commands.' },
+  B: { name: 'Code Space first', ref: 'Cursor · Devin · Claude Code Mobile — landing = the workhorse.',
+       pros: ['v1 ship truth: coding companion is the #1 hook', 'Active envs visible without a click', '+ New is the dominant CTA on empty state'],
+       cons: ['Pool and Irisy demoted to bottom-tab clicks', 'Power users may resent the slow path to Pool', 'Empty state ≈ "spawn something" — high friction for first run'],
+       notes: 'StatusBar persistent. BottomTab 4 icons (Code active). + New opens NewEnvModal directly from header.' },
+  C: { name: 'Dashboard 3-section', ref: 'GitHub Copilot Workspace · Linear inbox — multi-surface preview.',
+       pros: ['Surfaces all three primary modes equally', 'Reads as a status board, low cognitive load', 'Reduces "where do I start" anxiety for new users'],
+       cons: ['No surface gets focus — every tap is one extra click', 'Tile content can rot (empty Irisy, empty Code Space)', 'Wastes vertical space in a 920×560 floating window'],
+       notes: 'Greeting line keeps it human. Tiles deep-link into Code / Pool / Irisy. BottomTab unselected — Dashboard is a separate root view.' },
+  D: { name: 'Mobile tab home', ref: 'Twitter · Discord · Mastodon — bottom-tab is the only navigation.',
+       pros: ['Architectural simplicity — every surface is a tab, no special Home', 'Lowest visual chrome, most content room', 'Matches our PR #18 BottomTab investment directly'],
+       cons: ['"What is the launcher?" — no dedicated entry concept', 'Tab default (Code) silently becomes the home', 'No room for cross-surface affordances like the Dashboard'],
+       notes: 'Identical to B without the "+ New" hero button (defers spawn to in-list empty state). Cleanest if we trust users will read the tab bar.' },
+  E: { name: 'Hybrid: Code Space + Cmd+K palette', ref: 'Cursor 3.0 Agents Window · VS Code Cmd+K · Linear — base + overlay.',
+       pros: ['Best of A and B: workhorse landing + power-user search', 'Cmd+K is a discoverable, learnable accelerator', 'No UI growth as we add more commands / surfaces'],
+       cons: ['Two interaction models to learn (tabs + palette)', 'Overlay focus management is fiddly (Esc / blur / route changes)', 'Mobile fallback: no Cmd+K — needs a tap target for the palette'],
+       notes: 'Default identical to B. Any typing or Cmd+K (mobile: status-bar tap) opens the palette overlay. Esc / backdrop / route change closes it. Palette content = unified search over envs, keycaps, Irisy actions.' },
+};
+
+// === App ===
+
+const App = () => {
+  const [variant, setVariant] = useState('B');
+  const m = META[variant];
+  return (
+    <div className="page">
+      <header className="header">
+        <h1>CTRL — home layout variants</h1>
+        <p>5 explorations of the 920×560 launcher home. Pick one for lane-A to ship.</p>
+      </header>
+      <nav className="tweaks" aria-label="Variant switcher">
+        {['A','B','C','D','E'].map((id) => (
+          <button key={id} className={`tweak ${id === variant ? 'tweakActive' : ''}`} onClick={() => setVariant(id)}>
+            <b>{id}</b><span>{META[id].name}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="stage">
+        <div className="windowWrap">
+          <Variant id={variant} />
+        </div>
+        <aside className="meta" aria-label={`Variant ${variant} details`}>
+          <div>
+            <p className="metaKey">Variant {variant}</p>
+            <p className="metaBody" style={{ margin: 0, fontWeight: 600 }}>{m.name}</p>
+          </div>
+          <div>
+            <p className="metaKey">Industry reference</p>
+            <p className="metaBody" style={{ margin: 0 }}>{m.ref}</p>
+          </div>
+          <div>
+            <p className="metaKey">Pros</p>
+            <ul className="metaList pros">{m.pros.map((x) => <li key={x}>{x}</li>)}</ul>
+          </div>
+          <div>
+            <p className="metaKey">Cons</p>
+            <ul className="metaList cons">{m.cons.map((x) => <li key={x}>{x}</li>)}</ul>
+          </div>
+          <div>
+            <p className="metaKey">UX notes</p>
+            <p className="metaBody" style={{ margin: 0 }}>{m.notes}</p>
+          </div>
+        </aside>
+      </div>
+      <footer style={{ color: 'var(--ink-faint)', fontFamily: 'var(--font-mono)', fontSize: 11, textAlign: 'center', padding: 'var(--space-4) 0' }}>
+        doc/design/home-layout-variants.html · lane-A · daedalus · 2026-05-21 · for bao to choose A/B/C/D/E
+      </footer>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
