@@ -19,8 +19,35 @@
 
 use crate::kernel::event::{Cell, CellKind, Event, Op, OpKind};
 use crate::kernel::stss_bridge::StssBridge;
-use tokio::sync::mpsc;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, warn};
+
+/// Lifecycle status of a SubprocessActor-backed Code Space env. Held by
+/// commands::code_space::CodeSpaceRegistry's EnvEntry and updated by the
+/// forwarder task when SubprocessExit is observed.
+///
+/// Z2: surface this to PWA via cs_list response so the env tile can show
+/// running / crashed / stopped without having to wait on a websocket event.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum EnvLifeStatus {
+    /// Child process spawned and running. Default at cs_spawn time.
+    Running,
+    /// Child exited with code 0 (normal termination, or SIGTERM/SIGKILL
+    /// honoured cleanly). PWA tile shows "stopped" pill.
+    Stopped { exit_code: Option<i32> },
+    /// Child exited with non-zero code (panic / segfault / spawn failure).
+    /// PWA tile shows "crashed" pill + error detail.
+    Crashed { exit_code: Option<i32>, detail: Option<String> },
+}
+
+impl Default for EnvLifeStatus {
+    fn default() -> Self {
+        Self::Running
+    }
+}
 
 /// Forwarder task — drains a SubprocessActor outbox into the ST-SS bridge.
 ///
@@ -32,16 +59,52 @@ use tracing::{debug, warn};
 ///
 /// `StssBridge` is `Clone` and internally `Arc`-backed (broadcast::Sender),
 /// so we take ownership of a clone rather than re-wrapping in `Arc<...>`.
+///
+/// Z2: forwarder also updates `status` when it sees SubprocessExit so the
+/// CodeSpaceRegistry envelope is in sync with reality without a separate
+/// callback channel.
 pub async fn forward_subprocess_outbox(
     mut outbox: mpsc::Receiver<Event>,
     bridge: StssBridge,
     stream_id: String,
+    status: Arc<Mutex<EnvLifeStatus>>,
 ) {
     debug!(stream_id = %stream_id, "subprocess_stss_adapter: forwarder started");
     while let Some(event) = outbox.recv().await {
+        update_status_from_exit(&event, &status).await;
         translate_and_publish(event, &bridge, &stream_id);
     }
     debug!(stream_id = %stream_id, "subprocess_stss_adapter: forwarder ended (outbox closed)");
+}
+
+/// Inspect the event and, when it is a SubprocessExit op, update the env's
+/// status. Exit code 0 (or None) is treated as Stopped; non-zero is Crashed.
+async fn update_status_from_exit(event: &Event, status: &Arc<Mutex<EnvLifeStatus>>) {
+    let Event::Op(op) = event else { return };
+    if !matches!(op.kind, OpKind::SubprocessExit) {
+        return;
+    }
+    let exit_code = op.payload.get("code").and_then(|v| v.as_i64()).map(|n| n as i32);
+    let spawn_error = op
+        .payload
+        .get("spawn_error")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let new_status = match (exit_code, spawn_error) {
+        (Some(0), None) => EnvLifeStatus::Stopped { exit_code: Some(0) },
+        (None, Some(detail)) => EnvLifeStatus::Crashed {
+            exit_code: None,
+            detail: Some(detail),
+        },
+        (None, None) => EnvLifeStatus::Stopped { exit_code: None },
+        (Some(code), _) => EnvLifeStatus::Crashed {
+            exit_code: Some(code),
+            detail: None,
+        },
+    };
+    let mut guard = status.lock().await;
+    *guard = new_status;
 }
 
 /// Translate one kernel-internal Event into the spec-v0.7 wire shape and
@@ -240,5 +303,58 @@ mod tests {
         }
         // Nothing should have reached the wire.
         assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn exit_code_zero_marks_stopped() {
+        let status = Arc::new(Mutex::new(EnvLifeStatus::Running));
+        let ev = Event::Op(fake_op(
+            OpKind::SubprocessExit,
+            serde_json::json!({"actor": "x", "pid": 42, "code": 0}),
+        ));
+        update_status_from_exit(&ev, &status).await;
+        assert_eq!(*status.lock().await, EnvLifeStatus::Stopped { exit_code: Some(0) });
+    }
+
+    #[tokio::test]
+    async fn exit_code_nonzero_marks_crashed() {
+        let status = Arc::new(Mutex::new(EnvLifeStatus::Running));
+        let ev = Event::Op(fake_op(
+            OpKind::SubprocessExit,
+            serde_json::json!({"actor": "x", "pid": 42, "code": 137}),
+        ));
+        update_status_from_exit(&ev, &status).await;
+        assert_eq!(
+            *status.lock().await,
+            EnvLifeStatus::Crashed { exit_code: Some(137), detail: None }
+        );
+    }
+
+    #[tokio::test]
+    async fn spawn_error_marks_crashed_with_detail() {
+        let status = Arc::new(Mutex::new(EnvLifeStatus::Running));
+        let ev = Event::Op(fake_op(
+            OpKind::SubprocessExit,
+            serde_json::json!({"actor": "x", "code": null, "spawn_error": "command not found"}),
+        ));
+        update_status_from_exit(&ev, &status).await;
+        assert_eq!(
+            *status.lock().await,
+            EnvLifeStatus::Crashed {
+                exit_code: None,
+                detail: Some("command not found".into())
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn non_exit_event_does_not_change_status() {
+        let status = Arc::new(Mutex::new(EnvLifeStatus::Running));
+        let ev = Event::Op(fake_op(
+            OpKind::SubprocessStdout,
+            serde_json::json!({"data_b64": "aGk="}),
+        ));
+        update_status_from_exit(&ev, &status).await;
+        assert_eq!(*status.lock().await, EnvLifeStatus::Running);
     }
 }
