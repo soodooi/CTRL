@@ -28,6 +28,7 @@ macro_rules! pwa_invoke_handler {
         tauri::generate_handler![
             // kernel
             $crate::commands::kernel::list_keycaps,
+            $crate::commands::kernel::install_keycap,
             $crate::commands::kernel::install_keycap_from_mcp,
             $crate::commands::kernel::run_keycap,
             $crate::commands::kernel::mcp_call,
