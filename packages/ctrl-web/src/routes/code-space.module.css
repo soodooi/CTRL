@@ -409,3 +409,46 @@
   font-size: var(--text-xs);
   color: var(--color-text-soft);
 }
+
+.csdExitHint {
+  grid-column: 1 / -1;
+  margin: 0 var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger, #b00020);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--color-danger, #b00020) 8%, transparent);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.csdExitHint code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+  background: var(--color-surface-elevated);
+  border-radius: var(--radius-sm);
+}
+
+.csdExitHintBack {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.csdExitHintBack:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
