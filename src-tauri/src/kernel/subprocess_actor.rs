@@ -43,6 +43,59 @@ pub const STDOUT_CHUNK_BYTES: usize = 4096;
 /// the scheduler creates the channel and exposes the rx to consumers.
 pub const DEFAULT_OUTBOX_CAPACITY: usize = 1024;
 
+/// Common user-binary install dirs we want on every subprocess's PATH.
+/// Order matters: brew (mac) and /usr/local first, then per-user toolchains.
+/// Static slice → no per-spawn allocation for these.
+const PATH_EXTRAS_STATIC: &[&str] = &[
+    "/opt/homebrew/bin",      // macOS Apple Silicon brew
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",         // macOS Intel brew + Linux
+    "/usr/local/sbin",
+    "/snap/bin",              // Linux snap packages
+];
+
+/// Per-user dirs (relative to $HOME) we want on PATH. Same rationale as
+/// PATH_EXTRAS_STATIC; resolved lazily because $HOME isn't known at compile
+/// time.
+const PATH_EXTRAS_HOME_RELATIVE: &[&str] = &[
+    "/.cargo/bin",            // rustup
+    "/.local/bin",            // pip --user, pipx, etc
+    "/.bun/bin",              // bun
+    "/.npm-global/bin",       // npm prefix=~/.npm-global
+    "/go/bin",                // go install
+];
+
+/// Build a PATH value with common user-binary dirs appended (deduped).
+/// Used as the default PATH for spawned subprocesses so GUI-launched
+/// CTRL can still find brew/cargo/npm-installed CLIs (claude / aider /
+/// node / etc) without requiring the user to relaunch from a terminal.
+fn augmented_path() -> String {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let mut entries: Vec<String> = if current.is_empty() {
+        Vec::new()
+    } else {
+        current.split(':').map(String::from).collect()
+    };
+
+    let mut push_unique = |candidate: String| {
+        if !candidate.is_empty() && !entries.iter().any(|e| e == &candidate) {
+            entries.push(candidate);
+        }
+    };
+
+    for p in PATH_EXTRAS_STATIC {
+        push_unique((*p).to_string());
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let home = home.trim_end_matches('/').to_string();
+        for suffix in PATH_EXTRAS_HOME_RELATIVE {
+            push_unique(format!("{home}{suffix}"));
+        }
+    }
+
+    entries.join(":")
+}
+
 /// PTY 初始尺寸. resize 通过 Event::Op(SubprocessResize) 动态调整.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PtySpec {
@@ -144,6 +197,16 @@ impl SubprocessActor {
         if let Some(cwd) = &self.spec.cwd {
             cmd.cwd(cwd);
         }
+        // GUI-launched processes on macOS inherit a minimal PATH
+        // (`/usr/bin:/bin:/usr/sbin:/sbin`) and never see the user's
+        // login-shell PATH, so brew/cargo/npm/pip --user installs are
+        // invisible — the user types `claude` and gets exit 127 even
+        // though the CLI is installed. Augment PATH with the common
+        // install dirs before spawn so first-time UX doesn't break on
+        // the most likely happy path.
+        cmd.env("PATH", augmented_path());
+        // User-supplied env wins (incl. explicit PATH override) — applied
+        // after the augmented default so spec.env can still take effect.
         for (k, v) in &self.spec.env {
             cmd.env(k, v);
         }
@@ -426,6 +489,28 @@ mod tests {
         let p = PtySpec::default();
         assert_eq!(p.cols, 80);
         assert_eq!(p.rows, 24);
+    }
+
+    #[test]
+    fn augmented_path_includes_brew_and_cargo() {
+        // We can't fully mock std::env, but we can assert the function
+        // produces a value containing the static brew/local extras and
+        // (if HOME is set) at least one home-relative cargo path.
+        let p = augmented_path();
+        assert!(p.contains("/opt/homebrew/bin"), "missing brew arm64: {p}");
+        assert!(p.contains("/usr/local/bin"), "missing /usr/local/bin: {p}");
+        if std::env::var("HOME").is_ok() {
+            assert!(p.contains("/.cargo/bin"), "missing $HOME/.cargo/bin: {p}");
+        }
+    }
+
+    #[test]
+    fn augmented_path_does_not_duplicate_existing_entries() {
+        // If the current process PATH already contains an extra, the
+        // augmented value must not duplicate it.
+        let p = augmented_path();
+        let count = p.matches("/opt/homebrew/bin").count();
+        assert_eq!(count, 1, "duplicate /opt/homebrew/bin entries in: {p}");
     }
 
     #[test]
