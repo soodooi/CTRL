@@ -23,10 +23,12 @@
 #![allow(dead_code)]
 
 pub mod actor;
+pub mod cache;
 pub mod capability;
 pub mod channel;
 pub mod effect;
 pub mod event;
+pub mod local_storage;
 pub mod llm_adapters;
 pub mod llm_port;
 pub mod mcp_host;
