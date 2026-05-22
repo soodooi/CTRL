@@ -10,11 +10,23 @@
 // top of this in a follow-up commit).
 
 use crate::kernel::cache::{self, Cache, CacheError, DEFAULT_MAX_BYTES};
+use crate::kernel::capability::{CapToken, CapabilityBroker};
+use crate::kernel::capability_resolver;
 use crate::kernel::local_storage::{self, LocalStorage, StorageEntry, StorageError};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
+
+fn check_cap(keycap_id: Option<&str>, required: &CapToken) -> Result<(), String> {
+    let id = keycap_id.unwrap_or("ctrl-system");
+    let cap = capability_resolver::resolve_for_keycap(id);
+    let broker = CapabilityBroker::new();
+    broker.check(&cap, required).map_err(|e| {
+        tracing::warn!(keycap_id = %id, token = ?required, error = %e, "storage: capability check rejected");
+        format!("capability denied for keycap {id:?}: {e}")
+    })
+}
 
 static GLOBAL_LOCAL_STORAGE: OnceLock<Option<LocalStorage>> = OnceLock::new();
 static GLOBAL_CACHE: OnceLock<Option<Cache>> = OnceLock::new();
@@ -43,12 +55,20 @@ fn try_cache() -> Result<&'static Cache, String> {
 pub struct LocalStorageGetArgs {
     pub scope: String,
     pub key: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn localstorage_get(
     args: LocalStorageGetArgs,
 ) -> Result<Option<serde_json::Value>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::KvRead {
+            namespace: args.scope.clone(),
+        },
+    )?;
     try_local_storage()?
         .get(&args.scope, &args.key)
         .map_err(stringify_storage_error)
@@ -59,10 +79,18 @@ pub struct LocalStorageSetArgs {
     pub scope: String,
     pub key: String,
     pub value: serde_json::Value,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn localstorage_set(args: LocalStorageSetArgs) -> Result<(), String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::KvWrite {
+            namespace: args.scope.clone(),
+        },
+    )?;
     try_local_storage()?
         .set(&args.scope, &args.key, &args.value)
         .map_err(stringify_storage_error)
@@ -72,10 +100,18 @@ pub async fn localstorage_set(args: LocalStorageSetArgs) -> Result<(), String> {
 pub struct LocalStorageRemoveArgs {
     pub scope: String,
     pub key: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn localstorage_remove(args: LocalStorageRemoveArgs) -> Result<(), String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::KvWrite {
+            namespace: args.scope.clone(),
+        },
+    )?;
     try_local_storage()?
         .remove(&args.scope, &args.key)
         .map_err(stringify_storage_error)
@@ -84,10 +120,18 @@ pub async fn localstorage_remove(args: LocalStorageRemoveArgs) -> Result<(), Str
 #[derive(Debug, Deserialize)]
 pub struct LocalStorageListArgs {
     pub scope: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn localstorage_list(args: LocalStorageListArgs) -> Result<Vec<StorageEntry>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::KvRead {
+            namespace: args.scope.clone(),
+        },
+    )?;
     try_local_storage()?
         .list(&args.scope)
         .map_err(stringify_storage_error)
@@ -96,10 +140,18 @@ pub async fn localstorage_list(args: LocalStorageListArgs) -> Result<Vec<Storage
 #[derive(Debug, Deserialize)]
 pub struct LocalStorageClearArgs {
     pub scope: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn localstorage_clear(args: LocalStorageClearArgs) -> Result<usize, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::KvWrite {
+            namespace: args.scope.clone(),
+        },
+    )?;
     try_local_storage()?
         .clear(&args.scope)
         .map_err(stringify_storage_error)
@@ -111,6 +163,8 @@ pub async fn localstorage_clear(args: LocalStorageClearArgs) -> Result<usize, St
 pub struct CacheGetArgs {
     pub scope: String,
     pub key: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -123,6 +177,12 @@ pub struct CacheGetReply {
 
 #[tauri::command]
 pub async fn cache_get(args: CacheGetArgs) -> Result<CacheGetReply, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::CacheRead {
+            scope: args.scope.clone(),
+        },
+    )?;
     let bytes = try_cache()?
         .get(&args.scope, &args.key)
         .map_err(stringify_cache_error)?;
@@ -139,10 +199,18 @@ pub struct CacheSetArgs {
     pub data_b64: String,
     /// Optional TTL in milliseconds. Absent = never expires (until LRU).
     pub ttl_ms: Option<i64>,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn cache_set(args: CacheSetArgs) -> Result<(), String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::CacheWrite {
+            scope: args.scope.clone(),
+        },
+    )?;
     let bytes = B64
         .decode(&args.data_b64)
         .map_err(|e| format!("base64 decode: {e}"))?;
@@ -155,10 +223,18 @@ pub async fn cache_set(args: CacheSetArgs) -> Result<(), String> {
 pub struct CacheRemoveArgs {
     pub scope: String,
     pub key: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn cache_remove(args: CacheRemoveArgs) -> Result<(), String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::CacheWrite {
+            scope: args.scope.clone(),
+        },
+    )?;
     try_cache()?
         .remove(&args.scope, &args.key)
         .map_err(stringify_cache_error)
@@ -167,10 +243,18 @@ pub async fn cache_remove(args: CacheRemoveArgs) -> Result<(), String> {
 #[derive(Debug, Deserialize)]
 pub struct CacheClearArgs {
     pub scope: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn cache_clear(args: CacheClearArgs) -> Result<usize, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::CacheWrite {
+            scope: args.scope.clone(),
+        },
+    )?;
     try_cache()?
         .clear(&args.scope)
         .map_err(stringify_cache_error)
