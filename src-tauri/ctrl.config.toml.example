@@ -1,0 +1,40 @@
+# CTRL local config — single source of truth for LLM providers.
+#
+# COPY to $HOME/.ctrl/config.toml, edit, save, restart CTRL.
+#   mkdir -p ~/.ctrl
+#   cp src-tauri/ctrl.config.toml.example ~/.ctrl/config.toml
+#   vim ~/.ctrl/config.toml
+#
+# Priority order at startup:
+#   1. ~/.ctrl/config.toml (a provider entry with `enabled = true` +
+#      non-empty api_key wins)
+#   2. macOS Keychain entries (legacy `setup_llm_key` path)
+#   3. Adapter not registered → run_keycap returns clear error
+#
+# Leave `base_url` / `default_model` blank to use CTRL defaults.
+
+# ── Volcano Ark / Doubao (火山方舟 / 豆包) ──────────────────────────────
+# Default v1 launch provider. Get a key at:
+#   https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey
+[providers.volc]
+enabled = false
+api_key = ""
+base_url = ""               # defaults to https://ark.cn-beijing.volces.com/api/v3
+default_model = ""          # defaults to doubao-1-5-pro-32k-250115
+
+# ── OpenAI BYOK ──────────────────────────────────────────────────────────
+# Use this for OpenAI itself OR any OpenAI-compatible provider:
+#   DeepSeek      → base_url = "https://api.deepseek.com/v1"
+#                   default_model = "deepseek-chat"
+#   Moonshot Kimi → base_url = "https://api.moonshot.cn/v1"
+#                   default_model = "moonshot-v1-32k"
+#   Qwen / 通义   → base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+#                   default_model = "qwen-plus"
+#   Groq          → base_url = "https://api.groq.com/openai/v1"
+#                   default_model = "llama-3.3-70b-versatile"
+#   LiteLLM proxy → base_url = "http://localhost:4000"
+[providers.openai]
+enabled = false
+api_key = ""
+base_url = ""               # defaults to https://api.openai.com/v1
+default_model = ""          # defaults to gpt-4o-mini
