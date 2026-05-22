@@ -1,11 +1,38 @@
+/* StatusBar — top instrument cluster. Aviation PFD vocabulary:
+ *
+ *   green LED  = nominal
+ *   amber LED  = caution / waiting
+ *   red LED    = warning / error
+ *   gray LED   = offline / unknown
+ *
+ * All readouts use tabular-numeric mono so the values lock vertically.
+ */
+
 .bar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-5);
   height: var(--statusbar-height);
   padding: 0 var(--space-4);
   background: var(--color-bg-l1);
   border-bottom: 1px solid var(--color-border-soft);
+  position: relative;
+  /* Thin CTRL-blue stripe along the top edge — instrument bezel. */
+}
+.bar::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--color-accent), transparent 50%) 30%,
+    color-mix(in oklab, var(--color-accent), transparent 50%) 70%,
+    transparent 100%
+  );
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 .brand {
@@ -14,67 +41,136 @@
   gap: var(--space-2);
   text-decoration: none;
   color: var(--color-text);
-  /* 44pt-safe tap target — the visual chrome is short but the hit
-     area extends via padding. */
-  padding: var(--space-1) var(--space-2);
-  margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1);
-  border-radius: var(--radius-md);
-  transition: background var(--duration-fast) var(--ease-out-expo);
+  padding: 0 var(--space-1);
+  border-radius: 4px;
+  transition: background-color 140ms ease;
 }
-
-.brand:hover {
-  background: var(--color-surface-elevated);
-}
-
+.brand:hover { background: var(--color-bg-l2); }
 .brand:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
-
 .wordmark {
   font-family: var(--font-display);
-  font-size: var(--text-sm);
+  font-size: 12px;
   font-weight: var(--weight-black);
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   color: var(--color-text);
 }
 
-.time {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text);
-  letter-spacing: 0.5px;
+/* ── Instruments cluster (KRN / MESH / LLM) ─────────────────────── */
+
+.instruments {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border-left: 1px solid var(--color-border-soft);
+  border-right: 1px solid var(--color-border-soft);
+  height: 100%;
 }
+.instrument {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+.instrumentLabel { letter-spacing: 0.08em; }
 
 .led {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-pill);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
   background: var(--color-text-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, currentColor, transparent 60%);
   flex-shrink: 0;
 }
-
-.led_connected {
+.led_nominal {
   background: var(--color-success);
-  box-shadow: 0 0 8px color-mix(in oklab, var(--color-success) 60%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--color-success), transparent 30%),
+    0 0 6px color-mix(in oklab, var(--color-success), transparent 50%);
 }
-
-.led_connecting {
+.led_caution {
   background: var(--color-warning);
-  animation: pulse 1.4s ease-in-out infinite;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--color-warning), transparent 30%),
+    0 0 6px color-mix(in oklab, var(--color-warning), transparent 50%);
+  animation: pulse 1.6s ease-in-out infinite;
 }
-
-.led_offline {
+.led_warning {
   background: var(--color-danger);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--color-danger), transparent 30%),
+    0 0 6px color-mix(in oklab, var(--color-danger), transparent 50%);
 }
-
+.led_offline {
+  background: var(--graphite-soft-2);
+  box-shadow: none;
+}
+.led_unknown {
+  background: var(--graphite-soft-2);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50%      { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .led_caution { animation: none; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .led_connecting { animation: none; }
+/* ── Center tape: sessions / Irisy state ────────────────────────── */
+
+.tape {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tapeMeta {
+  color: var(--color-text-muted);
+  letter-spacing: 0.1em;
+}
+.tapeValue {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.tapeSep {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+/* ── Right cluster: clock + uptime ──────────────────────────────── */
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  letter-spacing: 0.05em;
+}
+.uptime {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
 }

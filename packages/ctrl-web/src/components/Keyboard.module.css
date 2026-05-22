@@ -9,6 +9,24 @@
   gap: var(--space-4);
   overflow-y: auto;
   overflow-x: hidden;
+  position: relative;
+}
+/* Instrument bezel — thin CTRL-blue stripe on the top edge of the rail. */
+.rail::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--color-accent), transparent 60%) 50%,
+    transparent 100%
+  );
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .search {
@@ -71,11 +89,20 @@
   gap: var(--keycap-gap);
 }
 
+/* Keycap — sculpted face with a faint top highlight + bottom shadow so
+   the cell reads as a tactile key, not a flat tile. Linear-gradient
+   gives the "skirt" the impression of a chamfered keycap. */
 .cap {
   appearance: none;
-  background: var(--color-bg-l2);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-bg-l2), white 4%) 0%,
+      var(--color-bg-l2) 55%,
+      color-mix(in oklab, var(--color-bg-l2), black 6%) 100%
+    );
   border: 1px solid var(--color-border-soft);
-  border-radius: 12px;
+  border-radius: 10px;
   aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
@@ -88,22 +115,46 @@
   font-size: var(--text-xs);
   letter-spacing: -0.005em;
   cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white, transparent 92%),
+    0 1px 2px rgba(0, 0, 0, 0.35);
   transition:
-    background-color 140ms ease,
+    background 140ms ease,
     border-color 140ms ease,
     color 140ms ease,
-    transform 80ms ease;
+    transform 80ms ease,
+    box-shadow 80ms ease;
 }
 .cap:hover {
-  background: var(--color-bg-l3);
   border-color: var(--color-border);
   color: var(--color-text);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-bg-l3), white 5%) 0%,
+      var(--color-bg-l3) 55%,
+      color-mix(in oklab, var(--color-bg-l3), black 6%) 100%
+    );
 }
-.cap:active { transform: translateY(1px); }
+.cap:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 0 0 rgba(0, 0, 0, 0);
+}
 .cap[data-active='true'] {
   border-color: var(--color-accent);
   color: var(--color-text);
-  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 8%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 14%) 0%,
+      color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 8%) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white, transparent 88%),
+    0 0 0 1px color-mix(in oklab, var(--color-accent), transparent 60%),
+    0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .capIcon {

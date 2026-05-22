@@ -1,62 +1,108 @@
-// StatusBar — mobile status-bar borrowed for the PWA shell chrome.
+// StatusBar — top instrument cluster of the cockpit shell.
 //
 // Layout left → right:
-//   [Logo mark + "CTRL" wordmark · tap → /] [time HH:MM] [connection LED]
+//   [logo · CTRL]   [KRN ● MESH ○ LLM ●]   [session count]   [clock · UPTIME]
 //
-// Per H-2026-05-20-001 mobile UX learning checklist: this surface is
-// inert by design (no actionable controls except the logo / home tap).
-// Real status — keycap activity, network state — flows in via the
-// `connection` prop when the kernel exposes a hook. Until then the prop
-// is omitted by callers and the LED dot is not rendered (honest default
-// vs. claiming 'connected' without evidence).
+// The middle "tape" is a tabular-monospace instrument readout in the
+// spirit of an aviation PFD: green dot = nominal, amber = caution,
+// red = error, gray = offline. Wired to real kernel state in Phase 1D;
+// today the three LEDs render in their default ("unknown") state so
+// the chrome doesn't lie about connectivity.
 
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Logo } from './primitives/Logo';
 import { cx } from './primitives/cx';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
+import { useRail } from './RightRail';
 import styles from './StatusBar.module.css';
 
-export type ConnectionState = 'connected' | 'connecting' | 'offline';
+export type LedTone = 'nominal' | 'caution' | 'warning' | 'offline' | 'unknown';
 
-interface StatusBarProps {
-  /** When omitted the LED is hidden. Set by the wiring layer that knows
-      the real kernel WS health (TODO: align with useCellStream's
-      StreamStatus enum when that hook is generalized). */
-  connection?: ConnectionState;
+export interface StatusBarProps {
+  /** Kernel WS bridge health. Falls back to "unknown" if omitted. */
+  kernel?: LedTone;
+  /** Mesh peer health (offline = 0 peers, nominal ≥ 1). */
+  mesh?: LedTone;
+  /** Default LLM provider availability. */
+  llm?: LedTone;
+  /** Active session count (Code Space envs + open chats). */
+  sessions?: number;
 }
 
-// Exhaustive lookup — if ConnectionState gains a variant the literal
-// must add the key or typecheck breaks. Cheaper than a switch + still
-// the loud-fail safety the themis Record pattern wants.
-const LED_CLASS: Record<ConnectionState, string> = {
-  connected: styles.led_connected ?? '',
-  connecting: styles.led_connecting ?? '',
+const TONE_CLASS: Record<LedTone, string> = {
+  nominal: styles.led_nominal ?? '',
+  caution: styles.led_caution ?? '',
+  warning: styles.led_warning ?? '',
   offline: styles.led_offline ?? '',
+  unknown: styles.led_unknown ?? '',
 };
 
-export const StatusBar = ({ connection }: StatusBarProps): ReactElement => {
+interface InstrumentProps {
+  label: string;
+  tone: LedTone;
+}
+const Instrument = ({ label, tone }: InstrumentProps): ReactElement => (
+  <span className={styles.instrument} title={`${label}: ${tone}`}>
+    <span className={cx(styles.led, TONE_CLASS[tone])} aria-hidden="true" />
+    <span className={styles.instrumentLabel}>{label}</span>
+  </span>
+);
+
+const formatUptime = (ms: number): string => {
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}H ${String(m).padStart(2, '0')}M`;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
+export const StatusBar = ({
+  kernel = 'unknown',
+  mesh = 'unknown',
+  llm = 'unknown',
+  sessions,
+}: StatusBarProps = {}): ReactElement => {
   const now = useWallClock();
+  const [bootAt] = useState<number>(() => Date.now());
+  const uptime = now.getTime() - bootAt;
+
+  // Surface the Irisy state in a quiet badge so the chrome always shows
+  // what the companion is doing, even when the workspace is on a route
+  // that doesn't otherwise expose it.
+  const { irisyState } = useRail();
+
   return (
-    <header className={styles.bar} aria-label="Status bar">
-      {/* Logo is decorative inside this Link — the surrounding
-          aria-label="CTRL home" already announces the destination.
-          ariaLabel="" suppresses the second img alt announce. */}
+    <header className={styles.bar} aria-label="Cockpit status bar">
       <Link to="/" className={styles.brand} aria-label="CTRL home">
         <Logo size="sm" ariaLabel="" />
         <span className={styles.wordmark}>CTRL</span>
       </Link>
-      <time className={styles.time} dateTime={now.toISOString()}>
-        {formatHHMM(now)}
-      </time>
-      {connection && (
-        <span
-          className={cx(styles.led, LED_CLASS[connection])}
-          role="img"
-          aria-label={`Kernel ${connection}`}
-          title={`Kernel ${connection}`}
-        />
-      )}
+
+      <div className={styles.instruments} aria-label="System instruments">
+        <Instrument label="KRN" tone={kernel} />
+        <Instrument label="MESH" tone={mesh} />
+        <Instrument label="LLM" tone={llm} />
+      </div>
+
+      <div className={styles.tape}>
+        <span className={styles.tapeMeta}>SESSIONS</span>
+        <span className={styles.tapeValue}>
+          {sessions === undefined ? '—' : String(sessions).padStart(2, '0')}
+        </span>
+        <span className={styles.tapeSep}>·</span>
+        <span className={styles.tapeMeta}>IRISY</span>
+        <span className={styles.tapeValue}>{irisyState}</span>
+      </div>
+
+      <div className={styles.right}>
+        <time className={styles.time} dateTime={now.toISOString()}>
+          {formatHHMM(now)}
+        </time>
+        <span className={styles.uptime}>UPTIME {formatUptime(uptime)}</span>
+      </div>
     </header>
   );
 };
+
