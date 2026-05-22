@@ -16,18 +16,37 @@ pub enum CapToken {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_tokens: Option<u32>,
     },
-    // Storage
+    // Storage — filesystem (generic)
     FsRead {
         path_glob: String,
     },
     FsWrite {
         path_glob: String,
     },
+    // Storage — vault (Obsidian-compatible markdown, $HOME/.ctrl/vault/)
+    // Per CLAUDE.md design philosophy, vault is the user's data; this
+    // token gates *which keycap* writes *which path prefix*, not whether
+    // the data itself is private (the user always owns it).
+    VaultRead {
+        /// Prefix match against vault-relative paths. "*" allows full vault.
+        path_glob: String,
+    },
+    VaultWrite {
+        path_glob: String,
+    },
+    // Storage — localstorage (per-keycap persistent JSON KV)
     KvRead {
         namespace: String,
     },
     KvWrite {
         namespace: String,
+    },
+    // Storage — cache (per-keycap transient LRU blob)
+    CacheRead {
+        scope: String,
+    },
+    CacheWrite {
+        scope: String,
     },
     // Network
     HttpGet {
@@ -142,15 +161,61 @@ impl CapabilityBroker {
     }
 
     /// Check whether a capability authorizes a given token usage.
+    /// Exact-match for tokens with no glob fields; prefix-match for tokens
+    /// with `path_glob` / `url_glob` (so a keycap holding
+    /// `VaultWrite { path_glob: "chats/" }` can write `chats/2026/x.md`
+    /// without listing every concrete path).
     pub fn check(&self, cap: &Capability, required: &CapToken) -> Result<(), CapabilityError> {
-        if cap.contains(required) {
-            Ok(())
-        } else {
-            Err(CapabilityError::MissingToken {
-                token: format!("{required:?}"),
-            })
+        for held in cap.tokens() {
+            if token_authorizes(held, required) {
+                return Ok(());
+            }
         }
+        Err(CapabilityError::MissingToken {
+            token: format!("{required:?}"),
+        })
     }
+}
+
+/// Does a held token authorize a requested token? Exact match by default;
+/// glob-bearing variants match by literal prefix or "*" wildcard. KvRead/
+/// Write + CacheRead/Write also support "*" as namespace/scope wildcard
+/// so a system keycap (ctrl-system) can declare full-access without
+/// enumerating every concrete scope.
+fn token_authorizes(held: &CapToken, requested: &CapToken) -> bool {
+    use CapToken::*;
+    match (held, requested) {
+        (VaultRead { path_glob: h }, VaultRead { path_glob: r }) => glob_authorizes(h, r),
+        (VaultWrite { path_glob: h }, VaultWrite { path_glob: r }) => glob_authorizes(h, r),
+        (FsRead { path_glob: h }, FsRead { path_glob: r }) => glob_authorizes(h, r),
+        (FsWrite { path_glob: h }, FsWrite { path_glob: r }) => glob_authorizes(h, r),
+        (KvRead { namespace: h }, KvRead { namespace: r }) => glob_authorizes(h, r),
+        (KvWrite { namespace: h }, KvWrite { namespace: r }) => glob_authorizes(h, r),
+        (CacheRead { scope: h }, CacheRead { scope: r }) => glob_authorizes(h, r),
+        (CacheWrite { scope: h }, CacheWrite { scope: r }) => glob_authorizes(h, r),
+        (HttpGet { url_glob: h }, HttpGet { url_glob: r }) => glob_authorizes(h, r),
+        (HttpPost { url_glob: h }, HttpPost { url_glob: r }) => glob_authorizes(h, r),
+        (
+            McpInvoke {
+                server: hs,
+                tool_glob: ht,
+            },
+            McpInvoke {
+                server: rs,
+                tool_glob: rt,
+            },
+        ) => glob_authorizes(hs, rs) && glob_authorizes(ht, rt),
+        _ => held == requested,
+    }
+}
+
+/// Minimal glob: `*` matches anything; otherwise literal-prefix match.
+/// Avoids a globset dep for v1 — most policies are `"*"` or `"prefix/"`.
+fn glob_authorizes(held_pattern: &str, requested_value: &str) -> bool {
+    if held_pattern == "*" {
+        return true;
+    }
+    requested_value.starts_with(held_pattern)
 }
 
 impl Default for CapabilityBroker {
@@ -208,5 +273,87 @@ mod tests {
             scopes: vec!["im:message".into()],
         };
         assert!(broker.check(&cap, &required).is_err());
+    }
+
+    #[test]
+    fn vault_write_prefix_authorizes_subpath() {
+        let broker = CapabilityBroker::new();
+        let held = Capability::new(vec![CapToken::VaultWrite {
+            path_glob: "chats/".into(),
+        }]);
+        // exact-prefix match
+        assert!(broker
+            .check(
+                &held,
+                &CapToken::VaultWrite {
+                    path_glob: "chats/2026-05-22/hello.md".into(),
+                },
+            )
+            .is_ok());
+        // outside prefix → rejected
+        assert!(broker
+            .check(
+                &held,
+                &CapToken::VaultWrite {
+                    path_glob: "notes/secret.md".into(),
+                },
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn vault_write_wildcard_authorizes_anything() {
+        let broker = CapabilityBroker::new();
+        let held = Capability::new(vec![CapToken::VaultWrite {
+            path_glob: "*".into(),
+        }]);
+        assert!(broker
+            .check(
+                &held,
+                &CapToken::VaultWrite {
+                    path_glob: "anything/here.md".into(),
+                },
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn vault_read_does_not_grant_vault_write() {
+        let broker = CapabilityBroker::new();
+        let read_only = Capability::new(vec![CapToken::VaultRead {
+            path_glob: "*".into(),
+        }]);
+        assert!(broker
+            .check(
+                &read_only,
+                &CapToken::VaultWrite {
+                    path_glob: "x.md".into(),
+                },
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn cache_scope_exact_match() {
+        let broker = CapabilityBroker::new();
+        let held = Capability::new(vec![CapToken::CacheWrite {
+            scope: "my-keycap".into(),
+        }]);
+        assert!(broker
+            .check(
+                &held,
+                &CapToken::CacheWrite {
+                    scope: "my-keycap".into(),
+                },
+            )
+            .is_ok());
+        assert!(broker
+            .check(
+                &held,
+                &CapToken::CacheWrite {
+                    scope: "other-keycap".into(),
+                },
+            )
+            .is_err());
     }
 }
