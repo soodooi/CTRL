@@ -48,35 +48,8 @@
   color: var(--color-text);
 }
 
-.input {
+.inputWrap {
   width: 100%;
   max-width: 640px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 14px 18px;
-  background: var(--color-bg-l2);
-  border: 1px solid var(--color-border-soft);
-  border-radius: 14px;
-  transition: border-color 140ms ease;
   margin-top: var(--space-2);
-}
-.input:focus-within { border-color: var(--color-accent); }
-.input input {
-  all: unset;
-  flex: 1;
-  font-family: var(--font-sans);
-  font-size: var(--text-base);
-  letter-spacing: -0.011em;
-  color: var(--color-text);
-}
-.input input::placeholder { color: var(--color-text-muted); }
-.inputHint {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  padding: 3px 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
 }

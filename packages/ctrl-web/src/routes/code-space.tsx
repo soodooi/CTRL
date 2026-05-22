@@ -76,11 +76,13 @@ const spawnEnv = async (args: CsSpawnArgs): Promise<string> => {
 const LOCAL_GROUP = { id: 'local', label: 'This device' } as const;
 const groupEnv = (): { id: string; label: string } => LOCAL_GROUP;
 
-const toneFromStatus = (env: ListedEnv): 'running' | 'error' | 'exited' | 'idle' => {
-  if (env.status === 'running') return 'running';
-  if (env.status === 'crashed') return 'error';
-  if (env.status === 'stopped') return 'exited';
-  return 'idle';
+// Map kernel-side EnvLifeStatus to the brand LedTone palette so all
+// cockpit dots share the same vocabulary (PFD discipline).
+const toneFromStatus = (env: ListedEnv): 'nominal' | 'warning' | 'offline' | 'unknown' => {
+  if (env.status === 'running') return 'nominal';
+  if (env.status === 'crashed') return 'warning';
+  if (env.status === 'stopped') return 'offline';
+  return 'unknown';
 };
 
 const shortStreamId = (id: string): string => {

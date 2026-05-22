@@ -11,13 +11,10 @@
 
 import { useState, type ReactElement } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Logo } from './primitives/Logo';
-import { cx } from './primitives/cx';
+import { Led, Logo, type LedTone } from './primitives';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import { useRail } from './RightRail';
 import styles from './StatusBar.module.css';
-
-export type LedTone = 'nominal' | 'caution' | 'warning' | 'offline' | 'unknown';
 
 export interface StatusBarProps {
   /** Kernel WS bridge health. Falls back to "unknown" if omitted. */
@@ -30,21 +27,13 @@ export interface StatusBarProps {
   sessions?: number;
 }
 
-const TONE_CLASS: Record<LedTone, string> = {
-  nominal: styles.led_nominal ?? '',
-  caution: styles.led_caution ?? '',
-  warning: styles.led_warning ?? '',
-  offline: styles.led_offline ?? '',
-  unknown: styles.led_unknown ?? '',
-};
-
 interface InstrumentProps {
   label: string;
   tone: LedTone;
 }
 const Instrument = ({ label, tone }: InstrumentProps): ReactElement => (
   <span className={styles.instrument} title={`${label}: ${tone}`}>
-    <span className={cx(styles.led, TONE_CLASS[tone])} aria-hidden="true" />
+    <Led tone={tone} size="sm" />
     <span className={styles.instrumentLabel}>{label}</span>
   </span>
 );

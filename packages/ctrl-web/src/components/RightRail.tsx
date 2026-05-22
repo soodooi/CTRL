@@ -14,7 +14,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { IrisyMascot, type IrisyState } from './IrisyMascot';
+import { IrisyMascot, type IrisyState } from './primitives/IrisyMascot';
 import styles from './RightRail.module.css';
 
 export type RailTone = 'active' | 'success' | 'warning' | 'danger' | 'idle';

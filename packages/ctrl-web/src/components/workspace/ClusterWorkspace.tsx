@@ -17,9 +17,12 @@
 // it via useRailItems in code-space.tsx.
 
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
+import { TabStrip, type LedTone } from '@/components/primitives';
 import styles from './ClusterWorkspace.module.css';
 
-export type SessionTone = 'idle' | 'running' | 'warning' | 'error' | 'exited';
+// Cluster sources use the brand LedTone palette so dots match the rest
+// of the cockpit (status bar instruments, history rail, etc.).
+export type SessionTone = LedTone;
 
 export interface ClusterSource<T> {
   id: string;
@@ -52,7 +55,7 @@ interface Group<T> {
   sources: ClusterSource<T>[];
 }
 
-const tabTone = (tone: SessionTone | undefined): SessionTone => tone ?? 'idle';
+const tabTone = (tone: SessionTone | undefined): LedTone => tone ?? 'unknown';
 
 export function ClusterWorkspace<T>({
   title,
@@ -164,27 +167,17 @@ function GroupCard<T>({
         )}
       </header>
 
-      <div className={styles.tabs} role="tablist" aria-label={`${group.key.label} sessions`}>
-        {group.sources.map((source) => (
-          <button
-            key={source.id}
-            type="button"
-            role="tab"
-            aria-selected={source.id === activeId}
-            data-active={source.id === activeId}
-            className={styles.tab}
-            onClick={() => setActiveId(source.id)}
-            title={source.label}
-          >
-            <span
-              className={styles.tabDot}
-              data-tone={tabTone(source.tone)}
-              aria-hidden="true"
-            />
-            <span className={styles.tabLabel}>{source.label}</span>
-          </button>
-        ))}
-      </div>
+      <TabStrip
+        items={group.sources.map((s) => ({
+          id: s.id,
+          label: s.label,
+          tone: tabTone(s.tone),
+        }))}
+        activeId={activeId}
+        onChange={setActiveId}
+        ariaLabel={`${group.key.label} sessions`}
+        className={styles.tabs}
+      />
 
       <div className={styles.cardBody}>{renderPreview(active)}</div>
 

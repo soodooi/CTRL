@@ -8,7 +8,7 @@
 // the frontend scales across many keycaps without per-page chrome.
 
 import { useEffect, useState, type ReactElement } from 'react';
-import { IrisyMascot } from '@/components/IrisyMascot';
+import { ChatInput, IrisyMascot } from '@/components/primitives';
 import { useRail } from '@/components/RightRail';
 import {
   SessionWorkspace,
@@ -48,9 +48,7 @@ export const DefaultWorkspace = (): ReactElement => {
     return () => setIrisyState('idle');
   }, [setIrisyState]);
 
-  const handleSubmit = (e: React.FormEvent): void => {
-    e.preventDefault();
-    if (!input.trim()) return;
+  const handleSend = (_text: string): void => {
     // Phase 1D wires this to the LLM transport.
     setInput('');
   };
@@ -77,17 +75,16 @@ export const DefaultWorkspace = (): ReactElement => {
 
         <h1 className={styles.greeting}>What are we doing today?</h1>
 
-        <form className={styles.input} onSubmit={handleSubmit}>
-          <input
-            type="text"
+        <div className={styles.inputWrap}>
+          <ChatInput
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={setInput}
+            onSubmit={handleSend}
             placeholder="Ask Irisy, or type / for a keycap…"
-            aria-label="Chat with Irisy"
+            ariaLabel="Chat with Irisy"
             autoFocus
           />
-          <span className={styles.inputHint}>↵</span>
-        </form>
+        </div>
       </div>
     </SessionWorkspace>
   );
