@@ -6,10 +6,12 @@
 #   vim ~/.ctrl/config.toml
 #
 # Priority order at startup:
-#   1. ~/.ctrl/config.toml (a provider entry with `enabled = true` +
-#      non-empty api_key wins)
+#   1. ~/.ctrl/config.toml (any provider with a non-empty api_key wins)
 #   2. macOS Keychain entries (legacy `setup_llm_key` path)
 #   3. Adapter not registered → run_keycap returns clear error
+#
+# The single signal that a provider is active = `api_key` is non-empty.
+# The `enabled` field is kept for backward compatibility but ignored.
 #
 # Leave `base_url` / `default_model` blank to use CTRL defaults.
 
