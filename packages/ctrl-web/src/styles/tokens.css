@@ -35,14 +35,27 @@
   --status-danger: oklch(0.55 0.22 27);
   --status-info: oklch(0.65 0.16 252);
 
-  /* === Surfaces (dark default) === */
-  --color-background: var(--graphite);
-  --color-surface: var(--graphite-soft);
-  --color-surface-elevated: var(--graphite-soft-2);
+  /* === Surfaces (dark default) ===
+     4-level elevation per Linear / Warp / Cursor dark-mode discipline:
+       L0 base       — viewport background (the "ground")
+       L1 surface    — left keyboard rail / right rail / status bar
+       L2 elevated   — workspace cards / panels nested on L1
+       L3 overlay    — modals / popovers / dropdowns above content */
+  --color-bg-l0: var(--graphite);
+  --color-bg-l1: oklch(0.155 0.005 264);
+  --color-bg-l2: var(--graphite-soft);
+  --color-bg-l3: var(--graphite-soft-2);
+
+  /* Back-compat aliases — existing components still reference these. */
+  --color-background: var(--color-bg-l0);
+  --color-surface: var(--color-bg-l2);
+  --color-surface-elevated: var(--color-bg-l3);
+
   --color-text: var(--paper);
   --color-text-muted: var(--ink-faint);
   --color-text-soft: var(--ink-soft);
   --color-border: var(--graphite-soft-2);
+  --color-border-soft: oklch(0.20 0.005 264);
   --color-accent: var(--ctrl-blue-light);
 
   /* Semantic color aliases — route/component CSS should reference these,
@@ -64,13 +77,15 @@
   --container-wide: 1280px;
   --container-full: 100%;
 
-  /* === Shell chrome heights ===
-     StatusBar and BottomTab heights are kept as tokens so any consumer
-     that needs to clear / offset the chrome (e.g. fixed-positioned
-     overlays inside a route) reads from the same source of truth and
-     stays aligned when the bars are retuned. */
+  /* === Shell chrome dimensions ===
+     The 3-column AppLayout: left keyboard / flex workspace / right rail.
+     Status bar pinned top; no bottom tab (navigation is the keyboard). */
   --statusbar-height: 32px;
-  --bottomtab-height: 56px;
+  --keyboard-width: 320px;
+  --rightrail-width: 64px;
+  --keycap-size: 64px;          /* 4×4 grid inside 320 keyboard */
+  --keycap-gap: 12px;
+  --bottomtab-height: 0px;       /* legacy alias — bottom tab removed */
 
   /* === Typography === */
   --font-sans: 'Inter', 'SF Pro Text', system-ui, -apple-system, sans-serif;

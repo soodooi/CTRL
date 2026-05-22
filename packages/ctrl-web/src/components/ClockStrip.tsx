@@ -9,9 +9,12 @@ import type { ReactElement } from 'react';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import styles from './ClockStrip.module.css';
 
+// English locale per project rule "all UI strings English". Format target:
+// "Friday · May 22"  — short month + day, no year (the clock implies the
+// current year). Using 'en-US' so weekday/month names stay ASCII-only.
 const fmtDate = (d: Date): string => {
-  const weekday = d.toLocaleDateString('zh-CN', { weekday: 'long' });
-  const md = d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'long' });
+  const md = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return `${weekday} · ${md}`;
 };
 

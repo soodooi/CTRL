@@ -1,0 +1,147 @@
+/* Keyboard — permanent left rail (320px). */
+
+.rail {
+  background: var(--color-bg-l1);
+  border-right: 1px solid var(--color-border-soft);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5) var(--space-4);
+  gap: var(--space-4);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-3);
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: -0.005em;
+  cursor: text;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.search:hover { border-color: var(--color-border); color: var(--color-text-soft); }
+.search:focus-within {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+  outline: none;
+}
+.search input {
+  all: unset;
+  flex: 1;
+  font: inherit;
+  color: inherit;
+}
+.search kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 1px 4px;
+  letter-spacing: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  padding: 0 var(--space-1);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--keycap-gap);
+}
+
+.cap {
+  appearance: none;
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 12px;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  color: var(--color-text-soft);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 80ms ease;
+}
+.cap:hover {
+  background: var(--color-bg-l3);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+.cap:active { transform: translateY(1px); }
+.cap[data-active='true'] {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 8%);
+}
+
+.capIcon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent);
+}
+.capLabel {
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0;
+  text-align: center;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capEmpty {
+  background: transparent;
+  border: 1px dashed var(--color-border-soft);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.capEmpty:hover {
+  border-color: var(--color-border);
+  color: var(--color-text-soft);
+  background: var(--color-bg-l2);
+}
+
+.divider {
+  height: 1px;
+  background: var(--color-border-soft);
+  margin: var(--space-2) 0;
+}
+
+.spacer { flex: 1; }

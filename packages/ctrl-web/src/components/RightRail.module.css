@@ -1,0 +1,122 @@
+/* RightRail — permanent 64px right column. Vertical icon list +
+ * Irisy mascot pinned at top. Hover reveals labels via tooltip. */
+
+.rail {
+  background: var(--color-bg-l1);
+  border-left: 1px solid var(--color-border-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-4) var(--space-2);
+  gap: var(--space-3);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.mascot {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-2);
+  position: relative;
+}
+.mascotHalo {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--color-accent), transparent 70%) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  animation: irisy-halo 6s ease-in-out infinite;
+}
+@keyframes irisy-halo {
+  0%, 100% { opacity: 0; transform: scale(0.85); }
+  50%      { opacity: 0.5; transform: scale(1); }
+}
+
+.divider {
+  width: 24px;
+  height: 1px;
+  background: var(--color-border-soft);
+  margin: var(--space-1) 0;
+}
+
+.item {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  position: relative;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+.item:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+.item[data-active='true'] {
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 14%);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.itemDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-soft);
+}
+.itemDot[data-tone='active'] { background: var(--color-accent); }
+.itemDot[data-tone='success'] { background: var(--color-success); }
+.itemDot[data-tone='warning'] { background: var(--color-warning); }
+.itemDot[data-tone='danger']  { background: var(--color-danger); }
+
+.itemBadge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  background: var(--color-danger);
+  color: white;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.itemGlyph {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  color: inherit;
+  letter-spacing: 0;
+}
+
+.empty {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-border-soft);
+  margin-top: var(--space-2);
+}
+
+.spacer { flex: 1; }

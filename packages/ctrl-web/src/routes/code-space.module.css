@@ -94,13 +94,14 @@
 .csdLayout {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   grid-template-areas:
     'header  header'
     'term    rail'
     'footer  footer';
-  min-height: 100vh;
-  background: var(--color-background);
+  flex: 1;
+  min-height: 0;
+  background: var(--color-bg-l0);
   color: var(--color-text);
 }
 

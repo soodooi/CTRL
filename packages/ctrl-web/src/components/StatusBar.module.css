@@ -2,13 +2,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  /* Mobile UX: clear the notch / dynamic island when running as a PWA
-     on iOS. Falls back to 0 on desktop. */
-  padding-top: max(var(--space-2), env(safe-area-inset-top));
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  min-height: var(--statusbar-height);
+  height: var(--statusbar-height);
+  padding: 0 var(--space-4);
+  background: var(--color-bg-l1);
+  border-bottom: 1px solid var(--color-border-soft);
 }
 
 .brand {
