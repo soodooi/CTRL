@@ -107,6 +107,16 @@ pub async fn vault_root_path() -> Result<String, String> {
     Ok(vault_root()?.display().to_string())
 }
 
+/// Wipe the FTS5 index and rebuild from every `.md` file in the vault.
+/// Useful after the user edited files in vim / Obsidian (bypassing
+/// CTRL's write path) — the index would be out of sync until next
+/// rebuild. Returns the number of files indexed.
+#[tauri::command]
+pub async fn vault_rebuild_index() -> Result<usize, String> {
+    let root = vault_root()?;
+    vault::rebuild_index(&root).map_err(stringify_vault_error)
+}
+
 fn stringify_vault_error(e: VaultError) -> String {
     e.to_string()
 }

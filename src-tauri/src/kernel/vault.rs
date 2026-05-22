@@ -16,9 +16,36 @@
 // can read/write which paths) lives in `kernel::capability`; PWA-facing
 // Tauri commands wrap this module and apply capability checks.
 
+use crate::kernel::vault_index;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+/// Lazy global FTS5 index. Initialized on first vault operation (or
+/// first search). Production code goes through this; tests skip
+/// index touches via the cfg(not(test)) gates below so concurrent
+/// test threads don't pollute the user's real index db.
+static GLOBAL_INDEX: OnceLock<Option<vault_index::VaultIndex>> = OnceLock::new();
+
+#[allow(dead_code)] // gated by cfg(not(test)); compiler can't see runtime use under test cfg
+fn try_global_index() -> Option<&'static vault_index::VaultIndex> {
+    GLOBAL_INDEX
+        .get_or_init(|| {
+            let path = std::env::var("CTRL_VAULT_INDEX_PATH")
+                .ok()
+                .map(PathBuf::from)
+                .or_else(vault_index::default_index_path)?;
+            match vault_index::VaultIndex::open(&path) {
+                Ok(idx) => Some(idx),
+                Err(e) => {
+                    tracing::warn!(?path, error = %e, "vault: index unavailable, falling back to scan");
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
 
 /// Default vault path: `$HOME/.ctrl/vault`. Users may override via
 /// `~/.ctrl/config.toml`'s `[vault] path = "..."` to point at their
@@ -59,6 +86,23 @@ pub fn write(
     let body = format!("---\n{yaml}---\n\n{content}");
     fs::write(&full, body).map_err(|e| VaultError::Io(e.to_string()))?;
 
+    // Best-effort index upsert. Failures are logged but never block the
+    // write — vault files on disk remain the source of truth and the
+    // index can always be rebuilt via vault::rebuild_index.
+    #[cfg(not(test))]
+    if let Some(idx) = try_global_index() {
+        let fm_str = serde_json::to_string(frontmatter).unwrap_or_default();
+        let mtime_ms = current_mtime_ms(&full);
+        if let Err(e) = idx.upsert(
+            &safe.to_string_lossy(),
+            content,
+            &fm_str,
+            mtime_ms,
+        ) {
+            tracing::warn!(path = %safe.display(), error = %e, "vault: index upsert failed");
+        }
+    }
+
     Ok(full)
 }
 
@@ -91,16 +135,54 @@ pub fn list(vault_root: &Path, subdir: Option<&str>) -> Result<Vec<String>, Vaul
     Ok(out)
 }
 
-/// Naive substring search across vault `.md` files. A future iteration
-/// swaps this for SQLite FTS5 (rusqlite is already a dep); the public
-/// signature stays the same so callers don't break.
+/// Vault search — tries FTS5 (kernel::vault_index) first, falls back
+/// to substring scan if the index is unavailable or empty. The public
+/// signature stays stable so existing callers don't break.
+///
+/// Fallback rationale: per CLAUDE.md design philosophy, the index is a
+/// *derivative* of the vault, not the source of truth. A user can rm
+/// the index db at any time, or the daemon can boot before the first
+/// rebuild_index runs — neither should make search hard-fail.
 pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<String>, VaultError> {
     let q = query.trim();
     if q.is_empty() {
         return Ok(Vec::new());
     }
+
+    #[cfg(not(test))]
+    if let Some(idx) = try_global_index() {
+        match idx.count() {
+            Ok(n) if n > 0 => {
+                if let Ok(hits) = idx.search(q, limit) {
+                    return Ok(hits);
+                }
+                // Fall through to scan on FTS5 error.
+            }
+            Ok(_) => {
+                // Index empty (never built or was cleared). Trigger
+                // async-ish rebuild for next call, return scan results
+                // now so the user gets an answer this turn.
+                if let Err(e) = rebuild_index_inner(vault_root, idx) {
+                    tracing::warn!(error = %e, "vault: lazy rebuild_index failed");
+                }
+            }
+            Err(_) => {
+                // Index unhealthy — log + fall through.
+                tracing::warn!("vault: index count failed, falling back to scan");
+            }
+        }
+    }
+
+    substring_search_scan(vault_root, q, limit)
+}
+
+fn substring_search_scan(
+    vault_root: &Path,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<String>, VaultError> {
     let paths = list(vault_root, None)?;
-    let needle = q.to_lowercase();
+    let needle = query.to_lowercase();
     let mut hits: Vec<String> = Vec::new();
     for p in paths {
         let full = vault_root.join(&p);
@@ -117,6 +199,54 @@ pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<String
     Ok(hits)
 }
 
+/// Wipe the FTS5 index and rebuild from every `.md` file in the vault.
+/// Called manually (Settings UI button) or lazily on first search if
+/// the index is empty.
+pub fn rebuild_index(vault_root: &Path) -> Result<usize, VaultError> {
+    #[cfg(not(test))]
+    {
+        let idx = try_global_index()
+            .ok_or_else(|| VaultError::Io("vault index unavailable (HOME unset?)".to_string()))?;
+        return rebuild_index_inner(vault_root, idx);
+    }
+    #[cfg(test)]
+    {
+        // Test mode bypasses the global index; caller should use
+        // VaultIndex directly for end-to-end index tests.
+        let _ = vault_root;
+        Ok(0)
+    }
+}
+
+#[allow(dead_code)] // gated under cfg(not(test))
+fn rebuild_index_inner(
+    vault_root: &Path,
+    idx: &vault_index::VaultIndex,
+) -> Result<usize, VaultError> {
+    idx.clear()
+        .map_err(|e| VaultError::Io(format!("clear index: {e}")))?;
+    let paths = list(vault_root, None)?;
+    for path in &paths {
+        let entry = read(vault_root, path)?;
+        let fm_str = serde_json::to_string(&entry.frontmatter).unwrap_or_default();
+        let mtime_ms = current_mtime_ms(&vault_root.join(path));
+        if let Err(e) = idx.upsert(path, &entry.content, &fm_str, mtime_ms) {
+            tracing::warn!(path = %path, error = %e, "vault: rebuild upsert failed");
+        }
+    }
+    Ok(paths.len())
+}
+
+#[allow(dead_code)]
+fn current_mtime_ms(full_path: &Path) -> i64 {
+    std::fs::metadata(full_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// Delete a vault file. Returns Ok even when the file didn't exist —
 /// vault semantics match the user's mental model: "after delete, it's
 /// gone" is true either way.
@@ -124,10 +254,17 @@ pub fn delete(vault_root: &Path, rel_path: &str) -> Result<(), VaultError> {
     let safe = sanitize_relative_path(rel_path)?;
     let full = vault_root.join(&safe);
     match fs::remove_file(&full) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(VaultError::Io(e.to_string())),
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(VaultError::Io(e.to_string())),
     }
+    #[cfg(not(test))]
+    if let Some(idx) = try_global_index() {
+        if let Err(e) = idx.remove(&safe.to_string_lossy()) {
+            tracing::warn!(path = %safe.display(), error = %e, "vault: index remove failed");
+        }
+    }
+    Ok(())
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────

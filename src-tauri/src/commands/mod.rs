@@ -62,6 +62,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_search,
             $crate::commands::vault::vault_delete,
             $crate::commands::vault::vault_root_path,
+            $crate::commands::vault::vault_rebuild_index,
         ]
     };
 }
