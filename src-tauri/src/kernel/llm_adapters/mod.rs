@@ -22,28 +22,44 @@ const KEYCHAIN_SERVICE: &str = "app.ctrl";
 /// so dev keys set with the pre-rename bin don't silently break.
 const KEYCHAIN_SERVICE_LEGACY: &str = "app.ctrl.spike";
 
-/// Read an API key from the keychain. Tries the current service name
-/// first, then the legacy spike name. Returns None when neither holds
-/// a key.
-fn read_keychain_key(profile: &str) -> Option<String> {
+/// Read an API key from the keychain. Tries each service × account
+/// combination in turn and returns the first non-empty hit. The
+/// account variants are aliases for the same provider — e.g. a user
+/// who ran `setup_llm_key ark <k>` and a user who ran
+/// `setup_llm_key volc <k>` both get picked up here.
+fn read_keychain_key_aliased(account_aliases: &[&str]) -> Option<String> {
     for service in [KEYCHAIN_SERVICE, KEYCHAIN_SERVICE_LEGACY] {
-        match keyring::Entry::new(service, profile) {
-            Ok(entry) => match entry.get_password() {
-                Ok(key) if !key.is_empty() => return Some(key),
-                _ => continue,
-            },
-            Err(_) => continue,
+        for account in account_aliases {
+            match keyring::Entry::new(service, account) {
+                Ok(entry) => {
+                    if let Ok(key) = entry.get_password() {
+                        if !key.is_empty() {
+                            tracing::info!(
+                                "llm_adapter: key resolved via service={service} account={account}"
+                            );
+                            return Some(key);
+                        }
+                    }
+                }
+                Err(_) => continue,
+            }
         }
     }
     None
 }
+
+/// Volcano Ark account name aliases. The CLI helper accepts whichever
+/// name the user typed; the adapter loader treats all three as the
+/// same provider.
+const VOLC_ACCOUNT_ALIASES: &[&str] = &["volc", "ark", "doubao"];
+const OPENAI_ACCOUNT_ALIASES: &[&str] = &["openai", "gpt"];
 
 /// Register the default-shipping adapters on a freshly-constructed
 /// LlmPortRouter. Called from KernelRuntime::boot. Adapters whose
 /// secrets are missing skip registration silently — the router will
 /// fall through to the next entry in the fallback chain.
 pub fn register_default_adapters(router: &mut LlmPortRouter) {
-    if let Some(key) = read_keychain_key("volc") {
+    if let Some(key) = read_keychain_key_aliased(VOLC_ACCOUNT_ALIASES) {
         let adapter = openai_shape::OpenAIShapeAdapter::new(
             "volc",
             "https://ark.cn-beijing.volces.com/api/v3",
@@ -56,7 +72,7 @@ pub fn register_default_adapters(router: &mut LlmPortRouter) {
         tracing::info!("llm_adapter: volc key not found in keychain; skipping registration");
     }
 
-    if let Some(key) = read_keychain_key("openai") {
+    if let Some(key) = read_keychain_key_aliased(OPENAI_ACCOUNT_ALIASES) {
         let adapter = openai_shape::OpenAIShapeAdapter::new(
             "openai",
             "https://api.openai.com/v1",
