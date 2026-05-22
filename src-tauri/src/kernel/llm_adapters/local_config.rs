@@ -47,8 +47,13 @@ pub struct ProvidersConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ProviderEntry {
+    /// Deprecated — accepted for backward compatibility but ignored. The
+    /// schema used to require enabled=true; users had to flip TWO knobs
+    /// (set api_key AND set enabled=true) which was a foot-gun. Now a
+    /// non-empty api_key is the single signal that an entry is active.
+    /// Leave this field out, set true, set false — all treated the same.
     #[serde(default)]
-    pub enabled: bool,
+    pub enabled: Option<bool>,
     #[serde(default)]
     pub api_key: String,
     #[serde(default)]
@@ -58,11 +63,11 @@ pub struct ProviderEntry {
 }
 
 impl ProviderEntry {
-    /// True iff this entry is usable — enabled flag set AND api_key non-empty.
-    /// A `[providers.volc]` block left at `enabled = false` (the template
-    /// default) returns false here so the loader skips it cleanly.
+    /// True iff `api_key` is non-empty (whitespace-only counts as empty).
+    /// The historic `enabled` boolean is intentionally NOT consulted —
+    /// see the field comment.
     pub fn is_usable(&self) -> bool {
-        self.enabled && !self.api_key.trim().is_empty()
+        !self.api_key.trim().is_empty()
     }
 }
 
@@ -97,7 +102,6 @@ mod tests {
     fn parse_minimal_volc_only() {
         let s = r#"
             [providers.volc]
-            enabled = true
             api_key = "abc"
             base_url = "https://x.test"
             default_model = "m"
@@ -113,7 +117,7 @@ mod tests {
     #[test]
     fn entry_with_blank_key_is_not_usable() {
         let e = ProviderEntry {
-            enabled: true,
+            enabled: None,
             api_key: "   ".into(),
             base_url: String::new(),
             default_model: String::new(),
@@ -122,14 +126,27 @@ mod tests {
     }
 
     #[test]
-    fn entry_disabled_is_not_usable_even_with_key() {
-        let e = ProviderEntry {
-            enabled: false,
+    fn entry_with_key_is_usable_regardless_of_enabled_field() {
+        // The `enabled` field is deprecated. With api_key non-empty, all
+        // three states (missing / true / explicit false) are treated as
+        // usable so users don't have to flip two knobs.
+        let base = ProviderEntry {
+            enabled: None,
             api_key: "real-key".into(),
             base_url: "https://x".into(),
             default_model: "m".into(),
         };
-        assert!(!e.is_usable());
+        assert!(base.is_usable());
+        assert!(ProviderEntry {
+            enabled: Some(true),
+            ..base.clone()
+        }
+        .is_usable());
+        assert!(ProviderEntry {
+            enabled: Some(false),
+            ..base
+        }
+        .is_usable());
     }
 
     #[test]
@@ -146,11 +163,13 @@ mod tests {
         // compat win when older builds read newer configs.
         let s = r#"
             [providers.volc]
-            enabled = true
+            enabled = false
             api_key = "k"
             future_field = "ignored"
         "#;
         let cfg: LocalConfig = toml::from_str(s).unwrap();
+        // Legacy `enabled = false` is parsed (no schema error) and
+        // ignored at is_usable time — only the api_key matters.
         assert!(cfg.providers.volc.unwrap().is_usable());
     }
 }
