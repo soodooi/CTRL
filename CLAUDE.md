@@ -29,6 +29,43 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 
 ---
 
+## Design Philosophy
+
+> 跨 session 强约束。冲突时优先级：**目标推进 > 硬规则 (## Rules) > 设计哲学 (本节) > 实施细节**。
+
+### Meta: Obsidian 哲学 (一切派生于此)
+
+**CTRL 是用户能力的延伸 (augmentation)，不是知识中介。**
+
+- 数据本来就是用户的——本地 markdown + YAML / TOML / JSON, 永恒中间格式, 100 年后用 vim 还能读
+- 本地是 **truth**, 云是 **mirror**, 不是反过来
+- 无 lock-in：离开 CTRL = 文件还在那, 不需要"导出"因为根本没"导入"
+- 无 CTRL 账号系统：用户身份 = 本机 keychain 里的密钥, CTRL 团队不知道你存在
+- 无私有 binary 格式：所有用户内容必须 plain text + structured frontmatter
+
+**vim test** (每个新 capability 的设计门槛): 用户用 vim 打开本机文件, 能拿到 CTRL 提供的核心价值吗? 答 No = 设计错, 重做。
+
+### Derived rules (任何新代码都遵守)
+
+1. **本地是 truth, 云是 mirror** — 所有读走本地；写本地立即可见, 异步推云。云不在 → 降级运行, 不 hard fail。
+2. **端侧化优先** — OAuth (本机 loopback callback, 不走 CTRL cloud proxy) / LLM (Volc 云 + Ollama 端侧 dual) / sync (mesh P2P, ADR-003) / RAG (本机 SQLite FTS5 + WASM embed) / OCR (本机 Vision framework) 都端侧实现。**ctrl-cloud 是 augmentation, 不是 dependency**——用户拔网 / 不用 ctrl-cloud, CTRL 完整可用。
+3. **Ctrl-key 是唯一入口** — 用户永不打开飞书 / Notion / Linear 等第三方 app；CTRL workspace 区 render 所有数据类型 (viewer registry by content type, 不是 by platform)。
+4. **One-shot, not flows** — 一个 keycap = 一个原子动作。无 wizard / 无 multi-step / 无 dialog tree。
+5. **AI 是 pipe, 不是 sidebar** — 发收消息 / 处理内容时 AI 默认 in-line 处理 (润色 / 摘要 / 抽 action item / 翻译), 可关默认开。
+6. **Transparency by drill-down** — 任何 AI / 抽象处理都可长按 / hover 看 raw 数据 (飞书原文 / AI 改后 / 本地草稿三层视图)。
+
+### 几个具体推论
+
+- **没有"导出"功能** — 数据从来没被进口过, vault 文件夹就是数据
+- **OAuth tokens 存 macOS Keychain** — CTRL 团队 server 不在 token 流量里
+- **keycap manifest = markdown + JSON frontmatter** — 不是 binary blob, 用户可手编可 git diff
+- **vault layout 由用户决定** — CTRL 提供 default policy (flat / by-day / by-entity), 用户可换；不 hardcode 目录结构
+- **第三方 backend (飞书 / Notion / Slack) 是 sync provider** — 不是 source of truth, 本地永远赢冲突
+
+详见 memory `decision_ctrl_obsidian_philosophy.md` (long-form rationale + Raycast 对比 + audit 清单)。
+
+---
+
 ## Architecture overview
 
 详细见 `.olym/decisions/001-system-architecture.md` (spine) + `.olym/decisions/002-pwa-pivot.md` (UI layer, accepted 2026-05-13).
