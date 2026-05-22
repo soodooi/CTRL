@@ -38,3 +38,11 @@ export { TabStrip } from './TabStrip';
 export type { TabStripProps, TabItem } from './TabStrip';
 export { IrisyMascot } from './IrisyMascot';
 export type { IrisyState } from './IrisyMascot';
+export { StatusPill } from './StatusPill';
+export type { StatusPillProps } from './StatusPill';
+export { IconButton } from './IconButton';
+export type {
+  IconButtonProps,
+  IconButtonVariant,
+  IconButtonSize,
+} from './IconButton';

@@ -1,0 +1,49 @@
+/* StatusPill — small label-chip primitive. Tone-driven. */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  background: var(--color-bg-l3);
+  color: var(--color-text-soft);
+  line-height: 1.4;
+}
+
+.tone_nominal {
+  background: color-mix(in oklab, var(--color-success), transparent 85%);
+  color: var(--color-success);
+  border-color: color-mix(in oklab, var(--color-success), transparent 60%);
+}
+.tone_caution {
+  background: color-mix(in oklab, var(--color-warning), transparent 85%);
+  color: var(--color-warning);
+  border-color: color-mix(in oklab, var(--color-warning), transparent 60%);
+}
+.tone_warning {
+  background: color-mix(in oklab, var(--color-danger), transparent 85%);
+  color: var(--color-danger);
+  border-color: color-mix(in oklab, var(--color-danger), transparent 60%);
+}
+.tone_info {
+  background: color-mix(in oklab, var(--color-accent), transparent 85%);
+  color: var(--color-accent);
+  border-color: color-mix(in oklab, var(--color-accent), transparent 60%);
+}
+.tone_offline {
+  background: var(--color-bg-l3);
+  color: var(--color-text-muted);
+}
+.tone_unknown {
+  background: transparent;
+  color: var(--color-text-muted);
+  border-color: var(--color-border-soft);
+}

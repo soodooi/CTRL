@@ -124,10 +124,12 @@
   border-radius: 50%;
   background: var(--color-text-soft);
 }
-.itemDot[data-tone='active'] { background: var(--color-accent); }
-.itemDot[data-tone='success'] { background: var(--color-success); }
-.itemDot[data-tone='warning'] { background: var(--color-warning); }
-.itemDot[data-tone='danger']  { background: var(--color-danger); }
+.itemDot[data-tone='info']     { background: var(--color-accent); }
+.itemDot[data-tone='nominal']  { background: var(--color-success); }
+.itemDot[data-tone='caution']  { background: var(--color-warning); }
+.itemDot[data-tone='warning']  { background: var(--color-danger); }
+.itemDot[data-tone='offline']  { background: var(--color-text-muted); opacity: 0.5; }
+.itemDot[data-tone='unknown']  { background: var(--color-text-soft); }
 
 .itemBadge {
   position: absolute;

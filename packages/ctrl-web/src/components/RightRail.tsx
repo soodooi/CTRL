@@ -15,9 +15,13 @@ import {
   type ReactNode,
 } from 'react';
 import { IrisyMascot, type IrisyState } from './primitives/IrisyMascot';
+import type { LedTone } from './primitives';
 import styles from './RightRail.module.css';
 
-export type RailTone = 'active' | 'success' | 'warning' | 'danger' | 'idle';
+// Rail tones reuse the brand LedTone so every cockpit dot shares one
+// vocabulary (PFD discipline: nominal / caution / warning / info /
+// offline / unknown).
+export type RailTone = LedTone;
 
 export interface RailItem {
   id: string;

@@ -161,12 +161,12 @@ export const CodeSpaceRoute = (): ReactElement => {
         : shortStreamId(env.stream_id),
       tone:
         env.status === 'running'
-          ? 'success'
+          ? 'nominal'
           : env.status === 'crashed'
-            ? 'danger'
+            ? 'warning'
             : env.status === 'stopped'
-              ? 'idle'
-              : 'idle',
+              ? 'offline'
+              : 'unknown',
       onClick: () => handleOpen(env.stream_id),
     }));
     setRailItems(items);
