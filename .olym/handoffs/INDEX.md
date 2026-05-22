@@ -4,7 +4,7 @@
 
 > Auto-generated from `H-*.md` frontmatter. Edits are overwritten.
 
-> **Counts** · open=5 · claimed=0 · in_progress=2 · done=3 · verified=0 · wontfix=0 · archived=0
+> **Counts** · open=6 · claimed=0 · in_progress=2 · done=2 · verified=1 · wontfix=0 · archived=0
 
 ## Open
 
@@ -13,6 +13,7 @@
 - **[H-2026-05-18-001](./H-2026-05-18-001-irisy-dev-lane.md)** · [P0] (open) · _daedalus_ · Irisy keycap-creator companion — bao 在 PWA 操作 Irisy 生成键帽 (no-Claude runtime)
 - **[H-2026-05-19-003](./H-2026-05-19-003-mac-shell-followups.md)** · [P1] (open) · _athena_ · mac shell follow-ups — single-instance lock, AX prompt, bundle id rename
 - **[H-2026-05-20-001](./H-2026-05-20-001-pwa-nav-mobile-ux.md)** · [P1] (open) · _daedalus_ · PWA nav redesign — borrow mobile UX patterns for the 920×560 floating-shell viewport
+- **[H-2026-05-22-002](./H-2026-05-22-002-mac-hotkey-reset-lock-hardening.md)** · [P1] (open) · _athena_ · mac shell hotkey reset — try_lock → lock + hide-path mirror (themis HIGH+MEDIUM)
 
 ## Claimed
 
@@ -25,13 +26,12 @@ _(none)_
 
 ## Done (awaiting verification)
 
-- **[H-2026-05-18-002](./H-2026-05-18-002-jiazuo-capability-spike.md)** · [P0] (done) · _hephaestus_ · 底座 capability surface 验证 spike — 喂 ADR-004
 - **[H-2026-05-19-001](./H-2026-05-19-001-code-space-path-c.md)** · [P0] (done) · _zeus_ · Code Space path C — SubprocessActor + portable-pty 落地
 - **[H-2026-05-19-002](./H-2026-05-19-002-mac-window-overlay-bug.md)** · [P0] (done) · _athena_ · macOS CTRL shell broken — window covers desktop, no menu bar tray, hotkey dead
 
 ## Verified
 
-_(none)_
+- **[H-2026-05-18-002](./H-2026-05-18-002-jiazuo-capability-spike.md)** · [P0] (verified) · _hephaestus_ · 底座 capability surface 验证 spike — 喂 ADR-004
 
 ## Won't Fix
 
@@ -56,6 +56,7 @@ _(none)_
 ### lane-E
 
 - **[H-2026-05-14-001](./H-2026-05-14-001-mesh-comm.md)** · [P0] (in_progress) · _hephaestus_ · Multi-device mesh communication — design + spike + library evaluation
+- **[H-2026-05-22-002](./H-2026-05-22-002-mac-hotkey-reset-lock-hardening.md)** · [P1] (open) · _athena_ · mac shell hotkey reset — try_lock → lock + hide-path mirror (themis HIGH+MEDIUM)
 
 ### lane-F
 
@@ -74,12 +75,17 @@ _(none)_
 
 - **[H-2026-05-19-003](./H-2026-05-19-003-mac-shell-followups.md)** · [P1] (open) · _athena_ · mac shell follow-ups — single-instance lock, AX prompt, bundle id rename
 - **[H-2026-05-22-001](./H-2026-05-22-001-code-space-companion-pane.md)** · [P0] (in_progress) · _daedalus_ · Code Space companion pane — Irisy ↔ live terminal 闭环 (coding companion 临门一脚)
+- **[H-2026-05-22-002](./H-2026-05-22-002-mac-hotkey-reset-lock-hardening.md)** · [P1] (open) · _athena_ · mac shell hotkey reset — try_lock → lock + hide-path mirror (themis HIGH+MEDIUM)
 
 ### irisy-v0.3-prod-agent
 
 - **[H-2026-05-18-001](./H-2026-05-18-001-irisy-dev-lane.md)** · [P0] (open) · _daedalus_ · Irisy keycap-creator companion — bao 在 PWA 操作 Irisy 生成键帽 (no-Claude runtime)
 
 ## By Category (active)
+
+### bugfix
+
+- **[H-2026-05-22-002](./H-2026-05-22-002-mac-hotkey-reset-lock-hardening.md)** · [P1] (open) · _athena_ · mac shell hotkey reset — try_lock → lock + hide-path mirror (themis HIGH+MEDIUM)
 
 ### chore
 
