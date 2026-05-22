@@ -2,10 +2,12 @@
 // env via the kernel's cs_spawn command. Modal pattern, no portal: the
 // route mounts an overlay div when open and the form submits the spawn.
 //
-// Three command presets surfaced as quick-select chips (bash / aider /
-// claude-code) plus free-form input. cwd is optional — kernel falls
-// back to its own default. Cols/rows are not exposed (sensible defaults
-// 80×24 are passed by the caller). Esc + backdrop click + Cancel all close.
+// Presets:
+//   - bash       — always available on macOS / Linux; default selection.
+//   - claude-code — requires `npm install -g @anthropic-ai/claude-code`.
+//   - aider      — requires `pip install aider-chat`.
+// The "needs install" presets surface their install command underneath
+// so a user who picks one knows what to run if cs_spawn returns 127.
 
 import {
   useCallback,
@@ -20,11 +22,33 @@ import { cx } from './primitives/cx';
 import type { CsSpawnArgs } from '@/lib/kernel';
 import styles from './NewEnvModal.module.css';
 
-const PRESETS: ReadonlyArray<{ label: string; command: string }> = [
+interface Preset {
+  label: string;
+  command: string;
+  install?: { hint: string; cmd: string };
+}
+
+const PRESETS: ReadonlyArray<Preset> = [
   { label: 'bash', command: 'bash' },
-  { label: 'aider', command: 'aider' },
-  { label: 'claude-code', command: 'claude' },
+  {
+    label: 'claude-code',
+    command: 'claude',
+    install: {
+      hint: 'Requires Claude Code CLI on $PATH.',
+      cmd: 'npm install -g @anthropic-ai/claude-code',
+    },
+  },
+  {
+    label: 'aider',
+    command: 'aider',
+    install: {
+      hint: 'Requires aider on $PATH (Python).',
+      cmd: 'pip install aider-chat',
+    },
+  },
 ];
+
+const DEFAULT_COMMAND = PRESETS[0]?.command ?? 'bash';
 
 interface Props {
   open: boolean;
@@ -44,7 +68,7 @@ export const NewEnvModal = ({
   pending = false,
   error,
 }: Props): ReactElement | null => {
-  const [command, setCommand] = useState('');
+  const [command, setCommand] = useState<string>(DEFAULT_COMMAND);
   const [cwd, setCwd] = useState('');
   const titleId = useId();
 
@@ -61,10 +85,11 @@ export const NewEnvModal = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose, pending]);
 
-  // Reset the form whenever the modal closes so the next open starts clean.
+  // Reset the form whenever the modal closes so the next open starts
+  // with bash pre-selected (the only preset that always works).
   useEffect(() => {
     if (!open) {
-      setCommand('');
+      setCommand(DEFAULT_COMMAND);
       setCwd('');
     }
   }, [open]);
@@ -88,6 +113,8 @@ export const NewEnvModal = ({
 
   if (!open) return null;
 
+  const activePreset = PRESETS.find((p) => p.command === command);
+
   return (
     <div
       className={styles.backdrop}
@@ -103,7 +130,8 @@ export const NewEnvModal = ({
         <header className={styles.head}>
           <h2 id={titleId} className={styles.title}>New environment</h2>
           <p className={styles.subtitle}>
-            Spawn a remote coding session. Pick a preset or enter any command.
+            Spawn a coding session. <strong>bash</strong> always works; other
+            presets need a one-time CLI install.
           </p>
         </header>
 
@@ -116,17 +144,26 @@ export const NewEnvModal = ({
                 className={cx(styles.preset, command === p.command && styles.presetActive)}
                 onClick={() => handlePreset(p.command)}
                 disabled={pending}
+                title={p.install ? p.install.hint : undefined}
               >
                 {p.label}
+                {p.install && <span className={styles.presetTag}>needs install</span>}
               </button>
             ))}
           </div>
+
+          {activePreset?.install && (
+            <div className={styles.installHint} role="note">
+              <span>{activePreset.install.hint}</span>
+              <code className={styles.installCmd}>{activePreset.install.cmd}</code>
+            </div>
+          )}
 
           <FormField label="Command" hint="The program to spawn, e.g. bash, aider, claude.">
             <TextInput
               value={command}
               onChange={(e) => setCommand(e.target.value)}
-              placeholder="claude"
+              placeholder="bash"
               autoFocus
               disabled={pending}
               required

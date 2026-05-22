@@ -107,6 +107,46 @@
   cursor: not-allowed;
 }
 
+.presetTag {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  font-size: 0.7em;
+  text-transform: none;
+  letter-spacing: 0;
+  background: var(--color-surface-elevated);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-soft);
+}
+
+.presetActive .presetTag {
+  background: color-mix(in oklch, var(--paper) 20%, transparent);
+  color: var(--paper);
+}
+
+.installHint {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.installCmd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  background: var(--color-background);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  user-select: all;
+  word-break: break-all;
+}
+
 .footer {
   display: flex;
   justify-content: flex-end;

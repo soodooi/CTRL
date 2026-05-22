@@ -226,12 +226,23 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
     },
     onTerminalExit: (payload) => {
       setExit(payload);
+      const code = payload.code;
       pushLog(
-        `exit · code=${payload.code ?? '?'}${
+        `exit · code=${code ?? '?'}${
           payload.signal !== undefined ? ` · signal=${payload.signal}` : ''
         }`,
-        payload.code === 0 ? 'info' : 'error',
+        code === 0 ? 'info' : 'error',
       );
+      // POSIX convention: 127 = "command not found". The most common
+      // first-time failure mode (user picked a claude/aider preset
+      // without the CLI installed). Surface a friendly hint instead of
+      // a bare exit code.
+      if (code === 127) {
+        pushLog(
+          'hint · command not found on $PATH. install the CLI first, or spawn a new env with the bash preset.',
+          'warn',
+        );
+      }
     },
     onEnvStatus: (payload) => {
       setEnvStatus(payload);
@@ -396,6 +407,22 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
           })}
         </div>
       </header>
+
+      {exit?.code === 127 && (
+        <div className={styles.csdExitHint} role="alert">
+          <strong>Command not found.</strong> The binary isn't installed on
+          your <code>$PATH</code>. Go back and spawn a new env with the
+          <code> bash </code>preset, or install the CLI you wanted (the
+          install command was shown in the spawn dialog).
+          <button
+            type="button"
+            className={styles.csdExitHintBack}
+            onClick={() => void navigate({ to: '/code-space' })}
+          >
+            Back to list
+          </button>
+        </div>
+      )}
 
       <div className={styles.csdSplit} data-mode={viewMode}>
         <section className={styles.csdTerminal} aria-label="Terminal output">
