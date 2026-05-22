@@ -101,20 +101,58 @@ pub struct RunKeycapResult {
 #[tauri::command]
 pub async fn run_keycap(
     args: RunKeycapArgs,
-    _kernel: State<'_, KernelHandle>,
+    kernel: State<'_, KernelHandle>,
 ) -> Result<RunKeycapResult, String> {
+    use crate::kernel::event::{Op, OpKind};
+
     let started = std::time::Instant::now();
-    // sub-PR e: route to scheduler::run_actor + Effect dispatch + ST-SS stream.
+    let stream_id = format!("keycap-{}", args.keycap_id);
+
+    // Publish KeycapInvoked the moment we accept the call so the PWA
+    // workspace pane subscribed to `keycap-<id>` sees an event before
+    // we do any work — without this, the user clicks a keycap and the
+    // pane sits silently until completion (or forever, if the work
+    // path stays a stub).
+    kernel.bridge.publish_op(Op {
+        kind: OpKind::KeycapInvoked,
+        ts_ms: now_ms(),
+        stream_id: Some(stream_id.clone()),
+        payload: serde_json::json!({
+            "keycap_id": args.keycap_id,
+            "input": args.input,
+        }),
+    });
+
+    // sub-PR e: route to scheduler::run_actor + Effect dispatch + ST-SS
+    // stream. Until then we publish the synthetic completion so the user
+    // still gets a visible "ran" result instead of "press button → nothing".
     let output = serde_json::json!({
         "stub": true,
         "keycap_id": args.keycap_id,
         "echo_input": args.input,
-        "note": "wired to scheduler in sub-PR e",
+        "note": "real scheduler dispatch pending",
     });
-    Ok(RunKeycapResult {
-        output,
-        duration_ms: started.elapsed().as_millis() as u64,
-    })
+    let duration_ms = started.elapsed().as_millis() as u64;
+
+    kernel.bridge.publish_op(Op {
+        kind: OpKind::KeycapCompleted,
+        ts_ms: now_ms(),
+        stream_id: Some(stream_id),
+        payload: serde_json::json!({
+            "keycap_id": args.keycap_id,
+            "output": output.clone(),
+            "duration_ms": duration_ms,
+        }),
+    });
+
+    Ok(RunKeycapResult { output, duration_ms })
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Deserialize)]
