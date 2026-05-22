@@ -27,6 +27,7 @@ pub mod capability;
 pub mod channel;
 pub mod effect;
 pub mod event;
+pub mod llm_adapters;
 pub mod llm_port;
 pub mod mcp_host;
 pub mod persistence;
