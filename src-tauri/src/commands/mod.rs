@@ -18,6 +18,7 @@ pub mod code_space;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
+pub mod storage;
 pub mod stss;
 pub mod vault;
 
@@ -63,6 +64,18 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_delete,
             $crate::commands::vault::vault_root_path,
             $crate::commands::vault::vault_rebuild_index,
+            // localstorage — small persistent JSON KV per keycap
+            $crate::commands::storage::localstorage_get,
+            $crate::commands::storage::localstorage_set,
+            $crate::commands::storage::localstorage_remove,
+            $crate::commands::storage::localstorage_list,
+            $crate::commands::storage::localstorage_clear,
+            // cache — transient blob LRU per keycap
+            $crate::commands::storage::cache_get,
+            $crate::commands::storage::cache_set,
+            $crate::commands::storage::cache_remove,
+            $crate::commands::storage::cache_clear,
+            $crate::commands::storage::cache_total_bytes,
         ]
     };
 }
