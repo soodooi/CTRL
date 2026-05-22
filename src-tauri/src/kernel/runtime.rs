@@ -61,11 +61,27 @@ impl KernelRuntime {
         ]);
         crate::kernel::llm_adapters::register_default_adapters(&mut llm_port);
 
+        let mcp_host = Arc::new(McpHost::new());
+        // Hydrate the MCP server registry from disk so previously
+        // installed Pattern D keycaps re-register without the user
+        // re-running the install wizard each launch. Connections lazy-
+        // establish on first invoke; this only reloads descriptors.
+        if let Some(reg_path) = McpHost::default_registry_path() {
+            let host_clone = Arc::clone(&mcp_host);
+            tokio::spawn(async move {
+                match host_clone.load_registry(&reg_path).await {
+                    Ok(n) if n > 0 => tracing::info!(count = n, ?reg_path, "mcp_host: registry loaded"),
+                    Ok(_) => tracing::debug!(?reg_path, "mcp_host: empty registry, fresh start"),
+                    Err(e) => tracing::warn!(error = %e, ?reg_path, "mcp_host: registry load failed"),
+                }
+            });
+        }
+
         Ok(Self {
             scheduler: Arc::new(Scheduler::new()),
             event_bus: Arc::new(EventBus::new()),
             capability_broker: Arc::new(CapabilityBroker::new()),
-            mcp_host: Arc::new(McpHost::new()),
+            mcp_host,
             effect_executor: Arc::new(EffectExecutor::new()),
             event_store: Arc::new(event_store),
             llm_port: Arc::new(llm_port),
