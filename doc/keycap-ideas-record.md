@@ -454,6 +454,15 @@
   1. **OpenHuman 定位 = "for your dad" 非技术用户** — 跟 CTRL 中文 OPC 创作者用户画像高度重合（"按 Ctrl 唤起，不要 terminal"）。值得对标 UX
   2. **openhuman-skills registry** = CTRL keycap registry 的早期同类。本仓库虽然只 3 star 但代码量小、新鲜（TypeScript，2026 出品），**直接抄读其 skill schema + 注册机制可加速 manifest v0.2 promote**。要不要让 Hephaestus 优先深读这个 registry 的 schema 设计？
 
+### 46. Dify（开源 AI 应用搭建平台）
+- **描述**：LangGenius/dify — 开源 LLM 应用开发平台，可视化编排 chatbot / agent / RAG / workflow，自托管 docker-compose 一键部署。每个用户创建的 app 暴露独立 REST API（`/v1/chat-messages`、`/v1/completion-messages` 等）+ App API key
+- **类型**：Pattern A (HTTP API sink) 主路径 / Pattern C (daemon controller) 当用户本地跑 docker-compose 时的辅路径
+- **优先级**：待 bao 拍板（生态势能大但 OPC 用户接入门槛 = 先建一个 dify app）
+- **状态**：记录待调研深度
+- **记录日期**：2026-05-22
+- **相关链接**：GitHub: langgenius/dify（待补 star + 主页 URL）
+- **评估**：候选 **Pattern A** ★。集成路径：keycap manifest 让用户填 Dify base_url + app_id + api_key（或 OAuth 化），调用 `/v1/chat-messages` 把当前 clipboard / selection / 文件作为 input。一个 Dify deploy 可挂 N 个 app → 一个 CTRL 安装可承载 N 个 Dify-derived keycap（每个 app 一个 keycap）。**抽象**：这类"平台 host N app + 每个 app 有独立 API endpoint" 跟飞书 (E)、Coze、Notion 同结构 — 建议 ADR-010 §`OAuthCapability` / `HTTPCapability` 之外，把"app-id+api-key" 这一类作为模板（已隐含在 A，但 Dify / Coze / 飞书 都是同 shape，值得显式归一）
+
 ---
 
 ### 系统级小工具主题的抽象洞察（给 Zeus 的建议候选）
@@ -627,6 +636,7 @@
 | 40 | 临时文件分享 (transfer.sh) | **A** | HTTP POST (curl 单行 cover) |
 | 41 | GitHub 加速 | **B** | git clone wrapper + URL 重写 |
 | 42 | Intent | — | ⚠️ 未找到 |
+| 46 | Dify | **A** ★ | 自建 AI app + REST API；一个 deploy → N keycap |
 | — | share/modules/builtin/markdown-quote | **G ★** | 16 个 starter 之一，做 builtin MCP server reference |
 | — | VSCode coding context publisher | **F ★** | Pattern F reference，待 ADR-010 §5.6 ST-SS↔MCP bridge spec |
 
