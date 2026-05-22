@@ -9,11 +9,30 @@
 // here. We compose them inside <IPhoneFrame>. When the kernel adds a new
 // keycap source, only Pool changes; this view inherits the fix.
 
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { IPhoneFrame } from '@/components/IPhoneFrame';
 import { PoolRoute } from './pool';
-import { WorkspaceRoute } from './workspace';
 import styles from './home.module.css';
+
+// Lazy-load Workspace so it shares the dynamic chunk with app.tsx's lazy
+// import. A static import here would defeat that split and pull xterm /
+// cbor-x into the critical path.
+const WorkspaceRoute = lazy(() =>
+  import('./workspace').then((m) => ({ default: m.WorkspaceRoute })),
+);
+
+const WorkspaceFallback = (): React.ReactElement => (
+  <div
+    style={{
+      padding: 'var(--space-6)',
+      fontFamily: 'var(--font-mono)',
+      fontSize: 'var(--text-sm)',
+      color: 'var(--color-text-muted)',
+    }}
+  >
+    Loading…
+  </div>
+);
 
 /** Wide breakpoint at which we have room for two iPhone frames side by side. */
 const DUAL_PANEL_MIN_WIDTH = 880;
@@ -50,7 +69,9 @@ export const HomeRoute = (): React.ReactElement => {
           title={activeKeycapId ? 'Workspace' : 'Keyboard'}
         >
           {activeKeycapId ? (
-            <WorkspaceRoute keycapId={activeKeycapId} />
+            <Suspense fallback={<WorkspaceFallback />}>
+              <WorkspaceRoute keycapId={activeKeycapId} />
+            </Suspense>
           ) : (
             <PoolRoute onActivate={handleActivate} />
           )}
@@ -78,7 +99,9 @@ export const HomeRoute = (): React.ReactElement => {
         title="Workspace"
         subtitle={activeKeycapId ?? 'pick a keycap'}
       >
-        <WorkspaceRoute keycapId={activeKeycapId} />
+        <Suspense fallback={<WorkspaceFallback />}>
+          <WorkspaceRoute keycapId={activeKeycapId} />
+        </Suspense>
       </IPhoneFrame>
     </div>
   );
