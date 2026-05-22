@@ -8,6 +8,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmPrompt {
@@ -39,8 +40,36 @@ pub trait LlmAdapter: Send + Sync {
     fn supports(&self, model: &str) -> bool;
 
     /// Run a chat completion with deadline. Returns full response.
-    /// Streaming variant lives in P2.4 (channel-based delivery).
     async fn complete(&self, model: &str, prompt: &LlmPrompt, deadline_ms: u64) -> Result<String, LlmError>;
+
+    /// Stream a chat completion as delta chunks. Default implementation
+    /// collects the non-streaming `complete()` result and yields it as a
+    /// single chunk — adapters that natively support SSE / WebSocket
+    /// streams override this for true incremental delivery.
+    async fn stream_chat(
+        &self,
+        model: &str,
+        prompt: &LlmPrompt,
+        deadline_ms: u64,
+    ) -> Result<mpsc::Receiver<Result<LlmChunk, LlmError>>, LlmError> {
+        let full = self.complete(model, prompt, deadline_ms).await?;
+        let (tx, rx) = mpsc::channel(2);
+        // Synthetic 2-chunk emit: the content + a sentinel finish_reason
+        // so consumers' "stop on finish_reason" logic still fires.
+        let _ = tx
+            .send(Ok(LlmChunk {
+                delta: full,
+                finish_reason: None,
+            }))
+            .await;
+        let _ = tx
+            .send(Ok(LlmChunk {
+                delta: String::new(),
+                finish_reason: Some("stop".into()),
+            }))
+            .await;
+        Ok(rx)
+    }
 }
 
 pub struct LlmPortRouter {
@@ -66,6 +95,22 @@ impl LlmPortRouter {
 
     pub fn fallback_chain(&self) -> &[String] {
         &self.fallback_order
+    }
+
+    /// Pick the first registered adapter in the fallback chain. Used by
+    /// callers that just want "the default LLM" without naming a provider
+    /// — Volc on a fresh install, falls back to whatever the user later
+    /// adds via BYOK.
+    pub fn primary_adapter(&self) -> Option<&Arc<dyn LlmAdapter>> {
+        for preferred in &self.fallback_order {
+            if let Some(a) = self.adapter_for(preferred) {
+                return Some(a);
+            }
+        }
+        // No adapter from the configured chain — try whatever's registered
+        // so a manually-registered "openai" adapter still works when chain
+        // is set to the default ["volc", "anthropic", "ollama"].
+        self.adapters.first()
     }
 }
 

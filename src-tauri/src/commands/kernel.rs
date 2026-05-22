@@ -276,16 +276,13 @@ pub async fn run_keycap(
     args: RunKeycapArgs,
     kernel: State<'_, KernelHandle>,
 ) -> Result<RunKeycapResult, String> {
-    use crate::kernel::event::{Op, OpKind};
+    use crate::kernel::event::{Cell, CellKind, Op, OpKind};
 
     let started = std::time::Instant::now();
     let stream_id = format!("keycap-{}", args.keycap_id);
 
-    // Publish KeycapInvoked the moment we accept the call so the PWA
-    // workspace pane subscribed to `keycap-<id>` sees an event before
-    // we do any work — without this, the user clicks a keycap and the
-    // pane sits silently until completion (or forever, if the work
-    // path stays a stub).
+    // Publish KeycapInvoked immediately so the PWA workspace pane sees
+    // an event before any work happens.
     kernel.bridge.publish_op(Op {
         kind: OpKind::KeycapInvoked,
         ts_ms: now_ms(),
@@ -296,29 +293,202 @@ pub async fn run_keycap(
         }),
     });
 
-    // sub-PR e: route to scheduler::run_actor + Effect dispatch + ST-SS
-    // stream. Until then we publish the synthetic completion so the user
-    // still gets a visible "ran" result instead of "press button → nothing".
-    let output = serde_json::json!({
-        "stub": true,
-        "keycap_id": args.keycap_id,
-        "echo_input": args.input,
-        "note": "real scheduler dispatch pending",
-    });
+    // Dispatch: seed LLM-flavored keycaps route to the LLM port; anything
+    // else falls through to the echo stub until a manifest-driven dispatch
+    // path lands.
+    let dispatch = classify_keycap(&args.keycap_id);
+    let result = match dispatch {
+        KeycapDispatch::TextChat { system } => {
+            run_text_chat(&kernel, &args, &stream_id, system).await
+        }
+        KeycapDispatch::Stub => Ok(serde_json::json!({
+            "stub": true,
+            "keycap_id": args.keycap_id,
+            "echo_input": args.input,
+            "note": "no manifest-driven dispatch yet for this keycap",
+        })),
+    };
+
     let duration_ms = started.elapsed().as_millis() as u64;
 
-    kernel.bridge.publish_op(Op {
-        kind: OpKind::KeycapCompleted,
+    match result {
+        Ok(output) => {
+            kernel.bridge.publish_op(Op {
+                kind: OpKind::KeycapCompleted,
+                ts_ms: now_ms(),
+                stream_id: Some(stream_id),
+                payload: serde_json::json!({
+                    "keycap_id": args.keycap_id,
+                    "output": output.clone(),
+                    "duration_ms": duration_ms,
+                }),
+            });
+            Ok(RunKeycapResult { output, duration_ms })
+        }
+        Err(err_msg) => {
+            // Publish a KeycapFailed Op AND a LlmResponse cell carrying
+            // the error text — the PWA workspace surfaces both, but only
+            // the cell content is human-readable inline.
+            kernel.bridge.publish_cell(Cell {
+                kind: CellKind::LlmResponse,
+                ts_ms: now_ms(),
+                stream_id: Some(stream_id.clone()),
+                payload: serde_json::json!({
+                    "delta": format!("\n[error] {err_msg}"),
+                    "error": true,
+                }),
+            });
+            kernel.bridge.publish_op(Op {
+                kind: OpKind::KeycapFailed,
+                ts_ms: now_ms(),
+                stream_id: Some(stream_id),
+                payload: serde_json::json!({
+                    "keycap_id": args.keycap_id,
+                    "error": err_msg.clone(),
+                    "duration_ms": duration_ms,
+                }),
+            });
+            Err(err_msg)
+        }
+    }
+}
+
+/// Classify a keycap id into a dispatch path. Seed LLM-flavored keycaps
+/// route to text.chat; everything else stays a stub until manifest-driven
+/// dispatch lands. Once the manifest registry feeds back source.type +
+/// source.tool, this hardcoded match collapses to a single read.
+enum KeycapDispatch {
+    TextChat { system: &'static str },
+    Stub,
+}
+
+fn classify_keycap(keycap_id: &str) -> KeycapDispatch {
+    match keycap_id {
+        "ctrl-chat" => KeycapDispatch::TextChat {
+            system: "You are CTRL, a concise AI assistant inside a desktop launcher. \
+                     Reply in the user's language. Keep answers terse and useful.",
+        },
+        "clipboard-ai" => KeycapDispatch::TextChat {
+            system: "You are CTRL's clipboard rewriter. Take the user's input text and \
+                     rewrite it for clarity, tone, and grammar without changing meaning. \
+                     Reply with the rewritten text only — no preamble.",
+        },
+        "ai-translate" => KeycapDispatch::TextChat {
+            system: "You are CTRL's translator. Detect the source language of the user's \
+                     input and translate it to the other of {English, 中文} (whichever \
+                     it is NOT). Reply with the translation only.",
+        },
+        "ai-text" => KeycapDispatch::TextChat {
+            system: "You are CTRL's text processor. Help the user transform, summarize, \
+                     or restructure their input. Be concise.",
+        },
+        _ => KeycapDispatch::Stub,
+    }
+}
+
+/// Run a text.chat dispatch: pull text from input, call the LLM port's
+/// primary adapter with streaming, publish each chunk as a LlmResponse
+/// cell on `keycap-<id>`, return accumulated content as the output.
+async fn run_text_chat(
+    kernel: &State<'_, KernelHandle>,
+    args: &RunKeycapArgs,
+    stream_id: &str,
+    system: &'static str,
+) -> Result<serde_json::Value, String> {
+    use crate::kernel::event::{Cell, CellKind};
+    use crate::kernel::llm_port::{LlmMessage, LlmPrompt};
+
+    let runtime = &kernel.runtime;
+    let adapter = runtime
+        .llm_port
+        .primary_adapter()
+        .ok_or_else(|| {
+            "No LLM adapter registered. Run `setup_llm_key volc <key>` to enable Doubao / Volcano Ark."
+                .to_string()
+        })?
+        .clone();
+
+    // Accept either input.text (simple shape PWA Irisy sends) or
+    // input.messages (full multi-turn). The text shape gets wrapped as
+    // a single user turn.
+    let user_text = args
+        .input
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let messages: Vec<LlmMessage> = if let Some(arr) = args.input.get("messages").and_then(|v| v.as_array()) {
+        arr.iter()
+            .filter_map(|m| {
+                let role = m.get("role")?.as_str()?.to_string();
+                let content = m.get("content")?.as_str()?.to_string();
+                Some(LlmMessage { role, content })
+            })
+            .collect()
+    } else if !user_text.is_empty() {
+        vec![LlmMessage {
+            role: "user".into(),
+            content: user_text,
+        }]
+    } else {
+        return Err("input must include either `text` (string) or `messages` (array)".into());
+    };
+
+    if messages.is_empty() {
+        return Err("input.messages is empty after parsing".into());
+    }
+
+    let prompt = LlmPrompt {
+        system: Some(system.to_string()),
+        messages,
+        temperature: None,
+        max_tokens: None,
+    };
+
+    let mut rx = adapter
+        .stream_chat("", &prompt, 30_000)
+        .await
+        .map_err(|e| format!("llm stream_chat failed: {e}"))?;
+
+    let mut accumulated = String::new();
+    while let Some(item) = rx.recv().await {
+        match item {
+            Ok(chunk) => {
+                if !chunk.delta.is_empty() {
+                    accumulated.push_str(&chunk.delta);
+                    kernel.bridge.publish_cell(Cell {
+                        kind: CellKind::LlmResponse,
+                        ts_ms: now_ms(),
+                        stream_id: Some(stream_id.to_string()),
+                        payload: serde_json::json!({
+                            "delta": chunk.delta,
+                            "done": false,
+                        }),
+                    });
+                }
+                if chunk.finish_reason.is_some() {
+                    break;
+                }
+            }
+            Err(e) => return Err(format!("llm stream error: {e}")),
+        }
+    }
+
+    // Publish a final done cell so the PWA can stop spinners.
+    kernel.bridge.publish_cell(Cell {
+        kind: CellKind::LlmResponse,
         ts_ms: now_ms(),
-        stream_id: Some(stream_id),
+        stream_id: Some(stream_id.to_string()),
         payload: serde_json::json!({
-            "keycap_id": args.keycap_id,
-            "output": output.clone(),
-            "duration_ms": duration_ms,
+            "delta": "",
+            "done": true,
         }),
     });
 
-    Ok(RunKeycapResult { output, duration_ms })
+    Ok(serde_json::json!({
+        "content": accumulated,
+        "adapter": adapter.name(),
+    }))
 }
 
 fn now_ms() -> u64 {

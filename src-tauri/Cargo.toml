@@ -28,6 +28,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 arboard = "3"
 base64 = "0.22"
 ureq = { version = "2", features = ["json"] }
+# H-2026-05-22 — async streaming HTTP for LLM adapters (Volc Ark / OpenAI-shape).
+# rustls-tls keeps the build OpenSSL-free for portable Tauri bundles.
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 keyring = "3"
 directories = "5"
 # L1 Kernel deps

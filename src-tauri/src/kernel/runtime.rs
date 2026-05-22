@@ -49,13 +49,17 @@ impl KernelRuntime {
         let event_store =
             EventStore::open(&db_path).map_err(|e| KernelBootError::EventStoreOpenFailed(e.to_string()))?;
 
-        // Default LLM fallback order matches Pattern D: CF Workers AI first,
-        // then BYOK Anthropic, finally local Ollama.
-        let llm_port = LlmPortRouter::new(vec![
-            "workers-ai".into(),
+        // ADR-005 / -011 launch posture: Volc Ark (Doubao) is the v1 default
+        // provider; Anthropic + Ollama stay in the fallback chain for BYOK /
+        // local dev. The router only routes to adapters that actually
+        // registered themselves at boot — missing keys → adapter not
+        // registered → router falls through silently.
+        let mut llm_port = LlmPortRouter::new(vec![
+            "volc".into(),
             "anthropic".into(),
             "ollama".into(),
         ]);
+        crate::kernel::llm_adapters::register_default_adapters(&mut llm_port);
 
         Ok(Self {
             scheduler: Arc::new(Scheduler::new()),
