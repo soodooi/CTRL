@@ -23,6 +23,7 @@ use crate::kernel::persistence::EventStore;
 use crate::kernel::scheduler::Scheduler;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct KernelRuntime {
     pub scheduler: Arc<Scheduler>,
@@ -32,6 +33,9 @@ pub struct KernelRuntime {
     pub effect_executor: Arc<EffectExecutor>,
     pub event_store: Arc<EventStore>,
     pub llm_port: Arc<LlmPortRouter>,
+    /// Monotonic instant captured at boot — used by the kernel_status
+    /// Tauri command to report uptime to the PWA status bar.
+    pub booted_at: Instant,
 }
 
 impl KernelRuntime {
@@ -85,6 +89,7 @@ impl KernelRuntime {
             effect_executor: Arc::new(EffectExecutor::new()),
             event_store: Arc::new(event_store),
             llm_port: Arc::new(llm_port),
+            booted_at: Instant::now(),
         })
     }
 
