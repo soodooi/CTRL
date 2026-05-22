@@ -1,24 +1,31 @@
 // System tray controller.
 //
 // Per ADR-002 §6, tray uses Tauri 2's built-in tray icon API (no separate
-// plugin in 2.x). Menu items: Show / Hide / About / Quit.
+// plugin in 2.x). Menu items: Open Config / About / Quit.
+//
+// Show/Hide are NOT in the menu — left-click on the tray icon already
+// toggles the window, and surfacing them as menu items is redundant
+// noise for a 3-state product. The menu is reserved for actions that
+// have no other path (open settings, see version info, exit).
 //
 // Tauri 2 click semantics (TrayIconEvent variants):
 //   - Click { button: MouseButton::Left,  button_state: Down/Up } — toggle window
-//   - Click { button: MouseButton::Right, ... }                   — menu (when show_menu_on_left_click(false))
-// To make the menu reliably appear on a Win11 install (where the right-click
-// default sometimes shows the OS context menu instead of our app menu in some
-// Tauri 2 builds), we set `show_menu_on_left_click(true)` AND wire the right
-// button as an explicit fallback. Left click then both toggles AND opens menu;
-// users get the menu wherever they click.
+//   - Click { button: MouseButton::Right, ... }                   — menu
+// `show_menu_on_left_click(true)` makes left-click ALSO open the menu so
+// Win11 users (where right-click is sometimes hijacked by the OS) still
+// get the menu.
 
 use anyhow::Result;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::WindowController;
+
+/// Event emitted to the webview when the user clicks the tray "Open Config"
+/// item. The PWA root listens for this and routes to `/settings`.
+const EVENT_OPEN_CONFIG: &str = "tray:open-config";
 
 pub struct TrayController;
 
@@ -26,17 +33,18 @@ impl TrayController {
     /// Build and install the system tray icon. Returns immediately; tray events
     /// fire on the Tauri runtime thread.
     pub fn install(app: &AppHandle) -> Result<()> {
-        let show = MenuItem::with_id(app, "show", "Show CTRL", true, None::<&str>)?;
-        let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
+        let open_config =
+            MenuItem::with_id(app, "open-config", "Open Config", true, None::<&str>)?;
         let about = MenuItem::with_id(app, "about", "About CTRL", true, None::<&str>)?;
         let separator = PredefinedMenuItem::separator(app)?;
         let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-        let menu = Menu::with_items(app, &[&show, &hide, &separator, &about, &separator, &quit])?;
+        let menu = Menu::with_items(
+            app,
+            &[&open_config, &separator, &about, &separator, &quit],
+        )?;
 
         // Embed the 32x32 icon bytes at compile time so the tray has a real
-        // visual identity even before bundle-time icon resolution. The png is
-        // the Tauri default placeholder for now; sub-PR f swaps in a CTRL-
-        // branded raster derived from doc/visual-identity/logo-mark.svg.
+        // visual identity even before bundle-time icon resolution.
         let icon_bytes: &[u8] = include_bytes!("../../icons/32x32.png");
         let icon = Image::from_bytes(icon_bytes)?;
 
@@ -44,21 +52,16 @@ impl TrayController {
             .tooltip("CTRL")
             .icon(icon)
             .menu(&menu)
-            // Left click also opens the menu — Win11 users expect either button
-            // to surface controls; relying on right-click only loses users.
             .show_menu_on_left_click(true)
             .on_menu_event(|app, event| match event.id.as_ref() {
-                "show" => {
+                "open-config" => {
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();
                         let _ = w.set_skip_taskbar(false);
                         let _ = w.set_focus();
                     }
-                }
-                "hide" => {
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.set_skip_taskbar(true);
-                        let _ = w.hide();
+                    if let Err(err) = app.emit(EVENT_OPEN_CONFIG, ()) {
+                        tracing::error!(?err, "failed to emit tray:open-config");
                     }
                 }
                 "about" => {
@@ -70,8 +73,6 @@ impl TrayController {
                 _ => {}
             })
             .on_tray_icon_event(|tray, event| {
-                // Toggle on left-up. Right-click is handled by show_menu_on_left_click(true)
-                // automatically by Tauri 2 — we don't need to wire it here.
                 if let TrayIconEvent::Click {
                     button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
