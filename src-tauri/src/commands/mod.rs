@@ -21,6 +21,7 @@ pub mod keychain;
 pub mod memory;
 pub mod storage;
 pub mod stss;
+pub mod system;
 pub mod vault;
 
 /// Returns the `invoke_handler!` tuple for `tauri::Builder::invoke_handler`.
@@ -36,6 +37,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::run_keycap,
             // chat — streaming LLM via Tauri events (Irisy companion)
             $crate::commands::chat::chat_stream,
+            // system — kernel health (PWA status bar Phase 1F)
+            $crate::commands::system::kernel_status,
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::open_workspace,
