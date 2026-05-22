@@ -1,25 +1,23 @@
-/* DefaultWorkspace — Irisy's page. Just Irisy.
- * No bento, no gauges, no sparklines. Per bao 2026-05-22:
- * "首页就给 irisy 的页面就行了".
- */
+/* DefaultWorkspace — Irisy's content inside <SessionWorkspace>.
+ * The shell (history sidebar + main column) lives in the template;
+ * this file only styles Irisy's centered greeting + chat input. */
 
-.wrap {
+.center {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg-l0);
-  color: var(--color-text);
   padding: var(--space-8);
   gap: var(--space-5);
   overflow-y: auto;
+  min-height: 0;
 }
 
 .mascotWrap {
   position: relative;
-  width: 220px;
-  height: 220px;
+  width: 200px;
+  height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -63,9 +61,7 @@
   transition: border-color 140ms ease;
   margin-top: var(--space-2);
 }
-.input:focus-within {
-  border-color: var(--color-accent);
-}
+.input:focus-within { border-color: var(--color-accent); }
 .input input {
   all: unset;
   flex: 1;
@@ -74,9 +70,7 @@
   letter-spacing: -0.011em;
   color: var(--color-text);
 }
-.input input::placeholder {
-  color: var(--color-text-muted);
-}
+.input input::placeholder { color: var(--color-text-muted); }
 .inputHint {
   font-family: var(--font-mono);
   font-size: 10px;
