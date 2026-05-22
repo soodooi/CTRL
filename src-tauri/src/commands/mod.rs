@@ -14,6 +14,7 @@
 // Skeleton stage (sub-PR b): each handler returns NotImplementedYet so the
 // JS bridge can be wired before kernel integration in sub-PR c.
 
+pub mod chat;
 pub mod code_space;
 pub mod kernel;
 pub mod keychain;
@@ -33,6 +34,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::install_keycap,
             $crate::commands::kernel::install_keycap_from_mcp,
             $crate::commands::kernel::run_keycap,
+            // chat — streaming LLM via Tauri events (Irisy companion)
+            $crate::commands::chat::chat_stream,
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::open_workspace,
