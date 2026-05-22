@@ -7,24 +7,37 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--space-4) var(--space-2);
+  padding: var(--space-4) 0 var(--space-4);
   gap: var(--space-3);
   overflow-y: auto;
   overflow-x: hidden;
 }
 
+/* Irisy lives in a dedicated "portal" zone at the top of the rail. The
+ * portal has its own background + bottom border so the visual hierarchy
+ * is clear: Irisy presides over the context navigation that lives below
+ * her — per bao "下面是导航栏". */
+.portal {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-3) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+}
+
 .mascot {
-  width: 48px;
-  height: 48px;
+  width: 56px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: var(--space-2);
   position: relative;
 }
 .mascotHalo {
   position: absolute;
-  inset: -4px;
+  inset: -6px;
   border-radius: 50%;
   background: radial-gradient(
     circle,
@@ -36,14 +49,27 @@
 }
 @keyframes irisy-halo {
   0%, 100% { opacity: 0; transform: scale(0.85); }
-  50%      { opacity: 0.5; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(1); }
 }
 
-.divider {
-  width: 24px;
-  height: 1px;
-  background: var(--color-border-soft);
-  margin: var(--space-1) 0;
+.mascotName {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-top: var(--space-2);
+}
+
+/* Context-item list — the navigation rail that lives BELOW Irisy. */
+.nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+  width: 100%;
 }
 
 .item {
@@ -112,11 +138,13 @@
 }
 
 .empty {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--color-border-soft);
-  margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin-top: var(--space-3);
+  opacity: 0.6;
+  text-align: center;
 }
 
 .spacer { flex: 1; }

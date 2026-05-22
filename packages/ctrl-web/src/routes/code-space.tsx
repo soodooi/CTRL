@@ -1,9 +1,9 @@
 // /code-space — two surfaces:
-//   - CodeSpaceRoute (list): real cs_list → RemoteEnvList. A "+ New" button
-//     opens NewEnvModal which calls cs_spawn and navigates to the detail
-//     view on success. No mock data — `cs_list` currently returns just
-//     `string[]` (active stream_ids); status / started_at / command will
-//     light up the card once the kernel extends the envelope.
+//   - CodeSpaceRoute (list): cluster card view. All running envs are
+//     auto-grouped (today: one "This Device" group; once mesh ships the
+//     env envelope, by git remote / fs root / device). Each group shows
+//     a tab strip across its sessions plus a compact preview of the
+//     active tab. Right rail mirrors the env list as quick switchers.
 //   - CodeSpaceDetailRoute (lane-B, ADR-012 §7 tile wire): live xterm
 //     viewer for one running SubprocessActor, with structured-cell rail
 //     and stdin/resize/signal/kill controls via Tauri cs_* commands.
@@ -21,10 +21,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Terminal, type ITerminalOptions } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { RemoteEnvList, type ListedEnv } from '@/components/RemoteEnvList';
+import { type ListedEnv } from '@/components/RemoteEnvList';
 import { NewEnvModal } from '@/components/NewEnvModal';
 import { Button } from '@/components/primitives';
 import { CompanionPane } from '@/components/code-space/CompanionPane';
+import {
+  ClusterWorkspace,
+  type ClusterSource,
+} from '@/components/workspace/ClusterWorkspace';
+import { useRail, type RailItem } from '@/components/RightRail';
 import { csList, csSpawn, type CsSpawnArgs } from '@/lib/kernel';
 import { formatHHMMSS } from '@/hooks/useWallClock';
 import { useTerminalBuffer } from '@/hooks/useTerminalBuffer';
@@ -63,9 +68,30 @@ const spawnEnv = async (args: CsSpawnArgs): Promise<string> => {
   return reply.stream_id;
 };
 
+// Group all envs into one local-device group for now. When the kernel
+// extends cs_list to ship cwd / git_remote / device_id, this grouping
+// will switch to: (1) match git remote → group; (2) match fs root →
+// group; (3) fallback to device_id. The ClusterWorkspace template
+// itself doesn't change — only the groupBy function does.
+const LOCAL_GROUP = { id: 'local', label: 'This device' } as const;
+const groupEnv = (): { id: string; label: string } => LOCAL_GROUP;
+
+const toneFromStatus = (env: ListedEnv): 'running' | 'error' | 'exited' | 'idle' => {
+  if (env.status === 'running') return 'running';
+  if (env.status === 'crashed') return 'error';
+  if (env.status === 'stopped') return 'exited';
+  return 'idle';
+};
+
+const shortStreamId = (id: string): string => {
+  if (id.length <= 8) return id;
+  return id.slice(0, 8);
+};
+
 export const CodeSpaceRoute = (): ReactElement => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { setItems: setRailItems, setIrisyState } = useRail();
   const [modalOpen, setModalOpen] = useState(false);
 
   const envsQuery = useQuery({
@@ -109,34 +135,118 @@ export const CodeSpaceRoute = (): ReactElement => {
       : String(spawnMutation.error)
     : null;
 
+  // Adapt the flat env list to ClusterWorkspace sources.
+  const sources: ClusterSource<ListedEnv>[] = useMemo(
+    () =>
+      envs.map((env) => ({
+        id: env.stream_id,
+        label: env.command
+          ? `${shortStreamId(env.stream_id)} · ${env.command}`
+          : shortStreamId(env.stream_id),
+        tone: toneFromStatus(env),
+        data: env,
+      })),
+    [envs],
+  );
+
+  // Populate the right rail with env switchers. Each env = one dot icon
+  // tinted by status; click navigates to that env's detail view.
+  useEffect(() => {
+    const items: RailItem[] = envs.map((env) => ({
+      id: env.stream_id,
+      label: env.command
+        ? `${shortStreamId(env.stream_id)} · ${env.command}`
+        : shortStreamId(env.stream_id),
+      tone:
+        env.status === 'running'
+          ? 'success'
+          : env.status === 'crashed'
+            ? 'danger'
+            : env.status === 'stopped'
+              ? 'idle'
+              : 'idle',
+      onClick: () => handleOpen(env.stream_id),
+    }));
+    setRailItems(items);
+    return () => setRailItems([]);
+  }, [envs, handleOpen, setRailItems]);
+
+  // Irisy reacts to fleet health: any error → worried, any running →
+  // watching, otherwise idle. Phase 1B Rive swap consumes the same state.
+  useEffect(() => {
+    if (envs.some((e) => e.status === 'crashed')) setIrisyState('worried');
+    else if (envs.some((e) => e.status === 'running')) setIrisyState('watching');
+    else setIrisyState('idle');
+    return () => setIrisyState('idle');
+  }, [envs, setIrisyState]);
+
+  const meta = envsQuery.isLoading
+    ? 'loading…'
+    : envs.length === 0
+      ? 'no sessions'
+      : `${envs.length} ${envs.length === 1 ? 'session' : 'sessions'}`;
+
   return (
-    <div className={styles.shell}>
-      <header className={styles.header}>
-        <div className={styles.headerRow}>
-          <div>
-            <h1 className={styles.title}>Code Space</h1>
-            <p className={styles.subtitle}>Active remote coding environments.</p>
-          </div>
+    <>
+      <ClusterWorkspace
+        title="Code Space"
+        meta={meta}
+        headerActions={
           <Button size="sm" onClick={openModal} aria-label="Spawn new environment">
             + New
           </Button>
-        </div>
-        {envsQuery.error && (
-          <p className={styles.headerError} role="alert">
-            Failed to load envs · {envsQuery.error instanceof Error ? envsQuery.error.message : 'unknown error'}
-          </p>
+        }
+        sources={sources}
+        groupBy={groupEnv}
+        renderPreview={(source) => (
+          <div className={styles.preview}>
+            <div className={styles.previewLine}>
+              <span className={styles.previewLabel}>command</span>
+              <code className={styles.previewValue}>
+                {source.data.command ?? '(unknown)'}
+              </code>
+            </div>
+            <div className={styles.previewLine}>
+              <span className={styles.previewLabel}>stream id</span>
+              <code className={styles.previewValue}>{source.data.stream_id}</code>
+            </div>
+            {source.data.started_at_iso && (
+              <div className={styles.previewLine}>
+                <span className={styles.previewLabel}>started</span>
+                <code className={styles.previewValue}>
+                  {source.data.started_at_iso}
+                </code>
+              </div>
+            )}
+          </div>
         )}
-      </header>
-      <RemoteEnvList
-        envs={envs}
-        onOpen={handleOpen}
-        onNew={openModal}
-        emptyMessage={
-          envsQuery.isLoading
-            ? 'Loading active environments…'
-            : 'No active environments. Spawn one to get started.'
+        renderFooter={(source) => (
+          <span>
+            status: <strong>{source.data.status ?? 'unknown'}</strong>
+          </span>
+        )}
+        onOpen={(source) => handleOpen(source.data.stream_id)}
+        onAddToGroup={() => openModal()}
+        emptyTitle="No coding sessions running"
+        emptyHint={
+          <>
+            Spawn one to get started. Default <code>bash</code> always works;
+            pick Claude or Aider if you have the CLI installed.
+            <br />
+            <Button size="sm" onClick={openModal} style={{ marginTop: 16 }}>
+              + New environment
+            </Button>
+          </>
         }
       />
+      {envsQuery.error && (
+        <p className={styles.headerError} role="alert">
+          Failed to load envs ·{' '}
+          {envsQuery.error instanceof Error
+            ? envsQuery.error.message
+            : 'unknown error'}
+        </p>
+      )}
       <NewEnvModal
         open={modalOpen}
         onClose={closeModal}
@@ -144,7 +254,7 @@ export const CodeSpaceRoute = (): ReactElement => {
         pending={spawnMutation.isPending}
         error={spawnError}
       />
-    </div>
+    </>
   );
 };
 

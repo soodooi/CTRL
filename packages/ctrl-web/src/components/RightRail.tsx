@@ -74,38 +74,43 @@ export const RightRail = (): ReactElement => {
 
   return (
     <aside className={styles.rail} aria-label="Context rail">
-      <div className={styles.mascot}>
-        <div className={styles.mascotHalo} />
-        <IrisyMascot state={irisyState} size={44} />
+      {/* Irisy portal — presides over the rail at the top. */}
+      <div className={styles.portal}>
+        <div className={styles.mascot}>
+          <div className={styles.mascotHalo} />
+          <IrisyMascot state={irisyState} size={48} />
+        </div>
+        <span className={styles.mascotName}>Irisy</span>
       </div>
-      <div className={styles.divider} />
 
-      {items.length === 0 && <span className={styles.empty} aria-hidden="true" />}
-
-      {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          className={styles.item}
-          data-active={item.active ?? false}
-          onClick={() => handleClick(item)}
-          title={item.label}
-          aria-label={item.label}
-        >
-          {item.glyph ? (
-            <span className={styles.itemGlyph}>{item.glyph}</span>
-          ) : (
-            <span className={styles.itemDot} data-tone={item.tone ?? 'idle'} />
-          )}
-          {item.badge !== undefined && item.badge > 0 && (
-            <span className={styles.itemBadge}>
-              {item.badge > 99 ? '99+' : item.badge}
-            </span>
-          )}
-        </button>
-      ))}
-
-      <div className={styles.spacer} />
+      {/* Navigation rail — context items for the current workspace. */}
+      <nav className={styles.nav} aria-label="Workspace context">
+        {items.length === 0 && (
+          <span className={styles.empty}>no items</span>
+        )}
+        {items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={styles.item}
+            data-active={item.active ?? false}
+            onClick={() => handleClick(item)}
+            title={item.label}
+            aria-label={item.label}
+          >
+            {item.glyph ? (
+              <span className={styles.itemGlyph}>{item.glyph}</span>
+            ) : (
+              <span className={styles.itemDot} data-tone={item.tone ?? 'idle'} />
+            )}
+            {item.badge !== undefined && item.badge > 0 && (
+              <span className={styles.itemBadge}>
+                {item.badge > 99 ? '99+' : item.badge}
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
     </aside>
   );
 };
