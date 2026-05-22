@@ -24,8 +24,10 @@ import '@xterm/xterm/css/xterm.css';
 import { RemoteEnvList, type ListedEnv } from '@/components/RemoteEnvList';
 import { NewEnvModal } from '@/components/NewEnvModal';
 import { Button } from '@/components/primitives';
+import { CompanionPane } from '@/components/code-space/CompanionPane';
 import { csList, csSpawn, type CsSpawnArgs } from '@/lib/kernel';
 import { formatHHMMSS } from '@/hooks/useWallClock';
+import { useTerminalBuffer } from '@/hooks/useTerminalBuffer';
 import {
   useSubprocessChannel,
   type EnvStatusPayload,
@@ -34,6 +36,14 @@ import {
   type TerminalExitPayload,
 } from '@/hooks/useSubprocessChannel';
 import styles from './code-space.module.css';
+
+type ViewMode = 'terminal' | 'split' | 'companion';
+const VIEW_MODES: readonly ViewMode[] = ['terminal', 'split', 'companion'] as const;
+const VIEW_MODE_LABEL: Record<ViewMode, string> = {
+  terminal: 'Terminal',
+  split: 'Split',
+  companion: 'Companion',
+};
 
 const CS_LIST_KEY = ['cs', 'list'] as const;
 
@@ -190,7 +200,9 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
   const [exit, setExit] = useState<TerminalExitPayload | null>(null);
   const [log, setLog] = useState<RailEntry[]>([]);
   const [draft, setDraft] = useState('');
+  const [viewMode, setViewMode] = useState<ViewMode>('split');
 
+  const termBuffer = useTerminalBuffer();
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const writeStdinRef = useRef<(bytes: Uint8Array) => Promise<void>>(NOOP_PROMISE);
@@ -210,6 +222,7 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
   const channel = useSubprocessChannel(envId, {
     onTerminalOutput: (bytes) => {
       terminalRef.current?.write(bytes);
+      termBuffer.append(bytes);
     },
     onTerminalExit: (payload) => {
       setExit(payload);
@@ -316,6 +329,28 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
     [channel, pushLog],
   );
 
+  const onSendToTerminal = useCallback(
+    (text: string): void => {
+      const bytes = new TextEncoder().encode(`${text}\n`);
+      channel.writeStdin(bytes).catch((err: unknown) => {
+        pushLog(
+          `inject error · ${err instanceof Error ? err.message : String(err)}`,
+          'error',
+        );
+      });
+      pushLog(
+        `inject · ${text.length > 60 ? `${text.slice(0, 60)}…` : text}`,
+        'info',
+      );
+    },
+    [channel, pushLog],
+  );
+
+  const getRecentStdout = useCallback(
+    (): string => termBuffer.getRecentText(),
+    [termBuffer],
+  );
+
   const statusText = useMemo(() => STATUS_LABEL[channel.status], [channel.status]);
   const statusClass = useMemo(() => STATUS_CLASS[channel.status], [channel.status]);
 
@@ -337,11 +372,46 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
           <span className={statusClass}>{statusText}</span>
           {channel.error && <span>· {channel.error}</span>}
         </div>
+        <div
+          className={styles.csdModeSegmented}
+          role="tablist"
+          aria-label="View mode"
+        >
+          {VIEW_MODES.map((mode) => {
+            const active = viewMode === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`${styles.csdModeBtn}${
+                  active ? ` ${styles.csdModeBtn_active}` : ''
+                }`}
+                onClick={() => setViewMode(mode)}
+              >
+                {VIEW_MODE_LABEL[mode]}
+              </button>
+            );
+          })}
+        </div>
       </header>
 
-      <section className={styles.csdTerminal} aria-label="Terminal output">
-        <div ref={terminalHostRef} className={styles.csdTerminalMount} />
-      </section>
+      <div className={styles.csdSplit} data-mode={viewMode}>
+        <section className={styles.csdTerminal} aria-label="Terminal output">
+          <div ref={terminalHostRef} className={styles.csdTerminalMount} />
+        </section>
+        <aside
+          className={styles.csdCompanion}
+          aria-label="Irisy companion"
+        >
+          <CompanionPane
+            envId={envId}
+            getRecentStdout={getRecentStdout}
+            onSendToTerminal={onSendToTerminal}
+          />
+        </aside>
+      </div>
 
       <aside className={styles.csdRail} aria-label="Structured cells">
         <div className={styles.csdRailCard}>

@@ -159,12 +159,112 @@
 .csdStatusPill_closed { color: var(--color-danger, #b00020); }
 
 .csdTerminal {
-  grid-area: term;
   position: relative;
   min-height: 0;
+  min-width: 0;
   padding: var(--space-3) 0 var(--space-3) var(--space-6);
   background: var(--color-background);
   overflow: hidden;
+}
+
+/* Companion split — wraps terminal + companion inside the term grid-area,
+   so rail / footer / header layout stays unchanged. data-mode toggles
+   which child gets shown. */
+
+.csdSplit {
+  grid-area: term;
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  grid-template-rows: 1fr;
+}
+
+.csdSplit[data-mode='split'] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.csdSplit[data-mode='terminal'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.csdSplit[data-mode='terminal'] .csdCompanion {
+  display: none;
+}
+
+.csdSplit[data-mode='companion'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.csdSplit[data-mode='companion'] .csdTerminal {
+  display: none;
+}
+
+.csdCompanion {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.csdCompanion > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.csdModeSegmented {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface-elevated);
+}
+
+.csdModeBtn {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.csdModeBtn + .csdModeBtn {
+  border-left: 1px solid var(--color-border);
+}
+
+.csdModeBtn:hover {
+  color: var(--color-text);
+}
+
+.csdModeBtn_active {
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+
+/* Mobile: collapse rail and force single pane. Split mode prefers
+   companion on small screens (chat-first UX). */
+@media (max-width: 899px) {
+  .csdLayout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'header'
+      'term'
+      'footer';
+  }
+  .csdRail {
+    display: none;
+  }
+  .csdSplit[data-mode='split'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .csdSplit[data-mode='split'] .csdTerminal {
+    display: none;
+  }
 }
 
 .csdTerminalMount {

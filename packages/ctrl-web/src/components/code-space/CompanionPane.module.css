@@ -1,0 +1,196 @@
+/* [H-2026-05-22-001] CompanionPane — Irisy chat companion to Code Space
+   terminal. Sits beside the xterm viewer in split / companion modes. */
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-soft);
+  text-align: center;
+  padding: var(--space-4);
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message_user {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.message_assistant {
+  background: color-mix(in oklch, var(--color-accent) 6%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-accent) 18%, transparent);
+  color: var(--color-text);
+}
+
+.message_pending {
+  opacity: 0.85;
+}
+
+.error {
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-danger, #b00020);
+  border-radius: var(--radius-sm);
+  color: var(--color-danger, #b00020);
+  background: color-mix(in oklch, var(--color-danger, #b00020) 6%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.retry {
+  background: transparent;
+  border: none;
+  color: var(--color-danger, #b00020);
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 0;
+}
+
+.runBlock {
+  margin-top: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-elevated);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.runBlockCode {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--color-background);
+}
+
+.runBlockSend {
+  align-self: stretch;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-accent);
+  cursor: pointer;
+  text-align: left;
+}
+
+.runBlockSend:hover {
+  background: color-mix(in oklch, var(--color-accent) 10%, transparent);
+}
+
+.inputRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+}
+
+.textarea {
+  width: 100%;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  min-height: 2.5rem;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.submitBtn,
+.stopBtn {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.submitBtn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.submitBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stopBtn {
+  border-color: var(--color-danger, #b00020);
+  color: var(--color-danger, #b00020);
+}
+
+.stopBtn:hover {
+  background: color-mix(in oklch, var(--color-danger, #b00020) 12%, transparent);
+}
