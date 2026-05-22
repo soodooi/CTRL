@@ -20,6 +20,7 @@ use rmcp::transport::TokioChildProcess;
 use rmcp::{RoleClient, ServiceExt};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::RwLock;
@@ -235,6 +236,57 @@ impl McpHost {
         }
         Ok(())
     }
+
+    /// Default on-disk registry path: $HOME/.ctrl/mcp-servers.json. Holds
+    /// the array of McpServerDescriptor — what to spawn next boot, with
+    /// every persisted install. Returns None when HOME isn't set (CI).
+    pub fn default_registry_path() -> Option<PathBuf> {
+        let home = std::env::var("HOME").ok()?;
+        Some(PathBuf::from(home).join(".ctrl").join("mcp-servers.json"))
+    }
+
+    /// Read the descriptor registry from disk and re-register every entry
+    /// (no auto-connect — connections lazy-establish on first invoke).
+    /// Absent / unparseable file = warning + clean empty state.
+    pub async fn load_registry(&self, path: &Path) -> Result<usize, McpHostError> {
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(McpHostError::RegistryReadFailed(e.to_string())),
+        };
+        let entries: Vec<McpServerDescriptor> = serde_json::from_slice(&bytes)
+            .map_err(|e| McpHostError::RegistryParseFailed(e.to_string()))?;
+        let count = entries.len();
+        {
+            let mut installed = self.installed.write().await;
+            for desc in entries {
+                installed.insert(desc.id.clone(), desc);
+            }
+        }
+        Ok(count)
+    }
+
+    /// Persist the current installed registry to disk atomically (write
+    /// to a temp sibling, then rename — avoids leaving a half-written
+    /// file if the process dies mid-write).
+    pub async fn save_registry(&self, path: &Path) -> Result<(), McpHostError> {
+        let entries: Vec<McpServerDescriptor> = {
+            let installed = self.installed.read().await;
+            installed.values().cloned().collect()
+        };
+        let bytes = serde_json::to_vec_pretty(&entries)
+            .map_err(|e| McpHostError::RegistryWriteFailed(e.to_string()))?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| McpHostError::RegistryWriteFailed(e.to_string()))?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, &bytes)
+            .map_err(|e| McpHostError::RegistryWriteFailed(e.to_string()))?;
+        std::fs::rename(&tmp, path)
+            .map_err(|e| McpHostError::RegistryWriteFailed(e.to_string()))?;
+        Ok(())
+    }
 }
 
 impl Default for McpHost {
@@ -265,4 +317,10 @@ pub enum McpHostError {
     SerializationFailed(String),
     #[error("server shutdown failed: {0}")]
     ShutdownFailed(String),
+    #[error("read registry failed: {0}")]
+    RegistryReadFailed(String),
+    #[error("parse registry failed: {0}")]
+    RegistryParseFailed(String),
+    #[error("write registry failed: {0}")]
+    RegistryWriteFailed(String),
 }
