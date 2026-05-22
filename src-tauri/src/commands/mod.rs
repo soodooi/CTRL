@@ -19,6 +19,7 @@ pub mod kernel;
 pub mod keychain;
 pub mod memory;
 pub mod stss;
+pub mod vault;
 
 /// Returns the `invoke_handler!` tuple for `tauri::Builder::invoke_handler`.
 /// Call sites use this to keep the handler list in one place.
@@ -54,6 +55,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::code_space::cs_resize,
             $crate::commands::code_space::cs_kill,
             $crate::commands::code_space::cs_list,
+            // vault — Obsidian-compatible local-first markdown store
+            $crate::commands::vault::vault_write,
+            $crate::commands::vault::vault_read,
+            $crate::commands::vault::vault_list,
+            $crate::commands::vault::vault_search,
+            $crate::commands::vault::vault_delete,
+            $crate::commands::vault::vault_root_path,
         ]
     };
 }
