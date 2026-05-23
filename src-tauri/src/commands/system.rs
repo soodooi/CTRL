@@ -52,6 +52,30 @@ pub struct KernelStatus {
     pub warnings: Vec<String>,
 }
 
+/// Build-time metadata for the user-visible version pill in the cockpit.
+/// Three fields:
+///   - `version`  cargo crate version (semver)
+///   - `sha`      git HEAD short SHA at the time `cargo build` ran
+///   - `built_at` RFC-3339 UTC timestamp of the build
+/// `sha` + `built_at` come from `src-tauri/build.rs` via cargo:rustc-env;
+/// they fall back to "unknown" when injection failed (rare — needs git
+/// + date on the build host).
+#[derive(Debug, Serialize)]
+pub struct AppMeta {
+    pub version: &'static str,
+    pub sha: &'static str,
+    pub built_at: &'static str,
+}
+
+#[tauri::command]
+pub async fn app_meta() -> Result<AppMeta, String> {
+    Ok(AppMeta {
+        version: env!("CARGO_PKG_VERSION"),
+        sha: option_env!("CTRL_BUILD_SHA").unwrap_or("unknown"),
+        built_at: option_env!("CTRL_BUILD_TIME").unwrap_or("unknown"),
+    })
+}
+
 /// Probe the Hermes dashboard daemon. Returns `Some(url)` when a TCP
 /// connection succeeds within `HERMES_DASHBOARD_PROBE_TIMEOUT_MS`, else
 /// `None`. We don't speak HTTP here — a successful TCP accept on the

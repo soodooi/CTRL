@@ -9,13 +9,20 @@
 // no mocks, no defaults. When the bridge isn't reachable we show
 // "offline" / "unknown" honestly.
 
-import type { ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Led, Logo, StatusPill, type LedTone } from './primitives';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import { useKernelStatus } from '../hooks/useKernelStatus';
 import { useRail } from './RightRail';
+import { invoke } from '../lib/bridge';
 import styles from './StatusBar.module.css';
+
+interface AppMeta {
+  version: string;
+  sha: string;
+  built_at: string;
+}
 
 interface InstrumentProps {
   label: string;
@@ -63,6 +70,24 @@ export const StatusBar = (): ReactElement => {
   const navigate = useNavigate();
   const { irisyState } = useRail();
   const status = useKernelStatus();
+
+  // Build version pill. Per bao 2026-05-23 — "你没有版本号 不知道是新的
+  // 还是旧的". Reads compile-time metadata injected by build.rs so the
+  // user can tell at a glance which build they're staring at.
+  const [meta, setMeta] = useState<AppMeta | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    invoke<AppMeta>('app_meta')
+      .then((m) => {
+        if (!cancelled) setMeta(m);
+      })
+      .catch(() => {
+        // PWA-only mode (no Tauri bridge): leave meta null; pill hides.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Derive tones from the kernel envelope. The kernel itself is healthy
   // by definition when the IPC round-trips (we got an answer back), so
@@ -127,6 +152,14 @@ export const StatusBar = (): ReactElement => {
       </div>
 
       <div className={styles.right}>
+        {meta && (
+          <span
+            className={styles.version}
+            title={`Built ${meta.built_at} from ${meta.sha}`}
+          >
+            v{meta.version}+{meta.sha}
+          </span>
+        )}
         <time className={styles.time} dateTime={now.toISOString()}>
           {formatHHMM(now)}
         </time>
