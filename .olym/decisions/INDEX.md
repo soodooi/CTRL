@@ -15,6 +15,7 @@
 | [010](./010-keycap-execution-model.md) | Keycap execution model — MCP outward, Actor inward | accepted | 2026-05-17 | bao, zeus, hephaestus | framework | — |
 | [011](./011-update-channel-and-delivery.md) | Tauri 2 updater + three-mirror channel for global + CN delivery | accepted | 2026-05-17 | bao, zeus | framework | — |
 | [012](./012-subprocess-actor-pty.md) | SubprocessActor + portable-pty execution model for Code Space coding companion | accepted | 2026-05-19 | bao, zeus | framework | — |
+| [013](./013-kernel-as-mcp-server.md) | Kernel as MCP server — single bus for hermes / Irisy / external agents | accepted | 2026-05-22 | bao, zeus | framework | — |
 
 > SLA 列 = "已挂天数 / SLA 上限"。P0 超时 → bao 决策顶；详见 PROCESS.md §1。
 
@@ -35,6 +36,6 @@
 
 ---
 
-**Index version**: 0.5 (2026-05-19, ADR-012 → accepted)
+**Index version**: 0.6 (2026-05-22, ADR-013 → accepted)
 **Process**: see [PROCESS.md](./PROCESS.md)
 **Template**: see [_template.md](./_template.md)

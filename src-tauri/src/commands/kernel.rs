@@ -718,6 +718,30 @@ pub async fn list_mcp_servers(
     Ok(kernel.runtime.mcp_host.list_installed().await)
 }
 
+/// `mcp_server_info` — return the kernel's own MCP server URL + ephemeral
+/// bearer token. The PWA hands these to `bootstrap_hermes` (and to any
+/// external agent like Claude Code that the user points at the local
+/// kernel). Returns null fields when the server failed to bind.
+#[derive(serde::Serialize)]
+pub struct McpServerInfo {
+    pub url: Option<String>,
+    pub token: Option<String>,
+}
+
+#[tauri::command]
+pub async fn mcp_server_info(kernel: State<'_, KernelHandle>) -> Result<McpServerInfo, String> {
+    match &kernel.mcp_server {
+        Some(h) => Ok(McpServerInfo {
+            url: Some(h.url()),
+            token: Some(h.auth_token.as_ref().clone()),
+        }),
+        None => Ok(McpServerInfo {
+            url: None,
+            token: None,
+        }),
+    }
+}
+
 /// Open the dedicated workspace window for a keycap activation.
 ///
 /// Per bao 2026-05-14 directive: the workspace is a SECOND window separate

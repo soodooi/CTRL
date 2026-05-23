@@ -135,7 +135,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | Layer | Tech |
 |---|---|
 | Desktop shell | Tauri 2 (~500 LOC Rust shell: hotkey / tray / keychain / kernel daemon supervisor) |
-| Kernel (L1) | Rust stable 1.77+, Tokio async runtime, ST-SS WS bridge @ 127.0.0.1:17872 (token-authenticated) |
+| Kernel (L1) | Rust stable 1.77+, Tokio async runtime, ST-SS WS bridge @ 127.0.0.1:17872 (token-auth), MCP server (rmcp 1.7 streamable-http) @ 127.0.0.1:17873 (Bearer auth, ADR-013) |
 | Sandbox | WASM (wasmtime, cranelift), capability-based |
 | UI | Single PWA (`packages/ctrl-web`) — React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa |
 | Web ↔ Rust bridge | Tauri 2 `invoke()` on desktop (intra-process), WebSocket + token on mobile |
@@ -145,7 +145,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | **Mesh comm (ADR-003)** | **vodozemac (Olm 1:1) + webrtc-rs v0.17.x + Automerge v0.7.x + mdns-sd v1.71+ + ctrl-relay CF Worker** |
 | LLM (default) | CF Workers AI (Qwen / Llama) |
 | LLM (BYOK) | Anthropic Claude / OpenAI GPT-4 |
-| MCP | Anthropic rmcp Rust SDK |
+| MCP | Anthropic rmcp Rust SDK (kernel acts as both client `mcp_host` and server `mcp_server` — ADR-013) |
 | Backend (cloud) | Cloudflare Workers + D1 (ctrl-auth / ctrl-billing / ctrl-market / **ctrl-relay** / ctrl-push) |
 | Payments | Stripe |
 | Min platform | Windows 10 1809+ (primary Win 11+ dev; ADR-002 §6 WebView2 bootstrapper covers 10), macOS 13+ (secondary), iOS 16.4+ PWA, Android Chrome PWA, WebView2 / WKWebView evergreen |
@@ -154,7 +154,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | Rust | 1.77+ stable |
 | Binary size | kernel ≤ 18 MB (revised by ADR-003), installer ≤ 25 MB default / ≤ 18 MB slim (mesh-included) |
 | PWA bundle | ≤ 500 KB gzip (revised by ADR-003); critical-path shell ≤ 200 KB, mesh modules lazy-load |
-| Local ports | **0 listening** for cross-device (ctrl-relay outbound WSS); kernel daemon WS bridge @ 127.0.0.1:17872 with token auth for intra-device PWA mobile-mode |
+| Local ports | **0 listening** for cross-device (ctrl-relay outbound WSS); kernel daemon WS bridge @ 127.0.0.1:17872 (CBOR/WebSocket, token auth) + MCP server @ 127.0.0.1:17873 (HTTP/JSON-RPC, Bearer auth) for intra-device PWA + AI agents (hermes / Irisy / Claude Code) |
 
 ---
 

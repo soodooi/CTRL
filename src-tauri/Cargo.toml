@@ -42,12 +42,20 @@ uuid = { version = "1", features = ["v4", "serde"] }
 ciborium = "0.2"           # CBOR encoding (ST-SS wire format)
 rusqlite = { version = "0.32", features = ["bundled"] }  # event store
 wasmtime = { version = "27", default-features = false, features = ["async", "cranelift"] }  # WASM sandbox (P2.7)
-rmcp = { version = "1.6", features = ["client", "transport-child-process"] }  # MCP host (Anthropic official Rust SDK)
+rmcp = { version = "1.7", features = [
+    "client", "transport-child-process",                          # MCP host (existing)
+    "server", "macros", "schemars", "transport-streamable-http-server",  # MCP server (ADR-013)
+] }  # Anthropic official Rust SDK
 # H-2026-05-13-001 sub-PR d — ST-SS WS bridge promoted from spike.
 tokio-tungstenite = "0.24"
 # H-2026-05-19-001 / ADR-012 — SubprocessActor PTY substrate for Code Space tiles.
 # Unix forkpty + Windows ConPTY 自动适配, wezterm 在生产用.
 portable-pty = "0.9"
+# H-2026-05-22 / ADR-013 — kernel MCP server (streamable-http transport).
+# axum hosts the rmcp StreamableHttpService + auth middleware.
+axum = "0.8"
+schemars = "1.0"
+tower = "0.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # H-2026-05-14-002 mac/a — CGEventTap port lives in shell/hotkey.rs::mac_impl,

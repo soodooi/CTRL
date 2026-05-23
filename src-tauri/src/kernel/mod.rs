@@ -33,6 +33,7 @@ pub mod local_storage;
 pub mod llm_adapters;
 pub mod llm_port;
 pub mod mcp_host;
+pub mod mcp_server;
 pub mod persistence;
 pub mod runtime;
 pub mod sandbox;
@@ -50,6 +51,9 @@ pub use effect::{Effect, EffectExecutor, HttpMethod};
 pub use event::{Cell, CellKind, Event, EventBus, EventFilter, Op, OpKind};
 pub use llm_port::{LlmAdapter, LlmChunk, LlmError, LlmMessage, LlmPortRouter, LlmPrompt};
 pub use mcp_host::{McpHost, McpServerDescriptor, McpServerSource, McpToolDescriptor};
+pub use mcp_server::{
+    McpServerHandle, DEFAULT_LISTEN_ADDR as MCP_SERVER_LISTEN_ADDR,
+};
 pub use persistence::EventStore;
 pub use runtime::{KernelBootError, KernelRuntime};
 pub use sandbox::{SandboxConfig, WasmSandbox};
