@@ -153,6 +153,33 @@ pub struct McpProxyListArgs {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct HttpGetArgs {
+    /// Full HTTPS URL to fetch.
+    pub url: String,
+    /// Optional request headers.
+    #[serde(default)]
+    pub headers: std::collections::BTreeMap<String, String>,
+    /// Per-call timeout in milliseconds. Defaults to 30000.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct HttpPostArgs {
+    /// Full HTTPS URL to POST to.
+    pub url: String,
+    /// Request body. Strings sent as-is; JSON values serialized to JSON
+    /// with `application/json` Content-Type unless overridden in headers.
+    pub body: serde_json::Value,
+    /// Optional request headers.
+    #[serde(default)]
+    pub headers: std::collections::BTreeMap<String, String>,
+    /// Per-call timeout in milliseconds. Defaults to 30000.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct McpProxyCallArgs {
     pub server: String,
     pub tool: String,
@@ -329,6 +356,39 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
+    /// http.get — fetch any HTTPS URL. Base keycap atomic. Used by
+    /// composite keycaps that need to read external API data (RSS,
+    /// REST, webhook ping). Body returned as a string; caller parses
+    /// JSON if applicable.
+    #[tool(description = "HTTP GET request — fetch a URL and return status + body + headers")]
+    async fn http_get(
+        &self,
+        Parameters(args): Parameters<HttpGetArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let body = http_request(reqwest::Method::GET, args.url, args.headers, None, args.timeout_ms)
+            .await?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// http.post — POST to any HTTPS URL. Base keycap atomic. Used by
+    /// composite keycaps that need to trigger external workflows
+    /// (n8n webhooks, Coze bot API, generic REST POST).
+    #[tool(description = "HTTP POST request — send JSON or text body and return status + body + headers")]
+    async fn http_post(
+        &self,
+        Parameters(args): Parameters<HttpPostArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let body = http_request(
+            reqwest::Method::POST,
+            args.url,
+            args.headers,
+            Some(args.body),
+            args.timeout_ms,
+        )
+        .await?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
     /// mcp.proxy_list_tools — list tools advertised by a downstream MCP
     /// server (the kernel relays the request to that server).
     #[tool(
@@ -463,6 +523,68 @@ fn map_vault_err(e: vault::VaultError) -> McpError {
 
 fn map_serde_err(e: serde_json::Error) -> McpError {
     McpError::internal_error(format!("serialize: {e}"), None)
+}
+
+/// Shared executor for http.get + http.post. Single reqwest::Client
+/// per call (cheap; reqwest pools internally). Returns a JSON string
+/// that the MCP caller parses: `{ status: u16, body: String, headers: {} }`.
+/// Errors map to McpError::internal_error with the underlying message
+/// so creator-side debugging is straightforward.
+async fn http_request(
+    method: reqwest::Method,
+    url: String,
+    headers: std::collections::BTreeMap<String, String>,
+    body: Option<serde_json::Value>,
+    timeout_ms: Option<u64>,
+) -> Result<String, McpError> {
+    let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(30_000));
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|e| McpError::internal_error(format!("http client build: {e}"), None))?;
+    let mut req = client.request(method, &url);
+    let mut content_type_set = false;
+    for (k, v) in &headers {
+        if k.eq_ignore_ascii_case("content-type") {
+            content_type_set = true;
+        }
+        req = req.header(k, v);
+    }
+    if let Some(body) = body {
+        // String body → text; everything else → JSON. Mirrors what
+        // creator-side flow.yaml authors expect ($var of any shape just works).
+        match body {
+            serde_json::Value::String(s) => {
+                req = req.body(s);
+            }
+            other => {
+                if !content_type_set {
+                    req = req.header("content-type", "application/json");
+                }
+                req = req.body(other.to_string());
+            }
+        }
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("http {url}: {e}"), None))?;
+    let status = resp.status().as_u16();
+    let resp_headers: std::collections::BTreeMap<String, String> = resp
+        .headers()
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+        .collect();
+    let body_text = resp
+        .text()
+        .await
+        .map_err(|e| McpError::internal_error(format!("http {url} read body: {e}"), None))?;
+    let envelope = serde_json::json!({
+        "status": status,
+        "body": body_text,
+        "headers": resp_headers,
+    });
+    Ok(envelope.to_string())
 }
 
 #[cfg(test)]
