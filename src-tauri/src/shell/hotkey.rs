@@ -357,8 +357,20 @@ mod mac_impl {
 
         // ListenOnly: we observe events but never consume them, so other
         // apps see Ctrl exactly as the user pressed it.
+        //
+        // Location = HID, not Session — bao 2026-05-23 root-cause:
+        // CGEventTapLocation::Session only delivers events to the tap
+        // when (a) our app is foreground, OR (b) no other foreground
+        // app consumed them first. Real-world Ctrl gets eaten by every
+        // text-input field (Ctrl+letter chords), browsers, terminals,
+        // etc. — so the tap effectively only fires when Finder (the
+        // desktop) is foreground. HID taps the event flow at the
+        // hardware-input layer, BEFORE any app handler runs, so the
+        // lone-Ctrl tap fires from any focused app. Raycast / Karabiner
+        // / Hammerspoon all use HID for the same reason. Accessibility
+        // privilege (already required for any CGEventTap) is sufficient.
         let tap = CGEventTap::new(
-            CGEventTapLocation::Session,
+            CGEventTapLocation::HID,
             CGEventTapPlacement::HeadInsertEventTap,
             CGEventTapOptions::ListenOnly,
             event_types,
