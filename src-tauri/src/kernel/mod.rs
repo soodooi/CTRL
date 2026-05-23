@@ -25,6 +25,7 @@
 pub mod actor;
 pub mod cache;
 pub mod capability;
+pub mod composition;
 pub mod capability_resolver;
 pub mod channel;
 pub mod effect;
