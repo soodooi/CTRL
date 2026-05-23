@@ -39,8 +39,11 @@ macro_rules! pwa_invoke_handler {
             // chat — streaming LLM via Tauri events (Irisy companion)
             $crate::commands::chat::chat_stream,
             // system — kernel health (PWA status bar Phase 1F) + build version pill
+            // + changelog + auto-update check (Settings → About)
             $crate::commands::system::kernel_status,
             $crate::commands::system::app_meta,
+            $crate::commands::system::app_changelog,
+            $crate::commands::system::check_for_updates,
             // irisy — first-launch host check + Irisy install (internal pipx + plugin copy)
             $crate::commands::irisy::system_check,
             $crate::commands::irisy::install_irisy,

@@ -69,6 +69,9 @@ export const MANIFEST_REGISTRY: Readonly<Record<string, AnyComponent>> = {
 
   // CommandBar deliberately omitted — it's a modal overlay, not part
   // of a workspace layout tree. Routes mount it imperatively.
+
+  // Settings — About card: version + Check for Updates + Changelog
+  AboutPanel,
 };
 
 export const isRegistered = (name: string): boolean =>

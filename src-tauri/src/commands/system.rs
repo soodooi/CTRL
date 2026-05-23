@@ -76,6 +76,93 @@ pub async fn app_meta() -> Result<AppMeta, String> {
     })
 }
 
+/// Read the repo's CHANGELOG.md so the cockpit Settings → About panel
+/// can show users what changed between builds. The file is bundled in
+/// the Tauri resource dir (production) and walked-up to from CWD in
+/// dev. Returns markdown content verbatim; PWA renders it.
+#[tauri::command]
+pub async fn app_changelog(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    // 1. Try the Tauri resource dir (production builds bundle CHANGELOG.md).
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let candidate = resource_dir.join("CHANGELOG.md");
+        if let Ok(contents) = std::fs::read_to_string(&candidate) {
+            return Ok(contents);
+        }
+    }
+    // 2. Dev fallback — walk up from CWD looking for CHANGELOG.md at
+    //    the repo root. Caps at 6 levels so we don't traverse the
+    //    whole filesystem on a misconfigured run.
+    if let Ok(mut cwd) = std::env::current_dir() {
+        for _ in 0..6 {
+            let candidate = cwd.join("CHANGELOG.md");
+            if let Ok(contents) = std::fs::read_to_string(&candidate) {
+                return Ok(contents);
+            }
+            if !cwd.pop() {
+                break;
+            }
+        }
+    }
+    Err("CHANGELOG.md not found in app resources or workspace".to_string())
+}
+
+/// Update-check result returned to the PWA. `kind` discriminates the
+/// outcome so the UI can render distinct messaging without parsing the
+/// `message` string.
+#[derive(Debug, Serialize)]
+pub struct UpdateCheck {
+    /// One of: "available" | "up_to_date" | "no_endpoint" | "error"
+    pub kind: &'static str,
+    /// Newer version when `kind = "available"`, else None.
+    pub available_version: Option<String>,
+    /// Human-readable single-line summary; safe to render directly.
+    pub message: String,
+}
+
+/// Wraps `tauri-plugin-updater` so the cockpit "Check for Updates"
+/// button has somewhere to call. When the updater isn't configured
+/// (no manifest endpoint hosted yet — the three-mirror channel from
+/// ADR-011 hasn't shipped its hosts), this returns `kind = "no_endpoint"`
+/// with an honest message instead of pretending success.
+#[tauri::command]
+pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateCheck, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    // `app.updater()` reads endpoint config from tauri.conf.json. When
+    // the endpoints array is empty / missing, the builder returns an
+    // error we surface as `no_endpoint` rather than a hard failure.
+    let updater = match app.updater() {
+        Ok(u) => u,
+        Err(e) => {
+            return Ok(UpdateCheck {
+                kind: "no_endpoint",
+                available_version: None,
+                message: format!(
+                    "Auto-update not yet configured — three-mirror channel hosts pending (ADR-011). \
+                     Underlying error: {e}"
+                ),
+            });
+        }
+    };
+    match updater.check().await {
+        Ok(Some(release)) => Ok(UpdateCheck {
+            kind: "available",
+            available_version: Some(release.version.clone()),
+            message: format!("Update available: v{}", release.version),
+        }),
+        Ok(None) => Ok(UpdateCheck {
+            kind: "up_to_date",
+            available_version: None,
+            message: "You're on the latest build.".to_string(),
+        }),
+        Err(e) => Ok(UpdateCheck {
+            kind: "error",
+            available_version: None,
+            message: format!("Update check failed: {e}"),
+        }),
+    }
+}
+
 /// Probe the Hermes dashboard daemon. Returns `Some(url)` when a TCP
 /// connection succeeds within `HERMES_DASHBOARD_PROBE_TIMEOUT_MS`, else
 /// `None`. We don't speak HTTP here — a successful TCP accept on the

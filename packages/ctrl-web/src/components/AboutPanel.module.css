@@ -1,0 +1,179 @@
+.card {
+  background: var(--color-surface, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.titleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.versionBadge {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: help;
+  font-variant-numeric: tabular-nums;
+}
+
+.versionSha {
+  color: var(--color-text-muted);
+}
+
+.metaList {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.metaList dt {
+  color: var(--color-text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.metaList dd {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.statusBox {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.statusBox[data-kind='available'] {
+  border-color: var(--color-success, #3fb950);
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.statusBox[data-kind='up_to_date'] {
+  border-color: var(--color-info, #58a6ff);
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.statusBox[data-kind='no_endpoint'] {
+  border-color: var(--color-warning, #d29922);
+  background: rgba(210, 153, 34, 0.08);
+}
+
+.statusBox[data-kind='error'] {
+  border-color: var(--color-danger, #f85149);
+  background: rgba(248, 81, 73, 0.08);
+}
+
+.statusBox strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.statusBox p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.errorLine {
+  color: var(--color-danger, #f85149);
+  font-size: 12px;
+  margin: 0;
+}
+
+.changelogModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.changelogPanel {
+  background: var(--color-bg, #0d1117);
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  width: min(720px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+
+.changelogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+}
+
+.changelogHeader h3 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.closeBtn {
+  background: transparent;
+  border: none;
+  color: var(--color-text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.changelogBody {
+  overflow-y: auto;
+  padding: 18px;
+  flex: 1;
+}
+
+.markdownText {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  color: var(--color-text);
+}

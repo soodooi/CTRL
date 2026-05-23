@@ -23,6 +23,10 @@ const SETTINGS_LAYOUT: WorkspaceLayout = {
     children: [
       { component: 'Heading', props: { level: 1 }, children: ['Settings'] },
 
+      // About — version + auto-update + changelog. First section so users
+      // see the build they're on without scrolling.
+      { component: 'AboutPanel' },
+
       {
         component: 'Stack',
         props: { gap: 2 },
