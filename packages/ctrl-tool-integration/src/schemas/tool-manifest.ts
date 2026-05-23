@@ -55,6 +55,99 @@ export const StartupPolicySchema = z.enum([
   'resident',     // 常驻运行
 ]);
 
+// --- Manifest schema v0.3 additions (2026-05-22) — ADR-010 amend / ADR-018 / ADR-014 / ADR-002 amend.
+// Fields are additive over v0.1; existing manifests remain valid (defaults
+// supplied where possible). See .olym/specs/tool-manifest/spec.md §0.
+
+// Loader target — kernel installs as MCP server (default) or generates
+// Hermes SKILL.md when target=hermes-skill. ADR-010 amendment.
+export const KeycapTargetSchema = z.enum(['mcp-tool', 'hermes-skill']);
+export type KeycapTarget = z.infer<typeof KeycapTargetSchema>;
+
+// Workspace tab renderer (10-enum). ADR-002 amendment. `custom` requires
+// `custom_component_path` to point at a keycap-supplied React component
+// (relative to packages/ctrl-web/src/components/keycaps/).
+export const WorkspaceUiSchema = z.enum([
+  'none',
+  'notification',
+  'modal',
+  'clipboard',
+  'html-output',
+  'chat-stream',
+  'picker',
+  'form',
+  'canvas',
+  'custom',
+]);
+export type WorkspaceUi = z.infer<typeof WorkspaceUiSchema>;
+
+export const WorkspaceLayoutSchema = z.object({
+  ui: WorkspaceUiSchema.default('none'),
+  custom_component_path: z.string().optional(),
+  icon: z.string().optional(),
+  title: z.string().optional(),
+}).superRefine((val, ctx) => {
+  if (val.ui === 'custom' && !val.custom_component_path) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'workspace.custom_component_path is required when ui="custom"',
+      path: ['custom_component_path'],
+    });
+  }
+});
+export type WorkspaceLayout = z.infer<typeof WorkspaceLayoutSchema>;
+
+// Per-keycap update channel (ADR-018 Layer 3 — keycap upstream).
+export const UpstreamTierSchema = z.enum(['config', 'patch', 'fork']);
+export type UpstreamTier = z.infer<typeof UpstreamTierSchema>;
+
+export const UpstreamSchema = z.object({
+  url: z.string().url(),
+  supported_tiers: z.array(UpstreamTierSchema)
+    .default(['config', 'patch', 'fork']),
+});
+export type Upstream = z.infer<typeof UpstreamSchema>;
+
+// Creator signing key. ed25519, base64.
+export const SigningSchema = z.object({
+  pubkey: z.string().min(32, 'pubkey must be base64-encoded ed25519 (~44 chars)'),
+});
+export type Signing = z.infer<typeof SigningSchema>;
+
+// Config field migration (forward-compatible config_schema evolution).
+// ADR-018 Config tier.
+export const MigrationOpSchema = z.object({
+  op: z.enum(['rename', 'move', 'default', 'drop']),
+  path: z.string(),
+  to: z.string().optional(),     // for rename / move
+  value: z.unknown().optional(), // for default
+});
+export type MigrationOp = z.infer<typeof MigrationOpSchema>;
+
+export const MigrationSchema = z.object({
+  from_version: z.string().regex(/^\d+\.\d+\.\d+$/),
+  to_version: z.string().regex(/^\d+\.\d+\.\d+$/),
+  operations: z.array(MigrationOpSchema),
+});
+export type Migration = z.infer<typeof MigrationSchema>;
+
+// Compatibility envelope. Replaces v0.1 top-level `min_ctrl_version` going
+// forward but the legacy field stays valid for backwards compat.
+export const CompatibilitySchema = z.object({
+  min_ctrl_version: z.string().regex(/^\d+\.\d+\.\d+$/).default('1.0.0'),
+  kernel_manifest_schema: z.string().default('>=0.1 <0.4'),
+});
+export type Compatibility = z.infer<typeof CompatibilitySchema>;
+
+// i18n declaration — ADR-014 global English first. Default locale must be
+// present; ctrl-market warns when default_locale !== 'en' (signals a
+// language-specific keycap).
+export const I18nSchema = z.object({
+  default_locale: z.string().default('en'),
+  supported_locales: z.array(z.string()).default(['en']),
+});
+export type I18n = z.infer<typeof I18nSchema>;
+
 // 工具manifest主schema
 export const ToolManifestSchema = z.object({
   // 基本信息
@@ -99,9 +192,34 @@ export const ToolManifestSchema = z.object({
   
   repository: z.string().url().optional(),
   license: z.string().optional(),
-  
+
   // 扩展配置（根据工具类型）
   extensions: z.record(z.string(), z.any()).optional(),
+
+  // --- v0.3 additive fields (ADR-010 / 014 / 018 amendments) ---
+  // Loader target — defaults to mcp-tool so existing v0.1 manifests behave
+  // exactly as before.
+  target: KeycapTargetSchema.default('mcp-tool'),
+
+  // Workspace tab renderer. Optional; absent = no workspace tab.
+  workspace: WorkspaceLayoutSchema.optional(),
+
+  // Auto-update channel (Layer 3 of ADR-018). Absent = no auto-update.
+  upstream: UpstreamSchema.optional(),
+
+  // Creator signing key. Absent = unsigned (dev-only; ctrl-market warns).
+  signing: SigningSchema.optional(),
+
+  // Cross-version config migrations.
+  config_migration: z.array(MigrationSchema).default([]),
+
+  // Compatibility envelope. Prefer this over the legacy top-level
+  // min_ctrl_version; both can coexist but `compatibility.min_ctrl_version`
+  // wins when both are present.
+  compatibility: CompatibilitySchema.optional(),
+
+  // i18n declaration.
+  i18n: I18nSchema.default({ default_locale: 'en', supported_locales: ['en'] }),
 });
 
 // 类型导出
