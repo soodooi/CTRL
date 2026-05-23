@@ -154,14 +154,73 @@
 
 .version {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.05em;
-  color: var(--color-text-muted);
+  color: var(--color-text);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 4px;
-  padding: 2px 6px;
+  padding: 2px 7px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+.upgradeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-success, #3fb950);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease;
+}
+
+.upgradeBtn:hover {
+  background: #4ac266;
+}
+
+.upgradeDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+  animation: upgradePulse 1.6s ease-in-out infinite;
+}
+
+@keyframes upgradePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.55); }
+  50%      { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0); }
+}
+
+.upgradeInstalling {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-info, #58a6ff);
+  background: rgba(88, 166, 255, 0.12);
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.upgradeError {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-danger, #f85149);
+  background: rgba(248, 81, 73, 0.12);
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
   cursor: help;
 }

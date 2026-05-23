@@ -9,7 +9,7 @@
 // no mocks, no defaults. When the bridge isn't reachable we show
 // "offline" / "unknown" honestly.
 
-import { useEffect, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Led, Logo, StatusPill, type LedTone } from './primitives';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
@@ -23,6 +23,28 @@ interface AppMeta {
   sha: string;
   built_at: string;
 }
+
+interface UpdateCheckResult {
+  kind: 'available' | 'up_to_date' | 'no_endpoint' | 'error';
+  available_version: string | null;
+  message: string;
+}
+
+interface InstallOutcome {
+  kind: 'installed' | 'no_update' | 'error';
+  message: string;
+}
+
+type UpgradeState =
+  | { kind: 'unknown' }
+  | { kind: 'up_to_date' }
+  | { kind: 'available'; version: string }
+  | { kind: 'installing' }
+  | { kind: 'error'; message: string };
+
+// Re-poll the update endpoint every 15 minutes so bao doesn't have to
+// quit & relaunch to see a new release. Cheap — single HTTP request.
+const UPDATE_POLL_MS = 15 * 60 * 1000;
 
 interface InstrumentProps {
   label: string;
@@ -88,6 +110,54 @@ export const StatusBar = (): ReactElement => {
       cancelled = true;
     };
   }, []);
+
+  // Auto-poll for updates and surface an inline Upgrade button next to
+  // the version pill when one's available. Per bao 2026-05-23 — "升级
+  // 按钮应该放在首页版本旁边". One-click upgrade — no Settings detour.
+  const [upgrade, setUpgrade] = useState<UpgradeState>({ kind: 'unknown' });
+
+  const runCheck = useCallback(() => {
+    invoke<UpdateCheckResult>('check_for_updates')
+      .then((r) => {
+        if (r.kind === 'available' && r.available_version) {
+          setUpgrade({ kind: 'available', version: r.available_version });
+        } else if (r.kind === 'up_to_date') {
+          setUpgrade({ kind: 'up_to_date' });
+        } else {
+          // 'no_endpoint' / 'error' — leave 'unknown' so the button hides.
+          setUpgrade({ kind: 'unknown' });
+        }
+      })
+      .catch(() => setUpgrade({ kind: 'unknown' }));
+  }, []);
+
+  useEffect(() => {
+    runCheck();
+    const timer = window.setInterval(runCheck, UPDATE_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [runCheck]);
+
+  const handleUpgrade = useCallback(() => {
+    if (upgrade.kind !== 'available') return;
+    setUpgrade({ kind: 'installing' });
+    invoke<InstallOutcome>('install_update')
+      .then((outcome) => {
+        if (outcome.kind === 'installed') {
+          // Kernel will restart in ~500ms; UI hold prevents flicker.
+          setUpgrade({ kind: 'installing' });
+        } else if (outcome.kind === 'no_update') {
+          setUpgrade({ kind: 'up_to_date' });
+        } else {
+          setUpgrade({ kind: 'error', message: outcome.message });
+        }
+      })
+      .catch((e) =>
+        setUpgrade({
+          kind: 'error',
+          message: e instanceof Error ? e.message : String(e),
+        }),
+      );
+  }, [upgrade]);
 
   // Derive tones from the kernel envelope. The kernel itself is healthy
   // by definition when the IPC round-trips (we got an answer back), so
@@ -155,9 +225,35 @@ export const StatusBar = (): ReactElement => {
         {meta && (
           <span
             className={styles.version}
-            title={`Built ${meta.built_at} from ${meta.sha}`}
+            title={`Build ${meta.sha} · ${meta.built_at}`}
           >
-            v{meta.version}+{meta.sha}
+            v{meta.version}
+          </span>
+        )}
+        {upgrade.kind === 'available' && (
+          <button
+            type="button"
+            className={styles.upgradeBtn}
+            onClick={handleUpgrade}
+            title={`Install v${upgrade.version}`}
+            aria-label={`Upgrade to v${upgrade.version}`}
+          >
+            <span className={styles.upgradeDot} aria-hidden="true" />
+            Upgrade
+          </button>
+        )}
+        {upgrade.kind === 'installing' && (
+          <span className={styles.upgradeInstalling} aria-live="polite">
+            Installing…
+          </span>
+        )}
+        {upgrade.kind === 'error' && (
+          <span
+            className={styles.upgradeError}
+            title={upgrade.message}
+            aria-live="polite"
+          >
+            Update failed
           </span>
         )}
         <time className={styles.time} dateTime={now.toISOString()}>
