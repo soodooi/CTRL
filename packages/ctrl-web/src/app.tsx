@@ -1,6 +1,10 @@
-// App root — TanStack Router setup + React Query provider.
-// Outlet is referenced inside rootRoute.component below; the linter sees it
-// embedded in JSX.
+// App root — TanStack Router setup + React Query provider + the cockpit
+// shell (StatusBar / Keyboard / Workspace / RightRail).
+//
+// Per decision_pwa_two_panel_layout (bao 2026-05-22): the shell is a
+// 3-column grid — keyboard on the left always, workspace in the middle
+// hosting the active route, right rail on the right for context items.
+// No iPhone bezels, no bottom tab.
 
 import { lazy, Suspense, useEffect, type ReactElement } from 'react';
 import {
@@ -14,17 +18,13 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
-import { BottomTab } from './components/BottomTab';
-import { HomeRoute } from './routes/home';
-import { PoolRoute } from './routes/pool';
+import { Keyboard } from './components/Keyboard';
+import { RailProvider, RightRail } from './components/RightRail';
+import { DefaultWorkspace } from './routes/default';
 import styles from './app.module.css';
 
-// Tray event names — must stay in sync with src-tauri/src/shell/tray.rs.
 const TRAY_OPEN_CONFIG = 'tray:open-config';
 
-// Listens for Tauri tray events and bridges them into router navigation.
-// In a pure-browser PWA (no Tauri runtime) the dynamic import throws and
-// we silently skip — there's no tray to receive clicks from anyway.
 function useTrayBridge(): void {
   const navigate = useNavigate();
   useEffect(() => {
@@ -56,19 +56,27 @@ function useTrayBridge(): void {
 function RootShell(): ReactElement {
   useTrayBridge();
   return (
-    <div className={styles.shell}>
-      <StatusBar />
-      <main className={styles.outlet}>
-        <Outlet />
-      </main>
-      <BottomTab />
-    </div>
+    <RailProvider>
+      <div className={styles.shell}>
+        <div className={styles.status}>
+          <StatusBar />
+        </div>
+        <div className={styles.keyboard}>
+          <Keyboard />
+        </div>
+        <main className={styles.workspace}>
+          <Outlet />
+        </main>
+        <div className={styles.rail}>
+          <RightRail />
+        </div>
+      </div>
+    </RailProvider>
   );
 }
 
-// Workspace pulls in cbor-x + the stream feed renderer; both are only needed
-// once a keycap activation routes to /workspace. Lazy-load to keep the Pool
-// critical path tiny on first paint after a destroy + rebuild summon.
+// Workspace + code-space + irisy chunks stay lazy — they pull xterm /
+// cbor-x and an LLM transport that the keyboard view doesn't need.
 const WorkspaceRoute = lazy(() =>
   import('./routes/workspace').then((m) => ({ default: m.WorkspaceRoute })),
 );
@@ -84,29 +92,36 @@ const CodeSpaceRoute = lazy(() =>
 const CodeSpaceDetailRoute = lazy(() =>
   import('./routes/code-space').then((m) => ({ default: m.CodeSpaceDetailRoute })),
 );
+const PoolRoute = lazy(() =>
+  import('./routes/pool').then((m) => ({ default: m.PoolRoute })),
+);
 
 const LazyFallback = (): ReactElement => (
-  <div style={{ padding: 'var(--space-6)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+  <div style={{
+    padding: 'var(--space-6)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--color-text-muted)',
+  }}>
     Loading…
   </div>
 );
 
-const rootRoute = createRootRoute({
-  component: RootShell,
-});
+const rootRoute = createRootRoute({ component: RootShell });
 
-// `/` = the dual iPhone-frame home view (decision_pc_mirrors_mobile_layout).
-// `/pool` and `/workspace` remain as standalone routes — used by the Tauri
-// dedicated workspace window (per workspace.tsx header) and as deep-links.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: HomeRoute,
+  component: DefaultWorkspace,
 });
 const poolRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/pool',
-  component: PoolRoute,
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <PoolRoute />
+    </Suspense>
+  ),
 });
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -164,9 +179,6 @@ const routeTree = rootRoute.addChildren([
   codeSpaceDetailRoute,
 ]);
 
-// Singleton router so `Register.router = typeof router` is concrete (gives
-// type-safe Link path autocompletion). Erased `ReturnType<typeof createRouter>`
-// would degrade `to` props to `string`.
 const router = createRouter({
   routeTree,
   defaultPreload: 'intent',
@@ -178,8 +190,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-// Singleton — created at module load so React Strict Mode dev double-mount
-// doesn't construct two QueryClients.
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 30_000, refetchOnWindowFocus: false },

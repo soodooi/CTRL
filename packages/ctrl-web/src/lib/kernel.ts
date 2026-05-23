@@ -5,6 +5,26 @@
 
 import { invoke } from './bridge';
 
+// === Kernel status (system instruments) ===
+//
+// Mirror of `src-tauri/src/commands/system.rs::KernelStatus`. The StatusBar
+// + DefaultWorkspace dashboard read this every ~3s via `useKernelStatus`.
+// `keep last good` semantics — if a poll fails, the consumer should keep
+// the previous snapshot rather than blank the UI (per Zeus' guidance).
+export interface KernelStatus {
+  uptime_ms: number;
+  llm_adapters: string[];
+  primary_adapter: string | null;
+  mcp_servers_installed: number;
+  vault_files: number;
+  stss_bridge_addr: string;
+  overall: 'ok' | 'degraded';
+  warnings: string[];
+}
+
+export const kernelStatus = (): Promise<KernelStatus> =>
+  invoke<KernelStatus>('kernel_status');
+
 export interface KeycapSummary {
   id: string;
   name: string;

@@ -1,78 +1,217 @@
-.layout {
+/* /pool — keycap catalog / back-office.
+ *
+ * Layout inside the workspace area:
+ *   ┌─────────────────────────────────────────────────────┐
+ *   │ header: title + meta + search                         │
+ *   ├─────────────────────────────────────────────────────┤
+ *   │ filter chips: 6 source pills (All / Built-in / MCP /  │
+ *   │   OAuth / Local / ST-SS)                              │
+ *   ├─────────────────────────────────────────────────────┤
+ *   │ grid: keycap cards, 88px square, auto-fill            │
+ *   └─────────────────────────────────────────────────────┘
+ */
+
+.shell {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  /* Fill the parent. The parent is either viewport (standalone /pool route)
-   * or the iPhone frame screen (dual-panel home route). The container query
-   * below adds dynamic-island clearance only when nested in the frame. */
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-6) var(--space-3);
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.022em;
+  margin: 0;
+  color: var(--color-text);
+}
+.meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 12px;
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  width: 280px;
+  transition: border-color 140ms ease;
+}
+.search:focus-within { border-color: var(--color-accent); }
+.search input {
+  all: unset;
   flex: 1;
-  min-height: 100%;
-  background: var(--color-background);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: -0.005em;
+  color: var(--color-text);
+}
+.search input::placeholder { color: var(--color-text-muted); }
+.searchIcon { color: var(--color-text-muted); display: flex; }
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  background: var(--color-bg-l1);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+.filter {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  color: var(--color-text-soft);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: -0.005em;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  transition: all 140ms ease;
+}
+.filter:hover {
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+.filterActive {
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 14%);
+  color: var(--color-text);
+  border-color: var(--color-accent);
+}
+.filterCount {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 0;
+}
+.filterActive .filterCount { color: var(--color-text-soft); }
+
+.body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  padding: var(--space-5) var(--space-6);
 }
 
 .grid {
-  flex: 1;
   display: grid;
-  grid-template-columns: repeat(8, 88px);
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   gap: var(--space-3);
-  padding: var(--space-6);
+}
+
+/* Card style — bigger than the keyboard cell, with name + tags + cta */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 140ms ease, transform 140ms ease;
+  min-height: 132px;
+  text-align: left;
+  appearance: none;
+  color: inherit;
+}
+.card:hover {
+  border-color: var(--color-border);
+  transform: translateY(-1px);
+}
+
+.cardGlyph {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  align-content: start;
-  background: var(--color-background);
-}
-
-@media (max-width: 920px) {
-  .grid { grid-template-columns: repeat(6, 88px); }
-}
-
-@media (max-width: 720px) {
-  .grid { grid-template-columns: repeat(4, 88px); gap: var(--space-2); padding: var(--space-4); }
-}
-
-@media (max-width: 480px) {
-  .grid { grid-template-columns: repeat(3, 88px); }
-}
-
-/* Container-scoped overrides for the iPhone-frame nested case.
- * Mirrors the @media breakpoints above but keyed to the parent container
- * width so the home view stays iPhone-shaped regardless of viewport. */
-@container iphone-screen (max-width: 480px) {
-  .layout {
-    padding-top: var(--space-12);
-    padding-bottom: var(--space-8);
-  }
-  .grid {
-    grid-template-columns: repeat(3, 88px);
-    gap: var(--space-2);
-    padding: var(--space-4) var(--space-3);
-  }
-}
-
-.banner {
-  margin: 0 var(--space-6);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--color-danger) 12%, transparent);
-  color: var(--color-danger);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-bg-l3), white 3%) 0%,
+      var(--color-bg-l3) 100%
+    );
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
   font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-accent);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white, transparent 92%);
+}
+
+.cardName {
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
-  text-align: center;
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.005em;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: auto;
 }
 
 .empty {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
   padding: var(--space-12) var(--space-4);
   text-align: center;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
-
 .emptyHint {
+  margin-top: var(--space-2);
   color: var(--color-text-soft);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
 }
-.emptyHint strong { color: var(--color-text); }
+
+.banner {
+  margin: 0 var(--space-6) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--color-danger), transparent 88%);
+  color: var(--color-danger);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-align: center;
+}

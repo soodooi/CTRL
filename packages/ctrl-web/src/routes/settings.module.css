@@ -1,6 +1,8 @@
 .layout {
-  min-height: 100vh;
-  background: var(--color-background);
+  flex: 1;
+  min-height: 0;
+  background: var(--color-bg-l0);
+  overflow-y: auto;
 }
 
 .main {

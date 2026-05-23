@@ -1,0 +1,23 @@
+/* SessionWorkspace — T5 template shell. Only the 2-column layout
+   lives here; HistorySidebar primitive owns the rail styling. */
+
+.shell {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.history {
+  border-right: 1px solid var(--color-border-soft);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
