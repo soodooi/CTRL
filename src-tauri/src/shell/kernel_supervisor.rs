@@ -56,6 +56,16 @@ impl KernelSupervisor {
                 .ok()
         });
 
+        // ADR-019: write the kernel handshake file so the
+        // `ctrl-hermes-plugin` Python adapter (and any external agent we
+        // configure) can read `{ url, token }` without an env var. Best-
+        // effort; failure to write is logged but doesn't block boot.
+        if let Some(ref mcp) = mcp_handle {
+            if let Err(e) = write_kernel_handshake(&mcp.url(), mcp.auth_token.as_ref()) {
+                tracing::warn!(error = %e, "kernel handshake file write failed (plugin path will fail until kernel restart)");
+            }
+        }
+
         let handle = KernelHandle {
             runtime: runtime.clone(),
             bridge: bridge_for_handle,
@@ -97,4 +107,39 @@ impl KernelSupervisor {
         tracing::info!("KernelSupervisor::shutdown");
         Ok(())
     }
+}
+
+/// Write the kernel handshake file at `~/.ctrl/state/kernel-handshake.json`
+/// for the ctrl-hermes-plugin Python adapter (ADR-019). Contents:
+/// `{ "url": "http://127.0.0.1:17873/mcp", "token": "<ephemeral>" }`.
+///
+/// File is rewritten atomically (temp + rename) so a partial write never
+/// confuses the plugin. Permissions are set to 0600 on Unix so other
+/// local users can't read the Bearer token.
+fn write_kernel_handshake(url: &str, token: &str) -> Result<()> {
+    let home = std::env::var("HOME").map_err(|e| anyhow!("HOME unset: {e}"))?;
+    let dir = std::path::PathBuf::from(home).join(".ctrl").join("state");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| anyhow!("create_dir_all {dir:?}: {e}"))?;
+
+    let path = dir.join("kernel-handshake.json");
+    let tmp = dir.join("kernel-handshake.json.tmp");
+    let body = serde_json::json!({
+        "url": url,
+        "token": token,
+        "schema_version": 1,
+    });
+    let body_bytes = serde_json::to_vec_pretty(&body)
+        .map_err(|e| anyhow!("serialize: {e}"))?;
+
+    std::fs::write(&tmp, body_bytes).map_err(|e| anyhow!("write tmp: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| anyhow!("chmod tmp: {e}"))?;
+    }
+    std::fs::rename(&tmp, &path).map_err(|e| anyhow!("rename: {e}"))?;
+    tracing::info!(?path, "kernel handshake written for ctrl-hermes-plugin");
+    Ok(())
 }

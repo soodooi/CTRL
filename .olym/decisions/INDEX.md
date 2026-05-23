@@ -15,12 +15,13 @@
 | [010](./010-keycap-execution-model.md) | Keycap execution model — MCP outward, Actor inward *(amend 2026-05-22: `target` field + hermes-skill exception)* | accepted | 2026-05-17 | bao, zeus, hephaestus | framework | — |
 | [011](./011-update-channel-and-delivery.md) | Tauri 2 updater + three-mirror channel for global + CN delivery *(amend 2026-05-22: scope = Layer 1 of 4, see ADR-018)* | accepted | 2026-05-17 | bao, zeus | framework | — |
 | [012](./012-subprocess-actor-pty.md) | SubprocessActor + portable-pty execution model for Code Space coding companion | accepted | 2026-05-19 | bao, zeus | framework | — |
-| [013](./013-kernel-as-mcp-server.md) | Kernel as MCP server — single bus for hermes / Irisy / external agents | accepted | 2026-05-22 | bao, zeus | framework | — |
+| [013](./013-kernel-as-mcp-server.md) | Kernel as MCP server — single bus for hermes / Irisy / external agents *(amend 2026-05-23: demoted to IPC + secondary surface by ADR-019)* | accepted | 2026-05-22 | bao, zeus | framework | — |
 | [014](./014-ctrl-global-english-first.md) | CTRL = global English first — UX, marketing, keycap priority by global creator+agent ecosystem | accepted | 2026-05-22 | bao, zeus | framework | — |
 | [015](./015-obsidian-philosophy.md) | Obsidian philosophy — CTRL is user-augmentation, not knowledge intermediary | accepted | 2026-05-22 | bao, zeus | framework | — |
 | [016](./016-irisy-eight-stage-lifecycle.md) | Irisy 8-stage keycap lifecycle — companion across Discovery → Retire | accepted | 2026-05-22 | bao, zeus, hephaestus | framework | — |
 | [017](./017-remote-coview-is-irisy.md) | Remote co-view = Irisy primitives (mesh = sync only, not viewer) | accepted | 2026-05-22 | bao, zeus | framework | — |
 | [018](./018-auto-update-strategy.md) | Auto-update strategy — 4 layers (app / hermes / keycap / PWA) × 3 tiers (Config / Patch / Fork) | accepted | 2026-05-22 | bao, zeus | framework | — |
+| [019](./019-ctrl-hermes-plugin-primary.md) | CTRL = hermes plugin (primary integration); kernel MCP server demoted to IPC + secondary surface | accepted | 2026-05-23 | bao, zeus, hephaestus | framework | — |
 
 > SLA 列 = "已挂天数 / SLA 上限"。P0 超时 → bao 决策顶；详见 PROCESS.md §1。
 
@@ -34,8 +35,8 @@
 | 006 | AI provider gateway | zeus | ADR-004 accepted | 2026-05-17 |
 | 008 | Tokyo VPS primary topology | hephaestus | VPS deploy verification 完成 | 2026-05-17 |
 | 009 | Multi-tenant baseline | zeus | 第 2 个商业项目签约 | 2026-05-17 |
-| 019 | (reserved) | — | future | — |
 | 020 | (reserved) | — | future | — |
+| 021 | (reserved) | — | future | — |
 
 ## Superseded / Deprecated
 
@@ -43,6 +44,6 @@
 
 ---
 
-**Index version**: 0.7 (2026-05-22, ADR-013 through 018 → accepted; ADR-001/002/010/011 amended)
+**Index version**: 0.8 (2026-05-23, ADR-019 → accepted; ADR-013 amended for plugin-primary)
 **Process**: see [PROCESS.md](./PROCESS.md)
 **Template**: see [_template.md](./_template.md)

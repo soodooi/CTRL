@@ -1,0 +1,44 @@
+# CTRL hermes Tool plugin — primary hermes integration path.
+# Per ADR-019: plugin auto-loaded by hermes (no manual `hermes mcp add`),
+# inherits profile awareness / cron / logs / models from hermes core.
+# Each tool handler forwards to the kernel MCP server (ADR-013) over
+# Bearer-authed HTTP — this plugin contains zero business logic.
+
+name: ctrl
+version: 0.1.0
+kind: tool
+description: CTRL workbench tools — keycap invocation, vault read/write, kv, llm, mcp proxy
+author: CTRL team
+website_url: https://github.com/soodooi/CTRL
+license: MIT
+provides_tools: true
+
+# Hermes loads this plugin into the user's default profile on first
+# discovery. The user can rescope per-profile via `hermes profile`.
+profile_scope: default
+
+# Plugin → kernel handshake. The kernel writes this file on each CTRL.app
+# boot with a fresh Bearer token; the plugin reads on first tool call and
+# refreshes lazily on 401.
+handshake_file: ~/.ctrl/state/kernel-handshake.json
+
+# Tools registered. Each entry maps to a kernel MCP tool of the same
+# name; the Python handler is a thin shim.
+tools:
+  - kernel.status
+  - vault.read
+  - vault.write
+  - vault.list
+  - vault.search
+  - kv.get
+  - kv.set
+  - llm.chat
+  - mcp.list_servers
+  - mcp.proxy_list_tools
+  - mcp.proxy_call_tool
+
+# Compatibility envelope.
+requires:
+  hermes_agent: ">=0.14.0"
+  python: ">=3.11"
+  ctrl_app: ">=1.0.0"

@@ -17,6 +17,8 @@ superseded_by: []
 
 ## Context
 
+> **2026-05-23 amendment**: ADR-019 demotes this ADR's role from "primary hermes integration" to "**kernel IPC layer + secondary surface for non-hermes agents**". The kernel MCP server below is unchanged; only the framing of who consumes it shifts. Primary hermes consumer = `ctrl-hermes-plugin` Python adapter (ADR-019). See §"Role after ADR-019" at the bottom.
+
 CTRL kernel 已经是 MCP **client** (`kernel::mcp_host`, rmcp `client` feature, 调外部 MCP server). 但 memory `decision_kernel_is_mcp_server_for_irisy` (2026-05-22) 钦定 kernel 同时也作 **server**: 让 hermes-agent / Irisy / 外部 agent (Claude Code / Cursor) 都通过单一 MCP wire 消费 kernel capability (vault / kv / llm / mcp.proxy).
 
 不作 server 的话:
@@ -135,8 +137,21 @@ Spike (`doc/hermes-spike/RESULT.md`) 同时证实: hermes-agent 没有 spec 假�
 - 端口 17873 跟 ST-SS 17872 故意差 1, 方便日志肉眼看
 - ADR-013 落地不动 hephaestus 的 Irisy spec v0.2.0 流程; spec 跟本 ADR 独立 advance, 在 follow-up PR (bootstrap_hermes 命令) 才有 hard dependency
 
+## Role after ADR-019 (amendment 2026-05-23)
+
+ADR-019 introduces the **`ctrl-hermes-plugin` Python adapter** as the **primary hermes integration UX**. The kernel MCP server below is unchanged in implementation but its consumers re-rank:
+
+| Consumer | Status | Notes |
+|---|---|---|
+| `ctrl-hermes-plugin` (Python, in `~/.hermes/plugins/ctrl/`) | **Primary** | Each plugin tool handler forwards to the kernel MCP server over Bearer-authed HTTP; the plugin is a thin shim, not a re-implementation |
+| Non-hermes agents (Claude Code / Cursor / future MCP-capable agents) | **Secondary** | Direct `hermes mcp add ctrl-kernel http://127.0.0.1:17873/mcp` or equivalent; no plugin required |
+| PWA mobile mode | **Tertiary** | Intra-device WebSocket/HTTP path when Tauri invoke is unavailable |
+
+This ADR's Acceptance items remain ticked; ADR-019's Acceptance items are the new gates for the primary-path UX. Nothing in §1-§5 above needs revision.
+
 ## Decision log
 
 - 2026-05-22 bao 钦定 "kernel = AI agent integration hub", memory `decision_kernel_is_mcp_server_for_irisy` 记录, 本 ADR 是协议层落地
 - 2026-05-22 zeus 抢在 hephaestus spec v0.2.0 land 前 ship 本 ADR 的理由: spec v0.2.0 引用 kernel MCP server 的 URL/token surface; 先有 server + Tauri command 再有 spec 收敛, 减少 spec 跟实施的 drift
 - 2026-05-22 拒绝 phasing (v1=3 tools / v1.1=8 tools): 反 `feedback_no_planning_no_phasing` memory, 单 PR ship 全集
+- 2026-05-23 hephaestus 完成 hermes plugin 3-class due diligence, 发现 plugin path 自动 reuse hermes profile/cron/logs/models, ADR-019 钉死 plugin = 主路径; 本 ADR 角色 demote 至 IPC layer + secondary surface. Implementation 不变, framing 变 — see §"Role after ADR-019" 上方表格.
