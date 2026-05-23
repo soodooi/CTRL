@@ -37,9 +37,12 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
-        // static manifest host + production signing key). The dep stays in
-        // Cargo.toml so the surface is wired for fast turn-on once those land.
+        // Tauri-side auto-updater. Endpoint + pubkey live in
+        // tauri.conf.json -> plugins.updater. Signed release pipeline:
+        // scripts/release.sh produces .app.tar.gz + .sig + latest.json
+        // and uploads to the public soodooi/CTRL-releases sibling repo.
+        // ADR-011 / 018 — Layer 1 of 4 of the auto-update strategy.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
@@ -67,9 +70,12 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
-        // static manifest host + production signing key). The dep stays in
-        // Cargo.toml so the surface is wired for fast turn-on once those land.
+        // Tauri-side auto-updater. Endpoint + pubkey live in
+        // tauri.conf.json -> plugins.updater. Signed release pipeline:
+        // scripts/release.sh produces .app.tar.gz + .sig + latest.json
+        // and uploads to the public soodooi/CTRL-releases sibling repo.
+        // ADR-011 / 018 — Layer 1 of 4 of the auto-update strategy.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())

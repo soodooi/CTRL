@@ -10,6 +10,7 @@
     "core:window:default",
     "core:tray:default",
     "core:menu:default",
-    "global-shortcut:default"
+    "global-shortcut:default",
+    "updater:default"
   ]
 }
