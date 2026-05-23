@@ -230,6 +230,14 @@ export const StatusBar = (): ReactElement => {
             v{meta.version}
           </span>
         )}
+        {/* Upgrade button — always visible to the RIGHT of the version
+            pill per bao 2026-05-23 ('升级按钮放在版本号右侧').
+            State drives label + tone:
+              - available: green pulsing — one-click install
+              - installing: blue, disabled, shows progress
+              - up_to_date: muted — click force-rechecks
+              - unknown: muted, hidden until first check completes
+              - error: red, click retries */}
         {upgrade.kind === 'available' && (
           <button
             type="button"
@@ -243,18 +251,46 @@ export const StatusBar = (): ReactElement => {
           </button>
         )}
         {upgrade.kind === 'installing' && (
-          <span className={styles.upgradeInstalling} aria-live="polite">
+          <span
+            className={styles.upgradeInstalling}
+            aria-live="polite"
+            title="Installing the new build, CTRL will restart automatically"
+          >
             Installing…
           </span>
         )}
-        {upgrade.kind === 'error' && (
-          <span
-            className={styles.upgradeError}
-            title={upgrade.message}
-            aria-live="polite"
+        {upgrade.kind === 'up_to_date' && (
+          <button
+            type="button"
+            className={styles.upgradeIdle}
+            onClick={runCheck}
+            title="You're on the latest build · click to re-check"
+            aria-label="Re-check for updates"
           >
-            Update failed
-          </span>
+            ↑ Up to date
+          </button>
+        )}
+        {upgrade.kind === 'unknown' && (
+          <button
+            type="button"
+            className={styles.upgradeIdle}
+            onClick={runCheck}
+            title="Check for a newer build"
+            aria-label="Check for updates"
+          >
+            ↑ Check
+          </button>
+        )}
+        {upgrade.kind === 'error' && (
+          <button
+            type="button"
+            className={styles.upgradeError}
+            onClick={runCheck}
+            title={`${upgrade.message} · click to retry`}
+            aria-label="Update failed, click to retry"
+          >
+            ↑ Retry
+          </button>
         )}
         <time className={styles.time} dateTime={now.toISOString()}>
           {formatHHMM(now)}

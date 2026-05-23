@@ -219,8 +219,32 @@
   letter-spacing: 0.04em;
   color: var(--color-danger, #f85149);
   background: rgba(248, 81, 73, 0.12);
+  border: 1px solid rgba(248, 81, 73, 0.3);
   border-radius: 4px;
   padding: 2px 7px;
   white-space: nowrap;
-  cursor: help;
+  cursor: pointer;
+}
+
+.upgradeError:hover {
+  background: rgba(248, 81, 73, 0.18);
+}
+
+.upgradeIdle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.upgradeIdle:hover {
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.06);
 }
