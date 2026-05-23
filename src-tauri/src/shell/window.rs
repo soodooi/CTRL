@@ -113,6 +113,37 @@ impl WindowController {
         Ok(())
     }
 
+    /// Always-reveal — bring the main window into view regardless of
+    /// current state. Used by single-instance + macOS Dock reopen
+    /// handlers so a second `open .app` or a Dock click consistently
+    /// surfaces the window (vs `toggle` which would hide it when
+    /// already visible). Per bao 2026-05-23: '在任务栏 就是打不开'.
+    pub fn reveal(app: &AppHandle) -> Result<()> {
+        let Some(w) = Self::main(app) else {
+            tracing::info!("WindowController::reveal — main missing, rebuilding");
+            let w = Self::build_main(app)?;
+            #[cfg(target_os = "windows")]
+            cloak::set(&w, false);
+            let _ = w.show();
+            let _ = w.set_focus();
+            return Ok(());
+        };
+        #[cfg(target_os = "windows")]
+        {
+            cloak::set(&w, false);
+            super::hotkey::HotkeyController::reset_state();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = w.show();
+            let _ = w.set_focus();
+            let _ = w.unminimize();
+            super::hotkey::HotkeyController::reset_state();
+        }
+        tracing::info!("WindowController::reveal — main shown + focused");
+        Ok(())
+    }
+
     /// Build the main launcher window. Recovery path; normally the window
     /// comes pre-built from tauri.conf.json `windows: [...]`.
     pub fn build_main(app: &AppHandle) -> Result<WebviewWindow> {

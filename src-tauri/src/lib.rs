@@ -35,7 +35,19 @@ pub fn run() {
         )
         .try_init();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        // Single-instance lock: a second `open /Applications/CTRL.app`
+        // (or Spotlight launch) calls back into the existing process
+        // instead of spawning a duplicate kernel that fights over
+        // 127.0.0.1:17872/17873. Callback reveals the main window so
+        // a Finder double-click works as "show CTRL" — fixes bao's
+        // "在任务栏 就是打不开" symptom.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            tracing::info!("single-instance: second launch detected, revealing window");
+            if let Err(err) = shell::WindowController::reveal(app) {
+                tracing::error!(?err, "single-instance reveal failed");
+            }
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // Tauri-side auto-updater. Endpoint + pubkey live in
         // tauri.conf.json -> plugins.updater. Signed release pipeline:
@@ -48,8 +60,22 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(pwa_invoke_handler!())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Run with an event handler so we can react to macOS Dock clicks
+    // (RunEvent::Reopen, fired by NSApplicationDelegate's applicationShouldHandleReopen).
+    // Bao's "明明 ctrl 在任务栏 就是打不开" symptom: Dock click on a
+    // running app with all windows hidden does nothing by default —
+    // we explicitly toggle (cloak → reveal) on Reopen.
+    app.run(|app, event| {
+        if let tauri::RunEvent::Reopen { .. } = event {
+            tracing::info!("dock reopen: revealing window");
+            if let Err(err) = shell::WindowController::reveal(app) {
+                tracing::error!(?err, "dock reopen reveal failed");
+            }
+        }
+    });
 }
 
 // Windows path — H-2026-05-13-001 sub-PR b + d + e.
