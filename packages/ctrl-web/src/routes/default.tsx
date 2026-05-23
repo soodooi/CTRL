@@ -1,11 +1,9 @@
-// DefaultWorkspace — Irisy's home page, rendered through the generic
-// <SessionWorkspace> template (T5 session-type).
-//
-// The template owns the history sidebar + new-button layout; this file
-// only supplies Irisy's centered greeting + chat input as the active
-// session UI. Any future chat-style keycap (Translate-with-history,
-// Email draft, ChatX-keycap) drops into the same template — that's how
-// the frontend scales across many keycaps without per-page chrome.
+// DefaultWorkspace — the `/` route. Per decision_ctrl_is_hermes_workbench
+// CTRL is a workshop: persistent multi-tab workspace + Irisy as side
+// drawer. When there are NO open tabs, fall back to the Irisy-idle
+// page (a friendly chat input — what the user sees the first time).
+// When tabs exist (e.g. user clicked Settings → hermes dashboard), the
+// tab strip + active tab content take over.
 
 import { useEffect, useState, type ReactElement } from 'react';
 import { ChatInput, IrisyMascot } from '@/components/primitives';
@@ -14,6 +12,7 @@ import {
   SessionWorkspace,
   type SessionHistoryGroup,
 } from '@/components/workspace/SessionWorkspace';
+import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
 import styles from './default.module.css';
 
 // Placeholder history — Phase 1D swaps this for a real persisted query.
@@ -58,7 +57,7 @@ export const DefaultWorkspace = (): ReactElement => {
     setInput('');
   };
 
-  return (
+  const fallback = (
     <SessionWorkspace
       groups={PLACEHOLDER_HISTORY}
       activeId={activeId}
@@ -88,4 +87,6 @@ export const DefaultWorkspace = (): ReactElement => {
       </div>
     </SessionWorkspace>
   );
+
+  return <WorkspaceTabs fallback={fallback} />;
 };

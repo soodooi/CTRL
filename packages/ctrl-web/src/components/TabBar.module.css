@@ -1,0 +1,95 @@
+/* TabBar — Cursor/VS Code style horizontal tab strip at the top of
+ * the workspace area. */
+
+.bar {
+  display: flex;
+  align-items: stretch;
+  background: var(--color-bg-l1);
+  border-bottom: 1px solid var(--color-border-soft);
+  min-height: 36px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  flex-shrink: 0;
+}
+
+.tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--color-border-soft);
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: -0.005em;
+  padding: 0 var(--space-3) 0 var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  min-width: 0;
+  max-width: 240px;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.tab:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+.tab[data-active='true'] {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+  position: relative;
+}
+.tab[data-active='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--color-accent);
+}
+
+.tabIcon {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-accent);
+}
+.tabKind {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+.tab[data-active='true'] .tabKind { color: var(--color-text-soft); }
+
+.tabLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.close {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  margin-left: var(--space-2);
+  flex-shrink: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.close:hover {
+  background: var(--color-bg-l3);
+  color: var(--color-text);
+}
+
+.spacer { flex: 1; }

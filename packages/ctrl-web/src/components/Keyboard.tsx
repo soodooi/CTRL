@@ -3,10 +3,15 @@
 // workspace (right side); pressing a system key navigates to /pool /
 // /irisy / /settings while leaving the keyboard itself in place.
 
-import { useState, type ReactElement } from 'react';
+import { useCallback, useState, type ReactElement } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
+import {
+  HERMES_DASHBOARD_DEFAULT_URL,
+  HERMES_SETTINGS_TAB_ID,
+  useTabStore,
+} from '@/lib/tab-store';
 import styles from './Keyboard.module.css';
 
 const KEYCAPS_PER_PAGE = 15; // 4×4 grid; the 16th cell is always the "+" add button.
@@ -15,6 +20,8 @@ interface SystemKey {
   id: 'pool' | 'search' | 'irisy' | 'settings';
   label: string;
   to?: '/pool' | '/irisy' | '/settings';
+  /** If set, clicking opens this kind of workspace tab instead of routing. */
+  opensTab?: 'hermes-settings';
   icon: ReactElement;
 }
 
@@ -53,7 +60,11 @@ const SYSTEM_KEYS: ReadonlyArray<SystemKey> = [
   { id: 'pool', label: 'Pool', to: '/pool', icon: <PoolIcon /> },
   { id: 'search', label: 'Search', icon: <SearchIcon /> },
   { id: 'irisy', label: 'Irisy', to: '/irisy', icon: <IrisyIcon /> },
-  { id: 'settings', label: 'Settings', to: '/settings', icon: <GearIcon /> },
+  // Settings opens the hermes dashboard as a workspace tab — that's the
+  // canonical "brain config" surface (skills / models / providers / memory).
+  // The old /settings route stays for CTRL-shell-only preferences but isn't
+  // the system-key target anymore.
+  { id: 'settings', label: 'Settings', opensTab: 'hermes-settings', icon: <GearIcon /> },
 ];
 
 // Two-letter token derived from the keycap name. Used as the keycap face
@@ -94,6 +105,30 @@ export const Keyboard = (): ReactElement => {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [searchOpen, setSearchOpen] = useState(false);
+  const openTab = useTabStore((s) => s.openTab);
+  const activeTabId = useTabStore((s) => s.activeId);
+
+  const openHermesSettingsTab = useCallback((): void => {
+    openTab({
+      id: HERMES_SETTINGS_TAB_ID,
+      kind: 'external-embed',
+      title: 'Hermes Settings',
+      url: HERMES_DASHBOARD_DEFAULT_URL,
+    });
+    // Settings lives in workspace tabs at `/`; route there if we're elsewhere.
+    if (pathname !== '/') void navigate({ to: '/' });
+  }, [openTab, navigate, pathname]);
+
+  const handleSystemKeyClick = useCallback(
+    (s: SystemKey): void => {
+      if (s.opensTab === 'hermes-settings') {
+        openHermesSettingsTab();
+        return;
+      }
+      if (s.to) void navigate({ to: s.to });
+    },
+    [navigate, openHermesSettingsTab],
+  );
 
   const { data: keycaps = [] } = useQuery({
     queryKey: ['keycaps'],
@@ -167,14 +202,20 @@ export const Keyboard = (): ReactElement => {
         <span className={styles.sectionLabel}>system</span>
         <div className={styles.grid}>
           {SYSTEM_KEYS.map((s) => {
-            const active = s.to ? pathname === s.to : false;
+            // Active when the route matches OR (for tab-opening keys)
+            // when the corresponding tab is the active workspace tab.
+            const active = s.to
+              ? pathname === s.to
+              : s.opensTab === 'hermes-settings'
+                ? pathname === '/' && activeTabId === HERMES_SETTINGS_TAB_ID
+                : false;
             return (
               <button
                 key={s.id}
                 type="button"
                 className={styles.cap}
                 data-active={active}
-                onClick={() => s.to && void navigate({ to: s.to })}
+                onClick={() => handleSystemKeyClick(s)}
                 title={s.label}
               >
                 <span className={styles.capIcon} aria-hidden="true">{s.icon}</span>
