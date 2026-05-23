@@ -78,14 +78,20 @@ impl KernelRuntime {
         // re-running the install wizard each launch. Connections lazy-
         // establish on first invoke; this only reloads descriptors.
         if let Some(reg_path) = McpHost::default_registry_path() {
-            let host_clone = Arc::clone(&mcp_host);
-            tokio::spawn(async move {
-                match host_clone.load_registry(&reg_path).await {
-                    Ok(n) if n > 0 => tracing::info!(count = n, ?reg_path, "mcp_host: registry loaded"),
-                    Ok(_) => tracing::debug!(?reg_path, "mcp_host: empty registry, fresh start"),
-                    Err(e) => tracing::warn!(error = %e, ?reg_path, "mcp_host: registry load failed"),
-                }
-            });
+            // In dev `tauri dev` boots inside a Tokio reactor, but the
+            // release `.app` calls `KernelRuntime::boot` from Tauri's
+            // setup hook BEFORE the runtime spins up — `tokio::spawn`
+            // would panic ("no reactor running") and abort the whole
+            // app launch (verified crash, 2026-05-23). Hydrate
+            // synchronously via futures::executor::block_on: the work
+            // is ~5ms (JSON read + map insert), and `mcp_host::connect`
+            // does not lazy-read the registry on demand.
+            let result = futures::executor::block_on(mcp_host.load_registry(&reg_path));
+            match result {
+                Ok(n) if n > 0 => tracing::info!(count = n, ?reg_path, "mcp_host: registry loaded"),
+                Ok(_) => tracing::debug!(?reg_path, "mcp_host: empty registry, fresh start"),
+                Err(e) => tracing::warn!(error = %e, ?reg_path, "mcp_host: registry load failed"),
+            }
         }
 
         // LocalStorage: open the same SQLite path the Tauri commands/storage

@@ -11,7 +11,15 @@
 use crate::kernel::vault::default_vault_root;
 use crate::shell::KernelHandle;
 use serde::Serialize;
+use std::net::{SocketAddr, TcpStream};
+use std::time::Duration;
 use tauri::State;
+
+/// Default loopback address of the Hermes Agent's local dashboard
+/// daemon. Hermes 0.14+ binds here when `hermes dashboard` is running.
+/// Kept loopback-only — never proxied / never exposed beyond the host.
+const HERMES_DASHBOARD_ADDR: &str = "127.0.0.1:9119";
+const HERMES_DASHBOARD_PROBE_TIMEOUT_MS: u64 = 200;
 
 #[derive(Debug, Serialize)]
 pub struct KernelStatus {
@@ -31,10 +39,31 @@ pub struct KernelStatus {
     pub vault_files: usize,
     /// ST-SS bridge listen address (loopback only, token-auth).
     pub stss_bridge_addr: String,
+    /// URL of the local Hermes Agent dashboard daemon when it is
+    /// reachable on its default port (127.0.0.1:9119). `None` when the
+    /// dashboard isn't running (or hermes isn't installed). The PWA's
+    /// Hermes Settings tab uses this to drive the iframe `src` — when
+    /// `None`, the tab can show an install prompt instead of a black
+    /// iframe. Probed via TCP connect on each poll (~200ms cap).
+    pub hermes_dashboard_url: Option<String>,
     /// "ok" when everything boot-time-required is registered; warnings
     /// list each missing component (e.g. "no llm adapter").
     pub overall: &'static str,
     pub warnings: Vec<String>,
+}
+
+/// Probe the Hermes dashboard daemon. Returns `Some(url)` when a TCP
+/// connection succeeds within `HERMES_DASHBOARD_PROBE_TIMEOUT_MS`, else
+/// `None`. We don't speak HTTP here — a successful TCP accept on the
+/// loopback port is good enough for the PWA to decide "show the iframe
+/// vs. show the install prompt" because no other service binds 9119 on
+/// loopback by convention. The PWA does its own HTTP-level health-check
+/// on the iframe load event.
+fn probe_hermes_dashboard() -> Option<String> {
+    let addr: SocketAddr = HERMES_DASHBOARD_ADDR.parse().ok()?;
+    let timeout = Duration::from_millis(HERMES_DASHBOARD_PROBE_TIMEOUT_MS);
+    TcpStream::connect_timeout(&addr, timeout).ok()?;
+    Some(format!("http://{HERMES_DASHBOARD_ADDR}"))
 }
 
 #[tauri::command]
@@ -75,6 +104,8 @@ pub async fn kernel_status(
     }
     let overall = if warnings.is_empty() { "ok" } else { "degraded" };
 
+    let hermes_dashboard_url = probe_hermes_dashboard();
+
     Ok(KernelStatus {
         uptime_ms,
         llm_adapters,
@@ -82,6 +113,7 @@ pub async fn kernel_status(
         mcp_servers_installed,
         vault_files,
         stss_bridge_addr,
+        hermes_dashboard_url,
         overall,
         warnings,
     })

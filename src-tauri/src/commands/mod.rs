@@ -16,6 +16,7 @@
 
 pub mod chat;
 pub mod code_space;
+pub mod irisy;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
@@ -39,6 +40,9 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::chat::chat_stream,
             // system — kernel health (PWA status bar Phase 1F)
             $crate::commands::system::kernel_status,
+            // irisy — first-launch host check + Irisy install (internal pipx + plugin copy)
+            $crate::commands::irisy::system_check,
+            $crate::commands::irisy::install_irisy,
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::mcp_server_info,
