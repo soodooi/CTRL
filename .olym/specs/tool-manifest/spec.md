@@ -1,9 +1,112 @@
 # Tool Manifest — Keycap Declarative Specification
 
-- **Status**: Draft v0.1
-- **Date**: 2026-05-11
-- **Parent**: `.olym/decisions/001-system-architecture.md` §4, §6 item 9
-- **Audience**: AI 创作助手 (generates manifests), L1 Kernel (instantiates actors), ctrl-market (审核 + 分发)
+- **Status**: v0.3 (2026-05-22 amend: target field + custom renderer + upstream + i18n)
+- **Date**: 2026-05-11 (initial v0.1) · 2026-05-22 (v0.3 amend)
+- **Parents**: ADR-001 §4 + ADR-010 (amended) + ADR-013 + ADR-014 + ADR-018
+- **Audience**: Hermes + AI 创作助手 (generate manifests), L1 Kernel (instantiate + register tools), ctrl-market (validate + distribute), kernel `update_scheduler` (Layer 3 updates)
+
+---
+
+## 0. v0.3 amendment summary (2026-05-22)
+
+ADR-010 amendment + ADR-014/016/018 introduced fields not in v0.1. v0.3 adds them as **additive** changes; v0.1 manifests remain valid.
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `target` | `"mcp-tool" \| "hermes-skill"` | `"mcp-tool"` | Loader: MCP server (≥90%) or Hermes skill — ADR-010 amend |
+| `workspace.ui` | enum (10) | `"none"` | Renderer type — ADR-002 amend |
+| `workspace.custom_component_path` | string | absent | Required when `ui = "custom"` |
+| `upstream.url` | string (URL) | absent | Per-keycap update source — ADR-018 |
+| `upstream.supported_tiers` | array | `["config","patch","fork"]` | Which tiers the keycap supports |
+| `signing.pubkey` | string (base64 ed25519) | absent | Signature key — ADR-018 |
+| `config_migration` | `Migration[]` | `[]` | Cross-version config field migrations — ADR-018 Config tier |
+| `compatibility.min_ctrl_version` | semver | manifest's `min_ctrl_version` | Hard floor |
+| `compatibility.kernel_manifest_schema` | semver range | `>=0.1 <0.4` | Schema versions targeted |
+| `i18n.default_locale` | BCP-47 | `"en"` | Source-of-truth locale — ADR-014 |
+| `i18n.supported_locales` | array of BCP-47 | `["en"]` | Localized variants |
+
+### 0.1 New top-level fields
+
+```typescript
+const KeycapManifest = z.object({
+  // ...existing v0.1 fields (id / version / name / description / author / icon /
+  // keycap_color / source / capabilities / triggers / flow / workspace_layout /
+  // market) ...
+
+  target: z.enum(['mcp-tool', 'hermes-skill']).default('mcp-tool')
+    .describe('Loader: kernel registers as MCP server (default) or generates SKILL.md for Hermes (knowledge-dense exception). ADR-010 amend 2026-05-22.'),
+
+  upstream: z.object({
+    url: z.string().url(),
+    supported_tiers: z.array(z.enum(['config', 'patch', 'fork']))
+      .default(['config', 'patch', 'fork']),
+  }).optional().describe('Update channel; ADR-018 Layer 3'),
+
+  signing: z.object({
+    pubkey: z.string().describe('ed25519 base64'),
+  }).optional().describe('ADR-018 signature; absent = unsigned (dev-only)'),
+
+  config_migration: z.array(z.object({
+    from_version: z.string().regex(/^\d+\.\d+\.\d+$/),
+    to_version: z.string().regex(/^\d+\.\d+\.\d+$/),
+    operations: z.array(z.object({
+      op: z.enum(['rename', 'move', 'default', 'drop']),
+      path: z.string(),
+      to: z.string().optional(),
+      value: z.any().optional(),
+    })),
+  })).default([]).describe('ADR-018 Config tier — forward-compatible field migrations'),
+
+  compatibility: z.object({
+    min_ctrl_version: z.string().regex(/^\d+\.\d+\.\d+$/).default('1.0.0'),
+    kernel_manifest_schema: z.string().default('>=0.1 <0.4'),
+  }).optional(),
+
+  i18n: z.object({
+    default_locale: z.string().default('en'),
+    supported_locales: z.array(z.string()).default(['en']),
+  }).default({ default_locale: 'en', supported_locales: ['en'] }),
+});
+```
+
+### 0.2 Workspace renderer enum + custom_component_path
+
+```typescript
+const WorkspaceLayout = z.object({
+  ui: z.enum([
+    'none',          // action-only keycap (e.g. clipboard write)
+    'notification',  // toast / banner, no persistent tab
+    'modal',         // modal dialog over current tab
+    'clipboard',     // clipboard read/write
+    'html-output',   // markdown / HTML result render
+    'chat-stream',   // live LLM streaming
+    'picker',        // list/grid picker
+    'form',          // auto-rendered form from config_schema
+    'canvas',        // free-draw / data viz
+    'custom',        // keycap-supplied React component
+  ]).default('none').describe('Workspace tab renderer — ADR-002 amend 2026-05-22'),
+
+  custom_component_path: z.string().optional()
+    .describe('Required when ui="custom"; path relative to packages/ctrl-web/src/components/keycaps/ (e.g. "CodeSpaceTab.tsx"). PWA keycap-tab-registry binds path → lazy import. LifecycleShell never hardcodes a specific keycap.'),
+
+  // ...existing v0.1 fields (icon / title / etc.) ...
+});
+```
+
+### 0.3 hermes-skill exception (target = "hermes-skill")
+
+When `target: "hermes-skill"` (knowledge-dense workflow keycap):
+
+- `source.type = "mcp"` forbidden (skills don't expose MCP); other source types valid
+- Install path: kernel `skill_generator` module writes `~/.hermes/skills/<id>/SKILL.md` (from `description + config_schema.documentation + flow` summarization) + copies declared assets
+- `capabilities[]` still applies — skills declare needs (web / vault.read / etc.), kernel grants via `CapabilityBroker`
+- Update: same 3-tier (Config / Patch / Fork) applied to SKILL.md file
+- Detailed generator spec: `.olym/specs/skill-generator/spec.md` (follow-up)
+
+### 0.4 Backwards compatibility
+
+- v0.1 manifests remain valid (all new fields optional, defaults backwards-compatible)
+- ctrl-market: WARN on missing v0.3 fields, ALLOW upload; required for "verified creator" badge
 
 ---
 
