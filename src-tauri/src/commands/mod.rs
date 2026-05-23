@@ -44,6 +44,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::system::app_meta,
             $crate::commands::system::app_changelog,
             $crate::commands::system::check_for_updates,
+            $crate::commands::system::install_update,
             // irisy — first-launch host check + Irisy install (internal pipx + plugin copy)
             $crate::commands::irisy::system_check,
             $crate::commands::irisy::install_irisy,

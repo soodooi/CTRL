@@ -13,7 +13,14 @@ import {
   type SessionHistoryGroup,
 } from '@/components/workspace/SessionWorkspace';
 import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
+import { defaultTransport } from '@/lib/llm-transport';
 import styles from './default.module.css';
+
+interface TranscriptTurn {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 // Placeholder history — Phase 1D swaps this for a real persisted query.
 const PLACEHOLDER_HISTORY: ReadonlyArray<SessionHistoryGroup> = [
@@ -41,15 +48,70 @@ export const DefaultWorkspace = (): ReactElement => {
   const { setIrisyState } = useRail();
   const [input, setInput] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<readonly TranscriptTurn[]>([]);
+  const [streaming, setStreaming] = useState(false);
 
   useEffect(() => {
     setIrisyState('idle');
     return () => setIrisyState('idle');
   }, [setIrisyState]);
 
-  const handleSend = (_text: string): void => {
-    // Phase 1D wires this to the LLM transport.
+  const handleSend = (text: string): void => {
+    const trimmed = text.trim();
+    if (!trimmed || streaming) return;
     setInput('');
+    const userTurn: TranscriptTurn = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: trimmed,
+    };
+    const assistantTurn: TranscriptTurn = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: '',
+    };
+    setTranscript((prev) => [...prev, userTurn, assistantTurn]);
+    setStreaming(true);
+    setIrisyState('thinking');
+    void (async () => {
+      const transport = defaultTransport();
+      let accumulated = '';
+      let errored = false;
+      try {
+        for await (const chunk of transport.stream(
+          [{ role: 'user', content: trimmed }],
+          { temperature: 0.7 },
+        )) {
+          if (chunk.error) {
+            errored = true;
+            accumulated += `\n\n[error: ${chunk.error}]`;
+            break;
+          }
+          if (chunk.delta) {
+            accumulated += chunk.delta;
+            setTranscript((prev) =>
+              prev.map((t) =>
+                t.id === assistantTurn.id ? { ...t, content: accumulated } : t,
+              ),
+            );
+          }
+          if (chunk.done) break;
+        }
+      } catch (e) {
+        errored = true;
+        const msg = e instanceof Error ? e.message : String(e);
+        setTranscript((prev) =>
+          prev.map((t) =>
+            t.id === assistantTurn.id
+              ? { ...t, content: `${accumulated}\n\n[transport error: ${msg}]` }
+              : t,
+          ),
+        );
+      } finally {
+        setStreaming(false);
+        setIrisyState(errored ? 'idle' : 'idle');
+      }
+    })();
   };
 
   const handleNewChat = (): void => {
@@ -67,21 +129,48 @@ export const DefaultWorkspace = (): ReactElement => {
       emptyText="no past chats"
     >
       <div className={styles.center}>
-        <div className={styles.mascotWrap}>
-          <div className={styles.mascotHalo} />
-          <IrisyMascot state="idle" size={180} />
-        </div>
-
-        <h1 className={styles.greeting}>What are we doing today?</h1>
+        {transcript.length === 0 ? (
+          <>
+            <div className={styles.mascotWrap}>
+              <div className={styles.mascotHalo} />
+              <IrisyMascot state="idle" size={180} />
+            </div>
+            <h1 className={styles.greeting}>What are we doing today?</h1>
+          </>
+        ) : (
+          <div className={styles.transcript} aria-label="Conversation">
+            {transcript.map((turn) => (
+              <div
+                key={turn.id}
+                className={styles.turn}
+                data-role={turn.role}
+              >
+                <span className={styles.turnRole}>
+                  {turn.role === 'user' ? 'You' : 'Irisy'}
+                </span>
+                <p className={styles.turnContent}>
+                  {turn.content || (streaming && turn.role === 'assistant'
+                    ? '…'
+                    : '')}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className={styles.inputWrap}>
           <ChatInput
             value={input}
             onChange={setInput}
             onSubmit={handleSend}
-            placeholder="Ask Irisy, or type / for a keycap…"
+            placeholder={
+              streaming
+                ? 'Irisy is replying…'
+                : 'Ask Irisy, or type / for a keycap…'
+            }
             ariaLabel="Chat with Irisy"
             autoFocus
+            disabled={streaming}
           />
         </div>
       </div>

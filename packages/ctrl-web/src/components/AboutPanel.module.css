@@ -99,6 +99,30 @@
   background: rgba(248, 81, 73, 0.08);
 }
 
+.statusBox[data-kind='installing'] {
+  border-color: var(--color-info, #58a6ff);
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.statusBox[data-kind='installed'] {
+  border-color: var(--color-success, #3fb950);
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.progressTrack {
+  margin-top: 8px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-info, #58a6ff);
+  transition: width 0.2s ease;
+}
+
 .statusBox strong {
   display: block;
   margin-bottom: 4px;

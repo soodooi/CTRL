@@ -121,26 +121,17 @@ pub struct UpdateCheck {
 }
 
 /// Wraps `tauri-plugin-updater` so the cockpit "Check for Updates"
-/// button has somewhere to call. When the updater isn't configured
-/// (no manifest endpoint hosted yet — the three-mirror channel from
-/// ADR-011 hasn't shipped its hosts), this returns `kind = "no_endpoint"`
-/// with an honest message instead of pretending success.
+/// button has somewhere to call.
 #[tauri::command]
 pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateCheck, String> {
     use tauri_plugin_updater::UpdaterExt;
-    // `app.updater()` reads endpoint config from tauri.conf.json. When
-    // the endpoints array is empty / missing, the builder returns an
-    // error we surface as `no_endpoint` rather than a hard failure.
     let updater = match app.updater() {
         Ok(u) => u,
         Err(e) => {
             return Ok(UpdateCheck {
                 kind: "no_endpoint",
                 available_version: None,
-                message: format!(
-                    "Auto-update not yet configured — three-mirror channel hosts pending (ADR-011). \
-                     Underlying error: {e}"
-                ),
+                message: format!("Updater not configured: {e}"),
             });
         }
     };
@@ -161,6 +152,80 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateCheck, Str
             message: format!("Update check failed: {e}"),
         }),
     }
+}
+
+/// Outcome of an install attempt.
+#[derive(Debug, Serialize)]
+pub struct InstallOutcome {
+    pub kind: &'static str, // "installed" | "no_update" | "error"
+    pub message: String,
+}
+
+/// Download + install the latest update reported by `check_for_updates`.
+/// Tauri's `download_and_install` replaces the running .app and the
+/// caller is expected to relaunch — we call `app.restart()` on success
+/// so the new build is live immediately. Streams download progress via
+/// the `update.install.progress` event channel so the AboutPanel can
+/// render a real progress bar.
+#[tauri::command]
+pub async fn install_update(app: tauri::AppHandle) -> Result<InstallOutcome, String> {
+    use tauri::Emitter;
+    use tauri_plugin_updater::UpdaterExt;
+
+    let updater = app
+        .updater()
+        .map_err(|e| format!("updater unavailable: {e}"))?;
+
+    let release = match updater.check().await {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            return Ok(InstallOutcome {
+                kind: "no_update",
+                message: "Already on the latest build.".to_string(),
+            });
+        }
+        Err(e) => return Err(format!("update check failed: {e}")),
+    };
+
+    let release_version = release.version.clone();
+    let app_for_progress = app.clone();
+    let mut downloaded: u64 = 0;
+    let download_result = release
+        .download_and_install(
+            move |chunk_len, content_length| {
+                downloaded = downloaded.saturating_add(chunk_len as u64);
+                let total = content_length.unwrap_or(0);
+                let _ = app_for_progress.emit(
+                    "update.install.progress",
+                    serde_json::json!({
+                        "downloaded": downloaded,
+                        "total": total,
+                        "version": release_version,
+                    }),
+                );
+            },
+            || {
+                tracing::info!("update download complete, installing");
+            },
+        )
+        .await;
+
+    if let Err(e) = download_result {
+        return Err(format!("download_and_install failed: {e}"));
+    }
+
+    let installed_version = release.version.clone();
+    let app_for_restart = app.clone();
+    // Give the PWA a brief moment to render the "Installed, restarting…"
+    // state before the restart yanks the WebView out from under it.
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        app_for_restart.restart();
+    });
+    Ok(InstallOutcome {
+        kind: "installed",
+        message: format!("Installed v{installed_version}, restarting…"),
+    })
 }
 
 /// Probe the Hermes dashboard daemon. Returns `Some(url)` when a TCP

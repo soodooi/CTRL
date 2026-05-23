@@ -23,10 +23,24 @@ interface UpdateCheckResult {
   message: string;
 }
 
+interface InstallOutcome {
+  kind: 'installed' | 'no_update' | 'error';
+  message: string;
+}
+
+interface InstallProgressEvent {
+  downloaded: number;
+  total: number;
+  version: string;
+}
+
 type UpdatePhase =
   | { kind: 'idle' }
   | { kind: 'checking' }
-  | { kind: 'result'; result: UpdateCheckResult };
+  | { kind: 'result'; result: UpdateCheckResult }
+  | { kind: 'installing'; version: string; downloaded: number; total: number }
+  | { kind: 'installed'; version: string }
+  | { kind: 'install_error'; message: string };
 
 const formatBuildTime = (iso: string): string => {
   if (iso === 'unknown') return 'unknown';
@@ -79,6 +93,70 @@ export const AboutPanel = (): ReactElement => {
     })();
   }, []);
 
+  // Auto-check on mount. Surfaces "Update available" without the user
+  // having to click — the cockpit shows it immediately.
+  useEffect(() => {
+    if (updatePhase.kind !== 'idle') return;
+    void (async () => {
+      try {
+        const result = await invoke<UpdateCheckResult>('check_for_updates');
+        setUpdatePhase({ kind: 'result', result });
+      } catch {
+        /* silent — manual button still works */
+      }
+    })();
+    // intentionally one-shot; subsequent checks are explicit via handleCheckUpdates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleInstallUpdate = useCallback(() => {
+    if (updatePhase.kind !== 'result' || updatePhase.result.kind !== 'available') return;
+    const version = updatePhase.result.available_version ?? 'next';
+    setUpdatePhase({ kind: 'installing', version, downloaded: 0, total: 0 });
+
+    void (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const off = await listen<InstallProgressEvent>('update.install.progress', (event) => {
+          setUpdatePhase((prev) =>
+            prev.kind === 'installing'
+              ? {
+                  kind: 'installing',
+                  version: event.payload.version,
+                  downloaded: event.payload.downloaded,
+                  total: event.payload.total,
+                }
+              : prev,
+          );
+        });
+        try {
+          const outcome = await invoke<InstallOutcome>('install_update');
+          if (outcome.kind === 'installed') {
+            setUpdatePhase({ kind: 'installed', version });
+            // The kernel will restart the process; this branch is mostly a
+            // visual hold for the half-second between download-complete
+            // and the WebView being yanked.
+          } else if (outcome.kind === 'no_update') {
+            setUpdatePhase({
+              kind: 'result',
+              result: {
+                kind: 'up_to_date',
+                available_version: null,
+                message: outcome.message,
+              },
+            });
+          } else {
+            setUpdatePhase({ kind: 'install_error', message: outcome.message });
+          }
+        } finally {
+          off();
+        }
+      } catch (e) {
+        setUpdatePhase({ kind: 'install_error', message: messageOf(e) });
+      }
+    })();
+  }, [updatePhase]);
+
   const handleOpenChangelog = useCallback(() => {
     setChangelogOpen(true);
     if (changelog !== null) return; // already loaded
@@ -118,9 +196,20 @@ export const AboutPanel = (): ReactElement => {
       )}
 
       <div className={styles.actions}>
-        <Button onClick={handleCheckUpdates} disabled={updatePhase.kind === 'checking'}>
+        <Button
+          onClick={handleCheckUpdates}
+          disabled={
+            updatePhase.kind === 'checking' || updatePhase.kind === 'installing'
+          }
+        >
           {updatePhase.kind === 'checking' ? 'Checking…' : 'Check for Updates'}
         </Button>
+        {updatePhase.kind === 'result' &&
+          updatePhase.result.kind === 'available' && (
+            <Button onClick={handleInstallUpdate} disabled={false}>
+              Install Now →
+            </Button>
+          )}
         <Button onClick={handleOpenChangelog}>View Changelog</Button>
       </div>
 
@@ -133,6 +222,44 @@ export const AboutPanel = (): ReactElement => {
             {updatePhase.result.kind === 'error' && 'Check failed'}
           </strong>
           <p>{updatePhase.result.message}</p>
+        </div>
+      )}
+
+      {updatePhase.kind === 'installing' && (
+        <div className={styles.statusBox} data-kind="installing">
+          <strong>Installing v{updatePhase.version}…</strong>
+          <p>
+            {updatePhase.total > 0
+              ? `Downloaded ${formatBytes(updatePhase.downloaded)} / ${formatBytes(updatePhase.total)} (${Math.round(
+                  (updatePhase.downloaded / updatePhase.total) * 100,
+                )}%)`
+              : `Downloaded ${formatBytes(updatePhase.downloaded)}…`}
+          </p>
+          <div className={styles.progressTrack}>
+            <div
+              className={styles.progressFill}
+              style={{
+                width:
+                  updatePhase.total > 0
+                    ? `${Math.round((updatePhase.downloaded / updatePhase.total) * 100)}%`
+                    : '15%',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {updatePhase.kind === 'installed' && (
+        <div className={styles.statusBox} data-kind="installed">
+          <strong>Installed v{updatePhase.version}</strong>
+          <p>Restarting CTRL in a moment…</p>
+        </div>
+      )}
+
+      {updatePhase.kind === 'install_error' && (
+        <div className={styles.statusBox} data-kind="error">
+          <strong>Install failed</strong>
+          <p>{updatePhase.message}</p>
         </div>
       )}
 
@@ -180,4 +307,10 @@ function messageOf(e: unknown): string {
   if (typeof e === 'string') return e;
   if (e instanceof Error) return e.message;
   return String(e);
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
