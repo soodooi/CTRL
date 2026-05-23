@@ -10,13 +10,19 @@
 
 import type { ComponentType } from 'react';
 import {
+  BentoGrid,
+  BentoTile,
   Button,
   Card,
   ChatInput,
+  Field,
+  FileDropzone,
+  Form,
   Gauge,
   HistorySidebar,
   IconButton,
   IrisyMascot,
+  KV,
   Led,
   Sparkline,
   StatusPill,
@@ -34,6 +40,8 @@ export const MANIFEST_REGISTRY: Readonly<Record<string, AnyComponent>> = {
   Stack,
   Heading,
   Text,
+  BentoGrid,
+  BentoTile,
 
   // Atoms
   Button,
@@ -41,15 +49,26 @@ export const MANIFEST_REGISTRY: Readonly<Record<string, AnyComponent>> = {
   TextInput,
   IconButton,
 
-  // Widgets
+  // Form
+  Form,
+  Field,
+
+  // Widgets — data viz + state
   Sparkline,
   Gauge,
   Led,
+  StatusPill,
+  KV,
+  IrisyMascot,
+
+  // Widgets — interactive
   ChatInput,
   HistorySidebar,
   TabStrip,
-  StatusPill,
-  IrisyMascot,
+  FileDropzone,
+
+  // CommandBar deliberately omitted — it's a modal overlay, not part
+  // of a workspace layout tree. Routes mount it imperatively.
 };
 
 export const isRegistered = (name: string): boolean =>
