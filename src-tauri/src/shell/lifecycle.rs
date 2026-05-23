@@ -12,6 +12,9 @@
 use anyhow::Result;
 use tauri::{AppHandle, Manager};
 
+use super::ax_prompt::{
+    ensure_accessibility_trusted_with_prompt, is_first_launch, mark_first_launch_done,
+};
 use super::window::install_close_intercept;
 use super::{HotkeyController, KernelSupervisor, TrayController, WindowController};
 
@@ -36,17 +39,48 @@ impl ShellLifecycle {
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;
 
-        // Prewarm: teleport the auto-built main window off-screen as the very
-        // first thing after kernel ready. Tauri's window-config `x`/`y` is
-        // unreliable on Win11 (often centered regardless), so do it from
-        // Rust to guarantee the user never sees the launcher until they
-        // press Ctrl. WebView2 spins up in the background, PWA mounts off-
-        // screen — first hotkey tap becomes a sub-30ms teleport.
-        tracing::info!("ShellLifecycle::boot — prewarming main window off-screen");
-        WindowController::prewarm(app)?;
+        // Accessibility permission gate (macOS only no-op elsewhere). The
+        // CGEventTap hotkey path needs this; without it the user sees
+        // "Ctrl does nothing" and has to guess. Calling this surfaces the
+        // standard macOS Privacy & Security dialog on the first launch
+        // where the permission isn't already granted. Per bao 2026-05-23:
+        // "你应该自动弹出 不要让用户猜".
+        let ax_trusted = ensure_accessibility_trusted_with_prompt();
+        if !ax_trusted {
+            tracing::warn!(
+                "Accessibility not yet granted — system prompt surfaced. Hotkey will arm \
+                 once user enables CTRL in System Settings → Privacy & Security → Accessibility."
+            );
+        }
 
-        // Install close intercept on the prewarmed main so the X button also
-        // teleports off-screen rather than destroying state.
+        let first_launch = is_first_launch();
+        if first_launch {
+            // First boot: show the window directly so the user sees CTRL
+            // running. Without this, the prewarm-cloak path leaves the
+            // app invisible until a hotkey works — and the hotkey needs
+            // a permission the user hasn't granted yet. Chicken-and-egg
+            // fix: visible first launch, prewarm-cloak from boot #2 on.
+            tracing::info!("ShellLifecycle::boot — first launch detected, showing main window");
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.center();
+                let _ = main.show();
+                let _ = main.set_focus();
+            }
+            mark_first_launch_done();
+        } else {
+            // Steady-state launch: teleport the auto-built main window
+            // off-screen as the very first thing after kernel ready.
+            // Tauri's window-config `x`/`y` is unreliable on Win11 (often
+            // centered regardless), so do it from Rust to guarantee the
+            // user never sees the launcher until they press Ctrl. WebView2
+            // / WKWebView spin up in the background, PWA mounts off-screen
+            // — first hotkey tap becomes a sub-30ms teleport.
+            tracing::info!("ShellLifecycle::boot — prewarming main window off-screen");
+            WindowController::prewarm(app)?;
+        }
+
+        // Install close intercept on main so the X button also teleports
+        // off-screen rather than destroying state.
         tracing::info!("ShellLifecycle::boot — installing close intercept on main");
         if let Some(main) = app.get_webview_window("main") {
             install_close_intercept(&main, app, "main");
