@@ -79,6 +79,19 @@
   letter-spacing: 0.08em;
   color: var(--color-text-muted);
 }
+.instrumentButton {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.instrumentButton:hover {
+  color: var(--color-text);
+  background: var(--color-bg-l2);
+}
 .instrumentLabel { letter-spacing: 0.08em; }
 
 /* LED tone classes moved to Led primitive (./primitives/Led.module.css);
@@ -107,6 +120,10 @@
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
+}
+.tapeSlot {
+  display: inline-flex;
+  align-items: center;
 }
 .tapeSep {
   color: var(--color-text-muted);

@@ -1,66 +1,97 @@
 // StatusBar — top instrument cluster of the cockpit shell.
 //
 // Layout left → right:
-//   [logo · CTRL]   [KRN ● MESH ○ LLM ●]   [session count]   [clock · UPTIME]
+//   [logo · CTRL]   [KRN ● MESH ○ LLM ●]   [adapter · MCP · vault · IRISY]   [clock · UPTIME]
 //
-// The middle "tape" is a tabular-monospace instrument readout in the
-// spirit of an aviation PFD: green dot = nominal, amber = caution,
-// red = error, gray = offline. Wired to real kernel state in Phase 1D;
-// today the three LEDs render in their default ("unknown") state so
-// the chrome doesn't lie about connectivity.
+// Wired to kernel_status (Zeus PR #42) via useKernelStatus, polled every
+// ~3s. PFD vocabulary: green=nominal, amber=caution, red=warning,
+// gray=offline, dim-ring=unknown. The kernel is the source of truth —
+// no mocks, no defaults. When the bridge isn't reachable we show
+// "offline" / "unknown" honestly.
 
-import { useState, type ReactElement } from 'react';
-import { Link } from '@tanstack/react-router';
-import { Led, Logo, type LedTone } from './primitives';
+import type { ReactElement } from 'react';
+import { Link, useNavigate } from '@tanstack/react-router';
+import { Led, Logo, StatusPill, type LedTone } from './primitives';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
+import { useKernelStatus } from '../hooks/useKernelStatus';
 import { useRail } from './RightRail';
 import styles from './StatusBar.module.css';
-
-export interface StatusBarProps {
-  /** Kernel WS bridge health. Falls back to "unknown" if omitted. */
-  kernel?: LedTone;
-  /** Mesh peer health (offline = 0 peers, nominal ≥ 1). */
-  mesh?: LedTone;
-  /** Default LLM provider availability. */
-  llm?: LedTone;
-  /** Active session count (Code Space envs + open chats). */
-  sessions?: number;
-}
 
 interface InstrumentProps {
   label: string;
   tone: LedTone;
+  title?: string;
+  onClick?: () => void;
 }
-const Instrument = ({ label, tone }: InstrumentProps): ReactElement => (
-  <span className={styles.instrument} title={`${label}: ${tone}`}>
-    <Led tone={tone} size="sm" />
-    <span className={styles.instrumentLabel}>{label}</span>
-  </span>
-);
+const Instrument = ({ label, tone, title, onClick }: InstrumentProps): ReactElement => {
+  const content = (
+    <>
+      <Led tone={tone} size="sm" />
+      <span className={styles.instrumentLabel}>{label}</span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`${styles.instrument} ${styles.instrumentButton}`}
+        title={title ?? `${label}: ${tone}`}
+        onClick={onClick}
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <span className={styles.instrument} title={title ?? `${label}: ${tone}`}>
+      {content}
+    </span>
+  );
+};
 
 const formatUptime = (ms: number): string => {
   const total = Math.floor(ms / 1000);
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
-  if (h > 0) return `${h}H ${String(m).padStart(2, '0')}M`;
+  if (h >= 1) return `${h}H ${String(m).padStart(2, '0')}M`;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
-export const StatusBar = ({
-  kernel = 'unknown',
-  mesh = 'unknown',
-  llm = 'unknown',
-  sessions,
-}: StatusBarProps = {}): ReactElement => {
+export const StatusBar = (): ReactElement => {
   const now = useWallClock();
-  const [bootAt] = useState<number>(() => Date.now());
-  const uptime = now.getTime() - bootAt;
-
-  // Surface the Irisy state in a quiet badge so the chrome always shows
-  // what the companion is doing, even when the workspace is on a route
-  // that doesn't otherwise expose it.
+  const navigate = useNavigate();
   const { irisyState } = useRail();
+  const status = useKernelStatus();
+
+  // Derive tones from the kernel envelope. The kernel itself is healthy
+  // by definition when the IPC round-trips (we got an answer back), so
+  // KRN tracks the envelope's `overall` field. LLM tracks adapter
+  // presence. MESH stays "unknown" until the mesh primitives ship.
+  const kernelReachable = status !== null;
+  const krnTone: LedTone = !kernelReachable
+    ? 'offline'
+    : status.overall === 'ok'
+      ? 'nominal'
+      : 'caution';
+  const llmTone: LedTone = !kernelReachable
+    ? 'unknown'
+    : status.primary_adapter
+      ? 'nominal'
+      : 'caution';
+  const meshTone: LedTone = 'unknown';
+
+  const adapter = status?.primary_adapter ?? null;
+  const mcpCount = status?.mcp_servers_installed ?? null;
+  const vaultCount = status?.vault_files ?? null;
+  const warning = status?.warnings[0] ?? null;
+  const uptimeMs = status?.uptime_ms ?? 0;
+  const showUptime = kernelReachable && uptimeMs > 0;
+
+  // Degraded overall → clicking the KRN LED jumps to Settings so the
+  // user can fix the configuration (typically "no LLM adapter").
+  const onLedClick = warning ? (): void => void navigate({ to: '/settings' }) : undefined;
+  const krnTitle = warning ? `${warning} · click to open Settings` : `KRN: ${krnTone}`;
 
   return (
     <header className={styles.bar} aria-label="Cockpit status bar">
@@ -70,16 +101,26 @@ export const StatusBar = ({
       </Link>
 
       <div className={styles.instruments} aria-label="System instruments">
-        <Instrument label="KRN" tone={kernel} />
-        <Instrument label="MESH" tone={mesh} />
-        <Instrument label="LLM" tone={llm} />
+        <Instrument label="KRN" tone={krnTone} title={krnTitle} onClick={onLedClick} />
+        <Instrument label="MESH" tone={meshTone} />
+        <Instrument label="LLM" tone={llmTone} title={adapter ? `LLM: ${adapter}` : 'no LLM adapter'} />
       </div>
 
       <div className={styles.tape}>
-        <span className={styles.tapeMeta}>SESSIONS</span>
-        <span className={styles.tapeValue}>
-          {sessions === undefined ? '—' : String(sessions).padStart(2, '0')}
+        <span className={styles.tapeMeta}>ADAPTER</span>
+        <span className={styles.tapeSlot}>
+          {adapter ? (
+            <StatusPill tone="info">{adapter}</StatusPill>
+          ) : (
+            <StatusPill tone="caution">none</StatusPill>
+          )}
         </span>
+        <span className={styles.tapeSep}>·</span>
+        <span className={styles.tapeMeta}>MCP</span>
+        <span className={styles.tapeValue}>{mcpCount ?? '—'}</span>
+        <span className={styles.tapeSep}>·</span>
+        <span className={styles.tapeMeta}>VAULT</span>
+        <span className={styles.tapeValue}>{vaultCount ?? '—'}</span>
         <span className={styles.tapeSep}>·</span>
         <span className={styles.tapeMeta}>IRISY</span>
         <span className={styles.tapeValue}>{irisyState}</span>
@@ -89,9 +130,10 @@ export const StatusBar = ({
         <time className={styles.time} dateTime={now.toISOString()}>
           {formatHHMM(now)}
         </time>
-        <span className={styles.uptime}>UPTIME {formatUptime(uptime)}</span>
+        <span className={styles.uptime}>
+          UPTIME {showUptime ? formatUptime(uptimeMs) : '—'}
+        </span>
       </div>
     </header>
   );
 };
-
