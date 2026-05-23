@@ -59,6 +59,10 @@ Self-update = **Tauri 2 native updater** + **three-mirror endpoint array (ordere
 - [ ] Cross-3-machine smoke (2 mac + 1 win) hitting each channel
 - [ ] CN-network P95 update < 30s real-world test
 
+## Scope (amendment 2026-05-22)
+
+This ADR covers **Layer 1 of 4** in CTRL's auto-update strategy — the CTRL.app binary update channel. The other 3 layers (hermes update CLI, keycap upstream channel, PWA SW) + the 3-tier user-adjustment model (Config / Patch / Fork) live in **ADR-018** (auto-update strategy). The Tauri updater + three-mirror approach below is unchanged; ADR-018 governs how this layer coordinates with the others.
+
 ## Changelog
 
 | Date | Change |
@@ -66,3 +70,4 @@ Self-update = **Tauri 2 native updater** + **three-mirror endpoint array (ordere
 | 2026-05-17 | Initial proposed (zeus); awaiting bao Accept to unblock implementation gates |
 | 2026-05-18 | Rewrite to olym 0.3.1 ADR format; implementation gates moved into Acceptance checklist (was separate "Implementation gates" section) |
 | 2026-05-19 | **Accepted** (bao verbal-go + zeus). Was P0 超时 5/3d, v1 ship blocker — unblocked. |
+| 2026-05-22 | Scope note: this ADR = Layer 1 of 4 in the auto-update strategy; full coordination lives in new ADR-018. No change to Tauri updater + three-mirror decision. |
