@@ -20,6 +20,11 @@ import {
   formatToolResultForDisplay,
   parseToolCalls,
 } from '@/lib/irisy-tools';
+import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
+import {
+  ensurePromptsBootstrap,
+  loadIrisySystemPrompt,
+} from '@/lib/irisy-prompts';
 import styles from './IrisyChat.module.css';
 
 const MAX_AGENT_ITERATIONS = 5;
@@ -93,14 +98,20 @@ ask you to invoke or build one, walk them through it step by step — but
 never invent keycap ids that aren't listed.`;
 
 function buildSystemPrompt(
+  systemBase: string,
   keycaps: ReadonlyArray<KeycapSummary>,
   longTermMemory: string,
+  coreMemory: string,
 ): string {
-  const sections: string[] = [IRISY_SYSTEM_BASE];
+  const sections: string[] = [systemBase];
+
+  if (coreMemory.trim().length > 0) {
+    sections.push(`# Core memory (loaded from vault/.irisy-memory/)\n${coreMemory.trim()}`);
+  }
 
   if (longTermMemory.trim().length > 0) {
     sections.push(
-      `# Your long-term memory (vault: irisy/SOUL.md)\n${longTermMemory.trim()}`,
+      `# Long-term memory (vault/irisy/SOUL.md)\n${longTermMemory.trim()}`,
     );
   }
 
@@ -125,6 +136,8 @@ export function IrisyChat(): React.ReactElement {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [keycaps, setKeycaps] = useState<KeycapSummary[]>([]);
   const [longTermMemory, setLongTermMemory] = useState<string>('');
+  const [coreMemory, setCoreMemory] = useState<string>('');
+  const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_BASE);
   const [hermesSessionId, setHermesSessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
     return window.localStorage.getItem(HERMES_SESSION_STORAGE_KEY) ?? '';
@@ -242,6 +255,22 @@ export function IrisyChat(): React.ReactElement {
           setLongTermMemory(body);
         }
       }
+      // Bootstrap + load memory/prompt substrates (G10 + G12). Both
+      // live in vault — `.irisy-memory/` and `.irisy-prompts/`. First
+      // mount per vault writes starter files; subsequent mounts just
+      // load.
+      await Promise.allSettled([
+        ensureMemoryBootstrap(),
+        ensurePromptsBootstrap(),
+      ]);
+      if (cancelled) return;
+      const [coreMem, sysPrompt] = await Promise.all([
+        loadCoreMemory(),
+        loadIrisySystemPrompt(),
+      ]);
+      if (cancelled) return;
+      setCoreMemory(coreMem);
+      setSystemBase(sysPrompt);
     })();
     return () => {
       cancelled = true;
@@ -375,7 +404,7 @@ export function IrisyChat(): React.ReactElement {
       let history: LLMMessage[] = [
         {
           role: 'system',
-          content: buildSystemPrompt(keycaps, longTermMemory),
+          content: buildSystemPrompt(systemBase, keycaps, longTermMemory, coreMemory),
         },
         ...messages.map((m) => ({
           role: (m.role === 'tool' ? 'user' : m.role) as
@@ -492,11 +521,13 @@ export function IrisyChat(): React.ReactElement {
       }
     },
     [
+      coreMemory,
       hermesSessionId,
       keycaps,
       longTermMemory,
       messages,
       sending,
+      systemBase,
       transport,
       useHermes,
     ],
