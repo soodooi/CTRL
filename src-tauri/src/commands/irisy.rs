@@ -430,6 +430,81 @@ pub async fn irisy_chat_hermes(
     })
 }
 
+#[derive(Debug, Serialize)]
+pub struct UpgradeHermesResult {
+    pub success: bool,
+    pub method: String,
+    pub new_version: Option<String>,
+    pub stdout: String,
+    pub stderr: String,
+    pub elapsed_ms: u64,
+}
+
+/// One-shot upgrade of the user's locally-installed `hermes-agent`.
+///
+/// Prefers `pipx upgrade hermes-agent` (Hermes's recommended install path)
+/// and falls back to `pip install --upgrade hermes-agent` when pipx isn't
+/// on PATH. Both run as blocking subprocesses on a Tokio blocking thread,
+/// so the JS bridge gets a single final result without polling. Stdout +
+/// stderr are returned verbatim so the PWA can show the upgrade log if
+/// the user wants details on failure.
+#[tauri::command]
+pub async fn irisy_upgrade_hermes() -> Result<UpgradeHermesResult, String> {
+    let started = std::time::Instant::now();
+
+    let pipx_available = Command::new("pipx")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    let method: &'static str = if pipx_available { "pipx" } else { "pip" };
+
+    let output = tokio::task::spawn_blocking(move || {
+        if pipx_available {
+            Command::new("pipx")
+                .args(["upgrade", "hermes-agent"])
+                .output()
+        } else {
+            Command::new("pip")
+                .args(["install", "--upgrade", "hermes-agent"])
+                .output()
+        }
+    })
+    .await
+    .map_err(|e| format!("subprocess join error: {e}"))?
+    .map_err(|e| format!("spawn {method}: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    let success = output.status.success();
+
+    // Even when pipx exits 0 ("hermes-agent is already at the latest
+    // version"), re-read the binary version so the PWA sees the truth.
+    let new_version = if success {
+        locate_hermes_binary().and_then(|p| read_version(&p))
+    } else {
+        None
+    };
+
+    tracing::info!(
+        method,
+        success,
+        elapsed_ms,
+        new_version = ?new_version,
+        "irisy_upgrade_hermes done"
+    );
+
+    Ok(UpgradeHermesResult {
+        success,
+        method: method.to_string(),
+        new_version,
+        stdout,
+        stderr,
+        elapsed_ms,
+    })
+}
+
 fn write_handshake_file() -> Result<McpBridgeStatus, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME env not set".to_string())?;
     let dir = PathBuf::from(&home).join(".ctrl").join("state");

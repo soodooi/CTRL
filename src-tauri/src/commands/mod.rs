@@ -45,6 +45,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::irisy::irisy_init,
             // irisy — one-shot chat via hermes subprocess (ctrl-volc provider)
             $crate::commands::irisy::irisy_chat_hermes,
+            // irisy — direct in-app upgrade of locally-installed hermes-agent
+            $crate::commands::irisy::irisy_upgrade_hermes,
             // system — kernel health (PWA status bar Phase 1F)
             $crate::commands::system::kernel_status,
             $crate::commands::kernel::mcp_call,

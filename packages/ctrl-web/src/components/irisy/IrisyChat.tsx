@@ -146,6 +146,8 @@ export function IrisyChat(): React.ReactElement {
   });
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [upgradingHermes, setUpgradingHermes] = useState(false);
+  const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null);
   const transport = useMemo(() => defaultTransport(), []);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -231,6 +233,39 @@ export function IrisyChat(): React.ReactElement {
     if (!scrollerRef.current) return;
     scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [messages]);
+
+  const upgradeHermes = useCallback(async (): Promise<void> => {
+    if (upgradingHermes) return;
+    setUpgradingHermes(true);
+    setUpgradeMessage('Upgrading hermes-agent…');
+    try {
+      const result = await invoke<{
+        success: boolean;
+        method: string;
+        new_version: string | null;
+        stdout: string;
+        stderr: string;
+        elapsed_ms: number;
+      }>('irisy_upgrade_hermes');
+      if (result.success) {
+        const refreshed = await invoke<IrisyStatus>('irisy_init');
+        setStatus(refreshed);
+        const versionLabel = result.new_version ?? refreshed.hermes.version ?? '?';
+        setUpgradeMessage(`Upgraded via ${result.method} → ${versionLabel}`);
+      } else {
+        const errSnippet = result.stderr.trim() || result.stdout.trim();
+        setUpgradeMessage(
+          `Upgrade failed (${result.method}): ${errSnippet.slice(0, 200)}`,
+        );
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setUpgradeMessage(`Upgrade error: ${message}`);
+    } finally {
+      setUpgradingHermes(false);
+      window.setTimeout(() => setUpgradeMessage(null), 6000);
+    }
+  }, [upgradingHermes]);
 
   const sendMessage = useCallback(
     async (text: string): Promise<void> => {
@@ -466,16 +501,21 @@ export function IrisyChat(): React.ReactElement {
           <button
             type="button"
             className={styles.updateBadge}
-            title={`Run \`pipx upgrade hermes-agent\` in a terminal to upgrade from ${status?.hermes.version ?? '?'} to ${status?.hermes.latest_version ?? '?'}.`}
-            onClick={() => {
-              const cmd = 'pipx upgrade hermes-agent';
-              if (navigator.clipboard != null) {
-                void navigator.clipboard.writeText(cmd);
-              }
-            }}
+            disabled={upgradingHermes}
+            title={
+              upgradingHermes
+                ? 'Running pipx upgrade hermes-agent — this can take 10-30 seconds.'
+                : `Click to upgrade hermes-agent from ${status?.hermes.version ?? '?'} to ${status?.hermes.latest_version ?? '?'} via pipx (or pip).`
+            }
+            onClick={() => void upgradeHermes()}
           >
-            ↑ v{status?.hermes.latest_version} available
+            {upgradingHermes
+              ? 'Upgrading…'
+              : `↑ v${status?.hermes.latest_version} · update`}
           </button>
+        )}
+        {upgradeMessage != null && (
+          <span className={styles.upgradeMessage}>{upgradeMessage}</span>
         )}
         <StatusLine
           label="MCP bridge"

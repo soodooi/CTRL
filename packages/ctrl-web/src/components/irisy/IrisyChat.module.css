@@ -68,6 +68,19 @@
   background: rgba(176, 122, 22, 0.2);
 }
 
+.updateBadge:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.upgradeMessage {
+  flex-basis: 100%;
+  font-size: 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  opacity: 0.7;
+  margin: 0;
+}
+
 .clearButton {
   background: transparent;
   border: 1px solid var(--ctrl-border, #d0d0d0);
