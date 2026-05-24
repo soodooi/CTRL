@@ -93,6 +93,7 @@
   border-radius: 12px;
   background: var(--color-bg-l1);
   box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
 }
 
 /* ── Update log specific ─────────────────────────────────────────── */

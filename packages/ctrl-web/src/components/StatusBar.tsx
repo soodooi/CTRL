@@ -8,6 +8,13 @@
 // gray=offline, dim-ring=unknown. The kernel is the source of truth —
 // no mocks, no defaults. When the bridge isn't reachable we show
 // "offline" / "unknown" honestly.
+//
+// MERGE NOTE for zeus (2026-05-24): bao 2026-05-24 explicitly removed
+// the StatusBar version pill + "Up to date" pill added by Athena
+// (release commit c09518f). The canonical version display lives in the
+// right-rail footer (RightRail.tsx `.versionRow` + green update dot).
+// When merging pwa-dev into the release branch, drop the version-pill
+// JSX from this file — pwa-dev's StatusBar shape is the chosen one.
 
 import type { ReactElement } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
