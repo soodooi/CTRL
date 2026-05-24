@@ -106,6 +106,30 @@ pub fn write(
     Ok(full)
 }
 
+/// Write raw bytes (typically a generated or captured image) to a path
+/// under the vault root. Companion `.md` sidecar is written via the
+/// regular `write` function so the FTS5 index picks up the metadata
+/// frontmatter (prompt / provider / etc.) and users see the image card
+/// when browsing the vault in any markdown viewer.
+///
+/// `path_hint` is the relative path for the binary asset (e.g.
+/// `images/2026-05/23-poster-001.png`); caller is responsible for
+/// deriving the sidecar path from this (typically swap extension).
+/// Returns the resolved absolute path. Parent dirs created on demand.
+pub fn write_binary(
+    vault_root: &Path,
+    path_hint: &str,
+    bytes: &[u8],
+) -> Result<PathBuf, VaultError> {
+    let safe = sanitize_relative_path(path_hint)?;
+    let full = vault_root.join(&safe);
+    if let Some(parent) = full.parent() {
+        fs::create_dir_all(parent).map_err(|e| VaultError::Io(e.to_string()))?;
+    }
+    fs::write(&full, bytes).map_err(|e| VaultError::Io(e.to_string()))?;
+    Ok(full)
+}
+
 /// Read a vault file and split frontmatter from body content.
 pub fn read(vault_root: &Path, rel_path: &str) -> Result<VaultEntry, VaultError> {
     let safe = sanitize_relative_path(rel_path)?;

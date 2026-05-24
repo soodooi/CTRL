@@ -83,6 +83,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::code_space::cs_list,
             // vault — Obsidian-compatible local-first markdown store
             $crate::commands::vault::vault_write,
+            $crate::commands::vault::vault_write_image,
             $crate::commands::vault::vault_read,
             $crate::commands::vault::vault_list,
             $crate::commands::vault::vault_search,

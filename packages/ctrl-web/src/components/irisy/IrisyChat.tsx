@@ -9,6 +9,8 @@
 // `hermes auth add` / `hermes model`.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
 import { defaultTransport, type LLMMessage } from '@/lib/llm-transport';
@@ -18,6 +20,11 @@ import {
   formatToolResultForDisplay,
   parseToolCalls,
 } from '@/lib/irisy-tools';
+import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
+import {
+  ensurePromptsBootstrap,
+  loadIrisySystemPrompt,
+} from '@/lib/irisy-prompts';
 import styles from './IrisyChat.module.css';
 
 const MAX_AGENT_ITERATIONS = 5;
@@ -91,14 +98,20 @@ ask you to invoke or build one, walk them through it step by step — but
 never invent keycap ids that aren't listed.`;
 
 function buildSystemPrompt(
+  systemBase: string,
   keycaps: ReadonlyArray<KeycapSummary>,
   longTermMemory: string,
+  coreMemory: string,
 ): string {
-  const sections: string[] = [IRISY_SYSTEM_BASE];
+  const sections: string[] = [systemBase];
+
+  if (coreMemory.trim().length > 0) {
+    sections.push(`# Core memory (loaded from vault/.irisy-memory/)\n${coreMemory.trim()}`);
+  }
 
   if (longTermMemory.trim().length > 0) {
     sections.push(
-      `# Your long-term memory (vault: irisy/SOUL.md)\n${longTermMemory.trim()}`,
+      `# Long-term memory (vault/irisy/SOUL.md)\n${longTermMemory.trim()}`,
     );
   }
 
@@ -123,6 +136,8 @@ export function IrisyChat(): React.ReactElement {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [keycaps, setKeycaps] = useState<KeycapSummary[]>([]);
   const [longTermMemory, setLongTermMemory] = useState<string>('');
+  const [coreMemory, setCoreMemory] = useState<string>('');
+  const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_BASE);
   const [hermesSessionId, setHermesSessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
     return window.localStorage.getItem(HERMES_SESSION_STORAGE_KEY) ?? '';
@@ -146,10 +161,27 @@ export function IrisyChat(): React.ReactElement {
   });
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendingStartedAt, setSendingStartedAt] = useState<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [chatError, setChatError] = useState<{ summary: string; detail: string } | null>(null);
+  const [errorExpanded, setErrorExpanded] = useState(false);
   const [upgradingHermes, setUpgradingHermes] = useState(false);
   const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null);
   const transport = useMemo(() => defaultTransport(), []);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  // Tick elapsed time while a send is in flight so the user sees that
+  // something is happening on long hermes-blocking calls.
+  useEffect(() => {
+    if (sendingStartedAt == null) {
+      setElapsedMs(0);
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setElapsedMs(Date.now() - sendingStartedAt);
+    }, 200);
+    return () => window.clearInterval(interval);
+  }, [sendingStartedAt]);
 
   // Persist message history on every change so a tab close / reload
   // doesn't lose the conversation.
@@ -191,7 +223,40 @@ export function IrisyChat(): React.ReactElement {
   const clearConversation = useCallback((): void => {
     setMessages([]);
     setHermesSessionId('');
+    setChatError(null);
   }, []);
+
+  // Keyboard shortcuts scoped to this component (not global).
+  // Cmd/Ctrl+K — clear conversation. Cmd/Ctrl+L — same (legacy terminal).
+  // ↑ on empty input — recall the last user message for editing.
+  // Cmd/Ctrl+Enter — send (textarea-style, even though composer is <input>).
+  const lastUserMessage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m && m.role === 'user') return m.content;
+    }
+    return '';
+  }, [messages]);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === 'k' || e.key === 'K' || e.key === 'l' || e.key === 'L')) {
+        e.preventDefault();
+        clearConversation();
+        return;
+      }
+      if (mod && e.key === 'Enter') {
+        e.preventDefault();
+        if (sendMessageRef.current) void sendMessageRef.current(input);
+        return;
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [clearConversation, input]);
 
   useEffect(() => {
     let cancelled = false;
@@ -223,6 +288,22 @@ export function IrisyChat(): React.ReactElement {
           setLongTermMemory(body);
         }
       }
+      // Bootstrap + load memory/prompt substrates (G10 + G12). Both
+      // live in vault — `.irisy-memory/` and `.irisy-prompts/`. First
+      // mount per vault writes starter files; subsequent mounts just
+      // load.
+      await Promise.allSettled([
+        ensureMemoryBootstrap(),
+        ensurePromptsBootstrap(),
+      ]);
+      if (cancelled) return;
+      const [coreMem, sysPrompt] = await Promise.all([
+        loadCoreMemory(),
+        loadIrisySystemPrompt(),
+      ]);
+      if (cancelled) return;
+      setCoreMemory(coreMem);
+      setSystemBase(sysPrompt);
     })();
     return () => {
       cancelled = true;
@@ -273,6 +354,9 @@ export function IrisyChat(): React.ReactElement {
       if (!trimmed || sending) return;
 
       setSending(true);
+      setSendingStartedAt(Date.now());
+      setChatError(null);
+      setErrorExpanded(false);
       const userId = `u-${Date.now()}`;
       const userMsg: DisplayMessage = {
         id: userId,
@@ -322,13 +406,18 @@ export function IrisyChat(): React.ReactElement {
           );
           if (result.session_id) setHermesSessionId(result.session_id);
         } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : 'hermes chat failed';
+          const detail = e instanceof Error ? e.message : String(e);
+          const firstLine = detail.split('\n')[0] ?? detail;
+          setChatError({
+            summary: `Hermes chat failed: ${firstLine.slice(0, 120)}`,
+            detail,
+          });
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
-                    content: `[hermes error] ${msg}`,
+                    content: `[hermes error] ${firstLine}`,
                     streaming: false,
                   }
                 : m,
@@ -336,6 +425,7 @@ export function IrisyChat(): React.ReactElement {
           );
         } finally {
           setSending(false);
+          setSendingStartedAt(null);
         }
         return;
       }
@@ -347,7 +437,7 @@ export function IrisyChat(): React.ReactElement {
       let history: LLMMessage[] = [
         {
           role: 'system',
-          content: buildSystemPrompt(keycaps, longTermMemory),
+          content: buildSystemPrompt(systemBase, keycaps, longTermMemory, coreMemory),
         },
         ...messages.map((m) => ({
           role: (m.role === 'tool' ? 'user' : m.role) as
@@ -451,25 +541,140 @@ export function IrisyChat(): React.ReactElement {
             ];
           }
         }
+      } catch (e: unknown) {
+        const detail = e instanceof Error ? e.message : String(e);
+        const firstLine = detail.split('\n')[0] ?? detail;
+        setChatError({
+          summary: `Chat stream failed: ${firstLine.slice(0, 120)}`,
+          detail,
+        });
       } finally {
         setSending(false);
+        setSendingStartedAt(null);
       }
     },
     [
+      coreMemory,
       hermesSessionId,
       keycaps,
       longTermMemory,
       messages,
       sending,
+      systemBase,
       transport,
       useHermes,
     ],
   );
 
+  // Keep the keydown handler reading the latest sendMessage closure.
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
+
   const onSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
     void sendMessage(input);
   };
+
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    // ↑ on an empty input recalls the last user message for quick edit.
+    if (e.key === 'ArrowUp' && input.length === 0 && lastUserMessage) {
+      e.preventDefault();
+      setInput(lastUserMessage);
+    }
+  };
+
+  const saveReplyToVault = useCallback(
+    async (assistantId: string, body: string): Promise<void> => {
+      const ts = new Date();
+      const stamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, '0')}${String(
+        ts.getDate(),
+      ).padStart(2, '0')}-${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}`;
+      const path = `irisy/replies/${stamp}-${assistantId.slice(-6)}.md`;
+      try {
+        await invoke('vault_write', {
+          args: {
+            path,
+            content: body,
+            frontmatter: {
+              kind: 'irisy-reply',
+              saved_at: ts.toISOString(),
+              assistant_id: assistantId,
+            },
+          },
+        });
+        setUpgradeMessage(`Saved → vault/${path}`);
+        window.setTimeout(() => setUpgradeMessage(null), 4000);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setChatError({ summary: `Save failed: ${msg.slice(0, 120)}`, detail: msg });
+      }
+    },
+    [],
+  );
+
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
+  const toggleToolExpand = useCallback((id: string): void => {
+    setExpandedTools((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // @-mention autocomplete state — populates from vault.list when '@'
+  // appears in the input, replaces with the picked relative path on click.
+  const [vaultFiles, setVaultFiles] = useState<string[]>([]);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+
+  useEffect(() => {
+    // Single, cheap fetch — the vault list is small enough for in-memory
+    // filter. Re-fetch on each mount; new files appear on next open.
+    void (async () => {
+      try {
+        const files = await invoke<string[]>('vault_list', { args: {} });
+        setVaultFiles(files);
+      } catch {
+        /* vault may be empty; @ picker stays empty */
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    const atIdx = input.lastIndexOf('@');
+    if (atIdx === -1) {
+      if (mentionOpen) setMentionOpen(false);
+      return;
+    }
+    const after = input.slice(atIdx + 1);
+    if (after.includes(' ')) {
+      if (mentionOpen) setMentionOpen(false);
+      return;
+    }
+    setMentionQuery(after.toLowerCase());
+    setMentionOpen(true);
+  }, [input, mentionOpen]);
+
+  const mentionResults = useMemo(() => {
+    if (!mentionOpen) return [];
+    const q = mentionQuery;
+    return vaultFiles
+      .filter((p) => p.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [mentionOpen, mentionQuery, vaultFiles]);
+
+  const pickMention = useCallback(
+    (path: string): void => {
+      const atIdx = input.lastIndexOf('@');
+      if (atIdx === -1) return;
+      setInput(`${input.slice(0, atIdx)}@${path} `);
+      setMentionOpen(false);
+      inputRef.current?.focus();
+    },
+    [input],
+  );
 
   const brainReady = status?.kernel_llm.ready ?? false;
   const hermesDetected = status?.hermes.binary_path != null;
@@ -564,47 +769,142 @@ export function IrisyChat(): React.ReactElement {
         )}
         {messages.map((m) => {
           if (m.role === 'tool') {
+            const expanded = expandedTools.has(m.id);
+            const lines = m.content.split('\n');
+            const headLine = lines[0] ?? m.content;
+            const hasMore = lines.length > 1 || m.content.length > 80;
             return (
-              <pre
-                key={m.id}
-                className={styles.toolBubble}
-                aria-live={m.streaming ? 'polite' : undefined}
-              >
-                {m.content}
-              </pre>
+              <div key={m.id} className={styles.toolCard}>
+                <button
+                  type="button"
+                  className={styles.toolCardHeader}
+                  onClick={() => toggleToolExpand(m.id)}
+                  disabled={!hasMore}
+                  aria-expanded={expanded}
+                >
+                  <span className={styles.toolCardChevron}>
+                    {hasMore ? (expanded ? '▾' : '▸') : '·'}
+                  </span>
+                  <span className={styles.toolCardTitle}>{headLine}</span>
+                  {m.streaming && (
+                    <span className={styles.toolCardRunning}>running…</span>
+                  )}
+                </button>
+                {expanded && hasMore && (
+                  <pre className={styles.toolCardBody}>{m.content}</pre>
+                )}
+              </div>
             );
           }
-          const rendered =
-            m.role === 'assistant'
-              ? renderAssistantContent(m.content)
-              : m.content;
+          if (m.role === 'assistant') {
+            const rendered = renderAssistantContent(m.content);
+            const isThisStreaming = m.streaming;
+            return (
+              <article
+                key={m.id}
+                className={`${styles.assistantBubble} ${styles.markdownBody}`}
+                aria-live={m.streaming ? 'polite' : undefined}
+              >
+                {rendered ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {rendered}
+                  </ReactMarkdown>
+                ) : isThisStreaming ? (
+                  <div className={styles.thinking}>
+                    <span className={styles.thinkingDots}>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </span>
+                    <span className={styles.thinkingLabel}>
+                      Thinking · {(elapsedMs / 1000).toFixed(1)}s
+                    </span>
+                  </div>
+                ) : (
+                  ''
+                )}
+                {!isThisStreaming && rendered && (
+                  <button
+                    type="button"
+                    className={styles.saveBtn}
+                    title="Save this reply to vault/irisy/replies/"
+                    onClick={() => void saveReplyToVault(m.id, m.content)}
+                    aria-label="Save reply to vault"
+                  >
+                    💾
+                  </button>
+                )}
+              </article>
+            );
+          }
           return (
             <article
               key={m.id}
-              className={
-                m.role === 'user' ? styles.userBubble : styles.assistantBubble
-              }
+              className={styles.userBubble}
               aria-live={m.streaming ? 'polite' : undefined}
             >
-              {rendered || (m.streaming ? '…' : '')}
+              {m.content}
             </article>
           );
         })}
       </div>
 
+      {chatError != null && (
+        <div className={styles.errorPanel}>
+          <button
+            type="button"
+            className={styles.errorSummary}
+            onClick={() => setErrorExpanded((v) => !v)}
+          >
+            <span>{chatError.summary}</span>
+            <span className={styles.errorToggle}>{errorExpanded ? '▾' : '▸'}</span>
+          </button>
+          {errorExpanded && (
+            <pre className={styles.errorDetail}>{chatError.detail}</pre>
+          )}
+          <button
+            type="button"
+            className={styles.errorDismiss}
+            onClick={() => setChatError(null)}
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       <form className={styles.composer} onSubmit={onSubmit}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={
-            brainReady
-              ? 'Talk to Irisy…'
-              : 'Brain not ready — wire a provider in CTRL settings'
-          }
-          disabled={sending || !brainReady}
-          aria-label="Message Irisy"
-        />
+        <div className={styles.composerInputWrap}>
+          {mentionOpen && mentionResults.length > 0 && (
+            <ul className={styles.mentionPopover} role="listbox" aria-label="Vault files">
+              {mentionResults.map((path) => (
+                <li key={path}>
+                  <button
+                    type="button"
+                    className={styles.mentionItem}
+                    onClick={() => pickMention(path)}
+                  >
+                    {path}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onInputKeyDown}
+            placeholder={
+              brainReady
+                ? 'Talk to Irisy — @file · ↑ recall · ⌘K clear · ⌘↵ send'
+                : 'Brain not ready — wire a provider in CTRL settings'
+            }
+            disabled={sending || !brainReady}
+            aria-label="Message Irisy"
+          />
+        </div>
         <button
           type="submit"
           disabled={sending || !brainReady || !input.trim()}

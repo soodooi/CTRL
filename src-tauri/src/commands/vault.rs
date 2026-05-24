@@ -77,6 +77,81 @@ pub async fn vault_write(args: VaultWriteArgs) -> Result<VaultWriteReply, String
 }
 
 #[derive(Debug, Deserialize)]
+pub struct VaultWriteImageArgs {
+    /// Relative path for the image binary under the vault root (e.g.
+    /// `images/2026-05/23-poster-001.png`). Caller picks the layout;
+    /// CTRL ships defaults but never enforces.
+    pub image_path: String,
+    /// Image bytes. Tauri marshals `Vec<u8>` as a typed array over IPC
+    /// so the PWA can hand over a Uint8Array without base64 overhead.
+    pub bytes: Vec<u8>,
+    /// Companion `.md` sidecar — markdown body (CTRL prefixes the YAML
+    /// frontmatter from `sidecar_frontmatter` automatically).
+    pub sidecar_path: String,
+    pub sidecar_body: String,
+    pub sidecar_frontmatter: serde_json::Value,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VaultWriteImageReply {
+    pub image_path: String,
+    pub image_absolute: String,
+    pub sidecar_path: String,
+    pub sidecar_absolute: String,
+}
+
+/// Write an image asset + its markdown sidecar atomically.
+///
+/// CTRL's vault is markdown-first (Obsidian-compat) — opening a `.png`
+/// directly in VMark / vim is unhelpful. The sidecar `.md` carries the
+/// rendered embed `![](path.png)` plus structured frontmatter (prompt /
+/// provider / model / etc.) so the asset is searchable via FTS5 and
+/// navigable from any markdown viewer.
+///
+/// The PWA gallery (C21, daedalus lane) browses sidecar files; the user
+/// double-clicks a sidecar to open it inline (CTRL native lightbox) and
+/// optionally jumps out to VMark.
+///
+/// Image and sidecar are written sequentially (filesystem doesn't give
+/// atomicity for two paths); on partial failure the caller can re-issue
+/// — both writes are idempotent on identical inputs.
+#[tauri::command]
+pub async fn vault_write_image(
+    args: VaultWriteImageArgs,
+) -> Result<VaultWriteImageReply, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultWrite {
+            path_glob: args.image_path.clone(),
+        },
+    )?;
+    let root = vault_root()?;
+    let image_full = vault::write_binary(&root, &args.image_path, &args.bytes)
+        .map_err(stringify_vault_error)?;
+    let sidecar_full = vault::write(
+        &root,
+        &args.sidecar_path,
+        &args.sidecar_body,
+        &args.sidecar_frontmatter,
+    )
+    .map_err(stringify_vault_error)?;
+    tracing::info!(
+        image = %args.image_path,
+        sidecar = %args.sidecar_path,
+        bytes = args.bytes.len(),
+        "vault_write_image ok",
+    );
+    Ok(VaultWriteImageReply {
+        image_path: args.image_path,
+        image_absolute: image_full.display().to_string(),
+        sidecar_path: args.sidecar_path,
+        sidecar_absolute: sidecar_full.display().to_string(),
+    })
+}
+
+#[derive(Debug, Deserialize)]
 pub struct VaultReadArgs {
     pub path: String,
     #[serde(default)]
