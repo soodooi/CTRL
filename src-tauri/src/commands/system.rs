@@ -278,7 +278,7 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<InstallOutcome, Str
                 downloaded = downloaded.saturating_add(chunk_len as u64);
                 let total = content_length.unwrap_or(0);
                 let _ = app_for_progress.emit(
-                    "update.install.progress",
+                    "update-install-progress",
                     serde_json::json!({
                         "downloaded": downloaded,
                         "total": total,

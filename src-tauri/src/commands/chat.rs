@@ -127,7 +127,7 @@ pub async fn chat_stream(
                 Ok(chunk) => {
                     let done_now = chunk.finish_reason.is_some();
                     let _ = app.emit(
-                        "chat.stream.delta",
+                        "chat-stream-delta",
                         ChatStreamDelta {
                             request_id: request_id.clone(),
                             delta: chunk.delta,
@@ -158,7 +158,7 @@ pub async fn chat_stream(
 
 fn emit_done(app: &AppHandle, request_id: &str, error: Option<String>) {
     let _ = app.emit(
-        "chat.stream.delta",
+        "chat-stream-delta",
         ChatStreamDelta {
             request_id: request_id.to_string(),
             delta: String::new(),
