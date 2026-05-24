@@ -19,7 +19,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
 import { Keyboard } from './components/Keyboard';
-import { RailProvider, RightRail } from './components/RightRail';
+import { RailProvider, RightRail, useRail } from './components/RightRail';
 import { DefaultWorkspace } from './routes/default';
 import styles from './app.module.css';
 
@@ -53,24 +53,37 @@ function useTrayBridge(): void {
   }, [navigate]);
 }
 
+function RootShellInner(): ReactElement {
+  const { subPanel, subPanelCollapsed } = useRail();
+  // Three states drive the shell grid's right column width via CSS var:
+  //   'none'      → no sub-panel registered (80px primary only)
+  //   'collapsed' → registered but collapsed (80px primary + 14px tab)
+  //   'open'      → registered and expanded (240px panel + 14px tab + 80px primary)
+  const subPanelState =
+    subPanel === null ? 'none' : subPanelCollapsed ? 'collapsed' : 'open';
+  return (
+    <div className={styles.shell} data-sub-panel={subPanelState}>
+      <div className={styles.status}>
+        <StatusBar />
+      </div>
+      <div className={styles.keyboard}>
+        <Keyboard />
+      </div>
+      <main className={styles.workspace}>
+        <Outlet />
+      </main>
+      <div className={styles.rail}>
+        <RightRail />
+      </div>
+    </div>
+  );
+}
+
 function RootShell(): ReactElement {
   useTrayBridge();
   return (
     <RailProvider>
-      <div className={styles.shell}>
-        <div className={styles.status}>
-          <StatusBar />
-        </div>
-        <div className={styles.keyboard}>
-          <Keyboard />
-        </div>
-        <main className={styles.workspace}>
-          <Outlet />
-        </main>
-        <div className={styles.rail}>
-          <RightRail />
-        </div>
-      </div>
+      <RootShellInner />
     </RailProvider>
   );
 }
@@ -95,9 +108,31 @@ const CodeSpaceDetailRoute = lazy(() =>
 const PoolRoute = lazy(() =>
   import('./routes/pool').then((m) => ({ default: m.PoolRoute })),
 );
-const IconLabRoute = lazy(() =>
-  import('./routes/icon-lab').then((m) => ({ default: m.IconLabRoute })),
-);
+// icon-lab is a development-only renderer bake-off. It imports
+// `lottie-react` for the side-by-side comparison — having that second
+// engine in a production chunk violates SKILL.md §7. Gating the dynamic
+// import behind `import.meta.env.DEV` lets Vite tree-shake the entire
+// route + its `lottie-react` dependency out of production builds.
+const IconLabRoute = import.meta.env.DEV
+  ? lazy(() =>
+      import('./routes/icon-lab').then((m) => ({ default: m.IconLabRoute })),
+    )
+  : lazy(() =>
+      Promise.resolve({
+        default: (): ReactElement => (
+          <div
+            style={{
+              padding: 'var(--space-6)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 'var(--text-sm)',
+              color: 'var(--color-text-muted)',
+            }}
+          >
+            icon-lab is dev-only.
+          </div>
+        ),
+      }),
+    );
 
 const LazyFallback = (): ReactElement => (
   <div style={{

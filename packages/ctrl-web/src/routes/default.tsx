@@ -1,17 +1,17 @@
 // DefaultWorkspace — the `/` route. Per decision_ctrl_is_hermes_workbench
 // CTRL is a workshop: persistent multi-tab workspace + Irisy as side
-// drawer. When there are NO open tabs, fall back to the Irisy-idle
-// page (a friendly chat input — what the user sees the first time).
-// When tabs exist (e.g. user clicked Settings → hermes dashboard), the
-// tab strip + active tab content take over.
+// drawer. When there are NO open tabs, fall back to the Irisy-idle page
+// (a friendly chat input — what the user sees the first time).
+//
+// Per bao 2026-05-23: the session history list that used to live as a
+// middle nav column now lives in the right rail as a collapsible level-2
+// sub-panel. We push it via useRailSubPanel — the rail clears it on
+// route unmount automatically.
 
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { ChatInput, IrisyMascot } from '@/components/primitives';
-import { useRail } from '@/components/RightRail';
-import {
-  SessionWorkspace,
-  type SessionHistoryGroup,
-} from '@/components/workspace/SessionWorkspace';
+import { useRail, useRailSubPanel, type RailSubPanel } from '@/components/RightRail';
+import type { SessionHistoryGroup } from '@/components/workspace/SessionWorkspace';
 import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
 import { defaultTransport } from '@/lib/llm-transport';
 import styles from './default.module.css';
@@ -55,6 +55,22 @@ export const DefaultWorkspace = (): ReactElement => {
     setIrisyState('idle');
     return () => setIrisyState('idle');
   }, [setIrisyState]);
+
+  const subPanel = useMemo<RailSubPanel>(
+    () => ({
+      groups: PLACEHOLDER_HISTORY,
+      activeId,
+      onSelect: setActiveId,
+      onNew: () => {
+        setActiveId(null);
+        setInput('');
+      },
+      newLabel: 'New chat',
+      emptyText: 'no past chats',
+    }),
+    [activeId],
+  );
+  useRailSubPanel(subPanel);
 
   const handleSend = (text: string): void => {
     const trimmed = text.trim();
@@ -114,67 +130,53 @@ export const DefaultWorkspace = (): ReactElement => {
     })();
   };
 
-  const handleNewChat = (): void => {
-    setActiveId(null);
-    setInput('');
-  };
-
   const fallback = (
-    <SessionWorkspace
-      groups={PLACEHOLDER_HISTORY}
-      activeId={activeId}
-      onSelect={setActiveId}
-      onNew={handleNewChat}
-      newLabel="New chat"
-      emptyText="no past chats"
-    >
-      <div className={styles.center}>
-        {transcript.length === 0 ? (
-          <>
-            <div className={styles.mascotWrap}>
-              <div className={styles.mascotHalo} />
-              <IrisyMascot state="idle" size={180} />
-            </div>
-            <h1 className={styles.greeting}>What are we doing today?</h1>
-          </>
-        ) : (
-          <div className={styles.transcript} aria-label="Conversation">
-            {transcript.map((turn) => (
-              <div
-                key={turn.id}
-                className={styles.turn}
-                data-role={turn.role}
-              >
-                <span className={styles.turnRole}>
-                  {turn.role === 'user' ? 'You' : 'Irisy'}
-                </span>
-                <p className={styles.turnContent}>
-                  {turn.content || (streaming && turn.role === 'assistant'
-                    ? '…'
-                    : '')}
-                </p>
-              </div>
-            ))}
+    <div className={styles.center}>
+      {transcript.length === 0 ? (
+        <>
+          <div className={styles.mascotWrap}>
+            <div className={styles.mascotHalo} />
+            <IrisyMascot state="idle" size={180} />
           </div>
-        )}
-
-        <div className={styles.inputWrap}>
-          <ChatInput
-            value={input}
-            onChange={setInput}
-            onSubmit={handleSend}
-            placeholder={
-              streaming
-                ? 'Irisy is replying…'
-                : 'Ask Irisy, or type / for a keycap…'
-            }
-            ariaLabel="Chat with Irisy"
-            autoFocus
-            disabled={streaming}
-          />
+          <h1 className={styles.greeting}>What are we doing today?</h1>
+        </>
+      ) : (
+        <div className={styles.transcript} aria-label="Conversation">
+          {transcript.map((turn) => (
+            <div
+              key={turn.id}
+              className={styles.turn}
+              data-role={turn.role}
+            >
+              <span className={styles.turnRole}>
+                {turn.role === 'user' ? 'You' : 'Irisy'}
+              </span>
+              <p className={styles.turnContent}>
+                {turn.content || (streaming && turn.role === 'assistant'
+                  ? '…'
+                  : '')}
+              </p>
+            </div>
+          ))}
         </div>
+      )}
+
+      <div className={styles.inputWrap}>
+        <ChatInput
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSend}
+          placeholder={
+            streaming
+              ? 'Irisy is replying…'
+              : 'Ask Irisy, or type / for a keycap…'
+          }
+          ariaLabel="Chat with Irisy"
+          autoFocus
+          disabled={streaming}
+        />
       </div>
-    </SessionWorkspace>
+    </div>
   );
 
   return <WorkspaceTabs fallback={fallback} />;

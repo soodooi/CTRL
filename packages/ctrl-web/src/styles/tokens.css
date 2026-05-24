@@ -82,7 +82,7 @@
      Status bar pinned top; no bottom tab (navigation is the keyboard). */
   --statusbar-height: 32px;
   --keyboard-width: 320px;
-  --rightrail-width: 64px;
+  --rightrail-width: 80px;
   --keycap-size: 64px;          /* 4×4 grid inside 320 keyboard */
   --keycap-gap: 12px;
   --bottomtab-height: 0px;       /* legacy alias — bottom tab removed */
