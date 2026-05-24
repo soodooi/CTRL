@@ -30,14 +30,25 @@ export const EmbedView = ({ url, label }: EmbedViewProps): ReactElement => {
         <div className={styles.spacer} />
         <span>{loaded ? 'CONNECTED' : 'LOADING…'}</span>
       </div>
-      <iframe
-        className={styles.frame}
-        src={url}
-        title={label ?? 'External embed'}
-        // No `allow-top-navigation` → the embed can't replace CTRL's window.
-        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
-        onLoad={() => setLoaded(true)}
-      />
+      <div className={styles.frameWrap}>
+        <iframe
+          className={styles.frame}
+          src={url}
+          title={label ?? 'External embed'}
+          // No `allow-top-navigation` → the embed can't replace CTRL's window.
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+          onLoad={() => setLoaded(true)}
+        />
+        {/* Dark loading overlay — hides the iframe's white initial paint
+            until the embedded app has rendered. Without this the cockpit
+            shows a jarring white slab whenever a tab first opens. */}
+        {!loaded && (
+          <div className={styles.loadingVeil} aria-hidden="true">
+            <div className={styles.loadingPulse} />
+            <span className={styles.loadingText}>Loading embed…</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -33,6 +33,12 @@
 }
 .spacer { flex: 1; }
 
+.frameWrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  display: flex;
+}
 .frame {
   flex: 1;
   border: none;
@@ -40,4 +46,47 @@
   background: var(--color-bg-l0);
   display: block;
   min-height: 0;
+  /* `color-scheme: dark` hints the iframe to prefer dark UI (scrollbars
+     etc). Cross-origin content still picks its own theme — the overlay
+     below is the real fix for the white initial paint. */
+  color-scheme: dark;
+}
+
+.loadingVeil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background:
+    radial-gradient(
+      800px 400px at 50% 40%,
+      color-mix(in oklab, var(--color-accent), transparent 90%) 0%,
+      transparent 60%
+    ),
+    var(--color-bg-l0);
+  pointer-events: none;
+}
+.loadingPulse {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--color-accent), transparent 60%);
+  animation: embed-loading 1.6s ease-in-out infinite;
+}
+.loadingText {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+}
+@keyframes embed-loading {
+  0%, 100% { transform: scale(0.85); opacity: 0.5; }
+  50%      { transform: scale(1);    opacity: 1;   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loadingPulse { animation: none; opacity: 0.7; }
 }

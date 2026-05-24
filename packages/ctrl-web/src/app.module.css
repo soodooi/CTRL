@@ -49,5 +49,27 @@
   flex-direction: column;
   overflow: hidden;
   /* Workspace owns its own scrolling; cards inside scroll independently. */
+  background: var(--color-bg-l0);
+  /* Subtle ambient — soft accent glow from the top-right corner +
+     a bottom-up tonal shift so the workspace doesn't read as a flat
+     gray slab. Route content (pool / settings / forge) layers its own
+     bg ON TOP, so this only shows on bare workspace surfaces. */
+  background-image:
+    radial-gradient(
+      1200px 600px at calc(100% + 100px) -10%,
+      color-mix(in oklab, var(--color-accent), transparent 92%) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 500px at -10% 110%,
+      color-mix(in oklab, var(--color-llm-accent), transparent 94%) 0%,
+      transparent 65%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-bg-l0), transparent 0%) 0%,
+      color-mix(in oklab, var(--color-bg-l0), var(--color-bg-l1) 50%) 100%
+    );
+  background-attachment: local;
 }
 .rail { grid-area: rail; }

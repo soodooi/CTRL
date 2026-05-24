@@ -8,43 +8,21 @@
 // gray=offline, dim-ring=unknown. The kernel is the source of truth —
 // no mocks, no defaults. When the bridge isn't reachable we show
 // "offline" / "unknown" honestly.
+//
+// MERGE NOTE for zeus (2026-05-24): bao 2026-05-24 explicitly removed
+// the StatusBar version pill + "Up to date" pill added by Athena
+// (release commit c09518f). The canonical version display lives in the
+// right-rail footer (RightRail.tsx `.versionRow` + green update dot).
+// When merging pwa-dev into the release branch, drop the version-pill
+// JSX from this file — pwa-dev's StatusBar shape is the chosen one.
 
-import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Led, Logo, StatusPill, type LedTone } from './primitives';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import { useKernelStatus } from '../hooks/useKernelStatus';
 import { useRail } from './RightRail';
-import { invoke } from '../lib/bridge';
 import styles from './StatusBar.module.css';
-
-interface AppMeta {
-  version: string;
-  sha: string;
-  built_at: string;
-}
-
-interface UpdateCheckResult {
-  kind: 'available' | 'up_to_date' | 'no_endpoint' | 'error';
-  available_version: string | null;
-  message: string;
-}
-
-interface InstallOutcome {
-  kind: 'installed' | 'no_update' | 'error';
-  message: string;
-}
-
-type UpgradeState =
-  | { kind: 'unknown' }
-  | { kind: 'up_to_date' }
-  | { kind: 'available'; version: string }
-  | { kind: 'installing' }
-  | { kind: 'error'; message: string };
-
-// Re-poll the update endpoint every 15 minutes so bao doesn't have to
-// quit & relaunch to see a new release. Cheap — single HTTP request.
-const UPDATE_POLL_MS = 15 * 60 * 1000;
 
 interface InstrumentProps {
   label: string;
@@ -92,92 +70,6 @@ export const StatusBar = (): ReactElement => {
   const navigate = useNavigate();
   const { irisyState } = useRail();
   const status = useKernelStatus();
-
-  // Build version pill. Per bao 2026-05-23 — "你没有版本号 不知道是新的
-  // 还是旧的". Reads compile-time metadata injected by build.rs so the
-  // user can tell at a glance which build they're staring at.
-  const [meta, setMeta] = useState<AppMeta | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    invoke<AppMeta>('app_meta')
-      .then((m) => {
-        if (!cancelled) setMeta(m);
-      })
-      .catch(() => {
-        // PWA-only mode (no Tauri bridge): leave meta null; pill hides.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Auto-poll for updates and surface an inline Upgrade button next to
-  // the version pill when one's available. Per bao 2026-05-23 — "升级
-  // 按钮应该放在首页版本旁边". One-click upgrade — no Settings detour.
-  const [upgrade, setUpgrade] = useState<UpgradeState>({ kind: 'unknown' });
-
-  // Two readers:
-  //   • readCached — mount + auto-poll. Reads the Rust-side cache that
-  //     ShellLifecycle::boot prewarms at app start. Instant (no network).
-  //   • forceRecheck — user-clicked "↑ Check" / "↑ Retry" / "↑ Up to date"
-  //     buttons. Bypasses cache, hits the network, updates the cache.
-  // Per bao 2026-05-23 — first PWA mount renders the right pill without
-  // a 1-3s "checking…" gap.
-  const applyResult = useCallback((r: UpdateCheckResult) => {
-    if (r.kind === 'available' && r.available_version) {
-      setUpgrade({ kind: 'available', version: r.available_version });
-    } else if (r.kind === 'up_to_date') {
-      setUpgrade({ kind: 'up_to_date' });
-    } else {
-      setUpgrade({ kind: 'unknown' });
-    }
-  }, []);
-
-  const readCached = useCallback(() => {
-    invoke<UpdateCheckResult>('check_for_updates')
-      .then(applyResult)
-      .catch(() => setUpgrade({ kind: 'unknown' }));
-  }, [applyResult]);
-
-  const forceRecheck = useCallback(() => {
-    invoke<UpdateCheckResult>('force_check_for_updates')
-      .then(applyResult)
-      .catch(() => setUpgrade({ kind: 'unknown' }));
-  }, [applyResult]);
-
-  useEffect(() => {
-    readCached();
-    const timer = window.setInterval(readCached, UPDATE_POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [readCached]);
-
-  const handleHide = useCallback(() => {
-    invoke<void>('hide_window').catch(() => {
-      // PWA-only mode (no Tauri bridge): silent no-op.
-    });
-  }, []);
-
-  const handleUpgrade = useCallback(() => {
-    if (upgrade.kind !== 'available') return;
-    setUpgrade({ kind: 'installing' });
-    invoke<InstallOutcome>('install_update')
-      .then((outcome) => {
-        if (outcome.kind === 'installed') {
-          // Kernel will restart in ~500ms; UI hold prevents flicker.
-          setUpgrade({ kind: 'installing' });
-        } else if (outcome.kind === 'no_update') {
-          setUpgrade({ kind: 'up_to_date' });
-        } else {
-          setUpgrade({ kind: 'error', message: outcome.message });
-        }
-      })
-      .catch((e) =>
-        setUpgrade({
-          kind: 'error',
-          message: e instanceof Error ? e.message : String(e),
-        }),
-      );
-  }, [upgrade]);
 
   // Derive tones from the kernel envelope. The kernel itself is healthy
   // by definition when the IPC round-trips (we got an answer back), so
@@ -242,93 +134,12 @@ export const StatusBar = (): ReactElement => {
       </div>
 
       <div className={styles.right}>
-        {meta && (
-          <span
-            className={styles.version}
-            title={`Build ${meta.sha} · ${meta.built_at}`}
-          >
-            v{meta.version}
-          </span>
-        )}
-        {/* Upgrade button — always visible to the RIGHT of the version
-            pill per bao 2026-05-23 ('升级按钮放在版本号右侧').
-            State drives label + tone:
-              - available: green pulsing — one-click install
-              - installing: blue, disabled, shows progress
-              - up_to_date: muted — click force-rechecks
-              - unknown: muted, hidden until first check completes
-              - error: red, click retries */}
-        {upgrade.kind === 'available' && (
-          <button
-            type="button"
-            className={styles.upgradeBtn}
-            onClick={handleUpgrade}
-            title={`Install v${upgrade.version}`}
-            aria-label={`Upgrade to v${upgrade.version}`}
-          >
-            <span className={styles.upgradeDot} aria-hidden="true" />
-            Upgrade
-          </button>
-        )}
-        {upgrade.kind === 'installing' && (
-          <span
-            className={styles.upgradeInstalling}
-            aria-live="polite"
-            title="Installing the new build, CTRL will restart automatically"
-          >
-            Installing…
-          </span>
-        )}
-        {upgrade.kind === 'up_to_date' && (
-          <button
-            type="button"
-            className={styles.upgradeIdle}
-            onClick={forceRecheck}
-            title="You're on the latest build · click to re-check"
-            aria-label="Re-check for updates"
-          >
-            ↑ Up to date
-          </button>
-        )}
-        {upgrade.kind === 'unknown' && (
-          <button
-            type="button"
-            className={styles.upgradeIdle}
-            onClick={forceRecheck}
-            title="Check for a newer build"
-            aria-label="Check for updates"
-          >
-            ↑ Check
-          </button>
-        )}
-        {upgrade.kind === 'error' && (
-          <button
-            type="button"
-            className={styles.upgradeError}
-            onClick={forceRecheck}
-            title={`${upgrade.message} · click to retry`}
-            aria-label="Update failed, click to retry"
-          >
-            ↑ Retry
-          </button>
-        )}
         <time className={styles.time} dateTime={now.toISOString()}>
           {formatHHMM(now)}
         </time>
         <span className={styles.uptime}>
           UPTIME {showUptime ? formatUptime(uptimeMs) : '—'}
         </span>
-        {/* Hide button — click-fallback for Ctrl hotkey per bao 2026-05-23
-            ('为了不至于隐藏不了 你在右上角先放一个hide按钮吧'). */}
-        <button
-          type="button"
-          className={styles.hideBtn}
-          onClick={handleHide}
-          title="Hide window (Ctrl tap also toggles)"
-          aria-label="Hide window"
-        >
-          ×
-        </button>
       </div>
     </header>
   );
