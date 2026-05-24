@@ -148,27 +148,59 @@ async fn probe_hermes() -> HermesStatus {
 /// returns without an update indicator rather than blocking the UI. PyPI's
 /// JSON metadata endpoint is anonymous and CDN-fronted; CORS isn't an
 /// issue here because the call originates from the Tauri Rust side, not
-/// the WebView. Future enhancement: cache the result for ~1h to avoid
-/// fetching on every /irisy mount.
+/// the WebView.
+///
+/// Results are cached for 1 hour per kernel process (both successful
+/// versions and outright failures, so PyPI isn't hammered when offline).
+/// Restarting CTRL forces a refresh. The cache is intentionally
+/// per-process — a kernel restart already happens often enough during
+/// active development, and a kernel that's been up for >1h is a steady
+/// state where a single extra HTTP GET costs nothing.
 async fn fetch_pypi_latest_hermes() -> Option<String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static PYPI_LATEST_CACHE: std::sync::OnceLock<Mutex<Option<(Instant, Option<String>)>>> =
+        std::sync::OnceLock::new();
+    const PYPI_CACHE_TTL: Duration = Duration::from_secs(3600);
+
+    let cell = PYPI_LATEST_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cell.lock() {
+        if let Some((stored_at, cached)) = guard.as_ref() {
+            if stored_at.elapsed() < PYPI_CACHE_TTL {
+                return cached.clone();
+            }
+        }
+    }
+
+    let fetched = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
         .user_agent("ctrl-irisy/0 (https://github.com/soodooi/CTRL)")
         .build()
-        .ok()?;
-    let resp = client
-        .get("https://pypi.org/pypi/hermes-agent/json")
-        .send()
-        .await
-        .ok()?;
-    if !resp.status().is_success() {
-        return None;
+    {
+        Ok(client) => match client
+            .get("https://pypi.org/pypi/hermes-agent/json")
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => resp
+                .json::<serde_json::Value>()
+                .await
+                .ok()
+                .and_then(|json| {
+                    json.get("info")
+                        .and_then(|i| i.get("version"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                }),
+            _ => None,
+        },
+        Err(_) => None,
+    };
+
+    if let Ok(mut guard) = cell.lock() {
+        *guard = Some((Instant::now(), fetched.clone()));
     }
-    let json: serde_json::Value = resp.json().await.ok()?;
-    json.get("info")
-        .and_then(|i| i.get("version"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+    fetched
 }
 
 /// Extract a (major, minor, patch) tuple from a `--version` style string
