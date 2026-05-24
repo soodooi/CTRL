@@ -30,6 +30,7 @@ import {
   TextInput,
 } from '../primitives';
 import { Heading, Stack, Text } from './layout';
+import { AboutPanel } from '../AboutPanel';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyComponent = ComponentType<any>;
