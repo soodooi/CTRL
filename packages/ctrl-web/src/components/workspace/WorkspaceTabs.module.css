@@ -20,10 +20,29 @@
 .unknown {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--space-2);
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: var(--space-8);
+  text-align: center;
+  position: relative;
+}
+.unknown::before {
+  content: '';
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--color-accent), transparent 70%) 0%,
+    transparent 60%
+  );
+  margin-bottom: var(--space-2);
+  opacity: 0.5;
 }
