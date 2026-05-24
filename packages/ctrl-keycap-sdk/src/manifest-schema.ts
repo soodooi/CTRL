@@ -196,6 +196,20 @@ export type ConfigSchema = z.infer<typeof ConfigSchema>;
 const StepCommon = z.object({
   /** Optional name to bind this step's output to for later steps. */
   as: z.string().optional(),
+  /** Author/creator notes — why this step is here. Surfaces in Irisy's
+   *  review pane + Patch tier diff. Pipedream-style annotation pattern. */
+  notes: z.string().optional(),
+  /** Optional example IO captured at design time. n8n-style: keeps a
+   *  golden input/output sample so Patch tier can baseline upstream
+   *  changes and Irisy can infer typing without running the step.
+   *  Inputs are post-template-resolution; outputs are the raw step result. */
+  recorded_io: z
+    .object({
+      input: z.unknown().optional(),
+      output: z.unknown().optional(),
+      recorded_at: z.string().optional(),
+    })
+    .optional(),
 });
 
 const CaptureClipboardStep = StepCommon.extend({
@@ -210,8 +224,18 @@ const WriteClipboardStep = StepCommon.extend({
 
 const LlmStep = StepCommon.extend({
   type: z.literal('llm'),
+  /** Inline system prompt (mutually exclusive with `system_ref`). */
   system: z.string().optional(),
-  prompt: z.string(),
+  /** Reference to a named prompt in the kernel prompt registry —
+   *  resolved at dispatch time. Path: `~/.ctrl/.irisy-prompts/<name>.md`
+   *  (or `<name>.v2.md` for a pinned version when `system_ref` ends in
+   *  `@v<n>`). G10 substrate; loads body as the actual system prompt. */
+  system_ref: z.string().optional(),
+  /** Inline user prompt (mutually exclusive with `prompt_ref`). */
+  prompt: z.string().optional(),
+  /** Reference to a named user-prompt template. Same registry as
+   *  system_ref. Use the same `@v<n>` pinning convention. */
+  prompt_ref: z.string().optional(),
   model: z.string().optional(),
   max_tokens: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
@@ -265,6 +289,33 @@ const VaultWriteStep = StepCommon.extend({
   frontmatter: z.record(z.string(), z.unknown()).optional(),
 });
 
+/** Composition step: invoke another callable thing by id. Abstracts
+ *  over keycaps, external MCP tools, and hermes skills behind one
+ *  step type so workshop canvas (drag base keycap onto graph) +
+ *  Irisy compositions don't have to know transport details.
+ *
+ *  `target.kind` decides routing:
+ *    keycap  → kernel run_keycap(id, action_id, inputs)
+ *    mcp     → kernel mcp_proxy_call(server_id, tool_name, args)
+ *    skill   → hermes runtime invocation (~/.hermes/skills/<id>/)
+ *
+ *  Matches the more abstract design favored after the 2026-05 workshop
+ *  research pass (n8n / Pipedream show value in polymorphic step refs;
+ *  Figma agents call into Figma via MCP tools — same shape). */
+const InvokeStep = StepCommon.extend({
+  type: z.literal('invoke'),
+  target: z.object({
+    kind: z.enum(['keycap', 'mcp', 'skill']),
+    /** Provider-specific id. keycap → keycap.id. mcp → "server_id/tool".
+     *  skill → hermes skill id (folder name under ~/.hermes/skills/). */
+    id: z.string().min(1),
+    /** keycap.kind only: which action to invoke (default: keycap's first action). */
+    action: z.string().optional(),
+  }),
+  /** Mustache-templated arg passing into the target. */
+  inputs: z.record(z.string(), z.string()).optional(),
+});
+
 export const Step = z.discriminatedUnion('type', [
   CaptureClipboardStep,
   WriteClipboardStep,
@@ -275,6 +326,7 @@ export const Step = z.discriminatedUnion('type', [
   OpenUrlStep,
   McpInvokeStep,
   VaultWriteStep,
+  InvokeStep,
 ]);
 export type Step = z.infer<typeof Step>;
 
@@ -365,6 +417,78 @@ export const Source = z.discriminatedUnion('type', [
 ]);
 export type Source = z.infer<typeof Source>;
 
+// ── Icon (legacy string OR richer asset descriptor) ─────────────────────
+
+/** Icon address. Two shapes coexist:
+ *  - **Legacy string** — Lucide name OR single Unicode char (what the
+ *    16 v0.1 builtins use). Preserved indefinitely for back-compat.
+ *  - **Object form** — for SVG / Lottie / dotLottie state machines
+ *    routed through IconRenderer (28d6873). The workshop icon palette
+ *    emits this form; legacy keycaps emit strings.
+ *
+ *  Both are valid manifest input; downstream renderer disambiguates. */
+export const KeycapIcon = z.union([
+  z.string().min(1),
+  z.object({
+    kind: z.enum(['lucide', 'unicode', 'svg', 'lottie', 'dotlottie']),
+    /** Lucide name / Unicode char / vault- or app-relative asset path. */
+    src: z.string().min(1),
+    /** Color overrides for dotLottie state machines. */
+    theme: z
+      .object({
+        colorRefs: z.record(z.string(), z.string()).optional(),
+      })
+      .optional(),
+    /** Initial state for state-machine icons (e.g. IrisyMascot 6-state). */
+    initial_state: z.string().optional(),
+  }),
+]);
+export type KeycapIcon = z.infer<typeof KeycapIcon>;
+
+// ── Lineage (Patch/Fork tier upstream tracking) ─────────────────────────
+
+/** Set on `keycap fork` / `keycap patch-init`. Records what the keycap
+ *  derived from so the 3-tier adjustment model can offer cherry-pick
+ *  hints (Patch tier) or just attribute upstream (Fork tier).
+ *
+ *  Matches the memory `decision_keycap_3_tier_adjustment` Config/Patch/Fork
+ *  model. Config tier doesn't fork the manifest at all, so it carries no
+ *  lineage. Patch + Fork tiers do. */
+export const Lineage = z.object({
+  upstream_id: z.string().min(1),
+  upstream_version: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+(-[a-z0-9.\-]+)?$/, {
+      message: 'upstream_version must be semver',
+    }),
+  tier: z.enum(['patch', 'fork']),
+  /** ISO timestamp of the fork moment. */
+  forked_at: z.string().optional(),
+  /** Patch tier — captured upstream baseline for the fields the patch
+   *  overrides. Dotted JSON pointers → original values. Lets Irisy say
+   *  "upstream changed X; do you want to cherry-pick or stay on baseline?". */
+  patch_baseline: z.record(z.string(), z.unknown()).optional(),
+  /** Optional cached diff snapshot (small JSON-patch-shape array). */
+  diff_snapshot: z.unknown().optional(),
+});
+export type Lineage = z.infer<typeof Lineage>;
+
+// ── Draft metadata (workshop in-flight authoring) ───────────────────────
+
+/** Marks the manifest as a draft (not yet installed). Workshop / Irisy
+ *  authoring flow sets this; `install_keycap` clears it. Kernel sandbox
+ *  uses the presence of this block to gate `run_keycap_draft` and to
+ *  show a "Draft" badge in PWA. */
+export const DraftMeta = z.object({
+  /** Stable draft id, separate from the keycap id (which may be empty
+   *  during authoring). Matches the directory name under
+   *  ~/.ctrl/keycaps/.drafts/<draft-id>/. */
+  id: z.string().min(1),
+  created_at: z.string(),
+  last_run_at: z.string().optional(),
+});
+export type DraftMeta = z.infer<typeof DraftMeta>;
+
 // ── Top-level manifest ──────────────────────────────────────────────────
 
 export const KeycapManifest = z.object({
@@ -390,8 +514,9 @@ export const KeycapManifest = z.object({
 
   description: Description,
 
-  /** Lucide icon name OR single Unicode char. */
-  icon: z.string().min(1),
+  /** Icon — legacy string (Lucide name / Unicode char) OR richer object
+   *  form for SVG / Lottie / dotLottie state-machine assets. */
+  icon: KeycapIcon,
 
   keycap_color: KeycapColor.optional(),
 
@@ -438,6 +563,21 @@ export const KeycapManifest = z.object({
     kind: z.enum(['hotkey', 'context-menu', 'spotlight']),
     binding: z.string().optional(),
   })).optional(),
+
+  /** SPDX license identifier (e.g., "MIT", "Apache-2.0", "ISC",
+   *  "AGPL-3.0-or-later"). Optional. Drives the marketplace listing's
+   *  license badge + the kernel's THIRD_PARTY_LICENSES.md generator. */
+  license: z.string().optional(),
+
+  /** Authoring-time draft metadata. Present = the manifest hasn't been
+   *  installed yet (it lives under ~/.ctrl/keycaps/.drafts/<id>/). The
+   *  install_keycap path strips this block on install. */
+  draft: DraftMeta.optional(),
+
+  /** Lineage — set when this keycap was derived from another via the
+   *  Patch/Fork tiers of the 3-tier adjustment model. Absent on
+   *  greenfield + Config-tier keycaps. */
+  lineage: Lineage.optional(),
 });
 export type KeycapManifest = z.infer<typeof KeycapManifest>;
 

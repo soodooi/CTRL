@@ -16,6 +16,9 @@
 
 pub mod chat;
 pub mod code_space;
+pub mod config;
+pub mod draft;
+pub mod draft_run;
 pub mod irisy;
 pub mod kernel;
 pub mod keychain;
@@ -24,6 +27,7 @@ pub mod storage;
 pub mod stss;
 pub mod system;
 pub mod vault;
+pub mod workshop;
 
 /// Returns the `invoke_handler!` tuple for `tauri::Builder::invoke_handler`.
 /// Call sites use this to keep the handler list in one place.
@@ -74,6 +78,25 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::keychain::store_key,
             $crate::commands::keychain::get_key,
             $crate::commands::keychain::delete_key,
+            // config — typed LLM provider configuration (Settings → Provider tab)
+            $crate::commands::config::config_list_providers,
+            $crate::commands::config::config_set_provider_key,
+            $crate::commands::config::config_test_provider,
+            $crate::commands::config::config_delete_provider,
+            // draft — workshop authoring state under ~/.ctrl/keycaps/.drafts/
+            $crate::commands::draft::draft_list,
+            $crate::commands::draft::draft_read,
+            $crate::commands::draft::draft_save,
+            $crate::commands::draft::draft_delete,
+            $crate::commands::draft::draft_record_run,
+            $crate::commands::draft::draft_list_runs,
+            // draft_run — sandbox execution + per-step trace for canvas preview
+            $crate::commands::draft_run::run_keycap_draft,
+            // workshop — composite canvas operations (read-modify-save in one call)
+            $crate::commands::workshop::workshop_add_step,
+            $crate::commands::workshop::workshop_update_step,
+            $crate::commands::workshop::workshop_remove_step,
+            $crate::commands::workshop::workshop_move_step,
             // code_space — coding 远程桌面 (ST-SS spec v0.7 wire)
             $crate::commands::code_space::cs_spawn,
             $crate::commands::code_space::cs_stdin,
