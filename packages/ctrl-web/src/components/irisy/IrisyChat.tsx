@@ -9,6 +9,8 @@
 // `hermes auth add` / `hermes model`.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
 import { defaultTransport, type LLMMessage } from '@/lib/llm-transport';
@@ -146,10 +148,27 @@ export function IrisyChat(): React.ReactElement {
   });
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendingStartedAt, setSendingStartedAt] = useState<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [chatError, setChatError] = useState<{ summary: string; detail: string } | null>(null);
+  const [errorExpanded, setErrorExpanded] = useState(false);
   const [upgradingHermes, setUpgradingHermes] = useState(false);
   const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null);
   const transport = useMemo(() => defaultTransport(), []);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  // Tick elapsed time while a send is in flight so the user sees that
+  // something is happening on long hermes-blocking calls.
+  useEffect(() => {
+    if (sendingStartedAt == null) {
+      setElapsedMs(0);
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setElapsedMs(Date.now() - sendingStartedAt);
+    }, 200);
+    return () => window.clearInterval(interval);
+  }, [sendingStartedAt]);
 
   // Persist message history on every change so a tab close / reload
   // doesn't lose the conversation.
@@ -273,6 +292,9 @@ export function IrisyChat(): React.ReactElement {
       if (!trimmed || sending) return;
 
       setSending(true);
+      setSendingStartedAt(Date.now());
+      setChatError(null);
+      setErrorExpanded(false);
       const userId = `u-${Date.now()}`;
       const userMsg: DisplayMessage = {
         id: userId,
@@ -322,13 +344,18 @@ export function IrisyChat(): React.ReactElement {
           );
           if (result.session_id) setHermesSessionId(result.session_id);
         } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : 'hermes chat failed';
+          const detail = e instanceof Error ? e.message : String(e);
+          const firstLine = detail.split('\n')[0] ?? detail;
+          setChatError({
+            summary: `Hermes chat failed: ${firstLine.slice(0, 120)}`,
+            detail,
+          });
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
-                    content: `[hermes error] ${msg}`,
+                    content: `[hermes error] ${firstLine}`,
                     streaming: false,
                   }
                 : m,
@@ -336,6 +363,7 @@ export function IrisyChat(): React.ReactElement {
           );
         } finally {
           setSending(false);
+          setSendingStartedAt(null);
         }
         return;
       }
@@ -451,8 +479,16 @@ export function IrisyChat(): React.ReactElement {
             ];
           }
         }
+      } catch (e: unknown) {
+        const detail = e instanceof Error ? e.message : String(e);
+        const firstLine = detail.split('\n')[0] ?? detail;
+        setChatError({
+          summary: `Chat stream failed: ${firstLine.slice(0, 120)}`,
+          detail,
+        });
       } finally {
         setSending(false);
+        setSendingStartedAt(null);
       }
     },
     [
@@ -574,23 +610,71 @@ export function IrisyChat(): React.ReactElement {
               </pre>
             );
           }
-          const rendered =
-            m.role === 'assistant'
-              ? renderAssistantContent(m.content)
-              : m.content;
+          if (m.role === 'assistant') {
+            const rendered = renderAssistantContent(m.content);
+            const isThisStreaming = m.streaming;
+            return (
+              <article
+                key={m.id}
+                className={`${styles.assistantBubble} ${styles.markdownBody}`}
+                aria-live={m.streaming ? 'polite' : undefined}
+              >
+                {rendered ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {rendered}
+                  </ReactMarkdown>
+                ) : isThisStreaming ? (
+                  <div className={styles.thinking}>
+                    <span className={styles.thinkingDots}>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </span>
+                    <span className={styles.thinkingLabel}>
+                      Thinking · {(elapsedMs / 1000).toFixed(1)}s
+                    </span>
+                  </div>
+                ) : (
+                  ''
+                )}
+              </article>
+            );
+          }
           return (
             <article
               key={m.id}
-              className={
-                m.role === 'user' ? styles.userBubble : styles.assistantBubble
-              }
+              className={styles.userBubble}
               aria-live={m.streaming ? 'polite' : undefined}
             >
-              {rendered || (m.streaming ? '…' : '')}
+              {m.content}
             </article>
           );
         })}
       </div>
+
+      {chatError != null && (
+        <div className={styles.errorPanel}>
+          <button
+            type="button"
+            className={styles.errorSummary}
+            onClick={() => setErrorExpanded((v) => !v)}
+          >
+            <span>{chatError.summary}</span>
+            <span className={styles.errorToggle}>{errorExpanded ? '▾' : '▸'}</span>
+          </button>
+          {errorExpanded && (
+            <pre className={styles.errorDetail}>{chatError.detail}</pre>
+          )}
+          <button
+            type="button"
+            className={styles.errorDismiss}
+            onClick={() => setChatError(null)}
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <form className={styles.composer} onSubmit={onSubmit}>
         <input
