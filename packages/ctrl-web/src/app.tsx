@@ -95,6 +95,9 @@ const CodeSpaceDetailRoute = lazy(() =>
 const PoolRoute = lazy(() =>
   import('./routes/pool').then((m) => ({ default: m.PoolRoute })),
 );
+const IconLabRoute = lazy(() =>
+  import('./routes/icon-lab').then((m) => ({ default: m.IconLabRoute })),
+);
 
 const LazyFallback = (): ReactElement => (
   <div style={{
@@ -168,6 +171,15 @@ const codeSpaceDetailRoute = createRoute({
     </Suspense>
   ),
 });
+const iconLabRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/icon-lab',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <IconLabRoute />
+    </Suspense>
+  ),
+});
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -177,6 +189,7 @@ const routeTree = rootRoute.addChildren([
   irisyRoute,
   codeSpaceRoute,
   codeSpaceDetailRoute,
+  iconLabRoute,
 ]);
 
 const router = createRouter({

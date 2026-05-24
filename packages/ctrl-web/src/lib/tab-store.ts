@@ -8,6 +8,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Icon } from './icon';
 
 export type TabKind =
   | 'external-embed' // iframe pointing at e.g. hermes dashboard
@@ -20,7 +21,10 @@ export interface BaseTab {
   id: string;
   kind: TabKind;
   title: string;
-  icon?: string;
+  // Per-tab icon override. `string` = glyph char (legacy); `Icon` = full
+  // discriminated union (glyph / svg / lottie / dotlottie). When omitted
+  // the TabBar falls back to a kind-specific default.
+  icon?: string | Icon;
 }
 
 export interface ExternalEmbedTab extends BaseTab {

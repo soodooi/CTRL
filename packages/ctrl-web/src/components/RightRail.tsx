@@ -15,7 +15,9 @@ import {
   type ReactNode,
 } from 'react';
 import { IrisyMascot, type IrisyState } from './primitives/IrisyMascot';
+import { IconRenderer } from './primitives';
 import type { LedTone } from './primitives';
+import type { Icon } from '@/lib/icon';
 import styles from './RightRail.module.css';
 
 // Rail tones reuse the brand LedTone so every cockpit dot shares one
@@ -26,12 +28,20 @@ export type RailTone = LedTone;
 export interface RailItem {
   id: string;
   label: string;
-  glyph?: string;
+  // `string` keeps the legacy short-label use (e.g. 2-char abbreviation
+  // from pool categories); `Icon` lifts it onto the IconRenderer pipeline
+  // so a rail item can carry a lottie / svg without ad-hoc rendering.
+  glyph?: string | Icon;
   tone?: RailTone;
   badge?: number;
   active?: boolean;
   onClick?: () => void;
 }
+
+const RAIL_ICON_SIZE = 22;
+
+const isIcon = (g: string | Icon | undefined): g is Icon =>
+  typeof g === 'object' && g !== null && 'kind' in g;
 
 interface RailContextValue {
   items: ReadonlyArray<RailItem>;
@@ -102,7 +112,16 @@ export const RightRail = (): ReactElement => {
             title={item.label}
             aria-label={item.label}
           >
-            {item.glyph ? (
+            {isIcon(item.glyph) ? (
+              <span className={styles.itemGlyph}>
+                <IconRenderer
+                  icon={item.glyph}
+                  size={RAIL_ICON_SIZE}
+                  playing={item.active ?? false}
+                  ariaLabel={item.label}
+                />
+              </span>
+            ) : item.glyph ? (
               <span className={styles.itemGlyph}>{item.glyph}</span>
             ) : (
               <span className={styles.itemDot} data-tone={item.tone ?? 'idle'} />

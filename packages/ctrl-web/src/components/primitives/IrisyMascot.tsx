@@ -1,14 +1,16 @@
-// IrisyMascot — Irisy's visible form. SVG stub today; Rive in Phase 1B.
+// IrisyMascot — Irisy's visible form.
 //
-// Public contract preserved across the swap:
-//   - <IrisyMascot state="idle" size={44} />
-//   - state ∈ IrisyState (6 values matching the Rive state machine)
+// Rendering path (per .olym/skills/thorvg/SKILL.md §3.4 + brand-tokens §12.4):
+//   - default: inline SVG stub (geometric abstract face — rounded square,
+//     dot eyes, geometric mouth; CSS breathe + blink keyframes)
+//   - upgrade: pass `src="/lottie/irisy.lottie"` to render via IconRenderer
+//     → ThorVG WASM with state machine input synced to the `state` prop
 //
-// Phase 1B will replace the SVG with @rive-app/react-canvas pointing at
-// irisy.riv, with the same prop surface. Until then this renders a 24×24
-// vector portrait — breathe loop and blink driven by CSS keyframes.
+// The SVG path stays until designer ships the canonical irisy.lottie; both
+// paths satisfy VI v0.2 §12.4 mascot lock.
 
 import type { ReactElement } from 'react';
+import { IconRenderer } from './IconRenderer';
 import styles from './IrisyMascot.module.css';
 
 export type IrisyState =
@@ -22,12 +24,32 @@ export type IrisyState =
 interface IrisyMascotProps {
   state?: IrisyState;
   size?: number;
+  /**
+   * When set, render through IconRenderer (ThorVG) instead of the SVG
+   * stub. Expected to be a `.lottie` file with a state machine that
+   * accepts `mood` input matching IrisyState. Until designer ships the
+   * canonical irisy.lottie, leave this unset.
+   */
+  src?: string;
 }
 
 export const IrisyMascot = ({
   state = 'idle',
   size = 44,
-}: IrisyMascotProps): ReactElement => (
+  src,
+}: IrisyMascotProps): ReactElement => {
+  if (src) {
+    return (
+      <IconRenderer
+        icon={{ kind: 'dotlottie', src }}
+        size={size}
+        playing
+        ariaLabel={`Irisy — ${state}`}
+        fallbackGlyph="I"
+      />
+    );
+  }
+  return (
   <svg
     className={styles.mascot}
     data-state={state}
@@ -93,5 +115,6 @@ export const IrisyMascot = ({
         fill="none"
       />
     )}
-  </svg>
-);
+    </svg>
+  );
+};

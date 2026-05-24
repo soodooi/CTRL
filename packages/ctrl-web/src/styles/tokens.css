@@ -136,7 +136,9 @@
   --shadow-xl: 0 24px 64px oklch(0 0 0 / 0.24);
   --shadow-glow-blue: 0 0 24px oklch(0.45 0.19 264 / 0.35);
 
-  /* === Motion === */
+  /* === Motion (system chrome tier — brand-tokens.md §7) ===
+     Use for StatusBar / Keyboard / Tab / Modal / dropdown / page
+     transitions. Restrained Linear/Cursor/OP-1 personality. */
   --duration-instant: 80ms;
   --duration-fast: 150ms;
   --duration-normal: 220ms;
@@ -144,6 +146,21 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+
+  /* === Motion (decoration content tier — brand-tokens.md §12) ===
+     Use for ThorVG / Lottie content: Irisy mascot, empty state
+     illustrations, keycap success/error feedback, ambient loops.
+     Expressive — spring + anticipation + character allowed here.
+     Anti-pattern: applying these to chrome surfaces; mascots use these,
+     buttons do not. */
+  --duration-emote-fast: 600ms;
+  --duration-emote-normal: 1000ms;
+  --duration-emote-slow: 1600ms;
+  --ease-anticipation: cubic-bezier(0.65, -0.45, 0.35, 1.45);
+  /* Springs are JS-side (framer-motion config / dotLottie segment
+     markers) — cubic-bezier cannot express spring physics. Reference
+     values: soft = mass 1 / stiff 180 / damp 24, snappy = mass 1 /
+     stiff 260 / damp 22. */
 }
 
 /* Light mode opt-in only (not auto via prefers-color-scheme) */
@@ -164,5 +181,8 @@
     --duration-fast: 0ms;
     --duration-normal: 50ms;
     --duration-slow: 50ms;
+    --duration-emote-fast: 0ms;
+    --duration-emote-normal: 50ms;
+    --duration-emote-slow: 50ms;
   }
 }

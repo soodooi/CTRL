@@ -4,6 +4,7 @@
 // Argument and return shapes mirror the Rust structs.
 
 import { invoke } from './bridge';
+import type { Icon } from './icon';
 
 // === Kernel status (system instruments) ===
 //
@@ -25,11 +26,16 @@ export interface KernelStatus {
 export const kernelStatus = (): Promise<KernelStatus> =>
   invoke<KernelStatus>('kernel_status');
 
+// `icon` is widened to `Icon | string` for forward-compat with the
+// kernel schema migration to a discriminated union (per
+// .olym/skills/thorvg/SKILL.md §1 / brand-tokens §12.2). Today the
+// kernel ships single-glyph strings; consumers must run the value
+// through `normalizeIcon()` from `lib/icon.ts` before rendering.
 export interface KeycapSummary {
   id: string;
   name: string;
   keycap_color: string;
-  icon: string;
+  icon: Icon | string;
 }
 
 export const listKeycaps = (): Promise<KeycapSummary[]> =>
