@@ -223,7 +223,40 @@ export function IrisyChat(): React.ReactElement {
   const clearConversation = useCallback((): void => {
     setMessages([]);
     setHermesSessionId('');
+    setChatError(null);
   }, []);
+
+  // Keyboard shortcuts scoped to this component (not global).
+  // Cmd/Ctrl+K — clear conversation. Cmd/Ctrl+L — same (legacy terminal).
+  // ↑ on empty input — recall the last user message for editing.
+  // Cmd/Ctrl+Enter — send (textarea-style, even though composer is <input>).
+  const lastUserMessage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m && m.role === 'user') return m.content;
+    }
+    return '';
+  }, [messages]);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === 'k' || e.key === 'K' || e.key === 'l' || e.key === 'L')) {
+        e.preventDefault();
+        clearConversation();
+        return;
+      }
+      if (mod && e.key === 'Enter') {
+        e.preventDefault();
+        if (sendMessageRef.current) void sendMessageRef.current(input);
+        return;
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [clearConversation, input]);
 
   useEffect(() => {
     let cancelled = false;
@@ -533,10 +566,115 @@ export function IrisyChat(): React.ReactElement {
     ],
   );
 
+  // Keep the keydown handler reading the latest sendMessage closure.
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
+
   const onSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
     void sendMessage(input);
   };
+
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    // ↑ on an empty input recalls the last user message for quick edit.
+    if (e.key === 'ArrowUp' && input.length === 0 && lastUserMessage) {
+      e.preventDefault();
+      setInput(lastUserMessage);
+    }
+  };
+
+  const saveReplyToVault = useCallback(
+    async (assistantId: string, body: string): Promise<void> => {
+      const ts = new Date();
+      const stamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, '0')}${String(
+        ts.getDate(),
+      ).padStart(2, '0')}-${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}`;
+      const path = `irisy/replies/${stamp}-${assistantId.slice(-6)}.md`;
+      try {
+        await invoke('vault_write', {
+          args: {
+            path,
+            content: body,
+            frontmatter: {
+              kind: 'irisy-reply',
+              saved_at: ts.toISOString(),
+              assistant_id: assistantId,
+            },
+          },
+        });
+        setUpgradeMessage(`Saved → vault/${path}`);
+        window.setTimeout(() => setUpgradeMessage(null), 4000);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setChatError({ summary: `Save failed: ${msg.slice(0, 120)}`, detail: msg });
+      }
+    },
+    [],
+  );
+
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
+  const toggleToolExpand = useCallback((id: string): void => {
+    setExpandedTools((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // @-mention autocomplete state — populates from vault.list when '@'
+  // appears in the input, replaces with the picked relative path on click.
+  const [vaultFiles, setVaultFiles] = useState<string[]>([]);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+
+  useEffect(() => {
+    // Single, cheap fetch — the vault list is small enough for in-memory
+    // filter. Re-fetch on each mount; new files appear on next open.
+    void (async () => {
+      try {
+        const files = await invoke<string[]>('vault_list', { args: {} });
+        setVaultFiles(files);
+      } catch {
+        /* vault may be empty; @ picker stays empty */
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    const atIdx = input.lastIndexOf('@');
+    if (atIdx === -1) {
+      if (mentionOpen) setMentionOpen(false);
+      return;
+    }
+    const after = input.slice(atIdx + 1);
+    if (after.includes(' ')) {
+      if (mentionOpen) setMentionOpen(false);
+      return;
+    }
+    setMentionQuery(after.toLowerCase());
+    setMentionOpen(true);
+  }, [input, mentionOpen]);
+
+  const mentionResults = useMemo(() => {
+    if (!mentionOpen) return [];
+    const q = mentionQuery;
+    return vaultFiles
+      .filter((p) => p.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [mentionOpen, mentionQuery, vaultFiles]);
+
+  const pickMention = useCallback(
+    (path: string): void => {
+      const atIdx = input.lastIndexOf('@');
+      if (atIdx === -1) return;
+      setInput(`${input.slice(0, atIdx)}@${path} `);
+      setMentionOpen(false);
+      inputRef.current?.focus();
+    },
+    [input],
+  );
 
   const brainReady = status?.kernel_llm.ready ?? false;
   const hermesDetected = status?.hermes.binary_path != null;
@@ -631,14 +769,31 @@ export function IrisyChat(): React.ReactElement {
         )}
         {messages.map((m) => {
           if (m.role === 'tool') {
+            const expanded = expandedTools.has(m.id);
+            const lines = m.content.split('\n');
+            const headLine = lines[0] ?? m.content;
+            const hasMore = lines.length > 1 || m.content.length > 80;
             return (
-              <pre
-                key={m.id}
-                className={styles.toolBubble}
-                aria-live={m.streaming ? 'polite' : undefined}
-              >
-                {m.content}
-              </pre>
+              <div key={m.id} className={styles.toolCard}>
+                <button
+                  type="button"
+                  className={styles.toolCardHeader}
+                  onClick={() => toggleToolExpand(m.id)}
+                  disabled={!hasMore}
+                  aria-expanded={expanded}
+                >
+                  <span className={styles.toolCardChevron}>
+                    {hasMore ? (expanded ? '▾' : '▸') : '·'}
+                  </span>
+                  <span className={styles.toolCardTitle}>{headLine}</span>
+                  {m.streaming && (
+                    <span className={styles.toolCardRunning}>running…</span>
+                  )}
+                </button>
+                {expanded && hasMore && (
+                  <pre className={styles.toolCardBody}>{m.content}</pre>
+                )}
+              </div>
             );
           }
           if (m.role === 'assistant') {
@@ -667,6 +822,17 @@ export function IrisyChat(): React.ReactElement {
                   </div>
                 ) : (
                   ''
+                )}
+                {!isThisStreaming && rendered && (
+                  <button
+                    type="button"
+                    className={styles.saveBtn}
+                    title="Save this reply to vault/irisy/replies/"
+                    onClick={() => void saveReplyToVault(m.id, m.content)}
+                    aria-label="Save reply to vault"
+                  >
+                    💾
+                  </button>
                 )}
               </article>
             );
@@ -708,18 +874,37 @@ export function IrisyChat(): React.ReactElement {
       )}
 
       <form className={styles.composer} onSubmit={onSubmit}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={
-            brainReady
-              ? 'Talk to Irisy…'
-              : 'Brain not ready — wire a provider in CTRL settings'
-          }
-          disabled={sending || !brainReady}
-          aria-label="Message Irisy"
-        />
+        <div className={styles.composerInputWrap}>
+          {mentionOpen && mentionResults.length > 0 && (
+            <ul className={styles.mentionPopover} role="listbox" aria-label="Vault files">
+              {mentionResults.map((path) => (
+                <li key={path}>
+                  <button
+                    type="button"
+                    className={styles.mentionItem}
+                    onClick={() => pickMention(path)}
+                  >
+                    {path}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onInputKeyDown}
+            placeholder={
+              brainReady
+                ? 'Talk to Irisy — @file · ↑ recall · ⌘K clear · ⌘↵ send'
+                : 'Brain not ready — wire a provider in CTRL settings'
+            }
+            disabled={sending || !brainReady}
+            aria-label="Message Irisy"
+          />
+        </div>
         <button
           type="submit"
           disabled={sending || !brainReady || !input.trim()}

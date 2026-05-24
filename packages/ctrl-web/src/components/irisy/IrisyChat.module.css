@@ -276,6 +276,156 @@
   opacity: 1;
 }
 
+/* Tool call expandable card */
+.toolCard {
+  margin: 0.4rem 1rem;
+  border: 1px solid var(--ctrl-border, #d8d8d8);
+  border-radius: 6px;
+  background: var(--ctrl-bg-soft, rgba(0, 0, 0, 0.03));
+  overflow: hidden;
+}
+
+.toolCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.7rem;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+}
+
+.toolCardHeader:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.toolCardHeader:disabled {
+  cursor: default;
+}
+
+.toolCardChevron {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  opacity: 0.7;
+  font-size: 0.85em;
+  width: 0.8em;
+  text-align: center;
+}
+
+.toolCardTitle {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolCardRunning {
+  font-size: 0.75em;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.toolCardBody {
+  margin: 0;
+  padding: 0.5rem 0.7rem 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.82em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid var(--ctrl-border, #e0e0e0);
+  background: rgba(0, 0, 0, 0.02);
+  max-height: 320px;
+  overflow: auto;
+}
+
+/* Save-to-vault floating button on assistant bubbles */
+.saveBtn {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  font-size: 0.9em;
+  line-height: 1;
+  padding: 0;
+}
+
+.assistantBubble {
+  position: relative;
+}
+
+.assistantBubble:hover .saveBtn {
+  opacity: 0.6;
+}
+
+.assistantBubble .saveBtn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* @-mention popover */
+.composerInputWrap {
+  position: relative;
+  flex: 1;
+}
+
+.composerInputWrap input {
+  width: 100%;
+}
+
+.mentionPopover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--ctrl-bg, #ffffff);
+  border: 1px solid var(--ctrl-border, #d8d8d8);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  z-index: 10;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.mentionPopover li {
+  margin: 0;
+}
+
+.mentionItem {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.7rem;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85em;
+  cursor: pointer;
+  color: inherit;
+}
+
+.mentionItem:hover,
+.mentionItem:focus {
+  background: var(--ctrl-bg-soft, rgba(0, 0, 0, 0.05));
+  outline: none;
+}
+
 .clearButton {
   background: transparent;
   border: 1px solid var(--ctrl-border, #d0d0d0);
