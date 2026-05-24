@@ -51,9 +51,13 @@
 }
 
 .tabIcon {
-  font-family: var(--font-mono);
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   color: var(--color-accent);
+  flex: 0 0 16px;
 }
 .tabKind {
   font-family: var(--font-mono);
