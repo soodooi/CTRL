@@ -764,7 +764,7 @@ fn emit(app: &AppHandle, stage: &'static str, message: &str, log: Option<String>
         message: message.to_string(),
         log,
     };
-    if let Err(e) = app.emit("irisy.install.progress", payload) {
+    if let Err(e) = app.emit("irisy-install-progress", payload) {
         tracing::warn!(error = %e, "failed to emit irisy.install.progress");
     }
 }

@@ -117,7 +117,7 @@ export const AboutPanel = (): ReactElement => {
     void (async () => {
       try {
         const { listen } = await import('@tauri-apps/api/event');
-        const off = await listen<InstallProgressEvent>('update.install.progress', (event) => {
+        const off = await listen<InstallProgressEvent>('update-install-progress', (event) => {
           setUpdatePhase((prev) =>
             prev.kind === 'installing'
               ? {

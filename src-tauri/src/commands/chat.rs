@@ -3,8 +3,9 @@
 // Contract (defined by PWA's ChatStreamTransport, lib/llm-transport.ts):
 //   invoke('chat_stream', { args: { request_id, messages, model?,
 //                                   temperature?, max_tokens? } })
-//   listen('chat.stream.delta', payload => { request_id, delta, done,
+//   listen('chat-stream-delta', payload => { request_id, delta, done,
 //                                            error? })
+// (Event name is hyphen-only — Tauri 2 rejects '.' in event names. See c22cccf.)
 //
 // The command returns immediately; deltas land on the event channel.
 // A background tokio task drives the LLM adapter's stream and emits

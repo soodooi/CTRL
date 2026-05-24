@@ -95,10 +95,10 @@ export class RunKeycapTransport implements LLMTransport {
   }
 }
 
-// ── B: true streaming via chat_stream + chat.stream.delta ─────────────────
-// Contract per bao 2026-05-18:
+// ── B: true streaming via chat_stream + chat-stream-delta ─────────────────
+// Contract per bao 2026-05-18 (event name hyphen-only per Tauri 2 — see c22cccf):
 //   invoke('chat_stream', { request_id, messages, model, temperature })
-//   listen('chat.stream.delta', payload => { request_id, delta, done, error? })
+//   listen('chat-stream-delta', payload => { request_id, delta, done, error? })
 // Skeleton compiles today; flip `enabled` to true once zeus Z3b lands.
 
 interface ChatStreamDelta {
@@ -147,7 +147,7 @@ export class ChatStreamTransport implements LLMTransport {
       }
     };
     const unlisten: UnlistenFn = await listen<ChatStreamDelta>(
-      'chat.stream.delta',
+      'chat-stream-delta',
       (event) => {
         if (event.payload.request_id !== requestId) return;
         queue.push(event.payload);
@@ -156,7 +156,7 @@ export class ChatStreamTransport implements LLMTransport {
     );
     // Abort listener wakes any pending Promise so the while-loop's
     // signal.aborted check fires immediately instead of hanging forever
-    // when no further chat.stream.delta arrives (e.g. user cancelled
+    // when no further chat-stream-delta arrives (e.g. user cancelled
     // before the first chunk).
     const onAbort = (): void => wakeWaiter();
     opts.signal?.addEventListener('abort', onAbort);
