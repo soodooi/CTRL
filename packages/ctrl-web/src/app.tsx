@@ -95,9 +95,31 @@ const CodeSpaceDetailRoute = lazy(() =>
 const PoolRoute = lazy(() =>
   import('./routes/pool').then((m) => ({ default: m.PoolRoute })),
 );
-const IconLabRoute = lazy(() =>
-  import('./routes/icon-lab').then((m) => ({ default: m.IconLabRoute })),
-);
+// icon-lab is a development-only renderer bake-off. It imports
+// `lottie-react` for the side-by-side comparison — having that second
+// engine in a production chunk violates SKILL.md §7. Gating the dynamic
+// import behind `import.meta.env.DEV` lets Vite tree-shake the entire
+// route + its `lottie-react` dependency out of production builds.
+const IconLabRoute = import.meta.env.DEV
+  ? lazy(() =>
+      import('./routes/icon-lab').then((m) => ({ default: m.IconLabRoute })),
+    )
+  : lazy(() =>
+      Promise.resolve({
+        default: (): ReactElement => (
+          <div
+            style={{
+              padding: 'var(--space-6)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 'var(--text-sm)',
+              color: 'var(--color-text-muted)',
+            }}
+          >
+            icon-lab is dev-only.
+          </div>
+        ),
+      }),
+    );
 
 const LazyFallback = (): ReactElement => (
   <div style={{

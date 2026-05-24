@@ -166,15 +166,31 @@ const useDotLottieIntegration = (
 
   useEffect(() => {
     if (!instance || !stateMachineId || !stateMachineInputs) return;
-    for (const [name, value] of Object.entries(stateMachineInputs)) {
-      if (typeof value === 'string') {
-        void instance.stateMachineSetStringInput(name, value);
-      } else if (typeof value === 'number') {
-        void instance.stateMachineSetNumericInput(name, value);
-      } else {
-        void instance.stateMachineSetBooleanInput(name, value);
+    // The instance ref fires during construction — before WASM init and
+    // before the state machine has loaded. stateMachineSet*Input on a
+    // not-yet-loaded core silently returns false and DROPS the value.
+    // We apply once optimistically (cheap when SM is already up) and
+    // also replay on 'load' + 'stateMachineStart' so the FIRST sync
+    // lands on a live machine. Without this, IrisyMascot mounts with
+    // mood='happy' but stays at the manifest default forever.
+    const apply = (): void => {
+      for (const [name, value] of Object.entries(stateMachineInputs)) {
+        if (typeof value === 'string') {
+          void instance.stateMachineSetStringInput(name, value);
+        } else if (typeof value === 'number') {
+          void instance.stateMachineSetNumericInput(name, value);
+        } else {
+          void instance.stateMachineSetBooleanInput(name, value);
+        }
       }
-    }
+    };
+    apply();
+    instance.addEventListener('load', apply);
+    instance.addEventListener('stateMachineStart', apply);
+    return () => {
+      instance.removeEventListener('load', apply);
+      instance.removeEventListener('stateMachineStart', apply);
+    };
   }, [instance, stateMachineId, stateMachineInputs]);
 };
 
