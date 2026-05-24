@@ -54,13 +54,17 @@ function useTrayBridge(): void {
 }
 
 function RootShellInner(): ReactElement {
-  const { subPanel, subPanelCollapsed } = useRail();
-  // Three states drive the shell grid's right column width via CSS var:
-  //   'none'      → no sub-panel registered (80px primary only)
-  //   'collapsed' → registered but collapsed (80px primary + 14px tab)
-  //   'open'      → registered and expanded (240px panel + 14px tab + 80px primary)
-  const subPanelState =
-    subPanel === null ? 'none' : subPanelCollapsed ? 'collapsed' : 'open';
+  const { items, irisySubPanel, activeRailId } = useRail();
+  // Per bao 2026-05-23: level-2 visibility = active level-1 item has a
+  // sub-panel. Two-state grid: hidden (80px primary only) vs open
+  // (240px panel + 80px primary). No explicit "collapsed but visible"
+  // tab — clicking the active item itself toggles.
+  const irisyHasPanel = irisySubPanel != null;
+  const activeItemHasPanel =
+    activeRailId === 'irisy'
+      ? irisyHasPanel
+      : items.some((i) => i.id === activeRailId && i.subPanel != null);
+  const subPanelState = activeItemHasPanel ? 'open' : 'none';
   return (
     <div className={styles.shell} data-sub-panel={subPanelState}>
       <div className={styles.status}>
@@ -93,8 +97,17 @@ function RootShell(): ReactElement {
 const WorkspaceRoute = lazy(() =>
   import('./routes/workspace').then((m) => ({ default: m.WorkspaceRoute })),
 );
-const SettingsRoute = lazy(() =>
-  import('./routes/settings').then((m) => ({ default: m.SettingsRoute })),
+const SettingsRedirect = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsRedirect })),
+);
+const SettingsCtrlPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsCtrlPage })),
+);
+const SettingsHermesPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsHermesPage })),
+);
+const SettingsUpdatesPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsUpdatesPage })),
 );
 const IrisyRoute = lazy(() =>
   import('./routes/irisy').then((m) => ({ default: m.IrisyRoute })),
@@ -170,12 +183,43 @@ const workspaceRoute = createRoute({
     </Suspense>
   ),
 });
+// /settings — three sub-pages selected from the right-rail level-2
+// panel. Bare /settings is a redirect shim to /settings/ctrl so old
+// tray-bridge / keyboard system-key flows that pointed at the legacy
+// single page keep working.
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
   component: () => (
     <Suspense fallback={<LazyFallback />}>
-      <SettingsRoute />
+      <SettingsRedirect />
+    </Suspense>
+  ),
+});
+const settingsCtrlRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/ctrl',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsCtrlPage />
+    </Suspense>
+  ),
+});
+const settingsHermesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/hermes',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsHermesPage />
+    </Suspense>
+  ),
+});
+const settingsUpdatesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/updates',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsUpdatesPage />
     </Suspense>
   ),
 });
@@ -221,6 +265,9 @@ const routeTree = rootRoute.addChildren([
   poolRoute,
   workspaceRoute,
   settingsRoute,
+  settingsCtrlRoute,
+  settingsHermesRoute,
+  settingsUpdatesRoute,
   irisyRoute,
   codeSpaceRoute,
   codeSpaceDetailRoute,

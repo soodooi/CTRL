@@ -1,11 +1,10 @@
-/* RightRail — two-level context rail.
+/* RightRail — two-level context navigation.
  *
- *   [ sub-panel 240px (collapsible) | toggle 14px | level-1 rail 80px ]
+ *   [ sub-panel 240px (shown when active) | level-1 rail 80px ]
  *
- * When no route registers a sub-panel, the sub-panel column and toggle
- * are not rendered and the rail is 80px total. When a sub-panel is
- * registered but the user collapses it, the toggle stays visible and
- * the sub-panel column animates to 0 width.
+ * Per bao 2026-05-23: level-2 only appears AFTER clicking a level-1
+ * item that carries a sub-panel. Default active = Irisy, so on boot
+ * her panel is open if the current route has pushed her content.
  */
 
 .container {
@@ -28,7 +27,10 @@
   overflow-x: hidden;
   background: var(--color-bg-l0);
   border-right: 1px solid var(--color-border-soft);
-  transition: width 200ms var(--ease-out-quart, ease-out);
+  /* Width animates 240 → 0 / 0 → 240 via shell-level grid resize. The
+     local column transitions border + width so a stale render between
+     re-paints doesn't show a hard edge collapse. */
+  transition: width 220ms var(--ease-out-quart, ease-out);
 }
 .container[data-sub-panel='closed'] .subPanel {
   width: 0;
@@ -37,54 +39,22 @@
 
 .history {
   width: 240px;
-  /* keep history's natural width when the column collapses so the
-     collapse animation feels like a curtain slide, not a re-flow */
-}
-
-/* ---------- collapse toggle ---------- */
-
-.toggle {
-  width: 14px;
-  height: 100%;
-  appearance: none;
-  background: var(--color-bg-l1);
-  border: 0;
-  border-right: 1px solid var(--color-border-soft);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  line-height: 1;
-  transition: background-color 140ms ease, color 140ms ease;
-}
-.toggle:hover {
-  background: var(--color-bg-l2);
-  color: var(--color-text);
-}
-.toggle:focus-visible {
-  outline: 1px solid var(--color-accent);
-  outline-offset: -1px;
 }
 
 /* ---------- level-1 primary rail ---------- */
 
 .primary {
-  width: var(--rightrail-primary-width, 80px);
+  width: 80px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 0 0 var(--space-4);
-  gap: 0;
+  padding: var(--space-2) 0 var(--space-4);
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
 }
-/* Instrument bezel — same accent stripe pattern as the left rail. */
+/* Top accent stripe — matches the instrument bezel on the left rail. */
 .primary::before {
   content: '';
   position: absolute;
@@ -102,93 +72,99 @@
   pointer-events: none;
 }
 
-/* Irisy portal — dedicated zone at the top. */
-.portal {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-3) var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--color-border-soft);
-  background: var(--color-bg-l1);
-}
-
-.mascot {
-  width: 56px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-.mascotHalo {
-  position: absolute;
-  inset: -6px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    color-mix(in oklab, var(--color-accent), transparent 70%) 0%,
-    transparent 70%
-  );
-  opacity: 0;
-  animation: irisy-halo 6s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes irisy-halo {
-  0%, 100% { opacity: 0; transform: scale(0.85); }
-  50%      { opacity: 0.55; transform: scale(1); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .mascotHalo { animation: none; opacity: 0; }
-}
-
-.mascotName {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-  margin-top: var(--space-2);
-}
-
-/* ---------- level-1 nav items (icon + label) ---------- */
-
 .nav {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-1);
+  gap: 4px;
+  padding: var(--space-2) 6px;
   width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
 }
+
+/* Footer = Settings item + version row, pinned to the bottom of the
+   primary column. Settings sits separate from the route-pushed items
+   so it stays put even when many keycap shortcuts scroll above it. */
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: var(--space-1) 6px var(--space-2);
+  border-top: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 40%);
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in oklab, var(--color-bg-l0), transparent 60%) 100%
+  );
+}
+
+.versionRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 4px 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.versionText {
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+.updateDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--color-success), transparent 80%),
+    0 0 8px color-mix(in oklab, var(--color-success), transparent 50%);
+  animation: rail-update-pulse 2.4s ease-in-out infinite;
+}
+@keyframes rail-update-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .updateDot { animation: none; }
+}
+
+/* ---------- level-1 item: icon + label vertical stack ---------- */
 
 .item {
   appearance: none;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 4px;
-  padding: 8px 4px;
+  padding: 10px 4px 8px;
   color: var(--color-text-muted);
   cursor: pointer;
   position: relative;
   transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
 }
 .item:hover {
   background: var(--color-bg-l2);
   color: var(--color-text);
 }
 .item[data-active='true'] {
-  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 14%);
-  border-color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 18%);
+  border-color: color-mix(in oklab, var(--color-accent), transparent 50%);
   color: var(--color-text);
 }
 .item:focus-visible {
@@ -196,9 +172,51 @@
   outline-offset: 1px;
 }
 
+/* Irisy item gets more vertical room because the mascot icon is 40px
+   (vs 22px for regular keycap shortcuts). The first-item bottom rule
+   gives Irisy a visual separator from the keycap shortcut column. */
+.item[data-irisy='true'] {
+  padding: 12px 4px 12px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 50%);
+  border-radius: 14px;
+}
+
+/* Settings item is the rail's utility footer cap — quieter than Irisy
+   (no inner separator, dimmer baseline). Active state still uses the
+   same accent treatment as everything else. */
+.item[data-settings='true'] {
+  padding: 8px 4px;
+  color: var(--color-text-muted);
+}
+.item[data-settings='true']:hover {
+  color: var(--color-text);
+}
+
+/* Active indicator bar — slim accent stripe on the right edge of the
+   active item, anchored to the sub-panel side. Subtle but unambiguous. */
+.activeBar {
+  position: absolute;
+  right: -7px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-accent);
+  opacity: 0;
+  transform: scaleY(0.4);
+  transform-origin: center;
+  transition: opacity 200ms ease, transform 200ms var(--ease-out-quart, ease-out);
+  pointer-events: none;
+}
+.item[data-active='true'] .activeBar {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
 .itemIcon {
-  width: 28px;
-  height: 28px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -208,7 +226,7 @@
 .itemLabel {
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   line-height: 1.1;
   color: inherit;
@@ -253,20 +271,8 @@
 
 .itemGlyph {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: var(--weight-medium);
   color: inherit;
   letter-spacing: 0;
 }
-
-.empty {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  margin-top: var(--space-3);
-  opacity: 0.6;
-  text-align: center;
-}
-
-.spacer { flex: 1; }

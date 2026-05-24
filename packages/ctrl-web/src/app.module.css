@@ -29,17 +29,14 @@
   background: var(--color-bg-l0);
   color: var(--color-text);
   overflow: hidden;
-  /* Right rail width responds to the level-2 sub-panel state pushed
-     by RightRail. Transition keeps the workspace edge in sync with
-     the rail's internal collapse animation. */
+  /* Right rail width responds to whether a level-2 sub-panel is open.
+     Two-state shell (none / open) — collapse happens by clicking the
+     active level-1 item itself, no explicit chevron tab. */
   --rightrail-width: 80px;
-  transition: grid-template-columns 200ms var(--ease-out-quart, ease-out);
-}
-.shell[data-sub-panel='collapsed'] {
-  --rightrail-width: 94px; /* 80 primary + 14 toggle tab */
+  transition: grid-template-columns 220ms var(--ease-out-quart, ease-out);
 }
 .shell[data-sub-panel='open'] {
-  --rightrail-width: 334px; /* 240 sub-panel + 14 toggle + 80 primary */
+  --rightrail-width: 320px; /* 240 sub-panel + 80 primary */
 }
 
 .status { grid-area: status; }

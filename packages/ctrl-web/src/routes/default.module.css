@@ -1,6 +1,7 @@
-/* DefaultWorkspace — Irisy's content inside <SessionWorkspace>.
- * The shell (history sidebar + main column) lives in the template;
- * this file only styles Irisy's centered greeting + chat input. */
+/* DefaultWorkspace — Irisy's centered greeting + chat input on `/`.
+ * The history list moved into the right rail sub-panel (bao 2026-05-23),
+ * so the center column owns the full workspace area now and the hero
+ * gets to breathe at its natural scale. */
 
 .center {
   flex: 1;
@@ -8,49 +9,68 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-8);
-  gap: var(--space-5);
+  padding: clamp(var(--space-6), 5vh, var(--space-10)) var(--space-8);
+  gap: var(--space-6);
   overflow-y: auto;
   min-height: 0;
 }
 
 .mascotWrap {
   position: relative;
-  width: 200px;
-  height: 200px;
+  width: 220px;
+  height: 220px;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: var(--space-2);
 }
 .mascotHalo {
   position: absolute;
-  inset: -8px;
+  inset: -16px;
   border-radius: 50%;
   background: radial-gradient(
     circle,
-    color-mix(in oklab, var(--color-accent), transparent 72%) 0%,
-    transparent 65%
+    color-mix(in oklab, var(--color-accent), transparent 78%) 0%,
+    color-mix(in oklab, var(--color-accent), transparent 92%) 45%,
+    transparent 70%
   );
-  animation: irisy-home-halo 5s ease-in-out infinite;
+  animation: irisy-home-halo 6s ease-in-out infinite;
+  pointer-events: none;
+  filter: blur(2px);
 }
 @keyframes irisy-home-halo {
-  0%, 100% { opacity: 0.35; transform: scale(0.94); }
-  50%      { opacity: 0.85; transform: scale(1.08); }
+  0%, 100% { opacity: 0.4; transform: scale(0.94); }
+  50%      { opacity: 0.9;  transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mascotHalo { animation: none; opacity: 0.45; transform: scale(1); }
 }
 
 .greeting {
   font-family: var(--font-display);
   font-size: var(--text-2xl);
-  font-weight: var(--weight-semibold);
-  letter-spacing: -0.022em;
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.026em;
+  line-height: 1.1;
   text-align: center;
   margin: 0;
+  /* Soft top-to-bottom tonal gradient so the headline carries weight
+     without screaming. Falls back to plain text-color if background-clip
+     isn't supported. */
+  background: linear-gradient(
+    180deg,
+    var(--color-text) 0%,
+    color-mix(in oklab, var(--color-text), var(--color-text-muted) 35%) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
   color: var(--color-text);
+  -webkit-text-fill-color: transparent;
 }
 
 .inputWrap {
   width: 100%;
-  max-width: 640px;
+  max-width: 620px;
   margin-top: var(--space-2);
 }
 

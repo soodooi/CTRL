@@ -1,8 +1,13 @@
+/* /settings/* layout primitives — shared across the three sub-pages
+   selected via the right-rail level-2 panel (CTRL / Hermes / Updates). */
+
 .layout {
   flex: 1;
   min-height: 0;
   background: var(--color-bg-l0);
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .main {
@@ -12,7 +17,12 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  width: 100%;
+  flex: 1;
+  min-height: 0;
 }
+
+/* ── Legacy classes used by the CTRL Settings manifest layout ──────── */
 
 .title {
   font-family: var(--font-display);
@@ -21,14 +31,12 @@
   letter-spacing: -1px;
   margin: 0;
 }
-
 .section {
   padding: var(--space-6);
   background: var(--color-surface);
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
 }
-
 .h2 {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
@@ -37,9 +45,149 @@
   color: var(--color-text-muted);
   margin: 0 0 var(--space-3);
 }
-
 .body {
   color: var(--color-text);
   margin: 0;
   line-height: 1.6;
+}
+
+/* ── Embedded sub-pages (Hermes / Updates) ─────────────────────────── */
+
+.embedHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+.embedTitle {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.026em;
+  margin: 0;
+  background: linear-gradient(
+    180deg,
+    var(--color-text) 0%,
+    color-mix(in oklab, var(--color-text), var(--color-text-muted) 30%) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: var(--color-text);
+  -webkit-text-fill-color: transparent;
+}
+.embedSubtitle {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+  max-width: 60ch;
+  letter-spacing: -0.005em;
+}
+
+.embedFrame {
+  flex: 1;
+  width: 100%;
+  min-height: 480px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 12px;
+  background: var(--color-bg-l1);
+  box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Update log specific ─────────────────────────────────────────── */
+
+.versionBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px;
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  width: max-content;
+}
+.versionBadgeLabel {
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 9px;
+}
+.versionBadgeValue {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.versionBadgePill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.versionBadgePill[data-tone='success'] {
+  background: color-mix(in oklab, var(--color-success), transparent 80%);
+  color: var(--color-success);
+}
+.versionBadgePill[data-tone='idle'] {
+  background: var(--color-bg-l3);
+  color: var(--color-text-muted);
+}
+
+.changelog {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.changeRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 10px;
+  transition:
+    border-color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart);
+}
+.changeRow:hover {
+  border-color: color-mix(in oklab, var(--color-border), var(--color-accent) 25%);
+  background: color-mix(in oklab, var(--color-bg-l1), var(--color-accent) 3%);
+}
+.changeRow[data-current='true'] {
+  border-color: color-mix(in oklab, var(--color-accent), transparent 50%);
+  background: color-mix(in oklab, var(--color-bg-l1), var(--color-accent) 6%);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent), transparent 75%);
+}
+.changeMeta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+}
+.changeVersion {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.changeDate {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.06em;
+}
+.changeSummary {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  letter-spacing: -0.005em;
+  color: var(--color-text-soft);
+  margin: 0;
+  line-height: 1.55;
 }

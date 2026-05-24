@@ -5,12 +5,12 @@
 //
 // Per bao 2026-05-23: the session history list that used to live as a
 // middle nav column now lives in the right rail as a collapsible level-2
-// sub-panel. We push it via useRailSubPanel — the rail clears it on
+// sub-panel. We push it via useIrisySubPanel — the rail clears it on
 // route unmount automatically.
 
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { ChatInput, IrisyMascot } from '@/components/primitives';
-import { useRail, useRailSubPanel, type RailSubPanel } from '@/components/RightRail';
+import { useRail, useIrisySubPanel, type RailSubPanel } from '@/components/RightRail';
 import type { SessionHistoryGroup } from '@/components/workspace/SessionWorkspace';
 import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
 import { defaultTransport } from '@/lib/llm-transport';
@@ -70,7 +70,7 @@ export const DefaultWorkspace = (): ReactElement => {
     }),
     [activeId],
   );
-  useRailSubPanel(subPanel);
+  useIrisySubPanel(subPanel);
 
   const handleSend = (text: string): void => {
     const trimmed = text.trim();
