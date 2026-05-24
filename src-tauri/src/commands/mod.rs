@@ -18,6 +18,7 @@ pub mod chat;
 pub mod code_space;
 pub mod config;
 pub mod draft;
+pub mod draft_run;
 pub mod irisy;
 pub mod kernel;
 pub mod keychain;
@@ -79,6 +80,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::draft::draft_delete,
             $crate::commands::draft::draft_record_run,
             $crate::commands::draft::draft_list_runs,
+            // draft_run — sandbox execution + per-step trace for canvas preview
+            $crate::commands::draft_run::run_keycap_draft,
             // code_space — coding 远程桌面 (ST-SS spec v0.7 wire)
             $crate::commands::code_space::cs_spawn,
             $crate::commands::code_space::cs_stdin,
