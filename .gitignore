@@ -37,3 +37,13 @@ out/
 _temp/
 .claude/scheduled_tasks.lock
 packages/*/tsconfig.tsbuildinfo
+
+# Git worktrees (lane-* / keycap / pwa / agent-*)
+.worktrees/
+.claude/worktrees/
+
+# Python build artifacts (ctrl-hermes-plugin pip install -e)
+*.egg-info/
+
+# Experimental scratch / 3rd-party clones (spike output goes to .olym/specs/)
+experiments/
