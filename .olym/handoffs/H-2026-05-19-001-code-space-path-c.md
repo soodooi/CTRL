@@ -2,7 +2,7 @@
 id: H-2026-05-19-001
 title: Code Space path C — SubprocessActor + portable-pty 落地
 severity: P0
-status: in_progress
+status: done
 reporter: zeus
 assigned_to: zeus
 lane: lane-G
@@ -20,7 +20,8 @@ related:
 project_id: ctrl-v1-ship
 category: feature
 created: 2026-05-19
-updated: 2026-05-19
+updated: 2026-05-22
+completed: 2026-05-22
 ---
 
 ## bao approval

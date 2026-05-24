@@ -2,10 +2,15 @@
 id: H-2026-05-18-002
 title: "底座 capability surface 验证 spike — 喂 ADR-004"
 severity: P0
-status: done
+status: verified
 reporter: zeus
 assigned_to: hephaestus
 lane: lane-C
+verified_by: zeus
+verified_on: 2026-05-22
+verified_evidence:
+  - themis-tier-C APPROVE 2026-05-22 (3 Q sections complete, 100 rows, 8 namespaces, 0 production code changes, anti-orphan self-check passed)
+  - RESULT.md TL;DR directly lifted into ADR-004 draft (004-kernel-capability-surface.md)
 touches:
   - .worktrees/scratch/spike-jiazuo-capability/**
   - doc/keycap-integration-research/06-jiazuo-result.md  # spike 输出位置
