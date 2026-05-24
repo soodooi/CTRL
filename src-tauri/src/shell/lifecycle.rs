@@ -105,6 +105,13 @@ impl ShellLifecycle {
         // the OS hook on exit anyway via the Tauri shutdown path.
         std::mem::forget(_hotkey);
 
+        // Background update prewarm — start polling the release endpoint
+        // before the user opens the window so the cockpit can render the
+        // "Upgrade" pill instantly on first mount. Per bao 2026-05-23:
+        // "update 不应该打开窗口后才检查, 应该后台直接做完, 用户打开页面
+        // 直接就点击能升级".
+        crate::commands::system::spawn_update_prewarm(app.clone());
+
         tracing::info!("ShellLifecycle::boot — complete");
         Ok(())
     }

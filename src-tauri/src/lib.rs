@@ -55,6 +55,7 @@ pub fn run() {
         // and uploads to the public soodooi/CTRL-releases sibling repo.
         // ADR-011 / 018 — Layer 1 of 4 of the auto-update strategy.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(commands::system::UpdateCache::default())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
@@ -102,6 +103,7 @@ pub fn run() {
         // and uploads to the public soodooi/CTRL-releases sibling repo.
         // ADR-011 / 018 — Layer 1 of 4 of the auto-update strategy.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(commands::system::UpdateCache::default())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())

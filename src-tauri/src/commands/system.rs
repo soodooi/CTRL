@@ -110,7 +110,7 @@ pub async fn app_changelog(app: tauri::AppHandle) -> Result<String, String> {
 /// Update-check result returned to the PWA. `kind` discriminates the
 /// outcome so the UI can render distinct messaging without parsing the
 /// `message` string.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct UpdateCheck {
     /// One of: "available" | "up_to_date" | "no_endpoint" | "error"
     pub kind: &'static str,
@@ -120,38 +120,120 @@ pub struct UpdateCheck {
     pub message: String,
 }
 
-/// Wraps `tauri-plugin-updater` so the cockpit "Check for Updates"
-/// button has somewhere to call.
-#[tauri::command]
-pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateCheck, String> {
+/// Tauri-managed background cache populated at boot + refreshed every
+/// 15 min by `prewarm_update_cache_loop`. `check_for_updates` reads this
+/// directly so the cockpit renders the "Upgrade" / "Up to date" pill the
+/// moment the PWA mounts — no per-mount network round-trip. Per bao
+/// 2026-05-23 "update 不应该打开窗口后才检查, 应该后台直接做完".
+#[derive(Default)]
+pub struct UpdateCache {
+    inner: std::sync::Mutex<Option<UpdateCheck>>,
+}
+
+impl UpdateCache {
+    pub fn read(&self) -> Option<UpdateCheck> {
+        self.inner.lock().unwrap().clone()
+    }
+    pub fn write(&self, value: UpdateCheck) {
+        *self.inner.lock().unwrap() = Some(value);
+    }
+}
+
+/// Run the actual network check via `tauri-plugin-updater`. Slow path
+/// (~1-3s, depends on GitHub round-trip). Used by:
+///   • The boot prewarm task (background, before window opens)
+///   • The 15-min refresh loop
+///   • `force_check_for_updates` (user-clicked re-check)
+///   • Cold-path fallback in `check_for_updates` if the cache is still
+///     empty when the PWA mounts (only possible in the first ~second
+///     after boot before prewarm finishes).
+pub async fn run_real_update_check(app: &tauri::AppHandle) -> UpdateCheck {
     use tauri_plugin_updater::UpdaterExt;
     let updater = match app.updater() {
         Ok(u) => u,
         Err(e) => {
-            return Ok(UpdateCheck {
+            return UpdateCheck {
                 kind: "no_endpoint",
                 available_version: None,
                 message: format!("Updater not configured: {e}"),
-            });
+            };
         }
     };
     match updater.check().await {
-        Ok(Some(release)) => Ok(UpdateCheck {
+        Ok(Some(release)) => UpdateCheck {
             kind: "available",
             available_version: Some(release.version.clone()),
             message: format!("Update available: v{}", release.version),
-        }),
-        Ok(None) => Ok(UpdateCheck {
+        },
+        Ok(None) => UpdateCheck {
             kind: "up_to_date",
             available_version: None,
             message: "You're on the latest build.".to_string(),
-        }),
-        Err(e) => Ok(UpdateCheck {
+        },
+        Err(e) => UpdateCheck {
             kind: "error",
             available_version: None,
             message: format!("Update check failed: {e}"),
-        }),
+        },
     }
+}
+
+/// Background loop kicked off in `ShellLifecycle::boot` — runs an initial
+/// check immediately (so the cache is populated by the time the user
+/// opens the window) then refreshes every 15 minutes for the process
+/// lifetime. Idempotent; safe to call once per boot.
+pub fn spawn_update_prewarm(app: tauri::AppHandle) {
+    use tauri::Manager;
+    tauri::async_runtime::spawn(async move {
+        // First pass — populate cache ASAP. If the PWA opens during this
+        // ~1-3s window it falls back to the cold path inside
+        // `check_for_updates` (still <3s, but no faster than today).
+        let initial = run_real_update_check(&app).await;
+        if let Some(cache) = app.try_state::<UpdateCache>() {
+            cache.write(initial);
+        }
+        tracing::info!("update prewarm: initial check complete, cache populated");
+
+        // Refresh loop. 15 min matches the PWA's prior poll interval.
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(15 * 60)).await;
+            let next = run_real_update_check(&app).await;
+            if let Some(cache) = app.try_state::<UpdateCache>() {
+                cache.write(next);
+            }
+            tracing::info!("update prewarm: 15-min refresh complete");
+        }
+    });
+}
+
+/// Read the cached update status populated by the boot prewarm task.
+/// Returns instantly (no network) when the cache is populated; falls
+/// back to a real check only on the first PWA mount if it happens before
+/// prewarm finishes (rare cold-start window, ~1-3s after boot).
+#[tauri::command]
+pub async fn check_for_updates(
+    app: tauri::AppHandle,
+    cache: tauri::State<'_, UpdateCache>,
+) -> Result<UpdateCheck, String> {
+    if let Some(cached) = cache.read() {
+        return Ok(cached);
+    }
+    let result = run_real_update_check(&app).await;
+    cache.write(result.clone());
+    Ok(result)
+}
+
+/// User-triggered force re-check — bypasses cache, hits the network,
+/// updates the cache. Wired to the cockpit's "↑ Check" button click so
+/// the user can manually verify they're on the latest.
+#[tauri::command]
+pub async fn force_check_for_updates(
+    app: tauri::AppHandle,
+    cache: tauri::State<'_, UpdateCache>,
+) -> Result<UpdateCheck, String> {
+    let result = run_real_update_check(&app).await;
+    cache.write(result.clone());
+    Ok(result)
 }
 
 /// Outcome of an install attempt.

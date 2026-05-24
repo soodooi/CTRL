@@ -116,26 +116,40 @@ export const StatusBar = (): ReactElement => {
   // 按钮应该放在首页版本旁边". One-click upgrade — no Settings detour.
   const [upgrade, setUpgrade] = useState<UpgradeState>({ kind: 'unknown' });
 
-  const runCheck = useCallback(() => {
-    invoke<UpdateCheckResult>('check_for_updates')
-      .then((r) => {
-        if (r.kind === 'available' && r.available_version) {
-          setUpgrade({ kind: 'available', version: r.available_version });
-        } else if (r.kind === 'up_to_date') {
-          setUpgrade({ kind: 'up_to_date' });
-        } else {
-          // 'no_endpoint' / 'error' — leave 'unknown' so the button hides.
-          setUpgrade({ kind: 'unknown' });
-        }
-      })
-      .catch(() => setUpgrade({ kind: 'unknown' }));
+  // Two readers:
+  //   • readCached — mount + auto-poll. Reads the Rust-side cache that
+  //     ShellLifecycle::boot prewarms at app start. Instant (no network).
+  //   • forceRecheck — user-clicked "↑ Check" / "↑ Retry" / "↑ Up to date"
+  //     buttons. Bypasses cache, hits the network, updates the cache.
+  // Per bao 2026-05-23 — first PWA mount renders the right pill without
+  // a 1-3s "checking…" gap.
+  const applyResult = useCallback((r: UpdateCheckResult) => {
+    if (r.kind === 'available' && r.available_version) {
+      setUpgrade({ kind: 'available', version: r.available_version });
+    } else if (r.kind === 'up_to_date') {
+      setUpgrade({ kind: 'up_to_date' });
+    } else {
+      setUpgrade({ kind: 'unknown' });
+    }
   }, []);
 
+  const readCached = useCallback(() => {
+    invoke<UpdateCheckResult>('check_for_updates')
+      .then(applyResult)
+      .catch(() => setUpgrade({ kind: 'unknown' }));
+  }, [applyResult]);
+
+  const forceRecheck = useCallback(() => {
+    invoke<UpdateCheckResult>('force_check_for_updates')
+      .then(applyResult)
+      .catch(() => setUpgrade({ kind: 'unknown' }));
+  }, [applyResult]);
+
   useEffect(() => {
-    runCheck();
-    const timer = window.setInterval(runCheck, UPDATE_POLL_MS);
+    readCached();
+    const timer = window.setInterval(readCached, UPDATE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [runCheck]);
+  }, [readCached]);
 
   const handleHide = useCallback(() => {
     invoke<void>('hide_window').catch(() => {
@@ -269,7 +283,7 @@ export const StatusBar = (): ReactElement => {
           <button
             type="button"
             className={styles.upgradeIdle}
-            onClick={runCheck}
+            onClick={forceRecheck}
             title="You're on the latest build · click to re-check"
             aria-label="Re-check for updates"
           >
@@ -280,7 +294,7 @@ export const StatusBar = (): ReactElement => {
           <button
             type="button"
             className={styles.upgradeIdle}
-            onClick={runCheck}
+            onClick={forceRecheck}
             title="Check for a newer build"
             aria-label="Check for updates"
           >
@@ -291,7 +305,7 @@ export const StatusBar = (): ReactElement => {
           <button
             type="button"
             className={styles.upgradeError}
-            onClick={runCheck}
+            onClick={forceRecheck}
             title={`${upgrade.message} · click to retry`}
             aria-label="Update failed, click to retry"
           >
