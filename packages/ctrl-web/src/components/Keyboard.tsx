@@ -137,6 +137,13 @@ export const Keyboard = (): ReactElement => {
   const empties = Math.max(0, KEYCAPS_PER_PAGE - visible.length);
 
   const handleActivate = (id: string): void => {
+    // Code Space is a non-LLM tool keycap — instead of `/workspace?keycap_id=...`
+    // (which dispatches via run_keycap), navigate to its dedicated `/code-space`
+    // route which hosts the env list + xterm detail (per bao 2026-05-24).
+    if (id === 'code-space') {
+      void navigate({ to: '/code-space' });
+      return;
+    }
     // Route to a keycap workspace view. For T0 hotkey-only keycaps the
     // navigation will land on a default view that immediately invokes
     // the keycap and shows a toast — wired in the workspace template.

@@ -62,6 +62,12 @@ fn seed_keycaps() -> Vec<KeycapSummary> {
             keycap_color: "graphite".into(),
             icon: "Aa".into(),
         },
+        KeycapSummary {
+            id: "code-space".into(),
+            name: "Code Space".into(),
+            keycap_color: "graphite".into(),
+            icon: "⌨".into(),
+        },
     ]
 }
 
