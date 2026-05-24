@@ -80,6 +80,61 @@
   gap: 4px;
   padding: var(--space-2) 6px;
   width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* Footer = Settings item + version row, pinned to the bottom of the
+   primary column. Settings sits separate from the route-pushed items
+   so it stays put even when many keycap shortcuts scroll above it. */
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: var(--space-1) 6px var(--space-2);
+  border-top: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 40%);
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in oklab, var(--color-bg-l0), transparent 60%) 100%
+  );
+}
+
+.versionRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 4px 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.versionText {
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+.updateDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--color-success), transparent 80%),
+    0 0 8px color-mix(in oklab, var(--color-success), transparent 50%);
+  animation: rail-update-pulse 2.4s ease-in-out infinite;
+}
+@keyframes rail-update-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .updateDot { animation: none; }
 }
 
 /* ---------- level-1 item: icon + label vertical stack ---------- */
@@ -125,6 +180,17 @@
   margin-bottom: 6px;
   border-bottom: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 50%);
   border-radius: 14px;
+}
+
+/* Settings item is the rail's utility footer cap — quieter than Irisy
+   (no inner separator, dimmer baseline). Active state still uses the
+   same accent treatment as everything else. */
+.item[data-settings='true'] {
+  padding: 8px 4px;
+  color: var(--color-text-muted);
+}
+.item[data-settings='true']:hover {
+  color: var(--color-text);
 }
 
 /* Active indicator bar — slim accent stripe on the right edge of the

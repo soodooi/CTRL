@@ -97,8 +97,17 @@ function RootShell(): ReactElement {
 const WorkspaceRoute = lazy(() =>
   import('./routes/workspace').then((m) => ({ default: m.WorkspaceRoute })),
 );
-const SettingsRoute = lazy(() =>
-  import('./routes/settings').then((m) => ({ default: m.SettingsRoute })),
+const SettingsRedirect = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsRedirect })),
+);
+const SettingsCtrlPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsCtrlPage })),
+);
+const SettingsHermesPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsHermesPage })),
+);
+const SettingsUpdatesPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsUpdatesPage })),
 );
 const IrisyRoute = lazy(() =>
   import('./routes/irisy').then((m) => ({ default: m.IrisyRoute })),
@@ -174,12 +183,43 @@ const workspaceRoute = createRoute({
     </Suspense>
   ),
 });
+// /settings — three sub-pages selected from the right-rail level-2
+// panel. Bare /settings is a redirect shim to /settings/ctrl so old
+// tray-bridge / keyboard system-key flows that pointed at the legacy
+// single page keep working.
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
   component: () => (
     <Suspense fallback={<LazyFallback />}>
-      <SettingsRoute />
+      <SettingsRedirect />
+    </Suspense>
+  ),
+});
+const settingsCtrlRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/ctrl',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsCtrlPage />
+    </Suspense>
+  ),
+});
+const settingsHermesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/hermes',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsHermesPage />
+    </Suspense>
+  ),
+});
+const settingsUpdatesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/updates',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsUpdatesPage />
     </Suspense>
   ),
 });
@@ -225,6 +265,9 @@ const routeTree = rootRoute.addChildren([
   poolRoute,
   workspaceRoute,
   settingsRoute,
+  settingsCtrlRoute,
+  settingsHermesRoute,
+  settingsUpdatesRoute,
   irisyRoute,
   codeSpaceRoute,
   codeSpaceDetailRoute,

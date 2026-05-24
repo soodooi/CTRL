@@ -1,13 +1,13 @@
 // RightRail — two-level context navigation on the right edge.
 //
 // Model (per bao 2026-05-23 clarification):
-//   Level-1 = permanent vertical icon column (Irisy on top + any keycap
-//             shortcuts pushed by routes).
-//   Level-2 = sub-panel that appears ONLY after clicking a level-1 item
-//             that carries one. Click the same item again to collapse.
+//   Level-1 = permanent vertical icon column. Synthesized order:
+//     [ Irisy (top) | …route-pushed items… | Settings (bottom) ]
+//   Level-2 = sub-panel that appears ONLY after clicking a level-1
+//     item that carries one. Click the same item again to collapse.
 //
 // Default active = `irisy`, so on first load the user sees Irisy
-// selected and (when the `/` route has pushed her history) her panel
+// selected and (when the `/` route has pushed her panel) her panel
 // open in level-2 — the cockpit feels alive without any explicit click.
 //
 // Per-item routing: each RailItem may carry an `onClick` (navigate to
@@ -15,6 +15,9 @@
 // Items WITHOUT a sub-panel just invoke `onClick` — they don't toggle
 // the active state. Items WITH a sub-panel toggle the active state on
 // click in addition to invoking `onClick`.
+//
+// Below the nav, the rail footer carries the app version and an update
+// indicator (green dot when a newer build is published on the channel).
 
 import {
   createContext,
@@ -26,7 +29,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { IrisyMascot, type IrisyState } from './primitives/IrisyMascot';
 import {
   HistorySidebar,
@@ -35,6 +38,7 @@ import {
 } from './primitives';
 import type { LedTone } from './primitives';
 import type { Icon } from '@/lib/icon';
+import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import styles from './RightRail.module.css';
 
 export type RailTone = LedTone;
@@ -79,11 +83,31 @@ interface RailContextValue {
 const RailContext = createContext<RailContextValue | null>(null);
 
 const IRISY_ITEM_ID = 'irisy';
+const SETTINGS_ITEM_ID = 'settings';
 const RAIL_ITEM_ICON_SIZE = 22;
 const IRISY_ICON_SIZE = 40;
 
 const isIcon = (g: string | Icon | undefined): g is Icon =>
   typeof g === 'object' && g !== null && 'kind' in g;
+
+// Inline gear icon — matches the stroke language of the keyboard's
+// system row settings key, so the two surfaces feel like one icon set.
+const GearIcon = (): ReactElement => (
+  <svg
+    viewBox="0 0 24 24"
+    width="20"
+    height="20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.65 1.65 0 0 0-1.8-.3 1.65 1.65 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.65 1.65 0 0 0-1-1.5 1.65 1.65 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.65 1.65 0 0 0 .3-1.8 1.65 1.65 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.65 1.65 0 0 0 1.5-1 1.65 1.65 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.65 1.65 0 0 0 1.8.3h.1a1.65 1.65 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.65 1.65 0 0 0 1 1.5 1.65 1.65 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.65 1.65 0 0 0-.3 1.8v.1a1.65 1.65 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.65 1.65 0 0 0-1.5 1z" />
+  </svg>
+);
 
 export const RailProvider = ({ children }: { children: ReactNode }): ReactElement => {
   const [items, setItems] = useState<ReadonlyArray<RailItem>>([]);
@@ -133,6 +157,24 @@ export const useIrisySubPanel = (panel: RailSubPanel | null): void => {
   useEffect(() => () => setIrisySubPanel(null), [setIrisySubPanel]);
 };
 
+interface SyntheticRailItem extends RailItem {
+  isIrisy?: boolean;
+  isSettings?: boolean;
+}
+
+const SETTINGS_SECTIONS: ReadonlyArray<{ id: string; title: string }> = [
+  { id: 'ctrl', title: 'CTRL Settings' },
+  { id: 'hermes', title: 'Hermes Settings' },
+  { id: 'updates', title: 'Update Log' },
+];
+
+const SETTINGS_DEFAULT_PATH = '/settings/ctrl';
+
+const parseSettingsSection = (pathname: string): string | null => {
+  const match = pathname.match(/^\/settings\/([\w-]+)/);
+  return match?.[1] ?? null;
+};
+
 export const RightRail = (): ReactElement => {
   const {
     items,
@@ -142,11 +184,14 @@ export const RightRail = (): ReactElement => {
     setActiveRailId,
   } = useRail();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const update = useUpdateStatus();
 
-  // Synthesize Irisy as the always-first level-1 item. Her sub-panel
-  // tracks the rail context (route-pushed via useIrisySubPanel).
-  const allItems = useMemo<ReadonlyArray<RailItem & { isIrisy: boolean }>>(() => {
-    const irisyItem: RailItem & { isIrisy: boolean } = {
+  const settingsSection = parseSettingsSection(pathname);
+
+  // Synthesize Irisy (top) + route items + Settings (bottom).
+  const allItems = useMemo<ReadonlyArray<SyntheticRailItem>>(() => {
+    const irisyItem: SyntheticRailItem = {
       id: IRISY_ITEM_ID,
       label: 'Irisy',
       isIrisy: true,
@@ -155,14 +200,37 @@ export const RightRail = (): ReactElement => {
         void navigate({ to: '/' });
       },
     };
-    return [irisyItem, ...items.map((i) => ({ ...i, isIrisy: false }))];
-  }, [irisySubPanel, items, navigate]);
+    const settingsItem: SyntheticRailItem = {
+      id: SETTINGS_ITEM_ID,
+      label: 'Settings',
+      isSettings: true,
+      subPanel: {
+        groups: [{ label: 'Sections', items: SETTINGS_SECTIONS }],
+        activeId: settingsSection,
+        onSelect: (id: string) => {
+          void navigate({ to: `/settings/${id}` });
+        },
+      },
+      onClick: () => {
+        // Landing the user inside a settings sub-route so the workspace
+        // has content the moment the level-2 panel reveals it.
+        if (!pathname.startsWith('/settings')) {
+          void navigate({ to: SETTINGS_DEFAULT_PATH });
+        }
+      },
+    };
+    return [
+      irisyItem,
+      ...items.map((i) => ({ ...i, isIrisy: false, isSettings: false })),
+      settingsItem,
+    ];
+  }, [irisySubPanel, items, navigate, pathname, settingsSection]);
 
   const activeItem = allItems.find((i) => i.id === activeRailId) ?? null;
   const showSubPanel = activeItem?.subPanel != null;
 
   const handleItemClick = useCallback(
-    (item: RailItem & { isIrisy: boolean }) => {
+    (item: SyntheticRailItem) => {
       // Items with a sub-panel toggle level-2 visibility AND invoke onClick.
       // Items without a sub-panel just invoke onClick (no toggle).
       if (item.subPanel != null) {
@@ -172,6 +240,67 @@ export const RightRail = (): ReactElement => {
     },
     [activeRailId, setActiveRailId],
   );
+
+  // Auto-flip activeRailId to 'settings' when the workspace enters a
+  // settings route — so the panel reveals its options without forcing
+  // the user to click the rail item first.
+  useEffect(() => {
+    if (settingsSection && activeRailId !== SETTINGS_ITEM_ID) {
+      setActiveRailId(SETTINGS_ITEM_ID);
+    }
+  }, [settingsSection, activeRailId, setActiveRailId]);
+
+  const renderItem = (item: SyntheticRailItem): ReactElement => {
+    const isActive = item.id === activeRailId && showSubPanel;
+    return (
+      <button
+        key={item.id}
+        type="button"
+        className={styles.item}
+        data-active={isActive}
+        data-irisy={item.isIrisy || undefined}
+        data-settings={item.isSettings || undefined}
+        onClick={() => handleItemClick(item)}
+        title={item.label}
+        aria-label={item.label}
+        aria-current={isActive ? 'true' : undefined}
+      >
+        <span className={styles.activeBar} aria-hidden="true" />
+        <span className={styles.itemIcon}>
+          {item.isIrisy ? (
+            <IrisyMascot state={irisyState} size={IRISY_ICON_SIZE} />
+          ) : item.isSettings ? (
+            <GearIcon />
+          ) : isIcon(item.glyph) ? (
+            <IconRenderer
+              icon={item.glyph}
+              size={RAIL_ITEM_ICON_SIZE}
+              playing={item.active ?? false}
+              ariaLabel={item.label}
+            />
+          ) : item.glyph ? (
+            <span className={styles.itemGlyph}>{item.glyph}</span>
+          ) : (
+            <span
+              className={styles.itemDot}
+              data-tone={item.tone ?? 'unknown'}
+            />
+          )}
+          {item.badge !== undefined && item.badge > 0 && (
+            <span className={styles.itemBadge}>
+              {item.badge > 99 ? '99+' : item.badge}
+            </span>
+          )}
+        </span>
+        <span className={styles.itemLabel}>{item.label}</span>
+      </button>
+    );
+  };
+
+  // Split synthetic items so Settings can live in the footer slot,
+  // pinned to the bottom of the rail.
+  const settingsItem = allItems.find((i) => i.isSettings);
+  const topItems = allItems.filter((i) => !i.isSettings);
 
   return (
     <aside
@@ -195,50 +324,29 @@ export const RightRail = (): ReactElement => {
 
       <div className={styles.primary}>
         <nav className={styles.nav} aria-label="Context navigation">
-          {allItems.map((item) => {
-            const isActive = item.id === activeRailId && showSubPanel;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={styles.item}
-                data-active={isActive}
-                data-irisy={item.isIrisy || undefined}
-                onClick={() => handleItemClick(item)}
-                title={item.label}
-                aria-label={item.label}
-                aria-current={isActive ? 'true' : undefined}
-              >
-                <span className={styles.activeBar} aria-hidden="true" />
-                <span className={styles.itemIcon}>
-                  {item.isIrisy ? (
-                    <IrisyMascot state={irisyState} size={IRISY_ICON_SIZE} />
-                  ) : isIcon(item.glyph) ? (
-                    <IconRenderer
-                      icon={item.glyph}
-                      size={RAIL_ITEM_ICON_SIZE}
-                      playing={item.active ?? false}
-                      ariaLabel={item.label}
-                    />
-                  ) : item.glyph ? (
-                    <span className={styles.itemGlyph}>{item.glyph}</span>
-                  ) : (
-                    <span
-                      className={styles.itemDot}
-                      data-tone={item.tone ?? 'unknown'}
-                    />
-                  )}
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span className={styles.itemBadge}>
-                      {item.badge > 99 ? '99+' : item.badge}
-                    </span>
-                  )}
-                </span>
-                <span className={styles.itemLabel}>{item.label}</span>
-              </button>
-            );
-          })}
+          {topItems.map(renderItem)}
         </nav>
+
+        <div className={styles.footer}>
+          {settingsItem && renderItem(settingsItem)}
+          <div
+            className={styles.versionRow}
+            title={
+              update.available
+                ? `Update available${update.latestVersion ? ` (${update.latestVersion})` : ''}`
+                : `CTRL v${APP_VERSION}`
+            }
+          >
+            <span className={styles.versionText}>v{APP_VERSION}</span>
+            {update.available && (
+              <span
+                className={styles.updateDot}
+                aria-label="Update available"
+                role="status"
+              />
+            )}
+          </div>
+        </div>
       </div>
     </aside>
   );
