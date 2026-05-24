@@ -48,6 +48,8 @@ interface KernelLlmStatus {
 interface HermesStatus {
   binary_path: string | null;
   version: string | null;
+  latest_version: string | null;
+  update_available: boolean;
   plugin_enabled: boolean;
   brain_configured: boolean;
 }
@@ -436,6 +438,9 @@ export function IrisyChat(): React.ReactElement {
 
   const brainReady = status?.kernel_llm.ready ?? false;
   const hermesDetected = status?.hermes.binary_path != null;
+  const hermesUpdateAvailable =
+    status?.hermes.update_available === true &&
+    status?.hermes.latest_version != null;
   const hermesDetail = hermesDetected
     ? [
         status?.hermes.version ?? 'detected',
@@ -457,6 +462,21 @@ export function IrisyChat(): React.ReactElement {
           ok={hermesDetected}
           detail={hermesDetail}
         />
+        {hermesUpdateAvailable && (
+          <button
+            type="button"
+            className={styles.updateBadge}
+            title={`Run \`pipx upgrade hermes-agent\` in a terminal to upgrade from ${status?.hermes.version ?? '?'} to ${status?.hermes.latest_version ?? '?'}.`}
+            onClick={() => {
+              const cmd = 'pipx upgrade hermes-agent';
+              if (navigator.clipboard != null) {
+                void navigator.clipboard.writeText(cmd);
+              }
+            }}
+          >
+            ↑ v{status?.hermes.latest_version} available
+          </button>
+        )}
         <StatusLine
           label="MCP bridge"
           ok={status?.mcp_bridge.handshake_written ?? false}

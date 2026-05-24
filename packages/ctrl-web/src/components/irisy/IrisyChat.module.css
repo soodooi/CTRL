@@ -47,6 +47,27 @@
   cursor: help;
 }
 
+.updateBadge {
+  background: transparent;
+  border: 1px solid #b07a16;
+  color: #b07a16;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.updateBadge:hover {
+  background: rgba(176, 122, 22, 0.1);
+}
+
+.updateBadge:active {
+  background: rgba(176, 122, 22, 0.2);
+}
+
 .clearButton {
   background: transparent;
   border: 1px solid var(--ctrl-border, #d0d0d0);

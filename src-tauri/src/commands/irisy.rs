@@ -46,7 +46,19 @@ pub struct KernelLlmStatus {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HermesStatus {
     pub binary_path: Option<String>,
+    /// Version reported by the locally-installed `hermes` binary (raw output
+    /// of `hermes --version`, e.g. "hermes-agent 0.14.0" or "0.14.0"). PWA
+    /// gets the raw string; CTRL only parses internally to compare against
+    /// `latest_version`.
     pub version: Option<String>,
+    /// Latest stable version published to PyPI for `hermes-agent`. `None`
+    /// when the PWA is offline / PyPI is unreachable / the call timed out.
+    /// Best-effort: irisy_init never blocks on this.
+    pub latest_version: Option<String>,
+    /// `true` when both `version` and `latest_version` parse as semver and
+    /// `latest_version > version`. Stays `false` on parse failure so we
+    /// never falsely advertise an update.
+    pub update_available: bool,
     pub plugin_enabled: bool,
     pub brain_configured: bool,
 }
@@ -64,7 +76,7 @@ pub async fn irisy_init(
 ) -> Result<IrisyStatus, String> {
     let app_version = app.package_info().version.to_string();
     let kernel_llm = probe_kernel_llm(&kernel);
-    let hermes = probe_hermes();
+    let hermes = probe_hermes().await;
     let mcp_bridge = write_handshake_file()?;
 
     tracing::info!(
@@ -91,13 +103,15 @@ fn probe_kernel_llm(kernel: &State<'_, KernelHandle>) -> KernelLlmStatus {
     }
 }
 
-fn probe_hermes() -> HermesStatus {
+async fn probe_hermes() -> HermesStatus {
     let binary = match locate_hermes_binary() {
         Some(p) => p,
         None => {
             return HermesStatus {
                 binary_path: None,
                 version: None,
+                latest_version: None,
+                update_available: false,
                 plugin_enabled: false,
                 brain_configured: false,
             };
@@ -112,11 +126,70 @@ fn probe_hermes() -> HermesStatus {
     let _ = wire_hermes_brain_from_kernel();
     let brain_configured = read_brain_configured();
 
+    let latest_version = fetch_pypi_latest_hermes().await;
+    let update_available = match (&version, &latest_version) {
+        (Some(local), Some(latest)) => is_newer(latest, local),
+        _ => false,
+    };
+
     HermesStatus {
         binary_path: Some(binary.display().to_string()),
         version,
+        latest_version,
+        update_available,
         plugin_enabled,
         brain_configured,
+    }
+}
+
+/// Best-effort lookup of `hermes-agent` latest published version on PyPI.
+///
+/// 2-second timeout — if the host is offline / PyPI is slow, irisy_init
+/// returns without an update indicator rather than blocking the UI. PyPI's
+/// JSON metadata endpoint is anonymous and CDN-fronted; CORS isn't an
+/// issue here because the call originates from the Tauri Rust side, not
+/// the WebView. Future enhancement: cache the result for ~1h to avoid
+/// fetching on every /irisy mount.
+async fn fetch_pypi_latest_hermes() -> Option<String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .user_agent("ctrl-irisy/0 (https://github.com/soodooi/CTRL)")
+        .build()
+        .ok()?;
+    let resp = client
+        .get("https://pypi.org/pypi/hermes-agent/json")
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let json: serde_json::Value = resp.json().await.ok()?;
+    json.get("info")
+        .and_then(|i| i.get("version"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Extract a (major, minor, patch) tuple from a `--version` style string
+/// like "hermes-agent 0.14.0", "0.14.0", or "hermes, version 0.14.0a1".
+/// Pre-release suffix is dropped — for the "update available?" check we
+/// compare stable cores only.
+fn parse_semver_core(s: &str) -> Option<(u32, u32, u32)> {
+    let token = s.split_whitespace().find(|t| {
+        let core = t.split(['a', 'b', 'r']).next().unwrap_or("");
+        let parts: Vec<&str> = core.split('.').collect();
+        parts.len() == 3 && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit()))
+    })?;
+    let core = token.split(['a', 'b', 'r']).next().unwrap_or("");
+    let mut parts = core.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    Some((parts.next()?, parts.next()?, parts.next()?))
+}
+
+fn is_newer(candidate: &str, baseline: &str) -> bool {
+    match (parse_semver_core(candidate), parse_semver_core(baseline)) {
+        (Some(a), Some(b)) => a > b,
+        _ => false,
     }
 }
 
