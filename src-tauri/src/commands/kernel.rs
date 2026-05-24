@@ -761,6 +761,85 @@ fn slugify(s: &str) -> String {
         .to_string()
 }
 
+// ── Irisy lifecycle commands (Config / Debug / Improvement / Retire) ──
+
+#[derive(Debug, Deserialize)]
+pub struct UninstallKeycapArgs {
+    pub keycap_id: String,
+}
+
+/// Remove an installed keycap's on-disk directory. Surfacing an error on
+/// "already gone" (instead of silent no-op) lets Irisy give the user a
+/// clear "X was not installed" reply rather than pretending success.
+#[tauri::command]
+pub async fn uninstall_keycap(
+    args: UninstallKeycapArgs,
+    _kernel: State<'_, KernelHandle>,
+) -> Result<(), String> {
+    validate_keycap_id(&args.keycap_id)?;
+    let dir = keycap_dir()?;
+    let target = dir.join(&args.keycap_id);
+    if !target.exists() {
+        return Err(format!("keycap {} not installed", args.keycap_id));
+    }
+    fs::remove_dir_all(&target).map_err(|e| format!("remove {target:?}: {e}"))?;
+    tracing::info!(keycap_id = %args.keycap_id, "uninstall_keycap ok");
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReadKeycapManifestArgs {
+    pub keycap_id: String,
+}
+
+/// Return the parsed manifest.json for an installed keycap so Irisy can
+/// inspect declared config schemas, source bindings, and metadata when
+/// answering debug / improvement questions.
+#[tauri::command]
+pub async fn read_keycap_manifest(
+    args: ReadKeycapManifestArgs,
+    _kernel: State<'_, KernelHandle>,
+) -> Result<serde_json::Value, String> {
+    validate_keycap_id(&args.keycap_id)?;
+    let dir = keycap_dir()?;
+    let path = dir.join(&args.keycap_id).join("manifest.json");
+    let bytes = fs::read(&path).map_err(|e| format!("read {path:?}: {e}"))?;
+    serde_json::from_slice(&bytes).map_err(|e| format!("parse manifest.json: {e}"))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetKeycapConfigArgs {
+    pub keycap_id: String,
+    /// Free-form JSON object that REPLACES the previous config override.
+    /// Pass `{}` to clear all overrides.
+    pub config: serde_json::Value,
+}
+
+/// Write the per-user override config for a keycap. Dispatch reads this
+/// alongside the upstream manifest at run_keycap time (Config tier of
+/// the 3-tier adjustment model: Config / Patch / Fork).
+#[tauri::command]
+pub async fn set_keycap_config(
+    args: SetKeycapConfigArgs,
+    _kernel: State<'_, KernelHandle>,
+) -> Result<(), String> {
+    validate_keycap_id(&args.keycap_id)?;
+    if !args.config.is_object() {
+        return Err("config must be a JSON object".into());
+    }
+    let dir = keycap_dir()?;
+    let target = dir.join(&args.keycap_id);
+    if !target.exists() {
+        return Err(format!("keycap {} not installed", args.keycap_id));
+    }
+    let path = target.join("config.json");
+    let body = serde_json::to_vec_pretty(&args.config)
+        .map_err(|e| format!("serialize config: {e}"))?;
+    fs::write(&path, &body).map_err(|e| format!("write {path:?}: {e}"))?;
+    tracing::info!(keycap_id = %args.keycap_id, "set_keycap_config ok");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

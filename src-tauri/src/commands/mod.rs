@@ -36,10 +36,17 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::install_keycap,
             $crate::commands::kernel::install_keycap_from_mcp,
             $crate::commands::kernel::run_keycap,
+            $crate::commands::kernel::uninstall_keycap,
+            $crate::commands::kernel::read_keycap_manifest,
+            $crate::commands::kernel::set_keycap_config,
             // chat — streaming LLM via Tauri events (Irisy companion)
             $crate::commands::chat::chat_stream,
+            // irisy — 3-layer (kernel llm / hermes-agent / mcp bridge) wire-up
+            $crate::commands::irisy::irisy_init,
+            $crate::commands::irisy::irisy_chat_hermes,
+            $crate::commands::irisy::irisy_upgrade_hermes,
             // system — kernel health (PWA status bar Phase 1F) + build version pill
-            // + changelog + auto-update check (Settings → About)
+            // + changelog + auto-update check (Settings → About) + Hide button fallback
             $crate::commands::system::kernel_status,
             $crate::commands::system::app_meta,
             $crate::commands::system::app_changelog,
