@@ -16,6 +16,7 @@ import { ManifestPreview } from '@/components/irisy/ManifestPreview';
 import { CodePreview } from '@/components/irisy/CodePreview';
 import { InstallBar } from '@/components/irisy/InstallBar';
 import { DiscardConfirm } from '@/components/irisy/DiscardConfirm';
+import { IrisyChat } from '@/components/irisy/IrisyChat';
 import { useKeycapCreatorStore } from '@/lib/irisy-keycap-store';
 import { defaultTransport } from '@/lib/llm-transport';
 import { runChatTurn } from '@/lib/irisy-llm-runner';
@@ -98,14 +99,7 @@ export const IrisyRoute = (): React.ReactElement => {
   }, [toast]);
 
   if (mode !== 'create-keycap') {
-    return (
-      <div className={styles.fallback}>
-        <p>Open Irisy with <code>?intent=create-keycap</code> to start building a keycap.</p>
-        <p className={styles.fallbackMuted}>
-          The general-purpose Irisy chat ships from a sibling lane.
-        </p>
-      </div>
-    );
+    return <IrisyChat />;
   }
 
   const handleSubmit = async (text: string): Promise<void> => {

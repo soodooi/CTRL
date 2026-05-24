@@ -16,6 +16,7 @@
 
 pub mod chat;
 pub mod code_space;
+pub mod irisy;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
@@ -35,8 +36,15 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::install_keycap,
             $crate::commands::kernel::install_keycap_from_mcp,
             $crate::commands::kernel::run_keycap,
+            $crate::commands::kernel::uninstall_keycap,
+            $crate::commands::kernel::read_keycap_manifest,
+            $crate::commands::kernel::set_keycap_config,
             // chat — streaming LLM via Tauri events (Irisy companion)
             $crate::commands::chat::chat_stream,
+            // irisy — 3-layer (kernel llm / hermes-agent / mcp bridge) wire-up
+            $crate::commands::irisy::irisy_init,
+            // irisy — one-shot chat via hermes subprocess (ctrl-volc provider)
+            $crate::commands::irisy::irisy_chat_hermes,
             // system — kernel health (PWA status bar Phase 1F)
             $crate::commands::system::kernel_status,
             $crate::commands::kernel::mcp_call,
