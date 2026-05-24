@@ -29,6 +29,17 @@
   background: var(--color-bg-l0);
   color: var(--color-text);
   overflow: hidden;
+  /* Right rail width responds to the level-2 sub-panel state pushed
+     by RightRail. Transition keeps the workspace edge in sync with
+     the rail's internal collapse animation. */
+  --rightrail-width: 80px;
+  transition: grid-template-columns 200ms var(--ease-out-quart, ease-out);
+}
+.shell[data-sub-panel='collapsed'] {
+  --rightrail-width: 94px; /* 80 primary + 14 toggle tab */
+}
+.shell[data-sub-panel='open'] {
+  --rightrail-width: 334px; /* 240 sub-panel + 14 toggle + 80 primary */
 }
 
 .status { grid-area: status; }
