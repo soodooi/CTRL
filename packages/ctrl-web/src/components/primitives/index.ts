@@ -61,3 +61,4 @@ export type {
 } from './BentoGrid';
 export { CommandBar } from './CommandBar';
 export type { CommandBarProps, CommandItem } from './CommandBar';
+export { IconRenderer } from './IconRenderer';

@@ -7,6 +7,8 @@ import { useCallback, useState, type ReactElement } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
+import { normalizeIcon } from '@/lib/icon';
+import { IconRenderer } from '@/components/primitives';
 import {
   HERMES_DASHBOARD_DEFAULT_URL,
   HERMES_SETTINGS_TAB_ID,
@@ -67,39 +69,35 @@ const SYSTEM_KEYS: ReadonlyArray<SystemKey> = [
   { id: 'settings', label: 'Settings', opensTab: 'hermes-settings', icon: <GearIcon /> },
 ];
 
-// Two-letter token derived from the keycap name. Used as the keycap face
-// when the kernel hasn't yet shipped a real icon glyph. Chinese names take
-// the first character; ASCII names take initials of the first two words.
-const fallbackGlyph = (name: string): string => {
-  const trimmed = name.trim();
-  if (!trimmed) return '?';
-  const first = trimmed[0];
-  if (first && /[一-鿿]/.test(first)) return first;
-  const parts = trimmed.split(/\s+/);
-  if (parts.length === 1) return (parts[0] ?? '').slice(0, 2).toUpperCase();
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
-};
-
 interface KeycapCellProps {
   keycap: KeycapSummary;
   active: boolean;
   onActivate: (id: string) => void;
 }
 
-const KeycapCell = ({ keycap, active, onActivate }: KeycapCellProps): ReactElement => (
-  <button
-    type="button"
-    className={styles.cap}
-    data-active={active}
-    onClick={() => onActivate(keycap.id)}
-    title={keycap.name}
-  >
-    <span className={styles.capIcon} aria-hidden="true">
-      {fallbackGlyph(keycap.name)}
-    </span>
-    <span className={styles.capLabel}>{keycap.name}</span>
-  </button>
-);
+// Keycap face dispatches through the canonical IconRenderer (per
+// .olym/skills/thorvg/SKILL.md §3.1). Today the kernel sends
+// `icon: string` glyphs (emoji / 1-2 chars); normalizeIcon wraps those
+// as { kind: 'glyph' }. Once the kernel ships the discriminated union
+// (handoff: thorvg-icon-schema) Lottie / SVG keycaps render without
+// any change at this layer.
+const KeycapCell = ({ keycap, active, onActivate }: KeycapCellProps): ReactElement => {
+  const icon = normalizeIcon(keycap.icon, keycap.name);
+  return (
+    <button
+      type="button"
+      className={styles.cap}
+      data-active={active}
+      onClick={() => onActivate(keycap.id)}
+      title={keycap.name}
+    >
+      <span className={styles.capIcon} aria-hidden="true">
+        <IconRenderer icon={icon} size={28} ariaLabel={keycap.name} />
+      </span>
+      <span className={styles.capLabel}>{keycap.name}</span>
+    </button>
+  );
+};
 
 export const Keyboard = (): ReactElement => {
   const navigate = useNavigate();

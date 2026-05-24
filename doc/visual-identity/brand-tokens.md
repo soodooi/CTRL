@@ -2,9 +2,9 @@
 
 **Single source of truth** for all design tokens. PWA / desktop shell / installer icons / marketing materials all derive from here.
 
-- **Date**: 2026-05-13
+- **Date**: 2026-05-13 (v0.1) · 2026-05-23 (v0.2 — §14 ThorVG/Lottie tier added)
 - **Owner**: bao (decisions), zeus (implementation)
-- **Status**: v0.1 — first lock; refine via PR + diff
+- **Status**: v0.2 — first lock; refine via PR + diff
 - **Anti-pattern**: do NOT hardcode color hex / spacing px / font-weight anywhere else. Always reference tokens by name.
 
 ---
@@ -259,7 +259,138 @@ Required (per `web/design-quality.md` checklist):
 
 ---
 
-## 12. References
+## 12. Motion content tier — ThorVG / Lottie (v0.2 lock, 2026-05-23)
+
+> Bao 2026-05-23 — four explicit locks for all Lottie/dotLottie assets
+> shipped through CTRL surfaces (PWA, marketing, installer). System chrome
+> stays on §7 restrained tokens; **decoration content gets the extended
+> palette below — expressive but disciplined**. Both layers exist in
+> parallel — they must not blur.
+
+### 12.1 Temperature — two-tier (LOCK)
+
+| Tier | Surface examples | Token source | Personality |
+|---|---|---|---|
+| **System chrome** | StatusBar / Keyboard / Tab / Modal / dropdown / page transition | §7 | restrained, Linear/Cursor/OP-1, no overshoot |
+| **Decoration content** | Irisy mascot / empty state illustration / keycap success-error / loading shimmer / onboarding step | §12.5 | expressive, spring, anticipation, character |
+
+Anti-pattern: applying §7 timing to a mascot transition (looks dead) or
+§14 spring to a Modal close (looks toy-y).
+
+### 12.2 Color usage — full palette per asset (LOCK)
+
+All 5 keycap colors + 4 status colors in-bounds. Per-asset hard rule:
+
+- **≤ 3 colors per single Lottie asset** (anti-template §11 applies per-asset)
+- Standard recipe: brand cobalt + 1 semantic status + 1 neutral
+- Strokes participate in palette (no plain `#000` / `#FFF`)
+
+**Slot naming convention** — designer must expose every brand-tied
+color via `slot_<role>`:
+
+| Slot ID | Token | Use |
+|---|---|---|
+| `slot_brand_primary` | `--ctrl-blue` | Logo, primary accent |
+| `slot_keycap_cobalt` | `--keycap-cobalt` | Primary keycap |
+| `slot_keycap_amber` | `--keycap-amber` | Warm / writing |
+| `slot_keycap_jade` | `--keycap-jade` | Success / safe |
+| `slot_keycap_platinum` | `--keycap-platinum` | Neutral / system |
+| `slot_keycap_graphite` | `--keycap-graphite` | Power-user |
+| `slot_status_success` | `--status-success` | OK |
+| `slot_status_warning` | `--status-warning` | Caution |
+| `slot_status_danger` | `--status-danger` | Error |
+| `slot_status_info` | `--status-info` | Info |
+| `slot_text` | `--color-text` | Text within illustration |
+| `slot_text_muted` | `--color-text-muted` | Secondary text |
+| `slot_bg` | `--color-bg-l0` | Optional bg (default: transparent, skip) |
+
+Runtime: `IconRenderer` reads CSS variables → calls
+`dotLottie.set_color_slot(id, r, g, b)` on load. Light / dark toggle
+re-applies. Anti-pattern: hardcoding colors in `.lottie` without slots.
+
+### 12.3 Stroke vocabulary — Mixed (LOCK)
+
+Default = **Mixed**: silhouette / main mass filled, key details stroked.
+Pure outline-only or pure flat-fill are reserved cases — not the default.
+
+| Asset render size | Stroke width | Notes |
+|---|---|---|
+| Keycap icon detail (24-32 px) | 1.5 px | hair-stroke accent |
+| Workspace icon detail (40-48 px) | 2 px | UI baseline |
+| Mascot / illustration detail (80+ px) | 3 px | bold accent |
+
+Stroke color: always one of §12.2 slot palette. Mixing stroke widths
+within one asset is allowed only when sizing breaks (e.g. 2 px main
+silhouette + 1.5 px subtle accent).
+
+### 12.4 Mascot — geometric abstract (LOCK)
+
+Irisy mascot is **geometric abstract** (not illustrated character).
+Visual lineage = "keycap come to life":
+
+- Rounded-square face → matches `--radius-lg` 12 px
+- Dot eyes / geometric mouth
+- No cartoon line art, no illustrated limbs
+- Color = 1 keycap-palette tone (default platinum, mood overrides)
+
+Implementation: **single `.lottie` file with state machine**, 6 segments:
+
+| Segment | Trigger | Duration |
+|---|---|---|
+| `idle` | default | loop, ambient breathe |
+| `watching` | input focus / hover | 800 ms transition |
+| `thinking` | LLM streaming | loop while pending |
+| `happy` | task success | 1000 ms one-shot |
+| `worried` | task error | 1000 ms one-shot |
+| `sleeping` | idle > N min | 1200 ms transition |
+
+Transitions ≤ 1200 ms. Each segment ≤ 60 frames @ 60 fps.
+
+### 12.5 Extended motion tokens — decoration tier (LOCK)
+
+System tier §7 still applies to chrome. Decoration tier adds:
+
+| Token | Value | Use |
+|---|---|---|
+| `--duration-emote-fast` | 600 ms | Single beat (mascot blink, status nod) |
+| `--duration-emote-normal` | 1000 ms | State transition (idle → thinking) |
+| `--duration-emote-slow` | 1600 ms | Ambient loop (breathing, empty-state idle) |
+| `--ease-anticipation` | `cubic-bezier(0.65, -0.45, 0.35, 1.45)` | Wind-up before action |
+| `--ease-spring-soft` (JS) | spring(mass 1, stiffness 180, damping 24) | Mascot state changes |
+| `--ease-spring-snappy` (JS) | spring(mass 1, stiffness 260, damping 22) | Success overshoot |
+
+Springs are JS-side (framer-motion / dotLottie segment markers) — CSS
+`cubic-bezier` can't express spring. Direction `Mode` ∈ {forward,
+reverse, bounce, reverse-bounce} all in-bounds. Loop ambient ≥ 1 s
+(below this = jitter perception).
+
+### 12.6 Asset budgets — hard cap (LOCK)
+
+| Use | Max file | Render size |
+|---|---|---|
+| Keycap icon (idle + running combined) | 8 KB | 24-64 px |
+| Feedback (success / error / nudge) | 12 KB | 48-96 px |
+| Irisy mascot (6 states in 1 file) | 40 KB | 64-180 px |
+| Empty state illustration | 60 KB | 240-480 px |
+
+Over budget → reject + return to designer with reduce instructions:
+fewer layers, drop raster embeds, trim keyframes, use markers instead
+of multiple files.
+
+### 12.7 Reduce-motion contract
+
+`prefers-reduced-motion: reduce` set → CTRL behavior:
+
+- Ambient loops stop (mascot breathing, empty-state idle, shimmer)
+- State transitions snap to end frame (no animated tween)
+- Feedback animations skip to final state (checkmark drawn, not animated)
+- Decoration tier durations clamped to ≤ 50 ms (matches §7 reduce)
+
+Mandatory per `web/testing.md` §2.
+
+---
+
+## 13. References
 
 - `doc/reference/logo-reference.png` — bao 's hand-off logo
 - ADR-001 §2 — visual direction lock (Linear / Cursor / OP-1 / Braun)
@@ -269,7 +400,7 @@ Required (per `web/design-quality.md` checklist):
 
 ---
 
-## 13. Versioning
+## 14. Versioning
 
 This file follows ADR lifecycle: `v0.1` → first PR ship. Increments via PR + diff, never silent edits. Major bump (`v1.0`) when full PWA scaffold (P3.8) consumes tokens end-to-end.
 
