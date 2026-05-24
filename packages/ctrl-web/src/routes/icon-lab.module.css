@@ -182,6 +182,19 @@
   max-width: 760px;
 }
 
+/* Mock keycap row — mirrors the keyboard's actual cell footprint so the
+   IconRenderer is exercised at the real keycap dimensions. */
+.keycapRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+}
+.keycapRow > * {
+  width: 120px;
+  height: 120px;
+}
+
 .mini {
   position: relative;
   display: flex;

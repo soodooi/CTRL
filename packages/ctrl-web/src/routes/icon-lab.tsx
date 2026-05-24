@@ -20,8 +20,30 @@ import {
 import { DotLottieReact, type DotLottie } from '@lottiefiles/dotlottie-react';
 import Lottie, { type LottieRefCurrentProps } from 'lottie-react';
 import { IconRenderer } from '@/components/primitives';
+import { KeycapCard } from '@/components/KeycapCard';
 import { inferIconKindFromUrl } from '@/lib/icon';
+import type { KeycapSummary } from '@/lib/kernel';
 import styles from './icon-lab.module.css';
+
+// Mock keycap summaries used only inside icon-lab to validate the
+// IconRenderer at production keycap size (36px icon, full bevel + label).
+// NOT wired into the real `list_keycaps` path — per
+// feedback_no_mock_data_in_production these stay scoped to the dev
+// playground.
+const MOCK_KEYCAPS: ReadonlyArray<KeycapSummary> = [
+  {
+    id: 'mock-ocr',
+    name: 'OCR',
+    keycap_color: 'platinum',
+    icon: { kind: 'lottie', src: '/lottie/ocr.json' },
+  },
+  {
+    id: 'mock-screenshot',
+    name: 'Screenshot',
+    keycap_color: 'graphite',
+    icon: { kind: 'lottie', src: '/lottie/screenshot.json' },
+  },
+];
 
 type PlaybackMode = 'forward' | 'reverse' | 'bounce' | 'reverse-bounce';
 
@@ -546,7 +568,34 @@ export const IconLabRoute = (): ReactElement => {
 
       <section className={styles.section}>
         <header className={styles.sectionHead}>
-          <h2 className={styles.sectionTitle}>3 · takeaway</h2>
+          <h2 className={styles.sectionTitle}>3 · keycap mock — OCR + Screenshot @ production size</h2>
+          <p className={styles.sectionSub}>
+            Two mock keycaps mounted through the real <code>KeycapCard</code> at
+            the keyboard&apos;s actual bevel + 36px icon size. Validates the
+            full path: <code>normalizeIcon</code> → <code>IconRenderer</code> →
+            ThorVG WASM inside a production card chrome (LED, embossed icon,
+            label). Animations: hand-rolled <code>ocr.json</code> (scan line
+            sweeping a paginated frame) + <code>screenshot.json</code> (corner
+            brackets pulsing with a center capture dot).
+          </p>
+        </header>
+        <div className={styles.keycapRow}>
+          {MOCK_KEYCAPS.map((kc) => (
+            <KeycapCard
+              key={kc.id}
+              keycap={kc}
+              onActivate={() => {
+                // Dev playground — no real keycap behind these. The real
+                // production wire goes through useKeycaps() in the Keyboard.
+              }}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <header className={styles.sectionHead}>
+          <h2 className={styles.sectionTitle}>4 · takeaway</h2>
         </header>
         <div className={styles.takeaway}>
           <div className={styles.tCol}>
