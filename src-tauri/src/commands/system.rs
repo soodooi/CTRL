@@ -242,6 +242,13 @@ fn probe_hermes_dashboard() -> Option<String> {
     Some(format!("http://{HERMES_DASHBOARD_ADDR}"))
 }
 
+/// Hide the main cockpit window. Backs the top-right Hide button so bao
+/// always has a click fallback when the Ctrl hotkey state desyncs.
+#[tauri::command]
+pub async fn hide_window(app: tauri::AppHandle) -> Result<(), String> {
+    crate::shell::WindowController::hide(&app).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn kernel_status(
     kernel: State<'_, KernelHandle>,

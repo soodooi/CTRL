@@ -214,6 +214,27 @@ impl WindowController {
         }
         Ok(())
     }
+
+    /// Always-hide — same path as the hide branch of `toggle`, but
+    /// unconditional. Used by the cockpit's top-right Hide button so bao
+    /// has a click fallback when the Ctrl hotkey state is broken (CGEventTap
+    /// permission drop, FlagsChanged desync, etc.).
+    pub fn hide(app: &AppHandle) -> Result<()> {
+        let Some(w) = Self::main(app) else {
+            return Ok(());
+        };
+        #[cfg(target_os = "windows")]
+        {
+            tracing::info!("WindowController::hide — cloak");
+            cloak::set(&w, true);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            tracing::info!("WindowController::hide — hide (macOS)");
+            let _ = w.hide();
+        }
+        Ok(())
+    }
 }
 
 /// DWM cloak — the only Win11 + WebView2 + DComp hide path that works

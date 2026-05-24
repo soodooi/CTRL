@@ -137,6 +137,12 @@ export const StatusBar = (): ReactElement => {
     return () => window.clearInterval(timer);
   }, [runCheck]);
 
+  const handleHide = useCallback(() => {
+    invoke<void>('hide_window').catch(() => {
+      // PWA-only mode (no Tauri bridge): silent no-op.
+    });
+  }, []);
+
   const handleUpgrade = useCallback(() => {
     if (upgrade.kind !== 'available') return;
     setUpgrade({ kind: 'installing' });
@@ -298,6 +304,17 @@ export const StatusBar = (): ReactElement => {
         <span className={styles.uptime}>
           UPTIME {showUptime ? formatUptime(uptimeMs) : '—'}
         </span>
+        {/* Hide button — click-fallback for Ctrl hotkey per bao 2026-05-23
+            ('为了不至于隐藏不了 你在右上角先放一个hide按钮吧'). */}
+        <button
+          type="button"
+          className={styles.hideBtn}
+          onClick={handleHide}
+          title="Hide window (Ctrl tap also toggles)"
+          aria-label="Hide window"
+        >
+          ×
+        </button>
       </div>
     </header>
   );
