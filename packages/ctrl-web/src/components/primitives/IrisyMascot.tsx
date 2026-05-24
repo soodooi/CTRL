@@ -39,6 +39,11 @@ export const IrisyMascot = ({
   src,
 }: IrisyMascotProps): ReactElement => {
   if (src) {
+    // Per SKILL.md §3.4: 6 emotion states drive a dotLottie state machine
+    // input rather than React-side if-switch. The canonical asset bundles
+    // an "emotion" state machine that accepts a string "mood" input
+    // matching IrisyState. Brand color slots are auto-injected by
+    // IconRenderer (theme="auto" default).
     return (
       <IconRenderer
         icon={{ kind: 'dotlottie', src }}
@@ -46,6 +51,8 @@ export const IrisyMascot = ({
         playing
         ariaLabel={`Irisy — ${state}`}
         fallbackGlyph="I"
+        stateMachineId="emotion"
+        stateMachineInputs={{ mood: state }}
       />
     );
   }
