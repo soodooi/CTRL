@@ -16,6 +16,7 @@
 
 pub mod chat;
 pub mod code_space;
+pub mod config;
 pub mod irisy;
 pub mod kernel;
 pub mod keychain;
@@ -65,6 +66,11 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::keychain::store_key,
             $crate::commands::keychain::get_key,
             $crate::commands::keychain::delete_key,
+            // config — typed LLM provider configuration (Settings → Provider tab)
+            $crate::commands::config::config_list_providers,
+            $crate::commands::config::config_set_provider_key,
+            $crate::commands::config::config_test_provider,
+            $crate::commands::config::config_delete_provider,
             // code_space — coding 远程桌面 (ST-SS spec v0.7 wire)
             $crate::commands::code_space::cs_spawn,
             $crate::commands::code_space::cs_stdin,
