@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { ChatInput, IrisyMascot } from '@/components/primitives';
 import { useRail, useIrisySubPanel, type RailSubPanel } from '@/components/RightRail';
 import type { SessionHistoryGroup } from '@/components/workspace/SessionWorkspace';
-import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
+import { WorkspaceShell } from '@/components/workspace/WorkspaceShell';
 import styles from './default.module.css';
 
 // Placeholder history — Phase 1D swaps this for a real persisted query.
@@ -89,5 +89,5 @@ export const DefaultWorkspace = (): ReactElement => {
     </div>
   );
 
-  return <WorkspaceTabs fallback={fallback} />;
+  return <WorkspaceShell fallback={fallback} />;
 };

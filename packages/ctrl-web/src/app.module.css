@@ -48,10 +48,27 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
   /* Workspace is the brightest of the four surface layers — bao reads
      this as "where work happens" per Linear 2026's content > chrome.
      Keep it a clean tinted neutral; route content can layer L1/L2
      cards on top. No ambient gradients (decoration without state). */
   background: var(--color-bg-l0);
+  transition: background-color var(--duration-fast) var(--ease-out-quart);
+}
+/* Drop affordance — only paints while a keycap is being dragged over
+   the workspace. Inset accent ring + faint tint so the target is
+   obvious without competing with route content. Decorative pseudo
+   element (no layout shift). */
+.workspace[data-drag-over] {
+  background: color-mix(in oklab, var(--color-bg-l0), var(--color-accent) 4%);
+}
+.workspace[data-drag-over]::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 1.5px dashed color-mix(in oklab, var(--color-accent), transparent 40%);
+  border-radius: var(--radius-lg);
+  pointer-events: none;
 }
 .rail { grid-area: rail; }
