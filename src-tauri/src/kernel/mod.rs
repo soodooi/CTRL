@@ -21,6 +21,7 @@
 #![allow(dead_code)]
 
 pub mod actor;
+pub mod brain_router;
 pub mod cache;
 pub mod capability;
 pub mod composition;
@@ -44,6 +45,7 @@ pub mod vault;
 pub mod vault_index;
 
 pub use actor::{Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority};
+pub use brain_router::{BrainEndpoint, BrainRouter, BrainRouterError};
 pub use capability::{CapToken, Capability, CapabilityBroker, CapabilityError};
 pub use channel::{Channel, ChannelError, ChannelOptions, ChannelRx, ChannelTx, DropPolicy};
 pub use effect::{Effect, EffectExecutor, HttpMethod};
