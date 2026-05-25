@@ -20,6 +20,7 @@
 //   • `commands::*` (Tauri 2 invoke) replaces the port-shaped tauri_commands
 //     adapter; `shell::*` replaces the macOS-only outbound adapters.
 
+mod asset_scheme;
 mod commands;
 mod error;
 mod kernel;
@@ -35,7 +36,7 @@ pub fn run() {
         )
         .try_init();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
         // static manifest host + production signing key). The dep stays in
@@ -44,7 +45,8 @@ pub fn run() {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
         })
-        .invoke_handler(pwa_invoke_handler!())
+        .invoke_handler(pwa_invoke_handler!());
+    asset_scheme::register(builder)
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -65,7 +67,7 @@ pub fn run() {
         )
         .try_init();
 
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
         // static manifest host + production signing key). The dep stays in
@@ -74,7 +76,8 @@ pub fn run() {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
         })
-        .invoke_handler(pwa_invoke_handler!())
+        .invoke_handler(pwa_invoke_handler!());
+    let app = asset_scheme::register(builder)
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
