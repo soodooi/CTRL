@@ -4,12 +4,38 @@
 // Argument and return shapes mirror the Rust structs.
 
 import { invoke } from './bridge';
+import type { Icon } from './icon';
 
+// === Kernel status (system instruments) ===
+//
+// Mirror of `src-tauri/src/commands/system.rs::KernelStatus`. The StatusBar
+// + DefaultWorkspace dashboard read this every ~3s via `useKernelStatus`.
+// `keep last good` semantics — if a poll fails, the consumer should keep
+// the previous snapshot rather than blank the UI (per Zeus' guidance).
+export interface KernelStatus {
+  uptime_ms: number;
+  llm_adapters: string[];
+  primary_adapter: string | null;
+  mcp_servers_installed: number;
+  vault_files: number;
+  stss_bridge_addr: string;
+  overall: 'ok' | 'degraded';
+  warnings: string[];
+}
+
+export const kernelStatus = (): Promise<KernelStatus> =>
+  invoke<KernelStatus>('kernel_status');
+
+// `icon` is widened to `Icon | string` for forward-compat with the
+// kernel schema migration to a discriminated union (per
+// .olym/skills/thorvg/SKILL.md §1 / brand-tokens §12.2). Today the
+// kernel ships single-glyph strings; consumers must run the value
+// through `normalizeIcon()` from `lib/icon.ts` before rendering.
 export interface KeycapSummary {
   id: string;
   name: string;
   keycap_color: string;
-  icon: string;
+  icon: Icon | string;
 }
 
 export const listKeycaps = (): Promise<KeycapSummary[]> =>

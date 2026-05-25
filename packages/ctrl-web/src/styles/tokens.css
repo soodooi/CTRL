@@ -1,89 +1,126 @@
 /*
- * CTRL design tokens — exported from doc/visual-identity/brand-tokens.md v0.1.
- * SINGLE source of truth in CSS. Do NOT hardcode color hex / spacing px
- * anywhere else; always reference via var(--token-name).
+ * CTRL design tokens — v0.4 per bao 2026-05-25 ("试试明亮色").
  *
- * Default theme = dark (deliberate, not auto-OS — per CLAUDE.md and brand-tokens.md §2).
+ * v0.4 shifts from v0.3:
+ *  - Default theme flips light. Dark moves to `[data-theme='dark']`
+ *    opt-in. (Earlier dark-lock retracted by bao 2026-05-25.)
+ *  - Keycap palette nudged warmer + more saturated so the colored
+ *    cards carry presence on the now-bright workspace surface.
+ *  - Accent stays CTRL blue but uses the deeper `--ctrl-blue` (oklch
+ *    0.45) by default since the lighter variant disappears on white.
+ *  - Shadows reweighted slightly — black shadows now do real elevation
+ *    work (they were ghosts on the dark slab).
+ *
+ * Earlier v0.3 direction held:
+ *  - Type scale: fixed `rem`, 9px retired, mono micro-scale (10/11/12)
+ *  - Neutrals tinted toward brand hue (252°, chroma 0.003)
+ *  - text-muted / text-soft both AA-pass on default bg
  */
 
 :root {
-  /* === Brand color === */
-  --ctrl-blue: oklch(0.45 0.19 264);
-  --ctrl-blue-dark: oklch(0.32 0.16 264);
-  --ctrl-blue-light: oklch(0.65 0.16 252);
+  /* === Brand color (single signature accent) ============= */
+  --ctrl-blue: oklch(0.50 0.20 252);
+  --ctrl-blue-dark: oklch(0.32 0.16 252);
+  --ctrl-blue-light: oklch(0.68 0.18 248);
 
-  /* === Keycap palette (per tool-manifest spec §2) === */
-  --keycap-cobalt: var(--ctrl-blue);
-  --keycap-amber: oklch(0.78 0.16 80);
-  --keycap-jade: oklch(0.65 0.15 162);
-  --keycap-platinum: oklch(0.85 0.005 264);
-  --keycap-graphite: oklch(0.32 0.005 264);
+  /* === Keycap palette ====================================
+     Nudged warmer / more saturated for the light cockpit —
+     they used to bake into a dark slab; now they sit on paper
+     and need their own presence. */
+  --keycap-cobalt: oklch(0.58 0.20 252);
+  --keycap-amber: oklch(0.76 0.18 78);
+  --keycap-jade: oklch(0.66 0.17 158);
+  --keycap-platinum: oklch(0.90 0.012 252);
+  --keycap-graphite: oklch(0.34 0.012 252);
 
-  /* === Neutrals (dark default) === */
-  --ink: oklch(0.18 0 0);
-  --ink-soft: oklch(0.42 0 0);
-  --ink-faint: oklch(0.65 0 0);
-  --paper: oklch(0.98 0 0);
-  --paper-soft: oklch(0.95 0 0);
-  --graphite: oklch(0.13 0.005 264);
-  --graphite-soft: oklch(0.17 0.005 264);
-  --graphite-soft-2: oklch(0.22 0.005 264);
+  /* === Neutral primitives ================================= */
+  --ink: oklch(0.18 0.003 252);
+  --ink-2: oklch(0.32 0.003 252);
+  --paper: oklch(0.985 0.003 252);
+  --paper-2: oklch(0.965 0.003 252);
 
-  /* === Semantic === */
-  --status-success: oklch(0.65 0.15 162);
-  --status-warning: oklch(0.78 0.16 80);
+  /* === Semantic primitives =============================== */
+  --status-success: oklch(0.58 0.16 160);
+  --status-warning: oklch(0.70 0.17 70);
   --status-danger: oklch(0.55 0.22 27);
-  --status-info: oklch(0.65 0.16 252);
+  --status-info: var(--ctrl-blue);
 
-  /* === Surfaces (dark default) === */
-  --color-background: var(--graphite);
-  --color-surface: var(--graphite-soft);
-  --color-surface-elevated: var(--graphite-soft-2);
-  --color-text: var(--paper);
-  --color-text-muted: var(--ink-faint);
-  --color-text-soft: var(--ink-soft);
-  --color-border: var(--graphite-soft-2);
-  --color-accent: var(--ctrl-blue-light);
+  /* === Surfaces (light theme — default) ====================
+     L0 base       — viewport floor (workspace = the star, the
+                     warmest paper tone in the stack)
+     L1 surface    — sidebars (keyboard / right rail / status bar).
+                     Slightly cooler/duller than L0 per Linear 2026
+                     "content > chrome" — sidebars step back.
+     L2 elevated   — workspace cards / panels nested on L0
+     L3 overlay    — modals / popovers / dropdowns */
+  --color-bg-l0: var(--paper);
+  --color-bg-l1: var(--paper-2);
+  --color-bg-l2: oklch(0.945 0.004 252);
+  --color-bg-l3: oklch(0.91  0.005 252);
 
-  /* Semantic color aliases — route/component CSS should reference these,
-     not the --status-* primitives, so light/dark can rebalance contrast
-     in one place if perceptual tuning is needed later. */
+  /* Back-compat aliases */
+  --color-background: var(--color-bg-l0);
+  --color-surface: var(--color-bg-l2);
+  --color-surface-elevated: var(--color-bg-l3);
+
+  --color-text: var(--ink);
+  --color-text-muted: oklch(0.38 0.005 252);  /* WCAG AA on bg-l0 */
+  --color-text-soft: oklch(0.52 0.005 252);   /* AA on bg-l0; tertiary */
+  --color-text-faint: oklch(0.68 0.005 252);  /* placeholder-only, sub-AA */
+
+  --color-border: oklch(0.86 0.005 252);
+  --color-border-soft: oklch(0.91 0.005 252);
+  --color-accent: var(--ctrl-blue);
+
+  /* Semantic aliases */
   --color-success: var(--status-success);
   --color-warning: var(--status-warning);
   --color-danger: var(--status-danger);
   --color-info: var(--status-info);
 
-  /* LLM cell stripe — amber keeps LLM responses visually distinct from
-     the cobalt user stripe in the workspace feed. Aliased over the
-     keycap-amber primitive so a future theme rebalance is one edit. */
+  /* LLM cell stripe — amber distinguishes from cobalt user voice. */
   --color-llm-accent: var(--keycap-amber);
 
-  /* === Containers (per brand-tokens.md §8) === */
+  /* iframe color-scheme hint — flips with theme. */
+  --color-scheme: light;
+
+  /* === Containers (per brand-tokens.md §8) ================ */
   --container-narrow: 640px;
   --container-content: 920px;
   --container-wide: 1280px;
   --container-full: 100%;
 
-  /* === Shell chrome heights ===
-     StatusBar and BottomTab heights are kept as tokens so any consumer
-     that needs to clear / offset the chrome (e.g. fixed-positioned
-     overlays inside a route) reads from the same source of truth and
-     stays aligned when the bars are retuned. */
+  /* === Shell chrome dimensions ============================ */
   --statusbar-height: 32px;
-  --bottomtab-height: 56px;
+  --keyboard-width: 320px;
+  --rightrail-width: 80px;
+  --keycap-size: 64px;
+  --keycap-gap: 12px;
+  --bottomtab-height: 0px;
 
-  /* === Typography === */
+  /* === Typography ========================================= */
   --font-sans: 'Inter', 'SF Pro Text', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Roboto Mono', monospace;
   --font-display: 'Inter', 'SF Pro Display', system-ui, sans-serif;
 
-  --text-xs: clamp(0.75rem, 0.7rem + 0.1vw, 0.8125rem);
-  --text-sm: clamp(0.875rem, 0.83rem + 0.2vw, 0.9375rem);
-  --text-base: clamp(1rem, 0.95rem + 0.2vw, 1.0625rem);
-  --text-lg: clamp(1.125rem, 1.05rem + 0.4vw, 1.25rem);
-  --text-xl: clamp(1.5rem, 1.3rem + 0.8vw, 1.875rem);
-  --text-2xl: clamp(2rem, 1.6rem + 1.6vw, 2.75rem);
-  --text-clock: clamp(2.5rem, 2rem + 2.5vw, 3.5rem);
+  /* Product UI scale — fixed rem (per impeccable typography guidance:
+     "Use fixed `rem` scales for app UIs and dashboards"). */
+  --text-xs: 0.75rem;       /* 12px — small body / hint */
+  --text-sm: 0.8125rem;     /* 13px — body */
+  --text-base: 0.9375rem;   /* 15px — primary body */
+  --text-lg: 1.125rem;      /* 18px — section heading */
+  --text-xl: 1.5rem;        /* 24px — page title */
+  --text-2xl: 2rem;         /* 32px — hero */
+  --text-3xl: 2.5rem;       /* 40px */
+
+  /* Mono micro-scale — cockpit instruments. 10px is the FLOOR
+     (`.impeccable.md` design principle 4: 9px retired). */
+  --text-mono-xs: 0.625rem;     /* 10px — cockpit minimum */
+  --text-mono-sm: 0.6875rem;    /* 11px — primary mono labels */
+  --text-mono-md: 0.75rem;      /* 12px — emphasized mono */
+
+  /* Marketing-only fluid scale (clamp ok off-product) */
+  --text-clock: clamp(2.25rem, 1.8rem + 2vw, 3.5rem);
   --text-hero: clamp(3rem, 2rem + 4vw, 5.5rem);
 
   --weight-regular: 400;
@@ -92,21 +129,23 @@
   --weight-bold: 700;
   --weight-black: 900;
 
-  /* === Spacing (4px base) === */
+  /* === Spacing (4px base) ================================ */
   --space-0: 0;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
   --space-12: 48px;
   --space-16: 64px;
   --space-24: 96px;
   --space-32: 128px;
   --space-section: clamp(4rem, 3rem + 5vw, 10rem);
 
-  /* === Radius === */
+  /* === Radius =========================================== */
   --radius-xs: 2px;
   --radius-sm: 4px;
   --radius-md: 8px;
@@ -114,14 +153,17 @@
   --radius-xl: 16px;
   --radius-pill: 9999px;
 
-  /* === Shadows === */
-  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.06);
+  /* === Shadows ==========================================
+     Tuned for light theme — slightly heavier than v0.3 since
+     shadows actually do elevation work on white. */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.08);
   --shadow-md: 0 4px 12px oklch(0 0 0 / 0.10);
-  --shadow-lg: 0 8px 32px oklch(0 0 0 / 0.16);
-  --shadow-xl: 0 24px 64px oklch(0 0 0 / 0.24);
-  --shadow-glow-blue: 0 0 24px oklch(0.45 0.19 264 / 0.35);
+  --shadow-lg: 0 12px 32px oklch(0 0 0 / 0.14);
+  --shadow-xl: 0 24px 64px oklch(0 0 0 / 0.20);
 
-  /* === Motion === */
+  /* === Motion (chrome tier — used for ALL interactive UI) ===
+     Per `.impeccable.md` design principle 3: motion explains state,
+     never decorates. Use these on focus / active / state-change. */
   --duration-instant: 80ms;
   --duration-fast: 150ms;
   --duration-normal: 220ms;
@@ -129,18 +171,38 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+
+  /* === Motion (decoration tier — Lottie / mascot only) ====
+     Reserved for ThorVG content that earns its motion budget
+     (Irisy idle breath = mood signal). NEVER apply to chrome. */
+  --duration-emote-fast: 600ms;
+  --duration-emote-normal: 1000ms;
+  --duration-emote-slow: 1600ms;
 }
 
-/* Light mode opt-in only (not auto via prefers-color-scheme) */
-:root[data-theme='light'] {
-  --color-background: var(--paper);
-  --color-surface: var(--paper-soft);
-  --color-surface-elevated: oklch(0.92 0 0);
-  --color-text: var(--ink);
-  --color-text-muted: var(--ink-faint);
-  --color-text-soft: var(--ink-soft);
-  --color-border: oklch(0.88 0 0);
-  --color-accent: var(--ctrl-blue);
+/* Dark theme — opt-in via `:root[data-theme='dark']` (no auto via
+   prefers-color-scheme; bao 2026-05-25: light is the product default,
+   dark is a user preference, not a system follower). */
+:root[data-theme='dark'] {
+  --color-bg-l0: oklch(0.155 0.003 252);
+  --color-bg-l1: oklch(0.135 0.003 252);
+  --color-bg-l2: oklch(0.190 0.003 252);
+  --color-bg-l3: oklch(0.230 0.003 252);
+
+  --color-background: var(--color-bg-l0);
+  --color-surface: var(--color-bg-l2);
+  --color-surface-elevated: var(--color-bg-l3);
+
+  --color-text: var(--paper);
+  --color-text-muted: oklch(0.72 0.003 252);
+  --color-text-soft: oklch(0.58 0.003 252);
+  --color-text-faint: oklch(0.42 0.003 252);
+
+  --color-border: oklch(0.230 0.003 252);
+  --color-border-soft: oklch(0.195 0.003 252);
+  --color-accent: var(--ctrl-blue-light);
+
+  --color-scheme: dark;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -149,5 +211,8 @@
     --duration-fast: 0ms;
     --duration-normal: 50ms;
     --duration-slow: 50ms;
+    --duration-emote-fast: 0ms;
+    --duration-emote-normal: 50ms;
+    --duration-emote-slow: 50ms;
   }
 }

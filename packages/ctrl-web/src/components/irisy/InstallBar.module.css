@@ -52,7 +52,7 @@
 .ctaReady {
   background: var(--status-success);
   border-color: var(--status-success);
-  color: var(--graphite);
+  color: var(--ink);
   cursor: pointer;
 }
 

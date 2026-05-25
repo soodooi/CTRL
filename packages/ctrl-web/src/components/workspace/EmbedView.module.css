@@ -1,0 +1,92 @@
+/* EmbedView — iframe-based external embed (e.g. hermes dashboard). */
+
+.shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-l0);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.statusStrip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 24px;
+  padding: 0 var(--space-3);
+  background: var(--color-bg-l1);
+  border-bottom: 1px solid var(--color-border-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+.statusUrl {
+  color: var(--color-text-soft);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.spacer { flex: 1; }
+
+.frameWrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  display: flex;
+}
+.frame {
+  flex: 1;
+  border: none;
+  width: 100%;
+  background: var(--color-bg-l0);
+  display: block;
+  min-height: 0;
+  /* `color-scheme` flips with the app theme so embedded scrollbars
+     match the cockpit. Cross-origin content still picks its own theme —
+     the loading veil below is the real fix for the white initial paint. */
+  color-scheme: var(--color-scheme);
+}
+
+.loadingVeil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background:
+    radial-gradient(
+      800px 400px at 50% 40%,
+      color-mix(in oklab, var(--color-accent), transparent 90%) 0%,
+      transparent 60%
+    ),
+    var(--color-bg-l0);
+  pointer-events: none;
+}
+.loadingPulse {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--color-accent), transparent 60%);
+  animation: embed-loading 1.6s ease-in-out infinite;
+}
+.loadingText {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+}
+@keyframes embed-loading {
+  0%, 100% { transform: scale(0.85); opacity: 0.5; }
+  50%      { transform: scale(1);    opacity: 1;   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loadingPulse { animation: none; opacity: 0.7; }
+}

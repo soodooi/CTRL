@@ -1,0 +1,63 @@
+/* FileDropzone — drag/click area for file input. */
+
+.zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 160px;
+  padding: var(--space-6) var(--space-5);
+  background: var(--color-bg-l2);
+  border: 1.5px dashed var(--color-border);
+  border-radius: 12px;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+  text-align: center;
+  width: 100%;
+}
+.zone:hover {
+  background: var(--color-bg-l3);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+.zone:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.zone[data-dragging='true'] {
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 12%);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+.zone[data-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon {
+  color: var(--color-accent);
+}
+.hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}

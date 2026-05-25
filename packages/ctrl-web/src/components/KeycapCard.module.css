@@ -1,5 +1,11 @@
+/* KeycapCard — Pool keycap tile. Industrial OP-1 keycap aesthetic:
+   colored face + top sheen + bottom bevel + LED hairline.
+   Per-color text is driven by `data-face` (light/dark) set in TSX. */
+
 .card {
   --card-color: var(--keycap-platinum);
+  --card-text: var(--paper);
+  --card-text-soft: color-mix(in oklab, var(--paper), transparent 25%);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -9,34 +15,57 @@
   width: 88px;
   height: 88px;
   padding: var(--space-3);
-  background: var(--card-color);
-  color: var(--paper);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--card-color), white 12%) 0%,
+      var(--card-color) 55%,
+      color-mix(in oklab, var(--card-color), black 10%) 100%
+    );
+  color: var(--card-text);
   border: none;
   border-radius: var(--radius-lg);
   box-shadow:
-    var(--shadow-md),
-    inset 0 -3px 0 0 rgb(0 0 0 / 0.18),
-    inset 0 1px 0 0 rgb(255 255 255 / 0.12);
+    /* outer drop — heavier so the cap lifts off the paper */
+    0 2px 6px -1px color-mix(in oklab, var(--card-color), black 60%) ,
+    0 8px 16px -8px color-mix(in oklab, var(--card-color), transparent 50%),
+    /* top sheen + bottom edge bevel — physical keycap rim */
+    inset 0 1px 0 0 color-mix(in oklab, white, transparent 70%),
+    inset 0 -3px 0 0 color-mix(in oklab, var(--card-color), black 25%);
   cursor: pointer;
   font-family: var(--font-mono);
   transform: translateY(0) scale(1);
   transition:
     box-shadow var(--duration-fast) var(--ease-out-expo),
-    background var(--duration-fast) var(--ease-out-expo),
     transform var(--duration-fast) var(--ease-out-expo);
 }
 
+/* Light keycap faces (amber / platinum) — swap text + soft to dark ink. */
+.card[data-face='light'] {
+  --card-text: var(--ink);
+  --card-text-soft: color-mix(in oklab, var(--ink), transparent 35%);
+}
+
 .card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   box-shadow:
-    var(--shadow-lg),
-    inset 0 -3px 0 0 rgb(0 0 0 / 0.22),
-    inset 0 1px 0 0 rgb(255 255 255 / 0.16);
+    0 4px 10px -2px color-mix(in oklab, var(--card-color), black 60%),
+    0 16px 28px -10px color-mix(in oklab, var(--card-color), transparent 45%),
+    inset 0 1px 0 0 color-mix(in oklab, white, transparent 60%),
+    inset 0 -3px 0 0 color-mix(in oklab, var(--card-color), black 25%);
+}
+.card:hover .led {
+  background: var(--card-text);
+  opacity: 1;
 }
 
 .card:active {
   transform: translateY(1px) scale(0.98);
   transition-duration: 80ms;
+  box-shadow:
+    0 1px 3px color-mix(in oklab, var(--card-color), black 60%),
+    inset 0 1px 0 0 color-mix(in oklab, white, transparent 80%),
+    inset 0 -1px 0 0 color-mix(in oklab, var(--card-color), black 25%);
 }
 
 .card:focus-visible {
@@ -44,21 +73,26 @@
   outline-offset: 4px;
 }
 
+/* LED hairline — sits in the keycap face, lights up on hover. */
 .led {
   position: absolute;
-  top: 6px;
+  top: 7px;
   left: 50%;
   transform: translateX(-50%);
-  width: 28px;
+  width: 30px;
   height: 3px;
-  border-radius: 1px;
-  background: rgb(255 255 255 / 0.55);
-  box-shadow: 0 0 8px rgb(255 255 255 / 0.4);
+  border-radius: 2px;
+  background: var(--card-text);
+  opacity: 0.55;
+  transition:
+    opacity var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart);
 }
 
 .icon {
   font-size: 28px;
   line-height: 1;
+  color: var(--card-text);
 }
 
 .label {
@@ -66,4 +100,5 @@
   font-weight: var(--weight-semibold);
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  color: var(--card-text);
 }

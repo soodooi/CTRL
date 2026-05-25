@@ -1,0 +1,64 @@
+/* Manifest layout primitives — Stack / Heading / Text.
+   Presentation-only utility wrappers that keycap manifests can name. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.stack[data-direction='horizontal'] { flex-direction: row; }
+.stack[data-align='center']         { align-items: center; }
+.stack[data-align='end']            { align-items: flex-end; }
+.stack[data-justify='center']       { justify-content: center; }
+.stack[data-justify='between']      { justify-content: space-between; }
+.stack[data-justify='end']          { justify-content: flex-end; }
+
+.padX_2 { padding-left: var(--space-2); padding-right: var(--space-2); }
+.padX_3 { padding-left: var(--space-3); padding-right: var(--space-3); }
+.padX_4 { padding-left: var(--space-4); padding-right: var(--space-4); }
+.padX_5 { padding-left: var(--space-5); padding-right: var(--space-5); }
+.padX_6 { padding-left: var(--space-6); padding-right: var(--space-6); }
+.padY_2 { padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.padY_3 { padding-top: var(--space-3); padding-bottom: var(--space-3); }
+.padY_4 { padding-top: var(--space-4); padding-bottom: var(--space-4); }
+.padY_5 { padding-top: var(--space-5); padding-bottom: var(--space-5); }
+.padY_6 { padding-top: var(--space-6); padding-bottom: var(--space-6); }
+
+.heading {
+  font-family: var(--font-display);
+  margin: 0;
+  letter-spacing: -0.022em;
+  color: var(--color-text);
+}
+.heading_1 { font-size: var(--text-2xl); font-weight: var(--weight-semibold); }
+.heading_2 { font-size: var(--text-xl);  font-weight: var(--weight-semibold); }
+.heading_3 { font-size: var(--text-lg);  font-weight: var(--weight-semibold); }
+.heading_4 {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.text {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+  color: var(--color-text);
+  margin: 0;
+}
+.text_soft { color: var(--color-text-soft); }
+.text_muted { color: var(--color-text-muted); }
+.text_mono { font-family: var(--font-mono); font-size: var(--text-xs); }
+
+.card {
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 12px;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}

@@ -1,0 +1,21 @@
+/* IconRenderer — visual baseline for every icon dispatch path.
+   Keeps glyph + svg + lottie cells optically aligned regardless of variant. */
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  color: currentColor;
+  line-height: 1;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.svg {
+  display: block;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}

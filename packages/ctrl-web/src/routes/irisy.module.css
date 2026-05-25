@@ -47,13 +47,13 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   z-index: 90;
-  box-shadow: 0 12px 32px color-mix(in oklch, var(--graphite) 50%, transparent);
+  box-shadow: var(--shadow-lg);
   animation: slide-up 180ms ease;
 }
 
 .toastOk {
   background: var(--status-success);
-  color: var(--graphite);
+  color: var(--ink);
 }
 
 .toastErr {
