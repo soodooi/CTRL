@@ -35,6 +35,16 @@ pub struct IrisyStatus {
     pub kernel_llm: KernelLlmStatus,
     pub hermes: HermesStatus,
     pub mcp_bridge: McpBridgeStatus,
+    /// Pi default-brain probe (ADR-001 amendment 2026-05-25, H-2026-05-25-001).
+    /// `reachable` = the @ctrl/pi-plugin MCP server is responding on its
+    /// `/healthz` endpoint. PWA reads this to decide whether `irisy_chat_stream`
+    /// will succeed; degraded UI prompts the user to start the subprocess
+    /// (until the kernel supervisor for pi-plugin lands).
+    pub pi: PiStatus,
+    /// Active brain keycap id (read from `~/.ctrl/active-brain`; defaults to
+    /// "pi" when the file is absent / empty). PWA shows this in the Settings
+    /// → Brain section so the user can swap brains by editing the file.
+    pub active_brain: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -69,6 +79,22 @@ pub struct McpBridgeStatus {
     pub handshake_path: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PiStatus {
+    /// MCP endpoint the brain router dispatches to. v1.0 hardcoded
+    /// `http://127.0.0.1:17874/mcp` for brain id "pi"; future supervisor
+    /// reports the actual ephemeral port through this field.
+    pub mcp_url: String,
+    /// `true` when /healthz returned 200 within the probe timeout. `false`
+    /// covers both "Pi plugin not running" and "Pi binary missing" — PWA
+    /// surfaces a single "start pi-plugin" hint either way.
+    pub reachable: bool,
+    /// Pi binary version reported by the plugin's /healthz (`pi.version`
+    /// field). `None` when the plugin is running but Pi itself is missing,
+    /// or when the probe didn't complete in time.
+    pub version: Option<String>,
+}
+
 #[tauri::command]
 pub async fn irisy_init(
     app: tauri::AppHandle,
@@ -78,6 +104,8 @@ pub async fn irisy_init(
     let kernel_llm = probe_kernel_llm(&kernel);
     let hermes = probe_hermes().await;
     let mcp_bridge = write_handshake_file()?;
+    let pi = probe_pi().await;
+    let active_brain = read_active_brain();
 
     tracing::info!(
         app_version = %app_version,
@@ -85,10 +113,87 @@ pub async fn irisy_init(
         hermes_path = ?hermes.binary_path,
         plugin_enabled = hermes.plugin_enabled,
         brain_configured = hermes.brain_configured,
+        pi_reachable = pi.reachable,
+        pi_version = ?pi.version,
+        active_brain = %active_brain,
         "irisy_init ok"
     );
 
-    Ok(IrisyStatus { app_version, kernel_llm, hermes, mcp_bridge })
+    Ok(IrisyStatus {
+        app_version,
+        kernel_llm,
+        hermes,
+        mcp_bridge,
+        pi,
+        active_brain,
+    })
+}
+
+const PI_HEALTHZ_URL: &str = "http://127.0.0.1:17874/healthz";
+const PI_PROBE_TIMEOUT_MS: u64 = 1500;
+
+async fn probe_pi() -> PiStatus {
+    let unreachable = PiStatus {
+        mcp_url: "http://127.0.0.1:17874/mcp".to_string(),
+        reachable: false,
+        version: None,
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(PI_PROBE_TIMEOUT_MS))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return unreachable,
+    };
+
+    let resp = match client.get(PI_HEALTHZ_URL).send().await {
+        Ok(r) if r.status().is_success() => r,
+        _ => return unreachable,
+    };
+
+    let body: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => {
+            return PiStatus {
+                reachable: true,
+                ..unreachable
+            };
+        }
+    };
+
+    let version = body
+        .get("pi")
+        .and_then(|p| p.get("version"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    PiStatus {
+        mcp_url: "http://127.0.0.1:17874/mcp".to_string(),
+        reachable: true,
+        version,
+    }
+}
+
+fn read_active_brain() -> String {
+    let home = match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() => h,
+        _ => return "pi".to_string(),
+    };
+    let path = std::path::PathBuf::from(home)
+        .join(".ctrl")
+        .join("active-brain");
+    match std::fs::read_to_string(&path) {
+        Ok(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                "pi".to_string()
+            } else {
+                trimmed.to_string()
+            }
+        }
+        Err(_) => "pi".to_string(),
+    }
 }
 
 fn probe_kernel_llm(kernel: &State<'_, KernelHandle>) -> KernelLlmStatus {
