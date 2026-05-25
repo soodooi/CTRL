@@ -93,20 +93,25 @@ impl WindowController {
         #[cfg(not(target_os = "windows"))]
         {
             // macOS: cloak bug is Win11-specific, native hide/show works.
-            // BUT: CGEventTap modifier-flag race after Cmd-Tab app switches
-            // can leave ctrl_pending stuck. Reset hotkey state on show so the
-            // 3rd+ Ctrl tap doesn't silently no-op.
+            // Hotkey path goes through THIS function from any focused app,
+            // so we must explicitly activate / deactivate the whole app —
+            // not just the window — otherwise `set_focus()` brings the
+            // NSWindow to front without taking key-focus from Chrome / etc.
+            // See troubleshoot_ctrl_hotkey.md for the full failure history.
             let visible = w.is_visible().unwrap_or(false);
             if visible {
                 tracing::info!("WindowController::toggle — hide (macOS)");
                 let _ = w.hide();
+                #[cfg(target_os = "macos")]
+                mac_app::hide_app();
             } else {
                 tracing::info!("WindowController::toggle — show (macOS)");
+                #[cfg(target_os = "macos")]
+                mac_app::ensure_all_spaces(&w);
                 let _ = w.show();
                 let _ = w.set_focus();
-                // Mirror Win path: clear hotkey state so the next Ctrl tap
-                // starts fresh regardless of what FlagsChanged events were
-                // dropped while the window was off-screen.
+                #[cfg(target_os = "macos")]
+                mac_app::activate_app();
                 super::hotkey::HotkeyController::reset_state();
             }
         }
@@ -124,6 +129,8 @@ impl WindowController {
             let w = Self::build_main(app)?;
             #[cfg(target_os = "windows")]
             cloak::set(&w, false);
+            #[cfg(target_os = "macos")]
+            mac_app::ensure_all_spaces(&w);
             let _ = w.show();
             let _ = w.set_focus();
             return Ok(());
@@ -135,9 +142,13 @@ impl WindowController {
         }
         #[cfg(not(target_os = "windows"))]
         {
+            #[cfg(target_os = "macos")]
+            mac_app::ensure_all_spaces(&w);
             let _ = w.show();
             let _ = w.set_focus();
             let _ = w.unminimize();
+            #[cfg(target_os = "macos")]
+            mac_app::activate_app();
             super::hotkey::HotkeyController::reset_state();
         }
         tracing::info!("WindowController::reveal — main shown + focused");
@@ -311,6 +322,15 @@ pub(crate) fn install_close_intercept(w: &WebviewWindow, app: &AppHandle, label:
                     if label_for_closure == "main" {
                         #[cfg(target_os = "windows")]
                         cloak::set(&w, true);
+                        // macOS: cloak is Win11-specific; the prior path was
+                        // an empty branch under the cfg gate so the X button
+                        // visibly did nothing. Native hide preserves the
+                        // PWA + kernel state and the next Ctrl tap shows it
+                        // again instantly.
+                        #[cfg(target_os = "macos")]
+                        {
+                            let _ = w.hide();
+                        }
                     } else {
                         let _ = w.destroy();
                     }
@@ -318,4 +338,86 @@ pub(crate) fn install_close_intercept(w: &WebviewWindow, app: &AppHandle, label:
             });
         }
     });
+}
+
+// ─── macOS app-level activation + space behavior ─────────────────────────
+//
+// The hotkey can fire from ANY focused app (Chrome, Slack, terminal, …)
+// because CGEventTap sits at the HID layer. But macOS by default won't
+// transfer focus to a background app's window just because the window
+// was raised — we must also activate the application. Without this,
+// `set_focus()` brings CTRL's NSWindow above other windows visually but
+// the user's keystrokes still go to Chrome.
+//
+// Plus: even with tauri.conf.json's `visibleOnAllWorkspaces: true`, the
+// NSWindow's collectionBehavior may not include `.canJoinAllSpaces` if
+// the window was created before Tauri applied that config (or if the
+// upstream binding skipped it). Setting it explicitly via the objc2-
+// app-kit API is reliable across the full lifecycle.
+//
+// See `troubleshoot_ctrl_hotkey.md` (memory) for the full failure log.
+#[cfg(target_os = "macos")]
+mod mac_app {
+    use objc2::{class, msg_send};
+    use objc2::runtime::AnyObject;
+    use tauri::WebviewWindow;
+
+    /// `NSWindowCollectionBehaviorCanJoinAllSpaces | .stationary | .fullScreenAuxiliary`
+    /// — same combination Raycast / Spotlight / Alfred use for a launcher
+    /// window that follows the user across Spaces + fullscreen apps.
+    const COLLECTION_BEHAVIOR: usize = 0x1 | 0x10 | 0x100;
+
+    /// Set `collectionBehavior` so the window joins every Space + appears
+    /// over fullscreen apps. Idempotent; cheap; safe to call on every show.
+    pub(super) fn ensure_all_spaces(w: &WebviewWindow) {
+        let ns_win = match w.ns_window() {
+            Ok(ptr) if !ptr.is_null() => ptr as *mut AnyObject,
+            _ => {
+                tracing::warn!("ensure_all_spaces: ns_window not available");
+                return;
+            }
+        };
+        // SAFETY: ns_win is a valid NSWindow pointer owned by tauri for the
+        // lifetime of the WebviewWindow; setCollectionBehavior: is documented
+        // main-thread only and the toggle path runs through `run_on_main_thread`.
+        unsafe {
+            let _: () = msg_send![ns_win, setCollectionBehavior: COLLECTION_BEHAVIOR];
+        }
+    }
+
+    fn shared_app() -> *mut AnyObject {
+        let cls = class!(NSApplication);
+        unsafe { msg_send![cls, sharedApplication] }
+    }
+
+    /// Activate CTRL.app so the just-shown window actually receives the
+    /// user's next keystrokes. Without this, NSWindow is raised but the
+    /// previous app stays "active" and keystrokes go there.
+    pub(super) fn activate_app() {
+        let app = shared_app();
+        if app.is_null() {
+            return;
+        }
+        // SAFETY: AppKit main-thread call; ptr from sharedApplication is
+        // a singleton owned by the runtime for the process lifetime.
+        unsafe {
+            let _: () = msg_send![app, activateIgnoringOtherApps: true];
+        }
+    }
+
+    /// Hide the entire app — yields focus back to the previously active
+    /// app (Chrome, Slack, etc.). Without this, hiding just the window
+    /// can leave CTRL.app as the active app with no visible window,
+    /// blocking the next keyboard input from reaching its real target.
+    pub(super) fn hide_app() {
+        let app = shared_app();
+        if app.is_null() {
+            return;
+        }
+        // SAFETY: -[NSApplication hide:] takes a single id sender; nil ok.
+        unsafe {
+            let nil: *mut AnyObject = std::ptr::null_mut();
+            let _: () = msg_send![app, hide: nil];
+        }
+    }
 }

@@ -12,6 +12,7 @@
 
 import type { ReactElement } from 'react';
 import { IconRenderer } from './IconRenderer';
+import styles from './IrisyMascot.module.css';
 
 export type IrisyState =
   | 'idle'
@@ -47,16 +48,25 @@ export const IrisyMascot = ({
   src = DEFAULT_IRISY_SRC,
 }: IrisyMascotProps): ReactElement => {
   const isDotLottie = src.toLowerCase().endsWith('.lottie');
+  // The wrapper carries the eye-blink keyframe animation (CSS), since
+  // the lottie itself only animates layer-scale (breath). Sleeping
+  // freezes both — no blink while asleep.
+  const wrapperClass = state === 'sleeping' ? undefined : styles.wrapper;
   return (
-    <IconRenderer
-      icon={isDotLottie ? { kind: 'dotlottie', src } : { kind: 'lottie', src }}
-      size={size}
-      playing={state !== 'sleeping'}
-      speed={SPEED_BY_STATE[state]}
-      ariaLabel={`Irisy — ${state}`}
-      fallbackGlyph="I"
-      stateMachineId="emotion"
-      stateMachineInputs={{ mood: state }}
-    />
+    <span
+      className={wrapperClass}
+      style={{ width: size, height: size }}
+    >
+      <IconRenderer
+        icon={isDotLottie ? { kind: 'dotlottie', src } : { kind: 'lottie', src }}
+        size={size}
+        playing={state !== 'sleeping'}
+        speed={SPEED_BY_STATE[state]}
+        ariaLabel={`Irisy — ${state}`}
+        fallbackGlyph="I"
+        stateMachineId="emotion"
+        stateMachineInputs={{ mood: state }}
+      />
+    </span>
   );
 };

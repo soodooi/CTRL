@@ -18,11 +18,19 @@
 
 import type { ReactElement } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
+import { invoke } from '@tauri-apps/api/core';
 import { Led, Logo, StatusPill, type LedTone } from './primitives';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import { useKernelStatus } from '../hooks/useKernelStatus';
 import { useRail } from './RightRail';
 import styles from './StatusBar.module.css';
+
+const hideMainWindow = (): void => {
+  void invoke('hide_window').catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('hide_window invoke failed', err);
+  });
+};
 
 interface InstrumentProps {
   label: string;
@@ -140,6 +148,15 @@ export const StatusBar = (): ReactElement => {
         <span className={styles.uptime}>
           UPTIME {showUptime ? formatUptime(uptimeMs) : '—'}
         </span>
+        <button
+          type="button"
+          className={styles.hideBtn}
+          onClick={hideMainWindow}
+          title="Hide CTRL (Done)"
+          aria-label="Hide CTRL"
+        >
+          ✕
+        </button>
       </div>
     </header>
   );

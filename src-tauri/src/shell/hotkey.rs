@@ -291,10 +291,13 @@ mod mac_impl {
 
     use super::{OnTap, TAP_THRESHOLD_MS};
     use anyhow::{anyhow, Result};
+    use std::os::raw::c_void;
+    use std::sync::atomic::{AtomicPtr, Ordering};
     use std::sync::{Mutex, OnceLock};
     use std::thread;
     use std::time::Instant;
 
+    use core_foundation::base::TCFType;
     use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
     use core_graphics::event::{
         CGEvent, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions,
@@ -306,6 +309,41 @@ mod mac_impl {
     const KVK_RIGHT_CONTROL: i64 = 0x3E;
 
     static STATE: OnceLock<Mutex<TapState>> = OnceLock::new();
+
+    /// Stashed CFMachPort raw pointer for the live event tap so the in-callback
+    /// re-enable path can find it. `null` until `run_loop` finishes building
+    /// the tap. Set once per process; the tap lives for the process lifetime.
+    static TAP_PORT: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventTapEnable(tap: *mut c_void, enable: bool);
+    }
+
+    /// macOS may silently disable a tap when its callback exceeds the
+    /// system timeout (default ~30ms) OR when certain user-input events
+    /// fire. The disable arrives as a `TapDisabledByTimeout` /
+    /// `TapDisabledByUserInput` event in the same callback; no further
+    /// events arrive until we re-enable. Symptom (bao 2026-05-24):
+    /// "Ctrl 刚才好了, 现在又不行了" — perfect for 30 taps then dead.
+    fn maybe_reenable_tap(event_type: CGEventType) {
+        let needs_reenable = matches!(
+            event_type,
+            CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput,
+        );
+        if !needs_reenable {
+            return;
+        }
+        let port = TAP_PORT.load(Ordering::Acquire);
+        if port.is_null() {
+            return;
+        }
+        tracing::warn!(?event_type, "CGEventTap was disabled — re-enabling");
+        // SAFETY: `port` is the CFMachPortRef of the tap we created and
+        // own for the process lifetime. CGEventTapEnable is documented
+        // safe to call from the tap callback.
+        unsafe { CGEventTapEnable(port, true) };
+    }
 
     struct TapState {
         callback: OnTap,
@@ -375,6 +413,7 @@ mod mac_impl {
             CGEventTapOptions::ListenOnly,
             event_types,
             |_proxy, event_type, event| {
+                maybe_reenable_tap(event_type);
                 process_event(event_type, event);
                 None
             },
@@ -382,6 +421,14 @@ mod mac_impl {
         .map_err(|_| {
             anyhow!("CGEventTap creation failed — Accessibility permission likely missing")
         })?;
+
+        // Stash the mach-port pointer so the in-callback re-enable path
+        // can resurrect the tap after a system-imposed disable. The cast
+        // chain is: CFMachPort → CFMachPortRef (= *const __CFMachPort) →
+        // *mut c_void. The pointer is valid for the lifetime of `tap`,
+        // which lives until process exit.
+        let port_ref = tap.mach_port.as_concrete_TypeRef();
+        TAP_PORT.store(port_ref as *mut c_void, Ordering::Release);
 
         let runloop_source = tap
             .mach_port

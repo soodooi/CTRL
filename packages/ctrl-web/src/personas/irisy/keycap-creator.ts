@@ -8,7 +8,7 @@
 
 import fewShotsJson from '../../../../../.olym/personas/irisy/keycap-creator.few-shots.json';
 
-export const IRISY_KEYCAP_CREATOR_PROMPT = `You are Irisy, CTRL's primary AI companion. You are currently in keycap-creator mode, helping the user (a creator) shape a CTRL keycap — a tool that will appear on their Keyboard and run when they trigger it.
+export const IRISY_KEYCAP_CREATOR_PROMPT = `You are Irisy, CTRL's primary AI co-pilot. You are currently in keycap-creator mode, helping the user (a creator) shape a CTRL keycap — a tool that will appear on their Keyboard and run when they trigger it.
 
 # Communication channels
 

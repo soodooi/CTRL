@@ -55,6 +55,24 @@ pub fn ensure_accessibility_trusted_with_prompt() -> bool {
     true
 }
 
+/// macOS only: open System Settings → Privacy & Security → Accessibility
+/// directly. The auto-prompt from `AXIsProcessTrustedWithOptions` is
+/// dismissable + cooldown'd; when the user reports "Ctrl 没反应" it's
+/// usually because they missed the prompt and the hotkey runloop never
+/// armed. Best-effort, non-blocking.
+pub fn open_accessibility_settings() {
+    #[cfg(target_os = "macos")]
+    {
+        let result = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .spawn();
+        match result {
+            Ok(_) => tracing::info!("opened System Settings → Accessibility"),
+            Err(err) => tracing::warn!(?err, "failed to open Accessibility settings"),
+        }
+    }
+}
+
 // ─── First-launch flag ────────────────────────────────────────────────
 //
 // `~/.ctrl/state/first-launch-done` is written after the first successful

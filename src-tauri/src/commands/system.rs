@@ -182,25 +182,38 @@ pub async fn run_real_update_check(app: &tauri::AppHandle) -> UpdateCheck {
 /// check immediately (so the cache is populated by the time the user
 /// opens the window) then refreshes every 15 minutes for the process
 /// lifetime. Idempotent; safe to call once per boot.
+///
+/// Auto-push: every time the cache transitions to a new `kind` we emit
+/// the `update-available-changed` Tauri event so the PWA's version pill
+/// reflects the new state without waiting for its 15-min poll fallback.
 pub fn spawn_update_prewarm(app: tauri::AppHandle) {
-    use tauri::Manager;
+    use tauri::{Emitter, Manager};
     tauri::async_runtime::spawn(async move {
+        let mut last_kind: Option<&'static str> = None;
+        let mut publish = |check: &UpdateCheck| {
+            if let Some(cache) = app.try_state::<UpdateCache>() {
+                cache.write(check.clone());
+            }
+            if last_kind != Some(check.kind) {
+                if let Err(err) = app.emit("update-available-changed", check) {
+                    tracing::warn!(?err, "update prewarm: emit failed");
+                }
+                last_kind = Some(check.kind);
+            }
+        };
+
         // First pass — populate cache ASAP. If the PWA opens during this
         // ~1-3s window it falls back to the cold path inside
         // `check_for_updates` (still <3s, but no faster than today).
         let initial = run_real_update_check(&app).await;
-        if let Some(cache) = app.try_state::<UpdateCache>() {
-            cache.write(initial);
-        }
+        publish(&initial);
         tracing::info!("update prewarm: initial check complete, cache populated");
 
         // Refresh loop. 15 min matches the PWA's prior poll interval.
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(15 * 60)).await;
             let next = run_real_update_check(&app).await;
-            if let Some(cache) = app.try_state::<UpdateCache>() {
-                cache.write(next);
-            }
+            publish(&next);
             tracing::info!("update prewarm: 15-min refresh complete");
         }
     });

@@ -1,6 +1,6 @@
 /* RightRail — two-level context navigation.
  *
- *   [ sub-panel 240px (shown when active) | level-1 rail 80px ]
+ *   [ sub-panel 240px (shown when active) | level-1 rail 64px ]
  *
  * Per bao 2026-05-23: level-2 only appears AFTER clicking a level-1
  * item that carries a sub-panel. Default active = Irisy, so on boot
@@ -27,10 +27,6 @@
   overflow-x: hidden;
   background: var(--color-bg-l0);
   border-right: 1px solid var(--color-border-soft);
-  /* Width animates 240 → 0 / 0 → 240 via shell-level grid resize. The
-     local column transitions border + width so a stale render between
-     re-paints doesn't show a hard edge collapse. */
-  transition: width 220ms var(--ease-out-quart, ease-out);
 }
 .container[data-sub-panel='closed'] .subPanel {
   width: 0;
@@ -44,7 +40,7 @@
 /* ---------- level-1 primary rail ---------- */
 
 .primary {
-  width: 80px;
+  width: 64px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -103,17 +99,50 @@
 }
 
 .versionRow {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 6px 4px 4px;
+  padding: 6px 6px 5px;
+  margin: 2px 2px 0;
+  border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 0.08em;
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
   user-select: none;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.versionRow:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--color-bg-l2), transparent 30%);
+  color: var(--color-text);
+}
+.versionRow:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-accent), transparent 50%);
+  outline-offset: 1px;
+}
+.versionRow:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+/* Highlighted CTA when an update is available — pill turns into the
+ * upgrade entry-point. */
+.versionRow[data-available='true'] {
+  color: var(--color-success);
+  border-color: color-mix(in oklab, var(--color-success), transparent 70%);
+  background: color-mix(in oklab, var(--color-success), transparent 90%);
+}
+.versionRow[data-available='true']:hover {
+  background: color-mix(in oklab, var(--color-success), transparent 80%);
+}
+.versionRow[data-state='installing'] {
+  color: var(--color-text);
+  border-color: color-mix(in oklab, var(--color-accent), transparent 60%);
 }
 .versionText {
   text-transform: lowercase;
@@ -142,29 +171,22 @@
 .item {
   appearance: none;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 12px;
+  border: none;
+  border-radius: 8px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 10px 4px 8px;
+  padding: 10px 4px;
   color: var(--color-text-muted);
   cursor: pointer;
   position: relative;
-  transition:
-    background-color 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease;
 }
 .item:hover {
   background: var(--color-bg-l2);
   color: var(--color-text);
 }
 .item[data-active='true'] {
-  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 18%);
-  border-color: color-mix(in oklab, var(--color-accent), transparent 50%);
+  background: var(--color-bg-l2);
   color: var(--color-text);
 }
 .item:focus-visible {
@@ -172,46 +194,20 @@
   outline-offset: 1px;
 }
 
-/* Irisy item gets more vertical room because the mascot icon is 40px
-   (vs 22px for regular keycap shortcuts). The first-item bottom rule
-   gives Irisy a visual separator from the keycap shortcut column. */
+/* Irisy item gets extra vertical padding because the mascot icon is 40px
+ * vs 22px for the other items. */
 .item[data-irisy='true'] {
-  padding: 12px 4px 12px;
-  margin-bottom: 6px;
-  border-bottom: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 50%);
-  border-radius: 14px;
+  padding: 12px 4px;
 }
 
-/* Settings item is the rail's utility footer cap — quieter than Irisy
-   (no inner separator, dimmer baseline). Active state still uses the
-   same accent treatment as everything else. */
 .item[data-settings='true'] {
-  padding: 8px 4px;
   color: var(--color-text-muted);
 }
-.item[data-settings='true']:hover {
-  color: var(--color-text);
-}
 
-/* Active indicator bar — slim accent stripe on the right edge of the
-   active item, anchored to the sub-panel side. Subtle but unambiguous. */
+/* activeBar removed — bao 2026-05-24: 不要过度设计. Active state is now
+ * a flat background-color change only. */
 .activeBar {
-  position: absolute;
-  right: -7px;
-  top: 12px;
-  bottom: 12px;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--color-accent);
-  opacity: 0;
-  transform: scaleY(0.4);
-  transform-origin: center;
-  transition: opacity 200ms ease, transform 200ms var(--ease-out-quart, ease-out);
-  pointer-events: none;
-}
-.item[data-active='true'] .activeBar {
-  opacity: 1;
-  transform: scaleY(1);
+  display: none;
 }
 
 .itemIcon {
@@ -223,19 +219,19 @@
   position: relative;
 }
 
+/* Visually hidden but readable by screen readers — the visible name comes
+ * from the button's `title` attribute (native hover tooltip) per bao
+ * 2026-05-24: 64px rail = icon-only, label as tooltip. */
 .itemLabel {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  line-height: 1.1;
-  color: inherit;
-  text-align: center;
-  max-width: 100%;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
-  display: block;
+  border: 0;
 }
 
 .itemDot {

@@ -14,7 +14,9 @@ use tauri::{AppHandle, Manager};
 
 use super::ax_prompt::{
     ensure_accessibility_trusted_with_prompt, is_first_launch, mark_first_launch_done,
+    open_accessibility_settings,
 };
+use super::bootstrap;
 use super::window::install_close_intercept;
 use super::{HotkeyController, KernelSupervisor, TrayController, WindowController};
 
@@ -36,6 +38,14 @@ impl ShellLifecycle {
         KernelSupervisor::start(app)?;
         KernelSupervisor::wait_ready(5_000)?;
 
+        // Seed builtin keycaps + vault skeleton. Idempotent — runs every boot
+        // so newly-added builtins in a release land without the user
+        // re-installing. Best-effort: any failure is logged inside the helper
+        // and never aborts boot.
+        if let Err(err) = bootstrap::seed_user_data(app) {
+            tracing::warn!(?err, "bootstrap::seed_user_data returned error");
+        }
+
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;
 
@@ -48,9 +58,16 @@ impl ShellLifecycle {
         let ax_trusted = ensure_accessibility_trusted_with_prompt();
         if !ax_trusted {
             tracing::warn!(
-                "Accessibility not yet granted — system prompt surfaced. Hotkey will arm \
-                 once user enables CTRL in System Settings → Privacy & Security → Accessibility."
+                "Accessibility not yet granted — opening System Settings so the user \
+                 doesn't have to find the pane manually. Hotkey arms after toggle."
             );
+            // The auto-prompt from AXIsProcessTrustedWithOptions is
+            // dismissable + cooldown'd. After a .app replacement (release
+            // update, code-sign change) the permission is reset and the
+            // dialog often doesn't re-appear — user sees "Ctrl 没反应" with
+            // no obvious next step. Opening the settings pane directly is
+            // the consistent recovery path.
+            open_accessibility_settings();
         }
 
         let first_launch = is_first_launch();

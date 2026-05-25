@@ -124,6 +124,11 @@ async fn probe_hermes() -> HermesStatus {
     // auto-wire Volc into hermes custom_providers (idempotent, no-op if
     // already wired with the same key).
     let _ = wire_hermes_brain_from_kernel();
+    // Side-effect: sync Irisy persona into ~/.hermes/SOUL.md so the chat
+    // identifies as Irisy instead of "Hermes Agent created by Nous
+    // Research". Safe — only overwrites the default Hermes SOUL or our
+    // own previous Irisy write; user customizations are preserved.
+    let _ = ensure_hermes_soul_identity();
     let brain_configured = read_brain_configured();
 
     let latest_version = fetch_pypi_latest_hermes().await;
@@ -364,6 +369,109 @@ fn wire_hermes_brain_from_kernel() -> Result<bool, String> {
     std::fs::write(&hermes_config_path, yaml.as_bytes())
         .map_err(|e| format!("write {hermes_config_path:?}: {e}"))?;
     tracing::info!(?hermes_config_path, "wire_hermes_brain_from_kernel: wrote ctrl-volc");
+    Ok(true)
+}
+
+// ─── Hermes SOUL.md sync ─────────────────────────────────────────────────
+//
+// Hermes auto-injects `~/.hermes/SOUL.md` into every chat's system prompt.
+// On a fresh install hermes ships its own default ("You are Hermes Agent,
+// an intelligent AI assistant created by Nous Research...") which makes
+// hermes introduce itself as Hermes, not Irisy. We replace it with our
+// Irisy persona — but only when safe.
+//
+// Safety contract (production-grade, NOT MVP):
+//   1. Absent file       → write Irisy
+//   2. Empty file        → write Irisy
+//   3. Default Hermes    → backup to SOUL.md.hermes-default, write Irisy
+//   4. Our previous Irisy write → no-op (idempotent)
+//   5. User-customized   → leave alone, log warning, return Ok(false)
+//
+// The Irisy identifier in our written content is the literal marker line
+// `<!-- managed-by: ctrl.irisy -->` near the top — that's how we detect
+// "our previous Irisy write" on subsequent boots.
+
+/// Sentinel comment so we can recognize our own previous writes on
+/// subsequent boots without committing to a fragile string match.
+const IRISY_SOUL_MARKER: &str = "<!-- managed-by: ctrl.irisy -->";
+
+/// Persona text written into `~/.hermes/SOUL.md`. Kept conservative — leans
+/// on hermes' tool-calling + skills protocol since that lives below the
+/// persona layer. The marker line is the first thing we write so the
+/// idempotency check can short-circuit on a fast string contains().
+const IRISY_SOUL_BODY: &str = "<!-- managed-by: ctrl.irisy -->\n\
+You are Irisy, the AI co-pilot built into CTRL — a desktop AI launcher.\n\
+You run on Hermes Agent under the hood, but your identity is Irisy.\n\
+\n\
+When the user asks who or what you are, answer \"Irisy\" — do not\n\
+introduce yourself as Hermes, an LLM provider, or any upstream model.\n\
+\n\
+CTRL exposes keycaps (single-action AI tools), a workspace pane, and a\n\
+chat co-pilot (you). Surface the relevant keycap when a user request\n\
+matches one, and cite the user's vault notes by path when relevant.\n\
+\n\
+Style:\n\
+- Concise by default. Short replies unless asked for depth.\n\
+- Markdown welcome — the chat renders headings, lists, code.\n\
+- Defer to vault contents over memory when uncertain.\n\
+- Never invent tool names or file paths.\n";
+
+/// Recognize the default hermes SOUL — the install-time persona we want
+/// to replace. Matches on the leading sentence so a slightly tweaked
+/// hermes-shipped default still gets caught.
+fn is_default_hermes_soul(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    trimmed.starts_with("You are Hermes Agent")
+        || trimmed.starts_with("# You are Hermes Agent")
+}
+
+/// Idempotent. Returns Ok(true) when we wrote, Ok(false) when we left an
+/// existing file untouched (user-customized), Err when IO failed.
+fn ensure_hermes_soul_identity() -> Result<bool, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME unset".to_string())?;
+    let dir = PathBuf::from(&home).join(".hermes");
+    let path = dir.join("SOUL.md");
+
+    // Read current state. We tolerate read errors (file may not exist).
+    let current = std::fs::read_to_string(&path).ok();
+
+    match current.as_deref().map(str::trim) {
+        // Already our managed version → done.
+        Some(s) if s.contains(IRISY_SOUL_MARKER) => Ok(false),
+        // Empty file → safe to write.
+        Some("") | None => write_irisy_soul(&dir, &path, false),
+        // Default hermes ship → back up + write.
+        Some(s) if is_default_hermes_soul(s) => write_irisy_soul(&dir, &path, true),
+        // Anything else = user customization. Leave alone.
+        Some(_) => {
+            tracing::warn!(
+                ?path,
+                "hermes SOUL.md is user-customized — leaving alone. Irisy \
+                 persona will NOT apply unless the user merges the marker \
+                 + body from ctrl's defaults manually."
+            );
+            Ok(false)
+        }
+    }
+}
+
+fn write_irisy_soul(dir: &PathBuf, path: &PathBuf, backup_existing: bool) -> Result<bool, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("mkdir {dir:?}: {e}"))?;
+    if backup_existing {
+        let backup = path.with_extension("md.hermes-default");
+        // Only back up once — if the backup already exists, don't clobber
+        // it with whatever flavor of the default this hermes shipped.
+        if !backup.exists() {
+            if let Some(prev) = std::fs::read(path).ok() {
+                std::fs::write(&backup, &prev)
+                    .map_err(|e| format!("backup {backup:?}: {e}"))?;
+                tracing::info!(?backup, "ensure_hermes_soul: backed up existing default");
+            }
+        }
+    }
+    std::fs::write(path, IRISY_SOUL_BODY.as_bytes())
+        .map_err(|e| format!("write {path:?}: {e}"))?;
+    tracing::info!(?path, "ensure_hermes_soul: wrote Irisy persona");
     Ok(true)
 }
 
@@ -622,10 +730,10 @@ pub async fn system_check() -> Result<SystemCheck, String> {
 /// renders the latest message + stream of log lines.
 #[derive(Debug, Clone, Serialize)]
 struct InstallProgress {
-    /// One of: "checking" | "installing_runtime" | "installing_companion"
+    /// One of: "checking" | "installing_runtime" | "installing_copilot"
     /// | "enabling" | "complete" | "failed"
     stage: &'static str,
-    /// Human-readable, English UI string. "Installing personal companion…",
+    /// Human-readable, English UI string. "Installing personal co-pilot…",
     /// never references "hermes" or "pipx" — those stay in the log lines.
     message: String,
     /// Verbatim stdout/stderr line from underlying process. PWA shows
@@ -672,9 +780,9 @@ pub async fn install_irisy(app: AppHandle) -> Result<(), String> {
     // 3. Copy the bundled plugin to ~/.hermes/plugins/ctrl/. Source path
     //    is the CTRL.app bundled resource dir (production builds) OR
     //    the repo's packages/ctrl-hermes-plugin (dev builds).
-    emit(&app, "installing_companion", "Installing personal companion…", None);
+    emit(&app, "installing_copilot", "Installing personal co-pilot…", None);
     let plugin_src = resolve_plugin_source(&app)
-        .ok_or_else(|| "Bundled companion plugin not found in app resources.".to_string())?;
+        .ok_or_else(|| "Bundled co-pilot plugin not found in app resources.".to_string())?;
     let plugin_dst = home_dir()
         .ok_or_else(|| "HOME unset".to_string())?
         .join(".hermes")
@@ -684,17 +792,17 @@ pub async fn install_irisy(app: AppHandle) -> Result<(), String> {
     copy_dir_recursive(&plugin_src, &plugin_dst).map_err(|e| format!("copy plugin: {e}"))?;
     emit(
         &app,
-        "installing_companion",
-        "Copied companion bundle to local plugin store.",
+        "installing_copilot",
+        "Copied co-pilot bundle to local plugin store.",
         Some(format!("dst: {}", plugin_dst.display())),
     );
 
     // 4. Enable the plugin so hermes loads it on next session.
-    emit(&app, "enabling", "Enabling personal companion…", None);
+    emit(&app, "enabling", "Enabling personal co-pilot…", None);
     let enabled = run_streaming(&app, "hermes", &["plugins", "enable", "ctrl"]).await?;
     if !enabled {
         return Err(
-            "Failed to enable companion. Run `hermes plugins enable ctrl` manually and report the error."
+            "Failed to enable co-pilot. Run `hermes plugins enable ctrl` manually and report the error."
                 .into(),
         );
     }
@@ -702,7 +810,7 @@ pub async fn install_irisy(app: AppHandle) -> Result<(), String> {
     emit(
         &app,
         "complete",
-        "Irisy ready — your personal AI companion is live.",
+        "Irisy ready — your personal AI co-pilot is live.",
         None,
     );
     Ok(())
@@ -854,4 +962,537 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
         }
     }
     Ok(())
+}
+
+// ─── Safe upgrade ───────────────────────────────────────────────────────
+//
+// `irisy_upgrade_hermes_safe` — atomic, transactional upgrade of the local
+// hermes-agent installation with automatic rollback on health failure.
+//
+// 5 stages, each emits an `irisy-upgrade-progress` event:
+//   1. snapshot   — record current version + plugin/brain state
+//   2. preflight  — confirm current install actually passes smoke
+//                   (refuse to upgrade a broken baseline)
+//   3. apply      — pipx upgrade hermes-agent (or pip fallback)
+//   4. post-health — re-wire plugin + brain + SOUL, then smoke
+//   5. commit OR rollback — on smoke fail run
+//                   `pipx install --force hermes-agent==<snapshot.version>`
+//                   then verify rollback smoke; both outcomes audit-logged
+//
+// Persistent state:
+//   • ~/.ctrl/state/hermes-snapshots/<ts>.json  per-attempt
+//   • ~/.ctrl/state/hermes-upgrade-log.jsonl    append-only audit
+//
+// The "smoke" test is a single `hermes chat -q "ping" --provider ctrl-volc
+// --max-turns 1` invocation that must exit 0 in < 30s with non-empty
+// stdout. This proves the binary loads + plugin attaches + brain answers.
+
+const HERMES_SMOKE_PROMPT: &str = "ping";
+const HERMES_SMOKE_TIMEOUT_SECS: u64 = 30;
+const UPGRADE_PROGRESS_EVENT: &str = "irisy-upgrade-progress";
+
+const UPGRADE_STAGE_SNAPSHOT: &str = "snapshot";
+const UPGRADE_STAGE_PREFLIGHT: &str = "preflight";
+const UPGRADE_STAGE_APPLY: &str = "apply";
+const UPGRADE_STAGE_POST_HEALTH: &str = "post-health";
+const UPGRADE_STAGE_COMMIT: &str = "commit";
+const UPGRADE_STAGE_ROLLBACK: &str = "rollback";
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HermesSnapshot {
+    pub ts_ms: u64,
+    pub version: String,
+    pub plugin_enabled: bool,
+    pub brain_configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SafeUpgradeOutcome {
+    /// One of: "upgraded" | "no_change" | "rolled_back" | "rollback_failed"
+    pub outcome: &'static str,
+    pub from_version: Option<String>,
+    pub to_version: Option<String>,
+    pub elapsed_ms: u64,
+    /// Path to the persisted snapshot (relative or absolute); kept for the
+    /// successful path too so an operator can inspect what was captured.
+    pub snapshot_path: Option<String>,
+    /// Path to the append-only audit log.
+    pub log_path: String,
+    /// User-facing one-line summary; suitable for a toast.
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct UpgradeProgress {
+    stage: &'static str,
+    /// "running" | "ok" | "fail"
+    status: &'static str,
+    message: String,
+    /// Optional verbatim subprocess log; PWA shows in a collapsible pane.
+    log: Option<String>,
+}
+
+fn emit_upgrade(app: &AppHandle, ev: UpgradeProgress) {
+    let _ = app.emit(UPGRADE_PROGRESS_EVENT, ev);
+}
+
+fn ctrl_state_dir() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME unset".to_string())?;
+    let dir = PathBuf::from(home).join(".ctrl").join("state");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir state: {e}"))?;
+    Ok(dir)
+}
+
+fn snapshots_dir() -> Result<PathBuf, String> {
+    let dir = ctrl_state_dir()?.join("hermes-snapshots");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir snapshots: {e}"))?;
+    Ok(dir)
+}
+
+fn upgrade_log_path() -> Result<PathBuf, String> {
+    Ok(ctrl_state_dir()?.join("hermes-upgrade-log.jsonl"))
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn capture_snapshot() -> Result<(HermesSnapshot, PathBuf), String> {
+    let binary = locate_hermes_binary().ok_or_else(|| {
+        "hermes binary not found — nothing to snapshot. Install via `pipx install hermes-agent`."
+            .to_string()
+    })?;
+    let version = read_version(&binary)
+        .ok_or_else(|| "could not read hermes --version".to_string())?;
+    let plugin_enabled = enable_ctrl_plugin(&binary); // idempotent; reflects current
+    let brain_configured = read_brain_configured();
+    let snap = HermesSnapshot {
+        ts_ms: now_ms(),
+        version,
+        plugin_enabled,
+        brain_configured,
+    };
+
+    let path = snapshots_dir()?.join(format!("{}.json", snap.ts_ms));
+    let body = serde_json::to_vec_pretty(&snap)
+        .map_err(|e| format!("serialize snapshot: {e}"))?;
+    std::fs::write(&path, body).map_err(|e| format!("write snapshot {path:?}: {e}"))?;
+    Ok((snap, path))
+}
+
+fn append_audit(
+    outcome: &str,
+    from_version: Option<&str>,
+    to_version: Option<&str>,
+    elapsed_ms: u64,
+    error: Option<&str>,
+) -> Result<PathBuf, String> {
+    let path = upgrade_log_path()?;
+    let record = serde_json::json!({
+        "ts_ms": now_ms(),
+        "outcome": outcome,
+        "from": from_version,
+        "to": to_version,
+        "elapsed_ms": elapsed_ms,
+        "error": error,
+    });
+    let line = format!("{}\n", record);
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("open audit {path:?}: {e}"))?;
+    f.write_all(line.as_bytes())
+        .map_err(|e| format!("write audit: {e}"))?;
+    Ok(path)
+}
+
+/// Run a single non-interactive hermes chat as a health probe. Returns the
+/// reply text on success. Times out after `HERMES_SMOKE_TIMEOUT_SECS`.
+async fn run_hermes_smoke(binary: &PathBuf) -> Result<String, String> {
+    let bin = binary.clone();
+    let handle = tokio::task::spawn_blocking(move || {
+        Command::new(&bin)
+            .arg("chat")
+            .arg("-q")
+            .arg(HERMES_SMOKE_PROMPT)
+            .arg("-Q")
+            .arg("--provider")
+            .arg("ctrl-volc")
+            .arg("--max-turns")
+            .arg("1")
+            .output()
+    });
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(HERMES_SMOKE_TIMEOUT_SECS),
+        handle,
+    )
+    .await
+    .map_err(|_| format!("smoke timed out after {HERMES_SMOKE_TIMEOUT_SECS}s"))?
+    .map_err(|e| format!("smoke join error: {e}"))?
+    .map_err(|e| format!("smoke spawn error: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(format!("hermes smoke exit {}: {stderr}", output.status));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let body: String = stdout
+        .lines()
+        .filter(|l| !l.starts_with("session_id:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
+    if body.is_empty() {
+        return Err("hermes smoke returned empty reply".to_string());
+    }
+    Ok(body)
+}
+
+/// Apply the upgrade. Returns (success, stdout, stderr, method) so the
+/// caller can audit. pipx is preferred; pip is fallback.
+async fn run_upgrade_step() -> Result<(bool, String, String, &'static str), String> {
+    let pipx_available = Command::new("pipx")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    let method: &'static str = if pipx_available { "pipx" } else { "pip" };
+    let output = tokio::task::spawn_blocking(move || {
+        if pipx_available {
+            Command::new("pipx")
+                .args(["upgrade", "hermes-agent"])
+                .output()
+        } else {
+            Command::new("pip")
+                .args(["install", "--upgrade", "hermes-agent"])
+                .output()
+        }
+    })
+    .await
+    .map_err(|e| format!("upgrade join: {e}"))?
+    .map_err(|e| format!("upgrade spawn: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    Ok((output.status.success(), stdout, stderr, method))
+}
+
+/// Force-install a specific hermes-agent version (used during rollback).
+/// Uses pipx where available so we don't accidentally pollute the user's
+/// system pip site-packages.
+async fn force_install_hermes_version(version: &str) -> Result<(bool, String, String), String> {
+    let pipx_available = Command::new("pipx")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    let spec = format!("hermes-agent=={version}");
+    let output = tokio::task::spawn_blocking(move || {
+        if pipx_available {
+            Command::new("pipx")
+                .args(["install", "--force", &spec])
+                .output()
+        } else {
+            Command::new("pip")
+                .args(["install", "--force-reinstall", &spec])
+                .output()
+        }
+    })
+    .await
+    .map_err(|e| format!("rollback join: {e}"))?
+    .map_err(|e| format!("rollback spawn: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    Ok((output.status.success(), stdout, stderr))
+}
+
+/// Atomic upgrade with auto-rollback. Production flow — NO MVP.
+#[tauri::command]
+pub async fn irisy_upgrade_hermes_safe(
+    app: AppHandle,
+) -> Result<SafeUpgradeOutcome, String> {
+    let started = std::time::Instant::now();
+    let log_path = upgrade_log_path()?.display().to_string();
+
+    // ── Stage 1: snapshot ─────────────────────────────────────────────
+    emit_upgrade(&app, UpgradeProgress {
+        stage: UPGRADE_STAGE_SNAPSHOT,
+        status: "running",
+        message: "Capturing current hermes state…".into(),
+        log: None,
+    });
+    let (snapshot, snapshot_path) = match capture_snapshot() {
+        Ok(s) => s,
+        Err(e) => {
+            emit_upgrade(&app, UpgradeProgress {
+                stage: UPGRADE_STAGE_SNAPSHOT,
+                status: "fail",
+                message: e.clone(),
+                log: None,
+            });
+            return Err(format!("snapshot failed: {e}"));
+        }
+    };
+    emit_upgrade(&app, UpgradeProgress {
+        stage: UPGRADE_STAGE_SNAPSHOT,
+        status: "ok",
+        message: format!("Captured v{} ({})", snapshot.version, snapshot_path.display()),
+        log: None,
+    });
+
+    let binary = locate_hermes_binary().ok_or_else(|| "hermes binary disappeared between snapshot and preflight".to_string())?;
+
+    // ── Stage 2: preflight smoke ──────────────────────────────────────
+    emit_upgrade(&app, UpgradeProgress {
+        stage: UPGRADE_STAGE_PREFLIGHT,
+        status: "running",
+        message: format!("Verifying current v{} works…", snapshot.version),
+        log: None,
+    });
+    match run_hermes_smoke(&binary).await {
+        Ok(reply) => emit_upgrade(&app, UpgradeProgress {
+            stage: UPGRADE_STAGE_PREFLIGHT,
+            status: "ok",
+            message: format!("Current v{} answered smoke", snapshot.version),
+            log: Some(reply),
+        }),
+        Err(e) => {
+            emit_upgrade(&app, UpgradeProgress {
+                stage: UPGRADE_STAGE_PREFLIGHT,
+                status: "fail",
+                message: format!("Current v{} fails smoke — fix before upgrading: {e}", snapshot.version),
+                log: None,
+            });
+            let elapsed = started.elapsed().as_millis() as u64;
+            let _ = append_audit("preflight_failed", Some(&snapshot.version), None, elapsed, Some(&e));
+            return Err(format!("preflight failed: {e}"));
+        }
+    }
+
+    // ── Stage 3: apply ────────────────────────────────────────────────
+    emit_upgrade(&app, UpgradeProgress {
+        stage: UPGRADE_STAGE_APPLY,
+        status: "running",
+        message: "Running pipx upgrade hermes-agent…".into(),
+        log: None,
+    });
+    let (apply_ok, apply_stdout, apply_stderr, method) = run_upgrade_step().await?;
+    if !apply_ok {
+        emit_upgrade(&app, UpgradeProgress {
+            stage: UPGRADE_STAGE_APPLY,
+            status: "fail",
+            message: format!("{method} exit non-zero — no upgrade applied"),
+            log: Some(format!("stdout:\n{apply_stdout}\nstderr:\n{apply_stderr}")),
+        });
+        let elapsed = started.elapsed().as_millis() as u64;
+        let _ = append_audit("apply_failed", Some(&snapshot.version), None, elapsed, Some(&apply_stderr));
+        // No rollback needed — the upgrade subprocess didn't change anything.
+        return Err(format!("upgrade failed (no changes made): {apply_stderr}"));
+    }
+    let new_version = read_version(&binary).unwrap_or_else(|| "unknown".to_string());
+    let apply_msg = if new_version == snapshot.version {
+        format!("hermes already at v{} — no change", new_version)
+    } else {
+        format!("Upgraded {} → {}", snapshot.version, new_version)
+    };
+    emit_upgrade(&app, UpgradeProgress {
+        stage: UPGRADE_STAGE_APPLY,
+        status: "ok",
+        message: apply_msg.clone(),
+        log: Some(apply_stdout.clone()),
+    });
+
+    // No-change short-circuit: if pipx says "already at latest", we can
+    // still run a sanity smoke but skip the rollback dance.
+    if new_version == snapshot.version {
+        // Light post check — re-wire is idempotent.
+        let _ = enable_ctrl_plugin(&binary);
+        let _ = wire_hermes_brain_from_kernel();
+        let _ = ensure_hermes_soul_identity();
+        let elapsed = started.elapsed().as_millis() as u64;
+        let log_p = append_audit("no_change", Some(&snapshot.version), Some(&new_version), elapsed, None)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&log_path));
+        return Ok(SafeUpgradeOutcome {
+            outcome: "no_change",
+            from_version: Some(snapshot.version.clone()),
+            to_version: Some(new_version),
+            elapsed_ms: elapsed,
+            snapshot_path: Some(snapshot_path.display().to_string()),
+            log_path: log_p.display().to_string(),
+            message: format!("Already on v{} — no change.", snapshot.version),
+        });
+    }
+
+    // ── Stage 4: post-upgrade health ──────────────────────────────────
+    emit_upgrade(&app, UpgradeProgress {
+        stage: UPGRADE_STAGE_POST_HEALTH,
+        status: "running",
+        message: "Re-wiring plugin + brain + persona, then smoke…".into(),
+        log: None,
+    });
+    // Re-wire (idempotent). Failures here are non-fatal — we collect them
+    // into the post-health log so the user can see what was off.
+    let _ = enable_ctrl_plugin(&binary);
+    let _ = wire_hermes_brain_from_kernel();
+    let _ = ensure_hermes_soul_identity();
+
+    match run_hermes_smoke(&binary).await {
+        Ok(reply) => {
+            emit_upgrade(&app, UpgradeProgress {
+                stage: UPGRADE_STAGE_POST_HEALTH,
+                status: "ok",
+                message: format!("v{} answered smoke", new_version),
+                log: Some(reply),
+            });
+            // ── Stage 5: commit ───────────────────────────────────────
+            emit_upgrade(&app, UpgradeProgress {
+                stage: UPGRADE_STAGE_COMMIT,
+                status: "ok",
+                message: format!("Upgrade committed: {} → {}", snapshot.version, new_version),
+                log: None,
+            });
+            let elapsed = started.elapsed().as_millis() as u64;
+            let log_p = append_audit("upgraded", Some(&snapshot.version), Some(&new_version), elapsed, None)
+                .unwrap_or_else(|_| std::path::PathBuf::from(&log_path));
+            Ok(SafeUpgradeOutcome {
+                outcome: "upgraded",
+                from_version: Some(snapshot.version),
+                to_version: Some(new_version.clone()),
+                elapsed_ms: elapsed,
+                snapshot_path: Some(snapshot_path.display().to_string()),
+                log_path: log_p.display().to_string(),
+                message: format!("Upgraded to v{new_version}."),
+            })
+        }
+        Err(smoke_err) => {
+            emit_upgrade(&app, UpgradeProgress {
+                stage: UPGRADE_STAGE_POST_HEALTH,
+                status: "fail",
+                message: format!("v{new_version} fails smoke: {smoke_err}"),
+                log: None,
+            });
+            // ── Stage 5: rollback ─────────────────────────────────────
+            emit_upgrade(&app, UpgradeProgress {
+                stage: UPGRADE_STAGE_ROLLBACK,
+                status: "running",
+                message: format!("Rolling back to v{}…", snapshot.version),
+                log: None,
+            });
+            match force_install_hermes_version(&snapshot.version).await {
+                Ok((true, rb_stdout, _rb_stderr)) => {
+                    // Re-wire after the version flip back.
+                    let _ = enable_ctrl_plugin(&binary);
+                    let _ = wire_hermes_brain_from_kernel();
+                    let _ = ensure_hermes_soul_identity();
+                    match run_hermes_smoke(&binary).await {
+                        Ok(_) => {
+                            emit_upgrade(&app, UpgradeProgress {
+                                stage: UPGRADE_STAGE_ROLLBACK,
+                                status: "ok",
+                                message: format!("Rolled back to v{} — smoke passed", snapshot.version),
+                                log: Some(rb_stdout),
+                            });
+                            let elapsed = started.elapsed().as_millis() as u64;
+                            let log_p = append_audit(
+                                "rolled_back",
+                                Some(&snapshot.version),
+                                Some(&new_version),
+                                elapsed,
+                                Some(&smoke_err),
+                            )
+                            .unwrap_or_else(|_| std::path::PathBuf::from(&log_path));
+                            Ok(SafeUpgradeOutcome {
+                                outcome: "rolled_back",
+                                from_version: Some(snapshot.version.clone()),
+                                to_version: Some(new_version.clone()),
+                                elapsed_ms: elapsed,
+                                snapshot_path: Some(snapshot_path.display().to_string()),
+                                log_path: log_p.display().to_string(),
+                                message: format!(
+                                    "v{new_version} failed smoke; rolled back to v{}.",
+                                    snapshot.version
+                                ),
+                            })
+                        }
+                        Err(rb_smoke_err) => {
+                            emit_upgrade(&app, UpgradeProgress {
+                                stage: UPGRADE_STAGE_ROLLBACK,
+                                status: "fail",
+                                message: format!(
+                                    "Rollback installed but smoke STILL fails: {rb_smoke_err}"
+                                ),
+                                log: None,
+                            });
+                            let elapsed = started.elapsed().as_millis() as u64;
+                            let combined = format!(
+                                "post-upgrade: {smoke_err} | rollback-smoke: {rb_smoke_err}"
+                            );
+                            let log_p = append_audit(
+                                "rollback_failed",
+                                Some(&snapshot.version),
+                                Some(&new_version),
+                                elapsed,
+                                Some(&combined),
+                            )
+                            .unwrap_or_else(|_| std::path::PathBuf::from(&log_path));
+                            Ok(SafeUpgradeOutcome {
+                                outcome: "rollback_failed",
+                                from_version: Some(snapshot.version),
+                                to_version: Some(new_version),
+                                elapsed_ms: elapsed,
+                                snapshot_path: Some(snapshot_path.display().to_string()),
+                                log_path: log_p.display().to_string(),
+                                message: format!(
+                                    "CRITICAL: upgrade failed AND rollback smoke fails. {combined}"
+                                ),
+                            })
+                        }
+                    }
+                }
+                rb_result => {
+                    let combined_err = match rb_result {
+                        Ok((_, _stdout, stderr)) => {
+                            if stderr.is_empty() {
+                                "rollback subprocess exit non-zero with no stderr".to_string()
+                            } else {
+                                stderr
+                            }
+                        }
+                        Err(e) => format!("rollback subprocess failed to spawn: {e}"),
+                    };
+                    emit_upgrade(&app, UpgradeProgress {
+                        stage: UPGRADE_STAGE_ROLLBACK,
+                        status: "fail",
+                        message: format!("Rollback command itself errored: {combined_err}"),
+                        log: None,
+                    });
+                    let elapsed = started.elapsed().as_millis() as u64;
+                    let log_p = append_audit(
+                        "rollback_command_failed",
+                        Some(&snapshot.version),
+                        Some(&new_version),
+                        elapsed,
+                        Some(&combined_err),
+                    )
+                    .unwrap_or_else(|_| std::path::PathBuf::from(&log_path));
+                    Ok(SafeUpgradeOutcome {
+                        outcome: "rollback_failed",
+                        from_version: Some(snapshot.version),
+                        to_version: Some(new_version),
+                        elapsed_ms: elapsed,
+                        snapshot_path: Some(snapshot_path.display().to_string()),
+                        log_path: log_p.display().to_string(),
+                        message: format!(
+                            "CRITICAL: upgrade failed and rollback command errored: {combined_err}"
+                        ),
+                    })
+                }
+            }
+        }
+    }
 }

@@ -29,9 +29,9 @@ interface VaultWriteReply {
   path: string;
 }
 
-const IRISY_SYSTEM_DEFAULT = `You are Irisy, the AI companion built into CTRL — a desktop AI launcher.
+const IRISY_SYSTEM_DEFAULT = `You are Irisy, the AI co-pilot built into CTRL — a desktop AI launcher.
 CTRL has keycaps (single-action AI tools), a workspace pane, and you, the
-chat companion that ties them together.
+chat co-pilot that ties them together.
 
 Style:
 - Concise. The user reads slowly; keep responses tight.
@@ -98,8 +98,11 @@ export function renderTemplate(
   });
 }
 
-/** Load Irisy's base system prompt with a hard-coded fallback. */
+/** Load Irisy's base system prompt with a hard-coded fallback. Treats
+ *  an empty or whitespace-only vault file as "missing" so the persona
+ *  always lands (mock environments often return empty content). */
 export async function loadIrisySystemPrompt(): Promise<string> {
   const fromVault = await loadPrompt('irisy-system');
-  return fromVault ?? IRISY_SYSTEM_DEFAULT;
+  if (fromVault && fromVault.trim().length > 0) return fromVault;
+  return IRISY_SYSTEM_DEFAULT;
 }

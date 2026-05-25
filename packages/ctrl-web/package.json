@@ -1,15 +1,17 @@
 {
   "name": "@ctrl/web",
-  "version": "0.1.0",
+  "version": "0.1.33",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "description": "CTRL PWA — single web codebase running in Tauri 2 WebView on desktop, browser on mobile.",
+  "description": "CTRL PWA \u2014 single web codebase running in Tauri 2 WebView on desktop, browser on mobile.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview --port 4173",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@lottiefiles/dotlottie-react": "^0.19.4",
@@ -30,6 +32,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

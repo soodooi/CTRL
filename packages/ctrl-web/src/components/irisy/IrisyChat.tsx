@@ -86,7 +86,7 @@ const SEED_PROMPTS: readonly string[] = [
   'Help me make a clipboard keycap.',
 ];
 
-const IRISY_SYSTEM_BASE = `You are Irisy, the AI companion built into CTRL — a desktop AI launcher.
+const IRISY_SYSTEM_BASE = `You are Irisy, the AI co-pilot built into CTRL — a desktop AI launcher.
 CTRL has keycaps (single-action AI tools), a workspace pane, and you, the
 ambient assistant. You accompany the user across the full keycap lifecycle:
 discovery, creation, configuration, invocation, collaboration, debugging,

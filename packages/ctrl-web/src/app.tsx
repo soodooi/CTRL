@@ -55,15 +55,22 @@ function useTrayBridge(): void {
 
 function RootShellInner(): ReactElement {
   const { items, irisySubPanel, activeRailId } = useRail();
-  // Per bao 2026-05-23: level-2 visibility = active level-1 item has a
-  // sub-panel. Two-state grid: hidden (80px primary only) vs open
-  // (240px panel + 80px primary). No explicit "collapsed but visible"
-  // tab — clicking the active item itself toggles.
+  // Level-2 visibility = active level-1 item has a sub-panel. Two-state
+  // grid: hidden (64px primary only) vs open (240px panel + 64px primary).
+  //
+  // Irisy + Settings are synthesized inside RightRail (NOT in `items`), so
+  // we replicate the "has sub-panel" check for them here. Bug bao 2026-05-24:
+  // when this clause was missing, clicking Settings made RightRail render
+  // a 240+64 layout inside a 64px slot — primary got pushed off-screen and
+  // 一级 nav vanished.
   const irisyHasPanel = irisySubPanel != null;
+  const settingsHasPanel = true; // SETTINGS_SECTIONS is static in RightRail.
   const activeItemHasPanel =
     activeRailId === 'irisy'
       ? irisyHasPanel
-      : items.some((i) => i.id === activeRailId && i.subPanel != null);
+      : activeRailId === 'settings'
+        ? settingsHasPanel
+        : items.some((i) => i.id === activeRailId && i.subPanel != null);
   const subPanelState = activeItemHasPanel ? 'open' : 'none';
   return (
     <div className={styles.shell} data-sub-panel={subPanelState}>

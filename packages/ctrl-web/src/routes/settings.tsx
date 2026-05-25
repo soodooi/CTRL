@@ -16,7 +16,7 @@ import {
   type WorkspaceLayout,
 } from '@/components/manifest';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
-import { HERMES_DASHBOARD_DEFAULT_URL } from '@/lib/tab-store';
+import { useKernelStatus } from '../hooks/useKernelStatus';
 import styles from './settings.module.css';
 
 // ─────────────────────────────────────────────────────────────
@@ -105,25 +105,49 @@ export const SettingsCtrlPage = (): ReactElement => (
 // /settings/hermes — Hermes brain config (embeds the dashboard)
 // ─────────────────────────────────────────────────────────────
 
-export const SettingsHermesPage = (): ReactElement => (
-  <div className={styles.layout}>
-    <main className={styles.main} role="main">
-      <header className={styles.embedHeader}>
-        <h1 className={styles.embedTitle}>Hermes Settings</h1>
-        <p className={styles.embedSubtitle}>
-          Skills · models · providers · memory. Lives in the local hermes
-          dashboard; CTRL embeds it here so the cockpit stays one window.
-        </p>
-      </header>
-      <iframe
-        className={styles.embedFrame}
-        src={HERMES_DASHBOARD_DEFAULT_URL}
-        title="Hermes dashboard"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-      />
-    </main>
-  </div>
-);
+export const SettingsHermesPage = (): ReactElement => {
+  const status = useKernelStatus();
+  // `hermes_dashboard_url` is `null` when the kernel's probe of
+  // 127.0.0.1:9119 fails (daemon not running / hermes not installed).
+  // Earlier versions blindly embedded the iframe and showed a white
+  // box for users without hermes — bao 2026-05-24 bug.
+  const dashboardUrl = status?.hermes_dashboard_url ?? null;
+  return (
+    <div className={styles.layout}>
+      <main className={styles.main} role="main">
+        <header className={styles.embedHeader}>
+          <h1 className={styles.embedTitle}>Hermes Settings</h1>
+          <p className={styles.embedSubtitle}>
+            Skills · models · providers · memory. Lives in the local hermes
+            dashboard; CTRL embeds it here so the cockpit stays one window.
+          </p>
+        </header>
+        {dashboardUrl ? (
+          <iframe
+            className={styles.embedFrame}
+            src={dashboardUrl}
+            title="Hermes dashboard"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          />
+        ) : (
+          <div className={styles.emptyState} role="status">
+            <p className={styles.emptyTitle}>Hermes is not running</p>
+            <p className={styles.emptyBody}>
+              CTRL couldn't reach the local Hermes dashboard at
+              {' '}<code>127.0.0.1:9119</code>.
+              Install + start <code>hermes-agent</code> to enable skill, model,
+              provider, and memory configuration here.
+            </p>
+            <p className={styles.emptyHint}>
+              Install: <code>pipx install hermes-agent</code> · Start the
+              daemon, then reopen this page.
+            </p>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────
 // /settings/updates — build info + update log

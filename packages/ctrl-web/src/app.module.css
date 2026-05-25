@@ -1,48 +1,59 @@
 /*
- * App shell — 3-column cockpit layout.
+ * App shell — 2-zone cockpit layout.
  *
- *   ┌──────────────────────────────────────────────────────┐
- *   │  StatusBar (top, full width)                          │ 32px
- *   ├────────────┬───────────────────────────┬─────────────┤
- *   │  Keyboard  │  Workspace (route outlet) │  RightRail  │ flex
- *   │  320px     │  flex                     │  64px       │
- *   └────────────┴───────────────────────────┴─────────────┘
+ *   ┌──────────────────────────────────────────────────────────────────┐
+ *   │  StatusBar (top, full width, contains Done [✕] in right slot)    │ 32px
+ *   ├────────────┬─────────────────────────────────────────────────────┤
+ *   │  Keyboard  │                  Workspace 工作区                    │
+ *   │  (left)    │  ┌──────────────────┬──────────┬────────┐           │
+ *   │  320px     │  │  Main / route    │ 二级 nav │ 一级   │  flex     │
+ *   │  always on │  │  outlet          │ (240px,  │ nav    │           │
+ *   │            │  │                  │  hides)  │ (64px) │           │
+ *   │            │  └──────────────────┴──────────┴────────┘           │
+ *   └────────────┴─────────────────────────────────────────────────────┘
+ *
+ * Terminology (bao 2026-05-24):
+ *   - 工作区 (workspace) = the WHOLE right side after the keyboard. Includes
+ *     the main content area + 二级 nav + 一级 nav as one conceptual zone.
+ *   - 一级导航栏 (level-1 nav) = the fixed 64px rail on the rightmost edge.
+ *     Hosts Irisy (top, with mascot blink animation), route items, Settings
+ *     (bottom). Always visible.
+ *   - 二级导航栏 (level-2 nav) = the collapsible 240px sub-panel that opens
+ *     from the active 一级 item. Used by the active keycap to list its work
+ *     titles (chat sessions / drafts / per-keycap context picker).
  *
  * Per decision_pwa_two_panel_layout: keyboard ALWAYS visible (left rail),
- * workspace content swaps per route, right rail = context (instance list,
- * categories, etc.) per workspace template.
- *
- * No bottom tab — navigation IS the keyboard. The system row at the bottom
- * of the keyboard hosts Pool / Search / Irisy / Settings as system keys.
+ * workspace content swaps per route. No bottom tab — navigation IS the keyboard.
+ * The system row at the bottom of the keyboard hosts Pool / Search / Irisy /
+ * Settings as system keys.
  */
 
 .shell {
   display: grid;
   grid-template-rows: var(--statusbar-height) 1fr;
   grid-template-columns:
-    var(--keyboard-width) 1fr var(--rightrail-width);
+    var(--keyboard-width) 1fr var(--workspace-nav-width);
   grid-template-areas:
     'status status status'
-    'keyboard workspace rail';
+    'keyboard workspace-main workspace-nav';
   height: 100vh;
   height: 100dvh;
   background: var(--color-bg-l0);
   color: var(--color-text);
   overflow: hidden;
-  /* Right rail width responds to whether a level-2 sub-panel is open.
-     Two-state shell (none / open) — collapse happens by clicking the
-     active level-1 item itself, no explicit chevron tab. */
-  --rightrail-width: 80px;
-  transition: grid-template-columns 220ms var(--ease-out-quart, ease-out);
+  /* 工作区导航 (workspace nav) width responds to whether 二级 nav is open.
+     Two-state (none / open) — collapse happens by clicking the active
+     一级 item itself, no explicit chevron tab. */
+  --workspace-nav-width: 64px;
 }
 .shell[data-sub-panel='open'] {
-  --rightrail-width: 320px; /* 240 sub-panel + 80 primary */
+  --workspace-nav-width: 304px; /* 240 二级 + 64 一级 */
 }
 
 .status { grid-area: status; }
 .keyboard { grid-area: keyboard; }
 .workspace {
-  grid-area: workspace;
+  grid-area: workspace-main;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -72,4 +83,5 @@
     );
   background-attachment: local;
 }
-.rail { grid-area: rail; }
+/* 一级 + 二级 nav live in this column — both are part of 工作区. */
+.rail { grid-area: workspace-nav; }

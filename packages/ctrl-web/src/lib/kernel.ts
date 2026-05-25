@@ -21,6 +21,10 @@ export interface KernelStatus {
   stss_bridge_addr: string;
   overall: 'ok' | 'degraded';
   warnings: string[];
+  /** Reachable http URL of the local Hermes dashboard (probe of
+   *  127.0.0.1:9119). `null` when not reachable — UI shows empty state
+   *  instead of a blank iframe. */
+  hermes_dashboard_url: string | null;
 }
 
 export const kernelStatus = (): Promise<KernelStatus> =>

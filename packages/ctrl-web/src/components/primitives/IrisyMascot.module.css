@@ -1,0 +1,17 @@
+/* IrisyMascot wrapper — neutral container only.
+ *
+ * The eye blink + breath both live in the lottie now
+ * (`/lottie/irisy.json`): EyeWhiteL/R + PupilL/R share a scale keyframe
+ * group at t=88→t=94 (scaleY 100→8) → t=100 back. Earlier this file
+ * carried a CSS wrapper scaleY that compressed the whole face — bao
+ * 2026-05-24 flagged that as a downgrade; removed.
+ *
+ * Kept as a CSS module so future per-state wrapper effects (hover halo,
+ * focus glow, etc.) have a hook without having to edit JS.
+ */
+
+.wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

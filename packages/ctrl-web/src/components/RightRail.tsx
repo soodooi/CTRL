@@ -1,23 +1,30 @@
-// RightRail — two-level context navigation on the right edge.
+// RightRail — 工作区 navigation column (一级 + 二级 nav).
 //
-// Model (per bao 2026-05-23 clarification):
-//   Level-1 = permanent vertical icon column. Synthesized order:
-//     [ Irisy (top) | …route-pushed items… | Settings (bottom) ]
-//   Level-2 = sub-panel that appears ONLY after clicking a level-1
-//     item that carries one. Click the same item again to collapse.
+// Terminology (bao 2026-05-24):
+//   工作区 (workspace) = entire right side of the cockpit, INCLUDING this
+//     column. RightRail is the navigation portion of 工作区; routes render
+//     into the main area to its left.
+//   一级导航 (level-1) = permanent 64px vertical icon column on the right
+//     edge of this component. Synthesized order:
+//       [ Irisy (top, mascot + blink) | …route-pushed items… | Settings (bottom) ]
+//   二级导航 (level-2) = collapsible 240px sub-panel that appears ONLY
+//     after clicking a 一级 item carrying one. Used by the active keycap
+//     to list its work titles (chat sessions / drafts / contexts). Click
+//     the same 一级 item again to collapse.
 //
-// Default active = `irisy`, so on first load the user sees Irisy
-// selected and (when the `/` route has pushed her panel) her panel
-// open in level-2 — the cockpit feels alive without any explicit click.
+// Default active = `irisy`, so on first load the user sees Irisy selected
+// and (when the `/` route has pushed her panel) her 二级 panel open — the
+// cockpit feels alive without an explicit click.
 //
-// Per-item routing: each RailItem may carry an `onClick` (navigate to
-// the item's workspace) and an optional `subPanel` (its level-2 data).
-// Items WITHOUT a sub-panel just invoke `onClick` — they don't toggle
-// the active state. Items WITH a sub-panel toggle the active state on
-// click in addition to invoking `onClick`.
+// Per-item routing: each RailItem may carry an `onClick` (navigate to its
+// main area) and an optional `subPanel` (its 二级 data). Items WITHOUT a
+// sub-panel just invoke `onClick` — they don't toggle the active state.
+// Items WITH a sub-panel toggle active state on click in addition to
+// invoking `onClick`.
 //
-// Below the nav, the rail footer carries the app version and an update
-// indicator (green dot when a newer build is published on the channel).
+// Footer (below 一级): app version pill — clickable, drives the auto-push
+// update flow (kernel-cached check, instant install on click when an
+// update is available).
 
 import {
   createContext,
@@ -38,7 +45,7 @@ import {
 } from './primitives';
 import type { LedTone } from './primitives';
 import type { Icon } from '@/lib/icon';
-import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
+import { APP_VERSION, useUpdateController } from '@/lib/app-meta';
 import styles from './RightRail.module.css';
 
 export type RailTone = LedTone;
@@ -185,7 +192,35 @@ export const RightRail = (): ReactElement => {
   } = useRail();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const update = useUpdateStatus();
+  const { status: update, forceCheck, install } = useUpdateController();
+
+  const versionLabel = (() => {
+    if (update.state === 'installing') return 'installing…';
+    if (update.state === 'available' && update.latestVersion) {
+      return `↑ v${update.latestVersion}`;
+    }
+    return `v${APP_VERSION}`;
+  })();
+
+  const versionTitle = (() => {
+    if (update.state === 'installing') return 'Downloading and installing update…';
+    if (update.state === 'available') {
+      return `Update to v${update.latestVersion ?? '?'} — click to install`;
+    }
+    if (update.state === 'error') return `${update.message ?? 'Update check failed'} — click to retry`;
+    if (update.state === 'no_endpoint') return update.message ?? 'Updater not configured';
+    if (update.state === 'up_to_date') return `${update.message ?? 'Up to date'} — click to re-check`;
+    return `CTRL v${APP_VERSION} — click to check for updates`;
+  })();
+
+  const onVersionClick = (): void => {
+    if (update.state === 'installing') return;
+    if (update.state === 'available') {
+      void install();
+    } else {
+      void forceCheck();
+    }
+  };
 
   const settingsSection = parseSettingsSection(pathname);
 
@@ -329,23 +364,24 @@ export const RightRail = (): ReactElement => {
 
         <div className={styles.footer}>
           {settingsItem && renderItem(settingsItem)}
-          <div
+          <button
+            type="button"
             className={styles.versionRow}
-            title={
-              update.available
-                ? `Update available${update.latestVersion ? ` (${update.latestVersion})` : ''}`
-                : `CTRL v${APP_VERSION}`
-            }
+            data-state={update.state}
+            data-available={update.available || undefined}
+            title={versionTitle}
+            onClick={onVersionClick}
+            disabled={update.state === 'installing'}
+            aria-label={versionTitle}
           >
-            <span className={styles.versionText}>v{APP_VERSION}</span>
+            <span className={styles.versionText}>{versionLabel}</span>
             {update.available && (
               <span
                 className={styles.updateDot}
-                aria-label="Update available"
-                role="status"
+                aria-hidden="true"
               />
             )}
-          </div>
+          </button>
         </div>
       </div>
     </aside>
