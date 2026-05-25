@@ -20,6 +20,7 @@ pub mod config;
 pub mod draft;
 pub mod draft_run;
 pub mod irisy;
+pub mod irisy_chat;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
@@ -43,8 +44,10 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::uninstall_keycap,
             $crate::commands::kernel::read_keycap_manifest,
             $crate::commands::kernel::set_keycap_config,
-            // chat — streaming LLM via Tauri events (Irisy companion)
+            // chat — raw streaming LLM via Tauri events (keycap-internal use)
             $crate::commands::chat::chat_stream,
+            // irisy_chat — brain-routed streaming (Irisy → active brain keycap MCP @ 17874)
+            $crate::commands::irisy_chat::irisy_chat_stream,
             // irisy — 3-layer (kernel llm / hermes-agent / mcp bridge) wire-up
             $crate::commands::irisy::irisy_init,
             // irisy — one-shot chat via hermes subprocess (ctrl-volc provider)
