@@ -90,6 +90,50 @@ Strategic positioning (ADR-014 locks formally):
 
 - **CTRL = global English first** (not 中文 OPC). UX/UI/marketing/keycap priority by global creator+agent ecosystem; Chinese is i18n adaptation. Priority order: hermes ecosystem skills / global MCP marketplace / agentskills.io > 飞书 / Notion / Coze CN connectors.
 
+## Amendment 2026-05-25 — Pi-as-sole-brain + hermes-as-keycap + VMark-not-substrate
+
+This session **撤销 2026-05-22 hermes-as-brain framing**, replaces it with Pi-as-sole-brain. Decision body (5 primitives + 5 sources + 4 layers) remains immutable; brain assignment + substrate set updated.
+
+### What changed
+
+**Brain layer (was hermes, now Pi):**
+
+- **Pi** ([github.com/badlogic/pi-mono](https://github.com/badlogic/pi-mono)) is the **sole brain** that powers Irisy. Sole = no "active brain switch" UI; kernel routes Irisy `text.chat` to Pi unconditionally.
+- Rationale: agentskills.io = open standard (Anthropic 2025-12), not hermes-private; Pi supports SKILL.md and consumes the same 90k+ skill ecosystems (Skills.sh / SkillsMP / agentskill.sh). Pi is lighter (TS + npm, <1000-token system prompt floor, 4-tool floor), philosophy-aligned (stateless brain + vault as truth, no separate memory store), has Rust port (`pi_agent_rust`) as future kernel-embed path. hermes' persistent memory + auto-skill-generation conflict with CTRL's plain-text-vault truth model.
+- **hermes降级 → 普通 functional keycap** ("个人助理键帽"). User installs hermes from keycap pool when they want a personal-assistant agent with persistent memory + auto-skill-gen. hermes is NOT in the brain slot — Pi keeps that slot. hermes keycap runs as its own MCP server subprocess (lazy `pip install hermes-agent`), with its own memory store kept in `~/.hermes/`. README warns users that hermes' memory does NOT integrate with the CTRL vault (it's the trade-off of installing this keycap).
+- ADR-019 (hermes-primary) **supersedes by this amendment**. ctrl-hermes-plugin code is NOT deleted — repositioned as the personal-assistant keycap's bridge (metadata + README change only). MIT compliance from `decision_hermes_mit_compliance` carries forward unchanged.
+
+**Vault substrate (was VMark MCP sidecar, now CTRL-native plain-text stack):**
+
+- **VMark is NOT a substrate.** VMark.app ([github.com/xiaolai/vmark](https://github.com/xiaolai/vmark)) is itself vibe-coded Tauri 2 + React + Tiptap + CodeMirror 6 + Tailwind 4. CTRL uses the **same open-source libs directly**, not VMark as an intermediary.
+- **S15 (VMark MCP sidecar) deprecated.** B15 / B16 ("Open in VMark" / "Insert at VMark cursor") deprecated. VMark remains a *compatibility commitment* (vault files are plain markdown, vim + VMark + Pi all read them) — never a dependency.
+- **CTRL-native vault stack** (decided 2026-05-25):
+  - PWA viewer registry by content-type: **Tiptap** (markdown WYSIWYG + source), **CodeMirror 6** (code / JSON / YAML / TOML / HTML), **mermaid.js** (mermaid), iframe+CSP (HTML sandbox), browser-native (SVG)
+  - Kernel **vault index** (`src-tauri/src/kernel/vault_index.rs`, already partial): SQLite FTS5 full-text + backlink scanner + tag scanner — extended in this lane
+  - Image inventory module (new substrate, replaces S20 framing): FS scan + thumbnail cache, kernel-native, no VMark dep
+- Frontmatter parsing: `gray-matter` (TS) + `serde_yaml` (Rust). Plain markdown + YAML frontmatter remains the vault's wire format.
+
+**Philosophy reframe (CLAUDE.md updates separately):**
+
+- "Obsidian philosophy" wording → **"Plain-text philosophy"**. Substance unchanged (local = truth, vim-readable, no proprietary binary, no CTRL account, end-side OAuth/LLM/RAG/sync), but no longer named after a specific app.
+- vim test still applies as the design gate.
+- "CTRL = hermes 长出来的手脚 + 工作台" framing (memory `decision_ctrl_is_hermes_workbench`, 2026-05-22) **superseded**: CTRL provides body + workbench for **Pi** (the brain) + N keycaps (one of which can be hermes personal-assistant). hermes is no longer the brain in CTRL's mental model.
+
+### Why this amendment now (灵活开发 window)
+
+bao explicitly authorized (2026-05-25): "我们现在灵活开发，就是因为不确定是否可行，是否是最好的选择；在确定架构前都可以修改". Brain selection + vault substrate are pre-v1.0-lock decisions, reversible at low cost (ctrl-hermes-plugin ~500 LOC sunk cost; no kernel API contract broken). Window closes when v1.0 ships.
+
+### Forward-looking acceptance
+
+- [ ] zeus: kernel `chat_stream` / `irisy_init` simplified — no "active brain" config, route directly to Pi keycap; remove hermes-specific probe from irisy.rs
+- [ ] zeus: CLAUDE.md updated — Obsidian → Plain-text wording, brain layer described, Stack table includes Tiptap + CodeMirror 6 + mermaid.js
+- [ ] zeus: vault_index.rs extended with backlink + tag scanners (FTS5 already in place)
+- [ ] hephaestus: ctrl-pi-plugin shipped under `packages/ctrl-pi-plugin/`; Pi keycap manifest written; H-2026-05-25-001 dispatched
+- [ ] hephaestus: ctrl-hermes-plugin repositioned (metadata + README only, no code change) as personal-assistant keycap
+- [ ] hephaestus: H-2026-05-23-001 (hermes-primary integration) marked `superseded` with reference to this amendment
+- [ ] daedalus: PWA viewer registry (Tiptap + CodeMirror 6 + mermaid.js) shipped — Settings "Active brain" UI NOT needed (sole brain)
+- [ ] ADR-019 status changed to `superseded`, `superseded_by: 001#amendment-2026-05-25`
+
 ## Changelog
 
 | Date | Change |
@@ -101,3 +145,4 @@ Strategic positioning (ADR-014 locks formally):
 | 2026-05-18 | Rewrite to olym 0.3.1 ADR format (Context/Decision/Alternatives/Consequences/Acceptance/Changelog) |
 | 2026-05-18 | Clarification (no policy change): line 23 "Default LLM = CF Workers AI + Doubao" 实际含义 = 默认订阅 = CF Workers AI (Qwen/Llama bundled); "Doubao" 字眼指 Volc-provided model, 通过 BYOK 或后续 kernel capability 接入, 非 CF 订阅默认含. ADR-005 (proposed) 进一步限定 BYOK Claude 仅 user action, 不是默认路径. ADR-001 Decision 段保持 immutable. |
 | 2026-05-22 | Amend: hermes-as-brain framing (5-part body mapping); ADR-013 kernel-as-MCP-server lands as protocol consolidation; ADR-015 Obsidian philosophy as cross-cutting constraint; ADR-014 global-English-first positioning. Decision body remains immutable; amendments capture the new framing without restructuring the spine. |
+| 2026-05-25 | **Amend: Pi-as-sole-brain + hermes-as-keycap + VMark-not-substrate.** Supersedes 2026-05-22 hermes-as-brain framing. Spine (5 primitives / 5 sources / 4 layers) immutable; brain assignment + vault substrate set updated. ADR-019 (hermes-primary) supersedes. CTRL-native vault stack chosen (Tiptap + CodeMirror 6 + mermaid.js + SQLite FTS5) — no VMark dependency. |

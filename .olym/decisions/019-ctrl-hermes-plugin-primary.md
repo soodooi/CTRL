@@ -1,7 +1,7 @@
 ---
 adr_id: 019
 title: CTRL = hermes plugin (primary integration); kernel MCP server demoted to IPC + secondary surface
-status: accepted
+status: superseded
 date: 2026-05-23
 deciders: [bao, zeus, hephaestus]
 related:
@@ -11,8 +11,44 @@ related:
   - .olym/decisions/016-irisy-eight-stage-lifecycle.md
 scope: framework
 supersedes: []
-superseded_by: []
+superseded_by:
+  - .olym/decisions/001-system-architecture.md#amendment-2026-05-25
 ---
+
+## ⚠️ SUPERSEDED 2026-05-25
+
+**This ADR is no longer in force.** Brain reframing: hermes is **not** the primary CTRL brain.
+
+bao 2026-05-25 拍板: **CTRL sole brain = Pi** (`@pi/coding-agent`, MIT, lazy npm install); hermes 降级为可选 "personal-assistant keycap" (用户从 Pool 装).
+
+See:
+- `.olym/decisions/001-system-architecture.md` amendment 2026-05-25 (authoritative)
+- memory `decision_pi_is_sole_brain_hermes_is_keycap.md`
+
+### Why superseded (key insights bao surfaced in conversation)
+
+1. **agentskills.io is an Anthropic 2025-12 open standard, not a hermes-private marketplace** — Pi supports SKILL.md, consumes Skills.sh (90k+) / SkillsMP (66k+) / agentskill.sh (44k+) / ClawHub (13k+) same ecosystems. ADR-019's "hermes ecosystem moat" rationale was based on incorrect data; verified via WebFetch 2026-05-25.
+2. **hermes' persistent memory + auto-skill-generation conflict with CTRL plain-text-vault truth model** — hermes stores in `~/.hermes/memory/*` (not vim-readable, not in vault); auto-writes SKILL.md without user intent. Violates the vim test (CLAUDE.md "Meta: Plain-text philosophy").
+3. **Pi is philosophically aligned** — 4-tool floor + <1000-token system prompt + stateless brain + uses vault as memory via `read` tool. Has Rust port (`pi_agent_rust`) as future kernel-embed path; hermes Python never can.
+4. **No "active brain" UX cost** — sole-brain simplification is cleaner than dual brain switching.
+
+### What carries forward unchanged from ADR-019
+
+- ADR-013 (kernel-as-MCP-server, port 17873) remains the protocol layer for any external AI agent (hermes / Claude Code / Cursor / Pi) to consume CTRL capabilities. Surface is brain-agnostic.
+- `ctrl-hermes-plugin` source code is **not deleted** — repurposed as the bridge for the personal-assistant hermes keycap (when user installs it from Pool). Metadata + README change only.
+- MIT compliance work (`decision_hermes_mit_compliance` memory): unchanged, still required for the hermes keycap. THIRD_PARTY_LICENSES.md + About panel attribution remain.
+- hermes plugin discovery / cron scheduling / profile system: these are hermes-internal features; users who install the hermes keycap get them in `~/.hermes/` as expected. CTRL does not wrap or replace them.
+
+### What ADR-019 got wrong (for the record)
+
+- Framed `ctrl-hermes-plugin` as "CTRL = hermes plugin (primary)" — this implied CTRL is downstream of hermes. Actually: CTRL is downstream of nothing; it is the OS shell. Brain is one (currently Pi) of CTRL's keycaps.
+- Demoted ADR-013 kernel MCP server to "IPC + secondary surface" — ADR-013 is restored as a primary surface (any external agent can consume CTRL via this MCP server; not just hermes).
+- Locked the kernel routing topology to hermes-plugin-primary path — that topology is removed; kernel routes `text.chat` directly to whichever brain keycap is installed (default Pi).
+
+---
+
+## (Original ADR content below — preserved as historical record, no longer in force)
+
 
 ## Context
 
