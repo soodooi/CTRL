@@ -16,6 +16,7 @@
 // implementations land in sub-PR b's second commit (hotkey port from W3
 // HotkeyService.cs, tray + window glue, lifecycle wiring).
 
+pub mod asset_protocol;
 pub mod ax_prompt;
 pub mod bootstrap;
 pub mod hotkey;

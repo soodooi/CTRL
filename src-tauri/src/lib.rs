@@ -48,6 +48,14 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // ctrl-asset:// custom URI scheme — serves files under
+        // ~/.ctrl/keycaps/<id>/{assets,skills}/... read-only. Handler is
+        // crate::shell::asset_protocol. PWA IconRenderer + viewer registry
+        // consumes these URLs (daedalus PR #44).
+        .register_asynchronous_uri_scheme_protocol(
+            shell::asset_protocol::SCHEME,
+            shell::asset_protocol::handle_request,
+        )
         // Tauri-side auto-updater. Endpoint + pubkey live in
         // tauri.conf.json -> plugins.updater. Signed release pipeline:
         // scripts/release.sh produces .app.tar.gz + .sig + latest.json
@@ -102,6 +110,12 @@ pub fn run() {
         // and uploads to the public soodooi/CTRL-releases sibling repo.
         // ADR-011 / 018 — Layer 1 of 4 of the auto-update strategy.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // ctrl-asset:// custom URI scheme (same handler as macOS branch) —
+        // serves files under ~/.ctrl/keycaps/<id>/{assets,skills}/... read-only.
+        .register_asynchronous_uri_scheme_protocol(
+            shell::asset_protocol::SCHEME,
+            shell::asset_protocol::handle_request,
+        )
         .manage(commands::system::UpdateCache::default())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
