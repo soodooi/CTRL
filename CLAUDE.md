@@ -27,6 +27,16 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 - 开始前查 `.olym/skills/` 和 `.olym/best-practice/` (后续建立)
 - 涉及战略改动: 先读 ADR-001, 再读相关 spec, 不冲突再动手
 
+### Working mode: 灵活开发, 文档后补
+
+bao 2026-05-25 校准: 当前处于 v1 快速迭代期, **代码 ship 优先, 文档后补**。
+
+- 不阻塞: handoff 状态 / spec 细则 / ADR 撰写 / README 同步 — 全部允许滞后
+- 先动手: 实装 → commit → push, 不等 spec/handoff 齐全
+- 回填窗口: 功能 ship 后 (release 切版本时 / EOD / 周末) 集中回补 doc 状态
+- 例外 (仍需先 doc): 战略级 ADR 改动 (架构 lock 点) / 安全相关 / 8 zeus-stewardship 类
+- 不变: olym 主循环 / RFC 5 步 / lane 边界 / commit message 规范 — 这些是流程保命线, 不是 doc
+
 ---
 
 ## Design Philosophy
