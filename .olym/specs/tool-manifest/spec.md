@@ -421,8 +421,64 @@ Target: 5 minutes from intent → installed keycap.
 
 ---
 
-## 12. References
+## 13. Target — pluggable role (added 2026-05-25, H-2026-05-25-001)
+
+`target` is **orthogonal to `variant`**:
+
+- `variant` = *how* the keycap runs (`builtin` / `mcp-server` / `oauth` / `cli-wrapper` / `stss-publisher` / `local-agent`).
+- `target` = *what role* the keycap plays in the CTRL surface.
+
+Allowed values:
+
+| `target`       | Meaning                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------- |
+| `mcp-tool`     | Default. One-shot tool call. ~90% of keycaps.                                                     |
+| `hermes-skill` | Optional rich SKILL.md-driven keycap (advanced authoring).                                        |
+| `brain`        | **Pluggable agent runtime** — owns a kernel capability (e.g. `text.chat`) for the entire user.    |
+
+### `target: brain` — pluggable agent runtime
+
+A brain keycap declares which kernel-level capability it answers, plus the npm bridge package the kernel supervisor spawns to talk to it:
+
+```yaml
+target: brain
+capability: text.chat                   # which kernel capability this brain owns
+bridge: '@ctrl/pi-plugin'               # npm package the kernel spawns
+provider_passthrough: true              # CTRL does NOT proxy LLM credentials
+```
+
+The kernel's **brain router** (zeus lane, separate scope) reads these fields and:
+
+1. Selects **exactly one active brain keycap per capability** (e.g. one for `text.chat`, optionally one for `text.embed`, …).
+2. When Irisy or any other CTRL surface requests `text.chat`, the router forwards the call to the active brain's MCP server.
+3. The user swaps brains by changing `~/.ctrl/active-brain` — no kernel rebuild.
+
+**Why brain is a keycap, not a kernel primitive** (per bao's 2026-05-25 framing):
+
+- The real kernel primitive is the *provider abstraction* (`text.chat`, `image.generate`, `audio.tts`, …) — declared in ADR-001.
+- A brain is a *task-specific runtime* that consumes that abstraction. Same shape as any other keycap.
+- Treating brain-as-keycap means the user picks their brain the same way they pick any other tool, and brains compete on a level playing field (Pi default, hermes optional, custom user-built fork).
+
+**`provider_passthrough: true` (recommended for all brain keycaps)** — when true, CTRL never stashes LLM API keys for this brain. The brain runtime (Pi reads `~/.pi/config`, hermes reads `~/.hermes/config.yaml`) owns the credential. This preserves the Obsidian "no second copy of user state" philosophy.
+
+### Validation rules
+
+- `target: brain` SHOULD declare `capability` (kernel router rejects brain keycaps that don't).
+- `target: brain` SHOULD declare `bridge` unless `variant: builtin` (the kernel knows where builtins live).
+- A keycap MAY declare `target: brain` and still expose additional tools via `variant: mcp-server` — the brain router only routes the declared `capability`; other tools remain callable as normal MCP tools.
+
+### Current brain keycaps
+
+| id     | bridge              | capability  | status                   |
+| ------ | ------------------- | ----------- | ------------------------ |
+| `pi`   | `@ctrl/pi-plugin`   | `text.chat` | **default** (2026-05-25) |
+| `hermes` | `@ctrl/hermes-plugin` | `text.chat` | optional (persistent memory + auto-skill-gen) |
+
+---
+
+## 14. References
 
 - `.olym/specs/kernel/spec.md` §2 — primitives used by manifest
 - `.olym/specs/stss-protocol/spec.md` §3.1 — stream capability declaration
 - `.olym/specs/creator-economy/spec.md` — market submission flow + revenue share
+- `.olym/handoffs/H-2026-05-25-001-pi-default-brain.md` — `target: brain` introduction + Pi default decision

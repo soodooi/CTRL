@@ -35,6 +35,23 @@ export const KeycapVariant = z.enum([
 ]);
 export type KeycapVariant = z.infer<typeof KeycapVariant>;
 
+// Keycap target — orthogonal to `variant`. Declares the *role* a keycap
+// plays in the CTRL surface so the kernel can route requests correctly.
+// Introduced 2026-05-25 (H-2026-05-25-001) when bao approved Pi as default
+// brain — brain runtimes are keycaps, not kernel-level primitives.
+//
+//   mcp-tool     — one-shot tool call. Default for ~90% of keycaps.
+//   hermes-skill — rich SKILL.md-driven keycap (optional, advanced).
+//   brain        — pluggable agent runtime that owns `text.chat` (or any
+//                  capability the keycap declares via `capability`). The
+//                  user's active brain keycap is the answer for any
+//                  inbound capability call from Irisy. Examples: Pi
+//                  (default), hermes (optional), claude-shim (dev-only).
+//
+// See .olym/specs/tool-manifest/spec.md §13.
+export const KeycapTarget = z.enum(['mcp-tool', 'hermes-skill', 'brain']);
+export type KeycapTarget = z.infer<typeof KeycapTarget>;
+
 export const Permission = z.enum([
   'clipboard',
   'network',
@@ -554,6 +571,29 @@ export const KeycapManifest = z.object({
 
   /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper). */
   source: Source.optional(),
+
+  /** Role of this keycap in the CTRL surface. Orthogonal to `variant`:
+   *  variant says *how* it runs, target says *what role* it plays.
+   *  Absent → `mcp-tool` (the default). `brain` is special — kernel's
+   *  brain router selects exactly one active brain keycap per user. */
+  target: KeycapTarget.optional(),
+
+  /** Brain-keycap only: the kernel capability this brain answers
+   *  (`text.chat`, `text.embed`, `image.generate`, …). Read by the
+   *  kernel brain router to dispatch the right capability to the right
+   *  brain. Ignored for non-brain targets. */
+  capability: z.string().optional(),
+
+  /** Brain-keycap only: name of the npm bridge package the kernel
+   *  supervisor spawns to talk to this brain (e.g. `@ctrl/pi-plugin`).
+   *  Ignored for non-brain targets. */
+  bridge: z.string().optional(),
+
+  /** Brain-keycap only: when true, CTRL does NOT proxy LLM credentials
+   *  — the brain runtime owns its own provider config (e.g. ~/.pi/config).
+   *  Default true for `target: brain` to preserve the Obsidian "no
+   *  second copy of user state" philosophy. */
+  provider_passthrough: z.boolean().optional(),
 
   /** Actions the user can invoke. Most keycaps have exactly one. */
   actions: z.array(Action).min(1),
