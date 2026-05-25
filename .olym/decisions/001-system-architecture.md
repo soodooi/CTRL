@@ -56,6 +56,138 @@ Adopt a 4-layer kernel architecture with **5 primitives** (Actor / Capability / 
 - [x] Anti-list documented (CTRL is NOT: Raycast clone / workflow editor / consumer chat / ChatGPT GPTs adapter / shared mamamiya tenant)
 - [x] Related: ADR-002 supersedes §3.1 rendering; ADR-003 supersedes §6 #18; ADR-010 resolves WASM-only plugin question (all three accepted as of 2026-05-17)
 
+## 2026-05-25 amendment — file system + keycap canonical layout + brain-as-keycap
+
+Scope: file system viewpoint, vault/assets canonical structure, keycap internal layout, brain target framing. Does not reverse the 4-layer spine — adds canonical structure under the existing primitive set. Triggered by H-2026-05-25-001 (Pi as default brain) plus hephaestus + daedalus joint review.
+
+### Brain-as-keycap framing (supersedes "decision_ctrl_is_hermes_workbench" memory)
+
+- The kernel primitive is the *provider abstraction* (`text.chat`, `text.embed`, `image.generate`, `audio.tts`, …). A brain is a *task-specific runtime* that consumes that abstraction.
+- A brain is therefore a **keycap with `target: brain`**, not a kernel-level module. Manifest schema gains `target` (mcp-tool | hermes-skill | brain), `capability`, `bridge`, `provider_passthrough` — see `.olym/specs/tool-manifest/spec.md` §13.
+- The kernel **brain router** is an inline lookup (`~/.ctrl/active-brain` → MCP server URL), not a substrate module. ≤100 LOC, embedded in the chat command path.
+- Pi (`@ctrl/pi-plugin`) is the v1 default brain (H-2026-05-25-001, shipped 2026-05-25). hermes (`@ctrl/hermes-plugin`) is an optional second brain (lives on `feat/h-2026-05-22-kernel-mcp-server`, will rebase into `keycap-dev`).
+
+### 10 file-system invariants (ship-after immutable)
+
+1. **One keycap = one directory** — `~/.ctrl/keycaps/<id>/` holds manifest + entry + assets + skills + patches + upstream record. `rm -rf` fully uninstalls; no registry to drift out of sync.
+2. **Vault is sibling-structured** — `~/Documents/CTRL/{notes,assets/}`. Compatible with Obsidian / Logseq / VMark default layouts.
+3. **`~/.ctrl/state/` is derivative** — `event-log.sqlite`, `vault-index.sqlite`, `cache/` rebuildable from vault + keycap manifests. Out of backup scope by design.
+4. **Prompts are markdown** — `keycap.md` frontmatter + body, `assets/prompt.md`, `system-prompt.md` all plain text. vim-editable, git-diffable; same format as hermes/Pi SKILL.md (agentskills.io standard).
+5. **Secrets always go through macOS Keychain** — provider keys, OAuth tokens, mesh identity. `~/.ctrl/config.toml` carries only non-sensitive settings.
+6. **Manifest is YAML frontmatter** — Zod-validated but plain text. User can hand-edit; CI/runtime validates.
+7. **Mobile = IndexedDB queue + LRU evict + soft quota** — captures (photo / audio) enqueue immediately, upload-drain when mesh online. Not "no binary asset"; capped and recycled.
+8. **Backup source set** = `~/Documents/CTRL/` + `~/.ctrl/{keycaps, config.toml, mesh/identity}`. `cp -r` of the vault is sufficient for user content; CTRL state restores on next launch.
+9. **Skills truth model** — `~/.ctrl/keycaps/<id>/skills/` is the **source**. `~/.ctrl/skills/<keycap-id>/<sub-id>/` is an **aggregated view** populated at install. Removing the keycap removes the view. Brain keycaps read the source directly via `PI_SKILLS_PATH` / `HERMES_SKILLS_PATH` env injection — no symlink dependency (Windows-safe).
+10. **v1.0 keycap runtime = `.ts` / `.js` only** — Tauri ships Node, so JS keycaps work everywhere CTRL ships. Python / Rust / native binaries deferred to v1.x ADR.
+
+### Canonical keycap directory layout
+
+```
+~/.ctrl/keycaps/<id>/
+├── keycap.md                manifest (YAML frontmatter + markdown body)
+├── mcp-server.{ts,js}       entry executable (kernel spawn target)
+├── package.json             Node deps (optional)
+├── assets/
+│   ├── icon.svg             12-grid icon (always required)
+│   ├── icon.lottie          optional animation
+│   ├── prompt.md            LLM prompt template (vim-editable)
+│   ├── few-shots.json       examples
+│   ├── system-prompt.md     optional persona override
+│   └── tool-schema.json     MCP tool schema (Zod-derived)
+├── skills/<sub-id>/         keycap-bundled SKILL.md (truth; aggregated to ~/.ctrl/skills)
+├── config.toml              Config-tier adjustments (user-editable; stays in sync with upstream)
+├── patches/                 Patch-tier overrides (3-way merge on upgrade)
+│   └── prompt.md.patch
+├── upstream.json            { source, channel, lock_version } — drives upgrade
+└── README.md
+```
+
+### Filesystem viewpoint summary
+
+```
+~/Documents/CTRL/                  VAULT (truth, plain markdown + assets)
+├── notes/                         markdown
+├── assets/{images,audio,pdf,attachments}/
+└── ctrl.toml                      user-editable vault policy
+
+~/.ctrl/                           RUNTIME state (CTRL private)
+├── config.toml                    provider keys ref + non-sensitive settings
+├── keycaps/<id>/                  canonical (above)
+├── skills/<keycap-id>/            aggregated VIEW (read-only, GC'd on keycap uninstall)
+├── state/                         derivative — event-log / vault-index / automerge
+├── cache/
+│   ├── thumbnails/
+│   ├── llm/
+│   └── keycap-upstream/<id>/<lock_version>/   base for 3-way patch merge
+├── mesh/peers.json + identity
+└── active-brain                   single file, holds "pi" or other brain keycap id
+
+macOS Keychain                     SECRETS — providers / OAuth / mesh-device-key
+```
+
+### App bundle (`CTRL.app/Contents/Resources/`)
+
+- `ctrl-web/` — PWA static (Vite build, ≤ 500 KB gzip critical path)
+- `keycaps/` — v1 builtin keycaps (15 starter), first-run idempotent copy to `~/.ctrl/keycaps/`
+- `brand/` — icon / logo / splash (promoted from `doc/visual-identity/`)
+- `third-party/LICENSES` — MIT compliance (Pi / hermes / Tiptap / CodeMirror / mermaid / etc.)
+
+First-run policy: target exists + `.ctrl-user-modified` marker → skip; no marker → safe to refresh from bundle. Marker is written by PWA file watcher on first user edit of any file under the keycap directory.
+
+### Decision log (E-series, hephaestus review acceptance)
+
+| # | Item | Decision |
+|---|---|---|
+| E1 | `ctrl-hermes-plugin` visibility | Exists on `feat/h-2026-05-22-kernel-mcp-server`; appears on `keycap-dev` post-rebase. Not a fact error — branch divergence. |
+| E2 | Invariant count | Codified as 10 above (was loosely 6/8). |
+| E3 | Mobile cache lifecycle | IndexedDB queue + LRU evict + explicit quota; "soft cap" surfaces in PWA. |
+| E4 | Skills truth model | Bundled SOURCE in `~/.ctrl/keycaps/<id>/skills/`; aggregated VIEW in `~/.ctrl/skills/`. |
+| E5 | Windows symlink risk | Eliminated — brain keycaps read source path via env injection, no symlinks required. |
+| E6 | Patch base | `~/.ctrl/cache/keycap-upstream/<id>/<lock_version>/` holds upstream tarball for 3-way merge. |
+| E7 | Multi-runtime entry | v1.0 = `.ts`/`.js` only. Python / Rust deferred to v1.x ADR. |
+| E8 | Vault path customisation | `~/.ctrl/config.toml [vault] path` (default `~/Documents/CTRL/`); user may relocate. |
+| E9 | First-run vault init wizard | First-screen flow: "Create new / Use existing / Skip". daedalus owns. |
+| E10 | `~/.ctrl/state/` derivative status | Made an invariant (#3 above). Backup scope clarified (#8 above). |
+
+Mesh identity: Keychain is sole truth. `~/.ctrl/mesh/identity` mirror only if vodozemac SDK strictly requires file path (verify before implementing); if mirrored, 0600 + ADR note.
+
+### Decision log (D-series, daedalus PWA ripple)
+
+| # | Item | Decision |
+|---|---|---|
+| D1 | `list_keycaps` envelope expansion | Add `target` / `source` / `adjustment` / `config_schema` / `upstream` fields. zeus owns kernel side. |
+| D2 | Keycap-bundled assets transport | New Tauri custom scheme `ctrl-asset://` — zeus implements protocol handler. Replaces invoke + base64. |
+| D3 | Viewer registry dimensions | Triple-axis: `source: 'vault' | 'keycap' | 'system'` + `editable: boolean` + `onSave` handler. Not mime alone. |
+| D4 | PDF sidecar transport | Viewer loads `<file>.pdf` (binary) + `<file>.pdf.md` (sidecar) together. Registry adds `companion?: string`. |
+| D5 | Mobile cache invariant | See invariant #7 above (D5 motivated the invariant rewrite). |
+| D6 | `first_run_state` field | `kernel_status.first_run_state ∈ { copying, ready }` surfaces in PWA empty state UI. |
+
+### PWA surface deltas (daedalus design-lead, mock-first)
+
+- Pool card: source / target badge + 3-tier adjustment badge (Config / Patch / Fork) + upgrade dot.
+- Settings: keycap-level update inventory, distinct from app-level updates.
+- Pool detail side-pane: open `keycap.md` / `prompt.md` for editing via the viewer registry (location=`keycap`, editable=true).
+- Dev workflow: `CTRL_KEYCAP_DEV_PATH` env redirects `~/.ctrl/keycaps/` → `packages/ctrl-keycaps/`; auto-on when `NODE_ENV=development`. Zero impact on shipped users.
+
+### v1.0 blocker delta (additions from this amendment)
+
+Quoted from bao's review consolidation (raw scope estimates per bao; not amplified here):
+
+| Lane | Added blockers from this amendment |
+|---|---|
+| zeus kernel | D1 envelope · D2 `ctrl-asset://` scheme + handler · D6 `first_run_state` · E6 upstream cache layout · E8 vault path config · E9 wizard backend · mesh identity Keychain-only verify · BrainRouter inline · `irisy_chat_stream` Tauri command · rewrite `irisy.rs` (Pi probe, drop hermes detection) |
+| hephaestus cap | E4/E5 brain keycap reads `keycap-bundled skills/` via env (`PI_SKILLS_PATH` / `HERMES_SKILLS_PATH`) · Gap A dev path override doc · E7 `.ts`/`.js` entry enforcement · `ctrl-hermes-plugin` rebase / cherry-pick into `keycap-dev` |
+| daedalus PWA | D3 viewer registry 3-axis · D4 PDF sidecar · D5 mobile IndexedDB queue + LRU · E9 init wizard UI · Pool card badges + 3-tier UI · Settings keycap update inventory · Pool detail side-pane prompt editing |
+| apollo | no change |
+
+Critical path: zeus mesh thin-wire + `ctrl-asset://` scheme. Other lanes work in parallel.
+
+### Open follow-ups (not blockers, tracked)
+
+- 4 ship blockers in Pi plugin (B1 RPC degrade re-emit / B2 Win detect / B3 Win shebang + Node 20 strip-types / B4 main → dist) — recorded in commit 202bfc9 body; address before v1.0 ship.
+- `pnpm-lock.yaml` / `pnpm-workspace.yaml` appeared in `packages/ctrl-web/` working tree on 2026-05-25; CLAUDE.md mandates npm workspaces — left untracked pending bao decision (keep / delete / migrate).
+- ADR-019 (referenced in earlier review by inference) does not exist; reservations there were potential-slope, not realised. No new ADR needed beyond this amendment unless multi-brain UI / hermes activation rolls in.
+
 ## Changelog
 
 | Date | Change |
@@ -66,3 +198,4 @@ Adopt a 4-layer kernel architecture with **5 primitives** (Actor / Capability / 
 | 2026-05-17 | ADR-010 resolves WASM-vs-MCP plugin model question; spine remains |
 | 2026-05-18 | Rewrite to olym 0.3.1 ADR format (Context/Decision/Alternatives/Consequences/Acceptance/Changelog) |
 | 2026-05-18 | Clarification (no policy change): line 23 "Default LLM = CF Workers AI + Doubao" 实际含义 = 默认订阅 = CF Workers AI (Qwen/Llama bundled); "Doubao" 字眼指 Volc-provided model, 通过 BYOK 或后续 kernel capability 接入, 非 CF 订阅默认含. ADR-005 (proposed) 进一步限定 BYOK Claude 仅 user action, 不是默认路径. ADR-001 Decision 段保持 immutable. |
+| 2026-05-25 | Amendment — file-system canonical layout, 10 invariants, brain-as-keycap framing (E1–E10 + D1–D6). Triggered by H-2026-05-25-001. Spine and 5-primitive set unchanged. |
