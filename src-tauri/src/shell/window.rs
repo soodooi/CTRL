@@ -58,6 +58,40 @@ impl WindowController {
         Ok(())
     }
 
+    /// Always-reveal — bring the main window into view regardless of
+    /// current state. Used by single-instance + macOS Dock reopen handlers
+    /// so a second `open .app` or a Dock click consistently surfaces the
+    /// window (vs `toggle` which would hide it when already visible).
+    /// Per bao 2026-05-23: '在任务栏 就是打不开'.
+    pub fn reveal(app: &AppHandle) -> Result<()> {
+        let Some(w) = Self::main(app) else {
+            tracing::info!("WindowController::reveal — main missing, rebuilding");
+            let _w = Self::build_main(app)?;
+            #[cfg(target_os = "windows")]
+            cloak::set(&_w, false);
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = _w.show();
+                let _ = _w.set_focus();
+            }
+            return Ok(());
+        };
+        #[cfg(target_os = "windows")]
+        {
+            cloak::set(&w, false);
+            super::hotkey::HotkeyController::reset_state();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = w.show();
+            let _ = w.set_focus();
+            let _ = w.unminimize();
+            super::hotkey::HotkeyController::reset_state();
+        }
+        tracing::info!("WindowController::reveal — main shown + focused");
+        Ok(())
+    }
+
     /// Toggle the main window. Called by hotkey + tray click.
     ///
     /// Cloaked → uncloak + raise + focus. Uncloaked → cloak. The cloak
