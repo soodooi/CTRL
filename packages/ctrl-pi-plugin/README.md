@@ -38,8 +38,8 @@ The bridge does **not** bundle Pi (lazy install — same pattern CTRL uses
 for hermes). Pick one:
 
 ```bash
-npm i -g @pi/coding-agent          # preferred — single global binary
-npm i --prefix ~/.local @pi/coding-agent   # per-user install
+npm i -g @earendil-works/pi-coding-agent          # preferred — single global binary
+npm i --prefix ~/.local @earendil-works/pi-coding-agent   # per-user install
 # or just have npx around; the bridge falls back to `npx pi` on demand.
 ```
 

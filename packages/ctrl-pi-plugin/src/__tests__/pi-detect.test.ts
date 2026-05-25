@@ -41,7 +41,7 @@ describe('pi-detect', () => {
       expect(e).toBeInstanceOf(PiNotFoundError);
       const err = e as PiNotFoundError;
       expect(err.searched.length).toBeGreaterThan(0);
-      expect(err.message).toContain('npm i -g @pi/coding-agent');
+      expect(err.message).toContain('npm i -g @earendil-works/pi-coding-agent');
     } finally {
       if (prior === undefined) delete process.env[ENV_KEY];
       else process.env[ENV_KEY] = prior;

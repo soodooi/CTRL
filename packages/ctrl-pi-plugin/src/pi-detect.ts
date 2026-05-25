@@ -7,7 +7,7 @@
 //   4. `npx pi` (lazy resolve through npm registry)
 //
 // Per CTRL Obsidian philosophy: never bundle the agent runtime. Pi is a
-// user-owned tool the user installs once (`npm i -g @pi/coding-agent`).
+// user-owned tool the user installs once (`npm i -g @earendil-works/pi-coding-agent`).
 // We just locate it and pipe through.
 
 import { spawnSync } from 'node:child_process';
@@ -30,7 +30,7 @@ export class PiNotFoundError extends Error {
 
   constructor(searched: string[]) {
     super(
-      'pi binary not found. Install with `npm i -g @pi/coding-agent` ' +
+      'pi binary not found. Install with `npm i -g @earendil-works/pi-coding-agent` ' +
         'or `npx pi` (one-time download). ' +
         `Searched: ${searched.join(', ')}.`,
     );

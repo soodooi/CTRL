@@ -127,13 +127,21 @@ binary itself is **not** bundled — CTRL is augmentation, not distributor.
 Install Pi once with:
 
 ```bash
-npm i -g @pi/coding-agent   # global install (preferred)
-# or just have npx around — the bridge falls back to `npx pi` on demand.
+npm i -g @earendil-works/pi-coding-agent   # global install (preferred)
+# Verified 2026-05-25 against v0.73+. Older mirror name
+# `@mariozechner/pi-coding-agent` is now deprecated by upstream.
+# Either resolves to the same `pi` binary on $PATH; the bridge also
+# falls back to `npx pi` on demand.
 ```
 
 The bridge auto-detects Pi via `$CTRL_PI_BIN` → `$PATH` → `~/.local/bin/pi`
 → `npx pi`. If none of those resolve, the MCP server returns a clear
 "install Pi" error to the PWA so Irisy can prompt the user.
+
+After installing Pi, give it a provider key (Pi handles its own credentials,
+CTRL is provider-passthrough). Easiest path: run `pi` once interactively and
+use the in-TUI `/login` flow against your preferred provider (Anthropic /
+OpenAI / Google / xAI / Groq / Cerebras / Mistral / OpenRouter).
 
 ## How the kernel finds this
 

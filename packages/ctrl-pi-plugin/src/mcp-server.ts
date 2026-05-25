@@ -363,7 +363,7 @@ function buildHealth(bridge: PiBridge | null, bridgeError: Error | null) {
     error: bridgeError?.message ?? 'pi binary unavailable',
     hint:
       bridgeError instanceof PiNotFoundError
-        ? 'Install with `npm i -g @pi/coding-agent` or run via `npx pi`.'
+        ? 'Install with `npm i -g @earendil-works/pi-coding-agent` or run via `npx pi`.'
         : undefined,
   };
 }
