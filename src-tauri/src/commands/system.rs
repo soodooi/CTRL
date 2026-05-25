@@ -11,12 +11,30 @@
 use crate::kernel::vault::default_vault_root;
 use crate::shell::KernelHandle;
 use serde::Serialize;
+use std::path::PathBuf;
 use tauri::State;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FirstRunState {
+    /// `~/.ctrl/keycaps/` doesn't exist yet. Kernel hasn't seeded builtin
+    /// keycaps from the app bundle Resources/keycaps/. PWA should render
+    /// a "Setting up CTRL…" empty state and avoid showing the keyboard.
+    Copying,
+    /// `~/.ctrl/keycaps/` exists. May be empty, may have keycaps. PWA
+    /// renders the normal keyboard + Pool empty-state hint when zero
+    /// keycaps installed.
+    Ready,
+}
 
 #[derive(Debug, Serialize)]
 pub struct KernelStatus {
     /// Kernel uptime in milliseconds (monotonic, captured at boot).
     pub uptime_ms: u64,
+    /// First-run state — distinguishes "fresh install still seeding" from
+    /// "set up, empty keyboard" so the PWA renders the right empty state.
+    /// Per ADR-001 amendment 2026-05-25 (decision D6).
+    pub first_run_state: FirstRunState,
     /// LLM adapters registered at boot. Empty = no provider configured.
     pub llm_adapters: Vec<String>,
     /// Name of the adapter chosen by `LlmPortRouter::primary_adapter`,
@@ -35,6 +53,19 @@ pub struct KernelStatus {
     /// list each missing component (e.g. "no llm adapter").
     pub overall: &'static str,
     pub warnings: Vec<String>,
+}
+
+fn detect_first_run_state() -> FirstRunState {
+    let home = match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() => h,
+        _ => return FirstRunState::Copying,
+    };
+    let keycaps = PathBuf::from(home).join(".ctrl").join("keycaps");
+    if keycaps.is_dir() {
+        FirstRunState::Ready
+    } else {
+        FirstRunState::Copying
+    }
 }
 
 #[tauri::command]
@@ -77,6 +108,7 @@ pub async fn kernel_status(
 
     Ok(KernelStatus {
         uptime_ms,
+        first_run_state: detect_first_run_state(),
         llm_adapters,
         primary_adapter,
         mcp_servers_installed,
