@@ -25,43 +25,45 @@ pub struct KeycapSummary {
     pub name: String,
     pub keycap_color: String,
     pub icon: String,
+    // D1 envelope (ADR-001 amendment 2026-05-25) — populated from manifest
+    // when present. All optional so legacy keycaps without these fields
+    // continue to render (PWA treats `None` as "field unknown / default").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adjustment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_schema: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<serde_json::Value>,
 }
 
 /// Built-in seed keycaps so a fresh install isn't empty. The real manifest
 /// registry replaces this in sub-PR e once `win/` is removed and the manifest
 /// loader becomes the single source of truth.
+fn seed_keycap(id: &str, name: &str, color: &str, icon: &str) -> KeycapSummary {
+    KeycapSummary {
+        id: id.into(),
+        name: name.into(),
+        keycap_color: color.into(),
+        icon: icon.into(),
+        target: Some("mcp-tool".into()),
+        source: Some("builtin".into()),
+        adjustment: None,
+        config_schema: None,
+        upstream: None,
+    }
+}
+
 fn seed_keycaps() -> Vec<KeycapSummary> {
     vec![
-        KeycapSummary {
-            id: "ctrl-chat".into(),
-            name: "CTRL Chat".into(),
-            keycap_color: "cobalt".into(),
-            icon: "💬".into(),
-        },
-        KeycapSummary {
-            id: "clipboard-ai".into(),
-            name: "改写粘贴".into(),
-            keycap_color: "amber".into(),
-            icon: "✦".into(),
-        },
-        KeycapSummary {
-            id: "ai-translate".into(),
-            name: "AI 翻译".into(),
-            keycap_color: "jade".into(),
-            icon: "译".into(),
-        },
-        KeycapSummary {
-            id: "ai-ocr".into(),
-            name: "AI OCR".into(),
-            keycap_color: "platinum".into(),
-            icon: "◫".into(),
-        },
-        KeycapSummary {
-            id: "ai-text".into(),
-            name: "文本处理".into(),
-            keycap_color: "graphite".into(),
-            icon: "Aa".into(),
-        },
+        seed_keycap("ctrl-chat", "CTRL Chat", "cobalt", "💬"),
+        seed_keycap("clipboard-ai", "改写粘贴", "amber", "✦"),
+        seed_keycap("ai-translate", "AI 翻译", "jade", "译"),
+        seed_keycap("ai-ocr", "AI OCR", "platinum", "◫"),
+        seed_keycap("ai-text", "文本处理", "graphite", "Aa"),
     ]
 }
 
@@ -69,23 +71,30 @@ fn seed_keycaps() -> Vec<KeycapSummary> {
 /// Defaults match the seed_keycaps fallbacks so a manifest missing a
 /// field still produces a renderable card.
 fn manifest_to_summary(manifest: &serde_json::Value, id: &str) -> KeycapSummary {
+    let string_field = |key: &str| -> Option<String> {
+        manifest
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    };
+    // `source` lives under manifest.source.type (per .olym/specs/tool-manifest/spec.md),
+    // not at the top level — read both shapes so PWA gets a value either way.
+    let source = manifest
+        .get("source")
+        .and_then(|s| s.get("type"))
+        .and_then(|v| v.as_str())
+        .or_else(|| manifest.get("source").and_then(|v| v.as_str()))
+        .map(|s| s.to_string());
     KeycapSummary {
         id: id.to_string(),
-        name: manifest
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or(id)
-            .to_string(),
-        keycap_color: manifest
-            .get("keycap_color")
-            .and_then(|v| v.as_str())
-            .unwrap_or("cobalt")
-            .to_string(),
-        icon: manifest
-            .get("icon")
-            .and_then(|v| v.as_str())
-            .unwrap_or("◆")
-            .to_string(),
+        name: string_field("name").unwrap_or_else(|| id.to_string()),
+        keycap_color: string_field("keycap_color").unwrap_or_else(|| "cobalt".to_string()),
+        icon: string_field("icon").unwrap_or_else(|| "◆".to_string()),
+        target: string_field("target"),
+        source,
+        adjustment: string_field("adjustment"),
+        config_schema: manifest.get("config_schema").cloned(),
+        upstream: manifest.get("upstream").cloned(),
     }
 }
 
