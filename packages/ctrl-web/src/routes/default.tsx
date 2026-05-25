@@ -71,7 +71,6 @@ export const DefaultWorkspace = (): ReactElement => {
   const fallback = (
     <div className={styles.center}>
       <div className={styles.mascotWrap}>
-        <div className={styles.mascotHalo} />
         <IrisyMascot state="idle" size={180} />
       </div>
 

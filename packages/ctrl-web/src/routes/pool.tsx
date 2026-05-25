@@ -16,6 +16,9 @@ import styles from './pool.module.css';
 
 type SourceId = 'all' | 'builtin' | 'mcp' | 'oauth' | 'local' | 'stss';
 
+type TargetId = 'mcp-tool' | 'hermes-skill' | 'brain';
+type AdjustmentId = 'config' | 'patch' | 'fork';
+
 interface SourceDef {
   id: SourceId;
   label: string;
@@ -42,6 +45,42 @@ const inferSource = (k: KeycapSummary): SourceId => {
   return 'builtin';
 };
 
+// ─── MOCK derivations (pre-D1 scaffolding) ─────────────────────────
+// `list_keycaps` will ship `target / adjustment / upstream` per the
+// 2026-05-25 architecture review (zeus blocker D1). Until then these
+// derived helpers stand in so the new Pool badges + upgrade dot can be
+// designed against real card layouts. ALL callers route through these;
+// when zeus lands the real envelope, replace each helper with `k.<field>`
+// in one place — no Pool component code changes.
+const MOCK_TARGET_BY_SOURCE: Record<SourceId, TargetId> = {
+  all: 'mcp-tool',
+  builtin: 'mcp-tool',
+  mcp: 'mcp-tool',
+  oauth: 'mcp-tool',
+  local: 'hermes-skill',
+  stss: 'mcp-tool',
+};
+const inferTarget = (k: KeycapSummary): TargetId => {
+  if (k.id === 'pi' || k.id === 'hermes') return 'brain';
+  return MOCK_TARGET_BY_SOURCE[inferSource(k)];
+};
+const inferAdjustment = (k: KeycapSummary): AdjustmentId => {
+  // Hash the id for a stable but distributed mock — every keycap
+  // shows the same adjustment across reloads.
+  let h = 0;
+  for (const c of k.id) h = (h * 31 + c.charCodeAt(0)) | 0;
+  const mod = Math.abs(h) % 10;
+  if (mod < 7) return 'config'; // 70% config-tier per spec
+  if (mod < 9) return 'patch'; // 20% patch
+  return 'fork'; //               10% fork
+};
+const inferUpgradeAvailable = (k: KeycapSummary): boolean => {
+  // Mock: ~1 in 5 has an upgrade.
+  let h = 0;
+  for (const c of k.id) h = (h * 17 + c.charCodeAt(0)) | 0;
+  return Math.abs(h) % 5 === 0;
+};
+
 const SOURCE_TONE: Record<SourceId, LedTone> = {
   all: 'unknown',
   builtin: 'info',
@@ -49,6 +88,18 @@ const SOURCE_TONE: Record<SourceId, LedTone> = {
   oauth: 'caution',
   local: 'warning',
   stss: 'info',
+};
+
+const TARGET_LABEL: Record<TargetId, string> = {
+  'mcp-tool': 'MCP',
+  'hermes-skill': 'SKILL',
+  brain: 'BRAIN',
+};
+
+const ADJUSTMENT_LABEL: Record<AdjustmentId, string> = {
+  config: 'Config',
+  patch: 'Patch',
+  fork: 'Fork',
 };
 
 const SearchIcon = (): ReactElement => (
@@ -215,23 +266,50 @@ export const PoolRoute = (): ReactElement => {
           </div>
         ) : (
           <div className={styles.grid}>
-            {filtered.map((k) => (
-              <button
-                key={k.id}
-                type="button"
-                className={styles.card}
-                onClick={() => handleActivate(k.id)}
-                title={k.id}
-              >
-                <span className={styles.cardGlyph}>{fallbackGlyph(k.name)}</span>
-                <span className={styles.cardName}>{k.name}</span>
-                <div className={styles.cardMeta}>
-                  <StatusPill tone={SOURCE_TONE[inferSource(k)]}>
-                    {SOURCES.find((s) => s.id === inferSource(k))?.label ?? '—'}
-                  </StatusPill>
-                </div>
-              </button>
-            ))}
+            {filtered.map((k) => {
+              const source = inferSource(k);
+              const target = inferTarget(k);
+              const adjustment = inferAdjustment(k);
+              const upgradeAvailable = inferUpgradeAvailable(k);
+              return (
+                <button
+                  key={k.id}
+                  type="button"
+                  className={styles.card}
+                  onClick={() => handleActivate(k.id)}
+                  title={k.id}
+                >
+                  {upgradeAvailable && (
+                    <span
+                      className={styles.upgradeDot}
+                      aria-label="Update available"
+                      role="status"
+                    />
+                  )}
+                  <span className={styles.cardGlyph}>{fallbackGlyph(k.name)}</span>
+                  <span className={styles.cardName}>{k.name}</span>
+                  <div className={styles.cardMeta}>
+                    <StatusPill tone={SOURCE_TONE[source]}>
+                      {SOURCES.find((s) => s.id === source)?.label ?? '—'}
+                    </StatusPill>
+                    <span
+                      className={styles.targetBadge}
+                      data-target={target}
+                      title={`Target: ${target}`}
+                    >
+                      {TARGET_LABEL[target]}
+                    </span>
+                    <span
+                      className={styles.adjustmentBadge}
+                      data-tier={adjustment}
+                      title={`Adjustment tier: ${adjustment}`}
+                    >
+                      {ADJUSTMENT_LABEL[adjustment]}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

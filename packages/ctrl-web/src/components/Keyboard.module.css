@@ -32,36 +32,56 @@
 
 /* ── Scenario header — page label + position indicator ───────── */
 
+/* Scenario header — keyboard "layer label" (like FN / NUM on real
+   keyboards). Caps mono + thin accent dot leading the label, NOT a
+   table header. */
 .scenarioBar {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
   padding: 2px var(--space-1) var(--space-1);
   font-family: var(--font-mono);
 }
 .scenarioName {
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
+.scenarioName::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  opacity: 0.55;
+}
 .scenarioCount {
-  font-size: 9px;
+  font-size: var(--text-mono-xs);
   letter-spacing: 0.04em;
-  color: var(--color-text-muted);
+  color: var(--color-text-soft);
   font-variant-numeric: tabular-nums;
-  opacity: 0.7;
 }
 
 /* ── Keycap grid — 4×4 ─────────────────────────────────────── */
 
+/* PCB frame — wraps the 4×4 grid in a slightly recessed inset. Reads
+   like a real keyboard plate without literal skeuomorphism. */
 .grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: var(--keycap-gap);
-  /* Fixed-aspect cells; the rail grows tall enough to hold the grid
-     and the dots are anchored to the bottom via the spacer. */
+  padding: var(--space-3);
+  background: color-mix(in oklab, var(--color-bg-l1), var(--ink) 8%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 1px 2px color-mix(in oklab, var(--ink), transparent 88%),
+    inset 0 -1px 0 color-mix(in oklab, white, transparent 60%);
 }
 
 .cap {
@@ -69,11 +89,11 @@
   background:
     linear-gradient(
       180deg,
-      color-mix(in oklab, var(--color-bg-l2), white 4%) 0%,
-      var(--color-bg-l2) 55%,
-      color-mix(in oklab, var(--color-bg-l2), black 6%) 100%
+      color-mix(in oklab, var(--paper), white 0%) 0%,
+      var(--paper) 55%,
+      color-mix(in oklab, var(--paper), var(--ink) 6%) 100%
     );
-  border: 1px solid var(--color-border-soft);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   aspect-ratio: 1 / 1;
   display: flex;
@@ -82,14 +102,15 @@
   justify-content: center;
   gap: var(--space-1);
   padding: var(--space-2);
-  color: var(--color-text-soft);
+  color: var(--color-text);
   font-family: var(--font-sans);
   font-size: var(--text-xs);
   letter-spacing: -0.005em;
   cursor: pointer;
   box-shadow:
-    inset 0 1px 0 color-mix(in oklab, white, transparent 92%),
-    0 1px 2px rgba(0, 0, 0, 0.35);
+    inset 0 1px 0 color-mix(in oklab, white, transparent 30%),
+    inset 0 -2px 0 color-mix(in oklab, var(--ink), transparent 88%),
+    0 1px 2px color-mix(in oklab, var(--ink), transparent 85%);
   transition:
     background var(--duration-fast) var(--ease-out-quart),
     border-color var(--duration-fast) var(--ease-out-quart),
@@ -98,39 +119,33 @@
     box-shadow 80ms ease;
 }
 .cap:hover {
-  border-color: color-mix(in oklab, var(--color-border), var(--color-accent) 30%);
-  color: var(--color-text);
+  border-color: color-mix(in oklab, var(--color-border), var(--color-accent) 40%);
+  color: var(--color-accent);
   transform: translateY(-1px);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--color-bg-l3), white 5%) 0%,
-      var(--color-bg-l3) 55%,
-      color-mix(in oklab, var(--color-bg-l3), black 6%) 100%
-    );
   box-shadow:
-    inset 0 1px 0 color-mix(in oklab, white, transparent 88%),
-    0 4px 10px -4px rgba(0, 0, 0, 0.45);
+    inset 0 1px 0 color-mix(in oklab, white, transparent 20%),
+    inset 0 -2px 0 color-mix(in oklab, var(--ink), transparent 85%),
+    0 4px 12px -4px color-mix(in oklab, var(--color-accent), transparent 60%);
 }
 .cap:active {
   transform: translateY(1px);
   box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.4),
-    0 0 0 rgba(0, 0, 0, 0);
+    inset 0 1px 2px color-mix(in oklab, var(--ink), transparent 80%),
+    0 0 0 transparent;
 }
 .cap[data-active='true'] {
-  border-color: var(--color-accent);
-  color: var(--color-text);
+  border-color: color-mix(in oklab, var(--color-accent), transparent 30%);
+  color: var(--color-accent);
   background:
     linear-gradient(
       180deg,
-      color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 14%) 0%,
-      color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 8%) 100%
+      color-mix(in oklab, var(--paper), var(--color-accent) 10%) 0%,
+      color-mix(in oklab, var(--paper), var(--color-accent) 5%) 100%
     );
   box-shadow:
-    inset 0 1px 0 color-mix(in oklab, white, transparent 88%),
-    0 0 0 1px color-mix(in oklab, var(--color-accent), transparent 60%),
-    0 1px 2px rgba(0, 0, 0, 0.4);
+    inset 0 1px 0 color-mix(in oklab, white, transparent 25%),
+    inset 0 -2px 0 color-mix(in oklab, var(--color-accent), transparent 75%),
+    0 2px 6px -2px color-mix(in oklab, var(--color-accent), transparent 55%);
 }
 
 .capIcon {
@@ -142,7 +157,7 @@
   color: var(--color-accent);
 }
 .capLabel {
-  font-size: 10px;
+  font-size: var(--text-mono-xs);
   font-weight: var(--weight-medium);
   letter-spacing: 0;
   text-align: center;
@@ -153,10 +168,12 @@
   white-space: nowrap;
 }
 
+/* Empty cells = ghost slots. Almost invisible — they preserve the
+   4×4 rhythm without competing with real keycaps for attention. */
 .capEmpty {
   background: transparent;
-  border: 1px dashed var(--color-border-soft);
-  color: var(--color-text-muted);
+  border: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 60%);
+  color: transparent;
   cursor: default;
   box-shadow: none;
 }
@@ -164,8 +181,8 @@
   transform: none;
   box-shadow: none;
   background: transparent;
-  border-color: var(--color-border-soft);
-  color: var(--color-text-muted);
+  border-color: color-mix(in oklab, var(--color-border-soft), transparent 60%);
+  color: transparent;
 }
 
 /* "+ Add" cell — quietly inviting; accents on hover */

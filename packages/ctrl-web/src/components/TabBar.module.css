@@ -39,28 +39,18 @@
   color: var(--color-text);
 }
 .tab[data-active='true'] {
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 10%) 0%,
-    var(--color-bg-l2) 70%
-  );
+  background: var(--color-bg-l2);
   color: var(--color-text);
 }
 .tab[data-active='true']::after {
   content: '';
   position: absolute;
-  left: 0;
-  right: 0;
+  left: var(--space-3);
+  right: var(--space-3);
   bottom: 0;
   height: 2px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--color-accent) 18%,
-    var(--color-accent) 82%,
-    transparent 100%
-  );
-  box-shadow: 0 0 8px color-mix(in oklab, var(--color-accent), transparent 60%);
+  background: var(--color-accent);
+  border-radius: 1px 1px 0 0;
 }
 
 .tabIcon {
@@ -74,8 +64,8 @@
 }
 .tabKind {
   font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.1em;
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.12em;
   color: var(--color-text-muted);
   text-transform: uppercase;
 }

@@ -46,10 +46,10 @@
   background: var(--color-bg-l0);
   display: block;
   min-height: 0;
-  /* `color-scheme: dark` hints the iframe to prefer dark UI (scrollbars
-     etc). Cross-origin content still picks its own theme — the overlay
-     below is the real fix for the white initial paint. */
-  color-scheme: dark;
+  /* `color-scheme` flips with the app theme so embedded scrollbars
+     match the cockpit. Cross-origin content still picks its own theme —
+     the loading veil below is the real fix for the white initial paint. */
+  color-scheme: var(--color-scheme);
 }
 
 .loadingVeil {

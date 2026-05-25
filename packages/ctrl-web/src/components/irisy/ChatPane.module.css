@@ -27,7 +27,7 @@
 .user {
   align-self: flex-end;
   background: var(--color-accent);
-  color: var(--graphite);
+  color: var(--ink);
 }
 
 .assistant {

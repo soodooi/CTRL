@@ -56,14 +56,6 @@
   font-weight: var(--weight-black);
   letter-spacing: 1.5px;
   color: var(--color-text);
-  background: linear-gradient(
-    180deg,
-    var(--color-text) 0%,
-    color-mix(in oklab, var(--color-text), var(--color-accent) 18%) 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
 /* ── Instruments cluster (KRN / MESH / LLM) ─────────────────────── */
@@ -82,10 +74,10 @@
   align-items: center;
   gap: 6px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-mono-sm);
   font-weight: var(--weight-medium);
   letter-spacing: 0.1em;
-  color: var(--color-text-soft);
+  color: var(--color-text-muted);
 }
 .instrumentButton {
   appearance: none;
@@ -113,19 +105,19 @@
   align-items: center;
   gap: var(--space-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-mono-sm);
   letter-spacing: 0.06em;
-  color: var(--color-text-soft);
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .tapeMeta {
-  color: var(--color-text-muted);
+  color: var(--color-text-soft);
   letter-spacing: 0.12em;
   font-weight: var(--weight-medium);
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: var(--text-mono-xs);
 }
 .tapeValue {
   color: var(--color-text);
@@ -151,16 +143,15 @@
 }
 .time {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--text-mono-md);
   font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
   color: var(--color-text);
   letter-spacing: 0.06em;
-  text-shadow: 0 0 12px color-mix(in oklab, var(--color-accent), transparent 88%);
 }
 .uptime {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-mono-xs);
   letter-spacing: 0.12em;
   color: var(--color-text-soft);
   font-variant-numeric: tabular-nums;

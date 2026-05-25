@@ -41,11 +41,11 @@
     0 0 6px color-mix(in oklab, var(--color-accent), transparent 50%);
 }
 .tone_offline {
-  background: var(--graphite-soft-2);
+  background: var(--color-bg-l3);
   box-shadow: none;
 }
 .tone_unknown {
-  background: var(--graphite-soft-2);
+  background: var(--color-bg-l3);
   box-shadow: inset 0 0 0 1px var(--color-border);
 }
 @keyframes led-pulse {

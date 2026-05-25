@@ -35,19 +35,11 @@
   font-weight: var(--weight-medium);
   letter-spacing: -0.024em;
   margin: 0;
-  background: linear-gradient(
-    180deg,
-    var(--color-text) 0%,
-    color-mix(in oklab, var(--color-text), var(--color-text-muted) 30%) 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
   color: var(--color-text);
-  -webkit-text-fill-color: transparent;
 }
 .meta {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-mono-sm);
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
 }
@@ -130,14 +122,13 @@
 }
 .filterActive,
 .filterActive:hover {
-  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 16%);
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 10%);
   color: var(--color-text);
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent), transparent 70%);
+  border-color: color-mix(in oklab, var(--color-accent), transparent 50%);
 }
 .filterCount {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-mono-xs);
   color: var(--color-text-muted);
   letter-spacing: 0;
 }
@@ -179,11 +170,9 @@
 }
 .card:hover {
   border-color: color-mix(in oklab, var(--color-border), var(--color-accent) 25%);
-  transform: translateY(-2px);
-  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 3%);
-  box-shadow:
-    0 12px 28px -16px color-mix(in oklab, var(--color-accent), transparent 60%),
-    0 2px 6px -2px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+  background: var(--color-bg-l3);
+  box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.3);
 }
 .card:focus-visible {
   outline: 2px solid var(--color-accent);
@@ -232,6 +221,79 @@
   gap: 4px;
   flex-wrap: wrap;
   margin-top: auto;
+}
+
+/* ── Target badge (MCP / SKILL / BRAIN) — sits next to source pill ─── */
+.targetBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--color-bg-l3), var(--color-accent) 8%);
+  border: 1px solid color-mix(in oklab, var(--color-border-soft), var(--color-accent) 20%);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+.targetBadge[data-target='brain'] {
+  background: color-mix(in oklab, var(--color-bg-l3), var(--color-accent) 18%);
+  border-color: color-mix(in oklab, var(--color-accent), transparent 40%);
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+}
+.targetBadge[data-target='hermes-skill'] {
+  background: color-mix(in oklab, var(--color-bg-l3), var(--color-warning) 14%);
+  border-color: color-mix(in oklab, var(--color-warning), transparent 50%);
+  color: color-mix(in oklab, var(--color-warning), var(--color-text) 30%);
+}
+
+/* ── Adjustment tier badge (Config / Patch / Fork) ───────────────────
+   Per memory decision_keycap_3_tier_adjustment: 90% Config, ~10% Patch,
+   rare Fork. Visual weight reflects user-modification depth — Config
+   is the calm baseline, Fork loudest. */
+.adjustmentBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.04em;
+  color: var(--color-text-soft);
+}
+.adjustmentBadge[data-tier='patch'] {
+  border-color: color-mix(in oklab, var(--color-warning), transparent 60%);
+  color: var(--color-warning);
+  background: color-mix(in oklab, var(--color-bg-l3), var(--color-warning) 6%);
+}
+.adjustmentBadge[data-tier='fork'] {
+  border-color: color-mix(in oklab, var(--color-danger), transparent 55%);
+  color: var(--color-danger);
+  background: color-mix(in oklab, var(--color-bg-l3), var(--color-danger) 6%);
+  font-weight: var(--weight-semibold);
+}
+
+/* ── Upgrade dot — anchored top-right of the card ─────────────────── */
+.upgradeDot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow:
+    0 0 0 2px var(--color-bg-l2),
+    0 0 6px color-mix(in oklab, var(--color-success), transparent 50%);
+}
+.card:hover .upgradeDot {
+  box-shadow:
+    0 0 0 2px var(--color-bg-l3),
+    0 0 8px color-mix(in oklab, var(--color-success), transparent 30%);
 }
 
 .empty {

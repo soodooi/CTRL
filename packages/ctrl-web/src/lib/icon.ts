@@ -9,23 +9,23 @@
 
 import { z } from 'zod';
 
+// `src` accepts http(s) URLs, app-static paths (`/lottie/foo.json`), and
+// `ctrl-asset://...` URIs (resolved by the Tauri protocol handler — see
+// `lib/asset-uri.ts`). All three reach the renderer as ordinary URLs.
+const iconSrc = z
+  .string()
+  .url()
+  .or(z.string().startsWith('/'))
+  .or(z.string().startsWith('ctrl-asset:'));
+
 export const iconSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('glyph'),
     char: z.string().min(1).max(4),
   }),
-  z.object({
-    kind: z.literal('svg'),
-    src: z.string().url().or(z.string().startsWith('/')),
-  }),
-  z.object({
-    kind: z.literal('lottie'),
-    src: z.string().url().or(z.string().startsWith('/')),
-  }),
-  z.object({
-    kind: z.literal('dotlottie'),
-    src: z.string().url().or(z.string().startsWith('/')),
-  }),
+  z.object({ kind: z.literal('svg'), src: iconSrc }),
+  z.object({ kind: z.literal('lottie'), src: iconSrc }),
+  z.object({ kind: z.literal('dotlottie'), src: iconSrc }),
 ]);
 
 export type Icon = z.infer<typeof iconSchema>;

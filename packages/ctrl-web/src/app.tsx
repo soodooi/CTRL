@@ -106,8 +106,8 @@ const SettingsCtrlPage = lazy(() =>
 const SettingsHermesPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsHermesPage })),
 );
-const SettingsUpdatesPage = lazy(() =>
-  import('./routes/settings').then((m) => ({ default: m.SettingsUpdatesPage })),
+const SettingsLogsPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsLogsPage })),
 );
 const IrisyRoute = lazy(() =>
   import('./routes/irisy').then((m) => ({ default: m.IrisyRoute })),
@@ -214,12 +214,12 @@ const settingsHermesRoute = createRoute({
     </Suspense>
   ),
 });
-const settingsUpdatesRoute = createRoute({
+const settingsLogsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/settings/updates',
+  path: '/settings/logs',
   component: () => (
     <Suspense fallback={<LazyFallback />}>
-      <SettingsUpdatesPage />
+      <SettingsLogsPage />
     </Suspense>
   ),
 });
@@ -267,7 +267,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
   settingsCtrlRoute,
   settingsHermesRoute,
-  settingsUpdatesRoute,
+  settingsLogsRoute,
   irisyRoute,
   codeSpaceRoute,
   codeSpaceDetailRoute,

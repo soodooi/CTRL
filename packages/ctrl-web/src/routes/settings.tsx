@@ -1,16 +1,17 @@
-// /settings/* — three sub-pages selected via the right rail level-2
-// sub-panel that appears when Settings is the active rail item.
+// /settings — single page with an inline tab strip at the top per
+// bao 2026-05-24 ("hermes setting / ctrl setting / logs 放在右下角设置
+// 页面，按 tab"). Three tabs share one shell; switching tabs is just a
+// route change so URL stays canonical and back-button works.
 //
-//   /settings/ctrl    → CTRL Settings   (manifest-rendered, the L3 test bed)
-//   /settings/hermes  → Hermes Settings (embeds the local hermes dashboard)
-//   /settings/updates → Update Log      (build / channel info, recent changes)
+//   /settings/ctrl    → CTRL Settings   (manifest-rendered)
+//   /settings/hermes  → Hermes Settings (embeds the local dashboard)
+//   /settings/logs    → Logs            (release log + installed pill)
 //
-// Bare /settings is registered separately in app.tsx as a redirect shim
-// to /settings/ctrl so tray bridge / keyboard system-key flows that
-// targeted the old single page keep working.
+// Bare /settings redirects to /settings/ctrl so legacy tray / keyboard
+// links keep landing somewhere sensible.
 
-import { useEffect, type ReactElement } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useEffect, type ReactElement, type ReactNode } from 'react';
+import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ManifestRenderer,
   type WorkspaceLayout,
@@ -18,6 +19,48 @@ import {
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { HERMES_DASHBOARD_DEFAULT_URL } from '@/lib/tab-store';
 import styles from './settings.module.css';
+
+// ─────────────────────────────────────────────────────────────
+// Shared tab shell
+// ─────────────────────────────────────────────────────────────
+
+type SettingsTab = 'ctrl' | 'hermes' | 'logs';
+
+const TABS: ReadonlyArray<{ id: SettingsTab; label: string; to: string }> = [
+  { id: 'ctrl', label: 'CTRL', to: '/settings/ctrl' },
+  { id: 'hermes', label: 'Hermes', to: '/settings/hermes' },
+  { id: 'logs', label: 'Logs', to: '/settings/logs' },
+];
+
+interface SettingsShellProps {
+  activeTab: SettingsTab;
+  children: ReactNode;
+}
+
+const SettingsShell = ({ activeTab, children }: SettingsShellProps): ReactElement => (
+  <div className={styles.layout}>
+    <header className={styles.header}>
+      <h1 className={styles.pageTitle}>Settings</h1>
+      <nav className={styles.tabs} role="tablist" aria-label="Settings sections">
+        {TABS.map((t) => (
+          <Link
+            key={t.id}
+            to={t.to}
+            role="tab"
+            aria-selected={activeTab === t.id}
+            data-active={activeTab === t.id}
+            className={styles.tab}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </nav>
+    </header>
+    <main className={styles.main} role="main">
+      {children}
+    </main>
+  </div>
+);
 
 // ─────────────────────────────────────────────────────────────
 // /settings → /settings/ctrl
@@ -32,17 +75,15 @@ export const SettingsRedirect = (): ReactElement => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// /settings/ctrl — CTRL shell preferences (manifest-rendered)
+// /settings/ctrl
 // ─────────────────────────────────────────────────────────────
 
 const CTRL_SETTINGS_LAYOUT: WorkspaceLayout = {
   version: 1,
   root: {
     component: 'Stack',
-    props: { padX: 6, padY: 6, gap: 5 },
+    props: { padX: 0, padY: 0, gap: 5 },
     children: [
-      { component: 'Heading', props: { level: 1 }, children: ['CTRL Settings'] },
-
       {
         component: 'Stack',
         props: { gap: 2 },
@@ -55,7 +96,6 @@ const CTRL_SETTINGS_LAYOUT: WorkspaceLayout = {
           },
         ],
       },
-
       {
         component: 'Stack',
         props: { gap: 2 },
@@ -70,7 +110,6 @@ const CTRL_SETTINGS_LAYOUT: WorkspaceLayout = {
           },
         ],
       },
-
       {
         component: 'Stack',
         props: { gap: 2 },
@@ -90,39 +129,32 @@ const CTRL_SETTINGS_LAYOUT: WorkspaceLayout = {
 };
 
 export const SettingsCtrlPage = (): ReactElement => (
-  <div className={styles.layout}>
-    <main className={styles.main} role="main">
-      <ManifestRenderer layout={CTRL_SETTINGS_LAYOUT} />
-    </main>
-  </div>
+  <SettingsShell activeTab="ctrl">
+    <ManifestRenderer layout={CTRL_SETTINGS_LAYOUT} />
+  </SettingsShell>
 );
 
 // ─────────────────────────────────────────────────────────────
-// /settings/hermes — Hermes brain config (embeds the dashboard)
+// /settings/hermes
 // ─────────────────────────────────────────────────────────────
 
 export const SettingsHermesPage = (): ReactElement => (
-  <div className={styles.layout}>
-    <main className={styles.main} role="main">
-      <header className={styles.embedHeader}>
-        <h1 className={styles.embedTitle}>Hermes Settings</h1>
-        <p className={styles.embedSubtitle}>
-          Skills · models · providers · memory. Lives in the local hermes
-          dashboard; CTRL embeds it here so the cockpit stays one window.
-        </p>
-      </header>
-      <iframe
-        className={styles.embedFrame}
-        src={HERMES_DASHBOARD_DEFAULT_URL}
-        title="Hermes dashboard"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-      />
-    </main>
-  </div>
+  <SettingsShell activeTab="hermes">
+    <p className={styles.sectionSubtitle}>
+      Skills · models · providers · memory. Lives in the local hermes
+      dashboard; CTRL embeds it so the cockpit stays one window.
+    </p>
+    <iframe
+      className={styles.embedFrame}
+      src={HERMES_DASHBOARD_DEFAULT_URL}
+      title="Hermes dashboard"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+    />
+  </SettingsShell>
 );
 
 // ─────────────────────────────────────────────────────────────
-// /settings/updates — build info + update log
+// /settings/logs
 // ─────────────────────────────────────────────────────────────
 
 interface UpdateLogEntry {
@@ -131,15 +163,24 @@ interface UpdateLogEntry {
   summary: string;
 }
 
-// Hand-maintained changelog until the kernel exposes an automated feed.
-// New top entry per release; oldest at the bottom. Keep summaries to
-// one line — long-form release notes belong in the GitHub release page.
 const UPDATE_LOG: ReadonlyArray<UpdateLogEntry> = [
+  {
+    version: '0.1.15',
+    date: '2026-05-24',
+    summary:
+      'VI v0.3 — warm-tinted neutrals · fixed-rem type scale · 9px retired · active-state softened · AI-slop bans enforced (gradient text + side-stripe out) · Irisy SVG breath + blink restored · Settings inline tabs.',
+  },
+  {
+    version: '0.1.14',
+    date: '2026-05-23',
+    summary:
+      'Hephaestus Irisy backend (irisy_init / chat / upgrade) · Tauri auto-updater · version pill · hotkey HID fix.',
+  },
   {
     version: '0.1.13',
     date: '2026-05-23',
     summary:
-      'Right-rail two-level model · Lottie Irisy mascot · ChatInput / hero / pool / keyboard polish · Settings sub-pages.',
+      'Right-rail two-level model · ChatInput / hero / pool / keyboard polish · Settings sub-pages.',
   },
   {
     version: '0.1.12',
@@ -147,62 +188,45 @@ const UPDATE_LOG: ReadonlyArray<UpdateLogEntry> = [
     summary:
       'IconRenderer SKILL.md compliance — themes / state machine / reduce-motion / CPU+Worker+WebGL backends.',
   },
-  {
-    version: '0.1.11',
-    date: '2026-05-23',
-    summary:
-      'Hide button on the StatusBar; window cloak / reveal hardening.',
-  },
-  {
-    version: '0.1.10',
-    date: '2026-05-23',
-    summary:
-      'Initial ThorVG icon system landed — TabBar / RightRail / KeycapCard moved through the single IconRenderer pipeline.',
-  },
 ];
 
-export const SettingsUpdatesPage = (): ReactElement => {
+export const SettingsLogsPage = (): ReactElement => {
   const update = useUpdateStatus();
   return (
-    <div className={styles.layout}>
-      <main className={styles.main} role="main">
-        <header className={styles.embedHeader}>
-          <h1 className={styles.embedTitle}>Update Log</h1>
-          <div className={styles.versionBadge}>
-            <span className={styles.versionBadgeLabel}>Installed</span>
-            <span className={styles.versionBadgeValue}>v{APP_VERSION}</span>
-            {update.available ? (
-              <span className={styles.versionBadgePill} data-tone="success">
-                update available
-                {update.latestVersion ? ` · v${update.latestVersion}` : ''}
-              </span>
-            ) : (
-              <span className={styles.versionBadgePill} data-tone="idle">
-                up to date
-              </span>
-            )}
-          </div>
-        </header>
+    <SettingsShell activeTab="logs">
+      <div className={styles.versionBadge}>
+        <span className={styles.versionBadgeLabel}>Installed</span>
+        <span className={styles.versionBadgeValue}>v{APP_VERSION}</span>
+        {update.available ? (
+          <span className={styles.versionBadgePill} data-tone="success">
+            update available
+            {update.latestVersion ? ` · v${update.latestVersion}` : ''}
+          </span>
+        ) : (
+          <span className={styles.versionBadgePill} data-tone="idle">
+            up to date
+          </span>
+        )}
+      </div>
 
-        <ul className={styles.changelog}>
-          {UPDATE_LOG.map((entry) => {
-            const isCurrent = entry.version === APP_VERSION;
-            return (
-              <li
-                key={entry.version}
-                className={styles.changeRow}
-                data-current={isCurrent}
-              >
-                <div className={styles.changeMeta}>
-                  <span className={styles.changeVersion}>v{entry.version}</span>
-                  <span className={styles.changeDate}>{entry.date}</span>
-                </div>
-                <p className={styles.changeSummary}>{entry.summary}</p>
-              </li>
-            );
-          })}
-        </ul>
-      </main>
-    </div>
+      <ul className={styles.changelog}>
+        {UPDATE_LOG.map((entry) => {
+          const isCurrent = entry.version === APP_VERSION;
+          return (
+            <li
+              key={entry.version}
+              className={styles.changeRow}
+              data-current={isCurrent}
+            >
+              <div className={styles.changeMeta}>
+                <span className={styles.changeVersion}>v{entry.version}</span>
+                <span className={styles.changeDate}>{entry.date}</span>
+              </div>
+              <p className={styles.changeSummary}>{entry.summary}</p>
+            </li>
+          );
+        })}
+      </ul>
+    </SettingsShell>
   );
 };

@@ -162,12 +162,8 @@ interface SyntheticRailItem extends RailItem {
   isSettings?: boolean;
 }
 
-const SETTINGS_SECTIONS: ReadonlyArray<{ id: string; title: string }> = [
-  { id: 'ctrl', title: 'CTRL Settings' },
-  { id: 'hermes', title: 'Hermes Settings' },
-  { id: 'updates', title: 'Update Log' },
-];
-
+// Settings has no level-2 panel — tabs live INSIDE the /settings page
+// (per bao 2026-05-24). Settings rail item is a simple navigate.
 const SETTINGS_DEFAULT_PATH = '/settings/ctrl';
 
 const parseSettingsSection = (pathname: string): string | null => {
@@ -189,9 +185,11 @@ export const RightRail = (): ReactElement => {
 
   const settingsSection = parseSettingsSection(pathname);
 
-  // Synthesize Irisy (top) + route items + Settings (bottom).
-  const allItems = useMemo<ReadonlyArray<SyntheticRailItem>>(() => {
-    const irisyItem: SyntheticRailItem = {
+  // Irisy lives in its own header slot ABOVE the level-1 nav — she's
+  // the cockpit's identity anchor, not a peer of route keycap shortcuts.
+  // Click still toggles her sub-panel + navigates to `/`.
+  const irisyItem = useMemo<SyntheticRailItem>(
+    () => ({
       id: IRISY_ITEM_ID,
       label: 'Irisy',
       isIrisy: true,
@@ -199,42 +197,42 @@ export const RightRail = (): ReactElement => {
       onClick: () => {
         void navigate({ to: '/' });
       },
-    };
+    }),
+    [irisySubPanel, navigate],
+  );
+
+  // Level-1 nav = route-pushed items + Settings footer cap.
+  const allItems = useMemo<ReadonlyArray<SyntheticRailItem>>(() => {
     const settingsItem: SyntheticRailItem = {
       id: SETTINGS_ITEM_ID,
       label: 'Settings',
       isSettings: true,
-      subPanel: {
-        groups: [{ label: 'Sections', items: SETTINGS_SECTIONS }],
-        activeId: settingsSection,
-        onSelect: (id: string) => {
-          void navigate({ to: `/settings/${id}` });
-        },
-      },
+      // No subPanel — Settings tabs live INSIDE the /settings page.
       onClick: () => {
-        // Landing the user inside a settings sub-route so the workspace
-        // has content the moment the level-2 panel reveals it.
-        if (!pathname.startsWith('/settings')) {
-          void navigate({ to: SETTINGS_DEFAULT_PATH });
-        }
+        void navigate({ to: SETTINGS_DEFAULT_PATH });
       },
     };
     return [
-      irisyItem,
       ...items.map((i) => ({ ...i, isIrisy: false, isSettings: false })),
       settingsItem,
     ];
-  }, [irisySubPanel, items, navigate, pathname, settingsSection]);
+  }, [items, navigate]);
 
-  const activeItem = allItems.find((i) => i.id === activeRailId) ?? null;
+  const activeItem =
+    activeRailId === IRISY_ITEM_ID
+      ? irisyItem
+      : allItems.find((i) => i.id === activeRailId) ?? null;
   const showSubPanel = activeItem?.subPanel != null;
 
   const handleItemClick = useCallback(
     (item: SyntheticRailItem) => {
-      // Items with a sub-panel toggle level-2 visibility AND invoke onClick.
-      // Items without a sub-panel just invoke onClick (no toggle).
-      if (item.subPanel != null) {
-        setActiveRailId(activeRailId === item.id ? null : item.id);
+      // Click the active item again → collapse its level-2 (only if it
+      // has one; items without a panel stay selected on re-click).
+      // Click any other item → move active selection to it.
+      if (item.id === activeRailId && item.subPanel != null) {
+        setActiveRailId(null);
+      } else {
+        setActiveRailId(item.id);
       }
       item.onClick?.();
     },
@@ -251,21 +249,23 @@ export const RightRail = (): ReactElement => {
   }, [settingsSection, activeRailId, setActiveRailId]);
 
   const renderItem = (item: SyntheticRailItem): ReactElement => {
-    const isActive = item.id === activeRailId && showSubPanel;
+    // Visual active = the user's current selection. This is independent
+    // of whether the item has a level-2 sub-panel — Settings is active
+    // when on /settings/* even though it has no panel.
+    const isSelected = item.id === activeRailId;
     return (
       <button
         key={item.id}
         type="button"
         className={styles.item}
-        data-active={isActive}
+        data-active={isSelected}
         data-irisy={item.isIrisy || undefined}
         data-settings={item.isSettings || undefined}
         onClick={() => handleItemClick(item)}
         title={item.label}
         aria-label={item.label}
-        aria-current={isActive ? 'true' : undefined}
+        aria-current={isSelected ? 'true' : undefined}
       >
-        <span className={styles.activeBar} aria-hidden="true" />
         <span className={styles.itemIcon}>
           {item.isIrisy ? (
             <IrisyMascot state={irisyState} size={IRISY_ICON_SIZE} />
@@ -300,7 +300,7 @@ export const RightRail = (): ReactElement => {
   // Split synthetic items so Settings can live in the footer slot,
   // pinned to the bottom of the rail.
   const settingsItem = allItems.find((i) => i.isSettings);
-  const topItems = allItems.filter((i) => !i.isSettings);
+  const navItems = allItems.filter((i) => !i.isSettings);
 
   return (
     <aside
@@ -323,8 +323,12 @@ export const RightRail = (): ReactElement => {
       )}
 
       <div className={styles.primary}>
+        <header className={styles.irisyHeader}>
+          {renderItem(irisyItem)}
+        </header>
+
         <nav className={styles.nav} aria-label="Context navigation">
-          {topItems.map(renderItem)}
+          {navItems.map(renderItem)}
         </nav>
 
         <div className={styles.footer}>
