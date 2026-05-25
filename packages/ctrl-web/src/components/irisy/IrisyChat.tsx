@@ -13,7 +13,11 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
-import { defaultTransport, type LLMMessage } from '@/lib/llm-transport';
+import {
+  defaultTransport,
+  irisyChatTransport,
+  type LLMMessage,
+} from '@/lib/llm-transport';
 import {
   describeToolsForPrompt,
   executeToolCall,
@@ -66,11 +70,21 @@ interface McpBridgeStatus {
   handshake_path: string;
 }
 
+interface PiStatus {
+  mcp_url: string;
+  reachable: boolean;
+  version: string | null;
+}
+
 interface IrisyStatus {
   app_version: string;
   kernel_llm: KernelLlmStatus;
   hermes: HermesStatus;
   mcp_bridge: McpBridgeStatus;
+  // ADR-001 amendment 2026-05-25 — Pi as default brain. Optional on the
+  // wire because the kernel's irisy_init may be older than this PWA build.
+  pi?: PiStatus;
+  active_brain?: string;
 }
 
 interface DisplayMessage {
@@ -102,6 +116,7 @@ function buildSystemPrompt(
   keycaps: ReadonlyArray<KeycapSummary>,
   longTermMemory: string,
   coreMemory: string,
+  toolsInPrompt: boolean,
 ): string {
   const sections: string[] = [systemBase];
 
@@ -127,7 +142,12 @@ function buildSystemPrompt(
       `# Installed keycaps (${keycaps.length})\n${lines.join('\n')}`,
     );
   }
-  sections.push(describeToolsForPrompt());
+  // Frontend tool list is for the legacy ReAct loop (chat_stream raw LLM).
+  // When Pi is the brain, Pi owns tools via its own MCP client config —
+  // duplicating the schema in the system prompt would just confuse Pi.
+  if (toolsInPrompt) {
+    sections.push(describeToolsForPrompt());
+  }
   return sections.join('\n\n');
 }
 
@@ -167,7 +187,6 @@ export function IrisyChat(): React.ReactElement {
   const [errorExpanded, setErrorExpanded] = useState(false);
   const [upgradingHermes, setUpgradingHermes] = useState(false);
   const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null);
-  const transport = useMemo(() => defaultTransport(), []);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   // Tick elapsed time while a send is in flight so the user sees that
@@ -211,14 +230,32 @@ export function IrisyChat(): React.ReactElement {
     }
   }, [hermesSessionId]);
 
-  // Auto-switch chat path: hermes subprocess once its brain is wired (Volc
-  // through custom_providers in ~/.hermes/config.yaml); otherwise legacy
-  // CTRL-kernel-Volc + frontend ReAct (kept as fallback when hermes isn't
-  // installed or the brain wire-up hasn't completed yet).
+  // Chat path priority (ADR-001 amendment 2026-05-25 — Pi is the default
+  // brain; hermes downgrades to "one of the keycaps", no longer the
+  // primary path):
+  //   1. usePi      — kernel's irisy_chat_stream → BrainRouter inline →
+  //                   @ctrl/pi-plugin MCP server. Pi runs its own agent
+  //                   loop with its own provider config. **Default when
+  //                   Pi plugin is reachable.**
+  //   2. useHermes  — hermes subprocess via irisy_chat_hermes (legacy
+  //                   path, retained as fallback until hermes-plugin
+  //                   lands as a brain keycap from feat/h-2026-05-22-
+  //                   kernel-mcp-server).
+  //   3. default    — kernel chat_stream + frontend ReAct (no brain
+  //                   configured; ages out once Pi is up).
+  const usePi = status?.pi?.reachable === true;
   const useHermes =
+    !usePi &&
     status?.hermes.brain_configured === true &&
     status?.hermes.binary_path != null &&
     status?.hermes.plugin_enabled === true;
+  // Pi → irisy_chat_stream (brain-routed). Otherwise → chat_stream (raw
+  // LLM, drives the legacy frontend ReAct loop). The memo re-runs when
+  // Pi reachability flips so the wire upgrades the moment Pi comes up.
+  const transport = useMemo(
+    () => (usePi ? irisyChatTransport() : defaultTransport()),
+    [usePi],
+  );
 
   const clearConversation = useCallback((): void => {
     setMessages([]);
@@ -437,7 +474,13 @@ export function IrisyChat(): React.ReactElement {
       let history: LLMMessage[] = [
         {
           role: 'system',
-          content: buildSystemPrompt(systemBase, keycaps, longTermMemory, coreMemory),
+          content: buildSystemPrompt(
+            systemBase,
+            keycaps,
+            longTermMemory,
+            coreMemory,
+            !usePi,
+          ),
         },
         ...messages.map((m) => ({
           role: (m.role === 'tool' ? 'user' : m.role) as
@@ -563,6 +606,7 @@ export function IrisyChat(): React.ReactElement {
       systemBase,
       transport,
       useHermes,
+      usePi,
     ],
   );
 
@@ -689,6 +733,17 @@ export function IrisyChat(): React.ReactElement {
       ].join(' · ')
     : 'not installed';
 
+  // Pi default-brain status. When status.pi is absent the kernel hasn't
+  // shipped the irisy_init Pi probe yet (older binary on user's machine),
+  // so we render `—` rather than misleading "not running".
+  const piProbed = status?.pi != null;
+  const piReachable = status?.pi?.reachable === true;
+  const piDetail = !piProbed
+    ? '—'
+    : piReachable
+      ? `${status?.pi?.version ?? 'reachable'} · brain=${status?.active_brain ?? 'pi'}`
+      : `not running — \`cd packages/ctrl-pi-plugin && npm start\``;
+
   return (
     <div className={styles.root}>
       <header className={styles.statusBar}>
@@ -696,6 +751,11 @@ export function IrisyChat(): React.ReactElement {
           label="Brain"
           ok={brainReady}
           detail={status?.kernel_llm.adapter ?? '—'}
+        />
+        <StatusLine
+          label="Pi"
+          ok={piReachable}
+          detail={piDetail}
         />
         <StatusLine
           label="hermes"

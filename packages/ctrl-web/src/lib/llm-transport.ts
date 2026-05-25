@@ -113,7 +113,15 @@ interface UnlistenFn {
 }
 
 export class ChatStreamTransport implements LLMTransport {
-  constructor(private readonly enabled: boolean = false) {}
+  // `commandName` lets one class drive both wires:
+  //   - 'chat_stream'        → raw LLM (kernel llm_port direct, keycap-internal)
+  //   - 'irisy_chat_stream'  → BrainRouter inline → active brain keycap MCP
+  // Both emit the same chat.stream.delta event shape; only the Tauri
+  // command name differs.
+  constructor(
+    private readonly enabled: boolean = false,
+    private readonly commandName: string = 'chat_stream',
+  ) {}
 
   async *stream(
     messages: LLMMessage[],
@@ -162,7 +170,7 @@ export class ChatStreamTransport implements LLMTransport {
     opts.signal?.addEventListener('abort', onAbort);
 
     try {
-      await invoke('chat_stream', {
+      await invoke(this.commandName, {
         args: {
           request_id: requestId,
           messages,
@@ -206,5 +214,13 @@ export class ChatStreamTransport implements LLMTransport {
 }
 
 export function defaultTransport(): LLMTransport {
-  return new ChatStreamTransport(true);
+  return new ChatStreamTransport(true, 'chat_stream');
+}
+
+// Irisy → active brain keycap (Pi default) via kernel's BrainRouter inline
+// dispatch. Use this for the general Irisy companion chat path. Pi runs its
+// own agent loop + tools through its own MCP client; the PWA stays
+// single-turn streaming on this side.
+export function irisyChatTransport(): LLMTransport {
+  return new ChatStreamTransport(true, 'irisy_chat_stream');
 }
