@@ -85,36 +85,11 @@ mDNS is a v1.1 LAN accelerator; v1.0 ships without it (ADR-003 §9 P4.9).
 
 Identical to `packages/ctrl-mesh/src/wire.rs`. Recap:
 
-```text
-MeshFrame {
-  magic:        b"CMSH"      // 4 bytes — sanity check + protocol identifier
-  version:     u8 = 1        // bump on incompatible change only
-  kind:        FrameKind     // pairing | data | control
-  from:        DeviceId
-  to:          DeviceId
-  session_step: u32          // monotonic per-direction counter (replay defense)
-  ciphertext:  Vec<u8>       // Olm-encrypted body
-}
-```
+- **`MeshFrame`** carries `magic: b"CMSH"` (4-byte sanity check), `version: u8 = 1` (bump on incompatible change only), `kind: FrameKind` (`pairing` | `data` | `control`), `from: DeviceId`, `to: DeviceId`, `session_step: u32` (monotonic per-direction counter — replay defense), and `ciphertext: Vec<u8>` (Olm-encrypted body).
+- **Decrypted body** is either `DataPayload::Change(MeshChange)` (Automerge change for a Document) or `DataPayload::Op { kind, payload }` (ephemeral kernel Op — signal / ack / control).
+- **`MeshChange` envelope** carries `document_id` (e.g. `"mesh.devices"` / `"mesh.keycaps"`), `causal_clock: VectorClock` (last-seen seq per device), `author_device: DeviceId`, `author_ts_ms: u64`, and `change_bytes: Vec<u8>` (raw automerge `save_incremental` output).
 
-Decrypted body is one of:
-
-```text
-DataPayload::Change(MeshChange)   // Automerge change for a Document
-DataPayload::Op { kind, payload } // ephemeral kernel Op (signal/ack/control)
-```
-
-`MeshChange` envelope:
-
-```text
-MeshChange {
-  document_id:   String           // "mesh.devices" | "mesh.keycaps" | …
-  causal_clock:  VectorClock      // last-seen seq per device
-  author_device: DeviceId
-  author_ts_ms:  u64
-  change_bytes:  Vec<u8>          // raw automerge save_incremental output
-}
-```
+*(Frame struct definitions elided. Implementation: `packages/ctrl-mesh/src/wire.rs`.)*
 
 Serialization: **CBOR** via ciborium (same crate the kernel uses for `Event`). Rationale: smaller than JSON, schema-flexible, already in our binary.
 
@@ -196,72 +171,30 @@ This section locks the Rust + WASM surface so Sprint 2+ doesn't churn callers.
 
 ### 4.1 `OlmSession` (Rust)
 
-```rust
-// packages/ctrl-mesh/src/session.rs (Sprint 2 fills the body)
+Wraps `vodozemac::olm::Session` with a stored `peer_identity_pub: Curve25519PublicKey`. Methods:
 
-pub struct OlmSession {
-    inner: vodozemac::olm::Session,
-    peer_identity_pub: Curve25519PublicKey,
-}
+- `encrypt(plaintext) -> Result<OlmMessage, SessionError>` — increments ratchet counter
+- `decrypt(msg) -> Result<Vec<u8>, SessionError>` — validates counter (replay defense)
+- `pickle(key) -> Vec<u8>` / `unpickle(bytes, key) -> Result<Self, _>` — persist / restore via keychain-derived pickle key
+- accessors `peer_identity()` / `session_id()`
 
-impl OlmSession {
-    /// Encrypt a frame payload. Increments ratchet counter.
-    pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<OlmMessage, SessionError>;
-
-    /// Decrypt a frame payload. Validates ratchet counter (replay defense).
-    pub fn decrypt(&mut self, msg: &OlmMessage) -> Result<Vec<u8>, SessionError>;
-
-    /// Persist session to keychain (serialized via `session.pickle()`).
-    pub fn pickle(&self, key: &PickleKey) -> Vec<u8>;
-
-    /// Restore session from keychain.
-    pub fn unpickle(bytes: &[u8], key: &PickleKey) -> Result<Self, SessionError>;
-
-    pub fn peer_identity(&self) -> Curve25519PublicKey;
-    pub fn session_id(&self) -> String;
-}
-```
+*(`OlmSession` definition. Implementation: `packages/ctrl-mesh/src/session.rs`, Sprint 2 fills body.)*
 
 ### 4.2 `OlmAccount` (Rust)
 
 `OlmAccount` is the **factory** for new sessions — both `establish_outbound` (initiator) and `establish_inbound` (responder) are methods on the account, not on the session, because session creation consumes one-time-key state held by the account.
 
-```rust
-pub struct OlmAccount {
-    inner: vodozemac::olm::Account,
-}
+Methods:
 
-impl OlmAccount {
-    pub fn fresh() -> Self;
+- `fresh() -> Self`
+- `identity_public_key() -> Curve25519PublicKey`
+- `generate_one_time_keys(count) -> Curve25519PublicKey` — generates N (default 50); returns first key for sync advertisement
+- `mark_keys_as_published()` — invalidates further reuse of generated one-time keys
+- `establish_outbound(peer_identity, peer_one_time) -> Result<OlmSession, _>` — initiator
+- `establish_inbound(initiator_identity, first_message) -> Result<(OlmSession, Vec<u8>), _>` — responder; only accepts PreKey-variant first message; returns the session plus the decrypted plaintext
+- `pickle(key)` / `unpickle(bytes, key)`
 
-    pub fn identity_public_key(&self) -> Curve25519PublicKey;
-
-    /// Generate N fresh one-time keys (default 50). Returns the first generated
-    /// key for callers that need to advertise a single prekey synchronously.
-    pub fn generate_one_time_keys(&mut self, count: usize) -> Curve25519PublicKey;
-
-    /// Mark all currently-generated one-time keys as published (cannot be reused).
-    pub fn mark_keys_as_published(&mut self);
-
-    /// Initiator side. Establishes outbound session against peer's prekey bundle.
-    pub fn establish_outbound(
-        &self,
-        peer_identity: Curve25519PublicKey,
-        peer_one_time: Curve25519PublicKey,
-    ) -> Result<OlmSession, SessionError>;
-
-    /// Responder side. Establishes inbound session from initiator's first message
-    /// (PreKey variant only). Returns the new session and the decrypted first plaintext.
-    pub fn establish_inbound(
-        &mut self,
-        initiator_identity: Curve25519PublicKey,
-        first_message: &OlmMessage,
-    ) -> Result<(OlmSession, Vec<u8>), SessionError>;
-
-    pub fn pickle(&self, key: &PickleKey) -> Vec<u8>;
-    pub fn unpickle(bytes: &[u8], key: &PickleKey) -> Result<Self, SessionError>;
-}
-```
+*(`OlmAccount` definition. Implementation: `packages/ctrl-mesh/src/account.rs`.)*
 
 ### 4.3 Errors (`SessionError`)
 
@@ -284,28 +217,12 @@ Sprint 2 implementation: before passing a peer identity key into vodozemac, vali
 
 ### 4.5 WASM binding (v1.1 build, surface locked here)
 
-```typescript
-// packages/ctrl-mesh/wasm/index.d.ts (generated by wasm-bindgen Sprint 2)
+The wasm-bindgen-generated `index.d.ts` exposes two classes mirroring the Rust surface:
 
-export class OlmSession {
-  encrypt(plaintext: Uint8Array): Uint8Array;
-  decrypt(ciphertext: Uint8Array): Uint8Array;
-  pickle(key: Uint8Array): Uint8Array;
-  static unpickle(bytes: Uint8Array, key: Uint8Array): OlmSession;
-  static establishOutbound(local: OlmAccount, identityPub: Uint8Array, oneTimePub: Uint8Array): OlmSession;
-  static establishInbound(local: OlmAccount, firstMessage: Uint8Array): OlmSession;
-  readonly peerIdentity: Uint8Array;
-}
+- `OlmSession` with `encrypt(plaintext) -> Uint8Array`, `decrypt(ciphertext) -> Uint8Array`, `pickle(key) -> Uint8Array`, static `unpickle(bytes, key)`, static `establishOutbound(local, identityPub, oneTimePub)`, static `establishInbound(local, firstMessage)`, readonly `peerIdentity: Uint8Array`.
+- `OlmAccount` with default constructor, readonly `identityPublicKey: Uint8Array`, `rotateOneTimeKeys(count)`, `markKeysAsPublished()`, `pickle(key)`, static `unpickle(bytes, key)`.
 
-export class OlmAccount {
-  constructor();
-  readonly identityPublicKey: Uint8Array;
-  rotateOneTimeKeys(count: number): void;
-  markKeysAsPublished(): void;
-  pickle(key: Uint8Array): Uint8Array;
-  static unpickle(bytes: Uint8Array, key: Uint8Array): OlmAccount;
-}
-```
+*(WASM surface elided. Implementation: `packages/ctrl-mesh/wasm/` — generated by `wasm-bindgen` in Sprint 2.)*
 
 Targeted bundle: ≤ 180 KB gzip for the WASM + glue (subset of the ADR-003 §7 ~330 KB mesh budget — Olm-1:1-only saves ~80 KB vs Megolm-included build).
 
@@ -388,17 +305,9 @@ The worker must NEVER:
 - Persist routing logs beyond `[timestamp, source_pubkey, dest_pubkey, byte_count]` for billing.
 - Cross-reference mesh peers between different users (each user's mesh has independent identity keys; relay scopes routing by destination pubkey, not by user account).
 
-D1 schema (sketch):
+D1 schema (sketch): a single `relay_quota` table tracks the per-pubkey monthly byte counter for the free 1 GB fair-use cap — columns `identity_pub` (PK), `month` (`"2026-05"`-style), `bytes_used` (default 0), `updated_at`.
 
-```sql
-CREATE TABLE relay_quota (
-  -- per-pubkey monthly byte counter, used for the free 1 GB fair-use cap
-  identity_pub TEXT PRIMARY KEY,
-  month        TEXT NOT NULL,          -- "2026-05"
-  bytes_used   INTEGER NOT NULL DEFAULT 0,
-  updated_at   INTEGER NOT NULL
-);
-```
+*(SQL DDL elided. Implementation: `ctrl-cloud/workers/ctrl-relay/migrations/` (separate repo).)*
 
 No table stores message content, no table joins users across identity keys (matches CLAUDE.md "no cross-D1 JOIN" rule by construction).
 

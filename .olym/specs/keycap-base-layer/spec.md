@@ -206,34 +206,11 @@ CTRL.app  ←──────── lazy install ─────────�
 
 **Tauri command surface**:
 
-```rust
-#[tauri::command]
-pub async fn install_vmark(app: tauri::AppHandle) -> Result<VMarkInstallOutcome, String>;
+- `install_vmark(app) -> Result<VMarkInstallOutcome, String>` — `VMarkInstallOutcome` carries `kind` (`"installed"` / `"already-installed"` / `"no-installer"` / `"user-cancelled"` / `"error"`), optional `method` (`"brew-cask"` / `"dmg-direct"` / `"winget"` / `"flatpak"` / `"appimage"`), optional `binary_path`, optional `version` (parsed from Info.plist CFBundleShortVersionString on macOS or equivalent), and `message`.
+- `vmark_status() -> Result<VMarkStatus, String>` — `VMarkStatus` carries `installed`, optional `binary_path`, `version`, `vault_dir` (user-configured; null until set), and `install_method`.
+- `vmark_set_vault_path(vault_dir) -> Result<(), String>`.
 
-#[derive(Serialize)]
-pub struct VMarkInstallOutcome {
-    pub kind: &'static str,   // "installed" | "already-installed" | "no-installer" | "user-cancelled" | "error"
-    pub method: Option<String>,  // "brew-cask" | "dmg-direct" | "winget" | "flatpak" | "appimage"
-    pub binary_path: Option<String>,
-    pub version: Option<String>,  // parsed from Info.plist CFBundleShortVersionString (macOS) or equivalent
-    pub message: String,
-}
-
-#[tauri::command]
-pub async fn vmark_status() -> Result<VMarkStatus, String>;
-
-#[derive(Serialize)]
-pub struct VMarkStatus {
-    pub installed: bool,
-    pub binary_path: Option<String>,
-    pub version: Option<String>,
-    pub vault_dir: Option<String>,  // user-configured; null until set
-    pub install_method: Option<String>,
-}
-
-#[tauri::command]
-pub async fn vmark_set_vault_path(vault_dir: String) -> Result<(), String>;
-```
+*(Tauri command + result struct definitions elided. Implementation: `src-tauri/src/commands/vmark.rs`.)*
 
 **Install paths per platform**:
 
@@ -248,61 +225,22 @@ Per upstream README: macOS is "primary platform"; Windows/Linux are
 is on Win/Linux, prompt mentions "VMark on this platform is upstream
 best-effort; you may prefer your existing editor". No forced install.
 
-**State file shape** (`~/.ctrl/state/vmark.json`):
+**State file shape** (`~/.ctrl/state/vmark.json`): JSON object with `installed` (bool), `install_method` (e.g. `"brew-cask"`), `binary_path`, `version`, `installed_at` (ISO timestamp), `vault_dir` (initially null), `url_scheme_supported` (bool).
 
-```json
-{
-  "installed": true,
-  "install_method": "brew-cask",
-  "binary_path": "/Applications/VMark.app",
-  "version": "0.7.26",
-  "installed_at": "2026-05-23T22:00:00Z",
-  "vault_dir": null,
-  "url_scheme_supported": true
-}
-```
-
-State is read-mostly. Written by `install_vmark` on success and by
-`vmark_set_vault_path` when user picks a shared vault dir.
+State is read-mostly. Written by `install_vmark` on success and by `vmark_set_vault_path` when user picks a shared vault dir.
 
 **URL scheme — how it works**:
 - VMark registers `vmark://` URL scheme on install (handled by VMark, not
   by CTRL).
 - CTRL invokes via `shell.open` capability (G9).
-- Open in VMark keycap manifest snippet:
-
-  ```ts
-  {
-    id: 'open-in-vmark',
-    name: 'Open in VMark',
-    target: 'mcp-tool',
-    capabilities: ['vault.read', 'shell.open'],
-    workspace: { ui: 'none' },
-    run: async (ctx) => {
-      const focused = ctx.input.path;
-      if (!focused) throw new Error('no focused file');
-      await ctx.shell.open(`vmark://open?path=${encodeURIComponent(focused)}`);
-    },
-  }
-  ```
-
+- Open in VMark keycap manifest: `id: 'open-in-vmark'`, `target: 'mcp-tool'`, declares `capabilities: ['vault.read', 'shell.open']`, `workspace: { ui: 'none' }`, and a `run` function that reads `ctx.input.path` (the focused vault file) and forwards it to `ctx.shell.open('vmark://open?path=<encoded>')`. *(Manifest snippet elided — implementation lives under `share/manifests/open-in-vmark/`.)*
 - Degrade behavior: if VMark not installed → `shell.open` falls back to
   system default editor for that extension (macOS Launch Services / Win
   ShellExecute). User still gets a viewer; CTRL doesn't crash.
 
-**License compliance (THIRD_PARTY_LICENSES.md entry)**:
+**License compliance (THIRD_PARTY_LICENSES.md entry)**: declare VMark as ISC (root) / MIT (sidecar `@vmark/mcp-server` npm package), source `https://github.com/xiaolai/vmark`, copyright "© 2026 Xiaolai Li and contributors", and clarify that CTRL does not bundle or distribute VMark binaries — CTRL triggers installation via the user's package manager (Homebrew tap) or by downloading VMark's unmodified release artifact from upstream. The installed VMark remains an independent program.
 
-```markdown
-## VMark
-License: ISC (root) / MIT (`@vmark/mcp-server` sidecar npm package)
-Source: https://github.com/xiaolai/vmark
-Copyright: © 2026 Xiaolai Li and contributors
-
-CTRL does not bundle or distribute VMark binaries. CTRL triggers
-installation via the user's package manager (Homebrew tap) or by
-downloading VMark's unmodified release artifact from upstream. The
-installed VMark remains an independent program.
-```
+*(THIRD_PARTY_LICENSES.md entry text elided — lives at repo root.)*
 
 No AGPL §13 concern — VMark is not AGPL. ISC is permissive (MIT-equivalent).
 
@@ -330,53 +268,20 @@ requests through the capability broker (same gating as `mcp_host`).
 unbounded. Pin to the sidecar contract that has documented stability.
 
 **Connection state**:
-- Stored in `~/.ctrl/state/mcp-clients.json`:
-  ```json
-  {
-    "clients": {
-      "vmark": {
-        "kind": "sidecar",
-        "binary_path": "/Applications/VMark.app/Contents/Resources/vmark-mcp-server",
-        "auto_start": true,
-        "last_connected_at": "..."
-      }
-    }
-  }
-  ```
-- Lifecycle: lazy start on first keycap call requiring MCP client; graceful
-  shutdown on CTRL kernel shutdown; reconnect on VMark restart.
+- Stored in `~/.ctrl/state/mcp-clients.json` as a `clients` map keyed by server id (e.g. `vmark`). Each entry carries `kind` (`"sidecar"` etc.), `binary_path`, `auto_start: bool`, `last_connected_at` timestamp.
+- Lifecycle: lazy start on first keycap call requiring MCP client; graceful shutdown on CTRL kernel shutdown; reconnect on VMark restart.
 
 **Tauri command surface**:
 
-```rust
-#[tauri::command]
-pub async fn mcp_client_call(
-    server: String,        // e.g. "vmark"
-    tool: String,          // e.g. "selection"
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String>;
+- `mcp_client_call(server, tool, args: serde_json::Value) -> Result<serde_json::Value, String>` — e.g. `server="vmark"`, `tool="selection"`.
+- `mcp_client_list_servers() -> Result<Vec<McpClientServer>, String>`.
+- `mcp_client_register_server(spec: McpClientServerSpec) -> Result<(), String>`.
 
-#[tauri::command]
-pub async fn mcp_client_list_servers() -> Result<Vec<McpClientServer>, String>;
+*(Command signatures elided. Implementation: `src-tauri/src/commands/mcp_client.rs`.)*
 
-#[tauri::command]
-pub async fn mcp_client_register_server(spec: McpClientServerSpec) -> Result<(), String>;
-```
+**Capability gating**: any keycap calling `mcp_client.*` must declare the target server in its manifest `capabilities` array (e.g. `["mcp:vmark"]`), enforced by capability broker.
 
-**Capability gating**: any keycap calling `mcp_client.*` must declare the
-target server in its manifest `capabilities` array (e.g. `["mcp:vmark"]`),
-enforced by capability broker.
-
-**Manifest dependency declaration**:
-
-```ts
-{
-  id: 'insert-at-vmark-cursor',
-  capabilities: ['mcp:vmark', 'text.chat'],
-  requires: ['mcp:vmark'],  // hard requirement → keycap greys out if VMark not connected
-  // ...
-}
-```
+**Manifest dependency declaration**: an `insert-at-vmark-cursor` keycap declares `capabilities: ['mcp:vmark', 'text.chat']` and `requires: ['mcp:vmark']` (hard requirement — keycap greys out if VMark not connected).
 
 ### 5.3 G3 / G4 / G5 / G6 — LLM image.ocr / audio.tts / audio.stt / image.edit
 
@@ -424,19 +329,13 @@ kernel capability so:
 - Audit trail logs clipboard reads (privacy/security: knowing which keycap
   touched clipboard at what time).
 
-**Tauri command** (likely already exists as Tauri plugin call, this is
-wrap):
+**Tauri commands** (thin wrap around `tauri-plugin-clipboard-manager`):
 
-```rust
-#[tauri::command]
-pub async fn clipboard_read_text() -> Result<String, String>;
+- `clipboard_read_text() -> Result<String, String>`
+- `clipboard_read_image() -> Result<Vec<u8>, String>` (PNG bytes)
+- `clipboard_write_text(text: String) -> Result<(), String>`
 
-#[tauri::command]
-pub async fn clipboard_read_image() -> Result<Vec<u8>, String>;  // bytes (PNG)
-
-#[tauri::command]
-pub async fn clipboard_write_text(text: String) -> Result<(), String>;
-```
+*(Command signatures elided. Implementation: `src-tauri/src/commands/clipboard.rs`.)*
 
 **Capability name**: `clipboard.read` / `clipboard.write`.
 
@@ -447,26 +346,11 @@ Windows = GDI+ / DXGI; Linux = scrot / grim (Wayland).
 
 **API surface**:
 
-```rust
-#[derive(Deserialize)]
-pub struct CaptureArgs {
-    pub mode: String,  // "region" | "fullscreen" | "window"
-    pub format: String,  // "png" | "jpg"
-    pub destination: Option<String>,  // vault-relative path; None = return bytes
-}
+- `CaptureArgs { mode: 'region'|'fullscreen'|'window', format: 'png'|'jpg', destination: Option<vault-relative-path> }` (omitting `destination` returns bytes).
+- `CaptureResult { bytes?, file_path?, width: u32, height: u32, elapsed_ms: u64 }`.
+- `shell_capture(args: CaptureArgs) -> Result<CaptureResult, String>` (Tauri command).
 
-#[derive(Serialize)]
-pub struct CaptureResult {
-    pub bytes: Option<Vec<u8>>,
-    pub file_path: Option<String>,
-    pub width: u32,
-    pub height: u32,
-    pub elapsed_ms: u64,
-}
-
-#[tauri::command]
-pub async fn shell_capture(args: CaptureArgs) -> Result<CaptureResult, String>;
-```
+*(Struct + command signatures elided. Implementation: `src-tauri/src/commands/shell_capture.rs`.)*
 
 **Cross-platform implementation**:
 - macOS: `CGWindowListCreateImage` for window/full; SystemEvents OSA for
@@ -483,13 +367,11 @@ ship macOS + Windows in v1 base.
 
 ### 5.6 G9 — Shell.open_path wrap
 
-Wraps Tauri's `shell.open` (already a Tauri plugin). G9 adds the
-capability-broker registration + per-keycap audit, same as G7.
+Wraps Tauri's `shell.open` (already a Tauri plugin). G9 adds the capability-broker registration + per-keycap audit, same as G7.
 
-```rust
-#[tauri::command]
-pub async fn shell_open_path(path_or_url: String) -> Result<(), String>;
-```
+Single command: `shell_open_path(path_or_url: String) -> Result<(), String>`.
+
+*(Command signature elided. Implementation: `src-tauri/src/commands/shell_open.rs`.)*
 
 **Capability name**: `shell.open`.
 

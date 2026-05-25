@@ -10,9 +10,9 @@
 //   - EventStore (SQLite event log)
 //   - LlmPortRouter (LLM adapter fallback chain)
 //
-// P2.8 stage: structured composition, runtime ready to host the existing
-// Tauri command path AND new kernel-driven actors. Full effect dispatch
-// wiring (scheduler -> handler -> effect -> capability check) lands in P5.
+// Live: structured composition. Hosts the Tauri command path today; the
+// full effect-dispatch loop (scheduler → handler → effect → capability
+// check) lands when the WASM keycap runtime ships.
 
 use crate::kernel::capability::CapabilityBroker;
 use crate::kernel::effect::EffectExecutor;

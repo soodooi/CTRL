@@ -1,7 +1,8 @@
 ---
 id: H-2026-05-17-apollo-marketing-v0
 owner: Apollo (marketing / brand)
-status: in-flight
+assigned_to: apollo
+status: in_progress
 created: 2026-05-17
 reviewer: bao
 related-adr: 001, 006 (pending)

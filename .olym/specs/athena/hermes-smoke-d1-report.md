@@ -10,11 +10,7 @@
 
 ## What was installed
 
-```
-pipx install --python python3.12 hermes-agent
-# → hermes-agent 0.13.0 (release 2026.5.7)
-# → installs hermes / hermes-acp / hermes-agent
-```
+`pipx install --python python3.12 hermes-agent` — installed `hermes-agent` 0.13.0 (release 2026.5.7), which provides the `hermes`, `hermes-acp`, and `hermes-agent` CLIs.
 
 No `install.sh` was used. `install.sh` would have bundled uv + Python 3.11 + Node.js + ripgrep + ffmpeg + git-bash — overkill for this smoke; saved for if/when a full appliance install is ever needed.
 

@@ -47,25 +47,9 @@ bao 提醒"匹配 skill"。本 spike 用 hephaestus 的：
 - **复用**: `doc/keycap-integration-research/00-adr-010-inputs-from-hephaestus.md`、`02-pattern-A/B/C/D`、`05-manifest-schema-v0.2.md`
 - **不做**: Rust kernel 实现 (zeus)、PWA UI (daedalus)、ADR 写作 (zeus)、sandbox profile 实施 (后续 lane)
 
-**Olym skill 调用建议**（开 hephaestus 窗口第一条 prompt 引这些）:
+**Olym skill 调用建议**（开 hephaestus 窗口第一条 prompt 引这些）— 起 session 在 `.worktrees/scratch/spike-jiazuo-capability/` (`.lane=jiazuo-spike`), 必读 `personas/hephaestus/{persona,skills}.md` + `CLAUDE.md` + 本 handoff + `decisions/001` & `010` + `doc/keycap-integration-research/{00-adr-010-inputs-from-hephaestus,02-pattern-A/B/C/D,05-manifest-schema-v0.2}.md`. 执行顺序: `/writing-plans` 拆 Q1/Q2/Q3 子任务 → Q1 输出后通知 bao (检查点 1, ≤4h) → `/systematic-debugging` Q2 schema → Q2 输出后通知 bao → Q3 grep 实证 (不靠记忆) → `/verification-before-completion` RESULT.md 收尾自查.
 
-```
-新 session start, 在 .worktrees/scratch/spike-jiazuo-capability/ 工区, .lane=jiazuo-spike
-你是 hephaestus, 接 H-2026-05-18-002. 必读:
-  - .olym/personas/hephaestus/persona.md + skills.md
-  - CLAUDE.md + .olym/CLAUDE.md
-  - .olym/handoffs/H-2026-05-18-002-jiazuo-capability-spike.md (本文件)
-  - .olym/decisions/001-system-architecture.md + 010-keycap-execution-model.md
-  - doc/keycap-integration-research/00-adr-010-inputs-from-hephaestus.md (你自己写的, 起点)
-  - doc/keycap-integration-research/02-pattern-A/B/C/D-*.md, 05-manifest-schema-v0.2.md
-执行顺序:
-  1. /writing-plans — 先拆 Q1/Q2/Q3 各 ≤30min 子任务清单
-  2. Q1 输出后通知 bao (检查点 1, ≤ 4h)
-  3. /systematic-debugging — Q2 schema 设计 (核对 Q1 频次, 避免过设计)
-  4. Q2 输出后通知 bao (检查点 2)
-  5. Q3 grep 实证, 不靠记忆
-  6. /verification-before-completion — RESULT.md 收尾前自查
-```
+*(Prompt scaffolding elided.)*
 
 ## Spike 三个 must-answer 问题（详）
 

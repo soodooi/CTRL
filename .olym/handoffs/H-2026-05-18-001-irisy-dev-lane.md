@@ -46,22 +46,9 @@ bao 提醒"匹配 skill"。本 lane 用 daedalus 矩阵的：
 - **L2 用区**: Accessibility (manifest preview 表单可键盘操作)、Hono / D1 接口消费 (只读 LLMTransport API)
 - **不碰**: Rust kernel (zeus)、键帽 manifest schema 定义 (zeus + hephaestus)、AI provider 接口实现 (zeus)
 
-**Olym skill 调用建议**（开 daedalus 窗口的第一条 prompt 引这些）:
+**Olym skill 调用建议**（开 daedalus 窗口的第一条 prompt 引这些）— 起 session 在 `.worktrees/lane-a/irisy-companion/` worktree (`.lane=irisy-companion`), 必读 `personas/daedalus/{persona,skills}.md` + `CLAUDE.md` + 本 handoff + `doc/keycap-integration-research/01-semantic-co-view.md`. 执行顺序: `/shape` 规划 keycap-creator UX → `/brainstorming` Irisy persona voice + few-shot 示例 (D3) → `/test-driven-development` Zod validator + LLMTransport unit test → `/impeccable:impeccable` D2 UI → `/verification-before-completion` 收尾前跑验收清单.
 
-```
-新 session start, 在 .worktrees/lane-a/irisy-companion/ 工区, .lane=irisy-companion
-你是 daedalus, 接 H-2026-05-18-001. 必读:
-  - .olym/personas/daedalus/persona.md + skills.md
-  - CLAUDE.md + .olym/CLAUDE.md
-  - .olym/handoffs/H-2026-05-18-001-irisy-dev-lane.md (本文件)
-  - doc/keycap-integration-research/01-semantic-co-view.md (Irisy 上下文)
-执行顺序:
-  1. /shape — 先用 shape skill 规划 keycap-creator UX (左聊天 / 右 manifest+code preview / 底 [Install])
-  2. /brainstorming — Irisy 的 persona voice + few-shot 示例选型 (产出 D3)
-  3. /test-driven-development — Zod validator + LLMTransport unit test 先写
-  4. /impeccable:impeccable — D2 UI 实施
-  5. /verification-before-completion — 收尾前跑验收清单
-```
+*(Prompt scaffolding elided — daedalus assembles per usual session-start convention.)*
 
 ## 现象 / 证据
 

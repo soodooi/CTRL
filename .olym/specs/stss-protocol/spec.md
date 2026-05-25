@@ -21,12 +21,7 @@ ST-SS (**Spatio-Temporal Semantic Stream**) is CTRL's protocol for:
 2. **Hardware sensor stream** — AI 眼镜 / 录音笔 / 摄像头 / 电纸书 / 指环 publish/subscribe semantic events instead of raw audio/video
 3. **Cross-device AI memory** — keycap invocations + LLM responses + tool results stream into event store, replayable across devices
 
-**Core idea**: ST-SS streams **semantic cells + temporal deltas** instead of pixels. 5 KB/s replaces 1.5 Mbps video.
-
-```
-Traditional RDP/VNC:  [pixels stream of someone coding]
-ST-SS:                [semantic stream: function foo() { return 1; }]
-```
+**Core idea**: ST-SS streams **semantic cells + temporal deltas** instead of pixels. 5 KB/s replaces 1.5 Mbps video. Where a traditional RDP/VNC stream pipes raw pixels of someone coding, ST-SS pipes the semantic event ("function foo returned 1") and lets the receiver render it however it likes.
 
 ---
 
@@ -34,56 +29,19 @@ ST-SS:                [semantic stream: function foo() { return 1; }]
 
 ### 2.1 Event types
 
-```typescript
-type StssEvent = Cell | Op;
+`StssEvent` is the union `Cell | Op`. Both share `type` (discriminator: `'cell'` or `'op'`), `kind`, `ts_ms` (epoch ms), `stream_id`, and a CBOR-encoded `payload`.
 
-interface Cell {
-  type: 'cell';
-  kind: CellKind;
-  ts_ms: number;        // epoch ms
-  stream_id: string;
-  payload: any;         // CBOR-encoded
-}
+`CellKind` (passive observation):
 
-interface Op {
-  type: 'op';
-  kind: OpKind;
-  ts_ms: number;
-  stream_id: string;
-  payload: any;
-}
+- **v0.6 base** — `user_input` (typed text / voice transcript / click), `clipboard_snapshot`, `screen_snapshot` (semantic, not pixels: current_function / current_file / …), `hardware_reading` (sensor data, AI-summarized), `llm_response`, `tool_result`, `context_snapshot` (app-defined blob)
+- **v0.7 coding-env** (H-2026-05-20-001) — `terminal_output` (PTY/subprocess stdout/stderr chunk), `terminal_exit` (PTY exit code + signal + duration), `lsp_state` (LSP diagnostics + symbols per file URI), `agent_thinking` (CoT delta from a coding agent, streaming), `agent_action` (tool_call / file_edit / shell_command / plan_update planned-or-done), `env_status` (cpu / mem / build / test health)
 
-type CellKind =
-  // ─── v0.6 base ───
-  | 'user_input'          // typed text, voice transcript, click
-  | 'clipboard_snapshot'
-  | 'screen_snapshot'     // not pixels, semantic: current_function/current_file/...
-  | 'hardware_reading'    // sensor data, AI-summarized
-  | 'llm_response'
-  | 'tool_result'
-  | 'context_snapshot'    // app-defined context blob
-  // ─── v0.7 coding-env (H-2026-05-20-001) ───
-  | 'terminal_output'     // stdout/stderr chunk from a PTY/subprocess in a coding env
-  | 'terminal_exit'       // PTY/subprocess exit (code + signal + duration)
-  | 'lsp_state'           // LSP diagnostics + symbols snapshot per file URI
-  | 'agent_thinking'      // chain-of-thought delta from a coding agent (streaming)
-  | 'agent_action'        // tool_call / file_edit / shell_command / plan_update planned-or-done
-  | 'env_status';         // env health: cpu/mem/build_status/test_status
+`OpKind` (action / state transition):
 
-type OpKind =
-  // ─── v0.6 base ───
-  | 'keycap_invoked'
-  | 'keycap_completed'
-  | 'hotkey_triggered'
-  | 'app_focus_changed'
-  | 'file_saved'
-  | 'cursor_moved'
-  // ─── v0.7 coding-env (H-2026-05-20-001) ───
-  | 'agent_prompt'        // user/zeus → agent prompt sent into the env
-  | 'agent_interrupt'     // abort the agent's current action
-  | 'env_signal'          // SIGINT/SIGTERM/restart/reload_config sent to env
-  | 'file_request';       // pull a specific file from the env (request_id correlates)
-```
+- **v0.6 base** — `keycap_invoked`, `keycap_completed`, `hotkey_triggered`, `app_focus_changed`, `file_saved`, `cursor_moved`
+- **v0.7 coding-env** — `agent_prompt` (user/zeus → agent prompt sent into env), `agent_interrupt` (abort agent's current action), `env_signal` (SIGINT/SIGTERM/restart/reload_config), `file_request` (pull a specific file; correlates by `request_id`)
+
+*(TS wire types. Implementation: `packages/ctrl-stss/src/protocol/kind.ts` and matching Rust `CellKind`/`OpKind` in `src-tauri/src/kernel/event.rs`.)*
 
 ### 2.1.1 Coding-env payload schemas (v0.7)
 
@@ -158,31 +116,17 @@ screi's base protocol is application-agnostic. CTRL profile adds:
 
 ### 3.1 Capability declaration (every stream)
 
-Every ST-SS source MUST declare what it can emit + needs:
+Every ST-SS source MUST declare what it can emit + needs at handshake. Required fields: `stream_id`, `publisher`, `cell_kinds: [...]`, `op_kinds: [...]`, `needs_capability: [...]` (e.g. `LlmCall`, `ClipboardRead`).
 
-```yaml
-# ST-SS stream metadata, sent at handshake
-stream_id: "my-coding-companion"
-publisher: "my-vscode-extension"
-cell_kinds: [screen_snapshot, llm_response]
-op_kinds: [file_saved, keycap_invoked]
-needs_capability: [LlmCall, ClipboardRead]
-```
+*(Handshake metadata schema elided — see `packages/ctrl-stss/src/protocol/handshake.ts` for the YAML/JSON shape.)*
 
 CTRL kernel verifies subscriber actor's Capability matches `needs_capability` before forwarding.
 
 ### 3.2 Hardware profile
 
-Special considerations for hardware sources:
+Hardware publishers attach a `hardware_profile` declaring `device_type` (`ai_glasses` / `voice_recorder` / `desktop_camera` / `eink_reader` / `ai_ring`), `power_class` (`always_on` / `intermittent` / `user_triggered`), `bandwidth_class` (`5kbps` / `50kbps` / `500kbps`), `latency_budget_ms` (e.g. 100 for AI glasses), and `battery_aware: true|false`.
 
-```yaml
-hardware_profile:
-  device_type: "ai_glasses" | "voice_recorder" | "desktop_camera" | "eink_reader" | "ai_ring"
-  power_class: "always_on" | "intermittent" | "user_triggered"
-  bandwidth_class: "5kbps" | "50kbps" | "500kbps"
-  latency_budget_ms: 100        # AI 眼镜实时 < 100ms
-  battery_aware: true
-```
+*(Profile schema elided — see `packages/ctrl-stss/src/protocol/hardware-profile.ts`.)*
 
 Kernel scheduler uses these to:
 - Hardware power_class=`always_on` → priority `Hardware` (preempts everything)
@@ -191,16 +135,9 @@ Kernel scheduler uses these to:
 
 ### 3.3 E-ink rendering profile (杀手用例)
 
-E-ink reader (Boox / Supernote / Daylight) subscribes to coding context stream:
+E-ink reader (Boox / Supernote / Daylight) subscribes to a coding context stream by declaring an `eink_render_profile` with `ppi` (e.g. 227), `refresh_class: 'static'` (no 60fps expected), `page_size: [1404, 1872]`, `contrast_class` (`binary` / `16_grey` / `full_grey`), and `preferred_cells: [current_function, pending_diff, test_status, ai_summary]`.
 
-```yaml
-eink_render_profile:
-  ppi: 227
-  refresh_class: "static"      # 不期待 60fps
-  page_size: [1404, 1872]
-  contrast_class: "binary" | "16_grey" | "full_grey"
-  preferred_cells: [current_function, pending_diff, test_status, ai_summary]
-```
+*(Profile schema elided — see `packages/ctrl-stss/src/protocol/eink-render-profile.ts`.)*
 
 CTRL kernel emits **e-ink-friendly cells**: pre-formatted text, low-frequency updates, large fonts. User on coffee shop reads code stream on Boox, taps to add comments, comments stream back as `op:annotation_added`.
 
@@ -217,15 +154,9 @@ Hardware streams can outpace consumers. CTRL kernel:
 
 ## 4. CTRL keycap as ST-SS sink
 
-A keycap MAY subscribe to ST-SS streams to receive triggers:
+A keycap MAY subscribe to ST-SS streams to receive triggers. In the manifest, declare an `on_stss` block: each entry binds a `stream` id + `filter` (e.g. `cell_kind: screen_snapshot`, `payload.app: vscode`) + `action` (e.g. `spawn_actor("code_companion")`).
 
-```yaml
-# Manifest excerpt
-on_stss:
-  - stream: "screen_context"
-    filter: { cell_kind: "screen_snapshot", payload.app: "vscode" }
-    action: spawn_actor("code_companion")
-```
+*(Manifest subscription block elided — see `.olym/specs/tool-manifest/spec.md` for the authoritative schema.)*
 
 This enables "AI 陪我 coding" use case: VSCode extension publishes coding context stream → CTRL keycap subscribes + reacts.
 
@@ -233,21 +164,9 @@ This enables "AI 陪我 coding" use case: VSCode extension publishes coding cont
 
 ## 5. CTRL keycap as ST-SS source
 
-Equally, a keycap MAY emit ST-SS events:
+Equally, a keycap MAY emit ST-SS events. Inside a keycap actor handler, return an `Effect::EmitEvent` targeting `ActorId::STSS_BROKER` with `Event::Cell { kind: CellKind::LlmResponse, payload, ts_ms }`.
 
-```rust
-// Inside keycap actor handler
-return vec![
-  Effect::EmitEvent {
-    target: ActorId::STSS_BROKER,
-    event: Event::Cell {
-      kind: CellKind::LlmResponse,
-      payload: cbor!({"text": llm_output}),
-      ts_ms: now_ms(),
-    },
-  },
-];
-```
+*(Emit-pattern elided — see `src-tauri/src/kernel/stss_bridge.rs` and keycap reference examples under `src-tauri/src/actors/`.)*
 
 This event:
 1. Persisted to local event store (replayable AI memory)

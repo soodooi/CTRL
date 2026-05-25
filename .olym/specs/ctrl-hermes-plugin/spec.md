@@ -20,36 +20,9 @@ This spec documents:
 
 ## 2. Plugin manifest
 
-`plugin.yaml` lives at the package root. Hermes reads it on discovery.
+`plugin.yaml` lives at the package root. Hermes reads it on discovery. Required keys: `name: ctrl`, `version` (semver), `kind: tool`, `description`, `author`, `website_url`, `license: MIT`, `provides_tools: true`, `profile_scope: default`, `handshake_file: ~/.ctrl/state/kernel-handshake.json`. The `tools[]` list enumerates the 11 kernel-backed handlers: `kernel.status`, `vault.{read,write,list,search}`, `kv.{get,set}`, `llm.chat`, `mcp.list_servers`, `mcp.proxy_list_tools`, `mcp.proxy_call_tool`. `requires` pins compatibility: `hermes_agent: ">=0.14.0"`, `python: ">=3.11"`, `ctrl_app: ">=1.0.0"`.
 
-```yaml
-name: ctrl
-version: 0.1.0
-kind: tool
-description: CTRL workbench tools
-author: CTRL team
-website_url: https://github.com/soodooi/CTRL
-license: MIT
-provides_tools: true
-profile_scope: default
-handshake_file: ~/.ctrl/state/kernel-handshake.json
-tools:
-  - kernel.status
-  - vault.read
-  - vault.write
-  - vault.list
-  - vault.search
-  - kv.get
-  - kv.set
-  - llm.chat
-  - mcp.list_servers
-  - mcp.proxy_list_tools
-  - mcp.proxy_call_tool
-requires:
-  hermes_agent: ">=0.14.0"
-  python: ">=3.11"
-  ctrl_app: ">=1.0.0"
-```
+*(YAML manifest elided. Implementation: `packages/ctrl-hermes-plugin/plugin.yaml`.)*
 
 Notes:
 
@@ -76,15 +49,7 @@ The entire plugin is ~300 lines of Python. Every tool handler is 1-5 lines (call
 
 ## 4. Kernel handshake file
 
-`~/.ctrl/state/kernel-handshake.json` is written by CTRL.app at each boot.
-
-```json
-{
-  "url": "http://127.0.0.1:17873/mcp",
-  "token": "<UUID v4>",
-  "schema_version": 1
-}
-```
+`~/.ctrl/state/kernel-handshake.json` is written by CTRL.app at each boot. Three fields: `url` (e.g. `http://127.0.0.1:17873/mcp`), `token` (UUID v4 string), and `schema_version` (integer, starts at 1).
 
 Properties:
 
@@ -95,12 +60,9 @@ Properties:
 
 ## 5. Tool handler convention
 
-Every handler is a thin shim:
+Every handler is a thin shim — e.g. `ctrl_vault_read(path: str)` returns `call_tool("vault_read", {"path": path})`. One line of forwarding logic per handler.
 
-```python
-def ctrl_vault_read(path: str) -> Any:
-    return call_tool("vault_read", {"path": path})
-```
+*(Handler example elided. Implementation: `packages/ctrl-hermes-plugin/ctrl_hermes_plugin/register.py`.)*
 
 Rules:
 
@@ -131,15 +93,7 @@ No manual `hermes mcp add ctrl-kernel` required.
 
 ## 7. Update flow
 
-Plugin updates follow the same channel as hermes plugins generally:
-
-```sh
-hermes plugins update ctrl   # checks PyPI, applies if newer
-# OR
-pip install --upgrade ctrl-hermes-plugin
-```
-
-Coordinated with CTRL.app updates via `compatibility.ctrl_app` envelope.
+Plugin updates follow the same channel as hermes plugins generally — either `hermes plugins update ctrl` (checks PyPI, applies if newer) or directly `pip install --upgrade ctrl-hermes-plugin`. Coordinated with CTRL.app updates via the `compatibility.ctrl_app` envelope.
 
 ## 8. PWA Settings UX
 

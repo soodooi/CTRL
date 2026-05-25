@@ -31,28 +31,11 @@ If a feature can be done in the PWA, it must be done in the PWA. The shell is re
 
 ## 2. Toolchain
 
-```
-Rust 1.75+ stable
-Tauri 2.x stable (cargo install tauri-cli --version "^2")
-Node 20.x LTS (for PWA build, not shell)
-WebView2 evergreen (Win 10 1809+ ships it; Win 10 LTSC needs bootstrapper)
-WKWebView (macOS 13+ ships it)
-```
+Rust 1.75+ stable, Tauri 2.x stable (`cargo install tauri-cli --version "^2"`), Node 20.x LTS (for PWA build only), WebView2 evergreen (ships on Win 10 1809+; Win 10 LTSC needs bootstrapper), WKWebView (ships on macOS 13+).
 
-Cargo dependencies (Cargo.toml):
+Cargo dependencies pinned in `src-tauri/Cargo.toml`: `tauri = "2"` with `macos-private-api` feature, plus plugins `tauri-plugin-global-shortcut`, `tauri-plugin-stronghold`, `tauri-plugin-updater` (all `"2"`). Runtime deps: `tokio` (full features), `serde` + `serde_json`, `thiserror`. Kernel deps stay in `src-tauri/src/kernel/`, unchanged.
 
-```toml
-[dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
-tauri-plugin-global-shortcut = "2"
-tauri-plugin-stronghold = "2"
-tauri-plugin-updater = "2"
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "1"
-# kernel deps remain in src-tauri/src/kernel/, unchanged
-```
+*(Toolchain + Cargo.toml blocks elided. Implementation: `src-tauri/Cargo.toml`.)*
 
 Tray uses Tauri 2 built-in tray API (no separate plugin in 2.x).
 
@@ -103,33 +86,9 @@ Note: `win/` tree is removed entirely after migration.
 
 ## 4. Window configuration
 
-```jsonc
-// src-tauri/tauri.conf.json (excerpt)
-{
-  "app": {
-    "windows": [{
-      "label": "main",
-      "title": "CTRL",
-      "width": 920,
-      "height": 560,
-      "decorations": false,           // frameless
-      "transparent": true,            // for Mica/vibrancy
-      "alwaysOnTop": true,
-      "resizable": false,
-      "skipTaskbar": true,
-      "visible": false,               // shown only when Ctrl is tapped
-      "center": true,
-      "windowEffects": {
-        "effects": ["mica"],          // Win 11 Mica; on Mac use "vibrancy"
-        "state": "active"
-      }
-    }],
-    "security": {
-      "csp": "default-src 'self' tauri://localhost; script-src 'self' tauri://localhost; connect-src 'self' tauri://localhost ws://localhost:* https://*.ctrl.run; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
-    }
-  }
-}
-```
+The single `main` window in `src-tauri/tauri.conf.json` is 920×560, frameless (`decorations: false`), transparent (for Mica / vibrancy), always-on-top, non-resizable, skips taskbar, hidden by default (`visible: false`) and centered. `windowEffects` requests `mica` (Win 11) or `vibrancy` (macOS). `security.csp` is tight: `default-src` / `script-src` limited to `'self' tauri://localhost`; `connect-src` allows local kernel WS + `https://*.ctrl.run` only; no remote scripts, no `eval`.
+
+*(Window + CSP config elided. Implementation: `src-tauri/tauri.conf.json`.)*
 
 CSP intentionally tight: no remote scripts, no eval. PWA bundle ships in app, served at `tauri://localhost`. Outbound only to local kernel WS and `*.ctrl.run`.
 
@@ -144,32 +103,9 @@ Behavior (per W3.2 commit `5b651fc` baseline, ported to Rust):
 - Window visible + Ctrl tap → hide
 - Window hidden + Ctrl tap → show + focus
 
-Implementation:
+Implementation: `HotkeyService` tracks `last_ctrl_down: Option<Instant>` plus a `GlobalShortcutManager` listener; on Ctrl down it stamps `Instant::now()`; on Ctrl up it checks elapsed < 200ms and (if so) toggles the window. `register()` registers the raw Ctrl key with Tauri 2's global-shortcut plugin (chord conflicts handled by the plugin).
 
-```rust
-// src-tauri/src/shell/hotkey.rs
-pub struct HotkeyService {
-    last_ctrl_down: Option<Instant>,
-    listener: GlobalShortcutManager,
-}
-
-impl HotkeyService {
-    pub fn register(&mut self, app: &AppHandle) -> Result<()> {
-        // Tauri 2 global shortcut for Ctrl key (raw key, not chord)
-        // Note: tauri-plugin-global-shortcut handles chord conflicts
-    }
-
-    fn on_ctrl_down(&mut self) { self.last_ctrl_down = Some(Instant::now()); }
-
-    fn on_ctrl_up(&mut self, app: &AppHandle) {
-        if let Some(t) = self.last_ctrl_down.take() {
-            if t.elapsed() < Duration::from_millis(200) {
-                self.toggle_window(app);
-            }
-        }
-    }
-}
-```
+*(Hotkey scaffolding elided. Implementation: `src-tauri/src/shell/hotkey.rs`.)*
 
 If `tauri-plugin-global-shortcut` does not expose key-up events (current 2.x limitation, requires verify), fall back to per-OS native impl (Win32 `RegisterHotKey` directly via `windows` crate, macOS `CGEventTap` via `core-graphics`). Spike in H-2026-05-13-001 Step 3.
 
@@ -179,27 +115,9 @@ If `tauri-plugin-global-shortcut` does not expose key-up events (current 2.x lim
 
 ## 6. Tray (Responsibility #2)
 
-```rust
-// src-tauri/src/shell/tray.rs
-pub fn build_tray(app: &AppHandle) -> Result<()> {
-    let menu = MenuBuilder::new(app)
-        .item("Show CTRL", "show")
-        .item("Settings", "settings")
-        .separator()
-        .item("Quit", "quit")
-        .build()?;
+`build_tray(app)` constructs a `MenuBuilder` with three items — `Show CTRL`, `Settings`, separator, `Quit` — then builds a `TrayIconBuilder` with the app icon, that menu, and an `on_tray_icon_event` handler that toggles the window on click.
 
-    TrayIconBuilder::new()
-        .icon(app.default_window_icon().unwrap().clone())
-        .menu(&menu)
-        .on_tray_icon_event(|tray, event| match event {
-            TrayIconEvent::Click { .. } => toggle_window(tray.app_handle()),
-            _ => {}
-        })
-        .build(app)?;
-    Ok(())
-}
-```
+*(Tray builder code elided. Implementation: `src-tauri/src/shell/tray.rs`.)*
 
 Tray remains visible while window hidden (CTRL is "always-running" daemon, tray = control surface).
 
@@ -207,42 +125,11 @@ Tray remains visible while window hidden (CTRL is "always-running" daemon, tray 
 
 ## 7. Kernel daemon supervision (Responsibility #3)
 
-Single Rust binary, two entrypoints decided by CLI flag:
+Single Rust binary, two entrypoints decided by CLI flag. `main()` matches `std::env::args().nth(1)`: `"--kernel-daemon"` dispatches to `kernel::daemon::run()`; anything else runs `shell::lifecycle::run()`.
 
-```rust
-// src-tauri/src/main.rs
-fn main() {
-    match std::env::args().nth(1).as_deref() {
-        Some("--kernel-daemon") => kernel::daemon::run(),
-        _ => shell::lifecycle::run(),
-    }
-}
-```
+Shell spawns the daemon as a child process on launch. `KernelSupervisor` owns the `Child` handle, the chosen `ws_port: u16`, and a `ready_tx` oneshot sender. `spawn()` execs the current exe with `--kernel-daemon --port <ws_port>`, pipes stdout/stderr, then waits for a `READY` line on stdout to resolve `ready_tx`. On crash, restart with exponential backoff (max 5 retries / 60s window).
 
-Shell spawns daemon as child process on launch:
-
-```rust
-// src-tauri/src/shell/kernel_supervisor.rs
-pub struct KernelSupervisor {
-    child: Option<Child>,
-    ws_port: u16,
-    ready_tx: oneshot::Sender<()>,
-}
-
-impl KernelSupervisor {
-    pub async fn spawn(&mut self) -> Result<()> {
-        let exe = std::env::current_exe()?;
-        let mut cmd = Command::new(&exe);
-        cmd.arg("--kernel-daemon")
-           .arg("--port").arg(self.ws_port.to_string())
-           .stdout(Stdio::piped())
-           .stderr(Stdio::piped());
-        let child = cmd.spawn()?;
-        // wait for "READY" line on stdout, then resolve ready_tx
-        // restart on crash with exponential backoff (max 5 retries / 60s window)
-    }
-}
-```
+*(Entry + supervisor scaffolding elided. Implementation: `src-tauri/src/main.rs` + `src-tauri/src/shell/kernel_supervisor.rs`.)*
 
 **Hotkey gating**: shell does NOT register the global hotkey until `ready_tx` resolves. Otherwise user Ctrl-taps land on a window with no kernel behind it.
 
@@ -254,18 +141,9 @@ impl KernelSupervisor {
 
 `tauri-plugin-stronghold` wraps Win Credential Vault and macOS Keychain. Used for BYOK API keys (Anthropic / OpenAI / others).
 
-Capability-gated commands (only callable from allowlisted PWA origin):
+Capability-gated commands (only callable from allowlisted PWA origin): `keychain_store(key_id, value)`, `keychain_get(key_id) -> String`, `keychain_delete(key_id)`. Each is a `#[tauri::command]` async fn returning `Result<_, String>`.
 
-```rust
-#[tauri::command]
-async fn keychain_store(key_id: String, value: String) -> Result<(), String> { … }
-
-#[tauri::command]
-async fn keychain_get(key_id: String) -> Result<String, String> { … }
-
-#[tauri::command]
-async fn keychain_delete(key_id: String) -> Result<(), String> { … }
-```
+*(Command signatures elided. Implementation: `src-tauri/src/commands/keychain.rs`.)*
 
 Keys never travel through the WebView in plaintext for storage; PWA passes value to `keychain_store`, retrieves via `keychain_get` only when needed for an LLM call. Future hardening (P11+): keys stay in keychain and the kernel daemon retrieves them directly, bypassing PWA entirely.
 
@@ -290,28 +168,9 @@ PWA calls Rust via `@tauri-apps/api/core::invoke()`. Surface is the union of `co
 | `shell.toggle_window` | `{}` | `void` | `shell:window` |
 | `shell.get_kernel_ws_port` | `{}` | `number` | `shell:read` |
 
-**Capabilities** declared in `src-tauri/capabilities/default.json`:
+**Capabilities** declared in `src-tauri/capabilities/default.json`: identifier `"default"`, scoped to the `main` window, with the 12 permission identifiers listed in the command table above (`kernel:read`, `kernel:run`, `mcp:call`, `mcp:read`, `stss:subscribe`, `stss:publish`, `memory:read`, `memory:write`, `keychain:read`, `keychain:write`, `shell:window`, `shell:read`).
 
-```jsonc
-{
-  "identifier": "default",
-  "windows": ["main"],
-  "permissions": [
-    { "identifier": "kernel:read" },
-    { "identifier": "kernel:run" },
-    { "identifier": "mcp:call" },
-    { "identifier": "mcp:read" },
-    { "identifier": "stss:subscribe" },
-    { "identifier": "stss:publish" },
-    { "identifier": "memory:read" },
-    { "identifier": "memory:write" },
-    { "identifier": "keychain:read" },
-    { "identifier": "keychain:write" },
-    { "identifier": "shell:window" },
-    { "identifier": "shell:read" }
-  ]
-}
-```
+*(Capability JSON elided. Implementation: `src-tauri/capabilities/default.json`.)*
 
 No filesystem, no shell, no http, no process plugins enabled. PWA cannot escape this surface.
 
@@ -325,11 +184,7 @@ No filesystem, no shell, no http, no process plugins enabled. PWA cannot escape 
 | Dev | `http://localhost:5173` (Vite dev server) | `cargo tauri dev` |
 | Mobile (browser) | `https://app.ctrl.run` (Cloudflare Pages or Workers static) | iOS Safari / Android Chrome |
 
-`tauri.conf.json` `frontendDist` points to `../packages/ctrl-web/dist`. Build pipeline:
-```bash
-npm -w @ctrl/web run build    # → packages/ctrl-web/dist/
-cargo tauri build              # bundles dist/ into app
-```
+`tauri.conf.json` `frontendDist` points to `../packages/ctrl-web/dist`. Build pipeline: `npm -w @ctrl/web run build` produces `packages/ctrl-web/dist/`; then `cargo tauri build` bundles `dist/` into the app.
 
 Service worker registered with scope `/`. Cache strategy:
 - App shell: cache-first, version-bumped on every deploy
@@ -361,24 +216,9 @@ Update flow:
 
 ## 12. Error handling
 
-```rust
-// src-tauri/src/shell/errors.rs (port from win/CTRL/Services/KernelErrors.cs)
-#[derive(thiserror::Error, Debug, Serialize)]
-pub enum ShellError {
-    #[error("kernel daemon failed to start: {0}")]
-    KernelBootFailed(String),
-    #[error("kernel daemon crashed: {0}")]
-    KernelCrashed(String),
-    #[error("hotkey registration failed: {0}")]
-    HotkeyRegistrationFailed(String),
-    #[error("keychain access denied: {0}")]
-    KeychainDenied(String),
-    #[error("capability {0} not granted")]
-    CapabilityDenied(String),
-}
+`ShellError` is a `thiserror`-derived, `Serialize`-derived enum with five variants: `KernelBootFailed(String)`, `KernelCrashed(String)`, `HotkeyRegistrationFailed(String)`, `KeychainDenied(String)`, `CapabilityDenied(String)`. Each carries a `#[error(...)]` template; the custom `Serialize` impl emits the friendly JSON shape consumed by PWA toasts.
 
-impl Serialize for ShellError { /* friendly JSON for PWA toast */ }
-```
+*(Error enum elided. Implementation: `src-tauri/src/shell/errors.rs` — port from `win/CTRL/Services/KernelErrors.cs`.)*
 
 PWA receives errors as `{ kind: "ShellError", variant: "KernelCrashed", message: "..." }`. Display in app toast, log to memory store for triage.
 
@@ -388,25 +228,9 @@ PWA receives errors as `{ kind: "ShellError", variant: "KernelCrashed", message:
 
 ## 13. Update channel
 
-`tauri-plugin-updater` pulls from `https://app.ctrl.run/updates/latest.json`:
+`tauri-plugin-updater` pulls from `https://app.ctrl.run/updates/latest.json`. Manifest carries `version`, `notes`, `pub_date`, plus a `platforms` map (e.g. `windows-x86_64`, `darwin-aarch64`) where each entry has `signature` + `url` pointing at the platform installer.
 
-```jsonc
-{
-  "version": "1.2.3",
-  "notes": "...",
-  "pub_date": "2026-05-13T00:00:00Z",
-  "platforms": {
-    "windows-x86_64": {
-      "signature": "...",
-      "url": "https://app.ctrl.run/updates/CTRL-1.2.3-x64.msi"
-    },
-    "darwin-aarch64": {
-      "signature": "...",
-      "url": "https://app.ctrl.run/updates/CTRL-1.2.3-aarch64.dmg"
-    }
-  }
-}
-```
+*(Update manifest schema elided. Implementation: release pipeline in `scripts/release.sh` per ADR-011 three-mirror channel.)*
 
 Updater code-signed with maintainer key (Tauri convention). PWA-only changes (no shell delta) ship via service-worker update — much faster path than shell update.
 

@@ -31,14 +31,7 @@ The Mac shell does **NOT** own:
 
 ## 2. Toolchain
 
-```
-macOS 13+ (Ventura)
-Xcode 15+ with Swift 5.9+
-SwiftUI for views
-AppKit for window chrome & hotkey
-Combine for reactive bindings
-Rust core via UniFFI (Mozilla official Swift bindings, first-class support)
-```
+macOS 13+ (Ventura), Xcode 15+ with Swift 5.9+, SwiftUI for views, AppKit for window chrome and hotkey, Combine for reactive bindings, Rust core consumed via UniFFI (Mozilla's official Swift bindings, first-class support).
 
 ---
 
@@ -77,25 +70,15 @@ CTRL/
 
 ### 4.1 Build Rust core for Mac targets
 
-```bash
-cd <repo>/src-tauri        # or future <repo>/core/
-cargo build --target aarch64-apple-darwin --release    # Apple Silicon
-cargo build --target x86_64-apple-darwin --release     # Intel
-lipo -create \
-    target/aarch64-apple-darwin/release/libctrl.dylib \
-    target/x86_64-apple-darwin/release/libctrl.dylib \
-    -output target/universal/libctrl.dylib
-```
+Build `libctrl.dylib` for both `aarch64-apple-darwin` and `x86_64-apple-darwin` (release), then `lipo -create` the two into a universal `target/universal/libctrl.dylib`.
+
+*(Build scripts elided — superseded by Tauri 2 PWA shell, see `.olym/specs/pwa-shell/spec.md`.)*
 
 ### 4.2 Generate Swift bindings
 
-```bash
-# Install uniffi-bindgen if not present
-cargo install uniffi-bindgen-cli
+Install `uniffi-bindgen-cli`, then `uniffi-bindgen generate src-tauri/src/ctrl.udl --language swift --out-dir mac/CTRL/Bindings/`.
 
-# Generate Swift module from UDL (src/ctrl.udl in Rust core)
-uniffi-bindgen generate src-tauri/src/ctrl.udl --language swift --out-dir mac/CTRL/Bindings/
-```
+*(Binding-generation scripts elided — superseded by ADR-002 PWA pivot.)*
 
 Produces:
 - `ctrl.swift` (Swift API wrapper)
@@ -115,26 +98,9 @@ Produces:
 All async work happens in Rust core via internal Tokio runtime. Swift calls
 the sync FFI entry points; results return synchronously to the caller.
 
-For UI responsiveness, Swift code should call FFI methods off main thread:
+For UI responsiveness, Swift code should call FFI methods off the main thread (e.g. `Task.detached { try kernelBoot(...) ; let h = try kernelHealth() ; await MainActor.run { kernelStatus = .online(h) } }`).
 
-```swift
-import ctrl
-
-Task.detached {
-    do {
-        try kernelBoot(dataDir: appSupportDir.path)
-        let healthJson = try kernelHealth()
-        let health = try JSONDecoder().decode(HealthSnapshot.self, from: healthJson.data(using: .utf8)!)
-        await MainActor.run {
-            kernelStatus = .online(health)
-        }
-    } catch {
-        await MainActor.run {
-            kernelStatus = .error("\(error)")
-        }
-    }
-}
-```
+*(Swift invocation example elided — see UniFFI Swift docs.)*
 
 ### Available functions (in current `ctrl.udl`):
 
@@ -180,38 +146,15 @@ chunks, event subscriptions), capability inspection, manifest CRUD.
 
 ### 6.3 Color tokens (from `Tokens.json`)
 
-```json
-{
-  "bg": "#F5F5F7",
-  "card": "#FFFFFF",
-  "cardDeep": "#F0F0F3",
-  "primary": "#3B5BDB",
-  "text": "#1D1D1F",
-  "shadowKeycap": "5-layer stack above"
-}
-```
-
-Dark mode auto-derived per `Tokens.dark` block.
+Light tokens: `bg #F5F5F7`, `card #FFFFFF`, `cardDeep #F0F0F3`, `primary #3B5BDB`, `text #1D1D1F`, and `shadowKeycap` referencing the 5-layer shadow stack above. Dark mode auto-derived per `Tokens.dark` block.
 
 ---
 
 ## 7. Hotkey detection (macOS)
 
-```swift
-import Carbon.HIToolbox
-import AppKit
+Use `NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged)`; on `.control` flag transitions, call `AppDelegate.shared.toggleMainWindow()`. Requires Accessibility permission; prompt user on first launch via `AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt: true])`.
 
-// Global Ctrl-press monitor (no other key held)
-NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event in
-    if event.modifierFlags.contains(.control) {
-        // Window show / hide toggle
-        AppDelegate.shared.toggleMainWindow()
-    }
-}
-```
-
-Requires Accessibility permission. Prompt user on first launch:
-`AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt: true])`
+*(Swift hotkey scaffolding elided — superseded by ADR-002 PWA shell. Implementation reference: see `src-tauri/src/shell/hotkey.rs` in the active shell.)*
 
 ---
 

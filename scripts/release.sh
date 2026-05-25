@@ -55,9 +55,15 @@ export TAURI_SIGNING_PRIVATE_KEY="$KEY"
 # empty string so the signer accepts it without an interactive prompt.
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
 
-echo "==> [2/6] bump versions in Cargo.toml + tauri.conf.json to $VERSION"
+echo "==> [2/6] bump versions in Cargo.toml + tauri.conf.json + workspace package.json files to $VERSION"
 sed -i '' "s/^version = \"[0-9.]*\"$/version = \"$VERSION\"/" src-tauri/Cargo.toml
 sed -i '' "s/\"version\": \"[0-9.]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+# PWA bundle reads `__APP_VERSION__` from packages/ctrl-web/package.json
+# (see vite.config.ts). Without bumping these two files the version pill /
+# Settings / Irisy footer all show the stale npm-side version even when
+# the Rust binary reports the correct one via `app_meta`.
+sed -i '' "s/\"version\": \"[0-9.]*\"/\"version\": \"$VERSION\"/" package.json
+sed -i '' "s/\"version\": \"[0-9.]*\"/\"version\": \"$VERSION\"/" packages/ctrl-web/package.json
 # Sync Cargo.lock so the build doesn't error on lockfile drift.
 (cd src-tauri && cargo update -p ctrl --offline 2>/dev/null || cargo update -p ctrl) >/dev/null 2>&1 || true
 

@@ -23,45 +23,18 @@ When a keycap declares `target: "hermes-skill"`, the kernel generates a Hermes A
 
 ## 3. SKILL.md template
 
-The generator fills this template from the manifest:
+The generator fills a fixed template from the manifest:
 
-```markdown
----
-name: <manifest.name>
-version: <manifest.version>
-description: <manifest.description>
-keycap_id: <manifest.id>
-ctrl_managed: true
----
+- **Frontmatter** — `name`, `version`, `description` (mirrored from manifest), plus `keycap_id` and `ctrl_managed: true` to mark CTRL-owned skills.
+- **`# <name>`** heading + manifest description body.
+- **`## When to use`** — derived from `manifest.flow` (intent inference) OR an explicit `manifest.skill_when_to_use` field when the author wants to override.
+- **`## How to invoke`** — `manifest.config_schema.documentation` if present, else default text.
+- **`## Inputs`** — derived from `manifest.config_schema.properties`.
+- **`## Examples`** — sourced from `manifest.examples[]` if present.
+- **`## Constraints`** — natural-language render of `manifest.capabilities[]` (what the skill can / cannot do).
+- **`## Related tools`** — auto-listed CTRL kernel MCP tools the skill can call (`vault.*` / `kv.*` / `llm.chat` / `mcp.proxy_*`).
 
-# <manifest.name>
-
-<manifest.description>
-
-## When to use
-
-<derived from manifest.flow OR explicit manifest.skill_when_to_use>
-
-## How to invoke
-
-<manifest.config_schema.documentation if present, else default text>
-
-## Inputs
-
-<derived from manifest.config_schema.properties>
-
-## Examples
-
-<from manifest.examples[] if present>
-
-## Constraints
-
-<from manifest.capabilities[] — natural-language list of what this skill can/cannot do>
-
-## Related tools
-
-<auto-list of CTRL kernel MCP tools the skill can call (vault.* / kv.* / llm.chat / mcp.proxy_*)>
-```
+*(SKILL.md template body elided. Implementation: `src-tauri/src/kernel/skill_generator.rs` + TS mirror in `packages/ctrl-keycap-sdk/src/skill-generator.ts`.)*
 
 ## 4. Update behavior (per ADR-018 3-tier)
 

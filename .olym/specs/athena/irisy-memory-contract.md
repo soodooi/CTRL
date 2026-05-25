@@ -23,40 +23,13 @@
 
 The single surface Irisy uses to talk to long-term memory. Other personas (Janus / Talos / Mnemosyne) will share it.
 
-```ts
-// packages/ctrl-memory/src/index.ts  (target package)
-export type MemoryKind = 'user_fact' | 'skill_outcome' | 'coding_context' | 'open_thread';
+- `MemoryKind = 'user_fact' | 'skill_outcome' | 'coding_context' | 'open_thread'`.
+- `MemoryRecord` = `{ text, kind, metadata? }` — metadata is kind-specific (see §3).
+- `MemoryHit` = `{ id, text, score (semantic similarity 0-1), kind, metadata, created_at (ISO) }`.
+- `MemoryFilter` = `{ kind?, since? (ISO), metadata? (key-equality match) }`.
+- `MemoryClient` exposes `add(record)`, `search(query, { topK?, filter? }?)`, `get(id)`, `delete(id)`, `history(id)` (Mem0 history pass-through), `deleteAll()` (user-triggered wipe).
 
-export interface MemoryRecord {
-  text: string;
-  kind: MemoryKind;
-  metadata?: Record<string, unknown>; // kind-specific, see §3
-}
-
-export interface MemoryHit {
-  id: string;
-  text: string;
-  score: number;            // semantic similarity 0–1
-  kind: MemoryKind;
-  metadata: Record<string, unknown>;
-  created_at: string;       // ISO
-}
-
-export interface MemoryFilter {
-  kind?: MemoryKind | MemoryKind[];
-  since?: string;           // ISO
-  metadata?: Record<string, unknown>; // key-equality match
-}
-
-export interface MemoryClient {
-  add(record: MemoryRecord): Promise<{ id: string }>;
-  search(query: string, opts?: { topK?: number; filter?: MemoryFilter }): Promise<MemoryHit[]>;
-  get(id: string): Promise<MemoryHit | null>;
-  delete(id: string): Promise<void>;
-  history(id: string): Promise<MemoryHit[]>; // Mem0 history() pass-through
-  deleteAll(): Promise<void>;                 // user-triggered wipe
-}
-```
+*(TS interface definitions elided. Implementation: `packages/ctrl-memory/src/index.ts`.)*
 
 `tenant_id` is NEVER in the SDK — server derives it from the bearer token. SDK constructor takes `{ baseUrl, getAuthToken }`; nothing else.
 
@@ -77,16 +50,14 @@ Pruning is Athena's job — Irisy runs a tiny client-side sweep at session-open 
 
 ## 4. Wire format
 
-REST over HTTPS at `https://api.ctrlapplab.com/v1/memory/*`. Caddy reverse-proxies to internal Mem0 OSS REST on `127.0.0.1:9100`.
+REST over HTTPS at `https://api.ctrlapplab.com/v1/memory/*`. Caddy reverse-proxies to internal Mem0 OSS REST on `127.0.0.1:9100`. Six endpoints:
 
-```
-POST   /v1/memory/records
-GET    /v1/memory/records/:id
-DELETE /v1/memory/records/:id
-POST   /v1/memory/search                # body: { query, top_k, filter }
-GET    /v1/memory/records/:id/history
-DELETE /v1/memory                       # wipe all (user-triggered)
-```
+- `POST /v1/memory/records` — add a record
+- `GET /v1/memory/records/:id` — fetch by id
+- `DELETE /v1/memory/records/:id` — delete by id
+- `POST /v1/memory/search` (body: `{ query, top_k, filter }`)
+- `GET /v1/memory/records/:id/history`
+- `DELETE /v1/memory` — wipe all (user-triggered)
 
 The SDK's clean shape (§2) translates inside `@ctrl/memory` to Mem0's native request body (`messages: [...]`, `user_id`, `metadata`). PWA / Irisy code never sees Mem0's shape.
 

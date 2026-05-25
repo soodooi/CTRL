@@ -1,18 +1,23 @@
 // Tauri 2 #[tauri::command] handlers — the JS↔Rust bridge.
 //
 // Per ADR-002 §3 + §6, the PWA calls into the Rust kernel through these
-// handlers (instead of the UniFFI path that the W3 .NET surface uses). Each
-// command is capability-gated; the kernel's CapabilityBroker decides whether
-// the invocation is allowed.
+// handlers (instead of the UniFFI path the retired W3 .NET surface used).
+// Each command is capability-gated; the kernel's CapabilityBroker decides
+// whether the invocation is allowed.
 //
 // Commands grouped by domain:
-//   • kernel   — keycap install / list / run; MCP introspection + invoke
-//   • stss     — subscribe / publish / list streams
-//   • memory   — read_log / append / query AI memory event store
-//   • keychain — BYOK API key store / get / delete
-//
-// Skeleton stage (sub-PR b): each handler returns NotImplementedYet so the
-// JS bridge can be wired before kernel integration in sub-PR c.
+//   • kernel    — keycap install / list / run; MCP introspection + invoke
+//   • chat      — streaming LLM via Tauri events (Irisy companion)
+//   • irisy     — hermes wire (init / chat / install / safe upgrade)
+//   • system    — kernel_status / app_meta / changelog / updater
+//   • config    — typed LLM provider configuration
+//   • draft / draft_run / workshop — keycap authoring surface
+//   • code_space — PTY subprocess control
+//   • vault     — Obsidian-compatible markdown store
+//   • storage   — per-keycap localStorage + cache
+//   • stss      — subscribe / publish / list streams (CBOR WS bridge)
+//   • memory    — read_log / append / query (event store)
+//   • keychain  — BYOK API key store / get / delete
 
 pub mod chat;
 pub mod code_space;
@@ -49,6 +54,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::irisy::irisy_init,
             $crate::commands::irisy::irisy_chat_hermes,
             $crate::commands::irisy::irisy_upgrade_hermes,
+            $crate::commands::irisy::irisy_upgrade_hermes_safe,
             // system — kernel health (PWA status bar Phase 1F) + build version pill
             // + changelog + auto-update check (Settings → About) + Hide button fallback
             $crate::commands::system::kernel_status,

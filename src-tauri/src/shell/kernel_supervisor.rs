@@ -102,11 +102,6 @@ impl KernelSupervisor {
         // In-process: kernel boots synchronously, ready returns immediately.
         Ok(())
     }
-
-    pub fn shutdown() -> Result<()> {
-        tracing::info!("KernelSupervisor::shutdown");
-        Ok(())
-    }
 }
 
 /// Write the kernel handshake file at `~/.ctrl/state/kernel-handshake.json`

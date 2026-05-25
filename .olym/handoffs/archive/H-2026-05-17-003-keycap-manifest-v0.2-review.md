@@ -35,11 +35,7 @@ Skip for v0.2: `i18n`, `screenshots`, `signature`. Add in v0.3 when store ships.
 
 OAuth is auth-method, not transport. A real OAuth keycap is `http-tool` + `capabilities.oauth`. Keeping `oauth-tool` as its own variant forces a fake distinction and makes "GitHub OAuth that also calls REST" awkward.
 
-New enum (6 values):
-
-```
-http-tool | cli-tool | daemon-rpc-tool | third-party | stss-bridge | builtin
-```
+New enum (6 values): `http-tool` | `cli-tool` | `daemon-rpc-tool` | `third-party` | `stss-bridge` | `builtin`.
 
 Pattern E (OAuth) → `mcp.variant: http-tool` + `capabilities.oauth: { provider, scopes }`. ADR-010 §5.2 already lists oauth as a capability, this aligns the manifest to it.
 
@@ -59,25 +55,9 @@ Future trigger: when 3+ keycaps need "either A or B but not both", add `capabili
 
 **Yes, must sandbox.** Free-form shell in `check:` is a clean RCE surface — manifest signed by no one, executed at install. Match the structured form `daemons` already uses.
 
-Replace:
+Replace the raw-shell form (`check: "command -v <name>"`) with a structured `check_method` enum (`in_path` / `at_path` / `version_match`), optionally accompanied by `at_path` (when `at_path`) / `min_version` + `version_command: [<argv>]` (when `version_match`) / `install_hint`.
 
-```yaml
-binaries:
-  - name: betterdisplaycli
-    check: "command -v betterdisplaycli"   # ❌ raw shell
-```
-
-With:
-
-```yaml
-binaries:
-  - name: betterdisplaycli
-    check_method: in_path                  # enum: in_path | at_path | version_match
-    at_path: /usr/local/bin/betterdisplaycli   # only if check_method == at_path
-    min_version: "2.0.0"                       # only if check_method == version_match
-    version_command: ["betterdisplaycli", "--version"]
-    install_hint: "..."
-```
+*(YAML before/after elided. Implementation: schema lives in `.olym/specs/tool-manifest/spec.md` §preconditions; reference manifests under `share/manifests/`.)*
 
 `version_command` is the only place a process gets spawned, and its `argv[0]` MUST equal `name` (validated at parse). No shell interpolation, no `bash -c`.
 

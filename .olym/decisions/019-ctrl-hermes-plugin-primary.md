@@ -48,34 +48,12 @@ ADR-013 is not wrong; it's necessary as the kernel-side IPC. But its role demote
 
 ### 2. Plugin shape
 
-```yaml
-# ~/.hermes/plugins/ctrl/plugin.yaml
-name: ctrl
-version: 0.1.0
-kind: tool
-description: CTRL workbench tools — keycap invocation, vault read/write, kv, llm, mcp proxy
-author: CTRL team
-website_url: https://github.com/soodooi/CTRL
-provides_tools: true
-```
+Two files at `~/.hermes/plugins/ctrl/`:
 
-```python
-# ~/.hermes/plugins/ctrl/register.py
-from hermes_agent.plugin_api import PluginContext, register_tool
+- `plugin.yaml` — declarative metadata: `name: ctrl`, `kind: tool`, `provides_tools: true`, plus `version` / `description` / `author` / `website_url`. Schema authoritative in `.olym/specs/ctrl-hermes-plugin/spec.md`.
+- `register.py` — Python handler module. Defines a `register(ctx: PluginContext)` function that calls `hermes_agent.plugin_api.register_tool` once per kernel-backed tool (vault read/write/list/search, kv get/set, llm chat, keycap invoke, mcp proxy). Each tool body is a thin shim — no business logic, only a forward to the kernel MCP server.
 
-def register(ctx: PluginContext) -> None:
-    # Each tool wraps a kernel MCP server call (ADR-013 wire).
-    # No business logic in the plugin — pure adapter from hermes
-    # plugin protocol to kernel MCP protocol.
-    register_tool(ctx, _vault_read)
-    register_tool(ctx, _vault_write)
-    register_tool(ctx, _kv_get)
-    register_tool(ctx, _kv_set)
-    register_tool(ctx, _llm_chat)
-    register_tool(ctx, _keycap_invoke)
-    register_tool(ctx, _mcp_proxy_call)
-    # ...
-```
+*(Plugin handler scaffolding elided. Implementation: `packages/ctrl-hermes-plugin/ctrl/register.py`.)*
 
 ### 3. Plugin handler → kernel IPC
 

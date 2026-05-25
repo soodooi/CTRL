@@ -13,36 +13,13 @@ For Irisy's Code Space (12 tiles in `/irisy`), each tile subscribes to one runni
 
 Athena consumer interface (already shipped at `packages/ctrl-web/src/lib/coding-streams.ts`):
 
-```ts
-interface CodingStream {
-  id: string;
-  source: 'claude' | 'cursor' | 'codex' | 'gemini-cli' | 'terminal' | 'unknown';
-  label: string;                  // 'CTRL/ctrl-web' or 'olym-core'
-  cwd?: string;
-  pid?: number;
-  discoveredAt: number;           // epoch ms
-  status: 'idle' | 'streaming' | 'paused' | 'gone';
-}
+- `CodingStream` carries `id`, `source` (`'claude' | 'cursor' | 'codex' | 'gemini-cli' | 'terminal' | 'unknown'`), `label` (e.g. `'CTRL/ctrl-web'`), optional `cwd` and `pid`, `discoveredAt: number` (epoch ms), and `status: 'idle' | 'streaming' | 'paused' | 'gone'`.
+- `CodingStreamChunk` carries `text` (ANSI passthrough OK; Athena renders pre-wrap), `seq` (monotonic per stream), and `ts` (epoch ms).
+- `CodingStreamProvider` exposes `list()`, `onListChange(cb)` (returns unsubscribe), and `subscribe(id, signal?) -> AsyncIterable<CodingStreamChunk>`.
 
-interface CodingStreamChunk {
-  text: string;                   // ANSI passthrough OK; Athena renders pre-wrap
-  seq: number;                    // monotonic per stream
-  ts: number;                     // epoch ms
-}
+*(TS interfaces elided. Implementation: `packages/ctrl-web/src/lib/coding-streams.ts`.)*
 
-interface CodingStreamProvider {
-  list(): Promise<CodingStream[]>;
-  onListChange(cb: (s: readonly CodingStream[]) => void): () => void;
-  subscribe(id: string, signal?: AbortSignal): AsyncIterable<CodingStreamChunk>;
-}
-```
-
-Athena's `MockCodingStreamProvider` fulfills this today with 5 fake sessions so Bao can see the tile UX. Once Zeus's real provider exists, Athena swaps the factory one line:
-
-```ts
-// lib/coding-streams.ts → createCodingStreamProvider()
-return new TauriCodingStreamProvider();  // instead of MockCodingStreamProvider
-```
+Athena's `MockCodingStreamProvider` fulfills this today with 5 fake sessions so Bao can see the tile UX. Once Zeus's real provider exists, Athena swaps the factory by returning `new TauriCodingStreamProvider()` from `createCodingStreamProvider()` instead of `MockCodingStreamProvider`.
 
 ---
 
@@ -52,26 +29,14 @@ Tauri-side surface that Athena will wrap with `TauriCodingStreamProvider`:
 
 ### Commands (Rust `#[tauri::command]`)
 
-```rust
-#[tauri::command]
-async fn coding_streams_list() -> Result<Vec<CodingStreamDto>, String>;
-//   → snapshot of currently-known streams
+- `coding_streams_list() -> Result<Vec<CodingStreamDto>, String>` — snapshot of currently-known streams.
+- `coding_streams_send(stream_id, input) -> Result<(), String>` — bidirectional input (write to PTY). v1.0 doesn't surface an input box yet; ship the command anyway.
 
-#[tauri::command]
-async fn coding_streams_send(stream_id: String, input: String) -> Result<(), String>;
-//   → bidirectional input (write to PTY). For v1.0 of this feature Athena
-//     doesn't surface the input box yet; ship the command anyway.
-```
-
-`CodingStreamDto` mirrors the TS `CodingStream` shape (snake_case fields fine).
+`CodingStreamDto` mirrors the TS `CodingStream` shape (snake_case fields fine). *(Command signatures elided — implementation will live in `src-tauri/src/commands/coding_streams.rs` once zeus delivers.)*
 
 ### Events (emitted via `app.emit_all`)
 
-```text
-coding-streams:list-changed         payload: { streams: CodingStreamDto[] }
-coding-stream:<id>:chunk            payload: { text: string, seq: number, ts: number }
-coding-stream:<id>:status           payload: { status: 'idle' | 'streaming' | 'paused' | 'gone' }
-```
+Three event channels: `coding-streams:list-changed` (payload `{ streams: CodingStreamDto[] }`), `coding-stream:<id>:chunk` (payload `{ text, seq, ts }`), and `coding-stream:<id>:status` (payload `{ status: 'idle' | 'streaming' | 'paused' | 'gone' }`).
 
 The `:<id>:` middle segment is the stream id so Athena's subscription can listen to a specific stream without filtering. If that pattern is awkward, a single `coding-stream:chunk` with `{stream_id, …}` in payload is equally fine — let me know which.
 

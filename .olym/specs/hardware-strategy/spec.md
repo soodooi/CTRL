@@ -108,26 +108,9 @@ CTRL ships `@ctrl/stss-eink-android` SDK as APK. Boox owners install, pair with 
 - Android Kotlin lib (`@ctrl/stss-hw-android`) — for Boox + Pixel etc.
 - Swift Package (`@ctrl/stss-hw-swift`) — for iOS / iPadOS / visionOS
 
-Surface:
-```rust
-// Rust hardware vendor SDK
-use ctrl_stss_hw::{Device, Stream, CellKind};
+Surface: `Device::register(DeviceManifest { device_type, power_class, bandwidth_class })` returns a `Device`; `device.create_stream(id)` returns a `Stream`; `stream.emit_cell(CellKind::HardwareReading, payload)` pushes a cell (CBOR payload typically carries `ts_ms`, `frame_summary`, `ai_label`).
 
-let device = Device::register(DeviceManifest {
-    device_type: "ai_glasses",
-    power_class: PowerClass::AlwaysOn,
-    bandwidth_class: BandwidthClass::Mid,
-})?;
-
-let stream = device.create_stream("glasses-vision")?;
-
-// Emit cells
-stream.emit_cell(CellKind::HardwareReading, cbor!({
-    "ts_ms": now_ms(),
-    "frame_summary": "user looking at screen, code visible",
-    "ai_label": "coding_context",
-}))?;
-```
+*(Rust SDK example elided — implementation will land in `packages/ctrl-stss-hardware/rs/` once P11 starts.)*
 
 ### 5.2 P11.5 — Reference implementations (2-3 demos)
 

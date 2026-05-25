@@ -31,15 +31,7 @@ The Win shell does **NOT** own:
 
 ## 2. Toolchain
 
-```
-Windows 11 (build 22000+, ideally 22621 for full Mica)
-.NET 8.0 SDK
-Windows App SDK 1.5+ (formerly Project Reunion)
-WinUI 3 + Fluent Design System
-C# 12 (latest stable)
-Visual Studio 2022 17.8+ OR rider 2024.1+ OR vscode + C# Dev Kit
-Rust 1.95+ (already installed via rustup on this machine)
-```
+Windows 11 (build 22000+, ideally 22621 for full Mica). .NET 8.0 SDK, Windows App SDK 1.5+ (formerly Project Reunion), WinUI 3 + Fluent Design System, C# 12, Visual Studio 2022 17.8+ / Rider 2024.1+ / VSCode + C# Dev Kit, Rust 1.95+.
 
 ---
 
@@ -96,105 +88,23 @@ produce the same `ctrl_lib.dll` cdylib.
 
 ### 4.2 Rust core additions (P2.13)
 
-```toml
-# Cargo.toml
-[build-dependencies]
-cbindgen = "0.27"   # Already added or to be added
-```
+Add `cbindgen = "0.27"` as a `[build-dependencies]` entry in `Cargo.toml`. Add `cbindgen.toml` with `language = "C"`, an All-Rights-Reserved SPDX header, `include_guard = "CTRL_NATIVE_H"`, `sys_includes = ["stdint.h", "stdbool.h", "stddef.h"]`, and `[export] include = ["ctrl_native_*"]` (the prefix filter).
 
-New `cbindgen.toml`:
-```toml
-language = "C"
-header = "/* SPDX-License-Identifier: All-Rights-Reserved */"
-include_guard = "CTRL_NATIVE_H"
-no_includes = false
-sys_includes = ["stdint.h", "stdbool.h", "stddef.h"]
-[export]
-include = ["ctrl_native_*"]
-```
+Add `src/ffi/native.rs` next to `mod.rs` exposing `#[no_mangle] pub unsafe extern "C" fn` wrappers — all named `ctrl_native_*`. Each wrapper validates the input C string, calls the corresponding `crate::ffi` Rust function, and returns an `i32` status code (`0` = OK, negative = specific error). A `ctrl_native_string_free` wrapper drops `CString` ownership returned to C callers.
 
-New `src/ffi/native.rs` (alongside `mod.rs`):
-```rust
-//! Raw C ABI for Windows P/Invoke and other languages without UniFFI support.
-//! All exports prefixed `ctrl_native_*` so cbindgen filters them.
+*(Cargo.toml / cbindgen.toml / Rust FFI scaffolding elided — superseded by ADR-002 PWA pivot. Tauri 2 invoke() replaces the cbindgen+P/Invoke path.)*
 
-use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
-
-#[no_mangle]
-pub unsafe extern "C" fn ctrl_native_kernel_boot(data_dir: *const c_char) -> i32 {
-    if data_dir.is_null() { return -1; }
-    let s = match CStr::from_ptr(data_dir).to_str() {
-        Ok(s) => s,
-        Err(_) => return -2,
-    };
-    match crate::ffi::kernel_boot(s.to_string()) {
-        Ok(()) => 0,
-        Err(_) => -3,
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn ctrl_native_kernel_health(out: *mut *mut c_char) -> i32 {
-    let s = match crate::ffi::kernel_health() {
-        Ok(s) => s,
-        Err(_) => return -1,
-    };
-    let c = match CString::new(s) { Ok(c) => c, Err(_) => return -2 };
-    if !out.is_null() { *out = c.into_raw(); }
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn ctrl_native_string_free(p: *mut c_char) {
-    if !p.is_null() { drop(CString::from_raw(p)); }
-}
-
-// ... similar wrappers for mcp_register / mcp_connect / mcp_list_tools / mcp_invoke / etc.
-```
-
-build.rs invokes cbindgen at compile-time, emitting `ctrl_native.h`.
+`build.rs` invokes cbindgen at compile-time, emitting `ctrl_native.h`.
 
 ### 4.3 C# side (CtrlNative.cs)
 
-```csharp
-using System.Runtime.InteropServices;
+A `partial class CtrlNative` declares static partial methods using `[LibraryImport("ctrl_lib.dll", EntryPoint = "ctrl_native_*", StringMarshalling = StringMarshalling.Utf8)]` (NET 7+ source-generated P/Invoke — faster and safer than legacy `[DllImport]`). Each method maps 1:1 to a Rust `ctrl_native_*` export. A friendly `KernelHealthString()` wrapper retrieves the returned IntPtr, marshals it as UTF-8 via `Marshal.PtrToStringUTF8`, and frees it via `StringFree` in a `try/finally`.
 
-internal static partial class CtrlNative
-{
-    private const string DllName = "ctrl_lib.dll";
-
-    [LibraryImport(DllName, EntryPoint = "ctrl_native_kernel_boot", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial int KernelBoot(string dataDir);
-
-    [LibraryImport(DllName, EntryPoint = "ctrl_native_kernel_health")]
-    public static partial int KernelHealth(out IntPtr outPtr);
-
-    [LibraryImport(DllName, EntryPoint = "ctrl_native_string_free")]
-    public static partial void StringFree(IntPtr ptr);
-
-    public static string? KernelHealthString()
-    {
-        if (KernelHealth(out var ptr) != 0) return null;
-        try { return Marshal.PtrToStringUTF8(ptr); }
-        finally { StringFree(ptr); }
-    }
-}
-```
-
-`LibraryImport` (NET 7+ source-generated P/Invoke) is faster and safer
-than legacy `DllImport`.
+*(C# P/Invoke scaffolding elided — superseded by ADR-002 PWA pivot.)*
 
 ### 4.4 Build Rust core for Win target
 
-```powershell
-cd src-tauri
-cargo build --release --target x86_64-pc-windows-msvc
-# Produces target/x86_64-pc-windows-msvc/release/ctrl_lib.dll
-copy target\x86_64-pc-windows-msvc\release\ctrl_lib.dll ..\win\
-```
-
-Or set MSBuild post-build to copy dll into output folder automatically.
+`cargo build --release --target x86_64-pc-windows-msvc` produces `target/x86_64-pc-windows-msvc/release/ctrl_lib.dll`; copy to `win/`. Or wire up an MSBuild post-build step to copy automatically.
 
 ---
 
@@ -230,44 +140,13 @@ from background threads (`Task.Run` / `ThreadPool`) to keep MainThread free.
 
 ### 6.2 Keycap visual (5-layer shadow)
 
-WinUI 3 supports CSS-like shadow chains via `DropShadow` composition layer.
-Approximate stack:
+WinUI 3 supports CSS-like shadow chains via the `DropShadow` composition layer. A `Border` (CornerRadius 10) with a vertical white-to-gray `LinearGradientBrush` background and a `ThemeShadow` provides the base; composition code-behind iterates 5 `compositor.CreateDropShadow()` calls (varying blur / opacity / offset per the spec) to build the highlight inset / bevel / ground / near drop / far drop stack.
 
-```xml
-<Border x:Name="Keycap" CornerRadius="10">
-    <Border.Background>
-        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#FFFFFFFF" Offset="0"/>
-            <GradientStop Color="#FFF0F0F3" Offset="1"/>
-        </LinearGradientBrush>
-    </Border.Background>
-    <Border.Shadow>
-        <ThemeShadow/>
-    </Border.Shadow>
-    <!-- Composition layer code-behind to add 5-layer drop shadow -->
-</Border>
-```
-
-5-layer composition (code-behind):
-```csharp
-var compositor = ElementCompositionPreview.GetElementVisual(keycap).Compositor;
-var shadow = compositor.CreateDropShadow();
-shadow.BlurRadius = 16f;
-shadow.Color = Color.FromArgb(20, 0, 0, 0);
-shadow.Offset = new Vector3(0, 12, 0);
-// Repeat for the other 4 layers (highlight inset / bevel / ground / near drop)
-```
+*(XAML + composition scaffolding elided — superseded by ADR-002 PWA pivot. CSS shadow stack lives in `packages/ctrl-web/src/styles/keycap.module.css`.)*
 
 ### 6.3 Spring animation
 
-WinUI 3 has `SpringVector3NaturalMotionAnimation`:
-```csharp
-var spring = compositor.CreateSpringVector3Animation();
-spring.DampingRatio = 0.7f;
-spring.Period = TimeSpan.FromMilliseconds(120);
-spring.FinalValue = new Vector3(1.05f, 1.05f, 1f);
-visual.StartAnimation("Scale", spring);
-```
+WinUI 3 has `SpringVector3NaturalMotionAnimation`: create via `compositor.CreateSpringVector3Animation()`, set `DampingRatio = 0.7`, `Period = 120ms`, `FinalValue = (1.05, 1.05, 1)`, then `visual.StartAnimation("Scale", spring)`.
 
 ### 6.4 Tokens
 
@@ -278,19 +157,9 @@ Same JSON file format as Mac shell — single source of design truth.
 
 ## 7. Hotkey detection (Win32 API)
 
-WinUI 3 doesn't provide global hotkey API directly. Use Win32 P/Invoke:
+WinUI 3 doesn't provide a global hotkey API directly. P/Invoke `user32.dll` for `RegisterHotKey` (combo-based) and `SetWindowsHookExW` (low-level keyboard hook for single-Ctrl detection). Single-key Ctrl-only detection requires the latter because `RegisterHotKey` needs at least one non-modifier key.
 
-```csharp
-[LibraryImport("user32.dll", SetLastError = true)]
-public static partial int RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-const uint MOD_CONTROL = 0x0002;
-const uint VK_NONE = 0; // Ctrl-only is unusual; may need WH_KEYBOARD_LL hook
-
-// Better: low-level keyboard hook for single-Ctrl detection
-[LibraryImport("user32.dll", SetLastError = true)]
-public static partial IntPtr SetWindowsHookExW(int idHook, KeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
-```
+*(Win32 P/Invoke declarations elided — superseded by ADR-002 PWA pivot. Active hotkey path lives in `src-tauri/src/shell/hotkey.rs`.)*
 
 Single-Ctrl detection requires `WH_KEYBOARD_LL` low-level hook (because
 `RegisterHotKey` needs at least one non-modifier key). The hook callback

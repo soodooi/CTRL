@@ -124,18 +124,7 @@ Keycap appears in user's pool
 
 ## 6. Quality scoring
 
-Each keycap has a composite score:
-
-```
-score = 
-  0.30 * install_count_normalized +
-  0.25 * return_rate (% of installers who use again after 7d) +
-  0.20 * star_rating (1-5 stars from users) +
-  0.15 * crash_rate_inverse (1 - crashes/invokes) +
-  0.10 * creator_reputation
-```
-
-Ranking in search/browse uses score. New keycaps get a "new" badge + boost factor for first 7 days (fairness for newcomers).
+Each keycap has a composite score with five weighted components: `install_count_normalized` (0.30), `return_rate` (% of installers who use again after 7d, 0.25), `star_rating` (1-5 stars from users, 0.20), `crash_rate_inverse` (= 1 − crashes/invokes, 0.15), and `creator_reputation` (0.10). Ranking in search/browse uses this score. New keycaps get a "new" badge + boost factor for first 7 days (fairness for newcomers).
 
 ---
 
@@ -166,47 +155,14 @@ ctrl-market worker
 └── /api/wallet/:user   GET — creator views earnings
 ```
 
-D1 schema:
+D1 schema spans four tables:
 
-```sql
-CREATE TABLE manifests (
-    id            TEXT PRIMARY KEY,
-    version       TEXT,
-    creator_id    TEXT NOT NULL,
-    spec_cbor     BLOB,
-    status        TEXT,  -- 'pending' / 'published' / 'rejected' / 'deprecated'
-    score         REAL,
-    install_count INTEGER,
-    invoke_count  INTEGER,
-    created_at_ms INTEGER,
-    updated_at_ms INTEGER
-);
+- **`manifests`** — `id` PK, `version`, `creator_id`, `spec_cbor` blob, `status` (`pending` / `published` / `rejected` / `deprecated`), `score` REAL, `install_count`, `invoke_count`, `created_at_ms`, `updated_at_ms`.
+- **`installs`** — autoinc `id`, `manifest_id`, `user_id`, `installed_at`, `last_used_at`, `uninstalled_at`.
+- **`invocations`** — autoinc `id`, `manifest_id`, `user_id`, `invoked_at_ms`, `duration_ms`, `success` BOOL.
+- **`creator_wallets`** — `creator_id` PK, `balance_cents`, `paid_total_cents`, `last_payout_at`.
 
-CREATE TABLE installs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    manifest_id   TEXT,
-    user_id       TEXT,
-    installed_at  INTEGER,
-    last_used_at  INTEGER,
-    uninstalled_at INTEGER
-);
-
-CREATE TABLE invocations (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    manifest_id   TEXT,
-    user_id       TEXT,
-    invoked_at_ms INTEGER,
-    duration_ms   INTEGER,
-    success       BOOLEAN
-);
-
-CREATE TABLE creator_wallets (
-    creator_id    TEXT PRIMARY KEY,
-    balance_cents INTEGER,
-    paid_total_cents INTEGER,
-    last_payout_at INTEGER
-);
-```
+*(SQL DDL elided. Implementation: `ctrl-cloud` repo — `ctrl-market/migrations/` (separate repo).)*
 
 ---
 

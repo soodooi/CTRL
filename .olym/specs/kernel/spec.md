@@ -19,33 +19,9 @@ The L1 Kernel is the **only privileged code path** in CTRL. It exposes 5 primiti
 
 ### 2.1 Actor
 
-```rust
-pub trait Actor: Send + 'static {
-    type Message: Event;
-    type State: Send;
-    
-    fn name(&self) -> &str;
-    fn handle(
-        &mut self,
-        state: &mut Self::State,
-        msg: Self::Message,
-        ctx: ActorContext,
-    ) -> Vec<Effect>;
-    
-    fn on_spawn(&mut self, _state: &mut Self::State, _ctx: ActorContext) -> Vec<Effect> {
-        vec![]
-    }
-    
-    fn on_shutdown(&mut self, _state: &mut Self::State) {}
-}
+The `Actor` trait carries an associated `Message: Event` type plus a `State: Send` type, and exposes `name()`, the pure handler `handle(state, msg, ctx) -> Vec<Effect>`, plus optional `on_spawn` / `on_shutdown` hooks. Each handler call receives an `ActorContext` carrying `self_id`, optional `parent_id`, the static `Capability`, and an optional `deadline_ms`.
 
-pub struct ActorContext {
-    pub self_id: ActorId,
-    pub parent_id: Option<ActorId>,
-    pub capability: Capability,
-    pub deadline_ms: Option<u64>,
-}
-```
+*(The `Actor` trait + `ActorContext` definitions. Implementation: `src-tauri/src/kernel/actor.rs`.)*
 
 **Properties**:
 - Each actor has its own state (no shared mutable memory across actors)
@@ -55,36 +31,17 @@ pub struct ActorContext {
 
 ### 2.2 Capability
 
-```rust
-pub struct Capability {
-    tokens: BTreeSet<CapToken>,
-}
+`Capability` is a `BTreeSet<CapToken>`. `CapToken` is an enum grouping every authority an actor can request, organized into 6 buckets:
 
-pub enum CapToken {
-    // LLM
-    LlmCall { model: String, max_tokens: Option<u32> },
-    // Storage
-    FsRead { path_glob: String },
-    FsWrite { path_glob: String },
-    KvRead { namespace: String },
-    KvWrite { namespace: String },
-    // Network
-    HttpGet { url_glob: String },
-    HttpPost { url_glob: String },
-    // System
-    ClipboardRead,
-    ClipboardWrite,
-    HotkeyRegister { combo: String },
-    // MCP
-    McpInvoke { server: String, tool_glob: String },
-    // ST-SS
-    StssEmit { stream_id: String },
-    StssSubscribe { stream_id: String },
-    // Inter-actor
-    Spawn { prototype: String },
-    Send { target: ActorId },
-}
-```
+- **LLM** — `LlmCall { model, max_tokens }`
+- **Storage** — `FsRead { path_glob }`, `FsWrite { path_glob }`, `KvRead { namespace }`, `KvWrite { namespace }`
+- **Network** — `HttpGet { url_glob }`, `HttpPost { url_glob }`
+- **System** — `ClipboardRead`, `ClipboardWrite`, `HotkeyRegister { combo }`
+- **MCP** — `McpInvoke { server, tool_glob }`
+- **ST-SS** — `StssEmit { stream_id }`, `StssSubscribe { stream_id }`
+- **Inter-actor** — `Spawn { prototype }`, `Send { target }`
+
+*(The `Capability` + `CapToken` enum. Implementation: `src-tauri/src/kernel/capability.rs`.)*
 
 **Rules**:
 - Capabilities are **static** — declared in manifest at actor spawn time
@@ -92,53 +49,16 @@ pub enum CapToken {
 - Child actors inherit a SUBSET of parent capability (no escalation)
 - Capability tokens are immutable post-spawn; mutation requires re-spawn
 
-**Example**: a translation keycap manifest declares:
-```yaml
-capabilities:
-  - ClipboardRead
-  - ClipboardWrite
-  - LlmCall: { model: "workers-ai/qwen-3", max_tokens: 4096 }
-```
-Any attempt to read filesystem or call non-Qwen model is rejected by Capability Broker.
+**Example**: a translation keycap manifest declares `capabilities: [ClipboardRead, ClipboardWrite, LlmCall { model: "workers-ai/qwen-3", max_tokens: 4096 }]`. Any attempt to read filesystem or call a non-Qwen model is rejected by the Capability Broker.
 
 ### 2.3 Event
 
-```rust
-pub enum Event {
-    Cell {
-        kind: CellKind,
-        ts_ms: u64,
-        payload: CborValue,
-    },
-    Op {
-        kind: OpKind,
-        ts_ms: u64,
-        payload: CborValue,
-    },
-}
+`Event` is an enum with two variants — `Cell { kind: CellKind, ts_ms, payload: CborValue }` (passive observation) and `Op { kind: OpKind, ts_ms, payload }` (action / state transition).
 
-pub enum CellKind {
-    UserInput,       // keypress, click, voice
-    ClipboardSnapshot,
-    ScreenSnapshot,
-    HardwareReading, // camera frame, audio chunk, sensor
-    LlmResponse,
-    McpToolResult,
-    ApiResponse,
-}
+- `CellKind` covers `UserInput`, `ClipboardSnapshot`, `ScreenSnapshot`, `HardwareReading` (camera frame / audio / sensor), `LlmResponse`, `McpToolResult`, `ApiResponse`.
+- `OpKind` covers keycap lifecycle (`KeycapInvoked` / `KeycapCompleted` / `KeycapFailed`), actor lifecycle (`ActorSpawned` / `ActorTerminated`), `HotkeyTriggered`, and LLM streaming (`LlmCallStarted` / `LlmCallChunk` / `LlmCallFinished`).
 
-pub enum OpKind {
-    KeycapInvoked,
-    KeycapCompleted,
-    KeycapFailed,
-    ActorSpawned,
-    ActorTerminated,
-    HotkeyTriggered,
-    LlmCallStarted,
-    LlmCallChunk,
-    LlmCallFinished,
-}
-```
+*(`Event` + `CellKind` + `OpKind` enums. Implementation: `src-tauri/src/kernel/event.rs`.)*
 
 **Properties**:
 - All inter-actor communication uses Event
@@ -148,18 +68,9 @@ pub enum OpKind {
 
 ### 2.4 Channel
 
-```rust
-pub struct Channel<T: Event> {
-    tx: ChannelTx<T>,
-    rx: ChannelRx<T>,
-    capacity: usize,
-}
+`Channel<T: Event>` wraps a typed `tx` / `rx` pair with a bounded `capacity` (Tokio MPSC). Static helpers `Channel::bounded(capacity)` constructs the pair; `Channel::typed::<U>()` requests a re-typed view (compile-time message check).
 
-impl<T: Event> Channel<T> {
-    pub fn bounded(capacity: usize) -> (ChannelTx<T>, ChannelRx<T>) { ... }
-    pub fn typed<U: Event>(&self) -> Result<Channel<U>, TypeError> { ... }
-}
-```
+*(`Channel<T>` definition. Implementation: `src-tauri/src/kernel/channel.rs`.)*
 
 **Properties**:
 - Typed pipes between actors (compile-time message type check)
@@ -168,48 +79,17 @@ impl<T: Event> Channel<T> {
 
 ### 2.5 Effect
 
-```rust
-pub enum Effect {
-    LlmCall {
-        model: String,
-        prompt: LlmPrompt,
-        deadline_ms: u64,
-        reply_to: ActorId,
-    },
-    McpInvoke {
-        server: String,
-        tool: String,
-        args: CborValue,
-        reply_to: ActorId,
-    },
-    EmitEvent {
-        target: ActorId,
-        event: Event,
-    },
-    SpawnActor {
-        prototype: String,
-        capability: Capability,
-        parent_id: ActorId,
-        initial_state: CborValue,
-    },
-    PersistEvent {
-        event: Event,
-        index: Vec<String>,  // for query
-    },
-    ShellExec {
-        cmd: String,
-        args: Vec<String>,
-        reply_to: ActorId,
-    },
-    HttpRequest {
-        method: HttpMethod,
-        url: String,
-        headers: BTreeMap<String, String>,
-        body: Option<CborValue>,
-        reply_to: ActorId,
-    },
-}
-```
+`Effect` is the enum of operations a handler can request the kernel perform on its behalf. Each effect carries the data needed to execute it plus a `reply_to: ActorId` for async result delivery (where applicable). Variants:
+
+- `LlmCall { model, prompt, deadline_ms, reply_to }`
+- `McpInvoke { server, tool, args, reply_to }`
+- `EmitEvent { target, event }`
+- `SpawnActor { prototype, capability, parent_id, initial_state }`
+- `PersistEvent { event, index }` (`index: Vec<String>` for query)
+- `ShellExec { cmd, args, reply_to }`
+- `HttpRequest { method, url, headers, body, reply_to }`
+
+*(`Effect` enum. Implementation: `src-tauri/src/kernel/effect.rs`.)*
 
 **Properties**:
 - Effects are **values returned from actor handlers**, not invoked directly
@@ -223,21 +103,9 @@ pub enum Effect {
 
 ### 3.1 Actor Scheduler
 
-```rust
-pub struct Scheduler {
-    actors: HashMap<ActorId, ActorHandle>,
-    priority_queue: PriorityHeap<ActorId>,
-    deadline_queue: BinaryHeap<DeadlineEntry>,
-}
+The `Scheduler` owns an `actors: HashMap<ActorId, ActorHandle>` plus a `priority_queue` and a `deadline_queue` (`BinaryHeap<DeadlineEntry>`). `ActorPriority` has 5 levels: `Hardware` (0, preempts all — camera/audio/hotkey), `LlmStream` (1, LLM streaming chunks), `UserAction` (2, keycap invocation / UI), `Background` (3, analytics / market sync), `Idle` (4).
 
-pub enum ActorPriority {
-    Hardware,    // 0 — preempts all (camera, audio, hotkey)
-    LlmStream,   // 1 — LLM streaming chunks
-    UserAction,  // 2 — keycap invocation, UI
-    Background,  // 3 — analytics, market sync
-    Idle,        // 4
-}
-```
+*(`Scheduler` + `ActorPriority`. Implementation: `src-tauri/src/kernel/scheduler.rs`.)*
 
 **RTOS-inspired scheduling**:
 - Priority preemption: hardware actors preempt user-action actors
@@ -246,18 +114,9 @@ pub enum ActorPriority {
 
 ### 3.2 Capability Broker
 
-```rust
-pub struct CapabilityBroker {
-    actor_caps: HashMap<ActorId, Capability>,
-    inheritance_graph: HashMap<ActorId, ActorId>,
-}
+`CapabilityBroker` holds `actor_caps: HashMap<ActorId, Capability>` and an `inheritance_graph` mapping child → parent. Two methods: `check(actor, effect)` verifies the actor's capability covers the requested effect's token; `derive_child(parent, requested)` derives a child capability constrained to a subset of the parent's tokens (no escalation).
 
-impl CapabilityBroker {
-    pub fn check(&self, actor: ActorId, effect: &Effect) -> Result<(), CapabilityError> { ... }
-    pub fn derive_child(&self, parent: ActorId, requested: Capability) 
-        -> Result<Capability, CapabilityError> { ... }
-}
-```
+*(`CapabilityBroker`. Implementation: `src-tauri/src/kernel/capability.rs` / `broker.rs`.)*
 
 **Rules**:
 - No ambient authority — every effect requires explicit capability token check
@@ -266,12 +125,9 @@ impl CapabilityBroker {
 
 ### 3.3 Event Bus
 
-```rust
-pub struct EventBus {
-    subscriptions: HashMap<EventFilter, Vec<ActorId>>,
-    persistence: EventStore,
-}
-```
+`EventBus` holds `subscriptions: HashMap<EventFilter, Vec<ActorId>>` and an `EventStore` for persistence.
+
+*(`EventBus`. Implementation: `src-tauri/src/kernel/event_bus.rs`.)*
 
 - Pub-sub with filter by `CellKind` / `OpKind` / payload patterns
 - All events persisted to local SQLite via WAL (durable)
@@ -279,18 +135,9 @@ pub struct EventBus {
 
 ### 3.4 LLM Port
 
-```rust
-pub trait LlmAdapter {
-    fn name(&self) -> &str;  // "workers-ai", "anthropic", "openai", "ollama"
-    fn supports(&self, model: &str) -> bool;
-    fn invoke(&self, prompt: LlmPrompt, deadline_ms: u64) -> BoxStream<LlmChunk>;
-}
+`LlmAdapter` is a trait — each adapter declares its `name()` (e.g. `workers-ai`, `anthropic`, `openai`, `ollama`), a `supports(model)` check, and `invoke(prompt, deadline_ms) -> BoxStream<LlmChunk>` for streaming inference. `LlmPort` owns the `adapters: Vec<Box<dyn LlmAdapter>>` plus a `fallback_chain: Vec<String>` (e.g. workers-ai/qwen → anthropic/claude → ollama/llama).
 
-pub struct LlmPort {
-    adapters: Vec<Box<dyn LlmAdapter>>,
-    fallback_chain: Vec<String>,  // ["workers-ai/qwen", "anthropic/claude", "ollama/llama"]
-}
-```
+*(`LlmAdapter` trait + `LlmPort`. Implementation: `src-tauri/src/kernel/llm_port.rs`.)*
 
 **Fallback logic**:
 - Try primary (CF Workers AI / Qwen) first
@@ -300,18 +147,9 @@ pub struct LlmPort {
 
 ### 3.5 MCP Host
 
-```rust
-pub struct McpHost {
-    discovered_servers: HashMap<String, McpServerHandle>,
-    sandbox: Arc<dyn Sandbox>,
-}
+`McpHost` owns `discovered_servers: HashMap<String, McpServerHandle>` plus a `sandbox: Arc<dyn Sandbox>`. Surface: `discover_from_registry(url)` returns available servers, `install(server)` adds one, `invoke(server, tool, args)` runs a tool call returning a CBOR result.
 
-impl McpHost {
-    pub async fn discover_from_registry(&mut self, url: &str) -> Result<Vec<McpServer>>;
-    pub async fn install(&mut self, server: &McpServer) -> Result<()>;
-    pub async fn invoke(&self, server: &str, tool: &str, args: CborValue) -> Result<CborValue>;
-}
-```
+*(`McpHost`. Implementation: `src-tauri/src/kernel/mcp_host.rs`.)*
 
 - Uses Anthropic MCP SDK (Rust port or shells out to TS reference impl)
 - Every MCP server runs inside WASM sandbox (Anthropic Sandbox Runtime port)
@@ -319,12 +157,9 @@ impl McpHost {
 
 ### 3.6 Persistence
 
-```rust
-pub struct EventStore {
-    db: SqlitePool,  // local
-    crdt: Option<YjsDoc>,  // optional cross-device sync
-}
-```
+`EventStore` holds a local `SqlitePool` plus an optional cross-device CRDT layer (`YjsDoc` proposed; final choice tracked in §8 Open RFC items).
+
+*(`EventStore`. Implementation: `src-tauri/src/kernel/persistence.rs`.)*
 
 - SQLite event store: `events(id, ts_ms, actor_id, kind, payload, idx_a, idx_b, idx_c)`
 - WAL for crash recovery
@@ -350,57 +185,28 @@ Every L3 userland actor runs inside a WASM sandbox. Choices for v1:
 
 ## 5. Persistence schema
 
-```sql
--- Event store
-CREATE TABLE events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts_ms       INTEGER NOT NULL,
-    actor_id    TEXT NOT NULL,
-    kind        TEXT NOT NULL,   -- "Cell:UserInput" / "Op:KeycapInvoked"
-    payload     BLOB NOT NULL,   -- CBOR
-    idx_a       TEXT,            -- optional index col (e.g., conversation_id)
-    idx_b       TEXT,
-    idx_c       TEXT
-);
-CREATE INDEX idx_events_ts ON events(ts_ms);
-CREATE INDEX idx_events_actor ON events(actor_id);
-CREATE INDEX idx_events_kind ON events(kind);
-CREATE INDEX idx_events_a ON events(idx_a) WHERE idx_a IS NOT NULL;
+Three SQLite tables underpin the event store:
 
--- Actor registry
-CREATE TABLE actors (
-    id            TEXT PRIMARY KEY,
-    prototype     TEXT NOT NULL,
-    parent_id     TEXT,
-    capability    BLOB NOT NULL,  -- CBOR-encoded Capability
-    state         BLOB,           -- CBOR snapshot, periodically updated
-    spawned_at_ms INTEGER NOT NULL,
-    status        TEXT NOT NULL   -- "running" / "terminated"
-);
+- **`events`** — `id` (autoinc PK), `ts_ms`, `actor_id`, `kind` (e.g. `Cell:UserInput` / `Op:KeycapInvoked`), `payload` (CBOR blob), plus three optional index columns `idx_a`/`idx_b`/`idx_c` for query (e.g. `conversation_id`). Indexed on `ts_ms`, `actor_id`, `kind`, and `idx_a` (partial, non-null).
+- **`actors`** — `id` (PK), `prototype`, `parent_id`, `capability` (CBOR), `state` (CBOR snapshot, periodic), `spawned_at_ms`, `status` (`running` / `terminated`).
+- **`manifests`** — `id` (PK), `version`, `source` (`builtin` / `market` / `local-dev`), `spec` (CBOR), `cached_at_ms`.
 
--- Manifest cache
-CREATE TABLE manifests (
-    id            TEXT PRIMARY KEY,
-    version       TEXT NOT NULL,
-    source        TEXT NOT NULL,  -- "builtin" / "market" / "local-dev"
-    spec          BLOB NOT NULL,  -- CBOR-encoded manifest
-    cached_at_ms  INTEGER NOT NULL
-);
-```
+*(SQL DDL elided. Implementation: `src-tauri/src/kernel/persistence/schema.sql` (or inline migrations in `kernel/persistence.rs`).)*
 
 ---
 
 ## 6. L2 SDK surface (TypeScript view)
 
-```typescript
-// @ctrl/kernel-sdk
-export function defineActor(manifest: ActorManifest): ActorPrototype;
-export function spawn(prototype: ActorPrototype, capability: Capability): ActorId;
-export function send(target: ActorId, event: Event): Promise<void>;
-export function subscribe(filter: EventFilter, handler: (e: Event) => void): Subscription;
-export function emit(effect: Effect): Promise<EffectResult>;
-export function capability(...tokens: CapToken[]): Capability;
-```
+`@ctrl/kernel-sdk` exports six top-level functions that wrap the corresponding L1 syscall:
+
+- `defineActor(manifest) -> ActorPrototype`
+- `spawn(prototype, capability) -> ActorId`
+- `send(target, event) -> Promise<void>`
+- `subscribe(filter, handler) -> Subscription`
+- `emit(effect) -> Promise<EffectResult>`
+- `capability(...tokens) -> Capability`
+
+*(L2 SDK signatures. Implementation: `packages/ctrl-kernel-sdk/src/index.ts`.)*
 
 L2 wraps L1 syscalls. L3 keycaps and creator manifests target L2, never L1 directly.
 

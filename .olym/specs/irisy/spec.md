@@ -156,14 +156,8 @@ CTRL Tauri installer remains ≤ 25 MB (ADR-003 budget preserved). On first laun
 3. PWA renders an onboarding pane (daedalus owns) showing:
    - "CTRL needs hermes (Python agent runtime, ~100 MB). Install now?"
    - One-click button that invokes kernel command `bootstrap_hermes`
-4. Kernel `bootstrap_hermes` — **default path = PyPI pip install** (zeus 2026-05-22 verified `hermes-agent==0.14.0` on PyPI):
-   ```
-   1. Check `python3 --version` >= 3.11 (else prompt user to install Python or auto-fetch via uv)
-   2. Create venv: `python3 -m venv ~/.ctrl/hermes-venv`
-   3. pip install: `~/.ctrl/hermes-venv/bin/pip install 'hermes-agent[mcp,web]'`
-   4. Verify: `~/.ctrl/hermes-venv/bin/hermes --version`
-   5. Start: `~/.ctrl/hermes-venv/bin/hermes gateway --port 8642`
-   ```
+4. Kernel `bootstrap_hermes` — **default path = PyPI pip install** (zeus 2026-05-22 verified `hermes-agent==0.14.0` on PyPI). Steps: (1) check `python3 --version` ≥ 3.11 (else prompt or auto-fetch via uv); (2) create venv at `~/.ctrl/hermes-venv`; (3) `pip install 'hermes-agent[mcp,web]'`; (4) verify `hermes --version`; (5) start `hermes gateway --port 8642`.
+
    **Optional quick path** = upstream `install.sh` (verified HTTP 200 at https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh as of 2026-05-22). Exposed as a `--quick-install` flag on `bootstrap_hermes` for users who already have `curl` + accept the upstream installer's uv-driven Python provisioning. Default stays pip — fewer moving parts, fewer failure modes, easier to reason about.
 
    Sets `~/.ctrl/hermes-venv/` (CTRL-scoped); hermes-side data lives at `~/.hermes/` (hermes's own default).
@@ -207,20 +201,9 @@ Hermes runs its own native plan-execute-observe agent loop. CTRL **does not** tr
 | **Improvement** | User-initiated "tweak this keycap" intent OR a function call to `patch_keycap_manifest` (kernel MCP tool, see §C6) | Switch to Patch editor (override diff visualisation) |
 | **Retire** | User-initiated "uninstall X" intent OR a function call to `uninstall_keycap` (kernel MCP tool) | Show retire confirmation + cleanup preview |
 
-**Verification spike required before C9 implementation**:
+**Verification spike required before C9 implementation**: after C4 (bootstrap_hermes) lands in alpha and before C9 (PWA inference), start `hermes gateway --port 8642`, obtain a bearer token via `hermes token`, POST a minimal `/v1/runs` request with a user message asking the agent to call any tool, then `curl -N` the run's `/events` SSE stream into an `sse-trace.log` file.
 
-```bash
-# Run after C4 (bootstrap_hermes) lands in alpha, before C9 (PWA inference)
-~/.ctrl/hermes-venv/bin/hermes gateway --port 8642 &
-TOKEN=$(~/.ctrl/hermes-venv/bin/hermes token)
-curl -X POST http://localhost:8642/v1/runs \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"call any tool"}]}'
-# Capture run_id, then:
-curl -N "http://localhost:8642/v1/runs/$RUN_ID/events" \
-  -H "Authorization: Bearer $TOKEN" > sse-trace.log
-```
+*(Spike commands elided — full snippet in `.olym/handoffs/H-2026-05-23-001-irisy-hermes-cli-eval.md`.)*
 
 Verify each row above against the captured `sse-trace.log` payloads. Any mismatch → update the inference rule table here and bump the spec version. **Unknown event types fall back to a generic "agent activity" notification** (failure mode B in §8).
 
@@ -243,64 +226,13 @@ Verify each row above against the captured `sse-trace.log` payloads. Any mismatc
 
 **Skills can also be installed independently of any keycap** (e.g. from agentskills.io upstream). Those are not under this spec's manifest schema — they are pure hermes skills.
 
-**`target=mcp-tool` flow** (default):
+**`target=mcp-tool` flow** (default): only `manifest.json`, `config.json`, and optional `patch.json` live under `~/.ctrl/keycaps/<id>/`. No SKILL.md is generated. Kernel MCP server registers one tool per `actions[]` entry, answers `tools/list` for hermes function-calling discovery, and optionally registers MCP `resources` (manifest description + capabilities listing) and `prompts` (a template pre-filling the action). Hermes invokes via `tools/call`.
 
-```
-~/.ctrl/keycaps/<id>/manifest.json         # CTRL canonical (target=mcp-tool)
-~/.ctrl/keycaps/<id>/config.json           # User Config tier values
-~/.ctrl/keycaps/<id>/patch.json            # User Patch tier overrides (if any)
-# NO SKILL.md generated.
-# Kernel MCP server registers a tool per `actions[]` entry and answers tools/list
-# for hermes function-calling discovery. Optionally registers MCP `resources`
-# (the manifest's description + capabilities listing) and `prompts` (a template
-# pre-filling the action). hermes invokes via tools/call.
-```
+**`target=hermes-skill` flow** (opt-in): the same three CTRL-side files, plus a hermes-side procedural mirror at `~/.hermes/skills/<id>/` containing `SKILL.md`, a symlinked `manifest.json` → CTRL canonical, and an `assets/` directory for optional templates / examples / knowledge files.
 
-**`target=hermes-skill` flow** (opt-in):
+**SKILL.md format** (agentskills.io-compatible, only emitted when `target=hermes-skill`): YAML frontmatter declaring `name` (= id), `version` (semver), `description`, `tools: [kernel.<method>...]`, `inputs: [clipboard|selection|screen|none|prompt]`, `output: [clipboard|modal|notification|workspace|silent]`. Body sections: `# <name>`, the description, then `## When to invoke` (plain-language hint for hermes function-calling decision), `## How` (numbered steps referencing kernel MCP tools), `## Capabilities required` (flatten capability namespace + methods + allowlists), and `## Configuration` (rendered from `config_schema`; values come from `config.json` at invoke time).
 
-```
-~/.ctrl/keycaps/<id>/manifest.json         # CTRL canonical (target=hermes-skill)
-~/.ctrl/keycaps/<id>/config.json           # User Config tier values
-~/.ctrl/keycaps/<id>/patch.json            # User Patch tier overrides (if any)
-~/.hermes/skills/<id>/SKILL.md             # hermes-side procedural mirror
-~/.hermes/skills/<id>/manifest.json        # symlink → ~/.ctrl/keycaps/<id>/manifest.json
-~/.hermes/skills/<id>/assets/              # optional templates, examples, knowledge files
-```
-
-**SKILL.md format** (agentskills.io-compatible, only emitted when `target=hermes-skill`):
-
-```markdown
----
-name: <id>
-version: <semver>
-description: <keycap description>
-tools:
-  - kernel.<capability_method_1>
-  - kernel.<capability_method_2>
-inputs:
-  - clipboard | selection | screen | none | prompt
-output:
-  - clipboard | modal | notification | workspace | silent
----
-
-# <name>
-
-<description>
-
-## When to invoke
-<plain-language hint for hermes function-calling decision>
-
-## How
-1. <step 1, references kernel MCP tool>
-2. <step 2>
-3. <step N>
-
-## Capabilities required
-- <capability namespace + methods + allowlists>
-
-## Configuration
-<rendered from config_schema; values come from config.json at invoke time>
-```
+*(Directory listings + SKILL.md template elided. Implementation: `packages/ctrl-keycap-sdk/src/skill-generator.ts` (TS reference) + `src-tauri/src/kernel/skill_generator.rs` (Rust mirror).)*
 
 The SKILL.md is **generated** from the manifest by a deterministic function (no LLM call). hephaestus owns the TS reference; zeus owns the in-kernel Rust mirror.
 
@@ -319,15 +251,7 @@ Per `decision_keycap_3_tier_adjustment`.
 | **Patch** (medium) | Override layer over manifest fields (system prompt, model, step inputs) | `~/.ctrl/keycaps/<id>/patch.json` (JSON Pointer paths → new values) | Smart merge on auto-update. Conflict → Irisy raises in chat: (a) keep my patch / (b) accept upstream / (c) Irisy-assisted merge. |
 | **Fork** (heavy) | Full divergence; user owns a copy that no longer tracks upstream | `~/.ctrl/keycaps/private/<new-id>/manifest.json` + SKILL.md fork | Not auto-updated. Irisy may prompt "upstream has v0.2, cherry-pick X?" but never overwrites. |
 
-**Composition order at dispatch** (kernel's `run_keycap`):
-
-```
-base manifest (upstream)
-  + patch_overrides (deep-merge via JSON Pointer)
-  + config_schema values (template expand: ${config.host} etc.)
-  → effective manifest
-  → execute steps
-```
+**Composition order at dispatch** (kernel's `run_keycap`): take the base upstream manifest, deep-merge `patch_overrides` via JSON Pointer paths, then template-expand `config_schema` values (e.g. `${config.host}`) — the result is the effective manifest, which the kernel then executes step-by-step.
 
 ### 3.7 4-layer auto-update
 
@@ -379,38 +303,18 @@ Delta vs v0.1 (`.olym/specs/tool-manifest/spec.md`):
 
 Lifted from spike 06 §Q2.13. The 5 v1.1 namespaces (`process` / `network.local_rpc` / `oauth.broker` / `stss` / `image`) have **reserved** sub-schemas in the same TS module but kernel does not expose them until the bucket-promotion trigger fires (see `decision_keycap_3_tier_adjustment` and spike 06 §Q2.11).
 
-```typescript
-const Capabilities = z.object({
-  clipboard: z.object({ read: z.boolean(), write: z.boolean() }).optional(),
-  text: z.object({
-    chat: z.boolean(),
-    transform: z.object({ ops: z.array(TextTransformOp) }).optional(),
-  }).optional(),
-  network: z.object({
-    http: z.object({
-      allowlist: z.array(z.string()).min(1),
-      methods: z.array(HttpMethod),
-      max_request_size_kb: z.number().int().optional(),
-    }).optional(),
-    open_url: z.object({ allowlist: z.array(z.string()).min(1) }).optional(),
-  }).optional(),
-  keyring: z.object({
-    read: z.array(z.string()),    // each entry namespaced by manifest.id
-    write: z.array(z.string()),
-  }).optional(),
-  screen: z.object({ capture: z.boolean(), list_displays: z.boolean() }).optional(),
-  file: z.object({
-    read_allowlist: z.array(z.string()),
-    write_allowlist: z.array(z.string()),
-  }).optional(),
-  mcp: z.object({
-    spawn: z.boolean(),
-    invoke: z.boolean(),
-    notifications: z.boolean(),
-  }).optional(),
-  platform: z.object({ notify: z.boolean(), hotkey: z.boolean() }).optional(),
-});
-```
+The 8 v1 namespaces (all optional):
+
+- `clipboard: { read, write }` (booleans)
+- `text: { chat, transform: { ops: TextTransformOp[] }? }`
+- `network: { http: { allowlist[], methods: HttpMethod[], max_request_size_kb? }?, open_url: { allowlist[] }? }`
+- `keyring: { read: string[], write: string[] }` — each entry forced-prefixed by `${manifest.id}.*`
+- `screen: { capture, list_displays }`
+- `file: { read_allowlist: string[], write_allowlist: string[] }`
+- `mcp: { spawn, invoke, notifications }`
+- `platform: { notify, hotkey }`
+
+*(Zod capability schema elided. Implementation: `packages/ctrl-keycap-sdk/src/capabilities.ts`.)*
 
 **Enforcement**: kernel `run_keycap` reads effective `capabilities` (after Patch merge) before invoking any step; missing capability → `CAPABILITY_VIOLATION` error returned to hermes which surfaces it to Irisy debug stage.
 
@@ -433,80 +337,33 @@ Frontend has a single dispatch registry; **adding a new keycap should not add a 
 | `canvas` | Image / region overlay (screenshot / OCR / poster) |
 | `custom` | **Escape hatch** — keycap supplies its own React component path via `workspace.custom_component_path`. Required for genuinely novel UIs (Code Space PTY + file tree + diff view; future video editor; future shader playground). PWA `keycap-tab-registry.ts` (daedalus) maps `custom_component_path` → mounted component. |
 
-```typescript
-const Workspace = z.object({
-  ui: WorkspaceUi,  // includes 'custom'
-  /** Required when ui = 'custom'. Path relative to packages/ctrl-web/src/. */
-  custom_component_path: z.string().optional(),
-}).refine(
-  (w) => w.ui !== 'custom' || !!w.custom_component_path,
-  { message: 'custom_component_path required when ui = "custom"' },
-);
-```
+The `Workspace` Zod object pairs `ui: WorkspaceUi` (including the `'custom'` variant) with optional `custom_component_path: string` (path relative to `packages/ctrl-web/src/`); a `refine` enforces that the path is present whenever `ui === 'custom'`.
+
+*(Zod refinement elided. Implementation: `packages/ctrl-keycap-sdk/src/workspace.ts`.)*
 
 **Creator-economy implication**: third-party creators contributing keycaps with `ui: 'custom'` ship their React component as part of the keycap bundle; daedalus's registry loads from `~/.ctrl/keycaps/<id>/component/` at runtime. CTRL's first-party `custom` keycap is Code Space (lane H-19-001, in_progress — owner zeus path C).
 
 ### 4.4 `config_schema`
 
-```typescript
-const ConfigField = z.object({
-  key: z.string().regex(/^[a-z0-9_]+$/),
-  kind: z.enum(['string', 'url', 'secret', 'integer', 'boolean', 'enum', 'oauth']),
-  label: z.string(),
-  description: z.string().optional(),
-  required: z.boolean(),
-  default: z.unknown().optional(),
-  options: z.array(z.string()).optional(),  // for kind=enum
-  oauth: z.object({                          // for kind=oauth
-    provider: z.string(),
-    scopes: z.array(z.string()),
-  }).optional(),
-  pattern: z.string().optional(),
-});
-const ConfigSchema = z.object({ fields: z.array(ConfigField).min(1) });
-```
+`ConfigSchema = { fields: ConfigField[] }` (≥ 1 field). Each `ConfigField` has `key` (lower-snake_case), `kind` (`'string' | 'url' | 'secret' | 'integer' | 'boolean' | 'enum' | 'oauth'`), `label`, optional `description` / `default`, `required: boolean`, plus kind-specific extensions: `options: string[]` for `enum`, `oauth: { provider, scopes }` for `oauth`, optional `pattern` (regex string).
+
+*(Zod schema elided. Implementation: `packages/ctrl-keycap-sdk/src/config-schema.ts`.)*
 
 `secret`-kind fields are routed to macOS Keychain (or Windows Credential Manager / Linux Secret Service); never written to `config.json`. `oauth`-kind triggers hermes-native OAuth loopback flow (when `oauth.broker` v1.1 ships).
 
 ### 4.5 `patch_overrides`
 
-JSON-Pointer-keyed deep-merge target.
+JSON-Pointer-keyed deep-merge target — `PatchOverrides = Record<JsonPointer, unknown>` where the key matches `/^\/[a-zA-Z0-9_.\-/]+$/`. Example: `"/actions/0/steps/1/system"` → a new system prompt string, `"/actions/0/steps/1/model"` → `"claude-3-5-sonnet"`.
 
-```typescript
-const PatchOverrides = z.record(
-  z.string().regex(/^\/[a-zA-Z0-9_.\-/]+$/),  // JSON Pointer
-  z.unknown(),
-);
-```
-
-Example:
-
-```json
-{
-  "patch_overrides": {
-    "/actions/0/steps/1/system": "You translate in a casual, conversational tone.",
-    "/actions/0/steps/1/model": "claude-3-5-sonnet"
-  }
-}
-```
+*(Schema + example elided. Implementation: `packages/ctrl-keycap-sdk/src/patch-overrides.ts`.)*
 
 At dispatch, kernel applies these against base manifest before resolving `config_schema` template expansions.
 
 ### 4.6 `upstream`
 
-```typescript
-const Upstream = z.object({
-  // GitHub release URL / ctrl-market URL / git+https://... — Zod's stock
-  // `.url()` does not accept `git+https://` scheme; use a regex that admits
-  // both standard http(s) and git+https.
-  source_url: z.string().regex(
-    /^(https?|git\+https?):\/\/[^\s]+$/,
-    { message: 'source_url must be http(s) or git+https URL' },
-  ),
-  channel: z.enum(['stable', 'beta']).default('stable'),
-  auto_update: z.boolean().default(true),
-});
-```
+`Upstream = { source_url, channel, auto_update }`. `source_url` is a string accepting either `http(s)://` or `git+https://` schemes (Zod's stock `.url()` rejects `git+https://`, so a regex is used). `channel` is `'stable' | 'beta'` (default `'stable'`). `auto_update: boolean` (default `true`).
+
+*(Zod schema elided. Implementation: `packages/ctrl-keycap-sdk/src/upstream.ts`.)*
 
 Kernel update worker polls source_url per channel + per global update preferences; on new-version detection runs the auto-update flow (3.7).
 
@@ -514,11 +371,9 @@ Kernel update worker polls source_url per channel + per global update preference
 
 ## 5. Keycap → SKILL.md generator
 
-Deterministic function (no LLM). Lives in `packages/ctrl-keycap-sdk` as TS reference; mirror in kernel Rust for install-time generation.
+Deterministic function (no LLM). Lives in `packages/ctrl-keycap-sdk` as TS reference; mirror in kernel Rust for install-time generation. Signature: `generateSkillMd(manifest, config) -> string`.
 
-```typescript
-function generateSkillMd(manifest: KeycapManifest, config: ConfigValues): string
-```
+*(Function signature elided. Implementation: `packages/ctrl-keycap-sdk/src/skill-generator.ts` (TS reference) + `src-tauri/src/kernel/skill_generator.rs` (Rust mirror).)*
 
 **Frontmatter fields**:
 - `name`: `manifest.id`

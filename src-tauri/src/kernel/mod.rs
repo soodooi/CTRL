@@ -7,19 +7,17 @@
 //   - Channel   : typed pipe between actors (back-pressure)
 //   - Effect    : first-class side effect (returned from actor handlers)
 //
-// Architecture lock: see ../../../.claude/ADR/001-system-architecture.md §3
-// Spec detail:       see ../../../.olym/specs/kernel/spec.md
+// Architecture lock: `.olym/decisions/001-system-architecture.md` §3
+// Spec detail:       `.olym/specs/kernel/spec.md`
 //
-// Status: P2.1 — skeleton stage. Trait + enum + struct shells. No live wiring
-// yet. Existing application/use_cases.rs path keeps running independently.
-// Full integration in P2.4-P2.7.
+// Status: live. `runtime.rs` composes Scheduler / EventBus / CapabilityBroker
+// / McpHost / EffectExecutor / EventStore / LlmPortRouter / LocalStorage at
+// boot. Tauri commands in `crate::commands::*` dispatch through this module.
 
-// dead-code allow is scoped to this module tree: the kernel primitives and
-// adjacent runtime/sandbox stubs are intentionally unwired in P2.1; the
-// Tauri command surface starts dispatching through them in P2.4. Without
-// this allow, `cargo check` emits ~120 warnings that drown the signal from
-// the legacy hexagonal modules during the macOS migration (H-2026-05-14-002).
-// Re-evaluate this allow when P2.4 lands.
+// dead-code allow keeps the public re-exports below cheap to maintain — many
+// are part of the L1 kernel's public surface (consumed by future SDK / WASM
+// keycap runtime) even when no in-tree caller exists today. Drop it once the
+// kernel-sdk consumer ships.
 #![allow(dead_code)]
 
 pub mod actor;

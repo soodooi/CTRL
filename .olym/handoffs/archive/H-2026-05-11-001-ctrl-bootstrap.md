@@ -43,26 +43,11 @@ CTRL ADR-001 已锁 (AI-native Agent OS Kernel architecture). 5 个子 spec 写�
 
 ### Step 1 — CTRL workspaces 初始化 (~30 min)
 
-```bash
-cd D:/code-space/CTRL
-# package.json 加 workspaces
-# - packages/*
-mkdir -p packages/{olym-core,olym-desktop,ctrl-stss,ctrl-memory,ctrl-kernel-sdk}
-```
-
-`package.json` patch:
-```json
-{
-  "workspaces": ["packages/*"]
-}
-```
+在 `D:/code-space/CTRL` 下 `mkdir -p packages/{olym-core,olym-desktop,ctrl-stss,ctrl-memory,ctrl-kernel-sdk}`, 在 root `package.json` 加 `"workspaces": ["packages/*"]`.
 
 ### Step 2 — olym-core 副本 (~10 min)
 
-```bash
-cp -r D:/code-space/hello-olym/packages/olym-core/. packages/olym-core/
-# 验证 package.json 已 private:true + license:UNLICENSED (从 hello-olym 已是这状态)
-```
+`cp -r D:/code-space/hello-olym/packages/olym-core/. packages/olym-core/`, 验证 `package.json` 已是 `private:true + license:UNLICENSED` (源仓已配)。
 
 ### Step 3 — ctrl-stss + ctrl-memory cherry-pick (~2 h)
 
@@ -84,66 +69,27 @@ Refactor:
 
 ### Step 4 — olym-desktop 骨架 (~30 min)
 
-```
-packages/olym-desktop/
-├── package.json (name: @ctrl/desktop, deps: @ctrl/stss, @manidala/olym-core)
-├── src/
-│   ├── ports/
-│   │   ├── llm.ts          (LLMPort interface)
-│   │   ├── storage.ts      (StoragePort)
-│   │   ├── tool.ts         (ToolPort)
-│   │   ├── auth.ts         (AuthPort)
-│   │   └── history.ts      (HistoryPort, bridges to @ctrl/memory)
-│   ├── adapters/           (stub directories, fill in P4)
-│   │   ├── llm/
-│   │   ├── storage/
-│   │   └── auth/
-│   ├── cloud-sync/         (client for ctrl-cloud, stub)
-│   └── index.ts
-```
+`packages/olym-desktop/` 含 `package.json` (name `@ctrl/desktop`, deps `@ctrl/stss` + `@manidala/olym-core`), `src/ports/` 暴露 5 个 port interface (`llm.ts` `LLMPort`, `storage.ts`, `tool.ts`, `auth.ts`, `history.ts` 桥到 `@ctrl/memory`), `src/adapters/` stub 目录 (llm / storage / auth, P4 填), `src/cloud-sync/` (ctrl-cloud client stub), `src/index.ts`。
+
+*(Directory tree elided — landed in repo under `packages/olym-desktop/`.)*
 
 ### Step 5 — ctrl-kernel-sdk 骨架 (~30 min)
 
-L2 syscall surface in TypeScript:
-```
-packages/ctrl-kernel-sdk/
-├── package.json (name: @ctrl/kernel-sdk)
-├── src/
-│   ├── actor.ts            (defineActor, spawn)
-│   ├── capability.ts       (capability tokens)
-│   ├── event.ts            (Event types, Cell, Op)
-│   ├── channel.ts          (typed Channel API)
-│   ├── effect.ts           (Effect builder API)
-│   └── index.ts
-```
+L2 syscall surface in TypeScript. `packages/ctrl-kernel-sdk/` 含 `package.json` (name `@ctrl/kernel-sdk`), `src/{actor,capability,event,channel,effect}.ts` (defineActor/spawn / capability tokens / Cell+Op event types / typed Channel API / Effect builder), `src/index.ts`. 初版 stub, real wiring 在 P2 Rust kernel via Tauri invoke.
 
-Initial implementations stub (real wiring in P2 Rust kernel via Tauri invoke).
+*(Directory tree elided — landed in repo under `packages/ctrl-kernel-sdk/`.)*
 
 ### Step 6 — L1 Kernel skeleton (Rust) (~5 days, biggest effort)
 
-Per `.olym/specs/kernel/spec.md` §7:
-```
-src-tauri/src/kernel/
-├── mod.rs
-├── actor.rs           (Actor trait, scheduler skeleton)
-├── capability.rs      (CapToken enum, Broker)
-├── event.rs           (Event enum, bus)
-├── channel.rs         (typed channels via tokio mpsc)
-├── effect.rs          (Effect enum + async executor)
-├── llm_port.rs        (adapter trait + workers-ai stub)
-├── mcp_host.rs        (stub for P4)
-└── persistence.rs     (SQLite event store)
-```
+Per `.olym/specs/kernel/spec.md` §7. `src-tauri/src/kernel/` 含 `mod.rs` 加 8 个 modules: `actor.rs` (Actor trait + scheduler skeleton), `capability.rs` (CapToken enum + Broker), `event.rs` (Event enum + bus), `channel.rs` (typed channels via tokio mpsc), `effect.rs` (Effect enum + async executor), `llm_port.rs` (adapter trait + workers-ai stub), `mcp_host.rs` (stub for P4), `persistence.rs` (SQLite event store).
+
+*(Directory tree elided — landed in repo under `src-tauri/src/kernel/`.)*
 
 P2 deliverable acceptance per `.olym/specs/kernel/spec.md` §9 validation criteria.
 
 ### Step 7 — npm install + 测试 (~10 min)
 
-```bash
-cd D:/code-space/CTRL
-npm install
-npm test --workspaces --if-present  # most workspaces have no tests yet, OK
-```
+`cd D:/code-space/CTRL && npm install && npm test --workspaces --if-present` (most workspaces have no tests yet — OK).
 
 ## 验收清单
 

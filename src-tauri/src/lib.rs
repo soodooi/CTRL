@@ -21,7 +21,6 @@
 //     adapter; `shell::*` replaces the macOS-only outbound adapters.
 
 mod commands;
-mod error;
 mod kernel;
 mod shell;
 
