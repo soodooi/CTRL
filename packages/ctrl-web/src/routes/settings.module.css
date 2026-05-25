@@ -1,43 +1,202 @@
+/* /settings — shared shell with inline tab strip + tab content.
+   Three tabs (CTRL / Hermes / Logs) share the same layout per
+   bao 2026-05-24. */
+
 .layout {
-  min-height: 100vh;
-  background: var(--color-background);
+  flex: 1;
+  min-height: 0;
+  background: var(--color-bg-l0);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-6) 0;
+  max-width: var(--container-content);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.pageTitle {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.022em;
+  margin: 0;
+  color: var(--color-text);
+}
+
+/* Tab strip — Linear 2026 compact-tab pattern. Rounded, low-chrome,
+   active = solid bg fill on l1 layer. No gradient text, no underline. */
+.tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  width: max-content;
+}
+.tab {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.005em;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart);
+}
+.tab:hover {
+  color: var(--color-text);
+}
+.tab[data-active='true'] {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+  border-color: var(--color-border-soft);
+}
+.tab:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 .main {
   max-width: var(--container-content);
   margin: 0 auto;
-  padding: var(--space-8) var(--space-6);
+  padding: var(--space-5) var(--space-6) var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-5);
+  width: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
-.title {
-  font-family: var(--font-display);
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-black);
-  letter-spacing: -1px;
-  margin: 0;
-}
+/* ── Tab content shared ────────────────────────────────────────── */
 
-.section {
-  padding: var(--space-6);
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-}
-
-.h2 {
-  font-family: var(--font-mono);
+.sectionSubtitle {
+  font-family: var(--font-sans);
   font-size: var(--text-sm);
-  text-transform: uppercase;
-  letter-spacing: 1px;
   color: var(--color-text-muted);
-  margin: 0 0 var(--space-3);
+  margin: 0;
+  max-width: 60ch;
+  letter-spacing: -0.005em;
+  line-height: 1.55;
 }
 
-.body {
+.embedFrame {
+  flex: 1;
+  width: 100%;
+  min-height: 480px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-l1);
+  color-scheme: var(--color-scheme);
+}
+
+/* ── Logs tab ─────────────────────────────────────────────────── */
+
+.versionBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.04em;
+  width: max-content;
+}
+.versionBadgeLabel {
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: var(--text-mono-xs);
+}
+.versionBadgeValue {
   color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.versionBadgePill {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.versionBadgePill[data-tone='success'] {
+  background: color-mix(in oklab, var(--color-success), transparent 82%);
+  color: var(--color-success);
+}
+.versionBadgePill[data-tone='idle'] {
+  background: var(--color-bg-l2);
+  color: var(--color-text-muted);
+}
+
+.changelog {
+  list-style: none;
   margin: 0;
-  line-height: 1.6;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.changeRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart);
+}
+.changeRow:hover {
+  border-color: color-mix(in oklab, var(--color-border), var(--color-accent) 25%);
+}
+.changeRow[data-current='true'] {
+  border-color: color-mix(in oklab, var(--color-accent), transparent 55%);
+  background: color-mix(in oklab, var(--color-bg-l1), var(--color-accent) 6%);
+}
+.changeMeta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+}
+.changeVersion {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.changeDate {
+  font-size: var(--text-mono-xs);
+  color: var(--color-text-muted);
+  letter-spacing: 0.06em;
+}
+.changeSummary {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  letter-spacing: -0.005em;
+  color: var(--color-text-soft);
+  margin: 0;
+  line-height: 1.55;
 }

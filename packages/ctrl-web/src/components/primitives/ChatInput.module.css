@@ -1,0 +1,64 @@
+/* ChatInput — text-input with hint chip. L1 primitive for any chat /
+ * composer workspace (Irisy default, Translate, Email draft …). */
+
+.shell {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 16px 20px;
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 0 0 color-mix(in oklab, var(--color-bg-l3), transparent 60%) inset,
+    0 8px 24px -16px rgb(0 0 0 / 0.4);
+  transition:
+    border-color var(--duration-fast) var(--ease-out-quart),
+    box-shadow var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart);
+}
+.shell:hover:not(:focus-within) {
+  border-color: color-mix(in oklab, var(--color-border-soft), var(--color-accent) 30%);
+}
+.shell:focus-within {
+  border-color: var(--color-accent);
+  background: var(--color-bg-l2);
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--color-accent), transparent 85%),
+    0 1px 0 0 color-mix(in oklab, var(--color-bg-l3), transparent 50%) inset;
+}
+
+.field {
+  all: unset;
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  letter-spacing: -0.011em;
+  line-height: 1.4;
+  color: var(--color-text);
+  caret-color: var(--color-accent);
+}
+.field::placeholder {
+  color: var(--color-text-muted);
+  letter-spacing: -0.005em;
+}
+
+.hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  padding: 3px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  text-transform: uppercase;
+  transition: color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+.shell:focus-within .hint {
+  color: var(--color-text-soft);
+  border-color: color-mix(in oklab, var(--color-border), var(--color-accent) 25%);
+}
+
+.disabled { opacity: 0.55; }

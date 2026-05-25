@@ -1,0 +1,50 @@
+/* Form — label + control wrapper + optional hint / error / submit footer. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.hint {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: -0.005em;
+  color: var(--color-text-muted);
+}
+.error {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--color-danger);
+}
+.required {
+  color: var(--color-warning);
+  margin-left: 2px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.footerError {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-danger);
+}

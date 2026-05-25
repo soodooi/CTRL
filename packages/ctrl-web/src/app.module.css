@@ -1,27 +1,57 @@
 /*
- * Shell layout — mobile-pattern chrome: StatusBar (top) / Outlet (middle) /
- * BottomTab (bottom). The middle slot owns its own scrolling so the
- * chrome stays pinned, mirroring what every mobile app does on iOS/Android.
+ * App shell — 3-column cockpit layout.
  *
- * dvh (dynamic viewport height) is used so the layout reflows correctly
- * when the iOS address bar hides on scroll. Plain vh fallback for browsers
- * without dvh support; the gap is small (the bottom-tab might be partially
- * obscured under the URL bar in those engines until first scroll).
+ *   ┌──────────────────────────────────────────────────────┐
+ *   │  StatusBar (top, full width)                          │ 32px
+ *   ├────────────┬───────────────────────────┬─────────────┤
+ *   │  Keyboard  │  Workspace (route outlet) │  RightRail  │ flex
+ *   │  320px     │  flex                     │  64px       │
+ *   └────────────┴───────────────────────────┴─────────────┘
+ *
+ * Per decision_pwa_two_panel_layout: keyboard ALWAYS visible (left rail),
+ * workspace content swaps per route, right rail = context (instance list,
+ * categories, etc.) per workspace template.
+ *
+ * No bottom tab — navigation IS the keyboard. The system row at the bottom
+ * of the keyboard hosts Pool / Search / Irisy / Settings as system keys.
  */
 
 .shell {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: var(--statusbar-height) 1fr;
+  grid-template-columns:
+    var(--keyboard-width) 1fr var(--rightrail-width);
+  grid-template-areas:
+    'status status status'
+    'keyboard workspace rail';
   height: 100vh;
   height: 100dvh;
-  background: var(--color-background);
+  background: var(--color-bg-l0);
+  color: var(--color-text);
   overflow: hidden;
+  /* Right rail width responds to whether a level-2 sub-panel is open.
+     Two-state shell (none / open) — collapse happens by clicking the
+     active level-1 item itself, no explicit chevron tab. */
+  --rightrail-width: 80px;
+  transition: grid-template-columns 220ms var(--ease-out-quart, ease-out);
+}
+.shell[data-sub-panel='open'] {
+  --rightrail-width: 320px; /* 240 sub-panel + 80 primary */
 }
 
-.outlet {
-  flex: 1;
+.status { grid-area: status; }
+.keyboard { grid-area: keyboard; }
+.workspace {
+  grid-area: workspace;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Workspace is the brightest of the four surface layers — bao reads
+     this as "where work happens" per Linear 2026's content > chrome.
+     Keep it a clean tinted neutral; route content can layer L1/L2
+     cards on top. No ambient gradients (decoration without state). */
+  background: var(--color-bg-l0);
 }
+.rail { grid-area: rail; }

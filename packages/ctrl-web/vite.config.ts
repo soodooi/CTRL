@@ -2,6 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
+
+const pkg = JSON.parse(
+  readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8'),
+) as { version: string };
 
 // ADR-002 §5 stack lock: React 18 + Vite 5 + TanStack Router/Query +
 // Zustand + vite-plugin-pwa. CSS modules + design tokens (no Tailwind by
@@ -9,6 +14,9 @@ import path from 'node:path';
 // stack lock for future surfaces but is currently removed from the bundle
 // — KeycapCard is pure CSS, ClockStrip is static text.
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, 'src'),

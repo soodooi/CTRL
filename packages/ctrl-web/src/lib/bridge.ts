@@ -65,10 +65,17 @@ const openWs = async (): Promise<WebSocket> => {
       wsConnPromise = null;
       resolve(ws);
     };
-    ws.onerror = (e) => {
+    ws.onerror = () => {
       wsConn = null;
       wsConnPromise = null;
-      reject(e);
+      // DOM `error` events carry no useful payload (and stringify to
+      // "[object Event]"). Surface a real Error so callers can render
+      // a meaningful message instead of leaking the event into the UI.
+      reject(
+        new Error(
+          `Kernel bridge unreachable at ${url}. Is the CTRL desktop app running?`,
+        ),
+      );
     };
     ws.onclose = () => {
       wsConn = null;

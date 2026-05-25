@@ -1,0 +1,249 @@
+/* Keyboard — permanent left rail. Pure keycap grid + scenario bar +
+   page dots. No search, no system row — those moved to the right rail
+   / ⌘K palette per bao 2026-05-23. */
+
+.rail {
+  background: var(--color-bg-l1);
+  border-right: 1px solid var(--color-border-soft);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) var(--space-3) var(--space-3);
+  gap: var(--space-3);
+  overflow: hidden;
+  position: relative;
+}
+/* Instrument bezel — thin CTRL-blue stripe on the top edge. */
+.rail::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--space-3);
+  right: var(--space-3);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--color-accent), transparent 60%) 50%,
+    transparent 100%
+  );
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ── Scenario header — page label + position indicator ───────── */
+
+/* Scenario header — keyboard "layer label" (like FN / NUM on real
+   keyboards). Caps mono + thin accent dot leading the label, NOT a
+   table header. */
+.scenarioBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 2px var(--space-1) var(--space-1);
+  font-family: var(--font-mono);
+}
+.scenarioName {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.scenarioName::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  opacity: 0.55;
+}
+.scenarioCount {
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.04em;
+  color: var(--color-text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Keycap grid — 4×4 ─────────────────────────────────────── */
+
+/* PCB frame — wraps the 4×4 grid in a slightly recessed inset. Reads
+   like a real keyboard plate without literal skeuomorphism. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--keycap-gap);
+  padding: var(--space-3);
+  background: color-mix(in oklab, var(--color-bg-l1), var(--ink) 8%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 1px 2px color-mix(in oklab, var(--ink), transparent 88%),
+    inset 0 -1px 0 color-mix(in oklab, white, transparent 60%);
+}
+
+.cap {
+  appearance: none;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--paper), white 0%) 0%,
+      var(--paper) 55%,
+      color-mix(in oklab, var(--paper), var(--ink) 6%) 100%
+    );
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white, transparent 30%),
+    inset 0 -2px 0 color-mix(in oklab, var(--ink), transparent 88%),
+    0 1px 2px color-mix(in oklab, var(--ink), transparent 85%);
+  transition:
+    background var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    transform 80ms ease,
+    box-shadow 80ms ease;
+}
+.cap:hover {
+  border-color: color-mix(in oklab, var(--color-border), var(--color-accent) 40%);
+  color: var(--color-accent);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white, transparent 20%),
+    inset 0 -2px 0 color-mix(in oklab, var(--ink), transparent 85%),
+    0 4px 12px -4px color-mix(in oklab, var(--color-accent), transparent 60%);
+}
+.cap:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 2px color-mix(in oklab, var(--ink), transparent 80%),
+    0 0 0 transparent;
+}
+.cap[data-active='true'] {
+  border-color: color-mix(in oklab, var(--color-accent), transparent 30%);
+  color: var(--color-accent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--paper), var(--color-accent) 10%) 0%,
+      color-mix(in oklab, var(--paper), var(--color-accent) 5%) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white, transparent 25%),
+    inset 0 -2px 0 color-mix(in oklab, var(--color-accent), transparent 75%),
+    0 2px 6px -2px color-mix(in oklab, var(--color-accent), transparent 55%);
+}
+
+.capIcon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent);
+}
+.capLabel {
+  font-size: var(--text-mono-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0;
+  text-align: center;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Empty cells = ghost slots. Almost invisible — they preserve the
+   4×4 rhythm without competing with real keycaps for attention. */
+.capEmpty {
+  background: transparent;
+  border: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 60%);
+  color: transparent;
+  cursor: default;
+  box-shadow: none;
+}
+.capEmpty:hover {
+  transform: none;
+  box-shadow: none;
+  background: transparent;
+  border-color: color-mix(in oklab, var(--color-border-soft), transparent 60%);
+  color: transparent;
+}
+
+/* "+ Add" cell — quietly inviting; accents on hover */
+.capAdd {
+  background: transparent;
+  border: 1px dashed color-mix(in oklab, var(--color-accent), transparent 60%);
+  color: var(--color-text-soft);
+  cursor: pointer;
+}
+.capAdd:hover {
+  border-style: solid;
+  border-color: var(--color-accent);
+  color: var(--color-text);
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 8%);
+  transform: translateY(-1px);
+}
+.capAdd .capIcon {
+  font-size: 18px;
+  font-weight: var(--weight-medium);
+}
+
+.spacer { flex: 1; min-height: var(--space-2); }
+
+/* ── Page dots — mobile-style indicator ────────────────────── */
+
+.pageDots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: var(--space-2) 0 var(--space-1);
+  min-height: 18px;
+}
+.dot {
+  appearance: none;
+  background: var(--color-text-muted);
+  border: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  opacity: 0.4;
+  padding: 0;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    opacity var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart),
+    box-shadow var(--duration-fast) var(--ease-out-quart),
+    width var(--duration-fast) var(--ease-out-quart);
+}
+.dot:hover {
+  opacity: 0.7;
+}
+.dot[data-active='true'] {
+  background: var(--color-accent);
+  opacity: 1;
+  width: 18px;
+  border-radius: 3px;
+  box-shadow: 0 0 8px color-mix(in oklab, var(--color-accent), transparent 60%);
+}
+.dot:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}

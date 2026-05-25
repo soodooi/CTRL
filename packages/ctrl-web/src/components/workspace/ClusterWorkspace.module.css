@@ -1,0 +1,275 @@
+/* ClusterWorkspace — vertical stack of GroupCards.
+ *
+ *   ┌─ workspace area ─────────────────────────────────────────┐
+ *   │ Header: title + meta + actions                            │
+ *   ├───────────────────────────────────────────────────────────┤
+ *   │ ┌─ GroupCard: "CTRL frontend · 3 sessions" ───────────┐  │
+ *   │ │ [Mac · npm test]  [MBP · vim]  [iMac · build]  [+]  │  │
+ *   │ │ ╔══════════════════════════════════════════════════╗ │  │
+ *   │ │ ║  active session preview                          ║ │  │
+ *   │ │ ╚══════════════════════════════════════════════════╝ │  │
+ *   │ └────────────────────────────────────────────────────────┘  │
+ *   │ ┌─ GroupCard: "ml-train · 2 sessions" ────────────────┐  │
+ *   │ │ ...                                                    │  │
+ *   │ └────────────────────────────────────────────────────────┘  │
+ *   └───────────────────────────────────────────────────────────┘
+ */
+
+.shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-6) var(--space-7) var(--space-4);
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+}
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.022em;
+  color: var(--color-text);
+  margin: 0;
+}
+.meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-8);
+  color: var(--color-text-muted);
+}
+.emptyHeadline {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.015em;
+  color: var(--color-text);
+  margin: 0;
+}
+.emptyHint {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-soft);
+  letter-spacing: -0.005em;
+  max-width: 48ch;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── GroupCard ───────────────────────────────────────────── */
+
+.card {
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+}
+.cardTitle {
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.011em;
+  color: var(--color-text);
+  margin: 0;
+}
+.cardCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+}
+.cardSpacer { flex: 1; }
+.cardAction {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  color: var(--color-text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.cardAction:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: -0.005em;
+  padding: var(--space-3) var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 140ms ease, border-color 140ms ease;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--color-text); }
+.tab[data-active='true'] {
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
+}
+.tabDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-text-soft);
+  flex-shrink: 0;
+}
+.tabDot[data-tone='running'] {
+  background: var(--color-success);
+  box-shadow: 0 0 6px color-mix(in oklab, var(--color-success) 50%, transparent);
+}
+.tabDot[data-tone='warning'] { background: var(--color-warning); }
+.tabDot[data-tone='error']   { background: var(--color-danger); }
+.tabDot[data-tone='exited']  { background: var(--color-text-soft); opacity: 0.5; }
+
+.tabLabel { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+
+.cardBody {
+  background: var(--color-bg-l2);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 180px;
+}
+
+.preview {
+  background: oklch(0.10 0.005 264);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--color-text);
+  overflow: auto;
+  max-height: 160px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.previewEmpty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.02em;
+}
+.stepperStep {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+}
+.stepperStep[data-active='true'] { color: var(--color-text); }
+.stepperStep[data-done='true']   { color: var(--color-success); }
+.stepperStep[data-error='true']  { color: var(--color-danger); }
+.stepperSeparator { color: var(--color-text-muted); opacity: 0.6; }
+
+.cardFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.02em;
+}
+.openButton {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  color: var(--color-text-soft);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: -0.005em;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+.openButton:hover {
+  background: var(--color-bg-l3);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}

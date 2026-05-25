@@ -1,0 +1,35 @@
+/* KV — key/value list. */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  word-break: break-word;
+}
+.valueSoft  { color: var(--color-text-soft); }
+.valueMuted { color: var(--color-text-muted); }
+
+.layout_compact .row { grid-template-columns: 100px 1fr; }
+.layout_wide    .row { grid-template-columns: 200px 1fr; }

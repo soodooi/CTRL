@@ -1,0 +1,255 @@
+/* RightRail — two-level context navigation.
+ *
+ *   [ sub-panel 240px (shown when active) | level-1 rail 80px ]
+ *
+ * Per bao 2026-05-23: level-2 only appears AFTER clicking a level-1
+ * item that carries a sub-panel. Default active = Irisy, so on boot
+ * her panel is open if the current route has pushed her content.
+ */
+
+.container {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  height: 100%;
+  background: var(--color-bg-l1);
+  border-left: 1px solid var(--color-border-soft);
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---------- level-2 sub-panel ---------- */
+
+.subPanel {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--color-bg-l0);
+  border-right: 1px solid var(--color-border-soft);
+  /* Width animates 240 → 0 / 0 → 240 via shell-level grid resize. The
+     local column transitions border + width so a stale render between
+     re-paints doesn't show a hard edge collapse. */
+  transition: width 220ms var(--ease-out-quart, ease-out);
+}
+.container[data-sub-panel='closed'] .subPanel {
+  width: 0;
+  border-right-width: 0;
+}
+
+.history {
+  width: 240px;
+}
+
+/* ---------- level-1 primary rail ---------- */
+
+.primary {
+  width: 80px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0 0 var(--space-4);
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Irisy header — pinned above the level-1 nav as the cockpit's identity
+   anchor. She's not a peer of route keycap shortcuts; her larger icon +
+   inset separator visually claim the top of the column. */
+.irisyHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--space-3) 6px var(--space-2);
+  border-bottom: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 50%);
+}
+
+.nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: var(--space-2) 6px;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* Footer = Settings item + version row, pinned to the bottom of the
+   primary column. Settings sits separate from the route-pushed items
+   so it stays put even when many keycap shortcuts scroll above it. */
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: var(--space-1) 6px var(--space-2);
+  border-top: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 40%);
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in oklab, var(--color-bg-l0), transparent 60%) 100%
+  );
+}
+
+.versionRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 4px 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.versionText {
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+.updateDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--color-success), transparent 80%),
+    0 0 8px color-mix(in oklab, var(--color-success), transparent 50%);
+  animation: rail-update-pulse 2.4s ease-in-out infinite;
+}
+@keyframes rail-update-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .updateDot { animation: none; }
+}
+
+/* ---------- level-1 item: icon + label vertical stack ---------- */
+
+.item {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 4px 8px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  position: relative;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.item:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+.item[data-active='true'] {
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 10%);
+  border-color: color-mix(in oklab, var(--color-accent), transparent 60%);
+  color: var(--color-text);
+}
+.item:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Irisy item gets more vertical room because the mascot icon is 40px
+   (vs 22px for regular keycap shortcuts). She lives in `.irisyHeader`
+   above the nav now — separator is on the header, not the item. */
+.item[data-irisy='true'] {
+  padding: 6px 4px 8px;
+  border-radius: 14px;
+}
+
+/* Settings item is the rail's utility footer cap — quieter than Irisy
+   (no inner separator, dimmer baseline). Active state still uses the
+   same accent treatment as everything else. */
+.item[data-settings='true'] {
+  padding: 8px 4px;
+  color: var(--color-text-muted);
+}
+.item[data-settings='true']:hover {
+  color: var(--color-text);
+}
+
+/* Active state is communicated via the item's own bg tint + border-color
+   (above). We deliberately do NOT use a side-stripe / vertical accent
+   bar — that's the most overused "design touch" in admin / dashboard UIs
+   and the AI-slop bans flag it explicitly. */
+
+.itemIcon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.itemLabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: inherit;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.itemDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-soft);
+}
+.itemDot[data-tone='info']     { background: var(--color-accent); }
+.itemDot[data-tone='nominal']  { background: var(--color-success); }
+.itemDot[data-tone='caution']  { background: var(--color-warning); }
+.itemDot[data-tone='warning']  { background: var(--color-danger); }
+.itemDot[data-tone='offline']  { background: var(--color-text-muted); opacity: 0.5; }
+.itemDot[data-tone='unknown']  { background: var(--color-text-soft); }
+
+.itemBadge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--color-danger);
+  color: white;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  font-weight: var(--weight-medium);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.itemGlyph {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  color: inherit;
+  letter-spacing: 0;
+}
