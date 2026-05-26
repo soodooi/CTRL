@@ -85,12 +85,8 @@ impl WindowController {
         {
             let _ = w.show();
             let _ = w.set_focus();
-            let _ = w.unminimize();
-            #[cfg(target_os = "macos")]
-            Self::mac_activate_app();
-            super::hotkey::HotkeyController::reset_state();
         }
-        tracing::info!("WindowController::reveal — main shown + focused");
+        tracing::info!("WindowController::reveal — main shown");
         Ok(())
     }
 
@@ -128,65 +124,17 @@ impl WindowController {
         }
         #[cfg(not(target_os = "windows"))]
         {
-            // macOS: cloak bug is Win11-specific, native hide/show works.
-            // BUT: CGEventTap modifier-flag race after Cmd-Tab app switches
-            // can leave ctrl_pending stuck. Reset hotkey state on show so the
-            // 3rd+ Ctrl tap doesn't silently no-op.
-            //
-            // Per memory `troubleshoot_ctrl_hotkey` 5th unresolved symptom
-            // (5-step fix Step A): Tauri set_focus() is not strong enough
-            // to bring CTRL forward from a different Space / different
-            // foreground app. Explicit NSApp().activate() (Raycast standard)
-            // is required. On hide, NSApp().hide(None) returns focus to
-            // the previous app cleanly.
             let visible = w.is_visible().unwrap_or(false);
             if visible {
-                tracing::info!("WindowController::toggle — hide (macOS)");
+                tracing::info!("WindowController::toggle — hide");
                 let _ = w.hide();
-                #[cfg(target_os = "macos")]
-                unsafe {
-                    use objc2_app_kit::NSApp;
-                    use objc2_foundation::MainThreadMarker;
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        NSApp(mtm).hide(None);
-                    }
-                }
             } else {
-                tracing::info!("WindowController::toggle — show (macOS)");
+                tracing::info!("WindowController::toggle — show");
                 let _ = w.show();
                 let _ = w.set_focus();
-                #[cfg(target_os = "macos")]
-                Self::mac_activate_app();
-                // Mirror Win path: clear hotkey state so the next Ctrl tap
-                // starts fresh regardless of what FlagsChanged events were
-                // dropped while the window was off-screen.
-                super::hotkey::HotkeyController::reset_state();
             }
         }
         Ok(())
-    }
-
-    /// Force-activate CTRL app via NSApp (cross-Space, cross-app focus
-    /// steal — Raycast-standard pattern). Tauri 2 set_focus alone calls
-    /// makeKeyAndOrderFront but not activateIgnoringOtherApps, so a hidden
-    /// CTRL window stays behind / on a different Space when the user
-    /// hotkey-summons it. Per memory `troubleshoot_ctrl_hotkey` 5-step fix
-    /// Step A.
-    #[cfg(target_os = "macos")]
-    fn mac_activate_app() {
-        unsafe {
-            use objc2_app_kit::NSApp;
-            use objc2_foundation::MainThreadMarker;
-            if let Some(mtm) = MainThreadMarker::new() {
-                let app = NSApp(mtm);
-                // Force Regular activation policy so the app can take focus
-                // even when launched with a hidden activation policy (some
-                // tray-only apps default to Accessory).
-                use objc2_app_kit::NSApplicationActivationPolicy;
-                let _ = app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
-                app.activate();
-            }
-        }
     }
 
     /// Build the main launcher window. Recovery path; normally the window
