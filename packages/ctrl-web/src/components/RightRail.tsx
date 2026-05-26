@@ -83,6 +83,8 @@ interface RailContextValue {
 const RailContext = createContext<RailContextValue | null>(null);
 
 const IRISY_ITEM_ID = 'irisy';
+const VAULT_ITEM_ID = 'vault';
+const POOL_ITEM_ID = 'pool';
 const SETTINGS_ITEM_ID = 'settings';
 const RAIL_ITEM_ICON_SIZE = 22;
 const IRISY_ICON_SIZE = 40;
@@ -106,6 +108,45 @@ const GearIcon = (): ReactElement => (
   >
     <circle cx="12" cy="12" r="3" />
     <path d="M19.4 15a1.65 1.65 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.65 1.65 0 0 0-1.8-.3 1.65 1.65 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.65 1.65 0 0 0-1-1.5 1.65 1.65 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.65 1.65 0 0 0 .3-1.8 1.65 1.65 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.65 1.65 0 0 0 1.5-1 1.65 1.65 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.65 1.65 0 0 0 1.8.3h.1a1.65 1.65 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.65 1.65 0 0 0 1 1.5 1.65 1.65 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.65 1.65 0 0 0-.3 1.8v.1a1.65 1.65 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.65 1.65 0 0 0-1.5 1z" />
+  </svg>
+);
+
+// Inline vault icon — book-like stack representing the markdown vault.
+const VaultIcon = (): ReactElement => (
+  <svg
+    viewBox="0 0 24 24"
+    width="20"
+    height="20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 5h12a2 2 0 0 1 2 2v13H6a2 2 0 0 1-2-2V5z" />
+    <path d="M4 5a2 2 0 0 1 2-2h12v15" />
+    <path d="M9 8h6M9 12h4" />
+  </svg>
+);
+
+// Inline pool / grid icon — 4 squares.
+const PoolIcon = (): ReactElement => (
+  <svg
+    viewBox="0 0 24 24"
+    width="20"
+    height="20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="3" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <rect x="14" y="14" width="7" height="7" rx="1" />
   </svg>
 );
 
@@ -160,6 +201,8 @@ export const useIrisySubPanel = (panel: RailSubPanel | null): void => {
 interface SyntheticRailItem extends RailItem {
   isIrisy?: boolean;
   isSettings?: boolean;
+  isVault?: boolean;
+  isPool?: boolean;
 }
 
 // Settings has no level-2 panel — tabs live INSIDE the /settings page
@@ -201,22 +244,51 @@ export const RightRail = (): ReactElement => {
     [irisySubPanel, navigate],
   );
 
-  // Level-1 nav = route-pushed items + Settings footer cap.
+  // Level-1 nav = permanent primaries (Vault, Pool) + route-pushed
+  // items + Settings footer cap.
   const allItems = useMemo<ReadonlyArray<SyntheticRailItem>>(() => {
+    const vaultItem: SyntheticRailItem = {
+      id: VAULT_ITEM_ID,
+      label: 'Vault',
+      isVault: true,
+      onClick: () => {
+        void navigate({ to: '/vault' });
+      },
+    };
+    const poolItem: SyntheticRailItem = {
+      id: POOL_ITEM_ID,
+      label: 'Pool',
+      isPool: true,
+      onClick: () => {
+        void navigate({ to: '/pool' });
+      },
+    };
     const settingsItem: SyntheticRailItem = {
       id: SETTINGS_ITEM_ID,
       label: 'Settings',
       isSettings: true,
-      // No subPanel — Settings tabs live INSIDE the /settings page.
       onClick: () => {
         void navigate({ to: SETTINGS_DEFAULT_PATH });
       },
     };
     return [
+      vaultItem,
+      poolItem,
       ...items.map((i) => ({ ...i, isIrisy: false, isSettings: false })),
       settingsItem,
     ];
   }, [items, navigate]);
+
+  // Auto-flip activeRailId to vault / pool when the route enters those
+  // surfaces — keeps the rail selection in sync with where the user
+  // actually is.
+  useEffect(() => {
+    if (pathname.startsWith('/vault') && activeRailId !== VAULT_ITEM_ID) {
+      setActiveRailId(VAULT_ITEM_ID);
+    } else if (pathname.startsWith('/pool') && activeRailId !== POOL_ITEM_ID) {
+      setActiveRailId(POOL_ITEM_ID);
+    }
+  }, [pathname, activeRailId, setActiveRailId]);
 
   const activeItem =
     activeRailId === IRISY_ITEM_ID
@@ -261,6 +333,8 @@ export const RightRail = (): ReactElement => {
         data-active={isSelected}
         data-irisy={item.isIrisy || undefined}
         data-settings={item.isSettings || undefined}
+        data-vault={item.isVault || undefined}
+        data-pool={item.isPool || undefined}
         onClick={() => handleItemClick(item)}
         title={item.label}
         aria-label={item.label}
@@ -269,6 +343,10 @@ export const RightRail = (): ReactElement => {
         <span className={styles.itemIcon}>
           {item.isIrisy ? (
             <IrisyMascot state={irisyState} size={IRISY_ICON_SIZE} />
+          ) : item.isVault ? (
+            <VaultIcon />
+          ) : item.isPool ? (
+            <PoolIcon />
           ) : item.isSettings ? (
             <GearIcon />
           ) : isIcon(item.glyph) ? (

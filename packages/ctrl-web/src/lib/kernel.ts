@@ -172,3 +172,66 @@ export const csSignal = (stream_id: string, signal: string): Promise<void> =>
 
 export const csKill = (stream_id: string): Promise<void> =>
   invoke('cs_kill', { args: { stream_id } });
+
+// === Vault (markdown + assets at ~/Documents/CTRL/) =================
+//
+// Mirrors src-tauri/src/commands/vault.rs. All paths relative to vault
+// root (machine-portable). Frontmatter is JSON over the wire; kernel
+// renders it as YAML on disk so vim / VMark / Obsidian see normal
+// markdown files.
+
+export interface VaultEntry {
+  /** Relative path under vault root. */
+  path: string;
+  /** Body excluding the YAML frontmatter block. */
+  body: string;
+  /** Parsed frontmatter as plain JSON. */
+  frontmatter: Record<string, unknown>;
+  /** Last modified, ms since epoch. */
+  modified_ms: number;
+  /** Byte size of the on-disk file. */
+  size_bytes: number;
+}
+
+export interface VaultWriteArgs {
+  path: string;
+  content: string;
+  frontmatter: Record<string, unknown>;
+  keycap_id?: string;
+}
+
+export interface VaultWriteReply {
+  absolute_path: string;
+  path: string;
+}
+
+export const vaultWrite = (args: VaultWriteArgs): Promise<VaultWriteReply> =>
+  invoke('vault_write', { args });
+
+export const vaultRead = (path: string, keycap_id?: string): Promise<VaultEntry> =>
+  invoke('vault_read', { args: { path, keycap_id: keycap_id ?? null } });
+
+export const vaultList = (
+  subdir?: string,
+  keycap_id?: string,
+): Promise<string[]> =>
+  invoke('vault_list', {
+    args: { subdir: subdir ?? null, keycap_id: keycap_id ?? null },
+  });
+
+export const vaultSearch = (
+  query: string,
+  limit = 50,
+  keycap_id?: string,
+): Promise<string[]> =>
+  invoke('vault_search', {
+    args: { query, limit, keycap_id: keycap_id ?? null },
+  });
+
+export const vaultDelete = (path: string, keycap_id?: string): Promise<void> =>
+  invoke('vault_delete', { args: { path, keycap_id: keycap_id ?? null } });
+
+export const vaultRootPath = (): Promise<string> => invoke('vault_root_path');
+
+export const vaultRebuildIndex = (): Promise<number> =>
+  invoke('vault_rebuild_index');

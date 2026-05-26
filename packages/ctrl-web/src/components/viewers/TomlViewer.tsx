@@ -1,19 +1,20 @@
-// CodeViewer — generic code viewer for content types not covered by a
-// dedicated module. Uses CodeMirror 6 with no language extension; the
-// editor still gets line numbers + fold gutter + bracket matching but
-// no syntax highlight. Lighter than per-language packs when a keycap
-// returns a one-off file type (e.g. text/rust, text/python).
+// TomlViewer — CodeMirror 6 via @codemirror/legacy-modes (no first-party
+// TOML lang ships in CodeMirror 6 core). Used for ~/.ctrl/config.toml
+// and keycap `config.toml` files (the Config-tier adjustment surface).
 
-import type { ReactElement } from 'react';
+import { useMemo, type ReactElement } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
+import { StreamLanguage } from '@codemirror/language';
+import { toml } from '@codemirror/legacy-modes/mode/toml';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
 
-export const CodeViewer = ({ resource }: ViewerProps): ReactElement => {
+export const TomlViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
+  const extensions = useMemo(() => [StreamLanguage.define(toml)], []);
   return (
     <div className={styles.frame}>
       <ViewerChrome
@@ -27,7 +28,8 @@ export const CodeViewer = ({ resource }: ViewerProps): ReactElement => {
         <CodeMirror
           value={content ?? ''}
           theme="light"
-          basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true }}
+          extensions={extensions}
+          basicSetup={{ lineNumbers: true, foldGutter: true }}
           onChange={(value) => setContent(value)}
           readOnly={!resource.editable}
           className={styles.codeMirror}

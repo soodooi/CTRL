@@ -1,17 +1,15 @@
-// CodeViewer — generic code viewer for content types not covered by a
-// dedicated module. Uses CodeMirror 6 with no language extension; the
-// editor still gets line numbers + fold gutter + bracket matching but
-// no syntax highlight. Lighter than per-language packs when a keycap
-// returns a one-off file type (e.g. text/rust, text/python).
+// JsonViewer — CodeMirror 6 + lang-json. Used for application/json
+// resources (vault frontmatter dumps, manifest, MCP server descriptors).
 
 import type { ReactElement } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
+import { json } from '@codemirror/lang-json';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
 
-export const CodeViewer = ({ resource }: ViewerProps): ReactElement => {
+export const JsonViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
   return (
@@ -27,7 +25,8 @@ export const CodeViewer = ({ resource }: ViewerProps): ReactElement => {
         <CodeMirror
           value={content ?? ''}
           theme="light"
-          basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true }}
+          extensions={[json()]}
+          basicSetup={{ lineNumbers: true, foldGutter: true, bracketMatching: true }}
           onChange={(value) => setContent(value)}
           readOnly={!resource.editable}
           className={styles.codeMirror}
