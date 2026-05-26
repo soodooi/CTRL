@@ -85,6 +85,15 @@ impl WindowController {
         {
             let _ = w.show();
             let _ = w.set_focus();
+            // Same launcher contract as toggle() — see comment there.
+            #[cfg(target_os = "macos")]
+            unsafe {
+                use objc2_app_kit::NSApp;
+                use objc2_foundation::MainThreadMarker;
+                if let Some(mtm) = MainThreadMarker::new() {
+                    NSApp(mtm).activate();
+                }
+            }
         }
         tracing::info!("WindowController::reveal — main shown");
         Ok(())
@@ -132,6 +141,26 @@ impl WindowController {
                 tracing::info!("WindowController::toggle — show");
                 let _ = w.show();
                 let _ = w.set_focus();
+                // CTRL = launcher 弹窗 (Raycast-style): set_focus only raises
+                // the window in z-order; it does NOT pull keyboard focus across
+                // app boundaries. NSApp.activate() is the launcher contract —
+                // hands focus to CTRL from whatever app is currently foreground
+                // (Chrome / Terminal / VSCode / etc.), and (combined with
+                // visibleOnAllWorkspaces:true in tauri.conf.json) brings the
+                // window across to the user's current Space.
+                //
+                // NOT calling: NSApp.hide() on the hide branch (would background
+                // the whole app and break the tray-resident architecture), and
+                // NOT setActivationPolicy(Regular) (would surface a Dock icon
+                // — CTRL is accessory-only).
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    use objc2_app_kit::NSApp;
+                    use objc2_foundation::MainThreadMarker;
+                    if let Some(mtm) = MainThreadMarker::new() {
+                        NSApp(mtm).activate();
+                    }
+                }
             }
         }
         Ok(())
