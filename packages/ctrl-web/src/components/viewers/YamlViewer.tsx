@@ -1,17 +1,15 @@
-// CodeViewer — generic code viewer for content types not covered by a
-// dedicated module. Uses CodeMirror 6 with no language extension; the
-// editor still gets line numbers + fold gutter + bracket matching but
-// no syntax highlight. Lighter than per-language packs when a keycap
-// returns a one-off file type (e.g. text/rust, text/python).
+// YamlViewer — CodeMirror 6 + lang-yaml. Used for keycap manifests
+// (the YAML frontmatter block exported on its own) and *.yaml config.
 
 import type { ReactElement } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
+import { yaml } from '@codemirror/lang-yaml';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
 
-export const CodeViewer = ({ resource }: ViewerProps): ReactElement => {
+export const YamlViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
   return (
@@ -27,7 +25,8 @@ export const CodeViewer = ({ resource }: ViewerProps): ReactElement => {
         <CodeMirror
           value={content ?? ''}
           theme="light"
-          basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true }}
+          extensions={[yaml()]}
+          basicSetup={{ lineNumbers: true, foldGutter: true }}
           onChange={(value) => setContent(value)}
           readOnly={!resource.editable}
           className={styles.codeMirror}

@@ -8,7 +8,7 @@
 // MIME alone doesn't pick the viewer — `text/markdown` from a vault note
 // is editable + persisted to the vault; the same MIME from a keycap
 // prompt is editable + persisted as a Config-tier patch; from a system
-// log it's read-only. Same Tiptap viewer, three save handlers.
+// log it's read-only. Same viewer body, three save handlers.
 //
 // All viewer modules are loaded lazily so the critical-path PWA bundle
 // stays under the mobile 200KB cap. A viewer enters the bundle the first
@@ -24,24 +24,14 @@ import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 
 export type ViewerLocation = 'vault' | 'keycap' | 'system';
 
-/**
- * The thing a viewer renders. `uri` is the primary handle; `companion`
- * is the sidecar (e.g. `file.pdf` paired with `file.pdf.md` for text
- * search + Irisy citation).
- */
 export interface ViewerResource {
   location: ViewerLocation;
   contentType: string;
   uri: string;
   companion?: string;
   editable: boolean;
-  /**
-   * Called when the viewer commits an edit. Required when `editable` is
-   * true; ignored otherwise. The viewer passes back the full new content;
-   * the handler is responsible for routing it (vault write / keycap
-   * patch / etc). When omitted, the viewer's default save handler
-   * dispatches by URI scheme (vault:// → vault_write).
-   */
+  /** Called when the viewer commits an edit. Required when `editable`
+   *  is true; ignored otherwise. */
   onSave?: (content: string) => Promise<void>;
 }
 
@@ -66,6 +56,56 @@ const FallbackViewer = lazy(() =>
 const MarkdownViewer = lazy(() =>
   import('@/components/viewers/MarkdownViewer').then((m) => ({
     default: m.MarkdownViewer,
+  })),
+);
+const JsonViewer = lazy(() =>
+  import('@/components/viewers/JsonViewer').then((m) => ({
+    default: m.JsonViewer,
+  })),
+);
+const YamlViewer = lazy(() =>
+  import('@/components/viewers/YamlViewer').then((m) => ({
+    default: m.YamlViewer,
+  })),
+);
+const TomlViewer = lazy(() =>
+  import('@/components/viewers/TomlViewer').then((m) => ({
+    default: m.TomlViewer,
+  })),
+);
+const CodeViewer = lazy(() =>
+  import('@/components/viewers/CodeViewer').then((m) => ({
+    default: m.CodeViewer,
+  })),
+);
+const HtmlViewer = lazy(() =>
+  import('@/components/viewers/HtmlViewer').then((m) => ({
+    default: m.HtmlViewer,
+  })),
+);
+const SvgViewer = lazy(() =>
+  import('@/components/viewers/SvgViewer').then((m) => ({
+    default: m.SvgViewer,
+  })),
+);
+const MermaidViewer = lazy(() =>
+  import('@/components/viewers/MermaidViewer').then((m) => ({
+    default: m.MermaidViewer,
+  })),
+);
+const ImageViewer = lazy(() =>
+  import('@/components/viewers/ImageViewer').then((m) => ({
+    default: m.ImageViewer,
+  })),
+);
+const PdfViewer = lazy(() =>
+  import('@/components/viewers/PdfViewer').then((m) => ({
+    default: m.PdfViewer,
+  })),
+);
+const SmartTableViewer = lazy(() =>
+  import('@/components/viewers/SmartTableViewer').then((m) => ({
+    default: m.SmartTableViewer,
   })),
 );
 
@@ -106,70 +146,46 @@ const SmartTableViewer = lazy(() =>
 );
 
 /**
- * Content-type → lazy viewer. New viewers register themselves by adding
- * a row here + the module under `src/components/viewers/`.
- *
- * Mappings are intentionally exact (no wildcards) — when a caller hands
- * us a never-before-seen MIME we fall through to FallbackViewer rather
- * than silently apply the wrong renderer.
+ * Content-type → lazy viewer. Aliases: any image/* uses ImageViewer; any
+ * text/* without a more specific match uses CodeViewer.
  */
 const VIEWERS: Record<string, LazyViewer> = {
-  // Markdown
+  // Structured text — primary viewers
   'text/markdown': MarkdownViewer,
-  'text/x-markdown': MarkdownViewer,
-
-  // Code / config
-  'application/json': CodeViewer,
-  'text/json': CodeViewer,
-  'application/yaml': CodeViewer,
-  'text/yaml': CodeViewer,
-  'application/x-yaml': CodeViewer,
-  'application/toml': CodeViewer,
-  'text/toml': CodeViewer,
-  'application/x-toml': CodeViewer,
-  'application/javascript': CodeViewer,
-  'text/javascript': CodeViewer,
-  'application/typescript': CodeViewer,
-  'text/typescript': CodeViewer,
-  'text/x-rust': CodeViewer,
-  'text/x-shellscript': CodeViewer,
-  'application/x-sh': CodeViewer,
-  'text/plain': CodeViewer,
-
-  // Diagrams
-  'text/mermaid': MermaidViewer,
-  'text/x-mermaid': MermaidViewer,
-
-  // HTML preview
+  'application/json': JsonViewer,
+  'text/yaml': YamlViewer,
+  'text/toml': TomlViewer,
   'text/html': HtmlViewer,
-  'application/xhtml+xml': HtmlViewer,
-
-  // Images
-  'image/svg+xml': ImageViewer,
-  'image/png': ImageViewer,
-  'image/jpeg': ImageViewer,
-  'image/gif': ImageViewer,
-  'image/webp': ImageViewer,
-  'image/avif': ImageViewer,
-
-  // PDF (native browser PDF.js)
+  'image/svg+xml': SvgViewer,
+  'text/mermaid': MermaidViewer,
+  // Smart-table — a markdown table with a frontmatter schema, rendered
+  // via Tanstack Table. File on disk is still markdown (vim test).
+  'text/x-ctrl-smart-table': SmartTableViewer,
+  // Binary
   'application/pdf': PdfViewer,
-
-  // Smart table — spreadsheet-like editor for tabular data
-  'text/csv': SmartTableViewer,
-  'application/csv': SmartTableViewer,
-  // JSON-array detection happens inside SmartTableViewer; explicit
-  // override registry below for callers that know the JSON is tabular.
-  'application/x-ctrl-table+json': SmartTableViewer,
+  // Code (generic — registers individual lang aliases below)
+  'text/typescript': CodeViewer,
+  'text/javascript': CodeViewer,
+  'text/css': CodeViewer,
+  'text/rust': CodeViewer,
+  'text/python': CodeViewer,
+  'text/shell': CodeViewer,
+  'text/plain': CodeViewer,
 };
+
+const isImageType = (contentType: string): boolean =>
+  contentType.startsWith('image/') && contentType !== 'image/svg+xml';
 
 /**
  * Resolve a viewer for the given content-type. Always returns a
  * component — falls back to a labelled placeholder when no viewer is
  * registered, so callers don't need to null-check.
  */
-export const resolveViewer = (contentType: string): LazyViewer =>
-  VIEWERS[contentType] ?? FallbackViewer;
+export const resolveViewer = (contentType: string): LazyViewer => {
+  if (VIEWERS[contentType]) return VIEWERS[contentType];
+  if (isImageType(contentType)) return ImageViewer;
+  return FallbackViewer;
+};
 
 /**
  * Convenience to register a viewer at runtime (e.g. from a feature

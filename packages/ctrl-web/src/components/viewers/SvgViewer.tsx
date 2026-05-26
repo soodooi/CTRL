@@ -1,23 +1,20 @@
-// HtmlViewer — sandboxed iframe so vault HTML can't script the cockpit.
-// Source-mode toggle drops to a CodeMirror buffer for editing.
-//
-// Per CLAUDE.md derived-rule #3: viewers cover content type, not
-// platform. HTML is rendered locally — no third-party preview service.
+// SvgViewer — inline-render SVG markup directly. Browser-native, zero
+// deps. Source-mode toggles to a CodeMirror buffer for editing. Used for
+// keycap icon.svg files (~/.ctrl/keycaps/<id>/assets/icon.svg) and any
+// SVG asset in the vault.
 
-import { useMemo, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
-import { html } from '@codemirror/lang-html';
+import { html } from '@codemirror/lang-html'; // SVG ≈ XML; lang-html covers it
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
 
-export const HtmlViewer = ({ resource }: ViewerProps): ReactElement => {
+export const SvgViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
-
-  const srcDoc = useMemo(() => content ?? '', [content]);
 
   const rightActions = (
     <div className={styles.modeToggle}>
@@ -52,12 +49,16 @@ export const HtmlViewer = ({ resource }: ViewerProps): ReactElement => {
       />
       <div className={mode === 'preview' ? styles.frameBody : styles.scroll}>
         {mode === 'preview' ? (
-          <iframe
-            title={resource.uri}
-            className={styles.htmlSandbox}
-            srcDoc={srcDoc}
-            sandbox=""
-          />
+          <div className={styles.svgStage}>
+            {/* SVG is XML — dangerouslySetInnerHTML is the canonical
+                way to inline-render trusted vault content. The vault is
+                user-controlled, not arbitrary third-party HTML. */}
+            <div
+              className={styles.svgFigure}
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={{ __html: content ?? '' }}
+            />
+          </div>
         ) : (
           <CodeMirror
             value={content ?? ''}

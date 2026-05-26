@@ -1,67 +1,90 @@
-// MermaidViewer — render a `.mmd` / `text/mermaid` resource as SVG.
+// MermaidViewer — render mermaid.js diagrams in the workspace.
 //
-// Mermaid is a sizeable dep (~180KB gzip), so this lives in its own
-// lazy chunk; instantiating the viewer once per tab is the only thing
-// that pulls Mermaid into memory.
-//
-// Read-only by design today: editing Mermaid source is rare enough that
-// users live with "open in source mode" (drop into CodeViewer over the
-// same file when content-type override is added). If demand surfaces,
-// add a Source toggle here matching MarkdownViewer.
+// Bundle weight: mermaid.js + its deps ≈ 200KB gzip. The lazy boundary
+// in viewer-registry.ts ensures this only loads on first text/mermaid
+// resource. Initialize is idempotent — first viewer pays init cost,
+// subsequent ones are free.
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
+import CodeMirror from '@uiw/react-codemirror';
 import mermaid from 'mermaid';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
 
-// Initialise once per page-load. Mermaid stores its config globally;
-// re-initing on every viewer instance would race when two tabs render
-// the same diagram simultaneously.
-let initialised = false;
-const ensureMermaid = (): void => {
-  if (initialised) return;
+// Initialize once for the lifetime of the page; tone the theme to match
+// CTRL light-default neutrals. `securityLevel: 'strict'` opts out of
+// raw HTML in diagram labels.
+let mermaidReady = false;
+const initMermaid = (): void => {
+  if (mermaidReady) return;
   mermaid.initialize({
     startOnLoad: false,
+    theme: 'neutral',
     securityLevel: 'strict',
-    theme: 'default',
-    fontFamily: 'var(--font-mono, monospace)',
+    fontFamily: 'var(--font-sans)',
   });
-  initialised = true;
+  mermaidReady = true;
 };
 
+let renderCounter = 0;
+
 export const MermaidViewer = ({ resource }: ViewerProps): ReactElement => {
-  const { content, save, dirty, saving, error, writable } =
+  const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useState<'preview' | 'source'>('preview');
+  const [svg, setSvg] = useState<string>('');
   const [renderError, setRenderError] = useState<string | null>(null);
+  const renderId = useRef(`mermaid-${++renderCounter}`);
 
   useEffect(() => {
-    if (content == null) return;
-    ensureMermaid();
-    const container = containerRef.current;
-    if (!container) return;
+    initMermaid();
+  }, []);
+
+  useEffect(() => {
+    if (mode !== 'preview' || content == null) return;
     let cancelled = false;
-    // Generate a stable id per source — mermaid throws on duplicates
-    // when two viewers happen to share content. Salt with random suffix.
-    const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`;
+    const id = `${renderId.current}-${Math.random().toString(36).slice(2, 8)}`;
     mermaid
       .render(id, content)
-      .then(({ svg }) => {
-        if (cancelled) return;
-        container.innerHTML = svg;
-        setRenderError(null);
+      .then(({ svg: out }) => {
+        if (!cancelled) {
+          setSvg(out);
+          setRenderError(null);
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        container.innerHTML = '';
-        setRenderError(err instanceof Error ? err.message : 'render failed');
+        const msg = err instanceof Error ? err.message : 'mermaid render failed';
+        setRenderError(msg);
+        setSvg('');
       });
     return () => {
       cancelled = true;
     };
-  }, [content]);
+  }, [content, mode]);
+
+  const rightActions = (
+    <div className={styles.modeToggle}>
+      <button
+        type="button"
+        className={styles.modeButton}
+        data-active={mode === 'preview'}
+        onClick={() => setMode('preview')}
+      >
+        Preview
+      </button>
+      <button
+        type="button"
+        className={styles.modeButton}
+        data-active={mode === 'source'}
+        onClick={() => setMode('source')}
+      >
+        Source
+      </button>
+    </div>
+  );
 
   return (
     <div className={styles.frame}>
@@ -70,23 +93,31 @@ export const MermaidViewer = ({ resource }: ViewerProps): ReactElement => {
         dirty={dirty}
         saving={saving}
         error={error}
-        writable={writable}
         onSave={save}
+        rightActions={rightActions}
       />
-      <div className={styles.scroll}>
-        {content === null && !error ? (
-          <pre className={styles.markdownStub}>loading…</pre>
-        ) : error && content === null ? (
-          <pre className={styles.markdownStub} role="alert">
-            {error}
-          </pre>
-        ) : renderError ? (
-          <pre className={styles.mermaidError} role="alert">
-            mermaid render error:{'\n'}
-            {renderError}
-          </pre>
+      <div className={mode === 'preview' ? styles.scroll : styles.scroll}>
+        {mode === 'preview' ? (
+          renderError ? (
+            <pre className={styles.markdownStub} role="alert">
+              {renderError}
+            </pre>
+          ) : (
+            <div
+              className={styles.mermaidStage}
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          )
         ) : (
-          <div ref={containerRef} className={styles.mermaidWrap} />
+          <CodeMirror
+            value={content ?? ''}
+            theme="light"
+            basicSetup={{ lineNumbers: true, foldGutter: true }}
+            onChange={(value) => setContent(value)}
+            readOnly={!resource.editable}
+            className={styles.codeMirror}
+          />
         )}
       </div>
     </div>

@@ -1,113 +1,80 @@
-// useViewerResource — shared load/save plumbing for every viewer.
-//
-// Centralising load + dirty tracking + save invocation here means each
-// individual viewer (markdown / code / smart-table / …) just renders
-// content and reports edits. The hook handles:
-//   - URI scheme dispatch (vault / ctrl-asset / http) via viewer-uri
-//   - in-flight save serialisation (no concurrent writes)
-//   - dirty flag relative to the last persisted snapshot
-//   - error surfacing (load failures stay visible until next reload)
-//   - readiness gating (non-editable resources never expose `save`)
-//
-// Returned `setContent` is the viewer's source-of-truth setter; calling
-// it sets `dirty=true`. `save()` returns a Promise so the caller can
-// chain UI feedback (toast, tab title star, etc.) on the result.
+// Shared hook: fetch a viewer resource's text content + expose save +
+// loading/error state. Used by every text-based viewer (Markdown,
+// CodeMirror-driven ones, etc.) so the fetch + ctrl-asset:// fallback
+// behavior lives in one place.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { isCtrlAssetUri } from '@/lib/asset-uri';
 import type { ViewerResource } from '@/lib/viewer-registry';
-import {
-  fetchUriAsText,
-  isWritable,
-  writeUriText,
-} from '@/lib/viewer-uri';
 
-export interface ViewerResourceState {
-  /** Current buffer content. `null` while loading or after an error. */
+interface UseViewerResourceState {
   content: string | null;
-  /** Replace the buffer (sets dirty=true). */
-  setContent: (next: string) => void;
-  /** Persist the buffer through the configured save channel. */
-  save: () => Promise<void>;
-  /** True when the buffer differs from the last persisted snapshot. */
-  dirty: boolean;
-  /** True during the in-flight save. */
-  saving: boolean;
-  /** Last load or save error. Cleared on successful operation. */
   error: string | null;
-  /** True if this URI scheme accepts writes (gates save button). */
-  writable: boolean;
+  setContent: (next: string) => void;
+  save: () => Promise<void>;
+  saving: boolean;
+  dirty: boolean;
 }
+
+const fetchAsText = async (uri: string): Promise<string> => {
+  const res = await fetch(uri);
+  if (!res.ok) throw new Error(`fetch ${uri} → ${res.status}`);
+  return res.text();
+};
 
 export const useViewerResource = (
   resource: ViewerResource,
-): ViewerResourceState => {
+): UseViewerResourceState => {
   const [content, setContentState] = useState<string | null>(null);
-  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
+  const [original, setOriginal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Prevent stale fetches from clobbering newer ones when the resource
-  // URI flips mid-load (e.g. user clicks between vault notes rapidly).
-  const reqIdRef = useRef(0);
-
   useEffect(() => {
-    const myReq = ++reqIdRef.current;
+    let cancelled = false;
     setContentState(null);
-    setSavedSnapshot(null);
+    setOriginal(null);
     setError(null);
-    fetchUriAsText(resource.uri)
+    fetchAsText(resource.uri)
       .then((text) => {
-        if (reqIdRef.current !== myReq) return;
+        if (cancelled) return;
         setContentState(text);
-        setSavedSnapshot(text);
+        setOriginal(text);
       })
       .catch((err: unknown) => {
-        if (reqIdRef.current !== myReq) return;
+        if (cancelled) return;
         const msg = err instanceof Error ? err.message : 'failed to load';
-        setError(msg);
+        const hint = isCtrlAssetUri(resource.uri)
+          ? `${msg} — ctrl-asset:// handler not yet registered`
+          : msg;
+        setError(hint);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [resource.uri]);
 
-  const setContent = useCallback((next: string) => {
-    setContentState(next);
-  }, []);
-
-  const writable = isWritable(resource.uri) && resource.editable;
-
-  const save = useCallback(async (): Promise<void> => {
-    if (!writable) {
-      throw new Error('resource is read-only');
-    }
-    if (content === null) return;
-    if (saving) return;
+  const save = async (): Promise<void> => {
+    if (!resource.editable || !resource.onSave || content == null) return;
     setSaving(true);
-    setError(null);
     try {
-      if (resource.onSave) {
-        // Custom save handler — caller wires routing (e.g. keycap patch).
-        await resource.onSave(content);
-      } else {
-        await writeUriText(resource.uri, content);
-      }
-      setSavedSnapshot(content);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'failed to save';
+      await resource.onSave(content);
+      setOriginal(content);
+      setError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'save failed';
       setError(msg);
-      throw err;
     } finally {
       setSaving(false);
     }
-  }, [content, resource, saving, writable]);
-
-  const dirty = content !== null && content !== savedSnapshot;
+  };
 
   return {
     content,
-    setContent,
-    save,
-    dirty,
-    saving,
     error,
-    writable,
+    setContent: setContentState,
+    save,
+    saving,
+    dirty: content !== null && content !== original,
   };
 };

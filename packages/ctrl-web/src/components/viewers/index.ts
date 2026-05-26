@@ -5,13 +5,16 @@
 
 export { FallbackViewer } from './Fallback';
 export { MarkdownViewer } from './MarkdownViewer';
+export { JsonViewer } from './JsonViewer';
+export { YamlViewer } from './YamlViewer';
+export { TomlViewer } from './TomlViewer';
 export { CodeViewer } from './CodeViewer';
-export { MermaidViewer } from './MermaidViewer';
 export { HtmlViewer } from './HtmlViewer';
+export { SvgViewer } from './SvgViewer';
+export { MermaidViewer } from './MermaidViewer';
 export { ImageViewer } from './ImageViewer';
 export { PdfViewer } from './PdfViewer';
 export { SmartTableViewer } from './SmartTableViewer';
-
+export { ViewerHost } from './ViewerHost';
 export { ViewerChrome } from './ViewerChrome';
 export { useViewerResource } from './useViewerResource';
-export type { ViewerResourceState } from './useViewerResource';

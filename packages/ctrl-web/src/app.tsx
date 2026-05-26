@@ -178,6 +178,9 @@ const CodeSpaceDetailRoute = lazy(() =>
 const PoolRoute = lazy(() =>
   import('./routes/pool').then((m) => ({ default: m.PoolRoute })),
 );
+const VaultRoute = lazy(() =>
+  import('./routes/vault').then((m) => ({ default: m.VaultRoute })),
+);
 // icon-lab is a development-only renderer bake-off. It imports
 // `lottie-react` for the side-by-side comparison — having that second
 // engine in a production chunk violates SKILL.md §7. Gating the dynamic
@@ -228,6 +231,15 @@ const poolRoute = createRoute({
   component: () => (
     <Suspense fallback={<LazyFallback />}>
       <PoolRoute />
+    </Suspense>
+  ),
+});
+const vaultRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/vault',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <VaultRoute />
     </Suspense>
   ),
 });
@@ -320,6 +332,7 @@ const iconLabRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   poolRoute,
+  vaultRoute,
   workspaceRoute,
   settingsRoute,
   settingsCtrlRoute,

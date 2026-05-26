@@ -1,59 +1,36 @@
-// PdfViewer — display PDFs via the browser's native PDF.js renderer.
-//
-// Both Tauri WebView2 (Edge Chromium) and WKWebView on macOS ship a
-// built-in PDF viewer; pointing an <iframe src> at the file URL is all
-// we need. Avoids bundling pdf.js (~250KB gzip) for a feature the
-// platform already provides.
-//
-// Sidecar companion (CLAUDE.md vault invariant):
-//   Every `file.pdf` in the vault has a `file.pdf.md` sidecar holding
-//   extracted text + frontmatter (page count, source URL, etc.) so the
-//   FTS5 index can search inside PDFs. When the resource carries a
-//   `companion` URI, render a small "open companion" button so the user
-//   can drop into the sidecar — Irisy citations land there too.
+// PdfViewer — browser-native PDF embed. WebView2 + WKWebView both
+// ship a PDF viewer; <embed> is the lightest path. When the resource
+// carries a companion (e.g. `file.pdf` + `file.pdf.md`), the sidecar
+// link surfaces so Irisy / search can drill into the extracted text.
 
-import { type ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
 
 export const PdfViewer = ({ resource }: ViewerProps): ReactElement => {
-  const noopSave = async (): Promise<void> => {
-    /* read-only */
-  };
-  const companion = resource.companion;
+  const rightActions = resource.companion ? (
+    <a
+      href={resource.companion}
+      target="_blank"
+      rel="noreferrer"
+      className={styles.companionLink}
+      title="Open extracted text sidecar"
+    >
+      Sidecar
+    </a>
+  ) : null;
+
   return (
     <div className={styles.frame}>
-      <ViewerChrome
-        resource={resource}
-        dirty={false}
-        saving={false}
-        error={null}
-        writable={false}
-        onSave={noopSave}
-        rightActions={
-          companion ? (
-            <span
-              className={styles.metaSaving}
-              title={`Sidecar markdown: ${companion}`}
-            >
-              + {displayCompanion(companion)}
-            </span>
-          ) : undefined
-        }
-      />
-      <div className={styles.scroll} style={{ padding: 0 }}>
-        <iframe
-          title={resource.uri}
+      <ViewerChrome resource={resource} rightActions={rightActions} />
+      <div className={styles.frameBody}>
+        <embed
           src={resource.uri}
-          className={styles.pdfFrame}
+          type="application/pdf"
+          className={styles.pdfEmbed}
         />
       </div>
     </div>
   );
-};
-
-const displayCompanion = (uri: string): string => {
-  if (uri.startsWith('vault://')) return uri.slice('vault://'.length);
-  return uri;
 };

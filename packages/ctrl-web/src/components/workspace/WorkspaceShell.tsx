@@ -12,6 +12,9 @@ import { Suspense, createElement, useCallback } from 'react';
 import { useWorkspaceStore } from '@/lib/workspace-store';
 import type { Tab } from '@/lib/tab-store';
 import { TabBar } from '@/components/TabBar';
+import { ViewerHost } from '@/components/viewers/ViewerHost';
+import { resourceFromVaultPath } from '@/lib/viewer-resource';
+import { vaultRead, vaultWrite } from '@/lib/kernel';
 import { InstanceSwitcher } from './InstanceSwitcher';
 import { EmbedView } from './EmbedView';
 import { resolveViewer, type ViewerResource } from '@/lib/viewer-registry';
@@ -85,42 +88,29 @@ const renderTabBody = (tab: Tab): ReactElement => {
     case 'external-embed':
       return <EmbedView url={tab.url} label={tab.title} />;
     case 'vault-md': {
-      // Empty path = no resource selected yet — show a hint instead of
-      // mounting a viewer against a bogus URI (which would fetch-fail).
       if (!tab.vaultPath) {
         return (
           <div className={styles.placeholder}>
             <span className={styles.placeholderKind}>vault-md</span>
             <p className={styles.placeholderHint}>
-              No file selected. Set <code>vaultPath</code> on the tab to load
-              a markdown note from the vault.
+              No vault path bound to this tab.
             </p>
           </div>
         );
       }
-      // Dispatch to the viewer registry. Smart-table content-types take
-      // precedence when the file extension hints at structured data;
-      // everything else falls into the markdown viewer.
-      const contentType = contentTypeForPath(tab.vaultPath);
-      const resource: ViewerResource = {
-        location: 'vault',
-        contentType,
-        uri: vaultUri(tab.vaultPath),
-        editable: true,
+      const base = resourceFromVaultPath(tab.vaultPath);
+      const resource = {
+        ...base,
+        onSave: async (content: string) => {
+          const entry = await vaultRead(tab.vaultPath);
+          await vaultWrite({
+            path: tab.vaultPath,
+            content,
+            frontmatter: entry.frontmatter,
+          });
+        },
       };
-      const Viewer = resolveViewer(contentType);
-      return (
-        <Suspense
-          fallback={
-            <div className={styles.placeholder}>
-              <span className={styles.placeholderKind}>loading viewer…</span>
-              <span className={styles.placeholderPath}>{tab.vaultPath}</span>
-            </div>
-          }
-        >
-          {createElement(Viewer, { resource })}
-        </Suspense>
-      );
+      return <ViewerHost resource={resource} />;
     }
     case 'keycap-output':
       return (
