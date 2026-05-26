@@ -13,6 +13,12 @@
 // All viewer modules are loaded lazily so the critical-path PWA bundle
 // stays under the mobile 200KB cap. A viewer enters the bundle the first
 // time its content-type appears in a workspace tab.
+//
+// VMark compatibility: per ADR-001 amendment (2026-05-25), CTRL uses the
+// same open-source stack VMark uses (Tiptap, CodeMirror, mermaid) — no
+// runtime dependency on the VMark.app process. A user can switch between
+// VMark and CTRL editing the same vault file because both speak plain
+// markdown + the same lib semantics.
 
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 
@@ -33,7 +39,8 @@ export interface ViewerResource {
    * Called when the viewer commits an edit. Required when `editable` is
    * true; ignored otherwise. The viewer passes back the full new content;
    * the handler is responsible for routing it (vault write / keycap
-   * patch / etc).
+   * patch / etc). When omitted, the viewer's default save handler
+   * dispatches by URI scheme (vault:// → vault_write).
    */
   onSave?: (content: string) => Promise<void>;
 }
@@ -51,9 +58,50 @@ const FallbackViewer = lazy(() =>
   })),
 );
 
+// ───── Real viewers ──────────────────────────────────────────────────────
+// Each line is its own dynamic import → its own chunk → its own lazy
+// load. Adding a viewer should never require touching critical-path
+// code.
+
 const MarkdownViewer = lazy(() =>
   import('@/components/viewers/MarkdownViewer').then((m) => ({
     default: m.MarkdownViewer,
+  })),
+);
+
+const CodeViewer = lazy(() =>
+  import('@/components/viewers/CodeViewer').then((m) => ({
+    default: m.CodeViewer,
+  })),
+);
+
+const MermaidViewer = lazy(() =>
+  import('@/components/viewers/MermaidViewer').then((m) => ({
+    default: m.MermaidViewer,
+  })),
+);
+
+const HtmlViewer = lazy(() =>
+  import('@/components/viewers/HtmlViewer').then((m) => ({
+    default: m.HtmlViewer,
+  })),
+);
+
+const ImageViewer = lazy(() =>
+  import('@/components/viewers/ImageViewer').then((m) => ({
+    default: m.ImageViewer,
+  })),
+);
+
+const PdfViewer = lazy(() =>
+  import('@/components/viewers/PdfViewer').then((m) => ({
+    default: m.PdfViewer,
+  })),
+);
+
+const SmartTableViewer = lazy(() =>
+  import('@/components/viewers/SmartTableViewer').then((m) => ({
+    default: m.SmartTableViewer,
   })),
 );
 
@@ -66,15 +114,53 @@ const MarkdownViewer = lazy(() =>
  * than silently apply the wrong renderer.
  */
 const VIEWERS: Record<string, LazyViewer> = {
+  // Markdown
   'text/markdown': MarkdownViewer,
-  // ↓ planned, file in subsequent commits as viewers are written
-  // 'application/json': JsonViewer,
-  // 'text/yaml': YamlViewer,
-  // 'text/toml': TomlViewer,
-  // 'text/html': HtmlViewer,
-  // 'image/svg+xml': SvgViewer,
-  // 'text/mermaid': MermaidViewer,
-  // 'application/pdf': PdfViewer,
+  'text/x-markdown': MarkdownViewer,
+
+  // Code / config
+  'application/json': CodeViewer,
+  'text/json': CodeViewer,
+  'application/yaml': CodeViewer,
+  'text/yaml': CodeViewer,
+  'application/x-yaml': CodeViewer,
+  'application/toml': CodeViewer,
+  'text/toml': CodeViewer,
+  'application/x-toml': CodeViewer,
+  'application/javascript': CodeViewer,
+  'text/javascript': CodeViewer,
+  'application/typescript': CodeViewer,
+  'text/typescript': CodeViewer,
+  'text/x-rust': CodeViewer,
+  'text/x-shellscript': CodeViewer,
+  'application/x-sh': CodeViewer,
+  'text/plain': CodeViewer,
+
+  // Diagrams
+  'text/mermaid': MermaidViewer,
+  'text/x-mermaid': MermaidViewer,
+
+  // HTML preview
+  'text/html': HtmlViewer,
+  'application/xhtml+xml': HtmlViewer,
+
+  // Images
+  'image/svg+xml': ImageViewer,
+  'image/png': ImageViewer,
+  'image/jpeg': ImageViewer,
+  'image/gif': ImageViewer,
+  'image/webp': ImageViewer,
+  'image/avif': ImageViewer,
+
+  // PDF (native browser PDF.js)
+  'application/pdf': PdfViewer,
+
+  // Smart table — spreadsheet-like editor for tabular data
+  'text/csv': SmartTableViewer,
+  'application/csv': SmartTableViewer,
+  // JSON-array detection happens inside SmartTableViewer; explicit
+  // override registry below for callers that know the JSON is tabular.
+  'application/x-ctrl-table+json': SmartTableViewer,
 };
 
 /**
