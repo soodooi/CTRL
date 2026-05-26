@@ -210,9 +210,9 @@ CTRL v1.0 must achieve:
 
 ## Specs index
 
-- `.claude/ADR/INDEX.md` — ADR registry (chronological)
-- `.claude/ADR/001-system-architecture.md` — master ADR (spine — never amend)
-- `.claude/ADR/002-pwa-pivot.md` — UI rendering layer (accepted 2026-05-13)
+- `.olym/decisions/INDEX.md` — ADR registry (chronological)
+- `.olym/decisions/001-system-architecture.md` — master ADR (spine — amend via dated `## Amendment` blocks only)
+- `.olym/decisions/002-pwa-pivot.md` — UI rendering layer (accepted 2026-05-13)
 - `.olym/specs/kernel/spec.md` — L1 Rust microkernel RFC
 - `.olym/specs/pwa-shell/spec.md` — Tauri 2 native shell (active)
 - `.olym/specs/stss-protocol/spec.md` — ST-SS CTRL profile + hardware + E-ink
@@ -229,5 +229,5 @@ CTRL v1.0 must achieve:
 
 1. Read ADR-001 first
 2. Check relevant spec (specs/ above)
-3. If still unclear: 新 ADR (`.claude/ADR/00X-*.md`) + update this strategy doc
+3. If still unclear: 新 ADR (`.olym/decisions/00X-*.md`) + update this strategy doc
 4. Do NOT make conflicting decisions across documents — strategy doc is canonical lookup

@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.37"
+version = "0.1.39"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -42,7 +42,12 @@ futures = "0.3"
 uuid = { version = "1", features = ["v4", "serde"] }
 ciborium = "0.2"           # CBOR encoding (ST-SS wire format)
 rusqlite = { version = "0.32", features = ["bundled"] }  # event store
-wasmtime = { version = "27", default-features = false, features = ["async", "cranelift"] }  # WASM sandbox (P2.7)
+# wasmtime removed 2026-05-25 — see ADR-001 amendment 4th 校准 (v1 architecture
+# design philosophy). v1 keycaps are mixed-language subprocesses (Node/Python/
+# Rust/Bash) which WASM cannot uniformly sandbox. Tauri 2 Capability + Isolation
+# Pattern + CSP already provide plugin-host isolation; subprocess process
+# isolation covers untrusted code. Re-evaluate via WasmEdge (8MB vs wasmtime
+# 80MB) when v1.x ships user-uploaded executable code.
 rmcp = { version = "1.7", features = [
     "client", "transport-child-process",
     "server", "macros", "schemars", "transport-streamable-http-server",  # MCP server (ADR-013)
@@ -65,8 +70,8 @@ portable-pty = "0.9"
 core-graphics = "0.24"
 core-foundation = "0.10"
 objc2 = "0.5"
-objc2-foundation = { version = "0.2", features = ["NSGeometry"] }
-objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder"] }
+objc2-foundation = { version = "0.2", features = ["NSGeometry", "NSThread"] }
+objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder", "NSApplication", "NSRunningApplication"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # H-2026-05-13-001 sub-PR b/2 — lone-Ctrl WH_KEYBOARD_LL hook port from

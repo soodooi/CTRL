@@ -22,7 +22,7 @@
 }
 
 .meta {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--space-2);
   padding: 4px 10px;
@@ -32,18 +32,60 @@
   font-size: var(--text-mono-sm);
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
+  flex-wrap: nowrap;
+  min-height: 28px;
 }
-.metaLocation { text-transform: uppercase; }
+.metaLocation { text-transform: uppercase; flex-shrink: 0; }
 .metaPath {
   font-family: var(--font-mono);
   color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
+.metaDirty {
+  color: var(--color-accent, #ffb454);
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.metaSaving,
+.metaError {
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.metaSaving { color: var(--color-text-soft); }
+.metaError { color: var(--color-danger, #e25555); cursor: help; }
+.metaSpacer { flex: 1 1 auto; min-width: 8px; }
 .metaReadOnly {
-  margin-left: auto;
   font-size: var(--text-mono-xs);
   letter-spacing: 0.1em;
   color: var(--color-text-soft);
   text-transform: uppercase;
+  flex-shrink: 0;
+}
+.saveButton {
+  font: inherit;
+  background: var(--color-bg-l2, transparent);
+  border: 1px solid var(--color-border, currentColor);
+  color: var(--color-text);
+  padding: 2px 10px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: var(--text-mono-xs);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.saveButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.saveButton:not(:disabled):hover {
+  background: var(--color-bg-l3, var(--color-bg-l2));
 }
 
 /* Fallback viewer — bare display when no registered viewer matches. */
@@ -72,13 +114,265 @@
   line-height: 1.6;
 }
 
-/* Markdown stub — neutral monospace + plain text until Tiptap lands.
-   Preserves the resource contract today so tabs can be opened against
-   the registry, with the real viewer dropping in zero-impact later. */
+/* Markdown stub — fallback monospace render used while the lazy viewer
+   chunk loads, or for error states. */
 .markdownStub {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   line-height: 1.55;
   white-space: pre-wrap;
   color: var(--color-text);
+}
+
+/* Mode toggle (Preview / Source) — sits in ViewerChrome rightActions. */
+.modeToggle {
+  display: inline-flex;
+  border: 1px solid var(--color-border, currentColor);
+  border-radius: 2px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.modeButton {
+  font: inherit;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  padding: 2px 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: var(--text-mono-xs);
+}
+.modeButton[data-active='true'] {
+  background: var(--color-bg-l3, var(--color-bg-l2));
+  color: var(--color-text);
+}
+
+/* Tiptap prose surface — minimal typography, lets the design tokens own
+   font + colour. Tiptap injects an `.ProseMirror` div; we scope our
+   rules through that selector instead of styling .prose itself so the
+   container's padding stays predictable. */
+.prose {
+  font-size: var(--text-md);
+  line-height: 1.65;
+  color: var(--color-text);
+  max-width: 76ch;
+}
+.prose :global(.ProseMirror) {
+  outline: none;
+  min-height: 200px;
+}
+.prose :global(.ProseMirror p) { margin: 0 0 0.8em; }
+.prose :global(.ProseMirror h1),
+.prose :global(.ProseMirror h2),
+.prose :global(.ProseMirror h3),
+.prose :global(.ProseMirror h4) {
+  margin: 1.2em 0 0.4em;
+  line-height: 1.25;
+  color: var(--color-text);
+}
+.prose :global(.ProseMirror h1) { font-size: 1.75em; }
+.prose :global(.ProseMirror h2) { font-size: 1.4em; }
+.prose :global(.ProseMirror h3) { font-size: 1.18em; }
+.prose :global(.ProseMirror ul),
+.prose :global(.ProseMirror ol) { padding-left: 1.4em; margin: 0 0 0.8em; }
+.prose :global(.ProseMirror code) {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--color-bg-l1);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+.prose :global(.ProseMirror pre) {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--color-bg-l1);
+  padding: var(--space-3);
+  border-radius: 3px;
+  overflow-x: auto;
+}
+.prose :global(.ProseMirror pre code) { background: transparent; padding: 0; }
+.prose :global(.ProseMirror blockquote) {
+  border-left: 3px solid var(--color-border-soft);
+  margin: 0 0 0.8em;
+  padding-left: var(--space-3);
+  color: var(--color-text-muted);
+}
+.prose :global(.ProseMirror a) {
+  color: var(--color-accent, #1E3FB0);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose :global(.ProseMirror img) { max-width: 100%; height: auto; }
+.prose :global(.ProseMirror hr) {
+  border: none;
+  border-top: 1px solid var(--color-border-soft);
+  margin: 1.2em 0;
+}
+
+/* CodeMirror — viewer wraps it in a flex container that fills the
+   scroll region; remove default margins. */
+.codeMirror {
+  height: 100%;
+}
+.codeMirror :global(.cm-editor) {
+  height: 100%;
+  background: var(--color-bg-l0);
+}
+.codeMirror :global(.cm-scroller) {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+/* HTML preview — full-bleed iframe inside the scroll container. */
+.htmlFrame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--color-bg-l0);
+}
+
+/* PDF — same shape as HTML; relies on the browser's native PDF viewer. */
+.pdfFrame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--color-bg-l0);
+}
+
+/* Image viewer — center single image, dark backdrop. */
+.imageWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  padding: var(--space-4);
+  background:
+    repeating-conic-gradient(
+      var(--color-bg-l1) 0 25%,
+      var(--color-bg-l2) 0 50%
+    ) 50% / 16px 16px;
+}
+.imageWrap img {
+  max-width: 100%;
+  max-height: 100%;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* Mermaid viewer — render output is centered; raw fallback uses pre. */
+.mermaidWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  min-height: 100%;
+  overflow: auto;
+}
+.mermaidWrap svg { max-width: 100%; height: auto; }
+.mermaidError {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  color: var(--color-danger, #e25555);
+  white-space: pre-wrap;
+  padding: var(--space-3);
+}
+
+/* Smart table */
+.tableWrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.tableToolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px var(--space-3);
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+}
+.tableFilter {
+  font: inherit;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  color: var(--color-text);
+  padding: 2px 8px;
+  border-radius: 2px;
+  flex: 1;
+  min-width: 0;
+  max-width: 300px;
+}
+.tableButton {
+  font: inherit;
+  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  color: var(--color-text-muted);
+  padding: 2px 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: 2px;
+}
+.tableButton:hover { background: var(--color-bg-l2); color: var(--color-text); }
+.tableScroll {
+  flex: 1;
+  overflow: auto;
+  background: var(--color-bg-l0);
+}
+.dataTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  table-layout: fixed;
+}
+.dataTable th,
+.dataTable td {
+  border-right: 1px solid var(--color-border-soft);
+  border-bottom: 1px solid var(--color-border-soft);
+  padding: 4px 8px;
+  vertical-align: top;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dataTable thead th {
+  background: var(--color-bg-l1);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+.dataTable thead th[data-sorted='asc']::after { content: ' ↑'; opacity: 0.6; }
+.dataTable thead th[data-sorted='desc']::after { content: ' ↓'; opacity: 0.6; }
+.dataTable tbody tr:hover { background: var(--color-bg-l1); }
+.cellEditor {
+  font: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  color: var(--color-text);
+  padding: 0;
+}
+.cellTypeNum { text-align: right; font-variant-numeric: tabular-nums; }
+.cellTypeBool { text-align: center; }
+.cellTypeLink a { color: var(--color-accent, #1E3FB0); text-decoration: underline; }
+.tableStatus {
+  padding: 4px var(--space-3);
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-text-muted);
+  display: flex;
+  gap: var(--space-3);
 }

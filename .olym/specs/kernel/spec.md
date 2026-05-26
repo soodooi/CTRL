@@ -303,7 +303,6 @@ pub struct LlmPort {
 ```rust
 pub struct McpHost {
     discovered_servers: HashMap<String, McpServerHandle>,
-    sandbox: Arc<dyn Sandbox>,
 }
 
 impl McpHost {
@@ -314,7 +313,7 @@ impl McpHost {
 ```
 
 - Uses Anthropic MCP SDK (Rust port or shells out to TS reference impl)
-- Every MCP server runs inside WASM sandbox (Anthropic Sandbox Runtime port)
+- MCP servers run as OS subprocesses behind Tauri 2 Capability + Isolation Pattern + CSP (see ADR-001 amendment 4 and ADR-010 §v1 sandbox)
 - Discovery via official MCP Registry + community sources
 
 ### 3.6 Persistence
@@ -332,19 +331,20 @@ pub struct EventStore {
 
 ---
 
-## 4. Sandbox model (WASM)
+## 4. Sandbox model — OS-level subprocess isolation
 
-Every L3 userland actor runs inside a WASM sandbox. Choices for v1:
+> WASM-based sandbox (wasmtime / cranelift) **removed in 0.1.39 lean kernel** per ADR-001 amendment 4. See `src-tauri/Cargo.toml` deps and amendment rationale (Shayon 2026 sandbox-isolation analysis, Tauri 2 Security docs, WasmEdge cold-start comparison).
 
-| Option | Pros | Cons |
-|---|---|---|
-| `wasmtime` | Bytecode Alliance, Rust-native, mature | Larger binary |
-| `wasmer` | Multiple runtimes (cranelift / LLVM / singlepass) | Younger |
-| Anthropic Sandbox Runtime port | Direct fit for MCP servers, native OS primitives | Not Tauri-tested |
+L3 userland keycaps run as **OS subprocesses** (Pattern B/C/D via `SubprocessActor` per ADR-012) gated by:
 
-**P2 RFC will decide**. Default bias: `wasmtime` for actor sandbox + Anthropic Sandbox Runtime for MCP server processes.
+| Surface | Mechanism |
+|---|---|
+| Filesystem / network / IPC | macOS `sandbox-exec` profile · Linux `landlock` + `seccomp` · Windows AppContainer |
+| Kernel ↔ keycap wire | MCP outward (ADR-010); declared `capability` tokens in keycap manifest = OS sandbox policy + Tauri ACL allowlist |
+| WebView ↔ kernel | Tauri 2 Capability + Isolation Pattern + CSP |
+| Re-entry into WASM | Reserved for in-process untrusted code (e.g. user-authored expression eval). Default = WasmEdge (8 MB, 1.5 ms cold start) when needed. |
 
-**Capability injection**: each WASM instance gets a host import table that mirrors actor's `Capability` — only declared effects are callable.
+**Capability injection** = manifest-declared tokens map 1:1 to (a) OS sandbox policy entries, (b) Tauri command ACL, (c) MCP tool allowlist. Missing token → syscall block at OS layer, not at kernel layer.
 
 ---
 
@@ -423,7 +423,7 @@ L2 wraps L1 syscalls. L3 keycaps and creator manifests target L2, never L1 direc
 ## 8. Open RFC items (resolve in P2 review)
 
 - [ ] Actor runtime: pure Tokio vs `actix` framework vs Bevy ECS (parallel scheduler)
-- [ ] WASM sandbox: wasmtime vs wasmer vs Anthropic Sandbox Runtime
+- [x] ~~WASM sandbox~~ — resolved 0.1.39: removed wasmtime/cranelift; OS subprocess + Tauri ACL (ADR-001 amendment 4)
 - [ ] Event store: own SQLite vs LiveStore vs TanStack DB
 - [ ] CRDT: Yjs (cross-language) vs Automerge (Rust-native) vs none for v1
 - [ ] Hot reload: how to swap actor code without losing state — checkpoint/restore via event replay
@@ -441,4 +441,4 @@ L1 Kernel implementation considered "done" when:
 - [ ] LLM Port routes to workers-ai with anthropic fail-over
 - [ ] First MCP server can be discovered + invoked with full capability check
 - [ ] Bench: 10,000 actor spawns + 100,000 events/sec on M1 Pro
-- [ ] WASM sandbox prevents file system access outside declared capability
+- [ ] OS subprocess sandbox (sandbox-exec / landlock / AppContainer) blocks FS access outside manifest-declared capability tokens

@@ -2,7 +2,7 @@
 
 CTRL profile of the **ST-SS** (Spatio-Temporal Semantic Stream) protocol — the wire format every keycap, hardware device, and external desktop app uses to publish into the CTRL kernel.
 
-> See [ADR-001 §3 §4](../../.claude/ADR/001-system-architecture.md) for where ST-SS sits in CTRL's 4-layer architecture, and [`.olym/specs/stss-protocol/spec.md`](../../.olym/specs/stss-protocol/spec.md) for the protocol-level reference. This package is the TypeScript reference implementation of that spec.
+> See [ADR-001 §3 §4](../../.olym/decisions/001-system-architecture.md) for where ST-SS sits in CTRL's 4-layer architecture, and [`.olym/specs/stss-protocol/spec.md`](../../.olym/specs/stss-protocol/spec.md) for the protocol-level reference. This package is the TypeScript reference implementation of that spec.
 
 ## What ST-SS is (and is not)
 

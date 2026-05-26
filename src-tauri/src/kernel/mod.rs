@@ -27,7 +27,6 @@ pub mod cache;
 pub mod capability;
 pub mod capability_resolver;
 pub mod channel;
-pub mod composition;
 pub mod effect;
 pub mod event;
 pub mod local_storage;
@@ -37,7 +36,6 @@ pub mod mcp_host;
 pub mod mcp_server;
 pub mod persistence;
 pub mod runtime;
-pub mod sandbox;
 pub mod scheduler;
 pub mod stss_bridge;
 pub mod subprocess_actor;
@@ -55,7 +53,6 @@ pub use mcp_host::{McpHost, McpServerDescriptor, McpServerSource, McpToolDescrip
 pub use mcp_server::{McpServerHandle, DEFAULT_LISTEN_ADDR as MCP_SERVER_LISTEN_ADDR};
 pub use persistence::EventStore;
 pub use runtime::{KernelBootError, KernelRuntime};
-pub use sandbox::{SandboxConfig, WasmSandbox};
 pub use scheduler::{ActorEntry, Scheduler, SchedulerError, SpawnResult};
 pub use stss_bridge::{StssBridge, DEFAULT_LISTEN_ADDR as STSS_LISTEN_ADDR};
 pub use subprocess_actor::{

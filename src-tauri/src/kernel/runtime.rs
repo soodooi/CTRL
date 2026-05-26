@@ -66,7 +66,7 @@ impl KernelRuntime {
         let mut llm_port = LlmPortRouter::new(vec![
             "volc".into(),
             "anthropic".into(),
-            "ollama".into(),
+            
         ]);
         crate::kernel::llm_adapters::register_default_adapters(&mut llm_port);
 
