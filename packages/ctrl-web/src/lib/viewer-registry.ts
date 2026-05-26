@@ -109,42 +109,6 @@ const SmartTableViewer = lazy(() =>
   })),
 );
 
-const CodeViewer = lazy(() =>
-  import('@/components/viewers/CodeViewer').then((m) => ({
-    default: m.CodeViewer,
-  })),
-);
-
-const MermaidViewer = lazy(() =>
-  import('@/components/viewers/MermaidViewer').then((m) => ({
-    default: m.MermaidViewer,
-  })),
-);
-
-const HtmlViewer = lazy(() =>
-  import('@/components/viewers/HtmlViewer').then((m) => ({
-    default: m.HtmlViewer,
-  })),
-);
-
-const ImageViewer = lazy(() =>
-  import('@/components/viewers/ImageViewer').then((m) => ({
-    default: m.ImageViewer,
-  })),
-);
-
-const PdfViewer = lazy(() =>
-  import('@/components/viewers/PdfViewer').then((m) => ({
-    default: m.PdfViewer,
-  })),
-);
-
-const SmartTableViewer = lazy(() =>
-  import('@/components/viewers/SmartTableViewer').then((m) => ({
-    default: m.SmartTableViewer,
-  })),
-);
-
 /**
  * Content-type → lazy viewer. Aliases: any image/* uses ImageViewer; any
  * text/* without a more specific match uses CodeViewer.

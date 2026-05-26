@@ -22,6 +22,7 @@
 | [016](./016-irisy-eight-stage-lifecycle.md) | Irisy 8-stage keycap lifecycle — companion across Discovery → Retire | accepted | 2026-05-22 | bao, zeus, hephaestus | framework | — |
 | [017](./017-remote-coview-is-irisy.md) | Remote co-view = Irisy primitives (mesh = sync only, not viewer) | accepted | 2026-05-22 | bao, zeus | framework | — |
 | [018](./018-auto-update-strategy.md) | Auto-update strategy — 4 layers (app / hermes / keycap / PWA) × 3 tiers | accepted | 2026-05-22 | bao, zeus | framework | — |
+| [020](./020-vmark-stack-adoption.md) | VMark stack adoption — viewer registry + vault browser + smart table | accepted | 2026-05-25 | bao, daedalus | framework | — |
 
 > SLA 列 = "已挂天数 / SLA 上限"。P0 超时 → bao 决策顶；详见 PROCESS.md §1。
 
@@ -43,6 +44,6 @@
 
 ---
 
-**Index version**: 0.7 (2026-05-25 — adr-architecture-debt-cleanup: +013/014/015/016/017/018 active, 019 superseded, reserved status annotated, ADR-004 SLA bumped to 3/7)
+**Index version**: 0.8 (2026-05-26 — +020 VMark stack adoption (daedalus, accepted with PR #48))
 **Process**: see [PROCESS.md](./PROCESS.md)
 **Template**: see [_template.md](./_template.md)
