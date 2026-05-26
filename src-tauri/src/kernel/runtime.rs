@@ -18,6 +18,7 @@ use crate::kernel::capability::CapabilityBroker;
 use crate::kernel::effect::EffectExecutor;
 use crate::kernel::event::EventBus;
 use crate::kernel::llm_port::LlmPortRouter;
+use crate::kernel::local_storage::{default_db_path as ls_default_db_path, LocalStorage};
 use crate::kernel::mcp_host::McpHost;
 use crate::kernel::persistence::EventStore;
 use crate::kernel::scheduler::Scheduler;
@@ -33,6 +34,10 @@ pub struct KernelRuntime {
     pub effect_executor: Arc<EffectExecutor>,
     pub event_store: Arc<EventStore>,
     pub llm_port: Arc<LlmPortRouter>,
+    /// Per-keycap persistent JSON KV opened against ls_default_db_path so the
+    /// MCP server's kv.* tools share state with Tauri storage commands. None
+    /// when HOME isn't resolvable (CI / sandboxed test runs).
+    pub local_storage: Option<Arc<LocalStorage>>,
     /// Monotonic instant captured at boot — used by the kernel_status
     /// Tauri command to report uptime to the PWA status bar.
     pub booted_at: Instant,
@@ -102,6 +107,29 @@ impl KernelRuntime {
             }
         }
 
+        // Vault canonical layout (ADR-001 amendment 2026-05-25 invariant #2).
+        // Migrates legacy ~/.ctrl/vault/ to ~/Documents/CTRL/ on first boot.
+        // Best-effort — failure leaves vault dir uninit, vault.* commands
+        // will surface a clean error and the PWA can prompt a wizard.
+        if let Some(vault_root) = crate::kernel::vault::default_vault_root() {
+            if let Err(e) = crate::kernel::vault::ensure_vault_layout(&vault_root) {
+                tracing::warn!(error = %e, ?vault_root, "vault: ensure_layout failed");
+            }
+        }
+
+        // LocalStorage: open the same SQLite path the Tauri commands/storage
+        // module uses so kv.* MCP tools and storage_* invoke handlers share
+        // one file. Best-effort — when HOME is absent (CI) the field stays
+        // None and the kv.* MCP tools surface a clean error.
+        let local_storage = ls_default_db_path()
+            .and_then(|p| match LocalStorage::open(&p) {
+                Ok(ls) => Some(Arc::new(ls)),
+                Err(e) => {
+                    tracing::warn!(error = %e, path = ?p, "local_storage open failed");
+                    None
+                }
+            });
+
         Ok(Self {
             scheduler: Arc::new(Scheduler::new()),
             event_bus: Arc::new(EventBus::new()),
@@ -110,6 +138,7 @@ impl KernelRuntime {
             effect_executor: Arc::new(EffectExecutor::new()),
             event_store: Arc::new(event_store),
             llm_port: Arc::new(llm_port),
+            local_storage,
             booted_at: Instant::now(),
         })
     }

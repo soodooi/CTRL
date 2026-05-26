@@ -1,0 +1,10 @@
+{
+  "name": "@ctrl/keycaps",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "Source-of-truth for CTRL's bundled builtin keycaps (15 v1 starter set). Bundled into CTRL.app/Contents/Resources/keycaps/ at build time; copied to ~/.ctrl/keycaps/ on first run.",
+  "scripts": {
+    "validate": "echo 'keycap manifest validation lands when ctrl-keycap-sdk schema is finalized'"
+  }
+}

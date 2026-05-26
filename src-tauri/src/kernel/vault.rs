@@ -47,12 +47,61 @@ fn try_global_index() -> Option<&'static vault_index::VaultIndex> {
         .as_ref()
 }
 
-/// Default vault path: `$HOME/.ctrl/vault`. Users may override via
-/// `~/.ctrl/config.toml`'s `[vault] path = "..."` to point at their
-/// existing Obsidian vault. Returns None when HOME isn't set (CI env).
+/// Default vault path: `$HOME/Documents/CTRL`. Plain-text philosophy + invariant
+/// #2 (vault = sibling structure visible to Finder / vim / VMark / Obsidian
+/// without dotfile burying). Users may override via `~/.ctrl/config.toml`'s
+/// `[vault] path = "..."` to point at an existing markdown vault. Returns
+/// None when HOME isn't set (CI env).
+///
+/// Migration: if the legacy `~/.ctrl/vault/` exists and the new default does
+/// not, call `migrate_legacy_vault()` to move it. ensure_vault_layout() also
+/// creates the canonical sibling structure (`notes/`, `assets/{images,audio,
+/// pdf,attachments}/`) on first boot.
 pub fn default_vault_root() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join("Documents").join("CTRL"))
+}
+
+/// Legacy vault path (pre-0.1.37). Migration source only.
+pub fn legacy_vault_root() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
     Some(PathBuf::from(home).join(".ctrl").join("vault"))
+}
+
+/// Ensure the vault directory exists with the canonical sibling layout per
+/// ADR-001 amendment 2026-05-25 invariant #2 (vault sibling structure). Also
+/// migrates legacy `~/.ctrl/vault/` content forward when present.
+///
+/// Called at kernel boot via vault_index init. Idempotent — already-existing
+/// dirs are left untouched; only missing pieces are created.
+pub fn ensure_vault_layout(root: &Path) -> std::io::Result<()> {
+    // Migration: if the new root doesn't exist but the legacy ~/.ctrl/vault/
+    // does, move it. Best-effort — on failure we log and continue with a
+    // fresh empty new root.
+    if !root.exists() {
+        if let Some(legacy) = legacy_vault_root() {
+            if legacy.exists() && legacy != root {
+                if let Some(parent) = root.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                match std::fs::rename(&legacy, root) {
+                    Ok(_) => {
+                        tracing::info!(?legacy, ?root, "vault: migrated legacy ~/.ctrl/vault/");
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, ?legacy, ?root, "vault: migration failed, starting fresh");
+                    }
+                }
+            }
+        }
+    }
+
+    // Canonical structure — notes/ + assets/{images,audio,pdf,attachments}/.
+    let _ = std::fs::create_dir_all(root.join("notes"));
+    for sub in ["images", "audio", "pdf", "attachments"] {
+        let _ = std::fs::create_dir_all(root.join("assets").join(sub));
+    }
+    Ok(())
 }
 
 /// VaultEntry — what callers get back from list / read operations.
