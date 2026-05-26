@@ -27,15 +27,26 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 - 开始前查 `.olym/skills/` 和 `.olym/best-practice/` (后续建立)
 - 涉及战略改动: 先读 ADR-001, 再读相关 spec, 不冲突再动手
 
-### Working mode: 灵活开发, 文档后补
+### Working mode: 灵活开发 — 只做 ADR + 代码 + PR
 
-bao 2026-05-25 校准: 当前处于 v1 快速迭代期, **代码 ship 优先, 文档后补**。
+bao 2026-05-25 进一步校准: **只 3 件事**:
 
-- 不阻塞: handoff 状态 / spec 细则 / ADR 撰写 / README 同步 — 全部允许滞后
-- 先动手: 实装 → commit → push, 不等 spec/handoff 齐全
-- 回填窗口: 功能 ship 后 (release 切版本时 / EOD / 周末) 集中回补 doc 状态
-- 例外 (仍需先 doc): 战略级 ADR 改动 (架构 lock 点) / 安全相关 / 8 zeus-stewardship 类
-- 不变: olym 主循环 / RFC 5 步 / lane 边界 / commit message 规范 — 这些是流程保命线, 不是 doc
+1. **ADR** — 战略决策必写 ADR. **ADR 跟最新决策有冲突立刻改/superseded**, 不留拖延 (memory `decision_pi_is_sole_brain_hermes_is_keycap` 反例: ADR-019 等到第二天才 supersede — 不允许再发生)
+2. **代码** — 直接动手实施, cargo + tsc 双绿就 commit
+3. **PR** — 单 branch 累积 commit, 一次性 PR → main, squash merge
+
+**不做** (灵活模式期间):
+- spec 细则 / handoff 中间态 / README 同步 — 暂搁
+- olym 主循环 / RFC 5 步 / 7-step process — 暂搁
+- doc churn / cleanup PR / governance ADR — 暂搁
+
+**仍守** (这些是保命线):
+- 全英文代码 (pre-push hook)
+- `--no-verify` 禁用
+- Cargo.lock + package-lock.json 进 commit
+- ADR-001 spine (5 primitives) 不动
+- 安全 (Keychain secrets, no hardcode)
+- **ADR 跟实装不允许漂移** — 发现冲突立刻 superseded / amend
 
 ---
 
