@@ -400,7 +400,7 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
       writeStdinRef.current(bytes).catch(reportErr('stdin error'));
     });
 
-    term.onResize(({ cols, rows }) => {
+    term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
       resizeRef.current(cols, rows).catch(reportErr('resize error', 'warn'));
     });
 

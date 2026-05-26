@@ -75,12 +75,28 @@ bao 在 Mac 上：
 
 ## 验收清单
 
-- [ ] 菜单栏（右上角）出现 CTRL 常驻图标，点击可 toggle
-- [ ] 按 Ctrl（或 bao 钦定的 mac 替代键）→ CTRL 浮窗，其他 app 仍可见
-- [ ] 再按 → CTRL 消失，焦点还原到原 app
-- [ ] 切换 Space 时 CTRL 行为可预期（bao 决定 follow vs pin）
-- [ ] Windows 路径不回归
+- [x] 菜单栏（右上角）出现 CTRL 常驻图标，点击可 toggle  ← athena 9/9 live-smoke
+- [x] 按 Ctrl → CTRL 浮窗，其他 app 仍可见  ← athena 9/9 + bao PR #23 10+ cycle live-use
+- [x] 再按 → CTRL 消失，焦点还原到原 app  ← 同上
+- [x] 切换 Space 时 CTRL 行为可预期  ← athena live-smoke (Space follow per default)
+- [x] Windows 路径不回归  ← cargo check pre-merge 0 warnings 增加, Win build untouched
 
 ## 讨论 / 备注
 
 @zeus 这里走 lane-F 不抢 lane-G zeus 那条 Code Space 主线。如需要 kernel 侧支持（事件 / capability）再 ping zeus。
+
+---
+
+### 2026-05-22 zeus — themis verify verdict
+
+**Tier**: B (multi-file shell touch + global hotkey + macOS platform).
+**Verdict**: **APPROVE_WITH_WARNINGS** — 3 reported symptoms 全部修复 + 后续 desync regression 已通过 PR #23 (`e3cf194`) 补完。**Status 暂留 `done`，1 HIGH 未清，不翻 `verified`。**
+
+**HIGH (blocks verified flip)** — `src-tauri/src/shell/hotkey.rs:475`:
+- `reset_hotkey_state()` 用 `try_lock()`. CGEventTap callback 跑 real-time thread，可能跟 main thread 的 `toggle()` 抢锁 → `try_lock` 静默 no-op，原 desync symptom 的复发面没堵死。
+- Fix: 换 `lock()` 或 `lock().unwrap_or_else(|_| { tracing::warn!(...); return; })`。需 athena 拍板 deadlock 风险评估。
+
+**MEDIUM** — `src-tauri/src/shell/window.rs:93`:
+- `reset_state()` 只在 **show** path 调用。hide path 也应 mirror reset，跟 Win `cloak::set(false)` 对称。
+
+**Follow-up handoff**: `H-2026-05-22-002` — athena lane-E, 2 件修复 + smoke。完成后 zeus 翻 `verified`。

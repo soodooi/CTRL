@@ -1,0 +1,63 @@
+/* WorkspaceShell — multi-instance container.
+   [ InstanceSwitcher (≥2 instances) | TabBar (layout !== single) | body ] */
+
+.shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  overflow: hidden;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-12) var(--space-6);
+  color: var(--color-text-soft);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.placeholderKind {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-md);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+.placeholderPath {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-accent);
+  letter-spacing: 0;
+}
+.placeholderHint {
+  margin: var(--space-1) 0 0;
+  max-width: 48ch;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+}
+.placeholderHint code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  background: var(--color-bg-l2);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+}

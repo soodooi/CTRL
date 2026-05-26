@@ -1,17 +1,21 @@
-// /workspace — ephemeral workspace route.
+// /workspace — workspace surface.
 //
-// Per bao 2026-05-14, this route loads in a DEDICATED window (label =
-// "workspace" in tauri.conf.json), not as a tab in the main launcher.
-// The Rust shell navigates this window's URL on each keycap activation,
-// so the route reads `keycap_id` from the URL search params (or hash
-// param when navigation uses location.hash + hashchange dispatch).
+// Two modes coexist by URL shape:
+//   (1) /workspace                — multi-instance shell (today's PWA flow,
+//       driven by workspace-store + WorkspaceShell)
+//   (2) /workspace?keycap_id=foo  — legacy dedicated Tauri window route,
+//       reads a single keycap_id from URL/hash and renders its
+//       cell-stream feed (kept for the Rust shell that opens a dedicated
+//       workspace window per ADR-001 §window-roles)
 //
-// Cell stream: useCellStream subscribes to `keycap-<id>` on the kernel
-// bridge; incoming Cell/Op events render in a kind-aware feed.
+// Both paths land here so the existing Tauri window code that navigates
+// `/workspace?keycap_id=...` keeps working while the multi-instance UI
+// owns the unparameterised entry point.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useCellStream, type EventRecord } from '@/hooks/useCellStream';
 import { formatHHMMSS } from '@/hooks/useWallClock';
+import { WorkspaceShell } from '@/components/workspace/WorkspaceShell';
 import styles from './workspace.module.css';
 
 const readKeycapId = (): string | null => {
@@ -58,53 +62,38 @@ interface WorkspaceRouteProps {
   /**
    * Override the keycap id source. When omitted the route reads the id from
    * the URL (default behavior used by the dedicated Tauri workspace window).
-   * The dual-panel home view passes its own state so left/right panels stay
-   * in sync without round-tripping through hashchange.
    */
   keycapId?: string | null;
 }
 
-export const WorkspaceRoute = ({
-  keycapId: keycapIdProp,
-}: WorkspaceRouteProps = {}): React.ReactElement => {
-  const [urlKeycapId, setUrlKeycapId] = useState<string | null>(() => readKeycapId());
-  const keycapId = keycapIdProp !== undefined ? keycapIdProp : urlKeycapId;
-
-  useEffect(() => {
-    // Skip the hashchange wiring when an explicit id is provided — the parent
-    // owns the lifecycle and we should not race it.
-    if (keycapIdProp !== undefined) return;
-    const onHashChange = (): void => setUrlKeycapId(readKeycapId());
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, [keycapIdProp]);
-
-  const streamId = useMemo(() => (keycapId ? `keycap-${keycapId}` : null), [keycapId]);
+const LegacyKeycapStreamView = ({
+  keycapId,
+}: {
+  keycapId: string;
+}): ReactElement => {
+  const streamId = useMemo(() => `keycap-${keycapId}`, [keycapId]);
   const { events, status, error } = useCellStream(streamId);
-
   return (
     <div className={styles.layout}>
       <header className={styles.header}>
         <h1 className={styles.title}>Workspace</h1>
-        {keycapId ? (
-          <p className={styles.subtitle}>
-            Keycap <code className={styles.code}>{keycapId}</code>
-            <span className={`${cls(styles.status)} ${cls(styles[`status_${status}`])}`}>
-              {status}
-            </span>
-          </p>
-        ) : (
-          <p className={styles.subtitle}>Pick a keycap from the pool to start.</p>
-        )}
+        <p className={styles.subtitle}>
+          Keycap <code className={styles.code}>{keycapId}</code>
+          <span className={`${cls(styles.status)} ${cls(styles[`status_${status}`])}`}>
+            {status}
+          </span>
+        </p>
         {error && <p className={styles.error}>{error}</p>}
       </header>
-
       <main className={styles.feed} role="log" aria-live="polite">
-        {keycapId && events.length === 0 && status === 'open' && (
+        {events.length === 0 && status === 'open' && (
           <p className={styles.hint}>Stream connected — waiting for cells…</p>
         )}
         {events.map((event, idx) => (
-          <article key={`${event.ts_ms}-${idx}`} className={`${cls(styles.event)} ${eventKindClass(event)}`}>
+          <article
+            key={`${event.ts_ms}-${idx}`}
+            className={`${cls(styles.event)} ${eventKindClass(event)}`}
+          >
             <header className={styles.eventHead}>
               <span className={styles.eventKind}>
                 {event.type === 'cell' ? '·' : '◆'} {event.kind}
@@ -117,4 +106,38 @@ export const WorkspaceRoute = ({
       </main>
     </div>
   );
+};
+
+const ShellFallback = (): ReactElement => (
+  <div className={styles.layout}>
+    <header className={styles.header}>
+      <h1 className={styles.title}>Workspace</h1>
+      <p className={styles.subtitle}>
+        Click a keycap on the left, or drop one here to open it.
+      </p>
+    </header>
+  </div>
+);
+
+export const WorkspaceRoute = ({
+  keycapId: keycapIdProp,
+}: WorkspaceRouteProps = {}): ReactElement => {
+  const [urlKeycapId, setUrlKeycapId] = useState<string | null>(() => readKeycapId());
+  const keycapId = keycapIdProp !== undefined ? keycapIdProp : urlKeycapId;
+
+  useEffect(() => {
+    if (keycapIdProp !== undefined) return;
+    const onHashChange = (): void => setUrlKeycapId(readKeycapId());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [keycapIdProp]);
+
+  // Legacy single-keycap stream mode — only when an explicit id is in
+  // the URL (dedicated Tauri window flow). Multi-instance shell owns
+  // everything else.
+  if (keycapId) {
+    return <LegacyKeycapStreamView keycapId={keycapId} />;
+  }
+
+  return <WorkspaceShell fallback={<ShellFallback />} />;
 };

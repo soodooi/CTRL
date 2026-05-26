@@ -10,6 +10,7 @@
 | [001](./001-system-architecture.md) | Adopt 4-layer AI-native Agent OS kernel architecture | accepted | 2026-05-11 | bao, zeus | framework | — |
 | [002](./002-pwa-pivot.md) | Pivot UI to single PWA codebase under thin Tauri 2 native shell | accepted | 2026-05-13 | bao, zeus | framework | — |
 | [003](./003-multi-device-mesh.md) | Mesh cross-device communication with E2E crypto + CRDT | accepted | 2026-05-14 | bao, zeus | framework | — |
+| [004](./004-kernel-capability-surface.md) | Kernel capability surface — 10 namespaces / 28 methods (freq ≥3) | proposed | 2026-05-22 | bao, zeus | framework | 0/7 |
 | [005](./005-no-claude-in-production-runtime.md) | No Claude / Anthropic SDK in CTRL production runtime | accepted | 2026-05-18 | bao, zeus | framework | — |
 | [007](./007-encryption-library.md) | Adopt vodozemac (Matrix Olm) for E2E crypto on all platforms | accepted | 2026-05-16 | bao, zeus | framework | — |
 | [010](./010-keycap-execution-model.md) | Keycap execution model — MCP outward, Actor inward | accepted | 2026-05-17 | bao, zeus, hephaestus | framework | — |
@@ -24,7 +25,6 @@
 
 | # | 主题 | Owner | Trigger 条件 | 占号自 |
 |---|---|---|---|---|
-| 004 | 底座 capability surface | zeus | lane-B hephaestus spike RESULT.md merged | 2026-05-17 |
 | 006 | AI provider gateway | zeus | ADR-004 accepted | 2026-05-17 |
 | 008 | Tokyo VPS primary topology | hephaestus | VPS deploy verification 完成 | 2026-05-17 |
 | 009 | Multi-tenant baseline | zeus | 第 2 个商业项目签约 | 2026-05-17 |
@@ -35,6 +35,6 @@
 
 ---
 
-**Index version**: 0.5 (2026-05-19, ADR-012 → accepted)
+**Index version**: 0.6 (2026-05-22, ADR-004 → proposed; reserved row removed; jiazuo spike lane-B→lane-C typo fixed at source)
 **Process**: see [PROCESS.md](./PROCESS.md)
 **Template**: see [_template.md](./_template.md)

@@ -1,8 +1,10 @@
-// TabBar — horizontal tab strip for the workspace work surface.
+// TabBar — horizontal tab strip for a single workspace instance.
 //
-// Per decision_ctrl_is_hermes_workbench: workspace is a persistent
-// multi-tab IDE-style work area. Each tab tracks a Tab from
-// tab-store (vault doc / keycap output / external embed / session).
+// Per the multi-instance refactor (2026-05-25): TabBar no longer reads
+// the store directly. Each instance renders its own TabBar via
+// WorkspaceShell, passing in its tabs + handlers. This decouples the
+// strip from any single store layer (workspace-store today, anything
+// later) and makes the component drop-in testable.
 //
 // Icons render through IconRenderer so a tab can carry a static glyph
 // (zero-byte) or an animated lottie when the kind earns the motion.
@@ -12,13 +14,14 @@
 import type { ReactElement } from 'react';
 import type { Tab } from '@/lib/tab-store';
 import type { Icon } from '@/lib/icon';
-import { useTabStore } from '@/lib/tab-store';
 import { IconRenderer } from '@/components/primitives';
 import styles from './TabBar.module.css';
 
 interface TabBarProps {
   tabs: ReadonlyArray<Tab>;
   activeId: string | null;
+  onActivate: (id: string) => void;
+  onClose: (id: string) => void;
 }
 
 const KIND_LABEL: Record<Tab['kind'], string> = {
@@ -50,10 +53,12 @@ const resolveIcon = (tab: Tab): Icon => {
   return KIND_ICON[tab.kind];
 };
 
-export const TabBar = ({ tabs, activeId }: TabBarProps): ReactElement | null => {
-  const activate = useTabStore((s) => s.activateTab);
-  const close = useTabStore((s) => s.closeTab);
-
+export const TabBar = ({
+  tabs,
+  activeId,
+  onActivate,
+  onClose,
+}: TabBarProps): ReactElement | null => {
   if (tabs.length === 0) return null;
 
   return (
@@ -68,12 +73,12 @@ export const TabBar = ({ tabs, activeId }: TabBarProps): ReactElement | null => 
             aria-selected={active}
             data-active={active}
             className={styles.tab}
-            onClick={() => activate(tab.id)}
+            onClick={() => onActivate(tab.id)}
             onAuxClick={(e) => {
               // Middle click closes (browser/VS Code convention).
               if (e.button === 1) {
                 e.preventDefault();
-                close(tab.id);
+                onClose(tab.id);
               }
             }}
             title={tab.title}
@@ -95,12 +100,12 @@ export const TabBar = ({ tabs, activeId }: TabBarProps): ReactElement | null => 
               tabIndex={0}
               onClick={(e) => {
                 e.stopPropagation();
-                close(tab.id);
+                onClose(tab.id);
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.stopPropagation();
-                  close(tab.id);
+                  onClose(tab.id);
                 }
               }}
             >

@@ -6,7 +6,15 @@
 // hosting the active route, right rail on the right for context items.
 // No iPhone bezels, no bottom tab.
 
-import { lazy, Suspense, useEffect, type ReactElement } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useState,
+  type DragEvent,
+  type ReactElement,
+} from 'react';
 import {
   RouterProvider,
   createRouter,
@@ -15,12 +23,13 @@ import {
   Outlet,
   useNavigate,
 } from '@tanstack/react-router';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
-import { Keyboard } from './components/Keyboard';
+import { Keyboard, KEYCAP_DRAG_MIME } from './components/Keyboard';
 import { RailProvider, RightRail, useRail } from './components/RightRail';
 import { DefaultWorkspace } from './routes/default';
+import { useWorkspaceStore } from './lib/workspace-store';
 import styles from './app.module.css';
 
 const TRAY_OPEN_CONFIG = 'tray:open-config';
@@ -55,6 +64,11 @@ function useTrayBridge(): void {
 
 function RootShellInner(): ReactElement {
   const { items, irisySubPanel, activeRailId } = useRail();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
+  const [dragOver, setDragOver] = useState(false);
+
   // Per bao 2026-05-23: level-2 visibility = active level-1 item has a
   // sub-panel. Two-state grid: hidden (80px primary only) vs open
   // (240px panel + 80px primary). No explicit "collapsed but visible"
@@ -65,6 +79,43 @@ function RootShellInner(): ReactElement {
       ? irisyHasPanel
       : items.some((i) => i.id === activeRailId && i.subPanel != null);
   const subPanelState = activeItemHasPanel ? 'open' : 'none';
+
+  // Drag-over only flips when our custom MIME is present — text drags
+  // from outside the cockpit don't paint the drop affordance.
+  const hasKeycapPayload = (e: DragEvent<HTMLElement>): boolean =>
+    Array.from(e.dataTransfer.types).includes(KEYCAP_DRAG_MIME);
+
+  const handleDragOver = useCallback((e: DragEvent<HTMLElement>) => {
+    if (!hasKeycapPayload(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent<HTMLElement>) => {
+    // Only clear when leaving the workspace element itself — child
+    // re-entries fire dragleave on the parent unhelpfully otherwise.
+    if (e.currentTarget === e.target) setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: DragEvent<HTMLElement>) => {
+      if (!hasKeycapPayload(e)) return;
+      e.preventDefault();
+      setDragOver(false);
+      const id = e.dataTransfer.getData(KEYCAP_DRAG_MIME);
+      if (!id) return;
+      // Resolve keycap name from the cached list_keycaps query — we
+      // already have it from the Keyboard rail's render.
+      const cache = queryClient.getQueryData<Array<{ id: string; name: string }>>(['keycaps']);
+      const summary = cache?.find((k) => k.id === id);
+      if (!summary) return;
+      createFromKeycap({ id: summary.id, name: summary.name });
+      await navigate({ to: '/workspace' });
+    },
+    [createFromKeycap, navigate, queryClient],
+  );
+
   return (
     <div className={styles.shell} data-sub-panel={subPanelState}>
       <div className={styles.status}>
@@ -73,7 +124,13 @@ function RootShellInner(): ReactElement {
       <div className={styles.keyboard}>
         <Keyboard />
       </div>
-      <main className={styles.workspace}>
+      <main
+        className={styles.workspace}
+        data-drag-over={dragOver || undefined}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <Outlet />
       </main>
       <div className={styles.rail}>
