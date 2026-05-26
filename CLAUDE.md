@@ -95,7 +95,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 详细见 `.olym/decisions/001-system-architecture.md` (spine) + `.olym/decisions/002-pwa-pivot.md` (UI layer, accepted 2026-05-13).
 
 ```
-L3 Userland (WASM sandboxed actors, 键帽 / 硬件 / LLM call / OAuth flow)
+L3 Userland (subprocess-isolated keycaps via MCP, 硬件 / LLM call / OAuth flow)
        ↑↓
 L2 SDK (@ctrl/{kernel-sdk, stss, memory, desktop})
        ↑↓
@@ -160,7 +160,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 |---|---|
 | Desktop shell | Tauri 2 (~500 LOC Rust shell: hotkey / tray / keychain / kernel daemon supervisor) |
 | Kernel (L1) | Rust stable 1.77+, Tokio async runtime, ST-SS WS bridge @ 127.0.0.1:17872 (token-authenticated) |
-| Sandbox | WASM (wasmtime, cranelift), capability-based |
+| Sandbox | OS-level subprocess isolation (sandbox-exec / landlock / AppContainer) + Tauri 2 Capability + Isolation Pattern + CSP. **WASM removed** in 0.1.39 lean kernel (ADR-001 amendment 4) — re-evaluate via WasmEdge if v1.x needs in-process untrusted code. |
 | UI | Single PWA (`packages/ctrl-web`) — React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa |
 | Vault viewers | **Tiptap** (markdown WYSIWYG+source) + **CodeMirror 6** (code/JSON/YAML/TOML/HTML) + **mermaid.js** (mermaid graphs) + iframe+CSP (HTML sandbox) — content-type viewer registry, replaces VMark MCP sidecar (S15 deprecated 2026-05-25) |
 | Vault index | SQLite FTS5 (`src-tauri/src/kernel/vault_index.rs`) + backlink scanner + tag scanner (kernel-native, no VMark dep) |
