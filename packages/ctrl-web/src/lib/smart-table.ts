@@ -31,7 +31,31 @@ export type CellType =
   | 'checkbox'
   | 'tags'
   | 'select'
-  | 'url';
+  | 'url'
+  // ── Workflow primitives (2026-05-26 — table-as-workflow, the
+  //    "替代飞书" framing). Each row becomes an automation unit; these
+  //    column types are the contract a row's `runRow()` executor reads.
+  | 'source' // input — vault://path | url://… | keycap://id | inline text
+  | 'references' // context (comma / newline list of URIs)
+  | 'prompts' // LLM instruction (markdown, supports {{source}} / {{refs}})
+  | 'output' // LLM result (read-only, populated by execution)
+  | 'publish' // destination URI for the output (vault://path | webhook://…)
+  | 'status' // pending | running | done | failed
+  | 'trigger'; // manual | on-change | <cron expression>
+
+/** Workflow status values for cells of type 'status'. */
+export type WorkflowStatus = 'pending' | 'running' | 'done' | 'failed';
+
+/** Workflow column types — the ones that carry automation semantics. */
+export const WORKFLOW_COLUMN_TYPES: ReadonlySet<CellType> = new Set<CellType>([
+  'source',
+  'references',
+  'prompts',
+  'output',
+  'publish',
+  'status',
+  'trigger',
+]);
 
 export interface ColumnSpec {
   key: string;

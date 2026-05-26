@@ -63,22 +63,16 @@ function useTrayBridge(): void {
 }
 
 function RootShellInner(): ReactElement {
-  const { items, irisySubPanel, activeRailId } = useRail();
+  const { irisySubPanel, activeRailId } = useRail();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
   const [dragOver, setDragOver] = useState(false);
 
-  // Per bao 2026-05-23: level-2 visibility = active level-1 item has a
-  // sub-panel. Two-state grid: hidden (80px primary only) vs open
-  // (240px panel + 80px primary). No explicit "collapsed but visible"
-  // tab — clicking the active item itself toggles.
-  const irisyHasPanel = irisySubPanel != null;
-  const activeItemHasPanel =
-    activeRailId === 'irisy'
-      ? irisyHasPanel
-      : items.some((i) => i.id === activeRailId && i.subPanel != null);
-  const subPanelState = activeItemHasPanel ? 'open' : 'none';
+  // Only Irisy has a level-2 sub-panel today (her session history). All
+  // other fixed nav items navigate without expanding the rail width.
+  const subPanelState =
+    activeRailId === 'irisy' && irisySubPanel != null ? 'open' : 'none';
 
   // Drag-over only flips when our custom MIME is present — text drags
   // from outside the cockpit don't paint the drop affordance.

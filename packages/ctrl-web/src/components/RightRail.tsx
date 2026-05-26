@@ -66,8 +66,6 @@ export interface RailItem {
 }
 
 interface RailContextValue {
-  items: ReadonlyArray<RailItem>;
-  setItems: (items: ReadonlyArray<RailItem>) => void;
   irisyState: IrisyState;
   setIrisyState: (state: IrisyState) => void;
   /** Irisy's level-2 panel content, pushed by whichever route owns her
@@ -151,14 +149,11 @@ const PoolIcon = (): ReactElement => (
 );
 
 export const RailProvider = ({ children }: { children: ReactNode }): ReactElement => {
-  const [items, setItems] = useState<ReadonlyArray<RailItem>>([]);
   const [irisyState, setIrisyState] = useState<IrisyState>('idle');
   const [irisySubPanel, setIrisySubPanel] = useState<RailSubPanel | null>(null);
   const [activeRailId, setActiveRailId] = useState<string | null>(IRISY_ITEM_ID);
   const value = useMemo<RailContextValue>(
     () => ({
-      items,
-      setItems,
       irisyState,
       setIrisyState,
       irisySubPanel,
@@ -166,7 +161,7 @@ export const RailProvider = ({ children }: { children: ReactNode }): ReactElemen
       activeRailId,
       setActiveRailId,
     }),
-    [items, irisyState, irisySubPanel, activeRailId],
+    [irisyState, irisySubPanel, activeRailId],
   );
   return <RailContext.Provider value={value}>{children}</RailContext.Provider>;
 };
@@ -177,15 +172,9 @@ export const useRail = (): RailContextValue => {
   return ctx;
 };
 
-/** Convenience hook for routes that want to populate the level-1 rail
- *  with route-specific items. Pass a memoized array. */
-export const useRailItems = (items: ReadonlyArray<RailItem>): void => {
-  const { setItems } = useRail();
-  useEffect(() => {
-    setItems(items);
-  }, [items, setItems]);
-  useEffect(() => () => setItems([]), [setItems]);
-};
+// `useRailItems` removed 2026-05-26 per memory
+// `feedback_right_rail_is_fixed`. Routes do NOT push items into the
+// rail; the level-1 nav is hardcoded in `RightRail` itself.
 
 /** Push Irisy's level-2 panel content. The rail clears it on unmount
  *  via the second effect — a single effect with cleanup would briefly
@@ -216,7 +205,6 @@ const parseSettingsSection = (pathname: string): string | null => {
 
 export const RightRail = (): ReactElement => {
   const {
-    items,
     irisyState,
     irisySubPanel,
     activeRailId,
@@ -244,8 +232,11 @@ export const RightRail = (): ReactElement => {
     [irisySubPanel, navigate],
   );
 
-  // Level-1 nav = permanent primaries (Vault, Pool) + route-pushed
-  // items + Settings footer cap.
+  // Level-1 nav = FIXED items only. Per memory
+  // `feedback_right_rail_is_fixed` (bao 2026-05-26): items must NOT
+  // change with route. No route-pushed items.map(...) here — routes
+  // render their own internal toolbars / chips inside the route page,
+  // never reach into the rail.
   const allItems = useMemo<ReadonlyArray<SyntheticRailItem>>(() => {
     const vaultItem: SyntheticRailItem = {
       id: VAULT_ITEM_ID,
@@ -271,13 +262,8 @@ export const RightRail = (): ReactElement => {
         void navigate({ to: SETTINGS_DEFAULT_PATH });
       },
     };
-    return [
-      vaultItem,
-      poolItem,
-      ...items.map((i) => ({ ...i, isIrisy: false, isSettings: false })),
-      settingsItem,
-    ];
-  }, [items, navigate]);
+    return [vaultItem, poolItem, settingsItem];
+  }, [navigate]);
 
   // Auto-flip activeRailId to vault / pool when the route enters those
   // surfaces — keeps the rail selection in sync with where the user
