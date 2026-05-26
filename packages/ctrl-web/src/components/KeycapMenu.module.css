@@ -1,0 +1,99 @@
+/* KeycapMenu — small popover. Absolute-positioned by the caller; this
+   module styles the inner panel only so the parent owns placement.
+
+   Trigger: tiny 3-dot button anchored top-right of a keycap cell. Hidden
+   until cap is hovered or menu is open (parent toggles via data-attr). */
+
+.trigger {
+  appearance: none;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  color: var(--color-text-soft);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    background-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+  padding: 0;
+}
+.trigger:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+  border-color: color-mix(in oklab, var(--color-border-soft), var(--color-accent) 30%);
+}
+.trigger:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+.menu {
+  background: var(--color-bg-l0);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  z-index: 50;
+}
+
+.item {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: -0.005em;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart);
+}
+.item:hover {
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 8%);
+}
+.item:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 8%);
+}
+.item:disabled {
+  color: var(--color-text-faint);
+  cursor: not-allowed;
+}
+.item[data-destructive='true'] {
+  color: var(--color-danger);
+}
+.item[data-destructive='true']:hover,
+.item[data-destructive='true']:focus-visible {
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-danger) 10%);
+}
+
+.itemLabel {
+  flex: 1;
+}
+.itemShortcut {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.04em;
+  color: var(--color-text-soft);
+}

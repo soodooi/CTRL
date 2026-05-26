@@ -20,6 +20,7 @@
 //   • `commands::*` (Tauri 2 invoke) replaces the port-shaped tauri_commands
 //     adapter; `shell::*` replaces the macOS-only outbound adapters.
 
+mod asset_scheme;
 mod commands;
 mod error;
 mod kernel;
@@ -35,18 +36,45 @@ pub fn run() {
         )
         .try_init();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
+        // Single-instance lock — Spotlight / Dock re-launch reveals the
+        // existing CTRL window instead of spawning a second kernel that
+        // would race on ports 17872/17873. Fixes bao's "在任务栏 就是
+        // 打不开" symptom.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            tracing::info!("single-instance: second launch detected, revealing window");
+            if let Err(err) = shell::WindowController::reveal(app) {
+                tracing::error!(?err, "single-instance reveal failed");
+            }
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
-        // static manifest host + production signing key). The dep stays in
-        // Cargo.toml so the surface is wired for fast turn-on once those land.
+        // Tauri-side auto-updater. Endpoint + pubkey live in
+        // tauri.conf.json -> plugins.updater. Signed release pipeline:
+        // scripts/release.sh produces .app.tar.gz + .sig + latest.json
+        // and uploads to the public soodooi/CTRL-releases sibling repo.
+        // ADR-011 / 018 — Layer 1 of 4 of the auto-update strategy.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
         })
-        .invoke_handler(pwa_invoke_handler!())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .invoke_handler(pwa_invoke_handler!());
+    let app = asset_scheme::register(builder)
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // macOS Dock click reveal: NSApplicationDelegate's
+    // applicationShouldHandleReopen fires RunEvent::Reopen. Default Tauri
+    // behavior does nothing on Reopen when all windows are hidden — we
+    // explicitly toggle cloak → reveal so Dock click works as "show CTRL".
+    app.run(|app, event| {
+        if let tauri::RunEvent::Reopen { .. } = event {
+            tracing::info!("dock reopen: revealing window");
+            if let Err(err) = shell::WindowController::reveal(app) {
+                tracing::error!(?err, "dock reopen reveal failed");
+            }
+        }
+    });
 }
 
 // Windows path — H-2026-05-13-001 sub-PR b + d + e.
@@ -65,16 +93,21 @@ pub fn run() {
         )
         .try_init();
 
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            tracing::info!("single-instance: second launch detected, revealing window");
+            if let Err(err) = shell::WindowController::reveal(app) {
+                tracing::error!(?err, "single-instance reveal failed");
+            }
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        // tauri-plugin-updater registration deferred to P8 (needs ctrl-cloud
-        // static manifest host + production signing key). The dep stays in
-        // Cargo.toml so the surface is wired for fast turn-on once those land.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
         })
-        .invoke_handler(pwa_invoke_handler!())
+        .invoke_handler(pwa_invoke_handler!());
+    let app = asset_scheme::register(builder)
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 

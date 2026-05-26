@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ctrl-hermes-plugin"
+version = "0.1.0"
+description = "CTRL workbench tools as a hermes-agent plugin — primary hermes integration path (ADR-019)"
+authors = [
+    { name = "CTRL team", email = "hi@ctrlapplab.com" },
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28,<1",
+]
+
+[project.urls]
+Homepage = "https://github.com/soodooi/CTRL"
+Source = "https://github.com/soodooi/CTRL/tree/main/packages/ctrl-hermes-plugin"
+
+# hermes-agent discovers plugins via this entry-point group. The value
+# is `package.module:callable`; hermes calls it once on plugin load.
+[project.entry-points."hermes_agent.plugins"]
+ctrl = "ctrl_hermes_plugin.register:register"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ctrl_hermes_plugin*"]

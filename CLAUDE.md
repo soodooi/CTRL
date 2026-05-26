@@ -27,13 +27,34 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 - 开始前查 `.olym/skills/` 和 `.olym/best-practice/` (后续建立)
 - 涉及战略改动: 先读 ADR-001, 再读相关 spec, 不冲突再动手
 
+### Working mode: 灵活开发 — 只做 ADR + 代码 + PR
+
+bao 2026-05-25 进一步校准: **只 3 件事**:
+
+1. **ADR** — 战略决策必写 ADR. **ADR 跟最新决策有冲突立刻改/superseded**, 不留拖延 (memory `decision_pi_is_sole_brain_hermes_is_keycap` 反例: ADR-019 等到第二天才 supersede — 不允许再发生)
+2. **代码** — 直接动手实施, cargo + tsc 双绿就 commit
+3. **PR** — 单 branch 累积 commit, 一次性 PR → main, squash merge
+
+**不做** (灵活模式期间):
+- spec 细则 / handoff 中间态 / README 同步 — 暂搁
+- olym 主循环 / RFC 5 步 / 7-step process — 暂搁
+- doc churn / cleanup PR / governance ADR — 暂搁
+
+**仍守** (这些是保命线):
+- 全英文代码 (pre-push hook)
+- `--no-verify` 禁用
+- Cargo.lock + package-lock.json 进 commit
+- ADR-001 spine (5 primitives) 不动
+- 安全 (Keychain secrets, no hardcode)
+- **ADR 跟实装不允许漂移** — 发现冲突立刻 superseded / amend
+
 ---
 
 ## Design Philosophy
 
 > 跨 session 强约束。冲突时优先级：**目标推进 > 硬规则 (## Rules) > 设计哲学 (本节) > 实施细节**。
 
-### Meta: Obsidian 哲学 (一切派生于此)
+### Meta: Plain-text 哲学 (VMark-compatible vault, 一切派生于此)
 
 **CTRL 是用户能力的延伸 (augmentation)，不是知识中介。**
 
@@ -42,6 +63,7 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 - 无 lock-in：离开 CTRL = 文件还在那, 不需要"导出"因为根本没"导入"
 - 无 CTRL 账号系统：用户身份 = 本机 keychain 里的密钥, CTRL 团队不知道你存在
 - 无私有 binary 格式：所有用户内容必须 plain text + structured frontmatter
+- **VMark / Obsidian 是兼容承诺, 不是依赖** — vault 文件夹是普通 markdown, 用户已装的 VMark / Obsidian / vim 都能开, 但 CTRL 不依赖它们任何一个 (不集成 VMark MCP sidecar, 不依赖 Obsidian DB cache)
 
 **vim test** (每个新 capability 的设计门槛): 用户用 vim 打开本机文件, 能拿到 CTRL 提供的核心价值吗? 答 No = 设计错, 重做。
 
@@ -53,6 +75,7 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 4. **One-shot, not flows** — 一个 keycap = 一个原子动作。无 wizard / 无 multi-step / 无 dialog tree。
 5. **AI 是 pipe, 不是 sidebar** — 发收消息 / 处理内容时 AI 默认 in-line 处理 (润色 / 摘要 / 抽 action item / 翻译), 可关默认开。
 6. **Transparency by drill-down** — 任何 AI / 抽象处理都可长按 / hover 看 raw 数据 (飞书原文 / AI 改后 / 本地草稿三层视图)。
+7. **Pi 是唯一 brain** *(amended 2026-05-25, 见 ADR-001 amendment)* — Irisy 跑 agent loop 永远走 **Pi** (`@pi/coding-agent`, MIT, lazy install via npm). kernel `text.chat` capability 不可配置, 直连 Pi keycap. **hermes-agent 不是 brain**, 降为可选 *"personal-assistant keycap"* (用户从 Pool 装) — 它的 persistent memory + auto-skill-gen 留在 `~/.hermes/` 自己的域内, 不进 CTRL vault, 跟 plain-text 哲学不完全一致是它作为高级 keycap 的 trade-off, README 警告写明.
 
 ### 几个具体推论
 
@@ -61,8 +84,9 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 - **keycap manifest = markdown + JSON frontmatter** — 不是 binary blob, 用户可手编可 git diff
 - **vault layout 由用户决定** — CTRL 提供 default policy (flat / by-day / by-entity), 用户可换；不 hardcode 目录结构
 - **第三方 backend (飞书 / Notion / Slack) 是 sync provider** — 不是 source of truth, 本地永远赢冲突
+- **CTRL-native vault stack** *(2026-05-25)* — viewer 用 **Tiptap** (markdown WYSIWYG+source) + **CodeMirror 6** (code/JSON/YAML/TOML/HTML) + **mermaid.js** (mermaid) + iframe+CSP (HTML sandbox) + browser-native (SVG); 索引用 **SQLite FTS5** (kernel `vault_index.rs`) + 自实现 backlink/tag scanner. VMark 用的也是同样开源 stack — 不需要把 VMark 作 substrate, 直接 npm 装这些 lib 即可
 
-详见 memory `decision_ctrl_obsidian_philosophy.md` (long-form rationale + Raycast 对比 + audit 清单)。
+详见 memory `decision_ctrl_obsidian_philosophy.md` (long-form rationale) + `decision_pi_is_sole_brain_hermes_is_keycap.md` (brain 校准) + `decision_vmark_not_substrate_use_open_stack.md` (vault stack 校准)。
 
 ---
 
@@ -138,6 +162,9 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | Kernel (L1) | Rust stable 1.77+, Tokio async runtime, ST-SS WS bridge @ 127.0.0.1:17872 (token-authenticated) |
 | Sandbox | WASM (wasmtime, cranelift), capability-based |
 | UI | Single PWA (`packages/ctrl-web`) — React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa |
+| Vault viewers | **Tiptap** (markdown WYSIWYG+source) + **CodeMirror 6** (code/JSON/YAML/TOML/HTML) + **mermaid.js** (mermaid graphs) + iframe+CSP (HTML sandbox) — content-type viewer registry, replaces VMark MCP sidecar (S15 deprecated 2026-05-25) |
+| Vault index | SQLite FTS5 (`src-tauri/src/kernel/vault_index.rs`) + backlink scanner + tag scanner (kernel-native, no VMark dep) |
+| Brain (sole) | **Pi** (`@pi/coding-agent`, MIT, lazy npm install) — kernel routes `text.chat` directly to Pi keycap. hermes is **NOT** brain (降为 personal-assistant keycap, 用户自装). See ADR-001 amendment 2026-05-25 |
 | Web ↔ Rust bridge | Tauri 2 `invoke()` on desktop (intra-process), WebSocket + token on mobile |
 | Stream protocol | ST-SS (CBOR Cell/Op) |
 | Package manager | npm workspaces |

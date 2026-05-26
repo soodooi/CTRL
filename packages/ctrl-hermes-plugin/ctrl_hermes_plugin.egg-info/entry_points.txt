@@ -1,0 +1,2 @@
+[hermes_agent.plugins]
+ctrl = ctrl_hermes_plugin.register:register

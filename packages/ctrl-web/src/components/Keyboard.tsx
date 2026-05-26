@@ -1,65 +1,151 @@
 // Keyboard — permanent 320px left rail. Pure keycap grid (4×4) +
 // mobile-style page dots at the bottom for paginated scenarios.
 //
-// Per bao 2026-05-23: the left rail is JUST keycaps now — no search
-// bar, no system row. Pool / Irisy / Settings live in the right rail
-// (level-1 items + Settings footer); search lives behind ⌘K. The "+"
-// add cell on every page still routes to /pool so new keycaps install
-// without leaving the cockpit.
-//
-// Scenario support is plumbed but inert until the kernel tags keycaps
-// with `scenario`. Today there's one "All keycaps" scenario and the
-// dots reflect actual data pagination. Once Work / Life / Marketing
-// scenarios land, this file just consumes that field — no UI rewrite.
+// 2026-05-25 workflow upgrade:
+//   - Click keycap → `createFromKeycap()` opens (or refocuses) its
+//     workspace instance in the middle zone. No more navigate to a
+//     dedicated `/workspace` query-string route.
+//   - Drag keycap → drop on workspace area = same as click (drop target
+//     wired in app.tsx, MIME = application/x-ctrl-keycap-id).
+//   - Hover cap → 3-dot menu reveal (Duplicate / Open new / Remove).
+//   - Cmd/Ctrl+D on focused cap → duplicate its workspace instance.
 
-import { useMemo, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactElement,
+  type RefObject,
+} from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
 import { normalizeIcon } from '@/lib/icon';
+import { useWorkspaceStore } from '@/lib/workspace-store';
 import { IconRenderer } from '@/components/primitives';
+import { KeycapMenu, KeycapMenuTrigger } from './KeycapMenu';
 import styles from './Keyboard.module.css';
 
 const KEYCAPS_PER_PAGE = 15; // 4×4 grid; the 16th cell is always the "+" add button.
 const MAX_PAGES = 8;          // hard cap so dots never run off the bottom.
+
+/** Custom MIME used for inter-app drag. Strict prefix so a stray text
+ *  drop from another app can never spawn a phantom keycap. */
+export const KEYCAP_DRAG_MIME = 'application/x-ctrl-keycap-id';
 
 interface Scenario {
   id: string;
   label: string;
 }
 
-// Scenarios are stubbed until the kernel exposes them per-keycap.
-// When that lands, replace this with `useScenarios()` and filter
-// keycaps by scenario id before pagination.
 const SCENARIO_DEFAULT: Scenario = { id: 'all', label: 'All keycaps' };
 
 interface KeycapCellProps {
   keycap: KeycapSummary;
   active: boolean;
+  menuOpen: boolean;
   onActivate: (id: string) => void;
+  onToggleMenu: (id: string | null) => void;
+  onDuplicate: (id: string) => void;
+  onRemove: (id: string) => void;
 }
 
-const KeycapCell = ({ keycap, active, onActivate }: KeycapCellProps): ReactElement => {
+const KeycapCell = ({
+  keycap,
+  active,
+  menuOpen,
+  onActivate,
+  onToggleMenu,
+  onDuplicate,
+  onRemove,
+}: KeycapCellProps): ReactElement => {
   const icon = normalizeIcon(keycap.icon, keycap.name);
+  const cellRef = useRef<HTMLButtonElement | null>(null);
+
+  const handleDragStart = (e: DragEvent<HTMLButtonElement>): void => {
+    e.dataTransfer.setData(KEYCAP_DRAG_MIME, keycap.id);
+    e.dataTransfer.setData('text/plain', keycap.id); // back-compat readers
+    e.dataTransfer.effectAllowed = 'copyMove';
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
+    // Cmd/Ctrl+D = duplicate the focused keycap's workspace instance.
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      onDuplicate(keycap.id);
+    }
+  };
+
   return (
-    <button
-      type="button"
-      className={styles.cap}
-      data-active={active}
-      onClick={() => onActivate(keycap.id)}
-      title={keycap.name}
-    >
-      <span className={styles.capIcon} aria-hidden="true">
-        <IconRenderer icon={icon} size={28} ariaLabel={keycap.name} />
-      </span>
-      <span className={styles.capLabel}>{keycap.name}</span>
-    </button>
+    <div className={styles.capWrap}>
+      <button
+        ref={cellRef}
+        type="button"
+        className={styles.cap}
+        data-active={active}
+        data-menu-open={menuOpen || undefined}
+        draggable
+        onDragStart={handleDragStart}
+        onClick={() => onActivate(keycap.id)}
+        onKeyDown={handleKeyDown}
+        title={keycap.name}
+      >
+        <span className={styles.capIcon} aria-hidden="true">
+          <IconRenderer icon={icon} size={28} ariaLabel={keycap.name} />
+        </span>
+        <span className={styles.capLabel}>{keycap.name}</span>
+        <span className={styles.menuTrigger}>
+          <KeycapMenuTrigger
+            onClick={() => onToggleMenu(menuOpen ? null : keycap.id)}
+            ariaLabel={`${keycap.name} actions`}
+          />
+        </span>
+      </button>
+      {menuOpen && (
+        <div className={styles.menuAnchor}>
+          <KeycapMenu
+            anchorRef={cellRef as RefObject<HTMLElement | null>}
+            onDismiss={() => onToggleMenu(null)}
+            items={[
+              {
+                id: 'open',
+                label: 'Open',
+                shortcut: '↵',
+                onSelect: () => onActivate(keycap.id),
+              },
+              {
+                id: 'duplicate',
+                label: 'Duplicate workspace',
+                shortcut: '⌘D',
+                onSelect: () => onDuplicate(keycap.id),
+              },
+              {
+                id: 'remove',
+                label: 'Remove keycap',
+                destructive: true,
+                onSelect: () => onRemove(keycap.id),
+              },
+            ]}
+          />
+        </div>
+      )}
+    </div>
   );
 };
 
 export const Keyboard = (): ReactElement => {
   const navigate = useNavigate();
   const [pageIndex, setPageIndex] = useState(0);
+  const [openMenuKeycapId, setOpenMenuKeycapId] = useState<string | null>(null);
+
+  const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
+  const duplicateInstance = useWorkspaceStore((s) => s.duplicateInstance);
+  const instances = useWorkspaceStore((s) => s.instances);
+  const closeInstance = useWorkspaceStore((s) => s.closeInstance);
 
   const { data: keycaps = [] } = useQuery({
     queryKey: ['keycaps'],
@@ -75,8 +161,6 @@ export const Keyboard = (): ReactElement => {
     const start = safePageIndex * KEYCAPS_PER_PAGE;
     const slice = keycaps.slice(start, start + KEYCAPS_PER_PAGE);
     const isLast = safePageIndex === cappedPages - 1;
-    // On the last page we leave the 16th cell for the "Add" button.
-    // On earlier pages we fill all 16 with keycaps + empties.
     const slotsForCells = isLast ? KEYCAPS_PER_PAGE : KEYCAPS_PER_PAGE + 1;
     const empties = Math.max(0, slotsForCells - slice.length);
     return {
@@ -88,13 +172,47 @@ export const Keyboard = (): ReactElement => {
     };
   }, [keycaps, pageIndex]);
 
-  const handleActivate = (id: string): void => {
-    void navigate({ to: '/workspace', search: { keycap_id: id } as never });
-  };
+  const handleActivate = useCallback(
+    (id: string): void => {
+      const summary = keycaps.find((k) => k.id === id);
+      if (!summary) return;
+      createFromKeycap({ id: summary.id, name: summary.name });
+      void navigate({ to: '/workspace' });
+    },
+    [keycaps, createFromKeycap, navigate],
+  );
 
-  const handleAdd = (): void => {
+  const handleDuplicate = useCallback(
+    (id: string): void => {
+      const summary = keycaps.find((k) => k.id === id);
+      if (!summary) return;
+      // Resolve to the keycap's existing instance (if any) and fork
+      // it. If no instance exists yet, create one first — Cmd+D on a
+      // never-opened keycap shouldn't be a silent no-op.
+      const existing = instances.find((i) => i.keycapId === id);
+      const target =
+        existing ?? createFromKeycap({ id: summary.id, name: summary.name });
+      duplicateInstance(target.id);
+      void navigate({ to: '/workspace' });
+    },
+    [keycaps, instances, createFromKeycap, duplicateInstance, navigate],
+  );
+
+  const handleRemove = useCallback(
+    (id: string): void => {
+      // Remove the keycap's workspace instance (if open) — keycap-level
+      // uninstall is a kernel op (`uninstall_keycap`) that lives on the
+      // 3-dot Remove action once it lands. For today the menu cleans up
+      // the front-end state so the action isn't a dead-end.
+      const existing = instances.find((i) => i.keycapId === id);
+      if (existing) closeInstance(existing.id);
+    },
+    [instances, closeInstance],
+  );
+
+  const handleAdd = useCallback((): void => {
     void navigate({ to: '/pool' });
-  };
+  }, [navigate]);
 
   // Keyboard navigation on the page-dots row — Left / Right arrow keys
   // jump pages while the rail itself is focused.
@@ -108,10 +226,14 @@ export const Keyboard = (): ReactElement => {
     }
   };
 
+  // Close any open hover menu on page change — visually disorienting
+  // otherwise (the anchor cell scrolls away).
+  useEffect(() => {
+    setOpenMenuKeycapId(null);
+  }, [pageIndex]);
+
   return (
     <aside className={styles.rail} aria-label="Keyboard — keycap rail">
-      {/* Scenario header — single label today; future iterations layer
-          in a dropdown / horizontal scroll once kernel tags scenarios. */}
       <header className={styles.scenarioBar}>
         <span className={styles.scenarioName}>{SCENARIO_DEFAULT.label}</span>
         <span className={styles.scenarioCount}>
@@ -127,7 +249,11 @@ export const Keyboard = (): ReactElement => {
             key={k.id}
             keycap={k}
             active={false}
+            menuOpen={openMenuKeycapId === k.id}
             onActivate={handleActivate}
+            onToggleMenu={setOpenMenuKeycapId}
+            onDuplicate={handleDuplicate}
+            onRemove={handleRemove}
           />
         ))}
         {Array.from({ length: paddingEmpties }).map((_, i) => (
@@ -159,8 +285,6 @@ export const Keyboard = (): ReactElement => {
 
       <div className={styles.spacer} />
 
-      {/* Page dots — iOS-style indicator. Always rendered so the rail
-          chrome doesn't reflow when a second page appears. */}
       <nav
         className={styles.pageDots}
         role="tablist"
