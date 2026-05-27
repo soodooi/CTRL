@@ -10,6 +10,7 @@ related:
   - .olym/decisions/013-kernel-as-mcp-server.md
   - .olym/decisions/016-irisy-eight-stage-lifecycle.md
 scope: framework
+module: irisy
 supersedes: []
 superseded_by:
   - .olym/decisions/001-system-architecture.md#amendment-2026-05-25

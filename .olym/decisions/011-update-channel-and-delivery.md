@@ -9,6 +9,7 @@ related:
   - .olym/decisions/002-pwa-pivot.md
   - src-tauri/tauri.conf.json
 scope: framework
+module: cap
 supersedes: []
 superseded_by: []
 ---

@@ -9,6 +9,7 @@ related:
   - .olym/decisions/003-multi-device-mesh.md
   - .olym/decisions/013-kernel-as-mcp-server.md
 scope: framework
+module: cross-cutting
 supersedes: []
 superseded_by: []
 ---

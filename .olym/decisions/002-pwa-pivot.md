@@ -8,6 +8,7 @@ related:
   - .olym/decisions/001-system-architecture.md
   - .olym/decisions/003-multi-device-mesh.md
 scope: framework
+module: frontend
 supersedes: []
 superseded_by: []
 ---

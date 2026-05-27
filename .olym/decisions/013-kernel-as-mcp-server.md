@@ -11,6 +11,7 @@ related:
   - doc/hermes-spike/RESULT.md
   - src-tauri/src/kernel/mcp_server.rs
 scope: framework
+module: substrate
 supersedes: []
 superseded_by: []
 ---

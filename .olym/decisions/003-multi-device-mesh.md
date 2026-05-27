@@ -9,6 +9,7 @@ related:
   - .olym/decisions/002-pwa-pivot.md
   - .olym/decisions/007-encryption-library.md
 scope: framework
+module: substrate
 supersedes: []
 superseded_by: []
 ---
