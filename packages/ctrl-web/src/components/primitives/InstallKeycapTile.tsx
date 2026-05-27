@@ -41,9 +41,10 @@ export interface InstallKeycapTileProps {
   label?: string;
   /** Tile aria-label, defaults to "Install a keycap". */
   ariaLabel?: string;
-  /** Visual size. 72 reads as a slot next to the 64-pixel Keyboard cap;
-   *  bump to 88 to match the keycap silhouette directly. */
-  size?: 64 | 72 | 88;
+  /** Visual size in px. Defaults to the canonical keycap-sm token (64)
+   *  so the install slot lines up with the Keyboard 4×4 cap right next
+   *  to it on `/`. Bump to 88 (keycap-md) only inside catalog surfaces. */
+  size?: number;
   className?: string;
 }
 
@@ -60,7 +61,7 @@ export const InstallKeycapTile = ({
   onActivate,
   label = 'Install',
   ariaLabel = 'Install a keycap',
-  size = 72,
+  size = 64,
   className,
 }: InstallKeycapTileProps): ReactElement => {
   const [dragOver, setDragOver] = useState(false);
