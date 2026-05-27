@@ -27,10 +27,6 @@
   overflow-x: hidden;
   background: var(--color-bg-l0);
   border-right: 1px solid var(--color-border-soft);
-  /* Width animates 240 → 0 / 0 → 240 via shell-level grid resize. The
-     local column transitions border + width so a stale render between
-     re-paints doesn't show a hard edge collapse. */
-  transition: width 220ms var(--ease-out-quart, ease-out);
 }
 .container[data-sub-panel='closed'] .subPanel {
   width: 0;
@@ -121,18 +117,14 @@
   box-shadow:
     0 0 0 2px color-mix(in oklab, var(--color-success), transparent 80%),
     0 0 8px color-mix(in oklab, var(--color-success), transparent 50%);
-  animation: rail-update-pulse 2.4s ease-in-out infinite;
-}
-@keyframes rail-update-pulse {
-  0%, 100% { opacity: 0.85; transform: scale(1); }
-  50%      { opacity: 1;    transform: scale(1.18); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .updateDot { animation: none; }
 }
 
 /* ---------- level-1 item: icon + label vertical stack ---------- */
 
+/* L1 nav = plain static menu (per bao 2026-05-26 "就是个菜单，不需要动画").
+ * No transitions, no hover lift — hover/active state changes are
+ * instant. Active = single-dimension bg tint + border-color (no side
+ * stripe, no underline, no transform). */
 .item {
   appearance: none;
   background: transparent;
@@ -147,10 +139,6 @@
   color: var(--color-text-muted);
   cursor: pointer;
   position: relative;
-  transition:
-    background-color 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease;
 }
 .item:hover {
   background: var(--color-bg-l2);

@@ -1,13 +1,21 @@
 // IrisyMascot — Irisy's visible form.
 //
 // Renders via IconRenderer (ThorVG WASM). The canonical asset is
-// `/lottie/irisy.json` (geometric square face + dot eyes + breath + blink).
-// Per .olym/skills/thorvg/SKILL.md §3.4 + §5.3, Irisy is a brand mascot
-// at the decoration tier — the breath sets the cockpit's ambient cadence.
+// `/lottie/irisy.json` — a 2-second loop (60fps × 120 frames) with:
+//   - whole-body breath: scale 100→104→100 over the full loop
+//   - eye blink at frames 88→94→100: EyeWhite scaleY 100→8→100 +
+//     pupil opacity 100→0→100 (the blink "closes" the eye)
 //
-// State today drives `speed` modulation (the manifest doesn't yet bake an
-// `emotion` state machine; passing the machine id is best-effort so when
-// the canonical .lottie ships with one the wire is already plumbed).
+// Verified 2026-05-26 (see memory `feedback_irisy_blink_lottie_baked`):
+// the blink keyframes ARE in the lottie. If you don't see blink at
+// runtime, it's a rendering issue (reduce-motion, WASM load failure,
+// or props interfering), NOT missing animation data.
+//
+// State today drives `speed` only. The lottie doesn't carry a state
+// machine, so `stateMachineId` / `stateMachineInputs` are deliberately
+// NOT passed — earlier sessions passed `stateMachineId="emotion"` which
+// caused dotlottie-react to try loading a non-existent state machine
+// and silently fall through to first-frame-static (no breath, no blink).
 // `sleeping` freezes the canvas on its first frame.
 
 import type { ReactElement } from 'react';
@@ -31,7 +39,9 @@ interface IrisyMascotProps {
 
 const DEFAULT_IRISY_SRC = '/lottie/irisy.json';
 
-// Breathing rate hints at the mood until the state machine ships.
+// Breathing rate hints at the mood. Speed multiplies the whole loop,
+// including the blink — `thinking` (0.7×) blinks slower, `happy`
+// (1.4×) blinks more often.
 const SPEED_BY_STATE: Readonly<Record<IrisyState, number>> = {
   idle: 1,
   watching: 1.2,
@@ -55,8 +65,6 @@ export const IrisyMascot = ({
       speed={SPEED_BY_STATE[state]}
       ariaLabel={`Irisy — ${state}`}
       fallbackGlyph="I"
-      stateMachineId="emotion"
-      stateMachineInputs={{ mood: state }}
     />
   );
 };

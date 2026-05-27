@@ -98,7 +98,14 @@
   --statusbar-height: 32px;
   --keyboard-width: 320px;
   --rightrail-width: 80px;
-  --keycap-size: 64px;
+  /* Keycap size scale — canonical for any keycap-shaped surface.
+     `sm` is the Keyboard daily grid and the install slot next to it
+     (they sit side-by-side on `/`, so they MUST match).
+     `md` is for catalog / showcase surfaces (KeycapCard demo, Pool
+     in the future when its catalog card collapses to keycap shape). */
+  --keycap-size-sm: 64px;
+  --keycap-size-md: 88px;
+  --keycap-size: var(--keycap-size-sm); /* legacy alias */
   --keycap-gap: 12px;
   --bottomtab-height: 0px;
 

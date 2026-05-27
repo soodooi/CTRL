@@ -12,8 +12,8 @@
   justify-content: flex-end;
   align-items: center;
   gap: var(--space-1);
-  width: 88px;
-  height: 88px;
+  width: var(--keycap-size-md);
+  height: var(--keycap-size-md);
   padding: var(--space-3);
   background:
     linear-gradient(

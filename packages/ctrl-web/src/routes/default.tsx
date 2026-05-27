@@ -102,7 +102,7 @@ export const DefaultWorkspace = (): ReactElement => {
     <div className={styles.cockpit}>
       <div className={styles.stage} aria-hidden="true" />
       <div className={styles.bottomDock}>
-        <InstallKeycapTile onActivate={handleInstall} size={72} />
+        <InstallKeycapTile onActivate={handleInstall} />
         <div className={styles.inputWrap}>
           <ChatInput
             value={input}
