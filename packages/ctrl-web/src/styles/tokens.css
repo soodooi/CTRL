@@ -1,20 +1,22 @@
 /*
- * CTRL design tokens — v0.4 per bao 2026-05-25 ("试试明亮色").
+ * CTRL design tokens — v0.5 per bao 2026-05-26 ("改成白色的主题, 选一个
+ * 好看的白色").
  *
- * v0.4 shifts from v0.3:
- *  - Default theme flips light. Dark moves to `[data-theme='dark']`
- *    opt-in. (Earlier dark-lock retracted by bao 2026-05-25.)
- *  - Keycap palette nudged warmer + more saturated so the colored
- *    cards carry presence on the now-bright workspace surface.
- *  - Accent stays CTRL blue but uses the deeper `--ctrl-blue` (oklch
- *    0.45) by default since the lighter variant disappears on white.
- *  - Shadows reweighted slightly — black shadows now do real elevation
- *    work (they were ghosts on the dark slab).
+ * v0.5 shifts from v0.4:
+ *  - "Polar white" pick: paper raised to oklch(0.99 0.004 252) — same
+ *    252° hue as `--ctrl-blue` so neutrals and accent share a tonal
+ *    family, slight cool tint differentiates from macOS HIG default
+ *    white and avoids the clinical / SwiftUI feel.
+ *  - Surface stack re-cascaded: paper(L0) brighter, paper-2(L1) lifted
+ *    too so sidebars don't read grey on the new floor, L2/L3 raised so
+ *    cards / overlays sit cleanly on polar paper instead of competing.
+ *  - Chroma nudged +0.001 across the neutral scale — the deeper
+ *    paper needed a hair more cool to keep the keycap-blue hue family
+ *    legible when the surface is brighter.
  *
- * Earlier v0.3 direction held:
- *  - Type scale: fixed `rem`, 9px retired, mono micro-scale (10/11/12)
- *  - Neutrals tinted toward brand hue (252°, chroma 0.003)
- *  - text-muted / text-soft both AA-pass on default bg
+ * v0.4 (held): light is default; dark via `[data-theme='dark']` opt-in;
+ *   keycap palette warmer / more saturated; accent = `--ctrl-blue`;
+ *   shadows tuned for white elevation.
  */
 
 :root {
@@ -36,8 +38,10 @@
   /* === Neutral primitives ================================= */
   --ink: oklch(0.18 0.003 252);
   --ink-2: oklch(0.32 0.003 252);
-  --paper: oklch(0.985 0.003 252);
-  --paper-2: oklch(0.965 0.003 252);
+  /* Polar white pick (v0.5 — bao 2026-05-26).
+     Paper = floor. Paper-2 = chrome (rail / keyboard / status bar). */
+  --paper: oklch(0.99 0.004 252);
+  --paper-2: oklch(0.975 0.004 252);
 
   /* === Semantic primitives =============================== */
   --status-success: oklch(0.58 0.16 160);
@@ -55,8 +59,8 @@
      L3 overlay    — modals / popovers / dropdowns */
   --color-bg-l0: var(--paper);
   --color-bg-l1: var(--paper-2);
-  --color-bg-l2: oklch(0.945 0.004 252);
-  --color-bg-l3: oklch(0.91  0.005 252);
+  --color-bg-l2: oklch(0.96 0.005 252);
+  --color-bg-l3: oklch(0.935 0.006 252);
 
   /* Back-compat aliases */
   --color-background: var(--color-bg-l0);
@@ -68,8 +72,8 @@
   --color-text-soft: oklch(0.52 0.005 252);   /* AA on bg-l0; tertiary */
   --color-text-faint: oklch(0.68 0.005 252);  /* placeholder-only, sub-AA */
 
-  --color-border: oklch(0.86 0.005 252);
-  --color-border-soft: oklch(0.91 0.005 252);
+  --color-border: oklch(0.88 0.006 252);
+  --color-border-soft: oklch(0.93 0.006 252);
   --color-accent: var(--ctrl-blue);
 
   /* Semantic aliases */

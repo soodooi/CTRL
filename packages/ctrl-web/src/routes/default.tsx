@@ -1,15 +1,35 @@
-// DefaultWorkspace — the `/` route. Per decision_ctrl_is_hermes_workbench
-// CTRL is a workshop: persistent multi-tab workspace + Irisy as side
-// drawer. When there are NO open tabs, fall back to the Irisy-idle page
-// (a friendly chat input — what the user sees the first time).
+// DefaultWorkspace — the `/` route. Per bao 2026-05-25 (Pi sole brain /
+// CTRL = AI workshop): no chat-shell hero. The empty state is a quiet
+// cockpit floor with the chat input pinned at the bottom and a single
+// install-keycap slot sitting just above it.
 //
-// Per bao 2026-05-23: the session history list that used to live as a
-// middle nav column now lives in the right rail as a collapsible level-2
-// sub-panel. We push it via useIrisySubPanel — the rail clears it on
-// route unmount automatically.
+// Layout (bao 2026-05-26):
+//   ┌─────────────────────────────────┐
+//   │                                 │
+//   │  (chat messages stream here     │
+//   │   once Phase 1D wires the LLM)  │
+//   │                                 │
+//   │            ┌─────┐              │  ← InstallKeycapTile (slot)
+//   │            │  +  │  Install     │
+//   │            └─────┘              │
+//   │  ┌───────────────────────────┐  │  ← ChatInput (sticky)
+//   │  │ Ask Irisy…                │  │
+//   │  └───────────────────────────┘  │
+//   └─────────────────────────────────┘
+//
+// Mascot moved to the right rail's Irisy header slot — the cockpit no
+// longer carries a hero-portrait, the rail does.
+//
+// History list remains pushed into the rail level-2 panel via
+// useIrisySubPanel — clears automatically on route unmount.
 
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
-import { ChatInput, IrisyMascot } from '@/components/primitives';
+import { useNavigate } from '@tanstack/react-router';
+import {
+  ChatInput,
+  InstallKeycapTile,
+  type InstallKeycapTilePayload,
+} from '@/components/primitives';
 import { useRail, useIrisySubPanel, type RailSubPanel } from '@/components/RightRail';
 import type { SessionHistoryGroup } from '@/components/workspace/SessionWorkspace';
 import { WorkspaceShell } from '@/components/workspace/WorkspaceShell';
@@ -39,6 +59,7 @@ const PLACEHOLDER_HISTORY: ReadonlyArray<SessionHistoryGroup> = [
 
 export const DefaultWorkspace = (): ReactElement => {
   const { setIrisyState } = useRail();
+  const navigate = useNavigate();
   const [input, setInput] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -46,6 +67,15 @@ export const DefaultWorkspace = (): ReactElement => {
     setIrisyState('idle');
     return () => setIrisyState('idle');
   }, [setIrisyState]);
+
+  // All three install paths funnel through one handler — click navigates
+  // to /pool, dropped keycap ids / URIs / files also navigate to /pool
+  // (Phase 1D will pass the payload as a router search param so Pool
+  // can pre-open its install drawer). Single source of truth keeps the
+  // tile presentational. */
+  const handleInstall = (_payload: InstallKeycapTilePayload): void => {
+    void navigate({ to: '/pool' });
+  };
 
   const subPanel = useMemo<RailSubPanel>(
     () => ({
@@ -69,22 +99,20 @@ export const DefaultWorkspace = (): ReactElement => {
   };
 
   const fallback = (
-    <div className={styles.center}>
-      <div className={styles.mascotWrap}>
-        <IrisyMascot state="idle" size={180} />
-      </div>
-
-      <h1 className={styles.greeting}>What are we doing today?</h1>
-
-      <div className={styles.inputWrap}>
-        <ChatInput
-          value={input}
-          onChange={setInput}
-          onSubmit={handleSend}
-          placeholder="Ask Irisy, or type / for a keycap…"
-          ariaLabel="Chat with Irisy"
-          autoFocus
-        />
+    <div className={styles.cockpit}>
+      <div className={styles.stage} aria-hidden="true" />
+      <div className={styles.bottomDock}>
+        <InstallKeycapTile onActivate={handleInstall} size={72} />
+        <div className={styles.inputWrap}>
+          <ChatInput
+            value={input}
+            onChange={setInput}
+            onSubmit={handleSend}
+            placeholder="Ask Irisy, or type / for a keycap…"
+            ariaLabel="Chat with Irisy"
+            autoFocus
+          />
+        </div>
       </div>
     </div>
   );

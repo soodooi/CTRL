@@ -63,22 +63,17 @@ function useTrayBridge(): void {
 }
 
 function RootShellInner(): ReactElement {
-  const { items, irisySubPanel, activeRailId } = useRail();
+  const { irisySubPanel, activeRailId } = useRail();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
   const [dragOver, setDragOver] = useState(false);
 
-  // Per bao 2026-05-23: level-2 visibility = active level-1 item has a
-  // sub-panel. Two-state grid: hidden (80px primary only) vs open
-  // (240px panel + 80px primary). No explicit "collapsed but visible"
-  // tab — clicking the active item itself toggles.
-  const irisyHasPanel = irisySubPanel != null;
-  const activeItemHasPanel =
-    activeRailId === 'irisy'
-      ? irisyHasPanel
-      : items.some((i) => i.id === activeRailId && i.subPanel != null);
-  const subPanelState = activeItemHasPanel ? 'open' : 'none';
+  // Per bao 2026-05-26 ("右侧一级导航栏是固定的"): only Irisy carries a
+  // level-2 panel. Vault / Pool / Settings navigate directly without
+  // expanding the rail, so panel visibility collapses to a single check.
+  const subPanelState =
+    activeRailId === 'irisy' && irisySubPanel != null ? 'open' : 'none';
 
   // Drag-over only flips when our custom MIME is present — text drags
   // from outside the cockpit don't paint the drop affordance.
@@ -159,9 +154,6 @@ const SettingsRedirect = lazy(() =>
 );
 const SettingsCtrlPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsCtrlPage })),
-);
-const SettingsHermesPage = lazy(() =>
-  import('./routes/settings').then((m) => ({ default: m.SettingsHermesPage })),
 );
 const SettingsLogsPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsLogsPage })),
@@ -274,15 +266,6 @@ const settingsCtrlRoute = createRoute({
     </Suspense>
   ),
 });
-const settingsHermesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/settings/hermes',
-  component: () => (
-    <Suspense fallback={<LazyFallback />}>
-      <SettingsHermesPage />
-    </Suspense>
-  ),
-});
 const settingsLogsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/logs',
@@ -336,7 +319,6 @@ const routeTree = rootRoute.addChildren([
   workspaceRoute,
   settingsRoute,
   settingsCtrlRoute,
-  settingsHermesRoute,
   settingsLogsRoute,
   irisyRoute,
   codeSpaceRoute,

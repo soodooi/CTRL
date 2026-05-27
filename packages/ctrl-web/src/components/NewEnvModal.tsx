@@ -1,6 +1,7 @@
 // NewEnvModal — captures the command/cwd needed to spawn a code-space
-// env via the kernel's cs_spawn command. Modal pattern, no portal: the
-// route mounts an overlay div when open and the form submits the spawn.
+// env via the kernel's cs_spawn command. Built on the shared `Modal`
+// primitive (bao 2026-05-26): backdrop / focus-trap / esc / portal all
+// live in one place, this surface owns only the form body + presets.
 //
 // Presets:
 //   - bash       — always available on macOS / Linux; default selection.
@@ -12,12 +13,11 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useState,
   type FormEvent,
   type ReactElement,
 } from 'react';
-import { Button, FormField, TextInput } from './primitives';
+import { Button, FormField, Modal, TextInput } from './primitives';
 import { cx } from './primitives/cx';
 import type { CsSpawnArgs } from '@/lib/kernel';
 import styles from './NewEnvModal.module.css';
@@ -67,23 +67,9 @@ export const NewEnvModal = ({
   onSubmit,
   pending = false,
   error,
-}: Props): ReactElement | null => {
+}: Props): ReactElement => {
   const [command, setCommand] = useState<string>(DEFAULT_COMMAND);
   const [cwd, setCwd] = useState('');
-  const titleId = useId();
-
-  // Esc to close — bound only while open so the listener doesn't sit
-  // permanently on document. Gated on `pending` so the user can't
-  // dismiss the modal mid-spawn (matches the Cancel button's
-  // disabled-while-pending behaviour).
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !pending) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, pending]);
 
   // Reset the form whenever the modal closes so the next open starts
   // with bash pre-selected (the only preset that always works).
@@ -111,90 +97,87 @@ export const NewEnvModal = ({
     [command, cwd, onSubmit],
   );
 
-  if (!open) return null;
-
   const activePreset = PRESETS.find((p) => p.command === command);
 
   return (
-    <div
-      className={styles.backdrop}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      onClick={onClose}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="New environment"
+      subtitle={
+        <>
+          Spawn a coding session. <strong>bash</strong> always works; other
+          presets need a one-time CLI install.
+        </>
+      }
+      maxWidth={480}
+      dismissOnBackdropClick={!pending}
+      dismissOnEsc={!pending}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="new-env-form"
+            disabled={pending || command.trim().length === 0}
+          >
+            {pending ? 'Spawning…' : 'Spawn'}
+          </Button>
+        </>
+      }
     >
-      <div
-        className={styles.card}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className={styles.head}>
-          <h2 id={titleId} className={styles.title}>New environment</h2>
-          <p className={styles.subtitle}>
-            Spawn a coding session. <strong>bash</strong> always works; other
-            presets need a one-time CLI install.
-          </p>
-        </header>
+      <form id="new-env-form" onSubmit={handleSubmit} className={styles.form}>
+        <div className={styles.presets} role="group" aria-label="Command presets">
+          {PRESETS.map((p) => (
+            <button
+              key={p.command}
+              type="button"
+              className={cx(styles.preset, command === p.command && styles.presetActive)}
+              onClick={() => handlePreset(p.command)}
+              disabled={pending}
+              title={p.install ? p.install.hint : undefined}
+            >
+              {p.label}
+              {p.install && <span className={styles.presetTag}>needs install</span>}
+            </button>
+          ))}
+        </div>
 
-        <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.presets} role="group" aria-label="Command presets">
-            {PRESETS.map((p) => (
-              <button
-                key={p.command}
-                type="button"
-                className={cx(styles.preset, command === p.command && styles.presetActive)}
-                onClick={() => handlePreset(p.command)}
-                disabled={pending}
-                title={p.install ? p.install.hint : undefined}
-              >
-                {p.label}
-                {p.install && <span className={styles.presetTag}>needs install</span>}
-              </button>
-            ))}
+        {activePreset?.install && (
+          <div className={styles.installHint} role="note">
+            <span>{activePreset.install.hint}</span>
+            <code className={styles.installCmd}>{activePreset.install.cmd}</code>
           </div>
+        )}
 
-          {activePreset?.install && (
-            <div className={styles.installHint} role="note">
-              <span>{activePreset.install.hint}</span>
-              <code className={styles.installCmd}>{activePreset.install.cmd}</code>
-            </div>
-          )}
+        <FormField label="Command" hint="The program to spawn, e.g. bash, aider, claude.">
+          <TextInput
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder="bash"
+            autoFocus
+            disabled={pending}
+            required
+          />
+        </FormField>
 
-          <FormField label="Command" hint="The program to spawn, e.g. bash, aider, claude.">
-            <TextInput
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              placeholder="bash"
-              autoFocus
-              disabled={pending}
-              required
-            />
-          </FormField>
+        <FormField label="Working directory" hint="Optional — defaults to the kernel's working dir.">
+          <TextInput
+            value={cwd}
+            onChange={(e) => setCwd(e.target.value)}
+            placeholder="/Users/you/code/project"
+            disabled={pending}
+          />
+        </FormField>
 
-          <FormField label="Working directory" hint="Optional — defaults to the kernel's working dir.">
-            <TextInput
-              value={cwd}
-              onChange={(e) => setCwd(e.target.value)}
-              placeholder="/Users/you/code/project"
-              disabled={pending}
-            />
-          </FormField>
-
-          {error && (
-            <p className={styles.error} role="alert">
-              {error}
-            </p>
-          )}
-
-          <footer className={styles.footer}>
-            <Button variant="ghost" onClick={onClose} disabled={pending}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending || command.trim().length === 0}>
-              {pending ? 'Spawning…' : 'Spawn'}
-            </Button>
-          </footer>
-        </form>
-      </div>
-    </div>
+        {error && (
+          <p className={styles.error} role="alert">
+            {error}
+          </p>
+        )}
+      </form>
+    </Modal>
   );
 };

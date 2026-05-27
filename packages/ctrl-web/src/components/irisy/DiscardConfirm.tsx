@@ -1,7 +1,12 @@
-// [H-2026-05-18-001] DiscardConfirm — confirm modal for "Discard & restart".
+// DiscardConfirm — confirm modal for "Throw away the conversation".
+//
+// Thin wrapper over the shared `ConfirmDialog` primitive (bao
+// 2026-05-26). The old bespoke backdrop + bespoke button styles were
+// retired when the dialog surface migrated to the shared primitive —
+// only the prompt copy + destructive variant choice live here now.
 
-import { useEffect } from 'react';
-import styles from './DiscardConfirm.module.css';
+import type { ReactElement } from 'react';
+import { ConfirmDialog } from '@/components/primitives';
 
 interface DiscardConfirmProps {
   open: boolean;
@@ -13,36 +18,22 @@ export function DiscardConfirm({
   open,
   onCancel,
   onConfirm,
-}: DiscardConfirmProps): React.ReactElement | null {
-  useEffect(() => {
-    if (!open) return;
-    const handleKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onCancel();
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [open, onCancel]);
-
-  if (!open) return null;
+}: DiscardConfirmProps): ReactElement {
   return (
-    <div className={styles.backdrop} role="dialog" aria-modal="true" aria-labelledby="discard-title">
-      <div className={styles.panel}>
-        <h2 id="discard-title" className={styles.title}>
-          Throw away the conversation?
-        </h2>
-        <p className={styles.body}>
-          This clears the chat, the manifest draft, and the generated server code.
-          You&rsquo;ll start from an empty Irisy.
-        </p>
-        <div className={styles.actions}>
-          <button type="button" className={styles.cancel} onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" className={styles.confirm} onClick={onConfirm}>
-            Discard
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmDialog
+      open={open}
+      title="Throw away the conversation?"
+      body={
+        <>
+          This clears the chat, the manifest draft, and the generated server
+          code. You&rsquo;ll start from an empty Irisy.
+        </>
+      }
+      cancelLabel="Cancel"
+      confirmLabel="Discard"
+      destructive
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
   );
 }
