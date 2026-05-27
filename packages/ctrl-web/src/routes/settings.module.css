@@ -1,6 +1,5 @@
-/* /settings — shared shell with inline tab strip + tab content.
-   Three tabs (CTRL / Hermes / Logs) share the same layout per
-   bao 2026-05-24. */
+/* /settings — shell + two tabs (General / Logs). Hermes tab removed
+ * 2026-05-26 with the Pi-sole-brain decision. */
 
 .layout {
   flex: 1;
@@ -59,9 +58,7 @@
     background-color var(--duration-fast) var(--ease-out-quart),
     color var(--duration-fast) var(--ease-out-quart);
 }
-.tab:hover {
-  color: var(--color-text);
-}
+.tab:hover { color: var(--color-text); }
 .tab[data-active='true'] {
   background: var(--color-bg-l2);
   color: var(--color-text);
@@ -78,32 +75,250 @@
   padding: var(--space-5) var(--space-6) var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
   width: 100%;
   flex: 1;
   min-height: 0;
 }
 
-/* ── Tab content shared ────────────────────────────────────────── */
+/* ── Section ───────────────────────────────────────────────────── */
 
-.sectionSubtitle {
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.sectionHead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+.sectionDesc {
+  margin: 0;
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
-  margin: 0;
-  max-width: 60ch;
-  letter-spacing: -0.005em;
   line-height: 1.55;
+  max-width: 64ch;
+}
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.embedFrame {
-  flex: 1;
-  width: 100%;
-  min-height: 480px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-lg);
+/* ── Segmented control (theme picker) ────────────────────────── */
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
   background: var(--color-bg-l1);
-  color-scheme: var(--color-scheme);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  width: 100%;
+  max-width: 540px;
+}
+.segment {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px var(--space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text-muted);
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+.segment:hover { color: var(--color-text); }
+.segment[data-active='true'] {
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  border-color: var(--color-border-soft);
+  box-shadow: var(--shadow-sm);
+}
+.segment:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+.segmentLabel {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.005em;
+}
+.segmentHint {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.06em;
+  color: var(--color-text-soft);
+  text-transform: uppercase;
+}
+
+/* ── Provider rows ────────────────────────────────────────────── */
+
+.providerStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.providersFallback {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.providersFallback[data-tone='danger'] { color: var(--color-danger); }
+
+.providerRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+}
+.providerHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.providerIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.providerName {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+.providerSlug {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+}
+.providerMeta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: var(--space-2) 0;
+  border-top: 1px dashed var(--color-border-soft);
+  border-bottom: 1px dashed var(--color-border-soft);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+}
+.providerMeta div { display: flex; flex-direction: column; gap: 2px; }
+.providerMeta dt {
+  color: var(--color-text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--text-mono-xs);
+}
+.providerMeta dd {
+  margin: 0;
+  color: var(--color-text);
+  word-break: break-all;
+}
+
+.providerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.providerTestResult {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+.providerTestResult[data-tone='success'] {
+  background: color-mix(in oklab, var(--color-success), transparent 88%);
+  color: var(--color-success);
+  border-color: color-mix(in oklab, var(--color-success), transparent 60%);
+}
+.providerTestResult[data-tone='danger'] {
+  background: color-mix(in oklab, var(--color-danger), transparent 88%);
+  color: var(--color-danger);
+  border-color: color-mix(in oklab, var(--color-danger), transparent 60%);
+}
+
+.providerError {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  color: var(--color-danger);
+}
+
+/* ── Hotkey readout ───────────────────────────────────────────── */
+
+.hotkeyBox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+}
+.hotkeyChord {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+  padding: 6px 12px;
+  background: var(--color-bg-l0);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow:
+    inset 0 -2px 0 oklch(0 0 0 / 0.04),
+    var(--shadow-sm);
+  color: var(--color-text);
+}
+.hotkeyNote {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  max-width: 48ch;
+}
+.hotkeyNote em {
+  font-style: normal;
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
 }
 
 /* ── Logs tab ─────────────────────────────────────────────────── */

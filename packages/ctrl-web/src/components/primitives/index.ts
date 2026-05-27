@@ -61,4 +61,13 @@ export type {
 } from './BentoGrid';
 export { CommandBar } from './CommandBar';
 export type { CommandBarProps, CommandItem } from './CommandBar';
+export { Modal } from './Modal';
+export type { ModalProps } from './Modal';
+export { ConfirmDialog } from './ConfirmDialog';
+export type { ConfirmDialogProps } from './ConfirmDialog';
+export { InstallKeycapTile } from './InstallKeycapTile';
+export type {
+  InstallKeycapTileProps,
+  InstallKeycapTilePayload,
+} from './InstallKeycapTile';
 export { IconRenderer } from './IconRenderer';

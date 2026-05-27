@@ -1,23 +1,24 @@
 // RightRail — two-level context navigation on the right edge.
 //
-// Model (per bao 2026-05-23 clarification):
-//   Level-1 = permanent vertical icon column. Synthesized order:
-//     [ Irisy (top) | …route-pushed items… | Settings (bottom) ]
-//   Level-2 = sub-panel that appears ONLY after clicking a level-1
-//     item that carries one. Click the same item again to collapse.
+// Model (per bao 2026-05-26: "右侧一级导航栏是固定的"):
+//   Level-1 = FIXED order, route-independent:
+//     [ Irisy (top, mascot slot) | Vault | Pool | Settings (footer) ]
+//   Routes CANNOT push items into level-1. The only thing a route may
+//   push is Irisy's level-2 panel content (e.g. chat history list)
+//   via `useIrisySubPanel`. The previous `useRailItems` / `setItems`
+//   channel was removed — its surface ambiguity ("which route owns
+//   the rail right now?") was the bug bao called out.
+//
+// Level-2 sub-panel only opens when Irisy is the active item AND a
+// route has pushed her panel content. Vault / Pool / Settings have
+// no panels by design — clicking them navigates and does not expand.
 //
 // Default active = `irisy`, so on first load the user sees Irisy
-// selected and (when the `/` route has pushed her panel) her panel
-// open in level-2 — the cockpit feels alive without any explicit click.
+// selected and (when `/` has pushed her panel) her history list open
+// in level-2. The cockpit feels alive without any explicit click.
 //
-// Per-item routing: each RailItem may carry an `onClick` (navigate to
-// the item's workspace) and an optional `subPanel` (its level-2 data).
-// Items WITHOUT a sub-panel just invoke `onClick` — they don't toggle
-// the active state. Items WITH a sub-panel toggle the active state on
-// click in addition to invoking `onClick`.
-//
-// Below the nav, the rail footer carries the app version and an update
-// indicator (green dot when a newer build is published on the channel).
+// Below the nav, the rail footer carries the app version and an
+// update indicator (green dot when a newer build is on the channel).
 
 import {
   createContext,
@@ -66,8 +67,6 @@ export interface RailItem {
 }
 
 interface RailContextValue {
-  items: ReadonlyArray<RailItem>;
-  setItems: (items: ReadonlyArray<RailItem>) => void;
   irisyState: IrisyState;
   setIrisyState: (state: IrisyState) => void;
   /** Irisy's level-2 panel content, pushed by whichever route owns her
@@ -151,14 +150,11 @@ const PoolIcon = (): ReactElement => (
 );
 
 export const RailProvider = ({ children }: { children: ReactNode }): ReactElement => {
-  const [items, setItems] = useState<ReadonlyArray<RailItem>>([]);
   const [irisyState, setIrisyState] = useState<IrisyState>('idle');
   const [irisySubPanel, setIrisySubPanel] = useState<RailSubPanel | null>(null);
   const [activeRailId, setActiveRailId] = useState<string | null>(IRISY_ITEM_ID);
   const value = useMemo<RailContextValue>(
     () => ({
-      items,
-      setItems,
       irisyState,
       setIrisyState,
       irisySubPanel,
@@ -166,7 +162,7 @@ export const RailProvider = ({ children }: { children: ReactNode }): ReactElemen
       activeRailId,
       setActiveRailId,
     }),
-    [items, irisyState, irisySubPanel, activeRailId],
+    [irisyState, irisySubPanel, activeRailId],
   );
   return <RailContext.Provider value={value}>{children}</RailContext.Provider>;
 };
@@ -175,16 +171,6 @@ export const useRail = (): RailContextValue => {
   const ctx = useContext(RailContext);
   if (!ctx) throw new Error('useRail must be used inside <RailProvider>');
   return ctx;
-};
-
-/** Convenience hook for routes that want to populate the level-1 rail
- *  with route-specific items. Pass a memoized array. */
-export const useRailItems = (items: ReadonlyArray<RailItem>): void => {
-  const { setItems } = useRail();
-  useEffect(() => {
-    setItems(items);
-  }, [items, setItems]);
-  useEffect(() => () => setItems([]), [setItems]);
 };
 
 /** Push Irisy's level-2 panel content. The rail clears it on unmount
@@ -216,7 +202,6 @@ const parseSettingsSection = (pathname: string): string | null => {
 
 export const RightRail = (): ReactElement => {
   const {
-    items,
     irisyState,
     irisySubPanel,
     activeRailId,
@@ -244,40 +229,37 @@ export const RightRail = (): ReactElement => {
     [irisySubPanel, navigate],
   );
 
-  // Level-1 nav = permanent primaries (Vault, Pool) + route-pushed
-  // items + Settings footer cap.
-  const allItems = useMemo<ReadonlyArray<SyntheticRailItem>>(() => {
-    const vaultItem: SyntheticRailItem = {
-      id: VAULT_ITEM_ID,
-      label: 'Vault',
-      isVault: true,
-      onClick: () => {
-        void navigate({ to: '/vault' });
+  // Level-1 nav = fixed primaries. Order + count never vary; routes
+  // cannot inject items here (per bao 2026-05-26).
+  const allItems = useMemo<ReadonlyArray<SyntheticRailItem>>(
+    () => [
+      {
+        id: VAULT_ITEM_ID,
+        label: 'Vault',
+        isVault: true,
+        onClick: () => {
+          void navigate({ to: '/vault' });
+        },
       },
-    };
-    const poolItem: SyntheticRailItem = {
-      id: POOL_ITEM_ID,
-      label: 'Pool',
-      isPool: true,
-      onClick: () => {
-        void navigate({ to: '/pool' });
+      {
+        id: POOL_ITEM_ID,
+        label: 'Pool',
+        isPool: true,
+        onClick: () => {
+          void navigate({ to: '/pool' });
+        },
       },
-    };
-    const settingsItem: SyntheticRailItem = {
-      id: SETTINGS_ITEM_ID,
-      label: 'Settings',
-      isSettings: true,
-      onClick: () => {
-        void navigate({ to: SETTINGS_DEFAULT_PATH });
+      {
+        id: SETTINGS_ITEM_ID,
+        label: 'Settings',
+        isSettings: true,
+        onClick: () => {
+          void navigate({ to: SETTINGS_DEFAULT_PATH });
+        },
       },
-    };
-    return [
-      vaultItem,
-      poolItem,
-      ...items.map((i) => ({ ...i, isIrisy: false, isSettings: false })),
-      settingsItem,
-    ];
-  }, [items, navigate]);
+    ],
+    [navigate],
+  );
 
   // Auto-flip activeRailId to vault / pool when the route enters those
   // surfaces — keeps the rail selection in sync with where the user

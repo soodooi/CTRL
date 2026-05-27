@@ -52,6 +52,48 @@ export interface McpInstallArgs {
 export const installKeycapFromMcp = (args: McpInstallArgs): Promise<KeycapSummary> =>
   invoke('install_keycap_from_mcp', { args });
 
+// === Provider config (Settings → General) ===
+//
+// Mirrors `src-tauri/src/commands/config.rs`. Three round-trips drive
+// the entire provider table: list → set/test/delete → list. The kernel
+// owns config.toml + Keychain writes; the PWA never touches them
+// directly.
+export interface ProviderInfo {
+  name: string;
+  display_name: string;
+  base_url: string;
+  default_model: string;
+  has_key_in_config: boolean;
+  has_key_in_keychain: boolean;
+  is_active: boolean;
+}
+
+export const listProviders = (): Promise<ProviderInfo[]> =>
+  invoke('config_list_providers');
+
+export interface SetProviderKeyArgs {
+  provider: string;
+  api_key: string;
+  base_url?: string;
+  default_model?: string;
+}
+
+export const setProviderKey = (args: SetProviderKeyArgs): Promise<void> =>
+  invoke('config_set_provider_key', { args });
+
+export interface TestProviderResult {
+  success: boolean;
+  message: string;
+  elapsed_ms: number;
+  model_count: number | null;
+}
+
+export const testProvider = (provider: string): Promise<TestProviderResult> =>
+  invoke('config_test_provider', { args: { provider } });
+
+export const deleteProvider = (provider: string): Promise<void> =>
+  invoke('config_delete_provider', { args: { provider } });
+
 export interface RunKeycapResult {
   output: unknown;
   duration_ms: number;

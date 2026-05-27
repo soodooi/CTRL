@@ -1,0 +1,86 @@
+/* InstallKeycapTile — empty-slot keycap with a `+` glyph. Sits as a
+ * presentational sibling of real keycaps; uses a dashed contour so it
+ * reads as "vacant" without competing with installed caps' 5-layer
+ * shadow stack. */
+
+.tile {
+  appearance: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  background: var(--color-bg-l0);
+  /* 1.5px dashed border in `--color-border` reads as "empty slot" on
+     polar paper without screaming for attention. The keycap silhouette
+     is preserved via radius so the slot still feels like a cap shape. */
+  border: 1.5px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-soft);
+  cursor: pointer;
+  /* Only transform / opacity / shadow / border-color per impeccable
+     motion law — no layout-property animation. */
+  transition:
+    border-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart),
+    box-shadow var(--duration-fast) var(--ease-out-quart);
+}
+
+.tile:hover {
+  border-color: color-mix(in oklab, var(--color-accent), var(--color-border) 35%);
+  color: var(--color-text);
+  background: color-mix(in oklab, var(--color-bg-l0), var(--color-accent) 3%);
+  box-shadow: 0 6px 18px oklch(0 0 0 / 0.06);
+  transform: translateY(-1px);
+}
+
+.tile:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent), transparent 75%);
+}
+
+.tile:active {
+  transform: translateY(0);
+  box-shadow: inset 0 1px 2px oklch(0 0 0 / 0.08);
+}
+
+/* Drag-over state — the slot is the drop target so it announces itself
+ * more loudly than hover. Solid accent border + tinted surface. */
+.dragOver,
+.dragOver:hover {
+  border-style: solid;
+  border-color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-bg-l0), var(--color-accent) 8%);
+  color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent), transparent 80%);
+  transform: translateY(-1px);
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--color-accent), transparent 88%);
+  color: var(--color-accent);
+  transition: background-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.tile:hover .glyph,
+.dragOver .glyph {
+  background: color-mix(in oklab, var(--color-accent), transparent 78%);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: inherit;
+}

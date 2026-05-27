@@ -29,7 +29,7 @@ import {
   ClusterWorkspace,
   type ClusterSource,
 } from '@/components/workspace/ClusterWorkspace';
-import { useRail, type RailItem } from '@/components/RightRail';
+import { useRail } from '@/components/RightRail';
 import { csList, csSpawn, type CsSpawnArgs } from '@/lib/kernel';
 import { formatHHMMSS } from '@/hooks/useWallClock';
 import { useTerminalBuffer } from '@/hooks/useTerminalBuffer';
@@ -93,7 +93,7 @@ const shortStreamId = (id: string): string => {
 export const CodeSpaceRoute = (): ReactElement => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { setItems: setRailItems, setIrisyState } = useRail();
+  const { setIrisyState } = useRail();
   const [modalOpen, setModalOpen] = useState(false);
 
   const envsQuery = useQuery({
@@ -152,26 +152,8 @@ export const CodeSpaceRoute = (): ReactElement => {
   );
 
   // Populate the right rail with env switchers. Each env = one dot icon
-  // tinted by status; click navigates to that env's detail view.
-  useEffect(() => {
-    const items: RailItem[] = envs.map((env) => ({
-      id: env.stream_id,
-      label: env.command
-        ? `${shortStreamId(env.stream_id)} · ${env.command}`
-        : shortStreamId(env.stream_id),
-      tone:
-        env.status === 'running'
-          ? 'nominal'
-          : env.status === 'crashed'
-            ? 'warning'
-            : env.status === 'stopped'
-              ? 'offline'
-              : 'unknown',
-      onClick: () => handleOpen(env.stream_id),
-    }));
-    setRailItems(items);
-    return () => setRailItems([]);
-  }, [envs, handleOpen, setRailItems]);
+  // Per-env switcher lives in the route's main pane (ClusterWorkspace
+  // sources), not the right rail — L1 nav is now fixed (bao 2026-05-26).
 
   // Irisy reacts to fleet health: any error → worried, any running →
   // watching, otherwise idle. Phase 1B Rive swap consumes the same state.

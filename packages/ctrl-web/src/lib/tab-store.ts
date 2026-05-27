@@ -138,10 +138,3 @@ export const useTabStore = create<TabStoreState>()(
   ),
 );
 
-/** Stable id for the Hermes settings embed tab — opening it twice
- *  should focus the existing tab, not duplicate. */
-export const HERMES_SETTINGS_TAB_ID = 'hermes-settings';
-
-/** Default URL for the local hermes dashboard. Replaced at runtime by
- *  kernel_status.hermes_dashboard_url once Zeus ships that field. */
-export const HERMES_DASHBOARD_DEFAULT_URL = 'http://127.0.0.1:9119';

@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listKeycaps, openWorkspace, type KeycapSummary } from '@/lib/kernel';
 import { StatusPill, type LedTone } from '@/components/primitives';
-import { useRail, type RailItem } from '@/components/RightRail';
+import { useRail } from '@/components/RightRail';
 import styles from './pool.module.css';
 
 type SourceId = 'all' | 'builtin' | 'mcp' | 'oauth' | 'local' | 'stss';
@@ -130,7 +130,7 @@ const fallbackGlyph = (name: string): string => {
 };
 
 export const PoolRoute = (): ReactElement => {
-  const { setItems: setRailItems, setIrisyState } = useRail();
+  const { setIrisyState } = useRail();
   const [active, setActive] = useState<SourceId>('all');
   const [query, setQuery] = useState('');
   const [activationError, setActivationError] = useState<string | null>(null);
@@ -164,19 +164,8 @@ export const PoolRoute = (): ReactElement => {
     });
   }, [keycaps, active, query]);
 
-  // Right rail: jump-to-source items + future "recently installed".
-  useEffect(() => {
-    const items: RailItem[] = SOURCES.filter((s) => s.id !== 'all').map((s) => ({
-      id: s.id,
-      label: s.label,
-      glyph: s.label.slice(0, 2).toUpperCase(),
-      tone: SOURCE_TONE[s.id],
-      active: active === s.id,
-      onClick: () => setActive(s.id),
-    }));
-    setRailItems(items);
-    return () => setRailItems([]);
-  }, [active, setRailItems]);
+  // Source filters live in the Pool main pane (chip row), not the
+  // right rail — L1 nav is now fixed (bao 2026-05-26).
 
   useEffect(() => {
     setIrisyState('idle');
