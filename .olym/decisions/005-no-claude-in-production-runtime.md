@@ -8,6 +8,7 @@ related:
   - .olym/decisions/001-system-architecture.md
   - packages/ctrl-web/src/lib/llm-transport.ts
 scope: framework
+module: cross-cutting
 supersedes: []
 superseded_by: []
 ---

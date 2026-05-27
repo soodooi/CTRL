@@ -10,6 +10,7 @@ related:
   - .olym/decisions/013-kernel-as-mcp-server.md
   - .olym/specs/irisy/spec.md
 scope: framework
+module: irisy
 supersedes: []
 superseded_by: []
 ---

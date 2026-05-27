@@ -9,6 +9,7 @@ related:
   - .olym/decisions/010-keycap-execution-model.md
   - .olym/decisions/013-kernel-as-mcp-server.md
 scope: framework
+module: cross-cutting
 supersedes: []
 superseded_by: []
 ---

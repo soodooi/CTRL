@@ -11,6 +11,7 @@ related:
   - .olym/handoffs/H-2026-05-18-002-jiazuo-capability-spike.md
   - doc/keycap-integration-research/06-jiazuo-result.md
 scope: framework
+module: substrate
 ---
 
 ## Context

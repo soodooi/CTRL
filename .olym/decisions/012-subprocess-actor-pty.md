@@ -11,6 +11,7 @@ related:
   - packages/ctrl-web/src/routes/irisy.tsx
   - src-tauri/src/kernel/actor.rs
 scope: framework
+module: substrate
 supersedes: []
 superseded_by: []
 ---

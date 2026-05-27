@@ -5,6 +5,7 @@ status: accepted
 date: 2026-05-25
 amends: 015-obsidian-philosophy
 relates: 002-pwa-pivot
+module: frontend
 ---
 
 ## Context

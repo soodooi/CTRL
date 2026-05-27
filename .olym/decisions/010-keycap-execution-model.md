@@ -10,6 +10,7 @@ related:
   - .olym/specs/kernel/spec.md
   - doc/keycap-integration-research/00-adr-010-inputs-from-hephaestus.md
 scope: framework
+module: cap
 supersedes: []
 superseded_by: []
 ---

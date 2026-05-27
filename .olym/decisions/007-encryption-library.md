@@ -8,6 +8,7 @@ related:
   - .olym/decisions/003-multi-device-mesh.md
   - .olym/handoffs/H-2026-05-14-001-mesh-comm.md
 scope: framework
+module: substrate
 supersedes: []
 superseded_by: []
 ---
