@@ -352,7 +352,6 @@ export const RightRail = (): ReactElement => {
             </span>
           )}
         </span>
-        <span className={styles.itemLabel}>{item.label}</span>
       </button>
     );
   };

@@ -30,10 +30,9 @@
   color: var(--color-text);
   overflow: hidden;
   /* Right rail width responds to whether a level-2 sub-panel is open.
-     Two-state shell (none / open) — collapse happens by clicking the
-     active level-1 item itself, no explicit chevron tab. */
+     Two-state shell (none / open). bao 2026-05-27: no transition —
+     L1 rail must feel fixed, width changes snap. */
   --rightrail-width: 80px;
-  transition: grid-template-columns 220ms var(--ease-out-quart, ease-out);
 }
 .shell[data-sub-panel='open'] {
   --rightrail-width: 320px; /* 240 sub-panel + 80 primary */
