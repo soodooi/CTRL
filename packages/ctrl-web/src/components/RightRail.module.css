@@ -93,6 +93,9 @@
 }
 
 .versionRow {
+  appearance: none;
+  background: transparent;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -104,6 +107,14 @@
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
   user-select: none;
+  cursor: pointer;
+}
+.versionRow:hover:not(:disabled) {
+  color: var(--color-text);
+}
+.versionRow:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 .versionText {
   text-transform: lowercase;

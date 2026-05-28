@@ -392,13 +392,22 @@ export const RightRail = (): ReactElement => {
 
         <div className={styles.footer}>
           {settingsItem && renderItem(settingsItem)}
-          <div
+          <button
+            type="button"
             className={styles.versionRow}
             title={
-              update.available
-                ? `Update available${update.latestVersion ? ` (${update.latestVersion})` : ''}`
-                : `CTRL v${APP_VERSION}`
+              update.installing
+                ? 'Installing…'
+                : update.checking
+                  ? 'Checking…'
+                  : update.available
+                    ? `Click to install v${update.latestVersion ?? ''} & restart`
+                    : `CTRL v${APP_VERSION} · click to check for updates`
             }
+            onClick={() => {
+              void (update.available ? update.installAndRestart() : update.checkNow());
+            }}
+            disabled={update.checking || update.installing}
           >
             <span className={styles.versionText}>v{APP_VERSION}</span>
             {update.available && (
@@ -408,7 +417,7 @@ export const RightRail = (): ReactElement => {
                 role="status"
               />
             )}
-          </div>
+          </button>
         </div>
       </div>
     </aside>

@@ -101,7 +101,11 @@ export const StatusBar = (): ReactElement => {
   const krnTitle = warning ? `${warning} · click to open Settings` : `KRN: ${krnTone}`;
 
   return (
-    <header className={styles.bar} aria-label="Cockpit status bar">
+    <header
+      className={styles.bar}
+      aria-label="Cockpit status bar"
+      data-tauri-drag-region
+    >
       <Link to="/" className={styles.brand} aria-label="CTRL home">
         <Logo size="sm" ariaLabel="" />
         <span className={styles.wordmark}>CTRL</span>
