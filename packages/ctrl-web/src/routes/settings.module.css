@@ -84,6 +84,163 @@
   min-height: 0;
 }
 
+/* ── Brain switcher (ADR-021) ──────────────────────────────────── */
+
+.brainHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.brainHeaderText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.brainTitle {
+  font-family: var(--font-sans);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.brainHelp {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.brainActions {
+  display: flex;
+  gap: 8px;
+}
+
+.brainButton {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.brainButton:hover {
+  background: var(--color-surface-hover);
+}
+
+.brainButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.brainList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.brainCard {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.brainCard[data-active='true'] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.brainCard[data-detected='false'] {
+  opacity: 0.55;
+}
+
+.brainRadio {
+  display: flex;
+  justify-content: center;
+}
+
+.brainBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.brainName {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.brainDetail {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brainTags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.brainTag {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+  color: var(--color-text-muted);
+}
+
+.brainTag[data-tone='good'] {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+}
+
+.brainTag[data-tone='warn'] {
+  background: color-mix(in srgb, #c08400 18%, transparent);
+  color: #c08400;
+}
+
+.brainStatus {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-align: right;
+  min-width: 80px;
+}
+
+.brainError {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: #b22020;
+  padding: 8px 12px;
+  background: color-mix(in srgb, #b22020 8%, transparent);
+  border-radius: 6px;
+  margin: 0 0 12px;
+}
+
 /* ── Tab content shared ────────────────────────────────────────── */
 
 .sectionSubtitle {

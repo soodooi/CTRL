@@ -176,24 +176,7 @@ async fn probe_pi() -> PiStatus {
 }
 
 fn read_active_brain() -> String {
-    let home = match std::env::var("HOME") {
-        Ok(h) if !h.is_empty() => h,
-        _ => return "pi".to_string(),
-    };
-    let path = std::path::PathBuf::from(home)
-        .join(".ctrl")
-        .join("active-brain");
-    match std::fs::read_to_string(&path) {
-        Ok(s) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                "pi".to_string()
-            } else {
-                trimmed.to_string()
-            }
-        }
-        Err(_) => "pi".to_string(),
-    }
+    crate::kernel::brain_config::active_brain_id()
 }
 
 fn probe_kernel_llm(kernel: &State<'_, KernelHandle>) -> KernelLlmStatus {

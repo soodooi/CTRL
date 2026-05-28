@@ -162,6 +162,20 @@ export function IrisyChat(): React.ReactElement {
     if (typeof window === 'undefined') return '';
     return window.localStorage.getItem(HERMES_SESSION_STORAGE_KEY) ?? '';
   });
+  // `?fresh=1` from the homepage's "New chat" hand-off clears the
+  // persisted conversation before this component reads it, so the new
+  // session starts genuinely empty even if the URL is hit while a
+  // previous chat is still in localStorage.
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('fresh') === '1') {
+        window.localStorage.removeItem(CHAT_STORAGE_KEY);
+      }
+    } catch {
+      // ignore — IrisyChat still mounts with whatever is stored
+    }
+  }
   const [messages, setMessages] = useState<DisplayMessage[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -613,6 +627,26 @@ export function IrisyChat(): React.ReactElement {
   // Keep the keydown handler reading the latest sendMessage closure.
   useEffect(() => {
     sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
+
+  // Homepage hand-off: `/?text=<encoded>` from default.tsx's ChatInput
+  // navigates here with the user's first message. Pop it off the URL
+  // and fire it once. The strip-on-consume guard prevents a refresh
+  // from re-sending the same prompt.
+  const prefillFiredRef = useRef(false);
+  useEffect(() => {
+    if (prefillFiredRef.current) return;
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const text = params.get('text');
+    if (!text) return;
+    prefillFiredRef.current = true;
+    params.delete('text');
+    params.delete('fresh');
+    const qs = params.toString();
+    const newUrl = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
+    window.history.replaceState({}, '', newUrl);
+    void sendMessage(text);
   }, [sendMessage]);
 
   const onSubmit = (e: React.FormEvent): void => {
