@@ -243,11 +243,6 @@
   color: var(--color-accent);
   font-weight: var(--weight-semibold);
 }
-.targetBadge[data-target='hermes-skill'] {
-  background: color-mix(in oklab, var(--color-bg-l3), var(--color-warning) 14%);
-  border-color: color-mix(in oklab, var(--color-warning), transparent 50%);
-  color: color-mix(in oklab, var(--color-warning), var(--color-text) 30%);
-}
 
 /* ── Adjustment tier badge (Config / Patch / Fork) ───────────────────
    Per memory decision_keycap_3_tier_adjustment: 90% Config, ~10% Patch,

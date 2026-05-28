@@ -1,6 +1,6 @@
 // theme — Light / Dark / System preference persisted in localStorage.
 //
-// Per bao 2026-05-25 ("试试明亮色") + 2026-05-26 ("改成白色的主题"):
+// Per bao 2026-05-25 ("try a bright color") + 2026-05-26 ("change it to a white theme"):
 // light is the product default. Dark is opt-in via `[data-theme='dark']`
 // on the root element. System lets the OS preference decide.
 //

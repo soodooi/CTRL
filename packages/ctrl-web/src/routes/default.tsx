@@ -4,7 +4,7 @@
 // Mascot lives in the right-rail Irisy header; cockpit carries no
 // hero-portrait.
 //
-// 2026-05-27 fix (bao "全量快速修复"): ChatInput + "New chat" used to
+// 2026-05-27 fix (bao "full quick fix"): ChatInput + "New chat" used to
 // be stubs (Phase 1D never landed). Now: Enter hands off to /irisy
 // via `?text=` URL param so all transport / persistence /
 // brain-routing lives in IrisyChat.tsx. "New chat" navigates to

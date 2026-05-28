@@ -357,7 +357,7 @@ mod mac_impl {
         // HID intercepts before per-session dispatch so Ctrl fires from any
         // focused app (Chrome/etc). 46f60e1 fixed this; regressed somewhere
         // — locked by memory troubleshoot_ctrl_hotkey "CGEventTap HID tap
-        // location (Session 不够, 不留 Chrome 等 app 完全不响应)".
+        // location (Session is not enough; without it Chrome and other apps stay completely unresponsive)".
         let tap = CGEventTap::new(
             CGEventTapLocation::HID,
             CGEventTapPlacement::HeadInsertEventTap,

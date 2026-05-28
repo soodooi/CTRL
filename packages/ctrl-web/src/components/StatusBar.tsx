@@ -103,8 +103,8 @@ export const StatusBar = (): ReactElement => {
 
   // Click fallback for when the Ctrl hotkey desyncs (AX revoked after
   // an upgrade that changed the bundle hash, CGEventTap permission
-  // dropped, etc.). bao 2026-05-23: "为了不至于隐藏不了 你在右上角先放
-  // 一个 hide 按钮吧". PWA-only browser mode (no Tauri bridge) silently
+  // dropped, etc.). bao 2026-05-23: "so we don't end up unable to hide,
+  // put a hide button in the top-right corner for now". PWA-only browser mode (no Tauri bridge) silently
   // no-ops since there's no native window to hide.
   const handleHide = useCallback((): void => {
     void invoke<void>('hide_window').catch(() => {

@@ -5,7 +5,7 @@
  * The kernel side (Rust, `src-tauri/src/kernel/persistence.rs`) owns
  * the canonical event store (SQLite). This package is the TypeScript
  * side companion: in-process append/read for tests + dev, plus a
- * cursor-based query facade the UI layer and 创作者助手 use to
+ * cursor-based query facade the UI layer and creator assistant use to
  * iterate over recent envelopes (e.g. "show me the last 10 LLM
  * responses on this stream").
  *

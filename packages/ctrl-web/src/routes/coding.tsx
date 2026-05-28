@@ -1,7 +1,7 @@
 // Coding — thin entry into the coding workspace.
 //
-// bao 2026-05-28 "你现在有基础的所有设施，直接组态出来就行了" +
-// "你觉得我需要一个纯静态的 coding 页面吗？".
+// bao 2026-05-28 "you now have all the basic facilities, just compose it directly" +
+// "do you think I need a purely static coding page?".
 //
 // Replaced the v0.1.49 static demo (hardcoded file tree, fake syntax-
 // highlighted code, fake terminal mock). /coding's job is to drop the

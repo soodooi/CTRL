@@ -41,15 +41,14 @@ export type KeycapVariant = z.infer<typeof KeycapVariant>;
 // brain — brain runtimes are keycaps, not kernel-level primitives.
 //
 //   mcp-tool     — one-shot tool call. Default for ~90% of keycaps.
-//   hermes-skill — rich SKILL.md-driven keycap (optional, advanced).
 //   brain        — pluggable agent runtime that owns `text.chat` (or any
 //                  capability the keycap declares via `capability`). The
 //                  user's active brain keycap is the answer for any
-//                  inbound capability call from Irisy. Examples: Pi
-//                  (default), hermes (optional), claude-shim (dev-only).
+//                  inbound capability call from Irisy. Pi is the sole
+//                  brain (ADR-001 amendment 2026-05-25).
 //
 // See .olym/specs/tool-manifest/spec.md §13.
-export const KeycapTarget = z.enum(['mcp-tool', 'hermes-skill', 'brain']);
+export const KeycapTarget = z.enum(['mcp-tool', 'brain']);
 export type KeycapTarget = z.infer<typeof KeycapTarget>;
 
 export const Permission = z.enum([
@@ -307,14 +306,13 @@ const VaultWriteStep = StepCommon.extend({
 });
 
 /** Composition step: invoke another callable thing by id. Abstracts
- *  over keycaps, external MCP tools, and hermes skills behind one
- *  step type so workshop canvas (drag base keycap onto graph) +
- *  Irisy compositions don't have to know transport details.
+ *  over keycaps and external MCP tools behind one step type so workshop
+ *  canvas (drag base keycap onto graph) + Irisy compositions don't have
+ *  to know transport details.
  *
  *  `target.kind` decides routing:
  *    keycap  → kernel run_keycap(id, action_id, inputs)
  *    mcp     → kernel mcp_proxy_call(server_id, tool_name, args)
- *    skill   → hermes runtime invocation (~/.hermes/skills/<id>/)
  *
  *  Matches the more abstract design favored after the 2026-05 workshop
  *  research pass (n8n / Pipedream show value in polymorphic step refs;
@@ -322,9 +320,8 @@ const VaultWriteStep = StepCommon.extend({
 const InvokeStep = StepCommon.extend({
   type: z.literal('invoke'),
   target: z.object({
-    kind: z.enum(['keycap', 'mcp', 'skill']),
-    /** Provider-specific id. keycap → keycap.id. mcp → "server_id/tool".
-     *  skill → hermes skill id (folder name under ~/.hermes/skills/). */
+    kind: z.enum(['keycap', 'mcp']),
+    /** Provider-specific id. keycap → keycap.id. mcp → "server_id/tool". */
     id: z.string().min(1),
     /** keycap.kind only: which action to invoke (default: keycap's first action). */
     action: z.string().optional(),

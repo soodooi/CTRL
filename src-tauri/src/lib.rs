@@ -39,8 +39,8 @@ pub fn run() {
     let builder = tauri::Builder::default()
         // Single-instance lock — Spotlight / Dock re-launch reveals the
         // existing CTRL window instead of spawning a second kernel that
-        // would race on ports 17872/17873. Fixes bao's "在任务栏 就是
-        // 打不开" symptom.
+        // would race on ports 17872/17873. Fixes bao's "in the taskbar
+        // but just won't open" symptom.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tracing::info!("single-instance: second launch detected, revealing window");
             if let Err(err) = shell::WindowController::reveal(app) {

@@ -3,8 +3,8 @@
 //
 // Exposes the kernel's capability surface as MCP tools so that:
 //   • Irisy (in-process via Tauri WebView)
-//   • hermes-agent (separate Python process @ 127.0.0.1:8642)
-//   • External AI agents on the user's machine (Claude Code, Cursor, etc.)
+//   • Brain keycaps (e.g. @ctrl/pi-plugin, separate MCP server process)
+//   • External AI agents on the user's machine (Cursor, etc.)
 // all consume the same backend through a single MCP wire — tools/list +
 // tools/call instead of N bespoke RPC surfaces.
 //
@@ -16,7 +16,7 @@
 // What this module does NOT do:
 //   • Bind 0.0.0.0 / accept LAN clients (mesh covered by ADR-003)
 //   • Issue long-lived tokens (each kernel boot = new token; the in-process
-//     PWA and the lazy-launched hermes both fetch fresh via Tauri commands)
+//     PWA and brain keycaps both fetch fresh via Tauri commands)
 //   • Implement business logic — every tool is a thin call into existing
 //     kernel modules (vault, local_storage, llm_port, mcp_host) so tests
 //     stay against those modules, not the MCP envelope.
@@ -51,7 +51,7 @@ pub const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:17873";
 pub const MCP_PATH: &str = "/mcp";
 
 /// Public handle to the running MCP server. Held by KernelSupervisor +
-/// returned to PWA / hermes via the `mcp_server_info` Tauri command.
+/// returned to PWA via the `mcp_server_info` Tauri command.
 #[derive(Clone)]
 pub struct McpServerHandle {
     pub auth_token: Arc<String>,
@@ -444,9 +444,9 @@ impl ServerHandler for KernelMcpRouter {
         info.server_info = implementation;
         info.instructions = Some(
             "CTRL Kernel MCP server. Exposes vault.*, kv.*, llm.chat, \
-             and mcp.proxy_* tools so AI agents (hermes, Irisy, Claude \
-             Code, Cursor) can read/write the user's local data and \
-             route LLM calls through the kernel."
+             and mcp.proxy_* tools so AI agents (Irisy, brain keycaps, \
+             Cursor) can read/write the user's local data and route LLM \
+             calls through the kernel."
                 .to_string(),
         );
         info

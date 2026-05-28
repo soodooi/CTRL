@@ -69,7 +69,7 @@ function RootShellInner(): ReactElement {
   const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
   const [dragOver, setDragOver] = useState(false);
 
-  // Per bao 2026-05-26 ("右侧一级导航栏是固定的"): only Irisy carries a
+  // Per bao 2026-05-26 ("the right-side level-1 nav is fixed"): only Irisy carries a
   // level-2 panel. Vault / Pool / Settings navigate directly without
   // expanding the rail, so panel visibility collapses to a single check.
   const subPanelState =
@@ -154,9 +154,6 @@ const SettingsRedirect = lazy(() =>
 );
 const SettingsCtrlPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsCtrlPage })),
-);
-const SettingsHermesPage = lazy(() =>
-  import('./routes/settings').then((m) => ({ default: m.SettingsHermesPage })),
 );
 const SettingsBrainPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsBrainPage })),
@@ -275,15 +272,6 @@ const settingsCtrlRoute = createRoute({
     </Suspense>
   ),
 });
-const settingsHermesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/settings/hermes',
-  component: () => (
-    <Suspense fallback={<LazyFallback />}>
-      <SettingsHermesPage />
-    </Suspense>
-  ),
-});
 const settingsBrainRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/brain',
@@ -355,7 +343,6 @@ const routeTree = rootRoute.addChildren([
   workspaceRoute,
   settingsRoute,
   settingsCtrlRoute,
-  settingsHermesRoute,
   settingsBrainRoute,
   settingsLogsRoute,
   irisyRoute,

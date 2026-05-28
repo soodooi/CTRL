@@ -1,13 +1,12 @@
 // EmbedView — workspace tab content for an external embed (iframe).
 //
-// First consumer = hermes dashboard (http://127.0.0.1:9119). Per
-// decision_ctrl_is_hermes_workbench, hermes brings its own admin UI;
-// CTRL just gives it a tab. Tauri CSP frame-src must allowlist the
-// origin (already done in tauri.conf.json for 127.0.0.1:9119).
+// Renders an external admin/dashboard URL in a sandboxed iframe so a
+// keycap that ships its own web UI can live in a CTRL tab. The Tauri
+// CSP frame-src must allowlist the origin (tauri.conf.json).
 //
 // Sandbox attrs allow scripts + same-origin + forms + popups so the
-// hermes dashboard works fully, but `allow-top-navigation` is omitted
-// so the embedded page can't escape into the parent window.
+// embedded page works fully, but `allow-top-navigation` is omitted so
+// the embedded page can't escape into the parent window.
 
 import { useState, type ReactElement } from 'react';
 import { Led } from '@/components/primitives';

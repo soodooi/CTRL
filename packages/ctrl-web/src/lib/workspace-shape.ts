@@ -13,8 +13,7 @@ import type { TabKind } from './tab-store';
 
 export type KeycapKind =
   | 'mcp-tool' // 90% default (kernel MCP server exposing tools)
-  | 'hermes-skill' // SKILL.md + assets + invocation
-  | 'brain' // text.chat producer (pi / hermes-as-brain)
+  | 'brain' // text.chat producer (pi)
   | 'oauth-platform' // feishu / notion / linear OAuth-backed
   | 'local-cli' // wrapped command-line tool
   | 'stss-stream' // long-tail desktop / hardware adapter
@@ -56,14 +55,6 @@ export const SHAPE_BY_KIND: Readonly<Record<KeycapKind, ShapeSpec>> = {
       { kind: 'session-stream', title: 'Output' },
     ],
   },
-  'hermes-skill': {
-    layout: 'tabs',
-    tabs: [
-      { kind: 'vault-md', title: 'SKILL.md' },
-      { kind: 'keycap-output', title: 'Invoke' },
-      { kind: 'session-stream', title: 'Output' },
-    ],
-  },
   brain: {
     layout: 'tabs',
     tabs: [{ kind: 'session-stream', title: 'Chat' }],
@@ -95,7 +86,7 @@ export const SHAPE_BY_KIND: Readonly<Record<KeycapKind, ShapeSpec>> = {
  * the real fields land, drop this in favor of reading `k.target`.
  */
 export const inferKindFromId = (id: string): KeycapKind => {
-  if (id === 'pi' || id === 'hermes') return 'brain';
+  if (id === 'pi') return 'brain';
   if (id.startsWith('mcp:')) return 'mcp-tool';
   if (id.startsWith('oauth:')) return 'oauth-platform';
   if (id.startsWith('local:')) return 'local-cli';

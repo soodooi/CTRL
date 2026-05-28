@@ -82,7 +82,7 @@ impl KernelRuntime {
             // an active-runtime check so boot doesn't panic when no runtime is
             // available; fall back to a blocking single-threaded mini-runtime so
             // the registry still hydrates synchronously on cold start. Fixes
-            // 0.1.34 "打不开" — panic at runtime.rs:75:13 on Tauri setup path.
+            // 0.1.34 "won't open" — panic at runtime.rs:75:13 on Tauri setup path.
             if tokio::runtime::Handle::try_current().is_ok() {
                 tokio::spawn(async move {
                     match host_clone.load_registry(&reg_path).await {

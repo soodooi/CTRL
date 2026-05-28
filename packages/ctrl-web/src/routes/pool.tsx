@@ -16,7 +16,7 @@ import styles from './pool.module.css';
 
 type SourceId = 'all' | 'builtin' | 'mcp' | 'oauth' | 'local' | 'stss';
 
-type TargetId = 'mcp-tool' | 'hermes-skill' | 'brain';
+type TargetId = 'mcp-tool' | 'brain';
 type AdjustmentId = 'config' | 'patch' | 'fork';
 
 interface SourceDef {
@@ -57,11 +57,11 @@ const MOCK_TARGET_BY_SOURCE: Record<SourceId, TargetId> = {
   builtin: 'mcp-tool',
   mcp: 'mcp-tool',
   oauth: 'mcp-tool',
-  local: 'hermes-skill',
+  local: 'mcp-tool',
   stss: 'mcp-tool',
 };
 const inferTarget = (k: KeycapSummary): TargetId => {
-  if (k.id === 'pi' || k.id === 'hermes') return 'brain';
+  if (k.id === 'pi') return 'brain';
   return MOCK_TARGET_BY_SOURCE[inferSource(k)];
 };
 const inferAdjustment = (k: KeycapSummary): AdjustmentId => {
@@ -92,7 +92,6 @@ const SOURCE_TONE: Record<SourceId, LedTone> = {
 
 const TARGET_LABEL: Record<TargetId, string> = {
   'mcp-tool': 'MCP',
-  'hermes-skill': 'SKILL',
   brain: 'BRAIN',
 };
 
@@ -123,7 +122,7 @@ const fallbackGlyph = (name: string): string => {
   const trimmed = name.trim();
   if (!trimmed) return '?';
   const first = trimmed[0];
-  if (first && /[一-鿿]/.test(first)) return first;
+  if (first && /[\u4e00-\u9fff]/.test(first)) return first;
   const parts = trimmed.split(/\s+/);
   if (parts.length === 1) return (parts[0] ?? '').slice(0, 2).toUpperCase();
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();

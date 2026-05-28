@@ -98,13 +98,3 @@
   background: var(--color-accent);
   border-radius: 1px;
 }
-.pill[data-kind='hermes-skill']::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 25%;
-  bottom: 25%;
-  width: 2px;
-  background: var(--color-warning);
-  border-radius: 1px;
-}

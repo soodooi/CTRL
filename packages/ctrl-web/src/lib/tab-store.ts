@@ -1,6 +1,6 @@
 // Workspace tab store — the multi-tab persistent work surface that
 // makes CTRL feel like a workshop (Cursor / Figma / Notion), not a
-// chat shell. Per decision_ctrl_is_hermes_workbench.md (2026-05-22).
+// chat shell. CTRL = AI workshop, not a chat app.
 //
 // Each tab declares its `kind` (discriminated union) so the workspace
 // renderer can pick the right view component. Tab list persists to
@@ -11,7 +11,7 @@ import { persist } from 'zustand/middleware';
 import type { Icon } from './icon';
 
 export type TabKind =
-  | 'external-embed' // iframe pointing at e.g. hermes dashboard
+  | 'external-embed' // iframe pointing at an external dashboard
   | 'vault-md' // markdown doc from the user's vault
   | 'keycap-output' // output surface for an invoked keycap
   | 'session-stream' // live stream (chat / code-space env)

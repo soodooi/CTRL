@@ -1,6 +1,6 @@
 /*
- * CTRL design tokens — v0.5 per bao 2026-05-26 ("改成白色的主题, 选一个
- * 好看的白色").
+ * CTRL design tokens — v0.5 per bao 2026-05-26 ("change it to a white theme,
+ * pick a nice-looking white").
  *
  * v0.5 shifts from v0.4:
  *  - "Polar white" pick: paper raised to oklch(0.99 0.004 252) — same
@@ -195,7 +195,7 @@
    prefers-color-scheme; bao 2026-05-25: light is the product default,
    dark is a user preference, not a system follower).
 
-   v0.6 (bao 2026-05-27 "Irisy 的暗色主题改成 opencode 的暗色主题"):
+   v0.6 (bao 2026-05-27 "change Irisy's dark theme to opencode's dark theme"):
    palette swapped from cool oklch neutrals to opencode.ai's spec —
    near-black warm charcoal floor (#0c0c0e), Apple system blue accent
    (#007aff), HIG-grade neutrals for text + borders. The shift gives

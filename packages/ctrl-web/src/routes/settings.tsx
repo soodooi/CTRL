@@ -5,9 +5,7 @@
 //   /settings/logs    → Logs    (release log + installed pill + Check for Updates)
 //
 // Bare /settings redirects to /settings/ctrl so legacy tray / keyboard
-// links keep landing somewhere sensible. /settings/hermes is retained
-// as a redirect to /settings/brain — the Hermes-as-brain framing was
-// superseded 2026-05-25 (ADR-019 → ADR-021).
+// links keep landing somewhere sensible.
 
 import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -536,17 +534,6 @@ export const SettingsBrainPage = (): ReactElement => {
       )}
     </SettingsShell>
   );
-};
-
-// Backwards-compat: the old `/settings/hermes` route now redirects to
-// /settings/brain. Kept so the tray / keyboard's "open settings"
-// shortcut (which still links to the old URL) lands somewhere live.
-export const SettingsHermesPage = (): ReactElement => {
-  const navigate = useNavigate();
-  useEffect(() => {
-    void navigate({ to: '/settings/brain', replace: true });
-  }, [navigate]);
-  return <div className={styles.layout} />;
 };
 
 // ─────────────────────────────────────────────────────────────

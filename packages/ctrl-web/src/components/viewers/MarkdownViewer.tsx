@@ -162,7 +162,7 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
         // IME guard: do not propagate while a CJK composition is in
         // progress — the markdown round-trip below would re-enter
         // setContent() mid-composition and corrupt the input ("ni hao"
-        // pinyin leaks through as raw characters next to "你好").
+        // pinyin leaks through as raw characters next to the composed CJK text).
         if (ed.view.composing) return;
         setContent(htmlToMarkdown(ed.getHTML()));
       },
