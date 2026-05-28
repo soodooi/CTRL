@@ -13,10 +13,11 @@
 //! - Capability gating: `fs_write` on the whole vault is too coarse; typed
 //!   commands let the broker gate `config.write` specifically.
 //!
-//! Per ADR-005 (Anthropic ban) — this surface only enumerates providers
-//! the kernel runtime supports. Adding `anthropic` here would be a
-//! production-runtime path to Claude. Today: `volc` + `openai`. Future
-//! providers (Ollama, Mistral, Volc-other-region) extend `KnownProvider`.
+//! Amended 2026-05-28: ADR-005's "Anthropic absent" lock only governed
+//! the default-shipped CTRL runtime — BYOK Anthropic + `claude` CLI
+//! subscription paths are first-class once the user opts in. This
+//! surface enumerates every provider the kernel's llm_adapters/mod.rs
+//! knows how to register; UI gates whether the user wants to fill any.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -30,8 +31,8 @@ use crate::kernel::llm_adapters::local_config::{
 const KEYRING_SERVICE: &str = "app.ctrl.spike";
 
 /// Providers the kernel knows how to register adapters for. Adding a
-/// new provider here is intentional: it surfaces in PWA Settings.
-/// Anthropic / Claude is intentionally absent (ADR-005).
+/// new provider here is intentional: it surfaces in PWA Settings and
+/// must have a matching branch in `llm_adapters::register_default_adapters`.
 const KNOWN_PROVIDERS: &[KnownProvider] = &[
     KnownProvider {
         name: "volc",
@@ -56,6 +57,40 @@ const KNOWN_PROVIDERS: &[KnownProvider] = &[
         display_name: "MiniMax (BYOK)",
         default_base_url: "https://api.minimax.chat/v1",
         default_model: "MiniMax-Text-01",
+    },
+    KnownProvider {
+        name: "anthropic",
+        display_name: "Anthropic (BYOK API key)",
+        default_base_url: "https://api.anthropic.com",
+        default_model: "claude-sonnet-4-6-fast",
+    },
+    KnownProvider {
+        name: "deepseek",
+        display_name: "DeepSeek (BYOK)",
+        default_base_url: "https://api.deepseek.com/v1",
+        default_model: "deepseek-chat",
+    },
+    KnownProvider {
+        name: "gemini",
+        display_name: "Google Gemini (BYOK)",
+        default_base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+        default_model: "gemini-2.5-flash",
+    },
+    KnownProvider {
+        name: "groq",
+        display_name: "Groq (BYOK)",
+        default_base_url: "https://api.groq.com/openai/v1",
+        default_model: "llama-3.3-70b-versatile",
+    },
+    KnownProvider {
+        name: "claude-cli",
+        display_name: "Claude CLI (subscription)",
+        // base_url is N/A for the CLI subprocess adapter; placeholder
+        // here keeps the KnownProvider struct uniform. The PWA Settings
+        // panel should render this row with a "Detected at: <path>" hint
+        // instead of an editable base_url field.
+        default_base_url: "subprocess://claude",
+        default_model: "sonnet",
     },
 ];
 
@@ -99,6 +134,11 @@ pub async fn config_list_providers() -> Result<Vec<ProviderInfo>, String> {
             "openai" => config.providers.openai.clone(),
             "ollama" => config.providers.ollama.clone(),
             "minimax" => config.providers.minimax.clone(),
+            "anthropic" => config.providers.anthropic.clone(),
+            "deepseek" => config.providers.deepseek.clone(),
+            "gemini" => config.providers.gemini.clone(),
+            "groq" => config.providers.groq.clone(),
+            "claude-cli" => config.providers.claude_cli.clone(),
             _ => None,
         };
         let (base_url, default_model, has_key_in_config) = match &entry {
@@ -364,6 +404,13 @@ fn resolve_credentials(
     let entry: Option<ProviderEntry> = match provider {
         "volc" => cfg.providers.volc,
         "openai" => cfg.providers.openai,
+        "ollama" => cfg.providers.ollama,
+        "minimax" => cfg.providers.minimax,
+        "anthropic" => cfg.providers.anthropic,
+        "deepseek" => cfg.providers.deepseek,
+        "gemini" => cfg.providers.gemini,
+        "groq" => cfg.providers.groq,
+        "claude-cli" => cfg.providers.claude_cli,
         _ => None,
     };
     let mut api_key = entry

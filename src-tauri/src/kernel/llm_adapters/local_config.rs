@@ -49,6 +49,31 @@ pub struct ProvidersConfig {
     /// MiniMax cloud LLM (BYOK, OpenAI-shape compatible endpoint).
     #[serde(default)]
     pub minimax: Option<ProviderEntry>,
+    /// Anthropic Messages API direct (BYOK API key). Native protocol,
+    /// not OpenAI-shape — uses AnthropicHttpAdapter.
+    #[serde(default)]
+    pub anthropic: Option<ProviderEntry>,
+    /// DeepSeek (OpenAI-compatible endpoint). `deepseek-chat` /
+    /// `deepseek-reasoner`. Fastest TTFT for users in China.
+    #[serde(default)]
+    pub deepseek: Option<ProviderEntry>,
+    /// Google Gemini via the OpenAI-compatibility endpoint. Native
+    /// Gemini protocol is not used in v1 — the compat endpoint speaks
+    /// chat.completions and lets the openai_shape adapter handle it.
+    #[serde(default)]
+    pub gemini: Option<ProviderEntry>,
+    /// Groq (OpenAI-compatible). Llama-family models at very low TTFT
+    /// (~50ms on Llama 3.3 70B).
+    #[serde(default)]
+    pub groq: Option<ProviderEntry>,
+    /// `claude` CLI subprocess provider — uses the user's Claude
+    /// subscription via the CLI's stored OAuth token. `api_key` is
+    /// IGNORED for this entry (CLI manages its own auth); `base_url`
+    /// is IGNORED (binary path is resolved from PATH at boot). The
+    /// adapter loads iff the binary is present AND the user opted in
+    /// via this entry being non-None.
+    #[serde(default, alias = "claude-code", alias = "claude_code")]
+    pub claude_cli: Option<ProviderEntry>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

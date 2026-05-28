@@ -158,3 +158,34 @@
   font-weight: var(--weight-medium);
   text-transform: uppercase;
 }
+
+/* Hide (×) button — top-right click fallback for when the Ctrl hotkey
+   desyncs (AX permission lost after upgrade, CGEventTap drop, etc.).
+   Lives at the far right of `.right` so bao always has a visible exit. */
+.hideBtn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: var(--space-2);
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  background: var(--color-surface-soft, rgba(0, 0, 0, 0.04));
+  color: var(--color-text-muted);
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.hideBtn:hover {
+  background: rgba(255, 80, 80, 0.14);
+  border-color: rgba(255, 80, 80, 0.32);
+  color: #c62828;
+}
+.hideBtn:focus-visible {
+  outline: 2px solid var(--color-focus-ring, rgba(0, 0, 0, 0.4));
+  outline-offset: 1px;
+}

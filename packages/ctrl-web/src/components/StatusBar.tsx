@@ -16,12 +16,13 @@
 // When merging pwa-dev into the release branch, drop the version-pill
 // JSX from this file — pwa-dev's StatusBar shape is the chosen one.
 
-import type { ReactElement } from 'react';
+import { useCallback, type ReactElement } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Led, Logo, StatusPill, type LedTone } from './primitives';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import { useKernelStatus } from '../hooks/useKernelStatus';
 import { useRail } from './RightRail';
+import { invoke } from '../lib/bridge';
 import styles from './StatusBar.module.css';
 
 interface InstrumentProps {
@@ -100,6 +101,17 @@ export const StatusBar = (): ReactElement => {
   const onLedClick = warning ? (): void => void navigate({ to: '/settings' }) : undefined;
   const krnTitle = warning ? `${warning} · click to open Settings` : `KRN: ${krnTone}`;
 
+  // Click fallback for when the Ctrl hotkey desyncs (AX revoked after
+  // an upgrade that changed the bundle hash, CGEventTap permission
+  // dropped, etc.). bao 2026-05-23: "为了不至于隐藏不了 你在右上角先放
+  // 一个 hide 按钮吧". PWA-only browser mode (no Tauri bridge) silently
+  // no-ops since there's no native window to hide.
+  const handleHide = useCallback((): void => {
+    void invoke<void>('hide_window').catch(() => {
+      /* browser PWA: nothing to hide */
+    });
+  }, []);
+
   return (
     <header
       className={styles.bar}
@@ -144,6 +156,15 @@ export const StatusBar = (): ReactElement => {
         <span className={styles.uptime}>
           UPTIME {showUptime ? formatUptime(uptimeMs) : '—'}
         </span>
+        <button
+          type="button"
+          className={styles.hideBtn}
+          onClick={handleHide}
+          title="Hide window (Ctrl tap also toggles)"
+          aria-label="Hide window"
+        >
+          ×
+        </button>
       </div>
     </header>
   );
