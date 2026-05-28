@@ -14,6 +14,7 @@
 // Skeleton stage (sub-PR b): each handler returns NotImplementedYet so the
 // JS bridge can be wired before kernel integration in sub-PR c.
 
+pub mod brain;
 pub mod chat;
 pub mod code_space;
 pub mod config;
@@ -46,8 +47,12 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::set_keycap_config,
             // chat — raw streaming LLM via Tauri events (keycap-internal use)
             $crate::commands::chat::chat_stream,
-            // irisy_chat — brain-routed streaming (Irisy → active brain keycap MCP @ 17874)
+            // irisy_chat — brain-routed streaming (Irisy → active brain keycap MCP)
             $crate::commands::irisy_chat::irisy_chat_stream,
+            // brain — cc-switch style switcher (ADR-021)
+            $crate::commands::brain::brain_list,
+            $crate::commands::brain::brain_detect,
+            $crate::commands::brain::brain_set_active,
             // irisy — 3-layer (kernel llm / hermes-agent / mcp bridge) wire-up
             $crate::commands::irisy::irisy_init,
             // irisy — one-shot chat via hermes subprocess (ctrl-volc provider)

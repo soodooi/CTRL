@@ -14,11 +14,15 @@
 // "BrainRouter inline" per ADR-001 amendment (2026-05-25): the lookup is a
 // ≤100-LOC helper inside this command, not a separate substrate module.
 //
-// v1.0 scope:
-//   - Only "pi" brain is wired (the @ctrl/pi-plugin MCP server on 127.0.0.1:17874).
-//   - The kernel does NOT yet supervise the pi-plugin subprocess — users start it
-//     manually via `npm start` in packages/ctrl-pi-plugin/. Supervisor lands next.
-//   - active-brain file is a single line of text. Absent / empty → "pi" default.
+// Brain selection (ADR-021):
+//   - The active brain id lives at `~/.ctrl/active-brain` (single line of text;
+//     absent / empty → "pi" default).
+//   - Brain registry + per-brain MCP port + adapter flag are read from
+//     `kernel::brain_config` (defaults + user overrides in
+//     `~/.ctrl/brains.toml`). NO brain id is hardcoded in this file.
+//   - Switching brains is a UI action (`/settings/brain`). The kernel does
+//     NOT yet supervise the brain MCP subprocess — users start `ctrl-pi-mcp`
+//     manually via `npm start` in packages/ctrl-pi-plugin/ for now.
 //
 // Wire format (Pi plugin SSE):
 //   event: delta
@@ -34,7 +38,6 @@ use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
 
 use crate::commands::chat::MessageWire;
@@ -69,7 +72,7 @@ pub async fn irisy_chat_stream(
     let url = brain_mcp_url(&brain_id).ok_or_else(|| {
         format!(
             "active brain '{brain_id}' has no known MCP endpoint. \
-             v1.0 supports 'pi' only (edit ~/.ctrl/active-brain)."
+             Open /settings/brain and pick a brain with a shipped adapter."
         )
     })?;
 
@@ -85,35 +88,19 @@ pub async fn irisy_chat_stream(
     Ok(())
 }
 
-// ── BrainRouter inline (≤100 LOC, ADR-001 amendment 2026-05-25) ──────────────
+// ── BrainRouter inline (ADR-021) ────────────────────────────────────────────
+//
+// Brain id + MCP URL come from `kernel::brain_config`. The router does
+// not hardcode any brain id — switching brains is a matter of writing
+// the new id to `~/.ctrl/active-brain` (via the Settings UI's
+// `brain_set_active` command) and reloading the registry.
 
 fn resolve_active_brain() -> String {
-    let path = active_brain_path();
-    match std::fs::read_to_string(&path) {
-        Ok(s) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                "pi".to_string()
-            } else {
-                trimmed.to_string()
-            }
-        }
-        Err(_) => "pi".to_string(),
-    }
+    crate::kernel::brain_config::active_brain_id()
 }
 
-fn active_brain_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(home).join(".ctrl").join("active-brain")
-}
-
-/// Map a brain keycap id to its MCP endpoint. v1.0 hardcoded — future
-/// reads `~/.ctrl/keycaps/<id>/keycap.md` `bridge` + supervisor-assigned port.
 fn brain_mcp_url(brain_id: &str) -> Option<String> {
-    match brain_id {
-        "pi" => Some("http://127.0.0.1:17874/mcp".to_string()),
-        _ => None,
-    }
+    crate::kernel::brain_config::brain_mcp_url(brain_id)
 }
 
 // ── HTTP + SSE forwarding ────────────────────────────────────────────────────

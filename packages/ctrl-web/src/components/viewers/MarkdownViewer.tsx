@@ -159,6 +159,11 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
       content: '',
       onUpdate: ({ editor: ed }) => {
         if (!resource.editable) return;
+        // IME guard: do not propagate while a CJK composition is in
+        // progress — the markdown round-trip below would re-enter
+        // setContent() mid-composition and corrupt the input ("ni hao"
+        // pinyin leaks through as raw characters next to "你好").
+        if (ed.view.composing) return;
         setContent(htmlToMarkdown(ed.getHTML()));
       },
     },
@@ -167,8 +172,14 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
 
   // Hydrate editor when content arrives. Strict-mode safe — Tiptap
   // diffs the doc, so re-set on same content is cheap.
+  //
+  // Skip while the user is actively typing (focused or composing) —
+  // markdown ↔ HTML round-trip is lossy and tears the cursor / IME
+  // state. External content changes still apply once the editor blurs.
   useEffect(() => {
     if (!editor || content == null) return;
+    if (editor.view.composing) return;
+    if (editor.isFocused) return;
     const html = markdownToHtml(content);
     if (editor.getHTML() !== html) {
       editor.commands.setContent(html, { emitUpdate: false });

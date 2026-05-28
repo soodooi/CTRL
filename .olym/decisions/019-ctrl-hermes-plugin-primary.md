@@ -14,17 +14,21 @@ module: irisy
 supersedes: []
 superseded_by:
   - .olym/decisions/001-system-architecture.md#amendment-2026-05-25
+  - .olym/decisions/021-irisy-brain-switcher-and-surfaces.md
 ---
 
-## ⚠️ SUPERSEDED 2026-05-25
+## ⚠️ SUPERSEDED — 2026-05-25 (Pi reframing) + 2026-05-27 (multi-brain reframing)
 
-**This ADR is no longer in force.** Brain reframing: hermes is **not** the primary CTRL brain.
+**This ADR is no longer in force.** Brain reframing happened in two steps:
 
-bao 2026-05-25 拍板: **CTRL sole brain = Pi** (`@pi/coding-agent`, MIT, lazy npm install); hermes 降级为可选 "personal-assistant keycap" (用户从 Pool 装).
+**2026-05-25 (ADR-001 amendment):** hermes is **not** the primary CTRL brain. Pi (`@pi/coding-agent`, MIT, lazy npm install) becomes the default brain; hermes is demoted to an optional personal-assistant keycap.
+
+**2026-05-27 (ADR-021):** the "Pi sole brain" wording is itself relaxed. CTRL ships a **brain registry** (`kernel::brain_config`) — Pi is the default and only adapter shipped today, but the architecture supports cc-switch / VMark / opencode-style multi-brain selection. The user picks the active brain in `/settings/brain`; `~/.ctrl/brains.toml` lets them add custom entries without recompiling. No active-brain field is hardcoded anywhere; `brain_mcp_url` is registry-driven.
 
 See:
-- `.olym/decisions/001-system-architecture.md` amendment 2026-05-25 (authoritative)
-- memory `decision_pi_is_sole_brain_hermes_is_keycap.md`
+- `.olym/decisions/001-system-architecture.md` amendment 2026-05-25 (Pi default)
+- `.olym/decisions/021-irisy-brain-switcher-and-surfaces.md` (cc-switch-style switcher, authoritative)
+- memory `decision_pi_is_sole_brain_hermes_is_keycap.md` (Pi default still holds; "sole" wording superseded by ADR-021)
 
 ### Why superseded (key insights bao surfaced in conversation)
 

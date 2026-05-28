@@ -182,12 +182,23 @@ export const IRISY_TOOLS: ReadonlyArray<IrisyTool> = [
     },
   },
   {
-    name: 'read_hermes_status',
+    name: 'list_brains',
     description:
-      'Re-probe hermes-agent + CTRL kernel status. Returns the same shape irisy_init returns: { kernel_llm, hermes: { binary_path, version, plugin_enabled, brain_configured }, mcp_bridge }. Use when the user asks about hermes / AI brain setup or when troubleshooting.',
+      'List the available brain backends (cc-switch style) — Pi, Claude Code, Codex, Gemini CLI, etc. Returns each with binary_path / version / reachable / adapter_available / active. Use to answer "which AI is driving me?" or troubleshoot brain setup.',
     args: '(no arguments)',
     async execute(): Promise<unknown> {
-      return await invoke('irisy_init');
+      return await invoke('brain_list');
+    },
+  },
+  {
+    name: 'set_active_brain',
+    description:
+      'Switch the active brain backend. The id MUST come from list_brains (e.g. "pi", "claude_code"). Only brains with adapter_available=true can be activated.',
+    args: 'id: string',
+    async execute(args): Promise<unknown> {
+      const id = String(args.id ?? '');
+      if (!id) throw new Error('set_active_brain requires "id"');
+      return await invoke('brain_set_active', { args: { id } });
     },
   },
 ];

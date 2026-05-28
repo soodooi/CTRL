@@ -7,22 +7,18 @@
 //   - Channel   : typed pipe between actors (back-pressure)
 //   - Effect    : first-class side effect (returned from actor handlers)
 //
-// Architecture lock: see ../../../.claude/ADR/001-system-architecture.md §3
-// Spec detail:       see ../../../.olym/specs/kernel/spec.md
+// Architecture lock: see .olym/decisions/001-system-architecture.md
+// Spec detail:       see .olym/specs/kernel/spec.md
 //
-// Status: P2.1 — skeleton stage. Trait + enum + struct shells. No live wiring
-// yet. Existing application/use_cases.rs path keeps running independently.
-// Full integration in P2.4-P2.7.
+// `#[allow(dead_code)]` is retained here because several primitive
+// surfaces are publicly exported for the Tauri command layer / the TS
+// SDK mirror but only a subset is actively dispatched. Without it the
+// build emits warnings on intentionally-unused exports.
 
-// dead-code allow is scoped to this module tree: the kernel primitives and
-// adjacent runtime/sandbox stubs are intentionally unwired in P2.1; the
-// Tauri command surface starts dispatching through them in P2.4. Without
-// this allow, `cargo check` emits ~120 warnings that drown the signal from
-// the legacy hexagonal modules during the macOS migration (H-2026-05-14-002).
-// Re-evaluate this allow when P2.4 lands.
 #![allow(dead_code)]
 
 pub mod actor;
+pub mod brain_config;
 pub mod cache;
 pub mod capability;
 pub mod capability_resolver;

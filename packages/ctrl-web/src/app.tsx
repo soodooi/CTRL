@@ -155,6 +155,12 @@ const SettingsRedirect = lazy(() =>
 const SettingsCtrlPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsCtrlPage })),
 );
+const SettingsHermesPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsHermesPage })),
+);
+const SettingsBrainPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsBrainPage })),
+);
 const SettingsLogsPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsLogsPage })),
 );
@@ -266,6 +272,24 @@ const settingsCtrlRoute = createRoute({
     </Suspense>
   ),
 });
+const settingsHermesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/hermes',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsHermesPage />
+    </Suspense>
+  ),
+});
+const settingsBrainRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/brain',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsBrainPage />
+    </Suspense>
+  ),
+});
 const settingsLogsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/logs',
@@ -319,6 +343,8 @@ const routeTree = rootRoute.addChildren([
   workspaceRoute,
   settingsRoute,
   settingsCtrlRoute,
+  settingsHermesRoute,
+  settingsBrainRoute,
   settingsLogsRoute,
   irisyRoute,
   codeSpaceRoute,

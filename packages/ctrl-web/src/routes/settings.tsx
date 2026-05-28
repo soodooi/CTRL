@@ -1,16 +1,13 @@
-// /settings — two-tab page (General / Logs). Tabs share one shell.
+// /settings — single page with an inline tab strip at the top.
 //
-// Per bao 2026-05-26 audit:
-//   - `/settings/hermes` removed. Hermes is no longer brain (Pi is sole
-//     brain per decision_pi_is_sole_brain_hermes_is_keycap); hermes
-//     configuration belongs in keycap config, not CTRL Settings.
-//   - `/settings/ctrl` was rendering marketing prose — replaced with
-//     actual controls (theme picker, provider table, hotkey readout).
-//   - `/settings/logs` was stale at 0.1.15; brought up to 0.1.41.
+//   /settings/ctrl    → General (theme picker, BYOK providers, hotkey readout)
+//   /settings/brain   → Brain   (cc-switch style switcher, ADR-021)
+//   /settings/logs    → Logs    (release log + installed pill + Check for Updates)
 //
-// URL kept as `/settings/ctrl` for back-compat with the tray bridge +
-// keyboard system-key links that already deep-link to it. The tab
-// label reads "General" so users see the right name.
+// Bare /settings redirects to /settings/ctrl so legacy tray / keyboard
+// links keep landing somewhere sensible. /settings/hermes is retained
+// as a redirect to /settings/brain — the Hermes-as-brain framing was
+// superseded 2026-05-25 (ADR-019 → ADR-021).
 
 import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -33,16 +30,18 @@ import {
 } from '@/lib/kernel';
 import type { ThemePreference } from '@/lib/theme';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
+import { invoke } from '@/lib/bridge';
 import styles from './settings.module.css';
 
 // ─────────────────────────────────────────────────────────────
 // Shared tab shell
 // ─────────────────────────────────────────────────────────────
 
-type SettingsTab = 'ctrl' | 'logs';
+type SettingsTab = 'ctrl' | 'brain' | 'logs';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string; to: string }> = [
   { id: 'ctrl', label: 'General', to: '/settings/ctrl' },
+  { id: 'brain', label: 'Brain', to: '/settings/brain' },
   { id: 'logs', label: 'Logs', to: '/settings/logs' },
 ];
 
@@ -362,6 +361,193 @@ export const SettingsCtrlPage = (): ReactElement => (
     </Section>
   </SettingsShell>
 );
+
+// ─────────────────────────────────────────────────────────────
+// /settings/brain  (ADR-021 — cc-switch / VMark / opencode style)
+// ─────────────────────────────────────────────────────────────
+
+interface BrainView {
+  id: string;
+  label: string;
+  command: string;
+  mcp_port: number | null;
+  mcp_url: string | null;
+  description: string;
+  adapter: string | null;
+  binary_path: string | null;
+  version: string | null;
+  reachable: boolean;
+  active: boolean;
+  adapter_available: boolean;
+}
+
+interface BrainListReply {
+  brains: BrainView[];
+  active_id: string;
+}
+
+export const SettingsBrainPage = (): ReactElement => {
+  const [reply, setReply] = useState<BrainListReply | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [detecting, setDetecting] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (): Promise<void> => {
+    try {
+      const result = await invoke<BrainListReply>('brain_list');
+      setReply(result);
+      setError(null);
+    } catch (e: unknown) {
+      const detail = e instanceof Error ? e.message : String(e);
+      setError(`brain_list failed: ${detail}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const detect = useCallback(async (): Promise<void> => {
+    setDetecting(true);
+    try {
+      const result = await invoke<BrainListReply>('brain_detect');
+      setReply(result);
+      setError(null);
+    } catch (e: unknown) {
+      const detail = e instanceof Error ? e.message : String(e);
+      setError(`brain_detect failed: ${detail}`);
+    } finally {
+      setDetecting(false);
+    }
+  }, []);
+
+  const selectBrain = useCallback(
+    async (id: string): Promise<void> => {
+      setSavingId(id);
+      try {
+        const result = await invoke<BrainListReply>('brain_set_active', { args: { id } });
+        setReply(result);
+        setError(null);
+      } catch (e: unknown) {
+        const detail = e instanceof Error ? e.message : String(e);
+        setError(detail);
+      } finally {
+        setSavingId(null);
+      }
+    },
+    [],
+  );
+
+  return (
+    <SettingsShell activeTab="brain">
+      <div className={styles.brainHeader}>
+        <div className={styles.brainHeaderText}>
+          <h2 className={styles.brainTitle}>Brain</h2>
+          <p className={styles.brainHelp}>
+            Pick which agent CLI drives Irisy. Only entries with a CTRL-shipped
+            adapter can be activated; the others are scaffolded for future
+            adapters.
+          </p>
+        </div>
+        <div className={styles.brainActions}>
+          <button
+            type="button"
+            className={styles.brainButton}
+            onClick={() => void detect()}
+            disabled={detecting || loading}
+          >
+            {detecting ? 'Detecting…' : 'Detect on $PATH'}
+          </button>
+        </div>
+      </div>
+
+      {error && <p className={styles.brainError}>{error}</p>}
+
+      {loading ? (
+        <p className={styles.sectionSubtitle}>Loading brain registry…</p>
+      ) : (
+        <ul className={styles.brainList}>
+          {reply?.brains.map((b) => {
+            const detected = b.binary_path != null;
+            const canActivate = b.adapter_available && detected;
+            const isSaving = savingId === b.id;
+            return (
+              <li
+                key={b.id}
+                className={styles.brainCard}
+                data-active={b.active}
+                data-detected={detected}
+              >
+                <div className={styles.brainRadio}>
+                  <input
+                    type="radio"
+                    name="active-brain"
+                    aria-label={`Set ${b.label} as active brain`}
+                    checked={b.active}
+                    disabled={!canActivate || isSaving}
+                    onChange={() => void selectBrain(b.id)}
+                  />
+                </div>
+                <div className={styles.brainBody}>
+                  <span className={styles.brainName}>{b.label}</span>
+                  <span className={styles.brainDetail}>
+                    {b.binary_path ?? '(not on $PATH)'}
+                    {b.version ? ` · ${b.version}` : ''}
+                    {b.mcp_port != null ? ` · :${b.mcp_port}` : ''}
+                  </span>
+                  <div className={styles.brainTags}>
+                    {b.adapter_available ? (
+                      <span className={styles.brainTag} data-tone="good">
+                        adapter shipped
+                      </span>
+                    ) : (
+                      <span className={styles.brainTag} data-tone="warn">
+                        adapter coming
+                      </span>
+                    )}
+                    {b.reachable && (
+                      <span className={styles.brainTag} data-tone="good">
+                        reachable
+                      </span>
+                    )}
+                    {b.description && (
+                      <span className={styles.brainTag}>{b.description}</span>
+                    )}
+                  </div>
+                </div>
+                <div className={styles.brainStatus}>
+                  {b.active
+                    ? 'active'
+                    : !detected
+                      ? 'not installed'
+                      : !b.adapter_available
+                        ? 'not yet'
+                        : isSaving
+                          ? 'saving…'
+                          : ''}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </SettingsShell>
+  );
+};
+
+// Backwards-compat: the old `/settings/hermes` route now redirects to
+// /settings/brain. Kept so the tray / keyboard's "open settings"
+// shortcut (which still links to the old URL) lands somewhere live.
+export const SettingsHermesPage = (): ReactElement => {
+  const navigate = useNavigate();
+  useEffect(() => {
+    void navigate({ to: '/settings/brain', replace: true });
+  }, [navigate]);
+  return <div className={styles.layout} />;
+};
 
 // ─────────────────────────────────────────────────────────────
 // /settings/logs
