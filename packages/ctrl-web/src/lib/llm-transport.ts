@@ -7,7 +7,7 @@
 // zeus Z3b ships true streaming.
 //
 // v1.x impl: ChatStreamTransport — true streaming via Tauri command
-// `chat_stream` + `chat.stream.delta` event (zeus Z3b). Skeleton present
+// `chat_stream` + `chat-stream-delta` event (zeus Z3b). Skeleton present
 // so the call sites compile and the swap is a one-liner.
 //
 // Zero legacy-provider strings in this file — per ADR-005 + memory
@@ -95,10 +95,10 @@ export class RunKeycapTransport implements LLMTransport {
   }
 }
 
-// ── B: true streaming via chat_stream + chat.stream.delta ─────────────────
+// ── B: true streaming via chat_stream + chat-stream-delta ─────────────────
 // Contract per bao 2026-05-18:
 //   invoke('chat_stream', { request_id, messages, model, temperature })
-//   listen('chat.stream.delta', payload => { request_id, delta, done, error? })
+//   listen('chat-stream-delta', payload => { request_id, delta, done, error? })
 // Skeleton compiles today; flip `enabled` to true once zeus Z3b lands.
 
 interface ChatStreamDelta {
@@ -116,7 +116,7 @@ export class ChatStreamTransport implements LLMTransport {
   // `commandName` lets one class drive both wires:
   //   - 'chat_stream'        → raw LLM (kernel llm_port direct, keycap-internal)
   //   - 'irisy_chat_stream'  → BrainRouter inline → active brain keycap MCP
-  // Both emit the same chat.stream.delta event shape; only the Tauri
+  // Both emit the same chat-stream-delta event shape; only the Tauri
   // command name differs.
   constructor(
     private readonly enabled: boolean = false,
@@ -155,7 +155,7 @@ export class ChatStreamTransport implements LLMTransport {
       }
     };
     const unlisten: UnlistenFn = await listen<ChatStreamDelta>(
-      'chat.stream.delta',
+      'chat-stream-delta',
       (event) => {
         if (event.payload.request_id !== requestId) return;
         queue.push(event.payload);
@@ -164,7 +164,7 @@ export class ChatStreamTransport implements LLMTransport {
     );
     // Abort listener wakes any pending Promise so the while-loop's
     // signal.aborted check fires immediately instead of hanging forever
-    // when no further chat.stream.delta arrives (e.g. user cancelled
+    // when no further chat-stream-delta arrives (e.g. user cancelled
     // before the first chunk).
     const onAbort = (): void => wakeWaiter();
     opts.signal?.addEventListener('abort', onAbort);

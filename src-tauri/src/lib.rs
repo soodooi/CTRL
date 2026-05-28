@@ -68,13 +68,19 @@ pub fn run() {
     // applicationShouldHandleReopen fires RunEvent::Reopen. Default Tauri
     // behavior does nothing on Reopen when all windows are hidden — we
     // explicitly toggle cloak → reveal so Dock click works as "show CTRL".
-    app.run(|app, event| {
-        if let tauri::RunEvent::Reopen { .. } = event {
+    app.run(|app, event| match event {
+        tauri::RunEvent::Reopen { .. } => {
             tracing::info!("dock reopen: revealing window");
             if let Err(err) = shell::WindowController::reveal(app) {
                 tracing::error!(?err, "dock reopen reveal failed");
             }
         }
+        // Real quit (tray Quit / Cmd-Q): kill the Pi brain child so the next
+        // launch doesn't collide on port 17874.
+        tauri::RunEvent::ExitRequested { .. } => {
+            shell::BrainSupervisor::shutdown();
+        }
+        _ => {}
     });
 }
 
@@ -124,6 +130,10 @@ pub fn run() {
             // code = Some(_) means explicit shutdown (tray Quit menu) — let it through.
             if code.is_none() {
                 api.prevent_exit();
+            } else {
+                // Real quit — kill the Pi brain child so the next launch
+                // doesn't collide on port 17874.
+                shell::BrainSupervisor::shutdown();
             }
         }
     });

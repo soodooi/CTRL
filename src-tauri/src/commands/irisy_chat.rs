@@ -4,7 +4,7 @@
 // works with only the command name swapped):
 //   invoke('irisy_chat_stream', { args: { request_id, messages, model?,
 //                                          temperature?, max_tokens? } })
-//   listen('chat.stream.delta', payload => { request_id, delta, done, error? })
+//   listen('chat-stream-delta', payload => { request_id, delta, done, error? })
 //
 // Difference from `chat_stream` (raw LLM): this command resolves the user's
 // **active brain keycap** (~/.ctrl/active-brain → keycap id) and forwards the
@@ -199,7 +199,7 @@ fn handle_sse_payload(
             let p: DeltaPayload = serde_json::from_str(data)
                 .map_err(|e| format!("malformed delta SSE payload: {e}"))?;
             let _ = app.emit(
-                "chat.stream.delta",
+                "chat-stream-delta",
                 StreamDelta {
                     request_id: request_id.to_string(),
                     delta: p.delta,
@@ -229,7 +229,7 @@ fn handle_sse_payload(
 
 fn emit_done(app: &AppHandle, request_id: &str, error: Option<String>) {
     let _ = app.emit(
-        "chat.stream.delta",
+        "chat-stream-delta",
         StreamDelta {
             request_id: request_id.to_string(),
             delta: String::new(),

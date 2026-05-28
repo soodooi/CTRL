@@ -3,7 +3,7 @@
 // Contract (defined by PWA's ChatStreamTransport, lib/llm-transport.ts):
 //   invoke('chat_stream', { args: { request_id, messages, model?,
 //                                   temperature?, max_tokens? } })
-//   listen('chat.stream.delta', payload => { request_id, delta, done,
+//   listen('chat-stream-delta', payload => { request_id, delta, done,
 //                                            error? })
 //
 // The command returns immediately; deltas land on the event channel.
@@ -127,7 +127,7 @@ pub async fn chat_stream(
                 Ok(chunk) => {
                     let done_now = chunk.finish_reason.is_some();
                     let _ = app.emit(
-                        "chat.stream.delta",
+                        "chat-stream-delta",
                         ChatStreamDelta {
                             request_id: request_id.clone(),
                             delta: chunk.delta,
@@ -158,7 +158,7 @@ pub async fn chat_stream(
 
 fn emit_done(app: &AppHandle, request_id: &str, error: Option<String>) {
     let _ = app.emit(
-        "chat.stream.delta",
+        "chat-stream-delta",
         ChatStreamDelta {
             request_id: request_id.to_string(),
             delta: String::new(),

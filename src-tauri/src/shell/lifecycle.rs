@@ -13,7 +13,7 @@ use anyhow::Result;
 use tauri::{AppHandle, Manager};
 
 use super::window::install_close_intercept;
-use super::{HotkeyController, KernelSupervisor, TrayController, WindowController};
+use super::{BrainSupervisor, HotkeyController, KernelSupervisor, TrayController, WindowController};
 
 pub struct ShellLifecycle;
 
@@ -32,6 +32,12 @@ impl ShellLifecycle {
         tracing::info!("ShellLifecycle::boot — starting kernel daemon");
         KernelSupervisor::start(app)?;
         KernelSupervisor::wait_ready(5_000)?;
+
+        // Pi is the sole brain — keep it always connected. Spawns + supervises
+        // the @ctrl/pi-plugin MCP server (ctrl-pi-mcp on :17874) so the user
+        // never starts it by hand. Non-blocking + graceful (Volc fallback).
+        tracing::info!("ShellLifecycle::boot — starting Pi brain supervisor");
+        BrainSupervisor::start(app);
 
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;

@@ -16,6 +16,7 @@
 // implementations land in sub-PR b's second commit (hotkey port from W3
 // HotkeyService.cs, tray + window glue, lifecycle wiring).
 
+pub mod brain_supervisor;
 pub mod hotkey;
 pub mod keychain;
 pub mod kernel_supervisor;
@@ -23,6 +24,7 @@ pub mod lifecycle;
 pub mod tray;
 pub mod window;
 
+pub use brain_supervisor::BrainSupervisor;
 pub use hotkey::HotkeyController;
 pub use keychain::KeychainStore;
 pub use kernel_supervisor::{KernelHandle, KernelSupervisor};
