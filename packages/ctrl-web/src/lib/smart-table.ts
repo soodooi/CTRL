@@ -48,7 +48,12 @@ export interface SmartTable {
   title?: string;
   schema: ColumnSpec[];
   rows: Array<Record<string, string>>;
-  /** Frontmatter fields outside `title` / `schema` — preserved on save. */
+  /** Keycap ids surfaced as chips above the table. Lets a smart-table file
+   *  declare which actions are relevant for its rows (e.g. a Shopify
+   *  products table pins `shopify-publish` + `translate`). Chip click
+   *  invokes the keycap with the table's selected rows as input. */
+  keycaps?: ReadonlyArray<string>;
+  /** Frontmatter fields outside `title` / `schema` / `keycaps` — preserved on save. */
   extraFrontmatter: Record<string, unknown>;
 }
 
@@ -170,6 +175,33 @@ const parseSchema = (yamlText: string): ColumnSpec[] => {
   return out;
 };
 
+/** Parse `keycaps: [a, b, c]` (single-line inline list) from frontmatter.
+ *  Multi-line block list (`keycaps:\n  - a\n  - b`) is also supported. */
+const parseKeycaps = (yamlText: string): string[] | undefined => {
+  const inline = /^keycaps\s*:\s*\[(.+?)\]\s*$/m.exec(yamlText);
+  if (inline) {
+    return splitTopLevel(inline[1]!, ',')
+      .map((s) => {
+        const v = parseScalar(s);
+        return typeof v === 'string' ? v : String(v);
+      })
+      .filter((s) => s.length > 0);
+  }
+  const lines = yamlText.split(/\r?\n/);
+  const startIdx = lines.findIndex((l) => /^keycaps\s*:\s*$/.test(l));
+  if (startIdx < 0) return undefined;
+  const out: string[] = [];
+  for (let i = startIdx + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+    if (/^\S/.test(line)) break;
+    const item = /^\s*-\s*(.+?)\s*$/.exec(line);
+    if (!item) continue;
+    const v = parseScalar(item[1]!);
+    if (typeof v === 'string' && v.length > 0) out.push(v);
+  }
+  return out.length > 0 ? out : undefined;
+};
+
 const parseTitle = (yamlText: string): string | undefined => {
   const m = /^title\s*:\s*(.+)$/m.exec(yamlText);
   if (!m) return undefined;
@@ -219,11 +251,12 @@ export const parseSmartTable = (source: string): SmartTable => {
   const { yaml, body } = splitFrontmatter(source);
   const schema = parseSchema(yaml);
   const title = parseTitle(yaml);
+  const keycaps = parseKeycaps(yaml);
   const rows = parseTable(body, schema);
   // We don't try to round-trip arbitrary frontmatter today — that's a
   // YAML library job. The viewer warns on save when extra keys are
   // present so the user knows hand-edited frontmatter survives.
-  return { title, schema, rows, extraFrontmatter: {} };
+  return { title, schema, rows, keycaps, extraFrontmatter: {} };
 };
 
 /** Serialize back to markdown. Re-emits the frontmatter (title + schema)
@@ -231,6 +264,9 @@ export const parseSmartTable = (source: string): SmartTable => {
 export const serializeSmartTable = (table: SmartTable): string => {
   const lines: string[] = ['---'];
   if (table.title) lines.push(`title: ${table.title}`);
+  if (table.keycaps && table.keycaps.length > 0) {
+    lines.push(`keycaps: [${table.keycaps.join(', ')}]`);
+  }
   if (table.schema.length > 0) {
     lines.push('schema:');
     for (const col of table.schema) {

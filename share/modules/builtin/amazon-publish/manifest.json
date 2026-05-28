@@ -1,0 +1,52 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.amazon-publish",
+  "name": "Publish to Amazon",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "Push selected product rows to Amazon Seller Central",
+    "long": "Reads selected rows from a vault smart-table and creates listings via the Amazon SP-API. Stub manifest — real LWA OAuth + SP-API wiring lands with the Amazon MCP server in v1.1."
+  },
+  "icon": "Package",
+  "keycap_color": "amber",
+  "category": "ecommerce",
+  "tags": [
+    "amazon",
+    "publish",
+    "ecommerce"
+  ],
+  "variant": "builtin",
+  "target": "mcp-tool",
+  "capabilities": {
+    "vault": { "read": true }
+  },
+  "permissions": [
+    "network",
+    "vault",
+    "notification"
+  ],
+  "license": "UNLICENSED",
+  "actions": [
+    {
+      "id": "publish-selected",
+      "name": "Publish Selected Rows",
+      "description": "Publish the selected smart-table rows to Amazon",
+      "input": "none",
+      "output": "notification",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "notify",
+          "message": "→ Amazon publish queued (impl pending — see roadmap)"
+        }
+      ]
+    }
+  ],
+  "chord": "ap"
+}

@@ -24,7 +24,8 @@ import {
   useReactTable,
   type ColumnDef,
 } from '@tanstack/react-table';
-import { useMemo, type ReactElement } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState, type ReactElement } from 'react';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import {
   appendRow,
@@ -35,9 +36,88 @@ import {
   type ColumnSpec,
   type SmartTable,
 } from '@/lib/smart-table';
+import { listKeycaps, runKeycap, type KeycapSummary } from '@/lib/kernel';
 import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
+
+interface KeycapChipsProps {
+  ids: ReadonlyArray<string>;
+  rows: ReadonlyArray<Record<string, string>>;
+  selectedRowIndices: ReadonlyArray<number>;
+  tableTitle?: string;
+}
+
+const KeycapChips = ({
+  ids,
+  rows,
+  selectedRowIndices,
+  tableTitle,
+}: KeycapChipsProps): ReactElement => {
+  const { data: catalog = [] } = useQuery({
+    queryKey: ['keycaps-installed'],
+    queryFn: listKeycaps,
+    staleTime: 30_000,
+  });
+  const byId = useMemo(() => {
+    const map = new Map<string, KeycapSummary>();
+    for (const k of catalog) map.set(k.id, k);
+    return map;
+  }, [catalog]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const selectedRows = selectedRowIndices.length > 0
+    ? selectedRowIndices.map((i) => rows[i]).filter((r): r is Record<string, string> => Boolean(r))
+    : rows;
+
+  const fire = async (id: string): Promise<void> => {
+    setBusyId(id);
+    setStatus(null);
+    try {
+      await runKeycap(id, {
+        table: tableTitle ?? null,
+        rows: selectedRows,
+        selection_count: selectedRowIndices.length,
+      });
+      setStatus(`→ ${byId.get(id)?.name ?? id} invoked on ${selectedRows.length} row${selectedRows.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      setStatus(`× ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className={styles.keycapBar}>
+      <div className={styles.keycapBarChips}>
+        {ids.map((id) => {
+          const summary = byId.get(id);
+          const missing = !summary;
+          const name = summary?.name ?? id.replace(/^ctrl\.builtin\./, '');
+          return (
+            <button
+              key={id}
+              type="button"
+              className={`${styles.keycapChip}${missing ? ` ${styles.keycapChipMissing}` : ''}`}
+              onClick={() => void fire(id)}
+              disabled={missing || busyId === id}
+              title={missing ? `${id} not installed` : `Run "${name}" on ${selectedRows.length} row${selectedRows.length === 1 ? '' : 's'}`}
+            >
+              {busyId === id ? '…' : name}
+            </button>
+          );
+        })}
+        <span className={styles.keycapBarHint}>
+          {selectedRowIndices.length > 0
+            ? `${selectedRowIndices.length} selected`
+            : `all ${rows.length}`}
+        </span>
+      </div>
+      {status && <div className={styles.keycapBarStatus}>{status}</div>}
+    </div>
+  );
+};
 
 interface CellProps {
   col: ColumnSpec;
@@ -135,6 +215,7 @@ const Cell = ({ col, value, editable, onChange }: CellProps): ReactElement => {
 export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
+  const [selected, setSelected] = useState<ReadonlyArray<number>>([]);
 
   const table: SmartTable = useMemo(
     () => (content ? parseSmartTable(content) : { schema: [], rows: [], extraFrontmatter: {} }),
@@ -145,9 +226,32 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
     setContent(serializeSmartTable(next));
   };
 
+  const toggleSelected = (i: number): void => {
+    setSelected((prev) => prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]);
+  };
+
+  const hasKeycaps = (table.keycaps?.length ?? 0) > 0;
+
   const columns = useMemo<ColumnDef<Record<string, string>>[]>(() => {
     const editable = resource.editable;
+    const selectionCol: ColumnDef<Record<string, string>>[] = hasKeycaps
+      ? [
+          {
+            id: '__select',
+            header: '',
+            cell: ({ row }) => (
+              <input
+                type="checkbox"
+                checked={selected.includes(row.index)}
+                onChange={() => toggleSelected(row.index)}
+                aria-label={`Select row ${row.index + 1}`}
+              />
+            ),
+          },
+        ]
+      : [];
     return [
+      ...selectionCol,
       ...table.schema.map<ColumnDef<Record<string, string>>>((col) => ({
         accessorKey: col.key,
         header: col.label,
@@ -180,7 +284,7 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
       },
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table, resource.editable]);
+  }, [table, resource.editable, hasKeycaps, selected]);
 
   const reactTable = useReactTable({
     data: table.rows,
@@ -238,6 +342,14 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
       />
       {table.title && (
         <h2 className={styles.tableTitle}>{table.title}</h2>
+      )}
+      {hasKeycaps && (
+        <KeycapChips
+          ids={table.keycaps ?? []}
+          rows={table.rows}
+          selectedRowIndices={selected}
+          tableTitle={table.title}
+        />
       )}
       <div className={styles.scroll}>
         <table className={styles.tableEl}>

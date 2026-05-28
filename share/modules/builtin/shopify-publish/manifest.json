@@ -1,0 +1,52 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.shopify-publish",
+  "name": "Publish to Shopify",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "Push selected product rows to your Shopify store",
+    "long": "Reads selected rows from a vault smart-table and publishes each as a Shopify product via the configured Admin API. Stub manifest — real OAuth + API wiring lands with the Shopify MCP server in v1.1."
+  },
+  "icon": "Store",
+  "keycap_color": "jade",
+  "category": "ecommerce",
+  "tags": [
+    "shopify",
+    "publish",
+    "ecommerce"
+  ],
+  "variant": "builtin",
+  "target": "mcp-tool",
+  "capabilities": {
+    "vault": { "read": true }
+  },
+  "permissions": [
+    "network",
+    "vault",
+    "notification"
+  ],
+  "license": "UNLICENSED",
+  "actions": [
+    {
+      "id": "publish-selected",
+      "name": "Publish Selected Rows",
+      "description": "Publish the selected smart-table rows to Shopify",
+      "input": "none",
+      "output": "notification",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "notify",
+          "message": "→ Shopify publish queued (impl pending — see roadmap)"
+        }
+      ]
+    }
+  ],
+  "chord": "sp"
+}
