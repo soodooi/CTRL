@@ -193,25 +193,33 @@
 
 /* Dark theme — opt-in via `:root[data-theme='dark']` (no auto via
    prefers-color-scheme; bao 2026-05-25: light is the product default,
-   dark is a user preference, not a system follower). */
+   dark is a user preference, not a system follower).
+
+   v0.6 (bao 2026-05-27 "Irisy 的暗色主题改成 opencode 的暗色主题"):
+   palette swapped from cool oklch neutrals to opencode.ai's spec —
+   near-black warm charcoal floor (#0c0c0e), Apple system blue accent
+   (#007aff), HIG-grade neutrals for text + borders. The shift gives
+   the dark scope a precise, editor-grade feel that matches the
+   /coding surface (which scopes its own dark even when global is
+   light). Both surfaces now read from the same vocabulary. */
 :root[data-theme='dark'] {
-  --color-bg-l0: oklch(0.155 0.003 252);
-  --color-bg-l1: oklch(0.135 0.003 252);
-  --color-bg-l2: oklch(0.190 0.003 252);
-  --color-bg-l3: oklch(0.230 0.003 252);
+  --color-bg-l0: #0c0c0e;
+  --color-bg-l1: #161618;
+  --color-bg-l2: #1c1c1f;
+  --color-bg-l3: #2c2c2e;
 
   --color-background: var(--color-bg-l0);
   --color-surface: var(--color-bg-l2);
   --color-surface-elevated: var(--color-bg-l3);
 
-  --color-text: var(--paper);
-  --color-text-muted: oklch(0.72 0.003 252);
-  --color-text-soft: oklch(0.58 0.003 252);
-  --color-text-faint: oklch(0.42 0.003 252);
+  --color-text: #ffffff;
+  --color-text-muted: #c7c7cc;
+  --color-text-soft: #a1a1a6;
+  --color-text-faint: #68686f;
 
-  --color-border: oklch(0.230 0.003 252);
-  --color-border-soft: oklch(0.195 0.003 252);
-  --color-accent: var(--ctrl-blue-light);
+  --color-border: #38383a;
+  --color-border-soft: #2c2c2e;
+  --color-accent: #007aff;
 
   --color-scheme: dark;
 }

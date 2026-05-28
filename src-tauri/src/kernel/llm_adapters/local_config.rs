@@ -43,6 +43,12 @@ pub struct ProvidersConfig {
     pub volc: Option<ProviderEntry>,
     #[serde(default)]
     pub openai: Option<ProviderEntry>,
+    /// Local Ollama daemon (no API key needed when running on loopback).
+    #[serde(default)]
+    pub ollama: Option<ProviderEntry>,
+    /// MiniMax cloud LLM (BYOK, OpenAI-shape compatible endpoint).
+    #[serde(default)]
+    pub minimax: Option<ProviderEntry>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -2,12 +2,16 @@
 //
 // Model (per bao 2026-05-26: "右侧一级导航栏是固定的"):
 //   Level-1 = FIXED order, route-independent:
-//     [ Irisy (top, mascot slot) | Vault | Pool | Settings (footer) ]
+//     [ Irisy (top, mascot slot) | Coding | Vault | Pool | Settings (footer) ]
 //   Routes CANNOT push items into level-1. The only thing a route may
 //   push is Irisy's level-2 panel content (e.g. chat history list)
 //   via `useIrisySubPanel`. The previous `useRailItems` / `setItems`
 //   channel was removed — its surface ambiguity ("which route owns
 //   the rail right now?") was the bug bao called out.
+//
+//   2026-05-27: Coding added (bao request) — sits above Vault as a
+//   primary work surface. Same fixed-set governance: design-time only,
+//   no runtime push.
 //
 // Level-2 sub-panel only opens when Irisy is the active item AND a
 // route has pushed her panel content. Vault / Pool / Settings have
@@ -82,6 +86,7 @@ interface RailContextValue {
 const RailContext = createContext<RailContextValue | null>(null);
 
 const IRISY_ITEM_ID = 'irisy';
+const CODING_ITEM_ID = 'coding';
 const VAULT_ITEM_ID = 'vault';
 const POOL_ITEM_ID = 'pool';
 const SETTINGS_ITEM_ID = 'settings';
@@ -126,6 +131,25 @@ const VaultIcon = (): ReactElement => (
     <path d="M4 5h12a2 2 0 0 1 2 2v13H6a2 2 0 0 1-2-2V5z" />
     <path d="M4 5a2 2 0 0 1 2-2h12v15" />
     <path d="M9 8h6M9 12h4" />
+  </svg>
+);
+
+// Inline coding icon — angle brackets + slash, the universal "code" mark.
+const CodingIcon = (): ReactElement => (
+  <svg
+    viewBox="0 0 24 24"
+    width="20"
+    height="20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <polyline points="8 7 3 12 8 17" />
+    <polyline points="16 7 21 12 16 17" />
+    <line x1="14" y1="5" x2="10" y2="19" />
   </svg>
 );
 
@@ -189,6 +213,7 @@ interface SyntheticRailItem extends RailItem {
   isSettings?: boolean;
   isVault?: boolean;
   isPool?: boolean;
+  isCoding?: boolean;
 }
 
 // Settings has no level-2 panel — tabs live INSIDE the /settings page
@@ -234,6 +259,14 @@ export const RightRail = (): ReactElement => {
   const allItems = useMemo<ReadonlyArray<SyntheticRailItem>>(
     () => [
       {
+        id: CODING_ITEM_ID,
+        label: 'Coding',
+        isCoding: true,
+        onClick: () => {
+          void navigate({ to: '/coding' });
+        },
+      },
+      {
         id: VAULT_ITEM_ID,
         label: 'Vault',
         isVault: true,
@@ -261,14 +294,16 @@ export const RightRail = (): ReactElement => {
     [navigate],
   );
 
-  // Auto-flip activeRailId to vault / pool when the route enters those
-  // surfaces — keeps the rail selection in sync with where the user
+  // Auto-flip activeRailId to vault / pool / coding when the route enters
+  // those surfaces — keeps the rail selection in sync with where the user
   // actually is.
   useEffect(() => {
     if (pathname.startsWith('/vault') && activeRailId !== VAULT_ITEM_ID) {
       setActiveRailId(VAULT_ITEM_ID);
     } else if (pathname.startsWith('/pool') && activeRailId !== POOL_ITEM_ID) {
       setActiveRailId(POOL_ITEM_ID);
+    } else if (pathname.startsWith('/coding') && activeRailId !== CODING_ITEM_ID) {
+      setActiveRailId(CODING_ITEM_ID);
     }
   }, [pathname, activeRailId, setActiveRailId]);
 
@@ -317,6 +352,7 @@ export const RightRail = (): ReactElement => {
         data-settings={item.isSettings || undefined}
         data-vault={item.isVault || undefined}
         data-pool={item.isPool || undefined}
+        data-coding={item.isCoding || undefined}
         onClick={() => handleItemClick(item)}
         title={item.label}
         aria-label={item.label}
@@ -325,6 +361,8 @@ export const RightRail = (): ReactElement => {
         <span className={styles.itemIcon}>
           {item.isIrisy ? (
             <IrisyMascot state={irisyState} size={IRISY_ICON_SIZE} />
+          ) : item.isCoding ? (
+            <CodingIcon />
           ) : item.isVault ? (
             <VaultIcon />
           ) : item.isPool ? (

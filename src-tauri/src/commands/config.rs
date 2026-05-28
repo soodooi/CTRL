@@ -45,6 +45,18 @@ const KNOWN_PROVIDERS: &[KnownProvider] = &[
         default_base_url: "https://api.openai.com/v1",
         default_model: "gpt-4o-mini",
     },
+    KnownProvider {
+        name: "ollama",
+        display_name: "Ollama (local)",
+        default_base_url: "http://localhost:11434/v1",
+        default_model: "qwen2.5",
+    },
+    KnownProvider {
+        name: "minimax",
+        display_name: "MiniMax (BYOK)",
+        default_base_url: "https://api.minimax.chat/v1",
+        default_model: "MiniMax-Text-01",
+    },
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -85,6 +97,8 @@ pub async fn config_list_providers() -> Result<Vec<ProviderInfo>, String> {
         let entry: Option<ProviderEntry> = match known.name {
             "volc" => config.providers.volc.clone(),
             "openai" => config.providers.openai.clone(),
+            "ollama" => config.providers.ollama.clone(),
+            "minimax" => config.providers.minimax.clone(),
             _ => None,
         };
         let (base_url, default_model, has_key_in_config) = match &entry {
