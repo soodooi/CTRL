@@ -1,0 +1,64 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.translate",
+  "name": "Translate",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "Translate clipboard text to English using the configured LLM"
+  },
+  "icon": "Languages",
+  "keycap_color": "amber",
+  "category": "language",
+  "tags": [
+    "translate",
+    "ai",
+    "language"
+  ],
+  "variant": "builtin",
+  "target": "mcp-tool",
+  "capabilities": {
+    "clipboard": { "read": true, "write": false },
+    "text": { "chat": true }
+  },
+  "workspace": { "ui": "modal" },
+  "permissions": [
+    "clipboard",
+    "network"
+  ],
+  "license": "UNLICENSED",
+  "actions": [
+    {
+      "id": "translate-to-english",
+      "name": "Translate to English",
+      "description": "Translate clipboard contents to natural English",
+      "input": "clipboard",
+      "output": "modal",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "capture-clipboard",
+          "as": "raw"
+        },
+        {
+          "type": "llm",
+          "system": "You are a precise translator. Translate the user's text to natural, idiomatic English. Output only the translation — no preface, no quotation marks, no commentary.",
+          "prompt": "{{raw}}",
+          "max_tokens": 800,
+          "temperature": 0.2,
+          "as": "translated"
+        },
+        {
+          "type": "notify",
+          "message": "{{translated}}"
+        }
+      ]
+    }
+  ],
+  "chord": "tr"
+}

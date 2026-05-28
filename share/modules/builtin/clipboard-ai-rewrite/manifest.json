@@ -1,0 +1,69 @@
+{
+  "$schema": "https://ctrlapplab.com/schema/tool/v1.json",
+  "id": "ctrl.builtin.clipboard-ai-rewrite",
+  "name": "AI Rewrite Paste",
+  "version": "0.1.0",
+  "author": {
+    "name": "CTRL App Lab",
+    "github": "ctrlapplab"
+  },
+  "description": {
+    "short": "Rewrite clipboard text via LLM and write the rewrite back to clipboard"
+  },
+  "icon": "Sparkles",
+  "keycap_color": "amber",
+  "category": "text-utility",
+  "tags": [
+    "ai",
+    "rewrite",
+    "paste",
+    "clipboard"
+  ],
+  "variant": "builtin",
+  "target": "mcp-tool",
+  "capabilities": {
+    "clipboard": { "read": true, "write": true },
+    "text": { "chat": true }
+  },
+  "workspace": { "ui": "clipboard" },
+  "permissions": [
+    "clipboard",
+    "network"
+  ],
+  "license": "UNLICENSED",
+  "actions": [
+    {
+      "id": "rewrite",
+      "name": "Rewrite Clipboard",
+      "description": "Polish clipboard text — fix grammar, tighten phrasing, keep meaning",
+      "input": "clipboard",
+      "output": "clipboard",
+      "scenes": [
+        "any-app"
+      ],
+      "steps": [
+        {
+          "type": "capture-clipboard",
+          "as": "raw"
+        },
+        {
+          "type": "llm",
+          "system": "You are an editor. Rewrite the user's text to be clear, concise, and grammatically correct, preserving meaning, register, and language. Output only the rewritten text — no preface, no commentary, no quotation marks.",
+          "prompt": "{{raw}}",
+          "max_tokens": 1200,
+          "temperature": 0.3,
+          "as": "rewritten"
+        },
+        {
+          "type": "write-clipboard",
+          "value": "{{rewritten}}"
+        },
+        {
+          "type": "notify",
+          "message": "→ Rewritten text in clipboard"
+        }
+      ]
+    }
+  ],
+  "chord": "rw"
+}

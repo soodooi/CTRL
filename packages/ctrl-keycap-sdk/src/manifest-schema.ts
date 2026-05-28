@@ -362,6 +362,7 @@ export const ActionOutput = z.enum([
   'modal',
   'notification',
   'workspace',  // render in PWA workspace pane
+  'browser',    // open URL in OS default browser (used by *-search keycaps)
   'silent',
 ]);
 
