@@ -352,8 +352,14 @@ mod mac_impl {
 
         // ListenOnly: we observe events but never consume them, so other
         // apps see Ctrl exactly as the user pressed it.
+        //
+        // HID (not Session) — Session tap only fires when CTRL is focused;
+        // HID intercepts before per-session dispatch so Ctrl fires from any
+        // focused app (Chrome/etc). 46f60e1 fixed this; regressed somewhere
+        // — locked by memory troubleshoot_ctrl_hotkey "CGEventTap HID tap
+        // location (Session 不够, 不留 Chrome 等 app 完全不响应)".
         let tap = CGEventTap::new(
-            CGEventTapLocation::Session,
+            CGEventTapLocation::HID,
             CGEventTapPlacement::HeadInsertEventTap,
             CGEventTapOptions::ListenOnly,
             event_types,
