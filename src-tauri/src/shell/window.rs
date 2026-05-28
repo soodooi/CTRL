@@ -236,6 +236,19 @@ impl WindowController {
         }
         Ok(())
     }
+
+    /// Unconditional hide — backs the top-right Hide (×) button in the
+    /// cockpit StatusBar (`hide_window` Tauri command). Click is an
+    /// explicit user signal so we don't gate on modal state. Same
+    /// destroy-the-window mechanism as hide_unless_modal (see the
+    /// module header for why CTRL uses destroy + rebuild on macOS).
+    pub fn hide(app: &AppHandle) -> Result<()> {
+        if let Some(w) = Self::main(app) {
+            tracing::info!("WindowController::hide — explicit user request");
+            let _ = w.destroy();
+        }
+        Ok(())
+    }
 }
 
 /// DWM cloak — the only Win11 + WebView2 + DComp hide path that works

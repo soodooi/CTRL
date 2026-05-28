@@ -61,6 +61,9 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::irisy::irisy_upgrade_hermes,
             // system — kernel health (PWA status bar Phase 1F)
             $crate::commands::system::kernel_status,
+            // system — explicit window hide for the StatusBar × button
+            // (click fallback when Ctrl hotkey state desyncs)
+            $crate::commands::system::hide_window,
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::open_workspace,

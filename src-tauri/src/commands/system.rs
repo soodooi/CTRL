@@ -118,3 +118,12 @@ pub async fn kernel_status(
         warnings,
     })
 }
+
+/// Hide the main cockpit window. Backs the top-right Hide (×) button so
+/// bao always has a click fallback when the Ctrl hotkey state desyncs
+/// (CGEventTap permission drop, FlagsChanged desync, AX revocation after
+/// an upgrade that changed the bundle hash).
+#[tauri::command]
+pub async fn hide_window(app: tauri::AppHandle) -> Result<(), String> {
+    crate::shell::WindowController::hide(&app).map_err(|e| e.to_string())
+}
