@@ -62,7 +62,7 @@ impl WindowController {
     /// current state. Used by single-instance + macOS Dock reopen handlers
     /// so a second `open .app` or a Dock click consistently surfaces the
     /// window (vs `toggle` which would hide it when already visible).
-    /// Per bao 2026-05-23: '在任务栏 就是打不开'.
+    /// Per bao 2026-05-23: 'in the taskbar but just won't open'.
     pub fn reveal(app: &AppHandle) -> Result<()> {
         let Some(w) = Self::main(app) else {
             tracing::info!("WindowController::reveal — main missing, rebuilding");
@@ -141,7 +141,7 @@ impl WindowController {
                 tracing::info!("WindowController::toggle — show");
                 let _ = w.show();
                 let _ = w.set_focus();
-                // CTRL = launcher 弹窗 (Raycast-style): set_focus only raises
+                // CTRL = launcher popup (Raycast-style): set_focus only raises
                 // the window in z-order; it does NOT pull keyboard focus across
                 // app boundaries. NSApp.activate() is the launcher contract —
                 // hands focus to CTRL from whatever app is currently foreground
@@ -189,7 +189,7 @@ impl WindowController {
 
     /// Open (or focus) the workspace window with a specific keycap loaded.
     ///
-    /// Per bao 2026-05-14: 工作区是独立窗口, 对应所选按键. Workspace window
+    /// Per bao 2026-05-14: the workspace is a standalone window, corresponding to the selected keycap. Workspace window
     /// is rebuilt fresh per activation so the new keycap_id query param
     /// drives the route from a clean WebView state (same destroy + rebuild
     /// trick as the main window).

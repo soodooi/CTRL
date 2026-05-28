@@ -1,8 +1,9 @@
 // SubprocessActor — long-lived child process Actor for Code Space tiles
 // and similar always-on CLI integrations. Per ADR-012.
 //
-// 实 Actor trait（不破 5 primitives 抽象）。每实例持一个 PTY-backed 子进程,
-// 通过 portable-pty 跨平台（Unix forkpty + Windows ConPTY）。
+// Implements the Actor trait (without breaking the 5-primitives abstraction).
+// Each instance holds one PTY-backed child process,
+// cross-platform via portable-pty (Unix forkpty + Windows ConPTY).
 //
 // Lifecycle:
 //   on_spawn   → spawn child + start reader task; emit `subprocess_spawned`
@@ -34,10 +35,11 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 
-/// 默认每 SubprocessActor 内存上限. OS-level 强制 (rlimit / Job Object) 留给
-/// follow-up handoff — manifest 字段先 wire 通, supervisor 观测可见.
+/// Default per-SubprocessActor memory cap. OS-level enforcement (rlimit / Job Object)
+/// is deferred to a follow-up handoff — the manifest field is wired through first so
+/// the supervisor can observe it.
 pub const DEFAULT_MEM_CAP_BYTES: u64 = 256 * 1024 * 1024;
-/// 每次 PTY master read 的最大字节 — 4 KB 与终端 cell 大小同量级.
+/// Max bytes per PTY master read — 4 KB is on the same order as a terminal cell size.
 pub const STDOUT_CHUNK_BYTES: usize = 4096;
 /// Outbox channel default capacity. Bounded to give back-pressure;
 /// the scheduler creates the channel and exposes the rx to consumers.
@@ -96,7 +98,7 @@ fn augmented_path() -> String {
     entries.join(":")
 }
 
-/// PTY 初始尺寸. resize 通过 Event::Op(SubprocessResize) 动态调整.
+/// Initial PTY size. Resize is adjusted dynamically via Event::Op(SubprocessResize).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PtySpec {
     pub cols: u16,
@@ -143,10 +145,10 @@ pub struct SubprocessActor {
 #[derive(Default)]
 struct RuntimeState {
     pid: Option<u32>,
-    /// Master PTY 用于 resize. take_writer 是单独的句柄 (writer field).
+    /// Master PTY used for resize. take_writer is a separate handle (writer field).
     master: Option<Arc<Mutex<Box<dyn MasterPty + Send>>>>,
     writer: Option<Arc<Mutex<Box<dyn std::io::Write + Send>>>>,
-    /// kill / signal via ChildKiller; child 本体已 move 进 waiter task.
+    /// kill / signal via ChildKiller; the child itself has been moved into the waiter task.
     killer: Option<Arc<Mutex<Box<dyn portable_pty::ChildKiller + Send + Sync>>>>,
     reader_task: Option<JoinHandle<()>>,
     waiter_task: Option<JoinHandle<()>>,
@@ -176,9 +178,10 @@ impl SubprocessActor {
         self.state.pid
     }
 
-    /// 拉起子进程 + 启动 reader / waiter task. 不 panic — 错误经
-    /// outbox 以 `subprocess_exit` 投递, 由 caller 决定是否复用 actor.
-    /// PID 返回 Option — portable-pty 在某些平台不能立即拿到 PID.
+    /// Spawns the child process + starts the reader / waiter tasks. Does not panic —
+    /// errors are delivered via the outbox as `subprocess_exit`, and the caller decides
+    /// whether to reuse the actor.
+    /// PID is returned as Option — portable-pty cannot obtain the PID immediately on some platforms.
     fn spawn_child(&mut self) -> Result<Option<u32>, SubprocessSpawnError> {
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -215,7 +218,7 @@ impl SubprocessActor {
             .slave
             .spawn_command(cmd)
             .map_err(|e| SubprocessSpawnError::Spawn(e.to_string()))?;
-        // 父进程不再持 slave fd, 由 child 独占.
+        // The parent no longer holds the slave fd; the child owns it exclusively.
         drop(pair.slave);
 
         // PID is Option — kernel sentinel (0) collides with real PIDs on Linux
@@ -223,7 +226,7 @@ impl SubprocessActor {
         let pid: Option<u32> = child.process_id();
         let killer: Box<dyn portable_pty::ChildKiller + Send + Sync> = child.clone_killer();
 
-        // Reader / writer 必须在 master 移入 Arc<Mutex> 前取出.
+        // Reader / writer must be extracted before master is moved into Arc<Mutex>.
         let reader = pair
             .master
             .try_clone_reader()
@@ -239,9 +242,9 @@ impl SubprocessActor {
         let outbox = self.outbox.clone();
         let actor_name = self.name.clone();
 
-        // Reader task: blocking reads (PTY 是 blocking fd), 4 KB chunks 通过
-        // outbox 以 SubprocessStdout op 投递. 三约束 #1: panic 在此 task 内
-        // 局部, kernel 不挂.
+        // Reader task: blocking reads (PTY is a blocking fd), 4 KB chunks delivered
+        // via the outbox as SubprocessStdout ops. Guarantee #1: a panic is contained
+        // within this task, the kernel does not hang.
         let reader_task = tokio::task::spawn_blocking(move || {
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut buf = [0u8; STDOUT_CHUNK_BYTES];
@@ -361,11 +364,11 @@ pub enum SubprocessSpawnError {
 #[async_trait]
 impl Actor for SubprocessActor {
     async fn on_spawn(&mut self, _ctx: &ActorContext) -> Vec<Effect> {
-        // 三约束 #1: reader / waiter task 内部各自 catch_unwind (panic 局部).
-        // 此处 NOT wrap in catch_unwind — themis CRITICAL: catch_unwind 包
-        // spawn_child 会留下半初始化 actor (child 已 spawn 但 self.state.killer
-        // 未写), 导致 on_shutdown 漏 kill. Scheduler 的 on_spawn catch_unwind
-        // 兜底 panic + on_shutdown 路径退出.
+        // Guarantee #1: the reader / waiter tasks each catch_unwind internally (panic contained).
+        // Here we do NOT wrap in catch_unwind — themis CRITICAL: wrapping spawn_child in
+        // catch_unwind would leave a half-initialized actor (child already spawned but
+        // self.state.killer not written), causing on_shutdown to miss the kill. The
+        // scheduler's on_spawn catch_unwind backstops the panic + exits via the on_shutdown path.
         match self.spawn_child() {
             Ok(pid) => {
                 let _ = self.outbox.try_send(Event::Op(Op {
@@ -453,7 +456,7 @@ impl Actor for SubprocessActor {
     }
 
     async fn on_shutdown(&mut self) {
-        // 三约束 #3: always close PTY + kill child on shutdown.
+        // Guarantee #3: always close PTY + kill child on shutdown.
         if let Some(killer) = self.state.killer.take() {
             // best-effort, blocking-lock acceptable in shutdown path.
             let mut guard = killer.lock().await;

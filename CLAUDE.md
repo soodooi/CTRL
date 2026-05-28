@@ -16,8 +16,8 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面
 
 ## Rules
 
-- 全英文代码 (注释 / UI 文本 / API 响应 / 错误信息) — 中文 OPC 用户但代码英文 + 国际化 ready
-- All `.md` 文档 + 注释允许中文 (战略文档 / spec / handoff)
+- 全英文代码 — **整个项目代码零中文** (注释 / UI 文本 / 字符串字面量 / API 响应 / 错误信息 全英). bao 钦定 2026-05-28
+- 中文只允许出现在 `.md` 文档 (战略文档 / spec / handoff / ADR) + 跟 bao 对话, **不允许出现在任何 `.rs` / `.ts` / `.tsx` / `.css` 代码注释里**
 - License: All Rights Reserved. **所有子包 `private: true` + `license: UNLICENSED`**
 - 禁止 `npm publish` 任何 `@ctrl/*` 包到公开 npm
 - 禁止本地 `wrangler dev` (ctrl-cloud 走 `*.workers.dev` staging)
@@ -75,7 +75,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 4. **One-shot, not flows** — 一个 keycap = 一个原子动作。无 wizard / 无 multi-step / 无 dialog tree。
 5. **AI 是 pipe, 不是 sidebar** — 发收消息 / 处理内容时 AI 默认 in-line 处理 (润色 / 摘要 / 抽 action item / 翻译), 可关默认开。
 6. **Transparency by drill-down** — 任何 AI / 抽象处理都可长按 / hover 看 raw 数据 (飞书原文 / AI 改后 / 本地草稿三层视图)。
-7. **Pi 是唯一 brain** *(amended 2026-05-25, 见 ADR-001 amendment)* — Irisy 跑 agent loop 永远走 **Pi** (`@pi/coding-agent`, MIT, lazy install via npm). kernel `text.chat` capability 不可配置, 直连 Pi keycap. **hermes-agent 不是 brain**, 降为可选 *"personal-assistant keycap"* (用户从 Pool 装) — 它的 persistent memory + auto-skill-gen 留在 `~/.hermes/` 自己的域内, 不进 CTRL vault, 跟 plain-text 哲学不完全一致是它作为高级 keycap 的 trade-off, README 警告写明.
+7. **Pi 是唯一 brain** *(amended 2026-05-25; hermes 彻底移除 2026-05-28, 见 ADR-001 §11 5th 校准)* — Irisy 跑 agent loop 永远走 **Pi** (`@pi/coding-agent`, MIT, lazy install via npm). kernel `text.chat` capability 不可配置, 直连 Pi keycap. **hermes 已彻底移除** — 不再作 keycap, 无 kernel / PWA 接线, `packages/ctrl-hermes-plugin/` 已删. hermes 的长效记忆优点已原生落在 Irisy (`vault/irisy/SOUL.md` + `.irisy-memory/`).
 
 ### 几个具体推论
 
@@ -164,7 +164,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | UI | Single PWA (`packages/ctrl-web`) — React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa |
 | Vault viewers | **Tiptap** (markdown WYSIWYG+source) + **CodeMirror 6** (code/JSON/YAML/TOML/HTML) + **mermaid.js** (mermaid graphs) + iframe+CSP (HTML sandbox) — content-type viewer registry, replaces VMark MCP sidecar (S15 deprecated 2026-05-25) |
 | Vault index | SQLite FTS5 (`src-tauri/src/kernel/vault_index.rs`) + backlink scanner + tag scanner (kernel-native, no VMark dep) |
-| Brain (sole) | **Pi** (`@pi/coding-agent`, MIT, lazy npm install) — kernel routes `text.chat` directly to Pi keycap. hermes is **NOT** brain (降为 personal-assistant keycap, 用户自装). See ADR-001 amendment 2026-05-25 |
+| Brain (sole) | **Pi** (`@pi/coding-agent`, MIT, lazy npm install) — kernel routes `text.chat` directly to Pi keycap. **hermes fully removed** (2026-05-28, ADR-001 §11 5th 校准) — not a brain, not a keycap, package deleted. See ADR-001 amendment |
 | Web ↔ Rust bridge | Tauri 2 `invoke()` on desktop (intra-process), WebSocket + token on mobile |
 | Stream protocol | ST-SS (CBOR Cell/Op) |
 | Package manager | npm workspaces |

@@ -1,8 +1,8 @@
 // InstallKeycapTile — a single keycap-sized "empty slot" tile that opens
 // the keycap install flow. Anchors the `/` route just above ChatInput.
 //
-// Per bao 2026-05-26 "三路全开 抽象化处理, 最极简方式做, 都是一个 id
-// 能解决问题的":
+// Per bao 2026-05-26 "open all three paths, handle them with abstraction,
+// do it the most minimal way — they're all solvable with a single id":
 //   1. click           → navigate /pool (browse + install)
 //   2. drop  keycap-id → already-installed payload, surface a hint
 //   3. drop  manifest  → defer to /pool (Phase 1D wires the manifest

@@ -32,6 +32,7 @@ export const KeycapVariant = z.enum([
   'cli-wrapper',     // wraps an external CLI binary (Pattern B)
   'stss-publisher',  // listens on ST-SS bridge for events (Pattern F)
   'local-agent',     // long-running local process (Pattern C)
+  'skill',           // self-describing skill folder (SKILL.md + assets), runs via brain
 ]);
 export type KeycapVariant = z.infer<typeof KeycapVariant>;
 
@@ -41,15 +42,14 @@ export type KeycapVariant = z.infer<typeof KeycapVariant>;
 // brain — brain runtimes are keycaps, not kernel-level primitives.
 //
 //   mcp-tool     — one-shot tool call. Default for ~90% of keycaps.
-//   hermes-skill — rich SKILL.md-driven keycap (optional, advanced).
 //   brain        — pluggable agent runtime that owns `text.chat` (or any
 //                  capability the keycap declares via `capability`). The
 //                  user's active brain keycap is the answer for any
-//                  inbound capability call from Irisy. Examples: Pi
-//                  (default), hermes (optional), claude-shim (dev-only).
+//                  inbound capability call from Irisy. Pi is the sole
+//                  brain (ADR-001 amendment 2026-05-25).
 //
 // See .olym/specs/tool-manifest/spec.md §13.
-export const KeycapTarget = z.enum(['mcp-tool', 'hermes-skill', 'brain']);
+export const KeycapTarget = z.enum(['mcp-tool', 'brain']);
 export type KeycapTarget = z.infer<typeof KeycapTarget>;
 
 export const Permission = z.enum([
@@ -307,14 +307,13 @@ const VaultWriteStep = StepCommon.extend({
 });
 
 /** Composition step: invoke another callable thing by id. Abstracts
- *  over keycaps, external MCP tools, and hermes skills behind one
- *  step type so workshop canvas (drag base keycap onto graph) +
- *  Irisy compositions don't have to know transport details.
+ *  over keycaps and external MCP tools behind one step type so workshop
+ *  canvas (drag base keycap onto graph) + Irisy compositions don't have
+ *  to know transport details.
  *
  *  `target.kind` decides routing:
  *    keycap  → kernel run_keycap(id, action_id, inputs)
  *    mcp     → kernel mcp_proxy_call(server_id, tool_name, args)
- *    skill   → hermes runtime invocation (~/.hermes/skills/<id>/)
  *
  *  Matches the more abstract design favored after the 2026-05 workshop
  *  research pass (n8n / Pipedream show value in polymorphic step refs;
@@ -322,9 +321,8 @@ const VaultWriteStep = StepCommon.extend({
 const InvokeStep = StepCommon.extend({
   type: z.literal('invoke'),
   target: z.object({
-    kind: z.enum(['keycap', 'mcp', 'skill']),
-    /** Provider-specific id. keycap → keycap.id. mcp → "server_id/tool".
-     *  skill → hermes skill id (folder name under ~/.hermes/skills/). */
+    kind: z.enum(['keycap', 'mcp']),
+    /** Provider-specific id. keycap → keycap.id. mcp → "server_id/tool". */
     id: z.string().min(1),
     /** keycap.kind only: which action to invoke (default: keycap's first action). */
     action: z.string().optional(),
@@ -426,11 +424,25 @@ export const CliWrapperSource = z.object({
   args: z.array(z.string()).optional(),
 });
 
+/** Skill source — a self-describing skill folder (SKILL.md + assets)
+ *  cloned into ~/.ctrl/keycaps/<id>/. The SKILL.md YAML frontmatter
+ *  (name + description) + body instructions ARE the behavior; there is
+ *  no step engine. Pressed → kernel reads SKILL.md → routes to the brain
+ *  (Pi) to execute against the skill folder.
+ *  `path` is the keycap-dir-relative skill entry file (default SKILL.md).
+ *  Integration of any GitHub skill = `git clone` the folder here + bind a
+ *  keycap manifest with this source. No manifest "generation" step. */
+export const SkillSource = z.object({
+  type: z.literal('skill'),
+  path: z.string().min(1).default('SKILL.md'),
+});
+
 export const Source = z.discriminatedUnion('type', [
   McpSource,
   BuiltinSource,
   OAuthSource,
   CliWrapperSource,
+  SkillSource,
 ]);
 export type Source = z.infer<typeof Source>;
 
@@ -506,6 +518,27 @@ export const DraftMeta = z.object({
 });
 export type DraftMeta = z.infer<typeof DraftMeta>;
 
+// ── I/O typing (workbench wiring — JSON Schema typed ports) ─────────────
+// A keycap declares its input + output shape as JSON Schema so the
+// workbench can validate a connection (React Flow `isValidConnection`)
+// BEFORE wiring keycaps into a composition. JSON Schema is the
+// cross-language standard and matches MCP tool `inputSchema`, so
+// mcp-source keycaps map 1:1 (derive `io.input` from the tool schema).
+//
+// A JSON Schema document is an open object, so it's loose-typed here;
+// the workbench does structural-compatibility checking at connect time,
+// not Zod-level validation. Optional: single-press keycaps don't need
+// it; composition needs it.
+
+export const JsonSchemaDoc = z.record(z.string(), z.unknown());
+export type JsonSchemaDoc = z.infer<typeof JsonSchemaDoc>;
+
+export const KeycapIo = z.object({
+  input: JsonSchemaDoc.optional(),
+  output: JsonSchemaDoc.optional(),
+});
+export type KeycapIo = z.infer<typeof KeycapIo>;
+
 // ── Top-level manifest ──────────────────────────────────────────────────
 
 export const KeycapManifest = z.object({
@@ -569,8 +602,14 @@ export const KeycapManifest = z.object({
   /** Tells the kernel which dispatch path to use. */
   variant: KeycapVariant.default('builtin'),
 
-  /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper). */
+  /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper /
+   *  skill). Skill keycaps point at their SKILL.md via `source.path`. */
   source: Source.optional(),
+
+  /** Typed I/O ports (JSON Schema) for workbench wiring. Optional —
+   *  single-press keycaps don't need it; composing keycaps into a system
+   *  needs it so the workbench can validate connections before wiring. */
+  io: KeycapIo.optional(),
 
   /** Role of this keycap in the CTRL surface. Orthogonal to `variant`:
    *  variant says *how* it runs, target says *what role* it plays.
@@ -595,8 +634,11 @@ export const KeycapManifest = z.object({
    *  second copy of user state" philosophy. */
   provider_passthrough: z.boolean().optional(),
 
-  /** Actions the user can invoke. Most keycaps have exactly one. */
-  actions: z.array(Action).min(1),
+  /** Actions the user can invoke (step-engine keycaps). Most step-based
+   *  keycaps have exactly one. Optional: skill / brain / pure mcp-tool
+   *  keycaps carry no step-actions — their behavior is the SKILL.md, the
+   *  brain runtime, or the MCP tool respectively. */
+  actions: z.array(Action).min(1).optional(),
 
   /** Trigger hints (hotkey / context-menu / spotlight); engine TBD. */
   triggers: z.array(z.object({

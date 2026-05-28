@@ -128,7 +128,7 @@
 }
 
 .emptyAction {
-  /* 44pt touch target — mobile rule (bao 2026-05-18 钦定). */
+  /* 44pt touch target — mobile rule (bao 2026-05-18 decreed). */
   min-height: 44px;
   padding: 0 var(--space-4);
   background: var(--ctrl-blue);

@@ -3,7 +3,7 @@ adr_id: 001
 title: 4-layer AI-native Agent OS kernel architecture (project doc + module index)
 status: accepted
 date: 2026-05-11
-last_state_refresh: 2026-05-26
+last_state_refresh: 2026-05-28
 deciders: [bao, zeus]
 module: spine
 related:
@@ -32,7 +32,7 @@ superseded_by: []
 
 ---
 
-## 1. Current state (2026-05-26)
+## 1. Current state (2026-05-28)
 
 ### 1.1 4-layer stack
 
@@ -74,7 +74,8 @@ PWA (packages/ctrl-web) — single web codebase
 
 - **Pi** (`@ctrl/pi-plugin`, MIT, lazy npm install) = v1 **sole brain**
 - A keycap with `target: brain`; kernel routes `text.chat` via inline brain router (`~/.ctrl/active-brain` → MCP server URL, ≤100 LOC)
-- hermes (`@ctrl/hermes-plugin`) = optional personal-assistant keycap, **NOT** brain (ADR-019 superseded)
+- **hermes fully removed (2026-05-28, 5th 校准)** — no longer ships as a keycap, no kernel `irisy_chat_hermes` / probe / auto-wire, no PWA hermes status line, `packages/ctrl-hermes-plugin/` deleted. Its strengths (long-term memory) are re-implemented natively in Irisy (`vault/irisy/SOUL.md` + `.irisy-memory/`). Pi is the only brain. (ADR-019 superseded; the hermes-as-optional-keycap framing from the 1st 校准 is retired.)
+- Manifest `target` enum is now `mcp-tool | brain` — `hermes-skill` dropped.
 
 ### 1.5 Current vault stack
 
@@ -120,7 +121,7 @@ Adopt a 4-layer kernel architecture with **5 primitives** (Actor / Capability / 
 6. **Manifest is YAML frontmatter** — Zod-validated but plain text. User can hand-edit; CI/runtime validates.
 7. **Mobile = IndexedDB queue + LRU evict + soft quota** — captures (photo / audio) enqueue immediately, upload-drain when mesh online. Capped and recycled, not "no binary asset".
 8. **Backup source set** = `~/Documents/CTRL/` + `~/.ctrl/{keycaps, config.toml, mesh/identity}`. `cp -r` of the vault is sufficient for user content; CTRL state restores on next launch.
-9. **Skills truth model** — `~/.ctrl/keycaps/<id>/skills/` is the **source**. `~/.ctrl/skills/<keycap-id>/<sub-id>/` is an **aggregated view** populated at install. Removing the keycap removes the view. Brain keycaps read source via `PI_SKILLS_PATH` / `HERMES_SKILLS_PATH` env injection (Windows-safe, no symlinks).
+9. **Skills truth model** — `~/.ctrl/keycaps/<id>/skills/` is the **source**. `~/.ctrl/skills/<keycap-id>/<sub-id>/` is an **aggregated view** populated at install. Removing the keycap removes the view. Brain keycaps read source via `PI_SKILLS_PATH` env injection (Windows-safe, no symlinks).
 10. **v1.0 keycap runtime = `.ts` / `.js` only** — Tauri ships Node. Python / Rust / native binaries deferred to v1.x ADR.
 
 ---
@@ -183,7 +184,7 @@ macOS Keychain = sole truth for provider keys / OAuth tokens / mesh-device-key.
 - `ctrl-web/` — PWA static (Vite build, ≤ 500 KB gzip critical path)
 - `keycaps/` — v1 builtin keycaps (15 starter), first-run idempotent copy to `~/.ctrl/keycaps/`
 - `brand/` — icon / logo / splash (promoted from `doc/visual-identity/`)
-- `third-party/LICENSES` — MIT compliance (Pi / hermes / Tiptap / CodeMirror / mermaid / etc.)
+- `third-party/LICENSES` — MIT compliance (Pi / Tiptap / CodeMirror / mermaid / etc.)
 
 First-run policy: target exists + `.ctrl-user-modified` marker → skip; no marker → safe to refresh from bundle.
 
@@ -192,7 +193,7 @@ First-run policy: target exists + `.ctrl-user-modified` marker → skip; no mark
 ## 6. Design philosophy locks (release/0.1.39 — canonical for v1)
 
 1. **Subprocess + Tauri ACL > WASM** — re-use Tauri Capability + Isolation Pattern + CSP; don't double-sandbox. (Research-cited: Shayon 2026 sandbox isolation; Wasmer comparison; Raycast/VSCode/Obsidian all use process isolation.)
-2. **Kernel atomic, composition in brain/skill** — kernel commands are one-shot per derived rule #4 ("One-shot, not flows"); multi-step workflow lives in Pi agent loop or user-authored hermes SKILL.md, not kernel.
+2. **Kernel atomic, composition in brain/skill** — kernel commands are one-shot per derived rule #4 ("One-shot, not flows"); multi-step workflow lives in the Pi agent loop or a user-authored skill, not the kernel.
 3. **MCP is the tool wire** — both inbound (kernel as MCP server, ADR-013) and outbound (kernel as MCP host, ADR-010).
 4. **Lean kernel** — only ship substrates v1 actually uses; defer unused with explicit comment + research-cited rationale (no speculative "we'll need it later"). v1.x WASM re-eval target: WasmEdge (8MB, 1.5ms cold start) not wasmtime (80MB+).
 
@@ -279,9 +280,9 @@ Each module has its own SPEC.md as the entry; sub-specs (e.g. `.olym/specs/kerne
 
 ---
 
-## 11. Spine evolution — 4 校准 (2026-05-25) narrative
+## 11. Spine evolution — 5 校准 narrative
 
-This ADR was amended 4× during 2026-05-25's 灵活开发 window. The original Decision body (5 primitives / 4 layers / 5 sources) remains untouched; below summarizes WHAT changed in each校准 and points to the active narrative sections above (§1, §4-6).
+This ADR was amended 4× during 2026-05-25's 灵活开发 window, then a 5th time on 2026-05-28. The original Decision body (5 primitives / 4 layers / 5 sources) remains untouched; below summarizes WHAT changed in each校准 and points to the active narrative sections above (§1, §4-6).
 
 ### 1st 校准 — Pi-as-sole-brain + VMark-not-substrate
 
@@ -322,6 +323,19 @@ Web-researched 2026 industry signals (Shayon sandbox isolation, Wasmer compariso
 **Locked**: 4 Design Philosophy principles → §6.
 
 - ⤴ Active sections: §6 Design philosophy locks
+
+### 5th 校准 (2026-05-28) — hermes fully removed · all demo keycaps cleared · code English-only
+
+bao directives during a 灵活开发 session ("清除 让项目干净" / "清除所有的键帽" / "整个项目都没有中文"). Clean-slate the project back to a platform skeleton with no demo content and no Chinese in code.
+
+**Removed**:
+- **hermes, fully** — `packages/ctrl-hermes-plugin/` deleted; kernel `irisy_chat_hermes` / `irisy_upgrade_hermes` / `probe_hermes` / `wire_hermes_brain_from_kernel` removed; PWA hermes status line + `useHermes` chat path + `/settings/hermes` route removed; `hermes-skill` dropped from the manifest `target` enum (`packages/ctrl-keycap-sdk/manifest-schema.ts`) and from the InvokeStep `kind` enum; CSP frame-src for the hermes dashboard (9119) removed. Pi is the only brain. hermes's long-term memory strength is already native in Irisy (`vault/irisy/SOUL.md` + `.irisy-memory/`).
+- **All demo keycaps** — hardcoded `seed_keycaps()` (5 demos) removed from `kernel.rs` (`list_keycaps` now returns installed-only → fresh install = empty Pool/Keyboard); `share/modules/builtin/` (16 Chinese manifests) deleted; runtime `~/.ctrl/keycaps/` cleared. The keycap **system** (install / list / run / `classify_seed` text-chat dispatch / SDK / Pool UI) and the kernel-internal `ctrl.builtin.text-chat` LLM dispatch are preserved.
+
+**Locked**:
+- **Code is English-only** — zero Chinese in any `.rs` / `.ts` / `.tsx` / `.css` (comments, UI strings, literals). Chinese stays only in `.md` docs + bao dialog. CLAUDE.md `## Rules` updated to remove the "+ 注释允许中文" carve-out.
+
+- ⤴ Active sections: §1.4 Current brain (hermes removed) · §6 · CLAUDE.md `## Rules`
 
 ### Appendix A — Decision log E-series (hephaestus review acceptance, 2nd校准)
 
@@ -381,3 +395,4 @@ Mesh identity: Keychain is sole truth. `~/.ctrl/mesh/identity` mirror only if vo
 | 2026-05-25 | **3rd 校准** (release/0.1.37): plan-vs-actual reconciliation (6 gaps fixed). |
 | 2026-05-25 | **4th 校准** (release/0.1.39): kernel lean — sandbox.rs/composition.rs/wasmtime/cranelift removed, Ollama out of default chain. Design Philosophy locked (4 principles). |
 | 2026-05-26 | **Restructure as project doc**: §1 Current state added on top, immutable spine (§2-3, §9-10) preserved verbatim, 4 校准 consolidated into §11 narrative + appendices. Module index (§1.6, §8) added — 4 module SPEC.md entries created at `.olym/specs/{substrate,cap,irisy,frontend}/SPEC.md`. Every other ADR (002-020) gets `module:` frontmatter field. |
+| 2026-05-28 | **5th 校准**: hermes fully removed (package + kernel + PWA + manifest `hermes-skill` target); all demo keycaps cleared (`seed_keycaps()` + `share/modules/builtin/` + runtime dir); code locked English-only (zero Chinese in `.rs`/`.ts`/`.tsx`/`.css`). Keycap system + `ctrl.builtin.text-chat` dispatch preserved. See §11 5th 校准. |

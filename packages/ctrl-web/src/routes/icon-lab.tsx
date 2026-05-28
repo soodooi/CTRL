@@ -477,7 +477,7 @@ export const IconLabRoute = (): ReactElement => {
         <div className={styles.grid}>
           <MiniCell label="kind: glyph" running={false} onToggle={() => {}}>
             <IconRenderer
-              icon={{ kind: 'glyph', char: '译' }}
+              icon={{ kind: 'glyph', char: 'T' }}
               size={48}
               ariaLabel="translate keycap"
             />

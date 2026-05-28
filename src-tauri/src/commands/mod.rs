@@ -53,12 +53,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::brain::brain_list,
             $crate::commands::brain::brain_detect,
             $crate::commands::brain::brain_set_active,
-            // irisy — 3-layer (kernel llm / hermes-agent / mcp bridge) wire-up
+            // irisy — init status (kernel llm / Pi brain / mcp bridge)
             $crate::commands::irisy::irisy_init,
-            // irisy — one-shot chat via hermes subprocess (ctrl-volc provider)
-            $crate::commands::irisy::irisy_chat_hermes,
-            // irisy — direct in-app upgrade of locally-installed hermes-agent
-            $crate::commands::irisy::irisy_upgrade_hermes,
             // system — kernel health (PWA status bar Phase 1F)
             $crate::commands::system::kernel_status,
             // system — explicit window hide for the StatusBar × button
@@ -99,7 +95,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::workshop::workshop_update_step,
             $crate::commands::workshop::workshop_remove_step,
             $crate::commands::workshop::workshop_move_step,
-            // code_space — coding 远程桌面 (ST-SS spec v0.7 wire)
+            // code_space — coding remote desktop (ST-SS spec v0.7 wire)
             $crate::commands::code_space::cs_spawn,
             $crate::commands::code_space::cs_stdin,
             $crate::commands::code_space::cs_signal,

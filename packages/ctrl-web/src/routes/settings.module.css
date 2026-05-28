@@ -1,5 +1,4 @@
-/* /settings — shell + two tabs (General / Logs). Hermes tab removed
- * 2026-05-26 with the Pi-sole-brain decision. */
+/* /settings — shell + tabs (General / Brain / Logs). */
 
 .layout {
   flex: 1;

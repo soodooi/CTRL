@@ -40,36 +40,8 @@ pub struct KeycapSummary {
     pub upstream: Option<serde_json::Value>,
 }
 
-/// Built-in seed keycaps so a fresh install isn't empty. The real manifest
-/// registry replaces this in sub-PR e once `win/` is removed and the manifest
-/// loader becomes the single source of truth.
-fn seed_keycap(id: &str, name: &str, color: &str, icon: &str) -> KeycapSummary {
-    KeycapSummary {
-        id: id.into(),
-        name: name.into(),
-        keycap_color: color.into(),
-        icon: icon.into(),
-        target: Some("mcp-tool".into()),
-        source: Some("builtin".into()),
-        adjustment: None,
-        config_schema: None,
-        upstream: None,
-    }
-}
-
-fn seed_keycaps() -> Vec<KeycapSummary> {
-    vec![
-        seed_keycap("ctrl-chat", "CTRL Chat", "cobalt", "💬"),
-        seed_keycap("clipboard-ai", "改写粘贴", "amber", "✦"),
-        seed_keycap("ai-translate", "AI 翻译", "jade", "译"),
-        seed_keycap("ai-ocr", "AI OCR", "platinum", "◫"),
-        seed_keycap("ai-text", "文本处理", "graphite", "Aa"),
-    ]
-}
-
 /// Build a KeycapSummary projection from a parsed manifest JSON value.
-/// Defaults match the seed_keycaps fallbacks so a manifest missing a
-/// field still produces a renderable card.
+/// Defaults keep a manifest missing a field renderable as a card.
 fn manifest_to_summary(manifest: &serde_json::Value, id: &str) -> KeycapSummary {
     let string_field = |key: &str| -> Option<String> {
         manifest
@@ -140,20 +112,9 @@ fn list_installed_in(dir: &Path) -> Vec<KeycapSummary> {
 #[tauri::command]
 pub async fn list_keycaps(_kernel: State<'_, KernelHandle>) -> Result<Vec<KeycapSummary>, String> {
     let dir = keycap_dir()?;
-    let installed = list_installed_in(&dir);
-    let installed_ids: std::collections::HashSet<String> =
-        installed.iter().map(|k| k.id.clone()).collect();
-
-    // Seeds fill the keyboard before any install — fresh CTRL isn't empty.
-    // Installed keycaps win on id collision so a user who installs an
-    // override of "clipboard-ai" sees their version, not the seed.
-    let mut out = installed;
-    for s in seed_keycaps() {
-        if !installed_ids.contains(&s.id) {
-            out.push(s);
-        }
-    }
-    Ok(out)
+    // Installed keycaps only — a fresh install shows an empty Pool/Keyboard
+    // until the user installs a keycap.
+    Ok(list_installed_in(&dir))
 }
 
 #[derive(Debug, Deserialize)]
@@ -538,7 +499,7 @@ fn classify_seed(keycap_id: &str) -> KeycapDispatch {
         },
         "ai-translate" => KeycapDispatch::TextChat {
             system: "You are CTRL's translator. Detect the source language of the user's \
-                     input and translate it to the other of {English, 中文} (whichever \
+                     input and translate it to the other of {English, Chinese} (whichever \
                      it is NOT). Reply with the translation only.",
         },
         "ai-text" => KeycapDispatch::TextChat {

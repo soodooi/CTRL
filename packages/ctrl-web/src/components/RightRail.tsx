@@ -1,6 +1,6 @@
 // RightRail — two-level context navigation on the right edge.
 //
-// Model (per bao 2026-05-26: "右侧一级导航栏是固定的"):
+// Model (per bao 2026-05-26: "the right-side level-1 nav is fixed"):
 //   Level-1 = FIXED order, route-independent:
 //     [ Irisy (top, mascot slot) | Coding | Vault | Pool | Settings (footer) ]
 //   Routes CANNOT push items into level-1. The only thing a route may

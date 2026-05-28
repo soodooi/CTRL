@@ -37,7 +37,7 @@ export const deriveGlyph = (name: string): string => {
   const trimmed = name.trim();
   if (!trimmed) return '?';
   const first = trimmed[0];
-  if (first && /[一-鿿]/.test(first)) return first;
+  if (first && /[\u4e00-\u9fff]/.test(first)) return first;
   const parts = trimmed.split(/\s+/);
   if (parts.length === 1) return (parts[0] ?? '').slice(0, 2).toUpperCase();
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();

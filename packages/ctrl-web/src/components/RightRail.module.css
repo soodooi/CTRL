@@ -132,7 +132,7 @@
 
 /* ---------- level-1 item: icon + label vertical stack ---------- */
 
-/* L1 nav = plain static menu (per bao 2026-05-26 "就是个菜单，不需要动画").
+/* L1 nav = plain static menu (per bao 2026-05-26 "it's just a menu, no animation needed").
  * No transitions, no hover lift — hover/active state changes are
  * instant. Active = single-dimension bg tint + border-color (no side
  * stripe, no underline, no transform). */

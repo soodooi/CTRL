@@ -7,9 +7,8 @@
 //
 // Tabs themselves still use the BaseTab / Tab / TabKind contracts from
 // `tab-store.ts` — no need to invent a parallel taxonomy. The old
-// `useTabStore` is preserved for the constants it exports (Hermes
-// dashboard URL etc) but its store value is no longer the source of
-// truth for workspace tabs.
+// `useTabStore` is preserved for the constants it exports but its store
+// value is no longer the source of truth for workspace tabs.
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';

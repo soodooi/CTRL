@@ -42,7 +42,7 @@ impl KernelSupervisor {
         };
         app.manage(handle);
 
-        // Code Space env registry — coding 远程桌面 v1 (zeus Z1, ST-SS spec v0.7).
+        // Code Space env registry — coding remote desktop v1 (zeus Z1, ST-SS spec v0.7).
         // commands::code_space::cs_* invocations pull this State to spawn /
         // control SubprocessActor instances. Independent from KernelHandle so
         // the registry lifetime is tied to the app, not to a specific kernel

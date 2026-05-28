@@ -1,4 +1,4 @@
-// Code Space remote env Tauri commands — coding 远程桌面 v1 surface.
+// Code Space remote env Tauri commands — coding remote desktop v1 surface.
 //
 // PWA invokes these to spawn / control SubprocessActor instances running
 // inside isolated coding envs. Outbound events flow back to the PWA via

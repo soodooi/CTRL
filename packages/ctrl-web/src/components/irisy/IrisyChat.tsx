@@ -1,12 +1,13 @@
 // Irisy chat — minimal end-to-end chat surface for the `/irisy` route
 // when mode !== 'create-keycap'.
 //
-// On mount: invoke('irisy_init') for kernel-llm / hermes / mcp-bridge
-// status. Renders a 3-line status header, then a welcome + chat composer.
-// Chat path: defaultTransport().stream() — kernel llm_port via
-// ChatStreamTransport (Tauri `chat_stream` command). No hermes in the
-// runtime path until the user wires a brain provider for hermes via
-// `hermes auth add` / `hermes model`.
+// On mount: invoke('irisy_init') for kernel-llm / Pi / mcp-bridge status.
+// Renders a status header, then a welcome + chat composer.
+// Chat path: Pi is the sole brain (ADR-001 amendment 2026-05-25). When the
+// Pi plugin is reachable the turn goes through irisyChatTransport()
+// (kernel irisy_chat_stream → BrainRouter → @ctrl/pi-plugin MCP). When Pi
+// isn't running, defaultTransport() (kernel chat_stream → llm_port → Volc)
+// gives a direct, fast reply and drives the frontend ReAct tool loop.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -33,7 +34,6 @@ import styles from './IrisyChat.module.css';
 
 const MAX_AGENT_ITERATIONS = 5;
 const CHAT_STORAGE_KEY = 'irisy:chat:v1';
-const HERMES_SESSION_STORAGE_KEY = 'irisy:hermes-session:v1';
 
 // Matches a complete <call name="...">…</call> block in assistant output.
 const ASSISTANT_CALL_TAG_RE =
@@ -56,15 +56,6 @@ interface KernelLlmStatus {
   ready: boolean;
 }
 
-interface HermesStatus {
-  binary_path: string | null;
-  version: string | null;
-  latest_version: string | null;
-  update_available: boolean;
-  plugin_enabled: boolean;
-  brain_configured: boolean;
-}
-
 interface McpBridgeStatus {
   handshake_written: boolean;
   handshake_path: string;
@@ -79,9 +70,8 @@ interface PiStatus {
 interface IrisyStatus {
   app_version: string;
   kernel_llm: KernelLlmStatus;
-  hermes: HermesStatus;
   mcp_bridge: McpBridgeStatus;
-  // ADR-001 amendment 2026-05-25 — Pi as default brain. Optional on the
+  // ADR-001 amendment 2026-05-25 — Pi is the sole brain. Optional on the
   // wire because the kernel's irisy_init may be older than this PWA build.
   pi?: PiStatus;
   active_brain?: string;
@@ -158,10 +148,6 @@ export function IrisyChat(): React.ReactElement {
   const [longTermMemory, setLongTermMemory] = useState<string>('');
   const [coreMemory, setCoreMemory] = useState<string>('');
   const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_BASE);
-  const [hermesSessionId, setHermesSessionId] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    return window.localStorage.getItem(HERMES_SESSION_STORAGE_KEY) ?? '';
-  });
   // `?fresh=1` from the homepage's "New chat" hand-off clears the
   // persisted conversation before this component reads it, so the new
   // session starts genuinely empty even if the URL is hit while a
@@ -199,12 +185,11 @@ export function IrisyChat(): React.ReactElement {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [chatError, setChatError] = useState<{ summary: string; detail: string } | null>(null);
   const [errorExpanded, setErrorExpanded] = useState(false);
-  const [upgradingHermes, setUpgradingHermes] = useState(false);
-  const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   // Tick elapsed time while a send is in flight so the user sees that
-  // something is happening on long hermes-blocking calls.
+  // something is happening on long calls.
   useEffect(() => {
     if (sendingStartedAt == null) {
       setElapsedMs(0);
@@ -234,38 +219,14 @@ export function IrisyChat(): React.ReactElement {
     }
   }, [messages]);
 
-  // Persist hermes session id so multi-turn chats survive reloads.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (hermesSessionId) {
-      window.localStorage.setItem(HERMES_SESSION_STORAGE_KEY, hermesSessionId);
-    } else {
-      window.localStorage.removeItem(HERMES_SESSION_STORAGE_KEY);
-    }
-  }, [hermesSessionId]);
-
-  // Chat path priority (ADR-001 amendment 2026-05-25 — Pi is the default
-  // brain; hermes downgrades to "one of the keycaps", no longer the
-  // primary path):
-  //   1. usePi      — kernel's irisy_chat_stream → BrainRouter inline →
-  //                   @ctrl/pi-plugin MCP server. Pi runs its own agent
-  //                   loop with its own provider config. **Default when
-  //                   Pi plugin is reachable.**
-  //   2. useHermes  — hermes subprocess via irisy_chat_hermes (legacy
-  //                   path, retained as fallback until hermes-plugin
-  //                   lands as a brain keycap from feat/h-2026-05-22-
-  //                   kernel-mcp-server).
-  //   3. default    — kernel chat_stream + frontend ReAct (no brain
-  //                   configured; ages out once Pi is up).
+  // Chat path (ADR-001 amendment 2026-05-25 — Pi is the sole brain):
+  //   1. Pi reachable  → irisyChatTransport() (kernel irisy_chat_stream →
+  //                      BrainRouter inline → @ctrl/pi-plugin MCP server).
+  //                      Pi runs its own agent loop with its own provider.
+  //   2. Pi not running → defaultTransport() (kernel chat_stream → llm_port
+  //                      → Volc). Direct, fast reply; drives the frontend
+  //                      ReAct tool loop below.
   const usePi = status?.pi?.reachable === true;
-  const useHermes =
-    !usePi &&
-    status?.hermes.brain_configured === true &&
-    status?.hermes.binary_path != null &&
-    status?.hermes.plugin_enabled === true;
-  // Pi → irisy_chat_stream (brain-routed). Otherwise → chat_stream (raw
-  // LLM, drives the legacy frontend ReAct loop). The memo re-runs when
-  // Pi reachability flips so the wire upgrades the moment Pi comes up.
   const transport = useMemo(
     () => (usePi ? irisyChatTransport() : defaultTransport()),
     [usePi],
@@ -273,7 +234,6 @@ export function IrisyChat(): React.ReactElement {
 
   const clearConversation = useCallback((): void => {
     setMessages([]);
-    setHermesSessionId('');
     setChatError(null);
   }, []);
 
@@ -366,39 +326,6 @@ export function IrisyChat(): React.ReactElement {
     scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [messages]);
 
-  const upgradeHermes = useCallback(async (): Promise<void> => {
-    if (upgradingHermes) return;
-    setUpgradingHermes(true);
-    setUpgradeMessage('Upgrading hermes-agent…');
-    try {
-      const result = await invoke<{
-        success: boolean;
-        method: string;
-        new_version: string | null;
-        stdout: string;
-        stderr: string;
-        elapsed_ms: number;
-      }>('irisy_upgrade_hermes');
-      if (result.success) {
-        const refreshed = await invoke<IrisyStatus>('irisy_init');
-        setStatus(refreshed);
-        const versionLabel = result.new_version ?? refreshed.hermes.version ?? '?';
-        setUpgradeMessage(`Upgraded via ${result.method} → ${versionLabel}`);
-      } else {
-        const errSnippet = result.stderr.trim() || result.stdout.trim();
-        setUpgradeMessage(
-          `Upgrade failed (${result.method}): ${errSnippet.slice(0, 200)}`,
-        );
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setUpgradeMessage(`Upgrade error: ${message}`);
-    } finally {
-      setUpgradingHermes(false);
-      window.setTimeout(() => setUpgradeMessage(null), 6000);
-    }
-  }, [upgradingHermes]);
-
   const sendMessage = useCallback(
     async (text: string): Promise<void> => {
       const trimmed = text.trim();
@@ -417,69 +344,6 @@ export function IrisyChat(): React.ReactElement {
       };
       setMessages((prev) => [...prev, userMsg]);
       setInput('');
-
-      // Hermes-driven path: one-shot subprocess call. hermes runs its own
-      // agent loop (tool calling through the ctrl plugin, skills, sessions,
-      // cron, …) and returns a single final message. No frontend ReAct.
-      if (useHermes) {
-        const assistantId = `a-${Date.now()}`;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: assistantId,
-            role: 'assistant',
-            content: '',
-            streaming: true,
-          },
-        ]);
-        try {
-          const result = await invoke<{
-            session_id: string;
-            content: string;
-            elapsed_ms: number;
-          }>('irisy_chat_hermes', {
-            args: {
-              prompt: trimmed,
-              session_id: hermesSessionId || undefined,
-              max_turns: 10,
-            },
-          });
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? {
-                    ...m,
-                    content: result.content || '(empty response)',
-                    streaming: false,
-                  }
-                : m,
-            ),
-          );
-          if (result.session_id) setHermesSessionId(result.session_id);
-        } catch (e: unknown) {
-          const detail = e instanceof Error ? e.message : String(e);
-          const firstLine = detail.split('\n')[0] ?? detail;
-          setChatError({
-            summary: `Hermes chat failed: ${firstLine.slice(0, 120)}`,
-            detail,
-          });
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? {
-                    ...m,
-                    content: `[hermes error] ${firstLine}`,
-                    streaming: false,
-                  }
-                : m,
-            ),
-          );
-        } finally {
-          setSending(false);
-          setSendingStartedAt(null);
-        }
-        return;
-      }
 
       // Compose initial history. Tool transcripts feed back as `user`
       // turns wrapping a <call-result>; that's the same shape the agent
@@ -612,14 +476,12 @@ export function IrisyChat(): React.ReactElement {
     },
     [
       coreMemory,
-      hermesSessionId,
       keycaps,
       longTermMemory,
       messages,
       sending,
       systemBase,
       transport,
-      useHermes,
       usePi,
     ],
   );
@@ -681,8 +543,8 @@ export function IrisyChat(): React.ReactElement {
             },
           },
         });
-        setUpgradeMessage(`Saved → vault/${path}`);
-        window.setTimeout(() => setUpgradeMessage(null), 4000);
+        setStatusMessage(`Saved → vault/${path}`);
+        window.setTimeout(() => setStatusMessage(null), 4000);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         setChatError({ summary: `Save failed: ${msg.slice(0, 120)}`, detail: msg });
@@ -755,19 +617,8 @@ export function IrisyChat(): React.ReactElement {
   );
 
   const brainReady = status?.kernel_llm.ready ?? false;
-  const hermesDetected = status?.hermes.binary_path != null;
-  const hermesUpdateAvailable =
-    status?.hermes.update_available === true &&
-    status?.hermes.latest_version != null;
-  const hermesDetail = hermesDetected
-    ? [
-        status?.hermes.version ?? 'detected',
-        status?.hermes.plugin_enabled ? 'plugin ✓' : 'plugin ✗',
-        status?.hermes.brain_configured ? 'brain ✓' : 'no brain',
-      ].join(' · ')
-    : 'not installed';
 
-  // Pi default-brain status. When status.pi is absent the kernel hasn't
+  // Pi sole-brain status. When status.pi is absent the kernel hasn't
   // shipped the irisy_init Pi probe yet (older binary on user's machine),
   // so we render `—` rather than misleading "not running".
   const piProbed = status?.pi != null;
@@ -791,30 +642,8 @@ export function IrisyChat(): React.ReactElement {
           ok={piReachable}
           detail={piDetail}
         />
-        <StatusLine
-          label="hermes"
-          ok={hermesDetected}
-          detail={hermesDetail}
-        />
-        {hermesUpdateAvailable && (
-          <button
-            type="button"
-            className={styles.updateBadge}
-            disabled={upgradingHermes}
-            title={
-              upgradingHermes
-                ? 'Running pipx upgrade hermes-agent — this can take 10-30 seconds.'
-                : `Click to upgrade hermes-agent from ${status?.hermes.version ?? '?'} to ${status?.hermes.latest_version ?? '?'} via pipx (or pip).`
-            }
-            onClick={() => void upgradeHermes()}
-          >
-            {upgradingHermes
-              ? 'Upgrading…'
-              : `↑ v${status?.hermes.latest_version} · update`}
-          </button>
-        )}
-        {upgradeMessage != null && (
-          <span className={styles.upgradeMessage}>{upgradeMessage}</span>
+        {statusMessage != null && (
+          <span className={styles.upgradeMessage}>{statusMessage}</span>
         )}
         <StatusLine
           label="MCP bridge"
