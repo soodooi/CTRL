@@ -32,7 +32,6 @@ export const KeycapVariant = z.enum([
   'cli-wrapper',     // wraps an external CLI binary (Pattern B)
   'stss-publisher',  // listens on ST-SS bridge for events (Pattern F)
   'local-agent',     // long-running local process (Pattern C)
-  'skill',           // self-describing skill folder (SKILL.md + assets), runs via brain
 ]);
 export type KeycapVariant = z.infer<typeof KeycapVariant>;
 
@@ -424,25 +423,11 @@ export const CliWrapperSource = z.object({
   args: z.array(z.string()).optional(),
 });
 
-/** Skill source — a self-describing skill folder (SKILL.md + assets)
- *  cloned into ~/.ctrl/keycaps/<id>/. The SKILL.md YAML frontmatter
- *  (name + description) + body instructions ARE the behavior; there is
- *  no step engine. Pressed → kernel reads SKILL.md → routes to the brain
- *  (Pi) to execute against the skill folder.
- *  `path` is the keycap-dir-relative skill entry file (default SKILL.md).
- *  Integration of any GitHub skill = `git clone` the folder here + bind a
- *  keycap manifest with this source. No manifest "generation" step. */
-export const SkillSource = z.object({
-  type: z.literal('skill'),
-  path: z.string().min(1).default('SKILL.md'),
-});
-
 export const Source = z.discriminatedUnion('type', [
   McpSource,
   BuiltinSource,
   OAuthSource,
   CliWrapperSource,
-  SkillSource,
 ]);
 export type Source = z.infer<typeof Source>;
 
@@ -518,27 +503,6 @@ export const DraftMeta = z.object({
 });
 export type DraftMeta = z.infer<typeof DraftMeta>;
 
-// ── I/O typing (workbench wiring — JSON Schema typed ports) ─────────────
-// A keycap declares its input + output shape as JSON Schema so the
-// workbench can validate a connection (React Flow `isValidConnection`)
-// BEFORE wiring keycaps into a composition. JSON Schema is the
-// cross-language standard and matches MCP tool `inputSchema`, so
-// mcp-source keycaps map 1:1 (derive `io.input` from the tool schema).
-//
-// A JSON Schema document is an open object, so it's loose-typed here;
-// the workbench does structural-compatibility checking at connect time,
-// not Zod-level validation. Optional: single-press keycaps don't need
-// it; composition needs it.
-
-export const JsonSchemaDoc = z.record(z.string(), z.unknown());
-export type JsonSchemaDoc = z.infer<typeof JsonSchemaDoc>;
-
-export const KeycapIo = z.object({
-  input: JsonSchemaDoc.optional(),
-  output: JsonSchemaDoc.optional(),
-});
-export type KeycapIo = z.infer<typeof KeycapIo>;
-
 // ── Top-level manifest ──────────────────────────────────────────────────
 
 export const KeycapManifest = z.object({
@@ -602,14 +566,8 @@ export const KeycapManifest = z.object({
   /** Tells the kernel which dispatch path to use. */
   variant: KeycapVariant.default('builtin'),
 
-  /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper /
-   *  skill). Skill keycaps point at their SKILL.md via `source.path`. */
+  /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper). */
   source: Source.optional(),
-
-  /** Typed I/O ports (JSON Schema) for workbench wiring. Optional —
-   *  single-press keycaps don't need it; composing keycaps into a system
-   *  needs it so the workbench can validate connections before wiring. */
-  io: KeycapIo.optional(),
 
   /** Role of this keycap in the CTRL surface. Orthogonal to `variant`:
    *  variant says *how* it runs, target says *what role* it plays.
@@ -634,11 +592,8 @@ export const KeycapManifest = z.object({
    *  second copy of user state" philosophy. */
   provider_passthrough: z.boolean().optional(),
 
-  /** Actions the user can invoke (step-engine keycaps). Most step-based
-   *  keycaps have exactly one. Optional: skill / brain / pure mcp-tool
-   *  keycaps carry no step-actions — their behavior is the SKILL.md, the
-   *  brain runtime, or the MCP tool respectively. */
-  actions: z.array(Action).min(1).optional(),
+  /** Actions the user can invoke. Most keycaps have exactly one. */
+  actions: z.array(Action).min(1),
 
   /** Trigger hints (hotkey / context-menu / spotlight); engine TBD. */
   triggers: z.array(z.object({
