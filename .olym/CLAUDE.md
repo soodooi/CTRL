@@ -5,6 +5,8 @@ scope: cross-project (olym framework asset, git 即用)
 consumer-load: 各 consumer project CLAUDE.md 顶部应加 `> Framework: see .olym/CLAUDE.md`
 ---
 
+> ⚠️ **CTRL 在灵活开发模式 (2026-05-25 钦定)** — **不写 handoff / 不跑 RFC 5 步 / 不跑 main-loop 10 阶段 / 不写 digest / 不跑 EOD audit**. 只做 3 件事: **ADR + 代码 + PR**. 详见项目 `CLAUDE.md` "Working mode: 灵活开发" 一节. 本文件其他流程 (handoff / RFC / monitor / dike) 在 CTRL 此期间一律 **暂搁**.
+
 # Olym Framework Instructions
 
 > Framework-level conventions, philosophy, fleet protocol, git workflow. 跨项目通用 — consumer project (`<consumer-project>` 等) 在自己的 CLAUDE.md 顶部 reference 此文件即可.

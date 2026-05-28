@@ -1,9 +1,14 @@
 // App metadata — PWA-side version + update detection.
 //
-// Today the version is injected at build time from package.json via
-// vite.config.ts (`__APP_VERSION__`). Update detection is a stub —
-// once zeus wires `app_meta.update_available` into the kernel_status
-// command (or a dedicated channel), swap the stub for a real poll.
+// Version is injected at build time from package.json via vite.config.ts
+// (`__APP_VERSION__`). Update detection calls Tauri 2 updater plugin
+// (`@tauri-apps/plugin-updater`) which fetches the configured `latest.json`
+// endpoint (see src-tauri/tauri.conf.json -> plugins.updater.endpoints).
+// `installUpdate()` downloads + applies the signed bundle and restarts.
+//
+// Browser-mode (mobile / dev outside Tauri) falls back to no-op: the
+// plugin import throws synchronously when `window.__TAURI_INTERNALS__` is
+// absent, so we guard via dynamic import + try/catch.
 
 import { useEffect, useState } from 'react';
 
@@ -12,30 +17,105 @@ export const APP_VERSION: string = __APP_VERSION__;
 export interface UpdateStatus {
   available: boolean;
   latestVersion?: string;
+  notes?: string;
+  checking: boolean;
+  installing: boolean;
+  error?: string;
 }
 
 const UPDATE_POLL_MS = 15 * 60 * 1000;
 
-/**
- * `available` flips to true when a newer build has been published on
- * the update channel. The current implementation always returns
- * `false` — kernel-side detection (`app_meta.update_available`) hooks
- * up in a follow-up. The shape is fixed now so consuming surfaces
- * (rail version footer green dot, settings → Update Log) don't change.
- */
-export const useUpdateStatus = (): UpdateStatus => {
-  const [status, setStatus] = useState<UpdateStatus>({ available: false });
+const isTauri = (): boolean =>
+  typeof window !== 'undefined' &&
+  '__TAURI_INTERNALS__' in window;
+
+interface UpdateHandle {
+  available: boolean;
+  version?: string;
+  body?: string;
+  downloadAndInstall: () => Promise<void>;
+}
+
+const checkForUpdate = async (): Promise<UpdateHandle | null> => {
+  if (!isTauri()) return null;
+  const { check } = await import('@tauri-apps/plugin-updater');
+  const update = await check();
+  if (!update || !update.available) return null;
+  return {
+    available: true,
+    version: update.version,
+    body: update.body,
+    downloadAndInstall: () => update.downloadAndInstall(),
+  };
+};
+
+const relaunchApp = async (): Promise<void> => {
+  if (!isTauri()) return;
+  const { relaunch } = await import('@tauri-apps/plugin-process');
+  await relaunch();
+};
+
+interface UseUpdateStatusReturn extends UpdateStatus {
+  checkNow: () => Promise<void>;
+  installAndRestart: () => Promise<void>;
+}
+
+export const useUpdateStatus = (): UseUpdateStatusReturn => {
+  const [status, setStatus] = useState<UpdateStatus>({
+    available: false,
+    checking: false,
+    installing: false,
+  });
+  const [handle, setHandle] = useState<UpdateHandle | null>(null);
+
+  const checkNow = async (): Promise<void> => {
+    if (!isTauri()) return;
+    setStatus((s) => ({ ...s, checking: true, error: undefined }));
+    try {
+      const result = await checkForUpdate();
+      if (result?.available) {
+        setHandle(result);
+        setStatus({
+          available: true,
+          latestVersion: result.version,
+          notes: result.body,
+          checking: false,
+          installing: false,
+        });
+      } else {
+        setHandle(null);
+        setStatus({ available: false, checking: false, installing: false });
+      }
+    } catch (err) {
+      setStatus((s) => ({
+        ...s,
+        checking: false,
+        error: err instanceof Error ? err.message : 'check failed',
+      }));
+    }
+  };
+
+  const installAndRestart = async (): Promise<void> => {
+    if (!handle?.available) return;
+    setStatus((s) => ({ ...s, installing: true, error: undefined }));
+    try {
+      await handle.downloadAndInstall();
+      await relaunchApp();
+    } catch (err) {
+      setStatus((s) => ({
+        ...s,
+        installing: false,
+        error: err instanceof Error ? err.message : 'install failed',
+      }));
+    }
+  };
 
   useEffect(() => {
-    // Placeholder: no-op until the kernel signal lands. The interval is
-    // kept so future wiring just swaps in the real fetcher.
-    const tick = (): void => {
-      // void detectUpdate(setStatus);
-    };
-    tick();
-    const id = window.setInterval(tick, UPDATE_POLL_MS);
+    void checkNow();
+    const id = window.setInterval(() => void checkNow(), UPDATE_POLL_MS);
     return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return status;
+  return { ...status, checkNow, installAndRestart };
 };

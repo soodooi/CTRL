@@ -411,6 +411,15 @@ const UPDATE_LOG: ReadonlyArray<UpdateLogEntry> = [
 
 export const SettingsLogsPage = (): ReactElement => {
   const update = useUpdateStatus();
+  const buttonLabel = update.installing
+    ? 'Installing…'
+    : update.checking
+      ? 'Checking…'
+      : update.available
+        ? `Install v${update.latestVersion ?? ''} & restart`
+        : 'Check for Updates';
+  const onClick = update.available ? update.installAndRestart : update.checkNow;
+  const disabled = update.checking || update.installing;
   return (
     <SettingsShell activeTab="logs">
       <div className={styles.versionBadge}>
@@ -426,6 +435,20 @@ export const SettingsLogsPage = (): ReactElement => {
             up to date
           </span>
         )}
+      </div>
+      <div className={styles.updateActions}>
+        <button
+          type="button"
+          className={styles.updateButton}
+          data-tone={update.available ? 'primary' : 'default'}
+          onClick={() => void onClick()}
+          disabled={disabled}
+        >
+          {buttonLabel}
+        </button>
+        {update.error ? (
+          <span className={styles.updateError}>{update.error}</span>
+        ) : null}
       </div>
 
       <ul className={styles.changelog}>
