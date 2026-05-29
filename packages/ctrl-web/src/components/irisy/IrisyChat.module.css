@@ -95,8 +95,8 @@
 .markdownBody :global(h3) { font-size: 1.05em; }
 
 .markdownBody :global(p) {
-  margin: 0.4em 0;
-  line-height: 1.55;
+  margin: 0.3em 0;
+  line-height: 1.4;
 }
 
 .markdownBody :global(ul),
@@ -463,10 +463,10 @@
 .scroller {
   flex: 1;
   overflow-y: auto;
-  padding: 1.25rem;
+  padding: 0.875rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .welcome {
@@ -516,10 +516,15 @@
 .userBubble,
 .assistantBubble {
   max-width: 70ch;
-  padding: 0.6rem 0.9rem;
-  border-radius: 0.75rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.6rem;
   white-space: pre-wrap;
-  line-height: 1.5;
+  /* Dense, mobile-chat-grade text. The copilot pane is narrow (~300px), so
+     the default ~16px body font fit only a handful of words per line — bao
+     repeatedly flagged it as too big. 13px + tight leading ~doubles the
+     characters visible without hurting readability. */
+  font-size: 0.8125rem;
+  line-height: 1.4;
 }
 
 .toolBubble {
