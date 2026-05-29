@@ -27,6 +27,7 @@ import {
   parseToolCalls,
 } from '@/lib/irisy-tools';
 import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
+import { useKeycapOutputStore } from '@/lib/keycap-output-store';
 import {
   ensurePromptsBootstrap,
   loadIrisySystemPrompt,
@@ -481,7 +482,40 @@ export function IrisyChat(): React.ReactElement {
                 streaming: true,
               },
             ]);
-            const result = await executeToolCall(call);
+            // run_keycap drives the output pane beside the chat: mark the run
+            // in flight so the pane streams keycap-<id> live, then post the
+            // produced artifact (or the failure) once it returns.
+            const runKeycapId =
+              call.name === 'run_keycap'
+                ? String(call.args.id ?? call.args.keycap_id ?? '')
+                : '';
+            if (runKeycapId) {
+              useKeycapOutputStore.getState().startRun(runKeycapId);
+            }
+            let result: unknown;
+            try {
+              result = await executeToolCall(call);
+            } catch (toolErr: unknown) {
+              if (runKeycapId) {
+                useKeycapOutputStore
+                  .getState()
+                  .finishRun(
+                    null,
+                    toolErr instanceof Error ? toolErr.message : String(toolErr),
+                  );
+              }
+              throw toolErr;
+            }
+            if (runKeycapId) {
+              const out = (result as { output?: { primary?: string } } | null)
+                ?.output;
+              useKeycapOutputStore
+                .getState()
+                .finishRun(
+                  out?.primary ?? null,
+                  out?.primary ? null : 'Run produced no viewable output.',
+                );
+            }
             // A tool that changes the installed set must refresh the keyboard —
             // the keycap grid is a cached ['keycaps'] query, so without this an
             // install/uninstall succeeds on disk but never shows up.

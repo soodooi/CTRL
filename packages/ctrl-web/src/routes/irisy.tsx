@@ -17,6 +17,8 @@ import { CodePreview } from '@/components/irisy/CodePreview';
 import { InstallBar } from '@/components/irisy/InstallBar';
 import { DiscardConfirm } from '@/components/irisy/DiscardConfirm';
 import { IrisyChat } from '@/components/irisy/IrisyChat';
+import { KeycapOutputPane } from '@/components/workspace/KeycapOutputPane';
+import { useKeycapOutputStore } from '@/lib/keycap-output-store';
 import { useKeycapCreatorStore } from '@/lib/irisy-keycap-store';
 import { defaultTransport } from '@/lib/llm-transport';
 import { runChatTurn } from '@/lib/irisy-llm-runner';
@@ -61,6 +63,25 @@ function readUrlParams(): { mode: IrisyMode; prefill: string | null } {
 // the command is registered.
 const BACKEND_INSTALL_READY = true;
 
+// Chat mode surface: Irisy on the left (the reusable conversational input),
+// the live keycap-output pane on the right. The pane only mounts once Irisy
+// has run a keycap, so an idle chat stays full-width (bao 2026-05-29).
+const IrisyRunSurface = (): React.ReactElement => {
+  const hasRun = useKeycapOutputStore((s) => s.running || s.keycapId !== null);
+  return (
+    <div className={styles.runSplit}>
+      <div className={styles.runChat}>
+        <IrisyChat />
+      </div>
+      {hasRun && (
+        <div className={styles.runOutput}>
+          <KeycapOutputPane />
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const IrisyRoute = (): React.ReactElement => {
   const { mode, prefill } = useMemo(readUrlParams, []);
   const [busy, setBusy] = useState(false);
@@ -99,7 +120,7 @@ export const IrisyRoute = (): React.ReactElement => {
   }, [toast]);
 
   if (mode !== 'create-keycap') {
-    return <IrisyChat />;
+    return <IrisyRunSurface />;
   }
 
   const handleSubmit = async (text: string): Promise<void> => {
