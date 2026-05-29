@@ -179,6 +179,11 @@ const PoolRoute = lazy(() =>
 const VaultRoute = lazy(() =>
   import('./routes/vault').then((m) => ({ default: m.VaultRoute })),
 );
+// Workbench pulls @xyflow/react (~57 KB) + its CSS — lazy so the canvas
+// stays off the keyboard view's critical-path bundle (ADR-022).
+const WorkbenchRoute = lazy(() =>
+  import('./routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),
+);
 // icon-lab is a development-only renderer bake-off. It imports
 // `lottie-react` for the side-by-side comparison — having that second
 // engine in a production chunk violates SKILL.md §7. Gating the dynamic
@@ -238,6 +243,15 @@ const vaultRoute = createRoute({
   component: () => (
     <Suspense fallback={<LazyFallback />}>
       <VaultRoute />
+    </Suspense>
+  ),
+});
+const workbenchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/workbench',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <WorkbenchRoute />
     </Suspense>
   ),
 });
@@ -340,6 +354,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   poolRoute,
   vaultRoute,
+  workbenchRoute,
   workspaceRoute,
   settingsRoute,
   settingsCtrlRoute,

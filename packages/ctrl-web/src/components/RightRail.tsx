@@ -87,6 +87,7 @@ const RailContext = createContext<RailContextValue | null>(null);
 
 const IRISY_ITEM_ID = 'irisy';
 const CODING_ITEM_ID = 'coding';
+const WORKBENCH_ITEM_ID = 'workbench';
 const VAULT_ITEM_ID = 'vault';
 const POOL_ITEM_ID = 'pool';
 const SETTINGS_ITEM_ID = 'settings';
@@ -153,6 +154,27 @@ const CodingIcon = (): ReactElement => (
   </svg>
 );
 
+// Inline workbench icon — a small node graph (nodes + wires), the
+// composition-canvas mark.
+const WorkbenchIcon = (): ReactElement => (
+  <svg
+    viewBox="0 0 24 24"
+    width="20"
+    height="20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="6" cy="6" r="2.2" />
+    <circle cx="18" cy="9" r="2.2" />
+    <circle cx="9" cy="18" r="2.2" />
+    <path d="M8 7l8 1.5M7.6 8l1.2 8" />
+  </svg>
+);
+
 // Inline pool / grid icon — 4 squares.
 const PoolIcon = (): ReactElement => (
   <svg
@@ -214,6 +236,7 @@ interface SyntheticRailItem extends RailItem {
   isVault?: boolean;
   isPool?: boolean;
   isCoding?: boolean;
+  isWorkbench?: boolean;
 }
 
 // Settings has no level-2 panel — tabs live INSIDE the /settings page
@@ -267,6 +290,14 @@ export const RightRail = (): ReactElement => {
         },
       },
       {
+        id: WORKBENCH_ITEM_ID,
+        label: 'Workbench',
+        isWorkbench: true,
+        onClick: () => {
+          void navigate({ to: '/workbench' });
+        },
+      },
+      {
         id: VAULT_ITEM_ID,
         label: 'Vault',
         isVault: true,
@@ -304,6 +335,8 @@ export const RightRail = (): ReactElement => {
       setActiveRailId(POOL_ITEM_ID);
     } else if (pathname.startsWith('/coding') && activeRailId !== CODING_ITEM_ID) {
       setActiveRailId(CODING_ITEM_ID);
+    } else if (pathname.startsWith('/workbench') && activeRailId !== WORKBENCH_ITEM_ID) {
+      setActiveRailId(WORKBENCH_ITEM_ID);
     }
   }, [pathname, activeRailId, setActiveRailId]);
 
@@ -353,6 +386,7 @@ export const RightRail = (): ReactElement => {
         data-vault={item.isVault || undefined}
         data-pool={item.isPool || undefined}
         data-coding={item.isCoding || undefined}
+        data-workbench={item.isWorkbench || undefined}
         onClick={() => handleItemClick(item)}
         title={item.label}
         aria-label={item.label}
@@ -363,6 +397,8 @@ export const RightRail = (): ReactElement => {
             <IrisyMascot state={irisyState} size={IRISY_ICON_SIZE} />
           ) : item.isCoding ? (
             <CodingIcon />
+          ) : item.isWorkbench ? (
+            <WorkbenchIcon />
           ) : item.isVault ? (
             <VaultIcon />
           ) : item.isPool ? (
