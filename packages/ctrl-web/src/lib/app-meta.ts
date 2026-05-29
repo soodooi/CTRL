@@ -58,6 +58,7 @@ const relaunchApp = async (): Promise<void> => {
 interface UseUpdateStatusReturn extends UpdateStatus {
   checkNow: () => Promise<void>;
   installAndRestart: () => Promise<void>;
+  checkAndInstall: () => Promise<void>;
 }
 
 export const useUpdateStatus = (): UseUpdateStatusReturn => {
@@ -110,6 +111,46 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
     }
   };
 
+  // One-click upgrade for the version row: a single click checks AND
+  // installs in one shot, so the user never has to click twice (once to
+  // discover the update, once to install it). If we already hold a pending
+  // update handle we install it directly; otherwise we check, and if one is
+  // found we download + relaunch immediately — no second click, no Settings
+  // detour. The whole point is "click the version → it upgrades".
+  const checkAndInstall = async (): Promise<void> => {
+    if (!isTauri()) return;
+    if (handle?.available) {
+      await installAndRestart();
+      return;
+    }
+    setStatus((s) => ({ ...s, checking: true, error: undefined }));
+    try {
+      const result = await checkForUpdate();
+      if (!result?.available) {
+        setHandle(null);
+        setStatus({ available: false, checking: false, installing: false });
+        return;
+      }
+      setHandle(result);
+      setStatus({
+        available: true,
+        latestVersion: result.version,
+        notes: result.body,
+        checking: false,
+        installing: true,
+      });
+      await result.downloadAndInstall();
+      await relaunchApp();
+    } catch (err) {
+      setStatus((s) => ({
+        ...s,
+        checking: false,
+        installing: false,
+        error: err instanceof Error ? err.message : 'update failed',
+      }));
+    }
+  };
+
   useEffect(() => {
     void checkNow();
     const id = window.setInterval(() => void checkNow(), UPDATE_POLL_MS);
@@ -117,5 +158,5 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { ...status, checkNow, installAndRestart };
+  return { ...status, checkNow, installAndRestart, checkAndInstall };
 };

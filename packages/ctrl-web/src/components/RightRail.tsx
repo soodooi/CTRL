@@ -476,14 +476,18 @@ export const RightRail = (): ReactElement => {
                   ? 'Checking…'
                   : update.available
                     ? `Click to install v${update.latestVersion ?? ''} & restart`
-                    : `CTRL v${APP_VERSION} · click to check for updates`
+                    : `CTRL v${APP_VERSION} · click to update`
             }
-            onClick={() => {
-              void (update.available ? update.installAndRestart() : update.checkNow());
-            }}
+            onClick={() => void update.checkAndInstall()}
             disabled={update.checking || update.installing}
           >
-            <span className={styles.versionText}>v{APP_VERSION}</span>
+            <span className={styles.versionText}>
+              {update.installing
+                ? 'Updating…'
+                : update.checking
+                  ? 'Checking…'
+                  : `v${APP_VERSION}`}
+            </span>
             {update.available && (
               <span
                 className={styles.updateDot}
