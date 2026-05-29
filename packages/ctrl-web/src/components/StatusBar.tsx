@@ -116,7 +116,13 @@ export const StatusBar = (): ReactElement => {
     <header
       className={styles.bar}
       aria-label="Cockpit status bar"
-      data-tauri-drag-region
+      // "deep" = the whole bar subtree is a drag handle, not just bare clicks
+      // directly on the <header>. With the bare attribute Tauri only drags when
+      // the click target IS the header element (drag.js: `el === composedPath[0]`),
+      // but the bar is fully covered by child clusters, leaving almost no
+      // draggable surface. Clickable children (brand link, LED/hide buttons)
+      // still block drag and handle their own clicks.
+      data-tauri-drag-region="deep"
     >
       <Link to="/" className={styles.brand} aria-label="CTRL home">
         <Logo size="sm" ariaLabel="" />
