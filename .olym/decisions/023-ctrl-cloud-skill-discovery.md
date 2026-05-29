@@ -1,6 +1,6 @@
 ---
 adr_id: 023
-title: Stand up ctrl-cloud; Irisy-led skill discovery over MCP registries + a CF-Worker-proxied GitHub SKILL.md search
+title: Skill discovery — kernel-local first (走通), ctrl-cloud Worker for production; Irisy-led, over MCP registries + GitHub SKILL.md
 status: accepted
 date: 2026-05-29
 deciders: [bao, zeus]
@@ -52,13 +52,32 @@ stands up the CF Workers backend with its first tenant.
 
 ## Decision
 
-### 1. ctrl-cloud is a standalone repo — stood up now
+### 1. Phasing — kernel-local first (走通), cloud for production
 
-New repo `soodooi/ctrl-cloud` (private), the CTRL CF Workers backend (eventual
-auth / billing / market / relay / push per CLAUDE.md topology). Separate from
-the desktop repo. The desktop app must run fully without it — discovery is
-**augmentation**: if ctrl-cloud is unreachable, the user can still hand-add a
-skill by `owner/repo` (the degraded fallback). 端侧化 / 本地是 truth.
+bao's calls (2026-05-29): *"本地先走通"* + *"不是每个用户都有 github repo 的"*.
+Two facts drive the phasing:
+- Skills live in their **authors'** public GitHub repos (e.g.
+  `zarazhangrui/frontend-slides`) — not "our repo", not per-user repos. We
+  *discover* across GitHub; we never store skills.
+- **Installing** a public skill needs **no token** (anonymous clone / raw
+  fetch). Only **searching** (GitHub code search API) needs one — and the
+  general user has **no GitHub account/token**.
+
+**Phase 1 — kernel-local (走通, this work, zero cloud):** the kernel runs the
+whole first-keycap pipeline locally. Search = GitHub code search using a
+**dev/BYOK PAT in the macOS Keychain** (bao's token for the walk-through; an
+advanced user's own later). Install = anonymous public clone/fetch →
+`~/.ctrl/keycaps/<id>/`. Run = Pi. This proves frontend-slides end-to-end.
+(Does NOT violate "no local `wrangler dev`" — that bans running the Worker
+locally; the kernel making an HTTPS call is not that.)
+
+**Phase 2 — ctrl-cloud Worker (production, deferred):** because most users have
+no GitHub token, production search MUST go through a shared `ctrl-skills` Worker
+that carries **our** token on their behalf (§2–§5) — that is the real reason for
+the Worker, not just caching/latency. One shared Worker for all users (not
+per-user, not skill storage). Install stays token-free + local for everyone.
+Stand up `soodooi/ctrl-cloud` only after Phase 1 走通. Until then, the kernel-
+local path is the truth; the Worker is augmentation (端侧化 / 本地是 truth).
 
 ### 2. Discovery substrate = one Worker (`ctrl-skills`), two source legs
 
@@ -137,12 +156,21 @@ point of the proxy). A fine-grained PAT with `public_repo` read suffices.
 
 ## Open follow-ups (build order)
 
-1. **Deep-dive the registry APIs** (official MCP Registry first; Glama/PulseMCP
-   shape + auth/rate limits) before coding Leg A.
-2. Create `soodooi/ctrl-cloud` + the `ctrl-skills` Worker; provision the
-   `GITHUB_TOKEN` secret; deploy to staging. **Build Leg B first** — it unblocks
-   the first keycap (frontend-slides is a SKILL.md skill). Add Leg A after.
-3. Irisy tools: `search_skills` + `install_skill_as_keycap` (ADR-021 §5).
-4. Kernel: install-from-skill (clone → `skill`-variant manifest) + `run_keycap`
-   skill dispatch (Pi reads SKILL.md) + viewer render.
-5. Pool/workbench manual search surface over the same Worker.
+**Phase 1 — kernel-local 走通 (this work, zero cloud):**
+1. Kernel `search_skills { query }` — GitHub code search `filename:SKILL.md`
+   using a PAT from the Keychain; returns the normalized CTRL envelope. Document
+   the PAT-in-Keychain setup (don't make bao guess the service name).
+2. Kernel install-from-skill — anonymous public clone/fetch →
+   `~/.ctrl/keycaps/<id>/` + write a `skill`-variant manifest (ADR-022 SDK).
+3. Irisy tools `search_skills` + `install_skill_as_keycap` (ADR-021 §5) →
+   conversational find-and-install; Pool/workbench manual surface over the same
+   kernel commands.
+4. Kernel `run_keycap` skill dispatch (Pi reads SKILL.md) + viewer render →
+   frontend-slides end-to-end.
+
+**Phase 2 — production (deferred, only after 走通):**
+5. Deep-dive registry APIs (official MCP Registry / Glama / PulseMCP).
+6. Create `soodooi/ctrl-cloud` + the `ctrl-skills` Worker (Leg B GitHub + Leg A
+   registries) per §2–§5; `GITHUB_TOKEN` secret; staging deploy. Switch
+   production search from the kernel-local PAT path to the Worker (users have no
+   GitHub token); install stays token-free + local.
