@@ -59,6 +59,35 @@ export const IRISY_TOOLS: ReadonlyArray<IrisyTool> = [
     },
   },
   {
+    name: 'search_skills',
+    description:
+      'Search GitHub for installable skills (SKILL.md files) when the user wants a capability that is NOT already in "Installed keycaps". Returns candidate repos.',
+    args: 'query: string (keywords, e.g. "html slides")',
+    async execute(args): Promise<unknown> {
+      const query = String(args.query ?? args.q ?? '');
+      if (!query) throw new Error('search_skills requires "query"');
+      return await invoke('search_skills', { query });
+    },
+  },
+  {
+    name: 'install_keycap',
+    description:
+      'Install a keycap from a manifest YOU construct. To turn a skill found via search_skills into a keycap, build a manifest like ' +
+      '{"id":"<repo-name-slug>","name":"<friendly name>","version":"0.1.0","icon":"◆","keycap_color":"cobalt","variant":"skill",' +
+      '"source":{"type":"skill","upstream":"<owner/repo>","entry":"<path to SKILL.md>"}}. ' +
+      'After installing, it appears on the keyboard.',
+    args: 'manifest: object (the keycap manifest you constructed)',
+    async execute(args): Promise<unknown> {
+      const manifest = args.manifest;
+      if (manifest === null || typeof manifest !== 'object') {
+        throw new Error('install_keycap requires "manifest" (object)');
+      }
+      return await invoke('install_keycap', {
+        args: { manifest, server_code: '', server_code_filename: '' },
+      });
+    },
+  },
+  {
     name: 'vault_search',
     description:
       "Full-text search the user's local markdown vault (FTS5 when available).",
