@@ -71,9 +71,11 @@ pub fn default_brains() -> Vec<BrainEntry> {
             id: "claude_code".to_string(),
             label: "Claude Code".to_string(),
             command: "claude".to_string(),
-            mcp_port: Some(17875),
-            description: "Anthropic Claude Code CLI. Adapter coming.".to_string(),
-            adapter: None,
+            mcp_port: None,
+            description: "Claude Code CLI — runs `claude -p` via the claude_cli adapter \
+                          (uses your Claude plan, no API key). Fast."
+                .to_string(),
+            adapter: Some("claude_cli".to_string()),
         },
         BrainEntry {
             id: "codex".to_string(),

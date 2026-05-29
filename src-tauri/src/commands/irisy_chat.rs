@@ -34,13 +34,17 @@
 //   event: error
 //   data: {"message":"..."}
 
+use std::sync::Arc;
+
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::chat::MessageWire;
+use crate::kernel::llm_port::{LlmAdapter, LlmMessage, LlmPrompt};
+use crate::shell::KernelHandle;
 
 #[derive(Debug, Deserialize)]
 pub struct IrisyChatStreamArgs {
@@ -66,26 +70,121 @@ struct StreamDelta {
 #[tauri::command]
 pub async fn irisy_chat_stream(
     args: IrisyChatStreamArgs,
+    kernel: State<'_, KernelHandle>,
     app: AppHandle,
 ) -> Result<(), String> {
     let brain_id = resolve_active_brain();
-    let url = brain_mcp_url(&brain_id).ok_or_else(|| {
-        format!(
-            "active brain '{brain_id}' has no known MCP endpoint. \
-             Open /settings/brain and pick a brain with a shipped adapter."
-        )
-    })?;
+    // Route by the active integration's adapter type (大模型集成 / Model
+    // Integration — ADR-021 / cc-switch): "pi" runs as an MCP server (the
+    // pi-plugin); any other adapter name is an LLM-port adapter (e.g.
+    // claude_cli = the `claude` CLI subprocess) — stream via the LLM port,
+    // no MCP server needed. Either way the same `chat-stream-delta` events
+    // go to the PWA, so the transport is identical.
+    let adapter_name = crate::kernel::brain_config::load()
+        .into_iter()
+        .find(|b| b.id == brain_id)
+        .and_then(|b| b.adapter);
 
     let request_id = args.request_id.clone();
     let app_clone = app.clone();
 
-    tokio::spawn(async move {
-        if let Err(e) = forward_to_brain(&app_clone, &request_id, &url, args).await {
-            emit_done(&app_clone, &request_id, Some(e));
+    match adapter_name.as_deref() {
+        Some("pi") | None => {
+            let url = brain_mcp_url(&brain_id).ok_or_else(|| {
+                format!(
+                    "active integration '{brain_id}' has no MCP endpoint. Open \
+                     Settings → Model Integration and pick one with an adapter."
+                )
+            })?;
+            tokio::spawn(async move {
+                if let Err(e) = forward_to_brain(&app_clone, &request_id, &url, args).await {
+                    emit_done(&app_clone, &request_id, Some(e));
+                }
+            });
         }
-    });
+        Some(llm_adapter) => {
+            let adapter = kernel
+                .runtime
+                .llm_port
+                .adapter_for(llm_adapter)
+                .ok_or_else(|| {
+                    format!(
+                        "integration '{brain_id}' uses LLM adapter '{llm_adapter}', which \
+                         isn't registered. Configure it in ~/.ctrl/config.toml or log in to \
+                         the CLI (e.g. run `claude`)."
+                    )
+                })?
+                .clone();
+            let model = args.model.clone().unwrap_or_default();
+            tokio::spawn(async move {
+                stream_via_llm_adapter(&app_clone, &request_id, adapter, model, args).await;
+            });
+        }
+    }
 
     Ok(())
+}
+
+/// Stream a chat turn through an LLM-port adapter (e.g. the `claude` CLI via
+/// the claude_cli adapter) and emit the same `chat-stream-delta` events the
+/// MCP path does, so the PWA transport is identical regardless of which
+/// integration powers Irisy. Mirrors `chat::chat_stream`'s worker loop.
+async fn stream_via_llm_adapter(
+    app: &AppHandle,
+    request_id: &str,
+    adapter: Arc<dyn LlmAdapter>,
+    model: String,
+    args: IrisyChatStreamArgs,
+) {
+    let prompt = LlmPrompt {
+        // The PWA bakes Irisy's persona + tool instructions into the messages.
+        system: None,
+        messages: args
+            .messages
+            .into_iter()
+            .map(|m| LlmMessage {
+                role: m.role,
+                content: m.content,
+            })
+            .collect(),
+        temperature: args.temperature,
+        max_tokens: args.max_tokens,
+    };
+    let mut rx = match adapter.stream_chat(&model, &prompt, 120_000).await {
+        Ok(rx) => rx,
+        Err(e) => {
+            emit_done(app, request_id, Some(e.to_string()));
+            return;
+        }
+    };
+    let mut saw_finish = false;
+    while let Some(item) = rx.recv().await {
+        match item {
+            Ok(chunk) => {
+                let done_now = chunk.finish_reason.is_some();
+                let _ = app.emit(
+                    "chat-stream-delta",
+                    StreamDelta {
+                        request_id: request_id.to_string(),
+                        delta: chunk.delta,
+                        done: done_now,
+                        error: None,
+                    },
+                );
+                if done_now {
+                    saw_finish = true;
+                    break;
+                }
+            }
+            Err(e) => {
+                emit_done(app, request_id, Some(e.to_string()));
+                return;
+            }
+        }
+    }
+    if !saw_finish {
+        emit_done(app, request_id, None);
+    }
 }
 
 // ── BrainRouter inline (ADR-021) ────────────────────────────────────────────
