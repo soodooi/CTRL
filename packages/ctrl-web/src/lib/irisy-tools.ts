@@ -61,10 +61,14 @@ export const IRISY_TOOLS: ReadonlyArray<IrisyTool> = [
   {
     name: 'list_local_skills',
     description:
-      'List skills the active brain ALREADY has locally (user + installed plugin skills) — no GitHub token needed. Prefer this over search_skills: if a local skill matches what the user wants, wrap it into a keycap directly by name (source.skill). Returns [{name, description, path}].',
-    args: '(no arguments)',
-    async execute(): Promise<unknown> {
-      return await invoke('list_local_skills');
+      'List skills the active brain ALREADY has locally (user + installed plugin skills) — no GitHub token needed. ALWAYS pass a keyword to narrow (there are hundreds); e.g. query "slide" finds frontend-slides. Prefer this over search_skills: a matching local skill wraps into a keycap directly by name (source.skill). Returns [{name, description, path}].',
+    args: 'query?: string (keyword to filter, e.g. "slide", "pdf")',
+    async execute(args): Promise<unknown> {
+      const query = args.query == null ? undefined : String(args.query);
+      return await invoke(
+        'list_local_skills',
+        query === undefined ? {} : { query },
+      );
     },
   },
   {

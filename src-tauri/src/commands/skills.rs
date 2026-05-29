@@ -321,8 +321,13 @@ pub struct LocalSkill {
     pub path: String,
 }
 
+/// Cap on returned skills — there can be hundreds of plugin skills; dumping
+/// them all into the brain's context is slow + useless. Irisy passes a query
+/// to narrow; this bounds the worst case.
+const MAX_LOCAL_SKILLS: usize = 40;
+
 #[tauri::command]
-pub async fn list_local_skills() -> Result<Vec<LocalSkill>, String> {
+pub async fn list_local_skills(query: Option<String>) -> Result<Vec<LocalSkill>, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
     let mut out: Vec<LocalSkill> = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -353,6 +358,30 @@ pub async fn list_local_skills() -> Result<Vec<LocalSkill>, String> {
     }
 
     out.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // Filter by query so Irisy gets only the relevant few, not the whole
+    // catalog. Token-based (match ANY word) — the brain often passes a phrase
+    // like "HTML slide keycap"; a whole-string match would miss "frontend-
+    // slides", but the token "slide" hits it.
+    if let Some(q) = query.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let tokens: Vec<String> = q
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|t| t.len() > 1)
+            .map(str::to_string)
+            .collect();
+        if !tokens.is_empty() {
+            out.retain(|s| {
+                let hay = format!(
+                    "{} {}",
+                    s.name.to_lowercase(),
+                    s.description.as_deref().unwrap_or("").to_lowercase()
+                );
+                tokens.iter().any(|t| hay.contains(t.as_str()))
+            });
+        }
+    }
+    out.truncate(MAX_LOCAL_SKILLS);
     Ok(out)
 }
 

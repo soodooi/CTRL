@@ -93,8 +93,14 @@ impl ClaudeCliAdapter {
         &self,
         model: &str,
         prompt: &LlmPrompt,
+        deadline_ms: u64,
     ) -> Result<mpsc::Receiver<Result<LlmChunk, LlmError>>, LlmError> {
         let resolved = self.resolve_model(model).to_string();
+        let deadline = if deadline_ms == 0 {
+            DEFAULT_DEADLINE_MS
+        } else {
+            deadline_ms
+        };
 
         let mut cmd = Command::new(&self.binary_path);
         cmd.arg("--output-format")
@@ -106,10 +112,22 @@ impl ClaudeCliAdapter {
             .arg("--max-turns")
             .arg("1")
             .arg("--verbose")
+            // Disable claude's OWN built-in tools. In the Irisy chat, claude is
+            // a pure TEXT responder that drives the FRONTEND ReAct loop via
+            // <call> tags. Without this it tries to run Bash/Edit itself (it's
+            // an agent) and then blocks on a permission prompt with stdin closed
+            // — the chat hangs forever. Empty list = no built-in tools.
+            .arg("--tools")
+            .arg("")
             .arg("-p")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::piped())
+            // If we drop the child (deadline hit, or the PWA closes the
+            // receiver), kill the subprocess — otherwise a stuck `claude`
+            // (e.g. waiting on a tool permission with stdin closed) would
+            // live forever and the Irisy chat would hang with no recovery.
+            .kill_on_drop(true);
         // CRITICAL: drop ANTHROPIC_API_KEY so the CLI uses its stored
         // OAuth subscription token, not the user's API account key.
         cmd.env_remove("ANTHROPIC_API_KEY");
@@ -142,39 +160,58 @@ impl ClaudeCliAdapter {
         let stderr = child.stderr.take();
 
         let (tx, rx) = mpsc::channel(STREAM_BUFFER);
+        // A separate sender kept outside the read loop so the deadline branch
+        // can still report an error after the loop future (which owns `child`)
+        // is dropped + the subprocess killed.
+        let tx_deadline = tx.clone();
         tokio::spawn(async move {
-            let mut reader = BufReader::new(stdout).lines();
-            loop {
-                match reader.next_line().await {
-                    Ok(Some(line)) => {
-                        if let Some(chunk) = parse_stream_json_line(&line) {
-                            if tx.send(Ok(chunk)).await.is_err() {
-                                break;
+            let read_loop = async move {
+                let mut reader = BufReader::new(stdout).lines();
+                loop {
+                    match reader.next_line().await {
+                        Ok(Some(line)) => {
+                            if let Some(chunk) = parse_stream_json_line(&line) {
+                                if tx.send(Ok(chunk)).await.is_err() {
+                                    return;
+                                }
                             }
                         }
-                    }
-                    Ok(None) => break,
-                    Err(e) => {
-                        let _ = tx
-                            .send(Err(LlmError::ProviderError(format!(
-                                "claude stdout read: {e}"
-                            ))))
-                            .await;
-                        break;
+                        Ok(None) => break,
+                        Err(e) => {
+                            let _ = tx
+                                .send(Err(LlmError::ProviderError(format!(
+                                    "claude stdout read: {e}"
+                                ))))
+                                .await;
+                            return;
+                        }
                     }
                 }
-            }
-            // Reap the child + drain stderr so non-zero exits surface as
-            // a typed error rather than disappearing into the void.
-            if let Ok(status) = child.wait().await {
-                if !status.success() {
-                    let mut stderr_text = String::new();
-                    if let Some(mut e) = stderr {
-                        let _ = e.read_to_string(&mut stderr_text).await;
+                // Reap the child + drain stderr so non-zero exits surface as
+                // a typed error rather than disappearing into the void.
+                if let Ok(status) = child.wait().await {
+                    if !status.success() {
+                        let mut stderr_text = String::new();
+                        if let Some(mut e) = stderr {
+                            let _ = e.read_to_string(&mut stderr_text).await;
+                        }
+                        let err = classify_cli_error(status.code(), &stderr_text);
+                        let _ = tx.send(Err(err)).await;
                     }
-                    let err = classify_cli_error(status.code(), &stderr_text);
-                    let _ = tx.send(Err(err)).await;
                 }
+            };
+            // Watchdog: if claude wedges (no output, never exits), the read
+            // loop never completes. Bound it — on timeout the read_loop future
+            // is dropped, `child` drops with it, and kill_on_drop terminates
+            // the subprocess so it can't linger. Then surface a typed error so
+            // the Irisy chat unsticks instead of hanging forever.
+            if tokio::time::timeout(Duration::from_millis(deadline), read_loop)
+                .await
+                .is_err()
+            {
+                let _ = tx_deadline
+                    .send(Err(LlmError::DeadlineExceeded(deadline)))
+                    .await;
             }
         });
 
@@ -205,7 +242,7 @@ impl LlmAdapter for ClaudeCliAdapter {
         };
         let mut rx = tokio::time::timeout(
             Duration::from_millis(deadline),
-            self.spawn_and_stream(model, prompt),
+            self.spawn_and_stream(model, prompt, deadline),
         )
         .await
         .map_err(|_| LlmError::DeadlineExceeded(deadline))??;
@@ -229,9 +266,9 @@ impl LlmAdapter for ClaudeCliAdapter {
         &self,
         model: &str,
         prompt: &LlmPrompt,
-        _deadline_ms: u64,
+        deadline_ms: u64,
     ) -> Result<mpsc::Receiver<Result<LlmChunk, LlmError>>, LlmError> {
-        self.spawn_and_stream(model, prompt).await
+        self.spawn_and_stream(model, prompt, deadline_ms).await
     }
 }
 
