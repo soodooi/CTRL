@@ -39,7 +39,7 @@ type SettingsTab = 'ctrl' | 'brain' | 'logs';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string; to: string }> = [
   { id: 'ctrl', label: 'General', to: '/settings/ctrl' },
-  { id: 'brain', label: 'Brain', to: '/settings/brain' },
+  { id: 'brain', label: 'Model Integration', to: '/settings/brain' },
   { id: 'logs', label: 'Logs', to: '/settings/logs' },
 ];
 

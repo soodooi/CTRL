@@ -75,7 +75,7 @@ pub fn default_brains() -> Vec<BrainEntry> {
             description: "Claude Code CLI — runs `claude -p` via the claude_cli adapter \
                           (uses your Claude plan, no API key). Fast."
                 .to_string(),
-            adapter: Some("claude_cli".to_string()),
+            adapter: Some("claude-cli".to_string()),
         },
         BrainEntry {
             id: "codex".to_string(),

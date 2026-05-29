@@ -236,34 +236,26 @@ pub fn register_default_adapters(router: &mut LlmPortRouter) {
     }
 
     // ── Claude CLI subprocess (subscription auth) ──────────────────────
-    // Active iff (a) the user opted in via [providers.claude_cli] in
-    // config.toml AND (b) the `claude` binary is reachable on PATH.
-    // No api_key check — the CLI manages its own OAuth token; an
-    // unauthenticated CLI will surface AuthFailed at call time.
-    if local_cfg.providers.claude_cli.is_some() {
-        if let Some(binary_path) = claude_cli::ClaudeCliAdapter::locate_binary() {
-            let default_model = local_cfg
-                .providers
-                .claude_cli
-                .as_ref()
-                .map(|e| e.default_model.clone())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| CLAUDE_CLI_DEFAULT_MODEL.to_string());
-            let adapter = claude_cli::ClaudeCliAdapter::new(
-                "claude-cli",
-                binary_path.clone(),
-                default_model,
-            );
-            router.register(Arc::new(adapter));
-            tracing::info!(
-                "llm_adapter: claude-cli registered (binary={binary_path}, uses subscription OAuth)"
-            );
-        } else {
-            tracing::warn!(
-                "llm_adapter: claude-cli enabled in config but `claude` binary not on PATH — \
-                 install Claude Code (https://claude.ai/code) and re-launch CTRL."
-            );
-        }
+    // Register whenever the `claude` binary is reachable on PATH — detect =
+    // available (cc-switch style / Model Integration module). The user opts
+    // IN by *activating* "Claude Code" in Settings → Model Integration, not
+    // by editing config.toml. config.toml [providers.claude_cli] is optional
+    // (overrides default_model). No api_key — the CLI manages its own OAuth;
+    // an unauthenticated CLI surfaces AuthFailed at call time.
+    if let Some(binary_path) = claude_cli::ClaudeCliAdapter::locate_binary() {
+        let default_model = local_cfg
+            .providers
+            .claude_cli
+            .as_ref()
+            .map(|e| e.default_model.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| CLAUDE_CLI_DEFAULT_MODEL.to_string());
+        let adapter =
+            claude_cli::ClaudeCliAdapter::new("claude-cli", binary_path.clone(), default_model);
+        router.register(Arc::new(adapter));
+        tracing::info!(
+            "llm_adapter: claude-cli registered (binary={binary_path}, uses subscription OAuth)"
+        );
     }
 }
 
