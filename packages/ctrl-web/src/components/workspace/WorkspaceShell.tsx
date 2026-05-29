@@ -17,6 +17,7 @@ import { resourceFromVaultPath } from '@/lib/viewer-resource';
 import { vaultRead, vaultWrite } from '@/lib/kernel';
 import { InstanceSwitcher } from './InstanceSwitcher';
 import { EmbedView } from './EmbedView';
+import { KeycapRunView } from './KeycapRunView';
 import { resolveViewer, type ViewerResource } from '@/lib/viewer-registry';
 import { vaultUri } from '@/lib/viewer-uri';
 import styles from './WorkspaceShell.module.css';
@@ -113,16 +114,7 @@ const renderTabBody = (tab: Tab): ReactElement => {
       return <ViewerHost resource={resource} />;
     }
     case 'keycap-output':
-      return (
-        <div className={styles.placeholder}>
-          <span className={styles.placeholderKind}>keycap-output</span>
-          <span className={styles.placeholderPath}>{tab.keycapId}</span>
-          <p className={styles.placeholderHint}>
-            Invocation output renders here once the kernel emits cells for
-            invocation <code>{tab.invocationId}</code>.
-          </p>
-        </div>
-      );
+      return <KeycapRunView keycapId={tab.keycapId} />;
     case 'session-stream':
       return (
         <div className={styles.placeholder}>

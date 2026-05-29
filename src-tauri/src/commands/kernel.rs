@@ -397,8 +397,8 @@ pub async fn run_keycap(
         KeycapDispatch::McpInvoke { server_id, tool_name } => {
             run_mcp_invoke(&kernel, &args, &stream_id, &server_id, &tool_name).await
         }
-        KeycapDispatch::SkillRun { id, upstream, entry } => {
-            crate::commands::skills::run_skill(&id, &upstream, &entry, &args.input).await
+        KeycapDispatch::SkillRun { id, skill } => {
+            crate::commands::skills::run_skill(&id, &skill, &args.input).await
         }
         KeycapDispatch::Stub => Ok(serde_json::json!({
             "stub": true,
@@ -459,7 +459,7 @@ pub async fn run_keycap(
 enum KeycapDispatch {
     TextChat { system: &'static str },
     McpInvoke { server_id: String, tool_name: String },
-    SkillRun { id: String, upstream: String, entry: String },
+    SkillRun { id: String, skill: String },
     Stub,
 }
 
@@ -487,23 +487,20 @@ fn classify_from_installed_manifest(keycap_id: &str) -> Option<KeycapDispatch> {
             Some(KeycapDispatch::McpInvoke { server_id, tool_name })
         }
         "skill" => {
-            let upstream = source
-                .get("upstream")
+            // Local skill name — the active brain CLI runs it natively. This is
+            // the supported run model (cc-switch-native); a skill source with
+            // only a remote `upstream` and no local `skill` isn't runnable yet.
+            let skill = source
+                .get("skill")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let entry = source
-                .get("entry")
-                .and_then(|v| v.as_str())
-                .unwrap_or("SKILL.md")
-                .to_string();
-            if upstream.is_empty() {
+            if skill.is_empty() {
                 return None;
             }
             Some(KeycapDispatch::SkillRun {
                 id: keycap_id.to_string(),
-                upstream,
-                entry,
+                skill,
             })
         }
         _ => None,

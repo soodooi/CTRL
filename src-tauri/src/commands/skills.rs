@@ -9,8 +9,9 @@
 // Consumed by Irisy's `search_skills` tool (ADR-021 §5) and the Pool/workbench
 // manual search surface. Returns the normalized CTRL shape, not raw GitHub JSON.
 
-use futures::StreamExt;
 use serde::Serialize;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 /// Keychain account holding the GitHub PAT (service is `app.ctrl`). See
 /// doc/setup-github-token.md for how to store it.
@@ -128,170 +129,284 @@ fn parse_item(item: &serde_json::Value) -> Option<SkillResult> {
     Some(SkillResult { repo, owner, name, description, stars, path, html_url })
 }
 
-// ── Skill executor (ADR-022 / ADR-023 Phase 1) ──────────────────────────────
-// Runs a `skill`-variant keycap. The kernel only ROUTES + materializes the
-// skill's files; Pi (the brain agent) does the actual work by following the
-// SKILL.md (feedback_build_system_not_business). Called from run_keycap's
-// SkillRun dispatch.
+// ── Skill executor (ADR-022 / ADR-023, cc-switch-native run model) ──────────
+// Runs a `skill`-variant keycap. The kernel does NOT orchestrate the skill —
+// the active brain CLI does (it already has the skill in its skills dir). The
+// kernel only: (1) hands the brain the keycap's working folder in the vault,
+// (2) routes the user input as a task that activates the named skill, (3)
+// reports back which artifact files the run produced. The brain (Claude Code)
+// writes the result with its own Write tool. See feedback_build_system_not_business.
 
-/// Subdirectory under the keycap dir holding the materialized skill repo.
-const SKILL_SOURCE_SUBDIR: &str = "source";
+/// Max wall-clock for one skill run. Artifact-generating skills do several
+/// tool-use rounds (think → write → refine); generous so a real deck finishes.
+const SKILL_RUN_TIMEOUT_SECS: u64 = 240;
+/// Turn budget handed to the brain CLI for an artifact run. The chat adapter
+/// uses 1 (text reply); a file-writing skill needs room to write + refine.
+const SKILL_RUN_MAX_TURNS: &str = "24";
 
-/// Run a skill keycap: lazily clone its public repo, then hand the SKILL.md +
-/// the user input to Pi, which follows the instructions and returns output.
+/// Run a skill keycap: hand the named local skill + the user input to the
+/// active brain CLI, running inside the keycap's vault working folder, and
+/// return the vault-relative paths of whatever artifact(s) it wrote.
 pub async fn run_skill(
-    id: &str,
-    upstream: &str,
-    entry: &str,
+    keycap_id: &str,
+    skill: &str,
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let source_dir = std::path::PathBuf::from(home)
-        .join(".ctrl")
-        .join("keycaps")
-        .join(id)
-        .join(SKILL_SOURCE_SUBDIR);
+    // Skill keycaps need a brain CLI that can use tools + write files. Claude
+    // Code is the verified one; require it (the active-brain selection in
+    // Settings → Model Integration must resolve to a CLI that has the skill).
+    let binary = crate::kernel::llm_adapters::claude_cli::ClaudeCliAdapter::locate_binary()
+        .ok_or_else(|| {
+            "Skill keycaps run on the Claude Code CLI. Install `claude` and \
+             activate Claude Code in Settings → Model Integration."
+                .to_string()
+        })?;
 
-    // Lazy materialize — clone the public repo on first run (no token needed).
-    if !source_dir.exists() {
-        clone_public_repo(upstream, &source_dir)?;
-    }
+    // Per-keycap working folder in the VAULT — plain, user-visible files (the
+    // user can open the generated deck in vim / Finder; local is truth).
+    let vault = crate::kernel::vault::default_vault_root()
+        .ok_or_else(|| "HOME not set; no vault root".to_string())?;
+    let workdir = vault.join("keycaps").join(keycap_id);
+    std::fs::create_dir_all(&workdir)
+        .map_err(|e| format!("create workdir {}: {e}", workdir.display()))?;
 
-    let skill_md_path = source_dir.join(entry);
-    let skill_md = std::fs::read_to_string(&skill_md_path)
-        .map_err(|e| format!("read {}: {e}", skill_md_path.display()))?;
+    let before = snapshot_files(&workdir);
 
     let input_text = input
         .get("text")
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .unwrap_or_else(|| input.to_string());
-
-    let system = format!(
-        "You are executing a CTRL skill. Follow the skill's instructions below \
-         exactly and produce the requested output. The skill's files are checked \
-         out locally at: {}\n\n--- SKILL.md ---\n{}",
-        source_dir.display(),
-        skill_md,
+    let prompt = format!(
+        "Use the {skill} skill. Task: {input_text}\n\n\
+         Write the complete, self-contained result as file(s) into the current \
+         working directory. Make reasonable design choices and do NOT ask \
+         questions — produce the artifact. When finished, state the main output \
+         filename on its own line."
     );
-    let messages = vec![
-        serde_json::json!({ "role": "system", "content": system }),
-        serde_json::json!({ "role": "user", "content": input_text }),
-    ];
 
-    let output = call_pi(messages).await?;
-    Ok(serde_json::json!({ "skill": upstream, "output": output }))
+    run_brain_agentic(&binary, &workdir, &prompt).await?;
+
+    // Diff the folder — return whatever the run created or changed.
+    let after = snapshot_files(&workdir);
+    let mut artifacts: Vec<String> = after
+        .iter()
+        .filter(|(name, meta)| before.get(*name).map_or(true, |b| b != *meta))
+        .map(|(name, _)| name.clone())
+        .collect();
+    artifacts.sort();
+    if artifacts.is_empty() {
+        return Err("the skill run produced no files".to_string());
+    }
+    // Primary = first renderable artifact (html), else first file.
+    let primary = artifacts
+        .iter()
+        .find(|n| n.to_lowercase().ends_with(".html"))
+        .cloned()
+        .unwrap_or_else(|| artifacts[0].clone());
+    let rel = |name: &str| format!("keycaps/{keycap_id}/{name}");
+
+    Ok(serde_json::json!({
+        "artifacts": artifacts.iter().map(|a| rel(a)).collect::<Vec<_>>(),
+        "primary": rel(&primary),
+        "content_type": content_type_for(&primary),
+    }))
 }
 
-/// Anonymous shallow clone of a public `owner/repo` — no token, no auth.
-fn clone_public_repo(upstream: &str, dest: &std::path::Path) -> Result<(), String> {
-    if upstream.is_empty() || upstream.contains("..") || !upstream.contains('/') {
-        return Err(format!("invalid upstream {upstream:?} (expected owner/repo)"));
-    }
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("create {}: {e}", parent.display()))?;
-    }
-    let git = git_binary();
-    let url = format!("https://github.com/{upstream}.git");
-    let status = std::process::Command::new(git)
-        .args(["clone", "--depth", "1", &url])
-        .arg(dest)
-        .status()
-        .map_err(|e| format!("git not runnable ({git}): {e}"))?;
-    if !status.success() {
-        return Err(format!("git clone {url} failed (exit {:?})", status.code()));
+/// Spawn the active brain CLI in agentic mode inside `workdir`: print mode,
+/// auto-accept file edits, a multi-turn budget, subscription OAuth (we drop
+/// ANTHROPIC_API_KEY so it bills the plan, not the API account). Kills the
+/// child if it overruns the deadline (`kill_on_drop`).
+async fn run_brain_agentic(binary: &str, workdir: &Path, prompt: &str) -> Result<(), String> {
+    use tokio::process::Command;
+    let mut cmd = Command::new(binary);
+    cmd.current_dir(workdir)
+        .arg("-p")
+        .arg(prompt)
+        .arg("--model")
+        .arg("sonnet")
+        .arg("--permission-mode")
+        .arg("acceptEdits")
+        .arg("--max-turns")
+        .arg(SKILL_RUN_MAX_TURNS)
+        .arg("--output-format")
+        .arg("text")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    cmd.env_remove("ANTHROPIC_API_KEY");
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("claude spawn failed: {e}"))?;
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(SKILL_RUN_TIMEOUT_SECS),
+        child.wait_with_output(),
+    )
+    .await
+    .map_err(|_| format!("skill run timed out after {SKILL_RUN_TIMEOUT_SECS}s"))?
+    .map_err(|e| format!("claude run error: {e}"))?;
+
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!(
+            "claude exited {:?}: {}",
+            out.status.code(),
+            stderr.trim()
+        ));
     }
     Ok(())
 }
 
-/// A Finder-launched .app has a minimal PATH; check the common git locations.
-fn git_binary() -> &'static str {
-    for p in ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"] {
-        if std::path::Path::new(p).is_file() {
-            return p;
+/// Top-level file snapshot (name → size+mtime) so a run's output can be
+/// detected by diffing before/after. Top-level only — sufficient for v1
+/// single-file artifacts (html deck, markdown doc).
+fn snapshot_files(dir: &Path) -> BTreeMap<String, (u64, i64)> {
+    let mut map = BTreeMap::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return map;
+    };
+    for e in entries.flatten() {
+        let Ok(ft) = e.file_type() else { continue };
+        if !ft.is_file() {
+            continue;
         }
+        let name = e.file_name().to_string_lossy().to_string();
+        let meta = e.metadata().ok();
+        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+        let mtime = meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        map.insert(name, (size, mtime));
     }
-    "git"
+    map
 }
 
-/// Invoke the active brain (Pi) MCP `text.chat` tool with the given messages
-/// and COLLECT the streamed output into a single string (run_keycap is
-/// non-streaming). Mirrors irisy_chat::forward_to_brain's wire, minus the
-/// per-delta event emission.
-async fn call_pi(messages: Vec<serde_json::Value>) -> Result<String, String> {
-    let brain_id = crate::kernel::brain_config::active_brain_id();
-    let url = crate::kernel::brain_config::brain_mcp_url(&brain_id)
-        .ok_or_else(|| format!("active brain '{brain_id}' has no MCP URL"))?;
-
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": { "name": "text.chat", "arguments": { "messages": messages } }
-    });
-
-    let mut req = reqwest::Client::new()
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "text/event-stream");
-    if let Ok(token) = std::env::var("CTRL_PI_TOKEN") {
-        if !token.is_empty() {
-            req = req.bearer_auth(token);
-        }
+/// Map a filename to the content-type the PWA viewer registry understands, so
+/// the workspace picks the right viewer (html → HtmlViewer, md → Markdown…).
+fn content_type_for(name: &str) -> &'static str {
+    let lower = name.to_lowercase();
+    if lower.ends_with(".html") || lower.ends_with(".htm") {
+        "text/html"
+    } else if lower.ends_with(".md") {
+        "text/markdown"
+    } else if lower.ends_with(".svg") {
+        "image/svg+xml"
+    } else if lower.ends_with(".json") {
+        "application/json"
+    } else if lower.ends_with(".css") {
+        "text/css"
+    } else if lower.ends_with(".js") {
+        "application/javascript"
+    } else {
+        "text/plain"
     }
-    let resp = req
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Pi brain not reachable at {url}: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!(
-            "Pi brain HTTP {}: {}",
-            resp.status(),
-            resp.text().await.unwrap_or_default()
-        ));
-    }
+}
 
-    let mut stream = resp.bytes_stream();
-    let mut buf = String::new();
-    let mut current_event = String::new();
-    let mut out = String::new();
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| format!("stream read error: {e}"))?;
-        buf.push_str(&String::from_utf8_lossy(&bytes));
-        while let Some(nl) = buf.find('\n') {
-            let line = buf[..nl].trim_end_matches('\r').to_string();
-            buf.drain(..=nl);
-            if line.is_empty() {
-                current_event.clear();
+// ── Local skill discovery ───────────────────────────────────────────────────
+// Irisy needs to know which skills the active brain already has locally (user
+// skills + installed plugin skills) so it can compose a keycap manifest that
+// references one by name. This is the no-token path — distinct from
+// `search_skills` (GitHub, needs a PAT). System primitive only; Irisy decides
+// what to do with the list (feedback_build_system_not_business).
+
+#[derive(Debug, Serialize)]
+pub struct LocalSkill {
+    pub name: String,
+    pub description: Option<String>,
+    pub path: String,
+}
+
+#[tauri::command]
+pub async fn list_local_skills() -> Result<Vec<LocalSkill>, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let mut out: Vec<LocalSkill> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    // 1. User skills: ~/.claude/skills/<name>/SKILL.md
+    let user_skills = PathBuf::from(&home).join(".claude").join("skills");
+    collect_skills_in(&user_skills, &mut out, &mut seen);
+
+    // 2. Installed plugin skills: ~/.claude/plugins/cache/<mkt>/<plugin>/<ver>/skills/<name>/SKILL.md
+    let cache = PathBuf::from(&home)
+        .join(".claude")
+        .join("plugins")
+        .join("cache");
+    if let Ok(markets) = std::fs::read_dir(&cache) {
+        for m in markets.flatten() {
+            let Ok(plugins) = std::fs::read_dir(m.path()) else {
                 continue;
-            }
-            if let Some(rest) = line.strip_prefix("event: ") {
-                current_event = rest.trim().to_string();
-            } else if let Some(rest) = line.strip_prefix("data: ") {
-                match current_event.as_str() {
-                    "delta" => {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(rest) {
-                            if let Some(d) = v.get("delta").and_then(|x| x.as_str()) {
-                                out.push_str(d);
-                            }
-                        }
-                    }
-                    "done" => return Ok(out),
-                    "error" => {
-                        let msg = serde_json::from_str::<serde_json::Value>(rest)
-                            .ok()
-                            .and_then(|v| {
-                                v.get("message").and_then(|m| m.as_str()).map(str::to_string)
-                            })
-                            .unwrap_or_else(|| rest.to_string());
-                        return Err(format!("Pi error: {msg}"));
-                    }
-                    _ => {}
+            };
+            for p in plugins.flatten() {
+                let Ok(versions) = std::fs::read_dir(p.path()) else {
+                    continue;
+                };
+                for v in versions.flatten() {
+                    collect_skills_in(&v.path().join("skills"), &mut out, &mut seen);
                 }
             }
         }
     }
+
+    out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
+}
+
+fn collect_skills_in(
+    dir: &Path,
+    out: &mut Vec<LocalSkill>,
+    seen: &mut std::collections::HashSet<String>,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let skill_md = e.path().join("SKILL.md");
+        if !skill_md.is_file() {
+            continue;
+        }
+        let raw = std::fs::read_to_string(&skill_md).unwrap_or_default();
+        let (mut name, description) = parse_skill_meta(&raw);
+        if name.is_empty() {
+            name = e.file_name().to_string_lossy().to_string();
+        }
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        out.push(LocalSkill {
+            name,
+            description,
+            path: skill_md.to_string_lossy().to_string(),
+        });
+    }
+}
+
+/// Pull `name:` + `description:` out of a SKILL.md YAML frontmatter block.
+fn parse_skill_meta(md: &str) -> (String, Option<String>) {
+    let mut name = String::new();
+    let mut description = None;
+    let mut in_fm = false;
+    for line in md.lines() {
+        let t = line.trim();
+        if t == "---" {
+            if in_fm {
+                break;
+            }
+            in_fm = true;
+            continue;
+        }
+        if !in_fm {
+            continue;
+        }
+        if let Some(v) = t.strip_prefix("name:") {
+            name = v.trim().trim_matches('"').to_string();
+        } else if let Some(v) = t.strip_prefix("description:") {
+            description = Some(v.trim().trim_matches('"').to_string());
+        }
+    }
+    (name, description)
 }

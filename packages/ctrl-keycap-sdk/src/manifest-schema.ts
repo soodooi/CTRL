@@ -434,6 +434,12 @@ export const SkillSource = z.object({
   type: z.literal('skill'),
   entry: z.string().min(1).default('SKILL.md'),
   upstream: z.string().optional(),
+  /** Local skill name — the active brain CLI (e.g. Claude Code) already has
+   *  this skill in its skills dir (user/plugin skill), so the kernel runs it
+   *  natively by name (no clone). When present this wins over `upstream`. The
+   *  brain activates the skill from the run prompt; CTRL only routes + hands
+   *  it the keycap's working folder to write artifacts into. */
+  skill: z.string().optional(),
 });
 
 export const Source = z.discriminatedUnion('type', [

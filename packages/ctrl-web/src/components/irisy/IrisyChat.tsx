@@ -232,6 +232,13 @@ export function IrisyChat(): React.ReactElement {
   const activeBrain = status?.active_brain ?? 'pi';
   const useIrisyTransport =
     activeBrain !== 'pi' || status?.pi?.reachable === true;
+  // Frontend ReAct tool loop (list_local_skills / install_keycap / run_keycap /
+  // vault_*). Turn it ON unless the backend brain already has CTRL's tools
+  // natively — only Pi does (it speaks the kernel MCP server). A CLI brain like
+  // Claude Code runs in plain chat mode (--max-turns 1, no kernel MCP), so the
+  // frontend MUST supply the tools via <call> tags or Irisy can't create/run
+  // keycaps. Volc fallback likewise needs the frontend loop.
+  const reactToolsOn = !(useIrisyTransport && activeBrain === 'pi');
   const transport = useMemo(
     () => (useIrisyTransport ? irisyChatTransport() : defaultTransport()),
     [useIrisyTransport],
@@ -362,7 +369,7 @@ export function IrisyChat(): React.ReactElement {
             keycaps,
             longTermMemory,
             coreMemory,
-            !useIrisyTransport,
+            reactToolsOn,
           ),
         },
         ...messages.map((m) => ({
@@ -487,7 +494,7 @@ export function IrisyChat(): React.ReactElement {
       sending,
       systemBase,
       transport,
-      useIrisyTransport,
+      reactToolsOn,
     ],
   );
 

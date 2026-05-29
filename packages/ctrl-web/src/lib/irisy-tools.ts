@@ -59,9 +59,18 @@ export const IRISY_TOOLS: ReadonlyArray<IrisyTool> = [
     },
   },
   {
+    name: 'list_local_skills',
+    description:
+      'List skills the active brain ALREADY has locally (user + installed plugin skills) — no GitHub token needed. Prefer this over search_skills: if a local skill matches what the user wants, wrap it into a keycap directly by name (source.skill). Returns [{name, description, path}].',
+    args: '(no arguments)',
+    async execute(): Promise<unknown> {
+      return await invoke('list_local_skills');
+    },
+  },
+  {
     name: 'search_skills',
     description:
-      'Search GitHub for installable skills (SKILL.md files) when the user wants a capability that is NOT already in "Installed keycaps". Returns candidate repos.',
+      'Search GitHub for installable skills (SKILL.md files) ONLY when no local skill (list_local_skills) matches. Needs a GitHub token; may be unavailable. Returns candidate repos.',
     args: 'query: string (keywords, e.g. "html slides")',
     async execute(args): Promise<unknown> {
       const query = String(args.query ?? args.q ?? '');
@@ -72,10 +81,12 @@ export const IRISY_TOOLS: ReadonlyArray<IrisyTool> = [
   {
     name: 'install_keycap',
     description:
-      'Install a keycap from a manifest YOU construct. To turn a skill found via search_skills into a keycap, build a manifest like ' +
-      '{"id":"<repo-name-slug>","name":"<friendly name>","version":"0.1.0","icon":"◆","keycap_color":"cobalt","variant":"skill",' +
-      '"source":{"type":"skill","upstream":"<owner/repo>","entry":"<path to SKILL.md>"}}. ' +
-      'After installing, it appears on the keyboard.',
+      'Install a keycap from a manifest YOU construct. To wrap a LOCAL skill (from list_local_skills) into a keycap, build a manifest like ' +
+      '{"id":"<slug>","name":"<friendly name>","version":"0.1.0","icon":"◆","keycap_color":"cobalt","variant":"skill",' +
+      '"source":{"type":"skill","skill":"<local skill name>"},' +
+      '"io":{"inputs":[{"id":"topic","label":"Topic","schema":{"type":"string"}}],' +
+      '"outputs":[{"id":"result","label":"Output","schema":{"type":"string","contentMediaType":"text/html"}}]}}. ' +
+      'Rules: use source.skill (the local skill name) so the active brain runs it natively — do NOT use upstream for local skills. ALWAYS declare io.inputs (the fields the user fills at run time) and io.outputs (set schema.contentMediaType to the result type, e.g. text/html for slides, text/markdown for docs) so the workspace can render the form + pick the right viewer. After installing it appears on the keyboard.',
     args: 'manifest: object (the keycap manifest you constructed)',
     async execute(args): Promise<unknown> {
       const manifest = args.manifest;

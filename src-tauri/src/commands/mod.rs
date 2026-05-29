@@ -66,6 +66,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::open_workspace,
             // skills — kernel-local skill discovery (ADR-023 Phase 1)
             $crate::commands::skills::search_skills,
+            $crate::commands::skills::list_local_skills,
             // stss
             $crate::commands::stss::subscribe,
             $crate::commands::stss::publish,
