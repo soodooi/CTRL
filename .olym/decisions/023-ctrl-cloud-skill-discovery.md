@@ -102,17 +102,21 @@ API so callers (Irisy + the Pool UI) don't care about the source:
   where `install_ref` is what the install step consumes (registry id / package,
   or `owner/repo` + `skillmd_raw_url`).
 
-### 3. Irisy is the primary discovery + install driver
+### 3. Irisy is the ONLY discovery surface (bao 2026-05-29: "保留一个 Irisy 搜索就行")
 
-Per ADR-021, the main path is conversational, not a search box:
-- Irisy gains `search_skills` (calls `ctrl-skills`) and `install_skill_as_keycap`
-  (clone/fetch → write a `skill`-variant manifest, ADR-022) in its tool registry
-  (`packages/ctrl-web/src/lib/irisy-tools.ts`, where ADR-021 §5 left these as
-  TODO). The user says "I want HTML slide decks" → Irisy searches → recommends
-  frontend-slides → installs it as a keycap → it lands on the keyboard.
-- The **Pool / workbench** search UI is the *secondary, manual* path over the
-  same Worker — power users browse + install directly.
-- Both call the same `ctrl-skills` API; neither holds any token.
+There is exactly **one** search surface — Irisy. Discovery is conversational,
+never a search box. Per ADR-021 (Personal Assistant):
+- Irisy gains `search_skills` (Phase 1: kernel `search_skills` command; Phase 2:
+  the `ctrl-skills` Worker) and `install_skill_as_keycap` (clone/fetch → write a
+  `skill`-variant manifest, ADR-022) in its tool registry
+  (`packages/ctrl-web/src/lib/irisy-tools.ts` — the ADR-021 §5 TODOs). The user
+  says "I want HTML slide decks" → Irisy turns it into keywords, searches,
+  reasons over the (keyword-matched, coverage-limited) results, recommends
+  frontend-slides, and installs it → it lands on the keyboard. Irisy IS the
+  intelligence layer that makes a blunt keyword search usable.
+- **No manual search box.** Pool stays a browse view of *installed* keycaps; it
+  does NOT get a GitHub-skill search box. Finding new skills is Irisy's job —
+  one path, no redundant surface (`feedback_no_redundancy_one_ssot`).
 
 ### 4. Token handling — server-side only
 
@@ -163,8 +167,8 @@ point of the proxy). A fine-grained PAT with `public_repo` read suffices.
 2. Kernel install-from-skill — anonymous public clone/fetch →
    `~/.ctrl/keycaps/<id>/` + write a `skill`-variant manifest (ADR-022 SDK).
 3. Irisy tools `search_skills` + `install_skill_as_keycap` (ADR-021 §5) →
-   conversational find-and-install; Pool/workbench manual surface over the same
-   kernel commands.
+   conversational find-and-install. Irisy is the only search surface; no manual
+   Pool search box (§3).
 4. Kernel `run_keycap` skill dispatch (Pi reads SKILL.md) + viewer render →
    frontend-slides end-to-end.
 
