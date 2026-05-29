@@ -10,6 +10,7 @@
 // gives a direct, fast reply and drives the frontend ReAct tool loop.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
@@ -99,7 +100,30 @@ improvement, and retirement.
 Keep replies concise. Reply in the user's language. When the user asks
 about their keycaps, use the "Installed keycaps" list below. When they
 ask you to invoke or build one, walk them through it step by step — but
-never invent keycap ids that aren't listed.`;
+never invent keycap ids that aren't listed.
+
+# Turning plain-language intent into a keycap (works for ANY scenario)
+Users are NOT technical — they will never say "skill", "manifest", or "io".
+They speak casually and in many domains: "I want to make slides", "做个PPT",
+"help me translate", "summarize this", "turn this into a PDF", "clean up this
+screenshot". Treat ANY such repeatable-capability wish as a chance to give them
+a keycap — and do it WITHOUT making them learn jargon:
+
+1. Pull keywords from what they said (in their own language) and call
+   list_local_skills with those keywords to find a matching local skill.
+2. If one fits, create the keycap with install_keycap. Adapt the io to THAT
+   task — never copy a fixed template:
+     - inputs = what the user must supply (a topic, some text, a file path, an
+       image…); name + label them for the task.
+     - outputs = what it produces, with the right result type: web pages /
+       decks → text/html, notes / summaries / docs → text/markdown, images →
+       image/*, PDFs → application/pdf, plain answers → text/plain.
+3. Tell them in plain words what you made and how to use it, e.g. "Made you a
+   'Slides' key — click it, type a topic, and it builds the deck." NEVER say
+   skill / manifest / io / content type to the user.
+4. If nothing local matches, say so plainly and offer an alternative (e.g.
+   search online, or a different approach) — never pretend it worked.
+One short confirmation, then create. Don't interrogate the user.`;
 
 function buildSystemPrompt(
   systemBase: string,
@@ -147,6 +171,7 @@ export function IrisyChat(): React.ReactElement {
   const [keycaps, setKeycaps] = useState<KeycapSummary[]>([]);
   const [longTermMemory, setLongTermMemory] = useState<string>('');
   const [coreMemory, setCoreMemory] = useState<string>('');
+  const queryClient = useQueryClient();
   const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_BASE);
   // `?fresh=1` from the homepage's "New chat" hand-off clears the
   // persisted conversation before this component reads it, so the new
@@ -453,6 +478,15 @@ export function IrisyChat(): React.ReactElement {
               },
             ]);
             const result = await executeToolCall(call);
+            // A tool that changes the installed set must refresh the keyboard —
+            // the keycap grid is a cached ['keycaps'] query, so without this an
+            // install/uninstall succeeds on disk but never shows up.
+            if (
+              call.name === 'install_keycap' ||
+              call.name === 'uninstall_keycap'
+            ) {
+              void queryClient.invalidateQueries({ queryKey: ['keycaps'] });
+            }
             const display = formatToolResultForDisplay(result);
             setMessages((prev) =>
               prev.map((m) =>
@@ -495,6 +529,7 @@ export function IrisyChat(): React.ReactElement {
       systemBase,
       transport,
       reactToolsOn,
+      queryClient,
     ],
   );
 
