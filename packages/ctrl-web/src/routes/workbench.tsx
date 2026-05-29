@@ -40,6 +40,7 @@ import '@xyflow/react/dist/style.css';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
 import { normalizeIcon } from '@/lib/icon';
 import { IconRenderer } from '@/components/primitives';
+import { IrisyChat } from '@/components/irisy/IrisyChat';
 import styles from './workbench.module.css';
 
 const DRAG_MIME = 'application/ctrl-keycap-node';
@@ -177,11 +178,7 @@ export function WorkbenchRoute(): ReactElement {
         <Canvas />
       </ReactFlowProvider>
       <aside className={styles.copilot} aria-label="Irisy co-pilot">
-        <h2 className={styles.sectionTitle}>Irisy</h2>
-        <p className={styles.hint}>
-          Co-pilot. Wire keycaps into a system; ask Irisy to patch the graph
-          (add-node / wire / set-prop) — coming next.
-        </p>
+        <IrisyChat />
       </aside>
     </div>
   );
