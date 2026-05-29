@@ -397,6 +397,9 @@ pub async fn run_keycap(
         KeycapDispatch::McpInvoke { server_id, tool_name } => {
             run_mcp_invoke(&kernel, &args, &stream_id, &server_id, &tool_name).await
         }
+        KeycapDispatch::SkillRun { id, upstream, entry } => {
+            crate::commands::skills::run_skill(&id, &upstream, &entry, &args.input).await
+        }
         KeycapDispatch::Stub => Ok(serde_json::json!({
             "stub": true,
             "keycap_id": args.keycap_id,
@@ -456,6 +459,7 @@ pub async fn run_keycap(
 enum KeycapDispatch {
     TextChat { system: &'static str },
     McpInvoke { server_id: String, tool_name: String },
+    SkillRun { id: String, upstream: String, entry: String },
     Stub,
 }
 
@@ -481,6 +485,26 @@ fn classify_from_installed_manifest(keycap_id: &str) -> Option<KeycapDispatch> {
                 return None;
             }
             Some(KeycapDispatch::McpInvoke { server_id, tool_name })
+        }
+        "skill" => {
+            let upstream = source
+                .get("upstream")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let entry = source
+                .get("entry")
+                .and_then(|v| v.as_str())
+                .unwrap_or("SKILL.md")
+                .to_string();
+            if upstream.is_empty() {
+                return None;
+            }
+            Some(KeycapDispatch::SkillRun {
+                id: keycap_id.to_string(),
+                upstream,
+                entry,
+            })
         }
         _ => None,
     }
