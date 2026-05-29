@@ -175,6 +175,14 @@ pub async fn run_skill(
     std::fs::create_dir_all(&workdir)
         .map_err(|e| format!("create workdir {}: {e}", workdir.display()))?;
 
+    tracing::info!(
+        keycap_id,
+        skill,
+        binary = %binary,
+        workdir = %workdir.display(),
+        "run_skill: start"
+    );
+
     let before = snapshot_files(&workdir);
 
     let input_text = input
@@ -201,8 +209,10 @@ pub async fn run_skill(
         .collect();
     artifacts.sort();
     if artifacts.is_empty() {
+        tracing::error!(keycap_id, skill, "run_skill: produced no files");
         return Err("the skill run produced no files".to_string());
     }
+    tracing::info!(keycap_id, skill, ?artifacts, "run_skill: artifacts");
     // Primary = first renderable artifact (html), else first file.
     let primary = artifacts
         .iter()

@@ -413,6 +413,11 @@ pub async fn run_keycap(
 
     match result {
         Ok(output) => {
+            tracing::info!(
+                keycap_id = %args.keycap_id,
+                duration_ms,
+                "run_keycap ok"
+            );
             kernel.bridge.publish_op(Op {
                 kind: OpKind::KeycapCompleted,
                 ts_ms: now_ms(),
@@ -426,6 +431,12 @@ pub async fn run_keycap(
             Ok(RunKeycapResult { output, duration_ms })
         }
         Err(err_msg) => {
+            tracing::error!(
+                keycap_id = %args.keycap_id,
+                duration_ms,
+                error = %err_msg,
+                "run_keycap failed"
+            );
             // Publish a KeycapFailed Op AND a LlmResponse cell carrying
             // the error text — the PWA workspace surfaces both, but only
             // the cell content is human-readable inline.
