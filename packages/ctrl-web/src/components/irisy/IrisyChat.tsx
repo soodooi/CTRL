@@ -219,17 +219,22 @@ export function IrisyChat(): React.ReactElement {
     }
   }, [messages]);
 
-  // Chat path (ADR-001 amendment 2026-05-25 — Pi is the sole brain):
-  //   1. Pi reachable  → irisyChatTransport() (kernel irisy_chat_stream →
-  //                      BrainRouter inline → @ctrl/pi-plugin MCP server).
-  //                      Pi runs its own agent loop with its own provider.
-  //   2. Pi not running → defaultTransport() (kernel chat_stream → llm_port
-  //                      → Volc). Direct, fast reply; drives the frontend
-  //                      ReAct tool loop below.
-  const usePi = status?.pi?.reachable === true;
+  // Chat path. irisy_chat_stream is THE Irisy transport — it routes by the
+  // active brain (大模型集成): "pi" → @ctrl/pi-plugin MCP server; any other
+  // brain → its CLI/LLM adapter (e.g. claude_code → the `claude` CLI). Only
+  // the Pi brain needs the Pi MCP server up; CLI-adapter brains don't. So we
+  // gate on the active brain, NOT on Pi reachability — otherwise a Claude Code
+  // user with no Pi running would silently fall through to Volc while the UI
+  // still claimed "Engine: Claude Code".
+  //
+  // Fall back to the raw Volc transport (chat_stream → llm_port) ONLY when the
+  // active brain is Pi but its MCP server isn't reachable.
+  const activeBrain = status?.active_brain ?? 'pi';
+  const useIrisyTransport =
+    activeBrain !== 'pi' || status?.pi?.reachable === true;
   const transport = useMemo(
-    () => (usePi ? irisyChatTransport() : defaultTransport()),
-    [usePi],
+    () => (useIrisyTransport ? irisyChatTransport() : defaultTransport()),
+    [useIrisyTransport],
   );
 
   const clearConversation = useCallback((): void => {
@@ -357,7 +362,7 @@ export function IrisyChat(): React.ReactElement {
             keycaps,
             longTermMemory,
             coreMemory,
-            !usePi,
+            !useIrisyTransport,
           ),
         },
         ...messages.map((m) => ({
@@ -482,7 +487,7 @@ export function IrisyChat(): React.ReactElement {
       sending,
       systemBase,
       transport,
-      usePi,
+      useIrisyTransport,
     ],
   );
 
@@ -638,7 +643,6 @@ export function IrisyChat(): React.ReactElement {
     codex: 'Codex',
     gemini: 'Gemini CLI',
   };
-  const activeBrain = status?.active_brain ?? 'pi';
   const engineLabel = ENGINE_LABELS[activeBrain] ?? activeBrain;
   const engineReady = activeBrain === 'pi' ? piReachable : brainReady || piReachable;
 
