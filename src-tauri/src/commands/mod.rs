@@ -25,6 +25,7 @@ pub mod irisy_chat;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
+pub mod skills;
 pub mod storage;
 pub mod stss;
 pub mod system;
@@ -63,6 +64,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::open_workspace,
+            // skills — kernel-local skill discovery (ADR-023 Phase 1)
+            $crate::commands::skills::search_skills,
             // stss
             $crate::commands::stss::subscribe,
             $crate::commands::stss::publish,
