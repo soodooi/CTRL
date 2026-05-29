@@ -49,11 +49,8 @@ export interface ShapeSpec {
  */
 export const SHAPE_BY_KIND: Readonly<Record<KeycapKind, ShapeSpec>> = {
   'mcp-tool': {
-    layout: 'tabs',
-    tabs: [
-      { kind: 'keycap-output', title: 'Invoke' },
-      { kind: 'session-stream', title: 'Output' },
-    ],
+    layout: 'single',
+    tabs: [{ kind: 'keycap-output', title: 'Run' }],
   },
   brain: {
     layout: 'tabs',

@@ -1,17 +1,21 @@
 // KeycapRunView — the run-time WORKSPACE for a keycap (the 工作区, not the
 // 工作台). Generic + reusable: it renders ANY keycap from its manifest —
 // an input form derived from manifest.io.inputs, a Run action that calls the
-// kernel run pipe, and the produced artifact shown through the content-type
-// viewer registry (HtmlViewer for slides, MarkdownViewer for docs, …).
+// kernel run pipe, a LIVE output pane (the brain's progress streamed cell by
+// cell over keycap-<id>), and the produced artifact shown through the
+// content-type viewer registry (HtmlViewer for slides, MarkdownViewer for
+// docs, …).
 //
 // This is substrate, not business logic: it knows nothing about "slides".
 // Irisy composes a keycap by declaring io.inputs/outputs in the manifest;
-// this view renders + runs whatever was declared. See feedback_build_system_not_business.
+// this view renders + runs + streams whatever was declared. See
+// feedback_build_system_not_business.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { invoke } from '@/lib/bridge';
 import { runKeycap } from '@/lib/kernel';
+import { useCellStream } from '@/hooks/useCellStream';
 import { ViewerHost } from '@/components/viewers/ViewerHost';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
 import styles from './KeycapRunView.module.css';
@@ -45,6 +49,28 @@ export const KeycapRunView = ({ keycapId }: KeycapRunViewProps): ReactElement =>
   const [running, setRunning] = useState(false);
   const [outputPath, setOutputPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Live progress: subscribe to the keycap's output stream only while a run is
+  // in flight. The kernel publishes the brain's chunks as llm_response cells on
+  // keycap-<id> (commands/skills.rs::publish_delta).
+  const stream = useCellStream(running ? `keycap-${keycapId}` : null);
+  const liveText = useMemo(
+    () =>
+      stream.events
+        .filter((e) => e.type === 'cell' && e.kind === 'llm_response')
+        .map((e) => {
+          const p = e.payload as { delta?: string } | null;
+          return p?.delta ?? '';
+        })
+        .join(''),
+    [stream.events],
+  );
+
+  const logRef = useRef<HTMLPreElement | null>(null);
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [liveText]);
 
   // Pull the keycap's declared input ports from its manifest. Falls back to a
   // single freeform field when the manifest declares no io.inputs.
@@ -94,6 +120,7 @@ export const KeycapRunView = ({ keycapId }: KeycapRunViewProps): ReactElement =>
     }
   }, [fields, values, keycapId]);
 
+  // Result view — the produced artifact, with a way back to a fresh run.
   if (outputPath) {
     return (
       <div className={styles.root}>
@@ -141,10 +168,22 @@ export const KeycapRunView = ({ keycapId }: KeycapRunViewProps): ReactElement =>
           </label>
         ))}
         <button type="submit" className={styles.run} disabled={running}>
-          {running ? 'Running… (can take a minute)' : 'Run'}
+          {running ? 'Running…' : 'Run'}
         </button>
         {error != null && <p className={styles.error}>{error}</p>}
       </form>
+
+      {running && (
+        <div className={styles.live}>
+          <div className={styles.liveHead}>
+            <span className={styles.liveDot} aria-hidden />
+            <span>Working…</span>
+          </div>
+          <pre ref={logRef} className={styles.liveLog}>
+            {liveText || 'Starting the brain…'}
+          </pre>
+        </div>
+      )}
     </div>
   );
 };

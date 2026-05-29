@@ -398,7 +398,8 @@ pub async fn run_keycap(
             run_mcp_invoke(&kernel, &args, &stream_id, &server_id, &tool_name).await
         }
         KeycapDispatch::SkillRun { id, skill } => {
-            crate::commands::skills::run_skill(&id, &skill, &args.input).await
+            crate::commands::skills::run_skill(&kernel.bridge, &stream_id, &id, &skill, &args.input)
+                .await
         }
         KeycapDispatch::Stub => Ok(serde_json::json!({
             "stub": true,

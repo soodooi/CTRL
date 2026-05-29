@@ -13,6 +13,9 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::kernel::event::{Cell, CellKind};
+use crate::kernel::StssBridge;
+
 /// Keychain account holding the GitHub PAT (service is `app.ctrl`). See
 /// doc/setup-github-token.md for how to store it.
 const GITHUB_PAT_ACCOUNT: &str = "github";
@@ -148,6 +151,8 @@ const SKILL_RUN_MAX_TURNS: &str = "24";
 /// active brain CLI, running inside the keycap's vault working folder, and
 /// return the vault-relative paths of whatever artifact(s) it wrote.
 pub async fn run_skill(
+    bridge: &StssBridge,
+    stream_id: &str,
     keycap_id: &str,
     skill: &str,
     input: &serde_json::Value,
@@ -185,7 +190,7 @@ pub async fn run_skill(
          filename on its own line."
     );
 
-    run_brain_agentic(&binary, &workdir, &prompt).await?;
+    run_brain_agentic(&binary, &workdir, &prompt, bridge, stream_id).await?;
 
     // Diff the folder — return whatever the run created or changed.
     let after = snapshot_files(&workdir);
@@ -213,12 +218,22 @@ pub async fn run_skill(
     }))
 }
 
-/// Spawn the active brain CLI in agentic mode inside `workdir`: print mode,
-/// auto-accept file edits, a multi-turn budget, subscription OAuth (we drop
-/// ANTHROPIC_API_KEY so it bills the plan, not the API account). Kills the
-/// child if it overruns the deadline (`kill_on_drop`).
-async fn run_brain_agentic(binary: &str, workdir: &Path, prompt: &str) -> Result<(), String> {
+/// Spawn the active brain CLI in agentic mode inside `workdir`: streaming JSON
+/// mode, auto-accept file edits, a multi-turn budget, subscription OAuth (we
+/// drop ANTHROPIC_API_KEY so it bills the plan, not the API account). Each
+/// assistant chunk is published as a Cell on `stream_id` so the workspace shows
+/// the run live instead of a frozen minute. Kills the child if it overruns the
+/// deadline (`kill_on_drop`).
+async fn run_brain_agentic(
+    binary: &str,
+    workdir: &Path,
+    prompt: &str,
+    bridge: &StssBridge,
+    stream_id: &str,
+) -> Result<(), String> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
     use tokio::process::Command;
+
     let mut cmd = Command::new(binary);
     cmd.current_dir(workdir)
         .arg("-p")
@@ -229,34 +244,129 @@ async fn run_brain_agentic(binary: &str, workdir: &Path, prompt: &str) -> Result
         .arg("acceptEdits")
         .arg("--max-turns")
         .arg(SKILL_RUN_MAX_TURNS)
+        .arg("--verbose")
         .arg("--output-format")
-        .arg("text")
+        .arg("stream-json")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     cmd.env_remove("ANTHROPIC_API_KEY");
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("claude spawn failed: {e}"))?;
-    let out = tokio::time::timeout(
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "claude stdout not captured".to_string())?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "claude stderr not captured".to_string())?;
+
+    // Drain stderr concurrently so a full pipe can't deadlock the child.
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = String::new();
+        let _ = stderr.read_to_string(&mut buf).await;
+        buf
+    });
+
+    publish_delta(bridge, stream_id, "Starting…\n");
+
+    let read_loop = async {
+        let mut lines = BufReader::new(stdout).lines();
+        while let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|e| format!("read claude stdout: {e}"))?
+        {
+            if let Some(snippet) = snippet_from_line(&line) {
+                publish_delta(bridge, stream_id, &snippet);
+            }
+        }
+        Ok::<(), String>(())
+    };
+
+    tokio::time::timeout(
         std::time::Duration::from_secs(SKILL_RUN_TIMEOUT_SECS),
-        child.wait_with_output(),
+        read_loop,
     )
     .await
-    .map_err(|_| format!("skill run timed out after {SKILL_RUN_TIMEOUT_SECS}s"))?
-    .map_err(|e| format!("claude run error: {e}"))?;
+    .map_err(|_| format!("skill run timed out after {SKILL_RUN_TIMEOUT_SECS}s"))??;
 
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("claude run error: {e}"))?;
+    let stderr_text = stderr_task.await.unwrap_or_default();
+
+    if !status.success() {
         return Err(format!(
             "claude exited {:?}: {}",
-            out.status.code(),
-            stderr.trim()
+            status.code(),
+            stderr_text.trim()
         ));
     }
     Ok(())
+}
+
+/// Publish one assistant chunk on the keycap's output stream. The PWA's
+/// `useCellStream(keycap-<id>)` decodes these and renders them live.
+fn publish_delta(bridge: &StssBridge, stream_id: &str, delta: &str) {
+    let ts_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    bridge.publish_cell(Cell {
+        kind: CellKind::LlmResponse,
+        ts_ms,
+        stream_id: Some(stream_id.to_string()),
+        payload: serde_json::json!({ "delta": delta }),
+    });
+}
+
+/// Turn one line of claude `stream-json` NDJSON into a short human-readable
+/// progress snippet (assistant prose + a one-liner per tool use). Non-assistant
+/// lines (system/init/result) return None — they carry no user-facing text.
+fn snippet_from_line(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
+        return None;
+    }
+    let content = v.get("message")?.get("content")?.as_array()?;
+    let mut out = String::new();
+    for block in content {
+        match block.get("type").and_then(|t| t.as_str()) {
+            Some("text") => {
+                if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
+                    out.push_str(t);
+                }
+            }
+            Some("tool_use") => {
+                let name = block.get("name").and_then(|x| x.as_str()).unwrap_or("tool");
+                let input = block.get("input");
+                let target = input
+                    .and_then(|i| {
+                        i.get("file_path")
+                            .or_else(|| i.get("path"))
+                            .or_else(|| i.get("command"))
+                            .or_else(|| i.get("pattern"))
+                    })
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("");
+                out.push_str(&format!("\n→ {name} {target}\n"));
+            }
+            _ => {}
+        }
+    }
+    let trimmed = out.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 /// Top-level file snapshot (name → size+mtime) so a run's output can be
