@@ -618,24 +618,37 @@ export function IrisyChat(): React.ReactElement {
 
   const brainReady = status?.kernel_llm.ready ?? false;
 
-  // Pi sole-brain status. When status.pi is absent the kernel hasn't
-  // shipped the irisy_init Pi probe yet (older binary on user's machine),
-  // so we render `—` rather than misleading "not running".
+  // Pi MCP health (the transport irisy_chat uses when Pi is reachable).
   const piProbed = status?.pi != null;
   const piReachable = status?.pi?.reachable === true;
   const piDetail = !piProbed
     ? '—'
     : piReachable
-      ? `${status?.pi?.version ?? 'reachable'} · brain=${status?.active_brain ?? 'pi'}`
+      ? (status?.pi?.version ?? 'reachable')
       : `not running — \`cd packages/ctrl-pi-plugin && npm start\``;
+
+  // The ACTIVE engine (大模型集成 / Model Integration) Irisy actually routes
+  // to — show THIS, not the kernel's fallback LLM adapter. The old code
+  // labeled `kernel_llm.adapter` (= "volc") as "Brain", so the header showed
+  // "Brain volc" even after the user activated Claude Code, making it look
+  // like the switch didn't take.
+  const ENGINE_LABELS: Record<string, string> = {
+    pi: 'Pi',
+    claude_code: 'Claude Code',
+    codex: 'Codex',
+    gemini: 'Gemini CLI',
+  };
+  const activeBrain = status?.active_brain ?? 'pi';
+  const engineLabel = ENGINE_LABELS[activeBrain] ?? activeBrain;
+  const engineReady = activeBrain === 'pi' ? piReachable : brainReady || piReachable;
 
   return (
     <div className={styles.root}>
       <header className={styles.statusBar}>
         <StatusLine
-          label="Brain"
-          ok={brainReady}
-          detail={status?.kernel_llm.adapter ?? '—'}
+          label="Engine"
+          ok={engineReady}
+          detail={engineLabel}
         />
         <StatusLine
           label="Pi"
