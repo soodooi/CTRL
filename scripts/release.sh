@@ -55,6 +55,23 @@ export TAURI_SIGNING_PRIVATE_KEY="$KEY"
 # empty string so the signer accepts it without an interactive prompt.
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
 
+# Code-sign CTRL.app with the stable self-signed cert so its macOS
+# Designated Requirement stays CONSTANT across releases. Without this the
+# build is ad-hoc signed (DR = cdhash, changes every build) and macOS drops
+# the Input Monitoring grant on every upgrade — i.e. the Ctrl hotkey dies
+# after each update. The cert lives in a dedicated keychain; unlock it so
+# codesign can use the identity non-interactively. See memory
+# troubleshoot_ctrl_hotkey for the full rationale.
+export APPLE_SIGNING_IDENTITY="CTRL Dev Signing"
+SIGN_KC="$HOME/Library/Keychains/ctrl-signing.keychain-db"
+if [[ -f "$SIGN_KC" ]]; then
+    security unlock-keychain -p "ctrl-signing-local" "$SIGN_KC" 2>/dev/null || true
+else
+    echo "error: signing keychain $SIGN_KC missing — the released app would be"
+    echo "       ad-hoc signed and lose Input Monitoring on upgrade. Aborting."
+    exit 1
+fi
+
 echo "==> [2/6] bump versions in Cargo.toml + tauri.conf.json + workspace package.json files to $VERSION"
 sed -i '' "s/^version = \"[0-9.]*\"$/version = \"$VERSION\"/" src-tauri/Cargo.toml
 sed -i '' "s/\"version\": \"[0-9.]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
