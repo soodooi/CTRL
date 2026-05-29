@@ -1,12 +1,14 @@
 ---
 adr_id: 023
-title: Stand up ctrl-cloud backend; global skill discovery via a CF-Worker-proxied GitHub search
+title: Stand up ctrl-cloud; Irisy-led skill discovery over MCP registries + a CF-Worker-proxied GitHub SKILL.md search
 status: accepted
 date: 2026-05-29
 deciders: [bao, zeus]
 related:
   - .olym/decisions/001-system-architecture.md
   - .olym/decisions/010-keycap-execution-model.md
+  - .olym/decisions/013-kernel-as-mcp-server.md
+  - .olym/decisions/021-irisy-brain-switcher-and-surfaces.md
   - .olym/decisions/022-workbench-composition-canvas.md
   - .olym/specs/workbench/spec.md
 scope: framework
@@ -17,130 +19,130 @@ amends: []
 
 ## Context
 
-The first keycap pipeline (ADR-022 / brief §9) is
-`discover skill → clone → workbench → keycap → keyboard → run (Pi) → render`.
-Step 1 is **discovery**: the user finds a skill. bao's standing requirement —
-*"支持全球用户"* — means discovery must be fast worldwide.
+The first-keycap pipeline (ADR-022 / brief §9) starts with **discovery**: the
+user finds a skill. bao's standing requirement is *"支持全球用户"* — discovery
+must be fast worldwide.
 
-Skills live on GitHub as `SKILL.md` files. Finding them needs the GitHub code
-search API (`GET /search/code?q=filename:SKILL.md ...`), which **requires
-authentication** — there is no unauthenticated code search. Putting a GitHub
-token in the desktop client is a non-starter (it ships to every user, can't be
-rotated, leaks). bao chose (2026-05-29) to **proxy search through a CF Worker**
-that holds the token server-side, over the lighter "paste owner/repo + direct
-fetch" MVP.
+Two course-corrections from bao shaped this ADR:
 
-Reality check that shaped this ADR: **ctrl-cloud does not exist yet** — neither
-on GitHub (`soodooi/ctrl-cloud` absent) nor locally. CLAUDE.md's repo topology
-lists it as a planned separate repo. So "CF Worker search first" means *standing
-up the ctrl-cloud backend from scratch*, of which this skill-discovery worker is
-the first tenant. bao confirmed: do it properly + completely.
+1. **Research first** (bao: *"你没有调研吗?"*). The web research changed the
+   design:
+   - **MCP registries are mature + API-accessible.** The official MCP Registry
+     (`registry.modelcontextprotocol.io`, built for programmatic discovery),
+     Glama (~27k servers), and PulseMCP (~11k) already index the MCP-server
+     ecosystem. Since keycaps are MCP (ADR-013) and CLAUDE.md's keycap source #1
+     is "MCP servers (10,000+ Day-1)", **these registries ARE that source** —
+     MCP-server keycap discovery should reuse them, not re-crawl GitHub.
+   - **GitHub code search for `SKILL.md` is rate-limit-fragile.** The GitHub
+     issue `cli/cli#13293` is literally titled *"gh skill: rate limiting makes
+     skill discovery unusable"* — uncached code search "is hit almost
+     immediately". So a shared edge cache is not an optimization, it is the
+     thing that makes GitHub-based SKILL.md discovery viable at all.
+
+2. **Irisy participates** (bao: *"应该要让 Irisy 参与"*). Per ADR-021, Irisy is
+   a Personal Assistant — *"the user tells Irisy what they want done; if a
+   suitable keycap isn't installed, Irisy installs it and operates it."* So
+   discovery is not primarily a search box; it is **Irisy-driven**: the user
+   describes a need, Irisy searches, recommends, and installs. ADR-021 §5
+   already reserves `search_pool` / `install_keycap_from_pool` as Irisy tools
+   (TODO) — this ADR fills them.
+
+ctrl-cloud does not exist yet (no `soodooi/ctrl-cloud`, not local). So this
+stands up the CF Workers backend with its first tenant.
 
 ## Decision
 
-### 1. ctrl-cloud is a standalone repo — stand it up now
+### 1. ctrl-cloud is a standalone repo — stood up now
 
-`ctrl-cloud` (new repo `soodooi/ctrl-cloud`, private) is the CF Workers backend
-for the CTRL ecosystem (eventual: auth / billing / market / relay / push per
-CLAUDE.md topology). It is **separate** from the CTRL desktop repo — the desktop
-app must run fully without it (端侧化 / augmentation: cloud is augmentation, not
-dependency, per ADR-001 design philosophy). Skill discovery is an *augmentation*:
-if ctrl-cloud is down, the user can still hand-add a skill by `owner/repo`
-(the MVP path stays as the offline/degraded fallback).
+New repo `soodooi/ctrl-cloud` (private), the CTRL CF Workers backend (eventual
+auth / billing / market / relay / push per CLAUDE.md topology). Separate from
+the desktop repo. The desktop app must run fully without it — discovery is
+**augmentation**: if ctrl-cloud is unreachable, the user can still hand-add a
+skill by `owner/repo` (the degraded fallback). 端侧化 / 本地是 truth.
 
-### 2. First worker — `ctrl-skills` (skill discovery)
+### 2. Discovery substrate = one Worker (`ctrl-skills`), two source legs
 
-A single Cloudflare Worker, deployed to `*.workers.dev` staging (CLAUDE.md:
-**no local `wrangler dev`**; staging only).
+A single Cloudflare Worker, deployed to `*.workers.dev` staging (CLAUDE.md: **no
+local `wrangler dev`**). It unifies two discovery legs behind one CTRL-shaped
+API so callers (Irisy + the Pool UI) don't care about the source:
 
-**Endpoint**: `GET /skills/search?q=<query>&page=<n>`
-- Proxies GitHub `GET /search/code?q=filename:SKILL.md ${query}` (+ pagination).
-- Returns a cleaned, CTRL-shaped list (not raw GitHub JSON).
+- **Leg A — MCP registries** (for MCP-server keycaps, the bulk / "10k+ Day-1"):
+  aggregate the official MCP Registry (+ Glama/PulseMCP as needed). Robust,
+  API-native, no GitHub rate-limit exposure. *(Exact registry API shape is a
+  pre-build deep-dive — see follow-up 1.)*
+- **Leg B — GitHub `SKILL.md` code search** (for agent-skills like
+  frontend-slides, which registries don't index): proxy GitHub
+  `/search/code?q=filename:SKILL.md ...` with a server-side token, **heavily
+  edge-cached** (the rate-limit mitigation — load-bearing, not optional).
 
-**Response envelope** (olym API format — success / data / error):
-```jsonc
-{
-  "success": true,
-  "data": {
-    "skills": [{
-      "repo": "zarazhangrui/frontend-slides",   // owner/name
-      "owner": "zarazhangrui",
-      "name": "frontend-slides",
-      "description": "…",                        // repo description
-      "stars": 42,
-      "path": "SKILL.md",                        // path within the repo
-      "skillmd_raw_url": "https://raw.githubusercontent.com/…/SKILL.md",
-      "html_url": "https://github.com/…/SKILL.md",
-      "updated_at": "2026-05-20T…Z"
-    }],
-    "total": 123,
-    "page": 1
-  },
-  "error": null
-}
-```
-On failure: `{ "success": false, "data": null, "error": "<message>" }` + an
-appropriate HTTP status. Errors are explicit, never silently swallowed.
+**Endpoints**:
+- `GET /skills/search?q=<query>&source=<registry|skill|all>&page=<n>`
+- Returns the CTRL envelope (`{ success, data, error }`); never raw upstream
+  JSON. `data.results[]` items are normalized across both legs:
+  `{ kind: "mcp"|"skill", id, name, description, source, install_ref, stars?, url }`
+  where `install_ref` is what the install step consumes (registry id / package,
+  or `owner/repo` + `skillmd_raw_url`).
 
-### 3. Token handling — server-side only
+### 3. Irisy is the primary discovery + install driver
 
-The GitHub token lives as a CF **secret** (`wrangler secret put GITHUB_TOKEN`),
-never in code, never in KV that the client can read, never shipped to the
-client (olym rule: API keys in CF, not hardcoded; the whole point of the proxy).
-A fine-grained PAT with only `public_repo` read scope is sufficient — skills are
-public repos. Rotation = re-run `wrangler secret put`.
+Per ADR-021, the main path is conversational, not a search box:
+- Irisy gains `search_skills` (calls `ctrl-skills`) and `install_skill_as_keycap`
+  (clone/fetch → write a `skill`-variant manifest, ADR-022) in its tool registry
+  (`packages/ctrl-web/src/lib/irisy-tools.ts`, where ADR-021 §5 left these as
+  TODO). The user says "I want HTML slide decks" → Irisy searches → recommends
+  frontend-slides → installs it as a keycap → it lands on the keyboard.
+- The **Pool / workbench** search UI is the *secondary, manual* path over the
+  same Worker — power users browse + install directly.
+- Both call the same `ctrl-skills` API; neither holds any token.
 
-### 4. Edge cache for global low-latency
+### 4. Token handling — server-side only
 
-GitHub authenticated code search is rate-limited (~10 req/min). The worker
-caches each `q` in the **CF Cache API** (~5 min TTL) so repeated/global queries
-hit the edge, not GitHub. This both respects the rate limit and gives worldwide
-low latency (the reason to use a Worker over direct GitHub at all).
+GitHub token (Leg B) + any registry key live as CF **secrets**
+(`wrangler secret put`), never in code, never client-side (olym rule; the whole
+point of the proxy). A fine-grained PAT with `public_repo` read suffices.
 
-### 5. CORS + abuse posture
+### 5. Edge cache (load-bearing) + CORS + abuse posture
 
-- CORS allows the CTRL app origins (the PWA dev origin, the Tauri custom
-  scheme/`tauri://`, and the deployed PWA origin). Not a wildcard.
-- A light per-IP token-bucket (CF) guards the GitHub rate budget from abuse.
-- No auth on the endpoint for v1 (public skill search is not sensitive); revisit
-  if abuse appears.
-
-### 6. How CTRL consumes it (next increment, not this ADR's code)
-
-The PWA Pool route (`routes/pool.tsx`, today only filters installed keycaps)
-gains a "search skills" mode that fetches `${CTRL_SKILLS_URL}/skills/search?q=`.
-Results render as installable cards; picking one feeds the clone/install step.
-The worker URL is config, not hardcoded in components.
+- Cache each `q`+`source` in the CF Cache API (~5 min TTL). Shared globally, so
+  popular queries hit the edge — survives GitHub code-search rate limits and
+  gives worldwide low latency (the reason to use a Worker at all).
+- CORS allows the CTRL app origins (PWA dev origin, the Tauri scheme, deployed
+  PWA), not a wildcard.
+- Light per-IP token-bucket to protect the GitHub budget from abuse. No
+  end-user auth on the endpoint for v1 (public discovery isn't sensitive).
 
 ## Consequences
 
 **Good**
-- Discovery works globally, fast, with no token on the client.
-- ctrl-cloud exists — the backend the topology always assumed, now real, with a
-  clean first tenant to pattern the rest (auth/billing/market/relay/push) on.
-- Desktop stays cloud-independent: search degrades to the `owner/repo` MVP path
-  when ctrl-cloud is unreachable.
+- MCP-server discovery reuses mature registries (the Day-1 10k+) instead of
+  re-crawling GitHub — robust, no rate-limit hell.
+- SKILL.md discovery is viable because the shared edge cache absorbs the GitHub
+  code-search rate limit (the documented failure mode of uncached search).
+- Discovery is Irisy-native (ADR-021): conversational find-and-install, with the
+  Pool/workbench as the manual alternative — one substrate serves both.
+- ctrl-cloud now exists with a clean first tenant patterning the rest.
 
-**Cost**
-- Net-new repo + deploy pipeline + a secret to manage (accepted; bao chose the
-  complete path over the MVP).
-- GitHub code-search REST API only indexes default branches of public repos and
-  has coverage gaps — discovery is "good", not exhaustive. Acceptable for v1.
+**Cost / risk**
+- Net-new repo + deploy + secrets (accepted; bao chose the complete path).
+- GitHub code search only indexes default branches of public repos with coverage
+  gaps; SKILL.md discovery is "good", not exhaustive — registries carry the bulk.
+- Two legs to maintain; the normalized envelope is where they must stay aligned.
 
 **Hard rules (this ADR holds)**
-- GitHub token NEVER leaves the Worker. No token in the client, ever.
+- Tokens NEVER leave the Worker.
 - No local `wrangler dev`; staging on `*.workers.dev`.
-- Desktop must still create a keycap from `owner/repo` without ctrl-cloud
-  (cloud is augmentation, not dependency).
-- Worker returns the CTRL envelope, not raw GitHub JSON.
+- Desktop must still create a keycap from `owner/repo` without ctrl-cloud.
+- Worker returns the normalized CTRL envelope, not raw upstream JSON.
+- Edge caching on Leg B is mandatory, not optional.
 
-## Open follow-ups
+## Open follow-ups (build order)
 
-1. Create `soodooi/ctrl-cloud` + the `ctrl-skills` worker; deploy to staging.
-2. Provision `GITHUB_TOKEN` secret (fine-grained PAT, `public_repo` read).
-3. Wire the PWA Pool search-skills mode to the worker.
-4. Clone/install path: pick a skill → fetch SKILL.md + clone repo into
-   `~/.ctrl/keycaps/<id>/` → write a `skill`-variant manifest (ADR-022 SDK work).
-5. Kernel `run_keycap` skill dispatch (Pi reads SKILL.md) + viewer render.
-6. Later: fold discovery into a broader `ctrl-market` worker if the marketplace
-   (paid listings / ratings) materializes; or keep `ctrl-skills` dedicated.
+1. **Deep-dive the registry APIs** (official MCP Registry first; Glama/PulseMCP
+   shape + auth/rate limits) before coding Leg A.
+2. Create `soodooi/ctrl-cloud` + the `ctrl-skills` Worker; provision the
+   `GITHUB_TOKEN` secret; deploy to staging. **Build Leg B first** — it unblocks
+   the first keycap (frontend-slides is a SKILL.md skill). Add Leg A after.
+3. Irisy tools: `search_skills` + `install_skill_as_keycap` (ADR-021 §5).
+4. Kernel: install-from-skill (clone → `skill`-variant manifest) + `run_keycap`
+   skill dispatch (Pi reads SKILL.md) + viewer render.
+5. Pool/workbench manual search surface over the same Worker.
