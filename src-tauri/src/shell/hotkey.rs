@@ -268,10 +268,10 @@ mod mac_impl {
     // guard, "another modifier already down cancels arming" guard).
     //
     // Differences from the Win path are environmental, not behavioral:
-    //   • CGEventTap requires the Accessibility privilege; tap creation
-    //     fails until the user grants it. Bootstrap responsibility lives in
-    //     `shell::lifecycle` — here we surface the failure as Err so the
-    //     supervisor can prompt + retry.
+    //   • CGEventTap requires the Accessibility privilege. `run_loop`
+    //     requests it (adds CTRL to the Accessibility list + shows the grant
+    //     dialog + opens the pane) and polls until granted, so the tap
+    //     installs in the same launch — no app restart needed.
     //   • The tap callback runs on whatever thread runs the CFRunLoop. We
     //     spawn a dedicated thread for that loop so the Tauri main thread
     //     stays free for IPC + UI; the user-supplied callback fires on the
@@ -301,6 +301,27 @@ mod mac_impl {
     const KVK_RIGHT_CONTROL: i64 = 0x3E;
 
     static STATE: OnceLock<Mutex<TapState>> = OnceLock::new();
+
+    // Input Monitoring (kTCCServiceListenEvent) gates whether a ListenOnly
+    // keyboard tap actually receives events. CGPreflightListenEventAccess
+    // checks the current grant; CGRequestListenEventAccess prompts the user +
+    // adds CTRL to the Input Monitoring list. Declared from CoreGraphics
+    // directly — the `core-graphics` crate doesn't bind these.
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGPreflightListenEventAccess() -> bool;
+        fn CGRequestListenEventAccess() -> bool;
+    }
+
+    fn preflight_input_monitoring() -> bool {
+        unsafe { CGPreflightListenEventAccess() }
+    }
+
+    fn request_input_monitoring() {
+        unsafe {
+            CGRequestListenEventAccess();
+        }
+    }
 
     struct TapState {
         callback: OnTap,
@@ -344,20 +365,56 @@ mod mac_impl {
     }
 
     fn run_loop() -> Result<()> {
+        // Bare-Ctrl summon needs a CGEventTap — the global-shortcut API
+        // (RegisterEventHotKey) rejects lone modifiers, so a chord like
+        // Alt+Space would be permission-free but a single Ctrl cannot be.
+        //
+        // A ListenOnly keyboard tap requires the **Input Monitoring** privilege
+        // (kTCCServiceListenEvent) on macOS 10.15+ — NOT Accessibility (that
+        // gates .defaultTap event *modification*). The trap that cost hours:
+        // CGEventTapCreate SUCCEEDS without Input Monitoring — the tap just
+        // silently receives zero events. "Tap installed" in the log meant
+        // nothing; Ctrl was dead globally because we'd only requested
+        // Accessibility. It appeared to "work when CTRL was focused" because
+        // the active app still gets its own key events.
+        //
+        // Two more load-bearing macOS gotchas:
+        //   1. TCC binds the grant to the app's code-signing Designated
+        //      Requirement. Ad-hoc / per-build signatures have an unstable DR
+        //      (cdhash changes every build) → the grant goes stale on the next
+        //      build and Settings shows a toggle that no longer matches this
+        //      binary. CTRL must ship signed with a STABLE cert so one grant
+        //      persists across rebuilds (see memory troubleshoot_ctrl_hotkey).
+        //   2. The grant is NOT applied to the already-running process —
+        //      CGPreflightListenEventAccess keeps returning the pre-grant value
+        //      for this process's lifetime. After the user flips the toggle the
+        //      app must RESTART for the tap to see events; the stable DR then
+        //      keeps it granted forever. The poll below is defensive (covers a
+        //      preflight that does update); the normal path is boot-after-grant.
+        if !preflight_input_monitoring() {
+            tracing::warn!(
+                "hotkey: Input Monitoring not granted — added CTRL to the list + prompting. \
+                 Grant it under System Settings > Privacy & Security > Input Monitoring, \
+                 then RESTART CTRL (TCC does not apply the grant to a running process)."
+            );
+            request_input_monitoring();
+            while !preflight_input_monitoring() {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
+        tracing::info!("hotkey: Input Monitoring granted — creating CGEventTap");
+
+        // ListenOnly: we observe events but never consume them, so other apps
+        // see Ctrl exactly as the user pressed it.
+        //
+        // HID (not Session) — a Session tap only fires when CTRL is focused;
+        // HID intercepts before per-session dispatch so Ctrl fires from any
+        // app (Chrome/etc). Locked by memory troubleshoot_ctrl_hotkey.
         let event_types = vec![
             CGEventType::KeyDown,
             CGEventType::KeyUp,
             CGEventType::FlagsChanged,
         ];
-
-        // ListenOnly: we observe events but never consume them, so other
-        // apps see Ctrl exactly as the user pressed it.
-        //
-        // HID (not Session) — Session tap only fires when CTRL is focused;
-        // HID intercepts before per-session dispatch so Ctrl fires from any
-        // focused app (Chrome/etc). 46f60e1 fixed this; regressed somewhere
-        // — locked by memory troubleshoot_ctrl_hotkey "CGEventTap HID tap
-        // location (Session is not enough; without it Chrome and other apps stay completely unresponsive)".
         let tap = CGEventTap::new(
             CGEventTapLocation::HID,
             CGEventTapPlacement::HeadInsertEventTap,
@@ -368,9 +425,8 @@ mod mac_impl {
                 None
             },
         )
-        .map_err(|_| {
-            anyhow!("CGEventTap creation failed — Accessibility permission likely missing")
-        })?;
+        .map_err(|_| anyhow!("CGEventTap creation failed"))?;
+        tracing::info!("hotkey: CGEventTap created (Input Monitoring granted)");
 
         let runloop_source = tap
             .mach_port

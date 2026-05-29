@@ -53,8 +53,19 @@ impl WindowController {
             return Ok(());
         };
         #[cfg(target_os = "windows")]
-        cloak::set(&w, true);
-        tracing::info!("WindowController::prewarm — main cloaked at boot");
+        {
+            cloak::set(&w, true);
+            tracing::info!("WindowController::prewarm — main cloaked at boot");
+        }
+        // macOS: hide the launcher at boot so it stays invisible until the
+        // first Ctrl tap. Without this the tauri.conf `visible: true` window
+        // sits on screen (always-on-top) and can cover the system
+        // Accessibility prompt the hotkey thread raises on first launch.
+        #[cfg(target_os = "macos")]
+        {
+            let _ = w.hide();
+            tracing::info!("WindowController::prewarm — main hidden at boot");
+        }
         Ok(())
     }
 
@@ -245,6 +256,13 @@ impl WindowController {
     pub fn hide(app: &AppHandle) -> Result<()> {
         if let Some(w) = Self::main(app) {
             tracing::info!("WindowController::hide — explicit user request");
+            // macOS: hide (not destroy) so the launcher stays tray-resident.
+            // Destroying the last window fires ExitRequested → quits the app
+            // (which would also kill the hotkey + Pi supervisor threads).
+            // Mirrors toggle()'s hide branch.
+            #[cfg(target_os = "macos")]
+            let _ = w.hide();
+            #[cfg(not(target_os = "macos"))]
             let _ = w.destroy();
         }
         Ok(())
@@ -325,6 +343,8 @@ pub(crate) fn install_close_intercept(w: &WebviewWindow, app: &AppHandle, label:
                     if label_for_closure == "main" {
                         #[cfg(target_os = "windows")]
                         cloak::set(&w, true);
+                        #[cfg(target_os = "macos")]
+                        let _ = w.hide();
                     } else {
                         let _ = w.destroy();
                     }
