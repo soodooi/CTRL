@@ -32,6 +32,9 @@ export const KeycapVariant = z.enum([
   'cli-wrapper',     // wraps an external CLI binary (Pattern B)
   'stss-publisher',  // listens on ST-SS bridge for events (Pattern F)
   'local-agent',     // long-running local process (Pattern C)
+  'skill',           // SKILL.md run by the active brain — the workbench's
+                     // primary create path (source/SKILL.md → ctrl skill →
+                     // 键帽). See ADR-022.
 ]);
 export type KeycapVariant = z.infer<typeof KeycapVariant>;
 
@@ -423,13 +426,56 @@ export const CliWrapperSource = z.object({
   args: z.array(z.string()).optional(),
 });
 
+/** Skill source — the keycap is backed by a SKILL.md the active brain runs
+ *  (ADR-022). `entry` is the markdown file inside the keycap dir
+ *  (`~/.ctrl/keycaps/<id>/SKILL.md`); `upstream` records where it came from
+ *  (GitHub `owner/repo` or URL) for Pool discovery + Patch-tier sync. */
+export const SkillSource = z.object({
+  type: z.literal('skill'),
+  entry: z.string().min(1).default('SKILL.md'),
+  upstream: z.string().optional(),
+});
+
 export const Source = z.discriminatedUnion('type', [
   McpSource,
   BuiltinSource,
   OAuthSource,
   CliWrapperSource,
+  SkillSource,
 ]);
 export type Source = z.infer<typeof Source>;
+
+// ── I/O ports (workbench wiring — JSON Schema typed) ─────────────────────
+// A keycap declares typed input/output ports so the workbench canvas can
+// validate connections STRUCTURALLY (output schema ⊑ input schema) at
+// connect-time, not at run-time (ADR-022 / brief §3). JSON Schema is the
+// cross-language standard and matches MCP tool I/O (ADR-013).
+
+/** An embedded JSON Schema document. Permissive record — the workbench
+ *  checks structural compatibility between ports, it does not validate the
+ *  schema grammar itself. Binary/stream payloads pass by reference
+ *  (handle/URI), never inlined (brief §8). */
+export const JsonSchemaDoc = z.record(z.string(), z.unknown());
+export type JsonSchemaDoc = z.infer<typeof JsonSchemaDoc>;
+
+export const IoPort = z.object({
+  /** Stable port id, referenced by workbench edges. */
+  id: z.string().min(1).regex(/^[a-z0-9_]+$/, {
+    message: 'port id must be lowercase + underscore',
+  }),
+  label: z.string().optional(),
+  /** JSON Schema describing the value this port carries. */
+  schema: JsonSchemaDoc,
+  /** Inputs only: must be wired before the keycap can run. Ignored on outputs. */
+  required: z.boolean().default(true),
+});
+export type IoPort = z.infer<typeof IoPort>;
+
+export const KeycapIo = z.object({
+  inputs: z.array(IoPort).default([]),
+  outputs: z.array(IoPort).default([]),
+});
+export type KeycapIo = z.infer<typeof KeycapIo>;
 
 // ── Icon (legacy string OR richer asset descriptor) ─────────────────────
 
@@ -566,8 +612,13 @@ export const KeycapManifest = z.object({
   /** Tells the kernel which dispatch path to use. */
   variant: KeycapVariant.default('builtin'),
 
-  /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper). */
+  /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper / skill). */
   source: Source.optional(),
+
+  /** Typed I/O ports for workbench composition (ADR-022). Each port carries
+   *  a JSON Schema; the canvas validates connections structurally at
+   *  connect-time. Optional — one-shot keycaps that are never composed omit it. */
+  io: KeycapIo.optional(),
 
   /** Role of this keycap in the CTRL surface. Orthogonal to `variant`:
    *  variant says *how* it runs, target says *what role* it plays.
@@ -592,8 +643,10 @@ export const KeycapManifest = z.object({
    *  second copy of user state" philosophy. */
   provider_passthrough: z.boolean().optional(),
 
-  /** Actions the user can invoke. Most keycaps have exactly one. */
-  actions: z.array(Action).min(1),
+  /** Actions the user can invoke (step-engine keycaps). `skill` / `mcp` /
+   *  external-source keycaps run via their `source` instead and may omit
+   *  this entirely; when present it must list at least one action. */
+  actions: z.array(Action).min(1).optional(),
 
   /** Trigger hints (hotkey / context-menu / spotlight); engine TBD. */
   triggers: z.array(z.object({
