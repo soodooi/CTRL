@@ -557,6 +557,65 @@ export type DraftMeta = z.infer<typeof DraftMeta>;
 
 // ── Top-level manifest ──────────────────────────────────────────────────
 
+// ── ADR-024 v2 axes (additive to v1; v1 manifests skip all of these) ────
+
+/** ADR-010 7-pattern axis — routes execution. G=builtin/StepEngine,
+ *  D=3rd-party MCP, B=CLI wrapper, C=daemon RPC, E=OAuth, F=ST-SS,
+ *  A=HTTP sink. Optional on v1 manifests (variant carries the same info). */
+export const KeycapPattern = z.enum(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+export type KeycapPattern = z.infer<typeof KeycapPattern>;
+
+/** ADR-024 brain capability requirement — declared per-capability with
+ *  optional provider lock. provider_pin = null → runtime walks the
+ *  fallback chain (ADR-011). Explicit id (e.g. "volc", "claude-cli")
+ *  pins this capability for this keycap. model_hint is advisory. */
+export const BrainCapabilityRequirement = z.object({
+  provider_pin: z.string().nullable().default(null),
+  model_hint: z.string().optional(),
+});
+/** Map of capability id → requirement. Keys are well-known capability
+ *  names: text.chat / text.embed / image.generate / image.edit /
+ *  image.understand / audio.stt / audio.tts. */
+export const BrainCapabilities = z.record(BrainCapabilityRequirement);
+export type BrainCapabilities = z.infer<typeof BrainCapabilities>;
+
+/** Single file-copy directive for cap_asset.files.items. */
+const CapAssetFileItem = z.object({
+  src: z.string(),
+  dest: z.string(),
+});
+
+/** Single seed-file directive for cap_asset.vault.seed. Either inline
+ *  string content OR a pointer to an already-bundled `cap_asset.files`
+ *  dest path. Empty .gitkeep entries use neither (just create the file). */
+const CapAssetSeedItem = z.object({
+  dest: z.string(),
+  content_inline: z.string().optional(),
+  content_from: z.string().optional(),
+});
+
+/** ADR-024 axis 6 — install-time provisioning bundle.
+ *
+ *  - cap_asset.files: static immutables copied to ~/.ctrl/keycaps/<id>/assets/
+ *    (replicated from the manifest at install + healed on every launch
+ *    if user deletes them).
+ *  - cap_asset.vault: user-facing folder reservation under the vault
+ *    root. Path is vault-relative (e.g. "keycaps/builtin-assist/").
+ *    Seed files populate first-run state (README, settings stubs, etc).
+ */
+export const CapAsset = z.object({
+  files: z.object({
+    items: z.array(CapAssetFileItem).default([]),
+  }).optional(),
+  vault: z.object({
+    path: z.string(),
+    seed: z.array(CapAssetSeedItem).default([]),
+  }).optional(),
+});
+export type CapAsset = z.infer<typeof CapAsset>;
+
+// ── Top-level manifest ───────────────────────────────────────────────────
+
 export const KeycapManifest = z.object({
   /** JSON schema URL — informational, not enforced. */
   $schema: z.string().url().optional(),
@@ -566,8 +625,11 @@ export const KeycapManifest = z.object({
     message: 'id must be lowercase alphanumeric + . - _',
   }),
 
-  /** Manifest format version. v1 = current; bump on breaking schema changes. */
-  manifest_version: z.literal(1).default(1),
+  /** Manifest format version. v1 = legacy; v2 = ADR-024 6-axis composition
+   *  model (adds cap_asset / brain_capabilities / ui_surface / pattern /
+   *  builtin). Either is accepted by parseManifest; new manifests should
+   *  use v2. The kernel loader reads v2-only fields when manifest_version=2. */
+  manifest_version: z.union([z.literal(1), z.literal(2)]).default(1),
 
   /** Human-readable name (i18n-friendly; can be CJK). */
   name: z.string().min(1),
@@ -674,6 +736,39 @@ export const KeycapManifest = z.object({
    *  Patch/Fork tiers of the 3-tier adjustment model. Absent on
    *  greenfield + Config-tier keycaps. */
   lineage: Lineage.optional(),
+
+  // ── ADR-024 v2 axes ─────────────────────────────────────────────────
+
+  /** True iff this is one of CTRL's built-in keycaps (lives in
+   *  packages/ctrl-keycaps/builtin/, seeded into ~/.ctrl/keycaps/ on
+   *  every launch). The shell self-repairs deleted builtins. v2 only. */
+  builtin: z.boolean().optional(),
+
+  /** ADR-010 7-pattern routing axis. Orthogonal to `variant` (variant
+   *  pre-dates ADR-010; pattern is the canonical successor). v2 only. */
+  pattern: KeycapPattern.optional(),
+
+  /** Per-capability brain provider requirements (ADR-024 §3). v2 only.
+   *  Replaces the singular `target=brain` model: a keycap can require
+   *  multiple modalities simultaneously (poster needs text.chat +
+   *  image.generate + image.edit) and lock provider per capability. */
+  brain_capabilities: BrainCapabilities.optional(),
+
+  /** Top-level alias for workspace.ui (ADR-024 §2 axis 5). When both are
+   *  set, ui_surface wins. v2 manifests should use ui_surface; v1
+   *  manifests using workspace.ui continue to work unchanged. */
+  ui_surface: WorkspaceUi.optional(),
+
+  /** Skill recipes the brain reads as context. Resolved via 3-tier lookup
+   *  per ADR-024 §3.5: vault/skills/<id>.md > ~/.claude/skills/<id>.md >
+   *  ~/.ctrl/keycaps/<id>/assets/skills/<id>.md. v2 only. */
+  skills: z.array(z.string()).optional(),
+
+  /** Install-time provisioning bundle (ADR-024 axis 6). v2 only. The
+   *  bundled `files.items[]` carry the keycap's icon / persona.md /
+   *  templates; `vault.path` reserves the keycap's user-facing folder
+   *  with optional seed structure. */
+  cap_asset: CapAsset.optional(),
 });
 export type KeycapManifest = z.infer<typeof KeycapManifest>;
 
