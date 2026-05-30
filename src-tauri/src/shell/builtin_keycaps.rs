@@ -27,6 +27,10 @@ use std::path::{Path, PathBuf};
 /// Each subfolder is `<bundle>/<BUILTIN_SRC_RELATIVE>/<id>/manifest.json`.
 const BUILTIN_SRC_RELATIVE: &str = "packages/ctrl-keycaps/builtin";
 
+/// Subpath inside the macOS `.app` bundle's Contents/Resources/ where the
+/// builtin keycap source lands (per tauri.conf.json bundle.resources).
+const BUNDLE_RESOURCE_SUBPATH: &str = "keycaps/builtin";
+
 /// Locate the builtin source directory.
 ///
 /// Priority:
@@ -34,8 +38,11 @@ const BUILTIN_SRC_RELATIVE: &str = "packages/ctrl-keycaps/builtin";
 ///   2. Walk up from `current_exe` looking for `packages/ctrl-keycaps/builtin`
 ///      (dev mode + `tauri dev` + run-in-repo)
 ///   3. Walk up from `current_dir` (same purpose; helps when exec path is odd)
-///   4. The installed `.app` bundle's `Resources/keycaps/builtin/` (TODO: not
-///      wired here — needs Tauri bundle config to include the directory).
+///   4. Installed `.app` bundle's `Contents/Resources/keycaps/builtin/` —
+///      derived from `current_exe` by stripping `MacOS/<binary>` and
+///      appending `Resources/<BUNDLE_RESOURCE_SUBPATH>`. tauri.conf.json
+///      bundle.resources includes the directory so this path exists at
+///      runtime on installed .app builds.
 fn find_source_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("CTRL_BUILTIN_KEYCAPS_DIR") {
         let p = PathBuf::from(dir);
@@ -45,7 +52,24 @@ fn find_source_dir() -> Option<PathBuf> {
     }
     let mut starts: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
-        starts.push(exe);
+        starts.push(exe.clone());
+        // macOS .app bundle: current_exe = <bundle>/Contents/MacOS/<bin>;
+        // the resources dir is <bundle>/Contents/Resources/. Tauri 2 also
+        // exposes app.path().resource_dir() but ShellLifecycle::boot is
+        // called before we have an AppHandle in this scope, so we derive
+        // the path geometrically. The walk falls through to None if the
+        // file isn't there (dev builds use the walk-up below).
+        if let Some(macos_dir) = exe.parent() {
+            if macos_dir.file_name().is_some_and(|n| n == "MacOS") {
+                if let Some(contents_dir) = macos_dir.parent() {
+                    let candidate =
+                        contents_dir.join("Resources").join(BUNDLE_RESOURCE_SUBPATH);
+                    if candidate.is_dir() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
     }
     if let Ok(cwd) = std::env::current_dir() {
         starts.push(cwd);
