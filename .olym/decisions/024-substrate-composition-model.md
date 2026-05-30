@@ -51,7 +51,7 @@ The runtime (formerly "kernel" in some docs) is the loader; **the user-facing co
 **Irisy is the user-perceived AI total** — single identity name that the user sees everywhere. Its physical implementation = the currently-active keycap's persona instance. Switching keycaps = Irisy quietly swaps her persona; the UI never exposes "you are talking to assist keycap". `builtin/assist` and `builtin/create` are keycaps with the same manifest shape as user keycaps (collapses ContextProfile and Keycap into a single abstraction). This reconciles memory `decision_irisy_is_pwa_native_not_keycap` (Irisy = first-class PWA page, true) with the implementation truth (Irisy's voice = active keycap's persona, also true) — different layers of the same fact.
 
 **Builtin / user keycap = zero architectural difference, only a metadata flag**:
-- `manifest.builtin = true` → shipped in `share/keycaps/builtin/<id>/`, app self-repairs on launch if user deletes the folder.
+- `manifest.builtin = true` → shipped in `packages/ctrl-keycaps/builtin/<id>/` (source) → bundled into `<bundle>.app/Contents/Resources/keycaps/builtin/<id>/` at build → seeded into `~/.ctrl/keycaps/<id>/` on every launch. App self-repairs deleted builtins.
 - `manifest.builtin = false` → user-installed under `~/.ctrl/keycaps/<id>/`, uninstall is permitted.
 
 ### 2. The 6 substrate axes
@@ -66,7 +66,7 @@ Each keycap manifest declares (all optional except `pattern`). Axes 1-5 are **ru
 | 3 | `mcp_servers` | for Pattern D | List of 3rd-party MCP server bindings (spawn args + tool allowlist) |
 | 4 | `skills` | list of SKILL.md references resolved via the **3-tier lookup chain** (see §3.5) | Recipes the brain reads as context. CTRL skill format = Claude Code SKILL.md compatible superset; keycap can reference ECC plugin skills, vault user skills, or its own bundled skills uniformly |
 | 5 | `ui_surface` | one of 9 enum (00-inventory §5 A1) | `none / notification / modal / clipboard / html-output / chat-stream / picker / form / canvas` — PWA WorkspaceUiDispatch registry routes |
-| **6** | **`cap_asset`** | **install-time provisioning bundle** | **Two sub-fields.** `cap_asset.files` = static bundled files (**icon, persona.md, templates, seed prompts, sample data**) copied to `~/.ctrl/keycaps/<id>/assets/` at install (immutable; `manifest.builtin=true` keycaps re-copy from `share/keycaps/builtin/<id>/`). `cap_asset.vault` = user-facing folder reservation under `~/Documents/CTRL/keycaps/<id>/` with seed sub-folders + seed README/settings files (user-editable, plain-text per ADR-015, mesh-synced per ADR-003). **User override path**: `vault/keycaps/<id>/persona.md` (if exists) overrides `assets/persona.md` — one lookup, no global persona library. |
+| **6** | **`cap_asset`** | **install-time provisioning bundle** | **Two sub-fields.** `cap_asset.files` = static bundled files (**icon, persona.md, templates, seed prompts, sample data**) copied to `~/.ctrl/keycaps/<id>/assets/` at install (immutable; `manifest.builtin=true` keycaps re-copy from `packages/ctrl-keycaps/builtin/<id>/` (dev) or `<bundle>/Contents/Resources/keycaps/builtin/<id>/` (installed)). `cap_asset.vault` = user-facing folder reservation under `~/Documents/CTRL/keycaps/<id>/` with seed sub-folders + seed README/settings files (user-editable, plain-text per ADR-015, mesh-synced per ADR-003). **User override path**: `vault/keycaps/<id>/persona.md` (if exists) overrides `assets/persona.md` — one lookup, no global persona library. |
 
 **Install-time provisioning rule** (binding for all 前期 keycaps): when a keycap is installed, the runtime MUST atomically:
 1. Copy all `cap_asset.files` into `~/.ctrl/keycaps/<id>/assets/` (preserves declared directory structure).
@@ -252,6 +252,86 @@ Irisy's prompt (`vault/.irisy-prompts/irisy-system.md` etc.) MUST:
 - Tool calls and tool results NEVER stream to chat (already partially fixed; ADR-024 makes it binding policy)
 - Hide internal layer breakdown unless user explicitly asks "what's running underneath"
 
+### 8. User Flow — workspace 怎么用 (bao sign-off pending)
+
+**This section locks the operator-facing surface for the workspace area.** It is normative, not exploratory. Sign-off here precedes any implementation; deviations require an ADR amendment.
+
+**8.1 The 2 states the user lives in**
+
+The main window has exactly **2 visual states**. No 3rd intermediate. No companion-→-expanded animation halfway.
+
+| State | Width | Visible content (left → right) | When |
+|---|---|---|---|
+| **COMPANION** (default) | **430 px** | `[L1 48] [Irisy chat 382]` | Default first launch + after `▾` collapse + after Ctrl-hide-then-show |
+| **EXPANDED** | **1800 px** (or clamp to monitor width) | `[L1 48] [workspace area 1370] [Irisy chat 382]` | After user clicks `▾` once on L1 |
+
+The window's **right edge stays anchored** (top-right of primary monitor). Expansion grows the window's **left edge leftward** so Irisy doesn't shift visually. bao 2026-05-30: "左边展开新的窗口" — "新窗口" = 主窗自身向左扩, 不是独立 Tauri 窗口.
+
+**8.2 The 1 operator the user has**
+
+`▾` button at the top of L1 is the **sole** operator for the workspace area. It is both the open and the close trigger.
+
+| Action | What happens |
+|---|---|
+| Click `▾` in COMPANION | Window animates to EXPANDED (430 → 1800, leftward). Workspace area renders. `▾` icon flips to `▴`. |
+| Click `▴` in EXPANDED | Window animates back to COMPANION (1800 → 430). Workspace area unmounts. `▴` flips to `▾`. |
+
+**No other close affordance**. Users do NOT look for an X in the workspace area. The L1 `▾`/`▴` is the only way in and out. This is unambiguous to teach: "click the chevron to expand; click again to collapse." The mistake of 0.1.95 (independent Tauri window with no visible close handle, bao "关都不知道怎么关") is forbidden by this rule.
+
+**8.3 What the workspace area shows (v1 minimum)**
+
+When EXPANDED, the workspace area (1370 px wide between L1 and Irisy) renders:
+
+- **Header strip** (~40 px): label "Keycaps" + installed count (e.g. "2 installed").
+- **Body**: installed-keycap grid as 4-column cards (icon + name), centered, max-width 1280 px. Empty state when 0 keycaps: "Use Create on the left to talk Irisy through making your first keycap."
+
+**Future v1.1+ additions** (out of scope for this section): tabs along the header for Pool / Workbench / per-keycap output. These DO NOT add new operators — they all stay inside the EXPANDED state, triggered by ▾.
+
+**8.4 L1 button list (sign-off required — bao to pick 3 + ▾ + Settings)**
+
+L1 contains, top to bottom:
+
+```
+[▾ / ▴]                    ← workspace toggle (always top, never goes away)
+                           ← <bao to fill: which 3 buttons go here>
+                           
+                           ← (spacer)
+[⚙ Settings]               ← always bottom
+```
+
+Current candidates from past discussion (bao to pick 3):
+
+| Candidate | Behavior |
+|---|---|
+| **◉ Assist** | Loads `builtin-assist` keycap → Irisy default chat persona. Click while already on it = no-op. |
+| **✚ Create** | Loads `builtin-create` keycap → Irisy keycap-designer persona. Click = navigate to /irisy?intent=create-keycap. |
+| **< / > Coding** | Opens `/coding` workspace. |
+| **▢ Vault** | Opens `/vault` browser. |
+| **▤ Pool** | Browse all available keycaps to install. (Could move into workspace area instead — see §8.6.) |
+
+bao explicitly questioned "你三个按钮什么意思" on 2026-05-30. **My default proposal (pending bao override)**: `[Assist] [Create] [Vault]` — assist (default chat) + create (designer) + vault (data home). Pool moves into the workspace area as a tab. Coding stays as a future addition or moves into workspace.
+
+**8.5 Edge case — monitor narrower than 1800**
+
+If the user's primary monitor is < 1800 px wide (e.g. 13" MacBook = 1440 native):
+- EXPANDED target width clamps to `min(1800, monitor_width - 40)` — leave 40 px breathing room on the left edge.
+- Window's right edge stays where COMPANION had it (top-right of monitor).
+- Workspace area shrinks accordingly; the keycap grid reflows (auto-fit 2-col / 3-col / 4-col).
+
+**8.6 Decision still open in §"实施时决"**
+
+- **Width transition style**: instant set_size or animated grow? Default = animated 220 ms ease-out, matching companion-input window glue's motion. If macOS animation API too brittle, fall back to instant.
+- **Pool location**: stays as L1 button (per current PrimaryRail) OR moves into workspace area as a tab. My preference: **tab** (workspace area is where keycap management lives; L1 stays minimal). Pending bao.
+- **First-launch hint**: show a one-time tooltip pointing at `▾` so users discover the workspace area exists. Default: yes, dismissable.
+
+**8.7 What this section forbids**
+
+- ❌ Independent Tauri windows for the workspace area (rejected 2026-05-30 after 0.1.95 user feedback "关都不知道怎么关").
+- ❌ Drawer / overlay that covers Irisy chat (Irisy must stay visible and useable in EXPANDED).
+- ❌ Multiple workspace areas open at once.
+- ❌ Workspace area opening automatically without user action (bao's "自动触发" earlier was ambiguous; this section locks `▾` as the ONLY trigger until a later ADR amendment adds explicit auto-open triggers per-keycap).
+- ❌ Closing the workspace area by any control inside it (Esc, hide button, click outside). Only L1 `▴` collapses.
+
 ## Alternatives considered
 
 | # | Alternative | Why rejected |
@@ -330,3 +410,4 @@ The following 6 originally-listed open questions are **deferred to implementatio
 | 2026-05-30 (same day) | Added 7th axis **`cap_asset`** (bao 2026-05-30 "那就规范定义叫 cap-asset"; preceded by "前期 keycap 都要全部创建该 keycap 的 assets ... 也要有 vault"). `cap_asset.files` = bundled-in static files; `cap_asset.vault` = user-facing vault folder reservation with seed structure. Install-time provisioning rule added to §1 (atomic, day-1 ready, no first-run wizard). Open question 6 added: cap_asset retroactive scope for 16 G builtin. |
 | 2026-05-30 (same day) | **Axes 7 → 6**: persona folded into `cap_asset.files` (bao 2026-05-30 "三层 persona 你怎么管理? 你还不如助理也是一个 keycap 逻辑更加清晰"). Shared persona library deleted from design. `builtin/assist` and `builtin/create` are keycaps with identical shape to user keycaps, only `manifest.builtin=true` flag distinguishes; no `scope="root"` or `can_install_keycaps` special fields. Capability `file.read_allowlist` decides what the keycap *reads* (assist gets `${vault_root}/*`); `cap_asset.vault.path` decides only what it *writes* (assist gets `keycaps/assist/`). |
 | 2026-05-30 (same day) | **A1 + B4 amended into normative sections**; "待 bao 拍板" reframed as "实施时决" with defaults chosen for all 6 originally-open questions (bao 2026-05-30 "边做边决策, 先做助理、create、第一个键帽, 这样逐步就清晰起来了; 先大体框架搭建好"). ADR-024 is no longer blocked on open questions; defaults stand unless implementation evidence forces a change. |
+| 2026-05-30 (same day, evening) | **§8 User Flow added** (workspace operator flow). Triggered by 0.1.95 ship of an independent Tauri workspace window that bao rejected as un-closable ("关都不知道怎么关"). §8 locks: (a) workspace area = main window's leftward expansion (430 ↔ 1800), NOT a separate window; (b) L1 `▾`/`▴` is the sole open/close operator; (c) Irisy chat stays visible in EXPANDED; (d) 1800 clamps to monitor width on small screens. **L1 button list (§8.4) requires bao sign-off on which 3 buttons sit between `▾` and Settings before any implementation.** No code lands until §8 is signed off. |

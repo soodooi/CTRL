@@ -7,9 +7,18 @@
 // breaking changes bump `manifest_version` so the kernel can detect +
 // migrate old keycaps.
 //
-// Schema reflects what the 16 v1 builtin keycaps actually use:
-//   share/modules/builtin/<id>/manifest.json
-// plus fields explicitly reserved for OAuth (Pattern E) and MCP server
+// Schema covers two manifest generations:
+//  - v1: legacy shape that the original 16 demo keycaps used (deleted in
+//    PR #62 "drop hermes, clear demo keycaps"). v1 manifests now consist
+//    of only the 2 builtins in packages/ctrl-keycaps/builtin/ + any
+//    user-installed keycaps under ~/.ctrl/keycaps/. Fields like the flat
+//    `permissions: string[]` list survive for back-compat parsing.
+//  - v2: ADR-024 6-axis composition model (additive top-level fields:
+//    builtin / pattern / brain_capabilities / ui_surface / skills /
+//    cap_asset). v1 parsers still accept v2 manifests because all v2
+//    fields are optional; v2 parsers respect the v1 shape.
+//
+// Plus fields explicitly reserved for OAuth (Pattern E) and MCP server
 // (Pattern D) variants the kernel already routes.
 
 import { z } from 'zod';
@@ -487,7 +496,9 @@ export type KeycapIo = z.infer<typeof KeycapIo>;
 
 /** Icon address. Two shapes coexist:
  *  - **Legacy string** — Lucide name OR single Unicode char (what the
- *    16 v0.1 builtins use). Preserved indefinitely for back-compat.
+ *    original demo builtins used; deleted PR #62, but shape preserved
+ *    indefinitely for back-compat with user-installed keycaps and the
+ *    current builtin-assist / builtin-create manifests).
  *  - **Object form** — for SVG / Lottie / dotLottie state machines
  *    routed through IconRenderer (28d6873). The workshop icon palette
  *    emits this form; legacy keycaps emit strings.
@@ -575,8 +586,13 @@ export const BrainCapabilityRequirement = z.object({
 });
 /** Map of capability id → requirement. Keys are well-known capability
  *  names: text.chat / text.embed / image.generate / image.edit /
- *  image.understand / audio.stt / audio.tts. */
-export const BrainCapabilities = z.record(BrainCapabilityRequirement);
+ *  image.understand / audio.stt / audio.tts.
+ *
+ *  ECC review C3 (2026-05-30): Zod v4 `z.record` requires the two-arg
+ *  form `(keySchema, valueSchema)` — the single-arg form errors at
+ *  schema construction time and would throw when parsing any v2
+ *  manifest with brain_capabilities. */
+export const BrainCapabilities = z.record(z.string(), BrainCapabilityRequirement);
 export type BrainCapabilities = z.infer<typeof BrainCapabilities>;
 
 /** Single file-copy directive for cap_asset.files.items. */
@@ -653,8 +669,10 @@ export const KeycapManifest = z.object({
   tags: z.array(z.string()).optional(),
 
   /**
-   * Legacy flat permission list (16 v0.1 builtins still use this).
-   * Prefer `capabilities` (structured, gate-enforceable) for new manifests.
+   * Legacy flat permission list (the original demo builtins used this;
+   * deleted PR #62. Kept for back-compat with any user keycap still on
+   * the v1 shape). Prefer `capabilities` (structured, gate-enforceable)
+   * for new manifests.
    */
   permissions: z.array(Permission).optional(),
 

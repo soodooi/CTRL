@@ -1,9 +1,13 @@
-// [H-2026-05-18-001] InstallBar — sticky bottom bar.
+// InstallBar — sticky bottom bar.
 //
 // Shows Zod status (structural error counts go silent on the LLM; only
 // semantic errors surface here, mirroring what ChatPane shows) + the
-// Install CTA. Per v1 contract, the button is greyed and labelled
-// "Install · backend in progress" until zeus Z2 ships install_keycap.
+// Install CTA.
+//
+// 2026-05-30 (ECC review C5): the historical "backend in progress" gate
+// referred to zeus's Z2 install_keycap Tauri command, which shipped at
+// commands/kernel.rs:197 long ago. The prop + greyed-out branch are
+// retired; the CTA is always live as long as the manifest is installable.
 
 import {
   selectInstallable,
@@ -12,13 +16,11 @@ import {
 import styles from './InstallBar.module.css';
 
 interface InstallBarProps {
-  /** Z2 status. When false, button is greyed with a "coming soon" tooltip. */
-  backendReady: boolean;
-  /** Called only when backendReady && installable. */
+  /** Called only when the manifest is installable. */
   onInstall(): void;
 }
 
-export function InstallBar({ backendReady, onInstall }: InstallBarProps): React.ReactElement {
+export function InstallBar({ onInstall }: InstallBarProps): React.ReactElement {
   const installable = useKeycapCreatorStore(selectInstallable);
   const phase = useKeycapCreatorStore((s) => s.phase);
   const errors = useKeycapCreatorStore((s) => s.errors);
@@ -26,21 +28,18 @@ export function InstallBar({ backendReady, onInstall }: InstallBarProps): React.
   const structuralCount = errors.filter((e) => e.kind === 'structural').length;
   const semanticCount = errors.filter((e) => e.kind === 'semantic').length;
 
-  const buttonEnabled = backendReady && installable && phase === 'ready';
+  const buttonEnabled = installable && phase === 'ready';
   const installing = phase === 'installing';
 
   const buttonLabel = (() => {
     if (installing) return 'Installing…';
-    if (!backendReady) return 'Install · backend in progress';
     if (phase === 'installed') return '✓ Installed';
     return '▸ Install keycap';
   })();
 
-  const buttonTitle = backendReady
-    ? installable
-      ? 'Land manifest + server.ts at ~/.ctrl/keycaps/<id>/'
-      : 'Finish slot-filling first'
-    : 'Coming soon — zeus Z2 ships install_keycap Tauri command';
+  const buttonTitle = installable
+    ? 'Land manifest + server.ts at ~/.ctrl/keycaps/<id>/'
+    : 'Finish slot-filling first';
 
   return (
     <footer className={styles.bar}>

@@ -57,11 +57,6 @@ function readUrlParams(): { mode: IrisyMode; prefill: string | null } {
   };
 }
 
-// Z2 (install_keycap Tauri command) ships tomorrow per zeus. Until then
-// the Install button stays greyed with a tooltip. Flip this flag once
-// the command is registered.
-const BACKEND_INSTALL_READY = true;
-
 // Chat mode surface (post 2026-05-29 restructure): Irisy chat is now
 // SHELL-LEVEL, so the route renders only the keycap-output pane when a
 // run is active. Idle visit to `/irisy` shows an empty hint — the chat
@@ -198,10 +193,7 @@ export const IrisyRoute = (): React.ReactElement => {
         manifest={<ManifestPreview />}
         code={<CodePreview />}
         bar={
-          <InstallBar
-            backendReady={BACKEND_INSTALL_READY}
-            onInstall={() => void handleInstall()}
-          />
+          <InstallBar onInstall={() => void handleInstall()} />
         }
       />
       <DiscardConfirm

@@ -186,7 +186,7 @@ const idForPath = (pathname: string): string => {
 };
 
 export const PrimaryRail = (): ReactElement => {
-  const { activeRailId, setActiveRailId, l2Open, setL2Open } = useRail();
+  const { activeRailId, setActiveRailId } = useRail();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -211,17 +211,11 @@ export const PrimaryRail = (): ReactElement => {
 
   return (
     <aside className={styles.primary} aria-label="Primary navigation">
-      {/* L2 toggle — pinned at the top of L1. */}
-      <button
-        type="button"
-        className={styles.l2Toggle}
-        onClick={() => setL2Open(!l2Open)}
-        aria-label={l2Open ? 'Close secondary navigation' : 'Open secondary navigation'}
-        title={l2Open ? 'Close sub-menu' : 'Open sub-menu'}
-        aria-pressed={l2Open}
-      >
-        <ToggleIcon open={l2Open} />
-      </button>
+      {/* ECC review C4 (2026-05-30): the L2 toggle wired to `setL2Open`
+          had no real effect — no route registers an L2 descriptor via
+          useL2, so clicking it just revealed an empty placeholder pane.
+          Removed pending ADR-024 §8 sign-off, which will replace this
+          with the main-window self-expansion toggle (430 ↔ 1800). */}
 
       <nav className={styles.nav} aria-label="Primary nav items">
         {NAV_ITEMS.map((def) => {

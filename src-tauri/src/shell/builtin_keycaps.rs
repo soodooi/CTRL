@@ -45,20 +45,26 @@ const BUNDLE_RESOURCE_SUBPATH: &str = "keycaps/builtin";
 ///      runtime on installed .app builds.
 fn find_source_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("CTRL_BUILTIN_KEYCAPS_DIR") {
+        // ECC review H8: log loudly when the env override is honored so a
+        // compromised env shows up in trace. This bypass exists for tests
+        // + packaging; it should never appear in normal user logs.
         let p = PathBuf::from(dir);
         if p.is_dir() {
+            tracing::warn!(
+                path = %p.display(),
+                "BuiltinKeycaps: CTRL_BUILTIN_KEYCAPS_DIR override honored — \
+                 this should only happen during tests / packaging"
+            );
             return Some(p);
         }
     }
-    let mut starts: Vec<PathBuf> = Vec::new();
+
+    // (1) macOS bundle Resources — preferred for installed `.app` builds.
+    // Trust path: codesigned bundle; we still don't follow symlinks during
+    // the actual copy (see copy_tree_inner). Tauri 2 also exposes
+    // app.path().resource_dir() but ShellLifecycle::boot doesn't have an
+    // AppHandle in this scope — derive the path geometrically.
     if let Ok(exe) = std::env::current_exe() {
-        starts.push(exe.clone());
-        // macOS .app bundle: current_exe = <bundle>/Contents/MacOS/<bin>;
-        // the resources dir is <bundle>/Contents/Resources/. Tauri 2 also
-        // exposes app.path().resource_dir() but ShellLifecycle::boot is
-        // called before we have an AppHandle in this scope, so we derive
-        // the path geometrically. The walk falls through to None if the
-        // file isn't there (dev builds use the walk-up below).
         if let Some(macos_dir) = exe.parent() {
             if macos_dir.file_name().is_some_and(|n| n == "MacOS") {
                 if let Some(contents_dir) = macos_dir.parent() {
@@ -71,22 +77,36 @@ fn find_source_dir() -> Option<PathBuf> {
             }
         }
     }
-    if let Ok(cwd) = std::env::current_dir() {
-        starts.push(cwd);
-    }
-    for start in starts {
-        let mut cur: &Path = start.as_path();
-        loop {
-            let candidate = cur.join(BUILTIN_SRC_RELATIVE);
-            if candidate.is_dir() {
-                return Some(candidate);
-            }
-            match cur.parent() {
-                Some(parent) => cur = parent,
-                None => break,
+
+    // (2) Repo walk-up — DEBUG BUILDS ONLY. ECC review H8: in release builds
+    // a malicious CWD (`/tmp/attacker/packages/ctrl-keycaps/builtin/...`)
+    // would pass this walk and seed attacker-controlled keycaps. Release
+    // builds rely on the bundle path above; dev / tauri-dev / cargo-test
+    // use this walk.
+    #[cfg(debug_assertions)]
+    {
+        let mut starts: Vec<PathBuf> = Vec::new();
+        if let Ok(exe) = std::env::current_exe() {
+            starts.push(exe);
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            starts.push(cwd);
+        }
+        for start in starts {
+            let mut cur: &Path = start.as_path();
+            loop {
+                let candidate = cur.join(BUILTIN_SRC_RELATIVE);
+                if candidate.is_dir() {
+                    return Some(candidate);
+                }
+                match cur.parent() {
+                    Some(parent) => cur = parent,
+                    None => break,
+                }
             }
         }
     }
+
     None
 }
 
@@ -96,27 +116,116 @@ fn install_root() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".ctrl").join("keycaps"))
 }
 
+/// Max recursion depth for copy_tree — bounds keycap layout. ECC review C1
+/// flagged that symlink cycles in source would stack-overflow without this.
+const COPY_MAX_DEPTH: u8 = 8;
+
 /// Recursively copy `src` into `dst`. Existing files are NOT overwritten —
-/// user customizations are preserved. Creates `dst` and intermediates as
-/// needed. Returns the count of files written.
+/// user customizations are preserved.
+///
+/// Security hardening (ECC review C1, 2026-05-30):
+/// - **Rejects symlinks** in both src and dst — `entry.file_type()` returns
+///   the link's own type (NOT followed). A symlink in src is skipped + logged.
+///   A symlink already at dst path is treated as "already exists" so
+///   `fs::copy` cannot follow it to write attacker-controlled bytes
+///   through the link to wherever it points.
+/// - **Rejects `..` / `/` / `\\` in filenames** (defense-in-depth even
+///   though `entry.file_name()` shouldn't contain them on any sane FS).
+/// - **Uses `symlink_metadata`** to gate the dst-exists check so dangling
+///   symlinks at dst correctly count as "exists" (the prior `dst.exists()`
+///   returns `false` for broken symlinks, leading to TOCTOU / overwrite).
+/// - **`create_new(true)` open** instead of `fs::copy` — atomic exists-check
+///   + write that closes the TOCTOU window between `symlink_metadata` and
+///   `fs::copy`. Returns `AlreadyExists` if the path appeared mid-loop;
+///   we treat that as "another process or the user got here first" and
+///   skip without erroring.
+/// - **Depth-bounded** via `COPY_MAX_DEPTH` to prevent symlink-cycle stack
+///   overflow even if a symlink slipped past the filter on some platform.
 fn copy_tree_no_overwrite(src: &Path, dst: &Path) -> std::io::Result<usize> {
-    let mut written: usize = 0;
-    if !dst.exists() {
+    copy_tree_inner(src, dst, 0)
+}
+
+fn copy_tree_inner(src: &Path, dst: &Path, depth: u8) -> std::io::Result<usize> {
+    use std::io::ErrorKind;
+
+    if depth > COPY_MAX_DEPTH {
+        return Err(std::io::Error::new(
+            ErrorKind::Other,
+            format!("BuiltinKeycaps: copy depth exceeds {COPY_MAX_DEPTH} at {dst:?}"),
+        ));
+    }
+
+    // Use symlink_metadata for dst so a dangling/live symlink at dst is
+    // detected (regular `exists()` returns false for dangling symlinks).
+    let dst_already = fs::symlink_metadata(dst).is_ok();
+    if !dst_already {
         fs::create_dir_all(dst)?;
     }
+
+    let mut written: usize = 0;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
+        let file_name = entry.file_name();
+        let name_str = file_name.to_string_lossy();
+
+        // Defense-in-depth: reject path-special filename components even
+        // though OS readdir shouldn't yield them.
+        if name_str == "." || name_str == ".." || name_str.contains('/') || name_str.contains('\\') {
+            tracing::warn!(
+                ?src_path,
+                name = %name_str,
+                "BuiltinKeycaps: refusing entry with path-special filename"
+            );
+            continue;
+        }
+
         let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            tracing::warn!(
+                ?src_path,
+                "BuiltinKeycaps: refusing symlink in source (security)"
+            );
+            continue;
+        }
+
+        let dst_path = dst.join(&file_name);
+
         if file_type.is_dir() {
-            written += copy_tree_no_overwrite(&src_path, &dst_path)?;
+            written += copy_tree_inner(&src_path, &dst_path, depth + 1)?;
         } else if file_type.is_file() {
-            if !dst_path.exists() {
-                fs::copy(&src_path, &dst_path)?;
-                written += 1;
+            // Refuse to copy onto a symlink at dst (would write through
+            // the link to wherever it points).
+            match fs::symlink_metadata(&dst_path) {
+                Ok(meta) if meta.file_type().is_symlink() => {
+                    tracing::warn!(
+                        ?dst_path,
+                        "BuiltinKeycaps: refusing to copy onto symlink at destination"
+                    );
+                    continue;
+                }
+                Ok(_) => continue, // file already exists (regular file or dir) — preserve user copy
+                Err(_) => { /* nothing at dst — fall through to atomic create */ }
+            }
+            // Atomic create-only open closes the symlink_metadata → fs::copy
+            // TOCTOU window. AlreadyExists = lost the race; treat as "user
+            // file present" and skip.
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&dst_path)
+            {
+                Ok(mut out) => {
+                    let mut input = fs::File::open(&src_path)?;
+                    std::io::copy(&mut input, &mut out)?;
+                    written += 1;
+                }
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
             }
         }
+        // Skip everything else (block devices, fifos, etc.) — keycaps are
+        // markdown + JSON + SVG; nothing else belongs here.
     }
     Ok(written)
 }

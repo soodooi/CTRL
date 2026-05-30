@@ -178,6 +178,42 @@ fn install_into(
         .to_string();
     validate_keycap_id(&id)?;
 
+    // ECC review C2 (2026-05-30): refuse to write `server_code` for any
+    // manifest variant whose runtime executor doesn't exist yet. The
+    // historical install_keycap path expected `variant: "mcp-server"`
+    // (Pattern D) where `server_code` is a TS file spawned as an MCP
+    // server. Pattern G / A / others have no executor for arbitrary user
+    // TS today; writing the file would just dead-code it on disk and
+    // create a future attack surface when an executor wires up without
+    // anyone reading this code path again.
+    //
+    // Empty server_code is always fine. Non-empty server_code is only
+    // accepted when the manifest declares `variant: "mcp-server"` (or
+    // the legacy `source.type == "mcp"` shape that pre-dates the v0.2
+    // schema migration).
+    if !args.server_code.is_empty() {
+        let variant = args
+            .manifest
+            .get("variant")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let source_type = args
+            .manifest
+            .get("source")
+            .and_then(|s| s.get("type"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let mcp_shape = variant == "mcp-server" || source_type == "mcp";
+        if !mcp_shape {
+            return Err(format!(
+                "install_keycap refuses non-empty server_code for variant '{variant}' / \
+                 source.type '{source_type}' — only Pattern D (variant=mcp-server) has a \
+                 runtime executor for arbitrary TS. Submit an empty server_code or \
+                 declare a manifest with variant=mcp-server."
+            ));
+        }
+    }
+
     let target = dir.join(&id);
     fs::create_dir_all(&target).map_err(|e| format!("create dir {target:?}: {e}"))?;
 
@@ -186,9 +222,11 @@ fn install_into(
     fs::write(target.join("manifest.json"), &manifest_bytes)
         .map_err(|e| format!("write manifest.json: {e}"))?;
 
-    let server_filename = sanitize_server_filename(&args.server_code_filename);
-    fs::write(target.join(&server_filename), &args.server_code)
-        .map_err(|e| format!("write {server_filename}: {e}"))?;
+    if !args.server_code.is_empty() {
+        let server_filename = sanitize_server_filename(&args.server_code_filename);
+        fs::write(target.join(&server_filename), &args.server_code)
+            .map_err(|e| format!("write {server_filename}: {e}"))?;
+    }
 
     Ok(manifest_to_summary(&args.manifest, &id))
 }
@@ -864,6 +902,10 @@ mod tests {
             "icon": "T",
             "keycap_color": "amber",
             "version": "0.1.0",
+            // ECC review C2: server_code with non-mcp variant is now refused.
+            // The test passes server_code so declare a variant the gate
+            // accepts.
+            "variant": "mcp-server",
         });
         let args = InstallKeycapArgs {
             manifest: manifest.clone(),
