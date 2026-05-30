@@ -36,7 +36,6 @@ import { Keyboard, KEYCAP_DRAG_MIME } from './components/Keyboard';
 import { KeycapNav } from './components/KeycapNav';
 import { RailProvider, PrimaryRail, useRail } from './components/PrimaryRail';
 import { L2Panel } from './components/L2Panel';
-import { VersionPill } from './components/VersionPill';
 import { InfraBar } from './components/InfraBar';
 import { IrisyChat } from './components/irisy/IrisyChat';
 import { KeycapOutputPane } from './components/workspace/KeycapOutputPane';
@@ -137,7 +136,6 @@ function RootShellInner(): ReactElement {
         onDrop={handleDrop}
       >
         <Outlet />
-        <VersionPill />
       </main>
       <div className={styles.irisy}>
         <IrisyChat />

@@ -230,6 +230,134 @@ fn copy_tree_inner(src: &Path, dst: &Path, depth: u8) -> std::io::Result<usize> 
     Ok(written)
 }
 
+/// Resolve the on-disk vault root — `~/Documents/CTRL/`.
+fn vault_root() -> Option<PathBuf> {
+    crate::kernel::vault::default_vault_root()
+}
+
+/// ADR-024 axis 6 (`cap_asset.vault`): provision the user-facing vault
+/// folder declared in the keycap's manifest. Reads
+/// `~/.ctrl/keycaps/<id>/manifest.json`, extracts `cap_asset.vault.path`
+/// + `cap_asset.vault.seed`, and creates the folder + seed files under
+/// the user's vault. Idempotent — existing user files are preserved
+/// (no overwrite; same contract as copy_tree_no_overwrite).
+///
+/// Returns Ok(count) on success — the number of seed files written
+/// this call (0 when the vault was already provisioned). Returns
+/// Err(...) only on actual filesystem errors; missing or malformed
+/// `cap_asset.vault` is silently skipped (Ok(0)) because not every
+/// keycap declares one.
+fn provision_cap_asset_vault(install_dir: &Path) -> std::io::Result<usize> {
+    use std::io::ErrorKind;
+
+    let manifest_path = install_dir.join("manifest.json");
+    let bytes = match fs::read(&manifest_path) {
+        Ok(b) => b,
+        Err(_) => return Ok(0), // no manifest, nothing to provision
+    };
+    let manifest: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                ?install_dir,
+                error = %e,
+                "BuiltinKeycaps: malformed manifest.json, skipping vault provision"
+            );
+            return Ok(0);
+        }
+    };
+
+    let Some(vault_block) = manifest
+        .get("cap_asset")
+        .and_then(|c| c.get("vault"))
+        .and_then(|v| v.as_object())
+    else {
+        return Ok(0);
+    };
+
+    let Some(rel_path) = vault_block.get("path").and_then(|p| p.as_str()) else {
+        return Ok(0);
+    };
+
+    // Reject any path with `..` or absolute-path components — manifest
+    // declarations should sit under the vault root, never escape it.
+    if rel_path.contains("..") || rel_path.starts_with('/') {
+        tracing::warn!(
+            path = %rel_path,
+            "BuiltinKeycaps: refusing cap_asset.vault.path with traversal/absolute components"
+        );
+        return Ok(0);
+    }
+
+    let Some(vault_root) = vault_root() else {
+        // No vault root set up yet (HOME missing or vault dir absent).
+        // The vault is created lazily elsewhere; nothing to do here.
+        return Ok(0);
+    };
+
+    let target_dir = vault_root.join(rel_path);
+    if !target_dir.exists() {
+        fs::create_dir_all(&target_dir)?;
+    }
+
+    let mut written: usize = 0;
+    let empty_seed: Vec<serde_json::Value> = Vec::new();
+    let seed = vault_block
+        .get("seed")
+        .and_then(|s| s.as_array())
+        .unwrap_or(&empty_seed);
+
+    for entry in seed {
+        let Some(obj) = entry.as_object() else { continue };
+        let Some(dest) = obj.get("dest").and_then(|d| d.as_str()) else {
+            continue;
+        };
+
+        // Same safety filter on each seed entry's dest.
+        if dest.contains("..") || dest.starts_with('/') {
+            tracing::warn!(
+                dest,
+                "BuiltinKeycaps: refusing seed entry with traversal/absolute dest"
+            );
+            continue;
+        }
+
+        let dest_path = target_dir.join(dest);
+        if let Some(parent) = dest_path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+
+        // .gitkeep / .keep / empty seed = just touch the file (or dir).
+        let content = obj
+            .get("content_inline")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+
+        // Preserve user edits — same rule as bundled assets.
+        match fs::symlink_metadata(&dest_path) {
+            Ok(_) => continue, // already exists, leave alone
+            Err(_) => { /* fall through to create */ }
+        }
+
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dest_path)
+        {
+            Ok(mut out) => {
+                std::io::Write::write_all(&mut out, content.as_bytes())?;
+                written += 1;
+            }
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(written)
+}
+
 /// Walk the builtin source directory; for each `<id>` subfolder, ensure
 /// `~/.ctrl/keycaps/<id>/` exists and contains the bundled `manifest.json`
 /// + `assets/`. Existing user files are preserved.
@@ -300,6 +428,25 @@ pub fn ensure_builtins_installed() {
                     src = %src_dir.display(),
                     dst = %dst_dir.display(),
                     "BuiltinKeycaps: seed failed"
+                );
+            }
+        }
+        // ADR-024 P1.8: provision the keycap's cap_asset.vault folder
+        // (creates ~/Documents/CTRL/<vault.path>/ + seed files). Idempotent
+        // — existing user files are preserved. Failures here are logged
+        // but don't block the rest of the boot.
+        match provision_cap_asset_vault(&dst_dir) {
+            Ok(n) if n > 0 => tracing::info!(
+                keycap = %id,
+                seed_files_written = n,
+                "BuiltinKeycaps: cap_asset.vault provisioned"
+            ),
+            Ok(_) => { /* nothing to do or already provisioned */ }
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    keycap = %id,
+                    "BuiltinKeycaps: cap_asset.vault provision failed"
                 );
             }
         }

@@ -142,16 +142,25 @@ export const IrisyRoute = (): React.ReactElement => {
     const state = useKeycapCreatorStore.getState();
     const manifest = state.validated;
     const serverCode = state.serverTs;
-    if (!manifest || !serverCode) {
-      setToast({ kind: 'error', text: 'Manifest or server code missing — finish creation first.' });
+    if (!manifest) {
+      setToast({ kind: 'error', text: 'Manifest missing — finish creation first.' });
       return;
     }
+    // C2 gate (kernel.rs install_into): non-empty server_code is rejected
+    // for variants other than mcp-server because no executor runs the TS.
+    // The Irisy keycap-creator persona emits TS even for builtin variants
+    // — drop it here when the variant has no executor, so the install
+    // succeeds with manifest-only. Pattern D (mcp-server) keeps the code.
+    const manifestVariant = (manifest as { variant?: string }).variant;
+    const effectiveServerCode = manifestVariant === 'mcp-server'
+      ? (serverCode ?? '')
+      : '';
     useKeycapCreatorStore.getState().setInstalling();
     try {
       await invoke('install_keycap', {
         args: {
           manifest,
-          server_code: serverCode,
+          server_code: effectiveServerCode,
           server_code_filename: 'server.ts',
         },
       });
