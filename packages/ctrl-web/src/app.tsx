@@ -38,6 +38,7 @@ import { RailProvider, RightRail, useRail } from './components/RightRail';
 import { L2Panel } from './components/L2Panel';
 import { VersionPill } from './components/VersionPill';
 import { IrisyChat } from './components/irisy/IrisyChat';
+import { KeycapOutputPane } from './components/workspace/KeycapOutputPane';
 import { DefaultWorkspace } from './routes/default';
 import { useWorkspaceStore } from './lib/workspace-store';
 import styles from './app.module.css';
@@ -141,6 +142,9 @@ function RootShellInner(): ReactElement {
       <div className={styles.l1b}>
         <KeycapNav />
       </div>
+      <aside className={styles.dialog} aria-label="Secondary dialog">
+        <KeycapOutputPane />
+      </aside>
     </div>
   );
 }

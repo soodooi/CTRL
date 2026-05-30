@@ -20,12 +20,13 @@
 
 .shell {
   display: grid;
-  grid-template-rows: var(--statusbar-height) 1fr;
+  grid-template-rows: var(--statusbar-height) 1fr var(--dialog-height);
   grid-template-columns:
     var(--l1-width) var(--l2-width) var(--keycap-pane-width) 1fr var(--irisy-pane-width) var(--l1b-width);
   grid-template-areas:
     'status status status status status status'
-    'l1 l2 keycap main irisy l1b';
+    'l1     l2     keycap main   irisy  l1b'
+    'l1     l2     keycap main   dialog dialog';
   height: 100vh;
   height: 100dvh;
   background: var(--color-bg-l0);
@@ -37,6 +38,7 @@
   --l2-width: 0px;
   --keycap-pane-width: 320px;
   --irisy-pane-width: 430px;
+  --dialog-height: 240px;
 }
 .shell[data-l2='open'] {
   --l2-width: 240px;
@@ -86,6 +88,17 @@
   overflow: hidden;
 }
 .l1b { grid-area: l1b; min-height: 0; }
+.dialog {
+  grid-area: dialog;
+  min-height: 0;
+  min-width: 0;
+  border-top: 1px solid var(--color-border-soft);
+  border-left: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
 .versionPill {
   position: absolute;
