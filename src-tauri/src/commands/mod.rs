@@ -62,6 +62,10 @@ macro_rules! pwa_invoke_handler {
             // system — explicit window hide for the StatusBar × button
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,
+            // system — dynamic window growth for COMPANION mode
+            // (bao 2026-05-30: "整个窗口往下流")
+            $crate::commands::system::set_window_height,
+            $crate::commands::system::position_window_top_right,
             // updater — safe macOS relaunch after auto-update (Chrome-style
             // detached helper, sidesteps the Tauri 2 race)
             $crate::commands::updater::safe_relaunch_after_update,

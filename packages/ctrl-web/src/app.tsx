@@ -17,6 +17,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useRef,
   useState,
   type DragEvent,
   type ReactElement,
@@ -40,6 +41,7 @@ import { VersionPill } from './components/VersionPill';
 import { IrisyChat } from './components/irisy/IrisyChat';
 import { KeycapOutputPane } from './components/workspace/KeycapOutputPane';
 import { DefaultWorkspace } from './routes/default';
+import { useCompanionWindow } from './hooks/useCompanionWindow';
 import { useWorkspaceStore } from './lib/workspace-store';
 import styles from './app.module.css';
 
@@ -79,6 +81,8 @@ function RootShellInner(): ReactElement {
   const queryClient = useQueryClient();
   const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
   const [dragOver, setDragOver] = useState(false);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  useCompanionWindow(shellRef);
 
   // Drag-over only flips when our custom MIME is present — text drags
   // from outside the cockpit don't paint the drop affordance.
@@ -113,7 +117,7 @@ function RootShellInner(): ReactElement {
   );
 
   return (
-    <div className={styles.shell} data-l2={l2Open ? 'open' : 'closed'}>
+    <div ref={shellRef} className={styles.shell} data-l2={l2Open ? 'open' : 'closed'}>
       <div className={styles.status}>
         <StatusBar />
       </div>

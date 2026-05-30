@@ -136,3 +136,55 @@ pub async fn kernel_status(
 pub async fn hide_window(app: tauri::AppHandle) -> Result<(), String> {
     crate::shell::WindowController::hide(&app).map_err(|e| e.to_string())
 }
+
+/// Set the main window's height in logical pixels. Width and top-left
+/// position are preserved — the bottom edge moves to accommodate the new
+/// height. Companion mode uses this to grow downward as chat content
+/// arrives (bao 2026-05-30: "整个窗口往下流").
+///
+/// The window is clamped to the primary monitor's available height so it
+/// can never grow past the bottom of the screen.
+#[tauri::command]
+pub fn set_window_height(app: tauri::AppHandle, height: f64) -> Result<(), String> {
+    use tauri::{LogicalSize, Manager};
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitor = win
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+    let max_logical = monitor.size().height as f64 / scale - 40.0; // leave room for menu bar
+    let target = height.max(180.0).min(max_logical);
+    let current_size = win.outer_size().map_err(|e| e.to_string())?;
+    let current_w_logical = current_size.width as f64 / scale;
+    win.set_size(LogicalSize::new(current_w_logical, target))
+        .map_err(|e| e.to_string())
+}
+
+/// Position the main window at the top-right edge of the primary monitor.
+/// Companion mode calls this on boot so the strip is anchored to the
+/// upper-right corner regardless of where the user last placed it.
+#[tauri::command]
+pub fn position_window_top_right(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{LogicalPosition, Manager};
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitor = win
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+    let monitor_w_logical = monitor.size().width as f64 / scale;
+    let win_outer = win.outer_size().map_err(|e| e.to_string())?;
+    let win_w_logical = win_outer.width as f64 / scale;
+    let monitor_pos = monitor.position();
+    let monitor_x_logical = monitor_pos.x as f64 / scale;
+    let monitor_y_logical = monitor_pos.y as f64 / scale;
+    let x = monitor_x_logical + monitor_w_logical - win_w_logical;
+    let y = monitor_y_logical + 24.0; // leave room for menu bar
+    win.set_position(LogicalPosition::new(x, y))
+        .map_err(|e| e.to_string())
+}
