@@ -46,12 +46,17 @@ const ASSISTANT_CALL_TAG_RE =
 const ASSISTANT_CALL_OPEN_PARTIAL_RE =
   /<call\s+name="[^"]*"\s*>(?:(?!<\/call>)[\s\S])*$/;
 
+// Strip tool-call plumbing entirely — the user sees the final natural
+// language reply, not Irisy's internal control plane. The Thinking pip
+// already signals "something is happening". Pattern matches Pi / Cluely
+// (full hide) and the default ChatGPT / Claude.ai behavior (tool plumbing
+// collapsed by default; we drop the collapsed pill too because companion
+// width is too narrow for it to feel like anything but noise).
+// bao 2026-05-30: "为什么用户要看到这些无用的思考过程".
 function renderAssistantContent(text: string): string {
-  let out = text.replace(ASSISTANT_CALL_TAG_RE, (_match, name: string) => {
-    return `[→ ${name}]`;
-  });
-  out = out.replace(ASSISTANT_CALL_OPEN_PARTIAL_RE, '[→ …]');
-  return out;
+  let out = text.replace(ASSISTANT_CALL_TAG_RE, '');
+  out = out.replace(ASSISTANT_CALL_OPEN_PARTIAL_RE, '');
+  return out.trim();
 }
 
 interface KernelLlmStatus {
@@ -786,34 +791,13 @@ export function IrisyChat(): React.ReactElement {
           </div>
         )}
         {messages.map((m) => {
-          if (m.role === 'tool') {
-            const expanded = expandedTools.has(m.id);
-            const lines = m.content.split('\n');
-            const headLine = lines[0] ?? m.content;
-            const hasMore = lines.length > 1 || m.content.length > 80;
-            return (
-              <div key={m.id} className={styles.toolCard}>
-                <button
-                  type="button"
-                  className={styles.toolCardHeader}
-                  onClick={() => toggleToolExpand(m.id)}
-                  disabled={!hasMore}
-                  aria-expanded={expanded}
-                >
-                  <span className={styles.toolCardChevron}>
-                    {hasMore ? (expanded ? '▾' : '▸') : '·'}
-                  </span>
-                  <span className={styles.toolCardTitle}>{headLine}</span>
-                  {m.streaming && (
-                    <span className={styles.toolCardRunning}>running…</span>
-                  )}
-                </button>
-                {expanded && hasMore && (
-                  <pre className={styles.toolCardBody}>{m.content}</pre>
-                )}
-              </div>
-            );
-          }
+          // Hide tool-result messages entirely. They're internal plumbing
+          // (raw kernel JSON) that the next assistant turn re-synthesizes
+          // into natural language. Showing them was a UX miss
+          // (bao 2026-05-30 "用户要看到这些无用的思考过程"). Same pattern
+          // as Pi / Cluely / native ChatGPT — tool results never reach
+          // the user's view as a primary bubble.
+          if (m.role === 'tool') return null;
           if (m.role === 'assistant') {
             const rendered = renderAssistantContent(m.content);
             const isThisStreaming = m.streaming;

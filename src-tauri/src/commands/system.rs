@@ -222,14 +222,17 @@ pub fn spawn_input_window(app: tauri::AppHandle) -> Result<(), String> {
         .map(|m| m.is_visible().unwrap_or(false))
         .unwrap_or(false);
 
+    // Default = 2 rows of textarea + padding visible (bao 2026-05-30:
+    // "对话框默认可以看见两行"). textarea is 14 px line-height ~21 px,
+    // 2 rows = 42 px + 12 px top/bot padding + 4 px chrome = ~70 px.
     let win = WebviewWindowBuilder::new(
         &app,
         "input",
         WebviewUrl::App("/?surface=input".into()),
     )
     .title("CTRL · Input")
-    .inner_size(430.0, 44.0)
-    .min_inner_size(430.0, 44.0)
+    .inner_size(430.0, 70.0)
+    .min_inner_size(430.0, 70.0)
     .decorations(false)
     .transparent(false)
     .shadow(true)
@@ -242,7 +245,7 @@ pub fn spawn_input_window(app: tauri::AppHandle) -> Result<(), String> {
     .build()
     .map_err(|e| e.to_string())?;
 
-    let _ = win.set_size(LogicalSize::new(430.0, 44.0));
+    let _ = win.set_size(LogicalSize::new(430.0, 70.0));
     position_input_under_main(&app, &win)?;
 
     // Keep input glued to main as the user drags / resizes the main
@@ -329,12 +332,11 @@ fn position_input_under_main(
     let monitor_bottom = monitor_top + monitor_h - 80.0; // reserve Dock height
 
     let desired_x = main_pos.x as f64 / scale;
-    // macOS adds ~10 px window shadow below outer_size; without an overlap
-    // the input window appears detached from main (bao 2026-05-30: "脱离了").
-    // Bring it up 10 px so its top tucks under main's shadow.
-    const SHADOW_OVERLAP: f64 = 10.0;
-    let desired_y =
-        (main_pos.y as f64 + main_size.height as f64) / scale - SHADOW_OVERLAP;
+    // Place input top flush against main's NSWindow frame bottom (no
+    // overlap, no gap). Earlier -10 px shadow-overlap covered chat
+    // content (bao 2026-05-30: "默认被对话框盖住了一部分"). NSWindow
+    // shadows on both windows blend at the seam without hard overlap.
+    let desired_y = (main_pos.y as f64 + main_size.height as f64) / scale;
     let input_h = input_size.height as f64 / scale;
     let max_y = monitor_bottom - input_h;
     let y = desired_y.min(max_y).max(monitor_top);
