@@ -206,6 +206,15 @@ pub fn spawn_input_window(app: tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
+    // Match main's current visibility. PWA mounts during the main
+    // window's prewarm (when main is hidden); we don't want the input
+    // window to pop up alone with no chat above it. bao 2026-05-30:
+    // '为什么安装后有一个输入框在页面,对话框不在'.
+    let main_visible = app
+        .get_webview_window("main")
+        .map(|m| m.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+
     let win = WebviewWindowBuilder::new(
         &app,
         "input",
@@ -220,7 +229,8 @@ pub fn spawn_input_window(app: tauri::AppHandle) -> Result<(), String> {
     .always_on_top(true)
     .visible_on_all_workspaces(true)
     .skip_taskbar(true)
-    .focused(true)
+    .focused(main_visible)
+    .visible(main_visible)
     .resizable(false)
     .build()
     .map_err(|e| e.to_string())?;
