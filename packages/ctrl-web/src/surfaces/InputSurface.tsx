@@ -32,15 +32,25 @@ export function InputSurface(): ReactElement {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Focus the textarea on mount + on wrap click. macOS alwaysOnTop
-  // windows don't always get keyboard focus on show — calling .focus()
-  // explicitly is the fix (bao 2026-05-30: '对话框无法输入').
+  // Activate the input window via the Rust path — NSApp.activate() +
+  // window.set_focus() — so macOS hands keyboard focus from whatever
+  // app was foreground over to the input window. JS-side .focus() alone
+  // doesn't work for alwaysOnTop .floating-level windows (bao 2026-05-30:
+  // '对话框无法输入').
   useEffect(() => {
-    const t = window.setTimeout(() => textareaRef.current?.focus(), 0);
+    if (!isTauri()) {
+      const t = window.setTimeout(() => textareaRef.current?.focus(), 0);
+      return () => window.clearTimeout(t);
+    }
+    void invoke('activate_input_window').catch(() => {});
+    const t = window.setTimeout(() => textareaRef.current?.focus(), 30);
     return () => window.clearTimeout(t);
   }, []);
 
   const handleWrapClick = (): void => {
+    if (isTauri()) {
+      void invoke('activate_input_window').catch(() => {});
+    }
     textareaRef.current?.focus();
   };
 

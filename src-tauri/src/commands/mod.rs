@@ -70,6 +70,7 @@ macro_rules! pwa_invoke_handler {
             // input = textarea (separate Tauri window below main)
             $crate::commands::system::spawn_input_window,
             $crate::commands::system::set_input_window_height,
+            $crate::commands::system::activate_input_window,
             // updater — safe macOS relaunch after auto-update (Chrome-style
             // detached helper, sidesteps the Tauri 2 race)
             $crate::commands::updater::safe_relaunch_after_update,

@@ -67,7 +67,10 @@
    reveals. User toggles by dragging the window edge. */
 @media (max-width: 959px) {
   .shell {
-    grid-template-columns: 0 0 0 0 var(--irisy-pane-width) var(--l1-width);
+    /* Irisy fills the window minus the L1 column so both stay visible
+       at companion widths (430 = 382 Irisy + 48 L1). Without the
+       calc(), L1 fell off the right edge — bao 'L1 你丢失了'. */
+    grid-template-columns: 0 0 0 0 calc(100% - var(--l1-width)) var(--l1-width);
     grid-template-rows: var(--statusbar-height) 1fr 0;
     --dialog-height: 0px;
   }

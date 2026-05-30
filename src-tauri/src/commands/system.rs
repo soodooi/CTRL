@@ -227,6 +227,45 @@ pub fn spawn_input_window(app: tauri::AppHandle) -> Result<(), String> {
 
     let _ = win.set_size(LogicalSize::new(430.0, 44.0));
     position_input_under_main(&app, &win)?;
+
+    // Keep input glued to main as the user drags / resizes the main
+    // window (bao 2026-05-30: "为什么移动不能一起移动输入框?").
+    if let Some(main) = app.get_webview_window("main") {
+        let app_handle = app.clone();
+        main.on_window_event(move |event| match event {
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                if let Some(input) = app_handle.get_webview_window("input") {
+                    let _ = position_input_under_main(&app_handle, &input);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    Ok(())
+}
+
+/// Activate the input window and pull keyboard focus to it. macOS
+/// alwaysOnTop / .floating-level NSWindows don't always grab keyboard
+/// focus from the foreground app on show — we explicitly activate the
+/// NSApplication, make the window key, and let the WKWebView receive
+/// the next keystrokes. bao 2026-05-30: '对话框无法输入'.
+#[tauri::command]
+pub fn activate_input_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let win = app
+        .get_webview_window("input")
+        .ok_or_else(|| "input window not found".to_string())?;
+    let _ = win.show();
+    let _ = win.set_focus();
+    #[cfg(target_os = "macos")]
+    unsafe {
+        use objc2_app_kit::NSApp;
+        use objc2_foundation::MainThreadMarker;
+        if let Some(mtm) = MainThreadMarker::new() {
+            NSApp(mtm).activate();
+        }
+    }
     Ok(())
 }
 
@@ -248,7 +287,9 @@ pub fn set_input_window_height(app: tauri::AppHandle, height: f64) -> Result<(),
         .map_err(|e| e.to_string())
 }
 
-/// Position the input window directly under the main window.
+/// Position the input window directly under the main window, clamped so
+/// the input never falls below the screen bottom (or behind the macOS
+/// Dock). bao 2026-05-30: 'Dock 盖住了输入框'.
 fn position_input_under_main(
     app: &tauri::AppHandle,
     input: &tauri::WebviewWindow,
@@ -264,9 +305,18 @@ fn position_input_under_main(
     let scale = monitor.scale_factor();
     let main_pos = main.outer_position().map_err(|e| e.to_string())?;
     let main_size = main.outer_size().map_err(|e| e.to_string())?;
-    let x = main_pos.x as f64 / scale;
-    let y = (main_pos.y as f64 + main_size.height as f64) / scale;
+    let input_size = input.outer_size().map_err(|e| e.to_string())?;
+    let monitor_pos = monitor.position();
+    let monitor_h = monitor.size().height as f64 / scale;
+    let monitor_top = monitor_pos.y as f64 / scale;
+    let monitor_bottom = monitor_top + monitor_h - 80.0; // reserve Dock height
+
+    let desired_x = main_pos.x as f64 / scale;
+    let desired_y = (main_pos.y as f64 + main_size.height as f64) / scale;
+    let input_h = input_size.height as f64 / scale;
+    let max_y = monitor_bottom - input_h;
+    let y = desired_y.min(max_y).max(monitor_top);
     input
-        .set_position(LogicalPosition::new(x, y))
+        .set_position(LogicalPosition::new(desired_x, y))
         .map_err(|e| e.to_string())
 }
