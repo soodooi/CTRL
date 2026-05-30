@@ -1,12 +1,7 @@
-/* DefaultWorkspace — home page = keycap grid (Keyboard component).
- * Page wrapper centers + caps width so the 4-column grid stays readable
- * even on wide 21:9 windows; on narrower viewports it shrinks to fit. */
+/* DefaultWorkspace — `/` route. Keyboard moved to the shell's keycap
+ * column (2026-05-30); the main display on `/` is just empty paper. */
 
-.keyboardPage {
+.emptyHome {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  padding: var(--space-3) var(--space-4);
 }

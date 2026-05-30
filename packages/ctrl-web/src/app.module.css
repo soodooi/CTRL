@@ -1,34 +1,31 @@
 /*
- * App shell — 4-column cockpit layout (bao 2026-05-29 restructure).
+ * App shell — 5-column cockpit layout (bao 2026-05-30).
  *
- *   ┌────────────────────────────────────────────────────────────────┐
- *   │  StatusBar (top, full width)                                    │ 32px
- *   ├──────────────────────┬──────────┬───────────┬──────────────────┤
- *   │                      │          │  L2 nav   │  L1 nav          │
- *   │  Display (Outlet)    │  Irisy   │  default  │  icons only      │
- *   │  1fr                 │  380px   │  closed   │  64px            │
- *   │  ┌─ version pill     │  fixed   │           │                  │
- *   │  │  bottom-left      │          │           │                  │
- *   └──────────────────────┴──────────┴───────────┴──────────────────┘
+ *   ┌────────────────────────────────────────────────────────────────────┐
+ *   │  StatusBar                                                          │ 32px
+ *   ├──────┬──────┬──────┬──────────────────┬──────────┬──────────┬──────┤
+ *   │  L1  │ L2   │ 副    │  主              │  Irisy   │  副 L1   │      │
+ *   │ 64px │ 0/   │ 320  │  (Outlet,        │  fixed   │  keycap  │      │
+ *   │ nav  │ 240  │ key- │  flex)           │  430px   │  mgmt    │      │
+ *   │      │      │ caps │                  │          │  64px    │      │
+ *   └──────┴──────┴──────┴──────────────────┴──────────┴──────────┴──────┘
  *
- * Irisy chat is a SHELL slot — fixed across assistant / workbench /
- * workspace contexts (bao 2026-05-29). It does not unmount on route
- * change. The display area renders the active route via <Outlet>.
- *
- * L1 = icon-only primary nav (route shortcuts + Settings). Stripped of
- *   the prior Irisy mascot + version pill — both moved out.
- * L2 = secondary nav. Default closed. Width collapses to 0 when closed,
- *   240 when open. Toggle button lives at the top of L1.
+ * L1 (primary nav, icon-only) is the far-LEFT column. L2 expands to its
+ * right when toggled. The KEYCAP panel ("副") sits between L2 and the
+ * main display area — always visible across all routes. The display
+ * area renders <Outlet>. Irisy chat is the fixed assistant column on
+ * the right. A second icon nav ("副 L1") on the far right is reserved
+ * for keycap-management actions (browse / add / categorize).
  */
 
 .shell {
   display: grid;
   grid-template-rows: var(--statusbar-height) 1fr;
   grid-template-columns:
-    1fr var(--irisy-pane-width) var(--l2-width) var(--l1-width);
+    var(--l1-width) var(--l2-width) var(--keycap-pane-width) 1fr var(--irisy-pane-width) var(--l1b-width);
   grid-template-areas:
-    'status status status status'
-    'display irisy l2 l1';
+    'status status status status status status'
+    'l1 l2 keycap main irisy l1b';
   height: 100vh;
   height: 100dvh;
   background: var(--color-bg-l0);
@@ -36,7 +33,9 @@
   overflow: hidden;
   position: relative;
   --l1-width: 64px;
+  --l1b-width: 64px;
   --l2-width: 0px;
+  --keycap-pane-width: 320px;
   --irisy-pane-width: 430px;
 }
 .shell[data-l2='open'] {
@@ -44,8 +43,19 @@
 }
 
 .status { grid-area: status; }
-.display {
-  grid-area: display;
+.l1 { grid-area: l1; min-height: 0; }
+.l2 { grid-area: l2; min-height: 0; }
+.keycap {
+  grid-area: keycap;
+  min-height: 0;
+  border-right: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.main {
+  grid-area: main;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -55,11 +65,10 @@
   background: var(--color-bg-l0);
   transition: background-color var(--duration-fast) var(--ease-out-quart);
 }
-/* Drop affordance — paints while a keycap drags over the display area. */
-.display[data-drag-over] {
+.main[data-drag-over] {
   background: color-mix(in oklab, var(--color-bg-l0), var(--color-accent) 4%);
 }
-.display[data-drag-over]::after {
+.main[data-drag-over]::after {
   content: '';
   position: absolute;
   inset: 8px;
@@ -76,11 +85,8 @@
   flex-direction: column;
   overflow: hidden;
 }
-.l2 { grid-area: l2; min-height: 0; }
-.l1 { grid-area: l1; min-height: 0; }
+.l1b { grid-area: l1b; min-height: 0; }
 
-/* Version pill — bottom-left of the display area (and therefore the
-   whole window). Absolute so it doesn't push the route content layout. */
 .versionPill {
   position: absolute;
   bottom: var(--space-3);

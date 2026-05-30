@@ -5,7 +5,6 @@
 // area on `/` shows the install slot until a workspace instance opens.
 
 import { useEffect, type ReactElement } from 'react';
-import { Keyboard } from '@/components/Keyboard';
 import { useRail } from '@/components/RightRail';
 import { WorkspaceShell } from '@/components/workspace/WorkspaceShell';
 import styles from './default.module.css';
@@ -18,15 +17,11 @@ export const DefaultWorkspace = (): ReactElement => {
     return () => setIrisyState('idle');
   }, [setIrisyState]);
 
-  // Home page = the keycap grid. Keyboard used to live in a fixed left
-  // rail; after the 2026-05-29 shell restructure it became the canonical
-  // `/` route content (bao 2026-05-30 "键帽区以页面形式"). WorkspaceShell
-  // still wraps so opening a keycap swaps in its workspace instance.
-  const fallback = (
-    <div className={styles.keyboardPage}>
-      <Keyboard />
-    </div>
-  );
+  // 2026-05-30 shell restructure: Keyboard is now a global shell column
+  // (lives at app.tsx in the `keycap` grid slot). The main display
+  // surface on `/` is empty — just a paper backdrop until the user
+  // opens a workspace instance or navigates to a keycap output.
+  const fallback = <div className={styles.emptyHome} aria-hidden="true" />;
 
   return <WorkspaceShell fallback={fallback} />;
 };

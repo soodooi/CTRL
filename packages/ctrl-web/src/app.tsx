@@ -32,7 +32,8 @@ import {
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
-import { KEYCAP_DRAG_MIME } from './components/Keyboard';
+import { Keyboard, KEYCAP_DRAG_MIME } from './components/Keyboard';
+import { KeycapNav } from './components/KeycapNav';
 import { RailProvider, RightRail, useRail } from './components/RightRail';
 import { L2Panel } from './components/L2Panel';
 import { VersionPill } from './components/VersionPill';
@@ -115,8 +116,17 @@ function RootShellInner(): ReactElement {
       <div className={styles.status}>
         <StatusBar />
       </div>
+      <div className={styles.l1}>
+        <RightRail />
+      </div>
+      <div className={styles.l2}>
+        <L2Panel />
+      </div>
+      <aside className={styles.keycap} aria-label="Keycap panel">
+        <Keyboard />
+      </aside>
       <main
-        className={styles.display}
+        className={styles.main}
         data-drag-over={dragOver || undefined}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -128,11 +138,8 @@ function RootShellInner(): ReactElement {
       <div className={styles.irisy}>
         <IrisyChat />
       </div>
-      <div className={styles.l2}>
-        <L2Panel />
-      </div>
-      <div className={styles.l1}>
-        <RightRail />
+      <div className={styles.l1b}>
+        <KeycapNav />
       </div>
     </div>
   );
