@@ -51,6 +51,22 @@ const checkForUpdate = async (): Promise<UpdateHandle | null> => {
 
 const relaunchApp = async (): Promise<void> => {
   if (!isTauri()) return;
+  // macOS: skip Tauri's `relaunch()` — it races with the in-place .app
+  // replacement and with tauri-plugin-single-instance, leaving the user
+  // with a closed window and no new process (bao 2026-05-30 smoking gun:
+  // `/Applications/CTRL.app` left empty by a half-finished install). The
+  // Rust `safe_relaunch_after_update` command verifies the bundle is
+  // intact, spawns a detached `sh` helper that waits for our PID to die
+  // and then `open`s the bundle via LaunchServices, then we exit.
+  const platform = typeof navigator !== 'undefined'
+    ? navigator.platform.toLowerCase()
+    : '';
+  const isMac = platform.includes('mac');
+  if (isMac) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('safe_relaunch_after_update');
+    return;
+  }
   const { relaunch } = await import('@tauri-apps/plugin-process');
   await relaunch();
 };

@@ -29,6 +29,7 @@ pub mod skills;
 pub mod storage;
 pub mod stss;
 pub mod system;
+pub mod updater;
 pub mod vault;
 pub mod workshop;
 
@@ -61,6 +62,9 @@ macro_rules! pwa_invoke_handler {
             // system — explicit window hide for the StatusBar × button
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,
+            // updater — safe macOS relaunch after auto-update (Chrome-style
+            // detached helper, sidesteps the Tauri 2 race)
+            $crate::commands::updater::safe_relaunch_after_update,
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::open_workspace,
