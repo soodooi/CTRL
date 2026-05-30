@@ -5,31 +5,26 @@
 // area on `/` shows the install slot until a workspace instance opens.
 
 import { useEffect, type ReactElement } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { InstallKeycapTile, type InstallKeycapTilePayload } from '@/components/primitives';
+import { Keyboard } from '@/components/Keyboard';
 import { useRail } from '@/components/RightRail';
 import { WorkspaceShell } from '@/components/workspace/WorkspaceShell';
 import styles from './default.module.css';
 
 export const DefaultWorkspace = (): ReactElement => {
   const { setIrisyState } = useRail();
-  const navigate = useNavigate();
 
   useEffect(() => {
     setIrisyState('idle');
     return () => setIrisyState('idle');
   }, [setIrisyState]);
 
-  const handleInstall = (_payload: InstallKeycapTilePayload): void => {
-    void navigate({ to: '/pool' });
-  };
-
+  // Home page = the keycap grid. Keyboard used to live in a fixed left
+  // rail; after the 2026-05-29 shell restructure it became the canonical
+  // `/` route content (bao 2026-05-30 "键帽区以页面形式"). WorkspaceShell
+  // still wraps so opening a keycap swaps in its workspace instance.
   const fallback = (
-    <div className={styles.cockpit}>
-      <div className={styles.stage} aria-hidden="true" />
-      <div className={styles.bottomDock}>
-        <InstallKeycapTile onActivate={handleInstall} />
-      </div>
+    <div className={styles.keyboardPage}>
+      <Keyboard />
     </div>
   );
 

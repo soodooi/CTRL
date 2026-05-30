@@ -1,65 +1,14 @@
-/* DefaultWorkspace — empty-cockpit landing. Polar paper floor, install
- * slot + ChatInput docked at the bottom, mid-pane stays open so future
- * chat messages can stream from top-down without colliding with the
- * docked controls. */
+/* DefaultWorkspace — home page = keycap grid (Keyboard component).
+ * Page wrapper centers + caps width so the 4-column grid stays readable
+ * even on wide 21:9 windows; on narrower viewports it shrinks to fit. */
 
-.cockpit {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 0 var(--space-8);
-  /* The whole panel rides the polar paper L0 surface — the docked
-     controls below get a subtle backdrop separator (see .bottomDock). */
-  background: var(--color-bg-l0);
-  position: relative;
-}
-
-/* Stage = the empty stream region. Today it's whitespace; Phase 1D
- * hands it the message list. We claim the space now so the bottom
- * dock anchors visually instead of flying mid-page. */
-.stage {
+.keyboardPage {
   flex: 1;
   min-height: 0;
-  /* Single hairline cockpit-floor reference — a paper-grain mark, not
-     a decoration. Anchors the stage when the message list is empty
-     without painting a heavy grid. Vanishes when content arrives. */
-  background-image:
-    radial-gradient(
-      circle at 50% 92%,
-      color-mix(in oklab, var(--color-accent), transparent 96%) 0%,
-      transparent 38%
-    );
-}
-
-.bottomDock {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) 0 var(--space-6);
-  position: relative;
-  /* A whisper-thin top hairline visually separates dock from stage
-     without a hard divider. */
-}
-
-.bottomDock::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto auto 50%;
-  width: clamp(140px, 28vw, 320px);
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--color-border-soft) 50%,
-    transparent 100%
-  );
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.inputWrap {
   width: 100%;
-  max-width: 620px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-4);
 }
