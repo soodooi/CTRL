@@ -1,52 +1,21 @@
 // StatusBar — top status zone.
 //
-// Layout (bao 2026-05-30 companion mode):
-//   [KRN ●] [ENGINE: <brain>] [MCP: N] [VAULT: N] ... [v0.1.x ●] [×]
+// Layout (bao 2026-05-30 校正: 顶部只 CTRL logo + KRN; ENGINE/MCP/VAULT
+// chips 挪到对话框底部的 InfraBar — 见 components/InfraBar.tsx):
+//   [LOGO] [KRN ●]                                       [v0.1.x ●] [×]
 //
-// The clock got replaced by a clickable version pill — in companion mode
-// the previous bottom-left VersionPill is hidden by the @media collapse,
-// so users need a visible upgrade affordance somewhere always-on. The
-// status bar's right cluster carries it now.
+// The previous "everything goes top" layout cluttered the status bar and
+// mixed system health (KRN) with substrate info (ENGINE/MCP/VAULT). The
+// new split puts identity + kernel-reachability up top, substrate state
+// at the bottom near where the user reads/types.
 
 import { useCallback, type ReactElement } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Led, type LedTone } from './primitives';
+import { Led, Logo, type LedTone } from './primitives';
 import { useKernelStatus } from '../hooks/useKernelStatus';
 import { APP_VERSION, useUpdateStatus } from '../lib/app-meta';
 import { invoke } from '../lib/bridge';
 import styles from './StatusBar.module.css';
-
-interface StatusChipProps {
-  label: string;
-  value: string | number;
-  title?: string;
-  onClick?: () => void;
-}
-const StatusChip = ({ label, value, title, onClick }: StatusChipProps): ReactElement => {
-  const body = (
-    <>
-      <span className={styles.chipLabel}>{label}</span>
-      <span className={styles.chipValue}>{value}</span>
-    </>
-  );
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        className={`${styles.chip} ${styles.chipButton}`}
-        title={title}
-        onClick={onClick}
-      >
-        {body}
-      </button>
-    );
-  }
-  return (
-    <span className={styles.chip} title={title}>
-      {body}
-    </span>
-  );
-};
 
 export const StatusBar = (): ReactElement => {
   const navigate = useNavigate();
@@ -63,10 +32,6 @@ export const StatusBar = (): ReactElement => {
   const warning = status?.warnings[0] ?? null;
   const onKrnClick = warning ? (): void => void navigate({ to: '/settings' }) : undefined;
   const krnTitle = warning ? `${warning} · click to open Settings` : `KRN: ${krnTone}`;
-
-  const engine = status?.active_brain ?? '—';
-  const mcpCount = status?.mcp_servers_installed ?? null;
-  const vaultCount = status?.vault_files ?? null;
 
   const handleHide = useCallback((): void => {
     void invoke<void>('hide_window').catch(() => {
@@ -98,6 +63,9 @@ export const StatusBar = (): ReactElement => {
           bao 2026-05-30: '顶部拖动不方便,可能因为有文字'. */}
       <div className={styles.dragStrip} data-tauri-drag-region aria-hidden="true" />
       <div className={styles.statusZone} aria-label="System status">
+        <span className={styles.logoSlot} aria-hidden="true">
+          <Logo size="sm" />
+        </span>
         {onKrnClick ? (
           <button
             type="button"
@@ -114,22 +82,6 @@ export const StatusBar = (): ReactElement => {
             <span className={styles.chipLabel}>KRN</span>
           </span>
         )}
-        <StatusChip
-          label="ENGINE"
-          value={engine}
-          title={`Active brain: ${engine}`}
-          onClick={() => void navigate({ to: '/settings/brain' })}
-        />
-        <StatusChip
-          label="MCP"
-          value={mcpCount ?? '—'}
-          title="MCP servers installed"
-        />
-        <StatusChip
-          label="VAULT"
-          value={vaultCount ?? '—'}
-          title="Vault markdown files"
-        />
       </div>
 
       <div className={styles.spacer} aria-hidden="true" />

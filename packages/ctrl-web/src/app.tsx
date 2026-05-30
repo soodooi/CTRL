@@ -37,6 +37,7 @@ import { KeycapNav } from './components/KeycapNav';
 import { RailProvider, PrimaryRail, useRail } from './components/PrimaryRail';
 import { L2Panel } from './components/L2Panel';
 import { VersionPill } from './components/VersionPill';
+import { InfraBar } from './components/InfraBar';
 import { IrisyChat } from './components/irisy/IrisyChat';
 import { KeycapOutputPane } from './components/workspace/KeycapOutputPane';
 import { DefaultWorkspace } from './routes/default';
@@ -140,6 +141,7 @@ function RootShellInner(): ReactElement {
       </main>
       <div className={styles.irisy}>
         <IrisyChat />
+        <InfraBar />
       </div>
       <div className={styles.l1}>
         <PrimaryRail />

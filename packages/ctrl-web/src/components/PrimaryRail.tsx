@@ -30,12 +30,14 @@ import type { L2ItemDescriptor } from './L2Panel';
 import { invoke } from '../lib/bridge';
 import styles from './PrimaryRail.module.css';
 
+// L1 nav ids — bao 2026-05-30 钦定: ▾ workspace toggle (top) + 3 nav
+// (Irisy 助理 / Irisy Create / Coding) + Settings (bottom). No home
+// button. Workbench / Vault / Pool moved into workspace area or
+// retired.
+const ASSIST_ITEM_ID = 'builtin-assist';
+const CREATE_ITEM_ID = 'builtin-create';
 const CODING_ITEM_ID = 'coding';
-const WORKBENCH_ITEM_ID = 'workbench';
-const VAULT_ITEM_ID = 'vault';
-const POOL_ITEM_ID = 'pool';
 const SETTINGS_ITEM_ID = 'settings';
-const HOME_ITEM_ID = 'home';
 
 interface RailContextValue {
   irisyState: IrisyState;
@@ -55,7 +57,7 @@ const RailContext = createContext<RailContextValue | null>(null);
 
 export const RailProvider = ({ children }: { children: ReactNode }): ReactElement => {
   const [irisyState, setIrisyState] = useState<IrisyState>('idle');
-  const [activeRailId, setActiveRailId] = useState<string | null>(HOME_ITEM_ID);
+  const [activeRailId, setActiveRailId] = useState<string | null>(ASSIST_ITEM_ID);
   const [l2Open, setL2Open] = useState(false);
   const [l2ByRailId, setL2ByRailId] = useState<Record<string, L2ItemDescriptor | undefined>>({});
   const setL2For = useCallback((id: string, descriptor: L2ItemDescriptor | null) => {
@@ -95,48 +97,12 @@ export const useL2 = (railId: string, descriptor: L2ItemDescriptor | null): void
 // Inline icons — kept inline because the L1 set is short, fixed, and
 // stroke-consistent. No external icon package needed.
 
-const HomeIcon = (): ReactElement => (
-  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
-    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z" />
-  </svg>
-);
-
 const CodingIcon = (): ReactElement => (
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
     strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <polyline points="8 7 3 12 8 17" />
     <polyline points="16 7 21 12 16 17" />
     <line x1="14" y1="5" x2="10" y2="19" />
-  </svg>
-);
-
-const WorkbenchIcon = (): ReactElement => (
-  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
-    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="6" cy="6" r="2.2" />
-    <circle cx="18" cy="9" r="2.2" />
-    <circle cx="9" cy="18" r="2.2" />
-    <path d="M8 7l8 1.5M7.6 8l1.2 8" />
-  </svg>
-);
-
-const VaultIcon = (): ReactElement => (
-  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
-    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M4 5h12a2 2 0 0 1 2 2v13H6a2 2 0 0 1-2-2V5z" />
-    <path d="M4 5a2 2 0 0 1 2-2h12v15" />
-    <path d="M9 8h6M9 12h4" />
-  </svg>
-);
-
-const PoolIcon = (): ReactElement => (
-  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
-    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="3" y="3" width="7" height="7" rx="1" />
-    <rect x="14" y="3" width="7" height="7" rx="1" />
-    <rect x="3" y="14" width="7" height="7" rx="1" />
-    <rect x="14" y="14" width="7" height="7" rx="1" />
   </svg>
 );
 
@@ -167,23 +133,37 @@ interface RailDef {
   icon: ReactElement;
 }
 
+// 助理 icon — circle + chat tail (Irisy default companion).
+const AssistIcon = (): ReactElement => (
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="11" r="6" />
+    <path d="M9 17l-2 3 4-2" />
+  </svg>
+);
+
+// Create icon — plus inside square (make a new keycap).
+const CreateIcon = (): ReactElement => (
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <path d="M12 8v8M8 12h8" />
+  </svg>
+);
+
 const NAV_ITEMS: ReadonlyArray<RailDef> = [
-  { id: HOME_ITEM_ID, label: 'Home', path: '/', icon: <HomeIcon /> },
+  { id: ASSIST_ITEM_ID, label: 'Irisy 助理', path: '/', icon: <AssistIcon /> },
+  { id: CREATE_ITEM_ID, label: 'Irisy Create', path: '/irisy?intent=create-keycap', icon: <CreateIcon /> },
   { id: CODING_ITEM_ID, label: 'Coding', path: '/coding', icon: <CodingIcon /> },
-  { id: WORKBENCH_ITEM_ID, label: 'Workbench', path: '/workbench', icon: <WorkbenchIcon /> },
-  { id: VAULT_ITEM_ID, label: 'Vault', path: '/vault', icon: <VaultIcon /> },
-  { id: POOL_ITEM_ID, label: 'Pool', path: '/pool', icon: <PoolIcon /> },
 ];
 
 const SETTINGS_PATH = '/settings/ctrl';
 
 const idForPath = (pathname: string): string => {
   if (pathname.startsWith('/coding')) return CODING_ITEM_ID;
-  if (pathname.startsWith('/workbench')) return WORKBENCH_ITEM_ID;
-  if (pathname.startsWith('/vault')) return VAULT_ITEM_ID;
-  if (pathname.startsWith('/pool')) return POOL_ITEM_ID;
+  if (pathname.startsWith('/irisy')) return CREATE_ITEM_ID;
   if (pathname.startsWith('/settings')) return SETTINGS_ITEM_ID;
-  return HOME_ITEM_ID;
+  return ASSIST_ITEM_ID;
 };
 
 export const PrimaryRail = (): ReactElement => {
