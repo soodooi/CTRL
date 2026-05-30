@@ -23,13 +23,14 @@
 | [017](./017-remote-coview-is-irisy.md) | Remote co-view = Irisy primitives (mesh = sync only, not viewer) | irisy | accepted | 2026-05-22 | bao, zeus | — |
 | [018](./018-auto-update-strategy.md) | Auto-update strategy — 4 layers (app / hermes / keycap / PWA) × 3 tiers | cap | accepted | 2026-05-22 | bao, zeus | — |
 | [020](./020-vmark-stack-adoption.md) | VMark stack adoption — viewer registry + vault browser + smart table | frontend | accepted | 2026-05-25 | bao, daedalus | — |
+| [024](./024-substrate-composition-model.md) | Substrate composition model — keycap = 6-axis manifest binding (incl. cap-asset; persona folded in); multi-modal brain (text+image+audio); schema convergence + dispatch unification | substrate | **proposed** | 2026-05-30 | bao, zeus | 0/7 |
 
 ### Module index (jump to entry SPEC)
 
 | Module | SPEC entry | ADRs |
 |---|---|---|
 | **spine** | (ADR-001 itself) | 001 |
-| **substrate** | [`.olym/specs/substrate/SPEC.md`](../specs/substrate/SPEC.md) | 003 · 004 · 007 · 012 · 013 |
+| **substrate** | [`.olym/specs/substrate/SPEC.md`](../specs/substrate/SPEC.md) | 003 · 004 · 007 · 012 · 013 · 024 |
 | **cap** | [`.olym/specs/cap/SPEC.md`](../specs/cap/SPEC.md) | 010 · 011 · 018 |
 | **irisy** | [`.olym/specs/irisy/spec.md`](../specs/irisy/spec.md) | 016 · 017 |
 | **frontend** | [`.olym/specs/frontend/SPEC.md`](../specs/frontend/SPEC.md) | 002 · 020 |
