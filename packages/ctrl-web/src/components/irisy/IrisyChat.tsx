@@ -712,33 +712,14 @@ export function IrisyChat(): React.ReactElement {
   const engineLabel = ENGINE_LABELS[activeBrain] ?? activeBrain;
   const engineReady = activeBrain === 'pi' ? piReachable : brainReady || piReachable;
 
+  // Engine + Pi + MCP-bridge status moved to the global StatusBar's
+  // top-left zone (bao 2026-05-30). Irisy chat keeps only its
+  // conversation surface — chat header is just a thin clear-history
+  // affordance when there's history; otherwise nothing.
   return (
     <div className={styles.root}>
-      <header className={styles.statusBar}>
-        <StatusLine
-          label="Engine"
-          ok={engineReady}
-          detail={engineLabel}
-        />
-        <StatusLine
-          label="Pi"
-          ok={piReachable}
-          detail={piDetail}
-        />
-        {statusMessage != null && (
-          <span className={styles.upgradeMessage}>{statusMessage}</span>
-        )}
-        <StatusLine
-          label="MCP bridge"
-          ok={status?.mcp_bridge.handshake_written ?? false}
-          detail={
-            status?.mcp_bridge.handshake_written ? 'handshake written' : '—'
-          }
-        />
-        <span className={styles.versionBadge} title="Irisy ships in lockstep with CTRL — version mirrors the app's package version.">
-          Irisy v{status?.app_version ?? '—'}
-        </span>
-        {messages.length > 0 && (
+      {messages.length > 0 && (
+        <div className={styles.chatHeader}>
           <button
             type="button"
             className={styles.clearButton}
@@ -747,11 +728,8 @@ export function IrisyChat(): React.ReactElement {
           >
             Clear
           </button>
-        )}
-        {statusError != null && (
-          <p className={styles.statusError}>irisy_init: {statusError}</p>
-        )}
-      </header>
+        </div>
+      )}
 
       <div className={`${styles.scroller} irisy-scroll`} ref={scrollerRef}>
         {messages.length === 0 && (
@@ -907,19 +885,39 @@ export function IrisyChat(): React.ReactElement {
             onKeyDown={onInputKeyDown}
             placeholder={
               brainReady
-                ? 'Talk to Irisy — Enter to send · Shift+Enter newline · @file · ↑ recall'
+                ? 'Talk to Irisy — Enter to send · Shift+Enter newline'
                 : 'Brain not ready — wire a provider in CTRL settings'
             }
             disabled={sending || !brainReady}
             aria-label="Message Irisy"
           />
+          <button
+            type="submit"
+            className={styles.sendBtn}
+            disabled={sending || !brainReady || !input.trim()}
+            aria-label="Send"
+            title="Send (Enter)"
+          >
+            {sending ? (
+              <span className={styles.sendingDot} aria-hidden="true" />
+            ) : (
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
+            )}
+          </button>
         </div>
-        <button
-          type="submit"
-          disabled={sending || !brainReady || !input.trim()}
-        >
-          {sending ? '…' : 'Send'}
-        </button>
       </form>
     </div>
   );
