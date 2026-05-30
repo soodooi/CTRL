@@ -148,10 +148,20 @@ impl WindowController {
             if visible {
                 tracing::info!("WindowController::toggle — hide");
                 let _ = w.hide();
+                // Sync hide for the input companion window so users don't
+                // see a stranded textarea floating on screen after Ctrl-hide
+                // (bao 2026-05-30: 'Ctrl 一键 toggle 两个窗口同时显隐').
+                if let Some(input) = app.get_webview_window("input") {
+                    let _ = input.hide();
+                }
             } else {
                 tracing::info!("WindowController::toggle — show");
                 let _ = w.show();
                 let _ = w.set_focus();
+                // Same — bring the input companion back up alongside main.
+                if let Some(input) = app.get_webview_window("input") {
+                    let _ = input.show();
+                }
                 // CTRL = launcher popup (Raycast-style): set_focus only raises
                 // the window in z-order; it does NOT pull keyboard focus across
                 // app boundaries. NSApp.activate() is the launcher contract —
@@ -264,6 +274,10 @@ impl WindowController {
             let _ = w.hide();
             #[cfg(not(target_os = "macos"))]
             let _ = w.destroy();
+        }
+        // Sync hide the input companion window too.
+        if let Some(input) = app.get_webview_window("input") {
+            let _ = input.hide();
         }
         Ok(())
     }
