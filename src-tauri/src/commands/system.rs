@@ -188,3 +188,85 @@ pub fn position_window_top_right(app: tauri::AppHandle) -> Result<(), String> {
     win.set_position(LogicalPosition::new(x, y))
         .map_err(|e| e.to_string())
 }
+
+/// Spawn (or reveal) the input window — a separate Tauri window dedicated
+/// to the composer (textarea + send). Positions it directly under the
+/// main window, same width. bao 2026-05-30: 两个独立窗口,上 chat history,
+/// 下 input,input 长高时这个窗口的底边外扩。
+#[tauri::command]
+pub fn spawn_input_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+
+    // Already exists? Just make sure it's visible and positioned.
+    if let Some(existing) = app.get_webview_window("input") {
+        position_input_under_main(&app, &existing)?;
+        existing
+            .show()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let win = WebviewWindowBuilder::new(
+        &app,
+        "input",
+        WebviewUrl::App("/?surface=input".into()),
+    )
+    .title("CTRL · Input")
+    .inner_size(430.0, 60.0)
+    .min_inner_size(430.0, 60.0)
+    .decorations(false)
+    .transparent(false)
+    .shadow(true)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .skip_taskbar(true)
+    .focused(true)
+    .resizable(false)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    let _ = win.set_size(LogicalSize::new(430.0, 60.0));
+    position_input_under_main(&app, &win)?;
+    Ok(())
+}
+
+/// Resize the input window (preserves position + width).
+#[tauri::command]
+pub fn set_input_window_height(app: tauri::AppHandle, height: f64) -> Result<(), String> {
+    use tauri::{LogicalSize, Manager};
+    let win = app
+        .get_webview_window("input")
+        .ok_or_else(|| "input window not found".to_string())?;
+    let monitor = win
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+    let max_logical = monitor.size().height as f64 / scale - 40.0;
+    let target = height.max(60.0).min(max_logical);
+    win.set_size(LogicalSize::new(430.0, target))
+        .map_err(|e| e.to_string())
+}
+
+/// Position the input window directly under the main window.
+fn position_input_under_main(
+    app: &tauri::AppHandle,
+    input: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    use tauri::{LogicalPosition, Manager};
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitor = main
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
+    let main_size = main.outer_size().map_err(|e| e.to_string())?;
+    let x = main_pos.x as f64 / scale;
+    let y = (main_pos.y as f64 + main_size.height as f64) / scale;
+    input
+        .set_position(LogicalPosition::new(x, y))
+        .map_err(|e| e.to_string())
+}

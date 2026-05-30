@@ -548,6 +548,36 @@ export function IrisyChat(): React.ReactElement {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
 
+  // Cross-window IPC — the InputSurface window emits 'irisy:send' on
+  // submit; we route the text into sendMessage here. Two-window design
+  // (bao 2026-05-30): main = chat history, input = standalone Tauri
+  // window for the composer.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+      return undefined;
+    }
+    let unlisten: (() => void) | null = null;
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      unlisten = await listen<{ text: string }>('irisy:send', (e) => {
+        const text = (e.payload?.text ?? '').trim();
+        if (!text) return;
+        void sendMessage(text);
+      });
+    })();
+    return () => unlisten?.();
+  }, [sendMessage]);
+
+  // Mirror the local 'sending' state out to the input window so its
+  // send button can disable while a turn is in flight.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+    void (async () => {
+      const { emit } = await import('@tauri-apps/api/event');
+      await emit('irisy:state', { busy: sending });
+    })();
+  }, [sending]);
+
   // Homepage hand-off: `/?text=<encoded>` from default.tsx's ChatInput
   // navigates here with the user's first message. Pop it off the URL
   // and fire it once. The strip-on-consume guard prevents a refresh
@@ -861,69 +891,6 @@ export function IrisyChat(): React.ReactElement {
         </div>
       )}
       </div>
-
-      <form className={styles.composer} onSubmit={onSubmit}>
-        <div className={styles.composerInputWrap}>
-          {mentionOpen && mentionResults.length > 0 && (
-            <ul className={styles.mentionPopover} role="listbox" aria-label="Vault files">
-              {mentionResults.map((path) => (
-                <li key={path}>
-                  <button
-                    type="button"
-                    className={styles.mentionItem}
-                    onClick={() => pickMention(path)}
-                  >
-                    {path}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              autoSizeTextarea(e.currentTarget);
-            }}
-            onKeyDown={onInputKeyDown}
-            placeholder={
-              brainReady
-                ? 'Talk to Irisy — Enter to send · Shift+Enter newline'
-                : 'Brain not ready — wire a provider in CTRL settings'
-            }
-            disabled={sending || !brainReady}
-            aria-label="Message Irisy"
-          />
-          <button
-            type="submit"
-            className={styles.sendBtn}
-            disabled={sending || !brainReady || !input.trim()}
-            aria-label="Send"
-            title="Send (Enter)"
-          >
-            {sending ? (
-              <span className={styles.sendingDot} aria-hidden="true" />
-            ) : (
-              <svg
-                viewBox="0 0 24 24"
-                width="18"
-                height="18"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <line x1="12" y1="19" x2="12" y2="5" />
-                <polyline points="5 12 12 5 19 12" />
-              </svg>
-            )}
-          </button>
-        </div>
-      </form>
     </div>
   );
 }

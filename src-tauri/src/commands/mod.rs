@@ -66,6 +66,10 @@ macro_rules! pwa_invoke_handler {
             // (bao 2026-05-30: "整个窗口往下流")
             $crate::commands::system::set_window_height,
             $crate::commands::system::position_window_top_right,
+            // system — two-window companion: main = chat history,
+            // input = textarea (separate Tauri window below main)
+            $crate::commands::system::spawn_input_window,
+            $crate::commands::system::set_input_window_height,
             // updater — safe macOS relaunch after auto-update (Chrome-style
             // detached helper, sidesteps the Tauri 2 race)
             $crate::commands::updater::safe_relaunch_after_update,
