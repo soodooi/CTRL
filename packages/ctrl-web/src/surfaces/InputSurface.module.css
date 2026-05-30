@@ -1,45 +1,58 @@
-/* InputSurface — standalone Tauri "input" window content. */
+/* InputSurface — standalone Tauri "input" window. Minimal chrome:
+   no border-radius (the window itself is the container), thin custom
+   scrollbar (4px), tight padding. bao 2026-05-30: 圆角太大,滑动条太
+   大,占空间. */
 
 .wrap {
   width: 100%;
-  background: var(--color-bg-l1);
-  border-top: 1px solid var(--color-border-soft);
-  padding: 10px 12px 12px;
+  height: 100%;
+  background: var(--color-bg-l0);
+  display: flex;
+  padding: 4px 6px;
   box-sizing: border-box;
+  border-top: 1px solid var(--color-border-soft);
 }
 
 .composer {
   position: relative;
+  flex: 1;
   display: flex;
-  align-items: flex-end;
-  background: var(--color-bg-l0);
-  border: 1px solid var(--color-border-soft);
-  border-radius: 18px;
-  transition: border-color var(--duration-fast) var(--ease-out-quart);
-}
-
-.composer:focus-within {
-  border-color: var(--color-accent);
 }
 
 .composer textarea {
   flex: 1;
-  padding: 9px 44px 9px 14px;
+  padding: 6px 32px 6px 10px;
   border: 0;
   background: transparent;
   color: var(--color-text);
   font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.4;
   resize: none;
   overflow-y: auto;
-  min-height: 38px;
+  min-height: 28px;
   max-height: 200px;
   outline: none;
+  /* Thin scrollbar (Firefox / Edge / future Safari). */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* Thin scrollbar (Chromium / WebKit). */
+.composer textarea::-webkit-scrollbar {
+  width: 4px;
+}
+.composer textarea::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 0;
+}
+.composer textarea::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .composer textarea:disabled {
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .composer textarea::placeholder {
@@ -48,26 +61,26 @@
 
 .sendBtn {
   position: absolute;
-  right: 6px;
-  bottom: 5px;
-  width: 28px;
-  height: 28px;
+  right: 4px;
+  bottom: 3px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: var(--color-accent);
-  color: var(--paper);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-accent);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: opacity var(--duration-fast) var(--ease-out-quart),
-              transform var(--duration-fast) var(--ease-out-quart);
+  transition: opacity var(--duration-fast) var(--ease-out-quart);
 }
-.sendBtn:hover:not(:disabled) { transform: translateY(-1px); }
+.sendBtn:hover:not(:disabled) {
+  color: var(--color-text);
+}
 .sendBtn:disabled {
-  background: var(--color-border);
+  color: var(--color-text-faint);
   cursor: not-allowed;
-  opacity: 0.7;
 }

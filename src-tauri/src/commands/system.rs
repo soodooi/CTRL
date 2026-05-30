@@ -212,8 +212,8 @@ pub fn spawn_input_window(app: tauri::AppHandle) -> Result<(), String> {
         WebviewUrl::App("/?surface=input".into()),
     )
     .title("CTRL · Input")
-    .inner_size(430.0, 60.0)
-    .min_inner_size(430.0, 60.0)
+    .inner_size(430.0, 44.0)
+    .min_inner_size(430.0, 44.0)
     .decorations(false)
     .transparent(false)
     .shadow(true)
@@ -225,7 +225,7 @@ pub fn spawn_input_window(app: tauri::AppHandle) -> Result<(), String> {
     .build()
     .map_err(|e| e.to_string())?;
 
-    let _ = win.set_size(LogicalSize::new(430.0, 60.0));
+    let _ = win.set_size(LogicalSize::new(430.0, 44.0));
     position_input_under_main(&app, &win)?;
     Ok(())
 }
@@ -243,7 +243,7 @@ pub fn set_input_window_height(app: tauri::AppHandle, height: f64) -> Result<(),
         .ok_or_else(|| "no current monitor".to_string())?;
     let scale = monitor.scale_factor();
     let max_logical = monitor.size().height as f64 / scale - 40.0;
-    let target = height.max(60.0).min(max_logical);
+    let target = height.max(44.0).min(max_logical);
     win.set_size(LogicalSize::new(430.0, target))
         .map_err(|e| e.to_string())
 }
