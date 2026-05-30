@@ -1,0 +1,79 @@
+# CTRL builtin keycap — "Create" (keycap-designer mode)
+# Schema: ADR-024 v2 (6-axis composition model)
+manifest_version = 2
+builtin = true
+
+[keycap]
+id = "builtin/create"
+label = "Create"
+description = "Irisy in keycap-designer mode. Talks the user through making a new keycap, writes the manifest, installs it into ~/.ctrl/keycaps/."
+pattern = "G"
+color = "amber"
+
+# ── Axis 1 — kernel capabilities ──────────────────────────────────────────
+# create can read the whole vault (to see what skills the user has and what
+# existing keycaps look like) and writes both into its own sandbox (drafts /
+# notes) AND into ~/.ctrl/keycaps/ to install new keycaps.
+
+[capabilities.clipboard]
+read = true
+write = false
+
+[capabilities.text]
+chat = true
+
+[capabilities.file]
+read_allowlist = ["${vault_root}/*"]
+write_allowlist = ["${cap_asset.vault.path}/*", "${user.home}/.ctrl/keycaps/*"]
+
+[capabilities.network.http]
+allowlist = ["https://api.github.com"]
+methods = ["GET"]
+
+[capabilities.mcp]
+list_tools = true
+invoke_tool = true
+
+[capabilities.platform]
+notify = true
+
+# ── Axis 2 — brain capabilities ───────────────────────────────────────────
+
+[brain_capabilities."text.chat"]
+provider_pin = null
+
+# ── Axis 3 — MCP servers ──────────────────────────────────────────────────
+# create itself binds none, but can discover and invoke any user-installed
+# MCP server when designing a Pattern D keycap.
+
+# ── Axis 4 — skills ───────────────────────────────────────────────────────
+# create needs the keycap-design recipes. Resolved via the 3-tier lookup
+# chain (ADR-024 §3.5): vault/skills first, then ~/.claude/skills (ECC
+# plugin), then this keycap's own bundle as fallback.
+
+skills = [
+  "create-keycap",
+  "validate-manifest",
+  "discover-skill",
+]
+
+# ── Axis 5 — UI surface ───────────────────────────────────────────────────
+# form: manifest fields rendered as a live preview pane next to the chat.
+# The user sees the manifest take shape as Irisy fills slots.
+
+ui_surface = "form"
+
+# ── Axis 6 — cap-asset ────────────────────────────────────────────────────
+
+[cap_asset.files]
+items = [
+  { src = "icon.svg",   dest = "icon.svg" },
+  { src = "persona.md", dest = "persona.md" },
+]
+
+[cap_asset.vault]
+path = "keycaps/create/"
+seed = [
+  { dest = "README.md",        content_inline = "# Create (keycap designer)\n\nWhen this keycap is active, Irisy shifts into keycap-designer mode. Drafts of in-progress manifests, design notes, and discarded ideas land in `drafts/`.\n\n## Customizing the designer's voice\n\nDrop a `persona.md` into this folder to override the bundled designer persona.\n" },
+  { dest = "drafts/.gitkeep" },
+]
