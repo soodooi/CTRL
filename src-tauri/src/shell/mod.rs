@@ -17,6 +17,7 @@
 // HotkeyService.cs, tray + window glue, lifecycle wiring).
 
 pub mod brain_supervisor;
+pub mod builtin_keycaps;
 pub mod hotkey;
 pub mod keychain;
 pub mod kernel_supervisor;

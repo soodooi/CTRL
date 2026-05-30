@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.80"
+version = "0.1.92"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -88,6 +88,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 codegen-units = 1
