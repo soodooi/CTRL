@@ -93,6 +93,10 @@ export const StatusBar = (): ReactElement => {
       aria-label="Cockpit status bar"
       data-tauri-drag-region="deep"
     >
+      {/* Guaranteed-drag strip at the very top — the chips below
+          intercept clicks so the user has nothing else to drag from.
+          bao 2026-05-30: '顶部拖动不方便,可能因为有文字'. */}
+      <div className={styles.dragStrip} data-tauri-drag-region aria-hidden="true" />
       <div className={styles.statusZone} aria-label="System status">
         {onKrnClick ? (
           <button

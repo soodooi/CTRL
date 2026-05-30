@@ -13,10 +13,22 @@
   align-items: center;
   gap: var(--space-3);
   height: var(--statusbar-height);
-  padding: 0 var(--space-3);
+  padding: 8px var(--space-3) 0;
   background: var(--color-bg-l1);
   border-bottom: 1px solid var(--color-border-soft);
   position: relative;
+}
+
+/* Guaranteed drag band above the chips. The chips intercept clicks so
+   the user needs a chip-free strip somewhere; the top 8 px of the bar
+   is reserved for that. */
+.dragStrip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: grab;
 }
 .bar::before {
   content: '';

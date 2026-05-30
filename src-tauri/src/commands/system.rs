@@ -163,9 +163,10 @@ pub fn set_window_height(app: tauri::AppHandle, height: f64) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
-/// Position the main window at the top-right edge of the primary monitor.
-/// Companion mode calls this on boot so the strip is anchored to the
-/// upper-right corner regardless of where the user last placed it.
+/// Position the main window centered in the right half of the primary
+/// monitor. bao 2026-05-30: don't sit flush against the right edge —
+/// put it in the middle of the right half so there's breathing room on
+/// both sides.
 #[tauri::command]
 pub fn position_window_top_right(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::{LogicalPosition, Manager};
@@ -178,13 +179,19 @@ pub fn position_window_top_right(app: tauri::AppHandle) -> Result<(), String> {
         .ok_or_else(|| "no current monitor".to_string())?;
     let scale = monitor.scale_factor();
     let monitor_w_logical = monitor.size().width as f64 / scale;
+    let monitor_h_logical = monitor.size().height as f64 / scale;
     let win_outer = win.outer_size().map_err(|e| e.to_string())?;
     let win_w_logical = win_outer.width as f64 / scale;
+    let win_h_logical = win_outer.height as f64 / scale;
     let monitor_pos = monitor.position();
     let monitor_x_logical = monitor_pos.x as f64 / scale;
     let monitor_y_logical = monitor_pos.y as f64 / scale;
-    let x = monitor_x_logical + monitor_w_logical - win_w_logical;
-    let y = monitor_y_logical + 24.0; // leave room for menu bar
+    // x: center of the right half of the screen = monitor_w * 0.75
+    let x = monitor_x_logical + monitor_w_logical * 0.75 - win_w_logical / 2.0;
+    // y: vertical center of the screen (input window will tuck below
+    // this; the clamp inside position_input_under_main handles Dock)
+    let y = monitor_y_logical + (monitor_h_logical - win_h_logical) / 2.0;
+    let y = y.max(monitor_y_logical + 24.0); // never above the menu bar
     win.set_position(LogicalPosition::new(x, y))
         .map_err(|e| e.to_string())
 }
