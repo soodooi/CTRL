@@ -112,13 +112,30 @@
   align-items: center;
   gap: var(--space-2);
 }
-.time {
+/* Version pill — replaced the clock in the right cluster (bao 2026-05-30):
+   in companion mode the bottom-left VersionPill is hidden, so we need
+   an always-visible upgrade affordance here. */
+.versionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 22px;
   font-family: var(--font-mono);
-  font-size: var(--text-mono-md);
-  font-weight: var(--weight-medium);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text);
+  font-size: var(--text-mono-xs);
   letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.updateDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-success), transparent 80%);
 }
 
 .hideBtn {

@@ -1,15 +1,18 @@
-// StatusBar — top status zone (bao 2026-05-30 directive: 顶端左侧 =
-// status indication area; engine / MCP / etc live HERE, not in Irisy
-// chat header).
+// StatusBar — top status zone.
 //
-// Layout:
-//   [KRN ●] [ENGINE: <brain>] [MCP: N] [VAULT: N] ... [clock] [×]
+// Layout (bao 2026-05-30 companion mode):
+//   [KRN ●] [ENGINE: <brain>] [MCP: N] [VAULT: N] ... [v0.1.x ●] [×]
+//
+// The clock got replaced by a clickable version pill — in companion mode
+// the previous bottom-left VersionPill is hidden by the @media collapse,
+// so users need a visible upgrade affordance somewhere always-on. The
+// status bar's right cluster carries it now.
 
 import { useCallback, type ReactElement } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Led, type LedTone } from './primitives';
-import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import { useKernelStatus } from '../hooks/useKernelStatus';
+import { APP_VERSION, useUpdateStatus } from '../lib/app-meta';
 import { invoke } from '../lib/bridge';
 import styles from './StatusBar.module.css';
 
@@ -46,9 +49,9 @@ const StatusChip = ({ label, value, title, onClick }: StatusChipProps): ReactEle
 };
 
 export const StatusBar = (): ReactElement => {
-  const now = useWallClock();
   const navigate = useNavigate();
   const status = useKernelStatus();
+  const update = useUpdateStatus();
 
   const kernelReachable = status !== null;
   const krnTone: LedTone = !kernelReachable
@@ -70,6 +73,19 @@ export const StatusBar = (): ReactElement => {
       /* browser PWA: nothing to hide */
     });
   }, []);
+
+  const versionLabel = update.installing
+    ? 'Updating…'
+    : update.checking
+      ? 'Checking…'
+      : `v${APP_VERSION}`;
+  const versionTitle = update.installing
+    ? 'Installing…'
+    : update.checking
+      ? 'Checking…'
+      : update.available
+        ? `Click to install v${update.latestVersion ?? ''} & restart`
+        : `CTRL v${APP_VERSION} · click to check`;
 
   return (
     <header
@@ -115,9 +131,18 @@ export const StatusBar = (): ReactElement => {
       <div className={styles.spacer} aria-hidden="true" />
 
       <div className={styles.right}>
-        <time className={styles.time} dateTime={now.toISOString()}>
-          {formatHHMM(now)}
-        </time>
+        <button
+          type="button"
+          className={`${styles.versionChip} ${styles.chipButton}`}
+          title={versionTitle}
+          onClick={() => void update.checkAndInstall()}
+          disabled={update.checking || update.installing}
+        >
+          <span className={styles.chipValue}>{versionLabel}</span>
+          {update.available && (
+            <span className={styles.updateDot} aria-label="Update available" role="status" />
+          )}
+        </button>
         <button
           type="button"
           className={styles.hideBtn}
