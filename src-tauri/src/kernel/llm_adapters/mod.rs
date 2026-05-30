@@ -236,13 +236,13 @@ pub fn register_default_adapters(router: &mut LlmPortRouter) {
     }
 
     // ── Claude CLI subprocess (subscription auth) ──────────────────────
-    // Register whenever the `claude` binary is reachable on PATH — detect =
-    // available (cc-switch style / Model Integration module). The user opts
-    // IN by *activating* "Claude Code" in Settings → Model Integration, not
-    // by editing config.toml. config.toml [providers.claude_cli] is optional
-    // (overrides default_model). No api_key — the CLI manages its own OAuth;
-    // an unauthenticated CLI surfaces AuthFailed at call time.
-    if let Some(binary_path) = claude_cli::ClaudeCliAdapter::locate_binary() {
+    // Source of truth for the executable is `brain_config` (registry +
+    // ~/.ctrl/brains.toml override). We do NOT probe PATH here; if the
+    // command isn't actually executable, spawn at call time surfaces a
+    // typed NotFound error that Irisy can route to a "set the path in
+    // brains.toml" affordance. Modular: same config flows to skills.rs,
+    // the Settings UI, and Irisy's own config read.
+    if let Some(command) = crate::kernel::brain_config::command_for("claude_code") {
         let default_model = local_cfg
             .providers
             .claude_cli
@@ -251,10 +251,10 @@ pub fn register_default_adapters(router: &mut LlmPortRouter) {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| CLAUDE_CLI_DEFAULT_MODEL.to_string());
         let adapter =
-            claude_cli::ClaudeCliAdapter::new("claude-cli", binary_path.clone(), default_model);
+            claude_cli::ClaudeCliAdapter::new("claude-cli", command.clone(), default_model);
         router.register(Arc::new(adapter));
         tracing::info!(
-            "llm_adapter: claude-cli registered (binary={binary_path}, uses subscription OAuth)"
+            "llm_adapter: claude-cli registered (command={command}, uses subscription OAuth)"
         );
     }
 }

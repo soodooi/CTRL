@@ -124,6 +124,21 @@ pub fn active_brain_path() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".ctrl").join("active-brain"))
 }
 
+/// Look up a single brain's `command` field (the executable name or
+/// absolute path that adapters/skills should spawn). Consumers (LLM
+/// adapter registration, skill runner) should call this instead of
+/// probing PATH themselves — the brain registry is the SSOT and the
+/// user can override per-id via `~/.ctrl/brains.toml`. None when the
+/// id isn't in the registry; an empty command is filtered out so
+/// callers can rely on a non-empty result.
+pub fn command_for(id: &str) -> Option<String> {
+    load()
+        .into_iter()
+        .find(|e| e.id == id)
+        .map(|e| e.command)
+        .filter(|c| !c.is_empty())
+}
+
 /// Load the brain registry: defaults + user overrides from
 /// `~/.ctrl/brains.toml` (if present). User entries can override
 /// any field on a known id, or add a new id entirely.

@@ -57,30 +57,6 @@ impl ClaudeCliAdapter {
         }
     }
 
-    /// Resolve `claude` in PATH. Returns the absolute path so the spawn
-    /// site has a stable target even if the parent process's PATH later
-    /// changes. None when `claude` is not installed.
-    pub fn locate_binary() -> Option<String> {
-        // `which`-equivalent: spawn `command -v claude` via login shell so
-        // we pick up Homebrew / nvm / pyenv PATH additions the GUI parent
-        // (Tauri shell) usually misses. Sync std::process is fine — this
-        // runs once at boot, not on every turn.
-        let output = std::process::Command::new("sh")
-            .arg("-lc")
-            .arg("command -v claude")
-            .output()
-            .ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() {
-            None
-        } else {
-            Some(path)
-        }
-    }
-
     fn resolve_model<'a>(&'a self, model: &'a str) -> &'a str {
         if model.is_empty() {
             &self.default_model
@@ -136,9 +112,22 @@ impl ClaudeCliAdapter {
             cmd.arg("--system-prompt").arg(sys);
         }
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| LlmError::ProviderError(format!("claude spawn failed: {e}")))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            // ErrorKind::NotFound means the configured command isn't on PATH
+            // (or the absolute path doesn't exist). Surface a specific
+            // message pointing at brain_config so Irisy / Settings can fix
+            // it — generic "spawn failed" hid the real cause.
+            if e.kind() == std::io::ErrorKind::NotFound {
+                LlmError::ProviderError(format!(
+                    "claude binary '{}' not found. Edit ~/.ctrl/brains.toml \
+                     ([brains.claude_code] command = \"/absolute/path/to/claude\") \
+                     or update Settings → Model Integration → Claude Code.",
+                    self.binary_path
+                ))
+            } else {
+                LlmError::ProviderError(format!("claude spawn failed: {e}"))
+            }
+        })?;
 
         let stdin_payload = build_stdin_payload(&prompt.messages)?;
         if let Some(mut stdin) = child.stdin.take() {

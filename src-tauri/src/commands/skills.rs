@@ -158,14 +158,16 @@ pub async fn run_skill(
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // Skill keycaps need a brain CLI that can use tools + write files. Claude
-    // Code is the verified one; require it (the active-brain selection in
-    // Settings → Model Integration must resolve to a CLI that has the skill).
-    let binary = crate::kernel::llm_adapters::claude_cli::ClaudeCliAdapter::locate_binary()
-        .ok_or_else(|| {
-            "Skill keycaps run on the Claude Code CLI. Install `claude` and \
-             activate Claude Code in Settings → Model Integration."
-                .to_string()
-        })?;
+    // Code is the verified one. Source the command from brain_config (same
+    // path the LLM-adapter registration uses + same path the user / Irisy
+    // overrides via ~/.ctrl/brains.toml). We do NOT probe PATH; if the
+    // command can't be spawned, the subprocess will surface the error.
+    let binary = crate::kernel::brain_config::command_for("claude_code").ok_or_else(|| {
+        "Skill keycaps run on the Claude Code CLI. Install `claude` (or set its \
+         path in ~/.ctrl/brains.toml under [brains.claude_code] command) and \
+         activate Claude Code in Settings → Model Integration."
+            .to_string()
+    })?;
 
     // Per-keycap working folder in the VAULT — plain, user-visible files (the
     // user can open the generated deck in vim / Finder; local is truth).
