@@ -254,7 +254,15 @@ export function IrisyChat(): React.ReactElement {
     }
     return '';
   }, [messages]);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Auto-size the composer textarea — grows downward as the user types,
+  // capped so it never eats more than ~25% of the chat column.
+  const autoSizeTextarea = (el: HTMLTextAreaElement | null): void => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  };
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
 
   useEffect(() => {
@@ -565,7 +573,21 @@ export function IrisyChat(): React.ReactElement {
     void sendMessage(input);
   };
 
-  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    // Enter submits (Doubao / Kimi mobile-chat convention). Shift+Enter
+    // inserts a newline so multi-line messages still work. Guard IME
+    // composition so Chinese input candidates don't trigger send.
+    if (
+      e.key === 'Enter' &&
+      !e.shiftKey &&
+      !e.nativeEvent.isComposing &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault();
+      e.currentTarget.form?.requestSubmit();
+      return;
+    }
     // ↑ on an empty input recalls the last user message for quick edit.
     if (e.key === 'ArrowUp' && input.length === 0 && lastUserMessage) {
       e.preventDefault();
@@ -874,15 +896,18 @@ export function IrisyChat(): React.ReactElement {
               ))}
             </ul>
           )}
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
+            rows={1}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              autoSizeTextarea(e.currentTarget);
+            }}
             onKeyDown={onInputKeyDown}
             placeholder={
               brainReady
-                ? 'Talk to Irisy — @file · ↑ recall · ⌘K clear · ⌘↵ send'
+                ? 'Talk to Irisy — Enter to send · Shift+Enter newline · @file · ↑ recall'
                 : 'Brain not ready — wire a provider in CTRL settings'
             }
             disabled={sending || !brainReady}

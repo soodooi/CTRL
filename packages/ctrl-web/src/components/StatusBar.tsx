@@ -1,14 +1,9 @@
-// StatusBar — top instrument cluster of the cockpit shell.
+// StatusBar — slim top cluster of the cockpit shell.
 //
-// 2026-05-30 restructure (bao "顶端左侧是状态指示区,ENGINE / MCP 这些"):
-// top-left is now a dedicated status zone. Cluster left → right:
-//
-//   [KRN ●] [ENGINE: <brain>] [MCP: N] [VAULT: N]            …  [clock] [×]
-//
-// Sources: useKernelStatus polls kernel_status() every ~3s. The kernel
-// reports overall health (drives KRN LED), the active brain id (ENGINE),
-// MCP server count, vault size. No adapter pill — bao 2026-05-29: don't
-// surface raw provider names ("volc") in the chrome.
+// 2026-05-30 revision (bao): ENGINE / MCP / VAULT chips removed — they
+// duplicated Irisy's own status header (which already shows Engine / Pi /
+// MCP bridge). Single source of truth: Irisy chat header owns runtime
+// state; this bar is just kernel-health LED + clock + hide.
 
 import { useCallback, type ReactElement } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -17,38 +12,6 @@ import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import { useKernelStatus } from '../hooks/useKernelStatus';
 import { invoke } from '../lib/bridge';
 import styles from './StatusBar.module.css';
-
-interface StatusChipProps {
-  label: string;
-  value: string | number;
-  title?: string;
-  onClick?: () => void;
-}
-const StatusChip = ({ label, value, title, onClick }: StatusChipProps): ReactElement => {
-  const body = (
-    <>
-      <span className={styles.chipLabel}>{label}</span>
-      <span className={styles.chipValue}>{value}</span>
-    </>
-  );
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        className={`${styles.chip} ${styles.chipButton}`}
-        title={title}
-        onClick={onClick}
-      >
-        {body}
-      </button>
-    );
-  }
-  return (
-    <span className={styles.chip} title={title}>
-      {body}
-    </span>
-  );
-};
 
 export const StatusBar = (): ReactElement => {
   const now = useWallClock();
@@ -66,11 +29,6 @@ export const StatusBar = (): ReactElement => {
   const onKrnClick = warning ? (): void => void navigate({ to: '/settings' }) : undefined;
   const krnTitle = warning ? `${warning} · click to open Settings` : `KRN: ${krnTone}`;
 
-  const engine = status?.active_brain ?? '—';
-  const mcpCount = status?.mcp_servers_installed ?? null;
-  const vaultCount = status?.vault_files ?? null;
-
-  // Click fallback for when the Ctrl hotkey desyncs.
   const handleHide = useCallback((): void => {
     void invoke<void>('hide_window').catch(() => {
       /* browser PWA: nothing to hide */
@@ -83,40 +41,22 @@ export const StatusBar = (): ReactElement => {
       aria-label="Cockpit status bar"
       data-tauri-drag-region="deep"
     >
-      <div className={styles.statusZone} aria-label="System status">
-        {onKrnClick ? (
-          <button
-            type="button"
-            className={`${styles.krn} ${styles.chipButton}`}
-            title={krnTitle}
-            onClick={onKrnClick}
-          >
-            <Led tone={krnTone} size="sm" />
-            <span className={styles.chipLabel}>KRN</span>
-          </button>
-        ) : (
-          <span className={styles.krn} title={krnTitle}>
-            <Led tone={krnTone} size="sm" />
-            <span className={styles.chipLabel}>KRN</span>
-          </span>
-        )}
-        <StatusChip
-          label="ENGINE"
-          value={engine}
-          title={`Active brain: ${engine}`}
-          onClick={() => void navigate({ to: '/settings/brain' })}
-        />
-        <StatusChip
-          label="MCP"
-          value={mcpCount ?? '—'}
-          title="MCP servers installed"
-        />
-        <StatusChip
-          label="VAULT"
-          value={vaultCount ?? '—'}
-          title="Vault markdown files"
-        />
-      </div>
+      {onKrnClick ? (
+        <button
+          type="button"
+          className={`${styles.krn} ${styles.chipButton}`}
+          title={krnTitle}
+          onClick={onKrnClick}
+        >
+          <Led tone={krnTone} size="sm" />
+          <span className={styles.chipLabel}>KRN</span>
+        </button>
+      ) : (
+        <span className={styles.krn} title={krnTitle}>
+          <Led tone={krnTone} size="sm" />
+          <span className={styles.chipLabel}>KRN</span>
+        </span>
+      )}
 
       <div className={styles.spacer} aria-hidden="true" />
 

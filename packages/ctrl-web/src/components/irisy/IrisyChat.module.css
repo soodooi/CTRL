@@ -569,35 +569,45 @@
 
 .composer {
   display: flex;
+  align-items: flex-end;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
   border-top: 1px solid var(--color-border-soft);
   background: var(--color-bg-l1);
 }
 
-.composer input {
+.composer textarea {
   flex: 1;
-  padding: 0.6rem 0.9rem;
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--color-border-soft);
   border-radius: 0.5rem;
   background: var(--color-bg-l0);
   color: inherit;
   font: inherit;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
+  min-height: 36px;
+  max-height: 160px;
 }
 
-.composer input:disabled {
+.composer textarea:disabled {
   background: var(--color-bg-l2);
   cursor: not-allowed;
 }
 
 .composer button {
-  padding: 0.6rem 1.25rem;
+  padding: 0.5rem 1rem;
   border: none;
   border-radius: 0.5rem;
   background: var(--color-accent);
   color: var(--paper);
   font: inherit;
   cursor: pointer;
+  flex-shrink: 0;
+  min-height: 36px;
 }
 
 .composer button:disabled {
