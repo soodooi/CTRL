@@ -37,7 +37,7 @@
   position: relative;
   --l1-width: 64px;
   --l2-width: 0px;
-  --irisy-pane-width: 380px;
+  --irisy-pane-width: 430px;
 }
 .shell[data-l2='open'] {
   --l2-width: 240px;
