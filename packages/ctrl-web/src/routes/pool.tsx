@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listKeycaps, openWorkspace, type KeycapSummary } from '@/lib/kernel';
 import { StatusPill, type LedTone } from '@/components/primitives';
-import { useRail } from '@/components/RightRail';
+import { useRail } from '@/components/PrimaryRail';
 import styles from './pool.module.css';
 
 type SourceId = 'all' | 'builtin' | 'mcp' | 'oauth' | 'local' | 'stss';

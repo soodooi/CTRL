@@ -1,49 +1,29 @@
 /*
- * App shell — 5-column cockpit layout (bao 2026-05-30).
- *
- *   ┌────────────────────────────────────────────────────────────────────┐
- *   │  StatusBar                                                          │ 32px
- *   ├──────┬──────┬──────┬──────────────────┬──────────┬──────────┬──────┤
- *   │  L1  │ L2   │ 副    │  主              │  Irisy   │  副 L1   │      │
- *   │ 64px │ 0/   │ 320  │  (Outlet,        │  fixed   │  keycap  │      │
- *   │ nav  │ 240  │ key- │  flex)           │  430px   │  mgmt    │      │
- *   │      │      │ caps │                  │          │  64px    │      │
- *   └──────┴──────┴──────┴──────────────────┴──────────┴──────────┴──────┘
- *
- * L1 (primary nav, icon-only) is the far-LEFT column. L2 expands to its
- * right when toggled. The KEYCAP panel ("副") sits between L2 and the
- * main display area — always visible across all routes. The display
- * area renders <Outlet>. Irisy chat is the fixed assistant column on
- * the right. A second icon nav ("副 L1") on the far right is reserved
- * for keycap-management actions (browse / add / categorize).
- */
-
-/*
- * 2026-05-30 shape v3 (bao sign-off): COMPANION default (window narrow,
- * pinned right edge) ↔ EXPANDED on demand. Companion shows only the
- * right strip (Irisy column + L1 nav, 494px). Expanded reveals the
- * left side (副 nav + L2 + keycap + main display + dialog row).
+ * App shell — 6-column cockpit layout (bao 2026-05-30 amended: L1 → LEFT).
  *
  * Column order LEFT → RIGHT:
- *   [副 nav 48] [L2 0/240] [keycap 320] [main flex] [Irisy 430] [L1 48]
+ *   [L1 48] [L2 0/240] [keycap 320] [main flex] [Irisy 430] [副 nav 48]
  *
- * 副 nav is the secondary icon column (its own set, different from L1).
- * L1 is the primary route nav, locked on the RIGHT edge.
+ * L1 (primary route nav, PrimaryRail) is the far-LEFT column. L2 expands
+ * to its right when toggled. The KEYCAP panel sits between L2 and the
+ * main display area — always visible across all routes. The display
+ * area renders <Outlet>. Irisy chat is the fixed assistant column.
+ * The secondary nav ("副 L1", KeycapNav) is locked on the far RIGHT for
+ * keycap-management actions (browse / add / categorize).
  *
- * Companion = window < 600px → left half collapses, only Irisy + L1
- * remain. The grid columns become 0 / 0 / 0 / 0 / 430 / 48 = 478 ≈ the
- * 494px window minus borders / paddings.
+ * Companion = window < 960px → middle collapses, only L1 (left) + Irisy
+ * remain. Grid becomes 48 / 0 / 0 / 0 / calc(100%-48) / 0.
  */
 
 .shell {
   display: grid;
   grid-template-rows: var(--statusbar-height) 1fr var(--dialog-height);
   grid-template-columns:
-    var(--sub-nav-width) var(--l2-width) var(--keycap-pane-width) 1fr var(--irisy-pane-width) var(--l1-width);
+    var(--l1-width) var(--l2-width) var(--keycap-pane-width) 1fr var(--irisy-pane-width) var(--sub-nav-width);
   grid-template-areas:
     'status status status status status status'
-    'subnav l2     keycap main   irisy  l1'
-    'subnav l2     keycap main   dialog dialog';
+    'l1     l2     keycap main   irisy  subnav'
+    'l1     l2     keycap main   dialog dialog';
   height: 100vh;
   height: 100dvh;
   background: var(--color-bg-l0);
@@ -61,16 +41,12 @@
   --l2-width: 240px;
 }
 
-/* COMPANION mode — when the window is narrow, collapse everything left
-   of Irisy. Threshold 960 px: under it, only Irisy + L1 show; over it,
-   the full expanded shell with 副 nav / L2 / keycap / main / dialog
-   reveals. User toggles by dragging the window edge. */
+/* COMPANION mode — narrow window collapses middle, keeps L1 (left) +
+   Irisy visible. Threshold 960 px. */
 @media (max-width: 959px) {
   .shell {
-    /* Irisy fills the window minus the L1 column so both stay visible
-       at companion widths (430 = 382 Irisy + 48 L1). Without the
-       calc(), L1 fell off the right edge — bao 'L1 你丢失了'. */
-    grid-template-columns: 0 0 0 0 calc(100% - var(--l1-width)) var(--l1-width);
+    /* L1 on the LEFT, Irisy fills the rest. 副 nav hidden in companion. */
+    grid-template-columns: var(--l1-width) 0 0 0 calc(100% - var(--l1-width)) 0;
     grid-template-rows: var(--statusbar-height) 1fr 0;
     --dialog-height: 0px;
   }

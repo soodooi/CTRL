@@ -34,7 +34,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
 import { Keyboard, KEYCAP_DRAG_MIME } from './components/Keyboard';
 import { KeycapNav } from './components/KeycapNav';
-import { RailProvider, RightRail, useRail } from './components/RightRail';
+import { RailProvider, PrimaryRail, useRail } from './components/PrimaryRail';
 import { L2Panel } from './components/L2Panel';
 import { VersionPill } from './components/VersionPill';
 import { IrisyChat } from './components/irisy/IrisyChat';
@@ -142,7 +142,7 @@ function RootShellInner(): ReactElement {
         <IrisyChat />
       </div>
       <div className={styles.l1}>
-        <RightRail />
+        <PrimaryRail />
       </div>
       <aside className={styles.dialog} aria-label="Secondary dialog">
         <KeycapOutputPane />

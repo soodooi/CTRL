@@ -1,5 +1,5 @@
 // L2Panel — secondary navigation column. Default closed (width 0).
-// Toggle from the expand/close button at the top of L1 (RightRail).
+// Toggle from the expand/close button at the top of L1 (PrimaryRail).
 //
 // The active L1 item drives what L2 shows. Each L1 nav item can declare
 // a label + content; if none is declared, L2 shows an empty placeholder.
@@ -7,7 +7,7 @@
 // can write it and L2 can read it).
 
 import type { ReactElement, ReactNode } from 'react';
-import { useRail } from './RightRail';
+import { useRail } from './PrimaryRail';
 import styles from './L2Panel.module.css';
 
 export interface L2ItemDescriptor {

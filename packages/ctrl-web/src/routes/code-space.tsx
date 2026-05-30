@@ -29,7 +29,7 @@ import {
   ClusterWorkspace,
   type ClusterSource,
 } from '@/components/workspace/ClusterWorkspace';
-import { useRail } from '@/components/RightRail';
+import { useRail } from '@/components/PrimaryRail';
 import { csList, csSpawn, type CsSpawnArgs } from '@/lib/kernel';
 import { formatHHMMSS } from '@/hooks/useWallClock';
 import { useTerminalBuffer } from '@/hooks/useTerminalBuffer';

@@ -1,9 +1,13 @@
-// RightRail — Level-1 primary navigation on the right edge.
+// PrimaryRail — Level-1 primary navigation on the left edge.
+//
+// (Was `RightRail`, renamed 2026-05-29 when L1 flipped right → left per
+// memory `feedback_l1_nav_left_and_fixed`. Component behavior unchanged;
+// only the grid placement and the name moved.)
 //
 // 2026-05-29 restructure (bao): stripped of the Irisy mascot slot and
 // the version pill — both moved out. L1 is icon-only. A toggle button at
-// the top expands / closes L2 (the new secondary nav column on the LEFT
-// of L1). Settings stays pinned at the bottom.
+// the top expands / closes L2 (secondary nav column to the right of L1).
+// Settings stays pinned at the bottom.
 //
 // Irisy is no longer a peer of L1 nav items; her chat lives in the
 // SHELL'S dedicated Irisy pane (always visible). RailContext still owns
@@ -23,7 +27,7 @@ import {
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { IrisyState } from './primitives/IrisyMascot';
 import type { L2ItemDescriptor } from './L2Panel';
-import styles from './RightRail.module.css';
+import styles from './PrimaryRail.module.css';
 
 const CODING_ITEM_ID = 'coding';
 const WORKBENCH_ITEM_ID = 'workbench';
@@ -181,7 +185,7 @@ const idForPath = (pathname: string): string => {
   return HOME_ITEM_ID;
 };
 
-export const RightRail = (): ReactElement => {
+export const PrimaryRail = (): ReactElement => {
   const { activeRailId, setActiveRailId, l2Open, setL2Open } = useRail();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });

@@ -112,11 +112,16 @@ markdown / yaml viewers.
 
 ### 4. Permanent rail navigation for vault + pool
 
-Right rail's level-1 nav gains two permanent items above route-pushed
+L1 rail's level-1 nav (left edge as of 2026-05-29 — was right edge when
+this ADR was written) gains two permanent items above route-pushed
 ones: **Vault** → `/vault`, **Pool** → `/pool`. Settings stays in the
 footer slot. Route-pushed items (from `useRailItems`) render between
-the two permanents and the footer. RailRail auto-flips `activeRailId`
+the two permanents and the footer. The rail auto-flips `activeRailId`
 when the pathname enters `/vault/*` or `/pool/*`.
+
+> **Amendment 2026-05-29**: L1 rail position flipped right → left. See
+> memory `feedback_l1_nav_left_and_fixed` for the binding rule. The
+> nav-items decision in this section is unchanged; only the side moves.
 
 ## Consequences
 

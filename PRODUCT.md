@@ -123,20 +123,21 @@ HIDDEN ◀────────────────────▶ COMPAN
   - Hot keycaps single row (6 keycaps; fades out on first text-input keystroke)
   - Irisy chat (message stream, idle = welcome / persona)
   - Text input box (separated from chat; switchable context: `assist` ▾ / `create` / future)
-- Right-edge column: **L1 nav** (48 px, icon-only, **always on the right** per `feedback_right_rail_is_fixed`).
+- Left-edge column: **L1 nav** (48 px, icon-only, **always on the left** per `feedback_l1_nav_left_and_fixed`; flipped from right 2026-05-29).
 
 (source: session 2026-05-30 "Irisy 可以伴随" + Cluely / Raycast research)
 
 ### 5.3 EXPANDED (on-demand wide state)
 
-- Window grows leftward; companion strip stays anchored right.
+- Window grows leftward; companion strip stays anchored right; L1 stays anchored left.
 - Width `clamp(960, 70vw, 1800) px`, height resizable.
-- Left side reveals (left → right):
-  - **副 nav** (48 px, secondary icon column — a different set from L1; default holds keycap-management entries — see §6.7)
-  - L2 panel (0 px closed / 240 px open)
+- Column order (left → right): `[L1 48] [L2 0/240] [keycap 320] [main flex] [Irisy 430] [副 nav 48]`.
+- Middle reveals on expand:
+  - L2 panel (0 px closed / 240 px open) — to the right of L1
   - Keycap pane (320 px, the full Keyboard grid)
   - Main display (flex) — route Outlet
-  - Dialog row at the bottom right (240 px) — KeycapOutputPane
+  - Dialog row at the bottom right (240 px, spans Irisy + 副 nav columns) — KeycapOutputPane
+  - **副 nav** (48 px, secondary icon column on the FAR RIGHT — a different set from L1; default holds keycap-management entries — see §6.7)
 - Trigger: window width ≥ 960 px (user drags the window edge wider).
 - Per Raycast technique: WKWebView pre-renders at expanded size in companion mode to avoid flicker.
 
@@ -163,8 +164,8 @@ Every surface below is a confirmed feature; this doc records its current home an
 
 ### 6.2 L1 nav (primary navigation)
 
-- **48 px** icon-only column, **right edge** in COMPANION, same position in EXPANDED. Width sign-off bao 2026-05-30 (48 = Cursor / VSCode side-rail band).
-- Fixed items, order preserved (`feedback_right_rail_is_fixed`):
+- **48 px** icon-only column, **left edge** in COMPANION, same position in EXPANDED. Width sign-off bao 2026-05-30 (48 = Cursor / VSCode side-rail band). Side flipped right → left 2026-05-29.
+- Fixed items, order preserved (`feedback_l1_nav_left_and_fixed`):
   - Home (`/`)
   - Coding (`/coding`)
   - Workbench (`/workbench`)
@@ -221,10 +222,10 @@ Drag-and-drop a keycap onto the main area → opens that keycap's workspace inst
 
 (source: session 2026-05-30 "对话框跟文本框分开", Cluely input/output separation pattern)
 
-### 6.7 副 nav (secondary navigation, LEFT side, separate set from L1)
+### 6.7 副 nav (secondary navigation, RIGHT side, separate set from L1)
 
-- **48 px** icon column, **left edge of the EXPANDED layout**. Hidden in COMPANION.
-- Explicitly **a different set from L1** — bao 2026-05-30 "左边的导航是副导航,另外一套". L1 is primary route nav; 副 nav is the management / context surface.
+- **48 px** icon column, **right edge of the EXPANDED layout**. Hidden in COMPANION (only L1 + Irisy visible).
+- Explicitly **a different set from L1** — bao 2026-05-30 "左边的导航是副导航,另外一套" (originally left; flipped to right 2026-05-29 when L1 took the left edge). L1 is primary route nav; 副 nav is the management / context surface.
 - Default contents (placeholder, iterable):
   - Browse pool (→ `/pool`)
   - Create keycap (→ `/irisy?intent=create-keycap`)
@@ -233,7 +234,7 @@ Drag-and-drop a keycap onto the main area → opens that keycap's workspace inst
 ### 6.8 Secondary dialog row (KeycapOutputPane)
 
 - Visible only in EXPANDED mode.
-- 240 px tall, spans the Irisy + KeycapNav width on the right.
+- 240 px tall, spans the Irisy + 副 nav (KeycapNav) columns on the right.
 - Default content: live keycap-run output (`useKeycapOutputStore`).
 
 ### 6.9 Version pill

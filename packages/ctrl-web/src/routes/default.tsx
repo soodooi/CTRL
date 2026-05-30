@@ -5,7 +5,7 @@
 // area on `/` shows the install slot until a workspace instance opens.
 
 import { useEffect, type ReactElement } from 'react';
-import { useRail } from '@/components/RightRail';
+import { useRail } from '@/components/PrimaryRail';
 import { WorkspaceShell } from '@/components/workspace/WorkspaceShell';
 import styles from './default.module.css';
 

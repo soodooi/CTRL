@@ -38,7 +38,7 @@ Two-panel layout (ADR-002 + memory `decision_pwa_two_panel_layout`): left Keyboa
 | [002](../../decisions/002-pwa-pivot.md) | Pivot UI to single PWA codebase under Tauri 2 | accepted |
 | [020](../../decisions/020-vmark-stack-adoption.md) | VMark stack — viewer registry + vault browser + smart table | accepted |
 
-Cross-references: ADR-001 §1.5 (vault stack libraries), Memory `decision_pwa_two_panel_layout` + `decision_pc_mirrors_mobile_layout` + `feedback_right_rail_is_fixed`.
+Cross-references: ADR-001 §1.5 (vault stack libraries), Memory `decision_pwa_two_panel_layout` + `decision_pc_mirrors_mobile_layout` + `feedback_l1_nav_left_and_fixed`.
 
 ## Adjacent sub-specs
 
@@ -53,8 +53,8 @@ Cross-references: ADR-001 §1.5 (vault stack libraries), Memory `decision_pwa_tw
 - 11 viewers (Markdown/Code/HTML/Image/JSON/Mermaid/PDF/SmartTable/SVG/TOML/YAML)
 - Tiptap WYSIWYG markdown editor + CodeMirror 6 + mermaid.js + iframe+CSP
 - ctrl-asset:// scheme consumed via `useViewerResource` / `asset-uri.ts`
-- Right rail level-1 nav fixed across all routes (memory `feedback_right_rail_is_fixed`)
-- Irisy ChatPane integrated (right rail companion)
+- L1 nav fixed across all routes — left edge as of 2026-05-29, was right edge (memory `feedback_l1_nav_left_and_fixed`)
+- Irisy ChatPane integrated (between main display and 副 nav)
 
 ⚠️ open:
 - **G6 Vault new note/folder entry** — viewers are read-only paths today; user can't easily create new vault content from PWA
