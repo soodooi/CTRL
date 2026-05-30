@@ -16,7 +16,6 @@ import { ManifestPreview } from '@/components/irisy/ManifestPreview';
 import { CodePreview } from '@/components/irisy/CodePreview';
 import { InstallBar } from '@/components/irisy/InstallBar';
 import { DiscardConfirm } from '@/components/irisy/DiscardConfirm';
-import { IrisyChat } from '@/components/irisy/IrisyChat';
 import { KeycapOutputPane } from '@/components/workspace/KeycapOutputPane';
 import { useKeycapOutputStore } from '@/lib/keycap-output-store';
 import { useKeycapCreatorStore } from '@/lib/irisy-keycap-store';
@@ -63,21 +62,24 @@ function readUrlParams(): { mode: IrisyMode; prefill: string | null } {
 // the command is registered.
 const BACKEND_INSTALL_READY = true;
 
-// Chat mode surface: Irisy on the left (the reusable conversational input),
-// the live keycap-output pane on the right. The pane only mounts once Irisy
-// has run a keycap, so an idle chat stays full-width (bao 2026-05-29).
+// Chat mode surface (post 2026-05-29 restructure): Irisy chat is now
+// SHELL-LEVEL, so the route renders only the keycap-output pane when a
+// run is active. Idle visit to `/irisy` shows an empty hint — the chat
+// itself is always present in the shell's Irisy column.
 const IrisyRunSurface = (): React.ReactElement => {
   const hasRun = useKeycapOutputStore((s) => s.running || s.keycapId !== null);
-  return (
-    <div className={styles.runSplit}>
-      <div className={styles.runChat}>
-        <IrisyChat />
+  if (!hasRun) {
+    return (
+      <div className={styles.fallback}>
+        <span className={styles.fallbackMuted}>
+          Talk to Irisy on the right — output appears here when a keycap runs.
+        </span>
       </div>
-      {hasRun && (
-        <div className={styles.runOutput}>
-          <KeycapOutputPane />
-        </div>
-      )}
+    );
+  }
+  return (
+    <div className={styles.runOutput}>
+      <KeycapOutputPane />
     </div>
   );
 };

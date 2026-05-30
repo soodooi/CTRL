@@ -18,10 +18,9 @@
 
 import { useCallback, type ReactElement } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { Led, Logo, StatusPill, type LedTone } from './primitives';
+import { Led, Logo, type LedTone } from './primitives';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import { useKernelStatus } from '../hooks/useKernelStatus';
-import { useRail } from './RightRail';
 import { invoke } from '../lib/bridge';
 import styles from './StatusBar.module.css';
 
@@ -69,7 +68,6 @@ const formatUptime = (ms: number): string => {
 export const StatusBar = (): ReactElement => {
   const now = useWallClock();
   const navigate = useNavigate();
-  const { irisyState } = useRail();
   const status = useKernelStatus();
 
   // Derive tones from the kernel envelope. The kernel itself is healthy
@@ -89,12 +87,10 @@ export const StatusBar = (): ReactElement => {
       : 'caution';
   const meshTone: LedTone = 'unknown';
 
-  const adapter = status?.primary_adapter ?? null;
-  const mcpCount = status?.mcp_servers_installed ?? null;
-  const vaultCount = status?.vault_files ?? null;
   const warning = status?.warnings[0] ?? null;
   const uptimeMs = status?.uptime_ms ?? 0;
   const showUptime = kernelReachable && uptimeMs > 0;
+  const adapter = status?.primary_adapter ?? null;
 
   // Degraded overall → clicking the KRN LED jumps to Settings so the
   // user can fix the configuration (typically "no LLM adapter").
@@ -132,28 +128,14 @@ export const StatusBar = (): ReactElement => {
       <div className={styles.instruments} aria-label="System instruments">
         <Instrument label="KRN" tone={krnTone} title={krnTitle} onClick={onLedClick} />
         <Instrument label="MESH" tone={meshTone} />
-        <Instrument label="LLM" tone={llmTone} title={adapter ? `LLM: ${adapter}` : 'no LLM adapter'} />
+        <Instrument
+          label="LLM"
+          tone={llmTone}
+          title={adapter ? `LLM adapter: ${adapter}` : 'no LLM adapter'}
+        />
       </div>
 
-      <div className={styles.tape}>
-        <span className={styles.tapeMeta}>ADAPTER</span>
-        <span className={styles.tapeSlot}>
-          {adapter ? (
-            <StatusPill tone="info">{adapter}</StatusPill>
-          ) : (
-            <StatusPill tone="caution">none</StatusPill>
-          )}
-        </span>
-        <span className={styles.tapeSep}>·</span>
-        <span className={styles.tapeMeta}>MCP</span>
-        <span className={styles.tapeValue}>{mcpCount ?? '—'}</span>
-        <span className={styles.tapeSep}>·</span>
-        <span className={styles.tapeMeta}>VAULT</span>
-        <span className={styles.tapeValue}>{vaultCount ?? '—'}</span>
-        <span className={styles.tapeSep}>·</span>
-        <span className={styles.tapeMeta}>IRISY</span>
-        <span className={styles.tapeValue}>{irisyState}</span>
-      </div>
+      <div className={styles.spacer} aria-hidden="true" />
 
       <div className={styles.right}>
         <time className={styles.time} dateTime={now.toISOString()}>

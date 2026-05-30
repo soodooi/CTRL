@@ -40,7 +40,6 @@ import '@xyflow/react/dist/style.css';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
 import { normalizeIcon } from '@/lib/icon';
 import { IconRenderer } from '@/components/primitives';
-import { IrisyChat } from '@/components/irisy/IrisyChat';
 import styles from './workbench.module.css';
 
 const DRAG_MIME = 'application/ctrl-keycap-node';
@@ -171,15 +170,15 @@ function Palette(): ReactElement {
 }
 
 export function WorkbenchRoute(): ReactElement {
+  // 2026-05-29 restructure: Irisy chat is shell-level; the workbench's
+  // own copilot column was dropped (the user now talks to Irisy in the
+  // fixed shell pane to the right).
   return (
     <div className={styles.shell}>
       <Palette />
       <ReactFlowProvider>
         <Canvas />
       </ReactFlowProvider>
-      <aside className={styles.copilot} aria-label="Irisy co-pilot">
-        <IrisyChat />
-      </aside>
     </div>
   );
 }

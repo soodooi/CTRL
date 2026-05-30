@@ -97,42 +97,10 @@
 /* LED tone classes moved to Led primitive (./primitives/Led.module.css);
    StatusBar consumes <Led /> directly. */
 
-/* ── Center tape: sessions / Irisy state ────────────────────────── */
-
-.tape {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-mono-sm);
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tapeMeta {
-  color: var(--color-text-soft);
-  letter-spacing: 0.12em;
-  font-weight: var(--weight-medium);
-  text-transform: uppercase;
-  font-size: var(--text-mono-xs);
-}
-.tapeValue {
-  color: var(--color-text);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  font-weight: var(--weight-medium);
-}
-.tapeSlot {
-  display: inline-flex;
-  align-items: center;
-}
-.tapeSep {
-  color: var(--color-text-muted);
-  opacity: 0.5;
-}
+/* Spacer takes up the middle so brand + LEDs stay left and clock cluster
+   stays right. (The old ADAPTER · MCP · VAULT · IRISY tape was removed
+   bao 2026-05-29: it leaked adapter names like "volc" into the top bar.) */
+.spacer { flex: 1; }
 
 /* ── Right cluster: clock + uptime ──────────────────────────────── */
 
