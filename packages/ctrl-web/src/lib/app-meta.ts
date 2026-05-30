@@ -23,7 +23,10 @@ export interface UpdateStatus {
   error?: string;
 }
 
-const UPDATE_POLL_MS = 15 * 60 * 1000;
+// Poll cadence — fast enough that new releases surface within ~1 min
+// during active dev (bao 2026-05-30). Once we're shipping less often,
+// bump this back to 15 min to be friendlier to GitHub + battery.
+const UPDATE_POLL_MS = 60 * 1000;
 
 const isTauri = (): boolean =>
   typeof window !== 'undefined' &&
