@@ -6,14 +6,38 @@
   color: var(--color-text);
 }
 
-/* Thin Clear-history affordance, only when there's history.
-   Engine / MCP status moved to the global top-left StatusBar. */
-.chatHeader {
-  display: flex;
-  justify-content: flex-end;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--color-border-soft);
+/* Clear-history is a floating icon top-right of the scroller — no
+   dedicated row. Engine / MCP status lives in the global StatusBar.
+   bao 2026-05-30: "一个 clear 按钮占了一行,浪费". */
+.clearFloating {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  z-index: 5;
+  opacity: 0.6;
+  transition: opacity var(--duration-fast) var(--ease-out-quart),
+              color var(--duration-fast) var(--ease-out-quart);
+}
+.clearFloating:hover {
+  opacity: 1;
+  color: var(--color-text);
+}
+.scrollerWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .statusLine {
@@ -85,34 +109,34 @@
 .markdownBody :global(h2),
 .markdownBody :global(h3),
 .markdownBody :global(h4) {
-  margin: 0.5em 0 0.2em;
+  margin: 0.35em 0 0.15em;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 .markdownBody :global(h1:first-child),
 .markdownBody :global(h2:first-child),
 .markdownBody :global(h3:first-child),
 .markdownBody :global(h4:first-child) { margin-top: 0; }
 
-.markdownBody :global(h1) { font-size: 1.25em; }
-.markdownBody :global(h2) { font-size: 1.1em; }
+.markdownBody :global(h1) { font-size: 1.15em; }
+.markdownBody :global(h2) { font-size: 1.05em; }
 .markdownBody :global(h3) { font-size: 1em; font-weight: 700; }
 
 .markdownBody :global(p) {
-  margin: 0.15em 0;
-  line-height: 1.45;
+  margin: 0.1em 0;
+  line-height: 1.4;
 }
 .markdownBody :global(p:first-child) { margin-top: 0; }
 .markdownBody :global(p:last-child) { margin-bottom: 0; }
 
 .markdownBody :global(ul),
 .markdownBody :global(ol) {
-  margin: 0.25em 0;
-  padding-left: 1.3em;
+  margin: 0.2em 0;
+  padding-left: 1.2em;
 }
 
 .markdownBody :global(li) {
-  margin: 0.1em 0;
+  margin: 0;
 }
 
 .markdownBody :global(code) {
@@ -469,10 +493,10 @@
 .scroller {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 14px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .welcome {
@@ -481,19 +505,21 @@
 }
 
 .welcome h2 {
-  font-size: 1.5rem;
-  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
 }
 
 .welcome p {
-  margin: 0 0 1rem;
-  opacity: 0.7;
+  margin: 0 0 0.6rem;
+  font-size: 13px;
+  opacity: 0.65;
 }
 
 .welcome ul {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 4px;
   list-style: none;
   padding: 0;
   margin: 0;
@@ -504,10 +530,11 @@
   background: var(--color-bg-l2);
   border: 1px solid var(--color-border-soft);
   color: inherit;
-  padding: 0.5rem 1rem;
+  padding: 4px 10px;
   border-radius: 999px;
   cursor: pointer;
   font: inherit;
+  font-size: 13px;
 }
 
 .welcome button:hover:not(:disabled) {
@@ -522,15 +549,13 @@
 .userBubble,
 .assistantBubble {
   max-width: 88%;
-  padding: 9px 13px;
-  border-radius: 16px;
-  /* Mobile-chat baseline: iOS body = 16-17pt; Telegram default = 16pt;
-     ChatGPT mobile ≈ 15-16px. We use 15px with 1.5 leading — readable
-     dense Chinese + English. Assistant rewraps markdown (NOT pre-wrap
-     which doubles paragraph gaps). User keeps pre-wrap to honor typed
-     newlines. */
-  font-size: 15px;
-  line-height: 1.5;
+  padding: 6px 10px;
+  border-radius: 14px;
+  /* Dense young-user spec (bao 2026-05-30 "目标用户是年轻人,可以小一些").
+     14 px is the Discord-desktop / X / Reddit band — denser than iMessage's
+     16-17 pt but still readable. 1.4 leading mirrors Discord. */
+  font-size: 14px;
+  line-height: 1.4;
   overflow-wrap: anywhere;
   word-break: break-word;
 }

@@ -712,26 +712,30 @@ export function IrisyChat(): React.ReactElement {
   const engineLabel = ENGINE_LABELS[activeBrain] ?? activeBrain;
   const engineReady = activeBrain === 'pi' ? piReachable : brainReady || piReachable;
 
-  // Engine + Pi + MCP-bridge status moved to the global StatusBar's
-  // top-left zone (bao 2026-05-30). Irisy chat keeps only its
-  // conversation surface — chat header is just a thin clear-history
-  // affordance when there's history; otherwise nothing.
+  // Engine / MCP status sits in the global StatusBar. Clear-history is
+  // a small floating × top-right of the scroller (bao 2026-05-30: the
+  // dedicated row wasted vertical space). Welcome state takes over when
+  // history is empty.
   return (
     <div className={styles.root}>
-      {messages.length > 0 && (
-        <div className={styles.chatHeader}>
+      <div className={styles.scrollerWrap}>
+        {messages.length > 0 && (
           <button
             type="button"
-            className={styles.clearButton}
+            className={styles.clearFloating}
             onClick={clearConversation}
             aria-label="Clear conversation"
+            title="Clear chat"
           >
-            Clear
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
+              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
           </button>
-        </div>
-      )}
+        )}
 
-      <div className={`${styles.scroller} irisy-scroll`} ref={scrollerRef}>
+        <div className={`${styles.scroller} irisy-scroll`} ref={scrollerRef}>
         {messages.length === 0 && (
           <div className={styles.welcome}>
             <h2>Hi, I&rsquo;m Irisy.</h2>
@@ -856,6 +860,7 @@ export function IrisyChat(): React.ReactElement {
           </button>
         </div>
       )}
+      </div>
 
       <form className={styles.composer} onSubmit={onSubmit}>
         <div className={styles.composerInputWrap}>

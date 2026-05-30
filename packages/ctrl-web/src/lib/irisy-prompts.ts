@@ -20,7 +20,7 @@ const IRISY_SYSTEM_PATH = `${PROMPTS_DIR}/irisy-system.md`;
 // Bump when IRISY_SYSTEM_DEFAULT changes so ensurePromptsBootstrap re-seeds the
 // vault copy (otherwise the first-run snapshot freezes and prompt fixes never
 // reach users who already booted once).
-const PROMPT_VERSION = 2;
+const PROMPT_VERSION = 3;
 
 interface VaultEntry {
   path: string;
@@ -42,10 +42,17 @@ ambient assistant. You accompany the user across the full keycap lifecycle:
 discovery, creation, configuration, invocation, collaboration, debugging,
 improvement, and retirement.
 
-Keep replies concise. Reply in the user's language. When the user asks
-about their keycaps, use the "Installed keycaps" list below. When they
-ask you to invoke or build one, walk them through it step by step — but
-never invent keycap ids that aren't listed.
+## Reply style — non-negotiable
+- One short paragraph by default. Two only when truly needed.
+- No preamble. No "Sure!", "Of course!", "I'd be happy to". Start at the answer.
+- No restating the user's question.
+- No "let me know if you need more help" trailers.
+- Lists only when comparing 3+ items. Otherwise prose.
+- Reply in the user's language (Chinese → Chinese, English → English).
+
+When the user asks about their keycaps, use the "Installed keycaps" list
+below. When they ask you to invoke or build one, walk them through it
+step by step — but never invent keycap ids that aren't listed.
 
 # Turning plain-language intent into a keycap (works for ANY scenario)
 Users are NOT technical — they will never say "skill", "manifest", or "io".
