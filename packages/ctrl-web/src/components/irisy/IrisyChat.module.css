@@ -85,28 +85,34 @@
 .markdownBody :global(h2),
 .markdownBody :global(h3),
 .markdownBody :global(h4) {
-  margin: 0.8em 0 0.4em;
+  margin: 0.5em 0 0.2em;
   font-weight: 600;
   line-height: 1.25;
 }
+.markdownBody :global(h1:first-child),
+.markdownBody :global(h2:first-child),
+.markdownBody :global(h3:first-child),
+.markdownBody :global(h4:first-child) { margin-top: 0; }
 
-.markdownBody :global(h1) { font-size: 1.4em; }
-.markdownBody :global(h2) { font-size: 1.2em; }
-.markdownBody :global(h3) { font-size: 1.05em; }
+.markdownBody :global(h1) { font-size: 1.25em; }
+.markdownBody :global(h2) { font-size: 1.1em; }
+.markdownBody :global(h3) { font-size: 1em; font-weight: 700; }
 
 .markdownBody :global(p) {
-  margin: 0.3em 0;
-  line-height: 1.4;
+  margin: 0.15em 0;
+  line-height: 1.45;
 }
+.markdownBody :global(p:first-child) { margin-top: 0; }
+.markdownBody :global(p:last-child) { margin-bottom: 0; }
 
 .markdownBody :global(ul),
 .markdownBody :global(ol) {
-  margin: 0.4em 0;
-  padding-left: 1.5em;
+  margin: 0.25em 0;
+  padding-left: 1.3em;
 }
 
 .markdownBody :global(li) {
-  margin: 0.15em 0;
+  margin: 0.1em 0;
 }
 
 .markdownBody :global(code) {
@@ -463,10 +469,10 @@
 .scroller {
   flex: 1;
   overflow-y: auto;
-  padding: 0.875rem;
+  padding: 0.5rem 0.625rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .welcome {
@@ -515,17 +521,21 @@
 
 .userBubble,
 .assistantBubble {
-  max-width: 70ch;
-  padding: 0.45rem 0.7rem;
+  max-width: 92%;
+  padding: 0.4rem 0.625rem;
   border-radius: 0.6rem;
-  white-space: pre-wrap;
-  /* Dense, mobile-chat-grade text. The copilot pane is narrow (~300px), so
-     the default ~16px body font fit only a handful of words per line — bao
-     repeatedly flagged it as too big. 13px + tight leading ~doubles the
-     characters visible without hurting readability. */
+  /* Mobile-chat density (Doubao / Kimi-grade). 13px + 1.45 leading; assistant
+     bubble rewraps markdown naturally (NOT pre-wrap — pre-wrap + LLM \n\n + <p>
+     margin = triple-spacing). User bubble keeps pre-wrap so typed newlines
+     are honored. */
   font-size: 0.8125rem;
-  line-height: 1.4;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
+
+.userBubble { white-space: pre-wrap; }
+.assistantBubble { white-space: normal; }
 
 .toolBubble {
   align-self: stretch;
@@ -552,6 +562,9 @@
   align-self: flex-start;
   background: var(--color-bg-l2);
   color: inherit;
+  /* Assistant messages span nearly the full pane width — markdown content
+     needs room to breathe in 430px. */
+  min-width: 60%;
 }
 
 .composer {
