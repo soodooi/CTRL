@@ -62,7 +62,7 @@
 }
 
 .sourceInput:focus {
-  border-color: var(--color-accent, #57a6ff);
+  border-color: var(--color-accent);
 }
 
 .sourceBtn {
@@ -71,8 +71,8 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: var(--space-2) var(--space-4);
-  background: var(--color-accent, #57a6ff);
-  color: #0d1117;
+  background: var(--color-accent);
+  color: var(--paper);
   border: 0;
   border-radius: 6px;
   cursor: pointer;
@@ -112,9 +112,9 @@
 }
 
 .presetChip[data-active='true'] {
-  background: var(--color-accent, #57a6ff);
-  color: #0d1117;
-  border-color: var(--color-accent, #57a6ff);
+  background: var(--color-accent);
+  color: var(--paper);
+  border-color: var(--color-accent);
 }
 
 /* === Section frame === */
@@ -170,7 +170,7 @@
 
 .btn:hover {
   background: var(--color-bg-l3);
-  border-color: var(--color-accent, #57a6ff);
+  border-color: var(--color-accent);
 }
 
 /* === Mini comparison grid === */
@@ -212,12 +212,14 @@
 
 .mini:hover {
   transform: translateY(-2px);
-  border-color: rgba(87, 166, 255, 0.4);
+  border-color: color-mix(in oklch, var(--color-accent) 40%, transparent);
 }
 
 .mini[data-running='true'] {
-  border-color: var(--color-accent, #57a6ff);
-  box-shadow: 0 0 0 1px rgba(87, 166, 255, 0.35), 0 10px 24px -12px rgba(87, 166, 255, 0.5);
+  border-color: var(--color-accent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-accent) 35%, transparent),
+    0 10px 24px -12px color-mix(in oklch, var(--color-accent) 50%, transparent);
 }
 
 .miniBody {
@@ -252,7 +254,7 @@
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.4;
-  color: #f0a070;
+  color: var(--color-danger);
   padding: var(--space-2);
   text-align: center;
 }
@@ -279,7 +281,7 @@
   width: 360px;
   height: 360px;
   background:
-    radial-gradient(circle at 50% 40%, rgba(87, 166, 255, 0.12), transparent 70%),
+    radial-gradient(circle at 50% 40%, color-mix(in oklch, var(--color-accent) 12%, transparent), transparent 70%),
     var(--color-bg-l1);
   border: 1px solid var(--color-border-soft);
   border-radius: 18px;
@@ -314,7 +316,7 @@
 
 .ctrlBtn:hover {
   background: var(--color-bg-l3);
-  border-color: var(--color-accent, #57a6ff);
+  border-color: var(--color-accent);
 }
 
 .frameReadout {
@@ -352,9 +354,9 @@
 }
 
 .ctrlChip[data-active='true'] {
-  background: var(--color-accent, #57a6ff);
-  color: #0d1117;
-  border-color: var(--color-accent, #57a6ff);
+  background: var(--color-accent);
+  color: var(--paper);
+  border-color: var(--color-accent);
 }
 
 .ctrlToggle {
@@ -370,7 +372,7 @@
 }
 
 .ctrlToggle input {
-  accent-color: var(--color-accent, #57a6ff);
+  accent-color: var(--color-accent);
 }
 
 .heroNote {

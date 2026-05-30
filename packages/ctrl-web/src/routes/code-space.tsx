@@ -578,9 +578,9 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
                 style={{
                   color:
                     entry.tone === 'error'
-                      ? 'var(--color-danger, #b00020)'
+                      ? 'var(--color-danger)'
                       : entry.tone === 'warn'
-                        ? 'var(--color-warning, #d4a017)'
+                        ? 'var(--color-warning)'
                         : undefined,
                 }}
               >

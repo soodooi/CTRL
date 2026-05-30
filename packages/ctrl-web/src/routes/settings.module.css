@@ -215,8 +215,8 @@
 }
 
 .brainTag[data-tone='warn'] {
-  background: color-mix(in srgb, #c08400 18%, transparent);
-  color: #c08400;
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
 }
 
 .brainStatus {
@@ -230,9 +230,9 @@
 .brainError {
   font-family: var(--font-sans);
   font-size: var(--text-sm);
-  color: #b22020;
+  color: var(--color-danger);
   padding: 8px 12px;
-  background: color-mix(in srgb, #b22020 8%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
   border-radius: 6px;
   margin: 0 0 12px;
 }
@@ -552,7 +552,7 @@
 }
 .updateError {
   font-size: var(--text-sm);
-  color: var(--color-danger, #d04040);
+  color: var(--color-danger);
 }
 
 .changelog {

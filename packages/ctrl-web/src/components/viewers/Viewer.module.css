@@ -61,7 +61,7 @@
   max-width: 50%;
 }
 .metaDirty {
-  color: var(--color-accent, #ffb454);
+  color: var(--color-warning);
   font-size: 14px;
   line-height: 1;
   flex-shrink: 0;
@@ -74,7 +74,7 @@
   flex-shrink: 0;
 }
 .metaSaving { color: var(--color-text-soft); }
-.metaError { color: var(--color-danger, #e25555); cursor: help; }
+.metaError { color: var(--color-danger); cursor: help; }
 .metaSpacer { flex: 1 1 auto; min-width: 8px; }
 .metaReadOnly {
   font-size: var(--text-mono-xs);
@@ -441,7 +441,7 @@
 .tableCell:hover {
   border-color: var(--color-border-soft);
 }
-.tableCell:focus {
+.tableCell:focus-visible {
   outline: none;
   border-color: var(--color-accent);
   background: var(--color-bg-l0);
@@ -547,7 +547,7 @@
   color: var(--color-text-muted);
 }
 .prose :global(.ProseMirror a) {
-  color: var(--color-accent, #1E3FB0);
+  color: var(--color-accent);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -621,7 +621,7 @@
 .mermaidError {
   font-family: var(--font-mono);
   font-size: var(--text-mono-sm);
-  color: var(--color-danger, #e25555);
+  color: var(--color-danger);
   white-space: pre-wrap;
   padding: var(--space-3);
 }
@@ -713,7 +713,7 @@
 }
 .cellTypeNum { text-align: right; font-variant-numeric: tabular-nums; }
 .cellTypeBool { text-align: center; }
-.cellTypeLink a { color: var(--color-accent, #1E3FB0); text-decoration: underline; }
+.cellTypeLink a { color: var(--color-accent); text-decoration: underline; }
 .tableStatus {
   padding: 4px var(--space-3);
   border-top: 1px solid var(--color-border-soft);
