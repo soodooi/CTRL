@@ -18,23 +18,40 @@
  * for keycap-management actions (browse / add / categorize).
  */
 
+/*
+ * 2026-05-30 shape v3 (bao sign-off): COMPANION default (window narrow,
+ * pinned right edge) ↔ EXPANDED on demand. Companion shows only the
+ * right strip (Irisy column + L1 nav, 494px). Expanded reveals the
+ * left side (副 nav + L2 + keycap + main display + dialog row).
+ *
+ * Column order LEFT → RIGHT:
+ *   [副 nav 48] [L2 0/240] [keycap 320] [main flex] [Irisy 430] [L1 48]
+ *
+ * 副 nav is the secondary icon column (its own set, different from L1).
+ * L1 is the primary route nav, locked on the RIGHT edge.
+ *
+ * Companion = window < 600px → left half collapses, only Irisy + L1
+ * remain. The grid columns become 0 / 0 / 0 / 0 / 430 / 48 = 478 ≈ the
+ * 494px window minus borders / paddings.
+ */
+
 .shell {
   display: grid;
   grid-template-rows: var(--statusbar-height) 1fr var(--dialog-height);
   grid-template-columns:
-    var(--l1-width) var(--l2-width) var(--keycap-pane-width) 1fr var(--irisy-pane-width) var(--l1b-width);
+    var(--sub-nav-width) var(--l2-width) var(--keycap-pane-width) 1fr var(--irisy-pane-width) var(--l1-width);
   grid-template-areas:
     'status status status status status status'
-    'l1     l2     keycap main   irisy  l1b'
-    'l1     l2     keycap main   dialog dialog';
+    'subnav l2     keycap main   irisy  l1'
+    'subnav l2     keycap main   dialog dialog';
   height: 100vh;
   height: 100dvh;
   background: var(--color-bg-l0);
   color: var(--color-text);
   overflow: hidden;
   position: relative;
-  --l1-width: 64px;
-  --l1b-width: 64px;
+  --l1-width: 48px;
+  --sub-nav-width: 48px;
   --l2-width: 0px;
   --keycap-pane-width: 320px;
   --irisy-pane-width: 430px;
@@ -44,8 +61,21 @@
   --l2-width: 240px;
 }
 
+/* COMPANION mode — when the window is narrow, collapse everything left
+   of Irisy. Threshold 960 px: under it, only Irisy + L1 show; over it,
+   the full expanded shell with 副 nav / L2 / keycap / main / dialog
+   reveals. User toggles by dragging the window edge. */
+@media (max-width: 959px) {
+  .shell {
+    grid-template-columns: 0 0 0 0 var(--irisy-pane-width) var(--l1-width);
+    grid-template-rows: var(--statusbar-height) 1fr 0;
+    --dialog-height: 0px;
+  }
+  .subnav, .l2, .keycap, .main, .dialog { display: none; }
+}
+
 .status { grid-area: status; }
-.l1 { grid-area: l1; min-height: 0; }
+.subnav { grid-area: subnav; min-height: 0; }
 .l2 { grid-area: l2; min-height: 0; }
 .keycap {
   grid-area: keycap;
@@ -87,7 +117,7 @@
   flex-direction: column;
   overflow: hidden;
 }
-.l1b { grid-area: l1b; min-height: 0; }
+.l1 { grid-area: l1; min-height: 0; }
 .dialog {
   grid-area: dialog;
   min-height: 0;

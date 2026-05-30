@@ -11,7 +11,7 @@
   padding: var(--space-2) 6px;
   overflow: hidden;
   background: var(--color-bg-l1);
-  border-left: 1px solid var(--color-border-soft);
+  border-right: 1px solid var(--color-border-soft);
 }
 
 .item {

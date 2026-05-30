@@ -90,9 +90,9 @@ Anti-references (hard NO):
 
 ---
 
-## 5. Layout model 🟡
+## 5. Layout model
 
-CTRL has **3 window states** (pending sign-off; replaces the earlier 5-col model):
+CTRL has **3 window states** (sign-off 2026-05-30; supersedes the earlier 5-col model):
 
 ```
        Ctrl key (lone-Ctrl tap)
@@ -118,12 +118,12 @@ HIDDEN ◀────────────────────▶ COMPAN
 
 - **494 px wide × 100vh tall**, pinned right edge of the primary screen.
 - `alwaysOnTop ✓ · visibleOnAllWorkspaces ✓ · decorations: false`.
-- Internal stack (top → bottom):
+- Internal stack — top → bottom inside the right strip:
   - StatusBar (32 px, drag region, status zone)
   - Hot keycaps single row (6 keycaps; fades out on first text-input keystroke)
   - Irisy chat (message stream, idle = welcome / persona)
   - Text input box (separated from chat; switchable context: `assist` ▾ / `create` / future)
-  - L1 nav (right edge, 64 px, icon-only) — per `feedback_right_rail_is_fixed`
+- Right-edge column: **L1 nav** (48 px, icon-only, **always on the right** per `feedback_right_rail_is_fixed`).
 
 (source: session 2026-05-30 "Irisy 可以伴随" + Cluely / Raycast research)
 
@@ -131,17 +131,18 @@ HIDDEN ◀────────────────────▶ COMPAN
 
 - Window grows leftward; companion strip stays anchored right.
 - Width `clamp(960, 70vw, 1800) px`, height resizable.
-- Left side renders:
-  - Route content (Pool / Vault / Workbench / Coding / Settings / Workspace)
-  - L2 panel (collapsible)
-  - KeycapOutputPane (secondary dialog row, 240 px bottom)
+- Left side reveals (left → right):
+  - **副 nav** (48 px, secondary icon column — a different set from L1; default holds keycap-management entries — see §6.7)
+  - L2 panel (0 px closed / 240 px open)
+  - Keycap pane (320 px, the full Keyboard grid)
+  - Main display (flex) — route Outlet
+  - Dialog row at the bottom right (240 px) — KeycapOutputPane
+- Trigger: window width ≥ 960 px (user drags the window edge wider).
 - Per Raycast technique: WKWebView pre-renders at expanded size in companion mode to avoid flicker.
 
 ### 5.4 Auto-shrink
 
 When user closes the last left panel (no route content, no L2, no output pane) → window animates back to COMPANION.
-
-🟡 Pending sign-off: companion default 494; expand max 1800; auto-shrink behavior.
 
 ---
 
@@ -162,7 +163,7 @@ Every surface below is a confirmed feature; this doc records its current home an
 
 ### 6.2 L1 nav (primary navigation)
 
-- 64 px icon-only column, right edge in COMPANION, same position in EXPANDED.
+- **48 px** icon-only column, **right edge** in COMPANION, same position in EXPANDED. Width sign-off bao 2026-05-30 (48 = Cursor / VSCode side-rail band).
 - Fixed items, order preserved (`feedback_right_rail_is_fixed`):
   - Home (`/`)
   - Coding (`/coding`)
@@ -205,7 +206,7 @@ Drag-and-drop a keycap onto the main area → opens that keycap's workspace inst
 
 (source: `IrisyChat.tsx`, session 2026-05-30 mobile-grade redesign)
 
-### 6.6 Text input box (separated from chat) 🟡
+### 6.6 Text input box (separated from chat)
 
 - Standalone box at the bottom of the Irisy column (own border, own background).
 - Behavior:
@@ -216,22 +217,18 @@ Drag-and-drop a keycap onto the main area → opens that keycap's workspace inst
 - **Switchable context** (▾ left of the input):
   - `assist` (default Irisy.assist persona)
   - `create` (Irisy.create — keycap creation mode)
-  - Future: per-keycap context
-
-🟡 Pending sign-off: exact set of switch targets beyond `assist` / `create`.
+  - Future: per-keycap context (added as more keycaps surface their own conversation surface).
 
 (source: session 2026-05-30 "对话框跟文本框分开", Cluely input/output separation pattern)
 
-### 6.7 KeycapNav (副 L1) 🟡
+### 6.7 副 nav (secondary navigation, LEFT side, separate set from L1)
 
-- 64 px icon column.
-- Visible only in EXPANDED mode (hidden in COMPANION per "minimal default").
-- Default contents:
+- **48 px** icon column, **left edge of the EXPANDED layout**. Hidden in COMPANION.
+- Explicitly **a different set from L1** — bao 2026-05-30 "左边的导航是副导航,另外一套". L1 is primary route nav; 副 nav is the management / context surface.
+- Default contents (placeholder, iterable):
   - Browse pool (→ `/pool`)
   - Create keycap (→ `/irisy?intent=create-keycap`)
-- Reserved for future keycap-management actions.
-
-🟡 Pending sign-off: keep in v1, or fold its items into L1?
+- Reserved for future keycap-management + workspace-context actions (sessions / history / favorites). Items remain product-defined (no runtime push from routes).
 
 ### 6.8 Secondary dialog row (KeycapOutputPane)
 
@@ -571,3 +568,4 @@ ADRs and memories that supply requirements above; this list is non-exhaustive bu
 | Date | Author | Change |
 |---|---|---|
 | 2026-05-30 | claude (with bao) | Initial consolidation — derived from CLAUDE.md, memories, attic PRODUCT.md, brand tokens, and session 2026-05-30 vision update (Irisy companion + COMPANION/EXPANDED states + text-input separation + external-app preference). §5, §6.6, §6.7, §8, §14 marked 🟡 pending bao sign-off. |
+| 2026-05-30 | claude (bao sign-off) | bao approved Q1-Q7 of shape v3: companion 494 × 100vh default ✓; L1 right side ✓; preserve all features 1-17 ✓; text input / chat split ✓; prefer user's own apps ✓; screen-share invisible v2 ✓; no code before sign-off ✓. Additional decisions: L1 width = 48 px (was 64); 副 nav lives on the LEFT side as a separate set from L1. §5 / §6.2 / §6.6 / §6.7 🟡 → confirmed. §8 / §14 stay 🟡 (mode list + external-app scope). |

@@ -117,8 +117,8 @@ function RootShellInner(): ReactElement {
       <div className={styles.status}>
         <StatusBar />
       </div>
-      <div className={styles.l1}>
-        <RightRail />
+      <div className={styles.subnav}>
+        <KeycapNav />
       </div>
       <div className={styles.l2}>
         <L2Panel />
@@ -139,8 +139,8 @@ function RootShellInner(): ReactElement {
       <div className={styles.irisy}>
         <IrisyChat />
       </div>
-      <div className={styles.l1b}>
-        <KeycapNav />
+      <div className={styles.l1}>
+        <RightRail />
       </div>
       <aside className={styles.dialog} aria-label="Secondary dialog">
         <KeycapOutputPane />
