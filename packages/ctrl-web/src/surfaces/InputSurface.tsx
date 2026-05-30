@@ -32,6 +32,31 @@ export function InputSurface(): ReactElement {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // Focus the textarea on mount + on wrap click. macOS alwaysOnTop
+  // windows don't always get keyboard focus on show — calling .focus()
+  // explicitly is the fix (bao 2026-05-30: '对话框无法输入').
+  useEffect(() => {
+    const t = window.setTimeout(() => textareaRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const handleWrapClick = (): void => {
+    textareaRef.current?.focus();
+  };
+
+  // When the window regains focus after Ctrl-show, re-focus the textarea.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | null = null;
+    void (async () => {
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      unlisten = await getCurrentWebviewWindow().onFocusChanged(({ payload }) => {
+        if (payload) textareaRef.current?.focus();
+      });
+    })();
+    return () => unlisten?.();
+  }, []);
+
   // Auto-resize this Tauri window to match the wrapper's height as the
   // textarea grows.
   useEffect(() => {
@@ -94,7 +119,7 @@ export function InputSurface(): ReactElement {
   };
 
   return (
-    <div ref={wrapRef} className={styles.wrap}>
+    <div ref={wrapRef} className={styles.wrap} onClick={handleWrapClick}>
       <div className={styles.composer}>
         <textarea
           ref={textareaRef}
@@ -105,9 +130,10 @@ export function InputSurface(): ReactElement {
             autoSizeTextarea(e.currentTarget);
           }}
           onKeyDown={onKeyDown}
-          placeholder="Talk to Irisy — Enter to send · Shift+Enter newline"
+          placeholder="Talk to Irisy"
           aria-label="Message Irisy"
           disabled={busy}
+          autoFocus
         />
         <button
           type="button"
