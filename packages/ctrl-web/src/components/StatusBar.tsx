@@ -1,68 +1,53 @@
 // StatusBar — top instrument cluster of the cockpit shell.
 //
-// Layout left → right:
-//   [logo · CTRL]   [KRN ● MESH ○ LLM ●]   [adapter · MCP · vault · IRISY]   [clock · UPTIME]
+// 2026-05-30 restructure (bao "顶端左侧是状态指示区,ENGINE / MCP 这些"):
+// top-left is now a dedicated status zone. Cluster left → right:
 //
-// Wired to kernel_status (Zeus PR #42) via useKernelStatus, polled every
-// ~3s. PFD vocabulary: green=nominal, amber=caution, red=warning,
-// gray=offline, dim-ring=unknown. The kernel is the source of truth —
-// no mocks, no defaults. When the bridge isn't reachable we show
-// "offline" / "unknown" honestly.
+//   [KRN ●] [ENGINE: <brain>] [MCP: N] [VAULT: N]            …  [clock] [×]
 //
-// MERGE NOTE for zeus (2026-05-24): bao 2026-05-24 explicitly removed
-// the StatusBar version pill + "Up to date" pill added by Athena
-// (release commit c09518f). The canonical version display lives in the
-// right-rail footer (RightRail.tsx `.versionRow` + green update dot).
-// When merging pwa-dev into the release branch, drop the version-pill
-// JSX from this file — pwa-dev's StatusBar shape is the chosen one.
+// Sources: useKernelStatus polls kernel_status() every ~3s. The kernel
+// reports overall health (drives KRN LED), the active brain id (ENGINE),
+// MCP server count, vault size. No adapter pill — bao 2026-05-29: don't
+// surface raw provider names ("volc") in the chrome.
 
 import { useCallback, type ReactElement } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
-import { Led, Logo, type LedTone } from './primitives';
+import { useNavigate } from '@tanstack/react-router';
+import { Led, type LedTone } from './primitives';
 import { useWallClock, formatHHMM } from '../hooks/useWallClock';
 import { useKernelStatus } from '../hooks/useKernelStatus';
 import { invoke } from '../lib/bridge';
 import styles from './StatusBar.module.css';
 
-interface InstrumentProps {
+interface StatusChipProps {
   label: string;
-  tone: LedTone;
+  value: string | number;
   title?: string;
   onClick?: () => void;
 }
-const Instrument = ({ label, tone, title, onClick }: InstrumentProps): ReactElement => {
-  const content = (
+const StatusChip = ({ label, value, title, onClick }: StatusChipProps): ReactElement => {
+  const body = (
     <>
-      <Led tone={tone} size="sm" />
-      <span className={styles.instrumentLabel}>{label}</span>
+      <span className={styles.chipLabel}>{label}</span>
+      <span className={styles.chipValue}>{value}</span>
     </>
   );
   if (onClick) {
     return (
       <button
         type="button"
-        className={`${styles.instrument} ${styles.instrumentButton}`}
-        title={title ?? `${label}: ${tone}`}
+        className={`${styles.chip} ${styles.chipButton}`}
+        title={title}
         onClick={onClick}
       >
-        {content}
+        {body}
       </button>
     );
   }
   return (
-    <span className={styles.instrument} title={title ?? `${label}: ${tone}`}>
-      {content}
+    <span className={styles.chip} title={title}>
+      {body}
     </span>
   );
-};
-
-const formatUptime = (ms: number): string => {
-  const total = Math.floor(ms / 1000);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h >= 1) return `${h}H ${String(m).padStart(2, '0')}M`;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
 export const StatusBar = (): ReactElement => {
@@ -70,38 +55,22 @@ export const StatusBar = (): ReactElement => {
   const navigate = useNavigate();
   const status = useKernelStatus();
 
-  // Derive tones from the kernel envelope. The kernel itself is healthy
-  // by definition when the IPC round-trips (we got an answer back), so
-  // KRN tracks the envelope's `overall` field. LLM tracks adapter
-  // presence. MESH stays "unknown" until the mesh primitives ship.
   const kernelReachable = status !== null;
   const krnTone: LedTone = !kernelReachable
     ? 'offline'
     : status.overall === 'ok'
       ? 'nominal'
       : 'caution';
-  const llmTone: LedTone = !kernelReachable
-    ? 'unknown'
-    : status.primary_adapter
-      ? 'nominal'
-      : 'caution';
-  const meshTone: LedTone = 'unknown';
 
   const warning = status?.warnings[0] ?? null;
-  const uptimeMs = status?.uptime_ms ?? 0;
-  const showUptime = kernelReachable && uptimeMs > 0;
-  const adapter = status?.primary_adapter ?? null;
-
-  // Degraded overall → clicking the KRN LED jumps to Settings so the
-  // user can fix the configuration (typically "no LLM adapter").
-  const onLedClick = warning ? (): void => void navigate({ to: '/settings' }) : undefined;
+  const onKrnClick = warning ? (): void => void navigate({ to: '/settings' }) : undefined;
   const krnTitle = warning ? `${warning} · click to open Settings` : `KRN: ${krnTone}`;
 
-  // Click fallback for when the Ctrl hotkey desyncs (AX revoked after
-  // an upgrade that changed the bundle hash, CGEventTap permission
-  // dropped, etc.). bao 2026-05-23: "so we don't end up unable to hide,
-  // put a hide button in the top-right corner for now". PWA-only browser mode (no Tauri bridge) silently
-  // no-ops since there's no native window to hide.
+  const engine = status?.active_brain ?? '—';
+  const mcpCount = status?.mcp_servers_installed ?? null;
+  const vaultCount = status?.vault_files ?? null;
+
+  // Click fallback for when the Ctrl hotkey desyncs.
   const handleHide = useCallback((): void => {
     void invoke<void>('hide_window').catch(() => {
       /* browser PWA: nothing to hide */
@@ -112,26 +81,40 @@ export const StatusBar = (): ReactElement => {
     <header
       className={styles.bar}
       aria-label="Cockpit status bar"
-      // "deep" = the whole bar subtree is a drag handle, not just bare clicks
-      // directly on the <header>. With the bare attribute Tauri only drags when
-      // the click target IS the header element (drag.js: `el === composedPath[0]`),
-      // but the bar is fully covered by child clusters, leaving almost no
-      // draggable surface. Clickable children (brand link, LED/hide buttons)
-      // still block drag and handle their own clicks.
       data-tauri-drag-region="deep"
     >
-      <Link to="/" className={styles.brand} aria-label="CTRL home">
-        <Logo size="sm" ariaLabel="" />
-        <span className={styles.wordmark}>CTRL</span>
-      </Link>
-
-      <div className={styles.instruments} aria-label="System instruments">
-        <Instrument label="KRN" tone={krnTone} title={krnTitle} onClick={onLedClick} />
-        <Instrument label="MESH" tone={meshTone} />
-        <Instrument
-          label="LLM"
-          tone={llmTone}
-          title={adapter ? `LLM adapter: ${adapter}` : 'no LLM adapter'}
+      <div className={styles.statusZone} aria-label="System status">
+        {onKrnClick ? (
+          <button
+            type="button"
+            className={`${styles.krn} ${styles.chipButton}`}
+            title={krnTitle}
+            onClick={onKrnClick}
+          >
+            <Led tone={krnTone} size="sm" />
+            <span className={styles.chipLabel}>KRN</span>
+          </button>
+        ) : (
+          <span className={styles.krn} title={krnTitle}>
+            <Led tone={krnTone} size="sm" />
+            <span className={styles.chipLabel}>KRN</span>
+          </span>
+        )}
+        <StatusChip
+          label="ENGINE"
+          value={engine}
+          title={`Active brain: ${engine}`}
+          onClick={() => void navigate({ to: '/settings/brain' })}
+        />
+        <StatusChip
+          label="MCP"
+          value={mcpCount ?? '—'}
+          title="MCP servers installed"
+        />
+        <StatusChip
+          label="VAULT"
+          value={vaultCount ?? '—'}
+          title="Vault markdown files"
         />
       </div>
 
@@ -141,9 +124,6 @@ export const StatusBar = (): ReactElement => {
         <time className={styles.time} dateTime={now.toISOString()}>
           {formatHHMM(now)}
         </time>
-        <span className={styles.uptime}>
-          UPTIME {showUptime ? formatUptime(uptimeMs) : '—'}
-        </span>
         <button
           type="button"
           className={styles.hideBtn}

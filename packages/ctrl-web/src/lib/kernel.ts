@@ -21,6 +21,7 @@ export interface KernelStatus {
   stss_bridge_addr: string;
   overall: 'ok' | 'degraded';
   warnings: string[];
+  active_brain: string;
 }
 
 export const kernelStatus = (): Promise<KernelStatus> =>

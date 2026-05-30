@@ -53,6 +53,12 @@ pub struct KernelStatus {
     /// list each missing component (e.g. "no llm adapter").
     pub overall: &'static str,
     pub warnings: Vec<String>,
+    /// Active brain keycap id (read from `~/.ctrl/active-brain`; falls back
+    /// to "pi" when the file is absent / empty). Surfaced here so the
+    /// StatusBar's top-left "engine" pill can render without a second
+    /// round-trip to `irisy_init`. bao 2026-05-30: top-left = status zone,
+    /// engine + MCP go here.
+    pub active_brain: String,
 }
 
 fn detect_first_run_state() -> FirstRunState {
@@ -106,6 +112,8 @@ pub async fn kernel_status(
     }
     let overall = if warnings.is_empty() { "ok" } else { "degraded" };
 
+    let active_brain = crate::kernel::brain_config::active_brain_id();
+
     Ok(KernelStatus {
         uptime_ms,
         first_run_state: detect_first_run_state(),
@@ -116,6 +124,7 @@ pub async fn kernel_status(
         stss_bridge_addr,
         overall,
         warnings,
+        active_brain,
     })
 }
 
