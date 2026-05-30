@@ -329,7 +329,12 @@ fn position_input_under_main(
     let monitor_bottom = monitor_top + monitor_h - 80.0; // reserve Dock height
 
     let desired_x = main_pos.x as f64 / scale;
-    let desired_y = (main_pos.y as f64 + main_size.height as f64) / scale;
+    // macOS adds ~10 px window shadow below outer_size; without an overlap
+    // the input window appears detached from main (bao 2026-05-30: "脱离了").
+    // Bring it up 10 px so its top tucks under main's shadow.
+    const SHADOW_OVERLAP: f64 = 10.0;
+    let desired_y =
+        (main_pos.y as f64 + main_size.height as f64) / scale - SHADOW_OVERLAP;
     let input_h = input_size.height as f64 / scale;
     let max_y = monitor_bottom - input_h;
     let y = desired_y.min(max_y).max(monitor_top);
