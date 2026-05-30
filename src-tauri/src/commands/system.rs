@@ -344,3 +344,188 @@ fn position_input_under_main(
         .set_position(LogicalPosition::new(desired_x, y))
         .map_err(|e| e.to_string())
 }
+
+// ── Workspace big window (v2, macOS Phase A per bao 2026-05-30) ────────
+//
+// Lifecycle that v0.1.95 missed (per ECC round-2 research):
+//  - workspace becomes an AppKit child of main via NSWindow.addChildWindow,
+//    so AppKit cascades position-follow + hide-on-main-hide for free.
+//  - WindowController::toggle also has explicit show/hide for workspace,
+//    matching the existing input-window sync (defense-in-depth on macOS
+//    + the path that any future Windows port will rely on).
+//  - 3 close paths: ▾ on main L1, → button on the workspace surface
+//    itself, and the global Ctrl hotkey (via main's hide → cascade).
+
+const WORKSPACE_DEFAULT_WIDTH: f64 = 1370.0;
+const WORKSPACE_DEFAULT_HEIGHT: f64 = 720.0;
+const WORKSPACE_MIN_WIDTH: f64 = 800.0;
+const WORKSPACE_MIN_HEIGHT: f64 = 480.0;
+
+#[tauri::command]
+pub fn spawn_workspace_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(existing) = app.get_webview_window("workspace") {
+        position_workspace_left_of_main(&app, &existing)?;
+        existing.show().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let main_visible = app
+        .get_webview_window("main")
+        .map(|m| m.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+
+    let win = WebviewWindowBuilder::new(
+        &app,
+        "workspace",
+        WebviewUrl::App("/?surface=workspace".into()),
+    )
+    .title("CTRL · Workspace")
+    .inner_size(WORKSPACE_DEFAULT_WIDTH, WORKSPACE_DEFAULT_HEIGHT)
+    .min_inner_size(WORKSPACE_MIN_WIDTH, WORKSPACE_MIN_HEIGHT)
+    .decorations(false)
+    .transparent(false)
+    .shadow(true)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .skip_taskbar(true)
+    .focused(false)
+    .visible(main_visible)
+    .resizable(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    let _ = win.set_size(LogicalSize::new(
+        WORKSPACE_DEFAULT_WIDTH,
+        WORKSPACE_DEFAULT_HEIGHT,
+    ));
+    position_workspace_left_of_main(&app, &win)?;
+
+    // CRITICAL fix vs v0.1.95: make workspace a child of main so AppKit
+    // cascades position-follow + hide-on-parent-hide. Falls back to JS
+    // on_window_event glue on non-macOS (no-op for now, Phase B).
+    #[cfg(target_os = "macos")]
+    {
+        if let Err(e) = attach_as_child_of_main(&app, "workspace") {
+            tracing::warn!(error = %e, "workspace addChildWindow failed — falling back to JS sync");
+        }
+    }
+
+    // Defense-in-depth: even with addChildWindow, also wire the same
+    // Moved/Resized glue we use for input so workspace position is
+    // re-anchored if main is dragged before AppKit catches up. Harmless
+    // when child relationship is correctly wired.
+    if let Some(main) = app.get_webview_window("main") {
+        let app_handle = app.clone();
+        main.on_window_event(move |event| match event {
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                if let Some(workspace) = app_handle.get_webview_window("workspace") {
+                    let _ = position_workspace_left_of_main(&app_handle, &workspace);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    Ok(())
+}
+
+/// Toggle workspace visibility. Returns the new visible state. Lazy-spawns
+/// on first call so the workspace window doesn't boot when the user never
+/// opens it. Backs the L1 ▾ button on the main shell.
+#[tauri::command]
+pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+
+    if let Some(win) = app.get_webview_window("workspace") {
+        let visible = win.is_visible().unwrap_or(false);
+        if visible {
+            win.hide().map_err(|e| e.to_string())?;
+            Ok(false)
+        } else {
+            position_workspace_left_of_main(&app, &win)?;
+            win.show().map_err(|e| e.to_string())?;
+            Ok(true)
+        }
+    } else {
+        spawn_workspace_window(app.clone())?;
+        if let Some(win) = app.get_webview_window("workspace") {
+            win.show().map_err(|e| e.to_string())?;
+        }
+        Ok(true)
+    }
+}
+
+/// Anchor workspace to the left of main (right edge of workspace touches
+/// left edge of main). Width is preserved from whatever the user resized
+/// to; only x/y move. Clamps so workspace's left edge stays on-screen.
+fn position_workspace_left_of_main(
+    app: &tauri::AppHandle,
+    workspace: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    use tauri::{LogicalPosition, Manager};
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitor = main
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
+    let workspace_size = workspace.outer_size().map_err(|e| e.to_string())?;
+    let monitor_pos = monitor.position();
+
+    let main_x = main_pos.x as f64 / scale;
+    let workspace_w = workspace_size.width as f64 / scale;
+    let monitor_x = monitor_pos.x as f64 / scale;
+
+    let desired_x = (main_x - workspace_w).max(monitor_x);
+    let desired_y = main_pos.y as f64 / scale;
+
+    workspace
+        .set_position(LogicalPosition::new(desired_x, desired_y))
+        .map_err(|e| e.to_string())
+}
+
+/// macOS-only: call NSWindow.addChildWindow(_:ordered:) so the child
+/// follows the parent on move + hides automatically when parent hides.
+/// `ordered: NSWindowAbove` (1) keeps the child above the parent in the
+/// z-order so it isn't clipped. AppKit handles the geometry sync
+/// internally — JS-side `on_window_event(Moved)` glue becomes a defense-
+/// in-depth fallback rather than the primary path.
+#[cfg(target_os = "macos")]
+fn attach_as_child_of_main(
+    app: &tauri::AppHandle,
+    child_label: &str,
+) -> Result<(), String> {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    use tauri::Manager;
+
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let child = app
+        .get_webview_window(child_label)
+        .ok_or_else(|| format!("{child_label} window not found"))?;
+
+    let main_handle: *mut std::ffi::c_void = main
+        .ns_window()
+        .map_err(|e| format!("main ns_window: {e}"))? as _;
+    let child_handle: *mut std::ffi::c_void = child
+        .ns_window()
+        .map_err(|e| format!("{child_label} ns_window: {e}"))? as _;
+
+    let main_obj = main_handle as *mut AnyObject;
+    let child_obj = child_handle as *mut AnyObject;
+
+    // NSWindowOrderingMode::NSWindowAbove == 1. Cast through raw obj
+    // pointers because objc2-app-kit's NSWindow type doesn't expose
+    // addChildWindow_ordered in our feature set.
+    unsafe {
+        let _: () = msg_send![&*main_obj, addChildWindow: &*child_obj, ordered: 1i64];
+    }
+    Ok(())
+}

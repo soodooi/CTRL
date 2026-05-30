@@ -154,6 +154,13 @@ impl WindowController {
                 if let Some(input) = app.get_webview_window("input") {
                     let _ = input.hide();
                 }
+                // Workspace big window also cascades. macOS NSWindow
+                // addChildWindow already auto-hides children when the
+                // parent hides; this explicit call is defense-in-depth
+                // (matches input path + future Windows fallback).
+                if let Some(workspace) = app.get_webview_window("workspace") {
+                    let _ = workspace.hide();
+                }
             } else {
                 tracing::info!("WindowController::toggle — show");
                 let _ = w.show();
@@ -162,6 +169,12 @@ impl WindowController {
                 if let Some(input) = app.get_webview_window("input") {
                     let _ = input.show();
                 }
+                // Workspace stays at the visibility the user last left it
+                // (closed by default; if user had it open before Ctrl
+                // hide, it re-appears with main). addChildWindow handles
+                // the auto-show case on macOS; we do not force-show here
+                // because that would override the user's last "▾ close"
+                // intent. The L1 ▾ button is the only way to re-open it.
                 // CTRL = launcher popup (Raycast-style): set_focus only raises
                 // the window in z-order; it does NOT pull keyboard focus across
                 // app boundaries. NSApp.activate() is the launcher contract —

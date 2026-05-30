@@ -71,6 +71,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::system::spawn_input_window,
             $crate::commands::system::set_input_window_height,
             $crate::commands::system::activate_input_window,
+            // system — workspace (big window) for advanced keycap rendering.
+            // macOS-only Phase A (bao 2026-05-30): main stays 430 companion;
+            // workspace = NSWindow.addChildWindow of main, left of main,
+            // ~1370 wide. Three close paths: ▾ on main L1 + → button on
+            // workspace + Ctrl global hide (cascades via WindowController).
+            $crate::commands::system::spawn_workspace_window,
+            $crate::commands::system::toggle_workspace_window,
             // updater — safe macOS relaunch after auto-update (Chrome-style
             // detached helper, sidesteps the Tauri 2 race)
             $crate::commands::updater::safe_relaunch_after_update,
