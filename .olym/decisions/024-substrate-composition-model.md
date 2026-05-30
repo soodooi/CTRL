@@ -54,6 +54,8 @@ The runtime (formerly "kernel" in some docs) is the loader; **the user-facing co
 - `manifest.builtin = true` → shipped in `packages/ctrl-keycaps/builtin/<id>/` (source) → bundled into `<bundle>.app/Contents/Resources/keycaps/builtin/<id>/` at build → seeded into `~/.ctrl/keycaps/<id>/` on every launch. App self-repairs deleted builtins.
 - `manifest.builtin = false` → user-installed under `~/.ctrl/keycaps/<id>/`, uninstall is permitted.
 
+**Relationship to memory `decision_ctrl_lean_substrate_scheduler_executor_tools` (bao 2026-05-28 "底座 ≠ 重型 kernel")**: ECC review H2 (2026-05-30) flagged tension. ADR-024 is **not** "more kernel framework" — it is the *composition contract* (what a keycap declares + how the loader resolves it) that the lean substrate must serve. The lean substrate stays = `scheduler` (brain-side) + `executor` (subprocess + mcp_host + sandbox) + `self-describing tools` (skill / MCP / CLI). ADR-024 only stabilizes the **manifest schema** these talk through. If implementation of ADR-024 ever requires "more kernel" (a custom runtime, a new in-process VM, a metadata service, etc.), that's a signal the ADR over-reached and should retreat. The 6 axes are *declarations*, not new kernel responsibilities.
+
 ### 2. The 6 substrate axes
 
 Each keycap manifest declares (all optional except `pattern`). Axes 1-5 are **runtime bindings** (what the keycap needs to execute); axis 6 — `cap_asset` — is **install-time provisioning** (what filesystem state the keycap brings into existence at install + carries as immutable resources). Persona is **not a separate axis** — it lives inside `cap_asset.files` as a per-keycap markdown (sign-off: bao 2026-05-30 "你还不如助理也是一个 keycap 逻辑更加清晰", reasoning: shared persona library = npm-style indirection that fights vim-test; each keycap self-contained).
@@ -143,7 +145,11 @@ Replace the singular `kernel_llm.adapter` field with a **per-capability typed re
 | **`audio.stt`** | **promote v1.1 → v1** | 会议 (transcription); accessibility |
 | `audio.tts` | v1.1 (defer until 2nd consumer) | accessibility roadmap only |
 
-**Three promotions** (image.generate / image.edit / image.understand / audio.stt) move from spike 06's v1.1 candidate list into the v1 kernel surface. Rationale: poster + 会议 + OCR are all in v1 top-15 keycap list and all multi-modal — the spike 06 "frequency ≥3" rule was scoped to keycap-count, but multi-modal brain capabilities are a *category* (text+image+audio collectively define "what AI can do") — different load-bearing dimension.
+**Four promotions** (image.generate / image.edit / image.understand / audio.stt) move from spike 06's v1.1 candidate list into the v1 kernel surface. ECC review H1 (2026-05-30) correctly flagged that three of these (image.generate, image.edit, audio.stt) have only ONE v1 consumer apiece, violating ADR-004's load-bearing "frequency ≥3 = kernel" rule. **ADR-024 explicitly amends ADR-004** to add a third exception alongside the existing two (`mcp.*` infrastructure + `platform.notify`):
+
+> **Category exception**: when a *category* of brain capabilities (text/image/audio/embedding/...) is needed for v1 keycaps, all members of that category enter the kernel surface together — even if individual members have only 1 consumer. Rationale: a "what AI can do" surface that ships text without image / audio is incoherent to the user ("做海报得有 image 大模型 — 我们是双重 brain", bao 2026-05-30). The frequency rule still governs non-brain kernel namespaces (clipboard, file, network, etc.).
+
+Multi-modal brain capabilities are a category exception. The frequency rule is preserved for everything else. ADR-004 must add a Changelog entry recording this amendment when its own status flips to accepted.
 
 **Provider Capability Registry**: each provider manifest (`~/.ctrl/providers/<id>/manifest.toml` + builtin) declares which capabilities it serves:
 
@@ -299,17 +305,17 @@ L1 contains, top to bottom:
 [⚙ Settings]               ← always bottom
 ```
 
-Current candidates from past discussion (bao to pick 3):
+**User-facing labels only** (ECC review H6, 2026-05-30): §7 of this ADR forbids surfacing internal layer names. Buttons are labeled by user *intent*, never by the underlying keycap id. Candidates:
 
-| Candidate | Behavior |
+| User label (intent) | Underlying behavior |
 |---|---|
-| **◉ Assist** | Loads `builtin-assist` keycap → Irisy default chat persona. Click while already on it = no-op. |
-| **✚ Create** | Loads `builtin-create` keycap → Irisy keycap-designer persona. Click = navigate to /irisy?intent=create-keycap. |
-| **< / > Coding** | Opens `/coding` workspace. |
+| **◉ Chat** | Loads `builtin-assist` keycap → Irisy default chat persona. Label is "Chat", not "Assist" (Assist is the keycap id, internal). |
+| **✚ New** | Loads `builtin-create` keycap → Irisy keycap-designer persona. Label is "New" (= "make a new keycap"), not "Create". |
+| **< / > Code** | Opens `/coding` workspace. |
 | **▢ Vault** | Opens `/vault` browser. |
-| **▤ Pool** | Browse all available keycaps to install. (Could move into workspace area instead — see §8.6.) |
+| **▤ Tools** | Browse and install keycaps from the local + community pool. Label is "Tools" (user-facing), not "Pool" (jargon). Could move into workspace area instead — see §8.6. |
 
-bao explicitly questioned "你三个按钮什么意思" on 2026-05-30. **My default proposal (pending bao override)**: `[Assist] [Create] [Vault]` — assist (default chat) + create (designer) + vault (data home). Pool moves into the workspace area as a tab. Coding stays as a future addition or moves into workspace.
+bao explicitly questioned "你三个按钮什么意思" on 2026-05-30. **My default proposal (pending bao override)**: `[Chat] [New] [Vault]` — Chat (default conversation) + New (make a keycap) + Vault (data home). Tools moves into the workspace area as a tab. Code stays as a future addition or moves into workspace.
 
 **8.5 Edge case — monitor narrower than 1800**
 
@@ -411,3 +417,4 @@ The following 6 originally-listed open questions are **deferred to implementatio
 | 2026-05-30 (same day) | **Axes 7 → 6**: persona folded into `cap_asset.files` (bao 2026-05-30 "三层 persona 你怎么管理? 你还不如助理也是一个 keycap 逻辑更加清晰"). Shared persona library deleted from design. `builtin/assist` and `builtin/create` are keycaps with identical shape to user keycaps, only `manifest.builtin=true` flag distinguishes; no `scope="root"` or `can_install_keycaps` special fields. Capability `file.read_allowlist` decides what the keycap *reads* (assist gets `${vault_root}/*`); `cap_asset.vault.path` decides only what it *writes* (assist gets `keycaps/assist/`). |
 | 2026-05-30 (same day) | **A1 + B4 amended into normative sections**; "待 bao 拍板" reframed as "实施时决" with defaults chosen for all 6 originally-open questions (bao 2026-05-30 "边做边决策, 先做助理、create、第一个键帽, 这样逐步就清晰起来了; 先大体框架搭建好"). ADR-024 is no longer blocked on open questions; defaults stand unless implementation evidence forces a change. |
 | 2026-05-30 (same day, evening) | **§8 User Flow added** (workspace operator flow). Triggered by 0.1.95 ship of an independent Tauri workspace window that bao rejected as un-closable ("关都不知道怎么关"). §8 locks: (a) workspace area = main window's leftward expansion (430 ↔ 1800), NOT a separate window; (b) L1 `▾`/`▴` is the sole open/close operator; (c) Irisy chat stays visible in EXPANDED; (d) 1800 clamps to monitor width on small screens. **L1 button list (§8.4) requires bao sign-off on which 3 buttons sit between `▾` and Settings before any implementation.** No code lands until §8 is signed off. |
+| 2026-05-30 (same day, ECC reviewer pass) | **Amends from 5-agent ECC review**. §1 added paragraph reconciling tension with memory `decision_ctrl_lean_substrate_scheduler_executor_tools` (ADR-024 is composition contract, NOT more kernel framework). §3 amended ADR-004's frequency≥3 rule to add a "category exception" so the 4 multi-modal brain capabilities (image.generate / image.edit / image.understand / audio.stt) can ship in v1 with 1 consumer each (bao 钦定 image.* for poster keycap). §8.4 button candidates relabeled from internal keycap ids (Assist / Create / Pool) to user-facing intents (Chat / New / Tools) — §7 forbids surfacing layer names. ADR-024 still proposed; sign-off conditions unchanged. |
