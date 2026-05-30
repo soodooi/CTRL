@@ -307,6 +307,130 @@ pub fn set_input_window_height(app: tauri::AppHandle, height: f64) -> Result<(),
         .map_err(|e| e.to_string())
 }
 
+/// Spawn the workspace window (left of main, ~1800 px wide). This is the
+/// "big window" where advanced keycaps render — main stays a 430-px
+/// companion, workspace carries the keycap browser / output / composition
+/// canvas. Same modular pattern as `spawn_input_window`: builder once,
+/// glue to main's window events for follow-on positioning.
+/// bao 2026-05-30: "之前是一共 1800px 宽度，你差不多按照这个标准设计；
+///                  你也不用改吧，把之前代码修改一下就成了新窗口了。"
+#[tauri::command]
+pub fn spawn_workspace_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(existing) = app.get_webview_window("workspace") {
+        position_workspace_left_of_main(&app, &existing)?;
+        existing.show().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let main_visible = app
+        .get_webview_window("main")
+        .map(|m| m.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+
+    let win = WebviewWindowBuilder::new(
+        &app,
+        "workspace",
+        WebviewUrl::App("/?surface=workspace".into()),
+    )
+    .title("CTRL · Workspace")
+    .inner_size(1800.0, 720.0)
+    .min_inner_size(960.0, 540.0)
+    .decorations(false)
+    .transparent(false)
+    .shadow(true)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .skip_taskbar(true)
+    .focused(false)
+    .visible(main_visible)
+    .resizable(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    let _ = win.set_size(LogicalSize::new(1800.0, 720.0));
+    position_workspace_left_of_main(&app, &win)?;
+
+    // Glue workspace to main's left edge — if the user drags main around,
+    // workspace follows (mirrors the input-window pattern).
+    if let Some(main) = app.get_webview_window("main") {
+        let app_handle = app.clone();
+        main.on_window_event(move |event| match event {
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                if let Some(workspace) = app_handle.get_webview_window("workspace") {
+                    let _ = position_workspace_left_of_main(&app_handle, &workspace);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    Ok(())
+}
+
+/// Toggle workspace window visibility. Used by the L1 ▾ button.
+#[tauri::command]
+pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("workspace") {
+        let visible = win.is_visible().unwrap_or(false);
+        if visible {
+            win.hide().map_err(|e| e.to_string())?;
+            Ok(false)
+        } else {
+            position_workspace_left_of_main(&app, &win)?;
+            win.show().map_err(|e| e.to_string())?;
+            Ok(true)
+        }
+    } else {
+        // Lazy spawn on first toggle so the workspace window doesn't
+        // boot when the user never asks for it.
+        spawn_workspace_window(app)?;
+        Ok(true)
+    }
+}
+
+/// Position the workspace window flush left of the main window. Width is
+/// preserved from whatever the user resized to; only x/y move. Clamped so
+/// workspace's left edge doesn't fall off the monitor.
+fn position_workspace_left_of_main(
+    app: &tauri::AppHandle,
+    workspace: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    use tauri::{LogicalPosition, Manager};
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitor = main
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
+    let workspace_size = workspace.outer_size().map_err(|e| e.to_string())?;
+
+    let main_x = main_pos.x as f64 / scale;
+    let workspace_w = workspace_size.width as f64 / scale;
+
+    // Workspace's right edge touches main's left edge (flush, no gap).
+    let mut desired_x = main_x - workspace_w;
+
+    // Clamp so workspace's left edge stays on-screen. If workspace is so
+    // wide it doesn't fit alongside main, slide it to monitor.x and let
+    // the user resize it down.
+    let monitor_pos = monitor.position();
+    let monitor_x = monitor_pos.x as f64 / scale;
+    if desired_x < monitor_x {
+        desired_x = monitor_x;
+    }
+
+    let desired_y = main_pos.y as f64 / scale;
+    workspace
+        .set_position(LogicalPosition::new(desired_x, desired_y))
+        .map_err(|e| e.to_string())
+}
+
 /// Position the input window directly under the main window, clamped so
 /// the input never falls below the screen bottom (or behind the macOS
 /// Dock). bao 2026-05-30: 'Dock 盖住了输入框'.

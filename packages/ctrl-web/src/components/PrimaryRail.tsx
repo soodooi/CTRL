@@ -27,6 +27,7 @@ import {
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { IrisyState } from './primitives/IrisyMascot';
 import type { L2ItemDescriptor } from './L2Panel';
+import { invoke } from '../lib/bridge';
 import styles from './PrimaryRail.module.css';
 
 const CODING_ITEM_ID = 'coding';
@@ -186,9 +187,10 @@ const idForPath = (pathname: string): string => {
 };
 
 export const PrimaryRail = (): ReactElement => {
-  const { activeRailId, setActiveRailId, l2Open, setL2Open } = useRail();
+  const { activeRailId, setActiveRailId } = useRail();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
   // Sync active L1 with current route so the highlight matches reality.
   useEffect(() => {
@@ -209,18 +211,32 @@ export const PrimaryRail = (): ReactElement => {
     void navigate({ to: SETTINGS_PATH });
   }, [navigate, setActiveRailId]);
 
+  // ▾ toggle — opens the workspace big window (1800 × 720, left of main)
+  // where advanced keycaps render. See commands/system.rs::
+  // toggle_workspace_window. Returns the new visibility so we can mirror
+  // it in the icon state without a follow-up poll.
+  const handleWorkspaceToggle = useCallback(async () => {
+    try {
+      const nowVisible = await invoke<boolean>('toggle_workspace_window');
+      setWorkspaceOpen(nowVisible);
+    } catch {
+      /* browser PWA or workspace window not available — silently no-op */
+    }
+  }, []);
+
   return (
     <aside className={styles.primary} aria-label="Primary navigation">
-      {/* L2 toggle — pinned at the top of L1. */}
+      {/* ▾ toggle — opens the workspace window (bao 2026-05-30:
+          "最上面的展开按钮,展开 keycap 管理区"). */}
       <button
         type="button"
         className={styles.l2Toggle}
-        onClick={() => setL2Open(!l2Open)}
-        aria-label={l2Open ? 'Close secondary navigation' : 'Open secondary navigation'}
-        title={l2Open ? 'Close sub-menu' : 'Open sub-menu'}
-        aria-pressed={l2Open}
+        onClick={() => void handleWorkspaceToggle()}
+        aria-label={workspaceOpen ? 'Close workspace window' : 'Open workspace window'}
+        title={workspaceOpen ? 'Close workspace' : 'Open workspace'}
+        aria-pressed={workspaceOpen}
       >
-        <ToggleIcon open={l2Open} />
+        <ToggleIcon open={workspaceOpen} />
       </button>
 
       <nav className={styles.nav} aria-label="Primary nav items">
