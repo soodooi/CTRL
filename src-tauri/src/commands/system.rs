@@ -331,11 +331,20 @@ fn position_input_under_main(
     let monitor_top = monitor_pos.y as f64 / scale;
     let monitor_bottom = monitor_top + monitor_h - 80.0; // reserve Dock height
 
-    let desired_x = main_pos.x as f64 / scale;
+    // Right-align input under main's right edge so it sits below the
+    // Irisy chat column even after the workspace expansion grows main
+    // to 1600 px. In companion mode (main width = 430 ≈ input width =
+    // 430) this collapses back to "full width below main"; in expanded
+    // mode (main width = 1600, input width = 430) input sits in the
+    // bottom-right under the Irisy chat 430-px column. bao 2026-05-30:
+    // "输入框应该保持在 Irisy 对话框下方".
+    let main_x = main_pos.x as f64 / scale;
+    let main_w = main_size.width as f64 / scale;
+    let input_w = input_size.width as f64 / scale;
+    let desired_x = main_x + main_w - input_w;
     // Place input top flush against main's NSWindow frame bottom (no
-    // overlap, no gap). Earlier -10 px shadow-overlap covered chat
-    // content (bao 2026-05-30: "默认被对话框盖住了一部分"). NSWindow
-    // shadows on both windows blend at the seam without hard overlap.
+    // overlap, no gap). NSWindow shadows on both windows blend at the
+    // seam without hard overlap.
     let desired_y = (main_pos.y as f64 + main_size.height as f64) / scale;
     let input_h = input_size.height as f64 / scale;
     let max_y = monitor_bottom - input_h;
@@ -357,7 +366,7 @@ fn position_input_under_main(
 // "show the expanded grid" responsive switch — no JS-side surface routing.
 
 const WORKSPACE_COMPANION_WIDTH: f64 = 430.0;
-const WORKSPACE_EXPANDED_WIDTH: f64 = 1800.0;
+const WORKSPACE_EXPANDED_WIDTH: f64 = 1600.0;
 const WORKSPACE_EXPANSION_THRESHOLD: f64 = 960.0;
 
 /// Toggle the main window between companion (430 px) and expanded
