@@ -6,7 +6,7 @@ date: 2026-05-22
 deciders: [bao, zeus]
 related:
   - .olym/decisions/001-system-architecture.md
-  - .olym/decisions/003-multi-device-mesh.md
+  - .olym/decisions/004-kernel-capability-surface.md       # § 9.2 Mesh (former ADR-003)
   - .olym/decisions/013-kernel-as-mcp-server.md
 scope: framework
 module: cross-cutting

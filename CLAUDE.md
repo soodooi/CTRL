@@ -92,28 +92,21 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 
 ## Architecture overview
 
-详细见 `.olym/decisions/001-system-architecture.md` (spine) + `.olym/decisions/002-pwa-pivot.md` (UI layer, accepted 2026-05-13).
+> Spine: `.olym/decisions/001-system-architecture.md` (含 Pi-centric 5 块图, 2026-05-30 6th 校准).
 
-```
-L3 Userland (subprocess-isolated keycaps via MCP, 硬件 / LLM call / OAuth flow)
-       ↑↓
-L2 SDK (@ctrl/{kernel-sdk, stss, memory, desktop})
-       ↑↓
-L1 CTRL Kernel (Rust microkernel, 5 primitives, ST-SS WS @ 17872)
-       ↑↓
-L0 Tauri 2 Native Shell (~500 LOC Rust shell)
-       ↑↓ embeds WebView2 / WKWebView
-PWA (packages/ctrl-web) — single web codebase, runs in Tauri WebView (desktop) + any browser (mobile)
-```
+**Pi-centric 5 块** (顶 → 底, 一切围绕 Pi):
 
-**5 kernel primitives**: Actor / Capability / Event / Channel / Effect.
+1. **ui-ux** — PWA, Irisy 表达 (user 唯一接触面)
+2. **kernel** — Rust microkernel + 公共服务 (provider / vault / storage / mcp / stss / mesh)
+3. **Pi** ★ — 核心 brain, 唯一 agent loop
+4. **provider** — Pi 用的 LLM 调用 (kernel/provider/ 子系统)
+5. **keycap** — Pi 调的 tool (subprocess via MCP)
 
-**5 keycap sources** (the integration map):
-1. MCP servers (10,000+ Day-1)
-2. Big-platform OAuth (Feishu / Coze / Notion / Linear)
-3. Local agents (OpenClaw / ClawX / Python)
-4. ST-SS shared windows (long-tail desktop + hardware)
-5. Built-in (15 v1 keycaps)
+**5 kernel primitives** (L1 内): Actor / Capability / Event / Channel / Effect.
+
+**5 keycap sources** (Pi 工具注入路径): MCP servers / Big-platform OAuth / Local agents / ST-SS shared windows / Built-in.
+
+物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 §3 immutable spine — Pi-centric 是 logical view, 4 层是 implementation view, 两图并存.
 
 ---
 

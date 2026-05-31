@@ -8,8 +8,8 @@ deciders: [bao, zeus]
 module: spine
 related:
   - .olym/decisions/002-pwa-pivot.md
-  - .olym/decisions/003-multi-device-mesh.md
-  - .olym/decisions/004-kernel-capability-surface.md
+  - .olym/decisions/003-brain-pi-core.md                   # Pi sole brain (6th 校准)
+  - .olym/decisions/004-kernel-capability-surface.md       # incl. § 9.2 Mesh (former ADR-003)
   - .olym/decisions/010-keycap-execution-model.md
   - .olym/decisions/013-kernel-as-mcp-server.md
   - .olym/steering/ctrl-strategy.md
@@ -24,10 +24,11 @@ superseded_by: []
 
 ## TL;DR
 
-- **4 layers** — Tauri 2 shell · Rust kernel · SDK · keycaps (subprocess-isolated)
+- **Pi-centric 5 块** (2026-05-30 6th 校准, default view) — ui-ux · kernel · **Pi** ★ · provider · keycap
+- **4 layers** (implementation topology, immutable spine §3) — Tauri 2 shell · Rust kernel · SDK · keycaps (subprocess-isolated)
 - **5 kernel primitives** — Actor / Capability / Channel / Event / Effect
 - **5 keycap sources** — MCP · OAuth · local agent · ST-SS · builtin
-- **Pi = sole brain** (a keycap with `target: brain`), inline brain router in kernel
+- **Pi = sole core brain** (first-class architecture block per 6th 校准, no longer "a keycap")
 - **Vault = plain-text** in `~/Documents/CTRL/`, MCP both inbound + outbound
 
 ---
@@ -337,6 +338,70 @@ bao directives during a 灵活开发 session ("清除 让项目干净" / "清除
 
 - ⤴ Active sections: §1.4 Current brain (hermes removed) · §6 · CLAUDE.md `## Rules`
 
+### 6th 校准 (2026-05-30) — Pi-centric reframe · 领域 ADR convention
+
+bao directive 2026-05-30 ("一切以 Pi 为核心" + "我们只有一个路径 Irisy = Pi + kernel + keycap + ui-ux" + 领域 ADR 编号 convention).
+
+**Reframed architecture (5 块 Pi-centric, NEW default view)**:
+
+```
+┌──────────────────────────────────────────┐
+│   USER (键盘 / 语音)                       │
+└────────────────┬─────────────────────────┘
+                 ↕
+┌──────────────────────────────────────────┐
+│   ui-ux  (PWA — Irisy 表达)                │  ← user 唯一接触面
+└────────────────┬─────────────────────────┘
+                 ↕ Tauri invoke
+┌──────────────────────────────────────────┐
+│   KERNEL  (Rust microkernel)               │  ← 运行环境 + 公共服务
+│   • commands (PWA 入口, 77+)               │
+│   • runtime + capability + scheduler       │
+│   • sub-systems (ADR-004 §9):              │
+│     vault / storage / mcp / stss / mesh    │
+│     provider (new, ADR-004 §9.1)           │
+└────────────────┬─────────────────────────┘
+                 ↕ supervise + IPC
+┌──────────────────────────────────────────┐
+│   Pi  ★  (核心 brain, 唯一 agent loop)      │
+│   ADR-003 Brain                            │
+└────┬───────────────────────────┬──────────┘
+     ↕                           ↕
+┌──────────────────────┐   ┌──────────────────────┐
+│  PROVIDER             │   │  KEYCAP               │
+│  (Pi 用 LLM)           │   │  (Pi 调 tool)         │
+│  → 外部 LLM           │   │  → 外部代码           │
+│    claude / volc /    │   │    subprocess via MCP │
+│    kimi / deepseek / …│   │                      │
+│  ADR-004 §9.1         │   │  ADR-010 / ADR-024    │
+└──────────────────────┘   └──────────────────────┘
+```
+
+**Two views co-exist** (not mutually exclusive):
+- **Pi-centric 5 块** (this校准) — *logical* view, optimized for "what's the role of each piece in Irisy's run". Used in CLAUDE.md, onboarding, ADR cross-refs.
+- **L0-L3 + PWA 4 层** (§3 immutable spine) — *physical* topology, optimized for "what process / binary boundary lives where". Unchanged.
+
+**Mapping** (旧 4 层 → 新 5 块):
+
+| 旧 (4 layers) | 新 (Pi-centric 5 块) | 说明 |
+|---|---|---|
+| L0 Tauri Shell | (隐藏) | kernel 的 host process, 非一级 logical block |
+| L1 Kernel | **kernel** | 不变, 加 sub-systems 显式列 (provider / mesh 等) |
+| L2 SDK | (隐藏) | 是 keycap 用的库, 非一级 logical block |
+| L3 Userland (keycap) | 拆 3 个: **Pi (核心)** + **keycap** (Pi tool) + **provider** (Pi LLM) | Pi 升一级架构 |
+| PWA | **ui-ux** | 改名表明它是 Irisy 表达 |
+
+**Related ADRs from this校准**:
+- **ADR-003 Brain (Pi)** — repurposed slot (former ADR-003 mesh content moved to ADR-004 §9.2). Locks Pi sole-brain, install location `~/.ctrl/pi/`, auto-upgrade priority-0, thin extension shim, retires brain registry + PWA frontend ReAct.
+- **ADR-004 §9 Kernel sub-systems** (amended) — explicit list (provider + vault + storage + mcp + stss + mesh). §9.1 Provider sub-system 7 条 lock (replaces scattered llm_port/llm_adapters/brain_config). §9.2 Mesh sub-system (former ADR-003 content).
+- **CLAUDE.md `## Architecture overview`** — collapsed to short index linking this ADR (no longer duplicates the spine).
+
+**Domain ADR convention** (binding for new ADRs):
+- ADR-001 = 架构 (this) · ADR-002 = 前端 (PWA) · ADR-003 = brain (Pi) · ADR-004 = kernel
+- Future领域 numbers per bao map (TBD: keycap / vault / update / mesh-already-in-004 / security / process …). New cross-cutting decisions go as **amendments to领域 ADR**, not new ADR numbers — keeps ADR count bounded.
+
+- ⤴ Active sections: §1.1 (4-layer stack — physical view) · ADR-003 Brain (Pi logical block) · ADR-004 §9 (kernel sub-systems incl. provider + mesh) · CLAUDE.md `## Architecture overview` (5 块 index)
+
 ### Appendix A — Decision log E-series (hephaestus review acceptance, 2nd校准)
 
 | # | Item | Decision |
@@ -396,3 +461,4 @@ Mesh identity: Keychain is sole truth. `~/.ctrl/mesh/identity` mirror only if vo
 | 2026-05-25 | **4th 校准** (release/0.1.39): kernel lean — sandbox.rs/composition.rs/wasmtime/cranelift removed, Ollama out of default chain. Design Philosophy locked (4 principles). |
 | 2026-05-26 | **Restructure as project doc**: §1 Current state added on top, immutable spine (§2-3, §9-10) preserved verbatim, 4 校准 consolidated into §11 narrative + appendices. Module index (§1.6, §8) added — 4 module SPEC.md entries created at `.olym/specs/{substrate,cap,irisy,frontend}/SPEC.md`. Every other ADR (002-020) gets `module:` frontmatter field. |
 | 2026-05-28 | **5th 校准**: hermes fully removed (package + kernel + PWA + manifest `hermes-skill` target); all demo keycaps cleared (`seed_keycaps()` + `share/modules/builtin/` + runtime dir); code locked English-only (zero Chinese in `.rs`/`.ts`/`.tsx`/`.css`). Keycap system + `ctrl.builtin.text-chat` dispatch preserved. See §11 5th 校准. |
+| 2026-05-30 | **6th 校准**: Pi-centric reframe + 领域 ADR convention. Pi promoted to first-class architecture block (one of 5: ui-ux / kernel / Pi / provider / keycap). ADR-003 repurposed for Brain (Pi); former mesh content moved to ADR-004 §9.2. ADR-004 scope expanded to include kernel sub-systems (§9.1 Provider + §9.2 Mesh). CLAUDE.md `## Architecture overview` collapsed to index. See §11 6th 校准. |
