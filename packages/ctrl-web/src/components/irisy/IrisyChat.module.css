@@ -561,22 +561,51 @@
   max-width: 320px;
 }
 
+/* bao 2026-05-31 P0 — drop chat-bubble pattern (ChatGPT/Doubao/Kimi
+   clone). Editorial conversation: small-caps mono sender label, then
+   flowing serif paragraph. No bubble fill, no border-radius, no
+   alignment-by-role. Two voices on paper. Hairline separator between
+   turns gives spatial rhythm without chrome. */
 .userBubble,
 .assistantBubble {
-  max-width: 88%;
-  padding: 6px 10px;
-  border-radius: 14px;
-  /* Dense young-user spec (bao 2026-05-30 "目标用户是年轻人,可以小一些").
-     14 px is the Discord-desktop / X / Reddit band — denser than iMessage's
-     16-17 pt but still readable. 1.4 leading mirrors Discord. */
-  font-size: 14px;
-  line-height: 1.4;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 15.5px;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .userBubble { white-space: pre-wrap; }
 .assistantBubble { white-space: normal; }
+
+.senderLabel {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+  margin-bottom: 6px;
+  user-select: none;
+}
+
+.senderLabelUser { color: var(--color-accent); }
+
+.turnSeparator {
+  align-self: stretch;
+  height: 0;
+  margin: 18px 0 20px;
+  border-top: 1px solid var(--color-border-soft);
+}
+.turnSeparator:first-child { display: none; }
 
 .toolBubble {
   align-self: stretch;
@@ -593,23 +622,8 @@
   overflow: auto;
 }
 
-.userBubble {
-  align-self: flex-end;
-  background: var(--color-accent);
-  color: var(--paper);
-  /* Tail corner for "from me" affordance (iMessage / Doubao convention). */
-  border-bottom-right-radius: 4px;
-}
-
-.assistantBubble {
-  align-self: flex-start;
-  background: var(--color-bg-l2);
-  color: var(--color-text);
-  border-bottom-left-radius: 4px;
-  /* Assistant messages span nearly the full pane width — markdown content
-     needs room to breathe in 430px. */
-  min-width: 55%;
-}
+/* Bubble fills + alignment overrides retired 2026-05-31 P0.
+   .userBubble + .assistantBubble share the editorial layout above. */
 
 .composer {
   padding: 10px 12px 12px;

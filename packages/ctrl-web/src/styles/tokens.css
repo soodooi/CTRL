@@ -39,25 +39,27 @@
   --keycap-platinum: oklch(0.90 0.012 252);
   --keycap-graphite: oklch(0.34 0.012 252);
 
-  /* === Neutral primitives (skill v0.6 — mint/deep-teal) ====
-     Paper = mint floor. Paper-2 = muted as elevated chrome.  */
-  --ink: #134E4A;
-  --ink-2: #2C5C58;
-  --paper: #F0FDFA;
-  --paper-2: #E8F1F4;
+  /* === Neutral primitives (v0.7 — paper + ink, editorial) ====
+     bao 2026-05-31 P0: drop mint/coral SaaS-clone palette. Paper-
+     warm with deep walnut ink + single vermillion accent. Reads
+     like a notebook, not a wellness app. */
+  --ink: oklch(0.22 0.018 60);     /* warm walnut ink */
+  --ink-2: oklch(0.38 0.020 60);
+  --paper: oklch(0.985 0.006 80);  /* warm paper white */
+  --paper-2: oklch(0.965 0.010 80);
 
   /* === Semantic primitives =============================== */
-  --status-success: #16A34A;
-  --status-warning: #EA580C;      /* skill accent doubles as warm cue */
-  --status-danger: #DC2626;
+  --status-success: oklch(0.55 0.14 145);
+  --status-warning: oklch(0.65 0.18 60);
+  --status-danger: oklch(0.55 0.18 30);
   --status-info: var(--color-primary);
 
-  /* === Surfaces (skill mint cascade) ======================
-     L0 mint base, L1 muted chrome, L2/L3 derived warmer tints. */
+  /* === Surfaces (paper cascade) ======================
+     L0 paper floor, others derived warmer for chrome / hover.   */
   --color-bg-l0: var(--paper);
   --color-bg-l1: var(--paper-2);
-  --color-bg-l2: #DAEFEC;
-  --color-bg-l3: #CCE5E1;
+  --color-bg-l2: oklch(0.945 0.012 75);
+  --color-bg-l3: oklch(0.92 0.014 70);
 
   /* Back-compat aliases */
   --color-background: var(--color-bg-l0);
@@ -65,13 +67,13 @@
   --color-surface-elevated: var(--color-bg-l3);
 
   --color-text: var(--ink);
-  --color-text-muted: #2C5C58;    /* AA on mint bg-l0 */
-  --color-text-soft: #4A7D78;
-  --color-text-faint: #739A95;
+  --color-text-muted: oklch(0.45 0.022 60);
+  --color-text-soft: oklch(0.55 0.020 60);
+  --color-text-faint: oklch(0.68 0.016 60);
 
-  --color-border: #99F6E4;
-  --color-border-soft: #CCFBF1;
-  --color-accent: #EA580C;        /* skill action orange */
+  --color-border: oklch(0.88 0.012 70);
+  --color-border-soft: oklch(0.93 0.010 75);
+  --color-accent: oklch(0.52 0.18 35);  /* vermillion — ink stamp */
 
   /* Semantic aliases */
   --color-success: var(--status-success);
@@ -107,9 +109,17 @@
   --bottomtab-height: 0px;
 
   /* === Typography (skill v0.6 — Plus Jakarta Sans) ========= */
-  --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Roboto Mono', monospace;
-  --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  /* bao 2026-05-31 P0 — drop Plus Jakarta / Inter (reflex fonts).
+     Body = iA Writer Quattro: humanist sans with serif inflections —
+     reads like notebook ink, not SaaS bot. Display/labels = JetBrains
+     Mono small-caps — terminal/letterpress feel for sender names + chrome.
+     System fallbacks keep us shippable before web-font loaders land. */
+  --font-sans: 'iA Writer Quattro', 'iA Writer Quattro V', 'Iowan Old Style',
+               'Charter', 'Hoefler Text', 'Georgia', ui-serif, serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', 'SF Mono', Consolas,
+               'Roboto Mono', monospace;
+  --font-display: 'JetBrains Mono', 'IBM Plex Mono', 'SF Mono', Consolas,
+                  monospace;
 
   /* Product UI scale — fixed rem (per impeccable typography guidance:
      "Use fixed `rem` scales for app UIs and dashboards"). */
