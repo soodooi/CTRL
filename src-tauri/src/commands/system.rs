@@ -196,162 +196,19 @@ pub fn position_window_top_right(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Spawn (or reveal) the input window — a separate Tauri window dedicated
-/// to the composer (textarea + send). Positions it directly under the
-/// main window, same width. bao 2026-05-30: 两个独立窗口,上 chat history,
-/// 下 input,input 长高时这个窗口的底边外扩。
+/// Close any persisted input-companion window. bao 2026-05-31 retired
+/// the separate Tauri "input" window — composer now lives inside the
+/// Irisy chat column (see IrisyChat.tsx). This command is called from
+/// `useCompanionWindow` on app mount so an instance from a previous
+/// launch is destroyed; new launches never spawn one. Safe to call
+/// when no input window exists (returns Ok).
 #[tauri::command]
-pub fn spawn_input_window(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
-
-    // Already exists? Just make sure it's visible and positioned.
-    if let Some(existing) = app.get_webview_window("input") {
-        position_input_under_main(&app, &existing)?;
-        existing
-            .show()
-            .map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-
-    // Match main's current visibility. PWA mounts during the main
-    // window's prewarm (when main is hidden); we don't want the input
-    // window to pop up alone with no chat above it. bao 2026-05-30:
-    // '为什么安装后有一个输入框在页面,对话框不在'.
-    let main_visible = app
-        .get_webview_window("main")
-        .map(|m| m.is_visible().unwrap_or(false))
-        .unwrap_or(false);
-
-    // Default = 2 rows of textarea + padding visible (bao 2026-05-30:
-    // "对话框默认可以看见两行"). textarea is 14 px line-height ~21 px,
-    // 2 rows = 42 px + 12 px top/bot padding + 4 px chrome = ~70 px.
-    let win = WebviewWindowBuilder::new(
-        &app,
-        "input",
-        WebviewUrl::App("/?surface=input".into()),
-    )
-    .title("CTRL · Input")
-    .inner_size(430.0, 70.0)
-    .min_inner_size(430.0, 70.0)
-    .decorations(false)
-    .transparent(false)
-    .shadow(true)
-    .always_on_top(true)
-    .visible_on_all_workspaces(true)
-    .skip_taskbar(true)
-    .focused(main_visible)
-    .visible(main_visible)
-    .resizable(false)
-    .build()
-    .map_err(|e| e.to_string())?;
-
-    let _ = win.set_size(LogicalSize::new(430.0, 70.0));
-    position_input_under_main(&app, &win)?;
-
-    // Keep input glued to main as the user drags / resizes the main
-    // window (bao 2026-05-30: "为什么移动不能一起移动输入框?").
-    if let Some(main) = app.get_webview_window("main") {
-        let app_handle = app.clone();
-        main.on_window_event(move |event| match event {
-            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
-                if let Some(input) = app_handle.get_webview_window("input") {
-                    let _ = position_input_under_main(&app_handle, &input);
-                }
-            }
-            _ => {}
-        });
-    }
-
-    Ok(())
-}
-
-/// Activate the input window and pull keyboard focus to it. macOS
-/// alwaysOnTop / .floating-level NSWindows don't always grab keyboard
-/// focus from the foreground app on show — we explicitly activate the
-/// NSApplication, make the window key, and let the WKWebView receive
-/// the next keystrokes. bao 2026-05-30: '对话框无法输入'.
-#[tauri::command]
-pub fn activate_input_window(app: tauri::AppHandle) -> Result<(), String> {
+pub fn destroy_input_window(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
-    let win = app
-        .get_webview_window("input")
-        .ok_or_else(|| "input window not found".to_string())?;
-    let _ = win.show();
-    let _ = win.set_focus();
-    #[cfg(target_os = "macos")]
-    unsafe {
-        use objc2_app_kit::NSApp;
-        use objc2_foundation::MainThreadMarker;
-        if let Some(mtm) = MainThreadMarker::new() {
-            NSApp(mtm).activate();
-        }
+    if let Some(win) = app.get_webview_window("input") {
+        win.close().map_err(|e| e.to_string())?;
     }
     Ok(())
-}
-
-/// Resize the input window (preserves position + width).
-#[tauri::command]
-pub fn set_input_window_height(app: tauri::AppHandle, height: f64) -> Result<(), String> {
-    use tauri::{LogicalSize, Manager};
-    let win = app
-        .get_webview_window("input")
-        .ok_or_else(|| "input window not found".to_string())?;
-    let monitor = win
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no current monitor".to_string())?;
-    let scale = monitor.scale_factor();
-    let max_logical = monitor.size().height as f64 / scale - 40.0;
-    let target = height.max(44.0).min(max_logical);
-    win.set_size(LogicalSize::new(430.0, target))
-        .map_err(|e| e.to_string())
-}
-
-/// Position the input window directly under the main window, clamped so
-/// the input never falls below the screen bottom (or behind the macOS
-/// Dock). bao 2026-05-30: 'Dock 盖住了输入框'.
-fn position_input_under_main(
-    app: &tauri::AppHandle,
-    input: &tauri::WebviewWindow,
-) -> Result<(), String> {
-    use tauri::{LogicalPosition, Manager};
-    let main = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    let monitor = main
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no current monitor".to_string())?;
-    let scale = monitor.scale_factor();
-    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
-    let main_size = main.outer_size().map_err(|e| e.to_string())?;
-    let input_size = input.outer_size().map_err(|e| e.to_string())?;
-    let monitor_pos = monitor.position();
-    let monitor_h = monitor.size().height as f64 / scale;
-    let monitor_top = monitor_pos.y as f64 / scale;
-    let monitor_bottom = monitor_top + monitor_h - 80.0; // reserve Dock height
-
-    // Right-align input under main's right edge so it sits below the
-    // Irisy chat column even after the workspace expansion grows main
-    // to 1600 px. In companion mode (main width = 430 ≈ input width =
-    // 430) this collapses back to "full width below main"; in expanded
-    // mode (main width = 1600, input width = 430) input sits in the
-    // bottom-right under the Irisy chat 430-px column. bao 2026-05-30:
-    // "输入框应该保持在 Irisy 对话框下方".
-    let main_x = main_pos.x as f64 / scale;
-    let main_w = main_size.width as f64 / scale;
-    let input_w = input_size.width as f64 / scale;
-    let desired_x = main_x + main_w - input_w;
-    // Place input top flush against main's NSWindow frame bottom (no
-    // overlap, no gap). NSWindow shadows on both windows blend at the
-    // seam without hard overlap.
-    let desired_y = (main_pos.y as f64 + main_size.height as f64) / scale;
-    let input_h = input_size.height as f64 / scale;
-    let max_y = monitor_bottom - input_h;
-    let y = desired_y.min(max_y).max(monitor_top);
-    input
-        .set_position(LogicalPosition::new(desired_x, y))
-        .map_err(|e| e.to_string())
 }
 
 // ── Workspace expansion (main window self-expand, bao 2026-05-30 final) ──
