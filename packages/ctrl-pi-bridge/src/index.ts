@@ -84,6 +84,14 @@ export interface PiProvider {
 export default function register(pi: PiExtensionApi): void {
   pi.registerProvider(BRIDGE_PROVIDER_NAME, {
     api: BRIDGE_PROVIDER_NAME,
+    // Pi's registerProvider validates that any provider declaring
+    // `models` also declares a `baseUrl` — even when `streamSimple`
+    // bypasses HTTP entirely. We supply a placeholder pseudo-URL
+    // (loopback localhost is the most honest description; the actual
+    // POST target port is resolved via env at stream time, not from
+    // this string). bao 2026-05-31: "Provider ctrl-bridge: baseUrl is
+    // required when defining models" on extension load.
+    baseUrl: 'http://127.0.0.1',
     models: [BRIDGE_MODEL_NAME],
     streamSimple: (model, ctx, opts) => streamFromKernel(model, ctx, opts),
   });
