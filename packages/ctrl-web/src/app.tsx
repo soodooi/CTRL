@@ -118,7 +118,6 @@ function RootShellInner(): ReactElement {
       <div className={styles.status}>
         <StatusBar />
       </div>
-      <div className={styles.l2} aria-hidden="true" />
       <div className={styles.l1}>
         <PrimaryRail />
       </div>

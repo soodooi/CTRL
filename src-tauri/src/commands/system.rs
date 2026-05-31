@@ -367,11 +367,30 @@ const WORKSPACE_EXPANDED_WIDTH: f64 = 1600.0;
 const WORKSPACE_EXPANSION_THRESHOLD: f64 = 960.0;
 
 /// Toggle the main window between companion (430 px) and expanded
-/// (1600 px). Right edge stays anchored; left edge slides leftward.
+/// (1600 px). The window's RIGHT EDGE is locked to the monitor's right
+/// edge (the right-edge anchor bao asked for, ADR-002 §7 "L1 和 Irisy
+/// 位置不变"). When expanding, the LEFT edge slides leftward to make
+/// room for the workspace; when collapsing, the left edge slides
+/// rightward. L1 + Irisy columns stay at their fixed pixel positions
+/// inside the shell relative to the right edge, so they never move
+/// on-screen across the toggle.
+///
+/// bao 2026-05-31: previous version anchored `right_edge` to wherever
+/// the window currently sat. If the user (or a startup race with
+/// `position_window_top_right`) left the window pinned at x=0, the
+/// `if target_x < monitor_x { target_x = monitor_x }` clamp caused
+/// the expansion to grow RIGHTWARD instead — visible as "向右打开".
+/// Fixed by always pinning the right edge to monitor right minus a
+/// small inset, regardless of current position.
+///
 /// Returns the new visible expansion state (`true` = expanded).
 #[tauri::command]
 pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
     use tauri::{LogicalPosition, LogicalSize, Manager};
+
+    /// Right-edge inset from the monitor edge in logical pixels. Gives the
+    /// window a small visual breathing margin from the screen edge.
+    const RIGHT_EDGE_INSET: f64 = 0.0;
 
     let main = app
         .get_webview_window("main")
@@ -386,11 +405,10 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
     let monitor_pos = monitor.position();
     let monitor_x = monitor_pos.x as f64 / scale;
     let monitor_w = monitor.size().width as f64 / scale;
+    let monitor_right_edge = monitor_x + monitor_w;
 
-    let current_x = main_pos.x as f64 / scale;
     let current_w = main_size.width as f64 / scale;
     let current_h = main_size.height as f64 / scale;
-    let right_edge = current_x + current_w;
     let is_expanded = current_w >= WORKSPACE_EXPANSION_THRESHOLD;
 
     let target_w = if is_expanded {
@@ -399,10 +417,11 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
         WORKSPACE_EXPANDED_WIDTH.min(monitor_w - 40.0)
     };
 
-    let mut target_x = right_edge - target_w;
-    if target_x < monitor_x {
-        target_x = monitor_x;
-    }
+    // Always anchor the right edge to the monitor's right edge. This
+    // guarantees expansion grows LEFTWARD (workspace appears to the
+    // left of the Irisy column) and that L1 + Irisy stay at fixed
+    // on-screen positions across the toggle.
+    let target_x = monitor_right_edge - target_w - RIGHT_EDGE_INSET;
 
     main.set_size(LogicalSize::new(target_w, current_h))
         .map_err(|e| e.to_string())?;
