@@ -44,3 +44,4 @@ packages/*/tsconfig.tsbuildinfo
 .claude.bak/
 .olym.bak/
 experiments/
+.provider-research/
