@@ -14,7 +14,8 @@
 // Skeleton stage (sub-PR b): each handler returns NotImplementedYet so the
 // JS bridge can be wired before kernel integration in sub-PR c.
 
-pub mod brain;
+// brain retired per ADR-003 (Pi is the sole brain — see file header
+// for context); module not declared so the file is not compiled.
 pub mod chat;
 pub mod code_space;
 pub mod config;
@@ -51,10 +52,11 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::chat::chat_stream,
             // irisy_chat — brain-routed streaming (Irisy → active brain keycap MCP)
             $crate::commands::irisy_chat::irisy_chat_stream,
-            // brain — cc-switch style switcher (ADR-021)
-            $crate::commands::brain::brain_list,
-            $crate::commands::brain::brain_detect,
-            $crate::commands::brain::brain_set_active,
+            // brain switcher retired per ADR-003 — Pi is the sole brain.
+            // Pi version + upgrade controls live in system::pi_status /
+            // pi_upgrade_now.
+            $crate::commands::system::pi_status,
+            $crate::commands::system::pi_upgrade_now,
             // irisy — init status (kernel llm / Pi brain / mcp bridge)
             $crate::commands::irisy::irisy_init,
             // system — kernel health (PWA status bar Phase 1F)
@@ -71,12 +73,10 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::system::spawn_input_window,
             $crate::commands::system::set_input_window_height,
             $crate::commands::system::activate_input_window,
-            // system — workspace independent Tauri window left of main
-            // (bao 2026-05-30 v2 revive — "L1原来在哪，还在哪 / 工作区是
-            // 独立窗口"). macOS NSWindow.addChildWindow cascades move +
-            // hide. Three close paths: ▾ on main L1 + → in workspace
-            // header + Ctrl hotkey hides cascade.
-            $crate::commands::system::spawn_workspace_window,
+            // system — workspace expansion via main window self-resize
+            // (bao 2026-05-30 final clarification: "左侧打开的意思，
+            // 不是浮窗"). Main slides left edge 430 ↔ 1600. CSS @media
+            // drives the expanded grid. No independent NSWindow.
             $crate::commands::system::toggle_workspace_window,
             // updater — safe macOS relaunch after auto-update (Chrome-style
             // detached helper, sidesteps the Tauri 2 race)

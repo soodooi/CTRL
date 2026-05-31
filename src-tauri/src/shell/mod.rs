@@ -22,6 +22,7 @@ pub mod hotkey;
 pub mod keychain;
 pub mod kernel_supervisor;
 pub mod lifecycle;
+pub mod pi_install;
 pub mod tray;
 pub mod window;
 

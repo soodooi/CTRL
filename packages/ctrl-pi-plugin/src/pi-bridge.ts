@@ -137,10 +137,29 @@ export class PiBridge {
 
   private async ensureRpc(): Promise<ChildProcessWithoutNullStreams> {
     if (this.rpcProc && !this.rpcProc.killed) return this.rpcProc;
-    const proc = spawn(this.pi.command, [...this.pi.args, 'rpc'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PI_OUTPUT_FORMAT: 'json' },
-    });
+    // ADR-003: when CTRL_PI_BRIDGE_EXTENSION is set, load the
+    // ctrl-pi-bridge extension into Pi so its LLM calls route back to
+    // the kernel provider sub-system (kernel /text-chat endpoint).
+    // Without the env Pi uses its own provider config (legacy path /
+    // standalone use of this MCP server).
+    const extraArgs: string[] = [];
+    const bridgeExt = process.env.CTRL_PI_BRIDGE_EXTENSION;
+    if (bridgeExt && bridgeExt.length > 0) {
+      extraArgs.push('--extension', bridgeExt);
+    }
+    const env: NodeJS.ProcessEnv = { ...process.env, PI_OUTPUT_FORMAT: 'json' };
+    if (bridgeExt && bridgeExt.length > 0) {
+      env.PI_PROVIDER = env.PI_PROVIDER ?? 'ctrl-bridge';
+      env.PI_MODEL = env.PI_MODEL ?? 'default';
+    }
+    const proc = spawn(
+      this.pi.command,
+      [...this.pi.args, ...extraArgs, 'rpc'],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env,
+      },
+    );
     proc.stdout.setEncoding('utf8');
     proc.stdout.on('data', (chunk: string) => this.handleRpcStdout(chunk));
     proc.stderr.setEncoding('utf8');
