@@ -1,0 +1,14 @@
+# OpenAI (BYOK) — chat.completions wire shape via api.openai.com.
+
+id = "openai-api"
+label = "OpenAI (BYOK)"
+kind = "http_api"
+shape = "openai_chat_completions"
+endpoint = "https://api.openai.com/v1"
+models = ["gpt-4o-mini", "gpt-4o", "o1-mini", "o1-preview"]
+description = "OpenAI cloud (BYOK). Bring your own platform.openai.com key."
+capabilities = ["text.chat"]
+
+[auth]
+source = "keychain"
+account = "openai"

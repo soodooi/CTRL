@@ -1,0 +1,16 @@
+# DeepSeek — Anthropic-shape variant. DeepSeek's `/anthropic` endpoint
+# implements the Messages API; the OpenAI-compat path is
+# `https://api.deepseek.com/v1` if a user prefers chat.completions.
+
+id = "deepseek"
+label = "DeepSeek"
+kind = "http_api"
+shape = "anthropic_messages"
+endpoint = "https://api.deepseek.com/anthropic"
+models = ["deepseek-chat", "deepseek-reasoner"]
+description = "DeepSeek via the Anthropic-shape compatibility endpoint (api.deepseek.com/anthropic)."
+capabilities = ["text.chat"]
+
+[auth]
+source = "keychain"
+account = "deepseek"

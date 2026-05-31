@@ -31,6 +31,7 @@ pub mod llm_port;
 pub mod mcp_host;
 pub mod mcp_server;
 pub mod persistence;
+pub mod provider;
 pub mod runtime;
 pub mod scheduler;
 pub mod stss_bridge;

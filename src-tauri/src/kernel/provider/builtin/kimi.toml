@@ -1,0 +1,17 @@
+# Moonshot Kimi — Anthropic-shape variant. Kimi exposes BOTH an OpenAI-
+# shape endpoint (`/v1`) and an Anthropic-shape endpoint (`/anthropic`);
+# we ship the Anthropic-shape preset because it carries through the
+# extended context / agent control features Kimi tunes for.
+
+id = "kimi"
+label = "Moonshot Kimi"
+kind = "http_api"
+shape = "anthropic_messages"
+endpoint = "https://api.moonshot.cn/anthropic"
+models = ["kimi-k2-0905-preview", "kimi-latest"]
+description = "Moonshot Kimi via the Anthropic-shape compatibility endpoint (api.moonshot.cn/anthropic)."
+capabilities = ["text.chat"]
+
+[auth]
+source = "keychain"
+account = "kimi"
