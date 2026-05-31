@@ -28,8 +28,9 @@ When Phase 1 lands the full ADR-024 loader, the kernel will read `cap_asset.file
 
 | id | label | pattern | What it does |
 |---|---|---|---|
-| `builtin-assist` | Assist | G | Irisy's default companion. Reads the whole vault; writes session state under `keycaps/builtin-assist/`. |
-| `builtin-create` | Create | G | Irisy in keycap-designer mode — talks user through making a new keycap, writes manifest, installs it. |
+| `builtin-irisy` | Irisy | G | CTRL's single user-facing companion. Reads the whole vault; writes session state and keycap drafts under `keycaps/builtin-irisy/`. Internally dispatches between conversational mode and keycap-designer mode based on context (invisible to the user). |
+
+`builtin-assist` + `builtin-create` were merged into `builtin-irisy` on 2026-05-30 per ADR-002 amendment (Irisy-as-sole-entry). The two-keycap split exposed an internal mode switch the user had to make — Irisy now picks per turn, so there is one persona, one chip, one folder.
 
 ## See also
 

@@ -1,66 +1,63 @@
 /*
- * CTRL design tokens — v0.5 per bao 2026-05-26 ("change it to a white theme,
- * pick a nice-looking white").
+ * CTRL design tokens — v0.6 (ui-ux-pro-max trial, bao 2026-05-31).
  *
- * v0.5 shifts from v0.4:
- *  - "Polar white" pick: paper raised to oklch(0.99 0.004 252) — same
- *    252° hue as `--ctrl-blue` so neutrals and accent share a tonal
- *    family, slight cool tint differentiates from macOS HIG default
- *    white and avoids the clinical / SwiftUI feel.
- *  - Surface stack re-cascaded: paper(L0) brighter, paper-2(L1) lifted
- *    too so sidebars don't read grey on the new floor, L2/L3 raised so
- *    cards / overlays sit cleanly on polar paper instead of competing.
- *  - Chroma nudged +0.001 across the neutral scale — the deeper
- *    paper needed a hair more cool to keep the keycap-blue hue family
- *    legible when the surface is brighter.
+ * v0.6 = strict apply of the ui-ux-pro-max skill's design-system output
+ * for query "ambient AI launcher productivity tool light minimal anti-saas
+ * raycast linear". Overrides v0.5's polar-white + cobalt-blue brand:
+ *   - Primary teal `#0D9488` (was `--ctrl-blue` oklch 252°)
+ *   - Accent orange `#EA580C` (skill notes adjusted from F97316 for WCAG 3:1)
+ *   - Mint background `#F0FDFA` (was polar-white oklch 252°)
+ *   - Foreground deep-teal `#134E4A`
+ *   - Plus Jakarta Sans for sans + display (was Inter)
  *
- * v0.4 (held): light is default; dark via `[data-theme='dark']` opt-in;
- *   keycap palette warmer / more saturated; accent = `--ctrl-blue`;
- *   shadows tuned for white elevation.
+ * This is a TRIAL — `--ctrl-blue` kept as a back-compat alias pointing at
+ * the new primary so any component still referencing it gets the new
+ * tone. Keycap palette and oklch motion tokens retained.
+ *
+ * If reverting: restore the v0.5 :root block (see git history of this
+ * file at commit d1cc153 or earlier).
  */
 
-:root {
-  /* === Brand color (single signature accent) ============= */
-  --ctrl-blue: oklch(0.50 0.20 252);
-  --ctrl-blue-dark: oklch(0.32 0.16 252);
-  --ctrl-blue-light: oklch(0.68 0.18 248);
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 
-  /* === Keycap palette ====================================
-     Nudged warmer / more saturated for the light cockpit —
-     they used to bake into a dark slab; now they sit on paper
-     and need their own presence. */
+:root {
+  /* === Brand color (skill v0.6 — teal primary) ============= */
+  --ctrl-blue: #0D9488;        /* legacy alias; same value as --color-primary */
+  --ctrl-blue-dark: #115E59;
+  --ctrl-blue-light: #5EEAD4;
+
+  --color-primary: #0D9488;
+  --color-on-primary: #FFFFFF;
+  --color-secondary: #14B8A6;
+
+  /* === Keycap palette (retained from v0.5) ================
+     Independent of brand swap so installed-keycap visual
+     identity persists across theme trials. */
   --keycap-cobalt: oklch(0.58 0.20 252);
   --keycap-amber: oklch(0.76 0.18 78);
   --keycap-jade: oklch(0.66 0.17 158);
   --keycap-platinum: oklch(0.90 0.012 252);
   --keycap-graphite: oklch(0.34 0.012 252);
 
-  /* === Neutral primitives ================================= */
-  --ink: oklch(0.18 0.003 252);
-  --ink-2: oklch(0.32 0.003 252);
-  /* Polar white pick (v0.5 — bao 2026-05-26).
-     Paper = floor. Paper-2 = chrome (rail / keyboard / status bar). */
-  --paper: oklch(0.99 0.004 252);
-  --paper-2: oklch(0.975 0.004 252);
+  /* === Neutral primitives (skill v0.6 — mint/deep-teal) ====
+     Paper = mint floor. Paper-2 = muted as elevated chrome.  */
+  --ink: #134E4A;
+  --ink-2: #2C5C58;
+  --paper: #F0FDFA;
+  --paper-2: #E8F1F4;
 
   /* === Semantic primitives =============================== */
-  --status-success: oklch(0.58 0.16 160);
-  --status-warning: oklch(0.70 0.17 70);
-  --status-danger: oklch(0.55 0.22 27);
-  --status-info: var(--ctrl-blue);
+  --status-success: #16A34A;
+  --status-warning: #EA580C;      /* skill accent doubles as warm cue */
+  --status-danger: #DC2626;
+  --status-info: var(--color-primary);
 
-  /* === Surfaces (light theme — default) ====================
-     L0 base       — viewport floor (workspace = the star, the
-                     warmest paper tone in the stack)
-     L1 surface    — sidebars (keyboard / right rail / status bar).
-                     Slightly cooler/duller than L0 per Linear 2026
-                     "content > chrome" — sidebars step back.
-     L2 elevated   — workspace cards / panels nested on L0
-     L3 overlay    — modals / popovers / dropdowns */
+  /* === Surfaces (skill mint cascade) ======================
+     L0 mint base, L1 muted chrome, L2/L3 derived warmer tints. */
   --color-bg-l0: var(--paper);
   --color-bg-l1: var(--paper-2);
-  --color-bg-l2: oklch(0.96 0.005 252);
-  --color-bg-l3: oklch(0.935 0.006 252);
+  --color-bg-l2: #DAEFEC;
+  --color-bg-l3: #CCE5E1;
 
   /* Back-compat aliases */
   --color-background: var(--color-bg-l0);
@@ -68,13 +65,13 @@
   --color-surface-elevated: var(--color-bg-l3);
 
   --color-text: var(--ink);
-  --color-text-muted: oklch(0.38 0.005 252);  /* WCAG AA on bg-l0 */
-  --color-text-soft: oklch(0.52 0.005 252);   /* AA on bg-l0; tertiary */
-  --color-text-faint: oklch(0.68 0.005 252);  /* placeholder-only, sub-AA */
+  --color-text-muted: #2C5C58;    /* AA on mint bg-l0 */
+  --color-text-soft: #4A7D78;
+  --color-text-faint: #739A95;
 
-  --color-border: oklch(0.88 0.006 252);
-  --color-border-soft: oklch(0.93 0.006 252);
-  --color-accent: var(--ctrl-blue);
+  --color-border: #99F6E4;
+  --color-border-soft: #CCFBF1;
+  --color-accent: #EA580C;        /* skill action orange */
 
   /* Semantic aliases */
   --color-success: var(--status-success);
@@ -109,10 +106,10 @@
   --keycap-gap: 12px;
   --bottomtab-height: 0px;
 
-  /* === Typography ========================================= */
-  --font-sans: 'Inter', 'SF Pro Text', system-ui, -apple-system, sans-serif;
+  /* === Typography (skill v0.6 — Plus Jakarta Sans) ========= */
+  --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Roboto Mono', monospace;
-  --font-display: 'Inter', 'SF Pro Display', system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
 
   /* Product UI scale — fixed rem (per impeccable typography guidance:
      "Use fixed `rem` scales for app UIs and dashboards"). */

@@ -1,0 +1,58 @@
+{
+  "manifest_version": 2,
+  "builtin": true,
+  "id": "builtin-irisy",
+  "name": "Irisy",
+  "keycap_color": "cobalt",
+  "icon": "◉",
+  "description": "Irisy — CTRL's single user-facing companion. Default mode is chat (reads the vault, answers questions, drives keycap workflows). When the user asks to make a new keycap, Irisy internally switches to keycap-designer mode and walks them through it. One persona, internal modes invisible to the user.",
+  "pattern": "G",
+  "capabilities": {
+    "clipboard": { "read": true, "write": true },
+    "text": { "chat": true },
+    "file": {
+      "read_allowlist": ["${vault_root}/*"],
+      "write_allowlist": [
+        "${cap_asset.vault.path}/*",
+        "${user.home}/.ctrl/keycaps/*"
+      ]
+    },
+    "network": {
+      "http": {
+        "allowlist": ["https://api.github.com"],
+        "methods": ["GET"]
+      }
+    },
+    "mcp": { "list_tools": true, "invoke_tool": true },
+    "platform": { "notify": true }
+  },
+  "brain_capabilities": {
+    "text.chat": { "provider_pin": null }
+  },
+  "skills": [
+    "create-keycap",
+    "validate-manifest",
+    "discover-skill"
+  ],
+  "ui_surface": "chat-stream",
+  "cap_asset": {
+    "files": {
+      "items": [
+        { "src": "icon.svg",   "dest": "icon.svg" },
+        { "src": "persona.md", "dest": "persona.md" }
+      ]
+    },
+    "vault": {
+      "path": "keycaps/builtin-irisy/",
+      "seed": [
+        {
+          "dest": "README.md",
+          "content_inline": "# Irisy (companion)\n\nIrisy is CTRL's single user-facing AI. Her chat history, saved replies, in-progress keycap drafts, and session state live here.\n\n## Customizing Irisy's voice\n\nDrop a file called `persona.md` into this folder to override `assets/persona.md`. The runtime prefers your vault copy.\n\n## Internal modes (invisible to you)\n\nIrisy dispatches between conversational mode and keycap-designer mode based on what you ask. You never switch by hand — say \"help me make a clipboard tool\" and she shifts; say \"summarize this\" and she answers.\n"
+        },
+        { "dest": "history/.gitkeep" },
+        { "dest": "saved-replies/.gitkeep" },
+        { "dest": "drafts/.gitkeep" }
+      ]
+    }
+  }
+}

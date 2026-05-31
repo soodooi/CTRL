@@ -1,18 +1,23 @@
 // PrimaryRail — Level-1 primary navigation on the left edge.
 //
 // (Was `RightRail`, renamed 2026-05-29 when L1 flipped right → left per
-// memory `feedback_l1_nav_left_and_fixed`. Component behavior unchanged;
-// only the grid placement and the name moved.)
+// memory `feedback_l1_nav_left_and_fixed`.)
 //
-// 2026-05-29 restructure (bao): stripped of the Irisy mascot slot and
-// the version pill — both moved out. L1 is icon-only. A toggle button at
-// the top expands / closes L2 (secondary nav column to the right of L1).
-// Settings stays pinned at the bottom.
+// L1 = icon-only chips. ▾ at the top toggles the NSWindow workspace
+// (separate Tauri child window, addChildWindow left of main). Settings
+// pinned at the bottom. Irisy chat is shell-level (always visible right
+// column), not an L1 peer.
 //
-// Irisy is no longer a peer of L1 nav items; her chat lives in the
-// SHELL'S dedicated Irisy pane (always visible). RailContext still owns
-// `irisyState` (used by the mascot inside IrisyChat) and a new `l2Open`
-// flag the toggle writes.
+// 2026-05-30 (ADR-002 §2): L1 nav = `[Irisy, Coding]` 2 chips. Create
+// removed — keycap-designer is an internal Irisy mode per memory
+// `decision_one_persona_irisy`.
+//
+// 2026-05-31 (ADR-002 §7): the legacy `L2Panel` + `useL2` API is gone.
+// L2 is now a shell-level reserved column (left of L1, in `app.module.css`)
+// driven by the NSWindow's active tab. L1 chips will be rewired to open
+// NSWindow with chip-specific content (Keycap / Vault / Coding /
+// Settings) in a follow-up PR; for now they keep the legacy route nav
+// so navigation does not break during the transition.
 
 import {
   createContext,
@@ -26,55 +31,33 @@ import {
 } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { IrisyState } from './primitives/IrisyMascot';
-import type { L2ItemDescriptor } from './L2Panel';
 import { invoke } from '../lib/bridge';
 import styles from './PrimaryRail.module.css';
 
-// L1 nav ids — bao 2026-05-30 钦定: ▾ workspace toggle (top) + 3 nav
-// (Irisy 助理 / Irisy Create / Coding) + Settings (bottom). No home
-// button. Workbench / Vault / Pool moved into workspace area or
-// retired.
-const ASSIST_ITEM_ID = 'builtin-assist';
-const CREATE_ITEM_ID = 'builtin-create';
+// L1 nav ids — bao 2026-05-30 (ADR-002 §2): ▾ workspace toggle (top) +
+// 2 nav (Irisy / Coding) + Settings (bottom). ADR-002 §7 target is 4
+// chips (Keycap / Vault / Coding / Settings) opening NSWindow content;
+// rewiring deferred to a follow-up PR.
+const IRISY_ITEM_ID = 'builtin-irisy';
 const CODING_ITEM_ID = 'coding';
 const SETTINGS_ITEM_ID = 'settings';
 
 interface RailContextValue {
   irisyState: IrisyState;
   setIrisyState: (state: IrisyState) => void;
-  /** Which L1 item is selected — drives the L2 panel content when open. */
+  /** Which L1 item is selected. */
   activeRailId: string | null;
   setActiveRailId: (id: string | null) => void;
-  /** Is the L2 column expanded? Default false. */
-  l2Open: boolean;
-  setL2Open: (open: boolean) => void;
-  /** Per-L1-id L2 descriptor. Routes register via `useL2`. */
-  l2ByRailId: Record<string, L2ItemDescriptor | undefined>;
-  setL2For: (id: string, descriptor: L2ItemDescriptor | null) => void;
 }
 
 const RailContext = createContext<RailContextValue | null>(null);
 
 export const RailProvider = ({ children }: { children: ReactNode }): ReactElement => {
   const [irisyState, setIrisyState] = useState<IrisyState>('idle');
-  const [activeRailId, setActiveRailId] = useState<string | null>(ASSIST_ITEM_ID);
-  const [l2Open, setL2Open] = useState(false);
-  const [l2ByRailId, setL2ByRailId] = useState<Record<string, L2ItemDescriptor | undefined>>({});
-  const setL2For = useCallback((id: string, descriptor: L2ItemDescriptor | null) => {
-    setL2ByRailId((prev) => ({ ...prev, [id]: descriptor ?? undefined }));
-  }, []);
+  const [activeRailId, setActiveRailId] = useState<string | null>(IRISY_ITEM_ID);
   const value = useMemo<RailContextValue>(
-    () => ({
-      irisyState,
-      setIrisyState,
-      activeRailId,
-      setActiveRailId,
-      l2Open,
-      setL2Open,
-      l2ByRailId,
-      setL2For,
-    }),
-    [irisyState, activeRailId, l2Open, l2ByRailId, setL2For],
+    () => ({ irisyState, setIrisyState, activeRailId, setActiveRailId }),
+    [irisyState, activeRailId],
   );
   return <RailContext.Provider value={value}>{children}</RailContext.Provider>;
 };
@@ -83,15 +66,6 @@ export const useRail = (): RailContextValue => {
   const ctx = useContext(RailContext);
   if (!ctx) throw new Error('useRail must be used inside <RailProvider>');
   return ctx;
-};
-
-/** Register the L2 descriptor for a given L1 id. Clears on unmount. */
-export const useL2 = (railId: string, descriptor: L2ItemDescriptor | null): void => {
-  const { setL2For } = useRail();
-  useEffect(() => {
-    setL2For(railId, descriptor);
-  }, [railId, descriptor, setL2For]);
-  useEffect(() => () => setL2For(railId, null), [railId, setL2For]);
 };
 
 // Inline icons — kept inline because the L1 set is short, fixed, and
@@ -133,27 +107,20 @@ interface RailDef {
   icon: ReactElement;
 }
 
-// 助理 icon — circle + chat tail (Irisy default companion).
-const AssistIcon = (): ReactElement => (
+// Irisy icon — eye (iris) inside a soft chat halo. Single user-facing
+// companion; the create-mode used to have its own icon (plus-in-square)
+// but Irisy is one persona now, internal modes invisible.
+const IrisyIcon = (): ReactElement => (
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
     strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="12" cy="11" r="6" />
+    <circle cx="12" cy="11" r="2.2" fill="currentColor" stroke="none" />
     <path d="M9 17l-2 3 4-2" />
   </svg>
 );
 
-// Create icon — plus inside square (make a new keycap).
-const CreateIcon = (): ReactElement => (
-  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
-    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="4" y="4" width="16" height="16" rx="2" />
-    <path d="M12 8v8M8 12h8" />
-  </svg>
-);
-
 const NAV_ITEMS: ReadonlyArray<RailDef> = [
-  { id: ASSIST_ITEM_ID, label: 'Irisy 助理', path: '/', icon: <AssistIcon /> },
-  { id: CREATE_ITEM_ID, label: 'Irisy Create', path: '/irisy?intent=create-keycap', icon: <CreateIcon /> },
+  { id: IRISY_ITEM_ID, label: 'Irisy', path: '/', icon: <IrisyIcon /> },
   { id: CODING_ITEM_ID, label: 'Coding', path: '/coding', icon: <CodingIcon /> },
 ];
 
@@ -161,9 +128,9 @@ const SETTINGS_PATH = '/settings/ctrl';
 
 const idForPath = (pathname: string): string => {
   if (pathname.startsWith('/coding')) return CODING_ITEM_ID;
-  if (pathname.startsWith('/irisy')) return CREATE_ITEM_ID;
   if (pathname.startsWith('/settings')) return SETTINGS_ITEM_ID;
-  return ASSIST_ITEM_ID;
+  // `/irisy` is now an alias landing on Irisy (no separate Create item).
+  return IRISY_ITEM_ID;
 };
 
 export const PrimaryRail = (): ReactElement => {

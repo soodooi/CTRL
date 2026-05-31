@@ -8,6 +8,24 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
+// Re-export manifest schema types + Zod parsers so consumers don't reach
+// into a deeper module path (`@ctrl/keycap-sdk/manifest-schema`). Keep
+// the surface flat: one package, one import path.
+export type {
+  L2NavItem,
+  WorkspaceTab,
+  WorkspaceDeclaration,
+  UiSurface,
+  WorkspaceUi,
+} from './manifest-schema';
+export {
+  L2NavItem as L2NavItemSchema,
+  WorkspaceTab as WorkspaceTabSchema,
+  WorkspaceDeclaration as WorkspaceDeclarationSchema,
+  UiSurface as UiSurfaceSchema,
+  WorkspaceUi as WorkspaceUiSchema,
+} from './manifest-schema';
+
 /* ---------- Types ---------- */
 
 export interface KeycapInfo {

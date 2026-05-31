@@ -1,0 +1,113 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+}
+
+.tabBar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 var(--space-3);
+  background: var(--color-bg-l1);
+  border-bottom: 1px solid var(--color-border-soft);
+  flex-shrink: 0;
+  min-height: 36px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabBar::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.tab:hover:not([data-active]) {
+  color: var(--color-text);
+}
+
+.tab[data-active] {
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
+}
+
+.tab:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-accent), transparent 70%);
+  outline-offset: -2px;
+  border-radius: var(--radius-xs);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-6);
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.placeholder {
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.placeholderTitle {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+}
+
+.placeholderMeta {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  color: var(--color-text-muted);
+}
+
+.placeholderMeta code {
+  background: var(--color-bg-l2);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+}
+
+.placeholderHint {
+  color: var(--color-text-soft);
+}
+
+.placeholderBody {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-bg-l1);
+  border-left: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-soft);
+}
