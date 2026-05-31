@@ -32,13 +32,10 @@ import {
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
-import { Keyboard, KEYCAP_DRAG_MIME } from './components/Keyboard';
-import { KeycapNav } from './components/KeycapNav';
-import { RailProvider, PrimaryRail, useRail } from './components/PrimaryRail';
-import { L2Panel } from './components/L2Panel';
+import { KEYCAP_DRAG_MIME } from './components/Keyboard';
+import { RailProvider, PrimaryRail } from './components/PrimaryRail';
 import { InfraBar } from './components/InfraBar';
 import { IrisyChat } from './components/irisy/IrisyChat';
-import { KeycapOutputPane } from './components/workspace/KeycapOutputPane';
 import { DefaultWorkspace } from './routes/default';
 import { useCompanionWindow } from './hooks/useCompanionWindow';
 import { useWorkspaceStore } from './lib/workspace-store';
@@ -75,7 +72,6 @@ function useTrayBridge(): void {
 }
 
 function RootShellInner(): ReactElement {
-  const { l2Open } = useRail();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
@@ -115,19 +111,10 @@ function RootShellInner(): ReactElement {
   );
 
   return (
-    <div className={styles.shell} data-l2={l2Open ? 'open' : 'closed'}>
+    <div className={styles.shell}>
       <div className={styles.status}>
         <StatusBar />
       </div>
-      <div className={styles.subnav}>
-        <KeycapNav />
-      </div>
-      <div className={styles.l2}>
-        <L2Panel />
-      </div>
-      <aside className={styles.keycap} aria-label="Keycap panel">
-        <Keyboard />
-      </aside>
       <main
         className={styles.main}
         data-drag-over={dragOver || undefined}
@@ -144,9 +131,6 @@ function RootShellInner(): ReactElement {
       <div className={styles.l1}>
         <PrimaryRail />
       </div>
-      <aside className={styles.dialog} aria-label="Secondary dialog">
-        <KeycapOutputPane />
-      </aside>
     </div>
   );
 }

@@ -17,13 +17,12 @@
 
 .shell {
   display: grid;
-  grid-template-rows: var(--statusbar-height) 1fr var(--dialog-height);
+  grid-template-rows: var(--statusbar-height) 1fr;
   grid-template-columns:
-    var(--l1-width) var(--l2-width) var(--keycap-pane-width) 1fr var(--irisy-pane-width) var(--sub-nav-width);
+    var(--l1-width) 1fr var(--irisy-pane-width);
   grid-template-areas:
-    'status status status status status status'
-    'l1     l2     keycap main   irisy  subnav'
-    'l1     l2     keycap main   dialog dialog';
+    'status status status'
+    'l1     main   irisy';
   height: 100vh;
   height: 100dvh;
   background: var(--color-bg-l0);
@@ -31,40 +30,19 @@
   overflow: hidden;
   position: relative;
   --l1-width: 48px;
-  --sub-nav-width: 48px;
-  --l2-width: 0px;
-  --keycap-pane-width: 320px;
   --irisy-pane-width: 430px;
-  --dialog-height: 240px;
-}
-.shell[data-l2='open'] {
-  --l2-width: 240px;
 }
 
-/* COMPANION mode — narrow window collapses middle, keeps L1 (left) +
-   Irisy visible. Threshold 960 px. */
+/* COMPANION mode — main collapses; only L1 + Irisy visible.
+   Threshold 960 px. bao 2026-05-30: 主窗 430 时只 [L1 48][Irisy 382]. */
 @media (max-width: 959px) {
   .shell {
-    /* L1 on the LEFT, Irisy fills the rest. 副 nav hidden in companion. */
-    grid-template-columns: var(--l1-width) 0 0 0 calc(100% - var(--l1-width)) 0;
-    grid-template-rows: var(--statusbar-height) 1fr 0;
-    --dialog-height: 0px;
+    grid-template-columns: var(--l1-width) 0 calc(100% - var(--l1-width));
   }
-  .subnav, .l2, .keycap, .main, .dialog { display: none; }
+  .main { display: none; }
 }
 
 .status { grid-area: status; }
-.subnav { grid-area: subnav; min-height: 0; }
-.l2 { grid-area: l2; min-height: 0; }
-.keycap {
-  grid-area: keycap;
-  min-height: 0;
-  border-right: 1px solid var(--color-border-soft);
-  background: var(--color-bg-l1);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 .main {
   grid-area: main;
   min-width: 0;
@@ -97,17 +75,6 @@
   overflow: hidden;
 }
 .l1 { grid-area: l1; min-height: 0; }
-.dialog {
-  grid-area: dialog;
-  min-height: 0;
-  min-width: 0;
-  border-top: 1px solid var(--color-border-soft);
-  border-left: 1px solid var(--color-border-soft);
-  background: var(--color-bg-l1);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 
 .versionPill {
   position: absolute;
