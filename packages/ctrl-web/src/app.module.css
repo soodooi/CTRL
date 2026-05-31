@@ -1,31 +1,33 @@
 /*
- * App shell — 2-column shell (bao 2026-05-31, ADR-002 §7).
+ * App shell — 2-column shell (bao 2026-05-31, ADR-002 §7 amended).
  *
  * Column order LEFT → RIGHT:
- *   [L2 reserved 0/var] [L1 48] [Irisy 430]
+ *   [L1 48] [Irisy 430]
  *
- * L2 = reserved slot for the active NSWindow tab's sub-nav. Width is
- * driven by the NSWindow workspace via a Tauri event setting
- * `data-l2-open` on the shell root; 0 = hidden. Sits visually between
- * the NSWindow workspace (separate Tauri child window, glued left of
- * main via NSWindow.addChildWindow) and the L1 rail.
+ * Main window width = 48 + 430 = 478px. **NEVER CHANGES.** L1 and Irisy
+ * positions are locked — neither moves when the NSWindow workspace opens
+ * or when an active tab declares L2 sub-nav.
  *
- * L1 (PrimaryRail) chips OPEN NSWindow with chip-specific content
- * (Keycap / Vault / Coding / Settings). L1 no longer switches `main`
- * routes — `main` column retired. `<Outlet />` stays mounted hidden so
- * legacy routes still register; full route retirement = next PR.
+ * L2 sub-nav (when an active workspace tab declares one) lives INSIDE
+ * the NSWindow workspace, not in this main window. Earlier design had
+ * L2 as a column in this shell — that pushed L1+Irisy when L2 opened,
+ * which bao explicitly rejected ("L1 和 Irisy 位置不变"). Reverted.
  *
- * Total default width: 0 + 48 + 430 = 478px (ambient dock).
+ * L1 (PrimaryRail) chips OPEN the NSWindow workspace (separate Tauri
+ * child window via addChildWindow, glued left of main). The main shell
+ * itself never changes shape.
+ *
+ * `<Outlet />` stays mounted hidden so legacy routes still register;
+ * full route retirement = next PR.
  */
 
 .shell {
   display: grid;
   grid-template-rows: var(--statusbar-height) 1fr;
-  grid-template-columns:
-    var(--l2-width) var(--l1-width) var(--irisy-pane-width);
+  grid-template-columns: var(--l1-width) var(--irisy-pane-width);
   grid-template-areas:
-    'status status status'
-    'l2     l1     irisy';
+    'status status'
+    'l1     irisy';
   height: 100vh;
   height: 100dvh;
   background: var(--color-bg-l0);
@@ -34,26 +36,9 @@
   position: relative;
   --l1-width: 48px;
   --irisy-pane-width: 430px;
-  --l2-width: 0px;
-}
-
-/* L2 expanded when active NSWindow tab declares sub-nav. */
-.shell[data-l2-open] {
-  --l2-width: 200px;
 }
 
 .status { grid-area: status; }
-
-/* L2 = reserved sub-nav slot (left of L1). 0 px until active NSWindow tab
-   sets `data-l2-open` on `.shell` root. Always present in the grid so
-   the column can animate from 0 → expanded without layout jump. */
-.l2 {
-  grid-area: l2;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--color-bg-l1);
-  border-right: 1px solid var(--color-border-soft);
-}
 
 /* Legacy <Outlet /> host — kept mounted invisible so registered routes
    don't error on lookup. Visually retired in this amendment; functional
