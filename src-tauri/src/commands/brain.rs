@@ -101,14 +101,35 @@ async fn inspect_registry(
 
     let mut out: Vec<BrainView> = Vec::with_capacity(brains.len());
     for entry in brains.into_iter() {
-        let binary_path = which_binary(&entry.command);
+        // Bug 2 fix (bao 2026-05-30 "切到 claude 没切成"): binary lookup
+        // must read ~/.ctrl/brains.toml override first — the launchd
+        // PATH for an installed .app does NOT contain Homebrew, so the
+        // plain `which claude` falls through and we report binary_path
+        // = null even when the user has it at /opt/homebrew/bin/claude.
+        // brain_config::command_for already follows the same resolver
+        // the LLM adapter registration uses; reuse it here so the two
+        // surfaces (registration + brain_detect) agree.
+        let resolved_command = crate::kernel::brain_config::command_for(&entry.id)
+            .unwrap_or_else(|| entry.command.clone());
+        let binary_path = if std::path::Path::new(&resolved_command).is_absolute()
+            && std::path::Path::new(&resolved_command).is_file()
+        {
+            Some(resolved_command.clone())
+        } else {
+            which_binary(&resolved_command)
+        };
         let version = match &binary_path {
             Some(path) => probe_version(path).await,
             None => None,
         };
+        // Bug 1 fix: CLI brains (claude_code / codex / gemini) have no
+        // healthz endpoint — only Pi exposes one on its MCP port. For
+        // CLI brains, "reachable" must mean "binary is present + we
+        // resolved its path", NOT "healthz returns 200". The old logic
+        // returned reachable=false unconditionally for every CLI brain.
         let reachable = match entry.healthz_url() {
             Some(url) => probe_healthz(&client, &url).await,
-            None => false,
+            None => binary_path.is_some(),
         };
         let adapter_available = entry.adapter.is_some();
         let mcp_url = entry.mcp_url();
