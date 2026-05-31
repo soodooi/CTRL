@@ -85,13 +85,14 @@ export default function register(pi: PiExtensionApi): void {
   pi.registerProvider(BRIDGE_PROVIDER_NAME, {
     api: BRIDGE_PROVIDER_NAME,
     // Pi's registerProvider validates that any provider declaring
-    // `models` also declares a `baseUrl` — even when `streamSimple`
-    // bypasses HTTP entirely. We supply a placeholder pseudo-URL
-    // (loopback localhost is the most honest description; the actual
-    // POST target port is resolved via env at stream time, not from
-    // this string). bao 2026-05-31: "Provider ctrl-bridge: baseUrl is
-    // required when defining models" on extension load.
+    // `models` must also declare `baseUrl` AND (`apiKey` | `oauth`),
+    // even when `streamSimple` bypasses HTTP entirely and never reads
+    // either field. Placeholder values keep validation happy; the real
+    // transport target is read from env (`CTRL_PROVIDER_PORT`) at
+    // stream time. bao 2026-05-31 (118-trail): two-step probe surfaced
+    // "baseUrl required" then "apiKey or oauth required".
     baseUrl: 'http://127.0.0.1',
+    apiKey: 'ctrl-bridge-streamSimple-bypass',
     models: [BRIDGE_MODEL_NAME],
     streamSimple: (model, ctx, opts) => streamFromKernel(model, ctx, opts),
   });
@@ -125,7 +126,11 @@ async function* streamFromKernel(
 
   const body = JSON.stringify({
     messages: assembleMessages(ctx),
-    model,
+    // Pi delivers `model` as a `Model<Api>` object (`{id, name, ...}`),
+    // but the kernel /text-chat endpoint takes the bare id string. Pick
+    // the most string-like field; fall back to empty so the registry
+    // routes to the active provider's default.
+    model: normalizeModel(model),
     capability: 'text.chat',
   });
 
@@ -238,12 +243,53 @@ function parseEventPayload(event: string, raw: string): PiStreamEvent | null {
 function assembleMessages(ctx: PiStreamContext): PiMessage[] {
   const out: PiMessage[] = [];
   if (ctx.system && ctx.system.length > 0) {
-    out.push({ role: 'system', content: ctx.system });
+    out.push({ role: 'system', content: normalizeContent(ctx.system) });
   }
   for (const m of ctx.messages) {
-    out.push({ role: m.role, content: m.content });
+    out.push({ role: m.role, content: normalizeContent(m.content) });
   }
   return out;
+}
+
+/** Pi delivers `model` as `Model<Api>` (`{id, name, ...}`) rather than a
+ *  bare string. The kernel /text-chat endpoint takes a string id; pick
+ *  the most string-like field. bao 2026-05-31 (118-trail): "HTTP 422:
+ *  model: invalid type: map, expected a string". */
+function normalizeModel(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value == null) return '';
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.id === 'string') return obj.id;
+    if (typeof obj.name === 'string') return obj.name;
+  }
+  return '';
+}
+
+/** Pi delivers `content` as either a plain string OR an array of Anthropic-
+ *  style blocks (`[{type:"text", text:"..."}]`). The kernel /text-chat
+ *  endpoint takes a string; collapse arrays by joining each block's text
+ *  field. Anything we can't recognize falls back to JSON.stringify so the
+ *  call doesn't silently lose payload. bao 2026-05-31 (118-trail): "HTTP
+ *  422: messages[0].content: invalid type: sequence, expected a string". */
+function normalizeContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((b) => {
+        if (b == null) return '';
+        if (typeof b === 'string') return b;
+        if (typeof b === 'object' && 'text' in b) {
+          const t = (b as { text?: unknown }).text;
+          return typeof t === 'string' ? t : '';
+        }
+        return '';
+      })
+      .filter((s) => s.length > 0)
+      .join('');
+  }
+  if (value == null) return '';
+  return JSON.stringify(value);
 }
 
 function safeJson(raw: string): unknown {
