@@ -272,6 +272,34 @@ export function IrisyChat(): React.ReactElement {
     };
   }, []);
 
+  // Pi-reachability polling. The boot init useEffect above fires once on
+  // mount; if Pi was still starting then, pi.reachable was false and the
+  // composer stays in the upgrade-stub state forever. Poll irisy_init
+  // every 5 s while the stub is showing so the textarea unlocks as soon
+  // as the brain comes online — without forcing the user to Cmd+R.
+  useEffect(() => {
+    if (!upgradeStub) return undefined;
+    let cancelled = false;
+    const tick = async (): Promise<void> => {
+      try {
+        const next = await invoke<IrisyStatus>('irisy_init');
+        if (cancelled) return;
+        setStatus(next);
+        setStatusError(null);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setStatusError(e instanceof Error ? e.message : 'irisy_init failed');
+      }
+    };
+    const id = window.setInterval(() => {
+      void tick();
+    }, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [upgradeStub]);
+
   useEffect(() => {
     if (!scrollerRef.current) return;
     scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
