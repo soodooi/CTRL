@@ -1,0 +1,21 @@
+# Anthropic Messages API (BYOK) — direct HTTPS to api.anthropic.com.
+# Uses the user's own ANTHROPIC API key (billed to their API account);
+# the CLI / OAuth subscription path is `claude-oauth.toml`.
+
+id = "anthropic-api"
+label = "Anthropic (BYOK API key)"
+kind = "http_api"
+shape = "anthropic_messages"
+endpoint = "https://api.anthropic.com"
+models = [
+  "claude-sonnet-4-6-fast",
+  "claude-sonnet-4-6",
+  "claude-opus-4-7",
+  "claude-haiku-4-5",
+]
+description = "Anthropic Messages API (BYOK). Bring your own api.anthropic.com key."
+capabilities = ["text.chat"]
+
+[auth]
+source = "keychain"
+account = "anthropic"

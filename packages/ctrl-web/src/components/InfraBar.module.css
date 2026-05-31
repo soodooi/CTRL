@@ -1,0 +1,60 @@
+/* InfraBar — bottom of Irisy chat, above input window.
+ * Compact substrate-state chip row (ENGINE, MCP, VAULT). */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  height: 32px;
+  background: var(--color-bg-l1);
+  border-top: 1px solid var(--color-border-soft);
+  flex-shrink: 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 20px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  user-select: none;
+}
+
+.chipButton {
+  appearance: none;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out-quart),
+              border-color var(--duration-fast) var(--ease-out-quart),
+              background-color var(--duration-fast) var(--ease-out-quart);
+}
+.chipButton:hover {
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: var(--color-bg-l3);
+}
+.chipButton:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.chipLabel {
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  color: var(--color-text-soft);
+  text-transform: uppercase;
+}
+
+.chipValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  letter-spacing: 0.04em;
+}

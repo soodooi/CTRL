@@ -7,8 +7,14 @@ import type { ViewerProps } from '@/lib/viewer-registry';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
 
+const basenameFromUri = (uri: string): string => {
+  const last = uri.split('/').pop() ?? '';
+  return decodeURIComponent(last.split('?')[0] ?? '');
+};
+
 export const ImageViewer = ({ resource }: ViewerProps): ReactElement => {
   const [zoom, setZoom] = useState<'fit' | 'actual'>('fit');
+  const altText = basenameFromUri(resource.uri);
 
   const rightActions = (
     <div className={styles.modeToggle}>
@@ -37,7 +43,7 @@ export const ImageViewer = ({ resource }: ViewerProps): ReactElement => {
       <div className={styles.imageStage} data-zoom={zoom}>
         <img
           src={resource.uri}
-          alt={resource.uri}
+          alt={altText}
           className={styles.imageEl}
           decoding="async"
           loading="lazy"

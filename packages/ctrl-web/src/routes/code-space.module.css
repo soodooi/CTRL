@@ -182,10 +182,10 @@
   background: var(--color-surface-elevated);
 }
 
-.csdStatusPill_open { color: var(--color-success, #2dbf6c); }
-.csdStatusPill_connecting { color: var(--color-warning, #d4a017); }
+.csdStatusPill_open { color: var(--color-success); }
+.csdStatusPill_connecting { color: var(--color-warning); }
 .csdStatusPill_error,
-.csdStatusPill_closed { color: var(--color-danger, #b00020); }
+.csdStatusPill_closed { color: var(--color-danger); }
 
 .csdTerminal {
   position: relative;
@@ -422,12 +422,12 @@
 }
 
 .csdBtnDanger {
-  border-color: var(--color-danger, #b00020);
-  color: var(--color-danger, #b00020);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .csdBtnDanger:hover {
-  background: color-mix(in oklch, var(--color-danger, #b00020) 12%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
 }
 
 .csdBanner {
@@ -443,9 +443,9 @@
   grid-column: 1 / -1;
   margin: 0 var(--space-6);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger, #b00020);
+  border: 1px solid var(--color-danger);
   border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--color-danger, #b00020) 8%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 8%, transparent);
   color: var(--color-text);
   font-family: var(--font-sans);
   font-size: var(--text-sm);

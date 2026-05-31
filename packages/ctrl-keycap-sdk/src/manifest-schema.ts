@@ -7,9 +7,18 @@
 // breaking changes bump `manifest_version` so the kernel can detect +
 // migrate old keycaps.
 //
-// Schema reflects what the 16 v1 builtin keycaps actually use:
-//   share/modules/builtin/<id>/manifest.json
-// plus fields explicitly reserved for OAuth (Pattern E) and MCP server
+// Schema covers two manifest generations:
+//  - v1: legacy shape that the original 16 demo keycaps used (deleted in
+//    PR #62 "drop hermes, clear demo keycaps"). v1 manifests now consist
+//    of only the 2 builtins in packages/ctrl-keycaps/builtin/ + any
+//    user-installed keycaps under ~/.ctrl/keycaps/. Fields like the flat
+//    `permissions: string[]` list survive for back-compat parsing.
+//  - v2: ADR-024 6-axis composition model (additive top-level fields:
+//    builtin / pattern / brain_capabilities / ui_surface / skills /
+//    cap_asset). v1 parsers still accept v2 manifests because all v2
+//    fields are optional; v2 parsers respect the v1 shape.
+//
+// Plus fields explicitly reserved for OAuth (Pattern E) and MCP server
 // (Pattern D) variants the kernel already routes.
 
 import { z } from 'zod';
@@ -32,6 +41,9 @@ export const KeycapVariant = z.enum([
   'cli-wrapper',     // wraps an external CLI binary (Pattern B)
   'stss-publisher',  // listens on ST-SS bridge for events (Pattern F)
   'local-agent',     // long-running local process (Pattern C)
+  'skill',           // SKILL.md run by the active brain — the workbench's
+                     // primary create path (source/SKILL.md → ctrl skill →
+                     // 键帽). See ADR-022.
 ]);
 export type KeycapVariant = z.infer<typeof KeycapVariant>;
 
@@ -423,19 +435,70 @@ export const CliWrapperSource = z.object({
   args: z.array(z.string()).optional(),
 });
 
+/** Skill source — the keycap is backed by a SKILL.md the active brain runs
+ *  (ADR-022). `entry` is the markdown file inside the keycap dir
+ *  (`~/.ctrl/keycaps/<id>/SKILL.md`); `upstream` records where it came from
+ *  (GitHub `owner/repo` or URL) for Pool discovery + Patch-tier sync. */
+export const SkillSource = z.object({
+  type: z.literal('skill'),
+  entry: z.string().min(1).default('SKILL.md'),
+  upstream: z.string().optional(),
+  /** Local skill name — the active brain CLI (e.g. Claude Code) already has
+   *  this skill in its skills dir (user/plugin skill), so the kernel runs it
+   *  natively by name (no clone). When present this wins over `upstream`. The
+   *  brain activates the skill from the run prompt; CTRL only routes + hands
+   *  it the keycap's working folder to write artifacts into. */
+  skill: z.string().optional(),
+});
+
 export const Source = z.discriminatedUnion('type', [
   McpSource,
   BuiltinSource,
   OAuthSource,
   CliWrapperSource,
+  SkillSource,
 ]);
 export type Source = z.infer<typeof Source>;
+
+// ── I/O ports (workbench wiring — JSON Schema typed) ─────────────────────
+// A keycap declares typed input/output ports so the workbench canvas can
+// validate connections STRUCTURALLY (output schema ⊑ input schema) at
+// connect-time, not at run-time (ADR-022 / brief §3). JSON Schema is the
+// cross-language standard and matches MCP tool I/O (ADR-013).
+
+/** An embedded JSON Schema document. Permissive record — the workbench
+ *  checks structural compatibility between ports, it does not validate the
+ *  schema grammar itself. Binary/stream payloads pass by reference
+ *  (handle/URI), never inlined (brief §8). */
+export const JsonSchemaDoc = z.record(z.string(), z.unknown());
+export type JsonSchemaDoc = z.infer<typeof JsonSchemaDoc>;
+
+export const IoPort = z.object({
+  /** Stable port id, referenced by workbench edges. */
+  id: z.string().min(1).regex(/^[a-z0-9_]+$/, {
+    message: 'port id must be lowercase + underscore',
+  }),
+  label: z.string().optional(),
+  /** JSON Schema describing the value this port carries. */
+  schema: JsonSchemaDoc,
+  /** Inputs only: must be wired before the keycap can run. Ignored on outputs. */
+  required: z.boolean().default(true),
+});
+export type IoPort = z.infer<typeof IoPort>;
+
+export const KeycapIo = z.object({
+  inputs: z.array(IoPort).default([]),
+  outputs: z.array(IoPort).default([]),
+});
+export type KeycapIo = z.infer<typeof KeycapIo>;
 
 // ── Icon (legacy string OR richer asset descriptor) ─────────────────────
 
 /** Icon address. Two shapes coexist:
  *  - **Legacy string** — Lucide name OR single Unicode char (what the
- *    16 v0.1 builtins use). Preserved indefinitely for back-compat.
+ *    original demo builtins used; deleted PR #62, but shape preserved
+ *    indefinitely for back-compat with user-installed keycaps and the
+ *    current builtin-assist / builtin-create manifests).
  *  - **Object form** — for SVG / Lottie / dotLottie state machines
  *    routed through IconRenderer (28d6873). The workshop icon palette
  *    emits this form; legacy keycaps emit strings.
@@ -505,6 +568,70 @@ export type DraftMeta = z.infer<typeof DraftMeta>;
 
 // ── Top-level manifest ──────────────────────────────────────────────────
 
+// ── ADR-024 v2 axes (additive to v1; v1 manifests skip all of these) ────
+
+/** ADR-010 7-pattern axis — routes execution. G=builtin/StepEngine,
+ *  D=3rd-party MCP, B=CLI wrapper, C=daemon RPC, E=OAuth, F=ST-SS,
+ *  A=HTTP sink. Optional on v1 manifests (variant carries the same info). */
+export const KeycapPattern = z.enum(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+export type KeycapPattern = z.infer<typeof KeycapPattern>;
+
+/** ADR-024 brain capability requirement — declared per-capability with
+ *  optional provider lock. provider_pin = null → runtime walks the
+ *  fallback chain (ADR-011). Explicit id (e.g. "volc", "claude-cli")
+ *  pins this capability for this keycap. model_hint is advisory. */
+export const BrainCapabilityRequirement = z.object({
+  provider_pin: z.string().nullable().default(null),
+  model_hint: z.string().optional(),
+});
+/** Map of capability id → requirement. Keys are well-known capability
+ *  names: text.chat / text.embed / image.generate / image.edit /
+ *  image.understand / audio.stt / audio.tts.
+ *
+ *  ECC review C3 (2026-05-30): Zod v4 `z.record` requires the two-arg
+ *  form `(keySchema, valueSchema)` — the single-arg form errors at
+ *  schema construction time and would throw when parsing any v2
+ *  manifest with brain_capabilities. */
+export const BrainCapabilities = z.record(z.string(), BrainCapabilityRequirement);
+export type BrainCapabilities = z.infer<typeof BrainCapabilities>;
+
+/** Single file-copy directive for cap_asset.files.items. */
+const CapAssetFileItem = z.object({
+  src: z.string(),
+  dest: z.string(),
+});
+
+/** Single seed-file directive for cap_asset.vault.seed. Either inline
+ *  string content OR a pointer to an already-bundled `cap_asset.files`
+ *  dest path. Empty .gitkeep entries use neither (just create the file). */
+const CapAssetSeedItem = z.object({
+  dest: z.string(),
+  content_inline: z.string().optional(),
+  content_from: z.string().optional(),
+});
+
+/** ADR-024 axis 6 — install-time provisioning bundle.
+ *
+ *  - cap_asset.files: static immutables copied to ~/.ctrl/keycaps/<id>/assets/
+ *    (replicated from the manifest at install + healed on every launch
+ *    if user deletes them).
+ *  - cap_asset.vault: user-facing folder reservation under the vault
+ *    root. Path is vault-relative (e.g. "keycaps/builtin-assist/").
+ *    Seed files populate first-run state (README, settings stubs, etc).
+ */
+export const CapAsset = z.object({
+  files: z.object({
+    items: z.array(CapAssetFileItem).default([]),
+  }).optional(),
+  vault: z.object({
+    path: z.string(),
+    seed: z.array(CapAssetSeedItem).default([]),
+  }).optional(),
+});
+export type CapAsset = z.infer<typeof CapAsset>;
+
+// ── Top-level manifest ───────────────────────────────────────────────────
+
 export const KeycapManifest = z.object({
   /** JSON schema URL — informational, not enforced. */
   $schema: z.string().url().optional(),
@@ -514,8 +641,11 @@ export const KeycapManifest = z.object({
     message: 'id must be lowercase alphanumeric + . - _',
   }),
 
-  /** Manifest format version. v1 = current; bump on breaking schema changes. */
-  manifest_version: z.literal(1).default(1),
+  /** Manifest format version. v1 = legacy; v2 = ADR-024 6-axis composition
+   *  model (adds cap_asset / brain_capabilities / ui_surface / pattern /
+   *  builtin). Either is accepted by parseManifest; new manifests should
+   *  use v2. The kernel loader reads v2-only fields when manifest_version=2. */
+  manifest_version: z.union([z.literal(1), z.literal(2)]).default(1),
 
   /** Human-readable name (i18n-friendly; can be CJK). */
   name: z.string().min(1),
@@ -539,8 +669,10 @@ export const KeycapManifest = z.object({
   tags: z.array(z.string()).optional(),
 
   /**
-   * Legacy flat permission list (16 v0.1 builtins still use this).
-   * Prefer `capabilities` (structured, gate-enforceable) for new manifests.
+   * Legacy flat permission list (the original demo builtins used this;
+   * deleted PR #62. Kept for back-compat with any user keycap still on
+   * the v1 shape). Prefer `capabilities` (structured, gate-enforceable)
+   * for new manifests.
    */
   permissions: z.array(Permission).optional(),
 
@@ -566,8 +698,13 @@ export const KeycapManifest = z.object({
   /** Tells the kernel which dispatch path to use. */
   variant: KeycapVariant.default('builtin'),
 
-  /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper). */
+  /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper / skill). */
   source: Source.optional(),
+
+  /** Typed I/O ports for workbench composition (ADR-022). Each port carries
+   *  a JSON Schema; the canvas validates connections structurally at
+   *  connect-time. Optional — one-shot keycaps that are never composed omit it. */
+  io: KeycapIo.optional(),
 
   /** Role of this keycap in the CTRL surface. Orthogonal to `variant`:
    *  variant says *how* it runs, target says *what role* it plays.
@@ -592,8 +729,10 @@ export const KeycapManifest = z.object({
    *  second copy of user state" philosophy. */
   provider_passthrough: z.boolean().optional(),
 
-  /** Actions the user can invoke. Most keycaps have exactly one. */
-  actions: z.array(Action).min(1),
+  /** Actions the user can invoke (step-engine keycaps). `skill` / `mcp` /
+   *  external-source keycaps run via their `source` instead and may omit
+   *  this entirely; when present it must list at least one action. */
+  actions: z.array(Action).min(1).optional(),
 
   /** Trigger hints (hotkey / context-menu / spotlight); engine TBD. */
   triggers: z.array(z.object({
@@ -615,6 +754,39 @@ export const KeycapManifest = z.object({
    *  Patch/Fork tiers of the 3-tier adjustment model. Absent on
    *  greenfield + Config-tier keycaps. */
   lineage: Lineage.optional(),
+
+  // ── ADR-024 v2 axes ─────────────────────────────────────────────────
+
+  /** True iff this is one of CTRL's built-in keycaps (lives in
+   *  packages/ctrl-keycaps/builtin/, seeded into ~/.ctrl/keycaps/ on
+   *  every launch). The shell self-repairs deleted builtins. v2 only. */
+  builtin: z.boolean().optional(),
+
+  /** ADR-010 7-pattern routing axis. Orthogonal to `variant` (variant
+   *  pre-dates ADR-010; pattern is the canonical successor). v2 only. */
+  pattern: KeycapPattern.optional(),
+
+  /** Per-capability brain provider requirements (ADR-024 §3). v2 only.
+   *  Replaces the singular `target=brain` model: a keycap can require
+   *  multiple modalities simultaneously (poster needs text.chat +
+   *  image.generate + image.edit) and lock provider per capability. */
+  brain_capabilities: BrainCapabilities.optional(),
+
+  /** Top-level alias for workspace.ui (ADR-024 §2 axis 5). When both are
+   *  set, ui_surface wins. v2 manifests should use ui_surface; v1
+   *  manifests using workspace.ui continue to work unchanged. */
+  ui_surface: WorkspaceUi.optional(),
+
+  /** Skill recipes the brain reads as context. Resolved via 3-tier lookup
+   *  per ADR-024 §3.5: vault/skills/<id>.md > ~/.claude/skills/<id>.md >
+   *  ~/.ctrl/keycaps/<id>/assets/skills/<id>.md. v2 only. */
+  skills: z.array(z.string()).optional(),
+
+  /** Install-time provisioning bundle (ADR-024 axis 6). v2 only. The
+   *  bundled `files.items[]` carry the keycap's icon / persona.md /
+   *  templates; `vault.path` reserves the keycap's user-facing folder
+   *  with optional seed structure. */
+  cap_asset: CapAsset.optional(),
 });
 export type KeycapManifest = z.infer<typeof KeycapManifest>;
 

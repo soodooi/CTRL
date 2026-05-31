@@ -63,10 +63,10 @@
 .error {
   margin-top: var(--space-1);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-danger, #b00020);
+  border: 1px solid var(--color-danger);
   border-radius: var(--radius-sm);
-  color: var(--color-danger, #b00020);
-  background: color-mix(in oklch, var(--color-danger, #b00020) 6%, transparent);
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 6%, transparent);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   display: flex;
@@ -78,7 +78,7 @@
 .retry {
   background: transparent;
   border: none;
-  color: var(--color-danger, #b00020);
+  color: var(--color-danger);
   text-decoration: underline;
   cursor: pointer;
   font-family: var(--font-mono);
@@ -187,10 +187,10 @@
 }
 
 .stopBtn {
-  border-color: var(--color-danger, #b00020);
-  color: var(--color-danger, #b00020);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .stopBtn:hover {
-  background: color-mix(in oklch, var(--color-danger, #b00020) 12%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
 }

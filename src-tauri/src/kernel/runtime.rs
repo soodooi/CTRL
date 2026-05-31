@@ -17,10 +17,10 @@
 use crate::kernel::capability::CapabilityBroker;
 use crate::kernel::effect::EffectExecutor;
 use crate::kernel::event::EventBus;
-use crate::kernel::llm_port::LlmPortRouter;
 use crate::kernel::local_storage::{default_db_path as ls_default_db_path, LocalStorage};
 use crate::kernel::mcp_host::McpHost;
 use crate::kernel::persistence::EventStore;
+use crate::kernel::provider::{self, ProviderRegistry};
 use crate::kernel::scheduler::Scheduler;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -33,7 +33,10 @@ pub struct KernelRuntime {
     pub mcp_host: Arc<McpHost>,
     pub effect_executor: Arc<EffectExecutor>,
     pub event_store: Arc<EventStore>,
-    pub llm_port: Arc<LlmPortRouter>,
+    /// Provider sub-system (ADR-004 §9.1). Backs `text.chat` for Pi (via
+    /// the bridge HTTP endpoint), Irisy direct invokes, and keycap MCP
+    /// `llm.chat` tool. Replaces the legacy `llm_port` router.
+    pub provider_registry: Arc<ProviderRegistry>,
     /// Per-keycap persistent JSON KV opened against ls_default_db_path so the
     /// MCP server's kv.* tools share state with Tauri storage commands. None
     /// when HOME isn't resolvable (CI / sandboxed test runs).
@@ -58,17 +61,42 @@ impl KernelRuntime {
         let event_store =
             EventStore::open(&db_path).map_err(|e| KernelBootError::EventStoreOpenFailed(e.to_string()))?;
 
-        // ADR-005 / -011 launch posture: Volc Ark (Doubao) is the v1 default
-        // provider; Anthropic + Ollama stay in the fallback chain for BYOK /
-        // local dev. The router only routes to adapters that actually
-        // registered themselves at boot — missing keys → adapter not
-        // registered → router falls through silently.
-        let mut llm_port = LlmPortRouter::new(vec![
-            "volc".into(),
-            "anthropic".into(),
-            
-        ]);
-        crate::kernel::llm_adapters::register_default_adapters(&mut llm_port);
+        // ADR-004 §9.1 provider sub-system. Loads 6 builtin presets
+        // (claude-oauth / anthropic-api / openai-api / volc / kimi /
+        // deepseek) + scans ~/.ctrl/providers/ for user-installed +
+        // bridges legacy ~/.ctrl/config.toml so pre-PR users' keys
+        // keep working.
+        let provider_registry = Arc::new(ProviderRegistry::load());
+
+        // Spawn the HTTP endpoint Pi bridge POSTs to (ADR-004 §9.1
+        // lock #7). Best-effort: if no tokio runtime is active at boot
+        // (Tauri setup() runs on main thread pre-tokio), fall back to a
+        // mini blocking runtime so the listener still binds before the
+        // brain supervisor spawns Pi.
+        {
+            let reg = Arc::clone(&provider_registry);
+            if tokio::runtime::Handle::try_current().is_ok() {
+                tokio::spawn(async move {
+                    match provider::http_endpoint::spawn(reg).await {
+                        Ok(port) => tracing::info!(port, "provider: /text-chat endpoint listening"),
+                        Err(e) => tracing::warn!(error = %e, "provider: /text-chat spawn failed"),
+                    }
+                });
+            } else {
+                tracing::debug!("provider: no tokio runtime in boot context, spawning endpoint inline");
+                if let Ok(rt) = tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+                    let reg2 = Arc::clone(&reg);
+                    rt.spawn(async move {
+                        match provider::http_endpoint::spawn(reg2).await {
+                            Ok(port) => tracing::info!(port, "provider: /text-chat endpoint listening"),
+                            Err(e) => tracing::warn!(error = %e, "provider: /text-chat spawn failed"),
+                        }
+                    });
+                    // Leak the runtime so the spawned task keeps living.
+                    std::mem::forget(rt);
+                }
+            }
+        }
 
         let mcp_host = Arc::new(McpHost::new());
         // Hydrate the MCP server registry from disk so previously
@@ -137,7 +165,7 @@ impl KernelRuntime {
             mcp_host,
             effect_executor: Arc::new(EffectExecutor::new()),
             event_store: Arc::new(event_store),
-            llm_port: Arc::new(llm_port),
+            provider_registry,
             local_storage,
             booted_at: Instant::now(),
         })

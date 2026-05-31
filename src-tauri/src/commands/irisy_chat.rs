@@ -1,46 +1,59 @@
-// irisy_chat_stream Tauri command — Irisy → active brain keycap → stream back.
+// irisy_chat_stream — Irisy → Pi brain MCP → stream back.
 //
-// Contract (mirrors chat_stream's wire so the PWA's existing ChatStreamTransport
-// works with only the command name swapped):
+// ADR-003: Pi is the sole brain. Every Irisy turn goes through the
+// `@ctrl/pi-plugin` MCP server (`ctrl-pi-mcp` on 127.0.0.1:17874) — no
+// `active-brain` branch, no LLM-port fallback. The Pi process inside
+// the plugin loads the `@ctrl/pi-bridge` extension at spawn so its LLM
+// calls go back through the kernel provider sub-system (ADR-004 §9.1).
+//
+// Contract (mirrors chat_stream's wire so the PWA's ChatStreamTransport
+// works unchanged):
 //   invoke('irisy_chat_stream', { args: { request_id, messages, model?,
 //                                          temperature?, max_tokens? } })
-//   listen('chat.stream.delta', payload => { request_id, delta, done, error? })
-//
-// Difference from `chat_stream` (raw LLM): this command resolves the user's
-// **active brain keycap** (~/.ctrl/active-brain → keycap id) and forwards the
-// request to that keycap's MCP server. The brain (e.g. Pi) runs its own agent
-// loop with its own provider config; CTRL is provider-passthrough.
-//
-// "BrainRouter inline" per ADR-001 amendment (2026-05-25): the lookup is a
-// ≤100-LOC helper inside this command, not a separate substrate module.
-//
-// Brain selection (ADR-021):
-//   - The active brain id lives at `~/.ctrl/active-brain` (single line of text;
-//     absent / empty → "pi" default).
-//   - Brain registry + per-brain MCP port + adapter flag are read from
-//     `kernel::brain_config` (defaults + user overrides in
-//     `~/.ctrl/brains.toml`). NO brain id is hardcoded in this file.
-//   - Switching brains is a UI action (`/settings/brain`). The kernel does
-//     NOT yet supervise the brain MCP subprocess — users start `ctrl-pi-mcp`
-//     manually via `npm start` in packages/ctrl-pi-plugin/ for now.
+//   listen('chat-stream-delta', payload => { request_id, delta, done, error? })
 //
 // Wire format (Pi plugin SSE):
 //   event: delta
 //   data: {"delta": "<token>"}
 //
 //   event: done
-//   data: {"jsonrpc":"2.0","id":...,"result":{"content":[{"type":"text","text":"..."}],...}}
+//   data: {"jsonrpc":"2.0","id":...,"result":{"content":[...],...}}
 //
 //   event: error
 //   data: {"message":"..."}
+//
+// Errors surface specific causes (not infinite spinner):
+//   - "Pi brain not started (supervisor: <last_error>)" — supervisor
+//     hasn't spawned the child yet or install failed
+//   - "Pi brain not reachable at <url>: <io error>" — TCP connect /
+//     connection-refused
+//   - "Pi brain stalled (no chunk in 5 s)" — connected but provider
+//     dropped the stream
+//
+// "BrainRouter inline" per ADR-001 amendment (2026-05-25): the lookup
+// is a ≤100-LOC helper inside this command, not a separate substrate
+// module.
+
+use std::time::Duration;
 
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
+use tokio::time::timeout;
 
 use crate::commands::chat::MessageWire;
+use crate::shell::KernelHandle;
+
+/// The Pi brain MCP server's loopback endpoint. Matches the default in
+/// `@ctrl/pi-plugin`'s mcp-server.ts (port 17874).
+const PI_BRAIN_MCP_URL: &str = "http://127.0.0.1:17874/mcp";
+
+/// Hard ceiling on time we wait for the first SSE chunk after a
+/// successful POST. Past this, we assume the provider is stalled and
+/// surface a specific error instead of an infinite spinner.
+const FIRST_CHUNK_DEADLINE: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Deserialize)]
 pub struct IrisyChatStreamArgs {
@@ -66,21 +79,25 @@ struct StreamDelta {
 #[tauri::command]
 pub async fn irisy_chat_stream(
     args: IrisyChatStreamArgs,
+    _kernel: State<'_, KernelHandle>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let brain_id = resolve_active_brain();
-    let url = brain_mcp_url(&brain_id).ok_or_else(|| {
-        format!(
-            "active brain '{brain_id}' has no known MCP endpoint. \
-             Open /settings/brain and pick a brain with a shipped adapter."
-        )
-    })?;
+    // Fail-fast surface: if the supervisor knows the brain isn't up,
+    // surface its specific reason instead of a 5 s TCP timeout.
+    if let Some(reason) = crate::shell::brain_supervisor::last_error() {
+        let request_id = args.request_id.clone();
+        let app_clone = app.clone();
+        let msg = format!("Pi brain not started: {reason}");
+        tokio::spawn(async move {
+            emit_done(&app_clone, &request_id, Some(msg));
+        });
+        return Ok(());
+    }
 
     let request_id = args.request_id.clone();
     let app_clone = app.clone();
-
     tokio::spawn(async move {
-        if let Err(e) = forward_to_brain(&app_clone, &request_id, &url, args).await {
+        if let Err(e) = forward_to_brain(&app_clone, &request_id, args).await {
             emit_done(&app_clone, &request_id, Some(e));
         }
     });
@@ -88,27 +105,9 @@ pub async fn irisy_chat_stream(
     Ok(())
 }
 
-// ── BrainRouter inline (ADR-021) ────────────────────────────────────────────
-//
-// Brain id + MCP URL come from `kernel::brain_config`. The router does
-// not hardcode any brain id — switching brains is a matter of writing
-// the new id to `~/.ctrl/active-brain` (via the Settings UI's
-// `brain_set_active` command) and reloading the registry.
-
-fn resolve_active_brain() -> String {
-    crate::kernel::brain_config::active_brain_id()
-}
-
-fn brain_mcp_url(brain_id: &str) -> Option<String> {
-    crate::kernel::brain_config::brain_mcp_url(brain_id)
-}
-
-// ── HTTP + SSE forwarding ────────────────────────────────────────────────────
-
 async fn forward_to_brain(
     app: &AppHandle,
     request_id: &str,
-    url: &str,
     args: IrisyChatStreamArgs,
 ) -> Result<(), String> {
     let body = json!({
@@ -128,7 +127,7 @@ async fn forward_to_brain(
     });
 
     let mut req = Client::new()
-        .post(url)
+        .post(PI_BRAIN_MCP_URL)
         .header("Content-Type", "application/json")
         .header("Accept", "text/event-stream");
     if let Ok(token) = std::env::var("CTRL_PI_TOKEN") {
@@ -138,9 +137,11 @@ async fn forward_to_brain(
     }
 
     let response = req.json(&body).send().await.map_err(|e| {
+        let hint = crate::shell::brain_supervisor::last_error()
+            .map(|r| format!(" (supervisor: {r})"))
+            .unwrap_or_default();
         format!(
-            "Pi brain not reachable at {url}: {e}. \
-             Start it with `cd packages/ctrl-pi-plugin && npm start`."
+            "Pi brain not reachable at {PI_BRAIN_MCP_URL}: {e}{hint}"
         )
     })?;
 
@@ -155,9 +156,30 @@ async fn forward_to_brain(
     let mut stream = response.bytes_stream();
     let mut buf = String::new();
     let mut current_event = String::new();
+    let mut saw_first_chunk = false;
 
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| format!("stream read error: {e}"))?;
+    loop {
+        let next = if saw_first_chunk {
+            // Once we've seen any chunk, fall back to indefinite wait —
+            // the provider may legitimately produce slow tokens.
+            stream.next().await
+        } else {
+            match timeout(FIRST_CHUNK_DEADLINE, stream.next()).await {
+                Ok(item) => item,
+                Err(_) => {
+                    return Err(format!(
+                        "Pi brain stalled (no chunk in {} s); provider may be \
+                         unreachable",
+                        FIRST_CHUNK_DEADLINE.as_secs()
+                    ));
+                }
+            }
+        };
+        let Some(chunk) = next else {
+            break;
+        };
+        let bytes = chunk.map_err(|e| format!("Pi brain stream read error: {e}"))?;
+        saw_first_chunk = true;
         buf.push_str(&String::from_utf8_lossy(&bytes));
         while let Some(nl) = buf.find('\n') {
             let line = buf[..nl].trim_end_matches('\r').to_string();
@@ -199,7 +221,7 @@ fn handle_sse_payload(
             let p: DeltaPayload = serde_json::from_str(data)
                 .map_err(|e| format!("malformed delta SSE payload: {e}"))?;
             let _ = app.emit(
-                "chat.stream.delta",
+                "chat-stream-delta",
                 StreamDelta {
                     request_id: request_id.to_string(),
                     delta: p.delta,
@@ -229,7 +251,7 @@ fn handle_sse_payload(
 
 fn emit_done(app: &AppHandle, request_id: &str, error: Option<String>) {
     let _ = app.emit(
-        "chat.stream.delta",
+        "chat-stream-delta",
         StreamDelta {
             request_id: request_id.to_string(),
             delta: String::new(),

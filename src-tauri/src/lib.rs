@@ -26,15 +26,56 @@ mod error;
 mod kernel;
 mod shell;
 
+/// Initialize tracing to stderr AND `~/.ctrl/ctrl.log`. A Finder-launched
+/// .app has its stderr discarded by LaunchServices, so the file mirror is the
+/// only way to diagnose boot / hotkey / Accessibility behavior in the shipped
+/// app. The log is truncated on each launch (fresh per run); best-effort —
+/// falls back to stderr-only if `$HOME` can't be resolved.
+fn init_tracing() {
+    use tracing_subscriber::prelude::*;
+
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let stderr_layer = tracing_subscriber::fmt::layer();
+
+    let log_path = std::env::var_os("HOME").map(|home| {
+        let dir = std::path::PathBuf::from(home).join(".ctrl");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("ctrl.log");
+        let _ = std::fs::File::create(&path); // truncate: fresh log per launch
+        path
+    });
+
+    match log_path {
+        Some(path) => {
+            let file_layer = tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(move || {
+                    std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&path)
+                        .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap())
+                });
+            let _ = tracing_subscriber::registry()
+                .with(filter)
+                .with(stderr_layer)
+                .with(file_layer)
+                .try_init();
+        }
+        None => {
+            let _ = tracing_subscriber::registry()
+                .with(filter)
+                .with(stderr_layer)
+                .try_init();
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(target_os = "macos")]
 pub fn run() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .try_init();
+    init_tracing();
 
     let builder = tauri::Builder::default()
         // Single-instance lock — Spotlight / Dock re-launch reveals the
@@ -68,13 +109,26 @@ pub fn run() {
     // applicationShouldHandleReopen fires RunEvent::Reopen. Default Tauri
     // behavior does nothing on Reopen when all windows are hidden — we
     // explicitly toggle cloak → reveal so Dock click works as "show CTRL".
-    app.run(|app, event| {
-        if let tauri::RunEvent::Reopen { .. } = event {
+    app.run(|app, event| match event {
+        tauri::RunEvent::Reopen { .. } => {
             tracing::info!("dock reopen: revealing window");
             if let Err(err) = shell::WindowController::reveal(app) {
                 tracing::error!(?err, "dock reopen reveal failed");
             }
         }
+        // Launcher contract (mirrors the Windows path): closing the last
+        // window must NOT quit the tray-resident app. code = None means
+        // user-initiated (window closed / Cmd-Q) → keep running in the tray.
+        // code = Some(_) is an explicit shutdown (tray Quit) → kill the Pi
+        // brain child so the next launch doesn't collide on port 17874.
+        tauri::RunEvent::ExitRequested { api, code, .. } => {
+            if code.is_none() {
+                api.prevent_exit();
+            } else {
+                shell::BrainSupervisor::shutdown();
+            }
+        }
+        _ => {}
     });
 }
 
@@ -87,12 +141,7 @@ pub fn run() {
 // would later race the supervisor's. Removed per pre-merge review.
 #[cfg(target_os = "windows")]
 pub fn run() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .try_init();
+    init_tracing();
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -124,6 +173,10 @@ pub fn run() {
             // code = Some(_) means explicit shutdown (tray Quit menu) — let it through.
             if code.is_none() {
                 api.prevent_exit();
+            } else {
+                // Real quit — kill the Pi brain child so the next launch
+                // doesn't collide on port 17874.
+                shell::BrainSupervisor::shutdown();
             }
         }
     });

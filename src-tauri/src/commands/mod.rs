@@ -14,7 +14,8 @@
 // Skeleton stage (sub-PR b): each handler returns NotImplementedYet so the
 // JS bridge can be wired before kernel integration in sub-PR c.
 
-pub mod brain;
+// brain retired per ADR-003 (Pi is the sole brain — see file header
+// for context); module not declared so the file is not compiled.
 pub mod chat;
 pub mod code_space;
 pub mod config;
@@ -25,9 +26,11 @@ pub mod irisy_chat;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
+pub mod skills;
 pub mod storage;
 pub mod stss;
 pub mod system;
+pub mod updater;
 pub mod vault;
 pub mod workshop;
 
@@ -49,10 +52,11 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::chat::chat_stream,
             // irisy_chat — brain-routed streaming (Irisy → active brain keycap MCP)
             $crate::commands::irisy_chat::irisy_chat_stream,
-            // brain — cc-switch style switcher (ADR-021)
-            $crate::commands::brain::brain_list,
-            $crate::commands::brain::brain_detect,
-            $crate::commands::brain::brain_set_active,
+            // brain switcher retired per ADR-003 — Pi is the sole brain.
+            // Pi version + upgrade controls live in system::pi_status /
+            // pi_upgrade_now.
+            $crate::commands::system::pi_status,
+            $crate::commands::system::pi_upgrade_now,
             // irisy — init status (kernel llm / Pi brain / mcp bridge)
             $crate::commands::irisy::irisy_init,
             // system — kernel health (PWA status bar Phase 1F)
@@ -60,9 +64,29 @@ macro_rules! pwa_invoke_handler {
             // system — explicit window hide for the StatusBar × button
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,
+            // system — dynamic window growth for COMPANION mode
+            // (bao 2026-05-30: "整个窗口往下流")
+            $crate::commands::system::set_window_height,
+            $crate::commands::system::position_window_top_right,
+            // system — two-window companion: main = chat history,
+            // input = textarea (separate Tauri window below main)
+            $crate::commands::system::spawn_input_window,
+            $crate::commands::system::set_input_window_height,
+            $crate::commands::system::activate_input_window,
+            // system — workspace expansion via main window self-resize
+            // (bao 2026-05-30 final clarification: "左侧打开的意思，
+            // 不是浮窗"). Main slides left edge 430 ↔ 1600. CSS @media
+            // drives the expanded grid. No independent NSWindow.
+            $crate::commands::system::toggle_workspace_window,
+            // updater — safe macOS relaunch after auto-update (Chrome-style
+            // detached helper, sidesteps the Tauri 2 race)
+            $crate::commands::updater::safe_relaunch_after_update,
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::open_workspace,
+            // skills — kernel-local skill discovery (ADR-023 Phase 1)
+            $crate::commands::skills::search_skills,
+            $crate::commands::skills::list_local_skills,
             // stss
             $crate::commands::stss::subscribe,
             $crate::commands::stss::publish,

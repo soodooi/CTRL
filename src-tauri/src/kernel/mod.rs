@@ -18,7 +18,6 @@
 #![allow(dead_code)]
 
 pub mod actor;
-pub mod brain_config;
 pub mod cache;
 pub mod capability;
 pub mod capability_resolver;
@@ -26,11 +25,10 @@ pub mod channel;
 pub mod effect;
 pub mod event;
 pub mod local_storage;
-pub mod llm_adapters;
-pub mod llm_port;
 pub mod mcp_host;
 pub mod mcp_server;
 pub mod persistence;
+pub mod provider;
 pub mod runtime;
 pub mod scheduler;
 pub mod stss_bridge;
@@ -44,7 +42,7 @@ pub use capability::{CapToken, Capability, CapabilityBroker, CapabilityError};
 pub use channel::{Channel, ChannelError, ChannelOptions, ChannelRx, ChannelTx, DropPolicy};
 pub use effect::{Effect, EffectExecutor, HttpMethod};
 pub use event::{Cell, CellKind, Event, EventBus, EventFilter, Op, OpKind};
-pub use llm_port::{LlmAdapter, LlmChunk, LlmError, LlmMessage, LlmPortRouter, LlmPrompt};
+pub use provider::{LlmChunk, LlmError, LlmMessage, LlmPrompt};
 pub use mcp_host::{McpHost, McpServerDescriptor, McpServerSource, McpToolDescriptor};
 pub use mcp_server::{McpServerHandle, DEFAULT_LISTEN_ADDR as MCP_SERVER_LISTEN_ADDR};
 pub use persistence::EventStore;

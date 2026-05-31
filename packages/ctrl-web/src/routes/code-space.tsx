@@ -29,7 +29,7 @@ import {
   ClusterWorkspace,
   type ClusterSource,
 } from '@/components/workspace/ClusterWorkspace';
-import { useRail } from '@/components/RightRail';
+import { useRail } from '@/components/PrimaryRail';
 import { csList, csSpawn, type CsSpawnArgs } from '@/lib/kernel';
 import { formatHHMMSS } from '@/hooks/useWallClock';
 import { useTerminalBuffer } from '@/hooks/useTerminalBuffer';
@@ -578,9 +578,9 @@ export const CodeSpaceDetailRoute = (): ReactElement => {
                 style={{
                   color:
                     entry.tone === 'error'
-                      ? 'var(--color-danger, #b00020)'
+                      ? 'var(--color-danger)'
                       : entry.tone === 'warn'
-                        ? 'var(--color-warning, #d4a017)'
+                        ? 'var(--color-warning)'
                         : undefined,
                 }}
               >

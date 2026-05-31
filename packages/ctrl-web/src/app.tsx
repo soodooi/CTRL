@@ -1,10 +1,16 @@
 // App root — TanStack Router setup + React Query provider + the cockpit
-// shell (StatusBar / Keyboard / Workspace / RightRail).
+// shell.
 //
-// Per decision_pwa_two_panel_layout (bao 2026-05-22): the shell is a
-// 3-column grid — keyboard on the left always, workspace in the middle
-// hosting the active route, right rail on the right for context items.
-// No iPhone bezels, no bottom tab.
+// 2026-05-29 restructure (bao): shell is a 4-column grid (left → right):
+//   [ Display (route Outlet) | Irisy chat (fixed) | L2 nav | L1 nav (icons) ]
+// + StatusBar (top, full width) and a version pill anchored bottom-left.
+//
+// Irisy chat is SHELL-LEVEL and does NOT unmount on route change — it is
+// the fixed assistant resource across assistant / workbench / workspace
+// surfaces (bao 2026-05-29).
+//
+// The Keyboard component used to live in a fixed left rail; it is now
+// route content (rendered into the display area where appropriate).
 
 import {
   lazy,
@@ -26,9 +32,12 @@ import {
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
-import { Keyboard, KEYCAP_DRAG_MIME } from './components/Keyboard';
-import { RailProvider, RightRail, useRail } from './components/RightRail';
+import { KEYCAP_DRAG_MIME } from './components/Keyboard';
+import { RailProvider, PrimaryRail } from './components/PrimaryRail';
+import { InfraBar } from './components/InfraBar';
+import { IrisyChat } from './components/irisy/IrisyChat';
 import { DefaultWorkspace } from './routes/default';
+import { useCompanionWindow } from './hooks/useCompanionWindow';
 import { useWorkspaceStore } from './lib/workspace-store';
 import styles from './app.module.css';
 
@@ -63,17 +72,11 @@ function useTrayBridge(): void {
 }
 
 function RootShellInner(): ReactElement {
-  const { irisySubPanel, activeRailId } = useRail();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
   const [dragOver, setDragOver] = useState(false);
-
-  // Per bao 2026-05-26 ("the right-side level-1 nav is fixed"): only Irisy carries a
-  // level-2 panel. Vault / Pool / Settings navigate directly without
-  // expanding the rail, so panel visibility collapses to a single check.
-  const subPanelState =
-    activeRailId === 'irisy' && irisySubPanel != null ? 'open' : 'none';
+  useCompanionWindow();
 
   // Drag-over only flips when our custom MIME is present — text drags
   // from outside the cockpit don't paint the drop affordance.
@@ -88,8 +91,6 @@ function RootShellInner(): ReactElement {
   }, []);
 
   const handleDragLeave = useCallback((e: DragEvent<HTMLElement>) => {
-    // Only clear when leaving the workspace element itself — child
-    // re-entries fire dragleave on the parent unhelpfully otherwise.
     if (e.currentTarget === e.target) setDragOver(false);
   }, []);
 
@@ -100,8 +101,6 @@ function RootShellInner(): ReactElement {
       setDragOver(false);
       const id = e.dataTransfer.getData(KEYCAP_DRAG_MIME);
       if (!id) return;
-      // Resolve keycap name from the cached list_keycaps query — we
-      // already have it from the Keyboard rail's render.
       const cache = queryClient.getQueryData<Array<{ id: string; name: string }>>(['keycaps']);
       const summary = cache?.find((k) => k.id === id);
       if (!summary) return;
@@ -112,15 +111,12 @@ function RootShellInner(): ReactElement {
   );
 
   return (
-    <div className={styles.shell} data-sub-panel={subPanelState}>
+    <div className={styles.shell}>
       <div className={styles.status}>
         <StatusBar />
       </div>
-      <div className={styles.keyboard}>
-        <Keyboard />
-      </div>
       <main
-        className={styles.workspace}
+        className={styles.main}
         data-drag-over={dragOver || undefined}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -128,8 +124,12 @@ function RootShellInner(): ReactElement {
       >
         <Outlet />
       </main>
-      <div className={styles.rail}>
-        <RightRail />
+      <div className={styles.irisy}>
+        <IrisyChat />
+        <InfraBar />
+      </div>
+      <div className={styles.l1}>
+        <PrimaryRail />
       </div>
     </div>
   );
@@ -179,11 +179,9 @@ const PoolRoute = lazy(() =>
 const VaultRoute = lazy(() =>
   import('./routes/vault').then((m) => ({ default: m.VaultRoute })),
 );
-// icon-lab is a development-only renderer bake-off. It imports
-// `lottie-react` for the side-by-side comparison — having that second
-// engine in a production chunk violates SKILL.md §7. Gating the dynamic
-// import behind `import.meta.env.DEV` lets Vite tree-shake the entire
-// route + its `lottie-react` dependency out of production builds.
+const WorkbenchRoute = lazy(() =>
+  import('./routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),
+);
 const IconLabRoute = import.meta.env.DEV
   ? lazy(() =>
       import('./routes/icon-lab').then((m) => ({ default: m.IconLabRoute })),
@@ -241,6 +239,15 @@ const vaultRoute = createRoute({
     </Suspense>
   ),
 });
+const workbenchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/workbench',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <WorkbenchRoute />
+    </Suspense>
+  ),
+});
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/workspace',
@@ -250,10 +257,6 @@ const workspaceRoute = createRoute({
     </Suspense>
   ),
 });
-// /settings — three sub-pages selected from the right-rail level-2
-// panel. Bare /settings is a redirect shim to /settings/ctrl so old
-// tray-bridge / keyboard system-key flows that pointed at the legacy
-// single page keep working.
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -340,6 +343,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   poolRoute,
   vaultRoute,
+  workbenchRoute,
   workspaceRoute,
   settingsRoute,
   settingsCtrlRoute,

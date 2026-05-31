@@ -178,6 +178,42 @@ fn install_into(
         .to_string();
     validate_keycap_id(&id)?;
 
+    // ECC review C2 (2026-05-30): refuse to write `server_code` for any
+    // manifest variant whose runtime executor doesn't exist yet. The
+    // historical install_keycap path expected `variant: "mcp-server"`
+    // (Pattern D) where `server_code` is a TS file spawned as an MCP
+    // server. Pattern G / A / others have no executor for arbitrary user
+    // TS today; writing the file would just dead-code it on disk and
+    // create a future attack surface when an executor wires up without
+    // anyone reading this code path again.
+    //
+    // Empty server_code is always fine. Non-empty server_code is only
+    // accepted when the manifest declares `variant: "mcp-server"` (or
+    // the legacy `source.type == "mcp"` shape that pre-dates the v0.2
+    // schema migration).
+    if !args.server_code.is_empty() {
+        let variant = args
+            .manifest
+            .get("variant")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let source_type = args
+            .manifest
+            .get("source")
+            .and_then(|s| s.get("type"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let mcp_shape = variant == "mcp-server" || source_type == "mcp";
+        if !mcp_shape {
+            return Err(format!(
+                "install_keycap refuses non-empty server_code for variant '{variant}' / \
+                 source.type '{source_type}' — only Pattern D (variant=mcp-server) has a \
+                 runtime executor for arbitrary TS. Submit an empty server_code or \
+                 declare a manifest with variant=mcp-server."
+            ));
+        }
+    }
+
     let target = dir.join(&id);
     fs::create_dir_all(&target).map_err(|e| format!("create dir {target:?}: {e}"))?;
 
@@ -186,9 +222,11 @@ fn install_into(
     fs::write(target.join("manifest.json"), &manifest_bytes)
         .map_err(|e| format!("write manifest.json: {e}"))?;
 
-    let server_filename = sanitize_server_filename(&args.server_code_filename);
-    fs::write(target.join(&server_filename), &args.server_code)
-        .map_err(|e| format!("write {server_filename}: {e}"))?;
+    if !args.server_code.is_empty() {
+        let server_filename = sanitize_server_filename(&args.server_code_filename);
+        fs::write(target.join(&server_filename), &args.server_code)
+            .map_err(|e| format!("write {server_filename}: {e}"))?;
+    }
 
     Ok(manifest_to_summary(&args.manifest, &id))
 }
@@ -397,6 +435,10 @@ pub async fn run_keycap(
         KeycapDispatch::McpInvoke { server_id, tool_name } => {
             run_mcp_invoke(&kernel, &args, &stream_id, &server_id, &tool_name).await
         }
+        KeycapDispatch::SkillRun { id, skill } => {
+            crate::commands::skills::run_skill(&kernel.bridge, &stream_id, &id, &skill, &args.input)
+                .await
+        }
         KeycapDispatch::Stub => Ok(serde_json::json!({
             "stub": true,
             "keycap_id": args.keycap_id,
@@ -409,6 +451,11 @@ pub async fn run_keycap(
 
     match result {
         Ok(output) => {
+            tracing::info!(
+                keycap_id = %args.keycap_id,
+                duration_ms,
+                "run_keycap ok"
+            );
             kernel.bridge.publish_op(Op {
                 kind: OpKind::KeycapCompleted,
                 ts_ms: now_ms(),
@@ -422,6 +469,12 @@ pub async fn run_keycap(
             Ok(RunKeycapResult { output, duration_ms })
         }
         Err(err_msg) => {
+            tracing::error!(
+                keycap_id = %args.keycap_id,
+                duration_ms,
+                error = %err_msg,
+                "run_keycap failed"
+            );
             // Publish a KeycapFailed Op AND a LlmResponse cell carrying
             // the error text — the PWA workspace surfaces both, but only
             // the cell content is human-readable inline.
@@ -456,6 +509,7 @@ pub async fn run_keycap(
 enum KeycapDispatch {
     TextChat { system: &'static str },
     McpInvoke { server_id: String, tool_name: String },
+    SkillRun { id: String, skill: String },
     Stub,
 }
 
@@ -481,6 +535,23 @@ fn classify_from_installed_manifest(keycap_id: &str) -> Option<KeycapDispatch> {
                 return None;
             }
             Some(KeycapDispatch::McpInvoke { server_id, tool_name })
+        }
+        "skill" => {
+            // Local skill name — the active brain CLI runs it natively. This is
+            // the supported run model (cc-switch-native); a skill source with
+            // only a remote `upstream` and no local `skill` isn't runnable yet.
+            let skill = source
+                .get("skill")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            if skill.is_empty() {
+                return None;
+            }
+            Some(KeycapDispatch::SkillRun {
+                id: keycap_id.to_string(),
+                skill,
+            })
         }
         _ => None,
     }
@@ -520,17 +591,17 @@ async fn run_text_chat(
     system: &'static str,
 ) -> Result<serde_json::Value, String> {
     use crate::kernel::event::{Cell, CellKind};
-    use crate::kernel::llm_port::{LlmMessage, LlmPrompt};
+    use crate::kernel::provider::{LlmMessage, LlmPrompt};
 
     let runtime = &kernel.runtime;
     let adapter = runtime
-        .llm_port
-        .primary_adapter()
+        .provider_registry
+        .primary_text_chat()
         .ok_or_else(|| {
-            "No LLM adapter registered. Run `setup_llm_key volc <key>` to enable Doubao / Volcano Ark."
+            "No text.chat provider available. Open Settings → Brain to pick a provider \
+             (Claude Pro via CLI, Volc, Kimi, DeepSeek, Anthropic API key, OpenAI API key)."
                 .to_string()
-        })?
-        .clone();
+        })?;
 
     // Accept either input.text (simple shape PWA Irisy sends) or
     // input.messages (full multi-turn). The text shape gets wrapped as
@@ -569,10 +640,14 @@ async fn run_text_chat(
         max_tokens: None,
     };
 
+    let opts = crate::kernel::provider::ChatOpts {
+        model: String::new(),
+        deadline_ms: 30_000,
+    };
     let mut rx = adapter
-        .stream_chat("", &prompt, 30_000)
+        .chat_stream(&prompt, &opts)
         .await
-        .map_err(|e| format!("llm stream_chat failed: {e}"))?;
+        .map_err(|e| format!("llm chat_stream failed: {e}"))?;
 
     let mut accumulated = String::new();
     while let Some(item) = rx.recv().await {
@@ -611,7 +686,7 @@ async fn run_text_chat(
 
     Ok(serde_json::json!({
         "content": accumulated,
-        "adapter": adapter.name(),
+        "adapter": adapter.id(),
     }))
 }
 
@@ -831,6 +906,10 @@ mod tests {
             "icon": "T",
             "keycap_color": "amber",
             "version": "0.1.0",
+            // ECC review C2: server_code with non-mcp variant is now refused.
+            // The test passes server_code so declare a variant the gate
+            // accepts.
+            "variant": "mcp-server",
         });
         let args = InstallKeycapArgs {
             manifest: manifest.clone(),

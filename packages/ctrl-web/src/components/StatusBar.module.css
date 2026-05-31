@@ -1,23 +1,34 @@
-/* StatusBar — top instrument cluster. Aviation PFD vocabulary:
+/* StatusBar — top instrument cluster.
  *
- *   green LED  = nominal
- *   amber LED  = caution / waiting
- *   red LED    = warning / error
- *   gray LED   = offline / unknown
+ * Layout (bao 2026-05-30: 顶端左侧 = 状态指示区):
+ *   [KRN ● | ENGINE: <brain> | MCP: N | VAULT: N]    ...    [clock] [×]
  *
- * All readouts use tabular-numeric mono so the values lock vertically.
+ * No brand wordmark in the bar — the chrome stays informational. The
+ * status zone (left) groups kernel + Irisy runtime indicators. Right
+ * cluster is clock + hide.
  */
 
 .bar {
   display: flex;
   align-items: center;
-  gap: var(--space-5);
+  gap: var(--space-3);
   height: var(--statusbar-height);
-  padding: 0 var(--space-4);
+  padding: 8px var(--space-3) 0;
   background: var(--color-bg-l1);
   border-bottom: 1px solid var(--color-border-soft);
   position: relative;
-  /* Thin CTRL-blue stripe along the top edge — instrument bezel. */
+}
+
+/* Guaranteed drag band above the chips. The chips intercept clicks so
+   the user needs a chip-free strip somewhere; the top 8 px of the bar
+   is reserved for that. */
+.dragStrip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: grab;
 }
 .bar::before {
   content: '';
@@ -35,133 +46,118 @@
   pointer-events: none;
 }
 
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  text-decoration: none;
-  color: var(--color-text);
-  padding: 0 var(--space-1);
-  border-radius: 4px;
-  transition: background-color 140ms ease;
-}
-.brand:hover { background: var(--color-bg-l2); }
-.brand:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-.wordmark {
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: var(--weight-black);
-  letter-spacing: 1.5px;
-  color: var(--color-text);
-}
+/* ── Status zone (top-left) ─────────────────────────────────────── */
 
-/* ── Instruments cluster (KRN / MESH / LLM) ─────────────────────── */
-
-.instruments {
+.statusZone {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-3);
-  border-left: 1px solid var(--color-border-soft);
-  border-right: 1px solid var(--color-border-soft);
+  gap: var(--space-2);
   height: 100%;
 }
-.instrument {
+
+.logoSlot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  color: var(--color-text);
+}
+
+.krn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 0 6px;
+  height: 22px;
   font-family: var(--font-mono);
-  font-size: var(--text-mono-sm);
-  font-weight: var(--weight-medium);
+  font-size: var(--text-mono-xs);
   letter-spacing: 0.1em;
   color: var(--color-text-muted);
-}
-.instrumentButton {
-  appearance: none;
-  background: transparent;
-  border: none;
-  padding: 0 2px;
-  cursor: pointer;
   border-radius: 4px;
-  transition: color 140ms ease, background-color 140ms ease;
+  border: 1px solid transparent;
 }
-.instrumentButton:hover {
-  color: var(--color-text);
-  background: var(--color-bg-l2);
-}
-.instrumentLabel { letter-spacing: 0.08em; }
 
-/* LED tone classes moved to Led primitive (./primitives/Led.module.css);
-   StatusBar consumes <Led /> directly. */
-
-/* ── Center tape: sessions / Irisy state ────────────────────────── */
-
-.tape {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-mono-sm);
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tapeMeta {
-  color: var(--color-text-soft);
-  letter-spacing: 0.12em;
-  font-weight: var(--weight-medium);
-  text-transform: uppercase;
-  font-size: var(--text-mono-xs);
-}
-.tapeValue {
-  color: var(--color-text);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  font-weight: var(--weight-medium);
-}
-.tapeSlot {
+.chip {
   display: inline-flex;
   align-items: center;
-}
-.tapeSep {
+  gap: 6px;
+  padding: 0 8px;
+  height: 22px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.06em;
   color: var(--color-text-muted);
-  opacity: 0.5;
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  user-select: none;
 }
 
-/* ── Right cluster: clock + uptime ──────────────────────────────── */
+.chipButton {
+  appearance: none;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out-quart),
+              border-color var(--duration-fast) var(--ease-out-quart),
+              background-color var(--duration-fast) var(--ease-out-quart);
+}
+.chipButton:hover {
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: var(--color-bg-l3);
+}
+.chipButton:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.chipLabel {
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  color: var(--color-text-soft);
+  text-transform: uppercase;
+}
+.chipValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  letter-spacing: 0.04em;
+}
+
+.spacer { flex: 1; }
+
+/* ── Right cluster: clock + hide ────────────────────────────────── */
 
 .right {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
-.time {
-  font-family: var(--font-mono);
-  font-size: var(--text-mono-md);
-  font-weight: var(--weight-medium);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text);
-  letter-spacing: 0.06em;
-}
-.uptime {
+/* Version pill — replaced the clock in the right cluster (bao 2026-05-30):
+   in companion mode the bottom-left VersionPill is hidden, so we need
+   an always-visible upgrade affordance here. */
+.versionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 22px;
   font-family: var(--font-mono);
   font-size: var(--text-mono-xs);
-  letter-spacing: 0.12em;
-  color: var(--color-text-soft);
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  background: var(--color-bg-l2);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
   font-variant-numeric: tabular-nums;
-  font-weight: var(--weight-medium);
-  text-transform: uppercase;
+}
+.updateDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-success), transparent 80%);
 }
 
-/* Hide (×) button — top-right click fallback for when the Ctrl hotkey
-   desyncs (AX permission lost after upgrade, CGEventTap drop, etc.).
-   Lives at the far right of `.right` so bao always has a visible exit. */
 .hideBtn {
   appearance: none;
   display: inline-flex;
@@ -170,9 +166,9 @@
   width: 22px;
   height: 22px;
   padding: 0;
-  margin-left: var(--space-2);
-  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
-  background: var(--color-surface-soft, rgba(0, 0, 0, 0.04));
+  margin-left: var(--space-1);
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
   color: var(--color-text-muted);
   border-radius: 4px;
   font-size: 14px;
@@ -181,11 +177,11 @@
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .hideBtn:hover {
-  background: rgba(255, 80, 80, 0.14);
-  border-color: rgba(255, 80, 80, 0.32);
-  color: #c62828;
+  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
+  border-color: color-mix(in oklch, var(--color-danger) 32%, transparent);
+  color: var(--color-danger);
 }
 .hideBtn:focus-visible {
-  outline: 2px solid var(--color-focus-ring, rgba(0, 0, 0, 0.4));
+  outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }

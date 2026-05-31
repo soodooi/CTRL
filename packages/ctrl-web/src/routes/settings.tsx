@@ -39,7 +39,7 @@ type SettingsTab = 'ctrl' | 'brain' | 'logs';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string; to: string }> = [
   { id: 'ctrl', label: 'General', to: '/settings/ctrl' },
-  { id: 'brain', label: 'Brain', to: '/settings/brain' },
+  { id: 'brain', label: 'Model Integration', to: '/settings/brain' },
   { id: 'logs', label: 'Logs', to: '/settings/logs' },
 ];
 
@@ -313,16 +313,16 @@ const ProvidersBlock = (): ReactElement => {
   );
 };
 
-// Hotkey readout — read-only summary today. Rebinding lives in the
-// system tray (lifecycle.rs owns the chord, PWA can't mutate it yet).
+// Hotkey readout. The lone-Ctrl chord is the fixed launcher hotkey, owned by
+// the native shell (shell/hotkey.rs CGEventTap) — it is intentionally not
+// rebindable, so this is a read-only display, not a control.
 const HotkeyBlock = (): ReactElement => (
   <div className={styles.hotkeyBox}>
     <div className={styles.hotkeyChord}>
       <kbd className={styles.kbd}>Ctrl</kbd>
     </div>
     <p className={styles.hotkeyNote}>
-      Tap to summon or dismiss CTRL. To rebind, open the system tray
-      menu and choose <em>Set hotkey…</em>
+      Tap to summon or dismiss CTRL. This is the fixed launcher hotkey.
     </p>
   </div>
 );

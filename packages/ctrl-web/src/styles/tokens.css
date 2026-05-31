@@ -95,7 +95,7 @@
   --container-full: 100%;
 
   /* === Shell chrome dimensions ============================ */
-  --statusbar-height: 32px;
+  --statusbar-height: 40px;
   --keyboard-width: 320px;
   --rightrail-width: 80px;
   /* Keycap size scale — canonical for any keycap-shaped surface.

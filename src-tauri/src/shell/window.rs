@@ -53,8 +53,19 @@ impl WindowController {
             return Ok(());
         };
         #[cfg(target_os = "windows")]
-        cloak::set(&w, true);
-        tracing::info!("WindowController::prewarm — main cloaked at boot");
+        {
+            cloak::set(&w, true);
+            tracing::info!("WindowController::prewarm — main cloaked at boot");
+        }
+        // macOS: hide the launcher at boot so it stays invisible until the
+        // first Ctrl tap. Without this the tauri.conf `visible: true` window
+        // sits on screen (always-on-top) and can cover the system
+        // Accessibility prompt the hotkey thread raises on first launch.
+        #[cfg(target_os = "macos")]
+        {
+            let _ = w.hide();
+            tracing::info!("WindowController::prewarm — main hidden at boot");
+        }
         Ok(())
     }
 
@@ -137,10 +148,26 @@ impl WindowController {
             if visible {
                 tracing::info!("WindowController::toggle — hide");
                 let _ = w.hide();
+                // Sync hide for the input companion window so users don't
+                // see a stranded textarea floating on screen after Ctrl-hide
+                // (bao 2026-05-30: 'Ctrl 一键 toggle 两个窗口同时显隐').
+                if let Some(input) = app.get_webview_window("input") {
+                    let _ = input.hide();
+                }
+                // Workspace independent window also cascades. macOS
+                // addChildWindow already auto-hides children when parent
+                // hides; the explicit call here is defense-in-depth.
+                if let Some(workspace) = app.get_webview_window("workspace") {
+                    let _ = workspace.hide();
+                }
             } else {
                 tracing::info!("WindowController::toggle — show");
                 let _ = w.show();
                 let _ = w.set_focus();
+                // Same — bring the input companion back up alongside main.
+                if let Some(input) = app.get_webview_window("input") {
+                    let _ = input.show();
+                }
                 // CTRL = launcher popup (Raycast-style): set_focus only raises
                 // the window in z-order; it does NOT pull keyboard focus across
                 // app boundaries. NSApp.activate() is the launcher contract —
@@ -245,7 +272,18 @@ impl WindowController {
     pub fn hide(app: &AppHandle) -> Result<()> {
         if let Some(w) = Self::main(app) {
             tracing::info!("WindowController::hide — explicit user request");
+            // macOS: hide (not destroy) so the launcher stays tray-resident.
+            // Destroying the last window fires ExitRequested → quits the app
+            // (which would also kill the hotkey + Pi supervisor threads).
+            // Mirrors toggle()'s hide branch.
+            #[cfg(target_os = "macos")]
+            let _ = w.hide();
+            #[cfg(not(target_os = "macos"))]
             let _ = w.destroy();
+        }
+        // Sync hide the input companion window too.
+        if let Some(input) = app.get_webview_window("input") {
+            let _ = input.hide();
         }
         Ok(())
     }
@@ -325,6 +363,8 @@ pub(crate) fn install_close_intercept(w: &WebviewWindow, app: &AppHandle, label:
                     if label_for_closure == "main" {
                         #[cfg(target_os = "windows")]
                         cloak::set(&w, true);
+                        #[cfg(target_os = "macos")]
+                        let _ = w.hide();
                     } else {
                         let _ = w.destroy();
                     }

@@ -24,7 +24,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::kernel::llm_port::{LlmMessage, LlmPrompt};
+use crate::kernel::provider::{LlmMessage, LlmPrompt};
 use crate::shell::KernelHandle;
 
 #[derive(Debug, Deserialize)]
@@ -227,11 +227,11 @@ async fn run_llm_step(
     bindings: &HashMap<String, String>,
     kernel: &State<'_, KernelHandle>,
 ) -> StepOutcome {
-    let adapter = match kernel.runtime.llm_port.primary_adapter() {
-        Some(a) => a.clone(),
+    let adapter = match kernel.runtime.provider_registry.primary_text_chat() {
+        Some(a) => a,
         None => {
             return StepOutcome::Error(
-                "no LLM adapter registered — edit ~/.ctrl/config.toml or use Settings → Provider"
+                "no text.chat provider available — open Settings → Brain to pick one"
                     .into(),
             );
         }
@@ -300,9 +300,13 @@ async fn run_llm_step(
         max_tokens,
     };
 
-    let mut rx = match adapter.stream_chat(&model, &llm_prompt, 30_000).await {
+    let opts = crate::kernel::provider::ChatOpts {
+        model: model.clone(),
+        deadline_ms: 30_000,
+    };
+    let mut rx = match adapter.chat_stream(&llm_prompt, &opts).await {
         Ok(rx) => rx,
-        Err(e) => return StepOutcome::Error(format!("stream_chat: {e}")),
+        Err(e) => return StepOutcome::Error(format!("chat_stream: {e}")),
     };
 
     // Drain to a single string — draft preview shows the final output;

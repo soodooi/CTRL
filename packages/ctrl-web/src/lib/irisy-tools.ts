@@ -59,6 +59,50 @@ export const IRISY_TOOLS: ReadonlyArray<IrisyTool> = [
     },
   },
   {
+    name: 'list_local_skills',
+    description:
+      'List skills the active brain ALREADY has locally (user + installed plugin skills) — no GitHub token needed. ALWAYS pass a keyword to narrow (there are hundreds); e.g. query "slide" finds frontend-slides. Prefer this over search_skills: a matching local skill wraps into a keycap directly by name (source.skill). Returns [{name, description, path}].',
+    args: 'query?: string (keyword to filter, e.g. "slide", "pdf")',
+    async execute(args): Promise<unknown> {
+      const query = args.query == null ? undefined : String(args.query);
+      return await invoke(
+        'list_local_skills',
+        query === undefined ? {} : { query },
+      );
+    },
+  },
+  {
+    name: 'search_skills',
+    description:
+      'Search GitHub for installable skills (SKILL.md files) ONLY when no local skill (list_local_skills) matches. Needs a GitHub token; may be unavailable. Returns candidate repos.',
+    args: 'query: string (keywords, e.g. "html slides")',
+    async execute(args): Promise<unknown> {
+      const query = String(args.query ?? args.q ?? '');
+      if (!query) throw new Error('search_skills requires "query"');
+      return await invoke('search_skills', { query });
+    },
+  },
+  {
+    name: 'install_keycap',
+    description:
+      'Install a keycap from a manifest YOU construct. To wrap a LOCAL skill (from list_local_skills) into a keycap, build a manifest like ' +
+      '{"id":"<slug>","name":"<friendly name>","version":"0.1.0","icon":"◆","keycap_color":"cobalt","variant":"skill",' +
+      '"source":{"type":"skill","skill":"<local skill name>"},' +
+      '"io":{"inputs":[{"id":"topic","label":"Topic","schema":{"type":"string"}}],' +
+      '"outputs":[{"id":"result","label":"Output","schema":{"type":"string","contentMediaType":"text/html"}}]}}. ' +
+      'Rules: use source.skill (the local skill name) so the active brain runs it natively — do NOT use upstream for local skills. ALWAYS declare io.inputs (the fields the user fills at run time) and io.outputs (set schema.contentMediaType to the result type, e.g. text/html for slides, text/markdown for docs) so the workspace can render the form + pick the right viewer. After installing it appears on the keyboard.',
+    args: 'manifest: object (the keycap manifest you constructed)',
+    async execute(args): Promise<unknown> {
+      const manifest = args.manifest;
+      if (manifest === null || typeof manifest !== 'object') {
+        throw new Error('install_keycap requires "manifest" (object)');
+      }
+      return await invoke('install_keycap', {
+        args: { manifest, server_code: '', server_code_filename: '' },
+      });
+    },
+  },
+  {
     name: 'vault_search',
     description:
       "Full-text search the user's local markdown vault (FTS5 when available).",

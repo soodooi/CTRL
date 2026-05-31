@@ -31,10 +31,11 @@ pub struct IrisyStatus {
     /// will succeed; degraded UI prompts the user to start the subprocess
     /// (until the kernel supervisor for pi-plugin lands).
     pub pi: PiStatus,
-    /// Active brain keycap id (read from `~/.ctrl/active-brain`; defaults to
-    /// "pi" when the file is absent / empty). PWA shows this in the Settings
-    /// → Brain section so the user can swap brains by editing the file.
-    pub active_brain: String,
+    /// Brain id — always "pi" (Pi is the sole brain per ADR-003).
+    /// Kept as a field for PWA forward-compat; the value is constant
+    /// and the Settings → Brain UI shows Pi status + upgrade controls
+    /// only.
+    pub active_brain: &'static str,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -74,14 +75,14 @@ pub async fn irisy_init(
     let kernel_llm = probe_kernel_llm(&kernel);
     let mcp_bridge = write_handshake_file()?;
     let pi = probe_pi().await;
-    let active_brain = read_active_brain();
+    // ADR-003: Pi is the sole brain; no registry, no ~/.ctrl/active-brain.
+    let active_brain = "pi";
 
     tracing::info!(
         app_version = %app_version,
         adapter = ?kernel_llm.adapter,
         pi_reachable = pi.reachable,
         pi_version = ?pi.version,
-        active_brain = %active_brain,
         "irisy_init ok"
     );
 
@@ -94,62 +95,26 @@ pub async fn irisy_init(
     })
 }
 
-const PI_HEALTHZ_URL: &str = "http://127.0.0.1:17874/healthz";
-const PI_PROBE_TIMEOUT_MS: u64 = 1500;
-
 async fn probe_pi() -> PiStatus {
-    let unreachable = PiStatus {
-        mcp_url: "http://127.0.0.1:17874/mcp".to_string(),
-        reachable: false,
-        version: None,
-    };
-
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(PI_PROBE_TIMEOUT_MS))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return unreachable,
-    };
-
-    let resp = match client.get(PI_HEALTHZ_URL).send().await {
-        Ok(r) if r.status().is_success() => r,
-        _ => return unreachable,
-    };
-
-    let body: serde_json::Value = match resp.json().await {
-        Ok(v) => v,
-        Err(_) => {
-            return PiStatus {
-                reachable: true,
-                ..unreachable
-            };
-        }
-    };
-
-    let version = body
-        .get("pi")
-        .and_then(|p| p.get("version"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
+    // ADR-003: Pi now runs as a stdin RPC subprocess (no HTTP server);
+    // reachability = "supervisor reports a live child". Version comes
+    // from the install metadata cache. PWA shows install/upgrade UI by
+    // calling `pi_status` (commands/system.rs) for the richer surface.
+    let install = crate::shell::pi_install::current_status();
+    let port = crate::shell::brain_supervisor::provider_port();
     PiStatus {
-        mcp_url: "http://127.0.0.1:17874/mcp".to_string(),
-        reachable: true,
-        version,
+        mcp_url: format!("rpc://pi/extension/ctrl-bridge@{port}"),
+        reachable: crate::shell::brain_supervisor::is_running(),
+        version: install.installed_version,
     }
-}
-
-fn read_active_brain() -> String {
-    crate::kernel::brain_config::active_brain_id()
 }
 
 fn probe_kernel_llm(kernel: &State<'_, KernelHandle>) -> KernelLlmStatus {
     let adapter = kernel
         .runtime
-        .llm_port
-        .primary_adapter()
-        .map(|a| a.name().to_string());
+        .provider_registry
+        .primary_text_chat()
+        .map(|p| p.id().to_string());
     KernelLlmStatus {
         ready: adapter.is_some(),
         adapter,

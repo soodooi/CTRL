@@ -23,7 +23,10 @@ export interface UpdateStatus {
   error?: string;
 }
 
-const UPDATE_POLL_MS = 15 * 60 * 1000;
+// Poll cadence — fast enough that new releases surface within ~1 min
+// during active dev (bao 2026-05-30). Once we're shipping less often,
+// bump this back to 15 min to be friendlier to GitHub + battery.
+const UPDATE_POLL_MS = 60 * 1000;
 
 const isTauri = (): boolean =>
   typeof window !== 'undefined' &&
@@ -51,6 +54,22 @@ const checkForUpdate = async (): Promise<UpdateHandle | null> => {
 
 const relaunchApp = async (): Promise<void> => {
   if (!isTauri()) return;
+  // macOS: skip Tauri's `relaunch()` — it races with the in-place .app
+  // replacement and with tauri-plugin-single-instance, leaving the user
+  // with a closed window and no new process (bao 2026-05-30 smoking gun:
+  // `/Applications/CTRL.app` left empty by a half-finished install). The
+  // Rust `safe_relaunch_after_update` command verifies the bundle is
+  // intact, spawns a detached `sh` helper that waits for our PID to die
+  // and then `open`s the bundle via LaunchServices, then we exit.
+  const platform = typeof navigator !== 'undefined'
+    ? navigator.platform.toLowerCase()
+    : '';
+  const isMac = platform.includes('mac');
+  if (isMac) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('safe_relaunch_after_update');
+    return;
+  }
   const { relaunch } = await import('@tauri-apps/plugin-process');
   await relaunch();
 };
@@ -58,6 +77,7 @@ const relaunchApp = async (): Promise<void> => {
 interface UseUpdateStatusReturn extends UpdateStatus {
   checkNow: () => Promise<void>;
   installAndRestart: () => Promise<void>;
+  checkAndInstall: () => Promise<void>;
 }
 
 export const useUpdateStatus = (): UseUpdateStatusReturn => {
@@ -110,6 +130,46 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
     }
   };
 
+  // One-click upgrade for the version row: a single click checks AND
+  // installs in one shot, so the user never has to click twice (once to
+  // discover the update, once to install it). If we already hold a pending
+  // update handle we install it directly; otherwise we check, and if one is
+  // found we download + relaunch immediately — no second click, no Settings
+  // detour. The whole point is "click the version → it upgrades".
+  const checkAndInstall = async (): Promise<void> => {
+    if (!isTauri()) return;
+    if (handle?.available) {
+      await installAndRestart();
+      return;
+    }
+    setStatus((s) => ({ ...s, checking: true, error: undefined }));
+    try {
+      const result = await checkForUpdate();
+      if (!result?.available) {
+        setHandle(null);
+        setStatus({ available: false, checking: false, installing: false });
+        return;
+      }
+      setHandle(result);
+      setStatus({
+        available: true,
+        latestVersion: result.version,
+        notes: result.body,
+        checking: false,
+        installing: true,
+      });
+      await result.downloadAndInstall();
+      await relaunchApp();
+    } catch (err) {
+      setStatus((s) => ({
+        ...s,
+        checking: false,
+        installing: false,
+        error: err instanceof Error ? err.message : 'update failed',
+      }));
+    }
+  };
+
   useEffect(() => {
     void checkNow();
     const id = window.setInterval(() => void checkNow(), UPDATE_POLL_MS);
@@ -117,5 +177,5 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { ...status, checkNow, installAndRestart };
+  return { ...status, checkNow, installAndRestart, checkAndInstall };
 };

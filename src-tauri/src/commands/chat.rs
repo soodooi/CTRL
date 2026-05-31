@@ -3,7 +3,7 @@
 // Contract (defined by PWA's ChatStreamTransport, lib/llm-transport.ts):
 //   invoke('chat_stream', { args: { request_id, messages, model?,
 //                                   temperature?, max_tokens? } })
-//   listen('chat.stream.delta', payload => { request_id, delta, done,
+//   listen('chat-stream-delta', payload => { request_id, delta, done,
 //                                            error? })
 //
 // The command returns immediately; deltas land on the event channel.
@@ -17,7 +17,7 @@
 
 use crate::kernel::capability::{CapToken, CapabilityBroker};
 use crate::kernel::capability_resolver;
-use crate::kernel::llm_port::{LlmMessage, LlmPrompt};
+use crate::kernel::provider::{LlmMessage, LlmPrompt};
 use crate::shell::KernelHandle;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
@@ -81,14 +81,14 @@ pub async fn chat_stream(
 
     let adapter = kernel
         .runtime
-        .llm_port
-        .primary_adapter()
+        .provider_registry
+        .primary_text_chat()
         .ok_or_else(|| {
-            "No LLM adapter registered. Edit ~/.ctrl/config.toml \
-             [providers.volc] api_key = \"...\" then restart CTRL."
+            "No text.chat provider available. Open Settings → Brain to \
+             pick a provider (Claude Pro via CLI, Anthropic API key, \
+             Volc, Kimi, DeepSeek...)."
                 .to_string()
-        })?
-        .clone();
+        })?;
 
     let prompt = LlmPrompt {
         // PWA bakes the system prompt into the messages array; we pass
@@ -113,7 +113,11 @@ pub async fn chat_stream(
     // we held the command open, the listener would never get a chance to
     // attach before our first delta fires.
     tokio::spawn(async move {
-        let result = adapter.stream_chat(&model, &prompt, 30_000).await;
+        let opts = crate::kernel::provider::ChatOpts {
+            model: model.clone(),
+            deadline_ms: 30_000,
+        };
+        let result = adapter.chat_stream(&prompt, &opts).await;
         let mut rx = match result {
             Ok(rx) => rx,
             Err(e) => {
@@ -127,7 +131,7 @@ pub async fn chat_stream(
                 Ok(chunk) => {
                     let done_now = chunk.finish_reason.is_some();
                     let _ = app.emit(
-                        "chat.stream.delta",
+                        "chat-stream-delta",
                         ChatStreamDelta {
                             request_id: request_id.clone(),
                             delta: chunk.delta,
@@ -158,7 +162,7 @@ pub async fn chat_stream(
 
 fn emit_done(app: &AppHandle, request_id: &str, error: Option<String>) {
     let _ = app.emit(
-        "chat.stream.delta",
+        "chat-stream-delta",
         ChatStreamDelta {
             request_id: request_id.to_string(),
             delta: String::new(),

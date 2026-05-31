@@ -17,6 +17,7 @@ supersedes: []
 superseded_by: []
 amends:
   - .olym/decisions/001-system-architecture.md
+  - .olym/decisions/004-kernel-capability-surface.md
   - .olym/decisions/019-ctrl-hermes-plugin-primary.md
 ---
 
@@ -178,3 +179,35 @@ exists. Multi-session history is a follow-up.
 4. Drop `irisy_chat_hermes` + `irisy_upgrade_hermes` + the Hermes
    upgrade button in IrisyChat header once any in-flight hermes branch
    work has landed or been cancelled.
+
+## Amendment 2026-05-29 — brain is local-CLI-first; cloud LLM (Volc) is dev-test only
+
+bao clarified the production brain story, refining §2 + §Consequences above
+and ADR-004's "Volc = v1 launch provider":
+
+1. **Primary brain = a local CLI run as a subprocess — this is the production
+   path.** Pi (`@pi/coding-agent`) is the shipped default; the switcher
+   (§2–§4) points at any local-CLI brain. Model credentials/auth live in that
+   CLI (BYOK or the CLI's own login), never in CTRL cloud — consistent with
+   the 端侧化 / augmentation / "本地是 truth" philosophy: the brain must run
+   with no CTRL-cloud dependency.
+
+2. **Volc (and any direct cloud LLM API) is DEVELOPMENT / TEST ONLY**, not a
+   production launch provider. §Consequences "Good" framed Irisy as working
+   "via the Volc adapter the moment this PR ships" — that holds only as a
+   *developer convenience*. Production Irisy routes to the active local-CLI
+   brain; `chat_stream`/Volc is the fallback used when no brain CLI is
+   reachable (i.e. during dev).
+
+3. **CTRL will ship its own CLI for model access (future).** The long-term
+   product is a CTRL-provided CLI that supplies the model, keeping the brain
+   端侧 and turning model-access into a CTRL offering rather than a
+   third-party dependency. VMark precedent: a local-CLI model integration is
+   commercially proven (VMark ships exactly this), so CTRL adopting it is the
+   intended commercial model, not a constraint.
+
+4. **Status — ADR-021 follow-up #1 is DONE.** The kernel now auto-spawns +
+   supervises the Pi MCP server (`shell::BrainSupervisor`, PR #63); selecting
+   Pi no longer needs a manual `npm start`. The "Cost: user starts Pi
+   manually" caveat is resolved. Volc fallback remains only for the dev case
+   where the brain CLI is absent.

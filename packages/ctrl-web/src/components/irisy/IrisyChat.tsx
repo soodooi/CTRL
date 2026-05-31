@@ -10,6 +10,7 @@
 // gives a direct, fast reply and drives the frontend ReAct tool loop.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
@@ -26,9 +27,11 @@ import {
   parseToolCalls,
 } from '@/lib/irisy-tools';
 import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
+import { useKeycapOutputStore } from '@/lib/keycap-output-store';
 import {
   ensurePromptsBootstrap,
   loadIrisySystemPrompt,
+  IRISY_SYSTEM_DEFAULT,
 } from '@/lib/irisy-prompts';
 import styles from './IrisyChat.module.css';
 
@@ -43,12 +46,17 @@ const ASSISTANT_CALL_TAG_RE =
 const ASSISTANT_CALL_OPEN_PARTIAL_RE =
   /<call\s+name="[^"]*"\s*>(?:(?!<\/call>)[\s\S])*$/;
 
+// Strip tool-call plumbing entirely — the user sees the final natural
+// language reply, not Irisy's internal control plane. The Thinking pip
+// already signals "something is happening". Pattern matches Pi / Cluely
+// (full hide) and the default ChatGPT / Claude.ai behavior (tool plumbing
+// collapsed by default; we drop the collapsed pill too because companion
+// width is too narrow for it to feel like anything but noise).
+// bao 2026-05-30: "为什么用户要看到这些无用的思考过程".
 function renderAssistantContent(text: string): string {
-  let out = text.replace(ASSISTANT_CALL_TAG_RE, (_match, name: string) => {
-    return `[→ ${name}]`;
-  });
-  out = out.replace(ASSISTANT_CALL_OPEN_PARTIAL_RE, '[→ …]');
-  return out;
+  let out = text.replace(ASSISTANT_CALL_TAG_RE, '');
+  out = out.replace(ASSISTANT_CALL_OPEN_PARTIAL_RE, '');
+  return out.trim();
 }
 
 interface KernelLlmStatus {
@@ -90,16 +98,6 @@ const SEED_PROMPTS: readonly string[] = [
   'Help me make a clipboard keycap.',
 ];
 
-const IRISY_SYSTEM_BASE = `You are Irisy, the AI companion built into CTRL — a desktop AI launcher.
-CTRL has keycaps (single-action AI tools), a workspace pane, and you, the
-ambient assistant. You accompany the user across the full keycap lifecycle:
-discovery, creation, configuration, invocation, collaboration, debugging,
-improvement, and retirement.
-
-Keep replies concise. Reply in the user's language. When the user asks
-about their keycaps, use the "Installed keycaps" list below. When they
-ask you to invoke or build one, walk them through it step by step — but
-never invent keycap ids that aren't listed.`;
 
 function buildSystemPrompt(
   systemBase: string,
@@ -147,7 +145,8 @@ export function IrisyChat(): React.ReactElement {
   const [keycaps, setKeycaps] = useState<KeycapSummary[]>([]);
   const [longTermMemory, setLongTermMemory] = useState<string>('');
   const [coreMemory, setCoreMemory] = useState<string>('');
-  const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_BASE);
+  const queryClient = useQueryClient();
+  const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_DEFAULT);
   // `?fresh=1` from the homepage's "New chat" hand-off clears the
   // persisted conversation before this component reads it, so the new
   // session starts genuinely empty even if the URL is hit while a
@@ -219,17 +218,29 @@ export function IrisyChat(): React.ReactElement {
     }
   }, [messages]);
 
-  // Chat path (ADR-001 amendment 2026-05-25 — Pi is the sole brain):
-  //   1. Pi reachable  → irisyChatTransport() (kernel irisy_chat_stream →
-  //                      BrainRouter inline → @ctrl/pi-plugin MCP server).
-  //                      Pi runs its own agent loop with its own provider.
-  //   2. Pi not running → defaultTransport() (kernel chat_stream → llm_port
-  //                      → Volc). Direct, fast reply; drives the frontend
-  //                      ReAct tool loop below.
-  const usePi = status?.pi?.reachable === true;
+  // Chat path. irisy_chat_stream is THE Irisy transport — it routes by the
+  // active brain (大模型集成): "pi" → @ctrl/pi-plugin MCP server; any other
+  // brain → its CLI/LLM adapter (e.g. claude_code → the `claude` CLI). Only
+  // the Pi brain needs the Pi MCP server up; CLI-adapter brains don't. So we
+  // gate on the active brain, NOT on Pi reachability — otherwise a Claude Code
+  // user with no Pi running would silently fall through to Volc while the UI
+  // still claimed "Engine: Claude Code".
+  //
+  // Fall back to the raw Volc transport (chat_stream → llm_port) ONLY when the
+  // active brain is Pi but its MCP server isn't reachable.
+  const activeBrain = status?.active_brain ?? 'pi';
+  const useIrisyTransport =
+    activeBrain !== 'pi' || status?.pi?.reachable === true;
+  // Frontend ReAct tool loop (list_local_skills / install_keycap / run_keycap /
+  // vault_*). Turn it ON unless the backend brain already has CTRL's tools
+  // natively — only Pi does (it speaks the kernel MCP server). A CLI brain like
+  // Claude Code runs in plain chat mode (--max-turns 1, no kernel MCP), so the
+  // frontend MUST supply the tools via <call> tags or Irisy can't create/run
+  // keycaps. Volc fallback likewise needs the frontend loop.
+  const reactToolsOn = !(useIrisyTransport && activeBrain === 'pi');
   const transport = useMemo(
-    () => (usePi ? irisyChatTransport() : defaultTransport()),
-    [usePi],
+    () => (useIrisyTransport ? irisyChatTransport() : defaultTransport()),
+    [useIrisyTransport],
   );
 
   const clearConversation = useCallback((): void => {
@@ -248,7 +259,15 @@ export function IrisyChat(): React.ReactElement {
     }
     return '';
   }, [messages]);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Auto-size the composer textarea — grows downward as the user types,
+  // capped so it never eats more than ~25% of the chat column.
+  const autoSizeTextarea = (el: HTMLTextAreaElement | null): void => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  };
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
 
   useEffect(() => {
@@ -357,7 +376,7 @@ export function IrisyChat(): React.ReactElement {
             keycaps,
             longTermMemory,
             coreMemory,
-            !usePi,
+            reactToolsOn,
           ),
         },
         ...messages.map((m) => ({
@@ -440,7 +459,49 @@ export function IrisyChat(): React.ReactElement {
                 streaming: true,
               },
             ]);
-            const result = await executeToolCall(call);
+            // run_keycap drives the output pane beside the chat: mark the run
+            // in flight so the pane streams keycap-<id> live, then post the
+            // produced artifact (or the failure) once it returns.
+            const runKeycapId =
+              call.name === 'run_keycap'
+                ? String(call.args.id ?? call.args.keycap_id ?? '')
+                : '';
+            if (runKeycapId) {
+              useKeycapOutputStore.getState().startRun(runKeycapId);
+            }
+            let result: unknown;
+            try {
+              result = await executeToolCall(call);
+            } catch (toolErr: unknown) {
+              if (runKeycapId) {
+                useKeycapOutputStore
+                  .getState()
+                  .finishRun(
+                    null,
+                    toolErr instanceof Error ? toolErr.message : String(toolErr),
+                  );
+              }
+              throw toolErr;
+            }
+            if (runKeycapId) {
+              const out = (result as { output?: { primary?: string } } | null)
+                ?.output;
+              useKeycapOutputStore
+                .getState()
+                .finishRun(
+                  out?.primary ?? null,
+                  out?.primary ? null : 'Run produced no viewable output.',
+                );
+            }
+            // A tool that changes the installed set must refresh the keyboard —
+            // the keycap grid is a cached ['keycaps'] query, so without this an
+            // install/uninstall succeeds on disk but never shows up.
+            if (
+              call.name === 'install_keycap' ||
+              call.name === 'uninstall_keycap'
+            ) {
+              void queryClient.invalidateQueries({ queryKey: ['keycaps'] });
+            }
             const display = formatToolResultForDisplay(result);
             setMessages((prev) =>
               prev.map((m) =>
@@ -482,7 +543,8 @@ export function IrisyChat(): React.ReactElement {
       sending,
       systemBase,
       transport,
-      usePi,
+      reactToolsOn,
+      queryClient,
     ],
   );
 
@@ -490,6 +552,36 @@ export function IrisyChat(): React.ReactElement {
   useEffect(() => {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
+
+  // Cross-window IPC — the InputSurface window emits 'irisy:send' on
+  // submit; we route the text into sendMessage here. Two-window design
+  // (bao 2026-05-30): main = chat history, input = standalone Tauri
+  // window for the composer.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+      return undefined;
+    }
+    let unlisten: (() => void) | null = null;
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      unlisten = await listen<{ text: string }>('irisy:send', (e) => {
+        const text = (e.payload?.text ?? '').trim();
+        if (!text) return;
+        void sendMessage(text);
+      });
+    })();
+    return () => unlisten?.();
+  }, [sendMessage]);
+
+  // Mirror the local 'sending' state out to the input window so its
+  // send button can disable while a turn is in flight.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+    void (async () => {
+      const { emit } = await import('@tauri-apps/api/event');
+      await emit('irisy:state', { busy: sending });
+    })();
+  }, [sending]);
 
   // Homepage hand-off: `/?text=<encoded>` from default.tsx's ChatInput
   // navigates here with the user's first message. Pop it off the URL
@@ -516,7 +608,21 @@ export function IrisyChat(): React.ReactElement {
     void sendMessage(input);
   };
 
-  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    // Enter submits (Doubao / Kimi mobile-chat convention). Shift+Enter
+    // inserts a newline so multi-line messages still work. Guard IME
+    // composition so Chinese input candidates don't trigger send.
+    if (
+      e.key === 'Enter' &&
+      !e.shiftKey &&
+      !e.nativeEvent.isComposing &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault();
+      e.currentTarget.form?.requestSubmit();
+      return;
+    }
     // ↑ on an empty input recalls the last user message for quick edit.
     if (e.key === 'ArrowUp' && input.length === 0 && lastUserMessage) {
       e.preventDefault();
@@ -618,59 +724,53 @@ export function IrisyChat(): React.ReactElement {
 
   const brainReady = status?.kernel_llm.ready ?? false;
 
-  // Pi sole-brain status. When status.pi is absent the kernel hasn't
-  // shipped the irisy_init Pi probe yet (older binary on user's machine),
-  // so we render `—` rather than misleading "not running".
+  // Pi MCP health (the transport irisy_chat uses when Pi is reachable).
   const piProbed = status?.pi != null;
   const piReachable = status?.pi?.reachable === true;
   const piDetail = !piProbed
     ? '—'
     : piReachable
-      ? `${status?.pi?.version ?? 'reachable'} · brain=${status?.active_brain ?? 'pi'}`
+      ? (status?.pi?.version ?? 'reachable')
       : `not running — \`cd packages/ctrl-pi-plugin && npm start\``;
 
+  // The ACTIVE engine (大模型集成 / Model Integration) Irisy actually routes
+  // to — show THIS, not the kernel's fallback LLM adapter. The old code
+  // labeled `kernel_llm.adapter` (= "volc") as "Brain", so the header showed
+  // "Brain volc" even after the user activated Claude Code, making it look
+  // like the switch didn't take.
+  const ENGINE_LABELS: Record<string, string> = {
+    pi: 'Pi',
+    claude_code: 'Claude Code',
+    codex: 'Codex',
+    gemini: 'Gemini CLI',
+  };
+  const engineLabel = ENGINE_LABELS[activeBrain] ?? activeBrain;
+  const engineReady = activeBrain === 'pi' ? piReachable : brainReady || piReachable;
+
+  // Engine / MCP status sits in the global StatusBar. Clear-history is
+  // a small floating × top-right of the scroller (bao 2026-05-30: the
+  // dedicated row wasted vertical space). Welcome state takes over when
+  // history is empty.
   return (
     <div className={styles.root}>
-      <header className={styles.statusBar}>
-        <StatusLine
-          label="Brain"
-          ok={brainReady}
-          detail={status?.kernel_llm.adapter ?? '—'}
-        />
-        <StatusLine
-          label="Pi"
-          ok={piReachable}
-          detail={piDetail}
-        />
-        {statusMessage != null && (
-          <span className={styles.upgradeMessage}>{statusMessage}</span>
-        )}
-        <StatusLine
-          label="MCP bridge"
-          ok={status?.mcp_bridge.handshake_written ?? false}
-          detail={
-            status?.mcp_bridge.handshake_written ? 'handshake written' : '—'
-          }
-        />
-        <span className={styles.versionBadge} title="Irisy ships in lockstep with CTRL — version mirrors the app's package version.">
-          Irisy v{status?.app_version ?? '—'}
-        </span>
+      <div className={styles.scrollerWrap}>
         {messages.length > 0 && (
           <button
             type="button"
-            className={styles.clearButton}
+            className={styles.clearFloating}
             onClick={clearConversation}
             aria-label="Clear conversation"
+            title="Clear chat"
           >
-            Clear
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
+              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
           </button>
         )}
-        {statusError != null && (
-          <p className={styles.statusError}>irisy_init: {statusError}</p>
-        )}
-      </header>
 
-      <div className={`${styles.scroller} irisy-scroll`} ref={scrollerRef}>
+        <div className={`${styles.scroller} irisy-scroll`} ref={scrollerRef}>
         {messages.length === 0 && (
           <div className={styles.welcome}>
             <h2>Hi, I&rsquo;m Irisy.</h2>
@@ -691,34 +791,13 @@ export function IrisyChat(): React.ReactElement {
           </div>
         )}
         {messages.map((m) => {
-          if (m.role === 'tool') {
-            const expanded = expandedTools.has(m.id);
-            const lines = m.content.split('\n');
-            const headLine = lines[0] ?? m.content;
-            const hasMore = lines.length > 1 || m.content.length > 80;
-            return (
-              <div key={m.id} className={styles.toolCard}>
-                <button
-                  type="button"
-                  className={styles.toolCardHeader}
-                  onClick={() => toggleToolExpand(m.id)}
-                  disabled={!hasMore}
-                  aria-expanded={expanded}
-                >
-                  <span className={styles.toolCardChevron}>
-                    {hasMore ? (expanded ? '▾' : '▸') : '·'}
-                  </span>
-                  <span className={styles.toolCardTitle}>{headLine}</span>
-                  {m.streaming && (
-                    <span className={styles.toolCardRunning}>running…</span>
-                  )}
-                </button>
-                {expanded && hasMore && (
-                  <pre className={styles.toolCardBody}>{m.content}</pre>
-                )}
-              </div>
-            );
-          }
+          // Hide tool-result messages entirely. They're internal plumbing
+          // (raw kernel JSON) that the next assistant turn re-synthesizes
+          // into natural language. Showing them was a UX miss
+          // (bao 2026-05-30 "用户要看到这些无用的思考过程"). Same pattern
+          // as Pi / Cluely / native ChatGPT — tool results never reach
+          // the user's view as a primary bubble.
+          if (m.role === 'tool') return null;
           if (m.role === 'assistant') {
             const rendered = renderAssistantContent(m.content);
             const isThisStreaming = m.streaming;
@@ -795,46 +874,7 @@ export function IrisyChat(): React.ReactElement {
           </button>
         </div>
       )}
-
-      <form className={styles.composer} onSubmit={onSubmit}>
-        <div className={styles.composerInputWrap}>
-          {mentionOpen && mentionResults.length > 0 && (
-            <ul className={styles.mentionPopover} role="listbox" aria-label="Vault files">
-              {mentionResults.map((path) => (
-                <li key={path}>
-                  <button
-                    type="button"
-                    className={styles.mentionItem}
-                    onClick={() => pickMention(path)}
-                  >
-                    {path}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onInputKeyDown}
-            placeholder={
-              brainReady
-                ? 'Talk to Irisy — @file · ↑ recall · ⌘K clear · ⌘↵ send'
-                : 'Brain not ready — wire a provider in CTRL settings'
-            }
-            disabled={sending || !brainReady}
-            aria-label="Message Irisy"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={sending || !brainReady || !input.trim()}
-        >
-          {sending ? '…' : 'Send'}
-        </button>
-      </form>
+      </div>
     </div>
   );
 }

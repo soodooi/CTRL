@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::kernel::llm_adapters::local_config::{
+use crate::kernel::provider::legacy_config::{
     default_config_path, load_from, ProviderEntry,
 };
 

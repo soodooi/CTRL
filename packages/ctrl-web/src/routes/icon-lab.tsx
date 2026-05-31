@@ -117,15 +117,15 @@ const MiniCell = ({ label, running, onToggle, children }: MiniCellProps): ReactE
 // 1) Static SVG fallback — generic placeholder; this is what CTRL ships
 // when the manifest has no icon at all.
 const StaticFallback = (): ReactElement => (
-  <svg viewBox="0 0 64 64" width="48" height="48" aria-hidden="true">
-    <rect x="14" y="14" width="36" height="36" rx="8" fill="none" stroke="#57a6ff" strokeWidth="3" />
-    <circle cx="32" cy="32" r="6" fill="#57a6ff" />
+  <svg viewBox="0 0 64 64" width="48" height="48" aria-hidden="true" style={{ color: 'var(--color-accent)' }}>
+    <rect x="14" y="14" width="36" height="36" rx="8" fill="none" stroke="currentColor" strokeWidth="3" />
+    <circle cx="32" cy="32" r="6" fill="currentColor" />
   </svg>
 );
 
 // 2) SVG + CSS — animated when running
 const CssAnimated = ({ running }: { running: boolean }): ReactElement => (
-  <svg viewBox="0 0 64 64" width="48" height="48" aria-hidden="true">
+  <svg viewBox="0 0 64 64" width="48" height="48" aria-hidden="true" style={{ color: 'var(--color-accent)' }}>
     <rect
       className={running ? styles.cssBreathe : undefined}
       x="14"
@@ -134,7 +134,7 @@ const CssAnimated = ({ running }: { running: boolean }): ReactElement => (
       height="36"
       rx="8"
       fill="none"
-      stroke="#57a6ff"
+      stroke="currentColor"
       strokeWidth="3"
       style={{ transformOrigin: '32px 32px', transformBox: 'fill-box' as const }}
     />
@@ -143,7 +143,7 @@ const CssAnimated = ({ running }: { running: boolean }): ReactElement => (
       cx="32"
       cy="32"
       r="6"
-      fill="#57a6ff"
+      fill="currentColor"
     />
   </svg>
 );

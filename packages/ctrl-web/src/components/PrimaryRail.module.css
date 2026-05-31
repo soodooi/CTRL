@@ -1,0 +1,110 @@
+/* PrimaryRail — L1 primary nav, icon-only. (Was RightRail; renamed
+ * 2026-05-29 when L1 flipped right → left. bao 2026-05-29 restructure.)
+ *
+ * Layout (top → bottom):
+ *   [ L2 toggle button ]
+ *   [ Home / Coding / Workbench / Vault / Pool ]   (nav)
+ *   [ Settings ]                                   (footer)
+ *
+ * No mascot, no version pill — both moved out.
+ */
+
+.primary {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  background: var(--color-bg-l1);
+  /* Separator was border-left when L1 lived on the right edge (invisible
+     there too, but at least against window chrome). After L1 → left flip
+     2026-05-29 the border-left fell on the window's outer left edge (no
+     visible line). Move it to border-right so the dividing line sits
+     between L1 and Irisy. */
+  border-right: 1px solid var(--color-border);
+}
+
+.l2Toggle {
+  appearance: none;
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border-soft);
+  transition: color var(--duration-fast) var(--ease-out-quart),
+              background-color var(--duration-fast) var(--ease-out-quart);
+}
+.l2Toggle:hover {
+  color: var(--color-text);
+  background: var(--color-bg-l2);
+}
+.l2Toggle:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.l2Toggle[aria-pressed='true'] {
+  color: var(--color-accent);
+}
+
+.nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: var(--space-2) 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: var(--space-2) 6px var(--space-3);
+  border-top: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 40%);
+}
+
+/* L1 item — plain static menu, no animation. Active = bg tint + border. */
+.item {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  position: relative;
+}
+.item:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+.item[data-active='true'] {
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-accent) 10%);
+  border-color: color-mix(in oklab, var(--color-accent), transparent 60%);
+  color: var(--color-text);
+}
+.item:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.itemIcon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

@@ -16,7 +16,8 @@ import { ManifestPreview } from '@/components/irisy/ManifestPreview';
 import { CodePreview } from '@/components/irisy/CodePreview';
 import { InstallBar } from '@/components/irisy/InstallBar';
 import { DiscardConfirm } from '@/components/irisy/DiscardConfirm';
-import { IrisyChat } from '@/components/irisy/IrisyChat';
+import { KeycapOutputPane } from '@/components/workspace/KeycapOutputPane';
+import { useKeycapOutputStore } from '@/lib/keycap-output-store';
 import { useKeycapCreatorStore } from '@/lib/irisy-keycap-store';
 import { defaultTransport } from '@/lib/llm-transport';
 import { runChatTurn } from '@/lib/irisy-llm-runner';
@@ -56,10 +57,27 @@ function readUrlParams(): { mode: IrisyMode; prefill: string | null } {
   };
 }
 
-// Z2 (install_keycap Tauri command) ships tomorrow per zeus. Until then
-// the Install button stays greyed with a tooltip. Flip this flag once
-// the command is registered.
-const BACKEND_INSTALL_READY = true;
+// Chat mode surface (post 2026-05-29 restructure): Irisy chat is now
+// SHELL-LEVEL, so the route renders only the keycap-output pane when a
+// run is active. Idle visit to `/irisy` shows an empty hint — the chat
+// itself is always present in the shell's Irisy column.
+const IrisyRunSurface = (): React.ReactElement => {
+  const hasRun = useKeycapOutputStore((s) => s.running || s.keycapId !== null);
+  if (!hasRun) {
+    return (
+      <div className={styles.fallback}>
+        <span className={styles.fallbackMuted}>
+          Talk to Irisy on the right — output appears here when a keycap runs.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.runOutput}>
+      <KeycapOutputPane />
+    </div>
+  );
+};
 
 export const IrisyRoute = (): React.ReactElement => {
   const { mode, prefill } = useMemo(readUrlParams, []);
@@ -99,7 +117,7 @@ export const IrisyRoute = (): React.ReactElement => {
   }, [toast]);
 
   if (mode !== 'create-keycap') {
-    return <IrisyChat />;
+    return <IrisyRunSurface />;
   }
 
   const handleSubmit = async (text: string): Promise<void> => {
@@ -124,16 +142,25 @@ export const IrisyRoute = (): React.ReactElement => {
     const state = useKeycapCreatorStore.getState();
     const manifest = state.validated;
     const serverCode = state.serverTs;
-    if (!manifest || !serverCode) {
-      setToast({ kind: 'error', text: 'Manifest or server code missing — finish creation first.' });
+    if (!manifest) {
+      setToast({ kind: 'error', text: 'Manifest missing — finish creation first.' });
       return;
     }
+    // C2 gate (kernel.rs install_into): non-empty server_code is rejected
+    // for variants other than mcp-server because no executor runs the TS.
+    // The Irisy keycap-creator persona emits TS even for builtin variants
+    // — drop it here when the variant has no executor, so the install
+    // succeeds with manifest-only. Pattern D (mcp-server) keeps the code.
+    const manifestVariant = (manifest as { variant?: string }).variant;
+    const effectiveServerCode = manifestVariant === 'mcp-server'
+      ? (serverCode ?? '')
+      : '';
     useKeycapCreatorStore.getState().setInstalling();
     try {
       await invoke('install_keycap', {
         args: {
           manifest,
-          server_code: serverCode,
+          server_code: effectiveServerCode,
           server_code_filename: 'server.ts',
         },
       });
@@ -175,10 +202,7 @@ export const IrisyRoute = (): React.ReactElement => {
         manifest={<ManifestPreview />}
         code={<CodePreview />}
         bar={
-          <InstallBar
-            backendReady={BACKEND_INSTALL_READY}
-            onInstall={() => void handleInstall()}
-          />
+          <InstallBar onInstall={() => void handleInstall()} />
         }
       />
       <DiscardConfirm
