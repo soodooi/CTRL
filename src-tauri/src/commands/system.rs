@@ -163,10 +163,12 @@ pub fn set_window_height(app: tauri::AppHandle, height: f64) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
-/// Position the main window centered in the right half of the primary
-/// monitor. bao 2026-05-30: don't sit flush against the right edge —
-/// put it in the middle of the right half so there's breathing room on
-/// both sides.
+/// Position the main window anchored against the monitor's right edge.
+/// bao 2026-05-31: must match the right-edge anchor toggle_workspace_window
+/// uses (ADR-002 §7 "L1 和 Irisy 位置不变"). Putting the boot position at
+/// 75 % center created a visual jump when toggle later relocated to the
+/// true right edge; aligning both paths to monitor_right means expansion
+/// slides leftward smoothly without re-positioning.
 #[tauri::command]
 pub fn position_window_top_right(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::{LogicalPosition, Manager};
@@ -186,10 +188,10 @@ pub fn position_window_top_right(app: tauri::AppHandle) -> Result<(), String> {
     let monitor_pos = monitor.position();
     let monitor_x_logical = monitor_pos.x as f64 / scale;
     let monitor_y_logical = monitor_pos.y as f64 / scale;
-    // x: center of the right half of the screen = monitor_w * 0.75
-    let x = monitor_x_logical + monitor_w_logical * 0.75 - win_w_logical / 2.0;
-    // y: vertical center of the screen (input window will tuck below
-    // this; the clamp inside position_input_under_main handles Dock)
+    // x: anchor right edge to monitor right edge (no inset, matches
+    // toggle_workspace_window's RIGHT_EDGE_INSET = 0.0).
+    let x = monitor_x_logical + monitor_w_logical - win_w_logical;
+    // y: vertical center of the screen
     let y = monitor_y_logical + (monitor_h_logical - win_h_logical) / 2.0;
     let y = y.max(monitor_y_logical + 24.0); // never above the menu bar
     win.set_position(LogicalPosition::new(x, y))
