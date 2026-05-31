@@ -570,55 +570,65 @@ export function IrisyChat(): React.ReactElement {
               </ul>
             </div>
           )}
-          {messages.map((m) => {
+          {messages.map((m, i) => {
+            const prev = i > 0 ? messages[i - 1] : null;
+            const showSep = prev != null && prev.role !== m.role;
             if (m.role === 'assistant') {
               const isThisStreaming = m.streaming;
               return (
-                <article
-                  key={m.id}
-                  className={`${styles.assistantBubble} ${styles.markdownBody}`}
-                  aria-live={m.streaming ? 'polite' : undefined}
-                >
-                  {m.content ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {m.content}
-                    </ReactMarkdown>
-                  ) : isThisStreaming ? (
-                    <div className={styles.thinking}>
-                      <span className={styles.thinkingDots}>
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                      </span>
-                      <span className={styles.thinkingLabel}>
-                        Thinking · {(elapsedMs / 1000).toFixed(1)}s
-                      </span>
-                    </div>
-                  ) : (
-                    ''
-                  )}
-                  {!isThisStreaming && m.content && (
-                    <button
-                      type="button"
-                      className={styles.saveBtn}
-                      title="Save this reply to vault/irisy/replies/"
-                      onClick={() => void saveReplyToVault(m.id, m.content)}
-                      aria-label="Save reply to vault"
-                    >
-                      ✓
-                    </button>
-                  )}
-                </article>
+                <div key={m.id}>
+                  {showSep && <div className={styles.turnSeparator} />}
+                  <article
+                    className={`${styles.assistantBubble} ${styles.markdownBody}`}
+                    aria-live={m.streaming ? 'polite' : undefined}
+                  >
+                    <span className={styles.senderLabel}>Irisy</span>
+                    {m.content ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {m.content}
+                      </ReactMarkdown>
+                    ) : isThisStreaming ? (
+                      <div className={styles.thinking}>
+                        <span className={styles.thinkingDots}>
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </span>
+                        <span className={styles.thinkingLabel}>
+                          Thinking · {(elapsedMs / 1000).toFixed(1)}s
+                        </span>
+                      </div>
+                    ) : (
+                      ''
+                    )}
+                    {!isThisStreaming && m.content && (
+                      <button
+                        type="button"
+                        className={styles.saveBtn}
+                        title="Save this reply to vault/irisy/replies/"
+                        onClick={() => void saveReplyToVault(m.id, m.content)}
+                        aria-label="Save reply to vault"
+                      >
+                        ✓
+                      </button>
+                    )}
+                  </article>
+                </div>
               );
             }
             return (
-              <article
-                key={m.id}
-                className={styles.userBubble}
-                aria-live={m.streaming ? 'polite' : undefined}
-              >
-                {m.content}
-              </article>
+              <div key={m.id}>
+                {showSep && <div className={styles.turnSeparator} />}
+                <article
+                  className={styles.userBubble}
+                  aria-live={m.streaming ? 'polite' : undefined}
+                >
+                  <span className={`${styles.senderLabel} ${styles.senderLabelUser}`}>
+                    You
+                  </span>
+                  {m.content}
+                </article>
+              </div>
             );
           })}
         </div>
@@ -660,7 +670,7 @@ export function IrisyChat(): React.ReactElement {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onInputKeyDown}
           className={styles.composerInput}
-          placeholder="Talk to Irisy…"
+          placeholder="Irisy is reading…"
           rows={1}
           aria-label="Message Irisy"
         />
