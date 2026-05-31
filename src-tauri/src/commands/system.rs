@@ -213,43 +213,41 @@ pub fn destroy_input_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-// ── Workspace expansion (main window self-expand, bao 2026-05-30 final) ──
+// ── Workspace = independent Tauri child window, glued LEFT of main ──
 //
-// bao 钦定 (clarification 5th round): "左侧打开的意思，不是浮窗".
-// "独立窗口" = independent AREA (panel within main), NOT independent
-// NSWindow / floating window. The main window itself slides its left
-// edge outward — 430 → 1600 — to reveal the workspace area. No OS-level
-// second window. CSS @media in app.module.css drives layout switch.
+// bao 2026-05-31 final: "工作区向左打开，L1 和 Irisy 一直固定不变".
+// Main window stays 478 px (L1 48 + Irisy 430) at monitor-right-edge
+// always. Toggling the workspace SPAWNS a separate Tauri "workspace"
+// window, sized 1122 × main_h, positioned flush against main's LEFT
+// edge. Closing toggles it off (destroys the child window).
+//
+// Previous iterations tried main-window self-resize (430 ↔ 1600). That
+// kept L1 + Irisy inside the same window but the CSS grid was only
+// 478 px wide, so the extra 1122 px of resized window stayed visually
+// empty — bao read this as "向右打开" / window not actually expanding
+// leftward. Spawning a real child window puts the workspace surface
+// flush left of main with its own NSWindow frame; L1 + Irisy stay at
+// fixed pixel positions because main itself never moves or resizes.
 
-const WORKSPACE_COMPANION_WIDTH: f64 = 430.0;
-const WORKSPACE_EXPANDED_WIDTH: f64 = 1600.0;
-const WORKSPACE_EXPANSION_THRESHOLD: f64 = 960.0;
+/// Workspace child window width. Together with main's 478 px the pair
+/// reaches 1600 px combined — matches the original expanded-mode width.
+const WORKSPACE_CHILD_WIDTH: f64 = 1122.0;
 
-/// Toggle the main window between companion (430 px) and expanded
-/// (1600 px). The window's RIGHT EDGE is locked to the monitor's right
-/// edge (the right-edge anchor bao asked for, ADR-002 §7 "L1 和 Irisy
-/// 位置不变"). When expanding, the LEFT edge slides leftward to make
-/// room for the workspace; when collapsing, the left edge slides
-/// rightward. L1 + Irisy columns stay at their fixed pixel positions
-/// inside the shell relative to the right edge, so they never move
-/// on-screen across the toggle.
+/// Toggle the workspace child window. If a "workspace" Tauri window is
+/// already open, close it (returns `Ok(false)`). Otherwise spawn one
+/// flush against main's LEFT edge (returns `Ok(true)`).
 ///
-/// bao 2026-05-31: previous version anchored `right_edge` to wherever
-/// the window currently sat. If the user (or a startup race with
-/// `position_window_top_right`) left the window pinned at x=0, the
-/// `if target_x < monitor_x { target_x = monitor_x }` clamp caused
-/// the expansion to grow RIGHTWARD instead — visible as "向右打开".
-/// Fixed by always pinning the right edge to monitor right minus a
-/// small inset, regardless of current position.
-///
-/// Returns the new visible expansion state (`true` = expanded).
+/// The child window URL is `/?surface=workspace`, served by the same
+/// PWA bundle; SurfaceSurface (sic) lives at `surfaces/WorkspaceSurface.tsx`.
 #[tauri::command]
 pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
-    use tauri::{LogicalPosition, LogicalSize, Manager};
+    use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
-    /// Right-edge inset from the monitor edge in logical pixels. Gives the
-    /// window a small visual breathing margin from the screen edge.
-    const RIGHT_EDGE_INSET: f64 = 0.0;
+    // Already open → close.
+    if let Some(existing) = app.get_webview_window("workspace") {
+        existing.close().map_err(|e| e.to_string())?;
+        return Ok(false);
+    }
 
     let main = app
         .get_webview_window("main")
@@ -261,33 +259,69 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
     let scale = monitor.scale_factor();
     let main_pos = main.outer_position().map_err(|e| e.to_string())?;
     let main_size = main.outer_size().map_err(|e| e.to_string())?;
-    let monitor_pos = monitor.position();
-    let monitor_x = monitor_pos.x as f64 / scale;
-    let monitor_w = monitor.size().width as f64 / scale;
-    let monitor_right_edge = monitor_x + monitor_w;
+    let main_x = main_pos.x as f64 / scale;
+    let main_y = main_pos.y as f64 / scale;
+    let main_h = main_size.height as f64 / scale;
 
-    let current_w = main_size.width as f64 / scale;
-    let current_h = main_size.height as f64 / scale;
-    let is_expanded = current_w >= WORKSPACE_EXPANSION_THRESHOLD;
+    // Position the child workspace window flush against main's LEFT edge.
+    let workspace_x = main_x - WORKSPACE_CHILD_WIDTH;
+    let workspace_y = main_y;
 
-    let target_w = if is_expanded {
-        WORKSPACE_COMPANION_WIDTH
-    } else {
-        WORKSPACE_EXPANDED_WIDTH.min(monitor_w - 40.0)
-    };
+    let workspace = WebviewWindowBuilder::new(
+        &app,
+        "workspace",
+        WebviewUrl::App("/?surface=workspace".into()),
+    )
+    .title("CTRL · Workspace")
+    .inner_size(WORKSPACE_CHILD_WIDTH, main_h)
+    .position(workspace_x, workspace_y)
+    .decorations(false)
+    .transparent(false)
+    .shadow(true)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .skip_taskbar(true)
+    .focused(false)
+    .visible(true)
+    .resizable(false)
+    .build()
+    .map_err(|e| e.to_string())?;
 
-    // Always anchor the right edge to the monitor's right edge. This
-    // guarantees expansion grows LEFTWARD (workspace appears to the
-    // left of the Irisy column) and that L1 + Irisy stay at fixed
-    // on-screen positions across the toggle.
-    let target_x = monitor_right_edge - target_w - RIGHT_EDGE_INSET;
+    let _ = workspace.set_size(LogicalSize::new(WORKSPACE_CHILD_WIDTH, main_h));
+    let _ = workspace.set_position(LogicalPosition::new(workspace_x, workspace_y));
 
-    main.set_size(LogicalSize::new(target_w, current_h))
-        .map_err(|e| e.to_string())?;
-    main.set_position(LogicalPosition::new(target_x, main_pos.y as f64 / scale))
-        .map_err(|e| e.to_string())?;
+    // Keep the workspace glued to main as the user drags / hides main.
+    // bao 2026-05-30 "为什么移动不能一起移动?".
+    let app_for_listener = app.clone();
+    main.on_window_event(move |event| match event {
+        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+            let (Some(m), Some(ws)) = (
+                app_for_listener.get_webview_window("main"),
+                app_for_listener.get_webview_window("workspace"),
+            ) else {
+                return;
+            };
+            let Ok(Some(mon)) = m.current_monitor() else {
+                return;
+            };
+            let s = mon.scale_factor();
+            if let (Ok(pos), Ok(sz)) = (m.outer_position(), m.outer_size()) {
+                let mx = pos.x as f64 / s;
+                let my = pos.y as f64 / s;
+                let mh = sz.height as f64 / s;
+                let _ = ws.set_position(LogicalPosition::new(mx - WORKSPACE_CHILD_WIDTH, my));
+                let _ = ws.set_size(LogicalSize::new(WORKSPACE_CHILD_WIDTH, mh));
+            }
+        }
+        tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
+            if let Some(ws) = app_for_listener.get_webview_window("workspace") {
+                let _ = ws.close();
+            }
+        }
+        _ => {}
+    });
 
-    Ok(!is_expanded)
+    Ok(true)
 }
 
 // ── Pi (sole brain) status + upgrade — ADR-003 §4 ───────────────────────

@@ -16,10 +16,22 @@ applyTheme(getStoredTheme());
 const root = document.getElementById('root');
 if (!root) throw new Error('PWA root element missing');
 
-const { App } = await import('./app');
-if (import.meta.env.PROD) {
-  const { StrictMode } = await import('react');
-  createRoot(root).render(<StrictMode><App /></StrictMode>);
+const surface = new URLSearchParams(window.location.search).get('surface');
+
+if (surface === 'workspace') {
+  const { WorkspaceSurface } = await import('./surfaces/WorkspaceSurface');
+  if (import.meta.env.PROD) {
+    const { StrictMode } = await import('react');
+    createRoot(root).render(<StrictMode><WorkspaceSurface /></StrictMode>);
+  } else {
+    createRoot(root).render(<WorkspaceSurface />);
+  }
 } else {
-  createRoot(root).render(<App />);
+  const { App } = await import('./app');
+  if (import.meta.env.PROD) {
+    const { StrictMode } = await import('react');
+    createRoot(root).render(<StrictMode><App /></StrictMode>);
+  } else {
+    createRoot(root).render(<App />);
+  }
 }
