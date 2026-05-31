@@ -1,11 +1,15 @@
 // /pool — keycap catalog ("back-office"). Per memory project_keyboard_vs_pool:
 // the keyboard is the always-on rail of installed keys; the pool is the
-// browse / install surface.
+// BROWSE surface (ADR-002 amendment 2026-05-30 §3 — install now happens
+// via drag-to-Keyboard, never via a Pool "install" button).
 //
 // Today the kernel only exposes installed keycaps via list_keycaps. The
 // Marketplace fetch (10k+ MCP servers, OAuth platforms, etc.) ships as
-// part of Phase 1F kernel wiring. Until then this route shows the
-// installed set with a source filter so the contract is visible.
+// part of Phase 1F kernel wiring. When that lands, Pool surfaces the
+// catalog; cards will be drag-sources carrying their manifest under
+// `application/x-ctrl-keycap-manifest` so the Keyboard's drop handler
+// can install them. Until the catalog ships, Pool is browse-only over
+// the installed set — clicking a card opens its workspace instance.
 
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -187,7 +191,7 @@ export const PoolRoute = (): ReactElement => {
 
   const meta = isLoading
     ? 'loading…'
-    : `${counts.all} installed · ${filtered.length} match${filtered.length === 1 ? '' : 'es'}`;
+    : `${counts.all} installed · ${filtered.length} match${filtered.length === 1 ? '' : 'es'} · browse only — drag onto the Keyboard to install`;
 
   return (
     <div className={styles.shell}>

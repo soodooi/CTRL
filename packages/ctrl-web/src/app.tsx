@@ -1,16 +1,19 @@
 // App root — TanStack Router setup + React Query provider + the cockpit
 // shell.
 //
-// 2026-05-29 restructure (bao): shell is a 4-column grid (left → right):
-//   [ Display (route Outlet) | Irisy chat (fixed) | L2 nav | L1 nav (icons) ]
-// + StatusBar (top, full width) and a version pill anchored bottom-left.
+// 2026-05-31 (ADR-002 §7): shell collapsed to 2-col `[L2 │ L1 │ Irisy]`
+// LEFT → RIGHT. `main` column retired — keycap work lives in the NSWindow
+// workspace (separate Tauri child window glued left of main via
+// addChildWindow). L2 is a reserved sub-nav slot (left of L1), width 0
+// until active NSWindow tab declares sub-nav. L1 (PrimaryRail) chips
+// OPEN NSWindow with chip-specific content (Keycap / Vault / Coding /
+// Settings) — no longer switches `main` routes.
 //
-// Irisy chat is SHELL-LEVEL and does NOT unmount on route change — it is
-// the fixed assistant resource across assistant / workbench / workspace
-// surfaces (bao 2026-05-29).
+// `<Outlet />` stays mounted inside a hidden host so legacy routes don't
+// error on lookup; full route retirement = next PR (ADR-002 §7.5).
 //
-// The Keyboard component used to live in a fixed left rail; it is now
-// route content (rendered into the display area where appropriate).
+// Irisy chat is SHELL-LEVEL and does NOT unmount on route change — fixed
+// assistant resource (bao 2026-05-29; reaffirmed §7).
 
 import {
   lazy,
@@ -115,21 +118,26 @@ function RootShellInner(): ReactElement {
       <div className={styles.status}>
         <StatusBar />
       </div>
-      <main
-        className={styles.main}
+      <div className={styles.l2} aria-hidden="true" />
+      <div className={styles.l1}>
+        <PrimaryRail />
+      </div>
+      <div className={styles.irisy}>
+        <IrisyChat />
+        <InfraBar />
+      </div>
+      {/* Hidden Outlet host — legacy routes still mount here but render
+          invisibly. Drag-over handler retained on the hidden node so the
+          shell-level keycap drop in `app.tsx` still works during transition;
+          full route retirement = next PR (ADR-002 §7.5). */}
+      <div
+        className={styles.outletHidden}
         data-drag-over={dragOver || undefined}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         <Outlet />
-      </main>
-      <div className={styles.irisy}>
-        <IrisyChat />
-        <InfraBar />
-      </div>
-      <div className={styles.l1}>
-        <PrimaryRail />
       </div>
     </div>
   );

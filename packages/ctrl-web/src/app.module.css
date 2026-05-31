@@ -1,28 +1,31 @@
 /*
- * App shell — 6-column cockpit layout (bao 2026-05-30 amended: L1 → LEFT).
+ * App shell — 2-column shell (bao 2026-05-31, ADR-002 §7).
  *
  * Column order LEFT → RIGHT:
- *   [L1 48] [L2 0/240] [keycap 320] [main flex] [Irisy 430] [副 nav 48]
+ *   [L2 reserved 0/var] [L1 48] [Irisy 430]
  *
- * L1 (primary route nav, PrimaryRail) is the far-LEFT column. L2 expands
- * to its right when toggled. The KEYCAP panel sits between L2 and the
- * main display area — always visible across all routes. The display
- * area renders <Outlet>. Irisy chat is the fixed assistant column.
- * The secondary nav ("副 L1", KeycapNav) is locked on the far RIGHT for
- * keycap-management actions (browse / add / categorize).
+ * L2 = reserved slot for the active NSWindow tab's sub-nav. Width is
+ * driven by the NSWindow workspace via a Tauri event setting
+ * `data-l2-open` on the shell root; 0 = hidden. Sits visually between
+ * the NSWindow workspace (separate Tauri child window, glued left of
+ * main via NSWindow.addChildWindow) and the L1 rail.
  *
- * Companion = window < 960px → middle collapses, only L1 (left) + Irisy
- * remain. Grid becomes 48 / 0 / 0 / 0 / calc(100%-48) / 0.
+ * L1 (PrimaryRail) chips OPEN NSWindow with chip-specific content
+ * (Keycap / Vault / Coding / Settings). L1 no longer switches `main`
+ * routes — `main` column retired. `<Outlet />` stays mounted hidden so
+ * legacy routes still register; full route retirement = next PR.
+ *
+ * Total default width: 0 + 48 + 430 = 478px (ambient dock).
  */
 
 .shell {
   display: grid;
   grid-template-rows: var(--statusbar-height) 1fr;
   grid-template-columns:
-    var(--l1-width) 1fr var(--irisy-pane-width);
+    var(--l2-width) var(--l1-width) var(--irisy-pane-width);
   grid-template-areas:
     'status status status'
-    'l1     main   irisy';
+    'l2     l1     irisy';
   height: 100vh;
   height: 100dvh;
   background: var(--color-bg-l0);
@@ -31,40 +34,34 @@
   position: relative;
   --l1-width: 48px;
   --irisy-pane-width: 430px;
+  --l2-width: 0px;
 }
 
-/* COMPANION mode — main collapses; only L1 + Irisy visible.
-   Threshold 960 px. bao 2026-05-30: 主窗 430 时只 [L1 48][Irisy 382]. */
-@media (max-width: 959px) {
-  .shell {
-    grid-template-columns: var(--l1-width) 0 calc(100% - var(--l1-width));
-  }
-  .main { display: none; }
+/* L2 expanded when active NSWindow tab declares sub-nav. */
+.shell[data-l2-open] {
+  --l2-width: 200px;
 }
 
 .status { grid-area: status; }
-.main {
-  grid-area: main;
-  min-width: 0;
+
+/* L2 = reserved sub-nav slot (left of L1). 0 px until active NSWindow tab
+   sets `data-l2-open` on `.shell` root. Always present in the grid so
+   the column can animate from 0 → expanded without layout jump. */
+.l2 {
+  grid-area: l2;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
-  position: relative;
-  background: var(--color-bg-l0);
-  transition: background-color var(--duration-fast) var(--ease-out-quart);
+  background: var(--color-bg-l1);
+  border-right: 1px solid var(--color-border-soft);
 }
-.main[data-drag-over] {
-  background: color-mix(in oklab, var(--color-bg-l0), var(--color-accent) 4%);
+
+/* Legacy <Outlet /> host — kept mounted invisible so registered routes
+   don't error on lookup. Visually retired in this amendment; functional
+   retirement of routes themselves = next PR. */
+.outletHidden {
+  display: none;
 }
-.main[data-drag-over]::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 1.5px dashed color-mix(in oklab, var(--color-accent), transparent 40%);
-  border-radius: var(--radius-lg);
-  pointer-events: none;
-}
+
 .irisy {
   grid-area: irisy;
   min-height: 0;

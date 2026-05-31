@@ -285,3 +285,94 @@
   outline: 2px solid var(--color-accent);
   outline-offset: 3px;
 }
+
+/* ── Drag-install drop-zone affordance ───────────────────────────── */
+/* Rail flips a soft accent wash when an install candidate is over it. */
+.rail[data-drop-mode='install'] {
+  background: color-mix(in oklab, var(--color-bg-l1), var(--color-accent) 6%);
+}
+.rail[data-drop-mode='install']::after {
+  content: 'Drop to install';
+  position: absolute;
+  inset: var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed color-mix(in oklab, var(--color-accent), transparent 40%);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-bg-l1), transparent 30%);
+  pointer-events: none;
+  z-index: 30;
+}
+
+/* ── Trash zone — anchored just above the page dots, only visible
+   while a Keyboard cell is being dragged. Drop = uninstall. ──── */
+.trash {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 0;
+  opacity: 0;
+  margin: 0 var(--space-1);
+  border: 1px dashed color-mix(in oklab, var(--color-danger), transparent 55%);
+  border-radius: var(--radius-md);
+  color: var(--color-danger);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow: hidden;
+  transition:
+    height var(--duration-fast) var(--ease-out-quart),
+    opacity var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+.trash[data-active] {
+  height: 36px;
+  opacity: 1;
+  margin-bottom: var(--space-2);
+}
+.trash[data-hot] {
+  background: color-mix(in oklab, var(--color-bg-l1), var(--color-danger) 12%);
+  border-color: var(--color-danger);
+  border-style: solid;
+}
+.trashLabel {
+  white-space: nowrap;
+}
+
+/* ── Install / uninstall toast — anchored to the bottom of the rail
+   so it sits inside the keyboard column rather than over the main
+   display area. Brief; auto-dismisses via TOAST_DISMISS_MS. ──── */
+.toast {
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  z-index: 35;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+.toastOk {
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-success) 18%);
+  border: 1px solid color-mix(in oklab, var(--color-success), transparent 40%);
+  color: var(--color-text);
+}
+.toastErr {
+  background: color-mix(in oklab, var(--color-bg-l2), var(--color-danger) 18%);
+  border: 1px solid color-mix(in oklab, var(--color-danger), transparent 40%);
+  color: var(--color-text);
+}

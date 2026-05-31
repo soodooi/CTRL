@@ -172,6 +172,48 @@ export const WorkspaceUi = z.enum([
 ]);
 export type WorkspaceUi = z.infer<typeof WorkspaceUi>;
 
+// ── v3 adaptive workspace declaration (ADR-002 §7.3) ───────────────────
+// A keycap may now declare a tabbed NSWindow workspace with optional L2
+// sub-nav per tab. The NSWindow host (`WorkspaceShell`, post-collapse)
+// reads `ui_surface.workspace.tabs[]` and renders adaptively — viewer
+// per tab, L2 column populated per active tab.
+//
+// `viewer` is a free string at the schema layer (registry validates at
+// runtime). Accepts: legacy WorkspaceUi values, viewer-registry content
+// keys ('markdown' / 'code' / 'json' / 'mermaid' / 'pdf' / 'image' /
+// 'svg' / 'yaml' / 'toml' / 'html' / 'smart-table' / 'fallback'), or
+// 'custom' (keycap-provided React component).
+
+export const L2NavItem = z.object({
+  id: z.string(),
+  label: z.string(),
+  href: z.string(),
+});
+export type L2NavItem = z.infer<typeof L2NavItem>;
+
+export const WorkspaceTab = z.object({
+  id: z.string(),
+  label: z.string(),
+  viewer: z.string(),
+  props: z.record(z.string(), z.unknown()).optional(),
+  l2_subnav: z.array(L2NavItem).optional(),
+});
+export type WorkspaceTab = z.infer<typeof WorkspaceTab>;
+
+export const WorkspaceDeclaration = z.object({
+  tabs: z.array(WorkspaceTab).min(1),
+});
+export type WorkspaceDeclaration = z.infer<typeof WorkspaceDeclaration>;
+
+// Unified `ui_surface` field: a string from the legacy single-renderer
+// enum (v2) OR an adaptive declaration object (v3). Zod picks at parse
+// time. v2 manifests using `ui_surface: "chat-stream"` continue to work.
+export const UiSurface = z.union([
+  WorkspaceUi,
+  z.object({ workspace: WorkspaceDeclaration }),
+]);
+export type UiSurface = z.infer<typeof UiSurface>;
+
 // ── Config schema (Irisy configurator mode walks these fields) ──────────
 // A keycap declares the values it needs from the user post-install
 // (Memos host / API base URL / OAuth scopes / Aria2 RPC port / ...).
@@ -498,7 +540,7 @@ export type KeycapIo = z.infer<typeof KeycapIo>;
  *  - **Legacy string** — Lucide name OR single Unicode char (what the
  *    original demo builtins used; deleted PR #62, but shape preserved
  *    indefinitely for back-compat with user-installed keycaps and the
- *    current builtin-assist / builtin-create manifests).
+ *    current builtin-irisy manifest).
  *  - **Object form** — for SVG / Lottie / dotLottie state machines
  *    routed through IconRenderer (28d6873). The workshop icon palette
  *    emits this form; legacy keycaps emit strings.
@@ -616,7 +658,7 @@ const CapAssetSeedItem = z.object({
  *    (replicated from the manifest at install + healed on every launch
  *    if user deletes them).
  *  - cap_asset.vault: user-facing folder reservation under the vault
- *    root. Path is vault-relative (e.g. "keycaps/builtin-assist/").
+ *    root. Path is vault-relative (e.g. "keycaps/builtin-irisy/").
  *    Seed files populate first-run state (README, settings stubs, etc).
  */
 export const CapAsset = z.object({
@@ -772,10 +814,14 @@ export const KeycapManifest = z.object({
    *  image.generate + image.edit) and lock provider per capability. */
   brain_capabilities: BrainCapabilities.optional(),
 
-  /** Top-level alias for workspace.ui (ADR-024 §2 axis 5). When both are
-   *  set, ui_surface wins. v2 manifests should use ui_surface; v1
-   *  manifests using workspace.ui continue to work unchanged. */
-  ui_surface: WorkspaceUi.optional(),
+  /** Workspace UI surface (ADR-024 §2 axis 5; ADR-002 §7.3 extended to
+   *  adaptive multi-tab in v3). Accepts:
+   *    - legacy single string from WorkspaceUi (`"chat-stream"` etc.)
+   *    - v3 object: `{ workspace: { tabs: [...] } }` for tabbed
+   *      NSWindow workspaces with optional per-tab L2 sub-nav.
+   *  When both `ui_surface` and `workspace.ui` are set, `ui_surface` wins.
+   *  v2 manifests using `workspace.ui` continue to work unchanged. */
+  ui_surface: UiSurface.optional(),
 
   /** Skill recipes the brain reads as context. Resolved via 3-tier lookup
    *  per ADR-024 §3.5: vault/skills/<id>.md > ~/.claude/skills/<id>.md >
