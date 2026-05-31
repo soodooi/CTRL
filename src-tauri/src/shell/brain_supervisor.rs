@@ -141,6 +141,16 @@ impl BrainSupervisor {
             "BrainSupervisor: starting Pi MCP supervision"
         );
 
+        // Reap any orphan ctrl-pi-mcp left listening on :17874 from a
+        // previous CTRL.app that died without taking its Pi child along
+        // (e.g. SIGKILL, crash, force-quit). The orphan re-parents to
+        // init and silently keeps the port — every subsequent spawn
+        // then fails EADDRINUSE and the supervisor enters a respawn
+        // crash loop. bao 2026-05-31 ("Pi brain exited"). Best-effort:
+        // we only signal processes whose argv contains `ctrl-pi-mcp.ts`
+        // so we never kill an unrelated user process on the same port.
+        reap_orphan_pi();
+
         let _ = std::thread::Builder::new()
             .name("ctrl-brain-supervisor".into())
             .spawn(move || supervise(node, plugin_dir, bridge_path));
@@ -175,6 +185,46 @@ impl BrainSupervisor {
             }
         }
         Ok(())
+    }
+}
+
+/// Kill any stray `ctrl-pi-mcp.ts` process holding the Pi MCP port
+/// from a previous CTRL.app lifetime. Idempotent + safe: matches by
+/// argv (only our own MCP entry), not by port alone, so an unrelated
+/// process on 17874 is left alone. Sends SIGTERM, waits 200 ms, then
+/// SIGKILL anything still alive.
+fn reap_orphan_pi() {
+    let output = std::process::Command::new("pgrep")
+        .args(["-f", "ctrl-pi-mcp.ts"])
+        .output();
+    let Ok(out) = output else { return };
+    if !out.status.success() {
+        return;
+    }
+    let self_pid = std::process::id();
+    let pids: Vec<u32> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|s| s.trim().parse::<u32>().ok())
+        .filter(|p| *p != self_pid)
+        .collect();
+    if pids.is_empty() {
+        return;
+    }
+    tracing::info!(
+        count = pids.len(),
+        ?pids,
+        "BrainSupervisor: reaping orphan ctrl-pi-mcp processes from previous lifetime"
+    );
+    for pid in &pids {
+        let _ = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .status();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    for pid in &pids {
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .status();
     }
 }
 
