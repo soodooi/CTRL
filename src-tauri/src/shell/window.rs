@@ -154,10 +154,12 @@ impl WindowController {
                 if let Some(input) = app.get_webview_window("input") {
                     let _ = input.hide();
                 }
-                // Workspace area is part of main now (single-window
-                // self-expansion, bao 2026-05-30 "应该是向左打开的窗口,
-                // 不是弹窗"). When main hides, workspace hides with it
-                // automatically — no separate window to cascade.
+                // Workspace independent window also cascades. macOS
+                // addChildWindow already auto-hides children when parent
+                // hides; the explicit call here is defense-in-depth.
+                if let Some(workspace) = app.get_webview_window("workspace") {
+                    let _ = workspace.hide();
+                }
             } else {
                 tracing::info!("WindowController::toggle — show");
                 let _ = w.show();

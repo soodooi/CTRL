@@ -28,6 +28,14 @@ if (surface === 'input') {
   } else {
     createRoot(root).render(<InputSurface />);
   }
+} else if (surface === 'workspace') {
+  const { WorkspaceSurface } = await import('./surfaces/WorkspaceSurface');
+  if (import.meta.env.PROD) {
+    const { StrictMode } = await import('react');
+    createRoot(root).render(<StrictMode><WorkspaceSurface /></StrictMode>);
+  } else {
+    createRoot(root).render(<WorkspaceSurface />);
+  }
 } else {
   const { App } = await import('./app');
   if (import.meta.env.PROD) {

@@ -71,10 +71,12 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::system::spawn_input_window,
             $crate::commands::system::set_input_window_height,
             $crate::commands::system::activate_input_window,
-            // system — workspace expansion via main window self-resize
-            // (bao 2026-05-30 v3 — "应该是向左打开的窗口, 不是弹窗").
-            // Right edge anchored; left edge slides out 430 ↔ 1800. CSS
-            // @media drives the expanded grid. No independent window.
+            // system — workspace independent Tauri window left of main
+            // (bao 2026-05-30 v2 revive — "L1原来在哪，还在哪 / 工作区是
+            // 独立窗口"). macOS NSWindow.addChildWindow cascades move +
+            // hide. Three close paths: ▾ on main L1 + → in workspace
+            // header + Ctrl hotkey hides cascade.
+            $crate::commands::system::spawn_workspace_window,
             $crate::commands::system::toggle_workspace_window,
             // updater — safe macOS relaunch after auto-update (Chrome-style
             // detached helper, sidesteps the Tauri 2 race)

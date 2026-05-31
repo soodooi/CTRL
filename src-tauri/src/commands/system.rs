@@ -354,32 +354,123 @@ fn position_input_under_main(
         .map_err(|e| e.to_string())
 }
 
-// ── Workspace expansion (single-window self-expand, bao 2026-05-30) ────
+// ── Workspace independent window (v2 revival, bao 2026-05-30) ──────────
 //
-// History: v0.1.95 shipped an independent Tauri window for workspace —
-// rejected ("关都不知道怎么关"). v2 (0.1.98) shipped a child NSWindow via
-// addChildWindow — rejected ("应该是向左打开的窗口, 不是弹窗"). v3 is
-// bao's actual intent throughout: the MAIN WINDOW ITSELF grows leftward
-// when ▾ is clicked. No independent workspace window, no NSPanel. Right
-// edge of main stays anchored; left edge slides out from 430 → 1800.
-// CSS @media (min-width: 960px) in app.module.css already drives the
-// "show the expanded grid" responsive switch — no JS-side surface routing.
+// bao 钦定: "L1原来在哪，还在哪" + "工作区是独立窗口".
+// Main keeps its 430-px companion shape (L1 + Irisy + InfraBar +
+// input window below). Workspace is a SEPARATE Tauri window glued
+// left of main via NSWindow.addChildWindow on macOS so AppKit cascades
+// position + hide-show.
+//
+// 3 close paths (avoiding v0.1.95 ghost-window failure):
+//   1. ▾ on main L1 (primary, always visible)
+//   2. → button in WorkspaceSurface header (secondary, in-window)
+//   3. Ctrl hotkey hides main → cascade hides workspace + input
+//
+// Visual unification (avoiding v0.1.98 "弹窗" complaint):
+//   - Same chrome (decorations:false, shadow:true) as main + input
+//   - Right edge of workspace flush against left edge of main (no gap)
+//   - addChildWindow ordered: NSWindowAbove keeps z-order so neither
+//     window clips the other
 
-const WORKSPACE_COMPANION_WIDTH: f64 = 430.0;
-const WORKSPACE_EXPANDED_WIDTH: f64 = 1600.0;
-const WORKSPACE_EXPANSION_THRESHOLD: f64 = 960.0;
+const WORKSPACE_DEFAULT_WIDTH: f64 = 1370.0;
+const WORKSPACE_DEFAULT_HEIGHT: f64 = 720.0;
+const WORKSPACE_MIN_WIDTH: f64 = 800.0;
+const WORKSPACE_MIN_HEIGHT: f64 = 480.0;
 
-/// Toggle the main window between companion (430 px) and expanded
-/// (1800 px). The window's right edge stays anchored — expansion grows
-/// the left edge leftward so Irisy chat on the right doesn't shift.
-/// Clamps expanded width to `monitor_width - 40` so the left edge never
-/// falls off the screen.
-///
-/// Returns the new visible expansion state (`true` = expanded).
+#[tauri::command]
+pub fn spawn_workspace_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(existing) = app.get_webview_window("workspace") {
+        position_workspace_left_of_main(&app, &existing)?;
+        existing.show().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let main_visible = app
+        .get_webview_window("main")
+        .map(|m| m.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+
+    let win = WebviewWindowBuilder::new(
+        &app,
+        "workspace",
+        WebviewUrl::App("/?surface=workspace".into()),
+    )
+    .title("CTRL · Workspace")
+    .inner_size(WORKSPACE_DEFAULT_WIDTH, WORKSPACE_DEFAULT_HEIGHT)
+    .min_inner_size(WORKSPACE_MIN_WIDTH, WORKSPACE_MIN_HEIGHT)
+    .decorations(false)
+    .transparent(false)
+    .shadow(true)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .skip_taskbar(true)
+    .focused(false)
+    .visible(main_visible)
+    .resizable(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    let _ = win.set_size(LogicalSize::new(
+        WORKSPACE_DEFAULT_WIDTH,
+        WORKSPACE_DEFAULT_HEIGHT,
+    ));
+    position_workspace_left_of_main(&app, &win)?;
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Err(e) = attach_as_child_of_main(&app, "workspace") {
+            tracing::warn!(error = %e, "workspace addChildWindow failed — falling back to JS sync");
+        }
+    }
+
+    if let Some(main) = app.get_webview_window("main") {
+        let app_handle = app.clone();
+        main.on_window_event(move |event| match event {
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                if let Some(workspace) = app_handle.get_webview_window("workspace") {
+                    let _ = position_workspace_left_of_main(&app_handle, &workspace);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    Ok(())
+}
+
+/// Toggle workspace independent window visibility. Returns the new
+/// visible state. Lazy-spawns on first call. Backs the L1 ▾ button.
 #[tauri::command]
 pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
-    use tauri::{LogicalPosition, LogicalSize, Manager};
+    use tauri::Manager;
 
+    if let Some(win) = app.get_webview_window("workspace") {
+        let visible = win.is_visible().unwrap_or(false);
+        if visible {
+            win.hide().map_err(|e| e.to_string())?;
+            Ok(false)
+        } else {
+            position_workspace_left_of_main(&app, &win)?;
+            win.show().map_err(|e| e.to_string())?;
+            Ok(true)
+        }
+    } else {
+        spawn_workspace_window(app.clone())?;
+        if let Some(win) = app.get_webview_window("workspace") {
+            win.show().map_err(|e| e.to_string())?;
+        }
+        Ok(true)
+    }
+}
+
+fn position_workspace_left_of_main(
+    app: &tauri::AppHandle,
+    workspace: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    use tauri::{LogicalPosition, Manager};
     let main = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
@@ -389,35 +480,50 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
         .ok_or_else(|| "no current monitor".to_string())?;
     let scale = monitor.scale_factor();
     let main_pos = main.outer_position().map_err(|e| e.to_string())?;
-    let main_size = main.outer_size().map_err(|e| e.to_string())?;
+    let workspace_size = workspace.outer_size().map_err(|e| e.to_string())?;
     let monitor_pos = monitor.position();
+
+    let main_x = main_pos.x as f64 / scale;
+    let workspace_w = workspace_size.width as f64 / scale;
     let monitor_x = monitor_pos.x as f64 / scale;
-    let monitor_w = monitor.size().width as f64 / scale;
 
-    let current_x = main_pos.x as f64 / scale;
-    let current_w = main_size.width as f64 / scale;
-    let current_h = main_size.height as f64 / scale;
-    let right_edge = current_x + current_w;
-    let is_expanded = current_w >= WORKSPACE_EXPANSION_THRESHOLD;
+    let desired_x = (main_x - workspace_w).max(monitor_x);
+    let desired_y = main_pos.y as f64 / scale;
 
-    let target_w = if is_expanded {
-        WORKSPACE_COMPANION_WIDTH
-    } else {
-        // Clamp expanded width so the left edge stays on screen
-        // (40 px breathing room on the left).
-        WORKSPACE_EXPANDED_WIDTH.min(monitor_w - 40.0)
-    };
+    workspace
+        .set_position(LogicalPosition::new(desired_x, desired_y))
+        .map_err(|e| e.to_string())
+}
 
-    // Right edge stays anchored — recompute x from new width.
-    let mut target_x = right_edge - target_w;
-    if target_x < monitor_x {
-        target_x = monitor_x;
+#[cfg(target_os = "macos")]
+fn attach_as_child_of_main(
+    app: &tauri::AppHandle,
+    child_label: &str,
+) -> Result<(), String> {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    use tauri::Manager;
+
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let child = app
+        .get_webview_window(child_label)
+        .ok_or_else(|| format!("{child_label} window not found"))?;
+
+    let main_handle: *mut std::ffi::c_void = main
+        .ns_window()
+        .map_err(|e| format!("main ns_window: {e}"))? as _;
+    let child_handle: *mut std::ffi::c_void = child
+        .ns_window()
+        .map_err(|e| format!("{child_label} ns_window: {e}"))? as _;
+
+    let main_obj = main_handle as *mut AnyObject;
+    let child_obj = child_handle as *mut AnyObject;
+
+    // NSWindowOrderingMode::NSWindowAbove == 1.
+    unsafe {
+        let _: () = msg_send![&*main_obj, addChildWindow: &*child_obj, ordered: 1i64];
     }
-
-    main.set_size(LogicalSize::new(target_w, current_h))
-        .map_err(|e| e.to_string())?;
-    main.set_position(LogicalPosition::new(target_x, main_pos.y as f64 / scale))
-        .map_err(|e| e.to_string())?;
-
-    Ok(!is_expanded)
+    Ok(())
 }
