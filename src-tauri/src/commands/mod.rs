@@ -68,11 +68,10 @@ macro_rules! pwa_invoke_handler {
             // (bao 2026-05-30: "整个窗口往下流")
             $crate::commands::system::set_window_height,
             $crate::commands::system::position_window_top_right,
-            // system — two-window companion: main = chat history,
-            // input = textarea (separate Tauri window below main)
-            $crate::commands::system::spawn_input_window,
-            $crate::commands::system::set_input_window_height,
-            $crate::commands::system::activate_input_window,
+            // system — input-companion-window retired (bao 2026-05-31:
+            // composer moved inside Irisy chat column). destroy_input_window
+            // closes any persisted instance from a previous launch.
+            $crate::commands::system::destroy_input_window,
             // system — workspace expansion via main window self-resize
             // (bao 2026-05-30 final clarification: "左侧打开的意思，
             // 不是浮窗"). Main slides left edge 430 ↔ 1600. CSS @media

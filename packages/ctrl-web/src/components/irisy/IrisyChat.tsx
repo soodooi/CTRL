@@ -395,34 +395,6 @@ export function IrisyChat(): React.ReactElement {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
 
-  // Cross-window IPC — the InputSurface window emits 'irisy:send' on
-  // submit; we route the text into sendMessage here.
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
-      return undefined;
-    }
-    let unlisten: (() => void) | null = null;
-    void (async () => {
-      const { listen } = await import('@tauri-apps/api/event');
-      unlisten = await listen<{ text: string }>('irisy:send', (e) => {
-        const text = (e.payload?.text ?? '').trim();
-        if (!text) return;
-        void sendMessage(text);
-      });
-    })();
-    return () => unlisten?.();
-  }, [sendMessage]);
-
-  // Mirror the local 'sending' state out to the input window so its
-  // send button can disable while a turn is in flight.
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
-    void (async () => {
-      const { emit } = await import('@tauri-apps/api/event');
-      await emit('irisy:state', { busy: sending });
-    })();
-  }, [sending]);
-
   // Homepage hand-off: `/?text=<encoded>` from default.tsx's ChatInput
   // navigates here with the user's first message.
   const prefillFiredRef = useRef(false);

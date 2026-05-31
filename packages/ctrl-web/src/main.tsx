@@ -1,13 +1,11 @@
 // CTRL PWA entry point.
 //
-// Two render surfaces share this entry:
-//   • Main window (default) — renders <App />, the cockpit shell.
-//   • Input window (URL has ?surface=input) — renders <InputSurface />,
-//     a bare composer / textarea + send. State syncs to main via Tauri
-//     events ("irisy:send", "irisy:state"). bao 2026-05-30: 2-window
-//     companion design — main = chat history (文本框), input = textarea
-//     (对话框); input window's bottom edge grows downward when textarea
-//     wraps. The main window's chat history is never asked to shrink.
+// Renders <App /> — the cockpit shell — in the main window. The legacy
+// input-companion window surface (?surface=input → <InputSurface />) was
+// retired 2026-05-31; the composer now lives inside the Irisy chat
+// column. The workspace surface (?surface=workspace) is similarly
+// inlined into App now that workspace expansion is a main-window resize
+// rather than an OS-level second window.
 
 import { createRoot } from 'react-dom/client';
 import './styles/global.css';
@@ -18,30 +16,10 @@ applyTheme(getStoredTheme());
 const root = document.getElementById('root');
 if (!root) throw new Error('PWA root element missing');
 
-const surface = new URLSearchParams(window.location.search).get('surface');
-
-if (surface === 'input') {
-  const { InputSurface } = await import('./surfaces/InputSurface');
-  if (import.meta.env.PROD) {
-    const { StrictMode } = await import('react');
-    createRoot(root).render(<StrictMode><InputSurface /></StrictMode>);
-  } else {
-    createRoot(root).render(<InputSurface />);
-  }
-} else if (surface === 'workspace') {
-  const { WorkspaceSurface } = await import('./surfaces/WorkspaceSurface');
-  if (import.meta.env.PROD) {
-    const { StrictMode } = await import('react');
-    createRoot(root).render(<StrictMode><WorkspaceSurface /></StrictMode>);
-  } else {
-    createRoot(root).render(<WorkspaceSurface />);
-  }
+const { App } = await import('./app');
+if (import.meta.env.PROD) {
+  const { StrictMode } = await import('react');
+  createRoot(root).render(<StrictMode><App /></StrictMode>);
 } else {
-  const { App } = await import('./app');
-  if (import.meta.env.PROD) {
-    const { StrictMode } = await import('react');
-    createRoot(root).render(<StrictMode><App /></StrictMode>);
-  } else {
-    createRoot(root).render(<App />);
-  }
+  createRoot(root).render(<App />);
 }
