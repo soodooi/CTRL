@@ -513,6 +513,15 @@ export function IrisyChat(): React.ReactElement {
             </div>
           </div>
         </div>
+        <div className={styles.composer}>
+          <textarea
+            className={styles.composerInput}
+            placeholder="Pi is wiring up…"
+            rows={1}
+            disabled
+            aria-label="Message Irisy (disabled during upgrade)"
+          />
+        </div>
       </div>
     );
   }
@@ -634,19 +643,23 @@ export function IrisyChat(): React.ReactElement {
         )}
       </div>
 
-      {/* Hidden composer hook — the actual input lives in a separate
-          Tauri window and communicates via 'irisy:send' / 'irisy:state'.
-          Keep an aria-hidden textarea ref so keyboard hotkeys + ↑ recall
-          still work without an inline composer. */}
-      <textarea
-        ref={inputRef}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={onInputKeyDown}
-        aria-hidden="true"
-        tabIndex={-1}
-        style={{ position: 'absolute', left: '-9999px', width: 1, height: 1 }}
-      />
+      {/* Composer — input + dialog merged into one column (bao 2026-05-31).
+          The previous design hid this textarea off-screen and ran the
+          actual input from a separate Tauri companion window. That window
+          is now retired; the input lives at the bottom of the Irisy chat
+          column and the message list flows above it. */}
+      <div className={styles.composer}>
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onInputKeyDown}
+          className={styles.composerInput}
+          placeholder="Talk to Irisy…"
+          rows={1}
+          aria-label="Message Irisy"
+        />
+      </div>
     </div>
   );
 }
