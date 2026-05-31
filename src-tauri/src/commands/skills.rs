@@ -157,17 +157,22 @@ pub async fn run_skill(
     skill: &str,
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    // Skill keycaps need a brain CLI that can use tools + write files. Claude
-    // Code is the verified one. Source the command from brain_config (same
-    // path the LLM-adapter registration uses + same path the user / Irisy
-    // overrides via ~/.ctrl/brains.toml). We do NOT probe PATH; if the
-    // command can't be spawned, the subprocess will surface the error.
-    let binary = crate::kernel::brain_config::command_for("claude_code").ok_or_else(|| {
-        "Skill keycaps run on the Claude Code CLI. Install `claude` (or set its \
-         path in ~/.ctrl/brains.toml under [brains.claude_code] command) and \
-         activate Claude Code in Settings → Model Integration."
-            .to_string()
-    })?;
+    // Skill keycaps need a CLI that can use tools + write files. Claude Code
+    // is the verified one. Resolve the binary path the same way the
+    // provider sub-system does — `claude-oauth` preset's manifest exposes
+    // the `claude` binary (ADR-004 §9.1). Fall back to plain `claude` on
+    // PATH if the preset isn't installed.
+    // Resolve `claude` binary path inline (no external crate dep). Splits
+    // $PATH and returns the first matching executable, or falls back to the
+    // bare name so std::process::Command's own PATH lookup still has a chance.
+    let binary = std::env::var_os("PATH")
+        .and_then(|paths| {
+            std::env::split_paths(&paths)
+                .map(|dir| dir.join("claude"))
+                .find(|p| p.is_file())
+        })
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "claude".to_string());
 
     // Per-keycap working folder in the VAULT — plain, user-visible files (the
     // user can open the generated deck in vim / Finder; local is truth).

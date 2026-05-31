@@ -591,17 +591,17 @@ async fn run_text_chat(
     system: &'static str,
 ) -> Result<serde_json::Value, String> {
     use crate::kernel::event::{Cell, CellKind};
-    use crate::kernel::llm_port::{LlmMessage, LlmPrompt};
+    use crate::kernel::provider::{LlmMessage, LlmPrompt};
 
     let runtime = &kernel.runtime;
     let adapter = runtime
-        .llm_port
-        .primary_adapter()
+        .provider_registry
+        .primary_text_chat()
         .ok_or_else(|| {
-            "No LLM adapter registered. Run `setup_llm_key volc <key>` to enable Doubao / Volcano Ark."
+            "No text.chat provider available. Open Settings → Brain to pick a provider \
+             (Claude Pro via CLI, Volc, Kimi, DeepSeek, Anthropic API key, OpenAI API key)."
                 .to_string()
-        })?
-        .clone();
+        })?;
 
     // Accept either input.text (simple shape PWA Irisy sends) or
     // input.messages (full multi-turn). The text shape gets wrapped as
@@ -640,10 +640,14 @@ async fn run_text_chat(
         max_tokens: None,
     };
 
+    let opts = crate::kernel::provider::ChatOpts {
+        model: String::new(),
+        deadline_ms: 30_000,
+    };
     let mut rx = adapter
-        .stream_chat("", &prompt, 30_000)
+        .chat_stream(&prompt, &opts)
         .await
-        .map_err(|e| format!("llm stream_chat failed: {e}"))?;
+        .map_err(|e| format!("llm chat_stream failed: {e}"))?;
 
     let mut accumulated = String::new();
     while let Some(item) = rx.recv().await {
@@ -682,7 +686,7 @@ async fn run_text_chat(
 
     Ok(serde_json::json!({
         "content": accumulated,
-        "adapter": adapter.name(),
+        "adapter": adapter.id(),
     }))
 }
 

@@ -21,6 +21,7 @@
 
 pub mod adapter;
 pub mod http_endpoint;
+pub mod legacy_config;
 pub mod manifest;
 pub mod registry;
 #[path = "trait.rs"]

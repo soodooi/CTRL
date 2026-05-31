@@ -80,16 +80,16 @@ pub async fn kernel_status(
     let uptime_ms = runtime.booted_at.elapsed().as_millis() as u64;
 
     let llm_adapters: Vec<String> = runtime
-        .llm_port
-        .fallback_chain()
-        .iter()
-        .filter(|name| runtime.llm_port.adapter_for(name).is_some())
-        .cloned()
+        .provider_registry
+        .list()
+        .into_iter()
+        .filter(|e| e.load_error.is_none())
+        .map(|e| e.id)
         .collect();
     let primary_adapter = runtime
-        .llm_port
-        .primary_adapter()
-        .map(|a| a.name().to_string());
+        .provider_registry
+        .primary_text_chat()
+        .map(|p| p.id().to_string());
 
     let mcp_servers_installed = runtime.mcp_host.list_installed().await.len();
 

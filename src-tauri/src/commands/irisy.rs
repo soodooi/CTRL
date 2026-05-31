@@ -112,9 +112,9 @@ async fn probe_pi() -> PiStatus {
 fn probe_kernel_llm(kernel: &State<'_, KernelHandle>) -> KernelLlmStatus {
     let adapter = kernel
         .runtime
-        .llm_port
-        .primary_adapter()
-        .map(|a| a.name().to_string());
+        .provider_registry
+        .primary_text_chat()
+        .map(|p| p.id().to_string());
     KernelLlmStatus {
         ready: adapter.is_some(),
         adapter,

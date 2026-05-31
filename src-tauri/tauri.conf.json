@@ -40,7 +40,8 @@
     "active": true,
     "targets": ["app", "dmg"],
     "resources": {
-      "../packages/ctrl-keycaps/builtin": "keycaps/builtin"
+      "../packages/ctrl-keycaps/builtin": "keycaps/builtin",
+      "../packages/ctrl-pi-bridge/src/index.ts": "pi-bridge/index.ts"
     },
     "icon": [
       "icons/32x32.png",

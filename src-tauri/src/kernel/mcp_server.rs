@@ -23,7 +23,7 @@
 
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::runtime::KernelRuntime;
-use crate::kernel::{llm_port::LlmPrompt, vault};
+use crate::kernel::{provider::LlmPrompt, vault};
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::Request;
@@ -207,7 +207,12 @@ impl KernelMcpRouter {
         let installed = self.runtime.mcp_host.list_installed().await;
         let body = serde_json::json!({
             "uptime_ms": uptime.as_millis() as u64,
-            "llm_fallback_chain": self.runtime.llm_port.fallback_chain(),
+            "provider_chain": self.runtime
+                .provider_registry
+                .list()
+                .iter()
+                .map(|e| e.id.clone())
+                .collect::<Vec<_>>(),
             "mcp_servers_installed": installed.len(),
         });
         Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
@@ -312,26 +317,16 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let adapter = self
             .runtime
-            .llm_port
-            .primary_adapter()
-            .ok_or_else(|| McpError::internal_error("no LLM adapter registered", None))?
-            .clone();
-        let model_owned = args.model.unwrap_or_else(|| "default".to_string());
-        let model = if model_owned == "default" {
-            // Probe the adapter for a model it supports — pick the first
-            // user-supplied model if any, else delegate to the adapter's
-            // notion of default by calling with the empty string (each
-            // adapter resolves "" to its built-in default).
-            String::new()
-        } else {
-            model_owned
-        };
+            .provider_registry
+            .primary_text_chat()
+            .ok_or_else(|| McpError::internal_error("no text.chat provider available", None))?;
+        let model = args.model.unwrap_or_default();
         let prompt = LlmPrompt {
             system: None,
             messages: args
                 .messages
                 .into_iter()
-                .map(|m| crate::kernel::llm_port::LlmMessage {
+                .map(|m| crate::kernel::provider::LlmMessage {
                     role: m.role,
                     content: m.content,
                 })
@@ -339,12 +334,34 @@ impl KernelMcpRouter {
             temperature: args.temperature,
             max_tokens: args.max_tokens,
         };
-        let deadline_ms = 60_000;
-        let response = adapter
-            .complete(&model, &prompt, deadline_ms)
+        let opts = crate::kernel::provider::ChatOpts {
+            model,
+            deadline_ms: 60_000,
+        };
+        // Provider trait is streaming-only; drain to a single string for
+        // non-streaming MCP tool surface.
+        let mut rx = adapter
+            .chat_stream(&prompt, &opts)
             .await
             .map_err(|e| McpError::internal_error(format!("llm.chat: {e}"), None))?;
-        Ok(CallToolResult::success(vec![Content::text(response)]))
+        let mut out = String::new();
+        while let Some(item) = rx.recv().await {
+            match item {
+                Ok(chunk) => {
+                    out.push_str(&chunk.delta);
+                    if chunk.finish_reason.is_some() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    return Err(McpError::internal_error(
+                        format!("llm.chat stream: {e}"),
+                        None,
+                    ));
+                }
+            }
+        }
+        Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
     /// mcp.list_servers — enumerate installed external MCP servers
