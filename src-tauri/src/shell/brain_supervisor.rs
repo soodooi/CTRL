@@ -281,13 +281,35 @@ fn spawn_brain(
 }
 
 /// Locate the `@ctrl/pi-plugin` directory containing `bin/ctrl-pi-mcp.ts`.
-/// Priority: `CTRL_PI_PLUGIN_DIR` env → walk up from the executable / cwd
-/// looking for `packages/ctrl-pi-plugin` (dev + run-in-repo).
+/// Priority:
+///   1. `CTRL_PI_PLUGIN_DIR` env override
+///   2. Bundled Resources path next to the executable
+///      (production `.app`: `Contents/Resources/ctrl-pi-plugin/`)
+///   3. Walk up from the executable / cwd looking for
+///      `packages/ctrl-pi-plugin/` (dev + run-in-repo).
 fn find_pi_plugin_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("CTRL_PI_PLUGIN_DIR") {
         let p = PathBuf::from(dir);
         if p.join(PI_MCP_ENTRY).is_file() {
             return Some(p);
+        }
+    }
+    // Bundled-resources path. On macOS the layout is
+    // `CTRL.app/Contents/MacOS/ctrl` for the binary and
+    // `CTRL.app/Contents/Resources/ctrl-pi-plugin/` for the bundled plugin.
+    if let Ok(exe) = std::env::current_exe() {
+        let candidates: [Option<PathBuf>; 2] = [
+            // macOS bundle: ../Resources/ctrl-pi-plugin
+            exe.parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("Resources").join("ctrl-pi-plugin")),
+            // Generic next-to-exe layout
+            exe.parent().map(|p| p.join("ctrl-pi-plugin")),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            if candidate.join(PI_MCP_ENTRY).is_file() {
+                return Some(candidate);
+            }
         }
     }
     let mut starts: Vec<PathBuf> = Vec::new();
