@@ -9,8 +9,8 @@
 |---|---|---|---|---|---|---|
 | [001](./001-system-architecture.md) | 4-layer AI-native Agent OS kernel architecture (project doc + module index) | spine | accepted | 2026-05-11 | bao, zeus | — |
 | [002](./002-pwa-pivot.md) | Pivot UI to single PWA codebase under thin Tauri 2 native shell | frontend | accepted | 2026-05-13 | bao, zeus | — |
-| [003](./003-multi-device-mesh.md) | Mesh cross-device communication with E2E crypto + CRDT | substrate | accepted | 2026-05-14 | bao, zeus | — |
-| [004](./004-kernel-capability-surface.md) | Kernel capability surface — 10 namespaces / 28 methods (freq ≥3) | substrate | **proposed** | 2026-05-22 | bao, zeus | 3/7 |
+| [003](./003-brain-pi-core.md) | Brain — Pi is the sole core agent loop (with upgrade + extension shim) | brain | **proposed** | 2026-05-30 | bao, zeus | 0/6 |
+| [004](./004-kernel-capability-surface.md) | Kernel — capability surface + sub-systems (incl. § 9.1 Provider + § 9.2 Mesh, former ADR-003) | kernel | **proposed** | 2026-05-22 (amended 2026-05-30) | bao, zeus | 3/7 |
 | [005](./005-no-claude-in-production-runtime.md) | No Claude / Anthropic SDK in CTRL production runtime | cross-cutting | accepted | 2026-05-18 | bao, zeus | — |
 | [007](./007-encryption-library.md) | Adopt vodozemac (Matrix Olm) for E2E crypto on all platforms | substrate | accepted | 2026-05-16 | bao, zeus | — |
 | [010](./010-keycap-execution-model.md) | Keycap execution model — MCP outward, Actor inward | cap | accepted | 2026-05-17 | bao, zeus, hephaestus | — |

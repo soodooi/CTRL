@@ -5,7 +5,7 @@ status: accepted
 date: 2026-05-16
 deciders: [bao, zeus]
 related:
-  - .olym/decisions/003-multi-device-mesh.md
+  - .olym/decisions/004-kernel-capability-surface.md       # § 9.2 Mesh (former ADR-003)
   - .olym/handoffs/H-2026-05-14-001-mesh-comm.md
 scope: framework
 module: substrate

@@ -78,8 +78,79 @@ The kernel exposes **10 capability namespaces / 28 well-known methods**, selecte
 - [ ] CLAUDE.md "Stack" table gains a row pointing to the spec.
 - [ ] `.olym/decisions/INDEX.md` reflects 004 active + the lane-B → lane-C trigger-text fix (one-line, no amendment cycle).
 
+## Amendment 2026-05-30 — Kernel sub-systems (Provider + Mesh)
+
+> Scope expansion: this ADR now covers both **capability surface** (28 methods, §Decision) and **kernel sub-systems** (modules under `src-tauri/src/kernel/`). Sub-systems are the implementation backing the capability surface. bao 2026-05-30: "ADR-004 = kernel" 含全部 kernel 范畴.
+
+### §9 Kernel sub-systems (modules under `src-tauri/src/kernel/`)
+
+Each sub-system = a kernel-internal Rust module. Public services serve PWA (via Tauri commands), Pi (via `kernel/mcp_server.rs`), and keycaps (via subprocess MCP). Sub-systems are public services; the 5 primitives (§3) are internal scaffolding.
+
+| Sub-system | Path | Service surface | Consumers |
+|---|---|---|---|
+| **provider** *(new, 2026-05-30 amendment §9.1)* | `kernel/provider/` | LLM 调用 (text.chat backend) | Pi (主, via thin extension) + keycap (次) |
+| **mcp** | `kernel/mcp_host.rs` + `kernel/mcp_server.rs` | MCP client (kernel → external) + MCP server (Pi / external → kernel) | Pi, keycap, external MCP clients |
+| **vault** | `kernel/vault.rs` + `kernel/vault_index.rs` | Markdown + FTS5 索引 | PWA (commands/vault.rs), Pi (vault.* MCP tools), keycap |
+| **storage** | `kernel/persistence.rs` + `kernel/local_storage.rs` + `kernel/cache.rs` | Event log (internal) + per-keycap KV + LRU blob cache | kernel internal (persistence), keycap (kv/cache via Tauri command) |
+| **stss** | `kernel/stss_bridge.rs` + `kernel/subprocess_stss_adapter.rs` | ST-SS WS @17872 intra-device stream protocol | PWA mobile mode, shared windows, hardware keycaps |
+| **mesh** *(2026-05-30 amendment §9.2, content moved from former ADR-003)* | `packages/ctrl-mesh/` (independent crate, not yet integrated into `src-tauri/src/kernel/`) | Cross-device E2E sync (vodozemac + Automerge + WebRTC + mDNS + ctrl-relay) | PWA mobile (WASM build), kernel (planned integration) |
+
+**Rule** (binding): each sub-system has one canonical Rust module folder. New LLM/transport/storage code goes into the matching sub-system, not as ad-hoc files. Pre-amendment scatter (`brain_config.rs` + `llm_port.rs` + `llm_adapters/*` — 6 files in 3 places) is the anti-pattern this amendment fixes via §9.1.
+
+---
+
+### §9.1 Provider sub-system (7 条 lock)
+
+bao directive 2026-05-30 "一切以 Pi 为核心 + 统一 adapter + 国产兼容 + Pi 自升级". Round-1 + Round-2 industry research in `.provider-research/FINDING.md` + `FINDING-R2.md` (LiteLLM 125 .py / LobeChat 70 thin TS / Goose / Cline / Vercel AI / Pi-mono) validated the design below.
+
+**Module location**: `src-tauri/src/kernel/provider/` (replaces current scatter: `brain_config.rs` + `llm_port.rs` + `llm_adapters/*` + `commands/brain.rs`).
+
+| # | Lock | Detail |
+|---|---|---|
+| 1 | Provider trait | `chat_stream(prompt, opts) -> Stream<Chunk>` + `trial_verify() -> Result` + `capabilities() -> Set<Capability>`. One trait, three concrete adapters. |
+| 2 | Manifest schema | TOML, fields: `id` / `kind` (cli/openai-shape/anthropic-shape) / `auth` (keychain/env/config_key) / `binary`+`args_template` OR `endpoint`+`headers` / `input_format` / `output_format` / `env_strip` / `env_inject` / `capabilities` / `models[]`. |
+| 3 | Registry | `ProviderRegistry::load()` at startup reads builtin TOMLs + user-installed under `~/.ctrl/providers/`. `active_provider(capability) -> ProviderHandle` lookup. |
+| 4 | Trial chat verify | `set_active(provider_id)` MUST send a real 1-token `"hi"` chat, await first chunk within 5 s deadline. First chunk → commit active + persist; timeout/error → keep previous + surface specific error (auth / network / model-not-found). Replaces current `healthz/binary-exists` conflation. |
+| 5 | 3 shared adapters + `claude_persistent` exception | `cli/one_shot.rs` (codex/gemini, manifest-driven ~200 LOC), `http_api.rs` (openai-shape, manifest-driven ~400 LOC), `http_api.rs` shared with anthropic-shape variant. `cli/claude_persistent.rs` is bespoke (~600 LOC, Goose-style OnceCell<Mutex<CliProcess>> + drain_pending_response + NDJSON control protocol) — claude CLI is the one provider that doesn't fit a generic spawner. |
+| 6 | 6 builtin presets | Day-1 ship: `claude-oauth.toml` (claude_persistent), `anthropic-api.toml` + `openai-api.toml` + `volc.toml` + `kimi.toml` + `deepseek.toml` (http_api shape variants). Adding a provider = adding a TOML, no Rust change. 国产 Anthropic-shape endpoints (api.moonshot.cn/anthropic, api.deepseek.com/anthropic, open.bigmodel.cn/api/coding/paas/v4) supported via manifest preset. |
+| 7 | Pi consumer path | Pi reaches the provider sub-system via thin TS extension (`packages/ctrl-pi-bridge/`, ~30 LOC) using `pi.registerProvider({ streamSimple })` that HTTP-fetches a new kernel endpoint `localhost:<port>/text-chat`. One spawn logic (Rust kernel), two consumers (Irisy direct Tauri invoke + Pi extension HTTP reverse-call). Per Round-2 finding: Pi has no MCP-client surface (`grep mcp pi-mono/coding-agent/src/` = 0), so ADR-013 kernel-as-MCP-server path can't carry Pi's LLM call. |
+
+**Retired by this lock** (no longer in scope, code to remove):
+- `brain_config.rs` + `commands/brain.rs` (brain registry / switcher) — Pi is sole brain, user switches **provider** not brain. PWA brain switcher UI also retires.
+- `lib/irisy-tools.ts` + `lib/irisy-llm-runner.ts` (PWA frontend ReAct agent loop) — Pi agent loop takes over per ADR-003 Brain.
+
+**Pi自升级 not in §9.1** — that's the brain (Pi) layer concern. See ADR-003 Brain (Pi) for the upgrade mechanism.
+
+---
+
+### §9.2 Mesh sub-system (content from former ADR-003)
+
+> Former ADR-003 (multi-device-mesh, accepted 2026-05-14) content moved here. ADR-003 file repurposed for Brain (Pi) per bao 2026-05-30 领域 ADR convention (001 架构 / 002 前端 / 003 brain / 004 kernel).
+
+**Decision**: Cross-device communication is a mesh of user-owned devices with E2E encryption + CRDT state, NOT a central CTRL server.
+
+**Stack**: `vodozemac` (Olm 1:1 sessions) + `webrtc-rs` v0.17.x (data channel) + `Automerge` v0.7.x (CRDT) + `mdns-sd` v1.71+ (LAN discovery) + `ctrl-relay` CF Worker (outbound WSS-only for NAT traversal — never holds plaintext). PWA gets WASM builds of vodozemac + Automerge. Zero listening ports for cross-device; intra-device PWA uses 127.0.0.1:17872 WS bridge with token auth.
+
+**Implementation status (2026-05-30)**: `packages/ctrl-mesh/` Rust crate exists (8 files: channel/document/identity/peer/session/signaling/wire/lib), kernel integration = 0 (`grep mesh src-tauri/src/` returns 0 hits). ADR-024 cap_asset.vault references "mesh-synced" but the wire-up is pending.
+
+**Alternatives rejected** (from former ADR-003):
+
+| # | Alternative | Why rejected |
+|---|---|---|
+| A1 | Central CTRL server (Firebase / Supabase model) | Privacy regression; CN data localization risk; bandwidth bill on us; cannot offer E2E credibly |
+| A2 | Bluetooth / wifi-direct only | Fails when devices on different networks |
+| A3 | WebRTC without app-layer crypto | DTLS only; no forward secrecy; can't claim Matrix-grade E2E |
+| A4 | Yjs CRDT instead of Automerge | Yjs JS-native; needs JS-on-Rust bridge; Automerge has clean Rust+WASM split |
+
+**Consequences** (positive): Real E2E claim → enterprise/OPC trust + differentiation vs cloud-state competitors (豆包 / Coze); no central state on CTRL → bandwidth on user devices + CF free tier; CN-friendly (`*.workers.dev`); hardware peer-ready.
+
+**Consequences** (negative): WebRTC + Olm + Automerge learning curve; cross-platform WASM testing; mdns iOS restrictions.
+
+---
+
 ## Changelog
 
 | Date | Change |
 |---|---|
 | 2026-05-22 | Initial draft from `06-jiazuo-result.md` TL;DR; status proposed (awaiting bao accept). |
+| 2026-05-30 | Amendment: scope expanded to cover kernel sub-systems (§9). Added §9.1 Provider sub-system (7 条 lock; replaces scattered llm_port/llm_adapters/brain_config). Added §9.2 Mesh sub-system (content moved from former ADR-003, which is repurposed for Brain). bao directive 2026-05-30 "ADR-004 = kernel" + "一切以 Pi 为核心" + 领域 ADR convention. |
