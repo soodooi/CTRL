@@ -450,7 +450,12 @@ export function IrisyChat(): React.ReactElement {
       !e.ctrlKey
     ) {
       e.preventDefault();
-      e.currentTarget.form?.requestSubmit();
+      // bao 2026-05-31 b: the textarea is not inside a <form>, so
+      // requestSubmit() does nothing. Send directly via the ref.
+      const text = input.trim();
+      if (text && sendMessageRef.current) {
+        void sendMessageRef.current(text);
+      }
       return;
     }
     if (e.key === 'ArrowUp' && input.length === 0 && lastUserMessage) {
