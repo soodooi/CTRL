@@ -1,12 +1,16 @@
 // useCompanionWindow — runs once at app root mount in the MAIN window.
-// Anchors the main window top-right of the primary monitor and spawns
-// the separate Tauri "input" window beneath it. The input window owns
-// its own resize logic (see surfaces/InputSurface.tsx).
+// Anchors the main window top-right of the primary monitor.
 //
-// bao 2026-05-30: two-window companion. Main = chat history (文本框,
-// iPhone 15 Pro Max sized). Input = textarea + send (对话框, grows
-// downward independently). The two windows are visually stacked but
-// each owns its own height.
+// 2026-05-31 (bao "输入框和对话框可以合二为一"): the separate Tauri
+// "input" window is RETIRED. The composer now lives at the bottom of
+// the Irisy chat column inside the main window (see IrisyChat.tsx).
+// We still call `destroy_input_window` here so any persisted input
+// window from a previous launch is closed; the spawn call is gone.
+//
+// Tauri-side: `spawn_input_window` / `destroy_input_window` /
+// `position_window_top_right` are kernel commands. Removing the
+// underlying Rust command + InputSurface.tsx is a separate (zeus-lane)
+// PR — this hook just stops the frontend from invoking the spawn.
 
 import { useEffect } from 'react';
 import { invoke } from '../lib/bridge';
@@ -24,9 +28,9 @@ export const useCompanionWindow = (): void => {
         /* browser PWA or window not ready */
       }
       try {
-        await invoke('spawn_input_window');
+        await invoke('destroy_input_window');
       } catch {
-        /* already created or unsupported — silently skip */
+        /* command may not exist on older kernels; silently skip */
       }
     })();
   }, []);
