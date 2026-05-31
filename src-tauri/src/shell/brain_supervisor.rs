@@ -327,6 +327,24 @@ fn spawn_brain(
             cmd.env("CTRL_PROVIDER_TOKEN", token);
         }
     }
+    // Ensure node's directory is on PATH so Pi's internal `pi rpc` child
+    // (whose shebang is `#!/usr/bin/env node`) can resolve `node`. Tauri-
+    // spawned processes inherit a sparse PATH that often lacks
+    // /opt/homebrew/bin or the user's nvm shim dir; without this the
+    // shim exits 127 ("command not found") and brain_supervisor enters
+    // a respawn loop. bao 2026-05-31: "pi rpc exited (code=127)".
+    if let Some(parent) = node.parent() {
+        let parent_str = parent.to_string_lossy().to_string();
+        let existing = std::env::var("PATH").unwrap_or_default();
+        let new_path = if existing.is_empty() {
+            parent_str.clone()
+        } else if existing.split(':').any(|p| p == parent_str) {
+            existing
+        } else {
+            format!("{parent_str}:{existing}")
+        };
+        cmd.env("PATH", new_path);
+    }
     cmd.spawn()
 }
 
