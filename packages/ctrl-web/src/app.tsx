@@ -120,14 +120,19 @@ function RootShellInner(): ReactElement {
       <div className={styles.status}>
         <StatusBar />
       </div>
-      {/* L2 — workspace tab pane (left of L1). Empty `fallback={null}`
-          collapses the cell when no instance is open; the grid's
-          `--l2-width: 0` default keeps the column off-screen. */}
-      <div className={styles.l2}>
-        <WorkspaceShell fallback={null} />
-      </div>
       <div className={styles.l1}>
         <PrimaryRail />
+      </div>
+      {/* L2 — sub-nav column for the active L1 item. Default width 0;
+          expands when `data-l2-open="true"` (reserved for the
+          VSCode-style sidebar; sub-nav components land in a follow-up). */}
+      <div className={styles.l2} />
+      {/* Tab — workspace tab content (TabBar + active tab body). The
+          `--tab-width: 0` default keeps it collapsed until a workspace
+          instance opens, at which point `data-workspace-open="true"`
+          flips it to `1fr`. */}
+      <div className={styles.tab}>
+        <WorkspaceShell fallback={null} />
       </div>
       <div className={styles.irisy}>
         <IrisyChat />

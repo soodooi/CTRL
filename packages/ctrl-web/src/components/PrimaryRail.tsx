@@ -41,6 +41,7 @@ import styles from './PrimaryRail.module.css';
 // rewiring deferred to a follow-up PR.
 const IRISY_ITEM_ID = 'builtin-irisy';
 const CODING_ITEM_ID = 'coding';
+const POOL_ITEM_ID = 'pool';
 const SETTINGS_ITEM_ID = 'settings';
 
 interface RailContextValue {
@@ -71,6 +72,16 @@ export const useRail = (): RailContextValue => {
 
 // Inline icons — kept inline because the L1 set is short, fixed, and
 // stroke-consistent. No external icon package needed.
+
+const PoolIcon = (): ReactElement => (
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="3" width="7" height="7" rx="1.4" />
+    <rect x="14" y="3" width="7" height="7" rx="1.4" />
+    <rect x="3" y="14" width="7" height="7" rx="1.4" />
+    <rect x="14" y="14" width="7" height="7" rx="1.4" />
+  </svg>
+);
 
 const CodingIcon = (): ReactElement => (
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
@@ -122,6 +133,7 @@ const IrisyIcon = (): ReactElement => (
 
 const NAV_ITEMS: ReadonlyArray<RailDef> = [
   { id: IRISY_ITEM_ID, label: 'Irisy', path: '/', icon: <IrisyIcon /> },
+  { id: POOL_ITEM_ID, label: 'Keycap pool', path: '/pool', icon: <PoolIcon /> },
   { id: CODING_ITEM_ID, label: 'Coding', path: '/coding', icon: <CodingIcon /> },
 ];
 
@@ -129,6 +141,7 @@ const SETTINGS_PATH = '/settings/ctrl';
 
 const idForPath = (pathname: string): string => {
   if (pathname.startsWith('/coding')) return CODING_ITEM_ID;
+  if (pathname.startsWith('/pool')) return POOL_ITEM_ID;
   if (pathname.startsWith('/settings')) return SETTINGS_ITEM_ID;
   // `/irisy` is now an alias landing on Irisy (no separate Create item).
   return IRISY_ITEM_ID;
@@ -149,6 +162,20 @@ export const PrimaryRail = (): ReactElement => {
   const handleNavClick = useCallback(
     (def: RailDef) => {
       setActiveRailId(def.id);
+      // bao 2026-06-01: tab-bound L1 chips open a route tab in the
+      // workspace tab area; the Tauri shell separately expands the main
+      // window so the Tab column is visible. Irisy stays as full-window
+      // navigation since it lives in the always-on right pane.
+      if (def.id === POOL_ITEM_ID || def.id === CODING_ITEM_ID) {
+        useWorkspaceStore.getState().openSystemTab({
+          id: def.id,
+          kind: 'route',
+          path: def.path,
+          title: def.label,
+        });
+        void invoke<boolean>('toggle_workspace_window').catch(() => undefined);
+        return;
+      }
       void navigate({ to: def.path });
     },
     [navigate, setActiveRailId],
