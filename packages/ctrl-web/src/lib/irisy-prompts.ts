@@ -20,7 +20,11 @@ const IRISY_SYSTEM_PATH = `${PROMPTS_DIR}/irisy-system.md`;
 // Bump when IRISY_SYSTEM_DEFAULT changes so ensurePromptsBootstrap re-seeds the
 // vault copy (otherwise the first-run snapshot freezes and prompt fixes never
 // reach users who already booted once).
-const PROMPT_VERSION = 4;
+//
+// v5 (ADR-002 substrate § provider v2 §3.7, 2026-05-31): adds <brain_state>
+// injection point + brand-label rule + Settings -> Providers path fix +
+// failover transition wording. Closes "Irisy doesn't know its own stack".
+const PROMPT_VERSION = 5;
 
 interface VaultEntry {
   path: string;
@@ -50,16 +54,36 @@ NOT user-facing vocabulary:
 - NEVER name "Pi" or any internal codename in chat. There is one
   companion — you (Irisy) — and that's all the user sees.
 - NEVER suggest the user "switch brain", "切回 Claude Code", "use a
-  different agent". The brain is a singleton; there is nothing to switch
-  to. (Suggesting otherwise reflects a retired model — [deleted ADR-021 brain switcher — superseded by ADR-002 substrate § brain v1 Pi singleton] superseded
-  by ADR-002 substrate.)
+  different agent". There is one companion (you) and the provider behind
+  you is selected in Settings; that's it.
 - When chat seems broken or you can't fulfil a request, say so plainly in
   your own voice ("I can't reach my model right now — try again in a sec,
-  or open Settings → Brain to see status"). Do NOT diagnose subsystems
+  or open Settings → Providers to see status"). Do NOT diagnose subsystems
   out loud, do NOT mention exit codes / processes / PATH / binaries.
 - LLM provider choice (Claude / GPT / Volc / Ollama BYOK) lives in
   Settings → Providers. If a user asks you to change it, point them
   there in one line — don't explain providers in chat.
+
+## What model you're on (brand label only)
+The runtime injects a <brain_state> block before this turn with the
+current provider per role (irisy.primary, irisy.fallback) and a brand
+label per slot. Use that block, never guess:
+- When asked "what model are you on" / "你用什么模型", reply with the
+  primary brand label from <brain_state> (e.g. "Claude subscription" or
+  "CTRL Cloud"). NEVER reply with the internal id ("claude-oauth" /
+  "volc" / "Pi"). NEVER reply with "I don't know" — the answer is in
+  the block.
+- If <brain_state>.last_failover is non-null, the runtime has already
+  switched you to the fallback. Acknowledge it once, in the user's
+  language and your own voice: e.g. "Claude 暂时连不上, 我切到 CTRL
+  Cloud 了" / "Claude is offline right now — I switched to CTRL Cloud."
+  Do NOT keep mentioning the failover on every following turn.
+- If <brain_state>.providers[\"irisy.primary\"] is missing, the user
+  hasn't configured a primary CLI. The fallback (CTRL Cloud) is still
+  serving you. If the user asks about model state, mention they can set
+  a primary in Settings → Providers — one line, then back to the task.
+- DO NOT fabricate a <brain_state> block in your output. The runtime
+  owns that surface; you read it, you don't write it.
 
 ## Reply style — non-negotiable
 - One short paragraph by default. Two only when truly needed.
@@ -170,4 +194,91 @@ export function renderTemplate(
 export async function loadIrisySystemPrompt(): Promise<string> {
   const fromVault = await loadPrompt('irisy-system');
   return fromVault ?? IRISY_SYSTEM_DEFAULT;
+}
+
+// ── ADR-002 substrate § provider v2 §3.7 — brain_state surface ─────────
+
+/** Who pays for a provider's calls. Mirrors Rust `ProviderManagedBy`. */
+export type ProviderManagedBy = 'user' | 'ctrl';
+
+/** Brain engine status (always Pi today). */
+export interface BrainEngine {
+  /** Engine id — always "Pi" per ADR-002 § brain v1. */
+  id: string;
+  version: string | null;
+  /** True iff the brain supervisor has a live Pi child. */
+  healthy: boolean;
+  /** Reserved for the streaming metrics follow-up. */
+  last_token_ms: number | null;
+}
+
+/** Active provider snapshot for one role. */
+export interface BrainRoleProvider {
+  id: string;
+  /** Brand-facing label (e.g. "Claude subscription" / "CTRL Cloud"). */
+  label: string;
+  endpoint: string | null;
+  binary: string | null;
+  healthy: boolean;
+  managed_by: ProviderManagedBy;
+}
+
+/** One failover transition from primary to fallback. */
+export interface BrainFailoverEvent {
+  from: string;
+  to: string;
+  reason: string;
+}
+
+/** Mirrors Rust `BrainStatusView` (commands/provider.rs). */
+export interface BrainState {
+  engine: BrainEngine;
+  /** Keyed by canonical role id ("irisy.primary" / "irisy.fallback"). */
+  providers: Record<string, BrainRoleProvider>;
+  /** Null when no failover has fired this session. */
+  last_failover: BrainFailoverEvent | null;
+}
+
+/**
+ * Render the brain_state snapshot as a system-prompt block. The block
+ * is intentionally minimal text (not JSON) so the LLM can quote brand
+ * labels back without escaping. ADR-002 substrate § provider v2 §3.7.
+ */
+export function formatBrainStateBlock(state: BrainState): string {
+  const lines: string[] = ['<brain_state>'];
+  const engineVersion = state.engine.version ?? 'unknown';
+  lines.push(
+    `engine: id=${state.engine.id} version=${engineVersion} healthy=${state.engine.healthy}`,
+  );
+  for (const role of ['irisy.primary', 'irisy.fallback']) {
+    const prov = state.providers[role];
+    if (prov) {
+      lines.push(
+        `${role}: ${prov.label} (id=${prov.id}, managed_by=${prov.managed_by}, healthy=${prov.healthy})`,
+      );
+    } else {
+      lines.push(`${role}: (unconfigured)`);
+    }
+  }
+  if (state.last_failover) {
+    const fo = state.last_failover;
+    lines.push(`last_failover: from=${fo.from} to=${fo.to} reason=${fo.reason}`);
+  } else {
+    lines.push('last_failover: none');
+  }
+  lines.push('</brain_state>');
+  return lines.join('\n');
+}
+
+/**
+ * Fetch the current brain state from the kernel. Returns `null` when
+ * the Tauri command fails (e.g. invoked from a browser preview without
+ * a kernel) so callers can fall back to a brain_state-less prompt.
+ */
+export async function loadBrainState(): Promise<BrainState | null> {
+  try {
+    return await invoke<BrainState>('brain_status');
+  } catch {
+    return null;
+  }
 }

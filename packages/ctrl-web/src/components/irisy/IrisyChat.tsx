@@ -21,6 +21,9 @@ import {
   ensurePromptsBootstrap,
   loadIrisySystemPrompt,
   IRISY_SYSTEM_DEFAULT,
+  loadBrainState,
+  formatBrainStateBlock,
+  type BrainState,
 } from '@/lib/irisy-prompts';
 import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
@@ -70,8 +73,16 @@ function buildSystemPrompt(
   keycaps: ReadonlyArray<KeycapSummary>,
   longTermMemory: string,
   coreMemory: string,
+  brainState: BrainState | null,
 ): string {
   const sections: string[] = [systemBase];
+
+  // ADR-002 substrate § provider v2 §3.7: inject the live brain state so
+  // Irisy answers "what model are you on" with the brand label, never the
+  // codename. Goes near the top so it sits above memory / keycap context.
+  if (brainState) {
+    sections.push(formatBrainStateBlock(brainState));
+  }
 
   if (coreMemory.trim().length > 0) {
     sections.push(`# Core memory (loaded from vault/.irisy-memory/)\n${coreMemory.trim()}`);
@@ -105,6 +116,7 @@ export function IrisyChat(): React.ReactElement {
   const [longTermMemory, setLongTermMemory] = useState<string>('');
   const [coreMemory, setCoreMemory] = useState<string>('');
   const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_DEFAULT);
+  const [brainState, setBrainState] = useState<BrainState | null>(null);
 
   // `?fresh=1` from the homepage's "New chat" hand-off clears the
   // persisted conversation before this component reads it, so the new
@@ -259,13 +271,18 @@ export function IrisyChat(): React.ReactElement {
         ensurePromptsBootstrap(),
       ]);
       if (cancelled) return;
-      const [coreMem, sysPrompt] = await Promise.all([
+      // ADR-002 substrate § provider v2 §3.7: fetch brain state alongside
+      // the base prompt + memory so the first turn already carries the
+      // <brain_state> block. Failures yield null and skip injection.
+      const [coreMem, sysPrompt, brain] = await Promise.all([
         loadCoreMemory(),
         loadIrisySystemPrompt(),
+        loadBrainState(),
       ]);
       if (cancelled) return;
       setCoreMemory(coreMem);
       setSystemBase(sysPrompt);
+      setBrainState(brain);
     })();
     return () => {
       cancelled = true;
@@ -338,6 +355,7 @@ export function IrisyChat(): React.ReactElement {
             keycaps,
             longTermMemory,
             coreMemory,
+            brainState,
           ),
         },
         ...messages.map((m) => ({
@@ -408,6 +426,7 @@ export function IrisyChat(): React.ReactElement {
       }
     },
     [
+      brainState,
       coreMemory,
       keycaps,
       longTermMemory,
