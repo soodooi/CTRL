@@ -35,6 +35,37 @@ use super::manifest::{
     parse_str, AuthSource, ManifestError, ProviderKind, ProviderManifest,
 };
 use super::r#trait::{Capability, Consumer, Provider, RouteChain};
+
+/// Who pays for a provider's calls. Surfaced by `snapshot()` so the
+/// Settings UI + brain_status response can mark CTRL-billed paths
+/// distinctly from user-owned ones. ADR-002 substrate § provider v2 §3.7.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderManagedBy {
+    /// CTRL pays — credential owned by CTRL secrets pipeline (today the
+    /// `volc` builtin is the occupier).
+    Ctrl,
+    /// User pays — credential lives in the user keychain or the user
+    /// already owns the CLI subscription (claude-oauth etc.).
+    User,
+}
+
+/// Snapshot of a single provider's externally-relevant state. Used by
+/// `commands/provider::brain_status` to compose the role status block
+/// without exposing the internal `LoadedProvider` / `ProviderManifest`
+/// types to the command layer. ADR-002 substrate § provider v2 §3.7.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProviderSnapshot {
+    pub id: String,
+    pub label: String,
+    pub kind: ProviderKind,
+    pub endpoint: Option<String>,
+    pub binary: Option<String>,
+    /// True iff the credential resolved AND the adapter was instantiated.
+    /// False = manifest known but not usable (user needs to set a key).
+    pub ready: bool,
+    pub managed_by: ProviderManagedBy,
+}
 use super::types::ProviderError;
 use super::verify::trial_chat;
 
@@ -47,6 +78,12 @@ const KEYCHAIN_SERVICE_LEGACY: &str = "app.ctrl.spike";
 /// path still reads the user keychain (account="volc"); a follow-up
 /// will swap to a ctrl-cloud secrets pipeline.
 const CTRL_FALLBACK_PROVIDER_ID: &str = "volc";
+
+/// Manifest ids whose credential pipeline is owned by CTRL (CTRL pays
+/// the bill). Used by `snapshot()` to set `managed_by`. ADR-002
+/// substrate § provider v2 lock #3 + v2 §3.7: the `volc` builtin is the
+/// occupier today; future ctrl-brand provider ids land here too.
+const CTRL_MANAGED_PROVIDER_IDS: &[&str] = &["volc"];
 
 /// Embedded builtin manifests — single source of truth for the 7
 /// presets ADR-002 substrate § provider v2 lock #6 mandates.
@@ -193,6 +230,31 @@ impl ProviderRegistry {
     pub fn get(&self, id: &str) -> Option<ProviderHandle> {
         let providers = self.providers.read().unwrap();
         providers.get(id).and_then(|p| p.provider.clone())
+    }
+
+    /// Snapshot one provider's manifest + load-state for the brain_status
+    /// response. `managed_by` derives from a hardcoded ids allowlist
+    /// (`CTRL_MANAGED_PROVIDER_IDS`) — when CTRL adds a ctrl-brand
+    /// manifest, its id goes in that const and snapshot() reports it as
+    /// `Ctrl` without touching the manifest schema.
+    pub fn snapshot(&self, id: &str) -> Option<ProviderSnapshot> {
+        let providers = self.providers.read().unwrap();
+        let loaded = providers.get(id)?;
+        let m = &loaded.manifest;
+        let managed_by = if CTRL_MANAGED_PROVIDER_IDS.contains(&m.id.as_str()) {
+            ProviderManagedBy::Ctrl
+        } else {
+            ProviderManagedBy::User
+        };
+        Some(ProviderSnapshot {
+            id: m.id.clone(),
+            label: m.label.clone(),
+            kind: m.kind.clone(),
+            endpoint: m.endpoint.clone(),
+            binary: m.binary.clone(),
+            ready: loaded.provider.is_some(),
+            managed_by,
+        })
     }
 
     /// Per-role active map (for Settings UI badges + brain_status).

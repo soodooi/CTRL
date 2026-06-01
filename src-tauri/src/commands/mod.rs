@@ -26,6 +26,7 @@ pub mod irisy_chat;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
+pub mod provider;
 pub mod skills;
 pub mod storage;
 pub mod stss;
@@ -61,6 +62,9 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::irisy::irisy_init,
             // system — kernel health (PWA status bar Phase 1F)
             $crate::commands::system::kernel_status,
+            // provider — ADR-002 substrate § provider v2 §3.7 introspection
+            // (brain_status closes "Irisy doesn't know its own stack" gap)
+            $crate::commands::provider::brain_status,
             // system — explicit window hide for the StatusBar × button
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,
