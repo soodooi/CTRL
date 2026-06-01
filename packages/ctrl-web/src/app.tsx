@@ -325,14 +325,17 @@ const settingsLogsRoute = createRoute({
     </Suspense>
   ),
 });
+// bao 2026-06-01: `/irisy` no longer mounts <IrisyRoute /> through the
+// hidden Outlet — the shell-level <IrisyChat /> in the .irisy column is
+// the only IrisyChat instance. Mounting a second copy here (even with
+// display:none) double-fires irisy_init polling + localStorage writes
+// and produces the visible "two chat columns" the user reported.
+// Lazy `IrisyRoute` import kept for potential future use.
+void IrisyRoute;
 const irisyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/irisy',
-  component: () => (
-    <Suspense fallback={<LazyFallback />}>
-      <IrisyRoute />
-    </Suspense>
-  ),
+  component: () => null,
 });
 const codeSpaceRoute = createRoute({
   getParentRoute: () => rootRoute,
