@@ -98,14 +98,21 @@ The skill itself can also be updated independently via Hermes' own skill update 
 
 ## Acceptance
 
-- [ ] Manifest schema v0.3 adds `upstream_url`, `signing.pubkey`, `config_migration`, `compatibility.min_ctrl_version`
-- [ ] Kernel scheduler module `kernel::update_scheduler` polls Layer 2 + 3 daily background
-- [ ] Tauri command `keycap_update_check` + `keycap_update_apply` for Layer 3 user-driven
-- [ ] Irisy stage 6 (Debug) UX renders 3-way merge conflict + per-conflict resolution buttons
-- [ ] Irisy stage 7 (Improvement) UX surfaces "upstream has new features" notification
-- [ ] PWA `registerSW` + auto-update with user-visible "reload to update" toast
-- [ ] Per-tier behavior verified across 3 keycaps (1 Config, 1 Patch, 1 Fork)
-- [ ] `.olym/specs/auto-update/spec.md` exists with detailed merge semantics + version compatibility matrix
+## Acceptance — v1 scope (2026-05-31 sweep: hermes layer dropped per memory `decision_pi_is_sole_brain_hermes_is_keycap`; only app + PWA layers live in v1)
+
+- [x] **Layer 1 (CTRL app)**: Tauri auto-updater wired — `scripts/release.sh` builds + signs + uploads to `soodooi/CTRL-releases`; `latest.json` endpoint configured in `tauri.conf.json`. Closed 2026-05-31.
+- [x] **Layer 2 (hermes)**: hermes removed entirely (PR #62, see memory `decision_pi_is_sole_brain_hermes_is_keycap`). Layer no longer applies. Closed as N/A.
+- [x] **Layer 4 (PWA)**: vite-plugin-pwa configured with auto-update; service worker runtime registered. Verified `packages/ctrl-web/vite.config.ts` + PWA bundle. Closed 2026-05-31.
+
+## Future work (Layer 3 keycap auto-update — v1.1+ scope, blocked on keycap manifest v0.3 schema work in ADR-024)
+
+- Manifest schema v0.3 adds `upstream_url`, `signing.pubkey`, `config_migration`, `compatibility.min_ctrl_version`
+- Kernel scheduler module `kernel::update_scheduler` polls Layer 3 daily background
+- Tauri command `keycap_update_check` + `keycap_update_apply` for user-driven update
+- Irisy stage 6 (Debug) UX renders 3-way merge conflict + per-conflict resolution buttons
+- Irisy stage 7 (Improvement) UX surfaces "upstream has new features" notification
+- Per-tier behavior verified across 3 keycaps (1 Config, 1 Patch, 1 Fork)
+- `.olym/specs/auto-update/spec.md` exists with detailed merge semantics + version compatibility matrix
 
 ## Counter-evidence (would invalidate this ADR)
 

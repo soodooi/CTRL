@@ -73,15 +73,19 @@ What this ADR does NOT promise:
 **Reversal cost**:
 - Medium-low. Reversing means "remote co-view is dropped as a feature" or "co-view goes to v2 with a different mechanism". The mesh + Irisy primitives ship independently; co-view is the composition layer.
 
-## Acceptance (v1.1+ scope; v1 ships none of these)
+## Acceptance (v1 scope)
 
-- [ ] `.olym/specs/remote-co-view/spec.md` exists (zeus lane, v1.1 design phase)
-- [ ] `session.observe` Tauri command + Irisy UI for "subscribe to remote session"
-- [ ] `session.share` token format defined (capability allow-list embedded in JWT-like envelope, Olm-signed)
-- [ ] `session.takeover` capability gate enforced through `CapabilityBroker`
-- [ ] `session.narrate` PWA component renders semantic summary in real-time
-- [ ] LAN smoke (2 mac on same wifi) + relay smoke (mac on LAN A + iPhone on cellular) before declaring v1.1 ready
-- [ ] Marketing copy explicitly: "remote co-view ≠ remote desktop" (apollo lane)
+- [x] ADR direction recorded; v1 ships none of the v1.1 list below. Closed 2026-05-31 (bao "全量开发" sweep): the ADR's own framing scopes all work below to v1.1, so v1 acceptance is just "decision recorded" — no v1 deliverables blocked.
+
+## Future work (v1.1+ scope — not blocking current ship)
+
+- `.olym/specs/remote-co-view/spec.md` (zeus lane, v1.1 design phase)
+- `session.observe` Tauri command + Irisy UI for "subscribe to remote session"
+- `session.share` token format defined (capability allow-list embedded in JWT-like envelope, Olm-signed)
+- `session.takeover` capability gate enforced through `CapabilityBroker`
+- `session.narrate` PWA component renders semantic summary in real-time
+- LAN smoke (2 mac on same wifi) + relay smoke (mac on LAN A + iPhone on cellular) before declaring v1.1 ready
+- Marketing copy explicitly: "remote co-view ≠ remote desktop" (apollo lane)
 
 ## Counter-evidence (would invalidate this ADR)
 

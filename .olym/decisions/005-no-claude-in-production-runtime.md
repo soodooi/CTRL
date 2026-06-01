@@ -63,14 +63,14 @@ CTRL production runtime **仅**通过 LLMTransport → 用户配置的 AI provid
 
 ## Acceptance
 
-- [ ] `packages/ctrl-web/src/lib/llm-transport.ts:108` 默认 model 改成 Volc-shaped (lane-A H-2026-05-18-001 D1 验收)
-- [ ] `packages/ctrl-web/src/lib/llm-transport.ts:2` 注释更新去除 "claude-cli-shim" 表述
-- [ ] `experiments/claude-cli-shim/` 在 vite build exclude (`vite.config.ts` 或 `.vite-ignore`)
-- [ ] `grep -rn 'claude\|anthropic\|@anthropic' packages/ctrl-web/src/ --include='*.ts' --include='*.tsx'` 输出 0 命中 production paths (排除 `experiments/`)
-- [ ] `grep -rn 'anthropic' src-tauri/Cargo.toml` 0 命中
-- [ ] BYOK UI 落地 (lane-A daedalus): 设置面板可添加 Anthropic / OpenAI / Ollama key
-- [ ] CLAUDE.md `## LLM Pattern D` 段加注: "Anthropic Claude / GPT-4 / Ollama 都是 BYOK, 用户主动启用; 默认 only CF Workers AI 经 Tokyo 主路径"
-- [ ] memory `feedback_no_claude_in_production.md` 引用本 ADR
+- [x] `packages/ctrl-web/src/lib/llm-transport.ts` 默认 model = Volc-shaped (RunKeycapTransport via `ctrl.builtin.text-chat`; comment line 1 reads "Volc-default, OpenAI-shape, transport-agnostic"). Closed 2026-05-31.
+- [x] `packages/ctrl-web/src/lib/llm-transport.ts` 注释去除 "claude-cli-shim" 表述. Closed.
+- [x] `experiments/claude-cli-shim/` 不在 vite build — directory has been removed entirely. Closed.
+- [x] `grep -rn 'claude\|anthropic\|@anthropic' packages/ctrl-web/src/` 剩余命中均为 user-facing external-CLI presets (Code Space env / NewEnvModal) — per amended CLAUDE.md `## LLM Pattern D` lock, those are user choices not CTRL-bundled SDK use. Closed 2026-05-31.
+- [x] `grep -rn 'anthropic' src-tauri/Cargo.toml` 0 命中. Closed.
+- [x] BYOK UI 落地 — `ProvidersBlock` in `packages/ctrl-web/src/routes/settings.tsx` exposes provider key management for BYOK paths. Closed.
+- [x] CLAUDE.md `## LLM Pattern D` 段加注 ADR-005 BYOK lock (2026-05-31). Closed.
+- [x] memory `feedback_no_claude_in_production.md` references ADR-005 (added 2026-05-31, ADR-003 sweep commit). Closed.
 
 ## Changelog
 

@@ -15,6 +15,21 @@
 // means upstream Pi version bumps either keep working or fail loudly at
 // extension-load time, never silently.
 //
+// streamSimple contract (per @mariozechner/pi-ai types):
+//   Returns AssistantMessageEventStream SYNCHRONOUSLY. All async work
+//   happens in a fire-and-forget IIFE that push()es events into the
+//   stream and end()s it. The stream object MUST expose `.result()`
+//   returning a Promise<AssistantMessage> — Pi awaits this after
+//   iterating events. bao 2026-05-31 (118-trail): "response.result is
+//   not a function" until this shape was matched.
+//
+//   We can't `import { createAssistantMessageEventStream } from
+//   '@mariozechner/pi-ai'` because at runtime this file lives at
+//   `<CTRL.app>/Contents/Resources/_up_/pi-bridge/index.ts`, and Node
+//   module resolution from there can't reach Pi's node_modules. We
+//   inline the class instead — small, no transitive deps, immune to
+//   resolution path drift.
+//
 // The kernel endpoint:
 //   POST http://127.0.0.1:<CTRL_PROVIDER_PORT>/text-chat
 //   Headers: Content-Type: application/json, Accept: text/event-stream
@@ -32,23 +47,43 @@ export const BRIDGE_MODEL_NAME = 'default';
 export const BRIDGE_ENV_PORT = 'CTRL_PROVIDER_PORT';
 export const BRIDGE_ENV_TOKEN = 'CTRL_PROVIDER_TOKEN';
 
-/** Minimum surface of Pi's extension API this extension touches. We type
- *  it locally rather than importing from `@mariozechner/pi-coding-agent`
- *  so this package has no hard runtime dependency on a specific Pi
- *  version — the host Pi process injects the real API at load time. */
+// ── Pi extension API surface (locally typed) ────────────────────────────
+
 export interface PiExtensionApi {
   registerProvider: (id: string, provider: PiProvider) => void;
 }
 
-/** Pi message shape mirrors OpenAI-shape conversation history. */
-export interface PiMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+export interface PiTextContent {
+  type: 'text';
+  text: string;
 }
 
-/** Subset of Pi's per-call context. We currently use only `messages`,
- *  but accept the full object so future Pi fields (system prompt,
- *  tool definitions, etc.) flow through unchanged. */
+export interface PiUserMessage {
+  role: 'user';
+  content: string | PiTextContent[];
+  timestamp?: number;
+}
+
+export interface PiSystemMessage {
+  role: 'system';
+  content: string;
+  timestamp?: number;
+}
+
+export interface PiAssistantMessage {
+  role: 'assistant';
+  content: PiTextContent[];
+  api: string;
+  provider: string;
+  model: string;
+  usage: PiUsage;
+  stopReason: PiStopReason;
+  timestamp: number;
+  errorMessage?: string;
+}
+
+export type PiMessage = PiUserMessage | PiSystemMessage | PiAssistantMessage;
+
 export interface PiStreamContext {
   messages: PiMessage[];
   system?: string;
@@ -58,39 +93,135 @@ export interface PiStreamOpts {
   signal?: AbortSignal;
 }
 
-/** One yielded chunk from Pi's `streamSimple`. We only emit
- *  `assistant_message_delta` (text tokens) + `stop` (terminal). */
-export type PiStreamEvent =
-  | { type: 'assistant_message_delta'; delta: string }
-  | { type: 'stop'; stop_reason: string };
+export interface PiUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+}
+
+export type PiStopReason = 'stop' | 'length' | 'toolUse' | 'error' | 'aborted';
+
+export type PiAssistantMessageEvent =
+  | { type: 'start'; partial: PiAssistantMessage }
+  | { type: 'text_start'; contentIndex: number; partial: PiAssistantMessage }
+  | {
+      type: 'text_delta';
+      contentIndex: number;
+      delta: string;
+      partial: PiAssistantMessage;
+    }
+  | {
+      type: 'text_end';
+      contentIndex: number;
+      content: string;
+      partial: PiAssistantMessage;
+    }
+  | {
+      type: 'done';
+      reason: Extract<PiStopReason, 'stop' | 'length' | 'toolUse'>;
+      message: PiAssistantMessage;
+    }
+  | {
+      type: 'error';
+      reason: Extract<PiStopReason, 'aborted' | 'error'>;
+      error: PiAssistantMessage;
+    };
 
 export interface PiProvider {
   api: string;
+  baseUrl: string;
+  apiKey: string;
   models: string[];
   streamSimple: (
-    model: string,
+    model: unknown,
     ctx: PiStreamContext,
     opts?: PiStreamOpts,
-  ) => AsyncIterable<PiStreamEvent>;
+  ) => BridgeEventStream;
 }
 
-/** Pi loads this default export with the extension API as its argument.
- *  Synchronous registration only — Pi caches the provider on first call.
- *
- *  When `CTRL_PROVIDER_PORT` is unset we still register so Pi has at
- *  least one provider; the first stream call surfaces a typed error
- *  instead of a load-time crash. The supervisor always sets the env;
- *  the unset path is purely for unit tests + paranoia. */
+// ── Inline AssistantMessageEventStream port ─────────────────────────────
+//
+// Mirrors @mariozechner/pi-ai's EventStream + AssistantMessageEventStream.
+// Pi consumes this through both async iteration AND `await stream.result()`,
+// so both surfaces must work. Source-of-truth reference:
+//   /Users/mac/.ctrl/pi/node_modules/@mariozechner/pi-ai/dist/utils/event-stream.js
+
+type Waiter = (r: { value: PiAssistantMessageEvent | undefined; done: boolean }) => void;
+
+export class BridgeEventStream implements AsyncIterable<PiAssistantMessageEvent> {
+  private queue: PiAssistantMessageEvent[] = [];
+  private waiting: Waiter[] = [];
+  private streamDone = false;
+  private finalResultPromise: Promise<PiAssistantMessage>;
+  private resolveFinalResult!: (m: PiAssistantMessage) => void;
+
+  constructor() {
+    this.finalResultPromise = new Promise((resolve) => {
+      this.resolveFinalResult = resolve;
+    });
+  }
+
+  push(event: PiAssistantMessageEvent): void {
+    if (this.streamDone) return;
+    if (event.type === 'done') {
+      this.streamDone = true;
+      this.resolveFinalResult(event.message);
+    } else if (event.type === 'error') {
+      this.streamDone = true;
+      this.resolveFinalResult(event.error);
+    }
+    const waiter = this.waiting.shift();
+    if (waiter) {
+      waiter({ value: event, done: false });
+    } else {
+      this.queue.push(event);
+    }
+  }
+
+  end(): void {
+    this.streamDone = true;
+    while (this.waiting.length > 0) {
+      const waiter = this.waiting.shift()!;
+      waiter({ value: undefined, done: true });
+    }
+  }
+
+  async *[Symbol.asyncIterator](): AsyncIterator<PiAssistantMessageEvent> {
+    while (true) {
+      if (this.queue.length > 0) {
+        yield this.queue.shift()!;
+      } else if (this.streamDone) {
+        return;
+      } else {
+        const result = await new Promise<{
+          value: PiAssistantMessageEvent | undefined;
+          done: boolean;
+        }>((resolve) => this.waiting.push(resolve));
+        if (result.done) return;
+        yield result.value!;
+      }
+    }
+  }
+
+  result(): Promise<PiAssistantMessage> {
+    return this.finalResultPromise;
+  }
+}
+
+// ── Registration ────────────────────────────────────────────────────────
+
 export default function register(pi: PiExtensionApi): void {
   pi.registerProvider(BRIDGE_PROVIDER_NAME, {
     api: BRIDGE_PROVIDER_NAME,
-    // Pi's registerProvider validates that any provider declaring
-    // `models` must also declare `baseUrl` AND (`apiKey` | `oauth`),
-    // even when `streamSimple` bypasses HTTP entirely and never reads
-    // either field. Placeholder values keep validation happy; the real
-    // transport target is read from env (`CTRL_PROVIDER_PORT`) at
-    // stream time. bao 2026-05-31 (118-trail): two-step probe surfaced
-    // "baseUrl required" then "apiKey or oauth required".
     baseUrl: 'http://127.0.0.1',
     apiKey: 'ctrl-bridge-streamSimple-bypass',
     models: [BRIDGE_MODEL_NAME],
@@ -98,163 +229,231 @@ export default function register(pi: PiExtensionApi): void {
   });
 }
 
-// ── Stream wiring ───────────────────────────────────────────────────────
+// ── streamSimple implementation ─────────────────────────────────────────
 
-async function* streamFromKernel(
-  model: string,
+function streamFromKernel(
+  model: unknown,
   ctx: PiStreamContext,
   opts: PiStreamOpts | undefined,
-): AsyncIterable<PiStreamEvent> {
-  const port = process.env[BRIDGE_ENV_PORT];
-  if (!port || port.length === 0) {
-    throw new Error(
-      `${BRIDGE_ENV_PORT} not set — Pi was started without the CTRL ` +
-        `provider port. Restart CTRL (the shell sets this env when ` +
-        `spawning Pi).`,
-    );
-  }
-  const url = `http://127.0.0.1:${port}/text-chat`;
-  const token = process.env[BRIDGE_ENV_TOKEN];
+): BridgeEventStream {
+  const stream = new BridgeEventStream();
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'text/event-stream',
+  const output: PiAssistantMessage = {
+    role: 'assistant',
+    content: [],
+    api: BRIDGE_PROVIDER_NAME,
+    provider: BRIDGE_PROVIDER_NAME,
+    model: normalizeModel(model) || BRIDGE_MODEL_NAME,
+    usage: emptyUsage(),
+    stopReason: 'stop',
+    timestamp: Date.now(),
   };
-  if (token && token.length > 0) {
-    headers.Authorization = `Bearer ${token}`;
-  }
 
-  const body = JSON.stringify({
-    messages: assembleMessages(ctx),
-    // Pi delivers `model` as a `Model<Api>` object (`{id, name, ...}`),
-    // but the kernel /text-chat endpoint takes the bare id string. Pick
-    // the most string-like field; fall back to empty so the registry
-    // routes to the active provider's default.
-    model: normalizeModel(model),
-    capability: 'text.chat',
-  });
+  // Fire-and-forget — Pi reads the stream and awaits stream.result().
+  void runPipe(stream, output, ctx, opts);
+  return stream;
+}
 
-  let response: Response;
+async function runPipe(
+  stream: BridgeEventStream,
+  output: PiAssistantMessage,
+  ctx: PiStreamContext,
+  opts: PiStreamOpts | undefined,
+): Promise<void> {
   try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body,
-      signal: opts?.signal,
+    stream.push({ type: 'start', partial: output });
+
+    const port = process.env[BRIDGE_ENV_PORT];
+    if (!port || port.length === 0) {
+      throw new Error(
+        `${BRIDGE_ENV_PORT} not set — Pi was started without the CTRL ` +
+          `provider port. Restart CTRL (the shell sets this env when ` +
+          `spawning Pi).`,
+      );
+    }
+    const url = `http://127.0.0.1:${port}/text-chat`;
+    const token = process.env[BRIDGE_ENV_TOKEN];
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    };
+    if (token && token.length > 0) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const body = JSON.stringify({
+      messages: assembleMessages(ctx),
+      model: output.model,
+      capability: 'text.chat',
     });
-  } catch (err: unknown) {
-    throw new Error(
-      `ctrl-bridge: kernel provider unreachable at ${url}: ${describe(err)}`,
-    );
-  }
 
-  if (!response.ok || !response.body) {
-    const detail = await safeReadText(response);
-    throw new Error(
-      `ctrl-bridge: kernel provider returned HTTP ${response.status}` +
-        (detail ? `: ${detail}` : ''),
-    );
-  }
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: opts?.signal,
+      });
+    } catch (err: unknown) {
+      throw new Error(
+        `ctrl-bridge: kernel provider unreachable at ${url}: ${describe(err)}`,
+      );
+    }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buf = '';
-  let currentEvent = '';
+    if (!response.ok || !response.body) {
+      const detail = await safeReadText(response);
+      throw new Error(
+        `ctrl-bridge: kernel provider returned HTTP ${response.status}` +
+          (detail ? `: ${detail}` : ''),
+      );
+    }
 
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      // SSE: events are separated by blank lines, each line is either
-      // `event: <name>` or `data: <json>`.
-      while (true) {
-        const nl = buf.indexOf('\n');
-        if (nl < 0) break;
-        const line = buf.slice(0, nl).replace(/\r$/, '');
-        buf = buf.slice(nl + 1);
-        if (line.length === 0) {
-          currentEvent = '';
-          continue;
-        }
-        if (line.startsWith('event: ')) {
-          currentEvent = line.slice('event: '.length).trim();
-          continue;
-        }
-        if (line.startsWith('data: ')) {
-          const payload = line.slice('data: '.length);
-          const event = currentEvent;
-          const parsed = parseEventPayload(event, payload);
-          if (parsed) {
-            yield parsed;
+    // Open the first text block lazily on first delta so empty responses
+    // don't emit an empty text_start/text_end pair.
+    let textBlockOpened = false;
+    let textBlockIndex = -1;
+    let textAccum = '';
+
+    const openTextBlock = () => {
+      output.content.push({ type: 'text', text: '' });
+      textBlockIndex = output.content.length - 1;
+      textBlockOpened = true;
+      stream.push({
+        type: 'text_start',
+        contentIndex: textBlockIndex,
+        partial: output,
+      });
+    };
+
+    const closeTextBlock = () => {
+      if (!textBlockOpened) return;
+      stream.push({
+        type: 'text_end',
+        contentIndex: textBlockIndex,
+        content: textAccum,
+        partial: output,
+      });
+    };
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buf = '';
+    let currentEvent = '';
+    let receivedTerminal = false;
+    let stopReason: PiStopReason = 'stop';
+
+    try {
+      outer: while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        while (true) {
+          const nl = buf.indexOf('\n');
+          if (nl < 0) break;
+          const line = buf.slice(0, nl).replace(/\r$/, '');
+          buf = buf.slice(nl + 1);
+          if (line.length === 0) {
+            currentEvent = '';
+            continue;
           }
-          if (event === 'done' || event === 'error') {
-            return;
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice('event: '.length).trim();
+            continue;
+          }
+          if (line.startsWith('data: ')) {
+            const payload = line.slice('data: '.length);
+            const event = currentEvent;
+            if (event === 'delta') {
+              const parsed = safeJson(payload);
+              const delta =
+                parsed && typeof parsed === 'object' && 'delta' in parsed
+                  ? String((parsed as { delta: unknown }).delta ?? '')
+                  : '';
+              if (delta.length > 0) {
+                if (!textBlockOpened) openTextBlock();
+                textAccum += delta;
+                (output.content[textBlockIndex] as PiTextContent).text = textAccum;
+                stream.push({
+                  type: 'text_delta',
+                  contentIndex: textBlockIndex,
+                  delta,
+                  partial: output,
+                });
+              }
+            } else if (event === 'done') {
+              const parsed = safeJson(payload);
+              const reason =
+                parsed && typeof parsed === 'object' && 'stop_reason' in parsed
+                  ? String((parsed as { stop_reason: unknown }).stop_reason ?? '')
+                  : '';
+              stopReason = mapStopReason(reason);
+              receivedTerminal = true;
+              break outer;
+            } else if (event === 'error') {
+              const parsed = safeJson(payload);
+              const message =
+                parsed && typeof parsed === 'object' && 'message' in parsed
+                  ? String((parsed as { message: unknown }).message ?? 'unknown')
+                  : payload || 'unknown';
+              throw new Error(`ctrl-bridge: provider error: ${message}`);
+            }
+            // unknown event: ignore for forward-compat
           }
         }
       }
+    } finally {
+      try {
+        reader.releaseLock();
+      } catch {
+        // already released
+      }
     }
-  } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      // reader may already be released; ignore.
-    }
-  }
 
-  // Stream closed without an explicit `done` — synthesize a stop so Pi
-  // doesn't hang waiting for terminal.
-  yield { type: 'stop', stop_reason: 'end_of_stream' };
-}
+    closeTextBlock();
 
-function parseEventPayload(event: string, raw: string): PiStreamEvent | null {
-  switch (event) {
-    case 'delta': {
-      const parsed = safeJson(raw);
-      const delta =
-        parsed && typeof parsed === 'object' && 'delta' in parsed
-          ? String((parsed as { delta: unknown }).delta ?? '')
-          : '';
-      if (delta.length === 0) return null;
-      return { type: 'assistant_message_delta', delta };
+    if (!receivedTerminal) {
+      // Stream closed without explicit done; treat as normal stop.
+      stopReason = 'stop';
     }
-    case 'done': {
-      const parsed = safeJson(raw);
-      const stopReason =
-        parsed && typeof parsed === 'object' && 'stop_reason' in parsed
-          ? String((parsed as { stop_reason: unknown }).stop_reason ?? 'end_turn')
-          : 'end_turn';
-      return { type: 'stop', stop_reason: stopReason };
-    }
-    case 'error': {
-      const parsed = safeJson(raw);
-      const message =
-        parsed && typeof parsed === 'object' && 'message' in parsed
-          ? String((parsed as { message: unknown }).message ?? 'unknown error')
-          : raw || 'unknown error';
-      throw new Error(`ctrl-bridge: provider error: ${message}`);
-    }
-    default:
-      // Unknown SSE event — ignore for forward-compatibility.
-      return null;
+
+    // Pi's "done" event only accepts non-error stop reasons.
+    const doneReason: 'stop' | 'length' | 'toolUse' =
+      stopReason === 'length' || stopReason === 'toolUse' ? stopReason : 'stop';
+    output.stopReason = doneReason;
+    stream.push({ type: 'done', reason: doneReason, message: output });
+    stream.end();
+  } catch (err: unknown) {
+    const aborted = opts?.signal?.aborted === true;
+    output.stopReason = aborted ? 'aborted' : 'error';
+    output.errorMessage = describe(err);
+    stream.push({
+      type: 'error',
+      reason: aborted ? 'aborted' : 'error',
+      error: output,
+    });
+    stream.end();
   }
 }
 
-function assembleMessages(ctx: PiStreamContext): PiMessage[] {
-  const out: PiMessage[] = [];
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+function assembleMessages(
+  ctx: PiStreamContext,
+): { role: 'system' | 'user' | 'assistant'; content: string }[] {
+  const out: { role: 'system' | 'user' | 'assistant'; content: string }[] = [];
   if (ctx.system && ctx.system.length > 0) {
-    out.push({ role: 'system', content: normalizeContent(ctx.system) });
+    out.push({ role: 'system', content: ctx.system });
   }
   for (const m of ctx.messages) {
-    out.push({ role: m.role, content: normalizeContent(m.content) });
+    if (m.role === 'system' || m.role === 'user' || m.role === 'assistant') {
+      out.push({ role: m.role, content: normalizeContent(m.content) });
+    }
   }
   return out;
 }
 
-/** Pi delivers `model` as `Model<Api>` (`{id, name, ...}`) rather than a
- *  bare string. The kernel /text-chat endpoint takes a string id; pick
- *  the most string-like field. bao 2026-05-31 (118-trail): "HTTP 422:
- *  model: invalid type: map, expected a string". */
 function normalizeModel(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value == null) return '';
@@ -266,12 +465,6 @@ function normalizeModel(value: unknown): string {
   return '';
 }
 
-/** Pi delivers `content` as either a plain string OR an array of Anthropic-
- *  style blocks (`[{type:"text", text:"..."}]`). The kernel /text-chat
- *  endpoint takes a string; collapse arrays by joining each block's text
- *  field. Anything we can't recognize falls back to JSON.stringify so the
- *  call doesn't silently lose payload. bao 2026-05-31 (118-trail): "HTTP
- *  422: messages[0].content: invalid type: sequence, expected a string". */
 function normalizeContent(value: unknown): string {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) {
@@ -290,6 +483,35 @@ function normalizeContent(value: unknown): string {
   }
   if (value == null) return '';
   return JSON.stringify(value);
+}
+
+function mapStopReason(raw: string): PiStopReason {
+  switch (raw) {
+    case 'length':
+    case 'max_tokens':
+      return 'length';
+    case 'tool_use':
+    case 'toolUse':
+      return 'toolUse';
+    case 'aborted':
+    case 'cancel':
+      return 'aborted';
+    case 'error':
+      return 'error';
+    default:
+      return 'stop';
+  }
+}
+
+function emptyUsage(): PiUsage {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
 }
 
 function safeJson(raw: string): unknown {

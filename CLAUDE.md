@@ -6,7 +6,7 @@
 
 ## What is CTRL?
 
-CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **中文 OPC 桌面 AI 工具入口 + 创作者底座**.
+CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI workbench + creator substrate** (ADR-014: global English first; 中文是后续 i18n locale, 不是 v1 default).
 
 按 `Ctrl` 唤起 → ephemeral workspace → 1 键帽 = 1 AI 工具. 极简化 + AI native + 创作者经济.
 
@@ -166,6 +166,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | LLM (default) | CF Workers AI (Qwen / Llama) |
 | LLM (BYOK) | Anthropic Claude / OpenAI GPT-4 |
 | MCP | Anthropic rmcp Rust SDK |
+| Subprocess execution | portable-pty 0.9 (Unix forkpty + Windows ConPTY) via `kernel::subprocess_actor` — ADR-012 |
 | Backend (cloud) | Cloudflare Workers + D1 (ctrl-auth / ctrl-billing / ctrl-market / **ctrl-relay** / ctrl-push) |
 | Payments | Stripe |
 | Min platform | Windows 10 1809+ (primary Win 11+ dev; ADR-002 §6 WebView2 bootstrapper covers 10), macOS 13+ (secondary), iOS 16.4+ PWA, Android Chrome PWA, WebView2 / WKWebView evergreen |
@@ -209,6 +210,8 @@ BYOK 高级 = user fills own Anthropic / OpenAI key (advanced creation tier)
        ↓
 Local Ollama = privacy geek tier
 ```
+
+> **ADR-005 lock**: Anthropic Claude / GPT-4 / Ollama 都是 **BYOK only**, 用户主动启用. Default subscription path 只 CF Workers AI (Tokyo 主路径). CTRL runtime never ships an Anthropic / OpenAI SDK on its hot path — those clients only load when the user has filled their own key in Settings → Providers. User-facing references to `claude-code` / `aider` etc. as external CLIs (Code Space env presets) are NOT a violation: they are user choice, not CTRL-bundled dependency.
 
 **We sell tools + platform, not models.**
 

@@ -364,41 +364,40 @@ export const SettingsCtrlPage = (): ReactElement => (
 // /settings/brain  (ADR-021 — cc-switch / VMark / opencode style)
 // ─────────────────────────────────────────────────────────────
 
-interface BrainView {
-  id: string;
-  label: string;
-  command: string;
-  mcp_port: number | null;
-  mcp_url: string | null;
-  description: string;
-  adapter: string | null;
-  binary_path: string | null;
-  version: string | null;
-  reachable: boolean;
-  active: boolean;
-  adapter_available: boolean;
-}
+// ADR-003 §5 — brain switcher retired. Pi is the sole brain (singleton);
+// no `brain_list / brain_detect / brain_set_active` calls. Settings → Brain
+// reads `pi_status` (system.rs) + binds "Upgrade now" to `pi_upgrade_now`.
+// bao 2026-05-31 (ADR-003 acceptance #5 close-out): legacy BrainListReply
+// + multi-radio switcher removed in this commit.
 
-interface BrainListReply {
-  brains: BrainView[];
-  active_id: string;
+interface PiStatusView {
+  installed_version: string | null;
+  latest_version: string | null;
+  upgrade_available: boolean;
+  major_update_blocked: boolean;
+  last_upgrade_error: string | null;
+  last_probe_ms: number;
+  pi_bin: string | null;
+  install_root: string | null;
+  running: boolean;
+  last_error: string | null;
+  provider_port: number;
 }
 
 export const SettingsBrainPage = (): ReactElement => {
-  const [reply, setReply] = useState<BrainListReply | null>(null);
+  const [status, setStatus] = useState<PiStatusView | null>(null);
   const [loading, setLoading] = useState(true);
-  const [detecting, setDetecting] = useState(false);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     try {
-      const result = await invoke<BrainListReply>('brain_list');
-      setReply(result);
+      const result = await invoke<PiStatusView>('pi_status');
+      setStatus(result);
       setError(null);
     } catch (e: unknown) {
       const detail = e instanceof Error ? e.message : String(e);
-      setError(`brain_list failed: ${detail}`);
+      setError(`pi_status failed: ${detail}`);
     } finally {
       setLoading(false);
     }
@@ -408,36 +407,19 @@ export const SettingsBrainPage = (): ReactElement => {
     void load();
   }, [load]);
 
-  const detect = useCallback(async (): Promise<void> => {
-    setDetecting(true);
+  const upgrade = useCallback(async (): Promise<void> => {
+    setUpgrading(true);
     try {
-      const result = await invoke<BrainListReply>('brain_detect');
-      setReply(result);
+      const result = await invoke<PiStatusView>('pi_upgrade_now');
+      setStatus(result);
       setError(null);
     } catch (e: unknown) {
       const detail = e instanceof Error ? e.message : String(e);
-      setError(`brain_detect failed: ${detail}`);
+      setError(`pi_upgrade_now failed: ${detail}`);
     } finally {
-      setDetecting(false);
+      setUpgrading(false);
     }
   }, []);
-
-  const selectBrain = useCallback(
-    async (id: string): Promise<void> => {
-      setSavingId(id);
-      try {
-        const result = await invoke<BrainListReply>('brain_set_active', { args: { id } });
-        setReply(result);
-        setError(null);
-      } catch (e: unknown) {
-        const detail = e instanceof Error ? e.message : String(e);
-        setError(detail);
-      } finally {
-        setSavingId(null);
-      }
-    },
-    [],
-  );
 
   return (
     <SettingsShell activeTab="brain">
@@ -445,19 +427,23 @@ export const SettingsBrainPage = (): ReactElement => {
         <div className={styles.brainHeaderText}>
           <h2 className={styles.brainTitle}>Brain</h2>
           <p className={styles.brainHelp}>
-            Pick which agent CLI drives Irisy. Only entries with a CTRL-shipped
-            adapter can be activated; the others are scaffolded for future
-            adapters.
+            Pi is the sole brain (ADR-003 §1). Provider selection happens in
+            Settings → Providers — this pane shows Pi&apos;s version, runtime
+            health, and lets you trigger a manual upgrade.
           </p>
         </div>
         <div className={styles.brainActions}>
           <button
             type="button"
             className={styles.brainButton}
-            onClick={() => void detect()}
-            disabled={detecting || loading}
+            onClick={() => void upgrade()}
+            disabled={upgrading || loading || !status?.upgrade_available}
           >
-            {detecting ? 'Detecting…' : 'Detect on $PATH'}
+            {upgrading
+              ? 'Upgrading…'
+              : status?.upgrade_available
+                ? 'Upgrade now'
+                : 'Up to date'}
           </button>
         </div>
       </div>
@@ -465,71 +451,58 @@ export const SettingsBrainPage = (): ReactElement => {
       {error && <p className={styles.brainError}>{error}</p>}
 
       {loading ? (
-        <p className={styles.sectionSubtitle}>Loading brain registry…</p>
-      ) : (
+        <p className={styles.sectionSubtitle}>Loading Pi status…</p>
+      ) : status == null ? null : (
         <ul className={styles.brainList}>
-          {reply?.brains.map((b) => {
-            const detected = b.binary_path != null;
-            const canActivate = b.adapter_available && detected;
-            const isSaving = savingId === b.id;
-            return (
-              <li
-                key={b.id}
-                className={styles.brainCard}
-                data-active={b.active}
-                data-detected={detected}
-              >
-                <div className={styles.brainRadio}>
-                  <input
-                    type="radio"
-                    name="active-brain"
-                    aria-label={`Set ${b.label} as active brain`}
-                    checked={b.active}
-                    disabled={!canActivate || isSaving}
-                    onChange={() => void selectBrain(b.id)}
-                  />
-                </div>
-                <div className={styles.brainBody}>
-                  <span className={styles.brainName}>{b.label}</span>
-                  <span className={styles.brainDetail}>
-                    {b.binary_path ?? '(not on $PATH)'}
-                    {b.version ? ` · ${b.version}` : ''}
-                    {b.mcp_port != null ? ` · :${b.mcp_port}` : ''}
+          <li
+            className={styles.brainCard}
+            data-active={status.running}
+            data-detected={status.installed_version != null}
+          >
+            <div className={styles.brainBody}>
+              <span className={styles.brainName}>Pi</span>
+              <span className={styles.brainDetail}>
+                {status.pi_bin ?? '(not installed)'}
+                {status.installed_version
+                  ? ` · v${status.installed_version}`
+                  : ''}
+                {status.latest_version &&
+                status.latest_version !== status.installed_version
+                  ? ` · latest v${status.latest_version}`
+                  : ''}
+                {` · provider :${status.provider_port}`}
+              </span>
+              <div className={styles.brainTags}>
+                {status.running ? (
+                  <span className={styles.brainTag} data-tone="good">
+                    running
                   </span>
-                  <div className={styles.brainTags}>
-                    {b.adapter_available ? (
-                      <span className={styles.brainTag} data-tone="good">
-                        adapter shipped
-                      </span>
-                    ) : (
-                      <span className={styles.brainTag} data-tone="warn">
-                        adapter coming
-                      </span>
-                    )}
-                    {b.reachable && (
-                      <span className={styles.brainTag} data-tone="good">
-                        reachable
-                      </span>
-                    )}
-                    {b.description && (
-                      <span className={styles.brainTag}>{b.description}</span>
-                    )}
-                  </div>
-                </div>
-                <div className={styles.brainStatus}>
-                  {b.active
-                    ? 'active'
-                    : !detected
-                      ? 'not installed'
-                      : !b.adapter_available
-                        ? 'not yet'
-                        : isSaving
-                          ? 'saving…'
-                          : ''}
-                </div>
-              </li>
-            );
-          })}
+                ) : (
+                  <span className={styles.brainTag} data-tone="warn">
+                    not running
+                  </span>
+                )}
+                {status.major_update_blocked && (
+                  <span className={styles.brainTag} data-tone="warn">
+                    major update pending review
+                  </span>
+                )}
+                {status.last_error && (
+                  <span className={styles.brainTag} data-tone="bad">
+                    {status.last_error}
+                  </span>
+                )}
+                {status.last_upgrade_error && (
+                  <span className={styles.brainTag} data-tone="warn">
+                    upgrade error: {status.last_upgrade_error}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className={styles.brainStatus}>
+              {status.running ? 'active' : 'idle'}
+            </div>
+          </li>
         </ul>
       )}
     </SettingsShell>

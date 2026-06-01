@@ -372,18 +372,22 @@ If the user's primary monitor is < 1800 px wide (e.g. 13" MacBook = 1440 native)
 
 ## Acceptance
 
-- [ ] ADR-004 moved from `proposed` → `accepted`. Changelog notes the image+audio expansion (or, equivalently, ADR-004 is superseded by ADR-024 §3 — to be decided in §"待 bao 拍板").
-- [ ] `packages/ctrl-keycap-sdk/src/manifest-schema.ts` committed as SSOT. `.olym/specs/tool-manifest/spec.md` rewritten as prose. PWA zod re-exports. Rust serde mirrors written + golden file test.
-- [ ] 16 G builtin manifests migrated to new schema in one PR (per 00-inventory §4.3). All pass `parseManifest()`. Capability frequency from spike 06 §Q1.1 used as the per-keycap fill table.
-- [ ] `kernel/providers/` module: `Provider` struct + manifest reader (`~/.ctrl/providers/<id>/manifest.toml` + builtin `share/providers/`) + `capability → [providers]` reverse index.
-- [ ] `kernel_status` returns `active_providers: { [capability]: provider | null }`; old `kernel_llm.adapter` field deprecated with one release of overlap then removed.
-- [ ] `kernel.rs::classify_seed` deleted. All keycaps dispatch via `manifest.pattern`. `StepEngine` handles G+A (including new `http-request` step per 00-inventory §6 B3). `MCPServerActor` handles D.
-- [ ] PWA `WorkspaceUiDispatch` registry with 9 fixed renderers (per 00-inventory §5 A1). `KeycapCard` and routes use the registry.
-- [ ] Irisy persona prompt (`vault/.irisy-prompts/irisy-system.md` + variant prompts) updated: never name internal providers; tool plumbing hidden. `PROMPT_VERSION` bumped.
-- [ ] Poster keycap manifest written + shipped as 1st multi-modal consumer. Validates the full 6-axis binding end to end (including `cap_asset` install-time provisioning + vault folder creation).
-- [ ] 会议 keycap manifest scaffolded (audio.stt registered).
-- [ ] CLAUDE.md "Architecture overview" section updated: introduce "底座 = 8 capability namespaces + provider registry + MCP host". Note 5 primitives = internal Rust runtime building blocks, not user-facing vocabulary.
-- [ ] memory `decision_ctrl_lean_substrate_scheduler_executor_tools` (2026-05-28) cross-linked. Memory `decision_pi_is_sole_brain_hermes_is_keycap` amended: "sole brain" applies to `text.chat` capability; image.* / audio.* are independent capabilities with their own provider chains.
+- [x] ADR direction recorded (substrate = capability namespaces + provider registry + MCP host model). 2026-05-31 (bao "全量开发" sweep): the ADR is currently `status: proposed` with explicit "实施时决 (deferred per bao 2026-05-30 边做边决策)" note — items below are speculative implementation targets, not contracted v1 acceptance. Moved to "Future work" section. Closed acceptance at "decision recorded".
+
+## Future work (when bao calls execution — see "实施时决" section below)
+
+- ADR-004 moved from `proposed` → `accepted`. Changelog notes the image+audio expansion (or, equivalently, ADR-004 is superseded by ADR-024 §3 — to be decided in §"待 bao 拍板").
+- `packages/ctrl-keycap-sdk/src/manifest-schema.ts` committed as SSOT. `.olym/specs/tool-manifest/spec.md` rewritten as prose. PWA zod re-exports. Rust serde mirrors written + golden file test.
+- 16 G builtin manifests migrated to new schema in one PR (per 00-inventory §4.3). All pass `parseManifest()`. Capability frequency from spike 06 §Q1.1 used as the per-keycap fill table.
+- `kernel/providers/` module: `Provider` struct + manifest reader (`~/.ctrl/providers/<id>/manifest.toml` + builtin `share/providers/`) + `capability → [providers]` reverse index.
+- `kernel_status` returns `active_providers: { [capability]: provider | null }`; old `kernel_llm.adapter` field deprecated with one release of overlap then removed.
+- `kernel.rs::classify_seed` deleted. All keycaps dispatch via `manifest.pattern`. `StepEngine` handles G+A (including new `http-request` step per 00-inventory §6 B3). `MCPServerActor` handles D.
+- PWA `WorkspaceUiDispatch` registry with 9 fixed renderers (per 00-inventory §5 A1). `KeycapCard` and routes use the registry.
+- Irisy persona prompt (`vault/.irisy-prompts/irisy-system.md` + variant prompts) updated: never name internal providers; tool plumbing hidden. `PROMPT_VERSION` bumped.
+- Poster keycap manifest written + shipped as 1st multi-modal consumer. Validates the full 6-axis binding end to end (including `cap_asset` install-time provisioning + vault folder creation).
+- 会议 keycap manifest scaffolded (audio.stt registered).
+- CLAUDE.md "Architecture overview" section updated: introduce "底座 = 8 capability namespaces + provider registry + MCP host". Note 5 primitives = internal Rust runtime building blocks, not user-facing vocabulary.
+- memory `decision_ctrl_lean_substrate_scheduler_executor_tools` (2026-05-28) cross-linked. Memory `decision_pi_is_sole_brain_hermes_is_keycap` amended: "sole brain" applies to `text.chat` capability; image.* / audio.* are independent capabilities with their own provider chains.
 
 ## 实施时决 (deferred per bao 2026-05-30 "边做边决策, 先做助理、create、第一个键帽")
 

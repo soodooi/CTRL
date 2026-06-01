@@ -8,7 +8,6 @@ export { startMcpServer, type RunningServer, type ServerConfig } from './mcp-ser
 export {
   PiBridge,
   type BridgeStatus,
-  type BridgeTransport,
   type ChatMessage,
   type ChatRequest,
   type ChatChunk,

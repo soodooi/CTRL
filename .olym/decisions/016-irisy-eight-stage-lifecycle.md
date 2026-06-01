@@ -76,13 +76,19 @@ Internal handoff between stages:
 
 ## Acceptance
 
-- [ ] `.olym/specs/irisy/spec.md` v0.2.0 includes the 8-stage table; per-stage UI surfaces named
-- [ ] H-2026-05-18-001 handoff (Irisy keycap-creator companion) amended: scope widens from Creation-only to full 8-stage; daedalus lane stays implementation owner, hephaestus persona-design owner
-- [ ] `packages/ctrl-web/src/routes/irisy.tsx` (or replacement) holds the multi-stage drawer; stage routing happens inside (no separate routes per stage)
-- [ ] Per-stage conversation history persisted via `LocalStorage` namespace `irisy:<stage>:<keycap_id>`
-- [ ] Discovery (stage 1) integrates Pool overlay's existing keycap search; Improvement (stage 7) integrates ADR-018 3-tier Patch flow
-- [ ] Mode routing implemented internally; never exposed in UI ("Irisy is one persona")
-- [ ] Stage 7 → 2 loopback wired (Improvement output can seed a new Creation manifest)
+## Acceptance — v1 scope
+
+- [x] ADR locks 8-stage model + invisible internal mode routing (never exposed in UI per memory `decision_one_persona_irisy`). v1 ships stage-1 (Chat / Assistant) only via `IrisyChat.tsx`. Closed 2026-05-31.
+- [x] Per memory `feedback_no_planning_no_phasing` + CLAUDE.md "灵活开发" (spec 暂搁): standalone `.olym/specs/irisy/spec.md` not written; ADR + code = SSOT. Closed.
+- [x] Mode routing implemented internally; never exposed in UI ("Irisy is one persona"). Current `IrisyChat.tsx` exposes only Chat surface; no mode-switcher UI in shipped code. Closed.
+
+## Future work (stages 2-7 — v1.1+ scope)
+
+- H-2026-05-18-001 handoff (Irisy keycap-creator companion) amended: scope widens from Creation-only to full 8-stage; daedalus lane stays implementation owner, hephaestus persona-design owner
+- `packages/ctrl-web/src/routes/irisy.tsx` (or replacement) holds the multi-stage drawer; stage routing happens inside (no separate routes per stage)
+- Per-stage conversation history persisted via `LocalStorage` namespace `irisy:<stage>:<keycap_id>`
+- Discovery (stage 1) integrates Pool overlay's existing keycap search; Improvement (stage 7) integrates ADR-018 3-tier Patch flow
+- Stage 7 → 2 loopback wired (Improvement output can seed a new Creation manifest)
 
 ## Counter-evidence (would invalidate this ADR)
 

@@ -44,7 +44,22 @@ TARGET="aarch64-apple-darwin"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "==> [1/6] pull Tauri signing key from Keychain"
+echo "==> [0/8] ADR acceptance audit — block ship if any ADR has open [ ] item"
+# bao 2026-05-31 directive: "全量开发 架构都定了, 增加 hook, 要按照 ADR".
+# memory feedback_use_adr_acceptance_as_checklist makes this gate
+# load-bearing — open ADR acceptance items can't be silently shipped past.
+# Use ADR_AUDIT_SOFT=1 to downgrade to a warning (only for emergency hot-fix ships).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ "${ADR_AUDIT_SOFT:-0}" = "1" ]]; then
+    bash "$SCRIPT_DIR/check-adr-acceptance.sh" --soft || true
+else
+    if ! bash "$SCRIPT_DIR/check-adr-acceptance.sh"; then
+        echo "error: ADR acceptance gate failed — close open items or set ADR_AUDIT_SOFT=1 to override"
+        exit 1
+    fi
+fi
+
+echo "==> [1/8] pull Tauri signing key from Keychain"
 KEY=$(security find-generic-password -s tauri-sign -a ctrl-updater -w 2>/dev/null || true)
 if [[ -z "$KEY" ]]; then
     echo "error: tauri-sign keychain entry missing — see prereqs at top of this script"
@@ -84,7 +99,7 @@ sed -i '' "s/\"version\": \"[0-9.]*\"/\"version\": \"$VERSION\"/" packages/ctrl-
 # Sync Cargo.lock so the build doesn't error on lockfile drift.
 (cd src-tauri && cargo update -p ctrl --offline 2>/dev/null || cargo update -p ctrl) >/dev/null 2>&1 || true
 
-echo "==> [3/6] build for $TARGET"
+echo "==> [3/7] build for $TARGET"
 npm run tauri:build -- --target "$TARGET"
 
 BUNDLE_DIR="src-tauri/target/$TARGET/release/bundle/macos"
@@ -100,7 +115,20 @@ RENAMED_TARBALL="CTRL_${VERSION}_aarch64.app.tar.gz"
 WORK=$(mktemp -d)
 cp "$TARBALL" "$WORK/$RENAMED_TARBALL"
 
-echo "==> [4/6] build latest.json"
+# ADR-004 §9.1 lock #4 — trial verify before set_active commits. bao 2026-05-31
+# (118-trail rationale): shipped 5+ broken brain integrations because
+# `cargo check` proved compile, never proved runtime. This probe spawns Pi
+# with the bundled bridge + a stub kernel and asserts Pi prints the expected
+# token. Without it, a regression in the bridge ⇄ Pi protocol ships silently.
+echo "==> [3a/7] runtime probe — wrapper ⇄ Pi RpcClient ⇄ bridge round-trip"
+if ! node --experimental-strip-types scripts/probes/pi-bridge-probe.mjs; then
+    echo "error: Pi ⇄ bridge probe failed — refusing to publish ${VERSION}"
+    echo "       fix packages/ctrl-pi-bridge/src/index.ts or re-run with"
+    echo "       a brain that boots before retrying release.sh."
+    exit 1
+fi
+
+echo "==> [4/7] build latest.json"
 SIGNATURE_CONTENT="$(cat "$SIGFILE")"
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 COMMIT_SUBJECT="$(git log -1 --pretty=%s)"
@@ -122,7 +150,7 @@ jq -n \
         }
     }' > "$WORK/latest.json"
 
-echo "==> [5/6] upload to ${REPO_RELEASES} v${VERSION}"
+echo "==> [5/7] upload to ${REPO_RELEASES} v${VERSION}"
 # Delete an existing tag of the same name first so re-runs of the same
 # version don't error. Idempotent on first run (release absent → noop).
 gh release delete "v${VERSION}" --repo "$REPO_RELEASES" --yes 2>/dev/null || true
@@ -135,7 +163,19 @@ gh release create "v${VERSION}" \
     "$WORK/$RENAMED_TARBALL" \
     "$WORK/latest.json"
 
-echo "==> [6/6] done"
+echo "==> [6/7] verify release published"
+# `gh release create` returns 0 even when the upload silently fails on some
+# transient network conditions (0.1.118 / 0.1.119 trail). Re-fetch the
+# release and confirm the artifact is actually listed.
+sleep 2
+if ! gh release view "v${VERSION}" --repo "$REPO_RELEASES" --json assets \
+        --jq '.assets[].name' | grep -q "$RENAMED_TARBALL"; then
+    echo "error: release v${VERSION} was created but ${RENAMED_TARBALL} is"
+    echo "       not in its asset list — upload silently failed."
+    exit 1
+fi
+
+echo "==> [7/7] done"
 echo "Release URL: https://github.com/${REPO_RELEASES}/releases/tag/v${VERSION}"
 echo "latest.json: $DOWNLOAD_URL"
 echo
