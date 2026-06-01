@@ -1,0 +1,171 @@
+# Lane Ownership — CTRL (灵活开发期间, 2026-05-31)
+#
+# Consumed by:
+#   - .claude/hooks/pretool-lane-guard.js   (PreToolUse — block writes outside lane)
+#   - .claude/hooks/session-handoff-snapshot.js (SessionStart — fleet status injection)
+#   - scripts/fleet-status.sh               (operator dashboard)
+#
+# Lane resolution order at hook runtime:
+#   1. cwd has .lane file → that lane (worker mode in worktree)
+#   2. cwd is main tree (no .lane) → "zeus" (orchestrator, no lane restriction)
+#
+# ── Current state (CTRL 灵活模式) ─────────────────────────
+# bao 2026-05-25 校准: 只 ADR + 代码 + PR. spec/handoff/RFC/main-loop 暂搁.
+# Multi-persona lane model preserved here as ready-to-activate config.
+# zeus 在 main tree 跑, .lane 文件不存在, hook 直接 approve all writes.
+# 多 persona 介入时 lanes[] + denylist_explicit 自动生效, 锁住 8 stewardship 类.
+
+version: 0.4.0-ctrl-2026-05-31-flexmode
+last_updated: 2026-05-31
+mode: flexible-dev  # values: flexible-dev | fleet-active
+
+# ── Ownership slots (historical lane assignments, suspended during flex mode) ──
+
+ownership_slots:
+  lane-A:
+    persona: daedalus
+    role_alias: frontend-owner
+    business: irisy-ui-llm-transport-persona-assets
+    alias_lanes: []
+  lane-B:
+    persona: hephaestus
+    role_alias: capability-spike-owner
+    business: kernel-capability-surface-spike
+    alias_lanes: []
+  lane-C:
+    persona: apollo
+    role_alias: marketing-owner
+    business: ctrlapplab-marketing-site
+    alias_lanes: []
+  lane-D:
+    persona: hephaestus
+    role_alias: keycap-integration-owner
+    business: keycap-integration-spec
+    alias_lanes: [hephaestus-keycap-spec]
+  lane-E:
+    persona: hephaestus
+    role_alias: mesh-comm-owner
+    business: mesh-comm-impl
+    alias_lanes: [athena-mesh, hephaestus-mesh]
+  lane-F:
+    persona: athena
+    role_alias: mac-shell-owner
+    business: mac-shell-tauri2-migration
+    alias_lanes: [athena-mac]
+  lane-G:
+    persona: zeus
+    role_alias: code-space-owner
+    business: subprocess-actor-pty-code-space
+    alias_lanes: []
+
+scratch:
+  namespace: .worktrees/scratch/<type>-<topic>/
+  types: [spike, proposal, poc, hotfix]
+  lifetime: short (timebox 1-5 day)
+
+main:
+  persona: zeus
+  worktree: /Users/mac/Documents/coding/CTRL/
+  role: orchestrator + cross-cutting + stewardship
+
+# ── Application surfaces (real CTRL business lanes) ───────
+
+lanes:
+
+  lane-A:
+    description: Irisy UI + LLM transport + persona assets
+    files:
+      - packages/ctrl-web/src/routes/irisy/**
+      - packages/ctrl-web/src/components/irisy/**
+      - packages/ctrl-web/public/irisy/**
+
+  lane-B:
+    description: kernel capability surface spike
+    files:
+      - .worktrees/scratch/spike-jiazuo-capability/**
+      - doc/keycap-integration-research/06-jiazuo-result.md
+
+  lane-C:
+    description: ctrlapplab.com Astro marketing site
+    files:
+      - packages/ctrl-marketing-site/**
+
+  lane-D:
+    description: keycap integration spec — MCP tool contract + intent buckets
+    files:
+      - doc/keycap-integration-research/02-pattern-*.md
+      - doc/keycap-integration-research/03-mcp-tool-contract.md
+      - doc/keycap-integration-research/04-intent-buckets.md
+
+  lane-E:
+    description: mesh comm impl — vodozemac + webrtc-rs + Automerge + ctrl-relay worker
+    files:
+      - packages/ctrl-mesh/**
+      - src-tauri/src/mesh/**
+
+  lane-F:
+    description: macOS shell Tauri 2 migration
+    files:
+      - src-tauri/src/shell/**
+      - src-tauri/src/lib.rs
+      - src-tauri/tauri.conf.json
+
+  lane-G:
+    description: SubprocessActor + portable-pty kernel landing (Code Space path C)
+    files:
+      - src-tauri/src/kernel/actor.rs
+      - src-tauri/src/kernel/runtime.rs
+      - src-tauri/src/kernel/scheduler.rs
+      - src-tauri/src/kernel/subprocess_actor.rs
+      - src-tauri/src/kernel/pty/**
+      - src-tauri/Cargo.toml
+      - doc/code-space-path-c/**
+
+# ── Always-allowed for all roles (worker + zeus) ──────────
+
+allowlist:
+  - .olym/handoffs/*.md
+  - .olym/handoffs/archive/*.md
+  - .olym/handoffs/INDEX.md
+
+# ── Allowed but warn (shared files) ───────────────────────
+
+warnlist:
+  - package.json
+  - package-lock.json
+  - tsconfig.json
+  - tsconfig.*.json
+  - .gitignore
+  - .env.example
+
+# ── Forbidden for all non-zeus roles (8 stewardship classes) ──
+
+denylist_explicit:
+  # Class 1: Entry rules
+  - CLAUDE.md
+  # Class 2: Memory
+  - MEMORY.md
+  # Class 3: Olym main architecture (灵活模式期间 specs/ 已删, 保留 glob 作未来扩展防线)
+  - .olym/specs/**
+  # Class 4: Steering
+  - .olym/steering/**
+  # Class 5: Decisions (ADR) — version-controlled, amendments via PROCESS.md
+  - .olym/decisions/**
+  # Class 6: Audits (dike output)
+  - .olym/audits/**
+  # Class 7: Cross-cutting skills + best-practice
+  - .olym/best-practice/**
+  - .olym/skills/**
+  # Class 8: MCP / Tooling / Hooks
+  - .claude/settings.json
+  - .claude/settings.local.json
+  - .claude/hooks/**
+  - .claude-plugin/**
+  - .olym/settings/mcp.json
+  - .husky/**
+  # CI workflows (zeus-only)
+  - .github/workflows/**
+  # Identity
+  - .lane
+  # Olym version lockfile
+  - .olym/VERSION

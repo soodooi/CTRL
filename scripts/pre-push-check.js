@@ -23,7 +23,7 @@ import { execSync } from 'node:child_process'
 const ROOT = resolve(process.cwd())
 const FULL_SCAN = process.env.FULL_SCAN === '1'
 
-const CHINESE_RE = /[一-鿿]/
+const CHINESE_RE = /[\u4e00-\u9fff]/  // Unicode escape: avoid self-trigger on this file
 const CODE_EXTENSIONS = new Set(['.js', '.ts', '.tsx', '.jsx', '.vue', '.css', '.html', '.cjs', '.mjs', '.toml', '.json', '.sql', '.go', '.py', '.rs', '.java', '.kt'])
 const SKIP_DIRS = new Set(['node_modules', '.wrangler', 'dist', 'build', '.git', '.olym', 'lib'])
 
