@@ -1,27 +1,12 @@
 // DefaultWorkspace — the `/` route.
 //
-// 2026-05-29 restructure (bao): Irisy chat is now SHELL-LEVEL, so the
-// home route no longer carries its own ChatInput / history. The display
-// area on `/` shows the install slot until a workspace instance opens.
+// bao 2026-06-01 full fix: the route content is now empty. The
+// shell-level WorkspaceShell (rendered in app.tsx's Tab column) is the
+// single mount of the workspace surface — rendering another instance
+// here would double-mount and race over the same Zustand state.
+// `/` now serves only as a URL anchor; the visible shell is rendered
+// by `RootShellInner` regardless of route.
 
-import { useEffect, type ReactElement } from 'react';
-import { useRail } from '@/components/PrimaryRail';
-import { WorkspaceShell } from '@/components/workspace/WorkspaceShell';
-import styles from './default.module.css';
+import type { ReactElement } from 'react';
 
-export const DefaultWorkspace = (): ReactElement => {
-  const { setIrisyState } = useRail();
-
-  useEffect(() => {
-    setIrisyState('idle');
-    return () => setIrisyState('idle');
-  }, [setIrisyState]);
-
-  // 2026-05-30 shell restructure: Keyboard is now a global shell column
-  // (lives at app.tsx in the `keycap` grid slot). The main display
-  // surface on `/` is empty — just a paper backdrop until the user
-  // opens a workspace instance or navigates to a keycap output.
-  const fallback = <div className={styles.emptyHome} aria-hidden="true" />;
-
-  return <WorkspaceShell fallback={fallback} />;
-};
+export const DefaultWorkspace = (): ReactElement => <></>;

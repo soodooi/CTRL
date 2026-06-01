@@ -53,12 +53,12 @@
   --tab-width: 0;
 }
 
+/* bao 2026-06-01 full fix: L2 and Tab both expand together when a
+   workspace instance exists. L2 width is fixed at 200px (sub-nav strip);
+   the Tab column fills the remaining space (1fr). */
 .shell[data-workspace-open='true'] {
-  --tab-width: 1fr;
-}
-
-.shell[data-l2-open='true'] {
   --l2-width: 200px;
+  --tab-width: 1fr;
 }
 
 .l2 {

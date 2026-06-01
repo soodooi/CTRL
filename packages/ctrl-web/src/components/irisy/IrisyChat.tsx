@@ -163,6 +163,11 @@ export function IrisyChat(): React.ReactElement {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // bao 2026-06-01: IME composition flag. React's controlled `value` + the
+  // onChange round-trip break Chinese / Japanese / Korean IME composition
+  // (the popup closes mid-keystroke). Track compositionstart/end and skip
+  // setInput while composing; commit the final string on compositionend.
+  const isComposingRef = useRef(false);
 
   // Tick elapsed time while a send is in flight so the user sees that
   // something is happening on long calls.
@@ -686,7 +691,20 @@ export function IrisyChat(): React.ReactElement {
         <textarea
           ref={inputRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            // Skip setState while the IME is composing so the popup
+            // can manage its own intermediate state. The final string
+            // commits on compositionend.
+            if (isComposingRef.current) return;
+            setInput(e.target.value);
+          }}
+          onCompositionStart={() => {
+            isComposingRef.current = true;
+          }}
+          onCompositionEnd={(e) => {
+            isComposingRef.current = false;
+            setInput(e.currentTarget.value);
+          }}
           onKeyDown={onInputKeyDown}
           className={styles.composerInput}
           placeholder="Irisy is reading…"

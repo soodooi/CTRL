@@ -162,10 +162,12 @@ export const PrimaryRail = (): ReactElement => {
   const handleNavClick = useCallback(
     (def: RailDef) => {
       setActiveRailId(def.id);
-      // bao 2026-06-01: tab-bound L1 chips open a route tab in the
-      // workspace tab area; the Tauri shell separately expands the main
-      // window so the Tab column is visible. Irisy stays as full-window
-      // navigation since it lives in the always-on right pane.
+      // bao 2026-06-01 (v0.1.129 regression fix): tab-bound L1 chips
+      // open a route tab in the workspace tab area. Do NOT call
+      // `toggle_workspace_window` here — it is a toggle, so clicking
+      // an L1 chip while the workspace is already expanded collapses
+      // it. The user controls window expand/collapse via the `>`
+      // chevron at the top of L1; this handler only updates state.
       if (def.id === POOL_ITEM_ID || def.id === CODING_ITEM_ID) {
         useWorkspaceStore.getState().openSystemTab({
           id: def.id,
@@ -173,7 +175,6 @@ export const PrimaryRail = (): ReactElement => {
           path: def.path,
           title: def.label,
         });
-        void invoke<boolean>('toggle_workspace_window').catch(() => undefined);
         return;
       }
       void navigate({ to: def.path });
@@ -183,17 +184,15 @@ export const PrimaryRail = (): ReactElement => {
 
   const handleSettingsClick = useCallback(() => {
     setActiveRailId(SETTINGS_ITEM_ID);
-    // bao 2026-06-01: L1 click opens a route tab in the singleton
-    // "system" workspace instance (L2 pane), not a full-window navigate.
-    // The Tauri shell separately expands the window leftward when any
-    // workspace instance exists so the new tab is visible.
+    // bao 2026-06-01: open a route tab in the singleton "system"
+    // workspace instance. Window expand/collapse stays user-driven via
+    // the `>` chevron at the top of L1 (see handleNavClick rationale).
     useWorkspaceStore.getState().openSystemTab({
       id: 'settings',
       kind: 'route',
       path: SETTINGS_PATH,
       title: 'Settings',
     });
-    void invoke<boolean>('toggle_workspace_window').catch(() => undefined);
   }, [setActiveRailId]);
 
   // ▾ toggle — opens the workspace big window (macOS NSWindow

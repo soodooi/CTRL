@@ -16,22 +16,16 @@ applyTheme(getStoredTheme());
 const root = document.getElementById('root');
 if (!root) throw new Error('PWA root element missing');
 
-const surface = new URLSearchParams(window.location.search).get('surface');
-
-if (surface === 'workspace') {
-  const { WorkspaceSurface } = await import('./surfaces/WorkspaceSurface');
-  if (import.meta.env.PROD) {
-    const { StrictMode } = await import('react');
-    createRoot(root).render(<StrictMode><WorkspaceSurface /></StrictMode>);
-  } else {
-    createRoot(root).render(<WorkspaceSurface />);
-  }
+// bao 2026-06-01: keycap page (WorkspaceSurface) retired. Cockpit now
+// hosts the workspace tab area inline (L1 + L2 + Tab + Irisy 4-col
+// shell). The `?surface=workspace` branch is removed; any URL surface
+// param is ignored. Toggling the main window 430 ↔ 1600 still works
+// via the existing `toggle_workspace_window` Tauri command (the `>`
+// chevron at the top of L1).
+const { App } = await import('./app');
+if (import.meta.env.PROD) {
+  const { StrictMode } = await import('react');
+  createRoot(root).render(<StrictMode><App /></StrictMode>);
 } else {
-  const { App } = await import('./app');
-  if (import.meta.env.PROD) {
-    const { StrictMode } = await import('react');
-    createRoot(root).render(<StrictMode><App /></StrictMode>);
-  } else {
-    createRoot(root).render(<App />);
-  }
+  createRoot(root).render(<App />);
 }
