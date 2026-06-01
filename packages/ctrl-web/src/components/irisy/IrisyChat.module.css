@@ -123,10 +123,11 @@
 .markdownBody :global(h3) { font-size: 1em; font-weight: 700; }
 
 .markdownBody :global(p) {
-  margin: 0;
-  line-height: 1.42;
+  margin: 0.35em 0;
+  line-height: 1.5;
 }
-.markdownBody :global(p + p) { margin-top: 0.2em; }
+.markdownBody :global(p:first-child) { margin-top: 0; }
+.markdownBody :global(p:last-child) { margin-bottom: 0; }
 .markdownBody :global(p:first-child) { margin-top: 0; }
 .markdownBody :global(p:last-child) { margin-bottom: 0; }
 
@@ -494,10 +495,10 @@
 .scroller {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 10px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
 }
 
 .welcome {
@@ -568,6 +569,14 @@
    2026-06-01: "YOU 占一行，Irisy 占一行，这个不对，用左右的". Tighter
    font + line-height + paragraph spacing to raise information density
    per bao's same turn ("字体应该再小一些，紧凑一些"). */
+/* Editorial 2-col: small-caps label on the left, content on the right,
+   same baseline row. Sizes calibrated 2026-06-01 from full research
+   (.olym/brainstorm/chat-readability-2026-06-01.md): Cursor users
+   settle at 15-16px/1.5-1.6; Linear runs 14px on dense panels; macOS
+   HIG floor for legible label is ~10.5px @ weight 600. v0.1.138 sat
+   at 13/1.42/9px which crossed the legibility line — this rolls back
+   to the industry common-ground (14.5/1.5/10.5) while keeping the
+   denser-than-ChatGPT editorial layout. */
 .userBubble,
 .assistantBubble {
   width: 100%;
@@ -577,14 +586,14 @@
   background: transparent;
   color: var(--color-text);
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.42;
+  font-size: 14.5px;
+  line-height: 1.5;
   letter-spacing: -0.005em;
   overflow-wrap: anywhere;
   word-break: break-word;
   display: grid;
-  grid-template-columns: 40px 1fr;
-  column-gap: 8px;
+  grid-template-columns: 48px 1fr;
+  column-gap: 10px;
   align-items: baseline;
 }
 
@@ -598,13 +607,13 @@
 
 .senderLabel {
   font-family: var(--font-display);
-  font-size: 9px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-text-faint);
+  color: var(--color-text-muted);
   margin: 0;
-  padding-top: 2px;
+  padding-top: 3px;
   align-self: start;
   user-select: none;
   white-space: nowrap;
@@ -616,7 +625,7 @@
   grid-column: 1 / -1;
   align-self: stretch;
   height: 0;
-  margin: 8px 0 10px;
+  margin: 12px 0 14px;
   border-top: 1px solid var(--color-border-soft);
 }
 .turnSeparator:first-child { display: none; }
