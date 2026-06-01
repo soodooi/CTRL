@@ -1,22 +1,49 @@
-/* StatusBar — top instrument cluster.
+/* StatusBar — top instrument cluster (ADR-003 frontend §7 v4 2026-06-01).
  *
- * Layout (bao 2026-05-30: 顶端左侧 = 状态指示区):
- *   [KRN ● | ENGINE: <brain> | MCP: N | VAULT: N]    ...    [clock] [×]
+ * Layout: status row is a 4-col grid that mirrors the shell's columns
+ * (Tab | L2 | L1 | Irisy). All visible chips live in `.cockpitZone`
+ * which spans L1+Irisy only — that pair is anchored to the window's
+ * right edge and never moves when the workspace toggle expands the
+ * window leftward.
  *
- * No brand wordmark in the bar — the chrome stays informational. The
- * status zone (left) groups kernel + Irisy runtime indicators. Right
- * cluster is clock + hide.
+ * Tab + L2 status cells (col 1-2) stay empty for now; future workspace
+ * breadcrumb / tab title can go there without disturbing cockpit chrome.
+ *
+ *   |── Tab (empty) ──|── L2 (empty) ──|─────── cockpitZone ───────|
+ *                                      [LOGO] [KRN] ... [vN] [×]
+ *
+ * bao 2026-06-01 fix: the logo + KRN chips must not move when the ▾
+ * toggle expands the window. Previously they sat at the bar's left
+ * edge and jumped ~1122px leftward (since the bar spans all 4 columns).
+ * Now they are pinned alongside L1+Irisy on the right.
  */
 
 .bar {
-  display: flex;
+  display: grid;
+  grid-template-columns:
+    var(--tab-width)
+    var(--l2-width)
+    var(--l1-width)
+    var(--irisy-pane-width);
   align-items: center;
-  gap: var(--space-3);
   height: var(--statusbar-height);
-  padding: 8px var(--space-3) 0;
+  padding: 8px 0 0;
   background: var(--color-bg-l1);
   border-bottom: 1px solid var(--color-border-soft);
   position: relative;
+}
+
+/* Cockpit zone — spans L1 (col 3) + Irisy (col 4). Together with
+   L1+Irisy below, this is the fixed cockpit that does not move when
+   the workspace toggle expands the window. */
+.cockpitZone {
+  grid-column: 3 / 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 100%;
+  padding: 0 var(--space-3);
+  min-width: 0;
 }
 
 /* Guaranteed drag band above the chips. The chips intercept clicks so

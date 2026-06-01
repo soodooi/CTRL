@@ -59,55 +59,59 @@ export const StatusBar = (): ReactElement => {
       data-tauri-drag-region="deep"
     >
       {/* Guaranteed-drag strip at the very top — the chips below
-          intercept clicks so the user has nothing else to drag from.
-          bao 2026-05-30: '顶部拖动不方便,可能因为有文字'. */}
+          intercept clicks so the user has nothing else to drag from. */}
       <div className={styles.dragStrip} data-tauri-drag-region aria-hidden="true" />
-      <div className={styles.statusZone} aria-label="System status">
-        <span className={styles.logoSlot} aria-hidden="true">
-          <Logo size="sm" />
-        </span>
-        {onKrnClick ? (
+      {/* Cockpit zone — pinned to grid cols 3-4 (L1 + Irisy) so the
+          logo, KRN, version pill and × stay still when ▾ expands the
+          window leftward into the Tab + L2 columns. */}
+      <div className={styles.cockpitZone}>
+        <div className={styles.statusZone} aria-label="System status">
+          <span className={styles.logoSlot} aria-hidden="true">
+            <Logo size="sm" />
+          </span>
+          {onKrnClick ? (
+            <button
+              type="button"
+              className={`${styles.krn} ${styles.chipButton}`}
+              title={krnTitle}
+              onClick={onKrnClick}
+            >
+              <Led tone={krnTone} size="sm" />
+              <span className={styles.chipLabel}>KRN</span>
+            </button>
+          ) : (
+            <span className={styles.krn} title={krnTitle}>
+              <Led tone={krnTone} size="sm" />
+              <span className={styles.chipLabel}>KRN</span>
+            </span>
+          )}
+        </div>
+
+        <div className={styles.spacer} aria-hidden="true" />
+
+        <div className={styles.right}>
           <button
             type="button"
-            className={`${styles.krn} ${styles.chipButton}`}
-            title={krnTitle}
-            onClick={onKrnClick}
+            className={`${styles.versionChip} ${styles.chipButton}`}
+            title={versionTitle}
+            onClick={() => void update.checkAndInstall()}
+            disabled={update.checking || update.installing}
           >
-            <Led tone={krnTone} size="sm" />
-            <span className={styles.chipLabel}>KRN</span>
+            <span className={styles.chipValue}>{versionLabel}</span>
+            {update.available && (
+              <span className={styles.updateDot} aria-label="Update available" role="status" />
+            )}
           </button>
-        ) : (
-          <span className={styles.krn} title={krnTitle}>
-            <Led tone={krnTone} size="sm" />
-            <span className={styles.chipLabel}>KRN</span>
-          </span>
-        )}
-      </div>
-
-      <div className={styles.spacer} aria-hidden="true" />
-
-      <div className={styles.right}>
-        <button
-          type="button"
-          className={`${styles.versionChip} ${styles.chipButton}`}
-          title={versionTitle}
-          onClick={() => void update.checkAndInstall()}
-          disabled={update.checking || update.installing}
-        >
-          <span className={styles.chipValue}>{versionLabel}</span>
-          {update.available && (
-            <span className={styles.updateDot} aria-label="Update available" role="status" />
-          )}
-        </button>
-        <button
-          type="button"
-          className={styles.hideBtn}
-          onClick={handleHide}
-          title="Hide window (Ctrl tap also toggles)"
-          aria-label="Hide window"
-        >
-          ×
-        </button>
+          <button
+            type="button"
+            className={styles.hideBtn}
+            onClick={handleHide}
+            title="Hide window (Ctrl tap also toggles)"
+            aria-label="Hide window"
+          >
+            ×
+          </button>
+        </div>
       </div>
     </header>
   );
