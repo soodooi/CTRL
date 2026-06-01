@@ -1,18 +1,20 @@
 ---
 adr_id: 003
 module: frontend
-title: CTRL frontend — single PWA + Irisy-as-sole-entry + Keyboard drag-install + vault viewer stack
-version: 2
+title: CTRL frontend — single PWA + Irisy-as-sole-entry + Keyboard drag-install + vault viewer stack + 4-col shell
+version: 3
 status: accepted
-last_updated: 2026-05-31
+last_updated: 2026-06-01
 deciders: [bao, zeus, daedalus]
 sections:
   - { id: pwa,           source: orig-002 }
   - { id: nav-keyboard,  source: orig-002-amendment-2026-05-30 }
   - { id: vault-stack,   source: orig-020 }
+  - { id: shell-4col,    source: new-2026-06-01 }
 changelog:
   - v1 2026-05-31: module reorg — merged orig-002 (PWA pivot + Irisy-as-sole-entry + Keyboard drag-install) + orig-020 (VMark stack adoption: Tiptap + CodeMirror 6 + mermaid + smart table + vault browser).
   - v2 2026-05-31: § nav-keyboard — Settings enters L1 (bao "L1 上的 setting 页面, 点击打开就是 setting 页面, 其中一个页面就是 providers"). Replaces v1 "Settings via StatusBar cog". L1 buttons under `▾`: [Chat] [New] [Vault] [Coding] [Settings]. Each opens its route in workspace EXPANDED area; no floating cog.
+  - v3 2026-06-01: NEW § shell-4col — 4-column shell `[L1 | L2 | Tab | Irisy]` lock-in. bao multi-message校准 in workspace tab refactor (2026-06-01 session, ~$720 cost). Keycap surface (separate Tauri child window) retired in concept; ship still has bugs (see § shell-4col known-bugs list). v0.1.127 → v0.1.132 released during this session.
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/002-substrate.md
@@ -102,6 +104,67 @@ Three-pane VMark-style entry into `~/Documents/CTRL/`:
 - Backlinks scans client-side for `[[stem]]` + `[label](path.md)` — kernel index follow-up
 
 `VaultBrowser` reused inside Pool keycap detail panel ("edit prompt.md").
+
+## §7 Shell 4-col layout (NEW v3, 2026-06-01) — `[L1 | L2 | Tab | Irisy]`
+
+**Why this section exists**: bao 2026-06-01 multi-message refactor (`你怎么这么蠢？无非就是最简单的tab和导航` + `L2和tab，是两个东西` + `keycap这个是pool` + 5 release iterations v0.1.127 → v0.1.132). The previous 2-col `[L1 | Irisy]` shell could not host the workspace tab paradigm; an ad-hoc Tauri child window (`WorkspaceSurface` + `toggle_workspace_window`) was filling that role and conflicting with the inline cockpit. This section locks the canonical 4-column shell.
+
+### §7.1 Column model
+
+| Column | Width | Role |
+|---|---|---|
+| **L1** | 48px fixed | Primary nav rail. Vertical icon-only chips: ▾ (window expand toggle, top), Irisy, Keycap pool, Coding, Settings (bottom). Always visible. |
+| **L2** | 0 (compact) / 200px (when active L1 has sub-nav) | Secondary nav for the active L1 item — VS Code-style sidebar. Reserved column; sub-nav components land per L1 item as needed. **L2 and Tab are two separate things** (bao explicit). |
+| **Tab** | 0 (no workspace) / 1fr (any workspace instance open) | Workspace tab content — `<WorkspaceShell />` from `components/workspace/`. Renders `InstanceSwitcher` (pill row) + `TabBar` (horizontal tabs) + active tab body. |
+| **Irisy** | 430px fixed | Always-on right pane. `<IrisyChat />` + `<InfraBar />` (kernel/MCP/vault chips at bottom). |
+
+CSS file: `packages/ctrl-web/src/app.module.css`. Driven by `--l1-width / --l2-width / --tab-width / --irisy-pane-width` CSS vars + `data-workspace-open / data-l2-open` attributes on `.shell`. Status bar spans all 4 columns at top via `grid-template-areas`.
+
+### §7.2 Window-size states
+
+- **Compact**: window ≈ 478px. Only L1 (48) + Irisy (430) render. No workspace open. Sufficient for "ask Irisy a question, dismiss" loop.
+- **Expanded**: window ≈ 1100px+. All 4 columns visible. Toggled via the `▾` chevron at the top of L1 (calls Tauri `toggle_workspace_window` which slides the main window's left edge 430 ↔ 1600). User-driven; L1 chip clicks do NOT auto-expand or auto-compact the window (bao 2026-06-01 `L1切换为什么要关掉工作区？`).
+
+### §7.3 L1 click semantics
+
+| L1 chip | Behaviour |
+|---|---|
+| ▾ (top) | Tauri `toggle_workspace_window` — manual window expand/compact only. |
+| Irisy | `navigate('/')` — Irisy is always rendered in the .irisy column; clicking refocuses route only. |
+| Keycap pool | `openSystemTab({id:'pool', path:'/pool', title:'Keycap pool'})` — opens a route tab in the singleton "system" workspace instance. Window is NOT auto-expanded. |
+| Coding | `openSystemTab({id:'coding', path:'/coding', title:'Coding'})`. |
+| Settings (bottom) | `openSystemTab({id:'settings', path:'/settings/ctrl', title:'Settings'})`. |
+
+System instance: `workspace-store.ts::openSystemTab(tab)` — singleton id `ws-system`, layout `tabs`, idempotent on `tab.id`. Non-keycap L1 chips share this instance.
+
+### §7.4 Keycap page = Pool route (NOT a separate Tauri window)
+
+bao 2026-06-01: `keycap这个是pool，用于管理keycaps`. The legacy `WorkspaceSurface` (separate Tauri child window opened by `toggle_workspace_window` with `?surface=workspace`) is **retired in concept**. The keycap grid view is the `/pool` route, opened as a Tab in the main window via the L1 "Keycap pool" chip.
+
+`main.tsx` no longer branches on `?surface=workspace` — it always renders `<App />`. The Rust `toggle_workspace_window` command was repurposed to drive main-window left-edge resize (per the system.rs comment); future work should rename it to `toggle_main_window_expanded` and retire `?surface=workspace` query handling end-to-end.
+
+### §7.5 Persistence + rehydration
+
+`workspace-store.ts` uses zustand `persist` middleware (key `ctrl-workspace-store`, version 2). A stale shape from earlier sessions immediately flipped `data-workspace-open=true` on boot which collapsed the StatusBar grid row at compact 430px window width ("can't see version" symptom). Resolved at v0.1.132 via `version: 2` + `migrate` that returns an empty store for any pre-v2 payload. Any future change to `WorkspaceInstance` MUST bump this version.
+
+### §7.6 IME input
+
+`IrisyChat.tsx` textarea uses `onCompositionStart` / `onCompositionEnd` + `isComposingRef` to skip `setInput` while the IME is composing (Chinese / Japanese / Korean). The final string commits on `compositionend`. Without this React's controlled `value` round-trip closes the IME popup mid-keystroke.
+
+### §7.7 Known bugs (ship-blockers for v1)
+
+These were surfaced during the 2026-06-01 refactor session and are NOT yet resolved as of v0.1.132. A follow-up session must address them before the shell is considered stable:
+
+1. **Duplicate cockpit window** (v0.1.132 screenshot) — `toggle_workspace_window` Rust command still opens a Tauri child window with `?surface=workspace` URL. With v3 `main.tsx` removing the WorkspaceSurface branch, that URL falls through to `<App />`, producing a second full cockpit. Fix: either retire the child-window code path in Rust entirely, or have `main.tsx` render `null` for `?surface=workspace`.
+2. **Stale localStorage** — even with v2 migration in place, users on v0.1.131 with active sessions may have cached zustand state pre-rehydration. Future schema changes should bump again and tolerate orphaned keys.
+3. **Comprehensive frontend review pending** — the `ecc:react-reviewer` agent stopped at $720 session cost. A fresh-session full audit of all ~25 frontend files is required before further refactor.
+
+### §7.8 Anti-patterns (do NOT do)
+
+- Do NOT call `toggle_workspace_window` from L1 click handlers — it is a toggle, will collapse an already-expanded window (bao 2026-06-01 `L1切换为什么要关掉工作区？`).
+- Do NOT render `<WorkspaceShell />` outside the `.tab` grid area — the hidden `<Outlet />` was double-mounting it via `/` route until v0.1.130 (`routes/default.tsx` now returns `<></>`).
+- Do NOT add new route components inside `<Outlet />` that mount heavy stateful chat / poll loops — they will run hidden and race against the shell-level mount (bao 2026-06-01 BUG 1: `/irisy` route mounted second `IrisyChat`).
+- Do NOT widen the Irisy column past 430px or shrink it under 380px — chat readability is calibrated to that range.
 
 ## §6 Smart table — markdown + frontmatter schema (vim test passes)
 
