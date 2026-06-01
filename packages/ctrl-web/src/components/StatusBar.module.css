@@ -19,12 +19,14 @@
  */
 
 .bar {
-  display: grid;
-  grid-template-columns:
-    var(--tab-width)
-    var(--l2-width)
-    var(--l1-width)
-    var(--irisy-pane-width);
+  /* Flex with right-anchored cockpit zone. Previously a 4-col grid
+     mirroring the shell, but WebKit collapses 0-width grid tracks
+     (compact: tab=0, l2=0) into a single line that makes the next
+     grid-column-line resolve to 0 — cockpitZone with `grid-column: 3/5`
+     then occupied 0px and the logo + KRN vanished. Flex with a
+     fixed-width cockpit zone is robust against the 0-track case. */
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
   height: var(--statusbar-height);
   padding: 8px 0 0;
@@ -33,17 +35,19 @@
   position: relative;
 }
 
-/* Cockpit zone — spans L1 (col 3) + Irisy (col 4). Together with
-   L1+Irisy below, this is the fixed cockpit that does not move when
-   the workspace toggle expands the window. */
+/* Cockpit zone — fixed width matches L1 + Irisy columns. Always glued
+   to the right edge of the bar, never shifts when the workspace
+   toggle expands the window leftward. */
 .cockpitZone {
-  grid-column: 3 / 5;
+  width: calc(var(--l1-width) + var(--irisy-pane-width));
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   height: 100%;
   padding: 0 var(--space-3);
   min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Guaranteed drag band above the chips. The chips intercept clicks so

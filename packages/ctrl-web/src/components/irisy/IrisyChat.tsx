@@ -175,6 +175,42 @@ const ToolCard = memo(function ToolCard({
   );
 });
 
+// Translate Pi RPC error strings into a friendlier first line. Pi's
+// rpc-client throws raw strings like "Timeout waiting for response to
+// prompt. Stderr: <maybe-empty>", which is accurate but unhelpful for
+// the user — they need to know what to do, not which timer fired.
+// Keep the original message in `detail` so the expandable panel
+// still shows the full stderr tail for diagnostics.
+function humanizePiError(
+  raw: string,
+  activeBrain?: string,
+): { summary: string; detail: string } {
+  const brain = activeBrain && activeBrain !== 'pi' ? activeBrain : 'the active provider';
+  if (raw.startsWith('Timeout waiting for response to')) {
+    return {
+      summary: `${brain} did not respond. Check provider auth (e.g. run 'claude login') or pick a different provider in Settings.`,
+      detail: raw,
+    };
+  }
+  if (raw.startsWith('Agent process exited immediately')) {
+    return {
+      summary: `Brain subprocess crashed on startup. Check Pi install or provider config.`,
+      detail: raw,
+    };
+  }
+  if (raw.startsWith('Timeout waiting for agent to become idle')) {
+    return {
+      summary: `${brain} is still streaming a previous request. Try again in a moment.`,
+      detail: raw,
+    };
+  }
+  const firstLine = raw.split('\n')[0] ?? raw;
+  return {
+    summary: `Brain error: ${firstLine.slice(0, 120)}`,
+    detail: raw,
+  };
+}
+
 interface AssistantBubbleProps {
   message: DisplayMessage;
   /**
@@ -596,12 +632,7 @@ export function IrisyChat(): React.ReactElement {
             // them into the errorPanel surface instead so the bubble
             // stays clean and the error can be expanded for the stderr
             // tail. ADR-003 §7 chat polish.
-            const detail = String(chunk.error);
-            const firstLine = detail.split('\n')[0] ?? detail;
-            setChatError({
-              summary: `Brain error: ${firstLine.slice(0, 120)}`,
-              detail,
-            });
+            setChatError(humanizePiError(String(chunk.error), activeBrain));
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId ? { ...m, streaming: false } : m,
@@ -627,11 +658,7 @@ export function IrisyChat(): React.ReactElement {
         );
       } catch (e: unknown) {
         const detail = e instanceof Error ? e.message : String(e);
-        const firstLine = detail.split('\n')[0] ?? detail;
-        setChatError({
-          summary: `Chat stream failed: ${firstLine.slice(0, 120)}`,
-          detail,
-        });
+        setChatError(humanizePiError(detail, activeBrain));
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId ? { ...m, streaming: false } : m,
