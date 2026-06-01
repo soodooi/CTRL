@@ -210,7 +210,6 @@ const AssistantBubble = memo(function AssistantBubble({
       className={`${styles.assistantBubble} ${styles.markdownBody}`}
       aria-live={isStreaming ? 'polite' : undefined}
     >
-      <span className={styles.senderLabel}>Irisy</span>
       <div className={styles.bubbleContent}>
         {hasRenderable ? (
           segments.map((seg, idx) => {
@@ -827,9 +826,6 @@ export function IrisyChat(): React.ReactElement {
                   className={styles.userBubble}
                   aria-live={m.streaming ? 'polite' : undefined}
                 >
-                  <span className={`${styles.senderLabel} ${styles.senderLabelUser}`}>
-                    You
-                  </span>
                   <span className={styles.bubbleContent}>{m.content}</span>
                 </article>
               </div>

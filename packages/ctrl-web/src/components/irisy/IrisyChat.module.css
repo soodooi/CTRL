@@ -569,14 +569,13 @@
    2026-06-01: "YOU 占一行，Irisy 占一行，这个不对，用左右的". Tighter
    font + line-height + paragraph spacing to raise information density
    per bao's same turn ("字体应该再小一些，紧凑一些"). */
-/* Editorial 2-col: small-caps label on the left, content on the right,
-   same baseline row. Sizes calibrated 2026-06-01 from full research
-   (.olym/brainstorm/chat-readability-2026-06-01.md): Cursor users
-   settle at 15-16px/1.5-1.6; Linear runs 14px on dense panels; macOS
-   HIG floor for legible label is ~10.5px @ weight 600. v0.1.138 sat
-   at 13/1.42/9px which crossed the legibility line — this rolls back
-   to the industry common-ground (14.5/1.5/10.5) while keeping the
-   denser-than-ChatGPT editorial layout. */
+/* No sender label — plain editorial flow. User vs assistant signaled
+   by: user lines render in muted color with a 2px accent rail on the
+   left; assistant lines render in primary text color with full
+   markdown structure (lists, headings, code, tool cards). Turn
+   separator (hairline) marks role boundary.
+   Sizes from .olym/brainstorm/chat-readability-2026-06-01.md
+   (14.5/1.5 body, 0.35em paragraph gap, 10px scroller gap). */
 .userBubble,
 .assistantBubble {
   width: 100%;
@@ -591,13 +590,14 @@
   letter-spacing: -0.005em;
   overflow-wrap: anywhere;
   word-break: break-word;
-  display: grid;
-  grid-template-columns: 48px 1fr;
-  column-gap: 10px;
-  align-items: baseline;
 }
 
-.userBubble { white-space: pre-wrap; }
+.userBubble {
+  white-space: pre-wrap;
+  border-left: 2px solid var(--color-accent);
+  padding-left: 10px;
+  color: var(--color-text-muted);
+}
 .assistantBubble { white-space: normal; }
 
 .bubbleContent {
@@ -605,24 +605,7 @@
   overflow-wrap: anywhere;
 }
 
-.senderLabel {
-  font-family: var(--font-display);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-  margin: 0;
-  padding-top: 3px;
-  align-self: start;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.senderLabelUser { color: var(--color-accent); }
-
 .turnSeparator {
-  grid-column: 1 / -1;
   align-self: stretch;
   height: 0;
   margin: 12px 0 14px;
