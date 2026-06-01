@@ -238,7 +238,13 @@ const EXPAND_THRESHOLD: f64 = 1000.0;
 /// `Ok(true)` when the window is now expanded (workspace tab area
 /// visible), `Ok(false)` when collapsed back to companion size.
 ///
-/// Anchors the right edge to monitor right; only the left edge moves.
+/// Preserves the window's CURRENT right edge — only the left edge moves.
+/// L1 + Irisy stay glued to the right side of the window content; the
+/// user can drag the window anywhere on screen and the toggle still
+/// grows / shrinks leftward from wherever they parked it (bao
+/// 2026-06-01: L1 and Irisy never change position relative to the
+/// window; the window itself is movable).
+///
 /// Also destroys any pre-v3 leftover `workspace` child window.
 #[tauri::command]
 pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
@@ -256,15 +262,14 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "no current monitor".to_string())?;
     let scale = monitor.scale_factor();
-    let monitor_pos = monitor.position();
-    let monitor_x_logical = monitor_pos.x as f64 / scale;
-    let monitor_w_logical = monitor.size().width as f64 / scale;
 
     let main_pos = main.outer_position().map_err(|e| e.to_string())?;
     let main_size = main.outer_size().map_err(|e| e.to_string())?;
+    let main_x = main_pos.x as f64 / scale;
     let main_w = main_size.width as f64 / scale;
     let main_h = main_size.height as f64 / scale;
     let main_y = main_pos.y as f64 / scale;
+    let right_edge = main_x + main_w;
 
     let (next_w, expanded) = if main_w >= EXPAND_THRESHOLD {
         (MAIN_COMPACT_WIDTH, false)
@@ -272,7 +277,8 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
         (MAIN_EXPANDED_WIDTH, true)
     };
 
-    let next_x = monitor_x_logical + monitor_w_logical - next_w;
+    // Anchor the right edge to its current screen position; left edge moves.
+    let next_x = right_edge - next_w;
 
     main.set_size(LogicalSize::new(next_w, main_h))
         .map_err(|e| e.to_string())?;

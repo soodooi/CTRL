@@ -99,8 +99,12 @@ sed -i '' "s/\"version\": \"[0-9.]*\"/\"version\": \"$VERSION\"/" packages/ctrl-
 # Sync Cargo.lock so the build doesn't error on lockfile drift.
 (cd src-tauri && cargo update -p ctrl --offline 2>/dev/null || cargo update -p ctrl) >/dev/null 2>&1 || true
 
-echo "==> [3/7] build for $TARGET"
-npm run tauri:build -- --target "$TARGET"
+echo "==> [3/7] build for $TARGET (app-only bundle; DMG step is flaky on this machine)"
+# bundle_dmg.sh has intermittently failed on this dev box (rw.NNNNN.dmg
+# leftover from a prior aborted run blocks DMG creation). The updater
+# only needs .app + .app.tar.gz + .sig, so restrict to `app` bundle —
+# DMG is a developer convenience, not a ship artifact.
+npm run tauri:build -- --target "$TARGET" --bundles app
 
 BUNDLE_DIR="src-tauri/target/$TARGET/release/bundle/macos"
 TARBALL="$BUNDLE_DIR/CTRL.app.tar.gz"
