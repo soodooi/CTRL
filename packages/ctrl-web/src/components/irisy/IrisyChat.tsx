@@ -728,11 +728,9 @@ export function IrisyChat(): React.ReactElement {
     [],
   );
 
-  // Surface the saved-reply confirmation as transient inline text rather
-  // than a toast — fits the slim companion column. Used to silence the
-  // setStatusMessage var; reading it keeps the linter happy and gives a
-  // hook for a future visual treatment.
-  void statusMessage;
+  // Transient confirmation strip (e.g. "Saved -> vault/...") rendered
+  // just above the composer. Auto-dismissed by saveReplyToVault's 4 s
+  // setTimeout; click-to-dismiss as a fallback.
 
   if (upgradeStub) {
     return (
@@ -861,6 +859,17 @@ export function IrisyChat(): React.ReactElement {
           </div>
         )}
       </div>
+
+      {statusMessage && (
+        <button
+          type="button"
+          className={styles.statusStrip}
+          onClick={() => setStatusMessage(null)}
+          aria-label="Dismiss save confirmation"
+        >
+          {statusMessage}
+        </button>
+      )}
 
       {/* Composer — input + dialog merged into one column (bao 2026-05-31).
           The previous design hid this textarea off-screen and ran the

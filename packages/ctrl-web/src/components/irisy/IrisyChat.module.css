@@ -631,6 +631,31 @@
   background: var(--color-bg-l1);
 }
 
+/* Transient confirmation pill rendered above the composer when a reply
+   has been saved to vault. Auto-dismissed after 4 s; click to dismiss
+   manually. Single-line, mono, low-key — matches existing chat chrome. */
+.statusStrip {
+  margin: 0 12px 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-accent) 12%, transparent);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  text-align: left;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  width: calc(100% - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-out-quart);
+}
+.statusStrip:hover {
+  color: var(--color-text);
+}
+
 /* The wrap is the single rounded surface; the send button is absolute
    positioned INSIDE so the textarea grows downward without pushing the
    button off-screen (Telegram / Doubao / Kimi convention). */

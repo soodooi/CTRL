@@ -251,7 +251,13 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
     use tauri::{LogicalPosition, LogicalSize, Manager};
 
     if let Some(stale) = app.get_webview_window("workspace") {
-        let _ = stale.close();
+        // Pre-v3 builds spawned a "workspace" child window; v3 retired
+        // the child-window path entirely. A close failure here only
+        // matters if the user is mid-drag of that stale window — log
+        // and continue so the toggle still resizes main.
+        if let Err(e) = stale.close() {
+            eprintln!("[toggle_workspace_window] stale child close failed: {e}");
+        }
     }
 
     let main = app
