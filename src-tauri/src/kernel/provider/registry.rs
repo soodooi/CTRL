@@ -1,7 +1,7 @@
 // ProviderRegistry — load manifests, instantiate adapters, hold the
 // per-capability active state.
 //
-// ADR-004 §9.1 lock #3:
+// ADR-002 substrate § provider v1 lock #3:
 //   - `ProviderRegistry::load()` reads builtin/*.toml at startup +
 //     scans `~/.ctrl/providers/`.
 //   - `active_provider(capability) -> ProviderHandle` lookup is the hot
@@ -34,7 +34,7 @@ const KEYCHAIN_SERVICE_PRIMARY: &str = "app.ctrl";
 const KEYCHAIN_SERVICE_LEGACY: &str = "app.ctrl.spike";
 
 /// Embedded builtin manifests — single source of truth for the 6
-/// presets ADR-004 §9.1 lock #6 mandates.
+/// presets ADR-002 substrate § provider v1 lock #6 mandates.
 const BUILTIN_MANIFESTS: &[(&str, &str)] = &[
     ("claude-oauth", include_str!("builtin/claude-oauth.toml")),
     ("anthropic-api", include_str!("builtin/anthropic-api.toml")),

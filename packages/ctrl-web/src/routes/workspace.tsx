@@ -6,7 +6,7 @@
 //   (2) /workspace?keycap_id=foo  — legacy dedicated Tauri window route,
 //       reads a single keycap_id from URL/hash and renders its
 //       cell-stream feed (kept for the Rust shell that opens a dedicated
-//       workspace window per ADR-001 §window-roles)
+//       workspace window per ADR-001 spine §window-roles)
 //
 // Both paths land here so the existing Tauri window code that navigates
 // `/workspace?keycap_id=...` keeps working while the multi-instance UI

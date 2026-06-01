@@ -1,7 +1,7 @@
 //! Smoke tests for ctrl-mesh skeleton.
 //! Sprint 2+ adds real test coverage for Identity / Peer / Document / Channel /
 //! SignalingBeacon. This file ensures the public API compiles + the constants
-//! agree with ADR-003.
+//! agree with ADR-002 substrate.
 
 use ctrl_mesh::{
     DeviceId, DeviceIdentity, DocumentId, FrameKind, MeshChange, MeshFrame, MESH_FRAME_MAGIC,
@@ -19,7 +19,7 @@ fn device_id_fresh_has_dev_prefix() {
 
 #[test]
 fn v1_documents_match_adr_003() {
-    // ADR-003 §6.1: v1.0 ships 3 documents.
+    // ADR-002 substrate §6.1: v1.0 ships 3 documents.
     assert_eq!(V1_DOCUMENTS, &["mesh.devices", "mesh.keycaps", "mesh.preferences"]);
 }
 

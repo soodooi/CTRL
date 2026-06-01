@@ -1,7 +1,7 @@
 // /settings — single page with an inline tab strip at the top.
 //
 //   /settings/ctrl    → General (theme picker, BYOK providers, hotkey readout)
-//   /settings/brain   → Brain   (cc-switch style switcher, ADR-021)
+//   /settings/brain   → Brain   (cc-switch style switcher, [deleted ADR-021 brain switcher — superseded by ADR-002 substrate § brain v1 Pi singleton])
 //   /settings/logs    → Logs    (release log + installed pill + Check for Updates)
 //
 // Bare /settings redirects to /settings/ctrl so legacy tray / keyboard
@@ -345,7 +345,7 @@ export const SettingsCtrlPage = (): ReactElement => (
         <>
           Bring your own key. Keys live in the macOS Keychain and never
           cross the network from CTRL itself. Anthropic / Claude is
-          deliberately absent from the runtime list (ADR-005).
+          deliberately absent from the runtime list (ADR-006 cross-cutting § byok-no-claude v1).
         </>
       }
     >
@@ -361,13 +361,13 @@ export const SettingsCtrlPage = (): ReactElement => (
 );
 
 // ─────────────────────────────────────────────────────────────
-// /settings/brain  (ADR-021 — cc-switch / VMark / opencode style)
+// /settings/brain  ([deleted ADR-021 brain switcher — superseded by ADR-002 substrate § brain v1 Pi singleton] — cc-switch / VMark / opencode style)
 // ─────────────────────────────────────────────────────────────
 
-// ADR-003 §5 — brain switcher retired. Pi is the sole brain (singleton);
+// ADR-002 substrate §5 — brain switcher retired. Pi is the sole brain (singleton);
 // no `brain_list / brain_detect / brain_set_active` calls. Settings → Brain
 // reads `pi_status` (system.rs) + binds "Upgrade now" to `pi_upgrade_now`.
-// bao 2026-05-31 (ADR-003 acceptance #5 close-out): legacy BrainListReply
+// bao 2026-05-31 (ADR-002 substrate acceptance #5 close-out): legacy BrainListReply
 // + multi-radio switcher removed in this commit.
 
 interface PiStatusView {
@@ -427,7 +427,7 @@ export const SettingsBrainPage = (): ReactElement => {
         <div className={styles.brainHeaderText}>
           <h2 className={styles.brainTitle}>Brain</h2>
           <p className={styles.brainHelp}>
-            Pi is the sole brain (ADR-003 §1). Provider selection happens in
+            Pi is the sole brain (ADR-002 substrate §1). Provider selection happens in
             Settings → Providers — this pane shows Pi&apos;s version, runtime
             health, and lets you trigger a manual upgrade.
           </p>
@@ -539,7 +539,7 @@ const UPDATE_LOG: ReadonlyArray<UpdateLogEntry> = [
     version: '0.1.39',
     date: '2026-05-25',
     summary:
-      'VMark stack adoption — Tiptap markdown WYSIWYG · CodeMirror 6 · mermaid.js · SmartTable viewer · Vault browser + backlinks · ADR-001 amendment (Pi sole brain, hermes demoted to keycap).',
+      'VMark stack adoption — Tiptap markdown WYSIWYG · CodeMirror 6 · mermaid.js · SmartTable viewer · Vault browser + backlinks · ADR-001 spine amendment (Pi sole brain, hermes demoted to keycap).',
   },
   {
     version: '0.1.34',

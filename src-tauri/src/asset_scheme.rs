@@ -1,7 +1,7 @@
 // ctrl-asset:// Tauri custom URI scheme — serves keycap-bundled assets to the
 // PWA without invoke() round-trips or base64 inlining.
 //
-// URL contract (locked by ADR-001 amendment 2026-05-25, decision D2):
+// URL contract (locked by ADR-001 spine amendment 2026-05-25, decision D2):
 //   ctrl-asset://keycaps/<keycap-id>/<relative-path>
 //     → file at ~/.ctrl/keycaps/<keycap-id>/<relative-path>
 //

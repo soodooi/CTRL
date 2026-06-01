@@ -1,6 +1,6 @@
 // Pi install + auto-upgrade.
 //
-// ADR-003 §3 + §4: Pi is the core. It lives at `~/.ctrl/pi/` (per-user,
+// ADR-002 substrate §3 + §4: Pi is the core. It lives at `~/.ctrl/pi/` (per-user,
 // no root needed) and self-updates in the background. The supervisor
 // calls `ensure_installed()` once on boot and `spawn_upgrade_probe()` in
 // a background thread; the upgrade probe respects a 24 h cache so we
@@ -280,12 +280,12 @@ fn install_via_npm(is_upgrade: bool) -> std::io::Result<()> {
         "pi_install: {label} via npm"
     );
 
-    // ADR-003 §4 priority-0 — Pi auto-upgrade cannot stay stale. The same
+    // ADR-002 substrate §4 priority-0 — Pi auto-upgrade cannot stay stale. The same
     // sparse-PATH trap that bit brain_supervisor's Pi spawn applies here:
     // Tauri-spawned processes inherit a PATH without /opt/homebrew/bin, so
     // npm's internal `env node` shim exits 127. Prepend npm's parent dir
     // (where node typically also lives) so the npm script can resolve node.
-    // bao 2026-05-31 (ADR-003 acceptance #4 close-out): ctrl.log was
+    // bao 2026-05-31 (ADR-002 substrate acceptance #4 close-out): ctrl.log was
     // surfacing `env: node: No such file or directory` every boot —
     // auto-upgrade silently never ran, Pi stayed stale.
     let mut cmd = Command::new(&npm);

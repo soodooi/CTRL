@@ -1,5 +1,5 @@
 // KeycapCard — single keycap tile in the Pool grid.
-// Hard industrial keycap aesthetic (per ADR-001 §2 OP-1 / Linear / Braun):
+// Hard industrial keycap aesthetic (per ADR-001 spine §2 OP-1 / Linear / Braun):
 // rounded square, deep bevel, embossed glyph, LED hairline.
 //
 // Per-color text contrast: light keycaps (amber / platinum) need dark ink

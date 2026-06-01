@@ -1,12 +1,12 @@
 # CTRL — Claude Code Project Entry
 
-> **新 session 必读**: `.olym/steering/ctrl-strategy.md` (5 min navigator) + `.olym/decisions/001-system-architecture.md` (architecture lock)
+> **新 session 必读**: `.olym/steering/ctrl-strategy.md` (5 min navigator) + `.olym/decisions/001-spine.md` + `.olym/decisions/INDEX.md` (architecture lock)
 
 ---
 
 ## What is CTRL?
 
-CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI workbench + creator substrate** (ADR-014: global English first; 中文是后续 i18n locale, 不是 v1 default).
+CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI workbench + creator substrate** (ADR-006 cross-cutting § global-english v1; 中文是后续 i18n locale, 不是 v1 default).
 
 按 `Ctrl` 唤起 → ephemeral workspace → 1 键帽 = 1 AI 工具. 极简化 + AI native + 创作者经济.
 
@@ -25,13 +25,13 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI
 - 禁止跨 D1 JOIN
 - 模棱两可的指令直接询问 bao
 - 开始前查 `.olym/skills/` 和 `.olym/best-practice/` (后续建立)
-- 涉及战略改动: 先读 ADR-001, 再读相关 spec, 不冲突再动手
+- 涉及战略改动: 先读 ADR-001 spine + `.olym/decisions/INDEX.md` (7 module ADR 索引), 不冲突再动手
 
 ### Working mode: 灵活开发 — 只做 ADR + 代码 + PR
 
 bao 2026-05-25 进一步校准: **只 3 件事**:
 
-1. **ADR** — 战略决策必写 ADR. **ADR 跟最新决策有冲突立刻改/superseded**, 不留拖延 (memory `decision_pi_is_sole_brain_hermes_is_keycap` 反例: ADR-019 等到第二天才 supersede — 不允许再发生)
+1. **ADR** — 战略决策必写 ADR (module-based, 7 个, 编号 001-007 锁死). **section amendment = bump version: + 加 changelog 行, 不开新 ADR** (PROCESS.md §1 锁). **ADR 跟最新决策有冲突立刻改**, 不留拖延 (memory `decision_pi_is_sole_brain_hermes_is_keycap` 反例: 原 ADR-019 hermes-primary 等到第二天才删 — 不允许再发生)
 2. **代码** — 直接动手实施, cargo + tsc 双绿就 commit
 3. **PR** — 单 branch 累积 commit, 一次性 PR → main, squash merge
 
@@ -44,7 +44,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 - 全英文代码 (pre-push hook)
 - `--no-verify` 禁用
 - Cargo.lock + package-lock.json 进 commit
-- ADR-001 spine (5 primitives) 不动
+- ADR-001 spine § primitives v1 (5 primitives) 不动
 - 安全 (Keychain secrets, no hardcode)
 - **ADR 跟实装不允许漂移** — 发现冲突立刻 superseded / amend
 
@@ -70,12 +70,12 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 ### Derived rules (任何新代码都遵守)
 
 1. **本地是 truth, 云是 mirror** — 所有读走本地；写本地立即可见, 异步推云。云不在 → 降级运行, 不 hard fail。
-2. **端侧化优先** — OAuth (本机 loopback callback, 不走 CTRL cloud proxy) / LLM (Volc 云 + Ollama 端侧 dual) / sync (mesh P2P, ADR-003) / RAG (本机 SQLite FTS5 + WASM embed) / OCR (本机 Vision framework) 都端侧实现。**ctrl-cloud 是 augmentation, 不是 dependency**——用户拔网 / 不用 ctrl-cloud, CTRL 完整可用。
+2. **端侧化优先** — OAuth (本机 loopback callback, 不走 CTRL cloud proxy) / LLM (Volc 云 + Ollama 端侧 dual) / sync (mesh P2P, ADR-002 substrate § crypto v1) / RAG (本机 SQLite FTS5 + WASM embed) / OCR (本机 Vision framework) 都端侧实现。**ctrl-cloud 是 augmentation, 不是 dependency**——用户拔网 / 不用 ctrl-cloud, CTRL 完整可用。
 3. **Ctrl-key 是唯一入口** — 用户永不打开飞书 / Notion / Linear 等第三方 app；CTRL workspace 区 render 所有数据类型 (viewer registry by content type, 不是 by platform)。
 4. **One-shot, not flows** — 一个 keycap = 一个原子动作。无 wizard / 无 multi-step / 无 dialog tree。
 5. **AI 是 pipe, 不是 sidebar** — 发收消息 / 处理内容时 AI 默认 in-line 处理 (润色 / 摘要 / 抽 action item / 翻译), 可关默认开。
 6. **Transparency by drill-down** — 任何 AI / 抽象处理都可长按 / hover 看 raw 数据 (飞书原文 / AI 改后 / 本地草稿三层视图)。
-7. **Pi 是唯一 brain** *(amended 2026-05-25; hermes 彻底移除 2026-05-28, 见 ADR-001 §11 5th 校准)* — Irisy 跑 agent loop 永远走 **Pi** (`@pi/coding-agent`, MIT, lazy install via npm). kernel `text.chat` capability 不可配置, 直连 Pi keycap. **hermes 已彻底移除** — 不再作 keycap, 无 kernel / PWA 接线, `packages/ctrl-hermes-plugin/` 已删. hermes 的长效记忆优点已原生落在 Irisy (`vault/irisy/SOUL.md` + `.irisy-memory/`).
+7. **Pi 是唯一 brain** *(ADR-002 substrate § brain v1; hermes 彻底移除 2026-05-28 PR #62)* — Irisy 跑 agent loop 永远走 **Pi** (`@mariozechner/pi-coding-agent`, MIT, lazy install via `~/.ctrl/pi/`). kernel `text.chat` 调用通过 provider router (ADR-002 substrate § provider v1) 路由到当前 active provider, Pi 通过 ctrl-bridge 扩展 HTTP-fetch kernel `/text-chat` endpoint. **hermes 已彻底移除** — 不再作 keycap, 无 kernel / PWA 接线, `packages/ctrl-hermes-plugin/` 已删. hermes 的长效记忆优点已原生落在 Irisy (`vault/irisy/SOUL.md` + `.irisy-memory/`).
 
 ### 几个具体推论
 
@@ -92,7 +92,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 
 ## Architecture overview
 
-> Spine: `.olym/decisions/001-system-architecture.md` (含 Pi-centric 5 块图, 2026-05-30 6th 校准).
+> Spine: `.olym/decisions/001-spine.md` § pi-centric (Pi-centric 5 块图). INDEX = `.olym/decisions/INDEX.md` (7 module ADR).
 
 **Pi-centric 5 块** (顶 → 底, 一切围绕 Pi):
 
@@ -106,7 +106,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 
 **5 keycap sources** (Pi 工具注入路径): MCP servers / Big-platform OAuth / Local agents / ST-SS shared windows / Built-in.
 
-物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 §3 immutable spine — Pi-centric 是 logical view, 4 层是 implementation view, 两图并存.
+物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 spine § layers v1 — Pi-centric 是 logical view, 4 层是 implementation view, 两图并存.
 
 ---
 
@@ -153,28 +153,28 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 |---|---|
 | Desktop shell | Tauri 2 (~500 LOC Rust shell: hotkey / tray / keychain / kernel daemon supervisor) |
 | Kernel (L1) | Rust stable 1.77+, Tokio async runtime, ST-SS WS bridge @ 127.0.0.1:17872 (token-authenticated) |
-| Sandbox | OS-level subprocess isolation (sandbox-exec / landlock / AppContainer) + Tauri 2 Capability + Isolation Pattern + CSP. **WASM removed** in 0.1.39 lean kernel (ADR-001 amendment 4) — re-evaluate via WasmEdge if v1.x needs in-process untrusted code. |
+| Sandbox | OS-level subprocess isolation (sandbox-exec / landlock / AppContainer) + Tauri 2 Capability + Isolation Pattern + CSP. **WASM removed** in 0.1.39 lean kernel (ADR-001 spine § philosophy #1+#4 v1) — re-evaluate via WasmEdge if v1.x needs in-process untrusted code. |
 | UI | Single PWA (`packages/ctrl-web`) — React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa |
 | Vault viewers | **Tiptap** (markdown WYSIWYG+source) + **CodeMirror 6** (code/JSON/YAML/TOML/HTML) + **mermaid.js** (mermaid graphs) + iframe+CSP (HTML sandbox) — content-type viewer registry, replaces VMark MCP sidecar (S15 deprecated 2026-05-25) |
 | Vault index | SQLite FTS5 (`src-tauri/src/kernel/vault_index.rs`) + backlink scanner + tag scanner (kernel-native, no VMark dep) |
-| Brain (sole) | **Pi** (`@pi/coding-agent`, MIT, lazy npm install) — kernel routes `text.chat` directly to Pi keycap. **hermes fully removed** (2026-05-28, ADR-001 §11 5th 校准) — not a brain, not a keycap, package deleted. See ADR-001 amendment |
+| Brain (sole) | **Pi** (`@mariozechner/pi-coding-agent`, MIT, lazy npm install to `~/.ctrl/pi/`) — kernel routes `text.chat` via provider router (ADR-002 substrate § provider v1); Pi consumes via ctrl-bridge extension. **hermes fully removed** (2026-05-28, PR #62) — not a brain, not a keycap, package deleted. ADR-002 substrate § brain v1. |
 | Web ↔ Rust bridge | Tauri 2 `invoke()` on desktop (intra-process), WebSocket + token on mobile |
 | Stream protocol | ST-SS (CBOR Cell/Op) |
 | Package manager | npm workspaces |
-| State persistence | SQLite (event-sourced) + Automerge CRDT (cross-device, ADR-003) |
-| **Mesh comm (ADR-003)** | **vodozemac (Olm 1:1) + webrtc-rs v0.17.x + Automerge v0.7.x + mdns-sd v1.71+ + ctrl-relay CF Worker** |
+| State persistence | SQLite (event-sourced) + Automerge CRDT (cross-device, ADR-002 substrate § crypto v1, v1.1+ scope) |
+| **Mesh comm** (ADR-002 substrate § crypto v1, v1.1+ scope) | **vodozemac (Olm 1:1) + webrtc-rs v0.17.x + Automerge v0.7.x + mdns-sd v1.71+ + ctrl-relay CF Worker** |
 | LLM (default) | CF Workers AI (Qwen / Llama) |
 | LLM (BYOK) | Anthropic Claude / OpenAI GPT-4 |
 | MCP | Anthropic rmcp Rust SDK |
-| Subprocess execution | portable-pty 0.9 (Unix forkpty + Windows ConPTY) via `kernel::subprocess_actor` — ADR-012 |
+| Subprocess execution | portable-pty 0.9 (Unix forkpty + Windows ConPTY) via `kernel::subprocess_actor` — ADR-002 substrate § subprocess v1 |
 | Backend (cloud) | Cloudflare Workers + D1 (ctrl-auth / ctrl-billing / ctrl-market / **ctrl-relay** / ctrl-push) |
 | Payments | Stripe |
-| Min platform | Windows 10 1809+ (primary Win 11+ dev; ADR-002 §6 WebView2 bootstrapper covers 10), macOS 13+ (secondary), iOS 16.4+ PWA, Android Chrome PWA, WebView2 / WKWebView evergreen |
+| Min platform | Windows 10 1809+ (primary Win 11+ dev; ADR-003 frontend § pwa v2 — WebView2 bootstrapper covers 10), macOS 13+ (secondary), iOS 16.4+ PWA, Android Chrome PWA, WebView2 / WKWebView evergreen |
 | Mobile | Pure browser PWA (no React Native, no Capacitor) + WebRTC + WASM vodozemac + WASM Automerge |
 | Node | 20.x LTS |
 | Rust | 1.77+ stable |
-| Binary size | kernel ≤ 18 MB (revised by ADR-003), installer ≤ 25 MB default / ≤ 18 MB slim (mesh-included) |
-| PWA bundle | ≤ 500 KB gzip (revised by ADR-003); critical-path shell ≤ 200 KB, mesh modules lazy-load |
+| Binary size | kernel ≤ 18 MB (ADR-002 substrate § crypto v1), installer ≤ 25 MB default / ≤ 18 MB slim (mesh-included) |
+| PWA bundle | ≤ 500 KB gzip (ADR-002 substrate § crypto v1); critical-path shell ≤ 200 KB, mesh modules lazy-load |
 | Local ports | **0 listening** for cross-device (ctrl-relay outbound WSS); kernel daemon WS bridge @ 127.0.0.1:17872 with token auth for intra-device PWA mobile-mode |
 
 ---
@@ -211,7 +211,7 @@ BYOK 高级 = user fills own Anthropic / OpenAI key (advanced creation tier)
 Local Ollama = privacy geek tier
 ```
 
-> **ADR-005 lock**: Anthropic Claude / GPT-4 / Ollama 都是 **BYOK only**, 用户主动启用. Default subscription path 只 CF Workers AI (Tokyo 主路径). CTRL runtime never ships an Anthropic / OpenAI SDK on its hot path — those clients only load when the user has filled their own key in Settings → Providers. User-facing references to `claude-code` / `aider` etc. as external CLIs (Code Space env presets) are NOT a violation: they are user choice, not CTRL-bundled dependency.
+> **ADR-006 cross-cutting § byok-no-claude v1 lock**: Anthropic Claude / GPT-4 / Ollama 都是 **BYOK only**, 用户主动启用. Default subscription path 只 CF Workers AI (Tokyo 主路径). CTRL runtime never ships an Anthropic / OpenAI SDK on its hot path — those clients only load when the user has filled their own key in Settings → Providers (ADR-002 substrate § provider §3.6 v1). User-facing references to `claude-code` / `aider` etc. as external CLIs (Code Space env presets) are NOT a violation: they are user choice, not CTRL-bundled dependency.
 
 **We sell tools + platform, not models.**
 
@@ -231,7 +231,7 @@ Current open:
 When you need to make any non-trivial decision:
 
 1. **Read** `.olym/steering/ctrl-strategy.md` (5 min)
-2. **Check** `.olym/decisions/001-system-architecture.md` for lock points
+2. **Check** `.olym/decisions/001-spine.md` + `.olym/decisions/INDEX.md` for lock points
 3. **Drill** into relevant spec under `.olym/specs/`
 4. **Ask** bao if conflict between docs or decision absent
 
@@ -274,7 +274,7 @@ Do **not** unilaterally change lock points without ADR amendment.
 
 ## When in doubt
 
-- Architecture question → ADR-001 + relevant spec
+- Architecture question → ADR-001 spine + relevant module ADR (INDEX.md)
 - Strategic question → `.olym/steering/ctrl-strategy.md`
 - "Should I add this?" → check 不做清单 first
 - "How does X work?" → ask bao directly, do not guess

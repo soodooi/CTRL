@@ -1,6 +1,6 @@
 // OS keychain bridge for BYOK API keys.
 //
-// Per ADR-002 §6, BYOK uses the system keychain (Win Credential Vault /
+// Per ADR-003 frontend §6, BYOK uses the system keychain (Win Credential Vault /
 // macOS Keychain) via the `keyring` crate that's already in this crate.
 //
 // Wrap it behind a thin port-shaped type so future swap to

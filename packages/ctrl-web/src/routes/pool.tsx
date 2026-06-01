@@ -1,6 +1,6 @@
 // /pool — keycap catalog ("back-office"). Per memory project_keyboard_vs_pool:
 // the keyboard is the always-on rail of installed keys; the pool is the
-// BROWSE surface (ADR-002 amendment 2026-05-30 §3 — install now happens
+// BROWSE surface (ADR-003 frontend amendment 2026-05-30 §3 — install now happens
 // via drag-to-Keyboard, never via a Pool "install" button).
 //
 // Today the kernel only exposes installed keycaps via list_keycaps. The

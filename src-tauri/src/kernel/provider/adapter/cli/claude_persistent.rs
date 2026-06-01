@@ -1,6 +1,6 @@
 // claude_persistent — bespoke adapter for the `claude` CLI subprocess.
 //
-// ADR-004 §9.1 lock #5 — "claude_persistent.rs is bespoke, Goose-style
+// ADR-002 substrate § provider v1 lock #5 — "claude_persistent.rs is bespoke, Goose-style
 // OnceCell<Mutex<CliProcess>>". The pattern is lifted from
 // `goose/providers/claude_code.rs` (FINDING-R2.md §3): one persistent
 // child for the lifetime of the process, NDJSON stdin/stdout, drain
@@ -230,7 +230,7 @@ impl CliProcess {
         model: &str,
         system: Option<&str>,
     ) -> Result<Self, ProviderError> {
-        // ADR-003 §1 + memory `feedback_no_claude_in_production` lock: when
+        // ADR-002 substrate §1 + memory `feedback_no_claude_in_production` lock: when
         // the user has the `claude` Code CLI installed externally, the
         // claude-oauth adapter is allowed to spawn it (user choice, not
         // CTRL-bundled SDK). But Tauri inherits a sparse PATH

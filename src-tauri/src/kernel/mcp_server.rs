@@ -1,5 +1,5 @@
 // kernel::mcp_server — Kernel-as-MCP-server (per memory
-// `decision_kernel_is_mcp_server_for_irisy`, ADR-013).
+// `decision_kernel_is_mcp_server_for_irisy`, ADR-002 substrate § mcp-bus v1).
 //
 // Exposes the kernel's capability surface as MCP tools so that:
 //   • Irisy (in-process via Tauri WebView)
@@ -14,7 +14,7 @@
 // boot — same model as `stss_bridge` (never persisted to disk).
 //
 // What this module does NOT do:
-//   • Bind 0.0.0.0 / accept LAN clients (mesh covered by ADR-003)
+//   • Bind 0.0.0.0 / accept LAN clients (mesh covered by ADR-002 substrate)
 //   • Issue long-lived tokens (each kernel boot = new token; the in-process
 //     PWA and brain keycaps both fetch fresh via Tauri commands)
 //   • Implement business logic — every tool is a thin call into existing

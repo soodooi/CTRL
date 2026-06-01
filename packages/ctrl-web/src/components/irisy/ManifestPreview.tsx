@@ -3,7 +3,7 @@
 // Renders the in-progress manifest as a tree of clickable spans. Clicking
 // a leaf field sets `fieldPending` on the store and focuses the chat
 // input (ChatPane handles the focus side via effect). The user never
-// edits values directly (ADR-010 §6) — they describe the change in chat
+// edits values directly (ADR-004 cap § execution v1 §6) — they describe the change in chat
 // and Irisy emits a <keycap-patch> token.
 
 import { useKeycapCreatorStore } from '@/lib/irisy-keycap-store';

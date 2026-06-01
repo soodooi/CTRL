@@ -10,7 +10,7 @@
 // `chat_stream` + `chat-stream-delta` event (zeus Z3b). Skeleton present
 // so the call sites compile and the swap is a one-liner.
 //
-// Zero legacy-provider strings in this file — per ADR-005 + memory
+// Zero legacy-provider strings in this file — per ADR-006 cross-cutting § byok-no-claude v1 + memory
 // `feedback_no_claude_in_production`. The PWA never sees an apiKey; auth
 // stays inside the Rust process by going through `run_keycap` /
 // `chat_stream` Tauri commands.

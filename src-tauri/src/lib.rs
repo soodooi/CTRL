@@ -1,6 +1,6 @@
 // Composition root.
 //
-// Per ADR-002 §3 + §6, both desktop targets boot the same shape:
+// Per ADR-003 frontend §3 + §6, both desktop targets boot the same shape:
 //   tauri::Builder::default()
 //     .plugin(tauri-plugin-global-shortcut)
 //     .setup(|app| ShellLifecycle::boot(app.handle()))
@@ -14,7 +14,7 @@
 //
 // W3-era hexagonal-architecture (`actors/`, `adapters/`, `application/`,
 // `domain/`) and the UniFFI bindings layer (`ffi/`, `ctrl.udl`) were
-// deleted in H-2026-05-14-002 mac/c. ADR-002 retired both:
+// deleted in H-2026-05-14-002 mac/c. ADR-003 frontend retired both:
 //   • PWA — not native UI — is the surface, so SwiftUI / WinUI 3 / C#
 //     bindings have no consumer
 //   • `commands::*` (Tauri 2 invoke) replaces the port-shaped tauri_commands
@@ -93,7 +93,7 @@ pub fn run() {
         // tauri.conf.json -> plugins.updater. Signed release pipeline:
         // scripts/release.sh produces .app.tar.gz + .sig + latest.json
         // and uploads to the public soodooi/CTRL-releases sibling repo.
-        // ADR-011 / 018 — Layer 1 of 4 of the auto-update strategy.
+        // ADR-004 cap § updater v1 / 018 — Layer 1 of 4 of the auto-update strategy.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {

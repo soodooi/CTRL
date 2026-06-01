@@ -4,9 +4,9 @@
 //!   1. probe the kernel's LLM port — is a brain adapter (Volc/BYOK) wired?
 //!   2. probe the Pi brain plugin (`@ctrl/pi-plugin` MCP server `/healthz`)
 //!   3. write `~/.ctrl/state/kernel-handshake.json` so a brain keycap's
-//!      MCP client can reach the kernel MCP server (ADR-013) with a token
+//!      MCP client can reach the kernel MCP server (ADR-002 substrate § mcp-bus v1) with a token
 //!
-//! Pi is the sole brain (ADR-001 amendment 2026-05-25). When Pi isn't
+//! Pi is the sole brain (ADR-001 spine amendment 2026-05-25). When Pi isn't
 //! running, the PWA falls back to the kernel `chat_stream` command
 //! (llm_port → Volc) for a direct, fast reply.
 
@@ -25,13 +25,13 @@ pub struct IrisyStatus {
     pub app_version: String,
     pub kernel_llm: KernelLlmStatus,
     pub mcp_bridge: McpBridgeStatus,
-    /// Pi default-brain probe (ADR-001 amendment 2026-05-25, H-2026-05-25-001).
+    /// Pi default-brain probe (ADR-001 spine amendment 2026-05-25, H-2026-05-25-001).
     /// `reachable` = the @ctrl/pi-plugin MCP server is responding on its
     /// `/healthz` endpoint. PWA reads this to decide whether `irisy_chat_stream`
     /// will succeed; degraded UI prompts the user to start the subprocess
     /// (until the kernel supervisor for pi-plugin lands).
     pub pi: PiStatus,
-    /// Brain id — always "pi" (Pi is the sole brain per ADR-003).
+    /// Brain id — always "pi" (Pi is the sole brain per ADR-002 substrate).
     /// Kept as a field for PWA forward-compat; the value is constant
     /// and the Settings → Brain UI shows Pi status + upgrade controls
     /// only.
@@ -75,7 +75,7 @@ pub async fn irisy_init(
     let kernel_llm = probe_kernel_llm(&kernel);
     let mcp_bridge = write_handshake_file()?;
     let pi = probe_pi().await;
-    // ADR-003: Pi is the sole brain; no registry, no ~/.ctrl/active-brain.
+    // ADR-002 substrate: Pi is the sole brain; no registry, no ~/.ctrl/active-brain.
     let active_brain = "pi";
 
     tracing::info!(
@@ -96,7 +96,7 @@ pub async fn irisy_init(
 }
 
 async fn probe_pi() -> PiStatus {
-    // ADR-003: Pi now runs as a stdin RPC subprocess (no HTTP server);
+    // ADR-002 substrate: Pi now runs as a stdin RPC subprocess (no HTTP server);
     // reachability = "supervisor reports a live child". Version comes
     // from the install metadata cache. PWA shows install/upgrade UI by
     // calling `pi_status` (commands/system.rs) for the richer surface.

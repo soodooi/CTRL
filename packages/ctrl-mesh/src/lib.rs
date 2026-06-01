@@ -1,6 +1,6 @@
 // ctrl-mesh — CTRL multi-device mesh communication primitives.
 //
-// Parent: ADR-003 (Accepted 2026-05-14) + H-2026-05-14-001 Sprint 1 evidence.
+// Parent: ADR-002 substrate (Accepted 2026-05-14) + H-2026-05-14-001 Sprint 1 evidence.
 // Status: SKELETON. Real implementations land Sprint 2+ (athena).
 //
 // 5 mesh primitives mirroring kernel's 5 primitives:
@@ -17,7 +17,7 @@ pub mod peer;
 pub mod signaling;
 pub mod wire;
 
-// `crypto` feature wires vodozemac (Olm 1:1 only — no Megolm; ADR-003 §3.1 / §6.1).
+// `crypto` feature wires vodozemac (Olm 1:1 only — no Megolm; ADR-002 substrate §3.1 / §6.1).
 // Disabled by default to keep the skeleton lean; enabled by tests and Sprint 2+.
 #[cfg(feature = "crypto")]
 pub mod session;

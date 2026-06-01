@@ -1,6 +1,6 @@
 // /irisy — Irisy run-output surface.
 //
-// 2026-05-30 ADR-002 amendment (Irisy-as-sole-entry): The dedicated
+// 2026-05-30 ADR-003 frontend amendment (Irisy-as-sole-entry): The dedicated
 // `?intent=create-keycap` CreatorShell is gone. Keycap creation is now
 // an internal Irisy skill dispatched from the regular chat ("帮我做个 …"),
 // so the route no longer hosts a chat or a manifest editor of its own.

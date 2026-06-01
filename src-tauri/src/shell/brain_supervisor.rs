@@ -1,6 +1,6 @@
 // Brain (Pi) subprocess supervisor.
 //
-// ADR-003 lifts Pi to the sole brain. CTRL keeps two pieces of process
+// ADR-002 substrate lifts Pi to the sole brain. CTRL keeps two pieces of process
 // state for it:
 //
 //   1. The Pi runtime (`@mariozechner/pi-coding-agent`) installed at
@@ -14,7 +14,7 @@
 //      `pi rpc` subprocess; we inject `CTRL_PI_BRIDGE_EXTENSION` (path
 //      to the bundled `@ctrl/pi-bridge`) + `CTRL_PROVIDER_PORT` env so
 //      Pi's LLM calls route into the kernel provider sub-system
-//      (ADR-004 §9.1 lock #7) instead of Pi's own ~/.pi/config.
+//      (ADR-002 substrate § provider v1 lock #7) instead of Pi's own ~/.pi/config.
 //
 // The MCP server is restarted on exit with capped backoff. The kernel
 // provider sub-system the bridge POSTs to is owned by the kernel lane;
@@ -255,12 +255,12 @@ fn supervise(node: PathBuf, plugin_dir: PathBuf, bridge_path: PathBuf) {
                 if let Ok(mut guard) = child_slot().lock() {
                     *guard = Some(child);
                 }
-                // ADR-003 acceptance #6 + ADR-004 §9.1 lock #4 — trial
+                // ADR-002 substrate acceptance #6 + ADR-002 substrate § provider v1 lock #4 — trial
                 // verify before declaring the brain healthy. The wrapper
                 // spawn returning Ok only means the Node process started;
                 // it does NOT confirm the MCP server bound :17874 or that
                 // the bridge extension loaded. Polling /healthz catches
-                // both. bao 2026-05-31 (ADR-003 close-out): without this
+                // both. bao 2026-05-31 (ADR-002 substrate close-out): without this
                 // the supervisor used to clear last_error optimistically
                 // and PWA showed pi_reachable=true on a dead chain.
                 match trial_verify_pi() {
@@ -378,7 +378,7 @@ fn spawn_brain(
     cmd.spawn()
 }
 
-/// ADR-003 acceptance #6 / ADR-004 §9.1 lock #4 trial verify.
+/// ADR-002 substrate acceptance #6 / ADR-002 substrate § provider v1 lock #4 trial verify.
 ///
 /// Poll the Pi MCP wrapper's `/healthz` endpoint until it responds 200 OK
 /// or `TRIAL_VERIFY_DEADLINE` elapses. Healthz returning OK means:

@@ -1,6 +1,6 @@
 // Irisy chat — thin streaming renderer.
 //
-// ADR-002 amendment 2026-05-30 + ADR-003 (Brain = Pi sole brain) collapse
+// ADR-003 frontend amendment 2026-05-30 + ADR-002 substrate (Brain = Pi sole brain) collapse
 // the historical PWA-side ReAct loop. Pi is the single brain, runs its own
 // agent loop with full tool access via the kernel MCP server, and streams
 // natural-language deltas back through `irisy_chat_stream`. The PWA's job is
@@ -183,7 +183,7 @@ export function IrisyChat(): React.ReactElement {
     }
   }, [messages]);
 
-  // Pi is THE brain (ADR-003). irisyChatTransport routes through Pi.
+  // Pi is THE brain (ADR-002 substrate). irisyChatTransport routes through Pi.
   // When Pi isn't reachable, the chat surface flips to a "being upgraded"
   // stub rather than silently degrading — keeps the user from thinking
   // Irisy is broken or slow.

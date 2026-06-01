@@ -1,4 +1,4 @@
-// Provider sub-system — ADR-004 §9.1.
+// Provider sub-system — ADR-002 substrate § provider v1.
 //
 // Layout (one file per lock item):
 //   - trait.rs           Provider trait + Capability enum

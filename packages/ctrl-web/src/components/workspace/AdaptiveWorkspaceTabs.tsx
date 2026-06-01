@@ -1,6 +1,6 @@
 // AdaptiveWorkspaceTabs — renders a keycap's v3 workspace declaration.
 //
-// ADR-002 §7.3 universal adaptive workspace: a keycap manifest declares
+// ADR-003 frontend §7.3 universal adaptive workspace: a keycap manifest declares
 // `ui_surface.workspace.tabs[]`; this component is the **presentation
 // shell** that turns that declaration into the NSWindow's interior.
 //
@@ -14,7 +14,7 @@
 //     a `ctrl:l2-open` event fires so the shell root can flip
 //     `[data-l2-open]` and reserve the L2 column.
 //
-// NOT in scope (next PR per ADR-002 §7.5):
+// NOT in scope (next PR per ADR-003 frontend §7.5):
 //   - Viewer dispatch (`tab.viewer` → ViewerHost / chat-stream / form).
 //   - L2 sub-nav rendering inside the shell's L2 slot.
 //   - NSWindow content router that picks WHICH keycap's tabs to mount.
@@ -119,7 +119,7 @@ export const AdaptiveWorkspaceTabs = ({
               ) : null}
             </div>
             <div className={styles.placeholderBody}>
-              Viewer dispatch lands in the next PR — see ADR-002 §7.5.
+              Viewer dispatch lands in the next PR — see ADR-003 frontend §7.5.
             </div>
           </div>
         ) : null}

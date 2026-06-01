@@ -32,7 +32,7 @@ use uuid::Uuid;
 
 use crate::kernel::event::{Cell, Event, Op};
 
-/// WS listen address. Mirrors ADR-002 §3 "kernel daemon @ localhost:17872".
+/// WS listen address. Mirrors ADR-003 frontend §3 "kernel daemon @ localhost:17872".
 pub const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:17872";
 
 /// In-memory broadcast capacity. Slow viewers see a `Lagged` warning above

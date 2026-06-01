@@ -1,7 +1,7 @@
 // One-shot CLI provider — manifest-driven generic spawner for codex /
 // gemini / any CLI that exposes a single-turn JSON I/O mode.
 //
-// ADR-004 §9.1 lock #5: "cli/one_shot.rs (codex/gemini, manifest-driven,
+// ADR-002 substrate § provider v1 lock #5: "cli/one_shot.rs (codex/gemini, manifest-driven,
 // ~200 LOC)". Compared to claude_persistent.rs, this adapter is
 // stateless — one spawn per turn, no warm child to reuse, no NDJSON
 // control protocol. The trade-off is the ~80-150 ms node-cold-start

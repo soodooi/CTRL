@@ -75,7 +75,7 @@ export interface CtrlCapabilities {
    * Kernel capability tokens the endpoint needs to function (e.g.
    * `'LlmCall'`, `'ClipboardRead'`, `'FsRead(/home)'`). The kernel
    * Capability Broker verifies subscriber actor's tokens cover this
-   * set before forwarding (per CTRL ADR-001 §3.2).
+   * set before forwarding (per CTRL ADR-001 spine §3.2).
    */
   readonly needs_capability?: readonly string[];
   readonly hardware_profile?: HardwareProfile;

@@ -1,5 +1,5 @@
 // [H-2026-05-20] useSubprocessChannel — bidirectional channel for one
-// SubprocessActor (ADR-012) using the v0.7 ST-SS wire vocabulary.
+// SubprocessActor (ADR-002 substrate § subprocess v1) using the v0.7 ST-SS wire vocabulary.
 //
 // Inbound: WebSocket to the kernel ST-SS bridge. The Z1 wire adapter
 // translates kernel-internal Op kinds into v0.7 Cell kinds before broadcast,

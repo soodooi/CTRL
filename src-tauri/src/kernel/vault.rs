@@ -69,7 +69,7 @@ pub fn legacy_vault_root() -> Option<PathBuf> {
 }
 
 /// Ensure the vault directory exists with the canonical sibling layout per
-/// ADR-001 amendment 2026-05-25 invariant #2 (vault sibling structure). Also
+/// ADR-001 spine amendment 2026-05-25 invariant #2 (vault sibling structure). Also
 /// migrates legacy `~/.ctrl/vault/` content forward when present.
 ///
 /// Called at kernel boot via vault_index init. Idempotent — already-existing

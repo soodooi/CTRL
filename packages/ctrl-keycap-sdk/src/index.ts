@@ -1,7 +1,7 @@
 // @ctrl/keycap-sdk — single stable interface for any client that consumes
 // keycaps (Irisy / PWA components / future Janus persona / 3rd-party).
 //
-// Underlying transport (MCP / Tauri direct / REST) is hidden. ADR-010 §5
+// Underlying transport (MCP / Tauri direct / REST) is hidden. ADR-004 cap § execution v1 §5
 // says keycap = MCP server outward, but builtin / OAuth-wrap variants
 // historically dispatch via Tauri invoke. SDK normalises both paths.
 

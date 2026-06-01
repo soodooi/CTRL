@@ -1,6 +1,6 @@
 // SubprocessActor ↔ ST-SS bridge translator + forwarder.
 //
-// PR #6 ADR-012 left SubprocessActor with an outbox mpsc::Sender<Event> using
+// PR #6 ADR-002 substrate § subprocess v1 left SubprocessActor with an outbox mpsc::Sender<Event> using
 // kernel-internal OpKind names (SubprocessStdout / SubprocessExit /
 // SubprocessSpawned). lane-C C1 (spec v0.7) standardised the ST-SS wire
 // vocabulary with publisher-neutral CellKind / OpKind values

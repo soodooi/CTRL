@@ -1,6 +1,6 @@
 // Tauri 2 #[tauri::command] handlers — the JS↔Rust bridge.
 //
-// Per ADR-002 §3 + §6, the PWA calls into the Rust kernel through these
+// Per ADR-003 frontend §3 + §6, the PWA calls into the Rust kernel through these
 // handlers (instead of the UniFFI path that the W3 .NET surface uses). Each
 // command is capability-gated; the kernel's CapabilityBroker decides whether
 // the invocation is allowed.
@@ -14,7 +14,7 @@
 // Skeleton stage (sub-PR b): each handler returns NotImplementedYet so the
 // JS bridge can be wired before kernel integration in sub-PR c.
 
-// brain retired per ADR-003 (Pi is the sole brain — see file header
+// brain retired per ADR-002 substrate (Pi is the sole brain — see file header
 // for context); module not declared so the file is not compiled.
 pub mod chat;
 pub mod code_space;
@@ -52,7 +52,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::chat::chat_stream,
             // irisy_chat — brain-routed streaming (Irisy → active brain keycap MCP)
             $crate::commands::irisy_chat::irisy_chat_stream,
-            // brain switcher retired per ADR-003 — Pi is the sole brain.
+            // brain switcher retired per ADR-002 substrate — Pi is the sole brain.
             // Pi version + upgrade controls live in system::pi_status /
             // pi_upgrade_now.
             $crate::commands::system::pi_status,
@@ -83,7 +83,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::open_workspace,
-            // skills — kernel-local skill discovery (ADR-023 Phase 1)
+            // skills — kernel-local skill discovery (ADR-007 workbench § discovery v1 Phase 1)
             $crate::commands::skills::search_skills,
             $crate::commands::skills::list_local_skills,
             // stss

@@ -5,7 +5,7 @@
 //   - Deadline awareness: every LLM call carries deadline_ms, scheduler fails over on timeout
 //   - Static resource budget: actor declares budget at spawn, scheduler rejects over-allocation
 //
-// P2.1 skeleton — extended in H-2026-05-19-001 (ADR-012) with
+// P2.1 skeleton — extended in H-2026-05-19-001 (ADR-002 substrate § subprocess v1) with
 // `spawn_from_manifest`: the entry point the runtime calls when a manifest
 // of `prototype: "subprocess"` lands. Other prototypes return
 // `SchedulerError::UnknownPrototype` until their well-known Actor subclass
@@ -61,7 +61,7 @@ impl Scheduler {
     /// `handle` per event. `on_shutdown` runs when the mailbox closes (last
     /// mailbox sender dropped) or when the task is aborted.
     ///
-    /// Supervisor (ADR-012 §5):
+    /// Supervisor (ADR-002 substrate § subprocess v1 §5):
     ///   - each `handle()` invocation wrapped in catch_unwind: an actor's
     ///     panic does NOT crash the kernel; the failing message is skipped,
     ///     the actor stays alive for subsequent messages.

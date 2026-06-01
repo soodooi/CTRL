@@ -4,7 +4,7 @@
 //     env envelope, by git remote / fs root / device). Each group shows
 //     a tab strip across its sessions plus a compact preview of the
 //     active tab. Right rail mirrors the env list as quick switchers.
-//   - CodeSpaceDetailRoute (lane-B, ADR-012 §7 tile wire): live xterm
+//   - CodeSpaceDetailRoute (lane-B, ADR-002 substrate § subprocess v1 §7 tile wire): live xterm
 //     viewer for one running SubprocessActor, with structured-cell rail
 //     and stdin/resize/signal/kill controls via Tauri cs_* commands.
 

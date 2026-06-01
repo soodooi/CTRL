@@ -1,10 +1,10 @@
 // irisy_chat_stream — Irisy → Pi brain MCP → stream back.
 //
-// ADR-003: Pi is the sole brain. Every Irisy turn goes through the
+// ADR-002 substrate: Pi is the sole brain. Every Irisy turn goes through the
 // `@ctrl/pi-plugin` MCP server (`ctrl-pi-mcp` on 127.0.0.1:17874) — no
 // `active-brain` branch, no LLM-port fallback. The Pi process inside
 // the plugin loads the `@ctrl/pi-bridge` extension at spawn so its LLM
-// calls go back through the kernel provider sub-system (ADR-004 §9.1).
+// calls go back through the kernel provider sub-system (ADR-002 substrate § provider v1).
 //
 // Contract (mirrors chat_stream's wire so the PWA's ChatStreamTransport
 // works unchanged):
@@ -30,7 +30,7 @@
 //   - "Pi brain stalled (no chunk in 5 s)" — connected but provider
 //     dropped the stream
 //
-// "BrainRouter inline" per ADR-001 amendment (2026-05-25): the lookup
+// "BrainRouter inline" per ADR-001 spine amendment (2026-05-25): the lookup
 // is a ≤100-LOC helper inside this command, not a separate substrate
 // module.
 

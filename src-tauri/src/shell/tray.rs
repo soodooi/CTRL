@@ -1,6 +1,6 @@
 // System tray controller.
 //
-// Per ADR-002 §6, tray uses Tauri 2's built-in tray icon API (no separate
+// Per ADR-003 frontend §6, tray uses Tauri 2's built-in tray icon API (no separate
 // plugin in 2.x). Menu items: Open Config / About / Quit.
 //
 // Show/Hide are NOT in the menu — left-click on the tray icon already

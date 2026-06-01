@@ -13,7 +13,7 @@
 //! - Capability gating: `fs_write` on the whole vault is too coarse; typed
 //!   commands let the broker gate `config.write` specifically.
 //!
-//! Amended 2026-05-28: ADR-005's "Anthropic absent" lock only governed
+//! Amended 2026-05-28: ADR-006 cross-cutting § byok-no-claude v1's "Anthropic absent" lock only governed
 //! the default-shipped CTRL runtime — BYOK Anthropic + `claude` CLI
 //! subscription paths are first-class once the user opts in. This
 //! surface enumerates every provider the kernel's llm_adapters/mod.rs

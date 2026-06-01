@@ -11,7 +11,7 @@
 // We deliberately ship a minimal hand-rolled MCP surface here rather than
 // pulling in the official SDK: keeps the brain-keycap glue small enough to
 // audit in one sitting, and matches the CTRL kernel's other MCP server (the
-// kernel writes its own MCP server too — see ADR-013 in CLAUDE.md).
+// kernel writes its own MCP server too — see ADR-002 substrate § mcp-bus v1 in CLAUDE.md).
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { PiBridge, type BridgeStatus, type ChatMessage } from './pi-bridge.ts';
