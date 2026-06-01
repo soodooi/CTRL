@@ -123,9 +123,10 @@
 .markdownBody :global(h3) { font-size: 1em; font-weight: 700; }
 
 .markdownBody :global(p) {
-  margin: 0.1em 0;
-  line-height: 1.4;
+  margin: 0;
+  line-height: 1.42;
 }
+.markdownBody :global(p + p) { margin-top: 0.2em; }
 .markdownBody :global(p:first-child) { margin-top: 0; }
 .markdownBody :global(p:last-child) { margin-bottom: 0; }
 
@@ -493,10 +494,10 @@
 .scroller {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 10px;
+  padding: 6px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .welcome {
@@ -561,11 +562,12 @@
   max-width: 320px;
 }
 
-/* bao 2026-05-31 P0 — drop chat-bubble pattern (ChatGPT/Doubao/Kimi
-   clone). Editorial conversation: small-caps mono sender label, then
-   flowing serif paragraph. No bubble fill, no border-radius, no
-   alignment-by-role. Two voices on paper. Hairline separator between
-   turns gives spatial rhythm without chrome. */
+/* Editorial conversation: small-caps mono sender label on the LEFT,
+   flowing paragraph on the RIGHT (same row). 2-col grid lets the label
+   align as a gutter without owning a vertical line of its own — bao
+   2026-06-01: "YOU 占一行，Irisy 占一行，这个不对，用左右的". Tighter
+   font + line-height + paragraph spacing to raise information density
+   per bao's same turn ("字体应该再小一些，紧凑一些"). */
 .userBubble,
 .assistantBubble {
   width: 100%;
@@ -575,34 +577,46 @@
   background: transparent;
   color: var(--color-text);
   font-family: var(--font-sans);
-  font-size: 15.5px;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.42;
   letter-spacing: -0.005em;
   overflow-wrap: anywhere;
   word-break: break-word;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: 8px;
+  align-items: baseline;
 }
 
 .userBubble { white-space: pre-wrap; }
 .assistantBubble { white-space: normal; }
 
+.bubbleContent {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .senderLabel {
-  display: block;
   font-family: var(--font-display);
-  font-size: 10.5px;
+  font-size: 9px;
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--color-text-faint);
-  margin-bottom: 6px;
+  margin: 0;
+  padding-top: 2px;
+  align-self: start;
   user-select: none;
+  white-space: nowrap;
 }
 
 .senderLabelUser { color: var(--color-accent); }
 
 .turnSeparator {
+  grid-column: 1 / -1;
   align-self: stretch;
   height: 0;
-  margin: 18px 0 20px;
+  margin: 8px 0 10px;
   border-top: 1px solid var(--color-border-soft);
 }
 .turnSeparator:first-child { display: none; }

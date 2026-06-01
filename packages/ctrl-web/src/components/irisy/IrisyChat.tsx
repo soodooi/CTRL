@@ -211,55 +211,57 @@ const AssistantBubble = memo(function AssistantBubble({
       aria-live={isStreaming ? 'polite' : undefined}
     >
       <span className={styles.senderLabel}>Irisy</span>
-      {hasRenderable ? (
-        segments.map((seg, idx) => {
-          if (seg.kind === 'text') {
-            const text = seg.text;
-            if (text.trim().length === 0) return null;
-            return (
-              <ReactMarkdown
-                key={`${message.id}-t-${idx}`}
-                remarkPlugins={[remarkGfm]}
-              >
-                {text}
-              </ReactMarkdown>
-            );
-          }
-          if (seg.kind === 'call') {
+      <div className={styles.bubbleContent}>
+        {hasRenderable ? (
+          segments.map((seg, idx) => {
+            if (seg.kind === 'text') {
+              const text = seg.text;
+              if (text.trim().length === 0) return null;
+              return (
+                <ReactMarkdown
+                  key={`${message.id}-t-${idx}`}
+                  remarkPlugins={[remarkGfm]}
+                >
+                  {text}
+                </ReactMarkdown>
+              );
+            }
+            if (seg.kind === 'call') {
+              return (
+                <ToolCard
+                  key={`${message.id}-c-${idx}`}
+                  tool={seg.tool}
+                  body={seg.args}
+                  direction="call"
+                  running={!seg.closed}
+                />
+              );
+            }
             return (
               <ToolCard
-                key={`${message.id}-c-${idx}`}
+                key={`${message.id}-r-${idx}`}
                 tool={seg.tool}
-                body={seg.args}
-                direction="call"
-                running={!seg.closed}
+                body={seg.body}
+                direction="result"
+                running={false}
               />
             );
-          }
-          return (
-            <ToolCard
-              key={`${message.id}-r-${idx}`}
-              tool={seg.tool}
-              body={seg.body}
-              direction="result"
-              running={false}
-            />
-          );
-        })
-      ) : isStreaming ? (
-        <div className={styles.thinking}>
-          <span className={styles.thinkingDots}>
-            <span></span>
-            <span></span>
-            <span></span>
-          </span>
-          <span className={styles.thinkingLabel}>
-            Thinking · {(elapsedMs / 1000).toFixed(1)}s
-          </span>
-        </div>
-      ) : (
-        ''
-      )}
+          })
+        ) : isStreaming ? (
+          <div className={styles.thinking}>
+            <span className={styles.thinkingDots}>
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+            <span className={styles.thinkingLabel}>
+              Thinking · {(elapsedMs / 1000).toFixed(1)}s
+            </span>
+          </div>
+        ) : (
+          ''
+        )}
+      </div>
       {!isStreaming && message.content && (
         <button
           type="button"
@@ -828,7 +830,7 @@ export function IrisyChat(): React.ReactElement {
                   <span className={`${styles.senderLabel} ${styles.senderLabelUser}`}>
                     You
                   </span>
-                  {m.content}
+                  <span className={styles.bubbleContent}>{m.content}</span>
                 </article>
               </div>
             );
