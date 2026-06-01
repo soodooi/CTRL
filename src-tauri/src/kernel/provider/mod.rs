@@ -27,9 +27,11 @@
 // brain lane PR, not this one), `llm_port.rs`, `llm_adapters/*`.
 
 pub mod adapter;
+pub mod detect;
 pub mod http_endpoint;
 pub mod legacy_config;
 pub mod manifest;
+pub mod path_resolver;
 pub mod registry;
 #[path = "trait.rs"]
 pub mod r#trait;
@@ -37,7 +39,8 @@ pub mod types;
 pub mod verify;
 
 pub use r#trait::{Capability, Consumer, Provider, RouteChain};
-pub use registry::{ProviderHandle, ProviderListEntry, ProviderRegistry};
+pub use registry::{ProviderHandle, ProviderListEntry, ProviderRegistry, RecordedFailover};
+pub use detect::CliProviderEntry;
 pub use types::{
     ChatChunk, ChatMessage, ChatOpts, ChatPrompt, LlmChunk, LlmError, LlmMessage, LlmPrompt,
     ProviderError,

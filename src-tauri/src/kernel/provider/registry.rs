@@ -128,6 +128,25 @@ pub struct ProviderRegistry {
     /// unavailable (CI) — in-memory active map still works, just isn't
     /// saved across boots.
     active_state_path: Option<PathBuf>,
+    /// Most recent failover transition observed by `http_endpoint`.
+    /// `None` until the first auto-fallback fires. Surfaced via
+    /// `brain_status()` so the PWA + Irisy prompt can acknowledge the
+    /// transition without polling logs. ADR-002 substrate § provider
+    /// v2 §3.5 + §3.7.
+    last_failover: RwLock<Option<RecordedFailover>>,
+}
+
+/// One failover transition: primary → fallback at a moment in time.
+/// Reset to None never happens during a session — the latest event
+/// wins. `at_unix_ms` is monotonic-ish (system time) and intentionally
+/// not used for ordering elsewhere; the Settings UI just renders it
+/// for the user to know how stale "Claude offline → switched" is.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordedFailover {
+    pub from: String,
+    pub to: String,
+    pub reason: String,
+    pub at_unix_ms: i64,
 }
 
 impl ProviderRegistry {
@@ -140,6 +159,7 @@ impl ProviderRegistry {
             providers: RwLock::new(BTreeMap::new()),
             active: RwLock::new(BTreeMap::new()),
             active_state_path: default_active_state_path(),
+            last_failover: RwLock::new(None),
         };
 
         // 1. Builtin presets (always present).
@@ -182,6 +202,12 @@ impl ProviderRegistry {
         //    without any detected CLI still has a working AI path.
         registry.seed_default_fallback();
 
+        // 6. ADR-002 substrate § provider v2 §3.6 first-boot auto-adopt:
+        //    if IrisyPrimary is unset AND a known user CLI is on PATH,
+        //    silently bind it. Persists immediately so subsequent boots
+        //    skip the detection cost.
+        registry.first_boot_auto_adopt();
+
         registry
     }
 
@@ -195,6 +221,75 @@ impl ProviderRegistry {
         active
             .entry(Consumer::IrisyFallback)
             .or_insert_with(|| CTRL_FALLBACK_PROVIDER_ID.to_string());
+    }
+
+    /// First-boot single-CLI auto-adopt. ADR-002 substrate § provider
+    /// v2 §3.6: when no `IrisyPrimary` is configured (fresh install OR
+    /// explicit unset by user delete), if a known user CLI is detected
+    /// on PATH we silently bind it as the primary so the user does not
+    /// have to open Settings just to get their own Claude OAuth wired
+    /// up. The CTRL-managed fallback (`volc`) seeded above already
+    /// handles the no-CLI case.
+    ///
+    /// Only fires when the chosen manifest is actually `ready` — if
+    /// `claude` is on PATH but `claude-oauth`'s adapter failed to
+    /// instantiate (binary path lookup quirk etc.), we leave the slot
+    /// unset and let the Settings UI surface the issue.
+    fn first_boot_auto_adopt(&self) {
+        {
+            let active = self.active.read().unwrap();
+            if active.contains_key(&Consumer::IrisyPrimary) {
+                return;
+            }
+        }
+        let Some(manifest_id) = super::detect::first_boot_primary_choice() else {
+            return;
+        };
+        let providers = self.providers.read().unwrap();
+        let Some(loaded) = providers.get(manifest_id) else {
+            return;
+        };
+        if loaded.provider.is_none() {
+            return;
+        }
+        drop(providers);
+        {
+            let mut active = self.active.write().unwrap();
+            active.insert(Consumer::IrisyPrimary, manifest_id.to_string());
+        }
+        self.persist_active_state();
+        tracing::info!(
+            manifest = %manifest_id,
+            "provider: first-boot auto-adopted IrisyPrimary from detected user CLI"
+        );
+    }
+
+    /// Record a failover transition observed by `http_endpoint` when
+    /// the primary provider failed and the request was routed through
+    /// a fallback. The last transition wins; reads via
+    /// `last_failover_event()`. ADR-002 substrate § provider v2 §3.5.
+    pub fn record_failover(&self, from: &str, to: &str, reason: &str) {
+        let event = RecordedFailover {
+            from: from.to_string(),
+            to: to.to_string(),
+            reason: reason.to_string(),
+            at_unix_ms: now_unix_ms(),
+        };
+        tracing::info!(
+            from = %from,
+            to = %to,
+            reason = %reason,
+            "provider: failover recorded"
+        );
+        let mut slot = self.last_failover.write().unwrap();
+        *slot = Some(event);
+    }
+
+    /// Read the most recent failover transition, or None when no
+    /// transition has fired this session. Consumed by
+    /// `commands::provider::brain_status`.
+    pub fn last_failover_event(&self) -> Option<RecordedFailover> {
+        self.last_failover.read().unwrap().clone()
     }
 
     /// Snapshot of all manifests + their load status for the Settings
@@ -760,6 +855,17 @@ pub struct ProviderListEntry {
 
 // Re-export the inner ManifestError type for the rest of the kernel.
 pub use super::manifest::ManifestError as ProviderManifestError;
+
+/// Current Unix millis. Used as `RecordedFailover::at_unix_ms`. Returns
+/// 0 if the system clock is somehow before Unix epoch (won't happen on
+/// any supported target but the unwrap-free path keeps the code total).
+fn now_unix_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
 
 #[cfg(test)]
 mod tests {

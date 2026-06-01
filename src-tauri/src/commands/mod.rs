@@ -66,9 +66,11 @@ macro_rules! pwa_invoke_handler {
             // brain_status: Irisy self-awareness (closes "doesn't know stack" gap)
             // provider_list: /settings/providers picker rows
             // provider_set_active: 2-role assignment with trial-verify
+            // provider_detect: PATH scan for known CLIs (cached)
             $crate::commands::provider::brain_status,
             $crate::commands::provider::provider_list,
             $crate::commands::provider::provider_set_active,
+            $crate::commands::provider::provider_detect,
             // system — explicit window hide for the StatusBar × button
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,

@@ -17,8 +17,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::kernel::provider::detect::{detect_cli_providers, CliProviderEntry};
 use crate::kernel::provider::registry::ProviderManagedBy;
-use crate::kernel::provider::{Consumer, ProviderListEntry};
+use crate::kernel::provider::{Consumer, ProviderListEntry, RecordedFailover};
 use crate::shell::KernelHandle;
 
 const ENGINE_ID: &str = "Pi";
@@ -110,11 +111,33 @@ pub fn brain_status(
         }
     }
 
+    let last_failover = registry.last_failover_event().map(FailoverEvent::from_recorded);
+
     Ok(BrainStatusView {
         engine,
         providers,
-        last_failover: None,
+        last_failover,
     })
+}
+
+impl FailoverEvent {
+    /// Map the registry-side `RecordedFailover` (which carries
+    /// `at_unix_ms`) into the wire shape brain_status exposes.
+    fn from_recorded(rec: RecordedFailover) -> Self {
+        Self {
+            from: rec.from,
+            to: rec.to,
+            reason: rec.reason,
+        }
+    }
+}
+
+/// Scan PATH for the known CLI providers (claude / codex / gemini /
+/// aider / ollama). Cached at the kernel level — repeated calls reuse
+/// the first scan's result. ADR-002 substrate § provider v2 §3.6.
+#[tauri::command]
+pub fn provider_detect() -> Result<Vec<CliProviderEntry>, String> {
+    Ok(detect_cli_providers())
 }
 
 /// One row in the /settings/providers page picker. Wraps `ProviderListEntry`
