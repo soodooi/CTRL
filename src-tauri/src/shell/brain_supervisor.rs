@@ -40,6 +40,16 @@ const POLL_INTERVAL: Duration = Duration::from_millis(300);
 /// lane owns the actual server; we read this port from the shared
 /// constant so the env we inject matches what the bridge will hit.
 const DEFAULT_PROVIDER_PORT: u16 = 17878;
+/// Pi MCP server bind address. Hard-coded in `@ctrl/pi-plugin`'s
+/// `mcp-server.ts` — used here for the post-spawn trial verify so the
+/// supervisor confirms the wrapper actually came up.
+const PI_MCP_HEALTHZ: &str = "http://127.0.0.1:17874/healthz";
+/// Total deadline for trial verify after spawn. Wrapper bind takes
+/// ~200-500ms in practice; allow generous headroom before declaring
+/// the brain dead.
+const TRIAL_VERIFY_DEADLINE: Duration = Duration::from_secs(6);
+/// Sleep between trial-verify polls.
+const TRIAL_VERIFY_INTERVAL: Duration = Duration::from_millis(250);
 
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 static PROVIDER_PORT: AtomicU16 = AtomicU16::new(DEFAULT_PROVIDER_PORT);
@@ -242,9 +252,29 @@ fn supervise(node: PathBuf, plugin_dir: PathBuf, bridge_path: PathBuf) {
 
         match spawn_brain(&node, &plugin_dir, &bridge_path, &pi_bin) {
             Ok(child) => {
-                clear_last_error();
                 if let Ok(mut guard) = child_slot().lock() {
                     *guard = Some(child);
+                }
+                // ADR-003 acceptance #6 + ADR-004 §9.1 lock #4 — trial
+                // verify before declaring the brain healthy. The wrapper
+                // spawn returning Ok only means the Node process started;
+                // it does NOT confirm the MCP server bound :17874 or that
+                // the bridge extension loaded. Polling /healthz catches
+                // both. bao 2026-05-31 (ADR-003 close-out): without this
+                // the supervisor used to clear last_error optimistically
+                // and PWA showed pi_reachable=true on a dead chain.
+                match trial_verify_pi() {
+                    Ok(()) => {
+                        clear_last_error();
+                        tracing::info!("BrainSupervisor: trial verify passed (Pi MCP /healthz reachable)");
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "BrainSupervisor: trial verify failed");
+                        set_last_error(format!("Pi trial verify failed: {e}"));
+                        // keep child alive — PWA surfaces the specific
+                        // reason via pi_status; user can re-probe by
+                        // calling pi_upgrade_now or by restarting CTRL.
+                    }
                 }
                 // Poll until the child exits or shutdown() takes it.
                 loop {
@@ -346,6 +376,52 @@ fn spawn_brain(
         cmd.env("PATH", new_path);
     }
     cmd.spawn()
+}
+
+/// ADR-003 acceptance #6 / ADR-004 §9.1 lock #4 trial verify.
+///
+/// Poll the Pi MCP wrapper's `/healthz` endpoint until it responds 200 OK
+/// or `TRIAL_VERIFY_DEADLINE` elapses. Healthz returning OK means:
+///   • the Node subprocess survived module load (`Cannot find package`
+///     errors would have crashed it),
+///   • the HTTP listener bound :17874 successfully,
+///   • the bridge extension's CTRL_PI_BRIDGE_EXTENSION env was consumed.
+///
+/// This does NOT verify the LLM provider chain end-to-end — that costs
+/// real provider quota on every restart. PWA surfaces a deeper failure
+/// (Claude OAuth revoked, kernel /text-chat 500, etc) on the first real
+/// chat turn via `irisy_chat_stream`'s specific error path.
+fn trial_verify_pi() -> Result<(), String> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("tokio runtime: {e}"))?;
+    rt.block_on(async {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .map_err(|e| format!("reqwest client: {e}"))?;
+        let deadline = std::time::Instant::now() + TRIAL_VERIFY_DEADLINE;
+        let mut last_err: Option<String> = None;
+        while std::time::Instant::now() < deadline {
+            match client.get(PI_MCP_HEALTHZ).send().await {
+                Ok(resp) if resp.status().is_success() => return Ok(()),
+                Ok(resp) => {
+                    last_err = Some(format!("/healthz returned HTTP {}", resp.status()));
+                }
+                Err(e) => {
+                    last_err = Some(format!("/healthz unreachable: {e}"));
+                }
+            }
+            tokio::time::sleep(TRIAL_VERIFY_INTERVAL).await;
+        }
+        Err(last_err.unwrap_or_else(|| {
+            format!(
+                "/healthz did not respond within {}s",
+                TRIAL_VERIFY_DEADLINE.as_secs()
+            )
+        }))
+    })
 }
 
 /// Locate the `@ctrl/pi-plugin` directory containing `bin/ctrl-pi-mcp.ts`.

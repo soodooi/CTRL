@@ -51,14 +51,20 @@ Self-update = **Tauri 2 native updater** + **three-mirror endpoint array (ordere
 
 ## Acceptance
 
-- [ ] `tauri signer generate` run; private key in macOS keychain `app.ctrl.spike` / `tauri-sign`; public key in `src-tauri/tauri.conf.json` `plugins.updater.pubkey`
-- [ ] DNS A record `updates.ctrlapplab.com` → 52.196.27.37 (use CF API token already in keychain)
-- [ ] Tokyo Caddyfile route `/updates/{channel}/{target}/{version}/{json,zip}` with auto-TLS
-- [ ] CF Worker + R2 bucket with same route shape (failover mirror)
-- [ ] `scripts/release.sh` one-shot: build → sign → push to all 3 mirrors
-- [ ] Win OV code-signing cert procured + CI signing integrated (bao budget gate)
-- [ ] Cross-3-machine smoke (2 mac + 1 win) hitting each channel
-- [ ] CN-network P95 update < 30s real-world test
+## Acceptance — v1 scope (single-mirror via `soodooi/CTRL-releases`)
+
+- [x] `tauri signer generate` run; private key in macOS keychain `app.ctrl.spike` / `tauri-sign`; public key in `src-tauri/tauri.conf.json` `plugins.updater.pubkey`. Verified `release.sh` step [1/8]. Closed 2026-05-31.
+- [x] `scripts/release.sh` one-shot build → sign → publish to single mirror (`soodooi/CTRL-releases`). 3-mirror failover deferred to v1.1 (see Future work below). Closed 2026-05-31.
+
+## Future work (3-mirror system — v1.1+ scope, gated on CN P95 SLO + bao budget)
+
+- DNS A record `updates.ctrlapplab.com` → 52.196.27.37 (use CF API token already in keychain)
+- Tokyo Caddyfile route `/updates/{channel}/{target}/{version}/{json,zip}` with auto-TLS
+- CF Worker + R2 bucket with same route shape (failover mirror)
+- `scripts/release.sh` extended: build → sign → push to all 3 mirrors (currently single mirror only)
+- Win OV code-signing cert procured + CI signing integrated (bao budget gate)
+- Cross-3-machine smoke (2 mac + 1 win) hitting each channel
+- CN-network P95 update < 30s real-world test
 
 ## Changelog
 

@@ -230,7 +230,22 @@ impl CliProcess {
         model: &str,
         system: Option<&str>,
     ) -> Result<Self, ProviderError> {
-        let mut cmd = Command::new(binary);
+        // ADR-003 §1 + memory `feedback_no_claude_in_production` lock: when
+        // the user has the `claude` Code CLI installed externally, the
+        // claude-oauth adapter is allowed to spawn it (user choice, not
+        // CTRL-bundled SDK). But Tauri inherits a sparse PATH
+        // (`/usr/bin:/bin:/usr/sbin:/sbin` — verified in production via
+        // `ps eww`), so `Command::new("claude")` fails NotFound even when
+        // `/opt/homebrew/bin/claude` (cask) or `~/.npm-global/bin/claude`
+        // (npm -g) exists. brain_supervisor + pi_install hit the same
+        // trap and fix it by prepending common bin dirs to PATH; this
+        // adapter is the third spawn site and was missed.
+        // bao 2026-05-31 (124-trail diagnose): "你不就在用 claude 订阅么?
+        // vmark 为什么可以识别到?" — claude IS installed locally
+        // (/opt/homebrew/Caskroom/claude-code/...), the adapter just
+        // couldn't see it.
+        let resolved_binary = resolve_binary_path(binary);
+        let mut cmd = Command::new(&resolved_binary);
         cmd.arg("--output-format")
             .arg("stream-json")
             .arg("--input-format")
@@ -249,6 +264,11 @@ impl CliProcess {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        // Augment PATH so the spawned `claude` can in turn find its own
+        // node helper, ripgrep, etc. via env. Without this `claude` itself
+        // may exit silently when its internal `env: node` shim 127s.
+        let augmented_path = augmented_path();
+        cmd.env("PATH", &augmented_path);
         for var in env_strip {
             cmd.env_remove(var);
         }
@@ -259,8 +279,8 @@ impl CliProcess {
         let mut child = cmd.spawn().map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 ProviderError::ProviderError(format!(
-                    "claude binary {:?} not found on PATH. Install Claude Code CLI or override `binary` in the manifest.",
-                    binary
+                    "claude binary {:?} not found on PATH ({}). Install Claude Code CLI or override `binary` in the manifest.",
+                    binary, augmented_path
                 ))
             } else {
                 ProviderError::ProviderError(format!("claude spawn failed: {e}"))
@@ -455,6 +475,60 @@ fn fold_history_into_user(messages: &[ChatMessage]) -> String {
     out.push_str("\nCurrent turn:\n");
     out.push_str(&messages[last_idx].content);
     out
+}
+
+/// Resolve a CLI binary name to an absolute path by scanning common bin
+/// dirs the Tauri-sparse PATH omits. Falls back to the original name on
+/// miss — `Command::spawn` will then surface the canonical NotFound.
+///
+/// bao 2026-05-31 (124-trail): Tauri ctrl process inherits PATH =
+/// `/usr/bin:/bin:/usr/sbin:/sbin`. `claude` lives at
+/// `/opt/homebrew/bin/claude` (Cask) or `~/.npm-global/bin/claude`
+/// (`npm i -g`); neither is on the sparse PATH. Same trap brain_supervisor
+/// + pi_install fix at their spawn sites.
+fn resolve_binary_path(binary: &str) -> String {
+    // Already absolute — trust caller.
+    if std::path::Path::new(binary).is_absolute() {
+        return binary.to_string();
+    }
+    for dir in candidate_bin_dirs() {
+        let candidate = std::path::Path::new(&dir).join(binary);
+        if candidate.is_file() {
+            return candidate.to_string_lossy().into_owned();
+        }
+    }
+    binary.to_string()
+}
+
+/// Augmented PATH for `claude`'s own subprocess use (it shells out to its
+/// internal node + helpers). Prepends common bin dirs so `env: node not
+/// found` doesn't 127 the child.
+fn augmented_path() -> String {
+    let existing = std::env::var("PATH").unwrap_or_default();
+    let mut parts: Vec<String> = candidate_bin_dirs();
+    if !existing.is_empty() {
+        for p in existing.split(':') {
+            if !parts.iter().any(|q| q == p) {
+                parts.push(p.to_string());
+            }
+        }
+    }
+    parts.join(":")
+}
+
+fn candidate_bin_dirs() -> Vec<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut dirs: Vec<String> = vec![
+        "/opt/homebrew/bin".into(),     // Apple Silicon Homebrew (Cask + Brew)
+        "/usr/local/bin".into(),        // Intel Homebrew + manual installs
+    ];
+    if !home.is_empty() {
+        dirs.push(format!("{home}/.npm-global/bin")); // npm -g without sudo
+        dirs.push(format!("{home}/.volta/bin"));      // Volta-managed node
+        dirs.push(format!("{home}/.nvm/versions/node/current/bin"));
+        dirs.push(format!("{home}/.ctrl/pi/node_modules/.bin"));
+    }
+    dirs
 }
 
 #[cfg(test)]

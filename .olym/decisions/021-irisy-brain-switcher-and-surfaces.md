@@ -1,7 +1,7 @@
 ---
 adr_id: 021
 title: Irisy is a personal assistant with a pluggable brain — cc-switch / VMark / opencode style
-status: accepted
+status: superseded
 date: 2026-05-27
 deciders: [bao, hephaestus]
 related:
@@ -14,7 +14,9 @@ related:
   - doc/irisy.md
 scope: framework
 supersedes: []
-superseded_by: []
+superseded_by:
+  - .olym/decisions/003-brain-pi-core.md
+  - memory decision_pi_is_sole_brain_hermes_is_keycap
 amends:
   - .olym/decisions/001-system-architecture.md
   - .olym/decisions/004-kernel-capability-surface.md

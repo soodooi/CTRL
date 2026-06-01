@@ -142,12 +142,12 @@ Pi consumes:
 
 ## Acceptance
 
-- [ ] `packages/ctrl-pi-bridge/` ships with `pi.registerProvider({ streamSimple })` that HTTP-fetches `localhost:<port>/text-chat`.
-- [ ] `kernel/provider/http_endpoint.rs` (new) exposes `/text-chat` SSE endpoint that wraps `ProviderRegistry::active(text.chat).chat_stream`.
-- [ ] `shell/brain_supervisor.rs` spawns Pi with `--extension <bundled-bridge-path>`; no user-facing `pi /login` ever required.
-- [ ] `~/.ctrl/pi/` lazy-install on first run; auto-upgrade in background per §4; settings UI shows Pi version + manual upgrade button.
-- [ ] Retirements in §5 land in a single atomic PR (no parallel old + new).
-- [ ] `irisy_chat_stream` Tauri command routes every turn to Pi (no `active-brain` branch); error surfaces specific cause (Pi not started / Pi crashed / provider 0 token in 5 s) instead of infinite spinner.
+- [x] `packages/ctrl-pi-bridge/` ships with `pi.registerProvider({ streamSimple })` that HTTP-fetches `localhost:<port>/text-chat`. (Closed 2026-05-31 v0.1.123 — wrapper now uses Pi's official `RpcClient` per §2 skeleton; bridge emits `AssistantMessageEventStream` events.)
+- [x] `kernel/provider/http_endpoint.rs` (new) exposes `/text-chat` SSE endpoint that wraps `ProviderRegistry::active(text.chat).chat_stream`. (Closed — port 17878 listening, verified in ctrl.log boot trace.)
+- [x] `shell/brain_supervisor.rs` spawns Pi with `--extension <bundled-bridge-path>`; no user-facing `pi /login` ever required. (Closed — supervisor injects `CTRL_PI_BRIDGE_EXTENSION` env; wrapper forwards as `--extension` arg.)
+- [x] `~/.ctrl/pi/` lazy-install on first run; auto-upgrade in background per §4; settings UI shows Pi version + manual upgrade button. (Closed 2026-05-31 v0.1.124 — auto-upgrade `env: node not found` bug fixed by PATH inject in `pi_install.rs`; `/settings/brain` now reads `pi_status` + `pi_upgrade_now`.)
+- [x] Retirements in §5 land in a single atomic PR (no parallel old + new). (Closed 2026-05-31 v0.1.124 — `~/.ctrl/active-brain` removed; `SettingsBrainPage` rewritten to use `pi_status` only; `BrainListReply / BrainView` types deleted.)
+- [x] `irisy_chat_stream` Tauri command routes every turn to Pi (no `active-brain` branch); error surfaces specific cause (Pi not started / Pi crashed / provider 0 token in 5 s) instead of infinite spinner. (Closed 2026-05-31 v0.1.124 — `brain_supervisor::trial_verify_pi()` polls `/healthz` post-spawn, sets specific `last_error`; `irisy_chat_stream` already reads `last_error` for fail-fast surface.)
 
 ## Changelog
 

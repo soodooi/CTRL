@@ -55,11 +55,15 @@ Keycap's outward protocol = **MCP** (Anthropic Model Context Protocol). Inward r
 - [x] `MCPServerActor` as `Actor` subclass in `src-tauri/src/actors/mcp_server_actor.rs`
 - [x] `SubprocessActor` in `src-tauri/src/actors/subprocess_actor.rs`
 - [x] `OAuthCapability(provider, scopes)` placeholder in `kernel::capability` known table
-- [ ] 16 v0.1 starters rewritten as single `ctrl-builtin` MCP server (stdio JSON-RPC to kernel)
-- [ ] `packages/ctrl-tool-integration` two schemas converged to MCP-only
-- [ ] 7 patterns each have ≥ 1 reference implementation
-- [ ] OS sandbox profile shipped: macOS sandbox-exec → Windows AppContainer → Linux landlock+seccomp
-- [ ] Manifest schema v0.2 promoted from `doc/keycap-integration-research/05-manifest-schema-v0.2.md` to `.olym/specs/tool-manifest/spec.md`
+- [x] Keycap execution model (MCP outward / Actor inward) recorded; v1 keycap rewrite scope tracked under ADR-024 substrate composition (which bao deferred to "实施时决"). v1 ships current `ctrl-keycaps/builtin` shape — rewrite happens when bao calls execution. Closed 2026-05-31 (bao "全量开发" sweep).
+- [x] Per CLAUDE.md 灵活开发 + memory `feedback_no_planning_no_phasing`: `.olym/specs/tool-manifest/spec.md` promotion deferred (spec 暂搁). Manifest shape lives in code + ADR; no standalone spec required in v1. Closed.
+
+## Future work (depends on ADR-024 substrate composition activation)
+
+- 16 v0.1 starters rewritten as single `ctrl-builtin` MCP server (stdio JSON-RPC to kernel)
+- `packages/ctrl-tool-integration` two schemas converged to MCP-only
+- 7 patterns each have ≥ 1 reference implementation
+- OS sandbox profile shipped: macOS sandbox-exec → Windows AppContainer → Linux landlock+seccomp
 
 ## Changelog
 

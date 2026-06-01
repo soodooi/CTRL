@@ -1,24 +1,75 @@
-// pi-bridge — translate a CTRL `text.chat` request into a Pi subprocess
-// invocation and stream the tokens back as MCP progress events.
+// pi-bridge — translate a CTRL `text.chat` request into a Pi `prompt`
+// command via Pi's official `RpcClient` and stream the tokens back as
+// MCP progress events.
 //
-// Two transport modes (auto-selected):
+// bao 2026-05-31 (122-trail): "我要 pi 是核心来开发". This file used to
+// hand-roll a JSON-RPC wire protocol against Pi RPC mode, which (a)
+// shipped two production bugs uncaught (positional 'rpc' instead of
+// `--mode rpc`; JSON-RPC 2.0 envelope vs Pi's `{type, command}` schema),
+// and (b) couples us to whatever Pi's wire shape happened to be on the
+// day the wrapper was written. Pi exports `RpcClient` from
+// `@mariozechner/pi-coding-agent`; we now delegate everything to it.
+// When Pi's RPC protocol evolves, we get the upgrade by bumping the
+// devDep — no wrapper diff required.
 //
-//   1. RPC mode (preferred) — `pi rpc` is a long-running NDJSON RPC server
-//      Pi ships for IDE / SDK integration. Once spawned, we send a single
-//      `prompt` request per chat turn, receive streaming `delta` events,
-//      then a `result` event. Spawn cost is amortised across calls.
-//
-//   2. Print mode (fallback) — `pi -q "<prompt>" --json` is a one-shot
-//      invocation that prints NDJSON events to stdout and exits. Cold
-//      spawn (~1-2s) per call, but works on any Pi version.
-//
-// We probe RPC at first call; on failure (binary too old, RPC subcommand
-// missing, etc.) we transparently fall back to print mode for the lifetime
-// of the bridge. The choice is surfaced via `BridgeStatus.transport`.
+// The bridge owns one persistent RpcClient. Each `chat()` call sends a
+// prompt and subscribes to events for the lifetime of that call:
+// `text_delta` events flow to `onChunk`, `agent_end` resolves with the
+// accumulated text → `onFinal`.
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { detectPi, type PiBinary } from './pi-detect.ts';
+
+// Locally-typed view of Pi's RpcClient + AgentEvent surface. Inlined
+// instead of imported because:
+//
+//  • Static `import type` statements survive `--experimental-strip-types`
+//    as runtime imports (Node tries to resolve the specifier at module
+//    load time even though it's `type`-only). In production the bundled
+//    wrapper lives at `<.app>/Resources/ctrl-pi-plugin/` and CANNOT
+//    resolve `@mariozechner/pi-coding-agent` from there — that package
+//    lives under `~/.ctrl/pi/node_modules/`. Static type import =
+//    immediate `Cannot find package` crash at first chat.
+//    bao 2026-05-31 (122-trail diagnose).
+//  • Bare `import('@mariozechner/...')` only happens inside
+//    `loadPiCodingAgent()` where the explicit absolute path candidates
+//    run first.
+//
+// These interfaces describe the subset of Pi's RpcClient we actually
+// touch. They are NOT the source of truth — the runtime object comes
+// from Pi. If Pi's surface changes incompatibly, TypeScript won't catch
+// it (no static check vs Pi's d.ts), but the dev probe at
+// scripts/probes/pi-bridge-probe.mjs exercises the real path against
+// hoisted Pi types, which does catch breakage during release.
+interface PiRpcClient {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  onEvent(listener: (event: PiAgentEvent) => void): () => void;
+  prompt(message: string): Promise<void>;
+}
+
+interface PiRpcClientCtor {
+  new (options: {
+    cliPath?: string;
+    args?: string[];
+    env?: Record<string, string>;
+  }): PiRpcClient;
+}
+
+interface PiAgentEvent {
+  type: string;
+  assistantMessageEvent?: {
+    type: string;
+    delta?: string;
+    reason?: string;
+    error?: { errorMessage?: string };
+  };
+  message?: {
+    role?: string;
+    usage?: { input?: number; output?: number };
+  };
+}
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -34,35 +85,24 @@ export interface ChatRequest {
   /** Optional model override; same passthrough semantics as `provider`. */
   model?: string;
   /** Working directory for Pi (controls which workspace it has visibility
-   *  into via its 4 builtin tools). Defaults to `process.cwd()`. */
+   *  into). Defaults to `process.cwd()`. */
   cwd?: string;
 }
 
 export interface ChatChunk {
-  /** Incremental assistant text since the previous chunk. */
   delta: string;
 }
 
 export interface ChatFinal {
-  /** Full assistant message text. */
   text: string;
-  /** Best-effort usage stats — populated only when Pi reports them. */
-  usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
-  };
-  /** Wall-clock duration of the call in ms. */
+  usage?: { input_tokens?: number; output_tokens?: number };
   duration_ms: number;
-  transport: BridgeTransport;
+  transport: 'rpc';
 }
-
-export type BridgeTransport = 'rpc' | 'print';
 
 export interface BridgeStatus {
   pi: PiBinary;
-  transport: BridgeTransport;
-  /** True after we've successfully completed at least one call in the
-   *  current transport (so healthz can distinguish "configured" from "warm"). */
+  transport: 'rpc';
   warm: boolean;
 }
 
@@ -72,19 +112,13 @@ export interface StreamCallbacks {
   onError: (e: Error) => void;
 }
 
-const MAX_PROMPT_BYTES = 256 * 1024; // 256 KB — generous; Pi context covers more.
+const MAX_PROMPT_BYTES = 256 * 1024;
 
-/**
- * Bridge instance — owns the Pi binary location + (optionally) a running
- * `pi rpc` process. Single instance per server.
- */
 export class PiBridge {
   private readonly pi: PiBinary;
-  private transport: BridgeTransport = 'rpc';
   private warm = false;
-  private rpcProc: ChildProcessWithoutNullStreams | null = null;
-  private rpcInflight = new Map<string, RpcInflight>();
-  private rpcBuf = '';
+  private rpc: PiRpcClient | null = null;
+  private rpcStarting: Promise<PiRpcClient> | null = null;
 
   constructor(pi: PiBinary) {
     this.pi = pi;
@@ -95,7 +129,7 @@ export class PiBridge {
   }
 
   status(): BridgeStatus {
-    return { pi: this.pi, transport: this.transport, warm: this.warm };
+    return { pi: this.pi, transport: 'rpc', warm: this.warm };
   }
 
   async chat(req: ChatRequest, cb: StreamCallbacks): Promise<void> {
@@ -111,266 +145,137 @@ export class PiBridge {
     }
 
     const started = Date.now();
-
-    if (this.transport === 'rpc') {
-      try {
-        await this.chatViaRpc(req, prompt, cb, started);
-        this.warm = true;
-        return;
-      } catch (e) {
-        // RPC failed — degrade to print mode for the rest of this bridge's
-        // life, then retry the current call.
-        this.transport = 'print';
-        this.killRpc();
-      }
+    try {
+      await this.runPrompt(prompt, cb, started);
+      this.warm = true;
+    } catch (e: unknown) {
+      cb.onError(e instanceof Error ? e : new Error(String(e)));
     }
-
-    await this.chatViaPrint(req, prompt, cb, started);
-    this.warm = true;
   }
 
   shutdown(): void {
-    this.killRpc();
+    if (this.rpc) {
+      this.rpc.stop().catch(() => {});
+      this.rpc = null;
+    }
   }
 
-  // ── RPC transport ─────────────────────────────────────────────────────
+  // ── Internals ────────────────────────────────────────────────────────
 
-  private async ensureRpc(): Promise<ChildProcessWithoutNullStreams> {
-    if (this.rpcProc && !this.rpcProc.killed) return this.rpcProc;
-    // ADR-003: when CTRL_PI_BRIDGE_EXTENSION is set, load the
-    // ctrl-pi-bridge extension into Pi so its LLM calls route back to
-    // the kernel provider sub-system (kernel /text-chat endpoint).
-    // Without the env Pi uses its own provider config (legacy path /
-    // standalone use of this MCP server).
-    const extraArgs: string[] = [];
-    const bridgeExt = process.env.CTRL_PI_BRIDGE_EXTENSION;
-    if (bridgeExt && bridgeExt.length > 0) {
-      extraArgs.push('--extension', bridgeExt);
-    }
-    const env: NodeJS.ProcessEnv = { ...process.env, PI_OUTPUT_FORMAT: 'json' };
-    if (bridgeExt && bridgeExt.length > 0) {
-      env.PI_PROVIDER = env.PI_PROVIDER ?? 'ctrl-bridge';
-      env.PI_MODEL = env.PI_MODEL ?? 'default';
-    }
-    const proc = spawn(
-      this.pi.command,
-      [...this.pi.args, ...extraArgs, 'rpc'],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env,
-      },
-    );
-    proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', (chunk: string) => this.handleRpcStdout(chunk));
-    proc.stderr.setEncoding('utf8');
-    proc.stderr.on('data', () => {
-      // intentional: surface to inflight callers below via onError path
-    });
-    proc.on('exit', (code) => {
-      const err = new Error(`pi rpc exited (code=${code ?? 'null'})`);
-      for (const inflight of this.rpcInflight.values()) inflight.cb.onError(err);
-      this.rpcInflight.clear();
-      this.rpcProc = null;
-    });
-    this.rpcProc = proc;
-    return proc;
-  }
-
-  private async chatViaRpc(
-    req: ChatRequest,
+  private async runPrompt(
     prompt: string,
     cb: StreamCallbacks,
     started: number,
   ): Promise<void> {
-    const proc = await this.ensureRpc();
-    const id = randomUUID();
-    const request = {
-      jsonrpc: '2.0',
-      id,
-      method: 'prompt',
-      params: {
-        prompt,
-        cwd: req.cwd ?? process.cwd(),
-        provider: req.provider,
-        model: req.model,
-      },
-    };
+    const client = await this.ensureRpc();
 
     return new Promise<void>((resolve, reject) => {
       let acc = '';
-      const inflight: RpcInflight = {
-        cb: {
-          onChunk: (c) => {
-            acc += c.delta;
-            cb.onChunk(c);
-          },
-          onFinal: (f) => {
-            cb.onFinal({ ...f, transport: 'rpc' });
-            resolve();
-          },
-          onError: (e) => {
-            cb.onError(e);
-            reject(e);
-          },
-        },
-        startedAt: started,
-        accumulatedText: () => acc,
+      let usage: ChatFinal['usage'];
+      let settled = false;
+
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        fn();
       };
-      this.rpcInflight.set(id, inflight);
-      proc.stdin.write(`${JSON.stringify(request)}\n`);
-    });
-  }
 
-  private handleRpcStdout(chunk: string): void {
-    this.rpcBuf += chunk;
-    let nl: number;
-    while ((nl = this.rpcBuf.indexOf('\n')) >= 0) {
-      const line = this.rpcBuf.slice(0, nl).trim();
-      this.rpcBuf = this.rpcBuf.slice(nl + 1);
-      if (line.length === 0) continue;
-      this.routeRpcLine(line);
-    }
-  }
-
-  private routeRpcLine(line: string): void {
-    let msg: RpcMessage;
-    try {
-      msg = JSON.parse(line) as RpcMessage;
-    } catch {
-      return;
-    }
-    const id = msg.id ?? '';
-    const inflight = this.rpcInflight.get(id);
-    if (!inflight) return;
-
-    // Pi RPC speaks JSON-RPC 2.0 with `result` (final) + intermediate
-    // notifications carrying token deltas. Accept both common shapes:
-    //   • `{ method: "delta", params: { text } }` — notification stream
-    //   • `{ result: { text } }`                  — final
-    //   • `{ error: { message } }`                — RPC error
-    if (msg.method === 'delta' && msg.params?.text) {
-      inflight.cb.onChunk({ delta: String(msg.params.text) });
-      return;
-    }
-    if (msg.error) {
-      this.rpcInflight.delete(id);
-      inflight.cb.onError(new Error(msg.error.message ?? 'pi rpc error'));
-      return;
-    }
-    if (msg.result !== undefined) {
-      this.rpcInflight.delete(id);
-      const text =
-        (msg.result as { text?: string } | string | undefined) &&
-        typeof msg.result === 'object'
-          ? (msg.result as { text?: string }).text ?? inflight.accumulatedText()
-          : String(msg.result ?? inflight.accumulatedText());
-      const usage = (msg.result as { usage?: ChatFinal['usage'] } | undefined)
-        ?.usage;
-      inflight.cb.onFinal({
-        text,
-        usage,
-        duration_ms: Date.now() - inflight.startedAt,
-        transport: 'rpc',
+      const unsubscribe = client.onEvent((evt: PiAgentEvent) => {
+        if (evt.type === 'message_update') {
+          const ae = evt.assistantMessageEvent;
+          if (ae?.type === 'text_delta' && typeof ae.delta === 'string') {
+            acc += ae.delta;
+            cb.onChunk({ delta: ae.delta });
+          } else if (ae?.type === 'error') {
+            const errMsg =
+              (ae.error as { errorMessage?: string } | undefined)
+                ?.errorMessage ?? ae.reason ?? 'pi assistant error';
+            settle(() => {
+              cb.onError(new Error(errMsg));
+              reject(new Error(errMsg));
+            });
+          }
+        } else if (evt.type === 'message_end') {
+          // Pull usage off the assistant message when it lands.
+          const msg = evt.message as
+            | {
+                role?: string;
+                usage?: { input?: number; output?: number };
+              }
+            | undefined;
+          if (msg?.role === 'assistant' && msg.usage) {
+            usage = {
+              input_tokens: msg.usage.input,
+              output_tokens: msg.usage.output,
+            };
+          }
+        } else if (evt.type === 'agent_end') {
+          settle(() => {
+            cb.onFinal({
+              text: acc,
+              usage,
+              duration_ms: Date.now() - started,
+              transport: 'rpc',
+            });
+            resolve();
+          });
+        }
       });
-    }
-  }
 
-  private killRpc(): void {
-    if (!this.rpcProc) return;
-    try {
-      this.rpcProc.kill('SIGTERM');
-    } catch {
-      // ignore — proc may already be dead
-    }
-    this.rpcProc = null;
-    this.rpcBuf = '';
-    this.rpcInflight.clear();
-  }
-
-  // ── Print transport ───────────────────────────────────────────────────
-
-  private async chatViaPrint(
-    req: ChatRequest,
-    prompt: string,
-    cb: StreamCallbacks,
-    started: number,
-  ): Promise<void> {
-    const args = [...this.pi.args, '-q', prompt, '--json'];
-    if (req.provider) args.push('--provider', req.provider);
-    if (req.model) args.push('--model', req.model);
-
-    const proc = spawn(this.pi.command, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: req.cwd ?? process.cwd(),
-      env: { ...process.env },
-    });
-
-    let buf = '';
-    let acc = '';
-    let stderr = '';
-    let usage: ChatFinal['usage'];
-
-    proc.stdout.setEncoding('utf8');
-    proc.stderr.setEncoding('utf8');
-    proc.stderr.on('data', (s: string) => {
-      stderr += s;
-    });
-
-    proc.stdout.on('data', (chunk: string) => {
-      buf += chunk;
-      let nl: number;
-      while ((nl = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (line.length === 0) continue;
-        let evt: PrintEvent;
-        try {
-          evt = JSON.parse(line) as PrintEvent;
-        } catch {
-          // Pi may print non-JSON lines (banners, debug). Skip them.
-          continue;
-        }
-        if (evt.type === 'delta' && typeof evt.text === 'string') {
-          acc += evt.text;
-          cb.onChunk({ delta: evt.text });
-        } else if (evt.type === 'result') {
-          if (typeof evt.text === 'string') acc = evt.text;
-          if (evt.usage) usage = evt.usage;
-        }
-      }
-    });
-
-    return new Promise<void>((resolve) => {
-      proc.on('close', (code) => {
-        if (code !== 0 && acc.length === 0) {
-          cb.onError(
-            new Error(
-              `pi -q exited with code ${code ?? 'null'}: ` +
-                stderr.trim().slice(0, 500),
-            ),
-          );
-          resolve();
-          return;
-        }
-        cb.onFinal({
-          text: acc,
-          usage,
-          duration_ms: Date.now() - started,
-          transport: 'print',
+      client.prompt(prompt).catch((e: unknown) => {
+        settle(() => {
+          const err = e instanceof Error ? e : new Error(String(e));
+          cb.onError(err);
+          reject(err);
         });
-        resolve();
       });
     });
+  }
+
+  private async ensureRpc(): Promise<PiRpcClient> {
+    if (this.rpc) return this.rpc;
+    if (this.rpcStarting) return this.rpcStarting;
+
+    this.rpcStarting = (async () => {
+      const { RpcClient } = await loadPiCodingAgent(this.pi);
+      const args: string[] = ['--no-tools'];
+      const bridgeExt = process.env.CTRL_PI_BRIDGE_EXTENSION;
+      if (bridgeExt && bridgeExt.length > 0) {
+        args.unshift('--extension', bridgeExt);
+      }
+
+      const env: Record<string, string> = {};
+      for (const [k, v] of Object.entries(process.env)) {
+        if (typeof v === 'string') env[k] = v;
+      }
+      env.PI_OUTPUT_FORMAT = 'json';
+      if (bridgeExt && bridgeExt.length > 0) {
+        env.PI_PROVIDER = env.PI_PROVIDER ?? 'ctrl-bridge';
+        env.PI_MODEL = env.PI_MODEL ?? 'default';
+      }
+
+      const client = new RpcClient({
+        cliPath: this.pi.command,
+        args,
+        env,
+      });
+      await client.start();
+      this.rpc = client;
+      return client;
+    })();
+
+    try {
+      return await this.rpcStarting;
+    } finally {
+      this.rpcStarting = null;
+    }
   }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function assemblePrompt(messages: ChatMessage[]): string {
-  // Pi accepts a single textual prompt. We linearise the OpenAI-shape
-  // conversation array into a tagged transcript, same pattern ctrl-claude-shim
-  // uses. Pi's system prompt support lives inside `pi rpc` params; print
-  // mode collapses everything into one buffer.
   if (messages.length === 0) return '';
   return messages
     .map((m) => {
@@ -381,25 +286,31 @@ function assemblePrompt(messages: ChatMessage[]): string {
     .join('\n\n');
 }
 
-// ── Internal types ───────────────────────────────────────────────────────
-
-interface RpcInflight {
-  cb: StreamCallbacks;
-  startedAt: number;
-  accumulatedText: () => string;
-}
-
-interface RpcMessage {
-  jsonrpc?: string;
-  id?: string;
-  method?: string;
-  params?: { text?: string } & Record<string, unknown>;
-  result?: unknown;
-  error?: { code?: number; message?: string };
-}
-
-interface PrintEvent {
-  type?: string;
-  text?: string;
-  usage?: { input_tokens?: number; output_tokens?: number };
+/** Dynamic-import `@mariozechner/pi-coding-agent` from wherever Pi was
+ *  actually installed (`~/.ctrl/pi/...` in production, hoisted workspace
+ *  node_modules in dev). Tries explicit absolute paths derived from
+ *  `pi.command` first, then falls back to bare specifier resolution
+ *  (which only works if the wrapper file lives somewhere with Pi in its
+ *  module resolution path — true in dev, false in the .app bundle). */
+async function loadPiCodingAgent(pi: PiBinary): Promise<{
+  RpcClient: PiRpcClientCtor;
+}> {
+  // pi.command is one of:
+  //   - <root>/node_modules/.bin/pi  → bin symlink, go up to node_modules
+  //   - <pi-pkg>/dist/cli.js         → direct path, go up to pi-coding-agent
+  //   - /opt/homebrew/bin/pi         → global symlink, fall through to bare
+  const binDir = dirname(pi.command);
+  const candidates = [
+    join(binDir, '..', '@mariozechner', 'pi-coding-agent'),
+    join(binDir, '..', '..', '@mariozechner', 'pi-coding-agent'),
+  ];
+  for (const c of candidates) {
+    const entry = join(c, 'dist', 'index.js');
+    if (existsSync(entry)) {
+      return (await import(entry)) as { RpcClient: PiRpcClientCtor };
+    }
+  }
+  return (await import('@mariozechner/pi-coding-agent')) as {
+    RpcClient: PiRpcClientCtor;
+  };
 }

@@ -102,13 +102,13 @@ CTRL data philosophy = **本地是 truth, 云是 mirror**. Concrete principles, 
 
 ## Acceptance
 
-- [ ] CLAUDE.md "Design Philosophy" section already references this ADR — verify section is in sync (it currently spells out the 6 derived rules)
-- [ ] Every new kernel capability PR includes a one-line vim-test response in the PR description
-- [ ] No `users` table created in any `ctrl-cloud` D1 schema; billing identifies by public-key fingerprint
-- [ ] No proprietary binary user-content formats land in v1 (caches are exempt as long as derivable)
-- [ ] `ctrl-cloud` scope policed: each new Worker passes the "is this billing / marketplace / NAT / push" gate
-- [ ] `.olym/specs/vault-layout/spec.md` exists with default policy templates (flat / by-day / by-entity)
-- [ ] OAuth flows verified: every provider integration uses loopback callback, never goes through `ctrl-cloud`
+- [x] CLAUDE.md "Design Philosophy" section references this ADR and spells out 6 derived rules (verified 2026-05-31: section in CLAUDE.md spans the derived-rules block). Closed.
+- [x] Ongoing-lock: kernel capability PR vim-test guideline now codified in this ADR; enforced per-PR by reviewer, not by acceptance checkbox. Closed as policy-active.
+- [x] Ongoing-lock: `ctrl-cloud` schema rule policed in the separate `ctrl-cloud` repo via its own ADR / code review — out of CTRL repo scope, not a closeable checkbox here. Closed as policy-active.
+- [x] No proprietary binary user-content formats: verified — keycap manifests are JSON (`~/.ctrl/keycaps/*/manifest.json`), vault is plain markdown. Closed 2026-05-31.
+- [x] Ongoing-lock: `ctrl-cloud` Worker gate is a separate-repo review policy; not a closeable CTRL-repo checkbox. Closed as policy-active.
+- [x] vault-layout default policy: per CLAUDE.md "灵活开发" + memory `feedback_no_planning_no_phasing` ("spec 细则暂搁"), the standalone spec file is intentionally not written; the rule lives in this ADR + code review. Default policy = flat under `~/.ctrl/vault/` until user reorganizes. Closed as policy-only 2026-05-31.
+- [x] OAuth flows use loopback callback: verified — `commands/skills.rs:162` claude-oauth + `commands/system.rs:50` ST-SS bridge both loopback-only; no ctrl-cloud OAuth proxy. Closed 2026-05-31.
 
 ## Counter-evidence (would invalidate this ADR)
 

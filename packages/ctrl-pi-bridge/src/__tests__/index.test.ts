@@ -1,16 +1,22 @@
 // Unit tests for the Pi bridge extension. We exercise the registration
 // shape + the SSE parsing path via a stubbed `fetch`. End-to-end is
 // covered by the brain supervisor's integration test.
+//
+// Contract under test (bao 2026-05-31 118-trail rewrite): streamSimple
+// returns a BridgeEventStream synchronously. Errors flow through the
+// stream as `error` events (Pi's `AssistantMessageEventStream` shape) —
+// they do NOT throw out of streamSimple itself.
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import register, {
   BRIDGE_ENV_PORT,
   BRIDGE_MODEL_NAME,
   BRIDGE_PROVIDER_NAME,
+  BridgeEventStream,
+  type PiAssistantMessageEvent,
   type PiExtensionApi,
   type PiProvider,
-  type PiStreamEvent,
-} from '../index.ts';
+} from '../index.js';
 
 describe('register', () => {
   it('registers a single ctrl-bridge provider with one default model', () => {
@@ -46,60 +52,92 @@ describe('streamSimple', () => {
     }
   });
 
-  it('parses delta + done SSE events into Pi-shaped stream chunks', async () => {
-    globalThis.fetch = vi.fn(async () => sseResponse([
-      'event: delta',
-      'data: {"delta":"hello "}',
-      '',
-      'event: delta',
-      'data: {"delta":"world"}',
-      '',
-      'event: done',
-      'data: {"stop_reason":"end_turn"}',
-      '',
-    ])) as unknown as typeof fetch;
+  it('emits start / text_start / text_delta / text_end / done sequence', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      sseResponse([
+        'event: delta',
+        'data: {"delta":"hello "}',
+        '',
+        'event: delta',
+        'data: {"delta":"world"}',
+        '',
+        'event: done',
+        'data: {"stop_reason":"end_turn"}',
+        '',
+      ]),
+    ) as unknown as typeof fetch;
 
+    const provider = collectProvider();
+    const stream = provider.streamSimple(BRIDGE_MODEL_NAME, {
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    expect(stream).toBeInstanceOf(BridgeEventStream);
+
+    const events = await drain(stream);
+    const types = events.map((e) => e.type);
+    expect(types).toEqual([
+      'start',
+      'text_start',
+      'text_delta',
+      'text_delta',
+      'text_end',
+      'done',
+    ]);
+
+    const deltas = events.filter(
+      (e): e is Extract<PiAssistantMessageEvent, { type: 'text_delta' }> =>
+        e.type === 'text_delta',
+    );
+    expect(deltas.map((e) => e.delta)).toEqual(['hello ', 'world']);
+
+    const done = events.find(
+      (e): e is Extract<PiAssistantMessageEvent, { type: 'done' }> =>
+        e.type === 'done',
+    );
+    expect(done?.reason).toBe('stop');
+    expect(done?.message.content).toEqual([
+      { type: 'text', text: 'hello world' },
+    ]);
+
+    const final = await stream.result();
+    expect(final.stopReason).toBe('stop');
+    expect(final.content).toEqual([{ type: 'text', text: 'hello world' }]);
+  });
+
+  it('emits an error event when the port env is missing', async () => {
+    delete process.env[BRIDGE_ENV_PORT];
     const provider = collectProvider();
     const events = await drain(
       provider.streamSimple(BRIDGE_MODEL_NAME, {
         messages: [{ role: 'user', content: 'hi' }],
       }),
     );
-
-    expect(events).toEqual<PiStreamEvent[]>([
-      { type: 'assistant_message_delta', delta: 'hello ' },
-      { type: 'assistant_message_delta', delta: 'world' },
-      { type: 'stop', stop_reason: 'end_turn' },
-    ]);
+    const errEvent = events.find(
+      (e): e is Extract<PiAssistantMessageEvent, { type: 'error' }> =>
+        e.type === 'error',
+    );
+    expect(errEvent).toBeDefined();
+    expect(errEvent?.error.errorMessage).toMatch(/CTRL_PROVIDER_PORT/);
   });
 
-  it('throws a typed error when port env is missing', async () => {
-    delete process.env[BRIDGE_ENV_PORT];
-    const provider = collectProvider();
-    await expect(
-      drain(
-        provider.streamSimple(BRIDGE_MODEL_NAME, {
-          messages: [{ role: 'user', content: 'hi' }],
-        }),
-      ),
-    ).rejects.toThrow(/CTRL_PROVIDER_PORT/);
-  });
-
-  it('surfaces server HTTP error with status code', async () => {
+  it('emits an error event when the server returns a non-2xx status', async () => {
     globalThis.fetch = vi.fn(async () =>
       new Response('oops', { status: 503, statusText: 'Service Unavailable' }),
     ) as unknown as typeof fetch;
     const provider = collectProvider();
-    await expect(
-      drain(
-        provider.streamSimple(BRIDGE_MODEL_NAME, {
-          messages: [{ role: 'user', content: 'hi' }],
-        }),
-      ),
-    ).rejects.toThrow(/HTTP 503/);
+    const events = await drain(
+      provider.streamSimple(BRIDGE_MODEL_NAME, {
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    const errEvent = events.find(
+      (e): e is Extract<PiAssistantMessageEvent, { type: 'error' }> =>
+        e.type === 'error',
+    );
+    expect(errEvent?.error.errorMessage).toMatch(/HTTP 503/);
   });
 
-  it('propagates an `error` SSE event as a thrown Error', async () => {
+  it('propagates an SSE `error` event as a stream error event', async () => {
     globalThis.fetch = vi.fn(async () =>
       sseResponse([
         'event: error',
@@ -108,13 +146,16 @@ describe('streamSimple', () => {
       ]),
     ) as unknown as typeof fetch;
     const provider = collectProvider();
-    await expect(
-      drain(
-        provider.streamSimple(BRIDGE_MODEL_NAME, {
-          messages: [{ role: 'user', content: 'hi' }],
-        }),
-      ),
-    ).rejects.toThrow(/provider crashed/);
+    const events = await drain(
+      provider.streamSimple(BRIDGE_MODEL_NAME, {
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    );
+    const errEvent = events.find(
+      (e): e is Extract<PiAssistantMessageEvent, { type: 'error' }> =>
+        e.type === 'error',
+    );
+    expect(errEvent?.error.errorMessage).toMatch(/provider crashed/);
   });
 });
 
@@ -132,10 +173,10 @@ function collectProvider(): PiProvider {
 }
 
 async function drain(
-  it: AsyncIterable<PiStreamEvent>,
-): Promise<PiStreamEvent[]> {
-  const out: PiStreamEvent[] = [];
-  for await (const e of it) out.push(e);
+  stream: AsyncIterable<PiAssistantMessageEvent>,
+): Promise<PiAssistantMessageEvent[]> {
+  const out: PiAssistantMessageEvent[] = [];
+  for await (const e of stream) out.push(e);
   return out;
 }
 

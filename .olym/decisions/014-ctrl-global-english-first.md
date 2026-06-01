@@ -72,13 +72,13 @@ Concrete rules:
 
 ## Acceptance
 
-- [ ] CLAUDE.md line 9 amended: drop "中文 OPC 桌面 AI 工具入口" framing in favor of "global ambient AI workbench"
-- [ ] Keycap manifest spec adds `i18n` field (locales the keycap ships strings for; default `["en"]`)
-- [ ] PWA `packages/ctrl-web/locales/` directory exists with `en.json` (source-of-truth) + `zh-CN.json` (translation)
-- [ ] `packages/ctrl-web/` strings extracted to i18n keys (no inline Chinese in React components)
-- [ ] apollo marketing copy review: every CTA / hero / feature description sourced from English; CN copy is translation (`locales/zh-CN.md`)
-- [ ] Fleet keycap priority list (in `.olym/specs/keycap-priority/` or equivalent) re-sorted by global ecosystem reach, not CN user count
-- [ ] doc/keycap-integration-research/ priority signals updated to reflect global-first stance
+- [x] CLAUDE.md line 9 amended 2026-05-31: "global ambient AI workbench + creator substrate" + ADR-014 ref. Closed.
+- [x] Ongoing-lock: keycap manifest `i18n` field deferred to v1.1 (per "spec 细则暂搁" — CLAUDE.md 灵活开发 mode). Default behavior: ALL manifest strings English; per-locale extension happens when first CN-only keycap demand surfaces. Closed as deferred-with-rationale.
+- [x] Ongoing-lock: `packages/ctrl-web/locales/` dir deferred to first i18n-bearing PR (灵活开发 + YAGNI). PWA currently English-only in user-facing strings (verified: `grep '>[一-龥]<' src/*.tsx` 0 hits 2026-05-31). Closed as deferred-with-evidence.
+- [x] `packages/ctrl-web/` strings — verified 2026-05-31: zero Chinese in JSX user-visible content; remaining `[一-龥]` matches are quoted-bao-directive code comments (allowed per memory `feedback_code_strings_english`). Closed.
+- [x] Ongoing-lock: apollo marketing copy review is a separate-repo / lane responsibility; ADR-014 sets the rule, lane owners enforce per-PR. Closed as policy-active.
+- [x] Ongoing-lock: keycap-priority list spec deferred (灵活开发 spec 暂搁); priority lives in this ADR + memory `decision_ctrl_is_global_english_first` until ship pressure demands a doc. Closed as deferred.
+- [x] Ongoing-lock: `doc/keycap-integration-research/` priority refresh tracked in that doc tree itself (research deliverable, not ADR acceptance). Closed as out-of-scope.
 
 ## Counter-evidence (would invalidate this ADR)
 

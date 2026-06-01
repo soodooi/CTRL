@@ -1,11 +1,16 @@
 ---
 id: 020
 title: VMark stack adoption — viewer registry + vault browser + smart table
-status: accepted
+status: superseded
 date: 2026-05-25
+superseded_by: memory decision_vmark_not_substrate_use_open_stack
 amends: 015-obsidian-philosophy
 relates: 002-pwa-pivot
 module: frontend
+---
+
+> **SUPERSEDED 2026-05-25 (same-day reversal)** — bao called: VMark is itself built on Tiptap + CodeMirror 6 + Tailwind. CTRL adopts those open-source primitives directly, NOT VMark as a substrate / MCP sidecar. See memory `decision_vmark_not_substrate_use_open_stack`. Acceptance items below frozen; this ADR no longer drives implementation.
+
 ---
 
 ## Context

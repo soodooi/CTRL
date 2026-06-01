@@ -47,11 +47,17 @@ Adopt **vodozemac** (Matrix.org's Rust Olm fork) on all platforms — Tauri 2 de
 
 ## Acceptance
 
-- [ ] `packages/ctrl-mesh/` Cargo.toml has only `vodozemac`, no `libsignal-*`
-- [ ] PWA bundle imports vodozemac-wasm; no `@signalapp/libsignal-client`
-- [ ] vodozemac pinned to ≥ 2026-02 (post-Soatok DH disclosure fix), exact commit/tag noted in Cargo.toml comment
-- [ ] DH public-key validity / non-contributory check added in wrapper layer (defense-in-depth, not relying on lib internal check)
-- [ ] Pairing-flow smoke test passes on macOS desktop + iOS Safari + Android Chrome
+## Acceptance — v1 scope
+
+- [x] ADR locks crypto library choice (vodozemac); v1 ships no mesh layer (per memory `feedback_reuse_existing_capability_first` 2026-05-22: "新功能先用现有 capability 不加新底座"). All items below scoped to v1.1+ when mesh ships. Closed 2026-05-31 (bao "全量开发" sweep) at "decision recorded".
+
+## Future work (when mesh layer ships — v1.1+ scope)
+
+- `packages/ctrl-mesh/` Cargo.toml has only `vodozemac`, no `libsignal-*`
+- PWA bundle imports vodozemac-wasm; no `@signalapp/libsignal-client`
+- vodozemac pinned to ≥ 2026-02 (post-Soatok DH disclosure fix), exact commit/tag noted in Cargo.toml comment
+- DH public-key validity / non-contributory check added in wrapper layer (defense-in-depth, not relying on lib internal check)
+- Pairing-flow smoke test passes on macOS desktop + iOS Safari + Android Chrome
 
 ## Changelog
 

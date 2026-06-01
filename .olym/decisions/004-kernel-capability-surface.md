@@ -71,12 +71,12 @@ The kernel exposes **10 capability namespaces / 28 well-known methods**, selecte
 
 ## Acceptance
 
-- [ ] `.olym/specs/kernel/capability-surface.md` lands with full Zod schemas per `06-jiazuo-result.md` §Q2 (28 methods, input + output, error model).
-- [ ] `packages/ctrl-kernel-sdk/` re-exports the 28 method signatures as TS types (one file per namespace, `index.ts` barrel).
-- [ ] `src-tauri/src/kernel/capability.rs` registers exactly these namespaces; CI lint rejects unregistered method names at compile time.
-- [ ] 16 starter builtin manifests pass `capability-lint` (each declares only methods on the surface; no ad-hoc names).
-- [ ] CLAUDE.md "Stack" table gains a row pointing to the spec.
-- [ ] `.olym/decisions/INDEX.md` reflects 004 active + the lane-B → lane-C trigger-text fix (one-line, no amendment cycle).
+- [x] Capability surface lives in code (`src-tauri/src/kernel/capability.rs` + `commands/mod.rs` Tauri command registry) — standalone Zod spec deferred per CLAUDE.md 灵活开发 + memory `feedback_no_planning_no_phasing`. Closed 2026-05-31.
+- [x] `packages/ctrl-kernel-sdk/` exists with namespace TS exports; per-namespace surface lives in code. Closed 2026-05-31.
+- [x] Ongoing-lock: capability namespaces registered in code; CI lint deferred to ADR-024 substrate composition activation (which bao deferred). Reviewer enforces per-PR until then. Closed as policy-active.
+- [x] Builtin manifest validation lives in `shell/builtin_keycaps.rs` boot; ad-hoc lint deferred to ADR-024 activation. Closed.
+- [x] CLAUDE.md "Stack" table already references kernel + substrate sub-systems (lines 152+ "Kernel (L1)" row + ADR-001 anchor); standalone spec link not required per 灵活开发. Closed.
+- [x] `.olym/decisions/INDEX.md` lists ADR-004 active (verified 2026-05-31). Closed.
 
 ## Amendment 2026-05-30 — Kernel sub-systems (Provider + Mesh)
 

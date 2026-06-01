@@ -280,15 +280,35 @@ fn install_via_npm(is_upgrade: bool) -> std::io::Result<()> {
         "pi_install: {label} via npm"
     );
 
-    let output = Command::new(&npm)
-        .arg("install")
+    // ADR-003 §4 priority-0 — Pi auto-upgrade cannot stay stale. The same
+    // sparse-PATH trap that bit brain_supervisor's Pi spawn applies here:
+    // Tauri-spawned processes inherit a PATH without /opt/homebrew/bin, so
+    // npm's internal `env node` shim exits 127. Prepend npm's parent dir
+    // (where node typically also lives) so the npm script can resolve node.
+    // bao 2026-05-31 (ADR-003 acceptance #4 close-out): ctrl.log was
+    // surfacing `env: node: No such file or directory` every boot —
+    // auto-upgrade silently never ran, Pi stayed stale.
+    let mut cmd = Command::new(&npm);
+    cmd.arg("install")
         .arg("--prefix")
         .arg(&root)
         .arg("--no-audit")
         .arg("--no-fund")
         .arg("--silent")
-        .arg(&pkg)
-        .output()?;
+        .arg(&pkg);
+    if let Some(parent) = npm.parent() {
+        let parent_str = parent.to_string_lossy().to_string();
+        let existing = std::env::var("PATH").unwrap_or_default();
+        let new_path = if existing.is_empty() {
+            parent_str
+        } else if existing.split(':').any(|p| p == parent_str) {
+            existing
+        } else {
+            format!("{parent_str}:{existing}")
+        };
+        cmd.env("PATH", new_path);
+    }
+    let output = cmd.output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         return Err(std::io::Error::other(format!(
