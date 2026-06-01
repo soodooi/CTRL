@@ -30,7 +30,7 @@ bao 2026-05-29: "连线这种 workflow, 目前看是需要的; 现成的, 我们
 
 ## §2 Stack — reuse, don't build
 
-Per `.olym/specs/workbench/spec.md` §1 (researched + locked):
+Per § canvas decision below (researched + locked):
 
 - **React Flow** (`@xyflow/react`, MIT) — wiring canvas, integrated as library, lazy-loaded into `/workbench` only. Custom nodes render the real keycap card. We do NOT write our own node editor.
 - **dnd-kit** (MIT) — Pool → Keyboard palette drag + reorder (also used by ADR-003 § nav-keyboard).

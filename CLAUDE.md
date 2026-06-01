@@ -1,6 +1,6 @@
 # CTRL — Claude Code Project Entry
 
-> **新 session 必读**: `.olym/steering/ctrl-strategy.md` (5 min navigator) + `.olym/decisions/001-spine.md` + `.olym/decisions/INDEX.md` (architecture lock)
+> **新 session 必读**: `.olym/decisions/INDEX.md` (7 module ADRs) + `.olym/decisions/001-spine.md` (architecture lock)
 
 ---
 
@@ -10,7 +10,7 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI
 
 按 `Ctrl` 唤起 → ephemeral workspace → 1 键帽 = 1 AI 工具. 极简化 + AI native + 创作者经济.
 
-**Single deliverable**: this repo (`soodooi/CTRL`, private). Self-contained, consumes `olym-core` via workspace copy.
+**Single deliverable**: this repo (`soodooi/CTRL`, private). Self-contained; olym dev framework installed as Claude Code plugin (`.claude-plugin/`) — no npm runtime dependency.
 
 ---
 
@@ -24,7 +24,6 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI
 - 禁止 `--no-verify` 跳过 git hooks
 - 禁止跨 D1 JOIN
 - 模棱两可的指令直接询问 bao
-- 开始前查 `.olym/skills/` 和 `.olym/best-practice/` (后续建立)
 - 涉及战略改动: 先读 ADR-001 spine + `.olym/decisions/INDEX.md` (7 module ADR 索引), 不冲突再动手
 
 ### Working mode: 灵活开发 — 只做 ADR + 代码 + PR
@@ -130,15 +129,23 @@ CTRL/                           ← THIS REPO (deliverable)
 ├── share/
 │   └── stss-spike/             standalone WS server + browser viewer (reference)
 ├── doc/
-│   ├── visual-identity/        logo SVG + brand-tokens.md (single source of truth)
-│   └── reference/              design references
-├── .claude/
-│   ├── ADR/                    architectural decisions (numbered, never deleted)
-│   └── PRPs/                   legacy PRP docs (historical)
+│   ├── design/                 HTML prototypes + tokens.json
+│   ├── reference/              brand assets
+│   └── setup-github-token.md   operational doc
+├── .claude/                    Claude Code config (agents/commands/hooks/settings/skills)
+├── .claude-plugin/             olym dev framework (Claude Code plugin)
 └── .olym/
-    ├── steering/               ctrl-strategy.md (5min navigator)
-    ├── specs/                  domain specs (kernel, pwa-shell, stss, tool-manifest, …)
-    └── handoffs/               work items (H-YYYY-MM-DD-NNN)
+    ├── decisions/              7 module ADRs (single source of truth)
+    │   ├── 001-spine.md
+    │   ├── 002-substrate.md
+    │   ├── 003-frontend.md
+    │   ├── 004-cap.md
+    │   ├── 005-irisy.md
+    │   ├── 006-cross-cutting.md
+    │   ├── 007-workbench.md
+    │   ├── INDEX.md            module map + provenance from original 22 numbered ADRs
+    │   └── PROCESS.md          version-control rules
+    └── handoffs/               (template only; 灵活开发期间不跑 handoff)
 
 ctrl-cloud/  (separate repo)    CF Workers backend (auth/billing/market/push)
 hello-olym/                     olym-core SSOT (also serves mamamiya)
@@ -183,7 +190,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 
 Every keycap = declarative manifest (Zod schema). 5 source types: builtin / mcp / oauth / local_agent / stss.
 
-详细 schema: `.olym/specs/tool-manifest/spec.md`.
+详细 schema: ADR-002 substrate § composition v1 + `packages/ctrl-keycap-sdk/src/manifest-schema.ts` (SSOT).
 
 AI 创作助手 generates manifests from natural language. User never writes JSON unless they want to (advanced mode).
 
@@ -196,8 +203,6 @@ AI 创作助手 generates manifests from natural language. User never writes JSO
 | 1-5 | Clipboard AI / OCR / Translate / Text / Chat | P0 v1.0 |
 | 6-10 | 窗口 / PDF / LaTeX / 智识 / 屏幕录 | P1 v1.1 |
 | 11-15 | Snippet / Code / Email / 会议 / 同步 | 差异化 |
-
-详细 `.olym/steering/ctrl-strategy.md`.
 
 ---
 
@@ -230,10 +235,9 @@ Current open:
 
 When you need to make any non-trivial decision:
 
-1. **Read** `.olym/steering/ctrl-strategy.md` (5 min)
-2. **Check** `.olym/decisions/001-spine.md` + `.olym/decisions/INDEX.md` for lock points
-3. **Drill** into relevant spec under `.olym/specs/`
-4. **Ask** bao if conflict between docs or decision absent
+1. **Read** `.olym/decisions/INDEX.md` (1 min) — 7 module ADR map
+2. **Open** the relevant module ADR — § Decision + § Acceptance + § Future work
+3. **Ask** bao if conflict between ADRs or decision absent
 
 Do **not** unilaterally change lock points without ADR amendment.
 
@@ -275,6 +279,6 @@ Do **not** unilaterally change lock points without ADR amendment.
 ## When in doubt
 
 - Architecture question → ADR-001 spine + relevant module ADR (INDEX.md)
-- Strategic question → `.olym/steering/ctrl-strategy.md`
+- Strategic question → `.olym/decisions/INDEX.md` + relevant module ADR
 - "Should I add this?" → check 不做清单 first
 - "How does X work?" → ask bao directly, do not guess

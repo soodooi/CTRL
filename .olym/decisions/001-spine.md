@@ -18,10 +18,9 @@ changelog:
 related:
   - .olym/decisions/002-substrate.md
   - .olym/decisions/003-frontend.md
-  - .olym/steering/ctrl-strategy.md
 ---
 
-> **Spine — immutable**. New session reads §1. All module-specific detail in module ADR + `.olym/specs/<module>/SPEC.md`.
+> **Spine — immutable**. New session reads §1. All module-specific detail in module ADR (see `.olym/decisions/INDEX.md`).
 
 ## §1 Layers — 4-layer stack (physical topology)
 

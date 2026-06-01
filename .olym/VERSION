@@ -1,9 +1,17 @@
-# Olym install provenance — written by Zeus (CTRL adopting hello-olym).
+# Olym install provenance — updated 2026-05-31 zeus upgrade.
 # CTRL is olym's first real production consumer.
 
-olym_version: 0.3.1-alpha
-plugin_sha: cbb2a564b749e58f1758b82597dda1d720ff00ad
+olym_version: 0.7.10-alpha
+plugin_sha: 717ad86d
 marketplace_source: github.com/soodooi/hello-olym
-installed_at: 2026-05-18
-installed_by: zeus (CTRL adoption)
+installed_at: 2026-05-31
+installed_by: zeus (CTRL upgrade from 0.3.1-alpha)
 schema_version: 1
+
+# Upgrade history
+upgrades:
+  - from: 0.3.1-alpha
+    to: 0.7.10-alpha
+    at: 2026-05-31
+    by: zeus
+    notes: "skipped 0.4–0.7 minor releases; full framework refresh while preserving CTRL ADRs, specs, attic, irisy persona, ctrl-strategy.md, team-roles.md, skills/thorvg. Dropped packages/olym-core (0 importers). Locally bumped .claude-plugin manifests to 0.7.10-alpha (upstream tag-vs-manifest drift)."
