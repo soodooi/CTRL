@@ -40,7 +40,11 @@
    toggle expands the window leftward. */
 .cockpitZone {
   width: calc(var(--l1-width) + var(--irisy-pane-width));
-  flex-shrink: 0;
+  /* Safety net — if the window is somehow narrower than the intended
+     cockpit width (478 px), shrink the zone to fit instead of letting
+     it overflow left and push the logo off-screen. */
+  max-width: 100%;
+  flex-shrink: 1;
   display: flex;
   align-items: center;
   gap: var(--space-3);
