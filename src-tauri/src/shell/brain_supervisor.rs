@@ -14,7 +14,7 @@
 //      `pi rpc` subprocess; we inject `CTRL_PI_BRIDGE_EXTENSION` (path
 //      to the bundled `@ctrl/pi-bridge`) + `CTRL_PROVIDER_PORT` env so
 //      Pi's LLM calls route into the kernel provider sub-system
-//      (ADR-002 substrate § provider v1 lock #7) instead of Pi's own ~/.pi/config.
+//      (ADR-002 substrate § provider v2 lock #7) instead of Pi's own ~/.pi/config.
 //
 // The MCP server is restarted on exit with capped backoff. The kernel
 // provider sub-system the bridge POSTs to is owned by the kernel lane;
@@ -255,7 +255,7 @@ fn supervise(node: PathBuf, plugin_dir: PathBuf, bridge_path: PathBuf) {
                 if let Ok(mut guard) = child_slot().lock() {
                     *guard = Some(child);
                 }
-                // ADR-002 substrate acceptance #6 + ADR-002 substrate § provider v1 lock #4 — trial
+                // ADR-002 substrate acceptance #6 + ADR-002 substrate § provider v2 lock #4 — trial
                 // verify before declaring the brain healthy. The wrapper
                 // spawn returning Ok only means the Node process started;
                 // it does NOT confirm the MCP server bound :17874 or that
@@ -378,7 +378,7 @@ fn spawn_brain(
     cmd.spawn()
 }
 
-/// ADR-002 substrate acceptance #6 / ADR-002 substrate § provider v1 lock #4 trial verify.
+/// ADR-002 substrate acceptance #6 / ADR-002 substrate § provider v2 lock #4 trial verify.
 ///
 /// Poll the Pi MCP wrapper's `/healthz` endpoint until it responds 200 OK
 /// or `TRIAL_VERIFY_DEADLINE` elapses. Healthz returning OK means:

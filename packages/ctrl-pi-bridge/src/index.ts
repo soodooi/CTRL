@@ -6,7 +6,7 @@
 // "ctrl-bridge" with Pi's extension API. Pi's agent loop then has one
 // provider, one model — "ctrl-bridge" / "default" — and every LLM call
 // goes through `streamSimple`, which HTTP-POSTs to a kernel endpoint
-// the Rust side owns (ADR-002 substrate § provider v1 lock #7).
+// the Rust side owns (ADR-002 substrate § provider v2 lock #7).
 //
 // Rationale (ADR-002 substrate §2 + Round-2 finding): Pi has no MCP-client surface,
 // so the only seam for routing Pi's LLM call through the kernel provider

@@ -1,6 +1,6 @@
 // HTTP endpoint — `POST /text-chat` served on 127.0.0.1:<port>.
 //
-// ADR-002 substrate § provider v1 lock #7. Pi has no MCP client surface (FINDING-R2.md);
+// ADR-002 substrate § provider v2 lock #7. Pi has no MCP client surface (FINDING-R2.md);
 // the Pi bridge runs an in-process LLM provider extension that fires
 // `fetch()` against this endpoint and streams the response back to the
 // Pi agent loop. SSE wire matches what `commands/irisy_chat.rs`'s

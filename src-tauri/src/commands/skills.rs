@@ -160,7 +160,7 @@ pub async fn run_skill(
     // Skill keycaps need a CLI that can use tools + write files. Claude Code
     // is the verified one. Resolve the binary path the same way the
     // provider sub-system does — `claude-oauth` preset's manifest exposes
-    // the `claude` binary (ADR-002 substrate § provider v1). Fall back to plain `claude` on
+    // the `claude` binary (ADR-002 substrate § provider v2). Fall back to plain `claude` on
     // PATH if the preset isn't installed.
     // Resolve `claude` binary path inline (no external crate dep). Splits
     // $PATH and returns the first matching executable, or falls back to the

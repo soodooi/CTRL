@@ -2,7 +2,7 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — Pi brain · capability surface · provider router · crypto · subprocess · MCP bus · composition
-version: 1
+version: 2
 status: accepted
 last_updated: 2026-05-31
 deciders: [bao, zeus]
@@ -16,6 +16,10 @@ sections:
   - { id: composition,  source: orig-024 }
 changelog:
   - v1 2026-05-31: module reorg — merged orig-003 (Pi brain) + orig-004 (capability surface) + orig-007 (crypto) + orig-012 (SubprocessActor + portable-pty) + orig-013 (kernel-as-MCP-server) + orig-024 (6-axis composition). **NEW** § provider — role routing (irisy.primary/fallback, keycap.default) + VMark-style PATH detect + introspection (brain_status). Closes the "Irisy doesn't know its own stack" gap (bao 2026-05-31).
+  - v2 2026-05-31: § provider amendments (bao 3-校准 in implementation discussion):
+      (1) drop `keycap.default` role — keycap binds provider via manifest `brain_capabilities`, not via substrate-wide default (2-role model: irisy.primary + irisy.fallback only).
+      (2) `irisy.primary` MUST be a detected user CLI (`claude > codex > gemini > aider`); removed "else volc" auto-fallback — primary path is augmentation, CTRL doesn't silently spend money there.
+      (3) `irisy.fallback` is the CTRL-managed slot (CTRL pays Volc Doubao bill, future = ctrl-brand provider). Volc now has two manifest ids: `volc` (CTRL fallback, ctrl-managed creds) and `volc-byok` (user-elected, user keychain). brain_status() exposes `managed_by: "user" | "ctrl"`. Brand label "CTRL Cloud" hides codename from Irisy responses + failover messages.
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/004-cap.md
@@ -101,10 +105,12 @@ capabilities = ["text.chat"]
 
 6 builtin presets ship Day-1: `claude-oauth`, `anthropic-api`, `openai-api`, `volc`, `kimi`, `deepseek`. User additions go to `~/.ctrl/providers/<id>.toml`. CN Anthropic-shape endpoints (api.moonshot.cn/anthropic, api.deepseek.com/anthropic) supported via preset.
 
-### §3.5 Role routing — consumer-aware (NEW, replaces single `text.chat` bucket)
+### §3.5 Role routing — consumer-aware (NEW, replaces single `text.chat` bucket) — v2 2-role model
+
+**v2 amendment (bao 2026-05-31)**: dropped `keycap.default` role (keycap binds provider via manifest `brain_capabilities`, not via substrate-wide default). `irisy.primary` MUST be a detected user CLI — no auto-fallback to a paid provider. `irisy.fallback` is the CTRL-managed slot (paid by CTRL).
 
 ```rust
-pub enum Consumer { IrisyPrimary, IrisyFallback, KeycapDefault, Custom(String) }
+pub enum Consumer { IrisyPrimary, IrisyFallback, Custom(String) }  // v2: dropped KeycapDefault
 
 pub struct RouteChain {
     primary: ProviderId,
@@ -112,47 +118,58 @@ pub struct RouteChain {
 }
 ```
 
-Default config:
-- `irisy.primary` = `claude-oauth` (if detected) else `volc`
-- `irisy.fallback` = `volc`
-- `keycap.default` = `volc`
+Default config (v2):
+- `irisy.primary` = first detected user CLI in priority order `claude > codex > gemini > aider`. **No CLI detected → unset** (Irisy toasts "Configure a provider in Settings → Providers"). Never auto-falls-back to a paid provider for primary slot. *Reason: augmentation philosophy — CTRL does not silently spend money on the user's behalf for the primary path.*
+- `irisy.fallback` = `volc` (CTRL-managed credential, CTRL pays the Volc Doubao bill; future replaces with ctrl-brand provider). Always present, always healthy — first-boot users without any CLI still get a working AI via this fallback. *This is the substrate-level CTRL business guarantee.*
 
-Persisted at `~/.ctrl/state/active-providers.json`:
+**Volc has two manifest ids** to disambiguate the dual identity:
+- `volc` = CTRL-managed fallback (credential from CTRL secrets pipeline / ctrl-cloud worker, never from user keychain). Used by `irisy.fallback` only.
+- `volc-byok` = user BYOK Volc (credential from user keychain). Listed in `/settings/providers` REST section, user-elected.
+
+Persisted at `~/.ctrl/state/active-providers.json` (v2 schema):
 ```json
 {
   "roles": {
-    "irisy.primary": "claude-oauth",
-    "irisy.fallback": "volc",
-    "keycap.default": "volc"
+    "irisy.primary":  "claude-oauth",
+    "irisy.fallback": "volc"
   }
 }
 ```
 
-`/text-chat` SSE endpoint (port 17878) accepts `?consumer=<id>` query param. Pi bridge sets `consumer=irisy.primary`; on stream error/timeout, kernel auto-falls-back to next in chain + emits `provider:failover` event.
+v1 → v2 migration: if file has the old single bucket `{"text.chat": "<id>"}`, the loader writes `roles.irisy.primary = <id>` and `roles.irisy.fallback = "volc"`. If file has v1 `roles.keycap.default`, the loader drops that key.
 
-### §3.6 Detect + auto-adopt UX (mirrors VMark)
+`/text-chat` SSE endpoint (port 17878) accepts `?consumer=<role>` query param. Pi bridge sets `consumer=irisy.primary`; on stream error/timeout, kernel auto-falls-back through `RouteChain.fallbacks` (default: `["volc"]`) + emits `provider:failover { from, to, reason }` event.
 
-- Tauri command `provider_detect()` → `Vec<ProviderEntry { id, label, kind, binary_path, version, available }>`. Scans PATH for `claude` / `codex` / `gemini` / `ollama`; pings REST endpoints for configured keys. Cached in `OnceLock<Mutex<...>>` (ported from VMark `detection.rs`).
-- First boot + no `active-providers.json` → if exactly 1 CLI available, set `irisy.primary` to it silently + Irisy one-line toast "Using <label> — change in Settings".
+### §3.6 Detect + auto-adopt UX (mirrors VMark detect + role assignment is CTRL-new) — v2
+
+**v2 amendment**: page renders **2 role sections** (not 3); `irisy.fallback` defaults `volc` at first boot without user action (CTRL-managed).
+
+- Tauri command `provider_detect()` → `Vec<ProviderEntry { id, label, kind, binary_path, version, available }>`. Scans PATH for `claude` / `codex` / `gemini` / `aider` / `ollama`; pings REST endpoints for configured keys. Cached in `OnceLock<Mutex<...>>` (ported from VMark `detection.rs`).
+- First boot + no `active-providers.json`:
+  - `irisy.primary` = highest-priority detected CLI (`claude > codex > gemini > aider`), silent — Irisy one-line toast "Using <label> — change in Settings". **No CLI detected → primary stays unset**, Irisy toasts "Tip: install Claude CLI for free use, or your Volc fallback is already active" (still functional via fallback).
+  - `irisy.fallback` = `volc` always — CTRL-managed credential, no user action needed.
 - Tauri command `provider_set_active(role, provider_id)` runs `trial_verify()` (1-token "hi", 5s deadline) before committing. Failure → keep previous, surface specific error.
-- `/settings/providers` page — 3 role sections (Irisy primary / Irisy fallback / Keycap default) × radio rows with Available/Not-found badges. REST API (BYOK) section below — Anthropic / OpenAI / Google / Volc / Ollama with Configure→ buttons.
+- `/settings/providers` page — **2 role sections** (Irisy primary / Irisy fallback) × radio rows with Available/Not-found badges. CLI providers listed first within each section, then `volc` (the CTRL fallback option, always shown as Available with "[CTRL-managed]" badge in fallback section). REST API (BYOK) section below — Anthropic / OpenAI / Google / Volc-BYOK / Kimi / DeepSeek / Ollama with Configure→ buttons. BYOK Volc is a separate row from CTRL-managed volc (different manifest id `volc-byok`).
 
-### §3.7 Introspection — Irisy self-awareness (closes bao 2026-05-31 root issue)
+### §3.7 Introspection — Irisy self-awareness (closes bao 2026-05-31 root issue) — v2
+
+**v2 amendment**: dropped `keycap.default` from the providers map. Fallback `volc` label = `"CTRL Cloud"` (brand-facing), not `"Volc Doubao"` (codename) — keeps user-facing layer abstracted so the future ctrl-brand swap is invisible.
 
 Tauri command `brain_status()`:
 ```json
 {
   "engine": { "id": "Pi", "version": "0.73.1", "healthy": true, "last_token_ms": 142 },
   "providers": {
-    "irisy.primary":  { "id": "claude-oauth", "label": "Claude subscription", "binary": "/opt/homebrew/bin/claude", "healthy": true },
-    "irisy.fallback": { "id": "volc",         "label": "Volc Doubao",         "endpoint": "...",                   "healthy": true },
-    "keycap.default": { "id": "volc",         ... }
+    "irisy.primary":  { "id": "claude-oauth", "label": "Claude subscription", "binary": "/opt/homebrew/bin/claude", "healthy": true, "managed_by": "user" },
+    "irisy.fallback": { "id": "volc",         "label": "CTRL Cloud",          "endpoint": "<ctrl-managed>",         "healthy": true, "managed_by": "ctrl" }
   },
   "last_failover": null
 }
 ```
 
-Irisy system prompt v5 (ADR-005 § persona) injects `<brain_state>` block built from this. Irisy answers "你用什么模型" with **brand label** ("Claude 订阅") — never RPC codename ("Pi" / "claude-oauth" / "RpcClient"). On failover Irisy says "Claude 暂时连不上, 我切到 Volc 了" — uses the typed event, not heuristics.
+`managed_by` field (v2): `"user"` = user-owned CLI or user BYOK key; `"ctrl"` = CTRL-paid fallback. Settings UI surfaces this so the user understands who pays for each path.
+
+Irisy system prompt v5 (ADR-005 § persona) injects `<brain_state>` block built from this. Irisy answers "你用什么模型" with **brand label** ("Claude 订阅" / "CTRL Cloud") — never RPC codename ("Pi" / "claude-oauth" / "volc" / "RpcClient"). On failover Irisy says "Claude 暂时连不上, 我切到 CTRL Cloud 了" — uses the typed event + brand label, not heuristics, not the `volc` codename.
 
 ### §3.8 Retirements
 
@@ -240,14 +257,14 @@ Keycap manifest declares 6 axes; runtime atomically provisions all declared reso
 
 ## Future work (§ Provider §3 implementation — tracked separately from § Acceptance per CLAUDE.md 灵活开发)
 
-- `kernel/provider/{trait.rs, registry.rs, detect.rs, path_resolver.rs}` exist with role table + RouteChain + auto-fallback
+- `kernel/provider/{trait.rs, registry.rs, detect.rs, path_resolver.rs}` exist with **2-role** table (irisy.primary + irisy.fallback) + RouteChain + auto-fallback (v2)
 - 4 REST adapters ported from VMark (`rest/{anthropic,openai,google,ollama}.rs`), ISC attribution
-- 6 builtin manifests: `claude-oauth`, `anthropic-api`, `openai-api`, `volc`, `kimi`, `deepseek`
-- Tauri commands: `provider_detect` / `provider_set_active(role, id)` / `provider_active` / `brain_status`
-- `/text-chat?consumer=<role>` honors role routing; auto-fallback chains on error, emits `provider:failover` event
-- First-boot single-CLI auto-adopt + Irisy one-line toast
-- Irisy prompt v5 wired (depends on ADR-005 § persona implementation)
-- `/settings/providers` page rendered inside Settings workspace route (ADR-003 § nav-keyboard v2) — 3 role sections × radio with Available/Not-found badges + REST API config
+- **7 builtin manifests** (v2): `claude-oauth`, `anthropic-api`, `openai-api`, `volc` (CTRL-managed fallback), `volc-byok` (user-elected), `kimi`, `deepseek` (+ implicit `ollama` if detected)
+- Tauri commands: `provider_detect` / `provider_set_active(role, id)` / `provider_active(role)` / `brain_status` (returns `managed_by` field per role, v2)
+- `/text-chat?consumer=<role>` honors 2-role routing; auto-fallback chains on error, emits `provider:failover { from, to, reason }` event
+- First-boot: irisy.primary = highest-priority detected CLI silently + Irisy toast; irisy.fallback = `volc` (CTRL-managed) always active without user action
+- Irisy prompt v5 wired (depends on ADR-005 § persona implementation) — brand labels only ("Claude 订阅" / "CTRL Cloud"), never codenames
+- `/settings/providers` page rendered inside Settings workspace route (ADR-003 § nav-keyboard v2) — **2 role sections** × radio with Available/Not-found + [CTRL-managed] badges + REST API (BYOK) config below
 
 ## Provenance
 

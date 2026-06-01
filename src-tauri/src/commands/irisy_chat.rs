@@ -4,7 +4,7 @@
 // `@ctrl/pi-plugin` MCP server (`ctrl-pi-mcp` on 127.0.0.1:17874) — no
 // `active-brain` branch, no LLM-port fallback. The Pi process inside
 // the plugin loads the `@ctrl/pi-bridge` extension at spawn so its LLM
-// calls go back through the kernel provider sub-system (ADR-002 substrate § provider v1).
+// calls go back through the kernel provider sub-system (ADR-002 substrate § provider v2).
 //
 // Contract (mirrors chat_stream's wire so the PWA's ChatStreamTransport
 // works unchanged):

@@ -1,6 +1,6 @@
 // claude_persistent — bespoke adapter for the `claude` CLI subprocess.
 //
-// ADR-002 substrate § provider v1 lock #5 — "claude_persistent.rs is bespoke, Goose-style
+// ADR-002 substrate § provider v2 lock #5 — "claude_persistent.rs is bespoke, Goose-style
 // OnceCell<Mutex<CliProcess>>". The pattern is lifted from
 // `goose/providers/claude_code.rs` (FINDING-R2.md §3): one persistent
 // child for the lifetime of the process, NDJSON stdin/stdout, drain

@@ -33,7 +33,7 @@ pub struct KernelRuntime {
     pub mcp_host: Arc<McpHost>,
     pub effect_executor: Arc<EffectExecutor>,
     pub event_store: Arc<EventStore>,
-    /// Provider sub-system (ADR-002 substrate § provider v1). Backs `text.chat` for Pi (via
+    /// Provider sub-system (ADR-002 substrate § provider v2). Backs `text.chat` for Pi (via
     /// the bridge HTTP endpoint), Irisy direct invokes, and keycap MCP
     /// `llm.chat` tool. Replaces the legacy `llm_port` router.
     pub provider_registry: Arc<ProviderRegistry>,
@@ -61,14 +61,14 @@ impl KernelRuntime {
         let event_store =
             EventStore::open(&db_path).map_err(|e| KernelBootError::EventStoreOpenFailed(e.to_string()))?;
 
-        // ADR-002 substrate § provider v1 provider sub-system. Loads 6 builtin presets
+        // ADR-002 substrate § provider v2 provider sub-system. Loads 6 builtin presets
         // (claude-oauth / anthropic-api / openai-api / volc / kimi /
         // deepseek) + scans ~/.ctrl/providers/ for user-installed +
         // bridges legacy ~/.ctrl/config.toml so pre-PR users' keys
         // keep working.
         let provider_registry = Arc::new(ProviderRegistry::load());
 
-        // Spawn the HTTP endpoint Pi bridge POSTs to (ADR-002 substrate § provider v1
+        // Spawn the HTTP endpoint Pi bridge POSTs to (ADR-002 substrate § provider v2
         // lock #7). Best-effort: if no tokio runtime is active at boot
         // (Tauri setup() runs on main thread pre-tokio), fall back to a
         // mini blocking runtime so the listener still binds before the

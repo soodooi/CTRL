@@ -5,7 +5,7 @@
 | # | Module | Title | Sections | Version | Status | Last updated |
 |---|---|---|---|---|---|---|
 | [001](./001-spine.md) | spine | 4-layer kernel + 5 primitives + 5 keycap sources + Pi-centric reframe | layers · primitives · sources · pi-centric · invariants · philosophy | v1 | accepted | 2026-05-31 |
-| [002](./002-substrate.md) | substrate | Pi brain · capability surface · **provider router** · crypto · subprocess · MCP bus · composition | brain · capability · provider · crypto · subprocess · mcp-bus · composition | v1 | accepted | 2026-05-31 |
+| [002](./002-substrate.md) | substrate | Pi brain · capability surface · **provider router** · crypto · subprocess · MCP bus · composition | brain · capability · provider · crypto · subprocess · mcp-bus · composition | v2 | accepted | 2026-05-31 |
 | [003](./003-frontend.md) | frontend | Single PWA + Irisy-as-sole-entry + Keyboard drag-install + vault viewer stack | pwa · nav-keyboard · vault-stack | v2 | accepted | 2026-05-31 |
 | [004](./004-cap.md) | cap | Keycap execution model + Tauri updater + 4-layer × 3-tier auto-update | execution · updater · auto-update | v1 | accepted | 2026-05-31 |
 | [005](./005-irisy.md) | irisy | 8-stage keycap lifecycle + remote co-view primitives + persona rule | lifecycle · remote-view · persona | v1 | accepted | 2026-05-31 |

@@ -1,13 +1,21 @@
 // ProviderRegistry — load manifests, instantiate adapters, hold the
-// per-capability active state.
+// per-role active state.
 //
-// ADR-002 substrate § provider v1 lock #3:
+// ADR-002 substrate § provider v2 lock #3:
 //   - `ProviderRegistry::load()` reads builtin/*.toml at startup +
 //     scans `~/.ctrl/providers/`.
-//   - `active_provider(capability) -> ProviderHandle` lookup is the hot
-//     path the chat commands hit.
+//   - `active_for_consumer(role) -> ProviderHandle` lookup is the hot
+//     path the chat commands hit (replaces v1 `active_provider(capability)`).
 //   - active state persists to `~/.ctrl/state/active-providers.json`
-//     (per-capability map).
+//     (role-keyed map under "roles" top-level key, v2 schema).
+//
+// v2 amendment (2026-05-31): switched from capability-keyed to role-keyed
+// active map (Consumer enum). 2 roles only: irisy.primary (user CLI,
+// 0 CTRL cost) + irisy.fallback (CTRL-managed paid `volc` by default).
+// Boot seeds irisy.fallback = "volc" so a fresh install without any
+// detected CLI still has a working AI path.
+// Migration: v0 file `{"text.chat":"<id>"}` -> roles.irisy.primary = <id>;
+// v1 file with `keycap.default` -> drop that key.
 //
 // Builtin TOMLs are embedded via `include_str!` so a packaged release
 // always has them even if the user's `~/.ctrl/providers/` is empty.
@@ -26,20 +34,30 @@ use super::manifest::{
     default_active_state_path, default_user_providers_dir, legacy_config_path, parse_file,
     parse_str, AuthSource, ManifestError, ProviderKind, ProviderManifest,
 };
-use super::r#trait::{Capability, Provider};
+use super::r#trait::{Capability, Consumer, Provider, RouteChain};
 use super::types::ProviderError;
 use super::verify::trial_chat;
 
 const KEYCHAIN_SERVICE_PRIMARY: &str = "app.ctrl";
 const KEYCHAIN_SERVICE_LEGACY: &str = "app.ctrl.spike";
 
-/// Embedded builtin manifests — single source of truth for the 6
-/// presets ADR-002 substrate § provider v1 lock #6 mandates.
+/// Manifest id used for the CTRL-managed fallback slot. ADR-002
+/// substrate § provider v2 lock #3: irisy.fallback always seeds to this
+/// at boot when no persisted state overrides it. Today the credential
+/// path still reads the user keychain (account="volc"); a follow-up
+/// will swap to a ctrl-cloud secrets pipeline.
+const CTRL_FALLBACK_PROVIDER_ID: &str = "volc";
+
+/// Embedded builtin manifests — single source of truth for the 7
+/// presets ADR-002 substrate § provider v2 lock #6 mandates.
+/// v2 added `volc-byok` so users who want their own Volc key can hold
+/// a separate slot from the CTRL-managed `volc` fallback.
 const BUILTIN_MANIFESTS: &[(&str, &str)] = &[
     ("claude-oauth", include_str!("builtin/claude-oauth.toml")),
     ("anthropic-api", include_str!("builtin/anthropic-api.toml")),
     ("openai-api", include_str!("builtin/openai-api.toml")),
     ("volc", include_str!("builtin/volc.toml")),
+    ("volc-byok", include_str!("builtin/volc-byok.toml")),
     ("kimi", include_str!("builtin/kimi.toml")),
     ("deepseek", include_str!("builtin/deepseek.toml")),
 ];
@@ -60,9 +78,10 @@ pub struct ProviderRegistry {
     /// when the manifest loaded but credentials were absent — UI can
     /// still list the manifest and prompt the user to set a key.
     providers: RwLock<BTreeMap<String, LoadedProvider>>,
-    /// Currently active provider id per capability. Mirrors
-    /// `~/.ctrl/state/active-providers.json` on every mutation.
-    active: RwLock<BTreeMap<Capability, String>>,
+    /// Currently active provider id per consumer role (v2: was per
+    /// `Capability` in v1). Mirrors `~/.ctrl/state/active-providers.json`
+    /// `"roles"` map on every mutation.
+    active: RwLock<BTreeMap<Consumer, String>>,
     /// Path the active-state file is persisted to. None when HOME is
     /// unavailable (CI) — in-memory active map still works, just isn't
     /// saved across boots.
@@ -113,10 +132,27 @@ impl ProviderRegistry {
             }
         }
 
-        // 4. Restore active selections.
+        // 4. Restore active selections (with v0/v1 -> v2 schema migration).
         registry.restore_active_state();
 
+        // 5. ADR-002 substrate § provider v2 lock #3: seed CTRL-managed
+        //    fallback if user hasn't overridden. Guarantees a fresh install
+        //    without any detected CLI still has a working AI path.
+        registry.seed_default_fallback();
+
         registry
+    }
+
+    /// Ensure `Consumer::IrisyFallback` is bound to the CTRL-managed
+    /// provider when the persisted state did not specify one. Idempotent
+    /// and never overwrites a user choice. Does NOT persist — the seeded
+    /// default is recomputed at next boot unless the user explicitly
+    /// `set_active` something else.
+    fn seed_default_fallback(&self) {
+        let mut active = self.active.write().unwrap();
+        active
+            .entry(Consumer::IrisyFallback)
+            .or_insert_with(|| CTRL_FALLBACK_PROVIDER_ID.to_string());
     }
 
     /// Snapshot of all manifests + their load status for the Settings
@@ -145,10 +181,10 @@ impl ProviderRegistry {
         out
     }
 
-    /// Lookup the active provider for a capability.
-    pub fn active_provider(&self, capability: &Capability) -> Option<ProviderHandle> {
+    /// Lookup the active provider for a consumer role (v2).
+    pub fn active_for_consumer(&self, consumer: &Consumer) -> Option<ProviderHandle> {
         let active = self.active.read().unwrap();
-        let id = active.get(capability)?.clone();
+        let id = active.get(consumer)?.clone();
         drop(active);
         self.get(&id)
     }
@@ -159,55 +195,103 @@ impl ProviderRegistry {
         providers.get(id).and_then(|p| p.provider.clone())
     }
 
-    /// Per-capability active map (for Settings UI badges).
+    /// Per-role active map (for Settings UI badges + brain_status).
+    /// Keys are canonical role ids ("irisy.primary" / "irisy.fallback").
     pub fn active_state(&self) -> BTreeMap<String, String> {
         let active = self.active.read().unwrap();
         active
             .iter()
-            .map(|(c, id)| (c.id().to_string(), id.clone()))
+            .map(|(c, id)| (c.id(), id.clone()))
             .collect()
     }
 
-    /// Set + persist the active provider for a capability, after a
+    /// Build the resolution chain for one consumer (primary + ordered
+    /// fallbacks). ADR-002 substrate § provider v2 lock #3:
+    /// - IrisyPrimary: primary = user-configured id, fallbacks = [CTRL fallback]
+    /// - IrisyFallback: primary = configured id (defaults "volc"), no further fallback
+    /// - Custom(_): primary = configured id, fallbacks = [CTRL fallback]
+    pub fn route_chain(&self, consumer: &Consumer) -> RouteChain {
+        let active = self.active.read().unwrap();
+        let primary = active.get(consumer).cloned();
+        let fallback_id = active
+            .get(&Consumer::IrisyFallback)
+            .cloned()
+            .unwrap_or_else(|| CTRL_FALLBACK_PROVIDER_ID.to_string());
+        drop(active);
+        let fallbacks = match consumer {
+            Consumer::IrisyFallback => Vec::new(),
+            _ => {
+                if primary.as_deref() == Some(fallback_id.as_str()) {
+                    Vec::new()
+                } else {
+                    vec![fallback_id]
+                }
+            }
+        };
+        RouteChain { primary, fallbacks }
+    }
+
+    /// Set + persist the active provider for a consumer role, after a
     /// successful 1-token trial chat. Returns the trial chat reply
-    /// text so the UI can display the verification proof.
+    /// text so the UI can display the verification proof. ADR-002
+    /// substrate § provider v2 lock #4: trial verify is mandatory before
+    /// commit; failure keeps the previous role binding intact.
     pub async fn set_active(
         &self,
         provider_id: &str,
-        capability: Capability,
+        consumer: Consumer,
     ) -> Result<String, ProviderError> {
         let provider = self
             .get(provider_id)
             .ok_or_else(|| ProviderError::ProviderNotFound(provider_id.to_string()))?;
-        if !provider.capabilities().contains(&capability) {
+        // Both Irisy roles serve text.chat today; Custom(_) consumers
+        // skip the check (they own their own capability contract).
+        let needs_text_chat = matches!(
+            consumer,
+            Consumer::IrisyPrimary | Consumer::IrisyFallback
+        );
+        if needs_text_chat && !provider.capabilities().contains(&Capability::TextChat) {
             return Err(ProviderError::ProviderError(format!(
-                "provider {provider_id} does not advertise capability {}",
-                capability.id()
+                "provider {provider_id} does not advertise text.chat for role {}",
+                consumer.id()
             )));
         }
         // 1-token trial — first chunk inside 5s → commit, else surface.
         let reply = trial_chat(provider.as_ref()).await?;
         {
             let mut active = self.active.write().unwrap();
-            active.insert(capability, provider_id.to_string());
+            active.insert(consumer.clone(), provider_id.to_string());
         }
         self.persist_active_state();
         tracing::info!(
             provider = %provider_id,
+            role = %consumer.id(),
             "provider: set_active committed after trial chat"
         );
         Ok(reply)
     }
 
-    /// Backstop for chat commands — return whichever provider is
-    /// active for text.chat, else fall back to the first ready provider
-    /// that advertises text.chat. Lets a fresh install (no active
-    /// state yet) still answer a chat call once any provider has
-    /// credentials.
+    /// Backstop for chat commands (8 callsites). Resolves the
+    /// IrisyPrimary handle first; on miss walks the IrisyPrimary
+    /// `route_chain` fallbacks; on miss falls through to any ready
+    /// provider that advertises text.chat. Lets a fresh install with
+    /// no detected CLI still answer once the seeded fallback loads.
     pub fn primary_text_chat(&self) -> Option<ProviderHandle> {
-        if let Some(p) = self.active_provider(&Capability::TextChat) {
+        // 1. IrisyPrimary if configured + ready
+        if let Some(p) = self.active_for_consumer(&Consumer::IrisyPrimary) {
             return Some(p);
         }
+        // 2. Walk IrisyPrimary fallback chain
+        for fallback_id in self.route_chain(&Consumer::IrisyPrimary).fallbacks {
+            if let Some(p) = self.get(&fallback_id) {
+                return Some(p);
+            }
+        }
+        // 3. IrisyFallback direct (seeded to "volc" at boot)
+        if let Some(p) = self.active_for_consumer(&Consumer::IrisyFallback) {
+            return Some(p);
+        }
+        // 4. Last-resort scan — first ready provider with text.chat.
         let providers = self.providers.read().unwrap();
         providers
             .values()
@@ -245,6 +329,8 @@ impl ProviderRegistry {
         );
     }
 
+    /// Persist the role-keyed active map under the `"roles"` top-level
+    /// key (v2 schema). ADR-002 substrate § provider v2 lock #3.
     fn persist_active_state(&self) {
         let Some(path) = self.active_state_path.as_ref() else {
             return;
@@ -255,8 +341,9 @@ impl ProviderRegistry {
                 return;
             }
         }
-        let serializable = self.active_state();
-        match serde_json::to_vec_pretty(&serializable) {
+        let roles = self.active_state();
+        let envelope = ActiveStateV2 { roles };
+        match serde_json::to_vec_pretty(&envelope) {
             Ok(bytes) => {
                 if let Err(e) = std::fs::write(path, bytes) {
                     tracing::warn!(?path, error = %e, "provider: write active-state failed");
@@ -266,6 +353,20 @@ impl ProviderRegistry {
         }
     }
 
+    /// Read persisted active selections. Accepts three on-disk formats
+    /// for migration safety (ADR-002 substrate § provider v2 lock #3):
+    ///
+    /// - **v0** (pre-roles, capability-keyed flat): `{"text.chat": "<id>"}`
+    ///   -> migrates to `roles.irisy.primary = <id>` (the lone bucket
+    ///   becomes the new primary; IrisyFallback gets seeded separately).
+    /// - **v1** (3-role): `{"roles": {"irisy.primary":..., "irisy.fallback":...,
+    ///   "keycap.default":...}}` -> drops `keycap.default`, keeps the rest.
+    /// - **v2** (2-role): `{"roles": {"irisy.primary":..., "irisy.fallback":...}}`
+    ///   -> loaded as-is.
+    ///
+    /// After successful migration the in-memory state is the v2 shape;
+    /// the next mutation (`set_active` or `seed_default_fallback`) will
+    /// rewrite the file in v2 schema and the old shape disappears.
     fn restore_active_state(&self) {
         let Some(path) = self.active_state_path.as_ref() else {
             return;
@@ -279,20 +380,54 @@ impl ProviderRegistry {
                 return;
             }
         };
-        let parsed: BTreeMap<String, String> = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(?path, error = %e, "provider: parse active-state failed");
+        // Try v2 / v1 envelope first; on failure fall through to v0 flat map.
+        let mut roles: BTreeMap<String, String> = BTreeMap::new();
+        let mut migrated_from: Option<&'static str> = None;
+        if let Ok(envelope) = serde_json::from_str::<ActiveStateV2>(&raw) {
+            roles = envelope.roles;
+            // v1 -> v2: drop `keycap.default` if present.
+            if roles.remove("keycap.default").is_some() {
+                migrated_from = Some("v1 (3-role with keycap.default)");
+            }
+        } else if let Ok(flat) = serde_json::from_str::<BTreeMap<String, String>>(&raw) {
+            // v0 single-bucket: `{"text.chat": "<id>"}` -> roles.irisy.primary
+            if let Some(primary_id) = flat.get("text.chat") {
+                roles.insert(Consumer::IrisyPrimary.id(), primary_id.clone());
+                migrated_from = Some("v0 (single text.chat bucket)");
+            } else {
+                tracing::warn!(
+                    ?path,
+                    "provider: active-state file is flat map but lacks text.chat key — skipping"
+                );
                 return;
             }
-        };
+        } else {
+            tracing::warn!(?path, "provider: parse active-state failed — skipping");
+            return;
+        }
         let mut active = self.active.write().unwrap();
-        for (cap_id, provider_id) in parsed {
-            if let Some(cap) = Capability::from_id(&cap_id) {
-                active.insert(cap, provider_id);
-            }
+        for (role_id, provider_id) in &roles {
+            active.insert(Consumer::from_id(role_id), provider_id.clone());
+        }
+        drop(active);
+        if let Some(from) = migrated_from {
+            tracing::info!(
+                ?path,
+                from = %from,
+                "provider: active-state migrated to v2 schema; next persist will rewrite the file"
+            );
+            // Force-rewrite so the file matches the in-memory v2 shape.
+            self.persist_active_state();
         }
     }
+}
+
+/// On-disk shape for `~/.ctrl/state/active-providers.json` v2 schema:
+/// `{"roles": {"irisy.primary": "...", "irisy.fallback": "..."}}`.
+#[derive(Debug, Serialize, Deserialize)]
+struct ActiveStateV2 {
+    #[serde(default)]
+    roles: BTreeMap<String, String>,
 }
 
 /// Construct the adapter for a manifest. Looks up credentials per

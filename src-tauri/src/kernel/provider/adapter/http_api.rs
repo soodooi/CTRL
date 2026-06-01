@@ -1,7 +1,7 @@
 // HTTP-API adapter — covers both OpenAI-shape and Anthropic-shape
 // endpoints, selected per manifest via `shape` field.
 //
-// ADR-002 substrate § provider v1 lock #5 — one ~400 LOC file replaces the pre-PR
+// ADR-002 substrate § provider v2 lock #5 — one ~400 LOC file replaces the pre-PR
 // openai_shape.rs + anthropic_http.rs split (which were 396 + 442 LOC
 // respectively). The shape-specific wire format lives in private
 // helpers; the public `HttpApiProvider` struct is shape-agnostic.
