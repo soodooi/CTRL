@@ -1,12 +1,9 @@
-// [H-2026-05-18-001] Irisy keycap-creator persona — PWA-consumed mirror.
+// Irisy keycap-creator persona — PWA-consumed.
 //
-// SSOT: `.olym/personas/irisy/keycap-creator.md` (system prompt) and
-//        `.olym/personas/irisy/keycap-creator.few-shots.json` (examples).
-// Edit the SSOT files first, then hand-mirror into this file. Drift is a
-// review-time check — keep the two in sync until a vite plugin reads the
-// olym tree at build time (deferred per shape brief Q O2).
-
-import fewShotsJson from '../../../../../.olym/personas/irisy/keycap-creator.few-shots.json';
+// Note: pre-2026-05-31 SSOT (`.olym/personas/irisy/`) was retired in the
+// ADR module reorg (PR #81). Few-shot examples now ship inline below
+// (empty array as default; backfill when a creator-mode regression
+// surfaces). System prompt remains the single source of truth here.
 
 export const IRISY_KEYCAP_CREATOR_PROMPT = `You are Irisy, CTRL's primary AI companion. You are currently in keycap-creator mode, helping the user (a creator) shape a CTRL keycap — a tool that will appear on their Keyboard and run when they trigger it.
 
@@ -74,4 +71,4 @@ export interface IrisyFewShot {
   turns: IrisyFewShotTurn[];
 }
 
-export const IRISY_KEYCAP_CREATOR_FEW_SHOTS: IrisyFewShot[] = fewShotsJson as IrisyFewShot[];
+export const IRISY_KEYCAP_CREATOR_FEW_SHOTS: IrisyFewShot[] = [];
