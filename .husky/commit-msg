@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+npx --no -- commitlint --edit "$1"
+
+# [H-id] commit msg enforce on handoff branches.
+# protocol/git.md mandates [H-YYYY-MM-DD-NNN] trailer on handoff commits.
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if echo "$BRANCH" | grep -qE '^(feat|chore|fix|docs)/'; then
+  # Skip carve-outs in priority order
+  if ! git rev-parse HEAD >/dev/null 2>&1; then
+    : # initial commit (no parent), skip enforce
+  elif grep -qE '^Merge ' "$1"; then
+    : # merge commit, skip
+  elif grep -qiE '^emergency:' "$1"; then
+    : # emergency carve-out (production hotfix, trailer-only at line start)
+  elif grep -qE '\[H-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3,}\]' "$1"; then
+    : # has [H-YYYY-MM-DD-NNN], pass
+  else
+    echo "[commit-msg] BLOCKED: handoff branch commit must include [H-YYYY-MM-DD-NNN]" >&2
+    echo "[commit-msg] branch: $BRANCH" >&2
+    echo "[commit-msg] add to commit message body: [H-YYYY-MM-DD-NNN]" >&2
+    echo "[commit-msg] (or use 'emergency:' as line-start trailer for production hot-fix)" >&2
+    exit 1
+  fi
+fi

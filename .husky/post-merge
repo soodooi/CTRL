@@ -1,0 +1,41 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Soft hint after merge / pull: list local branches whose PRs are already
+# merged on GitHub, so they can be cleaned up.
+#
+# - Runs only on main (otherwise the hint is noise during feature work)
+# - Single `gh pr list` call (intersection done locally) — fast
+# - Silent if `gh` is unavailable or returns nothing
+# - Never blocks; this is information, not enforcement
+
+# Only on main
+CURRENT="$(git branch --show-current 2>/dev/null || true)"
+[ "$CURRENT" = "main" ] || exit 0
+
+# Need gh
+command -v gh >/dev/null 2>&1 || exit 0
+
+# Recent merged PR head branches (last 30 PRs is plenty for a typical week)
+MERGED_HEADS="$(gh pr list --state merged --limit 30 --json headRefName --jq '.[].headRefName' 2>/dev/null || true)"
+[ -n "$MERGED_HEADS" ] || exit 0
+
+# Local branches except main / HEAD
+LOCAL_BRANCHES="$(git for-each-ref --format='%(refname:short)' refs/heads/ | grep -v -E '^(main|HEAD)$' || true)"
+[ -n "$LOCAL_BRANCHES" ] || exit 0
+
+# Intersect
+CLEANUP=""
+for b in $LOCAL_BRANCHES; do
+  if printf '%s\n' "$MERGED_HEADS" | grep -qx "$b"; then
+    CLEANUP="$CLEANUP  - $b\n"
+  fi
+done
+
+if [ -n "$CLEANUP" ]; then
+  printf '\n[post-merge hint] Local branches whose PRs are already merged on origin (safe to delete):\n'
+  printf '%b' "$CLEANUP"
+  printf 'Cleanup: git branch -D <branch-name>\n\n'
+fi
+
+exit 0

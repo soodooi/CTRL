@@ -1,0 +1,209 @@
+#!/usr/bin/env node
+/**
+ * Olym Daily Digest (G-025).
+ *
+ * Aggregates today's activity into .olym/digests/D-YYYY-MM-DD-digest.md
+ *
+ * Sections:
+ *   1. Commits (git log oneline since midnight UTC of target date)
+ *   2. PRs merged (gh pr list --state merged --search merged:>=date)
+ *   3. Handoff status flips (active count today)
+ *   4. Audit summary (5-dim from audit-olym-ssot-drift)
+ *   5. Best-practices added (git log --diff-filter=A on .olym/best-practice/)
+ *
+ * CLI:
+ *   node scripts/daily-digest.mjs                    # dry-run print
+ *   node scripts/daily-digest.mjs --apply            # write file
+ *   node scripts/daily-digest.mjs --apply --date 2026-05-05  # back-fill
+ *
+ * NOTE: index regen (.olym/digests/_index.md) NOT implemented per spec out-of-scope.
+ *
+ * Spec: .olym/specs/olym-daily-digest/spec.md
+ */
+
+import { execSync } from 'node:child_process';
+import { writeFileSync, readdirSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO = join(__dirname, '..');
+const DIGESTS_DIR = join(REPO, '.olym', 'digests');
+
+const args = process.argv.slice(2);
+const APPLY = args.includes('--apply');
+const dateIdx = args.indexOf('--date');
+const TARGET_DATE = dateIdx >= 0 ? args[dateIdx + 1] : new Date().toISOString().slice(0, 10);
+
+if (!/^\d{4}-\d{2}-\d{2}$/.test(TARGET_DATE)) {
+  console.error(`[daily-digest] ERROR: invalid --date '${TARGET_DATE}', expected YYYY-MM-DD`);
+  process.exit(1);
+}
+
+function run(cmd) {
+  try {
+    return execSync(cmd, { encoding: 'utf8', cwd: REPO, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+
+// ── 1. Commits ───────────────────────────────────────────
+
+function getCommits() {
+  const since = `${TARGET_DATE} 00:00:00`;
+  const until = `${TARGET_DATE} 23:59:59`;
+  const log = run(`git log --no-merges --oneline --since="${since}" --until="${until}"`);
+  const lines = log ? log.split('\n').filter(Boolean) : [];
+  return lines;
+}
+
+// ── 2. PRs merged ────────────────────────────────────────
+
+function getPRsMerged() {
+  // gh pr list with merged date filter; cap at 100
+  const out = run(`gh pr list --state merged --search "merged:${TARGET_DATE}" --json number,title,mergedAt --limit 100`);
+  if (!out) return [];
+  try {
+    return JSON.parse(out).map(p => `#${p.number} ${p.title}`);
+  } catch {
+    return [];
+  }
+}
+
+// ── 3. Handoff status snapshot (in-process, fast + portable) ──
+
+function getHandoffSnapshot() {
+  const dir = join(REPO, '.olym', 'handoffs');
+  if (!existsSync(dir)) return { open: 0, in_progress: 0, verified: 0, total: 0 };
+  const files = readdirSync(dir).filter(f => /^H-.*\.md$/.test(f));
+  const counts = { open: 0, in_progress: 0, claimed: 0, blocked: 0, done: 0, verified: 0, superseded: 0, total: files.length };
+  for (const name of files) {
+    let text;
+    try { text = readFileSync(join(dir, name), 'utf8'); } catch { continue; }
+    const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!fmMatch) continue;
+    const statusMatch = fmMatch[1].match(/^status:\s*(\w+)/m);
+    if (!statusMatch) continue;
+    const status = statusMatch[1].toLowerCase();
+    if (counts[status] !== undefined) counts[status]++;
+  }
+  return counts;
+}
+
+// ── 4. Audit summary ──────────────────────────────────────
+
+function getAuditSummary() {
+  // Distinguish "audit script unavailable" from "audit ran clean with no findings"
+  let out;
+  let scriptAvailable = true;
+  try {
+    out = execSync(`node scripts/audit-olym-ssot-drift.mjs --check`, { encoding: 'utf8', cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (e) {
+    // exit non-zero on FAIL is normal; capture stdout from error if present
+    out = (e.stdout && e.stdout.toString().trim()) || '';
+    scriptAvailable = !!out;
+  }
+  const lines = out.split('\n').filter(l => l.match(/^\[(OK|WARN|FAIL)\]/));
+  if (lines.length === 0 && !scriptAvailable) {
+    return ['__SCRIPT_UNAVAILABLE__'];
+  }
+  return lines;
+}
+
+// ── 5. Best-practices added today ─────────────────────────
+
+function getBestPracticesAdded() {
+  const since = `${TARGET_DATE} 00:00:00`;
+  const until = `${TARGET_DATE} 23:59:59`;
+  const log = run(`git log --diff-filter=A --since="${since}" --until="${until}" --name-only --pretty=format: -- .olym/best-practice/`);
+  if (!log) return [];
+  return [...new Set(log.split('\n').filter(l => l.trim().length > 0))];
+}
+
+// ── render ───────────────────────────────────────────────
+
+function render() {
+  const commits = getCommits();
+  const prs = getPRsMerged();
+  const handoffs = getHandoffSnapshot();
+  const audit = getAuditSummary();
+  const bps = getBestPracticesAdded();
+
+  const parts = [];
+  parts.push(`# Daily Digest — ${TARGET_DATE}`);
+  parts.push('');
+  parts.push(`> Generated by \`scripts/daily-digest.mjs\` (G-025). Spec: \`.olym/specs/olym-daily-digest/spec.md\``);
+  parts.push('');
+
+  parts.push(`## 1. Commits (${commits.length})`);
+  parts.push('');
+  if (commits.length === 0) {
+    parts.push('_(none)_');
+  } else {
+    for (const c of commits) parts.push(`- ${c}`);
+  }
+  parts.push('');
+
+  parts.push(`## 2. PRs Merged (${prs.length})`);
+  parts.push('');
+  if (prs.length === 0) {
+    parts.push('_(none)_');
+  } else {
+    for (const p of prs) parts.push(`- ${p}`);
+  }
+  parts.push('');
+
+  parts.push(`## 3. Handoff Snapshot (total ${handoffs.total})`);
+  parts.push('');
+  parts.push(`- open: ${handoffs.open}`);
+  parts.push(`- in_progress: ${handoffs.in_progress}`);
+  parts.push(`- claimed: ${handoffs.claimed}`);
+  parts.push(`- blocked: ${handoffs.blocked}`);
+  parts.push(`- done: ${handoffs.done}`);
+  parts.push(`- verified: ${handoffs.verified}`);
+  parts.push(`- superseded: ${handoffs.superseded}`);
+  parts.push('');
+
+  parts.push(`## 4. Audit Summary (5-dim)`);
+  parts.push('');
+  if (audit.length === 1 && audit[0] === '__SCRIPT_UNAVAILABLE__') {
+    parts.push('_(audit script unavailable — `audit-olym-ssot-drift.mjs` not found or unrunnable)_');
+  } else if (audit.length === 0) {
+    parts.push('_(audit ran but returned no [OK]/[WARN]/[FAIL] lines)_');
+  } else {
+    for (const l of audit) parts.push(`- \`${l}\``);
+  }
+  parts.push('');
+
+  parts.push(`## 5. Best-Practices Added (${bps.length})`);
+  parts.push('');
+  if (bps.length === 0) {
+    parts.push('_(none)_');
+  } else {
+    for (const f of bps) parts.push(`- \`${f}\``);
+  }
+  parts.push('');
+
+  return parts.join('\n');
+}
+
+// ── main ─────────────────────────────────────────────────
+
+const output = render();
+
+if (!APPLY) {
+  process.stdout.write(output);
+  process.stdout.write('\n');
+  process.stderr.write(`\n[daily-digest] DRY RUN — pass --apply to write file.\n`);
+  process.exit(0);
+}
+
+if (!existsSync(DIGESTS_DIR)) {
+  mkdirSync(DIGESTS_DIR, { recursive: true });
+}
+
+const outPath = join(DIGESTS_DIR, `D-${TARGET_DATE}-digest.md`);
+writeFileSync(outPath, output, 'utf8');
+process.stdout.write(`[daily-digest] wrote ${outPath.replace(REPO + '\\', '').replace(REPO + '/', '')}\n`);
+process.exit(0);
