@@ -32,6 +32,7 @@ import {
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { IrisyState } from './primitives/IrisyMascot';
 import { invoke } from '../lib/bridge';
+import { useWorkspaceStore } from '../lib/workspace-store';
 import styles from './PrimaryRail.module.css';
 
 // L1 nav ids — bao 2026-05-30 (ADR-003 frontend §2): ▾ workspace toggle (top) +
@@ -155,8 +156,18 @@ export const PrimaryRail = (): ReactElement => {
 
   const handleSettingsClick = useCallback(() => {
     setActiveRailId(SETTINGS_ITEM_ID);
-    void navigate({ to: SETTINGS_PATH });
-  }, [navigate, setActiveRailId]);
+    // bao 2026-06-01: L1 click opens a route tab in the singleton
+    // "system" workspace instance (L2 pane), not a full-window navigate.
+    // The Tauri shell separately expands the window leftward when any
+    // workspace instance exists so the new tab is visible.
+    useWorkspaceStore.getState().openSystemTab({
+      id: 'settings',
+      kind: 'route',
+      path: SETTINGS_PATH,
+      title: 'Settings',
+    });
+    void invoke<boolean>('toggle_workspace_window').catch(() => undefined);
+  }, [setActiveRailId]);
 
   // ▾ toggle — opens the workspace big window (macOS NSWindow
   // addChildWindow of main, 1370×720, left of main). Three close paths:

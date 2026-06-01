@@ -20,6 +20,7 @@ import { EmbedView } from './EmbedView';
 import { KeycapRunView } from './KeycapRunView';
 import { resolveViewer, type ViewerResource } from '@/lib/viewer-registry';
 import { vaultUri } from '@/lib/viewer-uri';
+import { resolveRouteComponent } from '@/lib/route-tab-components';
 import styles from './WorkspaceShell.module.css';
 
 interface WorkspaceShellProps {
@@ -126,13 +127,33 @@ const renderTabBody = (tab: Tab): ReactElement => {
           </p>
         </div>
       );
-    case 'route':
+    case 'route': {
+      const Component = resolveRouteComponent(tab.path);
+      if (!Component) {
+        return (
+          <div className={styles.placeholder}>
+            <span className={styles.placeholderKind}>route</span>
+            <span className={styles.placeholderPath}>{tab.path}</span>
+            <p className={styles.placeholderHint}>
+              No tab renderer registered for this path. Add it to
+              `lib/route-tab-components.ts`.
+            </p>
+          </div>
+        );
+      }
       return (
-        <div className={styles.placeholder}>
-          <span className={styles.placeholderKind}>route</span>
-          <span className={styles.placeholderPath}>{tab.path}</span>
-        </div>
+        <Suspense
+          fallback={
+            <div className={styles.placeholder}>
+              <span className={styles.placeholderKind}>loading</span>
+              <span className={styles.placeholderPath}>{tab.path}</span>
+            </div>
+          }
+        >
+          <Component />
+        </Suspense>
       );
+    }
   }
 };
 

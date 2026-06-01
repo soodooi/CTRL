@@ -66,6 +66,12 @@ interface WorkspaceStoreState {
 
   /** Wipe everything (dev / first-run reset). */
   reset: () => void;
+
+  /** Open a tab in the singleton "system" instance (Settings / Pool /
+   *  Vault / etc. — non-keycap routes invoked from L1). The system
+   *  instance is created on first call with layout = `tabs` so the
+   *  TabBar shows even with a single tab. Idempotent on tab.id. */
+  openSystemTab: (tab: Tab) => void;
 }
 
 const initial: Pick<WorkspaceStoreState, 'instances' | 'activeInstanceId'> = {
@@ -286,6 +292,40 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
       },
 
       reset: () => set(initial),
+
+      openSystemTab: (tab) => {
+        const SYSTEM_INSTANCE_ID = 'ws-system';
+        set((s) => {
+          const existing = s.instances.find((i) => i.id === SYSTEM_INSTANCE_ID);
+          if (!existing) {
+            const inst: WorkspaceInstance = {
+              id: SYSTEM_INSTANCE_ID,
+              keycapId: null,
+              kind: 'builtin',
+              title: 'System',
+              layout: 'tabs',
+              tabs: [tab],
+              activeTabId: tab.id,
+              lastActivatedAt: now(),
+            };
+            return {
+              instances: [...s.instances, inst],
+              activeInstanceId: SYSTEM_INSTANCE_ID,
+            };
+          }
+          // Idempotent on tab.id — re-activate existing tab.
+          const hasTab = existing.tabs.some((t) => t.id === tab.id);
+          const nextTabs = hasTab ? existing.tabs : [...existing.tabs, tab];
+          return {
+            instances: s.instances.map((i) =>
+              i.id === SYSTEM_INSTANCE_ID
+                ? { ...i, tabs: nextTabs, activeTabId: tab.id, lastActivatedAt: now() }
+                : i,
+            ),
+            activeInstanceId: SYSTEM_INSTANCE_ID,
+          };
+        });
+      },
     }),
     {
       name: 'ctrl-workspace-store',

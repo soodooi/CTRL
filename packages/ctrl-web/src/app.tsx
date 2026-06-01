@@ -39,6 +39,7 @@ import { KEYCAP_DRAG_MIME } from './components/Keyboard';
 import { RailProvider, PrimaryRail } from './components/PrimaryRail';
 import { InfraBar } from './components/InfraBar';
 import { IrisyChat } from './components/irisy/IrisyChat';
+import { WorkspaceShell } from './components/workspace/WorkspaceShell';
 import { DefaultWorkspace } from './routes/default';
 import { useCompanionWindow } from './hooks/useCompanionWindow';
 import { useWorkspaceStore } from './lib/workspace-store';
@@ -78,6 +79,7 @@ function RootShellInner(): ReactElement {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
+  const workspaceOpen = useWorkspaceStore((s) => s.instances.length > 0);
   const [dragOver, setDragOver] = useState(false);
   useCompanionWindow();
 
@@ -114,9 +116,15 @@ function RootShellInner(): ReactElement {
   );
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-workspace-open={workspaceOpen || undefined}>
       <div className={styles.status}>
         <StatusBar />
+      </div>
+      {/* L2 — workspace tab pane (left of L1). Empty `fallback={null}`
+          collapses the cell when no instance is open; the grid's
+          `--l2-width: 0` default keeps the column off-screen. */}
+      <div className={styles.l2}>
+        <WorkspaceShell fallback={null} />
       </div>
       <div className={styles.l1}>
         <PrimaryRail />
