@@ -53,10 +53,25 @@ pub struct KernelStatus {
     /// list each missing component (e.g. "no llm adapter").
     pub overall: &'static str,
     pub warnings: Vec<String>,
-    /// Brain engine label. Always "pi" (Pi is the sole brain per
-    /// ADR-002 substrate). Kept as a string field for forward-compat with PWA
-    /// consumers; the value never changes at runtime.
-    pub active_brain: &'static str,
+    /// Brain engine label. Surfaces the currently-active IrisyPrimary
+    /// provider's display label (e.g. "Claude" when claude-oauth is
+    /// active). Falls back to "pi" when no provider is configured —
+    /// Pi is the agent runtime; the label here is the provider behind
+    /// Pi's text-chat calls so the InfraBar ENGINE chip tells the user
+    /// which LLM they're actually talking to.
+    pub active_brain: String,
+}
+
+/// Compact form of a provider's display label for chips/status bars.
+/// Strips a trailing parenthetical (` (...)`) — e.g.
+/// `"Claude (OAuth subscription)"` → `"Claude"`. Leaves short labels
+/// unchanged. Used by both `kernel_status` and `irisy_init` so the
+/// InfraBar ENGINE chip and the irisy boot log surface the same brand.
+pub fn short_label(label: &str) -> String {
+    match label.find(" (") {
+        Some(idx) => label[..idx].to_string(),
+        None => label.to_string(),
+    }
 }
 
 fn detect_first_run_state() -> FirstRunState {
@@ -110,9 +125,18 @@ pub async fn kernel_status(
     }
     let overall = if warnings.is_empty() { "ok" } else { "degraded" };
 
-    // ADR-002 substrate: Pi is the sole brain (singleton). No registry, no
-    // ~/.ctrl/active-brain file. Value is constant.
-    let active_brain = "pi";
+    // Pi is the agent runtime; what the InfraBar ENGINE chip actually
+    // wants to surface is the provider behind Pi's text-chat calls, so
+    // the user can see "Claude" vs "Volc" vs whatever they've routed
+    // IrisyPrimary to. ADR-002 substrate § provider v2 §3.6.
+    let active_brain = runtime
+        .provider_registry
+        .route_chain(&crate::kernel::provider::Consumer::IrisyPrimary)
+        .primary
+        .as_ref()
+        .and_then(|id| runtime.provider_registry.snapshot(id))
+        .map(|snap| short_label(&snap.label))
+        .unwrap_or_else(|| "pi".to_string());
 
     Ok(KernelStatus {
         uptime_ms,
