@@ -29,7 +29,10 @@ use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 
-use super::adapter::{ClaudePersistentProvider, HttpApiProvider, OneShotCliProvider};
+use super::adapter::{
+    ClaudePersistentProvider, HttpApiProvider, OneShotCliProvider, RestAnthropicProvider,
+    RestGoogleProvider, RestOllamaProvider, RestOpenaiProvider,
+};
 use super::manifest::{
     default_active_state_path, default_user_providers_dir, legacy_config_path, parse_file,
     parse_str, AuthSource, ManifestError, ProviderKind, ProviderManifest,
@@ -85,10 +88,10 @@ const CTRL_FALLBACK_PROVIDER_ID: &str = "volc";
 /// occupier today; future ctrl-brand provider ids land here too.
 const CTRL_MANAGED_PROVIDER_IDS: &[&str] = &["volc"];
 
-/// Embedded builtin manifests — single source of truth for the 7
-/// presets ADR-002 substrate § provider v2 lock #6 mandates.
-/// v2 added `volc-byok` so users who want their own Volc key can hold
-/// a separate slot from the CTRL-managed `volc` fallback.
+/// Embedded builtin manifests — single source of truth for the 9
+/// presets ADR-002 substrate § provider v2 §3.2 + lock #6 mandate.
+/// v2 added `volc-byok` (separate slot from the CTRL-managed `volc`
+/// fallback) plus `google` + `ollama` (verbatim VMark REST adapters).
 const BUILTIN_MANIFESTS: &[(&str, &str)] = &[
     ("claude-oauth", include_str!("builtin/claude-oauth.toml")),
     ("anthropic-api", include_str!("builtin/anthropic-api.toml")),
@@ -97,6 +100,8 @@ const BUILTIN_MANIFESTS: &[(&str, &str)] = &[
     ("volc-byok", include_str!("builtin/volc-byok.toml")),
     ("kimi", include_str!("builtin/kimi.toml")),
     ("deepseek", include_str!("builtin/deepseek.toml")),
+    ("google", include_str!("builtin/google.toml")),
+    ("ollama", include_str!("builtin/ollama.toml")),
 ];
 
 pub type ProviderHandle = Arc<dyn Provider>;
@@ -510,6 +515,26 @@ fn instantiate(manifest: Arc<ProviderManifest>) -> Result<ProviderHandle, Provid
         }
         ProviderKind::CliClaudePersistent => {
             let provider = ClaudePersistentProvider::from_manifest(manifest)?;
+            Ok(Arc::new(provider))
+        }
+        // ADR-002 substrate § provider v2 §3.2 — verbatim VMark REST kinds.
+        ProviderKind::RestAnthropic => {
+            let provider = RestAnthropicProvider::from_manifest(manifest, auth_secret)?;
+            Ok(Arc::new(provider))
+        }
+        ProviderKind::RestOpenai => {
+            let provider = RestOpenaiProvider::from_manifest(manifest, auth_secret)?;
+            Ok(Arc::new(provider))
+        }
+        ProviderKind::RestGoogle => {
+            let provider = RestGoogleProvider::from_manifest(manifest, auth_secret)?;
+            Ok(Arc::new(provider))
+        }
+        ProviderKind::RestOllama => {
+            // Ollama needs no credential; `resolve_auth` returns "" for
+            // AuthSource::None, which we discard here.
+            let _ = auth_secret;
+            let provider = RestOllamaProvider::from_manifest(manifest)?;
             Ok(Arc::new(provider))
         }
     }

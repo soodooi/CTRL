@@ -1,0 +1,22 @@
+# Google AI Gemini — verbatim VMark REST adapter.
+#
+# ADR-002 substrate § provider v2 §3.2: this manifest binds to the
+# `rest_google` kind, which calls the public Gemini generateContent
+# endpoint. Custom endpoints (Vertex AI proxies) are out of scope —
+# users with that requirement should fall back to a CLI provider.
+
+id = "google"
+label = "Google Gemini"
+kind = "rest_google"
+models = [
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+]
+description = "Google AI Gemini via the public generativelanguage.googleapis.com endpoint (BYOK)."
+capabilities = ["text.chat"]
+
+[auth]
+source = "keychain"
+account = "google"

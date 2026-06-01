@@ -1,0 +1,23 @@
+# Ollama — local LLM runtime, verbatim VMark REST adapter.
+#
+# ADR-002 substrate § provider v2 §3.2: this manifest binds to the
+# `rest_ollama` kind. Ollama is local-only by convention, so no api_key
+# is required (auth.source = "none"). The default endpoint matches the
+# Ollama default install (http://localhost:11434) and can be overridden
+# in `~/.ctrl/providers/ollama.toml`.
+
+id = "ollama"
+label = "Ollama (local)"
+kind = "rest_ollama"
+endpoint = "http://localhost:11434"
+models = [
+  "llama3.2",
+  "llama3.1",
+  "qwen2.5",
+  "mistral",
+]
+description = "Local Ollama runtime — 0 cost, runs entirely on your machine. Default endpoint http://localhost:11434."
+capabilities = ["text.chat"]
+
+[auth]
+source = "none"

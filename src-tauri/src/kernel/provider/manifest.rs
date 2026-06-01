@@ -18,6 +18,11 @@ use super::r#trait::Capability;
 /// Discriminates which adapter handles a manifest. Adapters are wired
 /// in `registry::instantiate` — the registry refuses to load a manifest
 /// whose `kind` it doesn't know.
+///
+/// v2 amendment (ADR-002 substrate § provider v2 §3.2): adds the four
+/// verbatim VMark REST kinds — `rest_anthropic` / `rest_openai` /
+/// `rest_google` / `rest_ollama` — distinct from the generic streaming
+/// `http_api` kind. Manifests pick whichever fits their provider quirks.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
@@ -28,8 +33,19 @@ pub enum ProviderKind {
     /// `adapter::cli::claude_persistent`.
     CliClaudePersistent,
     /// HTTP API — actual wire shape selected via `shape` field
-    /// (`openai` or `anthropic`).
+    /// (`openai` or `anthropic`). Streaming SSE.
     HttpApi,
+    /// Verbatim VMark REST port (ISC) — non-streaming, single-chunk
+    /// response forwarded through the AiSink trait. See
+    /// `adapter/rest/anthropic.rs`.
+    RestAnthropic,
+    /// Verbatim VMark REST port (ISC). See `adapter/rest/openai.rs`.
+    RestOpenai,
+    /// Verbatim VMark REST port (ISC). See `adapter/rest/google.rs`.
+    RestGoogle,
+    /// Verbatim VMark REST port (ISC). No api_key required (local
+    /// Ollama). See `adapter/rest/ollama.rs`.
+    RestOllama,
 }
 
 /// HTTP wire shape for `ProviderKind::HttpApi`. Selected by manifest
