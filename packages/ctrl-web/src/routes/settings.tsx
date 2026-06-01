@@ -7,7 +7,7 @@
 // Bare /settings redirects to /settings/ctrl so legacy tray / keyboard
 // links keep landing somewhere sensible.
 
-import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -29,16 +29,26 @@ import {
 import type { ThemePreference } from '@/lib/theme';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { invoke } from '@/lib/bridge';
+// ADR-002 substrate § provider v2 §3.6 — Providers tab data sources
+import { loadBrainState, type BrainState } from '@/lib/irisy-prompts';
+import {
+  providerList,
+  providerSetActive,
+  type IrisyRole,
+  type ProviderListRow,
+} from '@/lib/provider-config';
 import styles from './settings.module.css';
 
 // ─────────────────────────────────────────────────────────────
 // Shared tab shell
 // ─────────────────────────────────────────────────────────────
 
-type SettingsTab = 'ctrl' | 'brain' | 'logs';
+type SettingsTab = 'ctrl' | 'providers' | 'brain' | 'logs';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string; to: string }> = [
   { id: 'ctrl', label: 'General', to: '/settings/ctrl' },
+  // ADR-002 substrate § provider v2 §3.6 — 2-role provider picker
+  { id: 'providers', label: 'Providers', to: '/settings/providers' },
   { id: 'brain', label: 'Model Integration', to: '/settings/brain' },
   { id: 'logs', label: 'Logs', to: '/settings/logs' },
 ];
@@ -554,6 +564,228 @@ const UPDATE_LOG: ReadonlyArray<UpdateLogEntry> = [
       'VI v0.3 — warm-tinted neutrals · fixed-rem type scale · 9px retired · active-state softened · AI-slop bans enforced.',
   },
 ];
+
+// ─────────────────────────────────────────────────────────────
+// /settings/providers — 2-role provider picker (ADR-002 v2 §3.6)
+// ─────────────────────────────────────────────────────────────
+
+interface IrisyRoleSpec {
+  id: IrisyRole;
+  label: string;
+  description: string;
+}
+
+const IRISY_ROLES: ReadonlyArray<IrisyRoleSpec> = [
+  {
+    id: 'irisy.primary',
+    label: 'Irisy primary',
+    description:
+      'Your own CLI (Claude / Codex / Gemini / Aider). No CTRL cost — augmentation slot.',
+  },
+  {
+    id: 'irisy.fallback',
+    label: 'Irisy fallback',
+    description:
+      'CTRL-managed safety net so a fresh install without a CLI still has a working AI path.',
+  },
+];
+
+interface ProviderRoleRowProps {
+  row: ProviderListRow;
+  isActive: boolean;
+  isPending: boolean;
+  errorText: string | null;
+  onSelect: () => void;
+}
+
+const ProviderRoleRow = ({
+  row,
+  isActive,
+  isPending,
+  errorText,
+  onSelect,
+}: ProviderRoleRowProps): ReactElement => {
+  const detected = row.ready;
+  const disabled = isPending || (!row.ready && !isActive);
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={isActive}
+      aria-label={row.label}
+      disabled={disabled}
+      onClick={onSelect}
+      className={styles.brainCard}
+      data-active={isActive}
+      data-detected={detected}
+    >
+      <span className={styles.brainRadio} aria-hidden />
+      <div className={styles.brainBody}>
+        <span className={styles.brainName}>{row.label}</span>
+        {row.description && (
+          <span className={styles.brainDetail}>{row.description}</span>
+        )}
+        {errorText && (
+          <span className={styles.brainError}>{errorText}</span>
+        )}
+      </div>
+      <div className={styles.brainTags}>
+        {row.managed_by === 'ctrl' && (
+          <span className={styles.brainTag} data-tone="good">
+            CTRL-managed
+          </span>
+        )}
+        <span
+          className={styles.brainTag}
+          data-tone={detected ? 'good' : 'warn'}
+        >
+          {detected ? 'Available' : 'Not configured'}
+        </span>
+      </div>
+    </button>
+  );
+};
+
+interface RoleSectionProps {
+  spec: IrisyRoleSpec;
+  rows: ReadonlyArray<ProviderListRow>;
+  activeProviderId: string | null;
+  pendingProviderId: string | null;
+  errorPerProvider: Record<string, string>;
+  onActivate: (providerId: string) => void;
+}
+
+const RoleSection = ({
+  spec,
+  rows,
+  activeProviderId,
+  pendingProviderId,
+  errorPerProvider,
+  onActivate,
+}: RoleSectionProps): ReactElement => (
+  <Section title={spec.label} description={spec.description}>
+    <div
+      className={styles.brainList}
+      role="radiogroup"
+      aria-label={`${spec.label} provider`}
+    >
+      {rows.map((row) => (
+        <ProviderRoleRow
+          key={`${spec.id}::${row.id}`}
+          row={row}
+          isActive={activeProviderId === row.id}
+          isPending={pendingProviderId === row.id}
+          errorText={errorPerProvider[row.id] ?? null}
+          onSelect={() => onActivate(row.id)}
+        />
+      ))}
+    </div>
+  </Section>
+);
+
+interface ActivationError {
+  role: IrisyRole;
+  providerId: string;
+  message: string;
+}
+
+export const SettingsProvidersPage = (): ReactElement => {
+  const queryClient = useQueryClient();
+  const brain = useQuery<BrainState | null>({
+    queryKey: ['brain-status'],
+    queryFn: loadBrainState,
+  });
+  const list = useQuery<ProviderListRow[]>({
+    queryKey: ['provider-list'],
+    queryFn: providerList,
+  });
+
+  const [activationError, setActivationError] = useState<ActivationError | null>(null);
+
+  const activation = useMutation({
+    mutationFn: providerSetActive,
+    onSuccess: () => {
+      setActivationError(null);
+      void queryClient.invalidateQueries({ queryKey: ['brain-status'] });
+      void queryClient.invalidateQueries({ queryKey: ['provider-list'] });
+    },
+  });
+
+  const handleActivate = useCallback(
+    (role: IrisyRole, providerId: string): void => {
+      setActivationError(null);
+      activation.mutate(
+        { role, provider_id: providerId },
+        {
+          onError: (err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            setActivationError({ role, providerId, message });
+          },
+        },
+      );
+    },
+    [activation],
+  );
+
+  const pendingProviderId = activation.isPending
+    ? activation.variables?.provider_id ?? null
+    : null;
+
+  const errorPerProvider = useMemo<Record<string, string>>(() => {
+    if (!activationError) return {};
+    return { [activationError.providerId]: activationError.message };
+  }, [activationError]);
+
+  const rows: ReadonlyArray<ProviderListRow> = list.data ?? [];
+
+  return (
+    <SettingsShell activeTab="providers">
+      {brain.isError && (
+        <p className={styles.brainError}>
+          Could not load current brain state — showing manifest list only.
+        </p>
+      )}
+      {list.isError && (
+        <p className={styles.brainError}>
+          Could not load provider manifests:{' '}
+          {list.error instanceof Error ? list.error.message : 'unknown error'}
+        </p>
+      )}
+      {IRISY_ROLES.map((spec) => {
+        const activeId = brain.data?.providers[spec.id]?.id ?? null;
+        return (
+          <RoleSection
+            key={spec.id}
+            spec={spec}
+            rows={rows}
+            activeProviderId={activeId}
+            pendingProviderId={pendingProviderId}
+            errorPerProvider={errorPerProvider}
+            onActivate={(providerId) => handleActivate(spec.id, providerId)}
+          />
+        );
+      })}
+      <Section
+        title="REST API keys (BYOK)"
+        description={
+          <>
+            Configure your own API keys for Anthropic, OpenAI, Volc, etc. in the{' '}
+            <Link to="/settings/ctrl" className={styles.tab}>
+              General tab
+            </Link>
+            . Once a key is set, the provider becomes Available here and can be
+            assigned to a role.
+          </>
+        }
+      >
+        <p className={styles.brainHelp}>
+          BYOK calls are billed to your own account. The CTRL-managed fallback
+          slot keeps working even when you have no BYOK keys configured.
+        </p>
+      </Section>
+    </SettingsShell>
+  );
+};
 
 export const SettingsLogsPage = (): ReactElement => {
   const update = useUpdateStatus();

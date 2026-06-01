@@ -14,11 +14,11 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::kernel::provider::registry::ProviderManagedBy;
-use crate::kernel::provider::Consumer;
+use crate::kernel::provider::{Consumer, ProviderListEntry};
 use crate::shell::KernelHandle;
 
 const ENGINE_ID: &str = "Pi";
@@ -115,4 +115,70 @@ pub fn brain_status(
         providers,
         last_failover: None,
     })
+}
+
+/// One row in the /settings/providers page picker. Wraps `ProviderListEntry`
+/// (from the registry) with the role-aware `managed_by` field the UI needs
+/// to render the [CTRL-managed] vs user-owned badge. ADR-002 substrate §
+/// provider v2 §3.6.
+#[derive(Debug, Serialize)]
+pub struct ProviderListRow {
+    #[serde(flatten)]
+    pub entry: ProviderListEntry,
+    pub managed_by: ProviderManagedBy,
+}
+
+/// List every known provider manifest (builtin + user-installed) with
+/// load + managed_by status. Powers the role section radio rows in
+/// /settings/providers. ADR-002 substrate § provider v2 §3.6.
+#[tauri::command]
+pub fn provider_list(
+    kernel: State<'_, KernelHandle>,
+) -> Result<Vec<ProviderListRow>, String> {
+    let registry = &kernel.runtime.provider_registry;
+    let entries = registry.list();
+    let rows = entries
+        .into_iter()
+        .map(|entry| {
+            let managed_by = registry
+                .snapshot(&entry.id)
+                .map(|s| s.managed_by)
+                .unwrap_or(ProviderManagedBy::User);
+            ProviderListRow { entry, managed_by }
+        })
+        .collect();
+    Ok(rows)
+}
+
+/// Tauri command body for `provider_set_active(role, id)`. Wraps the
+/// registry's trial-verify + persist path. ADR-002 substrate § provider
+/// v2 §3.6 lock #4: trial chat MUST pass before commit; failure keeps
+/// the previous role binding intact.
+#[derive(Debug, Deserialize)]
+pub struct ProviderSetActiveArgs {
+    /// Canonical role id, e.g. "irisy.primary" / "irisy.fallback". Unknown
+    /// ids fall through to `Consumer::Custom(id)`.
+    pub role: String,
+    /// Manifest id from the picker (`provider_list` row id).
+    pub provider_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProviderSetActiveReply {
+    /// First chunk of the 1-token "hi" trial chat (verification proof).
+    pub trial_reply: String,
+}
+
+#[tauri::command]
+pub async fn provider_set_active(
+    kernel: State<'_, KernelHandle>,
+    args: ProviderSetActiveArgs,
+) -> Result<ProviderSetActiveReply, String> {
+    let consumer = Consumer::from_id(&args.role);
+    let registry = &kernel.runtime.provider_registry;
+    let trial_reply = registry
+        .set_active(&args.provider_id, consumer)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(ProviderSetActiveReply { trial_reply })
 }

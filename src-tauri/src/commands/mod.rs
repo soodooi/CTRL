@@ -62,9 +62,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::irisy::irisy_init,
             // system — kernel health (PWA status bar Phase 1F)
             $crate::commands::system::kernel_status,
-            // provider — ADR-002 substrate § provider v2 §3.7 introspection
-            // (brain_status closes "Irisy doesn't know its own stack" gap)
+            // provider — ADR-002 substrate § provider v2 §3.6 + §3.7
+            // brain_status: Irisy self-awareness (closes "doesn't know stack" gap)
+            // provider_list: /settings/providers picker rows
+            // provider_set_active: 2-role assignment with trial-verify
             $crate::commands::provider::brain_status,
+            $crate::commands::provider::provider_list,
+            $crate::commands::provider::provider_set_active,
             // system — explicit window hide for the StatusBar × button
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,
