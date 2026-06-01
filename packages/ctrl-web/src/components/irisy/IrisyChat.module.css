@@ -679,27 +679,32 @@
 }
 
 .composer textarea {
-  /* bao 2026-06-01: `.composer` is a plain block (no `display: flex`),
-     so `flex: 1` alone does not grow the textarea — the browser falls
-     back to the HTML default `cols=20` ≈ 200 px, giving the half-width
-     input box visible in v0.1.128. Lock width 100% + border-box so the
-     textarea fills the `.composer` padding box on every layout. */
+  /* Single-line input, clearly 1 row tall. Previous height 16/1.45 +
+     18px vertical padding rendered ~41px which looked like a 2-row
+     block (bao 2026-06-01). Compact to 14/1.35 + 6/6 = ~31px so a
+     single row is unambiguous. No send button currently rendered, so
+     the right padding only leaves a small inset, not a 44px slot. */
   flex: 1;
   width: 100%;
   box-sizing: border-box;
-  padding: 9px 44px 9px 14px; /* right padding leaves room for send btn */
-  border: 0;
-  background: transparent;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 14px;
+  background: var(--color-bg-l0);
   color: var(--color-text);
   font-family: var(--font-sans);
-  /* 16px — iOS Safari floor; below it the system auto-zooms on focus. */
-  font-size: 16px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.35;
   resize: none;
   overflow-y: auto;
-  min-height: 38px;
-  max-height: 160px;
+  min-height: 30px;
+  max-height: 120px;
   outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.composer textarea:focus {
+  border-color: var(--color-accent);
 }
 
 .composer textarea:disabled {

@@ -879,10 +879,23 @@ export function IrisyChat(): React.ReactElement {
           ref={inputRef}
           value={input}
           onChange={(e) => {
-            // Skip setState while the IME is composing so the popup
-            // can manage its own intermediate state. The final string
-            // commits on compositionend.
-            if (isComposingRef.current) return;
+            // Prefer the browser-native isComposing flag (carried on
+            // the underlying InputEvent) over our manual ref — the ref
+            // can get stuck true on macOS when an IME session ends
+            // without firing compositionend (observed in v0.1.142 with
+            // certain CJK input methods, then ASCII typing was
+            // silently dropped). The manual ref stays as a safety net
+            // for browsers that don't surface isComposing.
+            const native = e.nativeEvent as InputEvent;
+            if (native.isComposing || isComposingRef.current) {
+              if (!native.isComposing) {
+                // Composition ref says yes but native says no -> stuck
+                // ref. Clear it and commit the value.
+                isComposingRef.current = false;
+              } else {
+                return;
+              }
+            }
             setInput(e.target.value);
           }}
           onCompositionStart={() => {
@@ -894,7 +907,7 @@ export function IrisyChat(): React.ReactElement {
           }}
           onKeyDown={onInputKeyDown}
           className={styles.composerInput}
-          placeholder="Irisy is reading…"
+          placeholder="Message Irisy…"
           rows={1}
           aria-label="Message Irisy"
         />
