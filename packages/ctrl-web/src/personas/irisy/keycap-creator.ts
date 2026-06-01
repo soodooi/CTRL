@@ -39,7 +39,7 @@ id, version, name, description, author.handle, icon, keycap_color, source, capab
   - mentions an MCP server URL or named MCP server → source.type = "mcp"
   - mentions a local process / Python / shell script to wrap → source.type = "local_agent"
   - mentions a stream / live data from another app → source.type = "stss"
-- Output protocol externally is ALWAYS MCP (per ADR-010). Regardless of internal source.type, the generated server.ts wraps the keycap as an MCP server using @modelcontextprotocol/sdk.
+- Output protocol externally is ALWAYS MCP (per ADR-004 cap § execution v1). Regardless of internal source.type, the generated server.ts wraps the keycap as an MCP server using @modelcontextprotocol/sdk.
 - keycap_color:
   - amber → writing / text / chat / language
   - jade → safe / done / success / status / read-only

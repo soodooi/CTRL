@@ -73,10 +73,10 @@ pub enum OpKind {
     AppFocusChanged,
     FileSaved,
     CursorMoved,
-    // ADR-003 mesh layer events — added in ctrl-mesh baseline before athena Sprint 2.
+    // ADR-002 substrate mesh layer events — added in ctrl-mesh baseline before athena Sprint 2.
     // Emitted by the mesh sync layer when remote peers contribute Automerge
     // changes to a document; consumed by the same kernel event bus that all
-    // local Ops flow through (preserves ADR-001 §3.2 invariant "Op is the
+    // local Ops flow through (preserves ADR-001 spine §3.2 invariant "Op is the
     // only mutation message").
     MeshDeviceJoined,
     MeshDeviceLeft,
@@ -84,7 +84,7 @@ pub enum OpKind {
     MeshKeycapRemoved,
     MeshKeycapUsedAt,
     MeshPreferenceUpdated,
-    // ADR-012 §3 — SubprocessActor 6 lifecycle events (kernel-internal,
+    // ADR-002 substrate § subprocess v1 §3 — SubprocessActor 6 lifecycle events (kernel-internal,
     // NOT for ST-SS wire emission; the subprocess_stss_adapter translates
     // these into v0.7 CellKind / OpKind values before broadcast).
     // Inbound (PWA → kernel → actor):

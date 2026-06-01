@@ -1,6 +1,6 @@
 // @ctrl/web — kernel bridge: Tauri 2 invoke on desktop, WS fallback on mobile.
 //
-// Per ADR-002 §5 + spec.md §3 + spec.md §3 transport row. One API surface,
+// Per ADR-003 frontend §5 + spec.md §3 + spec.md §3 transport row. One API surface,
 // two transports underneath. App code never branches on platform; the bridge
 // picks the right transport when the module first loads.
 //

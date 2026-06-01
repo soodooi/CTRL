@@ -1,6 +1,6 @@
 // Provider trait — the single contract every LLM backend implements.
 //
-// ADR-004 §9.1 lock #1:
+// ADR-002 substrate § provider v1 lock #1:
 //   - chat_stream(prompt, opts) -> Stream<Chunk>
 //   - trial_verify() -> Result
 //   - capabilities() -> Set<Capability>

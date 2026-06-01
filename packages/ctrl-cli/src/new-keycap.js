@@ -5,7 +5,7 @@
 //
 // Layout produced (TS):
 //   <name>/
-//   ├── manifest.yaml        keycap declaration (per ADR-010 spec)
+//   ├── manifest.yaml        keycap declaration (per ADR-004 cap § execution v1 spec)
 //   ├── package.json
 //   ├── tsconfig.json
 //   ├── src/server.ts        MCP server skeleton, one tool stub
@@ -114,7 +114,7 @@ async function scaffoldTs(dir, slug) {
     include: ['src/**/*'],
   }, null, 2) + '\n');
 
-  await w('manifest.yaml', `# CTRL keycap manifest (ADR-010 §implemented_by spec — v0.2 schema TBD)
+  await w('manifest.yaml', `# CTRL keycap manifest (ADR-004 cap § execution v1 §implemented_by spec — v0.2 schema TBD)
 id: my.${slug}
 name: ${slug}
 description: A new CTRL keycap built from \`ctrl new-keycap\`.
@@ -201,7 +201,7 @@ ctrl dev .           # auto-registers + watches src/
 
 ## Manifest spec
 
-See [ADR-010](../../.claude/ADR/010-keycap-execution-model.md) for the
+See [ADR-004 cap § execution v1](../../.claude/ADR/010-keycap-execution-model.md) for the
 keycap execution model (MCP outward, actor inward).
 `);
 }

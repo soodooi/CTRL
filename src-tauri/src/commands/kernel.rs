@@ -25,7 +25,7 @@ pub struct KeycapSummary {
     pub name: String,
     pub keycap_color: String,
     pub icon: String,
-    // D1 envelope (ADR-001 amendment 2026-05-25) — populated from manifest
+    // D1 envelope (ADR-001 spine amendment 2026-05-25) — populated from manifest
     // when present. All optional so legacy keycaps without these fields
     // continue to render (PWA treats `None` as "field unknown / default").
     #[serde(skip_serializing_if = "Option::is_none")]

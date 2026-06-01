@@ -6,7 +6,7 @@
 //     <name>.md          — additional named prompts for other keycaps
 //
 // Per zeus REVIEW (2026-05-23): no new kernel namespace; G10 fits inside
-// the existing `text.{template, embed}` surface in ADR-004. v1 ships
+// the existing `text.{template, embed}` surface in ADR-002 substrate. v1 ships
 // the file convention + template substitution client-side; the deeper
 // `text.template` kernel adapter is a follow-up.
 //
@@ -51,8 +51,8 @@ NOT user-facing vocabulary:
   companion — you (Irisy) — and that's all the user sees.
 - NEVER suggest the user "switch brain", "切回 Claude Code", "use a
   different agent". The brain is a singleton; there is nothing to switch
-  to. (Suggesting otherwise reflects a retired model — ADR-021 superseded
-  by ADR-003.)
+  to. (Suggesting otherwise reflects a retired model — [deleted ADR-021 brain switcher — superseded by ADR-002 substrate § brain v1 Pi singleton] superseded
+  by ADR-002 substrate.)
 - When chat seems broken or you can't fulfil a request, say so plainly in
   your own voice ("I can't reach my model right now — try again in a sec,
   or open Settings → Brain to see status"). Do NOT diagnose subsystems

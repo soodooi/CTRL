@@ -8,11 +8,11 @@
 // pinned at the bottom. Irisy chat is shell-level (always visible right
 // column), not an L1 peer.
 //
-// 2026-05-30 (ADR-002 §2): L1 nav = `[Irisy, Coding]` 2 chips. Create
+// 2026-05-30 (ADR-003 frontend §2): L1 nav = `[Irisy, Coding]` 2 chips. Create
 // removed — keycap-designer is an internal Irisy mode per memory
 // `decision_one_persona_irisy`.
 //
-// 2026-05-31 (ADR-002 §7): the legacy `L2Panel` + `useL2` API is gone.
+// 2026-05-31 (ADR-003 frontend §7): the legacy `L2Panel` + `useL2` API is gone.
 // L2 is now a shell-level reserved column (left of L1, in `app.module.css`)
 // driven by the NSWindow's active tab. L1 chips will be rewired to open
 // NSWindow with chip-specific content (Keycap / Vault / Coding /
@@ -34,8 +34,8 @@ import type { IrisyState } from './primitives/IrisyMascot';
 import { invoke } from '../lib/bridge';
 import styles from './PrimaryRail.module.css';
 
-// L1 nav ids — bao 2026-05-30 (ADR-002 §2): ▾ workspace toggle (top) +
-// 2 nav (Irisy / Coding) + Settings (bottom). ADR-002 §7 target is 4
+// L1 nav ids — bao 2026-05-30 (ADR-003 frontend §2): ▾ workspace toggle (top) +
+// 2 nav (Irisy / Coding) + Settings (bottom). ADR-003 frontend §7 target is 4
 // chips (Keycap / Vault / Coding / Settings) opening NSWindow content;
 // rewiring deferred to a follow-up PR.
 const IRISY_ITEM_ID = 'builtin-irisy';

@@ -1,61 +1,67 @@
-<!-- ADR Index — hand-maintained until scripts/adr-check.py lands from hello-olym. -->
-<!-- Governance rules: see PROCESS.md (lifecycle SLA / status transitions / reserved registry). -->
+<!-- ADR Index — 7 module ADRs. Single source of truth. Code MUST reference `(ADR-NNN <module> § <section> v<N>)` in comments. Amendments bump `version:` in ADR frontmatter; new ADRs only created if a new **module** appears. -->
 
-# Decisions (ADR) — Index
+# CTRL ADRs — module-organized, 7 total
 
-## Active
-
-| # | Title | Module | Status | Date | Deciders | SLA |
+| # | Module | Title | Sections | Version | Status | Last updated |
 |---|---|---|---|---|---|---|
-| [001](./001-system-architecture.md) | 4-layer AI-native Agent OS kernel architecture (project doc + module index) | spine | accepted | 2026-05-11 | bao, zeus | — |
-| [002](./002-pwa-pivot.md) | Pivot UI to single PWA codebase under thin Tauri 2 native shell | frontend | accepted | 2026-05-13 | bao, zeus | — |
-| [003](./003-brain-pi-core.md) | Brain — Pi is the sole core agent loop (with upgrade + extension shim) | brain | **proposed** | 2026-05-30 | bao, zeus | 0/6 |
-| [004](./004-kernel-capability-surface.md) | Kernel — capability surface + sub-systems (incl. § 9.1 Provider + § 9.2 Mesh, former ADR-003) | kernel | **proposed** | 2026-05-22 (amended 2026-05-30) | bao, zeus | 3/7 |
-| [005](./005-no-claude-in-production-runtime.md) | No Claude / Anthropic SDK in CTRL production runtime | cross-cutting | accepted | 2026-05-18 | bao, zeus | — |
-| [007](./007-encryption-library.md) | Adopt vodozemac (Matrix Olm) for E2E crypto on all platforms | substrate | accepted | 2026-05-16 | bao, zeus | — |
-| [010](./010-keycap-execution-model.md) | Keycap execution model — MCP outward, Actor inward | cap | accepted | 2026-05-17 | bao, zeus, hephaestus | — |
-| [011](./011-update-channel-and-delivery.md) | Tauri 2 updater + three-mirror channel for global + CN delivery | cap | accepted | 2026-05-17 | bao, zeus | — |
-| [012](./012-subprocess-actor-pty.md) | SubprocessActor + portable-pty for Code Space coding companion | substrate | accepted | 2026-05-19 | bao, zeus | — |
-| [013](./013-kernel-as-mcp-server.md) | Kernel as MCP server — single bus for hermes / Irisy / external agents | substrate | accepted | 2026-05-22 | bao, zeus | — |
-| [014](./014-ctrl-global-english-first.md) | CTRL = global English first — UX, marketing, keycap priority | cross-cutting | accepted | 2026-05-22 | bao, zeus | — |
-| [015](./015-obsidian-philosophy.md) | Plain-text philosophy — CTRL is user-augmentation, not knowledge intermediary | cross-cutting | accepted | 2026-05-22 | bao, zeus | — |
-| [016](./016-irisy-eight-stage-lifecycle.md) | Irisy 8-stage keycap lifecycle — companion across Discovery → Retire | irisy | accepted | 2026-05-22 | bao, zeus, hephaestus | — |
-| [017](./017-remote-coview-is-irisy.md) | Remote co-view = Irisy primitives (mesh = sync only, not viewer) | irisy | accepted | 2026-05-22 | bao, zeus | — |
-| [018](./018-auto-update-strategy.md) | Auto-update strategy — 4 layers (app / hermes / keycap / PWA) × 3 tiers | cap | accepted | 2026-05-22 | bao, zeus | — |
-| [020](./020-vmark-stack-adoption.md) | VMark stack adoption — viewer registry + vault browser + smart table | frontend | accepted | 2026-05-25 | bao, daedalus | — |
-| [024](./024-substrate-composition-model.md) | Substrate composition model — keycap = 6-axis manifest binding (incl. cap-asset; persona folded in); multi-modal brain (text+image+audio); schema convergence + dispatch unification | substrate | **proposed** | 2026-05-30 | bao, zeus | 0/7 |
+| [001](./001-spine.md) | spine | 4-layer kernel + 5 primitives + 5 keycap sources + Pi-centric reframe | layers · primitives · sources · pi-centric · invariants · philosophy | v1 | accepted | 2026-05-31 |
+| [002](./002-substrate.md) | substrate | Pi brain · capability surface · **provider router** · crypto · subprocess · MCP bus · composition | brain · capability · provider · crypto · subprocess · mcp-bus · composition | v1 | accepted | 2026-05-31 |
+| [003](./003-frontend.md) | frontend | Single PWA + Irisy-as-sole-entry + Keyboard drag-install + vault viewer stack | pwa · nav-keyboard · vault-stack | v2 | accepted | 2026-05-31 |
+| [004](./004-cap.md) | cap | Keycap execution model + Tauri updater + 4-layer × 3-tier auto-update | execution · updater · auto-update | v1 | accepted | 2026-05-31 |
+| [005](./005-irisy.md) | irisy | 8-stage keycap lifecycle + remote co-view primitives + persona rule | lifecycle · remote-view · persona | v1 | accepted | 2026-05-31 |
+| [006](./006-cross-cutting.md) | cross-cutting | BYOK no-Claude in production + global English first + plain-text philosophy | byok-no-claude · global-english · plain-text | v1 | accepted | 2026-05-31 |
+| [007](./007-workbench.md) | workbench | Keycap-composition canvas (React Flow + dnd-kit) + Irisy-led skill discovery | canvas · discovery | v1 | accepted | 2026-05-31 |
 
-### Module index (jump to entry SPEC)
+## Module map → code locations
 
-| Module | SPEC entry | ADRs |
+| Module | Owns | Code locations |
 |---|---|---|
-| **spine** | (ADR-001 itself) | 001 |
-| **substrate** | [`.olym/specs/substrate/SPEC.md`](../specs/substrate/SPEC.md) | 003 · 004 · 007 · 012 · 013 · 024 |
-| **cap** | [`.olym/specs/cap/SPEC.md`](../specs/cap/SPEC.md) | 010 · 011 · 018 |
-| **irisy** | [`.olym/specs/irisy/spec.md`](../specs/irisy/spec.md) | 016 · 017 |
-| **frontend** | [`.olym/specs/frontend/SPEC.md`](../specs/frontend/SPEC.md) | 002 · 020 |
-| **cross-cutting** | (no module SPEC) | 005 · 014 · 015 |
+| spine | overall architecture, 5 primitives, anti-list | `src-tauri/src/kernel/{actor,capability,channel,event,effect}.rs` |
+| substrate | brain spawn, capability surface, provider router, crypto, subprocess, MCP bus, manifest composition | `src-tauri/src/kernel/` (provider/, mcp_server.rs, mcp_host.rs, subprocess_actor.rs) + `packages/ctrl-pi-bridge/` + `packages/ctrl-pi-plugin/` |
+| frontend | PWA shell, L1 nav, Keyboard, vault browser, viewers | `packages/ctrl-web/` |
+| cap | keycap execution (MCP outward / Actor inward), updater, auto-update tiers | `src-tauri/src/kernel/actor.rs` + `scripts/release.sh` + `packages/ctrl-keycaps/` |
+| irisy | 8-stage UX, remote co-view primitives, persona prompts | `packages/ctrl-web/src/routes/irisy.tsx` + `packages/ctrl-web/src/lib/irisy-prompts.ts` |
+| cross-cutting | BYOK, global English, plain-text philosophy (vim-test gate) | reviewer-policy, no single owner |
+| workbench | composition canvas, skill discovery | `packages/ctrl-web/src/routes/workbench.tsx` (Phase 1) + `src-tauri/src/commands/skills.rs` (Phase 1) + future `soodooi/ctrl-cloud` Worker (Phase 2) |
 
-> SLA 列 = "已挂天数 / SLA 上限"。P0 超时 → bao 决策顶；详见 PROCESS.md §1。
+## Provenance — original 22 numbered ADRs (collapsed 2026-05-31)
 
-## Reserved (号码登记)
+Original files removed from working tree; full history reachable via `git log` (predecessor commit `31f47de` shipped v0.1.126; reorg commit `8749bdf` collapsed 22 → 7).
 
-每个保留号必有 owner + trigger，否则 6 个月后 release。
+| Original ADR | Title (verbatim) | Merged into |
+|---|---|---|
+| 001 (orig) | 4-layer AI-native Agent OS kernel architecture | **001 spine** |
+| 002 (orig) | Pivot UI to single PWA codebase | **003 frontend § pwa** |
+| 003 (orig) | Brain — Pi is the sole core agent loop | **002 substrate § brain** |
+| 003 (orig pre-rewrite) | Multi-device mesh | **002 substrate § crypto** (mesh deferred to v1.1) |
+| 004 (orig) | Kernel capability surface (10 ns / 28 methods) + §9 sub-systems | **002 substrate § capability + § provider + § mcp-bus** |
+| 005 (orig) | No Claude / Anthropic SDK in CTRL production runtime | **006 cross-cutting § byok-no-claude** |
+| 006 / 008 / 009 | (never written — reserved slots) | (deleted from registry — no longer reserve) |
+| 007 (orig) | vodozemac (Matrix Olm) for E2E crypto | **002 substrate § crypto** |
+| 010 (orig) | Keycap execution model — MCP outward, Actor inward | **004 cap § execution** |
+| 011 (orig) | Tauri 2 updater + three-mirror channel | **004 cap § updater** |
+| 012 (orig) | SubprocessActor + portable-pty | **002 substrate § subprocess** |
+| 013 (orig) | Kernel as MCP server (single bus :17873) | **002 substrate § mcp-bus** |
+| 014 (orig) | CTRL = global English first | **006 cross-cutting § global-english** |
+| 015 (orig) | Plain-text philosophy (formerly "Obsidian") | **006 cross-cutting § plain-text** |
+| 016 (orig) | Irisy 8-stage keycap lifecycle | **005 irisy § lifecycle** |
+| 017 (orig) | Remote co-view = Irisy primitives | **005 irisy § remote-view** |
+| 018 (orig) | Auto-update 4 layers × 3 tiers | **004 cap § auto-update** |
+| 019 (orig) | CTRL = hermes plugin (primary) | (deleted — hermes fully removed 2026-05-28, PR #62) |
+| 020 (orig) | VMark stack adoption | **003 frontend § vault-stack** (stack adopted, VMark NOT a dependency) |
+| 021 (orig) | Irisy brain switcher (cc-switch / VMark / opencode style) | (deleted — superseded by 002 substrate § brain Pi singleton; provider switcher UX lives in 002 substrate § provider §3.6) |
+| 022 (orig) | Workbench composition canvas (React Flow + dnd-kit) | **007 workbench § canvas** |
+| 023 (orig) | Skill discovery — kernel-local first, ctrl-cloud Worker for production | **007 workbench § discovery** |
+| 024 (orig) | Substrate composition model — 6-axis manifest | **002 substrate § composition** + persona rule lifted to **005 irisy § persona** |
 
-| # | 主题 | Owner | Trigger 条件 | 占号自 | 现状 |
-|---|---|---|---|---|---|
-| 006 | AI provider gateway | zeus | ADR-004 accepted | 2026-05-17 | 等 ADR-004 翻 accepted；ADR-004 现 proposed 3/7 |
-| 008 | Tokyo VPS primary topology | hephaestus | VPS deploy verification 完成 | 2026-05-17 | 实装已部分完成 (hermes/Caddy/Postgres on 52.196.27.37, hermes.ctrlapplab.com)；待 hephaestus 整理成 ADR |
-| 009 | Multi-tenant baseline | zeus | 第 2 个商业项目签约 | 2026-05-17 | 6 月 release 倒计时 → **2026-11-17 前未触发自动 release** |
+## Versioning
 
-## Superseded / Deprecated
+Single source of truth. Each module ADR has `version:` in frontmatter. Amendments:
 
-| # | Title | Superseded by | Date | Why |
-|---|---|---|---|---|
-| [019](./019-ctrl-hermes-plugin-primary.md) | CTRL = hermes plugin (primary integration); kernel MCP server demoted to IPC + secondary surface | [001 amendment 2026-05-25](./001-system-architecture.md#amendment-2026-05-25--pi-as-sole-brain--hermes-as-keycap--vmark-not-substrate) | 2026-05-25 | Brain reframe: Pi = sole brain (lazy npm install); hermes 降为可选 personal-assistant keycap |
+1. Edit the section in place
+2. Bump `version:` (v1 → v2)
+3. Append a row to `changelog:` listing the change + memory/decision link
+4. Update `last_updated:` to today
+5. Reference new behavior in code as `(ADR-NNN <module> § <section> v<N>)`
 
----
-
-**Index version**: 0.9 (2026-05-26 — ADR-001 restructured as project doc; Module column + Module index added; all ADRs got `module:` frontmatter)
-**Process**: see [PROCESS.md](./PROCESS.md)
-**Template**: see [_template.md](./_template.md)
+Never create a new numbered ADR for a section amendment. New ADR ↔ new module only.

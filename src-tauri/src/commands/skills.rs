@@ -1,12 +1,12 @@
-// Skill discovery — kernel-local (Phase 1, ADR-023).
+// Skill discovery — kernel-local (Phase 1, ADR-007 workbench § discovery v1).
 //
 // Searches GitHub for `filename:SKILL.md` matches, using a PAT read from the
 // macOS Keychain (service `app.ctrl`, account `github`). This is the 走通
 // path; production moves SEARCH behind the shared `ctrl-skills` Worker because
-// most users have no GitHub token (ADR-023 Phase 2). INSTALL of a public skill
+// most users have no GitHub token (ADR-007 workbench § discovery v1 Phase 2). INSTALL of a public skill
 // needs no token, so it stays kernel-local regardless.
 //
-// Consumed by Irisy's `search_skills` tool (ADR-021 §5) and the Pool/workbench
+// Consumed by Irisy's `search_skills` tool ([deleted ADR-021 brain switcher — superseded by ADR-002 substrate § brain v1 Pi singleton] §5) and the Pool/workbench
 // manual search surface. Returns the normalized CTRL shape, not raw GitHub JSON.
 
 use serde::Serialize;
@@ -132,7 +132,7 @@ fn parse_item(item: &serde_json::Value) -> Option<SkillResult> {
     Some(SkillResult { repo, owner, name, description, stars, path, html_url })
 }
 
-// ── Skill executor (ADR-022 / ADR-023, cc-switch-native run model) ──────────
+// ── Skill executor (ADR-007 workbench § canvas v1 / ADR-007 workbench § discovery v1, cc-switch-native run model) ──────────
 // Runs a `skill`-variant keycap. The kernel does NOT orchestrate the skill —
 // the active brain CLI does (it already has the skill in its skills dir). The
 // kernel only: (1) hands the brain the keycap's working folder in the vault,
@@ -160,7 +160,7 @@ pub async fn run_skill(
     // Skill keycaps need a CLI that can use tools + write files. Claude Code
     // is the verified one. Resolve the binary path the same way the
     // provider sub-system does — `claude-oauth` preset's manifest exposes
-    // the `claude` binary (ADR-004 §9.1). Fall back to plain `claude` on
+    // the `claude` binary (ADR-002 substrate § provider v1). Fall back to plain `claude` on
     // PATH if the preset isn't installed.
     // Resolve `claude` binary path inline (no external crate dep). Splits
     // $PATH and returns the first matching executable, or falls back to the

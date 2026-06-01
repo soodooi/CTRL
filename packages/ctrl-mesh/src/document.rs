@@ -1,6 +1,6 @@
 // Document — Automerge document replicated across the mesh.
 //
-// v1.0 ships 3 documents (per ADR-003 §6.1):
+// v1.0 ships 3 documents (per ADR-002 substrate §6.1):
 //   - mesh.devices       — paired device roster
 //   - mesh.keycaps       — installed keycap pool (manifests + last-used)
 //   - mesh.preferences   — user settings (LWW)

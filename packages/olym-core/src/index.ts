@@ -1,6 +1,6 @@
 // @manidala/olym-core — generic AI-native framework primitives.
 //
-// Per ADR-002 v1.1.0 §1.4 + §C3. olym-core stays vendor-agnostic; concrete
+// Per ADR-003 frontend v1.1.0 §1.4 + §C3. olym-core stays vendor-agnostic; concrete
 // entity ontologies live in host-specific domain packages (e.g.
 // @<host>/domain (host package)) which call registerDomain(...) at boot to wire their
 // entities into the MCP tool surface.

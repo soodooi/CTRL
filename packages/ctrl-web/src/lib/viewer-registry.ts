@@ -14,7 +14,7 @@
 // stays under the mobile 200KB cap. A viewer enters the bundle the first
 // time its content-type appears in a workspace tab.
 //
-// VMark compatibility: per ADR-001 amendment (2026-05-25), CTRL uses the
+// VMark compatibility: per ADR-001 spine amendment (2026-05-25), CTRL uses the
 // same open-source stack VMark uses (Tiptap, CodeMirror, mermaid) — no
 // runtime dependency on the VMark.app process. A user can switch between
 // VMark and CTRL editing the same vault file because both speak plain

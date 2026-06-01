@@ -8,7 +8,7 @@ const pkg = JSON.parse(
   readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8'),
 ) as { version: string };
 
-// ADR-002 §5 stack lock: React 18 + Vite 5 + TanStack Router/Query +
+// ADR-003 frontend §5 stack lock: React 18 + Vite 5 + TanStack Router/Query +
 // Zustand + vite-plugin-pwa. CSS modules + design tokens (no Tailwind by
 // default — protects against template look). framer-motion stayed in the
 // stack lock for future surfaces but is currently removed from the bundle

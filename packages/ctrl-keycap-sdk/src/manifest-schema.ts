@@ -13,7 +13,7 @@
 //    of only the 2 builtins in packages/ctrl-keycaps/builtin/ + any
 //    user-installed keycaps under ~/.ctrl/keycaps/. Fields like the flat
 //    `permissions: string[]` list survive for back-compat parsing.
-//  - v2: ADR-024 6-axis composition model (additive top-level fields:
+//  - v2: ADR-002 substrate § composition v1 6-axis composition model (additive top-level fields:
 //    builtin / pattern / brain_capabilities / ui_surface / skills /
 //    cap_asset). v1 parsers still accept v2 manifests because all v2
 //    fields are optional; v2 parsers respect the v1 shape.
@@ -43,7 +43,7 @@ export const KeycapVariant = z.enum([
   'local-agent',     // long-running local process (Pattern C)
   'skill',           // SKILL.md run by the active brain — the workbench's
                      // primary create path (source/SKILL.md → ctrl skill →
-                     // 键帽). See ADR-022.
+                     // 键帽). See ADR-007 workbench § canvas v1.
 ]);
 export type KeycapVariant = z.infer<typeof KeycapVariant>;
 
@@ -57,7 +57,7 @@ export type KeycapVariant = z.infer<typeof KeycapVariant>;
 //                  capability the keycap declares via `capability`). The
 //                  user's active brain keycap is the answer for any
 //                  inbound capability call from Irisy. Pi is the sole
-//                  brain (ADR-001 amendment 2026-05-25).
+//                  brain (ADR-001 spine amendment 2026-05-25).
 //
 // See .olym/specs/tool-manifest/spec.md §13.
 export const KeycapTarget = z.enum(['mcp-tool', 'brain']);
@@ -172,7 +172,7 @@ export const WorkspaceUi = z.enum([
 ]);
 export type WorkspaceUi = z.infer<typeof WorkspaceUi>;
 
-// ── v3 adaptive workspace declaration (ADR-002 §7.3) ───────────────────
+// ── v3 adaptive workspace declaration (ADR-003 frontend §7.3) ───────────────────
 // A keycap may now declare a tabbed NSWindow workspace with optional L2
 // sub-nav per tab. The NSWindow host (`WorkspaceShell`, post-collapse)
 // reads `ui_surface.workspace.tabs[]` and renders adaptively — viewer
@@ -450,7 +450,7 @@ export const Description = z.object({
   long: z.string().optional(),
 });
 
-// ── Source bindings (per ADR-010 5 source types) ─────────────────────────
+// ── Source bindings (per ADR-004 cap § execution v1 5 source types) ─────────────────────────
 // Currently only `mcp` carries structured config (server_id + tool_name).
 // Builtin / cli-wrapper / oauth / stss leave `source` empty and rely on
 // the manifest's `variant` + step content.
@@ -478,7 +478,7 @@ export const CliWrapperSource = z.object({
 });
 
 /** Skill source — the keycap is backed by a SKILL.md the active brain runs
- *  (ADR-022). `entry` is the markdown file inside the keycap dir
+ *  (ADR-007 workbench § canvas v1). `entry` is the markdown file inside the keycap dir
  *  (`~/.ctrl/keycaps/<id>/SKILL.md`); `upstream` records where it came from
  *  (GitHub `owner/repo` or URL) for Pool discovery + Patch-tier sync. */
 export const SkillSource = z.object({
@@ -505,8 +505,8 @@ export type Source = z.infer<typeof Source>;
 // ── I/O ports (workbench wiring — JSON Schema typed) ─────────────────────
 // A keycap declares typed input/output ports so the workbench canvas can
 // validate connections STRUCTURALLY (output schema ⊑ input schema) at
-// connect-time, not at run-time (ADR-022 / brief §3). JSON Schema is the
-// cross-language standard and matches MCP tool I/O (ADR-013).
+// connect-time, not at run-time (ADR-007 workbench § canvas v1 / brief §3). JSON Schema is the
+// cross-language standard and matches MCP tool I/O (ADR-002 substrate § mcp-bus v1).
 
 /** An embedded JSON Schema document. Permissive record — the workbench
  *  checks structural compatibility between ports, it does not validate the
@@ -610,17 +610,17 @@ export type DraftMeta = z.infer<typeof DraftMeta>;
 
 // ── Top-level manifest ──────────────────────────────────────────────────
 
-// ── ADR-024 v2 axes (additive to v1; v1 manifests skip all of these) ────
+// ── ADR-002 substrate § composition v1 v2 axes (additive to v1; v1 manifests skip all of these) ────
 
-/** ADR-010 7-pattern axis — routes execution. G=builtin/StepEngine,
+/** ADR-004 cap § execution v1 7-pattern axis — routes execution. G=builtin/StepEngine,
  *  D=3rd-party MCP, B=CLI wrapper, C=daemon RPC, E=OAuth, F=ST-SS,
  *  A=HTTP sink. Optional on v1 manifests (variant carries the same info). */
 export const KeycapPattern = z.enum(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
 export type KeycapPattern = z.infer<typeof KeycapPattern>;
 
-/** ADR-024 brain capability requirement — declared per-capability with
+/** ADR-002 substrate § composition v1 brain capability requirement — declared per-capability with
  *  optional provider lock. provider_pin = null → runtime walks the
- *  fallback chain (ADR-011). Explicit id (e.g. "volc", "claude-cli")
+ *  fallback chain (ADR-004 cap § updater v1). Explicit id (e.g. "volc", "claude-cli")
  *  pins this capability for this keycap. model_hint is advisory. */
 export const BrainCapabilityRequirement = z.object({
   provider_pin: z.string().nullable().default(null),
@@ -652,7 +652,7 @@ const CapAssetSeedItem = z.object({
   content_from: z.string().optional(),
 });
 
-/** ADR-024 axis 6 — install-time provisioning bundle.
+/** ADR-002 substrate § composition v1 axis 6 — install-time provisioning bundle.
  *
  *  - cap_asset.files: static immutables copied to ~/.ctrl/keycaps/<id>/assets/
  *    (replicated from the manifest at install + healed on every launch
@@ -683,7 +683,7 @@ export const KeycapManifest = z.object({
     message: 'id must be lowercase alphanumeric + . - _',
   }),
 
-  /** Manifest format version. v1 = legacy; v2 = ADR-024 6-axis composition
+  /** Manifest format version. v1 = legacy; v2 = ADR-002 substrate § composition v1 6-axis composition
    *  model (adds cap_asset / brain_capabilities / ui_surface / pattern /
    *  builtin). Either is accepted by parseManifest; new manifests should
    *  use v2. The kernel loader reads v2-only fields when manifest_version=2. */
@@ -743,7 +743,7 @@ export const KeycapManifest = z.object({
   /** Source binding for non-builtin variants (mcp / oauth / cli-wrapper / skill). */
   source: Source.optional(),
 
-  /** Typed I/O ports for workbench composition (ADR-022). Each port carries
+  /** Typed I/O ports for workbench composition (ADR-007 workbench § canvas v1). Each port carries
    *  a JSON Schema; the canvas validates connections structurally at
    *  connect-time. Optional — one-shot keycaps that are never composed omit it. */
   io: KeycapIo.optional(),
@@ -797,24 +797,24 @@ export const KeycapManifest = z.object({
    *  greenfield + Config-tier keycaps. */
   lineage: Lineage.optional(),
 
-  // ── ADR-024 v2 axes ─────────────────────────────────────────────────
+  // ── ADR-002 substrate § composition v1 v2 axes ─────────────────────────────────────────────────
 
   /** True iff this is one of CTRL's built-in keycaps (lives in
    *  packages/ctrl-keycaps/builtin/, seeded into ~/.ctrl/keycaps/ on
    *  every launch). The shell self-repairs deleted builtins. v2 only. */
   builtin: z.boolean().optional(),
 
-  /** ADR-010 7-pattern routing axis. Orthogonal to `variant` (variant
-   *  pre-dates ADR-010; pattern is the canonical successor). v2 only. */
+  /** ADR-004 cap § execution v1 7-pattern routing axis. Orthogonal to `variant` (variant
+   *  pre-dates ADR-004 cap § execution v1; pattern is the canonical successor). v2 only. */
   pattern: KeycapPattern.optional(),
 
-  /** Per-capability brain provider requirements (ADR-024 §3). v2 only.
+  /** Per-capability brain provider requirements (ADR-002 substrate § composition v1 §3). v2 only.
    *  Replaces the singular `target=brain` model: a keycap can require
    *  multiple modalities simultaneously (poster needs text.chat +
    *  image.generate + image.edit) and lock provider per capability. */
   brain_capabilities: BrainCapabilities.optional(),
 
-  /** Workspace UI surface (ADR-024 §2 axis 5; ADR-002 §7.3 extended to
+  /** Workspace UI surface (ADR-002 substrate § composition v1 §2 axis 5; ADR-003 frontend §7.3 extended to
    *  adaptive multi-tab in v3). Accepts:
    *    - legacy single string from WorkspaceUi (`"chat-stream"` etc.)
    *    - v3 object: `{ workspace: { tabs: [...] } }` for tabbed
@@ -824,11 +824,11 @@ export const KeycapManifest = z.object({
   ui_surface: UiSurface.optional(),
 
   /** Skill recipes the brain reads as context. Resolved via 3-tier lookup
-   *  per ADR-024 §3.5: vault/skills/<id>.md > ~/.claude/skills/<id>.md >
+   *  per ADR-002 substrate § composition v1 §3.5: vault/skills/<id>.md > ~/.claude/skills/<id>.md >
    *  ~/.ctrl/keycaps/<id>/assets/skills/<id>.md. v2 only. */
   skills: z.array(z.string()).optional(),
 
-  /** Install-time provisioning bundle (ADR-024 axis 6). v2 only. The
+  /** Install-time provisioning bundle (ADR-002 substrate § composition v1 axis 6). v2 only. The
    *  bundled `files.items[]` carry the keycap's icon / persona.md /
    *  templates; `vault.path` reserves the keycap's user-facing folder
    *  with optional seed structure. */

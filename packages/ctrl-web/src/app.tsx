@@ -1,7 +1,7 @@
 // App root — TanStack Router setup + React Query provider + the cockpit
 // shell.
 //
-// 2026-05-31 (ADR-002 §7): shell collapsed to 2-col `[L2 │ L1 │ Irisy]`
+// 2026-05-31 (ADR-003 frontend §7): shell collapsed to 2-col `[L2 │ L1 │ Irisy]`
 // LEFT → RIGHT. `main` column retired — keycap work lives in the NSWindow
 // workspace (separate Tauri child window glued left of main via
 // addChildWindow). L2 is a reserved sub-nav slot (left of L1), width 0
@@ -10,7 +10,7 @@
 // Settings) — no longer switches `main` routes.
 //
 // `<Outlet />` stays mounted inside a hidden host so legacy routes don't
-// error on lookup; full route retirement = next PR (ADR-002 §7.5).
+// error on lookup; full route retirement = next PR (ADR-003 frontend §7.5).
 //
 // Irisy chat is SHELL-LEVEL and does NOT unmount on route change — fixed
 // assistant resource (bao 2026-05-29; reaffirmed §7).
@@ -128,7 +128,7 @@ function RootShellInner(): ReactElement {
       {/* Hidden Outlet host — legacy routes still mount here but render
           invisibly. Drag-over handler retained on the hidden node so the
           shell-level keycap drop in `app.tsx` still works during transition;
-          full route retirement = next PR (ADR-002 §7.5). */}
+          full route retirement = next PR (ADR-003 frontend §7.5). */}
       <div
         className={styles.outletHidden}
         data-drag-over={dragOver || undefined}

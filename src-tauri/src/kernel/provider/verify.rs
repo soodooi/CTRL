@@ -1,6 +1,6 @@
 // Trial-chat verification — the real-roundtrip "set_active" gate.
 //
-// ADR-004 §9.1 lock #4: `set_active(provider_id, capability)` MUST send
+// ADR-002 substrate § provider v1 lock #4: `set_active(provider_id, capability)` MUST send
 // a real 1-token `"hi"` chat with a 5 s deadline. First chunk arriving
 // inside the deadline ⇒ commit + persist; timeout / error ⇒ keep the
 // previous selection + surface the specific error (auth / network /
@@ -17,7 +17,7 @@ use std::time::Duration;
 use crate::kernel::provider::r#trait::Provider;
 use crate::kernel::provider::types::{ChatMessage, ChatOpts, ChatPrompt, ProviderError};
 
-/// Wall-clock limit per ADR-004 §9.1 lock #4.
+/// Wall-clock limit per ADR-002 substrate § provider v1 lock #4.
 const TRIAL_DEADLINE_MS: u64 = 5_000;
 
 /// 1-token probe — single user turn "hi" with a tiny token budget. We

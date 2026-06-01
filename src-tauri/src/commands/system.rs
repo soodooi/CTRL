@@ -33,7 +33,7 @@ pub struct KernelStatus {
     pub uptime_ms: u64,
     /// First-run state — distinguishes "fresh install still seeding" from
     /// "set up, empty keyboard" so the PWA renders the right empty state.
-    /// Per ADR-001 amendment 2026-05-25 (decision D6).
+    /// Per ADR-001 spine amendment 2026-05-25 (decision D6).
     pub first_run_state: FirstRunState,
     /// LLM adapters registered at boot. Empty = no provider configured.
     pub llm_adapters: Vec<String>,
@@ -54,7 +54,7 @@ pub struct KernelStatus {
     pub overall: &'static str,
     pub warnings: Vec<String>,
     /// Brain engine label. Always "pi" (Pi is the sole brain per
-    /// ADR-003). Kept as a string field for forward-compat with PWA
+    /// ADR-002 substrate). Kept as a string field for forward-compat with PWA
     /// consumers; the value never changes at runtime.
     pub active_brain: &'static str,
 }
@@ -110,7 +110,7 @@ pub async fn kernel_status(
     }
     let overall = if warnings.is_empty() { "ok" } else { "degraded" };
 
-    // ADR-003: Pi is the sole brain (singleton). No registry, no
+    // ADR-002 substrate: Pi is the sole brain (singleton). No registry, no
     // ~/.ctrl/active-brain file. Value is constant.
     let active_brain = "pi";
 
@@ -165,7 +165,7 @@ pub fn set_window_height(app: tauri::AppHandle, height: f64) -> Result<(), Strin
 
 /// Position the main window anchored against the monitor's right edge.
 /// bao 2026-05-31: must match the right-edge anchor toggle_workspace_window
-/// uses (ADR-002 §7 "L1 和 Irisy 位置不变"). Putting the boot position at
+/// uses (ADR-003 frontend §7 "L1 和 Irisy 位置不变"). Putting the boot position at
 /// 75 % center created a visual jump when toggle later relocated to the
 /// true right edge; aligning both paths to monitor_right means expansion
 /// slides leftward smoothly without re-positioning.
@@ -324,7 +324,7 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 
-// ── Pi (sole brain) status + upgrade — ADR-003 §4 ───────────────────────
+// ── Pi (sole brain) status + upgrade — ADR-002 substrate §4 ───────────────────────
 //
 // Replaces the retired `brain_list / brain_detect / brain_set_active`
 // triple. There is one brain (Pi); the Settings → Brain pane reads

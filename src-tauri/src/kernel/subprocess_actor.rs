@@ -1,5 +1,5 @@
 // SubprocessActor — long-lived child process Actor for Code Space tiles
-// and similar always-on CLI integrations. Per ADR-012.
+// and similar always-on CLI integrations. Per ADR-002 substrate § subprocess v1.
 //
 // Implements the Actor trait (without breaking the 5-primitives abstraction).
 // Each instance holds one PTY-backed child process,
@@ -13,7 +13,7 @@
 //                  SubprocessSignal → child.kill() via ChildKiller handle
 //   on_shutdown→ kill child + close handles
 //
-// Supervisor guarantees (ADR-012 §5):
+// Supervisor guarantees (ADR-002 substrate § subprocess v1 §5):
 //   1. panic catch around spawn — failure emits `subprocess_exit` and the
 //      actor stays alive in a no-op state; does NOT crash the kernel.
 //   2. mem_cap_bytes (default 256 MB) declared in manifest spec. OS-level
@@ -111,7 +111,7 @@ impl Default for PtySpec {
     }
 }
 
-/// Manifest schema for `prototype: "subprocess"` (ADR-012 §4).
+/// Manifest schema for `prototype: "subprocess"` (ADR-002 substrate § subprocess v1 §4).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubprocessSpec {
     pub command: String,
@@ -576,7 +576,7 @@ mod tests {
         }
     }
 
-    /// e2e per ADR-012 Acceptance §6: spawn `bash -c '...'`, observe Spawned →
+    /// e2e per ADR-002 substrate § subprocess v1 Acceptance §6: spawn `bash -c '...'`, observe Spawned →
     /// Stdout containing "hello-from-subprocess" → Exit with code 7.
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

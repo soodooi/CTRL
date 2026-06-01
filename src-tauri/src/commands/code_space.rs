@@ -153,7 +153,7 @@ pub async fn cs_spawn(
     };
 
     // TODO(zeus, P5): wire to shared Scheduler from KernelHandle for
-    // supervisor visibility per ADR-012 §5. Per-invocation Scheduler::new()
+    // supervisor visibility per ADR-002 substrate § subprocess v1 §5. Per-invocation Scheduler::new()
     // works today (actor task lives outside via tokio::spawn, so no leak)
     // but cuts code-space actors off from future preemption / deadline
     // supervisor logic. Refactor when EffectExecutor wiring lands.

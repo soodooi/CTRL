@@ -10,7 +10,7 @@
 //   - Hover cap → 3-dot menu reveal (Duplicate / Open new / Remove).
 //   - Cmd/Ctrl+D on focused cap → duplicate its workspace instance.
 //
-// 2026-05-30 ADR-002 amendment (Irisy-as-sole-entry + Keyboard drag-install):
+// 2026-05-30 ADR-003 frontend amendment (Irisy-as-sole-entry + Keyboard drag-install):
 // The Keyboard itself is now the drag-target for keycap installation.
 // Accepts three drop sources:
 //   1. Pool card → install (MIME = `application/x-ctrl-keycap-manifest`,

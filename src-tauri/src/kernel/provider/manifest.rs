@@ -1,6 +1,6 @@
 // Provider manifest — TOML schema deserialized into `ProviderManifest`.
 //
-// ADR-004 §9.1 lock #2. The 6 builtin presets live under
+// ADR-002 substrate § provider v1 lock #2. The 6 builtin presets live under
 // `kernel/provider/builtin/*.toml` and ship inside the bundle; user-
 // installed manifests land in `~/.ctrl/providers/<id>.toml`. The
 // registry concatenates both sources at boot.

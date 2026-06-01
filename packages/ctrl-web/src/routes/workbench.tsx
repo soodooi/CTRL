@@ -1,4 +1,4 @@
-// Workbench — level-1 keycap-composition canvas (ADR-022).
+// Workbench — level-1 keycap-composition canvas (ADR-007 workbench § canvas v1).
 //
 // React Flow is the wiring surface ONLY (canvas-only; execution stays in the
 // CTRL executor — no borrowed dataflow engine). The palette lists the user's

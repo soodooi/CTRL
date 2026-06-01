@@ -235,7 +235,7 @@ fn vault_root() -> Option<PathBuf> {
     crate::kernel::vault::default_vault_root()
 }
 
-/// ADR-024 axis 6 (`cap_asset.vault`): provision the user-facing vault
+/// ADR-002 substrate § composition v1 axis 6 (`cap_asset.vault`): provision the user-facing vault
 /// folder declared in the keycap's manifest. Reads
 /// `~/.ctrl/keycaps/<id>/manifest.json`, extracts `cap_asset.vault.path`
 /// + `cap_asset.vault.seed`, and creates the folder + seed files under
@@ -431,7 +431,7 @@ pub fn ensure_builtins_installed() {
                 );
             }
         }
-        // ADR-024 P1.8: provision the keycap's cap_asset.vault folder
+        // ADR-002 substrate § composition v1 P1.8: provision the keycap's cap_asset.vault folder
         // (creates ~/Documents/CTRL/<vault.path>/ + seed files). Idempotent
         // — existing user files are preserved. Failures here are logged
         // but don't block the rest of the boot.

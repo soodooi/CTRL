@@ -1,6 +1,6 @@
 // MCP auto-register — derives 5 read-only tools per entity from the entity ontology.
 //
-// Per ADR-002 §11. Each entity emits 5 read-only MCP tools, each with a
+// Per ADR-003 frontend §11. Each entity emits 5 read-only MCP tools, each with a
 // PER-VERB input schema (not the entity's insert/select schema verbatim):
 //
 //   - mcp_<entity>_get      → { id }
@@ -72,7 +72,7 @@ const describeInputSchema = z.object({})
 
 // ---- Tool derivation ---------------------------------------------------
 
-// 5 read-only tools per entity (per ADR-002 §11.2):
+// 5 read-only tools per entity (per ADR-003 frontend §11.2):
 //   mcp_<entity>_get      — by id
 //   mcp_<entity>_list     — with Zod-validated filter
 //   mcp_<entity>_search   — full-text
@@ -142,7 +142,7 @@ export function clearRegistry(): void {
 
 export interface RegisterDomainInput {
   // Domain identifier — host application name (e.g. 'host', 'iris').
-  // Per ADR-002 §C3 — distinguishes which project's entities are loaded
+  // Per ADR-003 frontend §C3 — distinguishes which project's entities are loaded
   // when an MCP server hosts multiple instances.
   name: string
   // Map of entityName → EntityOntology. Each entity gets 5 MCP tools.

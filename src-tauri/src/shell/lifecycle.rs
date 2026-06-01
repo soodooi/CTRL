@@ -7,7 +7,7 @@
 //   • Window setup (WindowController)
 //
 // Ordering invariant: kernel must report ready before hotkey is armed, so the
-// first Ctrl tap can't reach a not-yet-listening kernel (ADR-002 §11 risk #2).
+// first Ctrl tap can't reach a not-yet-listening kernel (ADR-003 frontend §11 risk #2).
 
 use anyhow::Result;
 use tauri::{AppHandle, Manager};
@@ -35,7 +35,7 @@ impl ShellLifecycle {
 
         // Seed builtin keycaps under ~/.ctrl/keycaps/. Idempotent (existing
         // user files are never overwritten); heals accidentally-deleted
-        // builtins on every launch. Per ADR-024 — `builtin = true` in the
+        // builtins on every launch. Per ADR-002 substrate § composition v1 — `builtin = true` in the
         // manifest is the only distinction from user keycaps; everything
         // else (routing / dispatch / capability gates / vault scoping)
         // works identically.

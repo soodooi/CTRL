@@ -66,7 +66,7 @@ pub enum CapToken {
         server: String,
         tool_glob: String,
     },
-    // OAuth — Pattern E (ADR-010 §5.2)
+    // OAuth — Pattern E (ADR-004 cap § execution v1 §5.2)
     // Grants a keycap permission to obtain and use OAuth tokens for a given
     // provider. Token issuance + storage handled by kernel OAuth runtime;
     // keycap never touches the raw token, only the Effect dispatches through

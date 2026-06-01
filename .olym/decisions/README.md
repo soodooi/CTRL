@@ -1,56 +1,24 @@
 # Decisions (ADR)
 
-> Architectural Decision Records. Once-off decisions with alternatives + rationale + reversal cost.
+> Architectural Decision Records — module-organized, version-controlled. Single source of truth.
 
-## Format
+## Layout
 
 ```
-.olym/decisions/NNN-slug.md      # NNN zero-padded sequential, slug kebab-case
+.olym/decisions/NNN-<module>.md   # 001-spine.md ... 007-workbench.md (7 module ADRs)
+.olym/decisions/INDEX.md          # module map + provenance from original 22 numbered ADRs
+.olym/decisions/PROCESS.md        # governance: version-control rules + § Acceptance gate
+.olym/decisions/_template.md      # template for the (rare) case a new module is created
 ```
 
-## What goes in ADR
+## How to use
 
-- Once-off architectural decision (frame choice, vendor lock-in, data shape choice)
-- Includes 2-4 rejected alternatives with reasons
-- Documents reversal cost
-- Used as historical log — **immutable** once merged (zeus stewardship denylist)
+1. **Reading**: open `INDEX.md` for the 7-row module map. Click through to the module ADR for the load-bearing section.
+2. **Amending**: edit a section in place, bump `version:` in frontmatter, append a `changelog:` row, update `last_updated:`. Don't open a new numbered file.
+3. **Citing in code**: use `(ADR-NNN <module> § <section> v<N>)` format in comments. The `scripts/check-adr-acceptance.sh` gate enforces § Acceptance close-out before ship.
 
-## When ADR is mandatory
+## When a new ADR is needed
 
-- ≥3 simultaneous fleet retirements (per `olympus-roster.md` "退役 SOP")
-- Cross-lane architectural decision (multi-lane impact)
-- Any decision needing alternatives recorded for future reference
+Only when a genuinely new **module** appears (new architectural domain not covered by spine / substrate / frontend / cap / irisy / cross-cutting / workbench). Otherwise: amend the existing module ADR.
 
-## When ADR is optional
-
-- Single retirement / lane move
-- Project-internal product decision (use spec instead)
-
-详 `.olym/steering/protocol/spec-discipline.md` §6 决策树.
-
-## Lint (advised)
-
-`scripts/adr-check.py` — config-driven ADR governance lint, validates 10 errors + 2 warnings against the advised olym format:
-
-| Rule | What it checks |
-|---|---|
-| E1 | Parseable YAML frontmatter |
-| E2 | Required fields present (`adr_id`, `title`, `status`, `date`, `deciders`, `scope`) |
-| E3 | `status` in `{proposed, accepted, rejected, superseded, deprecated}` |
-| E4-E7 | Cross-ref integrity (supersedes / superseded_by / partially_superseded_by / amended_by) |
-| E8-E9 | `INDEX.md` row count + ordering match ADR files |
-| E10 | `## Alternatives considered` table has ≥2 data rows |
-| E11 | `## Consequences` includes `**Reversal cost**:` line |
-| E12 | `## Acceptance` has at least one `- [ ]` checkbox item |
-| E13 | `## Changelog` table has ≥1 data row |
-| W1 | Two accepted ADRs share scope + title similarity >0.70 |
-| W2 | `deciders` has only 1 entry (low-quorum decision) |
-
-Run from any olym consumer:
-
-```bash
-python3 scripts/adr-check.py            # all checks
-python3 scripts/adr-check.py --strict   # warnings become errors (release prep)
-```
-
-Consumer-specific overrides (filename pattern, status casing, id field name) go in `.olym/decisions/adr-check.config.yaml`. Built-in defaults match this README's advised format. iris-mro-camo is the first dogfood consumer; its config preserves a legacy `ADR-NNN-` filename prefix during transition.
+See `PROCESS.md` for the full version-control + acceptance gate rules.

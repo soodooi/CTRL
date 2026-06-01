@@ -115,7 +115,7 @@ RENAMED_TARBALL="CTRL_${VERSION}_aarch64.app.tar.gz"
 WORK=$(mktemp -d)
 cp "$TARBALL" "$WORK/$RENAMED_TARBALL"
 
-# ADR-004 §9.1 lock #4 — trial verify before set_active commits. bao 2026-05-31
+# ADR-002 substrate § provider v1 lock #4 — trial verify before set_active commits. bao 2026-05-31
 # (118-trail rationale): shipped 5+ broken brain integrations because
 # `cargo check` proved compile, never proved runtime. This probe spawns Pi
 # with the bundled bridge + a stub kernel and asserts Pi prints the expected
