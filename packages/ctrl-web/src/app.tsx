@@ -119,25 +119,29 @@ function RootShellInner(): ReactElement {
   );
 
   return (
-    <div className={styles.shell} data-workspace-open={workspaceOpen || undefined}>
-      <div className={styles.status}>
+    <div
+      className={styles.shell}
+      data-workspace-open={workspaceOpen || undefined}
+      data-testid="shell"
+    >
+      <div className={styles.status} data-testid="grid-status">
         <StatusBar />
       </div>
-      <div className={styles.l1}>
+      <div className={styles.l1} data-testid="grid-l1">
         <PrimaryRail />
       </div>
       {/* L2 — sub-nav column for the active L1 item. Default width 0;
           expands when `data-l2-open="true"` (reserved for the
           VSCode-style sidebar; sub-nav components land in a follow-up). */}
-      <div className={styles.l2} />
+      <div className={styles.l2} data-testid="grid-l2" />
       {/* Tab — workspace tab content (TabBar + active tab body). The
           `--tab-width: 0` default keeps it collapsed until a workspace
           instance opens, at which point `data-workspace-open="true"`
           flips it to `1fr`. */}
-      <div className={styles.tab}>
+      <div className={styles.tab} data-testid="grid-tab">
         <WorkspaceShell fallback={null} />
       </div>
-      <div className={styles.irisy}>
+      <div className={styles.irisy} data-testid="grid-irisy">
         <IrisyChat />
         <InfraBar />
       </div>

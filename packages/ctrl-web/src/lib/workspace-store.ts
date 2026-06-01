@@ -360,3 +360,11 @@ export const useActiveInstance = (): WorkspaceInstance | null =>
   useWorkspaceStore((s) =>
     s.instances.find((i) => i.id === s.activeInstanceId) ?? null,
   );
+
+// Dev-only window handle for Playwright E2E. Lets tests drive the store
+// from page.evaluate without depending on the L1 chip click path.
+// Production builds drop this branch via the import.meta.env.PROD check.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __ctrlWorkspaceStore?: typeof useWorkspaceStore }).__ctrlWorkspaceStore =
+    useWorkspaceStore;
+}

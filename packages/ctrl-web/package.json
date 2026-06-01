@@ -1,6 +1,6 @@
 {
   "name": "@ctrl/web",
-  "version": "0.1.133",
+  "version": "0.1.134",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -50,6 +50,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

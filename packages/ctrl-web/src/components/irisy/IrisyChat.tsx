@@ -12,7 +12,7 @@
 // silently falling through to Volc or hanging on a spinner. bao 2026-05-30
 // "don't block the PR on Pi bridge".
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
@@ -78,15 +78,17 @@ type ChatSegment =
   | { kind: 'call'; tool: string; args: string; closed: boolean }
   | { kind: 'result'; tool: string; body: string };
 
-const TOOL_BLOCK_RE = /<(call-result|call)\s+(?:name|for)="([^"]+)"\s*>([\s\S]*?)<\/\1>/g;
-const PARTIAL_OPEN_RE = /<(call-result|call)\s+(?:name|for)="([^"]+)"\s*>([\s\S]*)$/;
-
 function parseChatSegments(content: string): ChatSegment[] {
+  // Both regexes are local-scope to avoid module-level shared `lastIndex`
+  // landmines (review P1: a module-level g-flag regex leaks state across
+  // calls if any early-return forgets to reset it). Local instances reset
+  // on every call by construction; allocation cost is sub-microsecond.
+  const blockRe = /<(call-result|call)\s+(?:name|for)="([^"]+)"\s*>([\s\S]*?)<\/\1>/g;
+  const partialOpenRe = /<(call-result|call)\s+(?:name|for)="([^"]+)"\s*>([\s\S]*)$/;
   const segments: ChatSegment[] = [];
   let cursor = 0;
-  TOOL_BLOCK_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = TOOL_BLOCK_RE.exec(content)) !== null) {
+  while ((match = blockRe.exec(content)) !== null) {
     if (match.index > cursor) {
       segments.push({ kind: 'text', text: content.slice(cursor, match.index) });
     }
@@ -98,10 +100,10 @@ function parseChatSegments(content: string): ChatSegment[] {
     } else {
       segments.push({ kind: 'result', tool: name, body });
     }
-    cursor = TOOL_BLOCK_RE.lastIndex;
+    cursor = blockRe.lastIndex;
   }
   const tail = content.slice(cursor);
-  const partial = PARTIAL_OPEN_RE.exec(tail);
+  const partial = partialOpenRe.exec(tail);
   if (partial) {
     const head = tail.slice(0, partial.index);
     if (head.length > 0) segments.push({ kind: 'text', text: head });
@@ -126,10 +128,19 @@ interface ToolCardProps {
   running: boolean;
 }
 
-function ToolCard({ tool, body, direction, running }: ToolCardProps): ReactElement {
+// React.memo so streaming chunks on the parent assistant bubble don't
+// re-render every ToolCard in the message — only the currently streaming
+// card whose `running` prop flips. Without this, every delta on a long
+// turn forces a full re-render of all prior tool cards (review P2).
+const ToolCard = memo(function ToolCard({
+  tool,
+  body,
+  direction,
+  running,
+}: ToolCardProps): ReactElement {
   const [open, setOpen] = useState(false);
   const arrow = direction === 'call' ? '→' : '←';
-  const title = direction === 'call' ? `${arrow} ${tool}` : `${arrow} ${tool}`;
+  const title = `${arrow} ${tool}`;
   const formatted = useMemo(() => {
     const trimmed = body.trim();
     if (!trimmed) return '';
@@ -162,7 +173,107 @@ function ToolCard({ tool, body, direction, running }: ToolCardProps): ReactEleme
       {open && hasBody && <pre className={styles.toolCardBody}>{formatted}</pre>}
     </div>
   );
+});
+
+interface AssistantBubbleProps {
+  message: DisplayMessage;
+  /**
+   * Elapsed ms since the assistant turn started. Zero when not streaming
+   * (which lets the memo identity hold across unrelated chunk-driven
+   * re-renders).
+   */
+  elapsedMs: number;
+  onSave: (id: string, body: string) => void | Promise<void>;
 }
+
+// Memoized so streaming chunks on OTHER messages don't force every prior
+// assistant bubble to re-parse + re-render. The parser walks content
+// length linearly; over a 10-message history with sub-second deltas, the
+// unmemoized version produced visible jank (review P1).
+const AssistantBubble = memo(function AssistantBubble({
+  message,
+  elapsedMs,
+  onSave,
+}: AssistantBubbleProps): ReactElement {
+  const isStreaming = message.streaming;
+  const segments = useMemo(
+    () => parseChatSegments(message.content),
+    [message.content],
+  );
+  const hasRenderable =
+    message.content.length > 0 &&
+    segments.some((s) =>
+      s.kind === 'text' ? s.text.trim().length > 0 : true,
+    );
+  return (
+    <article
+      className={`${styles.assistantBubble} ${styles.markdownBody}`}
+      aria-live={isStreaming ? 'polite' : undefined}
+    >
+      <span className={styles.senderLabel}>Irisy</span>
+      {hasRenderable ? (
+        segments.map((seg, idx) => {
+          if (seg.kind === 'text') {
+            const text = seg.text;
+            if (text.trim().length === 0) return null;
+            return (
+              <ReactMarkdown
+                key={`${message.id}-t-${idx}`}
+                remarkPlugins={[remarkGfm]}
+              >
+                {text}
+              </ReactMarkdown>
+            );
+          }
+          if (seg.kind === 'call') {
+            return (
+              <ToolCard
+                key={`${message.id}-c-${idx}`}
+                tool={seg.tool}
+                body={seg.args}
+                direction="call"
+                running={!seg.closed}
+              />
+            );
+          }
+          return (
+            <ToolCard
+              key={`${message.id}-r-${idx}`}
+              tool={seg.tool}
+              body={seg.body}
+              direction="result"
+              running={false}
+            />
+          );
+        })
+      ) : isStreaming ? (
+        <div className={styles.thinking}>
+          <span className={styles.thinkingDots}>
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+          <span className={styles.thinkingLabel}>
+            Thinking · {(elapsedMs / 1000).toFixed(1)}s
+          </span>
+        </div>
+      ) : (
+        ''
+      )}
+      {!isStreaming && message.content && (
+        <button
+          type="button"
+          className={styles.saveBtn}
+          title="Save this reply to vault/irisy/replies/"
+          onClick={() => void onSave(message.id, message.content)}
+          aria-label="Save reply to vault"
+        >
+          ✓
+        </button>
+      )}
+    </article>
+  );
+});
 
 function buildSystemPrompt(
   systemBase: string,
@@ -215,22 +326,21 @@ export function IrisyChat(): React.ReactElement {
   const [brainState, setBrainState] = useState<BrainState | null>(null);
 
   // `?fresh=1` from the homepage's "New chat" hand-off clears the
-  // persisted conversation before this component reads it, so the new
-  // session starts genuinely empty even if the URL is hit while a
-  // previous chat is still in localStorage.
-  if (typeof window !== 'undefined') {
+  // persisted conversation before this component reads it. Folded into
+  // the useState initializer so it runs exactly once (Strict Mode-safe);
+  // a previous version ran the flush in the render body and would wipe
+  // a valid chat on a double render (review P1).
+  const [messages, setMessages] = useState<DisplayMessage[]>(() => {
+    if (typeof window === 'undefined') return [];
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get('fresh') === '1') {
         window.localStorage.removeItem(CHAT_STORAGE_KEY);
+        return [];
       }
     } catch {
-      // ignore — IrisyChat still mounts with whatever is stored
+      // URL parsing failed — fall through to normal restore path
     }
-  }
-
-  const [messages, setMessages] = useState<DisplayMessage[]>(() => {
-    if (typeof window === 'undefined') return [];
     try {
       const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
       if (!raw) return [];
@@ -699,84 +809,14 @@ export function IrisyChat(): React.ReactElement {
             const prev = i > 0 ? messages[i - 1] : null;
             const showSep = prev != null && prev.role !== m.role;
             if (m.role === 'assistant') {
-              const isThisStreaming = m.streaming;
-              const segments = parseChatSegments(m.content);
-              const hasRenderable =
-                m.content.length > 0 &&
-                segments.some((s) =>
-                  s.kind === 'text'
-                    ? s.text.trim().length > 0
-                    : true,
-                );
               return (
                 <div key={m.id}>
                   {showSep && <div className={styles.turnSeparator} />}
-                  <article
-                    className={`${styles.assistantBubble} ${styles.markdownBody}`}
-                    aria-live={m.streaming ? 'polite' : undefined}
-                  >
-                    <span className={styles.senderLabel}>Irisy</span>
-                    {hasRenderable ? (
-                      segments.map((seg, idx) => {
-                        if (seg.kind === 'text') {
-                          const text = seg.text;
-                          if (text.trim().length === 0) return null;
-                          return (
-                            <ReactMarkdown
-                              key={`${m.id}-t-${idx}`}
-                              remarkPlugins={[remarkGfm]}
-                            >
-                              {text}
-                            </ReactMarkdown>
-                          );
-                        }
-                        if (seg.kind === 'call') {
-                          return (
-                            <ToolCard
-                              key={`${m.id}-c-${idx}`}
-                              tool={seg.tool}
-                              body={seg.args}
-                              direction="call"
-                              running={!seg.closed}
-                            />
-                          );
-                        }
-                        return (
-                          <ToolCard
-                            key={`${m.id}-r-${idx}`}
-                            tool={seg.tool}
-                            body={seg.body}
-                            direction="result"
-                            running={false}
-                          />
-                        );
-                      })
-                    ) : isThisStreaming ? (
-                      <div className={styles.thinking}>
-                        <span className={styles.thinkingDots}>
-                          <span></span>
-                          <span></span>
-                          <span></span>
-                        </span>
-                        <span className={styles.thinkingLabel}>
-                          Thinking · {(elapsedMs / 1000).toFixed(1)}s
-                        </span>
-                      </div>
-                    ) : (
-                      ''
-                    )}
-                    {!isThisStreaming && m.content && (
-                      <button
-                        type="button"
-                        className={styles.saveBtn}
-                        title="Save this reply to vault/irisy/replies/"
-                        onClick={() => void saveReplyToVault(m.id, m.content)}
-                        aria-label="Save reply to vault"
-                      >
-                        ✓
-                      </button>
-                    )}
-                  </article>
+                  <AssistantBubble
+                    message={m}
+                    elapsedMs={m.streaming ? elapsedMs : 0}
+                    onSave={saveReplyToVault}
+                  />
                 </div>
               );
             }

@@ -40,15 +40,19 @@ export function ChatPane({ onSubmit, busy }: ChatPaneProps): React.ReactElement 
     }
   }, [fieldPending]);
 
-  // Track when the latest streaming assistant turn started, for patience pip
+  // Track when the latest streaming assistant turn started, for patience pip.
+  // Effect (not render-body mutation) so React Strict Mode + concurrent
+  // rendering can't double-fire the reset / overwrite (review P1).
   const lastMessage = messages[messages.length - 1];
-  if (lastMessage?.role === 'assistant' && !lastMessage.done) {
-    if (lastAssistantStartRef.current === null) {
-      lastAssistantStartRef.current = lastMessage.ts;
+  useEffect(() => {
+    if (lastMessage?.role === 'assistant' && !lastMessage.done) {
+      if (lastAssistantStartRef.current === null) {
+        lastAssistantStartRef.current = lastMessage.ts;
+      }
+    } else if (lastAssistantStartRef.current !== null) {
+      lastAssistantStartRef.current = null;
     }
-  } else if (lastAssistantStartRef.current !== null) {
-    lastAssistantStartRef.current = null;
-  }
+  }, [lastMessage?.role, lastMessage?.done, lastMessage?.ts]);
 
   const placeholder =
     fieldPending !== null

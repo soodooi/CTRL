@@ -63,10 +63,11 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  /* v4: L2 sits between Tab (left) and L1 (right). Border on both
-     sides for a thin sandwich rule. */
-  border-left: 1px solid var(--color-border-soft);
-  border-right: 1px solid var(--color-border-soft);
+  /* v4: NO borders on L2 itself — when the column is collapsed (no
+     sub-nav declared), a bordered .l2 still renders 2 px wide and shows
+     a thin line between Tab and L1. The Tab↔L1 and L2↔L1 separators
+     are handled by L1's border-left below, so removing them here means
+     a collapsed L2 takes literally 0 visible pixels. */
   background: var(--color-bg-l1);
   display: flex;
   flex-direction: column;
@@ -100,7 +101,14 @@
   flex-direction: column;
   overflow: hidden;
 }
-.l1 { grid-area: l1; min-height: 0; }
+.l1 {
+  grid-area: l1;
+  min-height: 0;
+  /* Single 1px separator on L1's left edge handles BOTH cases:
+     L2 open  -> separates L2 from L1
+     L2 closed -> separates Tab from L1 (since Tab + L1 become adjacent). */
+  border-left: 1px solid var(--color-border-soft);
+}
 
 .versionPill {
   position: absolute;
