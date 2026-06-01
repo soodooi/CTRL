@@ -18,6 +18,7 @@ import {
   type StatusPillProps,
 } from '@/components/primitives';
 import { useTheme } from '@/hooks/useTheme';
+import { useKernelStatus } from '@/hooks/useKernelStatus';
 import {
   deleteProvider,
   listProviders,
@@ -58,10 +59,36 @@ interface SettingsShellProps {
   children: ReactNode;
 }
 
+// Live header indicator — mirrors the InfraBar chips at the bottom of
+// the Irisy chat so the user sees the same substrate state at the top
+// of Settings (which provider Pi is talking to, how many vault files
+// are indexed). bao 2026-06-01: requested ENGINE + VAULT readout in
+// Settings, same data source as the InfraBar.
+const SettingsHeaderStatus = (): ReactElement => {
+  const status = useKernelStatus();
+  const engine = status?.active_brain ?? '—';
+  const vaultCount = status?.vault_files ?? null;
+  return (
+    <div className={styles.headerStatus} aria-label="Substrate status">
+      <span className={styles.headerChip} title={`Active brain: ${engine}`}>
+        <span className={styles.headerChipLabel}>ENGINE</span>
+        <span className={styles.headerChipValue}>{engine}</span>
+      </span>
+      <span className={styles.headerChip} title="Vault markdown files">
+        <span className={styles.headerChipLabel}>VAULT</span>
+        <span className={styles.headerChipValue}>{vaultCount ?? '—'}</span>
+      </span>
+    </div>
+  );
+};
+
 const SettingsShell = ({ activeTab, children }: SettingsShellProps): ReactElement => (
   <div className={styles.layout}>
     <header className={styles.header}>
-      <h1 className={styles.pageTitle}>Settings</h1>
+      <div className={styles.headerRow}>
+        <h1 className={styles.pageTitle}>Settings</h1>
+        <SettingsHeaderStatus />
+      </div>
       <nav className={styles.tabs} role="tablist" aria-label="Settings sections">
         {TABS.map((t) => (
           <Link

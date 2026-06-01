@@ -19,6 +19,13 @@
   width: 100%;
 }
 
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
 .pageTitle {
   font-family: var(--font-display);
   font-size: var(--text-xl);
@@ -26,6 +33,39 @@
   letter-spacing: -0.022em;
   margin: 0;
   color: var(--color-text);
+}
+
+/* Substrate status chips next to the page title — same shape as the
+   InfraBar at the bottom of the Irisy chat, so the user sees the
+   exact same ENGINE + VAULT readout in Settings. */
+.headerStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.headerChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.06em;
+}
+.headerChipLabel {
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  color: var(--color-text-soft);
+  text-transform: uppercase;
+}
+.headerChipValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  letter-spacing: 0.04em;
 }
 
 /* Tab strip — Linear 2026 compact-tab pattern. Rounded, low-chrome,
