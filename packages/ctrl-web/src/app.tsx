@@ -1,16 +1,19 @@
 // App root — TanStack Router setup + React Query provider + the cockpit
 // shell.
 //
-// 2026-05-31 (ADR-003 frontend §7): shell collapsed to 2-col `[L2 │ L1 │ Irisy]`
-// LEFT → RIGHT. `main` column retired — keycap work lives in the NSWindow
-// workspace (separate Tauri child window glued left of main via
-// addChildWindow). L2 is a reserved sub-nav slot (left of L1), width 0
-// until active NSWindow tab declares sub-nav. L1 (PrimaryRail) chips
-// OPEN NSWindow with chip-specific content (Keycap / Vault / Coding /
-// Settings) — no longer switches `main` routes.
+// ADR-003 frontend §7 v4 (2026-06-01): 4-column shell.
+// Column order LEFT -> RIGHT: [Tab | L2 | L1 | Irisy].
+// L1 sits immediately left of Irisy and never moves on screen. The
+// workspace tab area grows leftward when the chevron expands the main
+// window (478 <-> 1600 via Rust `toggle_workspace_window`).
 //
-// `<Outlet />` stays mounted inside a hidden host so legacy routes don't
-// error on lookup; full route retirement = next PR (ADR-003 frontend §7.5).
+// Compact mode (window=478): Tab=0, L2=0, L1=48, Irisy=430 — only L1
+// and Irisy render. L1 chips that open a workspace tab (Pool / Coding /
+// Settings) do NOT auto-expand the window; the user controls expand
+// via the chevron alone (ADR-003 §7.3 + §7.8 anti-pattern).
+//
+// Outlet stays mounted inside a hidden host so legacy routes don't
+// error on lookup; full route retirement = next PR (ADR-003 §7.5).
 //
 // Irisy chat is SHELL-LEVEL and does NOT unmount on route change — fixed
 // assistant resource (bao 2026-05-29; reaffirmed §7).

@@ -12,7 +12,7 @@
 // silently falling through to Volc or hanging on a spinner. bao 2026-05-30
 // "don't block the PR on Pi bridge".
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
@@ -67,6 +67,102 @@ const SEED_PROMPTS: readonly string[] = [
   'List my keycaps.',
   'Help me make a clipboard keycap.',
 ];
+
+// Pi emits tool invocations as XML-like markup inside assistant turns
+// (see lib/irisy-prompts.ts IRISY_SYSTEM_DEFAULT). The PWA must parse
+// these out of the chat stream so the user sees a compact card instead
+// of raw `<call name="..."><...></call>` text. ADR-003 §7 chat surface
+// expectations — Irisy is a polished assistant, not a console.
+type ChatSegment =
+  | { kind: 'text'; text: string }
+  | { kind: 'call'; tool: string; args: string; closed: boolean }
+  | { kind: 'result'; tool: string; body: string };
+
+const TOOL_BLOCK_RE = /<(call-result|call)\s+(?:name|for)="([^"]+)"\s*>([\s\S]*?)<\/\1>/g;
+const PARTIAL_OPEN_RE = /<(call-result|call)\s+(?:name|for)="([^"]+)"\s*>([\s\S]*)$/;
+
+function parseChatSegments(content: string): ChatSegment[] {
+  const segments: ChatSegment[] = [];
+  let cursor = 0;
+  TOOL_BLOCK_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TOOL_BLOCK_RE.exec(content)) !== null) {
+    if (match.index > cursor) {
+      segments.push({ kind: 'text', text: content.slice(cursor, match.index) });
+    }
+    const tag = match[1] ?? '';
+    const name = match[2] ?? '';
+    const body = (match[3] ?? '').trim();
+    if (tag === 'call') {
+      segments.push({ kind: 'call', tool: name, args: body, closed: true });
+    } else {
+      segments.push({ kind: 'result', tool: name, body });
+    }
+    cursor = TOOL_BLOCK_RE.lastIndex;
+  }
+  const tail = content.slice(cursor);
+  const partial = PARTIAL_OPEN_RE.exec(tail);
+  if (partial) {
+    const head = tail.slice(0, partial.index);
+    if (head.length > 0) segments.push({ kind: 'text', text: head });
+    const tag = partial[1] ?? '';
+    const name = partial[2] ?? '';
+    const body = partial[3] ?? '';
+    if (tag === 'call') {
+      segments.push({ kind: 'call', tool: name, args: body, closed: false });
+    } else {
+      segments.push({ kind: 'result', tool: name, body });
+    }
+  } else if (tail.length > 0) {
+    segments.push({ kind: 'text', text: tail });
+  }
+  return segments;
+}
+
+interface ToolCardProps {
+  tool: string;
+  body: string;
+  direction: 'call' | 'result';
+  running: boolean;
+}
+
+function ToolCard({ tool, body, direction, running }: ToolCardProps): ReactElement {
+  const [open, setOpen] = useState(false);
+  const arrow = direction === 'call' ? '→' : '←';
+  const title = direction === 'call' ? `${arrow} ${tool}` : `${arrow} ${tool}`;
+  const formatted = useMemo(() => {
+    const trimmed = body.trim();
+    if (!trimmed) return '';
+    try {
+      return JSON.stringify(JSON.parse(trimmed), null, 2);
+    } catch {
+      return trimmed;
+    }
+  }, [body]);
+  const hasBody = formatted.length > 0;
+  return (
+    <div className={styles.toolCard}>
+      <button
+        type="button"
+        className={styles.toolCardHeader}
+        onClick={() => setOpen((v) => !v)}
+        disabled={!hasBody}
+        aria-expanded={open}
+      >
+        <span className={styles.toolCardChevron}>
+          {hasBody ? (open ? '▾' : '▸') : '·'}
+        </span>
+        <span className={styles.toolCardTitle}>{title}</span>
+        {running && (
+          <span className={styles.toolCardRunning} aria-live="polite">
+            running…
+          </span>
+        )}
+      </button>
+      {open && hasBody && <pre className={styles.toolCardBody}>{formatted}</pre>}
+    </div>
+  );
+}
 
 function buildSystemPrompt(
   systemBase: string,
@@ -384,15 +480,20 @@ export function IrisyChat(): React.ReactElement {
       try {
         for await (const chunk of transport.stream(history)) {
           if (chunk.error) {
+            // Pi RPC errors (timeout / Stderr / supervisor crash) used to
+            // get appended into the assistant bubble as raw text. Route
+            // them into the errorPanel surface instead so the bubble
+            // stays clean and the error can be expanded for the stderr
+            // tail. ADR-003 §7 chat polish.
+            const detail = String(chunk.error);
+            const firstLine = detail.split('\n')[0] ?? detail;
+            setChatError({
+              summary: `Brain error: ${firstLine.slice(0, 120)}`,
+              detail,
+            });
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId
-                  ? {
-                      ...m,
-                      content: `${m.content}\n[error: ${chunk.error}]`,
-                      streaming: false,
-                    }
-                  : m,
+                m.id === assistantId ? { ...m, streaming: false } : m,
               ),
             );
             return;
@@ -599,6 +700,14 @@ export function IrisyChat(): React.ReactElement {
             const showSep = prev != null && prev.role !== m.role;
             if (m.role === 'assistant') {
               const isThisStreaming = m.streaming;
+              const segments = parseChatSegments(m.content);
+              const hasRenderable =
+                m.content.length > 0 &&
+                segments.some((s) =>
+                  s.kind === 'text'
+                    ? s.text.trim().length > 0
+                    : true,
+                );
               return (
                 <div key={m.id}>
                   {showSep && <div className={styles.turnSeparator} />}
@@ -607,10 +716,41 @@ export function IrisyChat(): React.ReactElement {
                     aria-live={m.streaming ? 'polite' : undefined}
                   >
                     <span className={styles.senderLabel}>Irisy</span>
-                    {m.content ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {m.content}
-                      </ReactMarkdown>
+                    {hasRenderable ? (
+                      segments.map((seg, idx) => {
+                        if (seg.kind === 'text') {
+                          const text = seg.text;
+                          if (text.trim().length === 0) return null;
+                          return (
+                            <ReactMarkdown
+                              key={`${m.id}-t-${idx}`}
+                              remarkPlugins={[remarkGfm]}
+                            >
+                              {text}
+                            </ReactMarkdown>
+                          );
+                        }
+                        if (seg.kind === 'call') {
+                          return (
+                            <ToolCard
+                              key={`${m.id}-c-${idx}`}
+                              tool={seg.tool}
+                              body={seg.args}
+                              direction="call"
+                              running={!seg.closed}
+                            />
+                          );
+                        }
+                        return (
+                          <ToolCard
+                            key={`${m.id}-r-${idx}`}
+                            tool={seg.tool}
+                            body={seg.body}
+                            direction="result"
+                            running={false}
+                          />
+                        );
+                      })
                     ) : isThisStreaming ? (
                       <div className={styles.thinking}>
                         <span className={styles.thinkingDots}>
