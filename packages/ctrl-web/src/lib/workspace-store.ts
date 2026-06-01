@@ -329,10 +329,28 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
     }),
     {
       name: 'ctrl-workspace-store',
+      // bao 2026-06-01 BUG 2 fix: bump version so v0.1.131 boots with
+      // an empty store. Stale `instances` from older sessions were
+      // flipping `data-workspace-open='true'` immediately, which made
+      // the 4-col grid require ~800px of width — at the compact 430px
+      // window size the grid collapsed and the StatusBar / version pill
+      // were clipped offscreen ("can't see version"). Future schema
+      // changes should bump this too.
+      version: 2,
       partialize: (s) => ({
         instances: s.instances,
         activeInstanceId: s.activeInstanceId,
       }),
+      migrate: (_persisted, version) => {
+        // Any pre-v2 payload is discarded — earlier sessions wrote
+        // partially-typed instances that no longer match the contract.
+        if (version < 2) return { instances: [], activeInstanceId: null };
+        const p = _persisted as Partial<WorkspaceStoreState>;
+        return {
+          instances: p.instances ?? [],
+          activeInstanceId: p.activeInstanceId ?? null,
+        };
+      },
     },
   ),
 );
