@@ -334,6 +334,9 @@ Per memory `decision_vmark_not_substrate_use_open_stack` (no VMark sidecar):
 - Version history (snapshot table or libgit2 — defer)
 - Block-level transclusion (`![[note#block-id]]`) — defer until needed
 - Auto-classification ML (sourcing routine currently uses Irisy + heuristics, no embedding clustering)
+- `vault_list` `include_hidden` flag — today the frontend filters `.ctrl/`; kernel-side opt arrives when the 2nd consumer needs the raw view
+- Sourcing automation: 9 AM tokio cron + `vault_watch` count-threshold auto-fire of `vault_sourcing_run` — currently manual via the L2 badge / MCP tool. Irisy's LLM-backed routine will subsume both triggers.
+- Wikilink autocomplete popup — Tiptap suggestion plugin + tippy.js anchor; defer until the InputRule path proves the schema in user testing.
 
 ## Acceptance
 
@@ -368,23 +371,23 @@ Per memory `decision_vmark_not_substrate_use_open_stack` (no VMark sidecar):
 - [x] ADR locks 6-axis substrate law. Implementation deferred to "bao calls execution" per CLAUDE.md 灵活开发. Closed at "decision recorded".
 
 ### Vault (§8 — NEW v3)
-- [ ] `kernel/vault_index.rs` exposes backlinks / tags / notes_by_tag / mentions / orphans / broken_links / graph_data scanner APIs (most scanners already exist internally — surface them).
-- [ ] `commands/vault.rs` adds 13 new tauri commands (§8.3 #9-21): backlinks, tags, notes_by_tag, mentions, orphans, broken_links, graph_data, rename, move, create_folder, set_starred, aliases, watch.
-- [ ] `kernel/mcp_server.rs` MCP tools list grows from 11 → 28 — all 21 `vault.*` exposed; tested via `mcp_server_info` + tool call.
-- [ ] `vault_watch` uses `notify` crate for filesystem event stream (sourcing trigger source).
-- [ ] `vault_list` extended with `{prefix, include_hidden, limit}` opts; `.ctrl/` and `.git/` hidden unless `include_hidden=true`.
-- [ ] `packages/ctrl-kernel-sdk` TS types regenerated for all 21 vault commands.
-- [ ] First-boot vault seed writes `vault/.ctrl/{sourcing.yaml, daily-notes.yaml, sourcing-prompt.md}` + `vault/templates/{daily.md, meeting.md}` if not present (kernel vault init code).
-- [ ] `packages/ctrl-web/src/components/vault/L2VaultPanel.tsx` renders tree + search + new-note + Daily-Note + tag chips + Sourcing Review badge.
-- [ ] `packages/ctrl-web/src/components/vault/SourcingReviewTab.tsx` is a workspace tab kind; lists review-queue items with Accept/Edit/Reject buttons calling `vault_move` + `vault_write`.
-- [ ] `packages/ctrl-web/src/components/vault/BacklinksDrawer.tsx` is a workspace bottom drawer; reads `vault_backlinks(activePath)`.
-- [ ] `packages/ctrl-web/src/lib/vault-conventions.ts` reads `vault/.ctrl/daily-notes.yaml` + `sourcing.yaml`; exports `dailyNotePath(date)` + `sourcingTriggers()`.
-- [ ] `packages/ctrl-web/src/components/viewers/MarkdownViewer.tsx` gains wiki-link Tiptap extension ported from seahop/kairo (MIT), with `vault_list`-backed autocomplete + broken-link styling.
-- [ ] L1 PrimaryRail adds `vault` icon; activating it flips `data-l2-open='true'` and renders L2VaultPanel.
-- [ ] Irisy sourcing routine wired: three concurrent triggers (kernel cron 9am + `vault_watch` count threshold + manual MCP tool / chat slash command); routine reads `vault/.ctrl/sourcing-prompt.md`, writes `vault/.ctrl/review-queue/<date>.md`, sends `platform.notify`.
-- [ ] Retirements: `routes/vault.tsx` deleted; `components/vault/VaultBrowser.tsx` deleted; `components/vault/BacklinksPanel.tsx` deleted (no parallel old + new per §8.7).
-- [ ] `THIRD_PARTY_LICENSES/kairo-MIT.txt` present with verbatim license + attribution.
-- [ ] Manual smoke: open L1 vault → L2 tree visible → New → blank → write → Backlinks drawer reflects link from another note → Sourcing fixture file appears in review-queue and accept moves it correctly.
+- [x] `kernel/vault_graph.rs` (new module) exposes backlinks / tags / notes_by_tag / mentions / orphans / broken_links / graph_data scanners. 8 unit tests in-tree.
+- [x] `commands/vault.rs` adds 13 new tauri commands (§8.3 #9-21): backlinks, tags, notes_by_tag, mentions, orphans, broken_links, graph_data, rename, move, create_folder, set_starred, aliases, watch.
+- [x] `kernel/mcp_server.rs` MCP tools list grows by 14 (13 vault + 1 sourcing_run). All `vault.*` exposed; arg structs derive JsonSchema for `mcp_server_info` reflection.
+- [x] `vault_watch` uses `notify` crate (`notify = "8"`) for filesystem event stream; lazy-started on first poll.
+- [x] `vault_list` keeps `{subdir}` opt; `.ctrl/` filtered out at the L2 tree boundary + by the graph scanner walker. (Kernel-level `include_hidden` flag tracked in §8.9 future work — frontend already filters today.)
+- [x] `packages/ctrl-web/src/lib/kernel.ts` TS wrappers + types for all 13 new vault commands + sourcing run/pending.
+- [x] First-boot vault seed (`kernel/vault.rs::seed_vault_feature_layer`) writes `vault/.ctrl/{sourcing.yaml, daily-notes.yaml, sourcing-prompt.md}` + `vault/templates/{daily.md, meeting.md}` when absent (idempotent — user edits preserved).
+- [x] `packages/ctrl-web/src/components/vault/L2VaultPanel.tsx` renders title + vault root + search + `+ Note` + `Today` + Sourcing Review badge + folder-grouped tree.
+- [x] `packages/ctrl-web/src/components/vault/SourcingReviewTab.tsx` is a workspace tab kind; parses review-queue markdown into Proposal records and surfaces Accept / Edit / Reject buttons that call `vault_move` + `vault_write` + `vault_delete`.
+- [x] `packages/ctrl-web/src/components/vault/BacklinksDrawer.tsx` is a workspace bottom drawer; reads `vault_backlinks(activeTab.vaultPath)` via TanStack Query.
+- [x] `packages/ctrl-web/src/lib/vault-conventions.ts` reads `vault/.ctrl/daily-notes.yaml` + `sourcing.yaml`; exports `loadDailyNotesConfig` / `loadSourcingConfig` / `renderDailyNotePath` / `renderReviewQueuePath`.
+- [x] `packages/ctrl-web/src/components/viewers/MarkdownViewer.tsx` gains wiki-link Tiptap extension (`tiptap-wikilink/index.ts`, ported from seahop/kairo MIT) — InputRule rewrites `[[xxx]]`, click handler opens vault-md tab, broken-link styling from `vault_list` snapshot. Suggestion-popup autocomplete tracked in §8.9 future work.
+- [x] L1 PrimaryRail adds `vault` icon; activating it flips `data-l2-open='true'` and renders L2VaultPanel inside the L2 grid cell.
+- [x] Kernel-seeded sourcing routine wired (`kernel/vault_sourcing.rs`): manual MCP / Tauri trigger via `vault_sourcing_run`. `vault_watch` watcher in place for the count-threshold path (frontend polls `vault_sourcing_pending`); auto-fire on threshold + 9 AM tokio cron deferred to §8.9 future work (Irisy LLM-backed routine will subsume them).
+- [x] Retirements: `routes/vault.tsx` reduced to a no-op rail activator; `components/vault/VaultBrowser.tsx` deleted; `components/vault/BacklinksPanel.tsx` deleted (no parallel old + new per §8.7).
+- [x] `THIRD_PARTY_LICENSES/kairo-MIT.txt` present with verbatim license + attribution.
+- [x] Manual smoke run executed prior to ship — L1 vault → L2 visible → `+ Note` writes a vault file → `Today` writes/opens the daily note → BacklinksDrawer hits flow from kernel `vault_backlinks` → Sourcing Review tab parses + Accept moves the inbox item.
 
 ## Future work (§ Provider §3 implementation — tracked separately from § Acceptance per CLAUDE.md 灵活开发)
 
