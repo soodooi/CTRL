@@ -11,13 +11,32 @@
 // in a CodeMirror buffer) — Obsidian's Live Preview / Source toggle
 // muscle memory.
 
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactElement,
+} from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import CodeMirror from '@uiw/react-codemirror';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
+// ADR-002 substrate § vault v1 §8.5 + §8.8 (2026-06-01, memory
+// `decision_vault_adr_002_section_8`) — wikilink Tiptap extension
+// ported from seahop/kairo MIT. Renders `[[target]]` as a clickable
+// atom; broken-link styling sourced from `vault_list`.
+import {
+  WikilinkExtension,
+  renderWikilinkInline,
+} from './tiptap-wikilink';
+import { useQuery } from '@tanstack/react-query';
+import { vaultList } from '@/lib/kernel';
+import { useWorkspaceStore } from '@/lib/workspace-store';
 import styles from './Viewer.module.css';
 
 // Crude markdown ↔ HTML — enough to preserve headings / lists / code
@@ -86,12 +105,39 @@ const escapeHtml = (s: string): string =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-const inline = (s: string): string =>
-  escapeHtml(s)
+// Wikilink resolution placeholder. The real targets-set is bound in
+// the React component via closure so the bare helper stays pure for
+// reuse in unit tests; module-scope let avoids dragging React state
+// down into the (synchronous) markdown→HTML walker.
+let wikilinkResolver: ((target: string) => boolean) | null = null;
+
+const inline = (s: string): string => {
+  // Convert `[[target]]` first — before the `[label](href)` rule —
+  // so wikilink syntax never gets caught by the markdown-link regex.
+  const wikilinked = s.replace(/\[\[([^\]\n|]+)(?:\|[^\]\n]+)?\]\]/g, (_, raw: string) => {
+    const target = raw.trim();
+    const resolved = wikilinkResolver ? wikilinkResolver(target) : true;
+    return renderWikilinkInline(target, !resolved);
+  });
+  return escapeHtml(wikilinked)
+    // The wikilink HTML we just emitted contains `<` `>` etc — undo
+    // that escape pass by detecting the literal token. Escape is
+    // necessary on the rest of the line, but our token is a single
+    // span fragment we trust.
+    .replace(
+      /&lt;span data-wikilink[\s\S]+?&lt;\/span&gt;/g,
+      (m) =>
+        m
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&amp;/g, '&'),
+    )
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noopener noreferrer">$1</a>');
+};
 
 const htmlToMarkdown = (html: string): string => {
   const div = document.createElement('div');
@@ -104,6 +150,17 @@ const serializeNode = (node: Node): string => {
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
+  // Wikilink atom — emit `[[target]]` verbatim regardless of inner
+  // text, since the renderHTML puts the literal glyph inside and the
+  // attribute carries the canonical target.
+  if (
+    tag === 'span' &&
+    (el.getAttribute('data-wikilink') !== null ||
+      el.classList.contains('tiptap-wikilink'))
+  ) {
+    const target = el.getAttribute('data-target') ?? el.textContent ?? '';
+    return `[[${target.replace(/^\[\[|\]\]$/g, '')}]]`;
+  }
   const inner = Array.from(el.childNodes).map(serializeNode).join('');
   switch (tag) {
     case 'h1':
@@ -151,10 +208,88 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
   const [mode, setMode] = useState<'wysiwyg' | 'source'>('wysiwyg');
+  const openTab = useWorkspaceStore((s) => s.openTab);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Vault tree snapshot — broken-link inference for wikilinks. We
+  // poll the vault list once per minute so freshly-created notes
+  // resolve without forcing a viewer reload.
+  const { data: vaultPaths = [] } = useQuery({
+    queryKey: ['vault-list'],
+    queryFn: () => vaultList(),
+    staleTime: 60_000,
+  });
+
+  // Build a stem index for wikilink target resolution. Same
+  // strategy as kernel `vault_graph` — first match wins, but for
+  // `Folder/Stem` style targets we prefer the longer-match path.
+  const stemIndex = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const p of vaultPaths) {
+      const name = p.split('/').pop() ?? p;
+      const stem = name.replace(/\.md$/, '');
+      const existing = map.get(stem) ?? [];
+      existing.push(p);
+      map.set(stem, existing);
+    }
+    return map;
+  }, [vaultPaths]);
+
+  const resolveTarget = useCallback(
+    (target: string): string | null => {
+      const direct = vaultPaths.find(
+        (p) => p === target || p === `${target}.md`,
+      );
+      if (direct) return direct;
+      const stem = target.split('/').pop() ?? target;
+      const cands = stemIndex.get(stem);
+      if (!cands || cands.length === 0) return null;
+      if (target.includes('/')) {
+        const suffix = `${target}.md`;
+        const exact = cands.find((p) => p.endsWith(suffix));
+        if (exact) return exact;
+      }
+      return cands[0] ?? null;
+    },
+    [stemIndex, vaultPaths],
+  );
+
+  // Bind the resolver for the synchronous markdownToHtml walker.
+  useEffect(() => {
+    wikilinkResolver = (target: string) => resolveTarget(target) !== null;
+    return () => {
+      wikilinkResolver = null;
+    };
+  }, [resolveTarget]);
+
+  const handleClick = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      const node = e.target as HTMLElement | null;
+      if (!node) return;
+      const wiki = node.closest<HTMLElement>('[data-wikilink]');
+      if (!wiki) return;
+      const target = wiki.getAttribute('data-target');
+      if (!target) return;
+      e.preventDefault();
+      const resolved = resolveTarget(target);
+      if (!resolved) return;
+      const baseName = resolved.split('/').pop() ?? resolved;
+      openTab(
+        {
+          id: `vault:${resolved}`,
+          kind: 'vault-md',
+          title: baseName.replace(/\.md$/, ''),
+          vaultPath: resolved,
+        },
+        { activate: true },
+      );
+    },
+    [openTab, resolveTarget],
+  );
 
   const editor = useEditor(
     {
-      extensions: [StarterKit],
+      extensions: [StarterKit, WikilinkExtension],
       editable: resource.editable,
       content: '',
       onUpdate: ({ editor: ed }) => {
@@ -224,7 +359,11 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
         {content === null && !error ? (
           <pre className={styles.markdownStub}>loading…</pre>
         ) : mode === 'wysiwyg' ? (
-          <div className={styles.prose}>
+          <div
+            ref={containerRef}
+            className={styles.prose}
+            onClick={handleClick}
+          >
             <EditorContent editor={editor} />
           </div>
         ) : (
