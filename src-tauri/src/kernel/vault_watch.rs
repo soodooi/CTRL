@@ -65,6 +65,13 @@ static STATE: OnceLock<WatchState> = OnceLock::new();
 /// Start the watcher rooted at `vault_root`. Idempotent — second call
 /// is a no-op even with a different root (first call wins). Callers
 /// changing the vault root must restart the kernel.
+///
+/// `STATE.set` is called inside an early-return guard rather than via
+/// `get_or_init` because the `RecommendedWatcher` constructor itself
+/// is fallible — `get_or_init` cannot propagate that error cleanly.
+/// The race between two concurrent starts is benign (both end up
+/// watching the same root) but we log the loser instead of silently
+/// dropping it so a future second-root attempt is visible in logs.
 pub fn start(vault_root: &Path) -> Result<(), WatchError> {
     if STATE.get().is_some() {
         return Ok(());
@@ -87,7 +94,13 @@ pub fn start(vault_root: &Path) -> Result<(), WatchError> {
         _watcher: watcher,
         vault_root: vault_root.to_path_buf(),
     };
-    let _ = STATE.set(state);
+    if STATE.set(state).is_err() {
+        tracing::warn!(
+            root = %vault_root.display(),
+            "vault_watch: race lost — another watcher started first; dropping new instance",
+        );
+        return Ok(());
+    }
     tracing::info!(root = %vault_root.display(), "vault_watch: started");
     Ok(())
 }
@@ -99,8 +112,16 @@ pub fn recent(prefix: Option<&str>, since_ms: i64) -> Vec<EventEntry> {
     let Some(state) = STATE.get() else {
         return Vec::new();
     };
-    let Ok(buf) = state.buffer.lock() else {
-        return Vec::new();
+    // Recover poisoned mutex rather than swallow it — a panic in the
+    // watcher callback poisons the mutex but the inner buffer is
+    // still consistent. Logging the recovery surfaces the underlying
+    // panic without taking the watcher silently offline forever.
+    let buf = match state.buffer.lock() {
+        Ok(b) => b,
+        Err(p) => {
+            tracing::warn!("vault_watch: ring buffer mutex was poisoned, recovering");
+            p.into_inner()
+        }
     };
     buf.iter()
         .filter(|e| e.ts_ms >= since_ms)
@@ -136,8 +157,12 @@ fn push_event(ev: &Event, root: &Path) {
     if entries.is_empty() {
         return;
     }
-    let Ok(mut buf) = state.buffer.lock() else {
-        return;
+    let mut buf = match state.buffer.lock() {
+        Ok(b) => b,
+        Err(p) => {
+            tracing::warn!("vault_watch: push_event recovering poisoned mutex");
+            p.into_inner()
+        }
     };
     for e in entries {
         if buf.len() == RING_CAPACITY {

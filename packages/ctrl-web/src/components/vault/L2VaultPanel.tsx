@@ -16,7 +16,6 @@
 
 import {
   useCallback,
-  useEffect,
   useMemo,
   useState,
   type ReactElement,
@@ -219,11 +218,18 @@ export const L2VaultPanel = (): ReactElement => {
   const handleToday = useCallback(async () => {
     const cfg = await loadDailyNotesConfig();
     const path = renderDailyNotePath(cfg.pathTemplate);
-    if (!allPaths.includes(path)) {
-      // Pre-fill the body from the template if the user has one;
-      // missing template -> empty body. Frontmatter defaults come
-      // straight from the yaml — `decision_vault_adr_002_section_8`
-      // keeps that policy outside kernel.
+    // Existence check goes through vaultRead instead of the
+    // useQuery cache — the cache might be stale by minutes, and
+    // depending on `allPaths` in this callback creates a stale
+    // closure that misses files created since the last query.
+    let exists = false;
+    try {
+      await vaultRead(path);
+      exists = true;
+    } catch {
+      exists = false;
+    }
+    if (!exists) {
       let body = '';
       try {
         const t = await vaultRead(cfg.template);
@@ -245,18 +251,11 @@ export const L2VaultPanel = (): ReactElement => {
       }
     }
     openPath(path, false);
-  }, [allPaths, openPath, refetch]);
+  }, [openPath, refetch]);
 
   // template placeholder substitution — `{{date}}` is the only one
   // we render today. Future placeholders (`{{title}}`, `{{tags}}`)
   // land in the same helper to keep substitution centralised.
-
-  // Auto-collapse new-note row if the user navigates away.
-  useEffect(() => {
-    if (!newNoteOpen) return;
-    const timer = setTimeout(() => undefined, 0);
-    return () => clearTimeout(timer);
-  }, [newNoteOpen]);
 
   return (
     <aside className={styles.panel} aria-label="Vault navigator">

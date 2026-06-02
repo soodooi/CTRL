@@ -30,6 +30,7 @@ import {
   vaultRead,
   vaultWrite,
 } from '@/lib/kernel';
+import { useWorkspaceStore } from '@/lib/workspace-store';
 import styles from './SourcingReviewTab.module.css';
 
 interface Proposal {
@@ -123,27 +124,20 @@ export const SourcingReviewTab = ({
     [refresh],
   );
 
+  // Static import — the dynamic import in the previous draft paid
+  // an unnecessary chunk-load round-trip on every Edit click (the
+  // module is already in the workspace bundle).
   const handleEdit = useCallback(
-    async (p: Proposal) => {
-      // Open the original sourcing item as a workspace vault-md tab
-      // so the user can edit body / frontmatter before accepting.
-      // The user can then re-trigger Accept from this tab once the
-      // file looks right.
-      try {
-        const m = await import('@/lib/workspace-store');
-        m.useWorkspaceStore.getState().openTab(
-          {
-            id: `vault:${p.sourcingPath}`,
-            kind: 'vault-md',
-            title: p.sourcingPath.split('/').pop() ?? p.sourcingPath,
-            vaultPath: p.sourcingPath,
-          },
-          { activate: true },
-        );
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('sourcing edit open failed', err);
-      }
+    (p: Proposal) => {
+      useWorkspaceStore.getState().openTab(
+        {
+          id: `vault:${p.sourcingPath}`,
+          kind: 'vault-md',
+          title: p.sourcingPath.split('/').pop() ?? p.sourcingPath,
+          vaultPath: p.sourcingPath,
+        },
+        { activate: true },
+      );
     },
     [],
   );

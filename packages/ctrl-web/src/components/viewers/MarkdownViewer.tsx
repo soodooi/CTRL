@@ -43,7 +43,16 @@ import styles from './Viewer.module.css';
 // blocks / inline formatting on the round trip. Real fidelity will
 // come from a remark/rehype pipeline once we install one; today the
 // goal is "edits don't destroy the file".
-const markdownToHtml = (md: string): string => {
+//
+// The wikilink resolver is threaded explicitly through every inline()
+// call. The previous draft cached it in a module-level let, which
+// raced between concurrent viewer instances — the last-mounted
+// viewer would overwrite the earlier viewer's resolver and the
+// earlier viewer would paint broken-link styling against the wrong
+// vault snapshot. Passing the resolver removes the global side-channel.
+type WikilinkResolver = (target: string) => boolean;
+
+const markdownToHtml = (md: string, resolver?: WikilinkResolver): string => {
   const lines = md.split('\n');
   const out: string[] = [];
   let inCode = false;
@@ -72,7 +81,7 @@ const markdownToHtml = (md: string): string => {
         inList = false;
       }
       const level = heading[1]!.length;
-      out.push(`<h${level}>${inline(heading[2]!)}</h${level}>`);
+      out.push(`<h${level}>${inline(heading[2]!, resolver)}</h${level}>`);
       continue;
     }
     const listItem = /^[-*]\s+(.*)$/.exec(line);
@@ -81,7 +90,7 @@ const markdownToHtml = (md: string): string => {
         out.push('<ul>');
         inList = true;
       }
-      out.push(`<li>${inline(listItem[1]!)}</li>`);
+      out.push(`<li>${inline(listItem[1]!, resolver)}</li>`);
       continue;
     }
     if (inList) {
@@ -92,7 +101,7 @@ const markdownToHtml = (md: string): string => {
       out.push('');
       continue;
     }
-    out.push(`<p>${inline(line)}</p>`);
+    out.push(`<p>${inline(line, resolver)}</p>`);
   }
   if (inList) out.push('</ul>');
   if (inCode) out.push('</code></pre>');
@@ -105,18 +114,15 @@ const escapeHtml = (s: string): string =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-// Wikilink resolution placeholder. The real targets-set is bound in
-// the React component via closure so the bare helper stays pure for
-// reuse in unit tests; module-scope let avoids dragging React state
-// down into the (synchronous) markdown→HTML walker.
-let wikilinkResolver: ((target: string) => boolean) | null = null;
-
-const inline = (s: string): string => {
+const inline = (s: string, resolver?: WikilinkResolver): string => {
   // Convert `[[target]]` first — before the `[label](href)` rule —
   // so wikilink syntax never gets caught by the markdown-link regex.
+  // Absent resolver = assume target resolves (paints as a normal
+  // wikilink). Broken-link styling requires the caller to pass an
+  // actual resolver.
   const wikilinked = s.replace(/\[\[([^\]\n|]+)(?:\|[^\]\n]+)?\]\]/g, (_, raw: string) => {
     const target = raw.trim();
-    const resolved = wikilinkResolver ? wikilinkResolver(target) : true;
+    const resolved = resolver ? resolver(target) : true;
     return renderWikilinkInline(target, !resolved);
   });
   return escapeHtml(wikilinked)
@@ -220,9 +226,11 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
     staleTime: 60_000,
   });
 
-  // Build a stem index for wikilink target resolution. Same
-  // strategy as kernel `vault_graph` — first match wins, but for
-  // `Folder/Stem` style targets we prefer the longer-match path.
+  // Indices for wikilink target resolution. `pathSet` covers the
+  // `Folder/Sub` and exact-filename cases in O(1); `stemIndex`
+  // matches kernel `vault_graph` — first hit wins, longer-match
+  // preferred when the target has a folder segment.
+  const pathSet = useMemo(() => new Set(vaultPaths), [vaultPaths]);
   const stemIndex = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const p of vaultPaths) {
@@ -237,10 +245,9 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
 
   const resolveTarget = useCallback(
     (target: string): string | null => {
-      const direct = vaultPaths.find(
-        (p) => p === target || p === `${target}.md`,
-      );
-      if (direct) return direct;
+      if (pathSet.has(target)) return target;
+      const withExt = `${target}.md`;
+      if (pathSet.has(withExt)) return withExt;
       const stem = target.split('/').pop() ?? target;
       const cands = stemIndex.get(stem);
       if (!cands || cands.length === 0) return null;
@@ -251,16 +258,15 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
       }
       return cands[0] ?? null;
     },
-    [stemIndex, vaultPaths],
+    [pathSet, stemIndex],
   );
 
-  // Bind the resolver for the synchronous markdownToHtml walker.
-  useEffect(() => {
-    wikilinkResolver = (target: string) => resolveTarget(target) !== null;
-    return () => {
-      wikilinkResolver = null;
-    };
-  }, [resolveTarget]);
+  // Stable resolver for markdownToHtml — recomputed only when
+  // resolveTarget changes (which means vaultPaths refreshed).
+  const wikiResolver = useCallback(
+    (target: string) => resolveTarget(target) !== null,
+    [resolveTarget],
+  );
 
   const handleClick = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -315,11 +321,11 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
     if (!editor || content == null) return;
     if (editor.view.composing) return;
     if (editor.isFocused) return;
-    const html = markdownToHtml(content);
+    const html = markdownToHtml(content, wikiResolver);
     if (editor.getHTML() !== html) {
       editor.commands.setContent(html, { emitUpdate: false });
     }
-  }, [editor, content]);
+  }, [editor, content, wikiResolver]);
 
   const rightActions = useMemo(
     () => (

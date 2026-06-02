@@ -216,7 +216,15 @@ fn build_proposal_frontmatter(original: &Value, kind: &str) -> String {
         .unwrap_or(0);
     map.entry("sourced_at".to_string())
         .or_insert(Value::Number(now_ms.into()));
-    serde_json::to_string_pretty(&Value::Object(map)).unwrap_or_default()
+    // serde_json::Value can only fail to serialize on out-of-memory;
+    // empty-string fallback would still write the review-queue file
+    // but leave the proposal frontmatter blank with no signal.
+    // Surface the error as the block contents instead so the user
+    // sees that something went wrong when reviewing.
+    serde_json::to_string_pretty(&Value::Object(map)).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "vault_sourcing: frontmatter serialization failed");
+        format!("# error: failed to serialize proposal frontmatter ({e})")
+    })
 }
 
 fn derive_backlinks(content: &str, all_notes: &HashSet<String>) -> Vec<String> {

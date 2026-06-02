@@ -271,7 +271,7 @@ impl VaultGraph {
                 continue;
             }
             let body = self.bodies.get(from).cloned().unwrap_or_default();
-            let snippet = snippet_around_link(&body, path, &stem, &re_wiki, &re_md);
+            let snippet = snippet_around_link(&body, path, &stem, re_wiki, re_md);
             hits.push(BacklinkHit {
                 from: from.clone(),
                 snippet,
@@ -413,27 +413,26 @@ fn read_string_list(fm: &serde_json::Value, key: &str) -> Vec<String> {
 
 /// `[[stem]]` or `[[Folder/Sub]]` or `[[note|Display Text]]`.
 /// Capture group 1 = target (display text after `|` discarded).
-fn wikilink_regex() -> Regex {
-    // OnceLock per-process keeps the regex object hot across calls
-    // without paying static-init churn during testing.
+///
+/// Returns a borrowed `&'static Regex` — the previous draft cloned
+/// the value out of `OnceLock`, reallocating the compiled NFA on
+/// every call and defeating the point of memoisation.
+fn wikilink_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\[\[([^\|\]\n]+)(?:\|[^\]]+)?\]\]").expect("wikilink regex"))
-        .clone()
 }
 
 /// `[label](relative/path.md)` — only relative targets (no scheme).
-fn mdlink_regex() -> Regex {
+fn mdlink_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\[([^\]\n]+)\]\(([^)\n]+)\)").expect("mdlink regex"))
-        .clone()
 }
 
 /// `#tag` (alphanum + `/` + `-`). Anchored at start-of-string or
 /// whitespace to avoid eating `#anchor` in URLs.
-fn inline_tag_regex() -> Regex {
+fn inline_tag_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"(?:^|\s)#([A-Za-z0-9][A-Za-z0-9/_-]*)").expect("tag regex"))
-        .clone()
 }
 
 fn resolve_wikilink(
@@ -444,7 +443,7 @@ fn resolve_wikilink(
     if let Some(p) = by_alias.get(target) {
         return Some(p.clone());
     }
-    let stem = target.split('/').next_back().unwrap_or(target);
+    let stem = last_segment(target);
     if let Some(paths) = by_stem.get(stem) {
         // Prefer a path that ends with `<target>.md` (handles
         // `[[Folder/Sub]]` style — same stem could exist in multiple
@@ -511,34 +510,56 @@ fn snippet_around_link(
     String::new()
 }
 
+/// Slice a body around `idx..idx+hit_len`, snapped outward to the
+/// nearest valid UTF-8 char boundary. The previous draft tried to
+/// loop with `is_char_boundary` inside a `while` body that always
+/// returned on the first iteration — that loop never actually
+/// advanced, so multibyte chars at the snippet edge could land in
+/// a panic on `&body[start..end]`. Snap exactly once, in both
+/// directions, then slice safely.
+///
+/// `str::floor_char_boundary` / `ceil_char_boundary` would be the
+/// idiomatic API but they remain unstable as of Rust 1.83 — manual
+/// walk via `is_char_boundary` is the stable-Rust equivalent.
 fn snippet_around_offset(body: &str, idx: usize, hit_len: usize) -> String {
-    let start = idx.saturating_sub(BACKLINK_SNIPPET_RADIUS);
-    let end = (idx + hit_len + BACKLINK_SNIPPET_RADIUS).min(body.len());
-    let mut s = &body[..];
-    // Walk char boundaries — slicing on bytes can split a UTF-8 char.
-    while !s.is_char_boundary(start) {
-        // pull start back one
-        return safe_slice(body, start.saturating_sub(1), end);
-    }
-    while !s.is_char_boundary(end) {
-        return safe_slice(body, start, end - 1);
-    }
-    s = &body[start..end];
-    s.replace('\n', " ").trim().to_string()
-}
-
-fn safe_slice(body: &str, start: usize, end: usize) -> String {
-    let lo = (0..=start).rev().find(|i| body.is_char_boundary(*i)).unwrap_or(0);
-    let hi = (end..=body.len())
+    let raw_start = idx.saturating_sub(BACKLINK_SNIPPET_RADIUS);
+    let raw_end = (idx + hit_len + BACKLINK_SNIPPET_RADIUS).min(body.len());
+    let start = (0..=raw_start)
+        .rev()
+        .find(|i| body.is_char_boundary(*i))
+        .unwrap_or(0);
+    let end = (raw_end..=body.len())
         .find(|i| body.is_char_boundary(*i))
         .unwrap_or(body.len());
-    body[lo..hi].replace('\n', " ").trim().to_string()
+    body[start..end].replace('\n', " ").trim().to_string()
 }
 
+/// True only when `idx..idx+needle_len` sits between `[[` and `]]`
+/// with nothing else in between — i.e. the substring really is the
+/// target of a wikilink, not just text that happens to live in a
+/// note that also contains an unrelated wikilink elsewhere.
 fn surrounded_by_wikilink(body: &str, idx: usize, needle_len: usize) -> bool {
-    let before = body[..idx].rfind("[[");
-    let after = body[idx + needle_len..].find("]]");
-    matches!((before, after), (Some(_), Some(_)))
+    let before_slice = &body[..idx];
+    let Some(before) = before_slice.rfind("[[") else {
+        return false;
+    };
+    let after_offset = idx + needle_len;
+    if after_offset > body.len() {
+        return false;
+    }
+    let after_slice = &body[after_offset..];
+    let Some(after) = after_slice.find("]]") else {
+        return false;
+    };
+    let between_before = &before_slice[before + 2..];
+    if between_before.contains("[[") || between_before.contains("]]") {
+        return false;
+    }
+    let between_after = &after_slice[..after];
+    if between_after.contains("[[") || between_after.contains("]]") {
+        return false;
+    }
+    true
 }
 
 fn file_stem(path: &str) -> String {
@@ -547,6 +568,14 @@ fn file_stem(path: &str) -> String {
         Some(i) if i > 0 => name[..i].to_string(),
         _ => name.to_string(),
     }
+}
+
+/// resolve_wikilink uses the rightmost path segment as the stem. We
+/// use `rsplit().next()` here rather than `split().next_back()` for
+/// documented semantics — `next_back()` on an iterator created from
+/// `split` interacts subtly with empty trailing separators.
+fn last_segment(target: &str) -> &str {
+    target.rsplit('/').next().unwrap_or(target)
 }
 
 /// Skip the `.ctrl/` and `.git/` directories during walk so internal

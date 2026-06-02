@@ -599,11 +599,24 @@ fn parse_yaml_to_json(yaml: &str) -> serde_json::Value {
 /// `[a, "b c", 3]` → Vec of parsed scalars. Returns None when the value
 /// isn't an inline flow sequence so the caller can fall back to scalar
 /// parsing.
+///
+/// We distinguish between an empty token (skip — handles trailing
+/// comma `[a, b,]`) and a token that parses to JSON null (keep —
+/// `[a, ~, b]` must round-trip preserving the explicit null). The
+/// earlier draft folded both cases together via `!v.is_null()` and
+/// silently dropped legitimate `~` entries.
 fn parse_inline_sequence(s: &str) -> Option<Vec<serde_json::Value>> {
     let inner = s.strip_prefix('[')?.strip_suffix(']')?;
     let mut out: Vec<serde_json::Value> = Vec::new();
     let mut buf = String::new();
     let mut in_quote: Option<char> = None;
+    let mut push_token = |buf: &mut String, out: &mut Vec<serde_json::Value>| {
+        let trimmed = buf.trim();
+        if !trimmed.is_empty() {
+            out.push(parse_yaml_scalar(trimmed));
+        }
+        buf.clear();
+    };
     for ch in inner.chars() {
         match (in_quote, ch) {
             (Some(q), c) if c == q => {
@@ -614,20 +627,11 @@ fn parse_inline_sequence(s: &str) -> Option<Vec<serde_json::Value>> {
                 in_quote = Some(c);
                 buf.push(c);
             }
-            (None, ',') => {
-                let v = parse_yaml_scalar(buf.trim());
-                if !v.is_null() {
-                    out.push(v);
-                }
-                buf.clear();
-            }
+            (None, ',') => push_token(&mut buf, &mut out),
             _ => buf.push(ch),
         }
     }
-    let v = parse_yaml_scalar(buf.trim());
-    if !v.is_null() {
-        out.push(v);
-    }
+    push_token(&mut buf, &mut out);
     Some(out)
 }
 
