@@ -135,7 +135,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::code_space::cs_resize,
             $crate::commands::code_space::cs_kill,
             $crate::commands::code_space::cs_list,
-            // vault — Obsidian-compatible local-first markdown store
+            // vault — plain-text markdown store. ADR-002 § vault v1 §8.3, 2026-06-01.
+            // §8 expanded the surface from 8 → 21 commands; the first 8 keep their
+            // original signatures, the remaining 13 expose the link/tag/mention/
+            // orphan/broken/graph scanner (vault_graph), single-file mutations
+            // (rename/move/create_folder/set_starred), and the notify-backed
+            // watcher poll (vault_watch). Daily Note + Sourcing are NOT here —
+            // those run at the feature layer per §8.4.
             $crate::commands::vault::vault_write,
             $crate::commands::vault::vault_write_image,
             $crate::commands::vault::vault_read,
@@ -144,6 +150,19 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_delete,
             $crate::commands::vault::vault_root_path,
             $crate::commands::vault::vault_rebuild_index,
+            $crate::commands::vault::vault_backlinks,
+            $crate::commands::vault::vault_tags,
+            $crate::commands::vault::vault_notes_by_tag,
+            $crate::commands::vault::vault_mentions,
+            $crate::commands::vault::vault_orphans,
+            $crate::commands::vault::vault_broken_links,
+            $crate::commands::vault::vault_graph_data,
+            $crate::commands::vault::vault_rename,
+            $crate::commands::vault::vault_move,
+            $crate::commands::vault::vault_create_folder,
+            $crate::commands::vault::vault_set_starred,
+            $crate::commands::vault::vault_aliases,
+            $crate::commands::vault::vault_watch_recent,
             // localstorage — small persistent JSON KV per keycap
             $crate::commands::storage::localstorage_get,
             $crate::commands::storage::localstorage_set,

@@ -35,7 +35,14 @@ pub mod stss_bridge;
 pub mod subprocess_actor;
 pub mod subprocess_stss_adapter;
 pub mod vault;
+// ADR-002 substrate § vault v1 §8.3 #9-15, 2026-06-01 —
+// vault_graph: in-memory link/tag/mention/orphan/broken_links/graph_data scanner
+// (memory `decision_vault_adr_002_section_8`).
+pub mod vault_graph;
 pub mod vault_index;
+// ADR-002 substrate § vault v1 §8.3 #21, 2026-06-01 — vault_watch:
+// notify-backed file-event stream for sourcing trigger (count-threshold path).
+pub mod vault_watch;
 
 pub use actor::{Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority};
 pub use capability::{CapToken, Capability, CapabilityBroker, CapabilityError};

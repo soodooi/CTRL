@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.144"
+version = "0.1.145"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -61,6 +61,11 @@ tokio-tungstenite = "0.24"
 # H-2026-05-19-001 / ADR-012 — SubprocessActor PTY substrate for Code Space tiles.
 # Unix forkpty + Windows ConPTY 自动适配, wezterm 在生产用.
 portable-pty = "0.9"
+# ADR-002 substrate § vault v1 §8.3 (2026-06-01) — link/tag/orphan scanner
+# (vault_graph.rs) + vault_watch file event source.
+regex = "1"
+walkdir = "2"
+notify = "8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # H-2026-05-14-002 mac/a — CGEventTap port lives in shell/hotkey.rs::mac_impl,
