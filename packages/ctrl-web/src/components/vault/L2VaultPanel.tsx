@@ -21,6 +21,7 @@ import {
   type ReactElement,
 } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { invoke } from '@/lib/bridge';
 import {
   vaultList,
   vaultRead,
@@ -129,7 +130,16 @@ export const L2VaultPanel = (): ReactElement => {
   const grouped = useMemo(() => groupPathsByFolder(visiblePaths), [visiblePaths]);
 
   const openPath = useCallback(
-    (path: string, newInstance: boolean) => {
+    async (path: string, newInstance: boolean) => {
+      // Vault tab is invisible if the main window is still in compact
+      // (478 px) mode — the workspace column has 0 width. Idempotently
+      // expand first so the tab actually surfaces. bao 2026-06-02 fix
+      // (ADR-002 substrate § vault v1 §8.6).
+      try {
+        await invoke('expand_workspace_window_if_collapsed');
+      } catch {
+        // Browser-only PWA / non-Tauri host — no shell command, ignore.
+      }
       const id = `vault:${path}`;
       const tab = {
         id,
@@ -174,7 +184,12 @@ export const L2VaultPanel = (): ReactElement => {
   }, [newNotePath, openPath, refetch]);
 
   const openSourcingReview = useCallback(
-    (reviewPath: string) => {
+    async (reviewPath: string) => {
+      try {
+        await invoke('expand_workspace_window_if_collapsed');
+      } catch {
+        // ignore — non-Tauri host
+      }
       const id = `sourcing-review:${reviewPath}`;
       const tab = {
         id,

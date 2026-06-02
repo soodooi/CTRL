@@ -30,6 +30,7 @@ import {
   vaultRead,
   vaultWrite,
 } from '@/lib/kernel';
+import { invoke } from '@/lib/bridge';
 import { useWorkspaceStore } from '@/lib/workspace-store';
 import styles from './SourcingReviewTab.module.css';
 
@@ -129,6 +130,7 @@ export const SourcingReviewTab = ({
   // module is already in the workspace bundle).
   const handleEdit = useCallback(
     (p: Proposal) => {
+      void invoke('expand_workspace_window_if_collapsed').catch(() => {});
       useWorkspaceStore.getState().openTab(
         {
           id: `vault:${p.sourcingPath}`,
