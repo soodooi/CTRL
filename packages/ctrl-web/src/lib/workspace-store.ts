@@ -109,6 +109,11 @@ const spawnTabsFromShape = (
         return { ...base, kind: 'external-embed', url: 'about:blank' };
       case 'vault-md':
         return { ...base, kind: 'vault-md', vaultPath: '' };
+      case 'sourcing-review':
+        // ADR-002 § vault v1 §8.6 (2026-06-01) — review-queue path is
+        // resolved by the caller (L2 badge / Irisy command) via
+        // vault-conventions.renderReviewQueuePath.
+        return { ...base, kind: 'sourcing-review', reviewPath: '' };
       case 'route':
         return { ...base, kind: 'route', path: '/' };
     }

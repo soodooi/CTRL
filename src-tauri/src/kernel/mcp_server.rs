@@ -145,6 +145,12 @@ pub struct VaultStarredArgs {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultSourcingRunMcpArgs {
+    /// Date in `YYYY-MM-DD` form (caller's local timezone).
+    pub date: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct VaultWatchArgs {
     /// Vault-relative prefix filter, e.g. `sourcing/`. Empty = all.
     #[serde(default)]
@@ -503,6 +509,21 @@ impl KernelMcpRouter {
         }
         let events = crate::kernel::vault_watch::recent(args.prefix.as_deref(), args.since_ms);
         let body = serde_json::to_string(&events).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.sourcing_run — run the kernel-seeded sourcing routine for
+    /// `date` (YYYY-MM-DD) and overwrite the matching review-queue
+    /// file. Idempotent.
+    #[tool(description = "Run the kernel sourcing routine for the given YYYY-MM-DD date and write the review-queue file")]
+    async fn vault_sourcing_run(
+        &self,
+        Parameters(args): Parameters<VaultSourcingRunMcpArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let report = crate::kernel::vault_sourcing::run(&root, &args.date)
+            .map_err(|e| McpError::internal_error(format!("vault.sourcing_run: {e}"), None))?;
+        let body = serde_json::to_string(&report).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 

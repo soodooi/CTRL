@@ -19,6 +19,7 @@ use crate::kernel::vault::{self, VaultEntry, VaultError};
 use crate::kernel::vault_graph::{
     self, BacklinkHit, BrokenLink, GraphData, MentionHit, TagCount,
 };
+use crate::kernel::vault_sourcing::{self, SourcingRunReport};
 use crate::kernel::vault_watch::{self, EventEntry as VaultWatchEvent};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -575,4 +576,54 @@ pub async fn vault_watch_recent(
         tracing::warn!(error = %e, "vault_watch_recent: start failed");
     }
     Ok(vault_watch::recent(args.prefix.as_deref(), args.since_ms))
+}
+
+// ---------------------------------------------------------------------
+// Sourcing routine (§8.4 — feature-layer kernel seed)
+// ---------------------------------------------------------------------
+// The richer Irisy LLM-backed routine writes to the same review-queue
+// file; this command guarantees the loop works before Irisy attaches.
+
+#[derive(Debug, Deserialize)]
+pub struct VaultSourcingRunArgs {
+    /// `YYYY-MM-DD` date for the review-queue file. Frontend passes the
+    /// local-tz "today" — kernel-side cron passes the UTC date.
+    pub date: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn vault_sourcing_run(
+    args: VaultSourcingRunArgs,
+) -> Result<SourcingRunReport, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultWrite {
+            path_glob: ".ctrl/review-queue/".to_string(),
+        },
+    )?;
+    let root = vault_root()?;
+    vault_sourcing::run(&root, &args.date).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Serialize)]
+pub struct VaultSourcingPendingReply {
+    pub count: usize,
+}
+
+#[tauri::command]
+pub async fn vault_sourcing_pending(
+    args: VaultEmptyArgs,
+) -> Result<VaultSourcingPendingReply, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: "sourcing/".to_string(),
+        },
+    )?;
+    let root = vault_root()?;
+    Ok(VaultSourcingPendingReply {
+        count: vault_sourcing::count_pending(&root),
+    })
 }

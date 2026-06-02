@@ -27,14 +27,19 @@ import {
   vaultRead,
   vaultRootPath,
   vaultSearch,
+  vaultSourcingPending,
+  vaultSourcingRun,
   vaultWrite,
 } from '@/lib/kernel';
 import { useWorkspaceStore } from '@/lib/workspace-store';
-// ADR-002 § vault v1 §8.4 — Daily Note path comes from the
-// vault-internal yaml convention, not from kernel-baked rules.
+// ADR-002 § vault v1 §8.4 — Daily Note path + review-queue path
+// come from the vault-internal yaml convention, not from kernel-baked
+// rules.
 import {
   loadDailyNotesConfig,
+  loadSourcingConfig,
   renderDailyNotePath,
+  renderReviewQueuePath,
 } from '@/lib/vault-conventions';
 import styles from './L2VaultPanel.module.css';
 
@@ -89,6 +94,17 @@ export const L2VaultPanel = (): ReactElement => {
   const [query, setQuery] = useState('');
   const [newNoteOpen, setNewNoteOpen] = useState(false);
   const [newNotePath, setNewNotePath] = useState('notes/');
+  const [reviewBusy, setReviewBusy] = useState(false);
+
+  // Poll the inbox size every 8 s so the badge reflects keycap drops
+  // without paying the cost of vault_watch event subscription here.
+  const { data: pending } = useQuery({
+    queryKey: ['vault-sourcing-pending'],
+    queryFn: () => vaultSourcingPending(),
+    refetchInterval: 8_000,
+    staleTime: 4_000,
+  });
+  const inboxCount = pending?.count ?? 0;
 
   const { data: rootPath } = useQuery({
     queryKey: ['vault-root'],
@@ -157,6 +173,48 @@ export const L2VaultPanel = (): ReactElement => {
       console.warn('vault new note failed', err);
     }
   }, [newNotePath, openPath, refetch]);
+
+  const openSourcingReview = useCallback(
+    (reviewPath: string) => {
+      const id = `sourcing-review:${reviewPath}`;
+      const tab = {
+        id,
+        kind: 'sourcing-review' as const,
+        title: 'Sourcing review',
+        reviewPath,
+      };
+      if (!activeInstanceId) {
+        const inst = createBlank('Sourcing review');
+        openTab(tab, { instanceId: inst.id, activate: true });
+      } else {
+        openTab(tab, { activate: true });
+      }
+    },
+    [activeInstanceId, createBlank, openTab],
+  );
+
+  // Sourcing badge handler — run the kernel routine then open the
+  // workspace review tab. Uses the sourcing yaml convention so the
+  // path matches the file the user actually edited.
+  const handleSourcingReview = useCallback(async () => {
+    setReviewBusy(true);
+    try {
+      const cfg = await loadSourcingConfig();
+      const today = new Date();
+      const reviewPath = renderReviewQueuePath(cfg.reviewQueuePath, today);
+      const yyyy = String(today.getFullYear());
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      await vaultSourcingRun(`${yyyy}-${mm}-${dd}`);
+      await refetch();
+      openSourcingReview(reviewPath);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('sourcing review trigger failed', err);
+    } finally {
+      setReviewBusy(false);
+    }
+  }, [openSourcingReview, refetch]);
 
   const handleToday = useCallback(async () => {
     const cfg = await loadDailyNotesConfig();
@@ -234,6 +292,17 @@ export const L2VaultPanel = (): ReactElement => {
             Today
           </button>
         </div>
+        <button
+          type="button"
+          className={styles.reviewBadge}
+          data-pending={inboxCount > 0 || undefined}
+          onClick={() => void handleSourcingReview()}
+          disabled={reviewBusy}
+          title="Review the sourcing inbox"
+        >
+          <span className={styles.reviewLabel}>Review</span>
+          <span className={styles.reviewCount}>{inboxCount}</span>
+        </button>
         {newNoteOpen ? (
           <div className={styles.newNoteRow}>
             <input

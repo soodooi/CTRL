@@ -29,6 +29,8 @@ const KIND_LABEL: Record<Tab['kind'], string> = {
   'vault-md': 'DOC',
   'keycap-output': 'OUT',
   'session-stream': 'LIVE',
+  // ADR-002 § vault v1 §8.6 (2026-06-01).
+  'sourcing-review': 'INBOX',
   route: 'PAGE',
 };
 
@@ -39,6 +41,8 @@ const KIND_ICON: Record<Tab['kind'], Icon> = {
   'vault-md': { kind: 'glyph', char: '⌬' },
   'keycap-output': { kind: 'glyph', char: '◉' },
   'session-stream': { kind: 'lottie', src: '/lottie/pulse.json' },
+  // Tray glyph for the sourcing review tab.
+  'sourcing-review': { kind: 'glyph', char: '⌽' },
   route: { kind: 'glyph', char: '⌘' },
 };
 

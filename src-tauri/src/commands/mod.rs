@@ -163,6 +163,11 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_set_starred,
             $crate::commands::vault::vault_aliases,
             $crate::commands::vault::vault_watch_recent,
+            // ADR-002 § vault v1 §8.4 sourcing-workflow (2026-06-01) —
+            // kernel-seeded review-queue producer (Irisy attaches the
+            // richer LLM pass on top of the same file).
+            $crate::commands::vault::vault_sourcing_run,
+            $crate::commands::vault::vault_sourcing_pending,
             // localstorage — small persistent JSON KV per keycap
             $crate::commands::storage::localstorage_get,
             $crate::commands::storage::localstorage_set,

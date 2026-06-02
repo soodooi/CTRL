@@ -43,6 +43,11 @@ pub mod vault_index;
 // ADR-002 substrate § vault v1 §8.3 #21, 2026-06-01 — vault_watch:
 // notify-backed file-event stream for sourcing trigger (count-threshold path).
 pub mod vault_watch;
+// ADR-002 substrate § vault v1 §8.4 sourcing-workflow, 2026-06-01 —
+// kernel-side seed sourcing routine (memory
+// `decision_vault_adr_002_section_8`). Irisy attaches a richer
+// LLM-backed version on top of the same review-queue file.
+pub mod vault_sourcing;
 
 pub use actor::{Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority};
 pub use capability::{CapToken, Capability, CapabilityBroker, CapabilityError};

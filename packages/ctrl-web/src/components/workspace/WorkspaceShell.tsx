@@ -20,8 +20,10 @@ import { EmbedView } from './EmbedView';
 import { KeycapRunView } from './KeycapRunView';
 // ADR-002 substrate § vault v1 §8.6 (2026-06-01, memory
 // `decision_vault_adr_002_section_8`) — backlinks live in a bottom
-// drawer of the workspace, not in a separate panel.
+// drawer of the workspace, not in a separate panel; sourcing review
+// is its own workspace tab kind.
 import { BacklinksDrawer } from '@/components/vault/BacklinksDrawer';
+import { SourcingReviewTab } from '@/components/vault/SourcingReviewTab';
 import { resolveViewer, type ViewerResource } from '@/lib/viewer-registry';
 import { vaultUri } from '@/lib/viewer-uri';
 import { resolveRouteComponent } from '@/lib/route-tab-components';
@@ -118,6 +120,10 @@ const renderTabBody = (tab: Tab): ReactElement => {
       };
       return <ViewerHost resource={resource} />;
     }
+    case 'sourcing-review':
+      // ADR-002 § vault v1 §8.6 (2026-06-01) — review the day's
+      // sourcing proposals (`.ctrl/review-queue/<date>.md`).
+      return <SourcingReviewTab reviewPath={tab.reviewPath} />;
     case 'keycap-output':
       return <KeycapRunView keycapId={tab.keycapId} />;
     case 'session-stream':

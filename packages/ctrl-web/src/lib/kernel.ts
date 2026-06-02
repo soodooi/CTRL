@@ -401,3 +401,32 @@ export const vaultWatchRecent = (
       keycap_id: keycap_id ?? null,
     },
   });
+
+// ADR-002 § vault v1 §8.4 — sourcing routine. Run produces a
+// review-queue file at `.ctrl/review-queue/<date>.md`; pending
+// reports the inbox size for the L2 badge.
+
+export interface SourcingRunReport {
+  review_path: string;
+  items_processed: number;
+  skipped_already_indexed: number;
+}
+
+export interface SourcingPendingReply {
+  count: number;
+}
+
+export const vaultSourcingRun = (
+  date: string,
+  keycap_id?: string,
+): Promise<SourcingRunReport> =>
+  invoke('vault_sourcing_run', {
+    args: { date, keycap_id: keycap_id ?? null },
+  });
+
+export const vaultSourcingPending = (
+  keycap_id?: string,
+): Promise<SourcingPendingReply> =>
+  invoke('vault_sourcing_pending', {
+    args: { keycap_id: keycap_id ?? null },
+  });
