@@ -24,11 +24,18 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import {
   vaultList,
+  vaultRead,
   vaultRootPath,
   vaultSearch,
   vaultWrite,
 } from '@/lib/kernel';
 import { useWorkspaceStore } from '@/lib/workspace-store';
+// ADR-002 § vault v1 §8.4 — Daily Note path comes from the
+// vault-internal yaml convention, not from kernel-baked rules.
+import {
+  loadDailyNotesConfig,
+  renderDailyNotePath,
+} from '@/lib/vault-conventions';
 import styles from './L2VaultPanel.module.css';
 
 const baseName = (path: string): string => {
@@ -63,12 +70,16 @@ const groupPathsByFolder = (
     .map(([folder, items]) => ({ folder, items: items.sort() }));
 };
 
-const todayDailyPath = (): string => {
+// Daily Note path resolution lives in vault-conventions per §8.4;
+// the local helper is retained only as the last-resort fallback when
+// the user's `.ctrl/daily-notes.yaml` is unreadable.
+
+const renderDailyTemplate = (raw: string): string => {
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
-  return `daily/${y}-${m}-${day}.md`;
+  return raw.replace(/\{\{date\}\}/g, `${y}-${m}-${day}`);
 };
 
 export const L2VaultPanel = (): ReactElement => {
@@ -148,15 +159,25 @@ export const L2VaultPanel = (): ReactElement => {
   }, [newNotePath, openPath, refetch]);
 
   const handleToday = useCallback(async () => {
-    const path = todayDailyPath();
-    // If the daily note already exists, just open it; otherwise create
-    // an empty one with the journal frontmatter convention.
+    const cfg = await loadDailyNotesConfig();
+    const path = renderDailyNotePath(cfg.pathTemplate);
     if (!allPaths.includes(path)) {
+      // Pre-fill the body from the template if the user has one;
+      // missing template -> empty body. Frontmatter defaults come
+      // straight from the yaml — `decision_vault_adr_002_section_8`
+      // keeps that policy outside kernel.
+      let body = '';
+      try {
+        const t = await vaultRead(cfg.template);
+        body = renderDailyTemplate(typeof t.body === 'string' ? t.body : '');
+      } catch {
+        body = '';
+      }
       try {
         await vaultWrite({
           path,
-          content: '',
-          frontmatter: { type: 'journal', tags: ['daily'] },
+          content: body,
+          frontmatter: cfg.frontmatterDefault,
         });
         await refetch();
       } catch (err) {
@@ -167,6 +188,10 @@ export const L2VaultPanel = (): ReactElement => {
     }
     openPath(path, false);
   }, [allPaths, openPath, refetch]);
+
+  // template placeholder substitution — `{{date}}` is the only one
+  // we render today. Future placeholders (`{{title}}`, `{{tags}}`)
+  // land in the same helper to keep substitution centralised.
 
   // Auto-collapse new-note row if the user navigates away.
   useEffect(() => {

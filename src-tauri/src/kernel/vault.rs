@@ -101,7 +101,48 @@ pub fn ensure_vault_layout(root: &Path) -> std::io::Result<()> {
     for sub in ["images", "audio", "pdf", "attachments"] {
         let _ = std::fs::create_dir_all(root.join("assets").join(sub));
     }
+    // ADR-002 substrate § vault v1 §8.2 + §8.4 (2026-06-01, memory
+    // `decision_vault_adr_002_section_8`) — feature-layer scaffolding.
+    // `.ctrl/` mirrors Obsidian's `.obsidian/` (hidden config namespace);
+    // `templates/` is plain-text user-forkable seeds. Each file is only
+    // written when absent so re-launch never clobbers user edits.
+    seed_vault_feature_layer(root);
     Ok(())
+}
+
+const SEED_SOURCING_YAML: &str = include_str!("vault_seed/sourcing.yaml");
+const SEED_DAILY_NOTES_YAML: &str = include_str!("vault_seed/daily-notes.yaml");
+const SEED_SOURCING_PROMPT: &str = include_str!("vault_seed/sourcing-prompt.md");
+const SEED_TEMPLATE_DAILY: &str = include_str!("vault_seed/template-daily.md");
+const SEED_TEMPLATE_MEETING: &str = include_str!("vault_seed/template-meeting.md");
+
+fn seed_vault_feature_layer(root: &Path) {
+    let _ = std::fs::create_dir_all(root.join(".ctrl"));
+    let _ = std::fs::create_dir_all(root.join(".ctrl").join("review-queue"));
+    let _ = std::fs::create_dir_all(root.join("sourcing"));
+    let _ = std::fs::create_dir_all(root.join("daily"));
+    let _ = std::fs::create_dir_all(root.join("templates"));
+
+    write_if_missing(root, ".ctrl/sourcing.yaml", SEED_SOURCING_YAML);
+    write_if_missing(root, ".ctrl/daily-notes.yaml", SEED_DAILY_NOTES_YAML);
+    write_if_missing(root, ".ctrl/sourcing-prompt.md", SEED_SOURCING_PROMPT);
+    write_if_missing(root, "templates/daily.md", SEED_TEMPLATE_DAILY);
+    write_if_missing(root, "templates/meeting.md", SEED_TEMPLATE_MEETING);
+}
+
+fn write_if_missing(root: &Path, rel: &str, contents: &str) {
+    let full = root.join(rel);
+    if full.exists() {
+        return;
+    }
+    if let Some(parent) = full.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(e) = std::fs::write(&full, contents) {
+        tracing::warn!(path = %full.display(), error = %e, "vault: seed write failed");
+    } else {
+        tracing::info!(path = %rel, "vault: seeded feature-layer file");
+    }
 }
 
 /// VaultEntry — what callers get back from list / read operations.

@@ -18,6 +18,10 @@ import { vaultRead, vaultWrite } from '@/lib/kernel';
 import { InstanceSwitcher } from './InstanceSwitcher';
 import { EmbedView } from './EmbedView';
 import { KeycapRunView } from './KeycapRunView';
+// ADR-002 substrate § vault v1 §8.6 (2026-06-01, memory
+// `decision_vault_adr_002_section_8`) — backlinks live in a bottom
+// drawer of the workspace, not in a separate panel.
+import { BacklinksDrawer } from '@/components/vault/BacklinksDrawer';
 import { resolveViewer, type ViewerResource } from '@/lib/viewer-registry';
 import { vaultUri } from '@/lib/viewer-uri';
 import { resolveRouteComponent } from '@/lib/route-tab-components';
@@ -210,6 +214,9 @@ export const WorkspaceShell = ({ fallback }: WorkspaceShellProps): ReactElement 
           </div>
         )}
       </div>
+      {activeTab && activeTab.kind === 'vault-md' && activeTab.vaultPath ? (
+        <BacklinksDrawer path={activeTab.vaultPath} />
+      ) : null}
     </div>
   );
 };
