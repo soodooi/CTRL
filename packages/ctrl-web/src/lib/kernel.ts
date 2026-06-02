@@ -278,3 +278,126 @@ export const vaultRootPath = (): Promise<string> => invoke('vault_root_path');
 
 export const vaultRebuildIndex = (): Promise<number> =>
   invoke('vault_rebuild_index');
+
+// ADR-002 substrate § vault v1 §8.3 #9-21 (2026-06-01) — graph + mutation
+// + watcher primitives (memory `decision_vault_adr_002_section_8`).
+// Mirrors src-tauri/src/commands/vault.rs; Daily Note + Sourcing
+// routines (frontend feature layer) compose from these calls.
+
+export interface BacklinkHit {
+  from: string;
+  snippet: string;
+}
+
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+export interface MentionHit {
+  path: string;
+  snippet: string;
+}
+
+export interface BrokenLink {
+  from: string;
+  target: string;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+}
+
+export interface GraphData {
+  nodes: string[];
+  edges: GraphEdge[];
+}
+
+export type VaultWatchEventKind = 'create' | 'modify' | 'remove' | 'other';
+
+export interface VaultWatchEvent {
+  path: string;
+  kind: VaultWatchEventKind;
+  ts_ms: number;
+}
+
+export const vaultBacklinks = (
+  path: string,
+  keycap_id?: string,
+): Promise<BacklinkHit[]> =>
+  invoke('vault_backlinks', { args: { path, keycap_id: keycap_id ?? null } });
+
+export const vaultTags = (keycap_id?: string): Promise<TagCount[]> =>
+  invoke('vault_tags', { args: { keycap_id: keycap_id ?? null } });
+
+export const vaultNotesByTag = (
+  tag: string,
+  keycap_id?: string,
+): Promise<string[]> =>
+  invoke('vault_notes_by_tag', { args: { tag, keycap_id: keycap_id ?? null } });
+
+export const vaultMentions = (
+  text: string,
+  keycap_id?: string,
+): Promise<MentionHit[]> =>
+  invoke('vault_mentions', { args: { text, keycap_id: keycap_id ?? null } });
+
+export const vaultOrphans = (keycap_id?: string): Promise<string[]> =>
+  invoke('vault_orphans', { args: { keycap_id: keycap_id ?? null } });
+
+export const vaultBrokenLinks = (keycap_id?: string): Promise<BrokenLink[]> =>
+  invoke('vault_broken_links', { args: { keycap_id: keycap_id ?? null } });
+
+export const vaultGraphData = (keycap_id?: string): Promise<GraphData> =>
+  invoke('vault_graph_data', { args: { keycap_id: keycap_id ?? null } });
+
+export const vaultRename = (
+  from: string,
+  to: string,
+  keycap_id?: string,
+): Promise<void> =>
+  invoke('vault_rename', { args: { from, to, keycap_id: keycap_id ?? null } });
+
+export const vaultMove = (
+  from: string,
+  to: string,
+  keycap_id?: string,
+): Promise<void> =>
+  invoke('vault_move', { args: { from, to, keycap_id: keycap_id ?? null } });
+
+export const vaultCreateFolder = (
+  path: string,
+  keycap_id?: string,
+): Promise<void> =>
+  invoke('vault_create_folder', {
+    args: { path, keycap_id: keycap_id ?? null },
+  });
+
+export const vaultSetStarred = (
+  path: string,
+  starred: boolean,
+  keycap_id?: string,
+): Promise<void> =>
+  invoke('vault_set_starred', {
+    args: { path, starred, keycap_id: keycap_id ?? null },
+  });
+
+export const vaultAliases = (
+  path: string,
+  keycap_id?: string,
+): Promise<string[]> =>
+  invoke('vault_aliases', { args: { path, keycap_id: keycap_id ?? null } });
+
+export const vaultWatchRecent = (
+  since_ms: number,
+  prefix?: string,
+  keycap_id?: string,
+): Promise<VaultWatchEvent[]> =>
+  invoke('vault_watch_recent', {
+    args: {
+      since_ms,
+      prefix: prefix ?? null,
+      keycap_id: keycap_id ?? null,
+    },
+  });
