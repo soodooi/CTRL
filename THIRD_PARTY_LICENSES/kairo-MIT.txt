@@ -1,0 +1,32 @@
+CTRL ports the wiki-link Tiptap extension from seahop/kairo
+(https://github.com/seahop/kairo), licensed under the MIT License.
+
+Source commit reference: v0.1.0-beta.1 (https://github.com/seahop/kairo/releases/tag/v0.1.0-beta.1)
+Ported files: packages/ctrl-web/src/components/viewers/tiptap-wikilink/* (adapted)
+Adaptation: rewired autocomplete source to CTRL `vault_list` kernel command;
+preserved broken-link styling + render path.
+
+ADR reference: ADR-002 substrate § vault v1 §8.5 + §8.8 (2026-06-01).
+
+----------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2026 Sean Hopkins
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

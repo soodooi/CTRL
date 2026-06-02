@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — Pi brain · capability surface · provider router · crypto · subprocess · MCP bus · composition
-version: 2
+version: 3
 status: accepted
-last_updated: 2026-05-31
+last_updated: 2026-06-01
 deciders: [bao, zeus]
 sections:
   - { id: brain,        source: orig-003 }
@@ -14,12 +14,14 @@ sections:
   - { id: subprocess,   source: orig-012 }
   - { id: mcp-bus,      source: orig-013 }
   - { id: composition,  source: orig-024 }
+  - { id: vault,        source: new-2026-06-01, note: "kernel vault primitives + feature-layer boundary; Daily Note + Sourcing are feature-layer (Irisy + frontend)" }
 changelog:
   - v1 2026-05-31: module reorg — merged orig-003 (Pi brain) + orig-004 (capability surface) + orig-007 (crypto) + orig-012 (SubprocessActor + portable-pty) + orig-013 (kernel-as-MCP-server) + orig-024 (6-axis composition). **NEW** § provider — role routing (irisy.primary/fallback, keycap.default) + VMark-style PATH detect + introspection (brain_status). Closes the "Irisy doesn't know its own stack" gap (bao 2026-05-31).
   - v2 2026-05-31: § provider amendments (bao 3-校准 in implementation discussion):
       (1) drop `keycap.default` role — keycap binds provider via manifest `brain_capabilities`, not via substrate-wide default (2-role model: irisy.primary + irisy.fallback only).
       (2) `irisy.primary` MUST be a detected user CLI (`claude > codex > gemini > aider`); removed "else volc" auto-fallback — primary path is augmentation, CTRL doesn't silently spend money there.
       (3) `irisy.fallback` is the CTRL-managed slot (CTRL pays Volc Doubao bill, future = ctrl-brand provider). Volc now has two manifest ids: `volc` (CTRL fallback, ctrl-managed creds) and `volc-byok` (user-elected, user keychain). brain_status() exposes `managed_by: "user" | "ctrl"`. Brand label "CTRL Cloud" hides codename from Irisy responses + failover messages.
+  - v3 2026-06-01: **NEW** §8 Vault — kernel primitive endpoints (21 commands) + explicit feature-layer boundary: Daily Note + Sourcing inbox are **feature-layer** (Irisy + frontend wire them via `vault/.ctrl/*.yaml` + `vault/templates/*.md`), kernel does not know about either concept. Retires frontend O(N) backlink scan + 3-pane VaultBrowser shell. §6 MCP tools list extended from 11 to 28 (kernel exposes vault.{backlinks,tags,notes_by_tag,mentions,orphans,broken_links,graph_data,rename,move,create_folder,set_starred,aliases,watch} on top of existing 8). Wiki-link Tiptap extension cherry-picked from seahop/kairo (MIT, Sean Hopkins 2026) — see `THIRD_PARTY_LICENSES/kairo-MIT.txt`. Decision lock + sourcing workflow design: `.olym/brainstorm/vault-md-management-2026-06-01.md`.
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/004-cap.md
@@ -199,7 +201,7 @@ Kernel runs MCP **server** parallel to its `mcp_host` (client) — same `rmcp 1.
 - **Transport**: streamable-http (MCP 2025-03-26 spec). rmcp 1.7 + `server` + `transport-streamable-http-server` + `macros` + `schemars`. axum 0.8 hosts.
 - **Auth**: ephemeral Bearer token. Fresh UUID v4 on every kernel boot, never persisted. `Authorization: Bearer <token>` header; axum middleware checks before `/mcp`.
 - **Discovery**: Tauri command `mcp_server_info` returns `{ url, token }`.
-- **Tools (11)**: `kernel.status` · `vault.{read,write,list,search}` · `kv.{get,set}` · `llm.chat` · `mcp.{list_servers,proxy_list_tools,proxy_call_tool}`. Stream LLM stays on Tauri event channel (PWA only), not on MCP surface.
+- **Tools (28, v3)**: `kernel.status` · `vault.{read,write,write_image,list,search,delete,root_path,rebuild_index,backlinks,tags,notes_by_tag,mentions,orphans,broken_links,graph_data,rename,move,create_folder,set_starred,aliases,watch}` (21) · `kv.{get,set}` · `llm.chat` · `mcp.{list_servers,proxy_list_tools,proxy_call_tool}`. Stream LLM stays on Tauri event channel (PWA only), not on MCP surface. Vault tool set expanded in v3 per §8.
 
 ## §7 Composition — 6-axis manifest (single substrate law)
 
@@ -222,6 +224,116 @@ Keycap manifest declares 6 axes; runtime atomically provisions all declared reso
 **Builtin vs user keycap** = one metadata flag. `manifest.builtin = true` → ships from `packages/ctrl-keycaps/builtin/<id>/`, re-seeds on every launch (self-repairs deletion). `builtin = false` → `~/.ctrl/keycaps/<id>/`, uninstallable.
 
 **Multi-modal category exception** to §2 frequency ≥3 rule: image.generate / image.edit / image.understand / audio.stt enter v1 even with 1 consumer each — "做海报得有 image 大模型, 我们是双重 brain" (bao 2026-05-30). Frequency rule still governs non-brain namespaces.
+
+## §8 Vault — markdown PKM substrate (NEW v3, 2026-06-01)
+
+**Why this section exists**: bao 2026-06-01 — vault MD management is a substrate concern (storage + index + integrity), but Daily Note / Sourcing inbox / templates are **feature-layer** (Irisy + frontend wire them via vault-internal config). Earlier `VaultBrowser.tsx` 3-pane shell predates ADR-003 4-col app shell and conflicts with it. Decision driver: memory `feedback_build_system_not_business` ("我建系统不建业务") + `decision_ctrl_obsidian_philosophy` (plain-text vault, vim test).
+
+### §8.1 Module location
+
+- **Kernel**: `src-tauri/src/kernel/vault.rs` + `vault_index.rs` (existing — SQLite FTS5 + backlink scanner + tag scanner, kernel-native, no VMark sidecar)
+- **Commands**: `src-tauri/src/commands/vault.rs` (existing 8 + 13 new commands per §8.3)
+- **MCP surface**: extended in §6 from 11 → 28 tools
+- **Frontend**: `packages/ctrl-web/src/components/vault/*` (new L2VaultPanel + SourcingReviewTab + BacklinksDrawer; retire VaultBrowser + BacklinksPanel)
+- **Conventions**: `packages/ctrl-web/src/lib/vault-conventions.ts` (reads `vault/.ctrl/*.yaml`)
+
+### §8.2 Storage layout
+
+```
+~/Documents/CTRL/                   ← vault root (vault_root_path())
+    notes/                          ← user main namespace
+    daily/                          ← Daily Note convention (path_template-driven, §8.4)
+    sourcing/                       ← user inbox (clipboard/OCR/link keycaps write here)
+    templates/                      ← template files (user can fork; default 2 seeded)
+        daily.md
+        meeting.md
+    skills/                         ← per-keycap skill override (ADR-002 §7)
+    keycaps/<id>/                   ← per-keycap vault override (cap_asset.vault)
+    .ctrl/                          ← CTRL-managed config (hidden in tree, vault_list opt-in)
+        sourcing.yaml
+        daily-notes.yaml
+        sourcing-prompt.md
+        review-queue/<YYYY-MM-DD>.md
+```
+
+All plain markdown + YAML frontmatter. **vim test 满分** — user can open any file with vim and get full value. `.ctrl/` mirrors Obsidian `.obsidian/` (hidden by default, still user-readable).
+
+### §8.3 Kernel primitive endpoints (21 commands, exposed as `vault.*` MCP tools per §6)
+
+| # | Command | Status | Backed by |
+|---|---|---|---|
+| 1 | `vault_read(path, opts?)` | existing | vault.rs |
+| 2 | `vault_write(path, body, frontmatter)` | existing | vault.rs |
+| 3 | `vault_write_image(path, bytes)` | existing | vault.rs |
+| 4 | `vault_list({prefix?, include_hidden?, limit?})` | extend existing | vault.rs |
+| 5 | `vault_search(query, limit)` | existing | vault_index.rs FTS5 |
+| 6 | `vault_delete(path)` | existing | vault.rs |
+| 7 | `vault_root_path()` | existing | vault.rs |
+| 8 | `vault_rebuild_index()` | existing | vault_index.rs |
+| 9 | `vault_backlinks(path)` | NEW | vault_index.rs (scanner already exists, expose) |
+| 10 | `vault_tags()` | NEW | vault_index.rs |
+| 11 | `vault_notes_by_tag(tag)` | NEW | vault_index.rs |
+| 12 | `vault_mentions(text)` | NEW | vault_index.rs |
+| 13 | `vault_orphans()` | NEW | derived from backlinks scanner |
+| 14 | `vault_broken_links()` | NEW | derived from link scanner |
+| 15 | `vault_graph_data()` | NEW | full node+edges (for graph view) |
+| 16 | `vault_rename(from, to)` | NEW | vault.rs + index update |
+| 17 | `vault_move(from, to)` | NEW | vault.rs (Sourcing accept uses this) |
+| 18 | `vault_create_folder(path)` | NEW | vault.rs |
+| 19 | `vault_set_starred(path, bool)` | NEW | frontmatter `starred:` write |
+| 20 | `vault_aliases(path)` | NEW | frontmatter `aliases:` read |
+| 21 | `vault_watch(prefix?)` → event stream | NEW | notify crate file watcher |
+
+**Explicitly NOT in kernel** (feature-layer, see §8.4):
+- ~~`vault_create_note(kind="daily")`~~ — Daily Note is feature, walks via `vault/.ctrl/daily-notes.yaml` + `vault_write` low-level
+- ~~`vault_sourcing_routine()`~~ — Irisy behavior, not kernel API; Irisy composes from primitives 4/1/2/9/10/12
+
+### §8.4 Feature-layer boundary (what is NOT substrate)
+
+Two user-facing features live above kernel — kernel does not know about them:
+
+**Daily Note** — `vault/.ctrl/daily-notes.yaml` defines `path_template`, `template` ref, `frontmatter_default`, `auto_create_on_first_write`. `lib/vault-conventions.ts` reads the yaml and composes the path; Irisy reads the same yaml when user asks "建今天的 daily". Both call `vault.write` low-level. Kernel sees only a `vault_write(daily/2026-06-01.md, body, fm)`.
+
+**Sourcing inbox + integration routine** — `vault/sourcing/` is just a folder; clipboard / OCR / link keycaps `vault.write` into it. `vault/.ctrl/sourcing.yaml` defines triggers (cron 9am + count threshold + manual command, all three concurrent), target root, review queue path. `vault/.ctrl/sourcing-prompt.md` is the user-editable prompt for Irisy's integration routine. Irisy runs the routine (composed from `vault.list(prefix='sourcing/')` + `vault.read` + `vault.tags` + `vault.search` + `vault.write` to `.ctrl/review-queue/<date>.md` + `platform.notify`). Kernel never touches the routine logic.
+
+This boundary is load-bearing: it lets users (advanced) replace Daily Note convention by editing yaml without code changes, and lets Irisy's integration prompt evolve via vault file edit. Plain-text philosophy satisfied (`decision_ctrl_obsidian_philosophy`).
+
+### §8.5 Frontend stack (locked)
+
+Per memory `decision_vmark_not_substrate_use_open_stack` (no VMark sidecar):
+
+- **Markdown editor**: Tiptap v2 (`@tiptap/react` + `@tiptap/starter-kit`) WYSIWYG + CodeMirror 6 (`@uiw/react-codemirror`) source-mode toggle — already shipped in `MarkdownViewer.tsx`
+- **Wiki-link**: custom Tiptap extension cherry-picked from seahop/kairo (MIT, Sean Hopkins 2026), adapted to call `vault_list` for autocomplete + render broken-link styling
+- **Mermaid diagrams**: `mermaid.js` (when content type triggers)
+- **HTML sandbox**: iframe + CSP (existing pattern)
+- **Frontmatter**: `gray-matter` round-trip (frontend-side; kernel already parses)
+- **File tree**: folder-grouped flat list (current implementation, sufficient for v1; switch to `react-arborist` if deep nesting demanded)
+
+### §8.6 Shell integration (ADR-003 frontend § shell v4)
+
+- L1 PrimaryRail adds `vault` icon
+- L1 vault active → app shell flips `data-l2-open='true'` (l2-width = 200px)
+- L2 column = `L2VaultPanel`: search + new-note button (template picker) + Daily-Note button + tree (folder-grouped) + tag chips + Sourcing Review badge `📥 N`
+- Workspace tab kinds: `vault-md` (single-file MarkdownViewer) + `sourcing-review` (SourcingReviewTab)
+- Backlinks: bottom drawer of workspace (collapsible) — `BacklinksDrawer` reads `vault_backlinks(activePath)`
+
+### §8.7 Retirements (load-bearing — `feedback_no_redundancy_one_ssot`)
+
+- `routes/vault.tsx` deleted (replaced by L1+L2+workspace tab path)
+- `components/vault/VaultBrowser.tsx` deleted (3-pane shell conflicts with 4-col app shell)
+- `components/vault/BacklinksPanel.tsx` deleted (O(N) frontend scan replaced by `vault_backlinks` kernel command)
+
+### §8.8 Third-party port attribution
+
+- **Wiki-link Tiptap extension**: ported from seahop/kairo, MIT License, Copyright (c) 2026 Sean Hopkins. Verbatim license at `THIRD_PARTY_LICENSES/kairo-MIT.txt`. Port location TBD (likely `packages/ctrl-web/src/components/viewers/tiptap-wikilink/`).
+
+### §8.9 Future work (not §8 v1)
+
+- Graph view UI (React Flow + D3-force from kairo stack — primitive `vault_graph_data` already in §8.3 #15)
+- Dataview-like query (`vault.dataview_query(spec)`) — defer until 2nd consumer
+- Version history (snapshot table or libgit2 — defer)
+- Block-level transclusion (`![[note#block-id]]`) — defer until needed
+- Auto-classification ML (sourcing routine currently uses Irisy + heuristics, no embedding clustering)
 
 ## Acceptance
 
@@ -255,6 +367,25 @@ Keycap manifest declares 6 axes; runtime atomically provisions all declared reso
 ### Composition (§7)
 - [x] ADR locks 6-axis substrate law. Implementation deferred to "bao calls execution" per CLAUDE.md 灵活开发. Closed at "decision recorded".
 
+### Vault (§8 — NEW v3)
+- [ ] `kernel/vault_index.rs` exposes backlinks / tags / notes_by_tag / mentions / orphans / broken_links / graph_data scanner APIs (most scanners already exist internally — surface them).
+- [ ] `commands/vault.rs` adds 13 new tauri commands (§8.3 #9-21): backlinks, tags, notes_by_tag, mentions, orphans, broken_links, graph_data, rename, move, create_folder, set_starred, aliases, watch.
+- [ ] `kernel/mcp_server.rs` MCP tools list grows from 11 → 28 — all 21 `vault.*` exposed; tested via `mcp_server_info` + tool call.
+- [ ] `vault_watch` uses `notify` crate for filesystem event stream (sourcing trigger source).
+- [ ] `vault_list` extended with `{prefix, include_hidden, limit}` opts; `.ctrl/` and `.git/` hidden unless `include_hidden=true`.
+- [ ] `packages/ctrl-kernel-sdk` TS types regenerated for all 21 vault commands.
+- [ ] First-boot vault seed writes `vault/.ctrl/{sourcing.yaml, daily-notes.yaml, sourcing-prompt.md}` + `vault/templates/{daily.md, meeting.md}` if not present (kernel vault init code).
+- [ ] `packages/ctrl-web/src/components/vault/L2VaultPanel.tsx` renders tree + search + new-note + Daily-Note + tag chips + Sourcing Review badge.
+- [ ] `packages/ctrl-web/src/components/vault/SourcingReviewTab.tsx` is a workspace tab kind; lists review-queue items with Accept/Edit/Reject buttons calling `vault_move` + `vault_write`.
+- [ ] `packages/ctrl-web/src/components/vault/BacklinksDrawer.tsx` is a workspace bottom drawer; reads `vault_backlinks(activePath)`.
+- [ ] `packages/ctrl-web/src/lib/vault-conventions.ts` reads `vault/.ctrl/daily-notes.yaml` + `sourcing.yaml`; exports `dailyNotePath(date)` + `sourcingTriggers()`.
+- [ ] `packages/ctrl-web/src/components/viewers/MarkdownViewer.tsx` gains wiki-link Tiptap extension ported from seahop/kairo (MIT), with `vault_list`-backed autocomplete + broken-link styling.
+- [ ] L1 PrimaryRail adds `vault` icon; activating it flips `data-l2-open='true'` and renders L2VaultPanel.
+- [ ] Irisy sourcing routine wired: three concurrent triggers (kernel cron 9am + `vault_watch` count threshold + manual MCP tool / chat slash command); routine reads `vault/.ctrl/sourcing-prompt.md`, writes `vault/.ctrl/review-queue/<date>.md`, sends `platform.notify`.
+- [ ] Retirements: `routes/vault.tsx` deleted; `components/vault/VaultBrowser.tsx` deleted; `components/vault/BacklinksPanel.tsx` deleted (no parallel old + new per §8.7).
+- [ ] `THIRD_PARTY_LICENSES/kairo-MIT.txt` present with verbatim license + attribution.
+- [ ] Manual smoke: open L1 vault → L2 tree visible → New → blank → write → Backlinks drawer reflects link from another note → Sourcing fixture file appears in review-queue and accept moves it correctly.
+
 ## Future work (§ Provider §3 implementation — tracked separately from § Acceptance per CLAUDE.md 灵活开发)
 
 - `kernel/provider/{trait.rs, registry.rs, detect.rs, path_resolver.rs}` exist with **2-role** table (irisy.primary + irisy.fallback) + RouteChain + auto-fallback (v2)
@@ -275,3 +406,4 @@ Keycap manifest declares 6 axes; runtime atomically provisions all declared reso
 - §5 Subprocess ← orig-012 (portable-pty SubprocessActor, 2026-05-19, accepted)
 - §6 MCP bus ← orig-013 (kernel as MCP server, 2026-05-22, accepted)
 - §7 Composition ← orig-024 (6-axis manifest, 2026-05-30, status proposed → accepted-at-decision here, implementation deferred per "实施时决")
+- §8 Vault — NEW v3 (2026-06-01). Driven by bao session "L1 vault button + vault MD management research + sourcing inbox workflow + 整体一次性 ship". Lock decisions in `.olym/brainstorm/vault-md-management-2026-06-01.md` §10. Feature-layer boundary (Daily Note + Sourcing) aligns with memory `feedback_build_system_not_business`; storage philosophy aligns with `decision_ctrl_obsidian_philosophy` (vim test) + `decision_vmark_not_substrate_use_open_stack` (no VMark sidecar). Wiki-link Tiptap extension ports from seahop/kairo (MIT) — see THIRD_PARTY_LICENSES/kairo-MIT.txt.
