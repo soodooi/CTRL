@@ -45,6 +45,7 @@ import { NotesActions } from './NotesActions';
 import { NotesTree } from './NotesTree';
 import { NotesEditor } from './NotesEditor';
 import { NotesBacklinks } from './NotesBacklinks';
+import { TemplatesModal } from './TemplatesModal';
 import styles from './Notes.module.css';
 
 const renderDailyTemplate = (raw: string): string => {
@@ -59,6 +60,7 @@ export const NotesApp = (): ReactElement => {
   const [query, setQuery] = useState('');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const queryClient = useQueryClient();
   const openTab = useWorkspaceStore((s) => s.openTab);
   const activeInstanceId = useWorkspaceStore((s) => s.activeInstanceId);
@@ -77,29 +79,17 @@ export const NotesApp = (): ReactElement => {
     queryClient.invalidateQueries({ queryKey: ['vault-list'] });
   }, [queryClient]);
 
-  const handleNew = useCallback(async () => {
-    const path = window.prompt(
-      'New note path under vault root',
-      'notes/untitled.md',
-    );
-    if (!path) return;
-    const safe = path.endsWith('.md') ? path : `${path}.md`;
-    setBusy(true);
-    try {
-      await vaultWrite({
-        path: safe,
-        content: '',
-        frontmatter: { created: new Date().toISOString() },
-      });
+  const handleNew = useCallback(() => {
+    setTemplatesOpen(true);
+  }, []);
+
+  const handleTemplateCreated = useCallback(
+    (path: string) => {
       refetchTree();
-      setSelectedPath(safe);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('notes new failed', err);
-    } finally {
-      setBusy(false);
-    }
-  }, [refetchTree]);
+      setSelectedPath(path);
+    },
+    [refetchTree],
+  );
 
   const handleToday = useCallback(async () => {
     setBusy(true);
@@ -181,11 +171,16 @@ export const NotesApp = (): ReactElement => {
       <NotesActions
         query={query}
         onQueryChange={setQuery}
-        onNew={() => void handleNew()}
+        onNew={handleNew}
         onToday={() => void handleToday()}
         onReview={() => void handleReview()}
         reviewCount={reviewCount}
         busy={busy}
+      />
+      <TemplatesModal
+        open={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        onCreated={handleTemplateCreated}
       />
       <div className={styles.cols}>
         <NotesTree
