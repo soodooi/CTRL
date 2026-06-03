@@ -15,6 +15,7 @@ import { useMemo, type ReactElement } from 'react';
 import { vaultRead, vaultWrite } from '@/lib/kernel';
 import { ViewerHost } from '@/components/viewers/ViewerHost';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
+import { FrontmatterPanel } from './FrontmatterPanel';
 import styles from './Notes.module.css';
 
 interface NotesEditorProps {
@@ -52,6 +53,7 @@ export const NotesEditor = ({ path }: NotesEditorProps): ReactElement => {
 
   return (
     <section className={styles.editor} aria-label="Editor">
+      {path ? <FrontmatterPanel path={path} /> : null}
       <ViewerHost resource={resource} />
     </section>
   );
