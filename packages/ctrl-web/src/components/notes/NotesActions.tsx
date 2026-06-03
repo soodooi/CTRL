@@ -8,6 +8,7 @@
 // Review). Pure presentation — state lives in NotesApp.
 
 import { type ChangeEvent, type ReactElement } from 'react';
+import { StarToggle } from './StarToggle';
 import styles from './Notes.module.css';
 
 interface NotesActionsProps {
@@ -18,6 +19,8 @@ interface NotesActionsProps {
   onReview: () => void;
   reviewCount: number;
   busy?: boolean;
+  /** Currently-selected note path — drives the StarToggle. */
+  selectedPath?: string | null;
 }
 
 export const NotesActions = ({
@@ -28,6 +31,7 @@ export const NotesActions = ({
   onReview,
   reviewCount,
   busy,
+  selectedPath = null,
 }: NotesActionsProps): ReactElement => (
   <header className={styles.actions} role="toolbar" aria-label="Notes actions">
     <input
@@ -38,6 +42,7 @@ export const NotesActions = ({
       onChange={(e: ChangeEvent<HTMLInputElement>) => onQueryChange(e.target.value)}
       aria-label="Search notes"
     />
+    <StarToggle path={selectedPath} />
     <button type="button" className={styles.actionButton} onClick={onNew} disabled={busy}>
       + Note
     </button>

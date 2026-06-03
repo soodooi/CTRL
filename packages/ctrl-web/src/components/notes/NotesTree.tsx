@@ -11,13 +11,21 @@
 
 import { useMemo, type ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { vaultList, vaultRootPath, vaultSearch } from '@/lib/kernel';
+import {
+  vaultList,
+  vaultNotesByTag,
+  vaultRootPath,
+  vaultSearch,
+} from '@/lib/kernel';
 import styles from './Notes.module.css';
 
 interface NotesTreeProps {
   query: string;
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  /** When set, the tree restricts to notes tagged with this value
+   *  via `vault_notes_by_tag`. */
+  tagFilter?: string | null;
 }
 
 interface FolderGroup {
@@ -61,6 +69,7 @@ export const NotesTree = ({
   query,
   selectedPath,
   onSelect,
+  tagFilter,
 }: NotesTreeProps): ReactElement => {
   const { data: rootPath } = useQuery({
     queryKey: ['vault-root'],
@@ -78,11 +87,25 @@ export const NotesTree = ({
   const { data: searchHits = [] } = useQuery({
     queryKey: ['vault-search', trimmed],
     queryFn: () => vaultSearch(trimmed, 100),
-    enabled: trimmed.length > 1,
+    enabled: trimmed.length > 1 && !tagFilter,
     staleTime: 2_000,
   });
 
-  const visiblePaths = trimmed.length > 1 ? searchHits : allPaths;
+  const { data: tagHits = [] } = useQuery({
+    queryKey: ['vault-tag-notes', tagFilter],
+    queryFn: () => (tagFilter ? vaultNotesByTag(tagFilter) : Promise.resolve([])),
+    enabled: !!tagFilter,
+    staleTime: 5_000,
+  });
+
+  // Resolution order: tag filter wins (kairo parity), then search,
+  // then full list. Search + tag can't combine yet — that's a
+  // future ANDed filter once the kernel exposes a join command.
+  const visiblePaths = tagFilter
+    ? tagHits
+    : trimmed.length > 1
+    ? searchHits
+    : allPaths;
   const grouped = useMemo(() => groupByFolder(visiblePaths), [visiblePaths]);
 
   return (

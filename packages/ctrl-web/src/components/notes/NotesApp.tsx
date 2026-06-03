@@ -46,6 +46,7 @@ import { NotesTree } from './NotesTree';
 import { NotesEditor } from './NotesEditor';
 import { NotesBacklinks } from './NotesBacklinks';
 import { TemplatesModal } from './TemplatesModal';
+import { TagsPanel } from './TagsPanel';
 import styles from './Notes.module.css';
 
 const renderDailyTemplate = (raw: string): string => {
@@ -61,6 +62,7 @@ export const NotesApp = (): ReactElement => {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const openTab = useWorkspaceStore((s) => s.openTab);
   const activeInstanceId = useWorkspaceStore((s) => s.activeInstanceId);
@@ -176,6 +178,7 @@ export const NotesApp = (): ReactElement => {
         onReview={() => void handleReview()}
         reviewCount={reviewCount}
         busy={busy}
+        selectedPath={selectedPath}
       />
       <TemplatesModal
         open={templatesOpen}
@@ -183,11 +186,15 @@ export const NotesApp = (): ReactElement => {
         onCreated={handleTemplateCreated}
       />
       <div className={styles.cols}>
-        <NotesTree
-          query={query}
-          selectedPath={selectedPath}
-          onSelect={setSelectedPath}
-        />
+        <div className={styles.leftCol}>
+          <NotesTree
+            query={query}
+            selectedPath={selectedPath}
+            onSelect={setSelectedPath}
+            tagFilter={tagFilter}
+          />
+          <TagsPanel selected={tagFilter} onSelect={setTagFilter} />
+        </div>
         <NotesEditor path={selectedPath} />
         <NotesBacklinks path={selectedPath} onSelect={setSelectedPath} />
       </div>
