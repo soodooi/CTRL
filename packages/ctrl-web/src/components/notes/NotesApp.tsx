@@ -41,13 +41,28 @@ import {
   renderDailyNotePath,
   renderReviewQueuePath,
 } from '@/lib/vault-conventions';
+import { lazy, Suspense } from 'react';
 import { NotesActions } from './NotesActions';
 import { NotesTree } from './NotesTree';
 import { NotesEditor } from './NotesEditor';
 import { NotesBacklinks } from './NotesBacklinks';
 import { TemplatesModal } from './TemplatesModal';
 import { TagsPanel } from './TagsPanel';
+import { ViewSwitcher, type NotesView } from './ViewSwitcher';
 import styles from './Notes.module.css';
+
+// Lazy-load the heavy views so the PWA cold-start bundle (ADR-002
+// § crypto v1: ≤ 200 KB gzip critical path) doesn't drag in the
+// force-graph runtime until the user actually opens the Graph view.
+const GraphView = lazy(() =>
+  import('./GraphView').then((m) => ({ default: m.GraphView })),
+);
+const HealthDashboard = lazy(() =>
+  import('./HealthDashboard').then((m) => ({ default: m.HealthDashboard })),
+);
+const DailyNotesCalendar = lazy(() =>
+  import('./DailyNotesCalendar').then((m) => ({ default: m.DailyNotesCalendar })),
+);
 
 const renderDailyTemplate = (raw: string): string => {
   const d = new Date();
@@ -63,6 +78,7 @@ export const NotesApp = (): ReactElement => {
   const [busy, setBusy] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [view, setView] = useState<NotesView>('editor');
   const queryClient = useQueryClient();
   const openTab = useWorkspaceStore((s) => s.openTab);
   const activeInstanceId = useWorkspaceStore((s) => s.activeInstanceId);
@@ -185,6 +201,16 @@ export const NotesApp = (): ReactElement => {
         onClose={() => setTemplatesOpen(false)}
         onCreated={handleTemplateCreated}
       />
+      <ViewSwitcher
+        active={view}
+        onChange={(next) => {
+          setView(next);
+          if (next === 'editor') return;
+          // Switching to a non-editor view doesn't drop the
+          // selectedPath — the user can flip back to the editor and
+          // the same note is still open.
+        }}
+      />
       <div className={styles.cols}>
         <div className={styles.leftCol}>
           <NotesTree
@@ -195,7 +221,23 @@ export const NotesApp = (): ReactElement => {
           />
           <TagsPanel selected={tagFilter} onSelect={setTagFilter} />
         </div>
-        <NotesEditor path={selectedPath} />
+        <div className={styles.centerCol}>
+          {view === 'editor' ? (
+            <NotesEditor path={selectedPath} />
+          ) : (
+            <Suspense
+              fallback={<div className={styles.viewFallback}>Loading view…</div>}
+            >
+              {view === 'graph' ? (
+                <GraphView focusPath={selectedPath} onSelect={setSelectedPath} />
+              ) : view === 'health' ? (
+                <HealthDashboard onSelect={setSelectedPath} />
+              ) : view === 'daily' ? (
+                <DailyNotesCalendar onSelect={setSelectedPath} />
+              ) : null}
+            </Suspense>
+          )}
+        </div>
         <NotesBacklinks path={selectedPath} onSelect={setSelectedPath} />
       </div>
     </div>
