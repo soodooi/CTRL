@@ -21,6 +21,10 @@ pub mod code_space;
 pub mod config;
 pub mod draft;
 pub mod draft_run;
+// ADR-002 § vault v1 §8.6 v5 (2026-06-03) — vault-side git via git CLI
+// (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
+// panel: status / init / commit_all / push / log.
+pub mod git;
 pub mod irisy;
 pub mod irisy_chat;
 pub mod kernel;
@@ -168,6 +172,12 @@ macro_rules! pwa_invoke_handler {
             // richer LLM pass on top of the same file).
             $crate::commands::vault::vault_sourcing_run,
             $crate::commands::vault::vault_sourcing_pending,
+            // git — vault-side CLI shim (§8.6 v5)
+            $crate::commands::git::git_status,
+            $crate::commands::git::git_init,
+            $crate::commands::git::git_commit_all,
+            $crate::commands::git::git_push,
+            $crate::commands::git::git_log,
             // localstorage — small persistent JSON KV per keycap
             $crate::commands::storage::localstorage_get,
             $crate::commands::storage::localstorage_set,

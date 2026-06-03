@@ -7,7 +7,14 @@
 import { type ReactElement } from 'react';
 import styles from './Notes.module.css';
 
-export type NotesView = 'editor' | 'graph' | 'daily' | 'health';
+export type NotesView =
+  | 'editor'
+  | 'graph'
+  | 'daily'
+  | 'health'
+  | 'kanban'
+  | 'diagram'
+  | 'git';
 
 interface ViewSwitcherProps {
   active: NotesView;
@@ -19,6 +26,9 @@ const VIEWS: ReadonlyArray<{ id: NotesView; label: string }> = [
   { id: 'graph', label: 'Graph' },
   { id: 'daily', label: 'Daily' },
   { id: 'health', label: 'Health' },
+  { id: 'kanban', label: 'Kanban' },
+  { id: 'diagram', label: 'Diagram' },
+  { id: 'git', label: 'Git' },
 ];
 
 export const ViewSwitcher = ({ active, onChange }: ViewSwitcherProps): ReactElement => (

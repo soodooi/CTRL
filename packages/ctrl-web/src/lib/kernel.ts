@@ -430,3 +430,36 @@ export const vaultSourcingPending = (
   invoke('vault_sourcing_pending', {
     args: { keycap_id: keycap_id ?? null },
   });
+
+// ADR-002 § vault v1 §8.6 v5 (2026-06-03) — vault-side git via the
+// kernel-spawned git CLI. Mirrors src-tauri/src/commands/git.rs.
+
+export interface GitStatusReply {
+  initialised: boolean;
+  branch: string | null;
+  ahead: number;
+  behind: number;
+  staged: number;
+  modified: number;
+  untracked: number;
+  clean: boolean;
+  last_error: string | null;
+}
+
+export interface GitLogEntry {
+  sha: string;
+  author: string;
+  date: string;
+  message: string;
+}
+
+export const gitStatus = (): Promise<GitStatusReply> => invoke('git_status');
+
+export const gitInit = (): Promise<string> => invoke('git_init');
+
+export const gitCommitAll = (message: string): Promise<string> =>
+  invoke('git_commit_all', { args: { message } });
+
+export const gitPush = (): Promise<string> => invoke('git_push');
+
+export const gitLog = (): Promise<GitLogEntry[]> => invoke('git_log');

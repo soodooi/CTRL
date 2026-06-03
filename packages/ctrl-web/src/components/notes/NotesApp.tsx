@@ -63,6 +63,15 @@ const HealthDashboard = lazy(() =>
 const DailyNotesCalendar = lazy(() =>
   import('./DailyNotesCalendar').then((m) => ({ default: m.DailyNotesCalendar })),
 );
+const KanbanView = lazy(() =>
+  import('./KanbanView').then((m) => ({ default: m.KanbanView })),
+);
+const DiagramView = lazy(() =>
+  import('./DiagramView').then((m) => ({ default: m.DiagramView })),
+);
+const GitPanel = lazy(() =>
+  import('./GitPanel').then((m) => ({ default: m.GitPanel })),
+);
 
 const renderDailyTemplate = (raw: string): string => {
   const d = new Date();
@@ -234,6 +243,12 @@ export const NotesApp = (): ReactElement => {
                 <HealthDashboard onSelect={setSelectedPath} />
               ) : view === 'daily' ? (
                 <DailyNotesCalendar onSelect={setSelectedPath} />
+              ) : view === 'kanban' ? (
+                <KanbanView />
+              ) : view === 'diagram' ? (
+                <DiagramView />
+              ) : view === 'git' ? (
+                <GitPanel />
               ) : null}
             </Suspense>
           )}
