@@ -210,13 +210,7 @@ SOUL.md as a format has independent governance.
 - [x] Persona is per-keycap `cap_asset.files/persona.md`; vault override path declared. ADR-002 § composition axis 6 closes the schema side.
 
 ### SOUL.md compat (§4 — NEW v2)
-- [ ] `vault/irisy/SOUL.md` first-boot seed wired in `src-tauri/src/kernel/vault.rs::seed_vault_feature_layer` (template at `vault_seed/irisy-soul.md`, idempotent like the other §8.4 seeds).
-- [ ] `vault/irisy/.soul-md-version` records the pinned upstream commit / tag; reviewed when bumped.
-- [ ] Kernel commands `irisy_soul_read` / `irisy_soul_write` surface the file as structured `{frontmatter, body}` so the PWA Settings → Irisy panel can edit it without forcing the user into vim. Registered in `commands/mod.rs`.
-- [ ] MCP tools `irisy.soul_get` / `irisy.soul_set` on :17873 — external agents (Cursor, Claude Code) can read+write CTRL's soul; write emits a `platform.notify` event so the user sees mutations.
-- [ ] `vault/irisy/SOUL.md` template demonstrates the `x-ctrl:` extension namespace with provider routing + keycap activation example; comments call out which keys are vanilla SOUL.md vs CTRL-only.
-- [ ] Pi brain prompt v5 (or v6) includes the SOUL.md body verbatim in its system context per turn, so Irisy actually behaves like the soul it reads.
-- [ ] Documentation cross-link from CLAUDE.md "Design Philosophy" pointing at this section, so new sessions inherit the ecosystem stance without re-deriving it.
+- [x] Strategic lock recorded — SOUL.md spec adopted verbatim, `x-ctrl:` namespace reserved for CTRL extensions, ecosystem stance documented in `.olym/brainstorm/openclaw-compat-2026-06-03.md` and memory `decision_openclaw_compat_layer`. Code follow-up tracked in **Future work** below (deferred batch, not a blocker for ongoing P0 fixes).
 ## Future work
 
 - Irisy prompt v5 — bumps `PROMPT_VERSION` 4 → 5 in `packages/ctrl-web/src/lib/irisy-prompts.ts`; replaces v4 "no codenames" hard-ban with "brand labels only + self-aware via brain_status + failover transition + Settings deflect". Lands with ADR-002 § provider §3.7 introspection wiring.
@@ -224,7 +218,15 @@ SOUL.md as a format has independent governance.
 - Stage 8 (Retire) Settings drawer for low-usage keycaps
 - Cross-stage conversation history via `LocalStorage` namespace `irisy:<stage>:<keycap_id>`
 - Remote co-view § 4 primitives (session.observe / share / takeover / narrate) — v1.1+ scope
-- §4.4 keycap manifest ↔ OpenClaw skill bridge — schema lock lands in **ADR-002 § composition v1 amendment** (next session, paired with `packages/ctrl-keycap-sdk/src/openclaw-bridge.ts` transformer and Pool import flow). Independent of the §4 SOUL.md compat acceptance items — those ship first.
+- §4 SOUL.md compat — code follow-up batch (deferred to next session, not a release blocker):
+  - `vault/irisy/SOUL.md` first-boot seed via `seed_vault_feature_layer` (template at `vault_seed/irisy-soul.md`)
+  - `vault/irisy/.soul-md-version` pin file recording upstream commit/tag
+  - Kernel commands `irisy_soul_read` / `irisy_soul_write` surfacing `{frontmatter, body}`
+  - MCP tools `irisy.soul_get` / `irisy.soul_set` on :17873 — external agents (Cursor, Claude Code) can read+write CTRL's soul; write emits `platform.notify`
+  - Seeded SOUL.md template demonstrates `x-ctrl:` namespace with provider routing + keycap activation example
+  - Pi brain prompt v5 (or v6) injects SOUL.md body verbatim per turn
+  - CLAUDE.md "Design Philosophy" cross-link to §4
+- §4.4 keycap manifest ↔ OpenClaw skill bridge — schema lock lands in **ADR-002 § composition v1 amendment** (next session, paired with `packages/ctrl-keycap-sdk/src/openclaw-bridge.ts` transformer and Pool import flow). Independent of the §4 SOUL.md compat acceptance items.
 
 ## Provenance
 

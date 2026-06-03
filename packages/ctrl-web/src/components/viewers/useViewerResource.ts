@@ -2,9 +2,17 @@
 // loading/error state. Used by every text-based viewer (Markdown,
 // CodeMirror-driven ones, etc.) so the fetch + ctrl-asset:// fallback
 // behavior lives in one place.
+//
+// bao 2026-06-03 — VAULT LOAD FAILED root cause: `vault://` is a JS-side
+// scheme (not a registered Tauri protocol). `fetch('vault://…')` throws
+// before reaching network. All scheme routing lives in `fetchUriAsText`
+// (`viewer-uri.ts`) which dispatches `vault://` to `vault_read`. Earlier
+// commit fixed the URI **generation** (vaultUri instead of vaultAssetUri)
+// but this consumer was still calling raw `fetch()`.
 
 import { useEffect, useState } from 'react';
 import { isCtrlAssetUri } from '@/lib/asset-uri';
+import { fetchUriAsText } from '@/lib/viewer-uri';
 import type { ViewerResource } from '@/lib/viewer-registry';
 
 interface UseViewerResourceState {
@@ -15,12 +23,6 @@ interface UseViewerResourceState {
   saving: boolean;
   dirty: boolean;
 }
-
-const fetchAsText = async (uri: string): Promise<string> => {
-  const res = await fetch(uri);
-  if (!res.ok) throw new Error(`fetch ${uri} → ${res.status}`);
-  return res.text();
-};
 
 export const useViewerResource = (
   resource: ViewerResource,
@@ -35,7 +37,7 @@ export const useViewerResource = (
     setContentState(null);
     setOriginal(null);
     setError(null);
-    fetchAsText(resource.uri)
+    fetchUriAsText(resource.uri)
       .then((text) => {
         if (cancelled) return;
         setContentState(text);
