@@ -42,12 +42,12 @@ import styles from './PrimaryRail.module.css';
 const IRISY_ITEM_ID = 'builtin-irisy';
 const CODING_ITEM_ID = 'coding';
 const POOL_ITEM_ID = 'pool';
-// ADR-002 substrate § vault v1 §8.6 (2026-06-01) — vault L1 entry
-// activates the L2 navigator (memory `decision_vault_adr_002_section_8`).
-const VAULT_ITEM_ID = 'vault';
+// ADR-002 § vault v1 §8.6 v4 (bao 2026-06-02): Vault is the substrate.
+// The L1 chip surfaces the **Notes** app (the first vault-using app);
+// Vault itself does not get an L1 entry. memory
+// `decision_vault_adr_002_section_8`.
+const NOTES_ITEM_ID = 'notes';
 const SETTINGS_ITEM_ID = 'settings';
-
-export const VAULT_RAIL_ID = VAULT_ITEM_ID;
 
 interface RailContextValue {
   irisyState: IrisyState;
@@ -136,10 +136,10 @@ const IrisyIcon = (): ReactElement => (
   </svg>
 );
 
-// Vault icon — open book with a centered bookmark stroke. Reads as
-// "library" (the vault) rather than a generic file/folder which would
-// collide with Pool's grid metaphor.
-const VaultIcon = (): ReactElement => (
+// Notes icon — open book with a centered bookmark stroke. Reads as
+// "notebook" rather than a generic file/folder which would collide
+// with Pool's grid metaphor.
+const NotesIcon = (): ReactElement => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M4 5.5a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z" />
     <path d="M9 4v8l2.5-2 2.5 2V4" />
@@ -149,7 +149,7 @@ const VaultIcon = (): ReactElement => (
 const NAV_ITEMS: ReadonlyArray<RailDef> = [
   { id: IRISY_ITEM_ID, label: 'Irisy', path: '/', icon: <IrisyIcon /> },
   { id: POOL_ITEM_ID, label: 'Keycap pool', path: '/pool', icon: <PoolIcon /> },
-  { id: VAULT_ITEM_ID, label: 'Vault', path: '/vault', icon: <VaultIcon /> },
+  { id: NOTES_ITEM_ID, label: 'Notes', path: '/notes', icon: <NotesIcon /> },
   { id: CODING_ITEM_ID, label: 'Coding', path: '/coding', icon: <CodingIcon /> },
 ];
 
@@ -158,7 +158,7 @@ const SETTINGS_PATH = '/settings/ctrl';
 const idForPath = (pathname: string): string => {
   if (pathname.startsWith('/coding')) return CODING_ITEM_ID;
   if (pathname.startsWith('/pool')) return POOL_ITEM_ID;
-  if (pathname.startsWith('/vault')) return VAULT_ITEM_ID;
+  if (pathname.startsWith('/notes')) return NOTES_ITEM_ID;
   if (pathname.startsWith('/settings')) return SETTINGS_ITEM_ID;
   // `/irisy` is now an alias landing on Irisy (no separate Create item).
   return IRISY_ITEM_ID;
@@ -185,20 +185,17 @@ export const PrimaryRail = (): ReactElement => {
       // an L1 chip while the workspace is already expanded collapses
       // it. The user controls window expand/collapse via the `>`
       // chevron at the top of L1; this handler only updates state.
-      if (def.id === POOL_ITEM_ID || def.id === CODING_ITEM_ID) {
+      if (
+        def.id === POOL_ITEM_ID ||
+        def.id === CODING_ITEM_ID ||
+        def.id === NOTES_ITEM_ID
+      ) {
         useWorkspaceStore.getState().openSystemTab({
           id: def.id,
           kind: 'route',
           path: def.path,
           title: def.label,
         });
-        return;
-      }
-      // Vault L1 (ADR-002 § vault v1 §8.6, 2026-06-01) — activates the
-      // L2 navigator inline (mounted in app.tsx via activeRailId), no
-      // workspace tab and no route navigation. Clicking a note inside
-      // L2 opens a workspace `vault-md` tab via openTab().
-      if (def.id === VAULT_ITEM_ID) {
         return;
       }
       void navigate({ to: def.path });

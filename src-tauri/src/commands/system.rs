@@ -318,46 +318,12 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
     Ok(expanded)
 }
 
-/// Idempotent expand. Returns `true` if expansion happened (was compact)
-/// or `false` if the window was already expanded.
-///
-/// Vault L1 → L2 → click-note flow needs to guarantee the workspace
-/// surface is visible before the new `vault-md` tab activates;
-/// `toggle_workspace_window` would collapse it when already open. This
-/// command peeks at the current width and only resizes if needed.
-/// (ADR-002 substrate § vault v1 §8.6 + bao 2026-06-02 fix.)
-#[tauri::command]
-pub fn expand_workspace_window_if_collapsed(app: tauri::AppHandle) -> Result<bool, String> {
-    use tauri::{LogicalPosition, LogicalSize, Manager};
-
-    let main = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    let monitor = main
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no current monitor".to_string())?;
-    let scale = monitor.scale_factor();
-
-    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
-    let main_size = main.outer_size().map_err(|e| e.to_string())?;
-    let main_x = main_pos.x as f64 / scale;
-    let main_w = main_size.width as f64 / scale;
-    let main_h = main_size.height as f64 / scale;
-    let main_y = main_pos.y as f64 / scale;
-    let right_edge = main_x + main_w;
-
-    if main_w >= EXPAND_THRESHOLD {
-        return Ok(false);
-    }
-
-    let next_x = right_edge - MAIN_EXPANDED_WIDTH;
-    main.set_size(LogicalSize::new(MAIN_EXPANDED_WIDTH, main_h))
-        .map_err(|e| e.to_string())?;
-    main.set_position(LogicalPosition::new(next_x, main_y))
-        .map_err(|e| e.to_string())?;
-    Ok(true)
-}
+// `expand_workspace_window_if_collapsed` (bao 2026-06-02 short-lived
+// fix from the L2 panel iteration) is retired in v3 of the Notes app
+// design: the L1 Notes chip uses `openSystemTab` like Pool/Coding,
+// and `toggle_workspace_window` (driven by the ▾ chevron) is the only
+// path that resizes the main window. Removing the helper keeps the
+// expand/collapse model single-source per ADR-003 § shell-4col.
 
 // ── Pi (sole brain) status + upgrade — ADR-002 substrate §4 ───────────────────────
 //

@@ -18,11 +18,10 @@ import { vaultRead, vaultWrite } from '@/lib/kernel';
 import { InstanceSwitcher } from './InstanceSwitcher';
 import { EmbedView } from './EmbedView';
 import { KeycapRunView } from './KeycapRunView';
-// ADR-002 substrate § vault v1 §8.6 (2026-06-01, memory
-// `decision_vault_adr_002_section_8`) — backlinks live in a bottom
-// drawer of the workspace, not in a separate panel; sourcing review
-// is its own workspace tab kind.
-import { BacklinksDrawer } from '@/components/vault/BacklinksDrawer';
+// ADR-002 substrate § vault v1 §8.6 v4 (bao 2026-06-02): backlinks live
+// inside the Notes app tab (right column), not as a workspace bottom
+// drawer. Sourcing review remains its own workspace tab kind so the
+// Irisy-produced review queue stays addressable from anywhere.
 import { SourcingReviewTab } from '@/components/vault/SourcingReviewTab';
 import { resolveViewer, type ViewerResource } from '@/lib/viewer-registry';
 import { vaultUri } from '@/lib/viewer-uri';
@@ -220,9 +219,6 @@ export const WorkspaceShell = ({ fallback }: WorkspaceShellProps): ReactElement 
           </div>
         )}
       </div>
-      {activeTab && activeTab.kind === 'vault-md' && activeTab.vaultPath ? (
-        <BacklinksDrawer path={activeTab.vaultPath} />
-      ) : null}
     </div>
   );
 };

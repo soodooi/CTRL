@@ -36,7 +36,6 @@ import {
 } from './tiptap-wikilink';
 import { useQuery } from '@tanstack/react-query';
 import { vaultList } from '@/lib/kernel';
-import { invoke } from '@/lib/bridge';
 import { useWorkspaceStore } from '@/lib/workspace-store';
 import styles from './Viewer.module.css';
 
@@ -281,10 +280,9 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
       const resolved = resolveTarget(target);
       if (!resolved) return;
       const baseName = resolved.split('/').pop() ?? resolved;
-      // Expand the workspace if compact so the new vault-md tab is
-      // actually visible. Same fix as L2VaultPanel openPath
-      // (ADR-002 § vault v1 §8.6, bao 2026-06-02).
-      void invoke('expand_workspace_window_if_collapsed').catch(() => {});
+      // The clicked wikilink opens the target as a regular workspace
+      // vault-md tab. The Notes app already owns the active workspace,
+      // so no explicit window-expand is required.
       openTab(
         {
           id: `vault:${resolved}`,

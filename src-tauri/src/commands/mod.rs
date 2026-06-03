@@ -87,7 +87,6 @@ macro_rules! pwa_invoke_handler {
             // 不是浮窗"). Main slides left edge 430 ↔ 1600. CSS @media
             // drives the expanded grid. No independent NSWindow.
             $crate::commands::system::toggle_workspace_window,
-            $crate::commands::system::expand_workspace_window_if_collapsed,
             // updater — safe macOS relaunch after auto-update (Chrome-style
             // detached helper, sidesteps the Tauri 2 race)
             $crate::commands::updater::safe_relaunch_after_update,

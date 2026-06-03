@@ -39,11 +39,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
 import { KEYCAP_DRAG_MIME } from './components/Keyboard';
-import { RailProvider, PrimaryRail, VAULT_RAIL_ID, useRail } from './components/PrimaryRail';
-// ADR-002 substrate § vault v1 §8.6 (2026-06-01) — L2 navigator
-// (memory `decision_vault_adr_002_section_8`). Lazy because vault is
-// not on the cold-start critical path.
-import { L2VaultPanel } from './components/vault/L2VaultPanel';
+import { RailProvider, PrimaryRail } from './components/PrimaryRail';
 import { InfraBar } from './components/InfraBar';
 import { IrisyChat } from './components/irisy/IrisyChat';
 import { WorkspaceShell } from './components/workspace/WorkspaceShell';
@@ -88,10 +84,6 @@ function RootShellInner(): ReactElement {
   const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
   const workspaceOpen = useWorkspaceStore((s) => s.instances.length > 0);
   const [dragOver, setDragOver] = useState(false);
-  // ADR-002 substrate § vault v1 §8.6 — vault L1 active flips the L2
-  // column open (200 px per app.module.css `data-l2-open='true'`).
-  const { activeRailId } = useRail();
-  const vaultActive = activeRailId === VAULT_RAIL_ID;
   useCompanionWindow();
 
   // Drag-over only flips when our custom MIME is present — text drags
@@ -130,7 +122,6 @@ function RootShellInner(): ReactElement {
     <div
       className={styles.shell}
       data-workspace-open={workspaceOpen || undefined}
-      data-l2-open={vaultActive || undefined}
       data-testid="shell"
     >
       <div className={styles.status} data-testid="grid-status">
@@ -139,12 +130,12 @@ function RootShellInner(): ReactElement {
       <div className={styles.l1} data-testid="grid-l1">
         <PrimaryRail />
       </div>
-      {/* L2 — sub-nav column for the active L1 item. Width 0 when no L1
-          chip declares sub-nav; 200 px when `data-l2-open='true'` flips
-          via `vaultActive` (ADR-002 § vault v1 §8.6, 2026-06-01). */}
-      <div className={styles.l2} data-testid="grid-l2">
-        {vaultActive ? <L2VaultPanel /> : null}
-      </div>
+      {/* L2 — reserved for future sub-nav of L1 modules. Width 0 by
+          default; future L1 modules can flip `data-l2-open='true'` when
+          they declare structured sub-nav. Notes / Pool / Coding use a
+          full workspace tab body instead (bao 2026-06-02 — Vault is
+          substrate, Notes is an in-tab app). */}
+      <div className={styles.l2} data-testid="grid-l2" />
       {/* Tab — workspace tab content (TabBar + active tab body). The
           `--tab-width: 0` default keeps it collapsed until a workspace
           instance opens, at which point `data-workspace-open="true"`
@@ -217,8 +208,8 @@ const CodeSpaceDetailRoute = lazy(() =>
 const PoolRoute = lazy(() =>
   import('./routes/pool').then((m) => ({ default: m.PoolRoute })),
 );
-const VaultRoute = lazy(() =>
-  import('./routes/vault').then((m) => ({ default: m.VaultRoute })),
+const NotesRoute = lazy(() =>
+  import('./routes/notes').then((m) => ({ default: m.NotesRoute })),
 );
 const WorkbenchRoute = lazy(() =>
   import('./routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),
@@ -271,12 +262,12 @@ const poolRoute = createRoute({
     </Suspense>
   ),
 });
-const vaultRoute = createRoute({
+const notesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/vault',
+  path: '/notes',
   component: () => (
     <Suspense fallback={<LazyFallback />}>
-      <VaultRoute />
+      <NotesRoute />
     </Suspense>
   ),
 });
@@ -395,7 +386,7 @@ const iconLabRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   poolRoute,
-  vaultRoute,
+  notesRoute,
   workbenchRoute,
   workspaceRoute,
   settingsRoute,
