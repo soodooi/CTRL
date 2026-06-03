@@ -35,12 +35,19 @@ const stem = (name: string): string => {
   return dot > 0 ? name.slice(0, dot) : name;
 };
 
+/**
+ * Group by the **last directory segment** so a path like
+ * `irisy/sub/README.md` lands in a group named `irisy/sub` instead of
+ * `irisy` (which would collapse multiple READMEs from different
+ * sub-folders into one bucket and lose the disambiguating folder).
+ * Root-level files (no `/`) land in a `(root)` bucket.
+ */
 const groupByFolder = (paths: ReadonlyArray<string>): FolderGroup[] => {
   const buckets = new Map<string, string[]>();
   for (const p of paths) {
     if (p.startsWith('.ctrl/')) continue;
-    const slash = p.indexOf('/');
-    const folder = slash >= 0 ? p.slice(0, slash) : '(root)';
+    const lastSlash = p.lastIndexOf('/');
+    const folder = lastSlash >= 0 ? p.slice(0, lastSlash) : '(root)';
     const list = buckets.get(folder) ?? [];
     list.push(p);
     buckets.set(folder, list);
