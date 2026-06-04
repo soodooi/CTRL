@@ -123,9 +123,11 @@
 .markdownBody :global(h3) { font-size: 1em; font-weight: 700; }
 
 .markdownBody :global(p) {
-  margin: 0.1em 0;
-  line-height: 1.4;
+  margin: 0.35em 0;
+  line-height: 1.5;
 }
+.markdownBody :global(p:first-child) { margin-top: 0; }
+.markdownBody :global(p:last-child) { margin-bottom: 0; }
 .markdownBody :global(p:first-child) { margin-top: 0; }
 .markdownBody :global(p:last-child) { margin-bottom: 0; }
 
@@ -493,10 +495,10 @@
 .scroller {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 10px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .welcome {
@@ -561,11 +563,19 @@
   max-width: 320px;
 }
 
-/* bao 2026-05-31 P0 — drop chat-bubble pattern (ChatGPT/Doubao/Kimi
-   clone). Editorial conversation: small-caps mono sender label, then
-   flowing serif paragraph. No bubble fill, no border-radius, no
-   alignment-by-role. Two voices on paper. Hairline separator between
-   turns gives spatial rhythm without chrome. */
+/* Editorial conversation: small-caps mono sender label on the LEFT,
+   flowing paragraph on the RIGHT (same row). 2-col grid lets the label
+   align as a gutter without owning a vertical line of its own — bao
+   2026-06-01: "YOU 占一行，Irisy 占一行，这个不对，用左右的". Tighter
+   font + line-height + paragraph spacing to raise information density
+   per bao's same turn ("字体应该再小一些，紧凑一些"). */
+/* No sender label — plain editorial flow. User vs assistant signaled
+   by: user lines render in muted color with a 2px accent rail on the
+   left; assistant lines render in primary text color with full
+   markdown structure (lists, headings, code, tool cards). Turn
+   separator (hairline) marks role boundary.
+   Sizes from .olym/brainstorm/chat-readability-2026-06-01.md
+   (14.5/1.5 body, 0.35em paragraph gap, 10px scroller gap). */
 .userBubble,
 .assistantBubble {
   width: 100%;
@@ -575,34 +585,30 @@
   background: transparent;
   color: var(--color-text);
   font-family: var(--font-sans);
-  font-size: 15.5px;
-  line-height: 1.55;
+  font-size: 14.5px;
+  line-height: 1.5;
   letter-spacing: -0.005em;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-.userBubble { white-space: pre-wrap; }
+.userBubble {
+  white-space: pre-wrap;
+  border-left: 2px solid var(--color-accent);
+  padding-left: 10px;
+  color: var(--color-text-muted);
+}
 .assistantBubble { white-space: normal; }
 
-.senderLabel {
-  display: block;
-  font-family: var(--font-display);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--color-text-faint);
-  margin-bottom: 6px;
-  user-select: none;
+.bubbleContent {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
-
-.senderLabelUser { color: var(--color-accent); }
 
 .turnSeparator {
   align-self: stretch;
   height: 0;
-  margin: 18px 0 20px;
+  margin: 12px 0 14px;
   border-top: 1px solid var(--color-border-soft);
 }
 .turnSeparator:first-child { display: none; }
@@ -631,6 +637,31 @@
   background: var(--color-bg-l1);
 }
 
+/* Transient confirmation pill rendered above the composer when a reply
+   has been saved to vault. Auto-dismissed after 4 s; click to dismiss
+   manually. Single-line, mono, low-key — matches existing chat chrome. */
+.statusStrip {
+  margin: 0 12px 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-accent) 12%, transparent);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  text-align: left;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  width: calc(100% - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-out-quart);
+}
+.statusStrip:hover {
+  color: var(--color-text);
+}
+
 /* The wrap is the single rounded surface; the send button is absolute
    positioned INSIDE so the textarea grows downward without pushing the
    button off-screen (Telegram / Doubao / Kimi convention). */
@@ -648,27 +679,32 @@
 }
 
 .composer textarea {
-  /* bao 2026-06-01: `.composer` is a plain block (no `display: flex`),
-     so `flex: 1` alone does not grow the textarea — the browser falls
-     back to the HTML default `cols=20` ≈ 200 px, giving the half-width
-     input box visible in v0.1.128. Lock width 100% + border-box so the
-     textarea fills the `.composer` padding box on every layout. */
+  /* Single-line input, clearly 1 row tall. Previous height 16/1.45 +
+     18px vertical padding rendered ~41px which looked like a 2-row
+     block (bao 2026-06-01). Compact to 14/1.35 + 6/6 = ~31px so a
+     single row is unambiguous. No send button currently rendered, so
+     the right padding only leaves a small inset, not a 44px slot. */
   flex: 1;
   width: 100%;
   box-sizing: border-box;
-  padding: 9px 44px 9px 14px; /* right padding leaves room for send btn */
-  border: 0;
-  background: transparent;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 14px;
+  background: var(--color-bg-l0);
   color: var(--color-text);
   font-family: var(--font-sans);
-  /* 16px — iOS Safari floor; below it the system auto-zooms on focus. */
-  font-size: 16px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.35;
   resize: none;
   overflow-y: auto;
-  min-height: 38px;
-  max-height: 160px;
+  min-height: 30px;
+  max-height: 120px;
   outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.composer textarea:focus {
+  border-color: var(--color-accent);
 }
 
 .composer textarea:disabled {

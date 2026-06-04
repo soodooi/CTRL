@@ -18,6 +18,11 @@ import { vaultRead, vaultWrite } from '@/lib/kernel';
 import { InstanceSwitcher } from './InstanceSwitcher';
 import { EmbedView } from './EmbedView';
 import { KeycapRunView } from './KeycapRunView';
+// ADR-002 substrate § vault v1 §8.6 v4 (bao 2026-06-02): backlinks live
+// inside the Notes app tab (right column), not as a workspace bottom
+// drawer. Sourcing review remains its own workspace tab kind so the
+// Irisy-produced review queue stays addressable from anywhere.
+import { SourcingReviewTab } from '@/components/vault/SourcingReviewTab';
 import { resolveViewer, type ViewerResource } from '@/lib/viewer-registry';
 import { vaultUri } from '@/lib/viewer-uri';
 import { resolveRouteComponent } from '@/lib/route-tab-components';
@@ -114,6 +119,10 @@ const renderTabBody = (tab: Tab): ReactElement => {
       };
       return <ViewerHost resource={resource} />;
     }
+    case 'sourcing-review':
+      // ADR-002 § vault v1 §8.6 (2026-06-01) — review the day's
+      // sourcing proposals (`.ctrl/review-queue/<date>.md`).
+      return <SourcingReviewTab reviewPath={tab.reviewPath} />;
     case 'keycap-output':
       return <KeycapRunView keycapId={tab.keycapId} />;
     case 'session-stream':

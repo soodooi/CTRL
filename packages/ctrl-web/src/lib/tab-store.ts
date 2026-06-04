@@ -15,6 +15,8 @@ export type TabKind =
   | 'vault-md' // markdown doc from the user's vault
   | 'keycap-output' // output surface for an invoked keycap
   | 'session-stream' // live stream (chat / code-space env)
+  | 'sourcing-review' // ADR-002 § vault v1 §8.6 (2026-06-01) — review the Irisy
+  //                  sourcing inbox proposals (`.ctrl/review-queue/<date>.md`)
   | 'route'; // wrap an existing route component until that surface migrates
 
 export interface BaseTab {
@@ -48,12 +50,18 @@ export interface RouteTab extends BaseTab {
   kind: 'route';
   path: string;
 }
+export interface SourcingReviewTab extends BaseTab {
+  kind: 'sourcing-review';
+  /** Vault-relative review-queue path that this tab is rendering. */
+  reviewPath: string;
+}
 
 export type Tab =
   | ExternalEmbedTab
   | VaultMdTab
   | KeycapOutputTab
   | SessionStreamTab
+  | SourcingReviewTab
   | RouteTab;
 
 interface TabStoreState {

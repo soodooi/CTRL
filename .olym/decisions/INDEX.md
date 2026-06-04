@@ -5,10 +5,10 @@
 | # | Module | Title | Sections | Version | Status | Last updated |
 |---|---|---|---|---|---|---|
 | [001](./001-spine.md) | spine | 4-layer kernel + 5 primitives + 5 keycap sources + Pi-centric reframe | layers · primitives · sources · pi-centric · invariants · philosophy | v1 | accepted | 2026-05-31 |
-| [002](./002-substrate.md) | substrate | Pi brain · capability surface · **provider router** · crypto · subprocess · MCP bus · composition | brain · capability · provider · crypto · subprocess · mcp-bus · composition | v2 | accepted | 2026-05-31 |
+| [002](./002-substrate.md) | substrate | Pi brain · capability surface · provider router · crypto · subprocess · MCP bus · composition · vault · **smart-table-output** · **embeddings** | brain · capability · provider · crypto · subprocess · mcp-bus · composition · vault · smart-table-output · embeddings | v5 | accepted | 2026-06-03 |
 | [003](./003-frontend.md) | frontend | Single PWA + Irisy-as-sole-entry + Keyboard drag-install + vault viewer stack + 4-col shell | pwa · nav-keyboard · vault-stack · shell-4col | v3 | accepted | 2026-06-01 |
 | [004](./004-cap.md) | cap | Keycap execution model + Tauri updater + 4-layer × 3-tier auto-update | execution · updater · auto-update | v1 | accepted | 2026-05-31 |
-| [005](./005-irisy.md) | irisy | 8-stage keycap lifecycle + remote co-view primitives + persona rule | lifecycle · remote-view · persona | v1 | accepted | 2026-05-31 |
+| [005](./005-irisy.md) | irisy | 8-stage keycap lifecycle + remote co-view + persona rule + **SOUL.md compat** | lifecycle · remote-view · persona · soul-md-compat | v2 | accepted | 2026-06-03 |
 | [006](./006-cross-cutting.md) | cross-cutting | BYOK no-Claude in production + global English first + plain-text philosophy | byok-no-claude · global-english · plain-text | v1 | accepted | 2026-05-31 |
 | [007](./007-workbench.md) | workbench | Keycap-composition canvas (React Flow + dnd-kit) + Irisy-led skill discovery | canvas · discovery | v1 | accepted | 2026-05-31 |
 
@@ -17,7 +17,7 @@
 | Module | Owns | Code locations |
 |---|---|---|
 | spine | overall architecture, 5 primitives, anti-list | `src-tauri/src/kernel/{actor,capability,channel,event,effect}.rs` |
-| substrate | brain spawn, capability surface, provider router, crypto, subprocess, MCP bus, manifest composition | `src-tauri/src/kernel/` (provider/, mcp_server.rs, mcp_host.rs, subprocess_actor.rs) + `packages/ctrl-pi-bridge/` + `packages/ctrl-pi-plugin/` |
+| substrate | brain spawn, capability surface, provider router, crypto, subprocess, MCP bus, manifest composition, **vault primitives + index** | `src-tauri/src/kernel/` (provider/, mcp_server.rs, mcp_host.rs, subprocess_actor.rs, vault.rs, vault_index.rs) + `src-tauri/src/commands/vault.rs` + `packages/ctrl-pi-bridge/` + `packages/ctrl-pi-plugin/` |
 | frontend | PWA shell, L1 nav, Keyboard, vault browser, viewers | `packages/ctrl-web/` |
 | cap | keycap execution (MCP outward / Actor inward), updater, auto-update tiers | `src-tauri/src/kernel/actor.rs` + `scripts/release.sh` + `packages/ctrl-keycaps/` |
 | irisy | 8-stage UX, remote co-view primitives, persona prompts | `packages/ctrl-web/src/routes/irisy.tsx` + `packages/ctrl-web/src/lib/irisy-prompts.ts` |

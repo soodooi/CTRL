@@ -249,7 +249,10 @@ impl McpHost {
     /// (no auto-connect — connections lazy-establish on first invoke).
     /// Absent / unparseable file = warning + clean empty state.
     pub async fn load_registry(&self, path: &Path) -> Result<usize, McpHostError> {
-        let bytes = match std::fs::read(path) {
+        // tokio::fs (not std::fs) so the blocking read happens on the
+        // runtime's blocking pool, not the current async worker thread
+        // (review P2: blocking syscall in async fn body).
+        let bytes = match tokio::fs::read(path).await {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
             Err(e) => return Err(McpHostError::RegistryReadFailed(e.to_string())),
@@ -277,13 +280,16 @@ impl McpHost {
         let bytes = serde_json::to_vec_pretty(&entries)
             .map_err(|e| McpHostError::RegistryWriteFailed(e.to_string()))?;
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
+            tokio::fs::create_dir_all(parent)
+                .await
                 .map_err(|e| McpHostError::RegistryWriteFailed(e.to_string()))?;
         }
         let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, &bytes)
+        tokio::fs::write(&tmp, &bytes)
+            .await
             .map_err(|e| McpHostError::RegistryWriteFailed(e.to_string()))?;
-        std::fs::rename(&tmp, path)
+        tokio::fs::rename(&tmp, path)
+            .await
             .map_err(|e| McpHostError::RegistryWriteFailed(e.to_string()))?;
         Ok(())
     }

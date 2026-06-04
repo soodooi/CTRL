@@ -1,0 +1,15 @@
+# Sourcing inbox config — read by Irisy and the L2 navigator.
+# (ADR-002 substrate § vault v1 §8.4, 2026-06-01.)
+#
+# This file is yours: edit any value and CTRL adapts on the next read.
+# Restoring the original — delete the file and the first-boot seed
+# recreates it on the next launch.
+version: 1
+inbox_dir: sourcing
+triggers:
+  cron: "0 9 * * *"
+  count_threshold: 5
+  manual_command: "/integrate sourcing"
+review_queue_path: ".ctrl/review-queue/{date}.md"
+default_target_root: "notes/"
+preserve_sourcing_originals: false

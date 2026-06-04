@@ -4,7 +4,8 @@
 // Pool detail panel etc.
 
 import type { Tab } from './tab-store';
-import { keycapAssetUri, vaultAssetUri } from './asset-uri';
+import { keycapAssetUri } from './asset-uri';
+import { vaultUri } from './viewer-uri';
 import type { ViewerResource } from './viewer-registry';
 
 /** Guess content type from a file extension. */
@@ -37,11 +38,19 @@ export const inferCompanionUri = (uri: string): string | undefined => {
   return undefined;
 };
 
-/** Convert a vault-md tab into a viewer resource. */
+/** Convert a vault-md tab into a viewer resource.
+ *
+ * Uses `vault://` (routed through `vault_read`) rather than
+ * `ctrl-asset://vault/...` — bao 2026-06-02 LOAD FAILED root cause:
+ * `asset_scheme.rs` only serves `ctrl-asset://keycaps/<id>/...`, every
+ * other host is rejected. The original `vaultAssetUri` produced a URI
+ * that the protocol handler had no clause for, so every Notes editor
+ * load failed silently. `vault://` is handled in `fetchUriAsText`
+ * (`viewer-uri.ts`) by delegating to `readVault` → `vault_read`. */
 export const resourceFromVaultPath = (vaultPath: string): ViewerResource => ({
   location: 'vault',
   contentType: inferContentTypeFromPath(vaultPath),
-  uri: vaultAssetUri(vaultPath),
+  uri: vaultUri(vaultPath),
   editable: true,
   companion: inferCompanionUri(vaultPath),
 });

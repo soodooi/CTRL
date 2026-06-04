@@ -11,20 +11,53 @@
 // in a CodeMirror buffer) — Obsidian's Live Preview / Source toggle
 // muscle memory.
 
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactElement,
+} from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import CodeMirror from '@uiw/react-codemirror';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
+// ADR-002 substrate § vault v1 §8.5 + §8.8 (2026-06-01, memory
+// `decision_vault_adr_002_section_8`) — wikilink Tiptap extension
+// ported from seahop/kairo MIT. Renders `[[target]]` as a clickable
+// atom; broken-link styling sourced from `vault_list`.
+import {
+  WikilinkExtension,
+  renderWikilinkInline,
+} from './tiptap-wikilink';
+import { useQuery } from '@tanstack/react-query';
+import { vaultList } from '@/lib/kernel';
+import { useWorkspaceStore } from '@/lib/workspace-store';
+// ADR-002 v5 §10 + product spec §5.2 / P2 / P7 — Block AI ops floating
+// menu wired against the live Tiptap editor handle.
+import { BlockAiOps, type BlockAiResult } from '@/components/notes/BlockAiOps';
+import { stampAiBlock } from '@/lib/ai-block-metadata';
+import { vaultRelativePath } from '@/lib/viewer-uri';
 import styles from './Viewer.module.css';
 
 // Crude markdown ↔ HTML — enough to preserve headings / lists / code
 // blocks / inline formatting on the round trip. Real fidelity will
 // come from a remark/rehype pipeline once we install one; today the
 // goal is "edits don't destroy the file".
-const markdownToHtml = (md: string): string => {
+//
+// The wikilink resolver is threaded explicitly through every inline()
+// call. The previous draft cached it in a module-level let, which
+// raced between concurrent viewer instances — the last-mounted
+// viewer would overwrite the earlier viewer's resolver and the
+// earlier viewer would paint broken-link styling against the wrong
+// vault snapshot. Passing the resolver removes the global side-channel.
+type WikilinkResolver = (target: string) => boolean;
+
+const markdownToHtml = (md: string, resolver?: WikilinkResolver): string => {
   const lines = md.split('\n');
   const out: string[] = [];
   let inCode = false;
@@ -53,7 +86,7 @@ const markdownToHtml = (md: string): string => {
         inList = false;
       }
       const level = heading[1]!.length;
-      out.push(`<h${level}>${inline(heading[2]!)}</h${level}>`);
+      out.push(`<h${level}>${inline(heading[2]!, resolver)}</h${level}>`);
       continue;
     }
     const listItem = /^[-*]\s+(.*)$/.exec(line);
@@ -62,7 +95,7 @@ const markdownToHtml = (md: string): string => {
         out.push('<ul>');
         inList = true;
       }
-      out.push(`<li>${inline(listItem[1]!)}</li>`);
+      out.push(`<li>${inline(listItem[1]!, resolver)}</li>`);
       continue;
     }
     if (inList) {
@@ -73,7 +106,7 @@ const markdownToHtml = (md: string): string => {
       out.push('');
       continue;
     }
-    out.push(`<p>${inline(line)}</p>`);
+    out.push(`<p>${inline(line, resolver)}</p>`);
   }
   if (inList) out.push('</ul>');
   if (inCode) out.push('</code></pre>');
@@ -86,12 +119,36 @@ const escapeHtml = (s: string): string =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-const inline = (s: string): string =>
-  escapeHtml(s)
+const inline = (s: string, resolver?: WikilinkResolver): string => {
+  // Convert `[[target]]` first — before the `[label](href)` rule —
+  // so wikilink syntax never gets caught by the markdown-link regex.
+  // Absent resolver = assume target resolves (paints as a normal
+  // wikilink). Broken-link styling requires the caller to pass an
+  // actual resolver.
+  const wikilinked = s.replace(/\[\[([^\]\n|]+)(?:\|[^\]\n]+)?\]\]/g, (_, raw: string) => {
+    const target = raw.trim();
+    const resolved = resolver ? resolver(target) : true;
+    return renderWikilinkInline(target, !resolved);
+  });
+  return escapeHtml(wikilinked)
+    // The wikilink HTML we just emitted contains `<` `>` etc — undo
+    // that escape pass by detecting the literal token. Escape is
+    // necessary on the rest of the line, but our token is a single
+    // span fragment we trust.
+    .replace(
+      /&lt;span data-wikilink[\s\S]+?&lt;\/span&gt;/g,
+      (m) =>
+        m
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&amp;/g, '&'),
+    )
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noopener noreferrer">$1</a>');
+};
 
 const htmlToMarkdown = (html: string): string => {
   const div = document.createElement('div');
@@ -104,6 +161,17 @@ const serializeNode = (node: Node): string => {
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
+  // Wikilink atom — emit `[[target]]` verbatim regardless of inner
+  // text, since the renderHTML puts the literal glyph inside and the
+  // attribute carries the canonical target.
+  if (
+    tag === 'span' &&
+    (el.getAttribute('data-wikilink') !== null ||
+      el.classList.contains('tiptap-wikilink'))
+  ) {
+    const target = el.getAttribute('data-target') ?? el.textContent ?? '';
+    return `[[${target.replace(/^\[\[|\]\]$/g, '')}]]`;
+  }
   const inner = Array.from(el.childNodes).map(serializeNode).join('');
   switch (tag) {
     case 'h1':
@@ -151,10 +219,91 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
   const [mode, setMode] = useState<'wysiwyg' | 'source'>('wysiwyg');
+  const openTab = useWorkspaceStore((s) => s.openTab);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Vault tree snapshot — broken-link inference for wikilinks. We
+  // poll the vault list once per minute so freshly-created notes
+  // resolve without forcing a viewer reload.
+  const { data: vaultPaths = [] } = useQuery({
+    queryKey: ['vault-list'],
+    queryFn: () => vaultList(),
+    staleTime: 60_000,
+  });
+
+  // Indices for wikilink target resolution. `pathSet` covers the
+  // `Folder/Sub` and exact-filename cases in O(1); `stemIndex`
+  // matches kernel `vault_graph` — first hit wins, longer-match
+  // preferred when the target has a folder segment.
+  const pathSet = useMemo(() => new Set(vaultPaths), [vaultPaths]);
+  const stemIndex = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const p of vaultPaths) {
+      const name = p.split('/').pop() ?? p;
+      const stem = name.replace(/\.md$/, '');
+      const existing = map.get(stem) ?? [];
+      existing.push(p);
+      map.set(stem, existing);
+    }
+    return map;
+  }, [vaultPaths]);
+
+  const resolveTarget = useCallback(
+    (target: string): string | null => {
+      if (pathSet.has(target)) return target;
+      const withExt = `${target}.md`;
+      if (pathSet.has(withExt)) return withExt;
+      const stem = target.split('/').pop() ?? target;
+      const cands = stemIndex.get(stem);
+      if (!cands || cands.length === 0) return null;
+      if (target.includes('/')) {
+        const suffix = `${target}.md`;
+        const exact = cands.find((p) => p.endsWith(suffix));
+        if (exact) return exact;
+      }
+      return cands[0] ?? null;
+    },
+    [pathSet, stemIndex],
+  );
+
+  // Stable resolver for markdownToHtml — recomputed only when
+  // resolveTarget changes (which means vaultPaths refreshed).
+  const wikiResolver = useCallback(
+    (target: string) => resolveTarget(target) !== null,
+    [resolveTarget],
+  );
+
+  const handleClick = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      const node = e.target as HTMLElement | null;
+      if (!node) return;
+      const wiki = node.closest<HTMLElement>('[data-wikilink]');
+      if (!wiki) return;
+      const target = wiki.getAttribute('data-target');
+      if (!target) return;
+      e.preventDefault();
+      const resolved = resolveTarget(target);
+      if (!resolved) return;
+      const baseName = resolved.split('/').pop() ?? resolved;
+      // The clicked wikilink opens the target as a regular workspace
+      // vault-md tab. The Notes app already owns the active workspace,
+      // so no explicit window-expand is required.
+      openTab(
+        {
+          id: `vault:${resolved}`,
+          kind: 'vault-md',
+          title: baseName.replace(/\.md$/, ''),
+          vaultPath: resolved,
+        },
+        { activate: true },
+      );
+    },
+    [openTab, resolveTarget],
+  );
 
   const editor = useEditor(
     {
-      extensions: [StarterKit],
+      extensions: [StarterKit, WikilinkExtension],
       editable: resource.editable,
       content: '',
       onUpdate: ({ editor: ed }) => {
@@ -180,11 +329,11 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
     if (!editor || content == null) return;
     if (editor.view.composing) return;
     if (editor.isFocused) return;
-    const html = markdownToHtml(content);
+    const html = markdownToHtml(content, wikiResolver);
     if (editor.getHTML() !== html) {
       editor.commands.setContent(html, { emitUpdate: false });
     }
-  }, [editor, content]);
+  }, [editor, content, wikiResolver]);
 
   const rightActions = useMemo(
     () => (
@@ -224,8 +373,31 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
         {content === null && !error ? (
           <pre className={styles.markdownStub}>loading…</pre>
         ) : mode === 'wysiwyg' ? (
-          <div className={styles.prose}>
+          <div
+            ref={containerRef}
+            className={styles.prose}
+            onClick={handleClick}
+          >
             <EditorContent editor={editor} />
+            {resource.editable ? (
+              <BlockAiOps
+                editor={editor as unknown as never}
+                onAccept={(result: BlockAiResult) => {
+                  // §8.7 transparency stamping — best-effort frontmatter
+                  // append; never blocks the editor.
+                  if (resource.uri.startsWith('vault://')) {
+                    const path = vaultRelativePath(resource.uri);
+                    void stampAiBlock({
+                      path,
+                      action: result.action,
+                      original: result.original,
+                      rewritten: result.rewritten,
+                      user_input: result.user_input,
+                    });
+                  }
+                }}
+              />
+            ) : null}
           </div>
         ) : (
           <CodeMirror

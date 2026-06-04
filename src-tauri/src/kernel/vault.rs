@@ -101,7 +101,60 @@ pub fn ensure_vault_layout(root: &Path) -> std::io::Result<()> {
     for sub in ["images", "audio", "pdf", "attachments"] {
         let _ = std::fs::create_dir_all(root.join("assets").join(sub));
     }
+    // ADR-002 substrate § vault v1 §8.2 + §8.4 (2026-06-01, memory
+    // `decision_vault_adr_002_section_8`) — feature-layer scaffolding.
+    // `.ctrl/` mirrors Obsidian's `.obsidian/` (hidden config namespace);
+    // `templates/` is plain-text user-forkable seeds. Each file is only
+    // written when absent so re-launch never clobbers user edits.
+    seed_vault_feature_layer(root);
     Ok(())
+}
+
+const SEED_SOURCING_YAML: &str = include_str!("vault_seed/sourcing.yaml");
+const SEED_DAILY_NOTES_YAML: &str = include_str!("vault_seed/daily-notes.yaml");
+const SEED_SOURCING_PROMPT: &str = include_str!("vault_seed/sourcing-prompt.md");
+const SEED_TEMPLATE_DAILY: &str = include_str!("vault_seed/template-daily.md");
+const SEED_TEMPLATE_MEETING: &str = include_str!("vault_seed/template-meeting.md");
+const SEED_IRISY_SOUL: &str = include_str!("vault_seed/irisy-soul.md");
+
+/// SOUL.md spec version pin (ADR-005 § soul-md-compat §4.6 churn policy).
+/// Bumped when CTRL adopts a newer upstream `aaronjmars/soul.md` revision.
+const SOUL_MD_VERSION: &str = "soul-md-v1.0.0 (2026-06-03)";
+
+fn seed_vault_feature_layer(root: &Path) {
+    let _ = std::fs::create_dir_all(root.join(".ctrl"));
+    let _ = std::fs::create_dir_all(root.join(".ctrl").join("review-queue"));
+    let _ = std::fs::create_dir_all(root.join("sourcing"));
+    let _ = std::fs::create_dir_all(root.join("daily"));
+    let _ = std::fs::create_dir_all(root.join("templates"));
+    // ADR-005 irisy v2 § soul-md-compat (2026-06-03, memory
+    // `decision_openclaw_compat_layer`) — Irisy persistent memory.
+    let _ = std::fs::create_dir_all(root.join("irisy"));
+    let _ = std::fs::create_dir_all(root.join("notes").join("keycap-runs"));
+    let _ = std::fs::create_dir_all(root.join("notes").join("keycap-runs").join("archive"));
+
+    write_if_missing(root, ".ctrl/sourcing.yaml", SEED_SOURCING_YAML);
+    write_if_missing(root, ".ctrl/daily-notes.yaml", SEED_DAILY_NOTES_YAML);
+    write_if_missing(root, ".ctrl/sourcing-prompt.md", SEED_SOURCING_PROMPT);
+    write_if_missing(root, "templates/daily.md", SEED_TEMPLATE_DAILY);
+    write_if_missing(root, "templates/meeting.md", SEED_TEMPLATE_MEETING);
+    write_if_missing(root, "irisy/SOUL.md", SEED_IRISY_SOUL);
+    write_if_missing(root, "irisy/.soul-md-version", SOUL_MD_VERSION);
+}
+
+fn write_if_missing(root: &Path, rel: &str, contents: &str) {
+    let full = root.join(rel);
+    if full.exists() {
+        return;
+    }
+    if let Some(parent) = full.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(e) = std::fs::write(&full, contents) {
+        tracing::warn!(path = %full.display(), error = %e, "vault: seed write failed");
+    } else {
+        tracing::info!(path = %rel, "vault: seeded feature-layer file");
+    }
 }
 
 /// VaultEntry — what callers get back from list / read operations.
@@ -375,7 +428,7 @@ fn walk_markdown(
 /// Reject path traversal (`..`), absolute paths, and Windows drive
 /// prefixes. Vault writes must stay inside the vault root no matter
 /// what a keycap claims.
-fn sanitize_relative_path(p: &str) -> Result<PathBuf, VaultError> {
+pub fn sanitize_relative_path(p: &str) -> Result<PathBuf, VaultError> {
     if p.starts_with('/') || p.starts_with('\\') {
         return Err(VaultError::InvalidPath(format!(
             "leading slash not allowed: {p}"
@@ -497,32 +550,101 @@ fn split_frontmatter(raw: &str) -> (serde_json::Value, String) {
     (fm_json, body)
 }
 
-/// Tiny YAML → JSON parser covering only the shapes we emit: top-level
-/// scalar / sequence / mapping. Anything fancier (anchors, multi-doc,
-/// flow style) falls back to a JSON null + the original text in the
-/// body. Good enough for round-tripping our own frontmatter; users
-/// editing frontmatter by hand stay within the same conservative shape.
+/// Tiny YAML → JSON parser covering the shapes we emit + the shapes
+/// users hand-write in frontmatter (block-style + flow-style scalar
+/// sequences). Anchors / multi-doc / nested mappings remain out of
+/// scope. Round-trips `tags: [a, b]` (inline) and:
+///
+/// ```yaml
+/// tags:
+///   - a
+///   - b
+/// ```
+///
+/// (block) symmetrically.
 fn parse_yaml_to_json(yaml: &str) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
+    let mut list_key: Option<String> = None;
+    let mut list_buf: Vec<serde_json::Value> = Vec::new();
+
     for line in yaml.lines() {
         let raw = line.trim_end();
-        if raw.is_empty() || raw.starts_with('#') {
+        if raw.is_empty() || raw.trim_start().starts_with('#') {
             continue;
         }
-        // Skip indented continuation / sequence lines for now (handled
-        // by callers that know they wrote nested structure).
+        // Block-sequence continuation under a previously-opened key.
+        let trimmed = raw.trim_start();
+        if list_key.is_some() && (raw.starts_with(' ') || raw.starts_with('\t')) {
+            if let Some(item) = trimmed.strip_prefix("- ") {
+                list_buf.push(parse_yaml_scalar(item.trim()));
+                continue;
+            }
+        }
+        // Hit a top-level key — flush any accumulating block list.
+        if let Some(k) = list_key.take() {
+            obj.insert(k, serde_json::Value::Array(std::mem::take(&mut list_buf)));
+        }
         if raw.starts_with(' ') || raw.starts_with('\t') {
+            // Nested mapping (unsupported) — skip line.
             continue;
         }
-        let Some(colon) = raw.find(':') else {
-            continue;
-        };
+        let Some(colon) = raw.find(':') else { continue };
         let key = raw[..colon].trim().to_string();
         let value_str = raw[colon + 1..].trim();
-        let value = parse_yaml_scalar(value_str);
-        obj.insert(key, value);
+        if value_str.is_empty() {
+            list_key = Some(key);
+            list_buf = Vec::new();
+            continue;
+        }
+        if let Some(items) = parse_inline_sequence(value_str) {
+            obj.insert(key, serde_json::Value::Array(items));
+            continue;
+        }
+        obj.insert(key, parse_yaml_scalar(value_str));
+    }
+    if let Some(k) = list_key.take() {
+        obj.insert(k, serde_json::Value::Array(list_buf));
     }
     serde_json::Value::Object(obj)
+}
+
+/// `[a, "b c", 3]` → Vec of parsed scalars. Returns None when the value
+/// isn't an inline flow sequence so the caller can fall back to scalar
+/// parsing.
+///
+/// We distinguish between an empty token (skip — handles trailing
+/// comma `[a, b,]`) and a token that parses to JSON null (keep —
+/// `[a, ~, b]` must round-trip preserving the explicit null). The
+/// earlier draft folded both cases together via `!v.is_null()` and
+/// silently dropped legitimate `~` entries.
+fn parse_inline_sequence(s: &str) -> Option<Vec<serde_json::Value>> {
+    let inner = s.strip_prefix('[')?.strip_suffix(']')?;
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    let mut buf = String::new();
+    let mut in_quote: Option<char> = None;
+    let mut push_token = |buf: &mut String, out: &mut Vec<serde_json::Value>| {
+        let trimmed = buf.trim();
+        if !trimmed.is_empty() {
+            out.push(parse_yaml_scalar(trimmed));
+        }
+        buf.clear();
+    };
+    for ch in inner.chars() {
+        match (in_quote, ch) {
+            (Some(q), c) if c == q => {
+                in_quote = None;
+                buf.push(c);
+            }
+            (None, c @ ('"' | '\'')) => {
+                in_quote = Some(c);
+                buf.push(c);
+            }
+            (None, ',') => push_token(&mut buf, &mut out),
+            _ => buf.push(ch),
+        }
+    }
+    push_token(&mut buf, &mut out);
+    Some(out)
 }
 
 fn parse_yaml_scalar(s: &str) -> serde_json::Value {

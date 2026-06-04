@@ -278,3 +278,281 @@ export const vaultRootPath = (): Promise<string> => invoke('vault_root_path');
 
 export const vaultRebuildIndex = (): Promise<number> =>
   invoke('vault_rebuild_index');
+
+// ADR-002 substrate § vault v1 §8.3 #9-21 (2026-06-01) — graph + mutation
+// + watcher primitives (memory `decision_vault_adr_002_section_8`).
+// Mirrors src-tauri/src/commands/vault.rs; Daily Note + Sourcing
+// routines (frontend feature layer) compose from these calls.
+
+export interface BacklinkHit {
+  from: string;
+  snippet: string;
+}
+
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+export interface MentionHit {
+  path: string;
+  snippet: string;
+}
+
+export interface BrokenLink {
+  from: string;
+  target: string;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+}
+
+export interface GraphData {
+  nodes: string[];
+  edges: GraphEdge[];
+}
+
+export type VaultWatchEventKind = 'create' | 'modify' | 'remove' | 'other';
+
+export interface VaultWatchEvent {
+  path: string;
+  kind: VaultWatchEventKind;
+  ts_ms: number;
+}
+
+export const vaultBacklinks = (
+  path: string,
+  keycap_id?: string,
+): Promise<BacklinkHit[]> =>
+  invoke('vault_backlinks', { args: { path, keycap_id: keycap_id ?? null } });
+
+export const vaultTags = (keycap_id?: string): Promise<TagCount[]> =>
+  invoke('vault_tags', { args: { keycap_id: keycap_id ?? null } });
+
+export const vaultNotesByTag = (
+  tag: string,
+  keycap_id?: string,
+): Promise<string[]> =>
+  invoke('vault_notes_by_tag', { args: { tag, keycap_id: keycap_id ?? null } });
+
+export const vaultMentions = (
+  text: string,
+  keycap_id?: string,
+): Promise<MentionHit[]> =>
+  invoke('vault_mentions', { args: { text, keycap_id: keycap_id ?? null } });
+
+export const vaultOrphans = (keycap_id?: string): Promise<string[]> =>
+  invoke('vault_orphans', { args: { keycap_id: keycap_id ?? null } });
+
+export const vaultBrokenLinks = (keycap_id?: string): Promise<BrokenLink[]> =>
+  invoke('vault_broken_links', { args: { keycap_id: keycap_id ?? null } });
+
+export const vaultGraphData = (keycap_id?: string): Promise<GraphData> =>
+  invoke('vault_graph_data', { args: { keycap_id: keycap_id ?? null } });
+
+export const vaultRename = (
+  from: string,
+  to: string,
+  keycap_id?: string,
+): Promise<void> =>
+  invoke('vault_rename', { args: { from, to, keycap_id: keycap_id ?? null } });
+
+export const vaultMove = (
+  from: string,
+  to: string,
+  keycap_id?: string,
+): Promise<void> =>
+  invoke('vault_move', { args: { from, to, keycap_id: keycap_id ?? null } });
+
+export const vaultCreateFolder = (
+  path: string,
+  keycap_id?: string,
+): Promise<void> =>
+  invoke('vault_create_folder', {
+    args: { path, keycap_id: keycap_id ?? null },
+  });
+
+export const vaultSetStarred = (
+  path: string,
+  starred: boolean,
+  keycap_id?: string,
+): Promise<void> =>
+  invoke('vault_set_starred', {
+    args: { path, starred, keycap_id: keycap_id ?? null },
+  });
+
+export const vaultAliases = (
+  path: string,
+  keycap_id?: string,
+): Promise<string[]> =>
+  invoke('vault_aliases', { args: { path, keycap_id: keycap_id ?? null } });
+
+export const vaultWatchRecent = (
+  since_ms: number,
+  prefix?: string,
+  keycap_id?: string,
+): Promise<VaultWatchEvent[]> =>
+  invoke('vault_watch_recent', {
+    args: {
+      since_ms,
+      prefix: prefix ?? null,
+      keycap_id: keycap_id ?? null,
+    },
+  });
+
+// ADR-002 § vault v1 §8.4 — sourcing routine. Run produces a
+// review-queue file at `.ctrl/review-queue/<date>.md`; pending
+// reports the inbox size for the L2 badge.
+
+export interface SourcingRunReport {
+  review_path: string;
+  items_processed: number;
+  skipped_already_indexed: number;
+}
+
+export interface SourcingPendingReply {
+  count: number;
+}
+
+export const vaultSourcingRun = (
+  date: string,
+  keycap_id?: string,
+): Promise<SourcingRunReport> =>
+  invoke('vault_sourcing_run', {
+    args: { date, keycap_id: keycap_id ?? null },
+  });
+
+export const vaultSourcingPending = (
+  keycap_id?: string,
+): Promise<SourcingPendingReply> =>
+  invoke('vault_sourcing_pending', {
+    args: { keycap_id: keycap_id ?? null },
+  });
+
+// ADR-005 v2 § soul-md-compat §4.3 — SOUL.md Tauri surface.
+export interface IrisySoulView {
+  path: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+  soul_md_version: string;
+}
+export const irisySoulRead = (): Promise<IrisySoulView> =>
+  invoke('irisy_soul_read');
+export const irisySoulWrite = (
+  frontmatter: Record<string, unknown>,
+  body: string,
+): Promise<void> =>
+  invoke('irisy_soul_write', { args: { frontmatter, body } });
+
+// ADR-002 v5 §10 — vault embeddings TS surface.
+export interface EmbeddingHit {
+  path: string;
+  score: number;
+  snippet: string;
+}
+export interface EmbeddingStatus {
+  total: number;
+  embedded: number;
+  stale: number;
+  last_run_at_ms: number | null;
+  provider_status: string;
+  model: string;
+}
+
+export const vaultEmbedNote = (
+  path: string,
+): Promise<{ path: string; vector_dims: number; cached: boolean }> =>
+  invoke('vault_embed_note', { args: { path } });
+
+export const vaultReembedAll = (
+  force = false,
+): Promise<{ embedded: number; skipped: number; failed: number }> =>
+  invoke('vault_reembed_all', { args: { force } });
+
+export const vaultEmbeddingStatus = (): Promise<EmbeddingStatus> =>
+  invoke('vault_embedding_status');
+
+export const vaultSemanticSearch = (
+  query: string,
+  limit = 10,
+  threshold?: number,
+): Promise<EmbeddingHit[]> =>
+  invoke('vault_semantic_search', {
+    args: { query, limit, threshold: threshold ?? null },
+  });
+
+export const vaultSuggestLinks = (
+  for_path: string,
+  limit = 5,
+): Promise<EmbeddingHit[]> =>
+  invoke('vault_suggest_links', { args: { for_path, limit } });
+
+// Irisy synthesize — Layer 4 surface
+// (brainstorm §5.3 / §5.5 / §5.10)
+export interface QuestionVaultReply {
+  answer: string;
+  citations: string[];
+}
+export const irisyQuestionVault = (
+  question: string,
+  top_k = 6,
+): Promise<QuestionVaultReply> =>
+  invoke('irisy_question_vault', { args: { question, top_k } });
+
+export interface SynthesizeReply {
+  result: string;
+  written_to: string | null;
+}
+export const irisySynthesizeNotes = (
+  paths: string[],
+  instruction: string,
+  output_path?: string,
+): Promise<SynthesizeReply> =>
+  invoke('irisy_synthesize_notes', {
+    args: { paths, instruction, output_path: output_path ?? null },
+  });
+
+export interface DailySummarizeReply {
+  daily_path: string;
+  summary: string;
+  items_in_inbox: number;
+}
+export const irisyDailySummarize = (
+  date?: string,
+): Promise<DailySummarizeReply> =>
+  invoke('irisy_daily_summarize', { args: { date: date ?? null } });
+
+// ADR-002 § vault v1 §8.6 v5 (2026-06-03) — vault-side git via the
+// kernel-spawned git CLI. Mirrors src-tauri/src/commands/git.rs.
+
+export interface GitStatusReply {
+  initialised: boolean;
+  branch: string | null;
+  ahead: number;
+  behind: number;
+  staged: number;
+  modified: number;
+  untracked: number;
+  clean: boolean;
+  last_error: string | null;
+}
+
+export interface GitLogEntry {
+  sha: string;
+  author: string;
+  date: string;
+  message: string;
+}
+
+export const gitStatus = (): Promise<GitStatusReply> => invoke('git_status');
+
+export const gitInit = (): Promise<string> => invoke('git_init');
+
+export const gitCommitAll = (message: string): Promise<string> =>
+  invoke('git_commit_all', { args: { message } });
+
+export const gitPush = (): Promise<string> => invoke('git_push');
+
+export const gitLog = (): Promise<GitLogEntry[]> => invoke('git_log');

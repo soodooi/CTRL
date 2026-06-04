@@ -1,0 +1,2072 @@
+/* Notes app — 3-pane workspace tab body.
+   (ADR-002 substrate § vault v1 §8.6 v4, 2026-06-02.) */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--color-bg-l0);
+  overflow: hidden;
+}
+
+/* ─── Actions bar ──────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  flex-shrink: 0;
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 6px;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.search:focus {
+  border-color: var(--color-accent);
+}
+
+.actionButton {
+  appearance: none;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.actionButton:hover:not(:disabled) {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.actionButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.actionButton[data-pending] {
+  border-color: color-mix(in oklch, var(--color-accent) 38%, transparent);
+  color: var(--color-text);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 6px;
+  height: 16px;
+  font-variant-numeric: tabular-nums;
+  background: var(--color-bg-l2);
+  border-radius: 999px;
+  color: var(--color-text);
+  font-size: 10.5px;
+}
+
+.actionButton[data-pending] .badge {
+  background: var(--color-accent);
+  color: var(--color-bg-l0);
+}
+
+/* ─── 3 columns ────────────────────────────────────────────────── */
+
+/* bao 2026-06-03 — sidebar slimmed (220 → 200) + backlinks slimmed
+   (220 → 180) so the editor body picks up 60 px of usable width on a
+   1122-px workspace. Backlinks rarely needs that much because note
+   stems are short; left tree stays roomy enough for typical paths. */
+.cols {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 200px 1fr 180px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Left column splits tree (top, scrolls) + tags panel (bottom). */
+.leftCol {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-l1);
+  border-right: 1px solid var(--color-border-soft);
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Center column hosts the active view (editor / graph / health / daily). */
+.centerCol {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-bg-l0);
+}
+
+.viewFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+}
+
+/* ─── ViewSwitcher (segmented tabs row) ──────────────────────── */
+
+.viewSwitcher {
+  display: flex;
+  gap: 4px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  flex-shrink: 0;
+}
+
+.viewTab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.viewTab:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+
+.viewTab[data-active] {
+  background: color-mix(in oklch, var(--color-accent) 14%, transparent);
+  border-color: color-mix(in oklch, var(--color-accent) 32%, transparent);
+  color: var(--color-text);
+}
+
+/* ─── GraphView ─────────────────────────────────────────────── */
+
+.graphView {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.graphHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  flex-shrink: 0;
+}
+
+.graphScope {
+  display: inline-flex;
+  background: var(--color-bg-l0);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.graphScopeButton {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  padding: 4px 10px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-right: 1px solid var(--color-border-soft);
+  transition: background var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart);
+}
+
+.graphScopeButton:last-child {
+  border-right: 0;
+}
+
+.graphScopeButton:hover:not(:disabled) {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+
+.graphScopeButton[data-active] {
+  background: color-mix(in oklch, var(--color-accent) 18%, transparent);
+  color: var(--color-text);
+}
+
+.graphScopeButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.graphFilter {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 6px;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  outline: none;
+}
+
+.graphFilter:focus {
+  border-color: var(--color-accent);
+}
+
+.graphFilter:disabled {
+  opacity: 0.55;
+}
+
+.graphCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.graphCanvas {
+  flex: 1;
+  background: var(--color-bg-l0);
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─── HealthDashboard ───────────────────────────────────────── */
+
+.healthView {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px 24px;
+}
+
+.healthHeader {
+  margin-bottom: 12px;
+}
+
+.healthTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+.healthStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.statCard {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+}
+
+.statCard[data-warn] {
+  border-color: color-mix(in oklch, var(--color-danger) 35%, transparent);
+}
+
+.statLabel {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.statValue {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.healthGroup {
+  margin-bottom: 16px;
+}
+
+.healthGroupTitle {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: var(--weight-medium);
+  color: var(--color-text-soft);
+  margin: 0 0 6px;
+}
+
+.healthList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.healthItem {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart);
+}
+
+.healthItem:hover {
+  background: var(--color-bg-l2);
+}
+
+.healthBroken .healthItem {
+  border-color: color-mix(in oklch, var(--color-danger) 22%, transparent);
+}
+
+.healthArrow {
+  color: var(--color-text-muted);
+}
+
+.healthBrokenTarget {
+  color: var(--color-danger);
+}
+
+.healthSearch {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 10px;
+  font-size: 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 6px;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  outline: none;
+  margin: 4px 0 8px;
+}
+
+.healthSearch:focus {
+  border-color: var(--color-accent);
+}
+
+.healthSnippet {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-family: var(--font-sans);
+  flex-basis: 100%;
+}
+
+/* ─── DailyNotesCalendar ────────────────────────────────────── */
+
+.calendarView {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 14px 20px 20px;
+}
+
+.calendarHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.calendarNav {
+  appearance: none;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  color: var(--color-text-muted);
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.calendarNav:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+
+.calendarTitle {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  text-align: center;
+}
+
+.calendarToday {
+  appearance: none;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.calendarToday:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+
+.calendarGrid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  min-height: 0;
+}
+
+.calendarDayLabel {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: 4px 0;
+}
+
+.calendarCell {
+  appearance: none;
+  position: relative;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border-radius: 6px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart);
+}
+
+.calendarCell:hover {
+  background: var(--color-bg-l2);
+}
+
+.calendarCell[data-other-month] {
+  opacity: 0.4;
+}
+
+.calendarCell[data-today] {
+  border-color: var(--color-accent);
+}
+
+.calendarCell[data-has-note] {
+  background: color-mix(in oklch, var(--color-accent) 8%, transparent);
+}
+
+.calendarDayNum {
+  font-variant-numeric: tabular-nums;
+}
+
+.calendarDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  align-self: flex-end;
+}
+
+/* ─── Kanban ───────────────────────────────────────────────── */
+
+.kanbanView, .kanbanBoard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kanbanViewHeader, .kanbanHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  flex-shrink: 0;
+}
+
+.kanbanViewTitle {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+.kanbanCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  flex: 1;
+}
+
+.kanbanList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.kanbanListItems {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kanbanListItem {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  transition: background var(--duration-fast) var(--ease-out-quart);
+}
+
+.kanbanListItem:hover {
+  background: var(--color-bg-l2);
+}
+
+.kanbanListPath {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.kanbanCols {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 12px 16px;
+}
+
+.kanbanCol {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 0;
+}
+
+.kanbanColHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.kanbanColTitle {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  flex: 1;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.kanbanColTitle:hover {
+  color: var(--color-accent);
+}
+
+.kanbanColBadge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  background: var(--color-bg-l2);
+  color: var(--color-text-muted);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.kanbanColDel {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.kanbanColDel:hover {
+  color: var(--color-danger);
+}
+
+.kanbanCards {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 60px;
+}
+
+.kanbanCard {
+  background: var(--color-bg-l0);
+  border: 1px solid var(--color-border-soft);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-text);
+  cursor: grab;
+  transition: background var(--duration-fast) var(--ease-out-quart);
+}
+
+.kanbanCard:hover {
+  background: var(--color-bg-l2);
+}
+
+.kanbanCard:active {
+  cursor: grabbing;
+}
+
+.kanbanAdd {
+  appearance: none;
+  background: transparent;
+  border: 1px dashed var(--color-border-soft);
+  color: var(--color-text-muted);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.kanbanAdd:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+
+/* ─── Diagram ─────────────────────────────────────────────── */
+
+.diagramView, .diagramEditor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.diagramViewHeader, .diagramHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.diagramViewTitle {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+.diagramCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  flex: 1;
+}
+
+.diagramList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.diagramCanvas {
+  flex: 1;
+  background: var(--color-bg-l0);
+  min-height: 0;
+  position: relative;
+}
+
+/* ─── Git ─────────────────────────────────────────────────── */
+
+.gitPanel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 22px 24px;
+}
+
+.gitHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.gitTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+.gitBranch {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-accent);
+  background: color-mix(in oklch, var(--color-accent) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-accent) 35%, transparent);
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+.gitStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.gitMessage {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 6px;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  outline: none;
+  resize: vertical;
+  margin-bottom: 6px;
+}
+
+.gitMessage:focus {
+  border-color: var(--color-accent);
+}
+
+.gitActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gitError {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 8%, transparent);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+.gitInfo {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+.gitLog {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gitLogItem {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  grid-template-rows: auto auto;
+  gap: 4px 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+}
+
+.gitSha {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.gitMsg {
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+.gitMeta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+}
+
+/* ─── Tree (left) ──────────────────────────────────────────────── */
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-l1);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.treeHeader {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.treeTitle {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: var(--weight-medium);
+  color: var(--color-text-soft);
+}
+
+.treeRoot {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treeSystemToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.treeSystemToggle input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.folderEmpty {
+  margin: 2px 12px 4px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+/* Left pane Files/Tags toggle — kairo-style mini pill */
+.leftPaneToggle {
+  display: inline-flex;
+  margin: 8px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.leftPaneToggleBtn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-soft);
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.leftPaneToggleBtn[data-active] {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+/* Notes tab strip — kairo-style above the editor */
+.notesTabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 8px 0;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-elev);
+}
+
+.notesTab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px 6px 0 0;
+  padding: 0 4px 0 8px;
+  background: transparent;
+  color: var(--color-text-soft);
+  font-size: 11px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+}
+
+.notesTab[data-active] {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border-soft);
+}
+
+.notesTabButton {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 6px 4px;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notesTabLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notesTabDirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.notesTabClose {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.6;
+}
+.notesTabClose:hover { opacity: 1; }
+
+/* Notes editor status bar — bottom strip */
+.notesStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-elev);
+  font-family: var(--font-mono);
+}
+.notesStatusPath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+.notesStatusSpacer { flex: 1; }
+.notesStatusMetric { color: var(--color-text-soft); }
+.notesStatusDivider { opacity: 0.5; }
+.notesStatusSaved { color: var(--color-success, #4ade80); }
+.notesStatusDim { color: var(--color-text-muted); font-style: italic; }
+
+/* Notes editor toolbar — kairo-style: Editor / Image / Git / Reading / mode */
+.notesEditorToolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-elev);
+  font-size: 11px;
+}
+.notesEditorToolbarBtn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 8px;
+  color: var(--color-text-soft);
+  font: inherit;
+  cursor: pointer;
+}
+.notesEditorToolbarBtn:hover { background: var(--color-bg); color: var(--color-text); }
+.notesEditorToolbarBtn[data-active] {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
+}
+.notesEditorToolbarSpacer { flex: 1; }
+.notesEditorToolbarGroup {
+  display: inline-flex;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.notesEditorToolbarGroup .notesEditorToolbarBtn {
+  border-radius: 0;
+  border: 0;
+  border-right: 1px solid var(--color-border-soft);
+}
+.notesEditorToolbarGroup .notesEditorToolbarBtn:last-child { border-right: 0; }
+
+/* BlockAiOps — floating menu above a Tiptap selection. Positioned via
+   inline style left/top from selection rect; we just style the chrome. */
+.blockAiOps {
+  position: fixed;
+  z-index: 1000;
+  min-width: 280px;
+  max-width: 420px;
+  transform: translateY(-100%);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  padding: 6px;
+  font-size: 12px;
+  color: var(--color-text);
+}
+.blockAiOpsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 6px 6px;
+  border-bottom: 1px solid var(--color-border-soft);
+  margin-bottom: 4px;
+}
+.blockAiOpsTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.blockAiOpsClose {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.blockAiOpsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.blockAiOpsItem {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+.blockAiOpsItem:hover {
+  background: var(--color-bg-l1);
+}
+.blockAiOpsLabel { font-weight: 500; }
+.blockAiOpsDesc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.blockAiOpsForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 6px 6px;
+}
+.blockAiOpsInput {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  font: inherit;
+}
+.blockAiOpsInput:focus { outline: 1px solid var(--color-accent); }
+.blockAiOpsPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 6px 6px;
+}
+.blockAiOpsPreviewLabel {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.blockAiOpsPreviewBody {
+  margin: 0;
+  padding: 8px;
+  background: var(--color-bg-l1);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+  color: var(--color-text);
+}
+.blockAiOpsError {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-danger, #f87171);
+}
+.blockAiOpsActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 2px;
+}
+.blockAiOpsBtn,
+.blockAiOpsBtnPrimary {
+  appearance: none;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.blockAiOpsBtnPrimary {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
+}
+.blockAiOpsBtnPrimary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* AI ops drill-down in FrontmatterPanel (§8.7 transparency) */
+.fmAiBadge {
+  appearance: none;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+.fmAiBadge:hover { opacity: 0.9; }
+.fmAiDrawer {
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fmAiBlock {
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  background: var(--color-bg);
+  font-size: 11px;
+}
+.fmAiBlockSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.fmAiBlockSummary::-webkit-details-marker { display: none; }
+.fmAiBlockAction {
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.fmAiBlockMeta {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.fmAiBlockTs {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+.fmAiBlockBody {
+  border-top: 1px solid var(--color-border-soft);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fmAiBlockLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.fmAiBlockPre {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--color-bg-l1);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow: auto;
+}
+.fmAiBlockInput {
+  margin: 0;
+  font-style: italic;
+  color: var(--color-text-soft);
+}
+
+.treeBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0 12px;
+}
+
+.folder {
+  margin-bottom: 4px;
+}
+
+.folderName {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  font-weight: var(--weight-medium);
+  margin: 6px 12px 2px;
+}
+
+.fileList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.fileItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  padding: 3px 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background var(--duration-fast) var(--ease-out-quart);
+}
+
+.fileItem:hover {
+  background: var(--color-bg-l2);
+}
+
+.fileItem[data-active] {
+  background: color-mix(in oklch, var(--color-accent) 14%, transparent);
+  color: var(--color-text);
+}
+
+.fileName {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 10px 12px;
+}
+
+/* ─── Editor (center) ──────────────────────────────────────────── */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-l0);
+  flex: 1;            /* claim remaining centerCol space below NotesTabBar */
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* `.editorBody` is a flex container so the inner ViewerHost > .frame
+   (`flex: 1; min-height: 0`) can claim height correctly. If this were
+   `overflow:auto`, the inner `.scroll` would have no bounded parent and
+   the contenteditable would render at its natural content height — no
+   scroll, content clipped (bao 2026-06-03 report: tiny text + no scroll). */
+.editorBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Tiptap renders the contenteditable with class `.ProseMirror`. The
+   default Tiptap base ships with no font-size, so the browser default
+   (~13.3px in our app shell) makes notes feel cramped. Bump body
+   text to 16px / 1.7 — kairo-equivalent reading comfort. */
+.editor :global(.ProseMirror) {
+  font-size: 16px;
+  line-height: 1.7;
+  padding: 16px 24px;
+  min-height: 100%;
+  color: var(--color-text);
+}
+.editor :global(.ProseMirror h1) { font-size: 24px; margin: 16px 0 10px; }
+.editor :global(.ProseMirror h2) { font-size: 20px; margin: 14px 0 8px; }
+.editor :global(.ProseMirror h3) { font-size: 17px; margin: 12px 0 6px; }
+.editor :global(.ProseMirror p) { margin: 8px 0; }
+.editor :global(.ProseMirror ul),
+.editor :global(.ProseMirror ol) { margin: 8px 0; padding-left: 24px; }
+.editor :global(.ProseMirror code) {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  background: var(--color-bg-l1);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.editor :global(.ProseMirror pre) {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--color-bg-l1);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+/* Reading mode: hide the editor chrome (toolbar lives outside body so
+   it stays; ViewerHost itself decides its render). */
+.editor[data-mode='reading'] .editorBody [contenteditable] {
+  pointer-events: none;
+  user-select: text;
+}
+
+/* ─── StarToggle (in NotesActions) ───────────────────────────── */
+
+.starButton {
+  appearance: none;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  color: var(--color-text-muted);
+  font-size: 14px;
+  width: 28px;
+  height: 26px;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out-quart),
+    background var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.starButton:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+
+.starButton[data-on] {
+  color: #e5b13a;
+  border-color: color-mix(in oklch, #e5b13a 35%, transparent);
+}
+
+.starButton[data-on]:hover {
+  background: color-mix(in oklch, #e5b13a 12%, transparent);
+}
+
+/* ─── TagsPanel (left column bottom, collapsible) ──────────── */
+
+.tagsPanel {
+  flex: 0 0 auto;
+  max-height: 45%;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  overflow: hidden;
+}
+
+.tagsHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 6px;
+}
+
+.tagsToggle {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: var(--weight-medium);
+  color: var(--color-text-soft);
+  cursor: pointer;
+  text-align: left;
+}
+
+.tagsLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tagsCount {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+  border-radius: 999px;
+  padding: 1px 6px;
+  letter-spacing: 0.02em;
+}
+
+.tagsClear {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 1px 3px;
+}
+
+.tagsClear:hover {
+  color: var(--color-text);
+}
+
+.tagsBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 12px;
+}
+
+.tagsList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tagChip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.tagChip:hover {
+  background: var(--color-bg-l2);
+}
+
+.tagChip[data-active] {
+  background: color-mix(in oklch, var(--color-accent) 16%, transparent);
+  border-color: color-mix(in oklch, var(--color-accent) 45%, transparent);
+  color: var(--color-text);
+}
+
+.tagName {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.tagBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--color-bg-l2);
+  color: var(--color-text-muted);
+  border-radius: 999px;
+  padding: 0 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tagChip[data-active] .tagBadge {
+  background: var(--color-accent);
+  color: var(--color-bg-l0);
+}
+
+/* ─── FrontmatterPanel (collapsible, above editor body) ───────── */
+
+.fmPanel {
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  flex-shrink: 0;
+}
+
+.fmHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.fmToggle {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-align: left;
+  padding: 2px 0;
+}
+
+.fmToggle:hover {
+  color: var(--color-text);
+}
+
+.fmChevron {
+  width: 10px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--color-text-soft);
+}
+
+.fmLabel {
+  letter-spacing: 0.12em;
+}
+
+.fmDirty {
+  color: var(--color-accent);
+  font-size: 16px;
+  line-height: 0;
+}
+
+.fmHeaderActions {
+  display: flex;
+  gap: 6px;
+}
+
+.fmAdd, .fmSave {
+  appearance: none;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart);
+}
+
+.fmAdd:hover, .fmSave:hover:not(:disabled) {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+
+.fmSave:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.fmSave[disabled]:not(:hover) {
+  /* keep default */
+}
+
+.fmRows {
+  padding: 4px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.fmEmpty {
+  margin: 4px 0;
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.fmRow {
+  display: grid;
+  grid-template-columns: 130px 1fr 22px;
+  gap: 6px;
+  align-items: center;
+}
+
+.fmKey, .fmValue {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 3px 7px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.fmKey:focus, .fmValue:focus {
+  border-color: var(--color-accent);
+}
+
+.fmDel {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  transition: color var(--duration-fast) var(--ease-out-quart);
+}
+
+.fmDel:hover {
+  color: var(--color-danger);
+}
+
+/* ─── Modal (Templates picker, future generic) ──────────────── */
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklch, var(--color-bg-l0) 60%, transparent);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  width: min(480px, 90vw);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.25);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.modalTitle {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+.modalClose {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.modalClose:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+
+.modalBody {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modalLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modalLabelText {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: var(--weight-medium);
+  color: var(--color-text-soft);
+}
+
+.modalInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 6px;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.modalInput:focus {
+  border-color: var(--color-accent);
+}
+
+.modalHint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.modalHint code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--color-bg-l2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--color-text);
+}
+
+.modalError {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 18px 14px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.modalPrimary, .modalSecondary {
+  appearance: none;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.modalPrimary {
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-bg-l0);
+}
+
+.modalPrimary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.modalPrimary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.modalSecondary {
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+}
+
+.modalSecondary:hover {
+  background: var(--color-bg-l2);
+}
+
+.editorEmpty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 40px;
+  gap: 8px;
+  background: var(--color-bg-l0);
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+
+.emptyHint {
+  margin: 0;
+  max-width: 360px;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.emptyHint code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--color-bg-l2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ─── Backlinks (right) ───────────────────────────────────────── */
+
+.backlinks {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-l1);
+  border-left: 1px solid var(--color-border-soft);
+  overflow: hidden;
+}
+
+.backlinksHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+/* Suggested links group inside the backlinks panel — visually
+   distinct so the embeddings-driven candidates don't read as
+   "real" backlinks. (ADR-002 v5 §10 / product spec §5.1) */
+.backlinksSuggestedHeader {
+  margin-top: 6px;
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+}
+
+.backlinksTitle {
+  margin: 0;
+  flex: 1;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: var(--weight-medium);
+  color: var(--color-text-soft);
+}
+
+.backlinksCount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.backlinksBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0 12px;
+}
+
+.backlinksList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.backlinksItem {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 6px 12px;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart);
+}
+
+.backlinksItem:hover {
+  background: var(--color-bg-l2);
+}
+
+.backlinksFrom {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.backlinksSnippet {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  color: var(--color-text-soft);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}

@@ -37,6 +37,10 @@ pub mod registry;
 pub mod r#trait;
 pub mod types;
 pub mod verify;
+// Local Ollama embeddings client (ADR-002 v5 §10.3) — separate from the
+// chat provider trait so embeddings can stay local even when chat goes
+// to a cloud provider.
+pub mod ollama_embed;
 
 pub use r#trait::{Capability, Consumer, Provider, RouteChain};
 pub use registry::{ProviderHandle, ProviderListEntry, ProviderRegistry, RecordedFailover};

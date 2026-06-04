@@ -24,8 +24,8 @@ export const ROUTE_TAB_COMPONENTS: Record<string, LazyExoticComponent<ComponentT
   '/pool': lazy(() =>
     import('@/routes/pool').then((m) => ({ default: m.PoolRoute })),
   ),
-  '/vault': lazy(() =>
-    import('@/routes/vault').then((m) => ({ default: m.VaultRoute })),
+  '/notes': lazy(() =>
+    import('@/routes/notes').then((m) => ({ default: m.NotesRoute })),
   ),
   '/workbench': lazy(() =>
     import('@/routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),

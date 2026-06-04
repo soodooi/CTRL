@@ -31,11 +31,33 @@ pub mod persistence;
 pub mod provider;
 pub mod runtime;
 pub mod scheduler;
+// Vault embeddings substrate (ADR-002 v5 §10) — local Ollama
+// nomic-embed-text + SQLite BLOB flat cosine search. Memory
+// `decision_vault_adr_002_section_8`.
+pub mod vault_embeddings;
+// Keycap output capture (ADR-002 v5 §9) — single SmartTable per keycap.
+pub mod keycap_capture;
+// Daily-cron tick for vault sourcing. Spawned from Runtime::boot. See
+// ADR-002 substrate § vault v1 §8.4 + memory
+// `decision_vault_adr_002_section_8`.
+pub mod sourcing_scheduler;
 pub mod stss_bridge;
 pub mod subprocess_actor;
 pub mod subprocess_stss_adapter;
 pub mod vault;
+// ADR-002 substrate § vault v1 §8.3 #9-15, 2026-06-01 —
+// vault_graph: in-memory link/tag/mention/orphan/broken_links/graph_data scanner
+// (memory `decision_vault_adr_002_section_8`).
+pub mod vault_graph;
 pub mod vault_index;
+// ADR-002 substrate § vault v1 §8.3 #21, 2026-06-01 — vault_watch:
+// notify-backed file-event stream for sourcing trigger (count-threshold path).
+pub mod vault_watch;
+// ADR-002 substrate § vault v1 §8.4 sourcing-workflow, 2026-06-01 —
+// kernel-side seed sourcing routine (memory
+// `decision_vault_adr_002_section_8`). Irisy attaches a richer
+// LLM-backed version on top of the same review-queue file.
+pub mod vault_sourcing;
 
 pub use actor::{Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority};
 pub use capability::{CapToken, Capability, CapabilityBroker, CapabilityError};

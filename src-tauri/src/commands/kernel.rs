@@ -456,6 +456,21 @@ pub async fn run_keycap(
                 duration_ms,
                 "run_keycap ok"
             );
+            // ADR-002 v5 §9 smart-table-output — best-effort row append
+            // into `notes/keycap-runs/<id>.table.md`. Never blocks the
+            // response; errors are warn-logged inside `capture_row`.
+            if let Some(root) = crate::kernel::vault::default_vault_root() {
+                crate::kernel::keycap_capture::capture_row(
+                    &root,
+                    &args.keycap_id,
+                    &args.input,
+                    &output,
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+            }
             kernel.bridge.publish_op(Op {
                 kind: OpKind::KeycapCompleted,
                 ts_ms: now_ms(),

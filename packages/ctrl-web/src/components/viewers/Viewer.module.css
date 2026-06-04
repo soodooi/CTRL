@@ -275,6 +275,41 @@
 .prose :global(a:hover) {
   border-bottom-color: var(--color-accent);
 }
+
+/* Wikilink atom (ADR-002 § vault v1 §8.5, 2026-06-01). Styled to read
+   as a "link to another note" — accent foreground, soft brackets,
+   click target reads as a chip rather than a normal hyperlink. Broken
+   links (target not found via vault_list) get a dashed warning style
+   so the user catches typos before saving. */
+.prose :global(.tiptap-wikilink) {
+  font-family: var(--font-sans);
+  color: var(--color-accent);
+  background: color-mix(in oklch, var(--color-accent) 8%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-accent) 32%, transparent);
+  padding: 0 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+.prose :global(.tiptap-wikilink:hover) {
+  background: color-mix(in oklch, var(--color-accent) 18%, transparent);
+  border-color: var(--color-accent);
+}
+.prose :global(.tiptap-wikilink:focus-visible) {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+}
+.prose :global(.tiptap-wikilink-broken) {
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 8%, transparent);
+  border-color: color-mix(in oklch, var(--color-danger) 28%, transparent);
+  border-style: dashed;
+  cursor: help;
+}
+.prose :global(.tiptap-wikilink-broken:hover) {
+  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
+}
 .prose :global(blockquote) {
   margin: 0 0 var(--space-3);
   padding-left: var(--space-3);

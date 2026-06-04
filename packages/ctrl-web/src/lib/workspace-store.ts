@@ -109,6 +109,11 @@ const spawnTabsFromShape = (
         return { ...base, kind: 'external-embed', url: 'about:blank' };
       case 'vault-md':
         return { ...base, kind: 'vault-md', vaultPath: '' };
+      case 'sourcing-review':
+        // ADR-002 § vault v1 §8.6 (2026-06-01) — review-queue path is
+        // resolved by the caller (L2 badge / Irisy command) via
+        // vault-conventions.renderReviewQueuePath.
+        return { ...base, kind: 'sourcing-review', reviewPath: '' };
       case 'route':
         return { ...base, kind: 'route', path: '/' };
     }
@@ -360,3 +365,11 @@ export const useActiveInstance = (): WorkspaceInstance | null =>
   useWorkspaceStore((s) =>
     s.instances.find((i) => i.id === s.activeInstanceId) ?? null,
   );
+
+// Dev-only window handle for Playwright E2E. Lets tests drive the store
+// from page.evaluate without depending on the L1 chip click path.
+// Production builds drop this branch via the import.meta.env.PROD check.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __ctrlWorkspaceStore?: typeof useWorkspaceStore }).__ctrlWorkspaceStore =
+    useWorkspaceStore;
+}

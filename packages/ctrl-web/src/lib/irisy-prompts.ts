@@ -196,6 +196,68 @@ export async function loadIrisySystemPrompt(): Promise<string> {
   return fromVault ?? IRISY_SYSTEM_DEFAULT;
 }
 
+// ── SOUL.md injection (ADR-005 irisy v2 § soul-md-compat §4.3) ─────────
+//
+// Every Irisy turn pulls vault/irisy/SOUL.md and prepends the body to
+// the system prompt as a "core memory block" (Letta pattern). The
+// frontmatter is also serialised inline so x-ctrl:* keys reach Pi
+// without a separate channel. Failure is silent — Irisy keeps working
+// against the bare default prompt if SOUL.md is missing.
+
+interface IrisySoulView {
+  path: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+  soul_md_version: string;
+}
+
+let cachedSoul: { value: IrisySoulView | null; loadedAt: number } | null = null;
+const SOUL_CACHE_TTL_MS = 30_000;
+
+async function loadSoul(): Promise<IrisySoulView | null> {
+  const now = Date.now();
+  if (cachedSoul && now - cachedSoul.loadedAt < SOUL_CACHE_TTL_MS) {
+    return cachedSoul.value;
+  }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const view = await invoke<IrisySoulView>('irisy_soul_read');
+    cachedSoul = { value: view, loadedAt: now };
+    return view;
+  } catch {
+    cachedSoul = { value: null, loadedAt: now };
+    return null;
+  }
+}
+
+/** Build the full system prompt that ships per turn: base persona +
+ *  SOUL.md core-memory block. Caller injects this as system role. */
+export async function loadIrisySystemPromptWithSoul(): Promise<string> {
+  const [base, soul] = await Promise.all([loadIrisySystemPrompt(), loadSoul()]);
+  if (!soul) return base;
+  const fm = JSON.stringify(soul.frontmatter, null, 2);
+  return [
+    base,
+    '',
+    '## Core memory (vault/irisy/SOUL.md)',
+    '',
+    'This block is always in context per ADR-005 § soul-md-compat §4.3.',
+    '',
+    '### Frontmatter (incl. x-ctrl:* extensions)',
+    '```json',
+    fm,
+    '```',
+    '',
+    '### Body',
+    soul.body,
+  ].join('\n');
+}
+
+/** Invalidate the SOUL.md cache — call after irisy_soul_write. */
+export function invalidateSoulCache(): void {
+  cachedSoul = null;
+}
+
 // ── ADR-002 substrate § provider v2 §3.7 — brain_state surface ─────────
 
 /** Who pays for a provider's calls. Mirrors Rust `ProviderManagedBy`. */

@@ -1,21 +1,17 @@
 /*
- * App shell — 2-column shell (bao 2026-05-31, ADR-002 §7 amended).
+ * App shell — 4-column shell (ADR-003 frontend §7 v4 2026-06-01).
  *
- * Column order LEFT → RIGHT:
- *   [L1 48] [Irisy 430]
+ * Column order LEFT -> RIGHT:
+ *   [Tab] [L2] [L1 48] [Irisy 430]
  *
- * Main window width = 48 + 430 = 478px. **NEVER CHANGES.** L1 and Irisy
- * positions are locked — neither moves when the NSWindow workspace opens
- * or when an active tab declares L2 sub-nav.
+ * Compact: Tab=0, L2=0, L1=48, Irisy=430 -> total 478px (only L1+Irisy
+ * render). Right edge anchored to monitor right; ▾ toggle slides the
+ * main window's left edge between 478 (compact) and 1600 (expanded).
  *
- * L2 sub-nav (when an active workspace tab declares one) lives INSIDE
- * the NSWindow workspace, not in this main window. Earlier design had
- * L2 as a column in this shell — that pushed L1+Irisy when L2 opened,
- * which bao explicitly rejected ("L1 和 Irisy 位置不变"). Reverted.
+ * Expanded: Tab=1fr (grows leftward), L2=200, L1=48, Irisy=430.
  *
- * L1 (PrimaryRail) chips OPEN the NSWindow workspace (separate Tauri
- * child window via addChildWindow, glued left of main). The main shell
- * itself never changes shape.
+ * L1 is anchored immediately left of Irisy and never moves on screen.
+ * Workspace tab area grows leftward when ▾ expands the window.
  *
  * `<Outlet />` stays mounted hidden so legacy routes still register;
  * full route retirement = next PR.
@@ -24,23 +20,21 @@
 .shell {
   display: grid;
   grid-template-rows: var(--statusbar-height) 1fr;
-  /* 4-col `[L1 | L2 | Tab | Irisy]` per bao 2026-06-01 (option A):
-       L1   = 48px primary nav (always visible)
-       L2   = sub-nav for active L1 item (default 0; expands to ~200px
-              when an L1 item with sub-nav is active; reserved for the
-              VSCode-style side bar)
-       Tab  = workspace tab content (TabBar + active tab body via
-              WorkspaceShell; default 0; expands to 1fr when at least
-              one workspace instance is open)
-       Irisy = 430px right pane (always visible). */
+  /* v4 column order [Tab | L2 | L1 | Irisy] — bao 2026-06-01
+       Tab   = workspace tab content (default 0; 1fr when a workspace
+               instance is open)
+       L2    = sub-nav for active L1 item (default 0; 200px when an L1
+               item with sub-nav is active)
+       L1    = 48px primary nav (always visible, anchored to Irisy left)
+       Irisy = 430px right pane (always visible, anchored monitor right) */
   grid-template-columns:
-    var(--l1-width)
-    var(--l2-width)
     var(--tab-width)
+    var(--l2-width)
+    var(--l1-width)
     var(--irisy-pane-width);
   grid-template-areas:
     'status status status status'
-    'l1     l2     tab    irisy';
+    'tab    l2     l1     irisy';
   height: 100vh;
   height: 100dvh;
   background: var(--color-bg-l0);
@@ -53,12 +47,15 @@
   --tab-width: 0;
 }
 
-/* bao 2026-06-01 full fix: L2 and Tab both expand together when a
-   workspace instance exists. L2 width is fixed at 200px (sub-nav strip);
-   the Tab column fills the remaining space (1fr). */
+/* Workspace open -> Tab column gets 1fr. L2 stays 0 unless the active
+   tab declares sub-nav (then `data-l2-open='true'` flips it to 200px).
+   bao 2026-06-01 — empty L2 auto-collapses so it never shows as a blank
+   strip when no sub-nav has been declared yet. */
 .shell[data-workspace-open='true'] {
-  --l2-width: 200px;
   --tab-width: 1fr;
+}
+.shell[data-l2-open='true'] {
+  --l2-width: 200px;
 }
 
 .l2 {
@@ -66,7 +63,11 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-right: 1px solid var(--color-border-soft);
+  /* v4: NO borders on L2 itself — when the column is collapsed (no
+     sub-nav declared), a bordered .l2 still renders 2 px wide and shows
+     a thin line between Tab and L1. The Tab↔L1 and L2↔L1 separators
+     are handled by L1's border-left below, so removing them here means
+     a collapsed L2 takes literally 0 visible pixels. */
   background: var(--color-bg-l1);
   display: flex;
   flex-direction: column;
@@ -100,7 +101,14 @@
   flex-direction: column;
   overflow: hidden;
 }
-.l1 { grid-area: l1; min-height: 0; }
+.l1 {
+  grid-area: l1;
+  min-height: 0;
+  /* Single 1px separator on L1's left edge handles BOTH cases:
+     L2 open  -> separates L2 from L1
+     L2 closed -> separates Tab from L1 (since Tab + L1 become adjacent). */
+  border-left: 1px solid var(--color-border-soft);
+}
 
 .versionPill {
   position: absolute;

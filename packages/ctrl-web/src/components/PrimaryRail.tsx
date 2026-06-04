@@ -42,6 +42,11 @@ import styles from './PrimaryRail.module.css';
 const IRISY_ITEM_ID = 'builtin-irisy';
 const CODING_ITEM_ID = 'coding';
 const POOL_ITEM_ID = 'pool';
+// ADR-002 § vault v1 §8.6 v4 (bao 2026-06-02): Vault is the substrate.
+// The L1 chip surfaces the **Notes** app (the first vault-using app);
+// Vault itself does not get an L1 entry. memory
+// `decision_vault_adr_002_section_8`.
+const NOTES_ITEM_ID = 'notes';
 const SETTINGS_ITEM_ID = 'settings';
 
 interface RailContextValue {
@@ -131,9 +136,20 @@ const IrisyIcon = (): ReactElement => (
   </svg>
 );
 
+// Notes icon — open book with a centered bookmark stroke. Reads as
+// "notebook" rather than a generic file/folder which would collide
+// with Pool's grid metaphor.
+const NotesIcon = (): ReactElement => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M4 5.5a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z" />
+    <path d="M9 4v8l2.5-2 2.5 2V4" />
+  </svg>
+);
+
 const NAV_ITEMS: ReadonlyArray<RailDef> = [
   { id: IRISY_ITEM_ID, label: 'Irisy', path: '/', icon: <IrisyIcon /> },
   { id: POOL_ITEM_ID, label: 'Keycap pool', path: '/pool', icon: <PoolIcon /> },
+  { id: NOTES_ITEM_ID, label: 'Notes', path: '/notes', icon: <NotesIcon /> },
   { id: CODING_ITEM_ID, label: 'Coding', path: '/coding', icon: <CodingIcon /> },
 ];
 
@@ -142,6 +158,7 @@ const SETTINGS_PATH = '/settings/ctrl';
 const idForPath = (pathname: string): string => {
   if (pathname.startsWith('/coding')) return CODING_ITEM_ID;
   if (pathname.startsWith('/pool')) return POOL_ITEM_ID;
+  if (pathname.startsWith('/notes')) return NOTES_ITEM_ID;
   if (pathname.startsWith('/settings')) return SETTINGS_ITEM_ID;
   // `/irisy` is now an alias landing on Irisy (no separate Create item).
   return IRISY_ITEM_ID;
@@ -162,19 +179,32 @@ export const PrimaryRail = (): ReactElement => {
   const handleNavClick = useCallback(
     (def: RailDef) => {
       setActiveRailId(def.id);
-      // bao 2026-06-01 (v0.1.129 regression fix): tab-bound L1 chips
-      // open a route tab in the workspace tab area. Do NOT call
-      // `toggle_workspace_window` here — it is a toggle, so clicking
-      // an L1 chip while the workspace is already expanded collapses
-      // it. The user controls window expand/collapse via the `>`
-      // chevron at the top of L1; this handler only updates state.
-      if (def.id === POOL_ITEM_ID || def.id === CODING_ITEM_ID) {
+      // bao 2026-06-03 — L1 chip click must surface its workspace. Calling
+      // `openSystemTab` alone registered the tab but left the main window
+      // compact, so the user saw nothing change ("L1 vault button can't
+      // open workspace"). `ensure_workspace_window_expanded` is idempotent
+      // (no-op when already expanded) so clicking the same chip twice
+      // cannot collapse the workspace — the ▾ chevron stays the only
+      // collapse path, preserving the single-source model from the
+      // earlier `toggle_workspace_window` rationale.
+      if (
+        def.id === POOL_ITEM_ID ||
+        def.id === CODING_ITEM_ID ||
+        def.id === NOTES_ITEM_ID
+      ) {
         useWorkspaceStore.getState().openSystemTab({
           id: def.id,
           kind: 'route',
           path: def.path,
           title: def.label,
         });
+        void invoke<boolean>('ensure_workspace_window_expanded')
+          .then((didExpand) => {
+            if (didExpand) setWorkspaceOpen(true);
+          })
+          .catch(() => {
+            /* browser PWA or unsupported platform — silently no-op */
+          });
         return;
       }
       void navigate({ to: def.path });
@@ -184,15 +214,21 @@ export const PrimaryRail = (): ReactElement => {
 
   const handleSettingsClick = useCallback(() => {
     setActiveRailId(SETTINGS_ITEM_ID);
-    // bao 2026-06-01: open a route tab in the singleton "system"
-    // workspace instance. Window expand/collapse stays user-driven via
-    // the `>` chevron at the top of L1 (see handleNavClick rationale).
+    // bao 2026-06-03: Settings chip mirrors the Pool/Notes/Coding flow —
+    // openSystemTab + idempotent expand. See handleNavClick comment.
     useWorkspaceStore.getState().openSystemTab({
       id: 'settings',
       kind: 'route',
       path: SETTINGS_PATH,
       title: 'Settings',
     });
+    void invoke<boolean>('ensure_workspace_window_expanded')
+      .then((didExpand) => {
+        if (didExpand) setWorkspaceOpen(true);
+      })
+      .catch(() => {
+        /* browser PWA or unsupported platform — silently no-op */
+      });
   }, [setActiveRailId]);
 
   // ▾ toggle — opens the workspace big window (macOS NSWindow

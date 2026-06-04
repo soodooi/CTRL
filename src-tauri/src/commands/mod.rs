@@ -21,6 +21,10 @@ pub mod code_space;
 pub mod config;
 pub mod draft;
 pub mod draft_run;
+// ADR-002 § vault v1 §8.6 v5 (2026-06-03) — vault-side git via git CLI
+// (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
+// panel: status / init / commit_all / push / log.
+pub mod git;
 pub mod irisy;
 pub mod irisy_chat;
 pub mod kernel;
@@ -33,6 +37,10 @@ pub mod stss;
 pub mod system;
 pub mod updater;
 pub mod vault;
+// Vault embeddings — 5 new commands (ADR-002 v5 §10.4)
+pub mod vault_embeddings;
+// Irisy synthesize — Layer 4 product surface (brainstorm §5.3/§5.5/§5.10)
+pub mod irisy_synth;
 pub mod workshop;
 
 /// Returns the `invoke_handler!` tuple for `tauri::Builder::invoke_handler`.
@@ -87,6 +95,10 @@ macro_rules! pwa_invoke_handler {
             // 不是浮窗"). Main slides left edge 430 ↔ 1600. CSS @media
             // drives the expanded grid. No independent NSWindow.
             $crate::commands::system::toggle_workspace_window,
+            // system — idempotent expand for L1 chip clicks. Unlike toggle,
+            // calling this when already expanded is a no-op; never collapses.
+            // bao 2026-06-03: closes "L1 vault button can't open workspace".
+            $crate::commands::system::ensure_workspace_window_expanded,
             // updater — safe macOS relaunch after auto-update (Chrome-style
             // detached helper, sidesteps the Tauri 2 race)
             $crate::commands::updater::safe_relaunch_after_update,
@@ -135,7 +147,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::code_space::cs_resize,
             $crate::commands::code_space::cs_kill,
             $crate::commands::code_space::cs_list,
-            // vault — Obsidian-compatible local-first markdown store
+            // vault — plain-text markdown store. ADR-002 § vault v1 §8.3, 2026-06-01.
+            // §8 expanded the surface from 8 → 21 commands; the first 8 keep their
+            // original signatures, the remaining 13 expose the link/tag/mention/
+            // orphan/broken/graph scanner (vault_graph), single-file mutations
+            // (rename/move/create_folder/set_starred), and the notify-backed
+            // watcher poll (vault_watch). Daily Note + Sourcing are NOT here —
+            // those run at the feature layer per §8.4.
             $crate::commands::vault::vault_write,
             $crate::commands::vault::vault_write_image,
             $crate::commands::vault::vault_read,
@@ -144,6 +162,43 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_delete,
             $crate::commands::vault::vault_root_path,
             $crate::commands::vault::vault_rebuild_index,
+            $crate::commands::vault::vault_backlinks,
+            $crate::commands::vault::vault_tags,
+            $crate::commands::vault::vault_notes_by_tag,
+            $crate::commands::vault::vault_mentions,
+            $crate::commands::vault::vault_orphans,
+            $crate::commands::vault::vault_broken_links,
+            $crate::commands::vault::vault_graph_data,
+            $crate::commands::vault::vault_rename,
+            $crate::commands::vault::vault_move,
+            $crate::commands::vault::vault_create_folder,
+            $crate::commands::vault::vault_set_starred,
+            $crate::commands::vault::vault_aliases,
+            $crate::commands::vault::vault_watch_recent,
+            // ADR-002 § vault v1 §8.4 sourcing-workflow (2026-06-01) —
+            // kernel-seeded review-queue producer (Irisy attaches the
+            // richer LLM pass on top of the same file).
+            $crate::commands::vault::vault_sourcing_run,
+            $crate::commands::vault::vault_sourcing_pending,
+            // SOUL.md — Irisy persistent memory file (ADR-005 v2 § soul-md-compat §4.3)
+            $crate::commands::vault::irisy_soul_read,
+            $crate::commands::vault::irisy_soul_write,
+            // Vault embeddings (ADR-002 v5 §10) — local Ollama + SQLite flat cosine
+            $crate::commands::vault_embeddings::vault_embed_note,
+            $crate::commands::vault_embeddings::vault_reembed_all,
+            $crate::commands::vault_embeddings::vault_embedding_status,
+            $crate::commands::vault_embeddings::vault_semantic_search,
+            $crate::commands::vault_embeddings::vault_suggest_links,
+            // Irisy synthesize — Layer 4 (question vault / cross-note / daily)
+            $crate::commands::irisy_synth::irisy_question_vault,
+            $crate::commands::irisy_synth::irisy_synthesize_notes,
+            $crate::commands::irisy_synth::irisy_daily_summarize,
+            // git — vault-side CLI shim (§8.6 v5)
+            $crate::commands::git::git_status,
+            $crate::commands::git::git_init,
+            $crate::commands::git::git_commit_all,
+            $crate::commands::git::git_push,
+            $crate::commands::git::git_log,
             // localstorage — small persistent JSON KV per keycap
             $crate::commands::storage::localstorage_get,
             $crate::commands::storage::localstorage_set,

@@ -1,5 +1,9 @@
 // Vault Tauri commands — PWA-facing surface for the vault capability.
 //
+// (ADR-002 substrate § vault v1 §8.3, 2026-06-01 — memory
+// `decision_vault_adr_002_section_8` — kernel exposes 21 primitive
+// endpoints; Daily Note / Sourcing routines live at the feature layer.)
+//
 // Per CLAUDE.md design philosophy:
 //   - All paths are relative to vault root (portable, machine-independent)
 //   - Frontmatter is JSON over the wire; vault module renders/parses YAML on disk
@@ -12,6 +16,11 @@
 use crate::kernel::capability::{CapToken, CapabilityBroker};
 use crate::kernel::capability_resolver;
 use crate::kernel::vault::{self, VaultEntry, VaultError};
+use crate::kernel::vault_graph::{
+    self, BacklinkHit, BrokenLink, GraphData, MentionHit, TagCount,
+};
+use crate::kernel::vault_sourcing::{self, SourcingRunReport};
+use crate::kernel::vault_watch::{self, EventEntry as VaultWatchEvent};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -256,4 +265,414 @@ pub async fn vault_rebuild_index() -> Result<usize, String> {
 
 fn stringify_vault_error(e: VaultError) -> String {
     e.to_string()
+}
+
+// ---------------------------------------------------------------------
+// Graph endpoints (§8.3 #9-15)
+// ---------------------------------------------------------------------
+// All graph queries require VaultRead "" (whole vault) because the
+// scanner walks every `.md` file. Per memory
+// `decision_vault_adr_002_section_8`, the graph is a derivative — the
+// scanner runs on demand and the result lives only in the caller's
+// reply payload (no static cache yet — see vault_graph.rs § scan).
+
+#[derive(Debug, Deserialize)]
+pub struct VaultGraphQueryArgs {
+    pub path: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn vault_backlinks(args: VaultGraphQueryArgs) -> Result<Vec<BacklinkHit>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: String::new(),
+        },
+    )?;
+    let root = vault_root()?;
+    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
+    Ok(graph.backlinks_of(&args.path))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VaultEmptyArgs {
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn vault_tags(args: VaultEmptyArgs) -> Result<Vec<TagCount>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: String::new(),
+        },
+    )?;
+    let root = vault_root()?;
+    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
+    Ok(graph.tags())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VaultNotesByTagArgs {
+    pub tag: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn vault_notes_by_tag(
+    args: VaultNotesByTagArgs,
+) -> Result<Vec<String>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: String::new(),
+        },
+    )?;
+    let root = vault_root()?;
+    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
+    Ok(graph.notes_by_tag(&args.tag))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VaultMentionsArgs {
+    pub text: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn vault_mentions(args: VaultMentionsArgs) -> Result<Vec<MentionHit>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: String::new(),
+        },
+    )?;
+    let root = vault_root()?;
+    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
+    Ok(graph.mentions_of(&args.text))
+}
+
+#[tauri::command]
+pub async fn vault_orphans(args: VaultEmptyArgs) -> Result<Vec<String>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: String::new(),
+        },
+    )?;
+    let root = vault_root()?;
+    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
+    Ok(graph.orphans())
+}
+
+#[tauri::command]
+pub async fn vault_broken_links(args: VaultEmptyArgs) -> Result<Vec<BrokenLink>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: String::new(),
+        },
+    )?;
+    let root = vault_root()?;
+    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
+    Ok(graph.broken_links())
+}
+
+#[tauri::command]
+pub async fn vault_graph_data(args: VaultEmptyArgs) -> Result<GraphData, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: String::new(),
+        },
+    )?;
+    let root = vault_root()?;
+    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
+    Ok(graph.graph_data())
+}
+
+// ---------------------------------------------------------------------
+// Mutation endpoints (§8.3 #16-20)
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct VaultRenameArgs {
+    pub from: String,
+    pub to: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+/// Move (or rename) a markdown file inside the vault. The kernel does
+/// NOT rewrite inbound wikilinks — that's a UX concern (kairo prompts
+/// the user; Irisy can offer batch-fix later). Frontend/Irisy can
+/// follow up with `vault_backlinks(from)` and chained writes if desired.
+#[tauri::command]
+pub async fn vault_rename(args: VaultRenameArgs) -> Result<(), String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultWrite {
+            path_glob: args.to.clone(),
+        },
+    )?;
+    rename_inner(&args.from, &args.to)
+}
+
+/// `vault_move` is an explicit alias of `vault_rename` — same semantics,
+/// distinct command surfaced for clarity in MCP tool listings (Irisy
+/// "move sourcing item to notes/" reads better than "rename").
+#[tauri::command]
+pub async fn vault_move(args: VaultRenameArgs) -> Result<(), String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultWrite {
+            path_glob: args.to.clone(),
+        },
+    )?;
+    rename_inner(&args.from, &args.to)
+}
+
+fn rename_inner(from: &str, to: &str) -> Result<(), String> {
+    let root = vault_root()?;
+    let entry = vault::read(&root, from).map_err(stringify_vault_error)?;
+    vault::write(&root, to, &entry.content, &entry.frontmatter)
+        .map_err(stringify_vault_error)?;
+    vault::delete(&root, from).map_err(stringify_vault_error)?;
+    tracing::info!(from = %from, to = %to, "vault_rename ok");
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VaultCreateFolderArgs {
+    pub path: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+/// Create an empty subdirectory under the vault root. Idempotent —
+/// existing directories are not an error (matches `mkdir -p`).
+#[tauri::command]
+pub async fn vault_create_folder(args: VaultCreateFolderArgs) -> Result<(), String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultWrite {
+            path_glob: args.path.clone(),
+        },
+    )?;
+    let root = vault_root()?;
+    let safe = vault::sanitize_relative_path(&args.path).map_err(stringify_vault_error)?;
+    std::fs::create_dir_all(root.join(&safe))
+        .map_err(|e| format!("create_folder: {e}"))?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VaultSetStarredArgs {
+    pub path: String,
+    pub starred: bool,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+/// Toggle the `starred:` frontmatter scalar. Implemented as
+/// read-modify-write at the kernel level so the FTS5 index and
+/// graph stay coherent (the rewritten file naturally re-upserts
+/// on the `vault::write` path).
+#[tauri::command]
+pub async fn vault_set_starred(args: VaultSetStarredArgs) -> Result<(), String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultWrite {
+            path_glob: args.path.clone(),
+        },
+    )?;
+    let root = vault_root()?;
+    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
+    let mut fm = entry.frontmatter;
+    match fm {
+        serde_json::Value::Object(ref mut map) => {
+            map.insert("starred".to_string(), serde_json::Value::Bool(args.starred));
+        }
+        _ => {
+            fm = serde_json::json!({ "starred": args.starred });
+        }
+    }
+    vault::write(&root, &args.path, &entry.content, &fm).map_err(stringify_vault_error)?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VaultAliasesArgs {
+    pub path: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+/// Read frontmatter `aliases:` for a note. Empty list when none set or
+/// when the value isn't an array of strings. Surfaces wikilink
+/// alternates without forcing the caller to re-parse frontmatter.
+#[tauri::command]
+pub async fn vault_aliases(args: VaultAliasesArgs) -> Result<Vec<String>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: args.path.clone(),
+        },
+    )?;
+    let root = vault_root()?;
+    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
+    let list = entry
+        .frontmatter
+        .get("aliases")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(list)
+}
+
+// ---------------------------------------------------------------------
+// Watcher endpoint (§8.3 #21)
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct VaultWatchRecentArgs {
+    /// Optional vault-relative prefix filter. Pass `"sourcing/"` to get
+    /// only Sourcing inbox events.
+    #[serde(default)]
+    pub prefix: Option<String>,
+    /// Unix epoch ms cursor. Frontend stores the largest `ts_ms` it has
+    /// seen and passes it back on the next poll; older entries get
+    /// dropped from the ring buffer regardless.
+    pub since_ms: i64,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+/// Drain recent filesystem events from the vault watcher ring buffer
+/// (`kernel::vault_watch`). First call lazily starts the watcher so the
+/// frontend doesn't need a separate setup step — the same poll loop
+/// bootstraps the cursor and the watcher in one round-trip.
+#[tauri::command]
+pub async fn vault_watch_recent(
+    args: VaultWatchRecentArgs,
+) -> Result<Vec<VaultWatchEvent>, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: String::new(),
+        },
+    )?;
+    let root = vault_root()?;
+    if let Err(e) = vault_watch::start(&root) {
+        tracing::warn!(error = %e, "vault_watch_recent: start failed");
+    }
+    Ok(vault_watch::recent(args.prefix.as_deref(), args.since_ms))
+}
+
+// ---------------------------------------------------------------------
+// Sourcing routine (§8.4 — feature-layer kernel seed)
+// ---------------------------------------------------------------------
+// The richer Irisy LLM-backed routine writes to the same review-queue
+// file; this command guarantees the loop works before Irisy attaches.
+
+#[derive(Debug, Deserialize)]
+pub struct VaultSourcingRunArgs {
+    /// `YYYY-MM-DD` date for the review-queue file. Frontend passes the
+    /// local-tz "today" — kernel-side cron passes the UTC date.
+    pub date: String,
+    #[serde(default)]
+    pub keycap_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn vault_sourcing_run(
+    args: VaultSourcingRunArgs,
+) -> Result<SourcingRunReport, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultWrite {
+            path_glob: ".ctrl/review-queue/".to_string(),
+        },
+    )?;
+    let root = vault_root()?;
+    vault_sourcing::run(&root, &args.date).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Serialize)]
+pub struct VaultSourcingPendingReply {
+    pub count: usize,
+}
+
+#[tauri::command]
+pub async fn vault_sourcing_pending(
+    args: VaultEmptyArgs,
+) -> Result<VaultSourcingPendingReply, String> {
+    check_cap(
+        args.keycap_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: "sourcing/".to_string(),
+        },
+    )?;
+    let root = vault_root()?;
+    Ok(VaultSourcingPendingReply {
+        count: vault_sourcing::count_pending(&root),
+    })
+}
+
+// ── SOUL.md surface (ADR-005 irisy v2 § soul-md-compat §4.3) ──────────
+//
+// Single-file persistent memory for Irisy lives at `vault/irisy/SOUL.md`,
+// shape per github.com/aaronjmars/soul.md. PWA + external MCP agents both
+// read/write through this surface so vanilla SOUL.md readers (Cursor /
+// Claude Code / OpenClaw companions) stay consistent with CTRL.
+
+const SOUL_REL_PATH: &str = "irisy/SOUL.md";
+
+#[derive(Debug, Serialize)]
+pub struct IrisySoulView {
+    pub path: String,
+    pub frontmatter: serde_json::Value,
+    pub body: String,
+    pub soul_md_version: String,
+}
+
+#[tauri::command]
+pub async fn irisy_soul_read() -> Result<IrisySoulView, String> {
+    let root = vault_root()?;
+    let entry = vault::read(&root, SOUL_REL_PATH)
+        .map_err(|e| format!("irisy_soul_read: {e}"))?;
+    let pin_path = root.join("irisy/.soul-md-version");
+    let pin = std::fs::read_to_string(&pin_path)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Ok(IrisySoulView {
+        path: entry.path,
+        frontmatter: entry.frontmatter,
+        body: entry.content,
+        soul_md_version: pin,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IrisySoulWriteArgs {
+    pub frontmatter: serde_json::Value,
+    pub body: String,
+}
+
+#[tauri::command]
+pub async fn irisy_soul_write(args: IrisySoulWriteArgs) -> Result<(), String> {
+    let root = vault_root()?;
+    vault::write(&root, SOUL_REL_PATH, &args.body, &args.frontmatter)
+        .map_err(|e| format!("irisy_soul_write: {e}"))?;
+    Ok(())
 }

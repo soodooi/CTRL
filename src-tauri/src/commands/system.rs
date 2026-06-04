@@ -53,10 +53,25 @@ pub struct KernelStatus {
     /// list each missing component (e.g. "no llm adapter").
     pub overall: &'static str,
     pub warnings: Vec<String>,
-    /// Brain engine label. Always "pi" (Pi is the sole brain per
-    /// ADR-002 substrate). Kept as a string field for forward-compat with PWA
-    /// consumers; the value never changes at runtime.
-    pub active_brain: &'static str,
+    /// Brain engine label. Surfaces the currently-active IrisyPrimary
+    /// provider's display label (e.g. "Claude" when claude-oauth is
+    /// active). Falls back to "pi" when no provider is configured —
+    /// Pi is the agent runtime; the label here is the provider behind
+    /// Pi's text-chat calls so the InfraBar ENGINE chip tells the user
+    /// which LLM they're actually talking to.
+    pub active_brain: String,
+}
+
+/// Compact form of a provider's display label for chips/status bars.
+/// Strips a trailing parenthetical (` (...)`) — e.g.
+/// `"Claude (OAuth subscription)"` → `"Claude"`. Leaves short labels
+/// unchanged. Used by both `kernel_status` and `irisy_init` so the
+/// InfraBar ENGINE chip and the irisy boot log surface the same brand.
+pub fn short_label(label: &str) -> String {
+    match label.find(" (") {
+        Some(idx) => label[..idx].to_string(),
+        None => label.to_string(),
+    }
 }
 
 fn detect_first_run_state() -> FirstRunState {
@@ -110,9 +125,18 @@ pub async fn kernel_status(
     }
     let overall = if warnings.is_empty() { "ok" } else { "degraded" };
 
-    // ADR-002 substrate: Pi is the sole brain (singleton). No registry, no
-    // ~/.ctrl/active-brain file. Value is constant.
-    let active_brain = "pi";
+    // Pi is the agent runtime; what the InfraBar ENGINE chip actually
+    // wants to surface is the provider behind Pi's text-chat calls, so
+    // the user can see "Claude" vs "Volc" vs whatever they've routed
+    // IrisyPrimary to. ADR-002 substrate § provider v2 §3.6.
+    let active_brain = runtime
+        .provider_registry
+        .route_chain(&crate::kernel::provider::Consumer::IrisyPrimary)
+        .primary
+        .as_ref()
+        .and_then(|id| runtime.provider_registry.snapshot(id))
+        .map(|snap| short_label(&snap.label))
+        .unwrap_or_else(|| "pi".to_string());
 
     Ok(KernelStatus {
         uptime_ms,
@@ -213,40 +237,51 @@ pub fn destroy_input_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-// ── Workspace = independent Tauri child window, glued LEFT of main ──
+// ── Workspace toggle = main-window left-edge resize (ADR-003 §7.2 v3) ──
 //
-// bao 2026-05-31 final: "工作区向左打开，L1 和 Irisy 一直固定不变".
-// Main window stays 478 px (L1 48 + Irisy 430) at monitor-right-edge
-// always. Toggling the workspace SPAWNS a separate Tauri "workspace"
-// window, sized 1122 × main_h, positioned flush against main's LEFT
-// edge. Closing toggles it off (destroys the child window).
-//
-// Previous iterations tried main-window self-resize (430 ↔ 1600). That
-// kept L1 + Irisy inside the same window but the CSS grid was only
-// 478 px wide, so the extra 1122 px of resized window stayed visually
-// empty — bao read this as "向右打开" / window not actually expanding
-// leftward. Spawning a real child window puts the workspace surface
-// flush left of main with its own NSWindow frame; L1 + Irisy stay at
-// fixed pixel positions because main itself never moves or resizes.
+// ADR-003 frontend §7.2 v3 (2026-06-01): the workspace tab area lives
+// inside the main window. Toggling slides the main window's LEFT edge
+// 478 <-> 1600; the right edge stays anchored to the monitor's right
+// edge so L1 + Irisy do not move on screen. Pre-v3 builds spawned a
+// separate Tauri child window with URL `/?surface=workspace`; that
+// path produced ADR-003 §7.7 known bug #1 (duplicate cockpit) and is
+// retired here. Any stale child window from an older install is
+// destroyed on the next toggle.
 
-/// Workspace child window width. Together with main's 478 px the pair
-/// reaches 1600 px combined — matches the original expanded-mode width.
-const WORKSPACE_CHILD_WIDTH: f64 = 1122.0;
+/// Compact main-window width: L1 (48) + Irisy (430).
+const MAIN_COMPACT_WIDTH: f64 = 478.0;
 
-/// Toggle the workspace child window. If a "workspace" Tauri window is
-/// already open, close it (returns `Ok(false)`). Otherwise spawn one
-/// flush against main's LEFT edge (returns `Ok(true)`).
+/// Expanded main-window width: L1 (48) + L2 (200) + Tab (922) + Irisy (430).
+/// Matches the original expanded-mode width referenced in ADR-003 §7.2.
+const MAIN_EXPANDED_WIDTH: f64 = 1600.0;
+
+/// Threshold separating compact from expanded for the toggle decision.
+const EXPAND_THRESHOLD: f64 = 1000.0;
+
+/// Toggle main-window between COMPACT (478) and EXPANDED (1600). Returns
+/// `Ok(true)` when the window is now expanded (workspace tab area
+/// visible), `Ok(false)` when collapsed back to companion size.
 ///
-/// The child window URL is `/?surface=workspace`, served by the same
-/// PWA bundle; SurfaceSurface (sic) lives at `surfaces/WorkspaceSurface.tsx`.
+/// Preserves the window's CURRENT right edge — only the left edge moves.
+/// L1 + Irisy stay glued to the right side of the window content; the
+/// user can drag the window anywhere on screen and the toggle still
+/// grows / shrinks leftward from wherever they parked it (bao
+/// 2026-06-01: L1 and Irisy never change position relative to the
+/// window; the window itself is movable).
+///
+/// Also destroys any pre-v3 leftover `workspace` child window.
 #[tauri::command]
 pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
-    use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+    use tauri::{LogicalPosition, LogicalSize, Manager};
 
-    // Already open → close.
-    if let Some(existing) = app.get_webview_window("workspace") {
-        existing.close().map_err(|e| e.to_string())?;
-        return Ok(false);
+    if let Some(stale) = app.get_webview_window("workspace") {
+        // Pre-v3 builds spawned a "workspace" child window; v3 retired
+        // the child-window path entirely. A close failure here only
+        // matters if the user is mid-drag of that stale window — log
+        // and continue so the toggle still resizes main.
+        if let Err(e) = stale.close() {
+            eprintln!("[toggle_workspace_window] stale child close failed: {e}");
+        }
     }
 
     let main = app
@@ -257,70 +292,75 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "no current monitor".to_string())?;
     let scale = monitor.scale_factor();
+
     let main_pos = main.outer_position().map_err(|e| e.to_string())?;
     let main_size = main.outer_size().map_err(|e| e.to_string())?;
     let main_x = main_pos.x as f64 / scale;
-    let main_y = main_pos.y as f64 / scale;
+    let main_w = main_size.width as f64 / scale;
     let main_h = main_size.height as f64 / scale;
+    let main_y = main_pos.y as f64 / scale;
+    let right_edge = main_x + main_w;
 
-    // Position the child workspace window flush against main's LEFT edge.
-    let workspace_x = main_x - WORKSPACE_CHILD_WIDTH;
-    let workspace_y = main_y;
+    let (next_w, expanded) = if main_w >= EXPAND_THRESHOLD {
+        (MAIN_COMPACT_WIDTH, false)
+    } else {
+        (MAIN_EXPANDED_WIDTH, true)
+    };
 
-    let workspace = WebviewWindowBuilder::new(
-        &app,
-        "workspace",
-        WebviewUrl::App("/?surface=workspace".into()),
-    )
-    .title("CTRL · Workspace")
-    .inner_size(WORKSPACE_CHILD_WIDTH, main_h)
-    .position(workspace_x, workspace_y)
-    .decorations(false)
-    .transparent(false)
-    .shadow(true)
-    .always_on_top(true)
-    .visible_on_all_workspaces(true)
-    .skip_taskbar(true)
-    .focused(false)
-    .visible(true)
-    .resizable(false)
-    .build()
-    .map_err(|e| e.to_string())?;
+    // Anchor the right edge to its current screen position; left edge moves.
+    let next_x = right_edge - next_w;
 
-    let _ = workspace.set_size(LogicalSize::new(WORKSPACE_CHILD_WIDTH, main_h));
-    let _ = workspace.set_position(LogicalPosition::new(workspace_x, workspace_y));
+    main.set_size(LogicalSize::new(next_w, main_h))
+        .map_err(|e| e.to_string())?;
+    main.set_position(LogicalPosition::new(next_x, main_y))
+        .map_err(|e| e.to_string())?;
 
-    // Keep the workspace glued to main as the user drags / hides main.
-    // bao 2026-05-30 "为什么移动不能一起移动?".
-    let app_for_listener = app.clone();
-    main.on_window_event(move |event| match event {
-        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
-            let (Some(m), Some(ws)) = (
-                app_for_listener.get_webview_window("main"),
-                app_for_listener.get_webview_window("workspace"),
-            ) else {
-                return;
-            };
-            let Ok(Some(mon)) = m.current_monitor() else {
-                return;
-            };
-            let s = mon.scale_factor();
-            if let (Ok(pos), Ok(sz)) = (m.outer_position(), m.outer_size()) {
-                let mx = pos.x as f64 / s;
-                let my = pos.y as f64 / s;
-                let mh = sz.height as f64 / s;
-                let _ = ws.set_position(LogicalPosition::new(mx - WORKSPACE_CHILD_WIDTH, my));
-                let _ = ws.set_size(LogicalSize::new(WORKSPACE_CHILD_WIDTH, mh));
-            }
-        }
-        tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
-            if let Some(ws) = app_for_listener.get_webview_window("workspace") {
-                let _ = ws.close();
-            }
-        }
-        _ => {}
-    });
+    Ok(expanded)
+}
 
+/// Ensure the main window is in EXPANDED mode (workspace tab area visible).
+/// Idempotent — no-op when already expanded. Returns `Ok(true)` when this
+/// call performed the expand, `Ok(false)` when the window was already
+/// expanded. Used by L1 chip clicks (Pool / Notes / Coding / Settings) so
+/// activating any of them surfaces the workspace without forcing the user
+/// to first click the ▾ chevron.
+///
+/// bao 2026-06-03 — un-retires the v0.1.148 helper after observing that
+/// `openSystemTab` alone leaves the window compact (the tab is registered
+/// but invisible). Crucially this is **expand-only, not a toggle**, so
+/// clicking the same L1 chip twice cannot collapse the workspace — the
+/// ▾ chevron remains the single collapse path.
+#[tauri::command]
+pub fn ensure_workspace_window_expanded(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::{LogicalPosition, LogicalSize, Manager};
+
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitor = main
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+
+    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
+    let main_size = main.outer_size().map_err(|e| e.to_string())?;
+    let main_x = main_pos.x as f64 / scale;
+    let main_w = main_size.width as f64 / scale;
+    let main_h = main_size.height as f64 / scale;
+    let main_y = main_pos.y as f64 / scale;
+    let right_edge = main_x + main_w;
+
+    if main_w >= EXPAND_THRESHOLD {
+        return Ok(false);
+    }
+
+    let next_w = MAIN_EXPANDED_WIDTH;
+    let next_x = right_edge - next_w;
+    main.set_size(LogicalSize::new(next_w, main_h))
+        .map_err(|e| e.to_string())?;
+    main.set_position(LogicalPosition::new(next_x, main_y))
+        .map_err(|e| e.to_string())?;
     Ok(true)
 }
 

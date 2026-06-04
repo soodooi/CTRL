@@ -1,16 +1,19 @@
 // App root — TanStack Router setup + React Query provider + the cockpit
 // shell.
 //
-// 2026-05-31 (ADR-003 frontend §7): shell collapsed to 2-col `[L2 │ L1 │ Irisy]`
-// LEFT → RIGHT. `main` column retired — keycap work lives in the NSWindow
-// workspace (separate Tauri child window glued left of main via
-// addChildWindow). L2 is a reserved sub-nav slot (left of L1), width 0
-// until active NSWindow tab declares sub-nav. L1 (PrimaryRail) chips
-// OPEN NSWindow with chip-specific content (Keycap / Vault / Coding /
-// Settings) — no longer switches `main` routes.
+// ADR-003 frontend §7 v4 (2026-06-01): 4-column shell.
+// Column order LEFT -> RIGHT: [Tab | L2 | L1 | Irisy].
+// L1 sits immediately left of Irisy and never moves on screen. The
+// workspace tab area grows leftward when the chevron expands the main
+// window (478 <-> 1600 via Rust `toggle_workspace_window`).
 //
-// `<Outlet />` stays mounted inside a hidden host so legacy routes don't
-// error on lookup; full route retirement = next PR (ADR-003 frontend §7.5).
+// Compact mode (window=478): Tab=0, L2=0, L1=48, Irisy=430 — only L1
+// and Irisy render. L1 chips that open a workspace tab (Pool / Coding /
+// Settings) do NOT auto-expand the window; the user controls expand
+// via the chevron alone (ADR-003 §7.3 + §7.8 anti-pattern).
+//
+// Outlet stays mounted inside a hidden host so legacy routes don't
+// error on lookup; full route retirement = next PR (ADR-003 §7.5).
 //
 // Irisy chat is SHELL-LEVEL and does NOT unmount on route change — fixed
 // assistant resource (bao 2026-05-29; reaffirmed §7).
@@ -116,25 +119,31 @@ function RootShellInner(): ReactElement {
   );
 
   return (
-    <div className={styles.shell} data-workspace-open={workspaceOpen || undefined}>
-      <div className={styles.status}>
+    <div
+      className={styles.shell}
+      data-workspace-open={workspaceOpen || undefined}
+      data-testid="shell"
+    >
+      <div className={styles.status} data-testid="grid-status">
         <StatusBar />
       </div>
-      <div className={styles.l1}>
+      <div className={styles.l1} data-testid="grid-l1">
         <PrimaryRail />
       </div>
-      {/* L2 — sub-nav column for the active L1 item. Default width 0;
-          expands when `data-l2-open="true"` (reserved for the
-          VSCode-style sidebar; sub-nav components land in a follow-up). */}
-      <div className={styles.l2} />
+      {/* L2 — reserved for future sub-nav of L1 modules. Width 0 by
+          default; future L1 modules can flip `data-l2-open='true'` when
+          they declare structured sub-nav. Notes / Pool / Coding use a
+          full workspace tab body instead (bao 2026-06-02 — Vault is
+          substrate, Notes is an in-tab app). */}
+      <div className={styles.l2} data-testid="grid-l2" />
       {/* Tab — workspace tab content (TabBar + active tab body). The
           `--tab-width: 0` default keeps it collapsed until a workspace
           instance opens, at which point `data-workspace-open="true"`
           flips it to `1fr`. */}
-      <div className={styles.tab}>
+      <div className={styles.tab} data-testid="grid-tab">
         <WorkspaceShell fallback={null} />
       </div>
-      <div className={styles.irisy}>
+      <div className={styles.irisy} data-testid="grid-irisy">
         <IrisyChat />
         <InfraBar />
       </div>
@@ -199,8 +208,8 @@ const CodeSpaceDetailRoute = lazy(() =>
 const PoolRoute = lazy(() =>
   import('./routes/pool').then((m) => ({ default: m.PoolRoute })),
 );
-const VaultRoute = lazy(() =>
-  import('./routes/vault').then((m) => ({ default: m.VaultRoute })),
+const NotesRoute = lazy(() =>
+  import('./routes/notes').then((m) => ({ default: m.NotesRoute })),
 );
 const WorkbenchRoute = lazy(() =>
   import('./routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),
@@ -253,12 +262,12 @@ const poolRoute = createRoute({
     </Suspense>
   ),
 });
-const vaultRoute = createRoute({
+const notesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/vault',
+  path: '/notes',
   component: () => (
     <Suspense fallback={<LazyFallback />}>
-      <VaultRoute />
+      <NotesRoute />
     </Suspense>
   ),
 });
@@ -377,7 +386,7 @@ const iconLabRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   poolRoute,
-  vaultRoute,
+  notesRoute,
   workbenchRoute,
   workspaceRoute,
   settingsRoute,

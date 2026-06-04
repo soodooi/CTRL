@@ -31,11 +31,11 @@ pub struct IrisyStatus {
     /// will succeed; degraded UI prompts the user to start the subprocess
     /// (until the kernel supervisor for pi-plugin lands).
     pub pi: PiStatus,
-    /// Brain id — always "pi" (Pi is the sole brain per ADR-002 substrate).
-    /// Kept as a field for PWA forward-compat; the value is constant
-    /// and the Settings → Brain UI shows Pi status + upgrade controls
-    /// only.
-    pub active_brain: &'static str,
+    /// Active IrisyPrimary provider's display label (matches the value
+    /// shown in the InfraBar ENGINE chip — e.g. "Claude" when
+    /// claude-oauth is active). Falls back to "pi" when no provider is
+    /// configured.
+    pub active_brain: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -75,8 +75,18 @@ pub async fn irisy_init(
     let kernel_llm = probe_kernel_llm(&kernel);
     let mcp_bridge = write_handshake_file()?;
     let pi = probe_pi().await;
-    // ADR-002 substrate: Pi is the sole brain; no registry, no ~/.ctrl/active-brain.
-    let active_brain = "pi";
+    // Mirror the same provider label kernel_status surfaces — see the
+    // comment there for why this is the IrisyPrimary provider label,
+    // not the literal "pi". ADR-002 substrate § provider v2 §3.6.
+    let active_brain = kernel
+        .runtime
+        .provider_registry
+        .route_chain(&crate::kernel::provider::Consumer::IrisyPrimary)
+        .primary
+        .as_ref()
+        .and_then(|id| kernel.runtime.provider_registry.snapshot(id))
+        .map(|snap| crate::commands::system::short_label(&snap.label))
+        .unwrap_or_else(|| "pi".to_string());
 
     tracing::info!(
         app_version = %app_version,

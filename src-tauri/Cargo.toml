@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.127"
+version = "0.1.158"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -29,6 +29,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 arboard = "3"
 base64 = "0.22"
+# Local-time aware date for sourcing_scheduler (daily cron). Pulled in
+# transitively by the Tauri stack; declared explicitly so the kernel
+# doesn't break if an upstream drops it. bao 2026-06-03.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 ureq = { version = "2", features = ["json"] }
 # H-2026-05-22 — async streaming HTTP for LLM adapters (Volc Ark / OpenAI-shape).
 # rustls-tls keeps the build OpenSSL-free for portable Tauri bundles.
@@ -61,6 +65,11 @@ tokio-tungstenite = "0.24"
 # H-2026-05-19-001 / ADR-012 — SubprocessActor PTY substrate for Code Space tiles.
 # Unix forkpty + Windows ConPTY 自动适配, wezterm 在生产用.
 portable-pty = "0.9"
+# ADR-002 substrate § vault v1 §8.3 (2026-06-01) — link/tag/orphan scanner
+# (vault_graph.rs) + vault_watch file event source.
+regex = "1"
+walkdir = "2"
+notify = "8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # H-2026-05-14-002 mac/a — CGEventTap port lives in shell/hotkey.rs::mac_impl,

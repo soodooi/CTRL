@@ -112,6 +112,113 @@ pub struct VaultSearchArgs {
     pub limit: Option<usize>,
 }
 
+// ADR-002 substrate § vault v1 §8.3 (2026-06-01) — 13 new vault MCP tools
+// (memory `decision_vault_adr_002_section_8`). Daily Note + Sourcing
+// stay above this surface — they compose from vault.* primitives at
+// the feature layer.
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultPathArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultTagArgs {
+    pub tag: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultMentionArgs {
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultMoveArgs {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultStarredArgs {
+    pub path: String,
+    pub starred: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultSourcingRunMcpArgs {
+    /// Date in `YYYY-MM-DD` form (caller's local timezone).
+    pub date: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultWatchArgs {
+    /// Vault-relative prefix filter, e.g. `sourcing/`. Empty = all.
+    #[serde(default)]
+    pub prefix: Option<String>,
+    /// Unix epoch milliseconds cursor. Caller persists the last
+    /// `ts_ms` it saw and passes it back on the next poll.
+    pub since_ms: i64,
+}
+
+// SOUL.md write args (ADR-005 v2 § soul-md-compat §4.4)
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct IrisySoulSetArgs {
+    /// Frontmatter as a JSON object (gets serialised to YAML on disk).
+    pub frontmatter: serde_json::Value,
+    /// Markdown body after the frontmatter fence.
+    pub body: String,
+}
+
+// Vault embeddings args (ADR-002 v5 §10.4)
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultEmbedNoteArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultReembedAllArgs {
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultSemanticSearchArgs {
+    pub query: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub threshold: Option<f32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultSuggestLinksArgs {
+    pub for_path: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+// ─── 5 NEW MCP tools (bao 2026-06-03 — close Irisy capability gap) ──────
+// Mirror the Tauri-only commands `vault_root_path` / `vault_delete` /
+// `vault_write_image` / `vault_rebuild_index` / `vault_sourcing_pending`
+// so external agents (Cursor, Claude Code via :17873 bus) get the same
+// surface PWA does. See ADR-002 substrate § vault v1 §8.3.
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultWriteImageArgs {
+    /// Vault-relative path for the binary asset (e.g.
+    /// `assets/images/2026-06-03/screenshot.png`).
+    pub path: String,
+    /// Base64-encoded image bytes.
+    pub data_base64: String,
+    /// Optional companion sidecar markdown (e.g. prompt / source URL).
+    /// When present, written alongside as `<path>.md` with frontmatter
+    /// (matching the kernel's `write_binary` + sidecar contract).
+    #[serde(default)]
+    pub sidecar_markdown: Option<String>,
+    #[serde(default)]
+    pub sidecar_frontmatter: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct KvGetArgs {
     /// Namespace (typically the keycap id).
@@ -267,6 +374,215 @@ impl KernelMcpRouter {
         let limit = args.limit.unwrap_or(20);
         let hits = vault::search(&root, &args.query, limit).map_err(map_vault_err)?;
         let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.backlinks — every note linking to `path` + snippet preview.
+    #[tool(description = "Backlinks for a vault note (paths + snippets)")]
+    async fn vault_backlinks(
+        &self,
+        Parameters(args): Parameters<VaultPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let g = crate::kernel::vault_graph::scan(&root)
+            .map_err(|e| McpError::internal_error(format!("vault.backlinks: {e}"), None))?;
+        let body = serde_json::to_string(&g.backlinks_of(&args.path)).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.tags — all tags with counts, frequency-sorted.
+    #[tool(description = "List every tag in the vault with usage count (descending)")]
+    async fn vault_tags(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let g = crate::kernel::vault_graph::scan(&root)
+            .map_err(|e| McpError::internal_error(format!("vault.tags: {e}"), None))?;
+        let body = serde_json::to_string(&g.tags()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.notes_by_tag — every note bearing the given tag.
+    #[tool(description = "List notes tagged with a specific tag")]
+    async fn vault_notes_by_tag(
+        &self,
+        Parameters(args): Parameters<VaultTagArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let g = crate::kernel::vault_graph::scan(&root)
+            .map_err(|e| McpError::internal_error(format!("vault.notes_by_tag: {e}"), None))?;
+        let body = serde_json::to_string(&g.notes_by_tag(&args.tag)).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.mentions — substring matches across body, excluding linked
+    /// occurrences (the unlinked-mention view).
+    #[tool(description = "Find unlinked mentions of text across the vault (excludes [[wikilinked]] hits)")]
+    async fn vault_mentions(
+        &self,
+        Parameters(args): Parameters<VaultMentionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let g = crate::kernel::vault_graph::scan(&root)
+            .map_err(|e| McpError::internal_error(format!("vault.mentions: {e}"), None))?;
+        let body = serde_json::to_string(&g.mentions_of(&args.text)).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.orphans — notes without inbound links. Sourcing routine
+    /// surfaces these for user review.
+    #[tool(description = "List vault notes that no other note links to")]
+    async fn vault_orphans(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let g = crate::kernel::vault_graph::scan(&root)
+            .map_err(|e| McpError::internal_error(format!("vault.orphans: {e}"), None))?;
+        let body = serde_json::to_string(&g.orphans()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.broken_links — outgoing links that resolve to no vault note.
+    #[tool(description = "List vault outgoing links that point at no existing note (broken links)")]
+    async fn vault_broken_links(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let g = crate::kernel::vault_graph::scan(&root)
+            .map_err(|e| McpError::internal_error(format!("vault.broken_links: {e}"), None))?;
+        let body = serde_json::to_string(&g.broken_links()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.graph_data — full node + edge set for graph-view UIs.
+    #[tool(description = "Return the entire vault link graph (nodes + edges)")]
+    async fn vault_graph_data(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let g = crate::kernel::vault_graph::scan(&root)
+            .map_err(|e| McpError::internal_error(format!("vault.graph_data: {e}"), None))?;
+        let body = serde_json::to_string(&g.graph_data()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.rename — same-folder rename (kernel doesn't rewrite inbound
+    /// wikilinks; caller follows with backlinks + chained writes).
+    #[tool(description = "Rename a vault note to a new path (no inbound-link rewrite)")]
+    async fn vault_rename(
+        &self,
+        Parameters(args): Parameters<VaultMoveArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.from).map_err(map_vault_err)?;
+        vault::write(&root, &args.to, &entry.content, &entry.frontmatter)
+            .map_err(map_vault_err)?;
+        vault::delete(&root, &args.from).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "renamed {} -> {}",
+            args.from, args.to
+        ))]))
+    }
+
+    /// vault.move — alias of vault.rename. Surfaced separately so the
+    /// Sourcing routine can call `vault.move(sourcing/X, notes/Y)` with
+    /// the verb that matches its intent.
+    #[tool(description = "Move a vault note to a new path (alias of vault.rename)")]
+    async fn vault_move(
+        &self,
+        Parameters(args): Parameters<VaultMoveArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.from).map_err(map_vault_err)?;
+        vault::write(&root, &args.to, &entry.content, &entry.frontmatter)
+            .map_err(map_vault_err)?;
+        vault::delete(&root, &args.from).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "moved {} -> {}",
+            args.from, args.to
+        ))]))
+    }
+
+    /// vault.create_folder — `mkdir -p` semantics under the vault root.
+    #[tool(description = "Create a vault subdirectory (mkdir -p semantics)")]
+    async fn vault_create_folder(
+        &self,
+        Parameters(args): Parameters<VaultPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let safe = vault::sanitize_relative_path(&args.path).map_err(map_vault_err)?;
+        std::fs::create_dir_all(root.join(&safe))
+            .map_err(|e| McpError::internal_error(format!("create_folder: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "created {}",
+            args.path
+        ))]))
+    }
+
+    /// vault.set_starred — toggle frontmatter `starred:` scalar.
+    #[tool(description = "Toggle the starred flag on a vault note's frontmatter")]
+    async fn vault_set_starred(
+        &self,
+        Parameters(args): Parameters<VaultStarredArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut fm = entry.frontmatter;
+        if let serde_json::Value::Object(ref mut map) = fm {
+            map.insert("starred".to_string(), serde_json::Value::Bool(args.starred));
+        } else {
+            fm = serde_json::json!({ "starred": args.starred });
+        }
+        vault::write(&root, &args.path, &entry.content, &fm).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "set starred={} on {}",
+            args.starred, args.path
+        ))]))
+    }
+
+    /// vault.aliases — frontmatter `aliases:` list for a note.
+    #[tool(description = "Read the frontmatter aliases list for a vault note")]
+    async fn vault_aliases(
+        &self,
+        Parameters(args): Parameters<VaultPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let list: Vec<String> = entry
+            .frontmatter
+            .get("aliases")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let body = serde_json::to_string(&list).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.watch — drain filesystem events since `since_ms`. Lazy-
+    /// starts the watcher on first call so external MCP clients don't
+    /// need a separate setup step.
+    #[tool(description = "Drain recent vault filesystem events since a millis cursor (lazy-starts watcher)")]
+    async fn vault_watch(
+        &self,
+        Parameters(args): Parameters<VaultWatchArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        if let Err(e) = crate::kernel::vault_watch::start(&root) {
+            tracing::warn!(error = %e, "vault.watch: start failed");
+        }
+        let events = crate::kernel::vault_watch::recent(args.prefix.as_deref(), args.since_ms);
+        let body = serde_json::to_string(&events).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.sourcing_run — run the kernel-seeded sourcing routine for
+    /// `date` (YYYY-MM-DD) and overwrite the matching review-queue
+    /// file. Idempotent.
+    #[tool(description = "Run the kernel sourcing routine for the given YYYY-MM-DD date and write the review-queue file")]
+    async fn vault_sourcing_run(
+        &self,
+        Parameters(args): Parameters<VaultSourcingRunMcpArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let report = crate::kernel::vault_sourcing::run(&root, &args.date)
+            .map_err(|e| McpError::internal_error(format!("vault.sourcing_run: {e}"), None))?;
+        let body = serde_json::to_string(&report).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -443,6 +759,292 @@ impl KernelMcpRouter {
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
+
+    // ─── 5 NEW vault MCP tools (bao 2026-06-03) ─────────────────────────
+    // Close the Tauri vs MCP capability gap so Irisy via :17873 has the
+    // same surface as the PWA via Tauri invoke().
+
+    /// vault.root_path — return the absolute vault root path on disk.
+    /// Used by external agents that need to drop files via the FS or
+    /// reason about absolute paths.
+    #[tool(description = "Return the absolute vault root path on disk")]
+    async fn vault_root_path(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        Ok(CallToolResult::success(vec![Content::text(
+            root.display().to_string(),
+        )]))
+    }
+
+    /// vault.delete — remove a vault note.
+    #[tool(description = "Delete a vault note (the file is removed; no soft-delete)")]
+    async fn vault_delete(
+        &self,
+        Parameters(args): Parameters<VaultPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        vault::delete(&root, &args.path).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "deleted {}",
+            args.path
+        ))]))
+    }
+
+    /// vault.rebuild_index — drop + repopulate the FTS5 index from
+    /// on-disk truth. Returns the indexed-file count. Slow on big
+    /// vaults; bao 2026-06-03 — exposed so creators have a recovery
+    /// path if the index ever drifts.
+    #[tool(description = "Rebuild the FTS5 vault search index from disk (returns indexed file count)")]
+    async fn vault_rebuild_index(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let count = vault::rebuild_index(&root)
+            .map_err(|e| McpError::internal_error(format!("vault: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "indexed {} files",
+            count
+        ))]))
+    }
+
+    /// vault.write_image — drop a binary asset (typically an
+    /// AI-generated image) into the vault, optionally with a sidecar
+    /// markdown carrying the generation prompt + provider so the FTS
+    /// index can surface it later.
+    #[tool(description = "Write a binary image asset to the vault (optionally with sidecar .md frontmatter)")]
+    async fn vault_write_image(
+        &self,
+        Parameters(args): Parameters<VaultWriteImageArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine};
+        let bytes = B64
+            .decode(args.data_base64.as_bytes())
+            .map_err(|e| McpError::internal_error(format!("base64: {e}"), None))?;
+        let root = vault_root()?;
+        let abs = vault::write_binary(&root, &args.path, &bytes).map_err(map_vault_err)?;
+        // Sidecar — only when caller supplied markdown. Path is the
+        // image path with its extension swapped for `.md` (matches the
+        // Tauri command's convention; keeps both surfaces consistent).
+        if let Some(md) = args.sidecar_markdown {
+            let sidecar_path = {
+                let p = std::path::Path::new(&args.path);
+                let stem = p.with_extension("md");
+                stem.to_string_lossy().to_string()
+            };
+            let fm = args.sidecar_frontmatter.unwrap_or_else(|| serde_json::json!({}));
+            vault::write(&root, &sidecar_path, &md, &fm).map_err(map_vault_err)?;
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "wrote {} ({} bytes)",
+            abs.display(),
+            bytes.len()
+        ))]))
+    }
+
+    /// vault.sourcing_pending — count of un-integrated items in the
+    /// sourcing inbox. Used by Irisy + UI to decide whether to nudge
+    /// the user toward Review.
+    #[tool(description = "Count un-integrated items in the sourcing inbox")]
+    async fn vault_sourcing_pending(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let count = crate::kernel::vault_sourcing::count_pending(&root);
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "{{\"count\": {}}}",
+            count
+        ))]))
+    }
+
+    // ── SOUL.md (ADR-005 irisy v2 § soul-md-compat §4.4) ───────────────
+    // External agents (Cursor / Claude Code / OpenClaw companions) read
+    // and write CTRL's Irisy soul through these MCP tools. Same surface
+    // PWA gets via Tauri commands.
+
+    /// irisy.soul_get — return vault/irisy/SOUL.md as `{frontmatter, body, soul_md_version}`.
+    #[tool(description = "Read the Irisy SOUL.md persistent memory (vault/irisy/SOUL.md)")]
+    async fn irisy_soul_get(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, "irisy/SOUL.md").map_err(map_vault_err)?;
+        let pin = std::fs::read_to_string(root.join("irisy/.soul-md-version"))
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let payload = serde_json::json!({
+            "path": entry.path,
+            "frontmatter": entry.frontmatter,
+            "body": entry.content,
+            "soul_md_version": pin,
+        });
+        let body = serde_json::to_string(&payload).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// irisy.soul_set — replace vault/irisy/SOUL.md with `{frontmatter, body}`.
+    /// External mutation goes through here so Irisy can surface a notify
+    /// event ("Cursor just rewrote your soul — review?").
+    #[tool(description = "Write the Irisy SOUL.md persistent memory")]
+    async fn irisy_soul_set(
+        &self,
+        Parameters(args): Parameters<IrisySoulSetArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        vault::write(&root, "irisy/SOUL.md", &args.body, &args.frontmatter)
+            .map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            String::from("irisy/SOUL.md updated"),
+        )]))
+    }
+
+    // ── 5 NEW Vault embeddings MCP tools (ADR-002 v5 §10.4, 2026-06-03) ────
+
+    /// vault.embed_note — embed a single note (idempotent via content_hash).
+    #[tool(description = "Embed a single vault note into the local embeddings index")]
+    async fn vault_embed_note(
+        &self,
+        Parameters(args): Parameters<VaultEmbedNoteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let hash = crate::kernel::vault_embeddings::content_hash(&entry.content);
+        let emb = open_embed_db()?;
+        if let Some((_m, cached_hash)) = emb
+            .cached_meta(&args.path)
+            .map_err(|e| McpError::internal_error(format!("embed cache: {e}"), None))?
+        {
+            if cached_hash == hash {
+                return Ok(CallToolResult::success(vec![Content::text(format!(
+                    "{{\"path\":{:?},\"vector_dims\":768,\"cached\":true}}",
+                    args.path
+                ))]));
+            }
+        }
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let vec = client
+            .embed(&entry.content)
+            .await
+            .map_err(|e| McpError::internal_error(format!("ollama: {e}"), None))?;
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        emb.upsert(&args.path, now_ms, &hash, &vec)
+            .map_err(|e| McpError::internal_error(format!("embed upsert: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "{{\"path\":{:?},\"vector_dims\":{},\"cached\":false}}",
+            args.path,
+            vec.len()
+        ))]))
+    }
+
+    /// vault.reembed_all — bulk re-embed. Respects `force`.
+    #[tool(description = "Re-embed all vault notes (bulk; respects content_hash unless force=true)")]
+    async fn vault_reembed_all(
+        &self,
+        Parameters(args): Parameters<VaultReembedAllArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let paths = vault::list(&root, None).map_err(map_vault_err)?;
+        let emb = open_embed_db()?;
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let mut embedded = 0usize;
+        let mut skipped = 0usize;
+        let mut failed = 0usize;
+        for p in paths {
+            let entry = match vault::read(&root, &p) {
+                Ok(e) => e,
+                Err(_) => {
+                    failed += 1;
+                    continue;
+                }
+            };
+            let hash = crate::kernel::vault_embeddings::content_hash(&entry.content);
+            if !args.force {
+                if let Ok(Some((_m, cached))) = emb.cached_meta(&p) {
+                    if cached == hash {
+                        skipped += 1;
+                        continue;
+                    }
+                }
+            }
+            match client.embed(&entry.content).await {
+                Ok(vec) => {
+                    let now_ms = chrono::Utc::now().timestamp_millis();
+                    if emb.upsert(&p, now_ms, &hash, &vec).is_ok() {
+                        embedded += 1;
+                    } else {
+                        failed += 1;
+                    }
+                }
+                Err(_) => failed += 1,
+            }
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "{{\"embedded\":{},\"skipped\":{},\"failed\":{}}}",
+            embedded, skipped, failed
+        ))]))
+    }
+
+    /// vault.embedding_status — snapshot of the index.
+    #[tool(description = "Snapshot of the vault embedding index (available / total / embedded / stale)")]
+    async fn vault_embedding_status(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let total = vault::list(&root, None).map(|v| v.len()).unwrap_or(0);
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let provider_status = match client.probe().await {
+            Ok(_) => "available",
+            Err(_) => "unreachable",
+        };
+        let emb = open_embed_db()?;
+        let status = emb
+            .status(total, provider_status)
+            .map_err(|e| McpError::internal_error(format!("embed status: {e}"), None))?;
+        let body = serde_json::to_string(&status).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.semantic_search — cosine-similarity search for the query string.
+    #[tool(description = "Semantic-similarity vault search (cosine over local embeddings)")]
+    async fn vault_semantic_search(
+        &self,
+        Parameters(args): Parameters<VaultSemanticSearchArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let q = client
+            .embed(&args.query)
+            .await
+            .map_err(|e| McpError::internal_error(format!("ollama: {e}"), None))?;
+        let emb = open_embed_db()?;
+        let hits = emb
+            .search(&q, args.limit.unwrap_or(10), args.threshold)
+            .map_err(|e| McpError::internal_error(format!("embed search: {e}"), None))?;
+        let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.suggest_links — find notes similar to a source path (autolink).
+    #[tool(description = "Suggest related notes for a given path (embeddings-based autolink)")]
+    async fn vault_suggest_links(
+        &self,
+        Parameters(args): Parameters<VaultSuggestLinksArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.for_path).map_err(map_vault_err)?;
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let v = client
+            .embed(&entry.content)
+            .await
+            .map_err(|e| McpError::internal_error(format!("ollama: {e}"), None))?;
+        let emb = open_embed_db()?;
+        let mut hits = emb
+            .search(&v, args.limit.unwrap_or(5) + 1, None)
+            .map_err(|e| McpError::internal_error(format!("embed search: {e}"), None))?;
+        hits.retain(|h| h.path != args.for_path);
+        hits.truncate(args.limit.unwrap_or(5));
+        let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+}
+
+// Helper — open the embeddings DB at the standard path.
+fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, McpError> {
+    let home = std::env::var("HOME")
+        .map_err(|_| McpError::internal_error("HOME env var not set", None))?;
+    let path = std::path::PathBuf::from(home).join(".ctrl/embeddings.db");
+    crate::kernel::vault_embeddings::VaultEmbeddings::open(&path, "nomic-embed-text")
+        .map_err(|e| McpError::internal_error(format!("embed open: {e}"), None))
 }
 
 // ServerHandler impl — rmcp uses this for tools/list + tools/call dispatch.

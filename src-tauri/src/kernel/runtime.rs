@@ -143,6 +143,13 @@ impl KernelRuntime {
             if let Err(e) = crate::kernel::vault::ensure_vault_layout(&vault_root) {
                 tracing::warn!(error = %e, ?vault_root, "vault: ensure_layout failed");
             }
+            // Spawn the daily sourcing tick (ADR-002 § vault v1 §8.4
+            // cron trigger). Tokio runtime is already up at this point
+            // because we're inside an async boot path. Best-effort —
+            // panic in the spawn helper would not affect kernel boot.
+            if tokio::runtime::Handle::try_current().is_ok() {
+                crate::kernel::sourcing_scheduler::spawn(vault_root.clone());
+            }
         }
 
         // LocalStorage: open the same SQLite path the Tauri commands/storage
