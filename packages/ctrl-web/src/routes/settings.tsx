@@ -368,6 +368,11 @@ const HotkeyBlock = (): ReactElement => (
 // /settings/ctrl  (label: General)
 // ─────────────────────────────────────────────────────────────
 
+// ADR-002 substrate § provider v3 amendment 2026-06-04 (bao directive:
+// theme picker should not sit next to providers). The AI providers
+// section moved to its own dedicated `/settings/providers` tab (Tabs
+// entry at the top of this file). General now hosts user-preference
+// surface only: appearance + hotkey.
 export const SettingsCtrlPage = (): ReactElement => (
   <SettingsShell activeTab="ctrl">
     <Section
@@ -375,18 +380,6 @@ export const SettingsCtrlPage = (): ReactElement => (
       description="Polar paper or cool slate. System follows your OS dark / light setting."
     >
       <ThemePicker />
-    </Section>
-    <Section
-      title="AI providers"
-      description={
-        <>
-          Bring your own key. Keys live in the macOS Keychain and never
-          cross the network from CTRL itself. Anthropic / Claude is
-          deliberately absent from the runtime list (ADR-006 cross-cutting § byok-no-claude v1).
-        </>
-      }
-    >
-      <ProvidersBlock />
     </Section>
     <Section
       title="Hotkey"
