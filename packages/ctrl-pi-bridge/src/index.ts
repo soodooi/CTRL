@@ -1073,59 +1073,59 @@ const CAPABILITY_SEGMENTS: Record<CapabilityId, string> = {
 // `new RegExp(...)`. Source stays ASCII; runtime regex matches CJK input.
 //
 // Token map (auditable without a Unicode chart):
-//   键帽    = key+cap = keycap
-//   按钮    = button
-//   一键    = one-key
-//   快捷    = shortcut
-//   做个键      = "make a key"
-//   做个按钮 = "make a button"
-//   我经常       = "I often"
-//   用          = use
-//   跑          = run
-//   启动    = launch
-//   写笔记       = write-note
-//   草稿             = draft
-//   帮我写       = "help me write"
-//   写个             = "write a"
-//   写一份       = "write one"
-//   存到             = save-to
-//   存为             = save-as
-//   笔记             = note
-//   创建             = create
-//   搜                   = search
-//   查                   = look-up
-//   前几天       = "the past few days"
-//   历史             = history
-//   切换             = switch (long)
-//   切                   = switch (short)
-//   登录             = login
-//   哪个             = which-one
-//   什么模型 = "what model"
-//   代码             = code
-//   改下             = fix
-//   改个             = fix-one
-//   你是谁       = "who are you"
-//   哈喽             = hello
-//   怎么样       = "how is X"
+//   \u952E\u5E3D    = key+cap = keycap
+//   \u6309\u94AE    = button
+//   \u4E00\u952E    = one-key
+//   \u5FEB\u6377    = shortcut
+//   \u505A\u4E2A\u952E      = "make a key"
+//   \u505A\u4E2A\u6309\u94AE = "make a button"
+//   \u6211\u7ECF\u5E38       = "I often"
+//   \u7528          = use
+//   \u8DD1          = run
+//   \u542F\u52A8    = launch
+//   \u5199\u7B14\u8BB0       = write-note
+//   \u8349\u7A3F             = draft
+//   \u5E2E\u6211\u5199       = "help me write"
+//   \u5199\u4E2A             = "write a"
+//   \u5199\u4E00\u4EFD       = "write one"
+//   \u5B58\u5230             = save-to
+//   \u5B58\u4E3A             = save-as
+//   \u7B14\u8BB0             = note
+//   \u521B\u5EFA             = create
+//   \u641C                   = search
+//   \u67E5                   = look-up
+//   \u524D\u51E0\u5929       = "the past few days"
+//   \u5386\u53F2             = history
+//   \u5207\u6362             = switch (long)
+//   \u5207                   = switch (short)
+//   \u767B\u5F55             = login
+//   \u54EA\u4E2A             = which-one
+//   \u4EC0\u4E48\u6A21\u578B = "what model"
+//   \u4EE3\u7801             = code
+//   \u6539\u4E0B             = fix
+//   \u6539\u4E2A             = fix-one
+//   \u4F60\u662F\u8C01       = "who are you"
+//   \u54C8\u55BD             = hello
+//   \u600E\u4E48\u6837       = "how is X"
 
 const CN_CAP_BUILDER =
-  '键帽|按钮|一键|快捷|' +
-  '做个键|做个按钮|我经常';
+  '\u952E\u5E3D|\u6309\u94AE|\u4E00\u952E|\u5FEB\u6377|' +
+  '\u505A\u4E2A\u952E|\u505A\u4E2A\u6309\u94AE|\u6211\u7ECF\u5E38';
 
-const CN_CAP_INVOKER = '用\\s|跑\\s|启动';
+const CN_CAP_INVOKER = '\u7528\\s|\u8DD1\\s|\u542F\u52A8';
 
 const CN_NOTE_WRITER =
-  '写笔记|草稿|帮我写|写个|' +
-  '写一份|存到|存为|笔记|创建';
+  '\u5199\u7B14\u8BB0|\u8349\u7A3F|\u5E2E\u6211\u5199|\u5199\u4E2A|' +
+  '\u5199\u4E00\u4EFD|\u5B58\u5230|\u5B58\u4E3A|\u7B14\u8BB0|\u521B\u5EFA';
 
-const CN_KNOWLEDGE_RETRIEVER = '搜|查|前几天|历史';
+const CN_KNOWLEDGE_RETRIEVER = '\u641C|\u67E5|\u524D\u51E0\u5929|\u5386\u53F2';
 
 const CN_SYSTEM_DOCTOR =
-  '切换|切\\s|登录|哪个|什么模型';
+  '\u5207\u6362|\u5207\\s|\u767B\u5F55|\u54EA\u4E2A|\u4EC0\u4E48\u6A21\u578B';
 
-const CN_CODING_COMPANION = '代码|改下|改个';
+const CN_CODING_COMPANION = '\u4EE3\u7801|\u6539\u4E0B|\u6539\u4E2A';
 
-const CN_CONVERSATION = '你是谁|哈喽|怎么样';
+const CN_CONVERSATION = '\u4F60\u662F\u8C01|\u54C8\u55BD|\u600E\u4E48\u6837';
 
 const CAPABILITY_KEYWORDS: Record<CapabilityId, RegExp> = {
   cap_builder: new RegExp(
