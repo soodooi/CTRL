@@ -318,12 +318,51 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
     Ok(expanded)
 }
 
-// `expand_workspace_window_if_collapsed` (bao 2026-06-02 short-lived
-// fix from the L2 panel iteration) is retired in v3 of the Notes app
-// design: the L1 Notes chip uses `openSystemTab` like Pool/Coding,
-// and `toggle_workspace_window` (driven by the ▾ chevron) is the only
-// path that resizes the main window. Removing the helper keeps the
-// expand/collapse model single-source per ADR-003 § shell-4col.
+/// Ensure the main window is in EXPANDED mode (workspace tab area visible).
+/// Idempotent — no-op when already expanded. Returns `Ok(true)` when this
+/// call performed the expand, `Ok(false)` when the window was already
+/// expanded. Used by L1 chip clicks (Pool / Notes / Coding / Settings) so
+/// activating any of them surfaces the workspace without forcing the user
+/// to first click the ▾ chevron.
+///
+/// bao 2026-06-03 — un-retires the v0.1.148 helper after observing that
+/// `openSystemTab` alone leaves the window compact (the tab is registered
+/// but invisible). Crucially this is **expand-only, not a toggle**, so
+/// clicking the same L1 chip twice cannot collapse the workspace — the
+/// ▾ chevron remains the single collapse path.
+#[tauri::command]
+pub fn ensure_workspace_window_expanded(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::{LogicalPosition, LogicalSize, Manager};
+
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitor = main
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+
+    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
+    let main_size = main.outer_size().map_err(|e| e.to_string())?;
+    let main_x = main_pos.x as f64 / scale;
+    let main_w = main_size.width as f64 / scale;
+    let main_h = main_size.height as f64 / scale;
+    let main_y = main_pos.y as f64 / scale;
+    let right_edge = main_x + main_w;
+
+    if main_w >= EXPAND_THRESHOLD {
+        return Ok(false);
+    }
+
+    let next_w = MAIN_EXPANDED_WIDTH;
+    let next_x = right_edge - next_w;
+    main.set_size(LogicalSize::new(next_w, main_h))
+        .map_err(|e| e.to_string())?;
+    main.set_position(LogicalPosition::new(next_x, main_y))
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
 
 // ── Pi (sole brain) status + upgrade — ADR-002 substrate §4 ───────────────────────
 //

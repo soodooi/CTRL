@@ -179,12 +179,14 @@ export const PrimaryRail = (): ReactElement => {
   const handleNavClick = useCallback(
     (def: RailDef) => {
       setActiveRailId(def.id);
-      // bao 2026-06-01 (v0.1.129 regression fix): tab-bound L1 chips
-      // open a route tab in the workspace tab area. Do NOT call
-      // `toggle_workspace_window` here — it is a toggle, so clicking
-      // an L1 chip while the workspace is already expanded collapses
-      // it. The user controls window expand/collapse via the `>`
-      // chevron at the top of L1; this handler only updates state.
+      // bao 2026-06-03 — L1 chip click must surface its workspace. Calling
+      // `openSystemTab` alone registered the tab but left the main window
+      // compact, so the user saw nothing change ("L1 vault button can't
+      // open workspace"). `ensure_workspace_window_expanded` is idempotent
+      // (no-op when already expanded) so clicking the same chip twice
+      // cannot collapse the workspace — the ▾ chevron stays the only
+      // collapse path, preserving the single-source model from the
+      // earlier `toggle_workspace_window` rationale.
       if (
         def.id === POOL_ITEM_ID ||
         def.id === CODING_ITEM_ID ||
@@ -196,6 +198,13 @@ export const PrimaryRail = (): ReactElement => {
           path: def.path,
           title: def.label,
         });
+        void invoke<boolean>('ensure_workspace_window_expanded')
+          .then((didExpand) => {
+            if (didExpand) setWorkspaceOpen(true);
+          })
+          .catch(() => {
+            /* browser PWA or unsupported platform — silently no-op */
+          });
         return;
       }
       void navigate({ to: def.path });
@@ -205,15 +214,21 @@ export const PrimaryRail = (): ReactElement => {
 
   const handleSettingsClick = useCallback(() => {
     setActiveRailId(SETTINGS_ITEM_ID);
-    // bao 2026-06-01: open a route tab in the singleton "system"
-    // workspace instance. Window expand/collapse stays user-driven via
-    // the `>` chevron at the top of L1 (see handleNavClick rationale).
+    // bao 2026-06-03: Settings chip mirrors the Pool/Notes/Coding flow —
+    // openSystemTab + idempotent expand. See handleNavClick comment.
     useWorkspaceStore.getState().openSystemTab({
       id: 'settings',
       kind: 'route',
       path: SETTINGS_PATH,
       title: 'Settings',
     });
+    void invoke<boolean>('ensure_workspace_window_expanded')
+      .then((didExpand) => {
+        if (didExpand) setWorkspaceOpen(true);
+      })
+      .catch(() => {
+        /* browser PWA or unsupported platform — silently no-op */
+      });
   }, [setActiveRailId]);
 
   // ▾ toggle — opens the workspace big window (macOS NSWindow
