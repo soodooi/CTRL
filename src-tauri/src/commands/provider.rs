@@ -78,6 +78,17 @@ pub struct FailoverEvent {
 pub fn brain_status(
     kernel: State<'_, KernelHandle>,
 ) -> Result<BrainStatusView, String> {
+    brain_status_inner(&kernel)
+}
+
+/// Tauri-State-free entry point so kernel::provider::http_endpoint
+/// /tool/brain_status can reuse the same body (ADR-002 substrate § brain
+/// v7 §1.1, 2026-06-04). Pi's brain_status tool gives Irisy self-
+/// awareness of its own active provider — closes the "doesn't know its
+/// stack" gap from the BYOK path too.
+pub(crate) fn brain_status_inner(
+    kernel: &KernelHandle,
+) -> Result<BrainStatusView, String> {
     let install = crate::shell::pi_install::current_status();
     let engine = EngineStatus {
         id: ENGINE_ID,

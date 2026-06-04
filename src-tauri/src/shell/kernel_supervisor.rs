@@ -40,7 +40,23 @@ impl KernelSupervisor {
             runtime: runtime.clone(),
             bridge: bridge_for_handle,
         };
-        app.manage(handle);
+        app.manage(handle.clone());
+
+        // ADR-002 substrate § brain v7 §1.1 + ADR-005 irisy v4 §7.5 (2026-06-04):
+        // Pi-facing HTTP endpoint serves both /text-chat (provider router)
+        // and /tool/<name> (kernel-tool dispatch for BYOK frontier-native
+        // function-calling). Spawned here — not from KernelRuntime::boot —
+        // so the /tool dispatcher reuses the same KernelHandle Tauri
+        // commands hold (single SSOT, no shadow `bridge` copy).
+        // Must bind BEFORE BrainSupervisor::start so Pi finds the endpoint
+        // on first /text-chat fetch.
+        let handle_for_endpoint = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            match crate::kernel::provider::http_endpoint::spawn(handle_for_endpoint).await {
+                Ok(port) => tracing::info!(port, "provider: HTTP endpoint listening (/text-chat + /tool/<name>)"),
+                Err(e) => tracing::warn!(error = %e, "provider: HTTP endpoint spawn failed"),
+            }
+        });
 
         // Code Space env registry — coding remote desktop v1 (zeus Z1, ST-SS spec v0.7).
         // commands::code_space::cs_* invocations pull this State to spawn /

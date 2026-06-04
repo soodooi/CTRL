@@ -1,20 +1,27 @@
-// HTTP endpoint — `POST /text-chat` served on 127.0.0.1:<port>.
+// HTTP endpoint — `POST /text-chat` + `POST /tool/<name>` served on 127.0.0.1:<port>.
 //
-// ADR-002 substrate § provider v2 lock #7. Pi has no MCP client surface (FINDING-R2.md);
-// the Pi bridge runs an in-process LLM provider extension that fires
-// `fetch()` against this endpoint and streams the response back to the
-// Pi agent loop. SSE wire matches what `commands/irisy_chat.rs`'s
-// `handle_sse_payload` already parses for the PWA path.
+// ADR-002 substrate § provider v2 lock #7 (text-chat) + § brain v7 §1.1
+// (tool dispatch, 2026-06-04).
+//
+// Pi has no MCP client surface (FINDING-R2.md); the Pi bridge runs an
+// in-process LLM provider extension that fires `fetch()` against this
+// endpoint. `/text-chat` streams provider tokens back to Pi (SSE wire
+// matches what `commands/irisy_chat.rs`'s `handle_sse_payload` already
+// parses for the PWA path). `/tool/<name>` is the BYOK frontier-native
+// function-calling path (ADR-005 irisy v4 §7.5) — Pi's
+// `registerTool()` handlers POST here and receive a JSON
+// `{ok, result?, error?}` envelope synchronously.
 //
 // Port: 17878 by default (between stss 17872 / mcp 17873 / pi 17874).
 // `CTRL_PROVIDER_PORT` overrides — the brain lane's spawn-Pi sets this
 // env var so Pi knows where to reach the kernel.
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::sse::{Event, Sse},
     response::IntoResponse,
@@ -27,6 +34,7 @@ use tokio::net::TcpListener;
 use super::registry::ProviderRegistry;
 use super::r#trait::{Capability, Consumer};
 use super::types::{ChatChunk, ChatMessage, ChatOpts, ChatPrompt, ProviderError};
+use crate::shell::KernelHandle;
 
 /// Default loopback port. Brain lane spawn-Pi may override via
 /// `CTRL_PROVIDER_PORT`; the registry exports the resolved port back
@@ -40,7 +48,12 @@ pub const ENV_PORT_OVERRIDE: &str = "CTRL_PROVIDER_PORT";
 /// pointed at a different port). The server runs until the tokio
 /// runtime shuts down — there's no explicit stop API in v1, the kernel
 /// lives for the lifetime of the process.
-pub async fn spawn(registry: Arc<ProviderRegistry>) -> Result<u16, String> {
+///
+/// State = `KernelHandle` (ADR-002 substrate § brain v7 §1.1, 2026-06-04):
+/// /text-chat pulls the registry out of `handle.runtime.provider_registry`,
+/// /tool/<name> needs the full handle for run_keycap event publishing +
+/// mcp_host access.
+pub async fn spawn(handle: KernelHandle) -> Result<u16, String> {
     let port = resolve_port();
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
     let listener = TcpListener::bind(addr)
@@ -52,7 +65,8 @@ pub async fn spawn(registry: Arc<ProviderRegistry>) -> Result<u16, String> {
         .port();
     let app = Router::new()
         .route("/text-chat", post(text_chat))
-        .with_state(registry);
+        .route("/tool/{name}", post(tool_dispatch))
+        .with_state(handle);
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, app).await {
             tracing::error!(error = %e, "provider HTTP endpoint exited");
@@ -110,9 +124,10 @@ struct ErrorPayload {
 }
 
 async fn text_chat(
-    State(registry): State<Arc<ProviderRegistry>>,
+    State(handle): State<KernelHandle>,
     Json(req): Json<TextChatRequest>,
 ) -> impl IntoResponse {
+    let registry: Arc<ProviderRegistry> = handle.runtime.provider_registry.clone();
     let prompt = ChatPrompt {
         system: None,
         messages: req
@@ -411,4 +426,150 @@ fn into_sse_stream(
     futures::stream::unfold(out_rx, |mut rx| async move {
         rx.recv().await.map(|e| (e, rx))
     })
+}
+
+// ── /tool/<name> dispatcher ─────────────────────────────────────────────
+//
+// ADR-002 substrate § brain v7 §1.1 + ADR-005 irisy v4 §7.5 (2026-06-04):
+// Pi's `registerTool()` handlers in `ctrl-pi-bridge` POST here. The wire
+// envelope matches what `packages/ctrl-pi-bridge/src/index.ts ::
+// callKernelTool` expects: input is the tool args JSON; output is
+// `{ ok: true, result: ... }` or `{ ok: false, error: "..." }`.
+//
+// Dispatch policy: each branch reuses the existing Tauri command body's
+// inner free function (vault_root + check_cap + vault::* / vault_graph::*
+// / skills::list_local_skills / kernel.rs::run_keycap). One SSOT for the
+// business logic — this file is glue only.
+
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum ToolReply {
+    Ok { ok: bool, result: serde_json::Value },
+    Err { ok: bool, error: String },
+}
+
+impl ToolReply {
+    fn ok(value: serde_json::Value) -> Self {
+        ToolReply::Ok { ok: true, result: value }
+    }
+    fn err(msg: impl Into<String>) -> Self {
+        ToolReply::Err { ok: false, error: msg.into() }
+    }
+}
+
+async fn tool_dispatch(
+    State(handle): State<KernelHandle>,
+    Path(name): Path<String>,
+    Json(args): Json<serde_json::Value>,
+) -> Json<ToolReply> {
+    tracing::debug!(tool = %name, "tool_dispatch: routing");
+    let reply = match name.as_str() {
+        "vault_write" => run_vault_write(args).await,
+        "vault_read" => run_vault_read(args).await,
+        "vault_search" => run_vault_search(args).await,
+        "vault_tags" => run_vault_tags(args).await,
+        "vault_backlinks" => run_vault_backlinks(args).await,
+        "list_local_skills" => run_list_local_skills(args).await,
+        "list_keycaps" => run_list_keycaps().await,
+        "install_keycap" => run_install_keycap(args, &handle).await,
+        "keycap_run" => run_keycap_dispatch(args, &handle).await,
+        "brain_status" => run_brain_status(&handle).await,
+        other => Err(format!("unknown tool: {other}")),
+    };
+    Json(match reply {
+        Ok(v) => ToolReply::ok(v),
+        Err(e) => {
+            tracing::warn!(tool = %name, error = %e, "tool_dispatch: failed");
+            ToolReply::err(e)
+        }
+    })
+}
+
+fn parse_args<T: serde::de::DeserializeOwned>(v: serde_json::Value) -> Result<T, String> {
+    serde_json::from_value(v).map_err(|e| format!("invalid args: {e}"))
+}
+
+async fn run_vault_write(args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let parsed = parse_args::<crate::commands::vault::VaultWriteArgs>(args)?;
+    let reply = crate::commands::vault::vault_write(parsed).await?;
+    serde_json::to_value(reply).map_err(|e| e.to_string())
+}
+
+async fn run_vault_read(args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let parsed = parse_args::<crate::commands::vault::VaultReadArgs>(args)?;
+    let reply = crate::commands::vault::vault_read(parsed).await?;
+    serde_json::to_value(reply).map_err(|e| e.to_string())
+}
+
+async fn run_vault_search(args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let parsed = parse_args::<crate::commands::vault::VaultSearchArgs>(args)?;
+    let reply = crate::commands::vault::vault_search(parsed).await?;
+    serde_json::to_value(reply).map_err(|e| e.to_string())
+}
+
+async fn run_vault_tags(args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let parsed = parse_args::<crate::commands::vault::VaultEmptyArgs>(args)?;
+    let reply = crate::commands::vault::vault_tags(parsed).await?;
+    serde_json::to_value(reply).map_err(|e| e.to_string())
+}
+
+async fn run_vault_backlinks(args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let parsed = parse_args::<crate::commands::vault::VaultGraphQueryArgs>(args)?;
+    let reply = crate::commands::vault::vault_backlinks(parsed).await?;
+    serde_json::to_value(reply).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Deserialize)]
+struct ListLocalSkillsArgs {
+    #[serde(default)]
+    query: Option<String>,
+}
+
+async fn run_list_local_skills(args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let parsed = parse_args::<ListLocalSkillsArgs>(args).unwrap_or(ListLocalSkillsArgs { query: None });
+    let reply = crate::commands::skills::list_local_skills(parsed.query).await?;
+    serde_json::to_value(reply).map_err(|e| e.to_string())
+}
+
+async fn run_list_keycaps() -> Result<serde_json::Value, String> {
+    // list_keycaps' Tauri body only reads ~/.ctrl/keycaps/; rebuild that
+    // logic here (one-liner) so we don't fight the `State<KernelHandle>`
+    // injection in the original.
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let dir = PathBuf::from(home).join(".ctrl").join("keycaps");
+    let summaries = crate::commands::kernel::list_installed_in(&dir);
+    serde_json::to_value(summaries).map_err(|e| e.to_string())
+}
+
+async fn run_install_keycap(
+    args: serde_json::Value,
+    handle: &KernelHandle,
+) -> Result<serde_json::Value, String> {
+    let parsed = parse_args::<crate::commands::kernel::InstallKeycapArgs>(args)?;
+    // Reuse install_into via the shared keycap dir helper. Replicates the
+    // Tauri command body's logic minus the `State<KernelHandle>` extractor.
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let dir = PathBuf::from(home).join(".ctrl").join("keycaps");
+    let summary = crate::commands::kernel::install_into(&dir, &parsed)?;
+    tracing::info!(keycap_id = %summary.id, "install_keycap (via /tool) ok");
+    let _ = handle; // reserved for future capability-broker hook
+    serde_json::to_value(summary).map_err(|e| e.to_string())
+}
+
+async fn run_keycap_dispatch(
+    args: serde_json::Value,
+    handle: &KernelHandle,
+) -> Result<serde_json::Value, String> {
+    let parsed = parse_args::<crate::commands::kernel::RunKeycapArgs>(args)?;
+    // Reuse the existing run_keycap inner body — it publishes
+    // KeycapInvoked / KeycapCompleted / KeycapFailed Ops so the PWA
+    // workspace pane shows Pi-driven invocations identically to user
+    // clicks. Single SSOT for keycap execution.
+    let result = crate::commands::kernel::run_keycap_inner(parsed, handle).await?;
+    serde_json::to_value(result).map_err(|e| e.to_string())
+}
+
+async fn run_brain_status(handle: &KernelHandle) -> Result<serde_json::Value, String> {
+    let view = crate::commands::provider::brain_status_inner(handle)?;
+    serde_json::to_value(view).map_err(|e| e.to_string())
 }

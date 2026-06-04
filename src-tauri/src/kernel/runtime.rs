@@ -20,7 +20,7 @@ use crate::kernel::event::EventBus;
 use crate::kernel::local_storage::{default_db_path as ls_default_db_path, LocalStorage};
 use crate::kernel::mcp_host::McpHost;
 use crate::kernel::persistence::EventStore;
-use crate::kernel::provider::{self, ProviderRegistry};
+use crate::kernel::provider::ProviderRegistry;
 use crate::kernel::scheduler::Scheduler;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -68,35 +68,13 @@ impl KernelRuntime {
         // keep working.
         let provider_registry = Arc::new(ProviderRegistry::load());
 
-        // Spawn the HTTP endpoint Pi bridge POSTs to (ADR-002 substrate § provider v2
-        // lock #7). Best-effort: if no tokio runtime is active at boot
-        // (Tauri setup() runs on main thread pre-tokio), fall back to a
-        // mini blocking runtime so the listener still binds before the
-        // brain supervisor spawns Pi.
-        {
-            let reg = Arc::clone(&provider_registry);
-            if tokio::runtime::Handle::try_current().is_ok() {
-                tokio::spawn(async move {
-                    match provider::http_endpoint::spawn(reg).await {
-                        Ok(port) => tracing::info!(port, "provider: /text-chat endpoint listening"),
-                        Err(e) => tracing::warn!(error = %e, "provider: /text-chat spawn failed"),
-                    }
-                });
-            } else {
-                tracing::debug!("provider: no tokio runtime in boot context, spawning endpoint inline");
-                if let Ok(rt) = tokio::runtime::Builder::new_multi_thread().enable_all().build() {
-                    let reg2 = Arc::clone(&reg);
-                    rt.spawn(async move {
-                        match provider::http_endpoint::spawn(reg2).await {
-                            Ok(port) => tracing::info!(port, "provider: /text-chat endpoint listening"),
-                            Err(e) => tracing::warn!(error = %e, "provider: /text-chat spawn failed"),
-                        }
-                    });
-                    // Leak the runtime so the spawned task keeps living.
-                    std::mem::forget(rt);
-                }
-            }
-        }
+        // NOTE: HTTP endpoint (Pi-facing /text-chat + /tool/<name>) was
+        // previously spawned here. It now spawns from
+        // `shell::kernel_supervisor::start` AFTER the `KernelHandle` is
+        // available so the new `/tool/<name>` dispatcher (ADR-002 substrate
+        // § brain v7 §1.1 + ADR-005 irisy v4 §7.5, 2026-06-04) can reuse
+        // the same `KernelHandle` the Tauri commands hold — single SSOT
+        // dispatch path, no shadow copy of `bridge` / `mcp_host`.
 
         let mcp_host = Arc::new(McpHost::new());
         // Hydrate the MCP server registry from disk so previously

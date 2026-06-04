@@ -74,7 +74,10 @@ fn manifest_to_summary(manifest: &serde_json::Value, id: &str) -> KeycapSummary 
 /// child. Malformed entries (missing manifest.json, bad JSON, missing id)
 /// are skipped silently — they'll surface in trace logs but shouldn't
 /// crash the keyboard render.
-fn list_installed_in(dir: &Path) -> Vec<KeycapSummary> {
+///
+/// pub(crate) so kernel::provider::http_endpoint /tool/<name>
+/// dispatcher reuses it (ADR-002 substrate § brain v7 §1.1, 2026-06-04).
+pub(crate) fn list_installed_in(dir: &Path) -> Vec<KeycapSummary> {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return Vec::new(), // dir doesn't exist yet — fresh install
@@ -166,7 +169,9 @@ fn sanitize_server_filename(raw: &str) -> String {
     }
 }
 
-fn install_into(
+/// pub(crate) for kernel::provider::http_endpoint /tool/<name>
+/// dispatcher reuse (ADR-002 substrate § brain v7 §1.1, 2026-06-04).
+pub(crate) fn install_into(
     dir: &Path,
     args: &InstallKeycapArgs,
 ) -> Result<KeycapSummary, String> {
@@ -407,6 +412,18 @@ pub async fn run_keycap(
     args: RunKeycapArgs,
     kernel: State<'_, KernelHandle>,
 ) -> Result<RunKeycapResult, String> {
+    run_keycap_inner(args, &kernel).await
+}
+
+/// Tauri-State-free entry point so kernel::provider::http_endpoint
+/// /tool/keycap_run can reuse the same body (ADR-002 substrate § brain
+/// v7 §1.1 + ADR-005 irisy v4 §7.5, 2026-06-04). Single SSOT for keycap
+/// dispatch — Pi-driven invocations publish the same KeycapInvoked /
+/// KeycapCompleted / KeycapFailed Ops as user clicks.
+pub(crate) async fn run_keycap_inner(
+    args: RunKeycapArgs,
+    kernel: &KernelHandle,
+) -> Result<RunKeycapResult, String> {
     use crate::kernel::event::{Cell, CellKind, Op, OpKind};
 
     let started = std::time::Instant::now();
@@ -430,10 +447,10 @@ pub async fn run_keycap(
     let dispatch = classify_keycap(&args.keycap_id);
     let result = match dispatch {
         KeycapDispatch::TextChat { system } => {
-            run_text_chat(&kernel, &args, &stream_id, system).await
+            run_text_chat(kernel, &args, &stream_id, system).await
         }
         KeycapDispatch::McpInvoke { server_id, tool_name } => {
-            run_mcp_invoke(&kernel, &args, &stream_id, &server_id, &tool_name).await
+            run_mcp_invoke(kernel, &args, &stream_id, &server_id, &tool_name).await
         }
         KeycapDispatch::SkillRun { id, skill } => {
             crate::commands::skills::run_skill(&kernel.bridge, &stream_id, &id, &skill, &args.input)
@@ -600,7 +617,7 @@ fn classify_seed(keycap_id: &str) -> KeycapDispatch {
 /// primary adapter with streaming, publish each chunk as a LlmResponse
 /// cell on `keycap-<id>`, return accumulated content as the output.
 async fn run_text_chat(
-    kernel: &State<'_, KernelHandle>,
+    kernel: &KernelHandle,
     args: &RunKeycapArgs,
     stream_id: &str,
     system: &'static str,
@@ -711,7 +728,7 @@ async fn run_text_chat(
 /// connects lazily on first invoke; subsequent presses on the same
 /// keycap reuse the spawned child.
 async fn run_mcp_invoke(
-    kernel: &State<'_, KernelHandle>,
+    kernel: &KernelHandle,
     args: &RunKeycapArgs,
     stream_id: &str,
     server_id: &str,
