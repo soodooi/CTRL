@@ -158,17 +158,20 @@ export const NotesTree = ({
     : trimmed.length > 1
     ? searchHits
     : allPaths;
-  // Empty user-level dirs are only injected on the unfiltered full
-  // list — searches / tag filters should not synthesize folders that
-  // contain none of the matches.
+  // Empty user-level dirs are only injected when there is literally
+  // NO user content yet — otherwise listing them creates 4 always-
+  // visible "Empty" rows even when the user only writes into notes/.
+  // bao 2026-06-03 reported this as the main "tree feels cluttered"
+  // offender, so once any user content lands the placeholders retire.
   const isFiltered = !!tagFilter || trimmed.length > 1;
+  const userHasContent = allPaths.some((p) => !isSystemPath(p));
   const grouped = useMemo(
     () => groupByFolder(
       visiblePaths,
       showSystem,
-      isFiltered ? [] : USER_TOP_LEVEL_FOLDERS,
+      isFiltered || userHasContent ? [] : USER_TOP_LEVEL_FOLDERS,
     ),
-    [visiblePaths, showSystem, isFiltered],
+    [visiblePaths, showSystem, isFiltered, userHasContent],
   );
 
   return (

@@ -94,10 +94,14 @@
 
 /* ─── 3 columns ────────────────────────────────────────────────── */
 
+/* bao 2026-06-03 — sidebar slimmed (220 → 200) + backlinks slimmed
+   (220 → 180) so the editor body picks up 60 px of usable width on a
+   1122-px workspace. Backlinks rarely needs that much because note
+   stems are short; left tree stays roomy enough for typical paths. */
 .cols {
   flex: 1;
   display: grid;
-  grid-template-columns: 220px 1fr 220px;
+  grid-template-columns: 200px 1fr 180px;
   min-height: 0;
   overflow: hidden;
 }
@@ -1185,14 +1189,55 @@
   display: flex;
   flex-direction: column;
   background: var(--color-bg-l0);
+  flex: 1;            /* claim remaining centerCol space below NotesTabBar */
   min-height: 0;
   overflow: hidden;
 }
 
+/* `.editorBody` is a flex container so the inner ViewerHost > .frame
+   (`flex: 1; min-height: 0`) can claim height correctly. If this were
+   `overflow:auto`, the inner `.scroll` would have no bounded parent and
+   the contenteditable would render at its natural content height — no
+   scroll, content clipped (bao 2026-06-03 "能写的字很小, 不能上下滚动"). */
 .editorBody {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Tiptap renders the contenteditable with class `.ProseMirror`. The
+   default Tiptap base ships with no font-size, so the browser default
+   (~13.3px in our app shell) makes notes feel cramped. Bump body
+   text to 16px / 1.7 — kairo-equivalent reading comfort. */
+.editor :global(.ProseMirror) {
+  font-size: 16px;
+  line-height: 1.7;
+  padding: 16px 24px;
+  min-height: 100%;
+  color: var(--color-text);
+}
+.editor :global(.ProseMirror h1) { font-size: 24px; margin: 16px 0 10px; }
+.editor :global(.ProseMirror h2) { font-size: 20px; margin: 14px 0 8px; }
+.editor :global(.ProseMirror h3) { font-size: 17px; margin: 12px 0 6px; }
+.editor :global(.ProseMirror p) { margin: 8px 0; }
+.editor :global(.ProseMirror ul),
+.editor :global(.ProseMirror ol) { margin: 8px 0; padding-left: 24px; }
+.editor :global(.ProseMirror code) {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  background: var(--color-bg-l1);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.editor :global(.ProseMirror pre) {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--color-bg-l1);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
 }
 
 /* Reading mode: hide the editor chrome (toolbar lives outside body so
