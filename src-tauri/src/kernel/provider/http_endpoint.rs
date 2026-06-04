@@ -26,7 +26,7 @@ use tokio::net::TcpListener;
 
 use super::registry::ProviderRegistry;
 use super::r#trait::{Capability, Consumer};
-use super::types::{ChatMessage, ChatOpts, ChatPrompt, ProviderError};
+use super::types::{ChatChunk, ChatMessage, ChatOpts, ChatPrompt, ProviderError};
 
 /// Default loopback port. Brain lane spawn-Pi may override via
 /// `CTRL_PROVIDER_PORT`; the registry exports the resolved port back
@@ -197,15 +197,87 @@ async fn text_chat(
     let mut primary_error: Option<(String, ProviderError)> = None;
     let mut chosen: Option<(String, _)> = None;
 
+    let n_candidates = candidates.len();
     for (i, manifest_id) in candidates.iter().enumerate() {
+        // 0) Skip a primary that recently failed AND there is at least
+        //    one fallback left to try. Saves the ~300 ms claude CLI
+        //    spawn while a Claude OAuth outage holds. ADR-002 substrate
+        //    § provider v2 §3.5 M2 amendment 2026-06-04.
+        if i == 0 && n_candidates > 1 && registry.is_in_cooldown(manifest_id) {
+            tracing::info!(
+                provider = %manifest_id,
+                "provider: primary in cooldown, skipping to fallback"
+            );
+            primary_error = Some((
+                manifest_id.clone(),
+                ProviderError::ProviderError(format!(
+                    "{manifest_id}: in cooldown after recent failure"
+                )),
+            ));
+            continue;
+        }
         let Some(provider) = registry.get(manifest_id) else {
             continue;
         };
-        match provider.chat_stream(&prompt, &opts).await {
-            Ok(rx) => {
-                chosen = Some((manifest_id.clone(), rx));
-                // Auto-fallback happened iff the resolved provider is
-                // not the primary slot.
+        // 1) chat_stream() construction may fail synchronously (binary
+        //    not on PATH, manifest credential missing). Treat as a chain
+        //    step failure and walk on.
+        let mut rx = match provider.chat_stream(&prompt, &opts).await {
+            Ok(rx) => rx,
+            Err(e) => {
+                registry.mark_failure(manifest_id, &e.to_string());
+                if i == 0 {
+                    primary_error = Some((manifest_id.clone(), e));
+                } else {
+                    tracing::warn!(
+                        provider = %manifest_id,
+                        error = %e,
+                        "provider: fallback candidate chat_stream failed; walking chain"
+                    );
+                }
+                continue;
+            }
+        };
+        // 2) First-chunk peek (ADR-002 substrate § provider v2 §3.5 M1
+        //    amendment 2026-06-04). Many failure modes — Claude OAuth
+        //    expired/refresh failed, Volc 401, network error inside the
+        //    provider's worker task — surface as the FIRST stream item
+        //    being Err, not as chat_stream() returning Err. Without this
+        //    peek, http_endpoint commits `chosen` immediately and pipes
+        //    the failed stream into SSE; the fallback chain never runs
+        //    and the user sees "Claude did not respond" (Pi user-facing
+        //    fallback message). bao 2026-06-03 confirmed this exact
+        //    symptom in production.
+        match rx.recv().await {
+            Some(Ok(first_chunk)) => {
+                // M2 success path — clear any prior cooldown for this
+                // provider so the slot reopens immediately if a previous
+                // turn had marked it bad.
+                registry.clear_failure(manifest_id);
+                // Bridge the head + tail: re-inject first_chunk into a
+                // fresh channel + forward subsequent items. Lets the SSE
+                // path consume what we already pulled plus everything
+                // else the provider's worker emits.
+                let (tx_bridge, rx_bridge) =
+                    tokio::sync::mpsc::channel::<Result<ChatChunk, ProviderError>>(64);
+                if tx_bridge.send(Ok(first_chunk)).await.is_err() {
+                    // SSE consumer dropped already — give up on this
+                    // candidate but don't treat it as a chain failure
+                    // (the request is gone, walking is pointless).
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        "client closed before first chunk forwarded",
+                    )
+                        .into_response();
+                }
+                tokio::spawn(async move {
+                    while let Some(item) = rx.recv().await {
+                        if tx_bridge.send(item).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+                chosen = Some((manifest_id.clone(), rx_bridge));
                 if i > 0 {
                     if let Some((from_id, err)) = primary_error.take() {
                         registry.record_failover(
@@ -227,16 +299,37 @@ async fn text_chat(
                 }
                 break;
             }
-            Err(e) => {
+            Some(Err(e)) => {
+                // Stream-level failure (CLI auth expired, 401, partial
+                // crash). Walk to next candidate. M1 critical path.
+                registry.mark_failure(manifest_id, &e.to_string());
                 if i == 0 {
                     primary_error = Some((manifest_id.clone(), e));
                 } else {
                     tracing::warn!(
                         provider = %manifest_id,
                         error = %e,
-                        "provider: fallback candidate also failed; walking chain"
+                        "provider: fallback candidate stream-level error; walking chain"
                     );
                 }
+                continue;
+            }
+            None => {
+                // Worker task closed the channel before emitting
+                // anything — treat as transport failure, walk on.
+                let synthetic = ProviderError::ProviderError(format!(
+                    "{manifest_id}: stream closed before first chunk"
+                ));
+                registry.mark_failure(manifest_id, &synthetic.to_string());
+                if i == 0 {
+                    primary_error = Some((manifest_id.clone(), synthetic));
+                } else {
+                    tracing::warn!(
+                        provider = %manifest_id,
+                        "provider: fallback candidate closed without first chunk; walking chain"
+                    );
+                }
+                continue;
             }
         }
     }

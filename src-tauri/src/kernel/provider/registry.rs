@@ -26,6 +26,16 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+use std::time::SystemTime;
+
+/// Cooldown window after a provider's chat_stream / first-chunk peek fails.
+/// While inside the window, `http_endpoint` skips this provider as the
+/// primary candidate IF there is at least one fallback available, so we
+/// don't re-pay the failed primary's spawn/connect cost on every Pi turn.
+/// 5 minutes balances "react fast when user fixes auth" vs "don't waste
+/// 300 ms / 401 on every turn during a Claude OAuth outage". ADR-002
+/// substrate § provider v2 §3.5 M2 amendment 2026-06-04.
+const PROVIDER_COOLDOWN_SECS: u64 = 300;
 
 use serde::{Deserialize, Serialize};
 
@@ -134,6 +144,24 @@ pub struct ProviderRegistry {
     /// transition without polling logs. ADR-002 substrate § provider
     /// v2 §3.5 + §3.7.
     last_failover: RwLock<Option<RecordedFailover>>,
+    /// Recent-failure cache, keyed by manifest id. Populated by
+    /// `mark_failure` (called from the http_endpoint fallback loop) and
+    /// consulted via `is_in_cooldown` so subsequent Pi turns skip a
+    /// known-bad primary while the cooldown window holds. Cleared on
+    /// observed success via `clear_failure`. ADR-002 substrate §
+    /// provider v2 §3.5 M2 amendment 2026-06-04 — avoids re-paying the
+    /// ~300 ms claude CLI spawn (or REST 401) every turn during a
+    /// Claude OAuth outage.
+    provider_health: RwLock<BTreeMap<String, HealthState>>,
+}
+
+/// One provider's last-known failure state. Reset entries also persist
+/// the `reason` text so `brain_status` / logs can surface why the
+/// cooldown was set without reading log scrollback.
+#[derive(Debug, Clone)]
+struct HealthState {
+    last_failure_at: SystemTime,
+    reason: String,
 }
 
 /// One failover transition: primary → fallback at a moment in time.
@@ -160,6 +188,7 @@ impl ProviderRegistry {
             active: RwLock::new(BTreeMap::new()),
             active_state_path: default_active_state_path(),
             last_failover: RwLock::new(None),
+            provider_health: RwLock::new(BTreeMap::new()),
         };
 
         // 1. Builtin presets (always present).
@@ -290,6 +319,54 @@ impl ProviderRegistry {
     /// `commands::provider::brain_status`.
     pub fn last_failover_event(&self) -> Option<RecordedFailover> {
         self.last_failover.read().unwrap().clone()
+    }
+
+    /// Record that `provider_id` failed (either chat_stream() returned
+    /// Err, or the first stream chunk was Err). Resets the cooldown
+    /// clock. ADR-002 substrate § provider v2 §3.5 M2 2026-06-04.
+    pub fn mark_failure(&self, provider_id: &str, reason: &str) {
+        let mut map = self.provider_health.write().unwrap();
+        map.insert(
+            provider_id.to_string(),
+            HealthState {
+                last_failure_at: SystemTime::now(),
+                reason: reason.to_string(),
+            },
+        );
+        tracing::debug!(
+            provider = %provider_id,
+            reason = %reason,
+            "provider: marked unhealthy (cooldown active)"
+        );
+    }
+
+    /// Drop any cooldown entry for `provider_id`. Called from the
+    /// http_endpoint success branch so the slot reopens immediately
+    /// when the underlying issue clears (user runs `claude login`,
+    /// network restored, etc.). Idempotent — missing entry is a no-op.
+    pub fn clear_failure(&self, provider_id: &str) {
+        let mut map = self.provider_health.write().unwrap();
+        if map.remove(provider_id).is_some() {
+            tracing::debug!(
+                provider = %provider_id,
+                "provider: cooldown cleared after observed success"
+            );
+        }
+    }
+
+    /// True iff `provider_id` failed within the last
+    /// `PROVIDER_COOLDOWN_SECS` window. http_endpoint uses this to
+    /// short-circuit a primary candidate when at least one fallback
+    /// remains, saving the spawn / connect cost during an outage.
+    pub fn is_in_cooldown(&self, provider_id: &str) -> bool {
+        let map = self.provider_health.read().unwrap();
+        let Some(state) = map.get(provider_id) else {
+            return false;
+        };
+        SystemTime::now()
+            .duration_since(state.last_failure_at)
+            .map(|d| d.as_secs() < PROVIDER_COOLDOWN_SECS)
+            .unwrap_or(false)
     }
 
     /// Snapshot of all manifests + their load status for the Settings
