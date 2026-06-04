@@ -234,3 +234,34 @@ export function formatResultsAsUserTurn(results: DispatchResult[]): string {
     .map((r) => `<call-result for="${r.tool}">\n${r.body}\n</call-result>`)
     .join('\n\n');
 }
+
+// ADR-002 substrate § brain v7 §1.1 + ADR-005 irisy v4 §7.6 (2026-06-04):
+// Provider-aware tool path. Frontier providers (Claude, GPT) speak
+// native function calling — ctrl-pi-bridge's `registerTool()` makes the
+// 10 kernel tools first-class to Pi, so the model never has to emit
+// `<call>` XML; calls execute via the bridge and the model sees the
+// result inline. Non-frontier providers (Volc / Qwen / Llama / Kimi /
+// DeepSeek / Google) lack interoperable native function-calling, so the
+// PWA's XML protocol stays in the system prompt and this dispatcher
+// runs the loop.
+//
+// Active provider id comes from BrainState.providers['irisy.primary'].id
+// (commands/provider.rs::brain_status). Match by prefix because user-
+// installed manifests may carry suffixed ids (`anthropic-api-claude-3-5`).
+const FRONTIER_PROVIDER_PREFIXES = [
+  'claude-oauth',
+  'anthropic-api',
+  'anthropic-',
+  'claude-',
+  'openai-api',
+  'openai-',
+  'gpt-',
+];
+
+/** Return true when the provider id designates a frontier model that
+ *  supports native function calling. Frontier path skips the XML loop. */
+export function isFrontierNativeProvider(activeProviderId: string | undefined | null): boolean {
+  if (!activeProviderId) return false;
+  const id = activeProviderId.toLowerCase();
+  return FRONTIER_PROVIDER_PREFIXES.some((p) => id.startsWith(p));
+}

@@ -32,6 +32,7 @@ import { useSessionStateStore, sessionLabel } from '@/lib/session-state';
 import {
   dispatchAllCalls,
   formatResultsAsUserTurn,
+  isFrontierNativeProvider,
 } from '@/lib/irisy-tool-dispatch';
 import styles from './IrisyChat.module.css';
 
@@ -332,6 +333,32 @@ function buildSystemPrompt(
   // codename. Goes near the top so it sits above memory / keycap context.
   if (brainState) {
     sections.push(formatBrainStateBlock(brainState));
+  }
+
+  // ADR-002 substrate § brain v7 §1.1 + ADR-005 irisy v4 §7.6 (2026-06-04):
+  // Frontier providers (Claude / GPT) get the kernel tools as
+  // native function calls via ctrl-pi-bridge's registerTool(). When
+  // that path is active, the static XML tool-calling protocol in
+  // IRISY_SYSTEM_DEFAULT becomes counterproductive — Pi would emit
+  // <call> XML the bridge already covers natively, and the chat
+  // bubble would leak that XML to the user. Overlay below tells Pi
+  // to prefer native calls and suppress XML emission. Non-frontier
+  // path (Volc / Qwen / Llama / Kimi / DeepSeek / Google) ignores
+  // this overlay; the XML loop in irisy-tool-dispatch handles it.
+  const activePrimaryId = brainState?.providers?.['irisy.primary']?.id ?? null;
+  if (isFrontierNativeProvider(activePrimaryId)) {
+    sections.push(
+      [
+        '# Tool calling — native path (overrides earlier XML protocol)',
+        'Your runtime exposes vault_write / vault_read / vault_search /',
+        'vault_tags / vault_backlinks / list_local_skills / list_keycaps /',
+        'install_keycap / keycap_run / brain_status as NATIVE function',
+        'calls. Use them via the function-calling API. Do NOT emit',
+        '`<call name="…">…</call>` XML blocks; the user will see the raw',
+        'tags in chat. Just call the tool, read the result, and continue',
+        'in plain language.',
+      ].join('\n'),
+    );
   }
 
   if (coreMemory.trim().length > 0) {
