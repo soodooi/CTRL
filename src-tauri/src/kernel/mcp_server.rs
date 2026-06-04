@@ -160,6 +160,28 @@ pub struct VaultWatchArgs {
     pub since_ms: i64,
 }
 
+// ─── 5 NEW MCP tools (bao 2026-06-03 — close Irisy capability gap) ──────
+// Mirror the Tauri-only commands `vault_root_path` / `vault_delete` /
+// `vault_write_image` / `vault_rebuild_index` / `vault_sourcing_pending`
+// so external agents (Cursor, Claude Code via :17873 bus) get the same
+// surface PWA does. See ADR-002 substrate § vault v1 §8.3.
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultWriteImageArgs {
+    /// Vault-relative path for the binary asset (e.g.
+    /// `assets/images/2026-06-03/screenshot.png`).
+    pub path: String,
+    /// Base64-encoded image bytes.
+    pub data_base64: String,
+    /// Optional companion sidecar markdown (e.g. prompt / source URL).
+    /// When present, written alongside as `<path>.md` with frontmatter
+    /// (matching the kernel's `write_binary` + sidecar contract).
+    #[serde(default)]
+    pub sidecar_markdown: Option<String>,
+    #[serde(default)]
+    pub sidecar_frontmatter: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct KvGetArgs {
     /// Namespace (typically the keycap id).
@@ -699,6 +721,97 @@ impl KernelMcpRouter {
             .map_err(|e| McpError::internal_error(format!("mcp.call_tool: {e}"), None))?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    // ─── 5 NEW vault MCP tools (bao 2026-06-03) ─────────────────────────
+    // Close the Tauri vs MCP capability gap so Irisy via :17873 has the
+    // same surface as the PWA via Tauri invoke().
+
+    /// vault.root_path — return the absolute vault root path on disk.
+    /// Used by external agents that need to drop files via the FS or
+    /// reason about absolute paths.
+    #[tool(description = "Return the absolute vault root path on disk")]
+    async fn vault_root_path(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        Ok(CallToolResult::success(vec![Content::text(
+            root.display().to_string(),
+        )]))
+    }
+
+    /// vault.delete — remove a vault note.
+    #[tool(description = "Delete a vault note (the file is removed; no soft-delete)")]
+    async fn vault_delete(
+        &self,
+        Parameters(args): Parameters<VaultPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        vault::delete(&root, &args.path).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "deleted {}",
+            args.path
+        ))]))
+    }
+
+    /// vault.rebuild_index — drop + repopulate the FTS5 index from
+    /// on-disk truth. Returns the indexed-file count. Slow on big
+    /// vaults; bao 2026-06-03 — exposed so creators have a recovery
+    /// path if the index ever drifts.
+    #[tool(description = "Rebuild the FTS5 vault search index from disk (returns indexed file count)")]
+    async fn vault_rebuild_index(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let count = vault::rebuild_index(&root)
+            .map_err(|e| McpError::internal_error(format!("vault: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "indexed {} files",
+            count
+        ))]))
+    }
+
+    /// vault.write_image — drop a binary asset (typically an
+    /// AI-generated image) into the vault, optionally with a sidecar
+    /// markdown carrying the generation prompt + provider so the FTS
+    /// index can surface it later.
+    #[tool(description = "Write a binary image asset to the vault (optionally with sidecar .md frontmatter)")]
+    async fn vault_write_image(
+        &self,
+        Parameters(args): Parameters<VaultWriteImageArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine};
+        let bytes = B64
+            .decode(args.data_base64.as_bytes())
+            .map_err(|e| McpError::internal_error(format!("base64: {e}"), None))?;
+        let root = vault_root()?;
+        let abs = vault::write_binary(&root, &args.path, &bytes).map_err(map_vault_err)?;
+        // Sidecar — only when caller supplied markdown. Path is the
+        // image path with its extension swapped for `.md` (matches the
+        // Tauri command's convention; keeps both surfaces consistent).
+        if let Some(md) = args.sidecar_markdown {
+            let sidecar_path = {
+                let p = std::path::Path::new(&args.path);
+                let stem = p.with_extension("md");
+                stem.to_string_lossy().to_string()
+            };
+            let fm = args.sidecar_frontmatter.unwrap_or_else(|| serde_json::json!({}));
+            vault::write(&root, &sidecar_path, &md, &fm).map_err(map_vault_err)?;
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "wrote {} ({} bytes)",
+            abs.display(),
+            bytes.len()
+        ))]))
+    }
+
+    /// vault.sourcing_pending — count of un-integrated items in the
+    /// sourcing inbox. Used by Irisy + UI to decide whether to nudge
+    /// the user toward Review.
+    #[tool(description = "Count un-integrated items in the sourcing inbox")]
+    async fn vault_sourcing_pending(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let count = crate::kernel::vault_sourcing::count_pending(&root);
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "{{\"count\": {}}}",
+            count
+        ))]))
     }
 }
 

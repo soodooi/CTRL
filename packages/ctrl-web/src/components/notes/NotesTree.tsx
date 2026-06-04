@@ -9,7 +9,7 @@
 // component itself stays presentational and emits selections through
 // `onSelect`.
 
-import { useMemo, type ReactElement } from 'react';
+import { useMemo, useState, type ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   vaultList,
@@ -44,26 +44,76 @@ const stem = (name: string): string => {
 };
 
 /**
+ * Top-level paths that are CTRL substrate rather than user notes. They
+ * exist in the vault root so vim / Finder / Obsidian can see them
+ * (philosophy: vault is plain-text substrate), but they pollute the
+ * Notes app left tree because they are tools-talking-to-tools data, not
+ * stuff the user is writing into. Hidden by default; toggleable via
+ * `Show system folders`.
+ *
+ * Keep this list in lockstep with the seed dirs created in
+ * `src-tauri/src/kernel/vault.rs::ensure_vault_layout` +
+ * `seed_vault_feature_layer` so we never accidentally surface a new
+ * substrate dir as a "note folder".
+ */
+const SYSTEM_TOP_LEVEL = new Set([
+  '.ctrl',           // config / sourcing.yaml / daily-notes.yaml
+  '.irisy-memory',   // Irisy persistent yaml memory
+  '.irisy-prompts',  // Irisy prompt cache
+  '.irisy-sessions', // Irisy past sessions
+  'irisy',           // Irisy state (SOUL.md will land in here per ADR-005 §4)
+  'keycaps',         // keycap builtin resources (substrate)
+  'assets',          // images/audio/pdf/attachments — handled via attachment viewer
+]);
+
+const isSystemPath = (p: string): boolean => {
+  const slash = p.indexOf('/');
+  const top = slash >= 0 ? p.slice(0, slash) : p;
+  return SYSTEM_TOP_LEVEL.has(top);
+};
+
+/**
  * Group by the **last directory segment** so a path like
  * `irisy/sub/README.md` lands in a group named `irisy/sub` instead of
  * `irisy` (which would collapse multiple READMEs from different
  * sub-folders into one bucket and lose the disambiguating folder).
  * Root-level files (no `/`) land in a `(root)` bucket.
+ *
+ * `extraEmptyFolders` lets the caller surface user-level folders even
+ * when they contain no `.md` files yet — e.g. an empty `sourcing/` that
+ * should still appear so the user knows where the kernel will drop
+ * unintegrated input.
  */
-const groupByFolder = (paths: ReadonlyArray<string>): FolderGroup[] => {
+const groupByFolder = (
+  paths: ReadonlyArray<string>,
+  showSystem: boolean,
+  extraEmptyFolders: ReadonlyArray<string>,
+): FolderGroup[] => {
   const buckets = new Map<string, string[]>();
   for (const p of paths) {
-    if (p.startsWith('.ctrl/')) continue;
+    if (!showSystem && isSystemPath(p)) continue;
     const lastSlash = p.lastIndexOf('/');
     const folder = lastSlash >= 0 ? p.slice(0, lastSlash) : '(root)';
     const list = buckets.get(folder) ?? [];
     list.push(p);
     buckets.set(folder, list);
   }
+  for (const f of extraEmptyFolders) {
+    if (!buckets.has(f)) buckets.set(f, []);
+  }
   return Array.from(buckets.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([folder, items]) => ({ folder, items: items.sort() }));
 };
+
+/** User-level top-level folders that should appear in the tree even
+ *  when empty, so the user sees the canonical layout up-front. */
+const USER_TOP_LEVEL_FOLDERS = [
+  'notes',
+  'daily',
+  'sourcing',
+  'templates',
+] as const;
 
 export const NotesTree = ({
   query,
@@ -98,6 +148,8 @@ export const NotesTree = ({
     staleTime: 5_000,
   });
 
+  const [showSystem, setShowSystem] = useState(false);
+
   // Resolution order: tag filter wins (kairo parity), then search,
   // then full list. Search + tag can't combine yet — that's a
   // future ANDed filter once the kernel exposes a join command.
@@ -106,7 +158,18 @@ export const NotesTree = ({
     : trimmed.length > 1
     ? searchHits
     : allPaths;
-  const grouped = useMemo(() => groupByFolder(visiblePaths), [visiblePaths]);
+  // Empty user-level dirs are only injected on the unfiltered full
+  // list — searches / tag filters should not synthesize folders that
+  // contain none of the matches.
+  const isFiltered = !!tagFilter || trimmed.length > 1;
+  const grouped = useMemo(
+    () => groupByFolder(
+      visiblePaths,
+      showSystem,
+      isFiltered ? [] : USER_TOP_LEVEL_FOLDERS,
+    ),
+    [visiblePaths, showSystem, isFiltered],
+  );
 
   return (
     <aside className={styles.tree} aria-label="Notes tree">
@@ -117,6 +180,14 @@ export const NotesTree = ({
             {rootPath}
           </p>
         ) : null}
+        <label className={styles.treeSystemToggle} title="Show CTRL system folders (.ctrl, irisy, keycaps, …)">
+          <input
+            type="checkbox"
+            checked={showSystem}
+            onChange={(e) => setShowSystem(e.target.checked)}
+          />
+          <span>Show system folders</span>
+        </label>
       </header>
       <div className={styles.treeBody}>
         {isLoading ? (
@@ -129,21 +200,25 @@ export const NotesTree = ({
           grouped.map(({ folder, items }) => (
             <section key={folder} className={styles.folder}>
               <h3 className={styles.folderName}>{folder}</h3>
-              <ul className={styles.fileList}>
-                {items.map((path) => (
-                  <li key={path}>
-                    <button
-                      type="button"
-                      className={styles.fileItem}
-                      data-active={selectedPath === path || undefined}
-                      onClick={() => onSelect(path)}
-                      title={path}
-                    >
-                      <span className={styles.fileName}>{stem(baseName(path))}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {items.length === 0 ? (
+                <p className={styles.folderEmpty}>Empty</p>
+              ) : (
+                <ul className={styles.fileList}>
+                  {items.map((path) => (
+                    <li key={path}>
+                      <button
+                        type="button"
+                        className={styles.fileItem}
+                        data-active={selectedPath === path || undefined}
+                        onClick={() => onSelect(path)}
+                        title={path}
+                      >
+                        <span className={styles.fileName}>{stem(baseName(path))}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           ))
         )}

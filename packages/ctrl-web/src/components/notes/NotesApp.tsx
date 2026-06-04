@@ -9,18 +9,16 @@
 //   ┌────────────────────────────────────────────────────────┐
 //   │ Actions: [search] [+ Note] [Today] [Review N]          │
 //   ├────────┬──────────────────────────────┬────────────────┤
-//   │ Tree   │ Editor                       │ Backlinks      │
+//   │ Side   │ Editor (tab strip + body)    │ Backlinks      │
 //   │ 220px  │ 1fr                          │ 220px          │
 //   └────────┴──────────────────────────────┴────────────────┘
 //
-// State scope (owned here, propagated down via props):
-//   - `query`         — search box value (drives NotesTree)
-//   - `selectedPath`  — currently-active note (drives Editor + Backlinks)
-//   - `busy`          — async lock for + Note / Today / Review writes
-//
-// Components live in standalone files so the Irisy app system can
-// reuse them later (e.g. a "Weekly Review" keycap importing
-// `NotesEditor`) without copying the wiring.
+// bao 2026-06-03 (kairo-parity batch): left sidebar gets a Files/Tags
+// toggle (no more dual-stacked panel), the center column carries an
+// open-notes tab strip + bottom status bar, and the editor sprouts a
+// kairo-style toolbar. State that used to live as separate UI panes
+// (TagsPanel + NotesTree) now coalesces under a single `leftPane`
+// switch — kairo's "Files | Tags" affordance.
 
 import {
   useCallback,
@@ -46,6 +44,7 @@ import { NotesActions } from './NotesActions';
 import { NotesTree } from './NotesTree';
 import { NotesEditor } from './NotesEditor';
 import { NotesBacklinks } from './NotesBacklinks';
+import { NotesTabBar } from './NotesTabBar';
 import { TemplatesModal } from './TemplatesModal';
 import { TagsPanel } from './TagsPanel';
 import { ViewSwitcher, type NotesView } from './ViewSwitcher';
@@ -81,15 +80,24 @@ const renderDailyTemplate = (raw: string): string => {
   return raw.replace(/\{\{date\}\}/g, `${y}-${m}-${day}`);
 };
 
+type LeftPane = 'files' | 'tags';
+
+interface OpenTab {
+  path: string;
+  dirty: boolean;
+}
+
 export const NotesApp = (): ReactElement => {
   const [query, setQuery] = useState('');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
+  const [leftPane, setLeftPane] = useState<LeftPane>('files');
   const [busy, setBusy] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [view, setView] = useState<NotesView>('editor');
   const queryClient = useQueryClient();
-  const openTab = useWorkspaceStore((s) => s.openTab);
+  const openSysTab = useWorkspaceStore((s) => s.openTab);
   const activeInstanceId = useWorkspaceStore((s) => s.activeInstanceId);
   const createBlank = useWorkspaceStore((s) => s.createBlank);
 
@@ -106,6 +114,36 @@ export const NotesApp = (): ReactElement => {
     queryClient.invalidateQueries({ queryKey: ['vault-list'] });
   }, [queryClient]);
 
+  /** Pin a note into the open-tab strip and select it. Re-opening an
+   *  already-open path just selects it (no duplicate tab). */
+  const openNoteTab = useCallback((path: string) => {
+    setSelectedPath(path);
+    setOpenTabs((prev) => {
+      if (prev.some((t) => t.path === path)) return prev;
+      return [...prev, { path, dirty: false }];
+    });
+  }, []);
+
+  /** Close a note tab. If we just closed the active note, fall back
+   *  to the right-neighbor (or empty state when none remain). */
+  const closeNoteTab = useCallback((path: string) => {
+    setOpenTabs((prev) => {
+      const idx = prev.findIndex((t) => t.path === path);
+      if (idx < 0) return prev;
+      const next = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+      // Adjust selection
+      if (selectedPath === path) {
+        const fallback = next[idx] ?? next[idx - 1] ?? null;
+        setSelectedPath(fallback ? fallback.path : null);
+      }
+      return next;
+    });
+  }, [selectedPath]);
+
+  const handleSelect = useCallback((path: string) => {
+    openNoteTab(path);
+  }, [openNoteTab]);
+
   const handleNew = useCallback(() => {
     setTemplatesOpen(true);
   }, []);
@@ -113,9 +151,9 @@ export const NotesApp = (): ReactElement => {
   const handleTemplateCreated = useCallback(
     (path: string) => {
       refetchTree();
-      setSelectedPath(path);
+      openNoteTab(path);
     },
-    [refetchTree],
+    [refetchTree, openNoteTab],
   );
 
   const handleToday = useCallback(async () => {
@@ -123,8 +161,6 @@ export const NotesApp = (): ReactElement => {
     try {
       const cfg = await loadDailyNotesConfig();
       const path = renderDailyNotePath(cfg.pathTemplate);
-      // Existence check via direct read so we don't depend on a
-      // possibly-stale vault-list cache.
       let exists = false;
       try {
         await vaultRead(path);
@@ -153,11 +189,11 @@ export const NotesApp = (): ReactElement => {
           return;
         }
       }
-      setSelectedPath(path);
+      openNoteTab(path);
     } finally {
       setBusy(false);
     }
-  }, [refetchTree]);
+  }, [refetchTree, openNoteTab]);
 
   const handleReview = useCallback(async () => {
     setBusy(true);
@@ -181,9 +217,9 @@ export const NotesApp = (): ReactElement => {
       };
       if (!activeInstanceId) {
         const inst = createBlank('Sourcing review');
-        openTab(tab, { instanceId: inst.id, activate: true });
+        openSysTab(tab, { instanceId: inst.id, activate: true });
       } else {
-        openTab(tab, { activate: true });
+        openSysTab(tab, { activate: true });
       }
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -191,7 +227,7 @@ export const NotesApp = (): ReactElement => {
     } finally {
       setBusy(false);
     }
-  }, [activeInstanceId, createBlank, openTab, refetchTree]);
+  }, [activeInstanceId, createBlank, openSysTab, refetchTree]);
 
   return (
     <div className={styles.shell}>
@@ -214,35 +250,64 @@ export const NotesApp = (): ReactElement => {
         active={view}
         onChange={(next) => {
           setView(next);
-          if (next === 'editor') return;
-          // Switching to a non-editor view doesn't drop the
-          // selectedPath — the user can flip back to the editor and
-          // the same note is still open.
         }}
       />
       <div className={styles.cols}>
         <div className={styles.leftCol}>
-          <NotesTree
-            query={query}
-            selectedPath={selectedPath}
-            onSelect={setSelectedPath}
-            tagFilter={tagFilter}
-          />
-          <TagsPanel selected={tagFilter} onSelect={setTagFilter} />
+          <div className={styles.leftPaneToggle} role="tablist" aria-label="Left pane">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={leftPane === 'files'}
+              className={styles.leftPaneToggleBtn}
+              data-active={leftPane === 'files' || undefined}
+              onClick={() => setLeftPane('files')}
+            >
+              Files
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={leftPane === 'tags'}
+              className={styles.leftPaneToggleBtn}
+              data-active={leftPane === 'tags' || undefined}
+              onClick={() => setLeftPane('tags')}
+            >
+              Tags
+            </button>
+          </div>
+          {leftPane === 'files' ? (
+            <NotesTree
+              query={query}
+              selectedPath={selectedPath}
+              onSelect={handleSelect}
+              tagFilter={tagFilter}
+            />
+          ) : (
+            <TagsPanel selected={tagFilter} onSelect={setTagFilter} />
+          )}
         </div>
         <div className={styles.centerCol}>
           {view === 'editor' ? (
-            <NotesEditor path={selectedPath} />
+            <>
+              <NotesTabBar
+                tabs={openTabs}
+                activePath={selectedPath}
+                onSelect={setSelectedPath}
+                onClose={closeNoteTab}
+              />
+              <NotesEditor path={selectedPath} />
+            </>
           ) : (
             <Suspense
               fallback={<div className={styles.viewFallback}>Loading view…</div>}
             >
               {view === 'graph' ? (
-                <GraphView focusPath={selectedPath} onSelect={setSelectedPath} />
+                <GraphView focusPath={selectedPath} onSelect={handleSelect} />
               ) : view === 'health' ? (
-                <HealthDashboard onSelect={setSelectedPath} />
+                <HealthDashboard onSelect={handleSelect} />
               ) : view === 'daily' ? (
-                <DailyNotesCalendar onSelect={setSelectedPath} />
+                <DailyNotesCalendar onSelect={handleSelect} />
               ) : view === 'kanban' ? (
                 <KanbanView />
               ) : view === 'diagram' ? (
@@ -253,7 +318,7 @@ export const NotesApp = (): ReactElement => {
             </Suspense>
           )}
         </div>
-        <NotesBacklinks path={selectedPath} onSelect={setSelectedPath} />
+        <NotesBacklinks path={selectedPath} onSelect={handleSelect} />
       </div>
     </div>
   );

@@ -31,6 +31,10 @@ pub mod persistence;
 pub mod provider;
 pub mod runtime;
 pub mod scheduler;
+// Daily-cron tick for vault sourcing. Spawned from Runtime::boot. See
+// ADR-002 substrate § vault v1 §8.4 + memory
+// `decision_vault_adr_002_section_8`.
+pub mod sourcing_scheduler;
 pub mod stss_bridge;
 pub mod subprocess_actor;
 pub mod subprocess_stss_adapter;

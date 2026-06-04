@@ -29,6 +29,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 arboard = "3"
 base64 = "0.22"
+# Local-time aware date for sourcing_scheduler (daily cron). Pulled in
+# transitively by the Tauri stack; declared explicitly so the kernel
+# doesn't break if an upstream drops it. bao 2026-06-03.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 ureq = { version = "2", features = ["json"] }
 # H-2026-05-22 — async streaming HTTP for LLM adapters (Volc Ark / OpenAI-shape).
 # rustls-tls keeps the build OpenSSL-free for portable Tauri bundles.

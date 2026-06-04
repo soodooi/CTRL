@@ -929,6 +929,189 @@
   white-space: nowrap;
 }
 
+.treeSystemToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.treeSystemToggle input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.folderEmpty {
+  margin: 2px 12px 4px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+/* Left pane Files/Tags toggle — kairo-style mini pill */
+.leftPaneToggle {
+  display: inline-flex;
+  margin: 8px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.leftPaneToggleBtn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-soft);
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.leftPaneToggleBtn[data-active] {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+/* Notes tab strip — kairo-style above the editor */
+.notesTabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 8px 0;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-elev);
+}
+
+.notesTab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px 6px 0 0;
+  padding: 0 4px 0 8px;
+  background: transparent;
+  color: var(--color-text-soft);
+  font-size: 11px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+}
+
+.notesTab[data-active] {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border-soft);
+}
+
+.notesTabButton {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 6px 4px;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notesTabLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notesTabDirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.notesTabClose {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.6;
+}
+.notesTabClose:hover { opacity: 1; }
+
+/* Notes editor status bar — bottom strip */
+.notesStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-elev);
+  font-family: var(--font-mono);
+}
+.notesStatusPath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+.notesStatusSpacer { flex: 1; }
+.notesStatusMetric { color: var(--color-text-soft); }
+.notesStatusDivider { opacity: 0.5; }
+.notesStatusSaved { color: var(--color-success, #4ade80); }
+.notesStatusDim { color: var(--color-text-muted); font-style: italic; }
+
+/* Notes editor toolbar — kairo-style: Editor / Image / Git / Reading / mode */
+.notesEditorToolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-elev);
+  font-size: 11px;
+}
+.notesEditorToolbarBtn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 8px;
+  color: var(--color-text-soft);
+  font: inherit;
+  cursor: pointer;
+}
+.notesEditorToolbarBtn:hover { background: var(--color-bg); color: var(--color-text); }
+.notesEditorToolbarBtn[data-active] {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
+}
+.notesEditorToolbarSpacer { flex: 1; }
+.notesEditorToolbarGroup {
+  display: inline-flex;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.notesEditorToolbarGroup .notesEditorToolbarBtn {
+  border-radius: 0;
+  border: 0;
+  border-right: 1px solid var(--color-border-soft);
+}
+.notesEditorToolbarGroup .notesEditorToolbarBtn:last-child { border-right: 0; }
+
 .treeBody {
   flex: 1;
   overflow-y: auto;
@@ -1004,6 +1187,19 @@
   background: var(--color-bg-l0);
   min-height: 0;
   overflow: hidden;
+}
+
+.editorBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Reading mode: hide the editor chrome (toolbar lives outside body so
+   it stays; ViewerHost itself decides its render). */
+.editor[data-mode='reading'] .editorBody [contenteditable] {
+  pointer-events: none;
+  user-select: text;
 }
 
 /* ─── StarToggle (in NotesActions) ───────────────────────────── */
