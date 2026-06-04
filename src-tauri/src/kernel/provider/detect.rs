@@ -88,28 +88,85 @@ fn scan_now() -> Vec<CliProviderEntry> {
         .collect()
 }
 
-/// Pick the highest-priority detected CLI for first-boot
-/// `irisy.primary` auto-adoption. Returns the manifest id that should
-/// be bound (not the CLI command name) so the registry can look it up
-/// in the loaded builtins. ADR-002 substrate § provider v2 §3.6.
-///
-/// Today the only manifest with a corresponding CLI binary is
-/// `claude-oauth` (binary = `claude`). Future CLI builtins (codex,
-/// aider) extend this map.
+/// BYOK REST manifest order for first-boot `irisy.primary` selection.
+/// ADR-002 substrate § provider v3 amendment 2026-06-04 (bao directive:
+/// claude cli is unreliable, switch to BYOK REST API as primary, move
+/// the CLI providers to fallback). First-boot scans keychain for the
+/// first REST adapter with a usable credential and binds it as primary;
+/// bypasses Claude OAuth token-expiry circus (Issue #36489) and the
+/// broader CLI-process reliability surface (stderr drain, goose-style
+/// NDJSON aborts, etc.) for users who already have a paid API key.
+const BYOK_REST_MANIFEST_ORDER: &[(&str, &str)] = &[
+    // (manifest_id, keychain_account). Account names match the
+    // `legacy_account_aliases` resolver in registry.rs so an entry
+    // stored under a legacy alias still wins.
+    ("anthropic-api", "anthropic"),
+    ("openai-api", "openai"),
+    ("volc-byok", "volc-byok"),
+    ("kimi", "kimi"),
+    ("deepseek", "deepseek"),
+    ("google", "gemini"),
+];
+
+/// CLI fallback order for first-boot `irisy.primary` when no BYOK REST
+/// credential exists. Same priority as the legacy v2 behavior; surfaced
+/// here so the registry's route_chain fallbacks list can reuse the same
+/// constant. ADR-002 § provider v3 §3.6.
+pub const CLI_FALLBACK_MANIFEST_ORDER: &[&str] = &[
+    "claude-oauth",
+    // Future: "codex", "aider"
+];
+
+/// Pick the highest-priority provider for first-boot `irisy.primary`
+/// auto-adoption. ADR-002 substrate § provider v3 amendment 2026-06-04:
+/// BYOK REST keychain scan first; CLI fallback only when no REST key
+/// is configured. Returns the manifest id to bind.
 pub fn first_boot_primary_choice() -> Option<&'static str> {
-    const CLI_TO_MANIFEST: &[(&str, &str)] = &[
-        ("claude", "claude-oauth"),
-        // Future: ("codex", "codex"), ("aider", "aider")
-    ];
+    // 1) BYOK REST first — bypass CLI auth instability.
+    for (manifest_id, account) in BYOK_REST_MANIFEST_ORDER {
+        if has_keychain_secret(account) {
+            return Some(*manifest_id);
+        }
+    }
+    // 2) CLI fallback — same priority as v2, claude-oauth top.
     let detected = detect_cli_providers();
-    for (cli_id, manifest_id) in CLI_TO_MANIFEST {
-        if let Some(entry) = detected.iter().find(|e| e.provider_type == *cli_id) {
+    for manifest_id in CLI_FALLBACK_MANIFEST_ORDER {
+        let cli_id = manifest_id_to_cli(manifest_id);
+        if let Some(entry) = detected.iter().find(|e| e.provider_type == cli_id) {
             if entry.available {
                 return Some(*manifest_id);
             }
         }
     }
     None
+}
+
+/// True iff `account` has a non-empty keychain entry under either the
+/// primary or legacy service. Mirrors the registry's
+/// `keychain_read_with_aliases` shape but only checks existence (no
+/// secret materialization) so the first-boot scan stays cheap.
+fn has_keychain_secret(account: &str) -> bool {
+    for service in ["app.ctrl", "app.ctrl.spike"] {
+        if let Ok(entry) = keyring::Entry::new(service, account) {
+            if let Ok(s) = entry.get_password() {
+                if !s.is_empty() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Map a CLI manifest id back to its `provider_type` string used in
+/// `CLI_PROVIDERS`. Centralized so adding a new CLI builtin updates one
+/// table only.
+fn manifest_id_to_cli(manifest_id: &str) -> &'static str {
+    match manifest_id {
+        "claude-oauth" => "claude",
+        // Future: "codex" => "codex", "aider" => "aider"
+        _ => "",
+    }
 }
 
 #[cfg(test)]

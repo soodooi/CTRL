@@ -445,10 +445,20 @@ impl ProviderRegistry {
     }
 
     /// Build the resolution chain for one consumer (primary + ordered
-    /// fallbacks). ADR-002 substrate § provider v2 lock #3:
-    /// - IrisyPrimary: primary = user-configured id, fallbacks = [CTRL fallback]
-    /// - IrisyFallback: primary = configured id (defaults "volc"), no further fallback
-    /// - Custom(_): primary = configured id, fallbacks = [CTRL fallback]
+    /// fallbacks).
+    ///
+    /// ADR-002 substrate § provider v3 amendment 2026-06-04 (bao
+    /// directive: claude cli is unreliable, switch to BYOK REST API as
+    /// primary, move CLI providers to fallback):
+    /// - IrisyPrimary: primary = user-configured id (default BYOK REST
+    ///   if any key exists; else first detected CLI). Fallbacks =
+    ///   [detected CLI manifests in priority order, then CTRL-managed
+    ///   fallback]. CLI providers thus serve as backup, not as primary
+    ///   default, so a Claude OAuth circuit-breaker (Issue #36489)
+    ///   never blocks first-message latency.
+    /// - IrisyFallback: primary = configured id (defaults "volc"), no
+    ///   further fallback (fallback of the fallback would loop).
+    /// - Custom(_): same shape as IrisyPrimary.
     pub fn route_chain(&self, consumer: &Consumer) -> RouteChain {
         let active = self.active.read().unwrap();
         let primary = active.get(consumer).cloned();
@@ -460,11 +470,32 @@ impl ProviderRegistry {
         let fallbacks = match consumer {
             Consumer::IrisyFallback => Vec::new(),
             _ => {
-                if primary.as_deref() == Some(fallback_id.as_str()) {
-                    Vec::new()
-                } else {
-                    vec![fallback_id]
+                let mut chain: Vec<String> = Vec::new();
+                // 1) Detected CLI manifests as fallbacks (v3 amendment).
+                //    Skip the one already bound as primary so we don't
+                //    retry the same handle twice in a row.
+                for cli_manifest_id in super::detect::CLI_FALLBACK_MANIFEST_ORDER {
+                    let id = cli_manifest_id.to_string();
+                    if Some(&id) == primary.as_ref() {
+                        continue;
+                    }
+                    // Only push when the manifest is actually loaded
+                    // (`provider.is_some()` proxied via `get`). An
+                    // unloaded manifest would just consume a fallback
+                    // slot with no chance of answering.
+                    if self.get(&id).is_some() {
+                        chain.push(id);
+                    }
                 }
+                // 2) CTRL-managed fallback (volc today, future
+                //    ctrl-cloud proxy). Dedupe in case a CLI fallback
+                //    above shared the id (defensive forward-compat).
+                if primary.as_deref() != Some(fallback_id.as_str())
+                    && !chain.contains(&fallback_id)
+                {
+                    chain.push(fallback_id);
+                }
+                chain
             }
         };
         RouteChain { primary, fallbacks }
