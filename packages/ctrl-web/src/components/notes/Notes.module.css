@@ -1419,7 +1419,7 @@
    (`flex: 1; min-height: 0`) can claim height correctly. If this were
    `overflow:auto`, the inner `.scroll` would have no bounded parent and
    the contenteditable would render at its natural content height — no
-   scroll, content clipped (bao 2026-06-03 "能写的字很小, 不能上下滚动"). */
+   scroll, content clipped (bao 2026-06-03 report: tiny text + no scroll). */
 .editorBody {
   flex: 1;
   min-height: 0;
