@@ -116,6 +116,11 @@ const SEED_SOURCING_PROMPT: &str = include_str!("vault_seed/sourcing-prompt.md")
 const SEED_TEMPLATE_DAILY: &str = include_str!("vault_seed/template-daily.md");
 const SEED_TEMPLATE_MEETING: &str = include_str!("vault_seed/template-meeting.md");
 const SEED_IRISY_SOUL: &str = include_str!("vault_seed/irisy-soul.md");
+// ADR-005 irisy v4 §5 (2026-06-04) — sleep-time reflection subagent.
+// Reflection prompt seeds the reflect subagent's system message;
+// playbook seeds the procedural-memory file the main Irisy turn reads.
+const SEED_IRISY_REFLECT_PROMPT: &str = include_str!("vault_seed/irisy-reflect-prompt.md");
+const SEED_IRISY_PLAYBOOK: &str = include_str!("vault_seed/irisy-playbook.md");
 
 /// SOUL.md spec version pin (ADR-005 § soul-md-compat §4.6 churn policy).
 /// Bumped when CTRL adopts a newer upstream `aaronjmars/soul.md` revision.
@@ -140,6 +145,10 @@ fn seed_vault_feature_layer(root: &Path) {
     write_if_missing(root, "templates/meeting.md", SEED_TEMPLATE_MEETING);
     write_if_missing(root, "irisy/SOUL.md", SEED_IRISY_SOUL);
     write_if_missing(root, "irisy/.soul-md-version", SOUL_MD_VERSION);
+    // ADR-005 irisy v4 §5 — sleep-time reflection subagent files.
+    let _ = std::fs::create_dir_all(root.join("irisy").join("episodes"));
+    write_if_missing(root, "irisy/reflect-prompt.md", SEED_IRISY_REFLECT_PROMPT);
+    write_if_missing(root, "irisy/playbook.md", SEED_IRISY_PLAYBOOK);
 }
 
 fn write_if_missing(root: &Path, rel: &str, contents: &str) {

@@ -34,6 +34,12 @@ import {
   formatResultsAsUserTurn,
   isFrontierNativeProvider,
 } from '@/lib/irisy-tool-dispatch';
+import {
+  detectReflectTrigger,
+  isCorrectionMessage,
+  runReflection,
+  type ReflectTurn,
+} from '@/lib/irisy-reflection';
 import styles from './IrisyChat.module.css';
 
 const CHAT_STORAGE_KEY = 'irisy:chat:v1';
@@ -733,6 +739,47 @@ export function IrisyChat(): React.ReactElement {
           if (results.length === 0) {
             // No tool calls in this turn — Pi is done. Break out so the
             // composer unlocks instead of starting another stream.
+            // ADR-005 irisy v4 §5 (2026-06-04): fire sleep-time
+            // reflection here. Best-effort, fire-and-forget so the
+            // user's next turn is never blocked. Only triggers when the
+            // Detect rules say it's worth writing an episode.
+            const trigger = detectReflectTrigger({
+              recentTurns: [],
+              lastTurnHadToolError: false,
+              lastUserTurnIsCorrection: isCorrectionMessage(trimmed),
+            });
+            if (trigger) {
+              const recentTurns: ReflectTurn[] = [
+                ...messages.slice(-6).map((m) => ({
+                  role: m.role,
+                  content: m.content,
+                })),
+                { role: 'user', content: trimmed },
+                { role: 'assistant', content: assistantText },
+              ];
+              const activeProviderId =
+                brainState?.providers?.['irisy.primary']?.id ?? null;
+              void runReflection({
+                trigger,
+                recentTurns,
+                activeProviderId,
+                streamFn: async (systemPrompt, userPrompt) => {
+                  let acc = '';
+                  for await (const chunk of transport.stream(
+                    [
+                      { role: 'system', content: systemPrompt },
+                      { role: 'user', content: userPrompt },
+                    ],
+                    {},
+                  )) {
+                    if (chunk.error) break;
+                    if (chunk.delta) acc += chunk.delta;
+                    if (chunk.done) break;
+                  }
+                  return acc;
+                },
+              });
+            }
             break;
           }
 
