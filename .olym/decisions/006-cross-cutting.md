@@ -2,16 +2,18 @@
 adr_id: 006
 module: cross-cutting
 title: CTRL cross-cutting — BYOK no-Claude in production + global English first + plain-text philosophy
-version: 1
+version: 2
 status: accepted
-last_updated: 2026-05-31
+last_updated: 2026-06-04
 deciders: [bao, zeus]
 sections:
-  - { id: byok-no-claude,  source: orig-005 }
-  - { id: global-english,  source: orig-014 }
-  - { id: plain-text,      source: orig-015 }
+  - { id: byok-no-claude,    source: orig-005 }
+  - { id: global-english,    source: orig-014 }
+  - { id: plain-text,        source: orig-015 }
+  - { id: policy-envelope,   source: new-2026-06-04, note: "L3/L4/L5 autonomy ladder + blast-radius limit + typed-ISA validation — invariants reused across all 6 self-evolution loops (ADR-001 §8)." }
 changelog:
   - v1 2026-05-31: module reorg — merged orig-005 (no Claude/Anthropic SDK in production runtime) + orig-014 (global English first) + orig-015 (plain-text / "Obsidian" philosophy).
+  - v2 2026-06-04: **NEW §4 policy-envelope** — single autonomy ladder (L3 suggest-only / L4 low-risk auto / L5 full auto) + blast-radius limit + typed-ISA validation, reused across the 6 self-evolution loops (ADR-001 §8). Source: UUMit L3-L5 (cap-design-v2 §14 #8) generalised cross-loop. Per bao "整个系统都要自我升级成长 ... 唯一真相, 要经常整理 ADR".
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/002-substrate.md
@@ -74,6 +76,63 @@ CTRL = user-augmentation, NOT knowledge intermediary. Memory `decision_ctrl_obsi
 7. **Vault layout is user-policy, not hardcoded** — CTRL provides default templates (flat / by-day / by-entity); user can swap. Keycap writes declare `path_glob` capability (ADR-004 §1); kernel does NOT enforce directory structure.
 
 8. **Cloud (`ctrl-cloud`) scope locked** — allowed: billing settlement, marketplace listing, NAT-traversal relay, push-notification fanout. NOT allowed: user content storage, AI inference proxy (BYOK direct to provider), knowledge graph hosting.
+
+## §4 Policy envelope — L3/L4/L5 autonomy + blast-radius + typed-ISA (NEW v2, 2026-06-04)
+
+bao 2026-06-04: "整个系统都要自我升级成长" → 6 self-evolution loops (ADR-001 §8) all need the same safety substrate. Rather than each loop inventing its own permission model, **one policy envelope governs them all**. Inspired by Nova AI Ops "policy envelope + blast-radius" (2026) + arxiv 2604.09963 typed ISA (2604.09963) + UUMit autonomy L3/L4/L5 ladder (cap-design-v2 §14 #8 — extended cross-loop here).
+
+### §4.1 Autonomy ladder (locked)
+
+Every self-evolution action declares an **autonomy level** at execution time, persisted to the audit ledger (ADR-002 §11):
+
+| Level | Behaviour | Applies to |
+|---|---|---|
+| **L3 suggest-only** | Microkernel validates + logs the action; **does not execute**. User sees it in Settings → 自我升级 → 待批 panel and approves manually. | New loops in Crawl phase; any high-blast-radius action regardless of phase; loops the user has explicitly slowed. |
+| **L4 low-risk auto (default)** | Microkernel executes the action immediately **iff** it passes blast-radius + reversibility checks; otherwise downgrades to L3 (suggest-only) for that action. | Walk-phase loops; the standard mode after a loop has earned >7 d of clean audit-ledger history. |
+| **L5 full auto** | Microkernel executes within envelope without any blast-radius downgrade. Verify + auto-rollback still mandatory. | Run-phase loops only; opt-in per loop; rate-limited; ledger-audited. |
+
+Default global level = **L4**. Per-loop overrides allowed (e.g. Loop 5 system self-healing might stay at L3 indefinitely on first install). User can also set per-cap override (cap manifest `autonomy_level` field, cap-design-v2 §6).
+
+### §4.2 Typed ISA — the only language self-evolution actions speak
+
+Self-evolution code does **not** call `std::process::Command::new()`, `std::fs::remove_file()`, or any other untyped surface. Every action is a typed variant of an enum (e.g. `SelfEvolutionAction::RestartPi`, `AdjustProviderTrust { delta }`, `AppendPlaybook { rule }`). The full variant list belongs in ADR-002 § typed-isa v1 (amend pending, P1).
+
+Rationale (arxiv 2604.09963 evidence): typed actuation + microkernel validation reduces agent-caused harm by 95% in simulation (77% → 4%) and to 0% in online experiments under fault injection. Untyped agents frequently cause regressions; constrained agents cannot express harmful actions.
+
+CTRL has the substrate already: ADR-001 §2 5 primitives include `Effect` (first-class side-effect type returned from actor handlers). Self-evolution actions extend the Effect taxonomy.
+
+### §4.3 Blast-radius limit
+
+Every typed action declares blast-radius metadata as part of its variant definition:
+
+- **`scope`**: which subsystem the action touches (`pi_process` / `provider_state` / `vault_index` / `cap_manifest` / `keychain` / etc.)
+- **`reversibility`**: `transactional` (one-step rollback) / `compensatable` (run inverse) / `irreversible` (e.g. a network DELETE — these always require L3 approval)
+- **`rate_limit_key`**: bucket name (e.g. "pi_restart" capped at 3/hour, "vault_re_embed" capped at 1/min)
+
+The microkernel validator (capability_resolver.rs extension) reads these and rejects or downgrades before execution.
+
+### §4.4 Verify + auto-rollback (mandatory at L4 and above)
+
+Borrowed from Nova AI Ops 6-stage loop. No self-evolution action is considered complete until:
+
+1. The Verify stage runs (ADR-002 §11 stage `verify` row written)
+2. The verify_result is `recovered` — `unchanged` or `rolled_back` triggers automatic rollback via the action's `reversibility` path
+3. Three consecutive `rolled_back` results in the same loop's audit ledger downgrade the loop to L3 for 24 h (auto-pause)
+
+Skipping Verify is **not optional** — Nova AI Ops phrases this as "skipping verify is how an auto-fix loops forever or declares victory on a still-broken service". Microkernel will reject `learn`-stage writes if the matching `verify` row is missing.
+
+### §4.5 Break-glass (irreversible actions)
+
+For truly irreversible self-evolution actions (e.g. permanent SOUL.md frontmatter delete, cap uninstall that purges manifests), the policy envelope **always** requires L3 regardless of global setting. The Settings UI shows a "break-glass" panel listing pending irreversible actions; user must explicitly approve.
+
+### §4.6 Acceptance
+
+- [ ] `kernel/policy_envelope.rs` (new) — autonomy level enum + per-action `BlastRadius` struct + validation entry point.
+- [ ] `capability_resolver.rs` extended to call into `policy_envelope::validate(action)` before execution.
+- [ ] Settings → 自我升级 → autonomy slider (global L3/L4/L5) + per-loop override panel.
+- [ ] Settings → 自我升级 → break-glass panel for pending irreversibles.
+- [ ] Audit ledger `autonomy_level` column populated at write-time (not retroactively, see ADR-002 §11.5 invariant #4).
+- [ ] Three-consecutive-rollback auto-downgrade rule shipped (verify substrate exists in ADR-002 §11).
 
 ## Acceptance
 

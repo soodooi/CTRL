@@ -33,6 +33,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { IrisyState } from './primitives/IrisyMascot';
 import { invoke } from '../lib/bridge';
 import { useWorkspaceStore } from '../lib/workspace-store';
+import { useSessionStateStore } from '../lib/session-state';
 import styles from './PrimaryRail.module.css';
 
 // L1 nav ids — bao 2026-05-30 (ADR-003 frontend §2): ▾ workspace toggle (top) +
@@ -179,6 +180,43 @@ export const PrimaryRail = (): ReactElement => {
   const handleNavClick = useCallback(
     (def: RailDef) => {
       setActiveRailId(def.id);
+
+      // bao 2026-06-04 (3-mode full): L1 is the entry point for Pi's
+      // three session modes. Mode switch happens BEFORE workspace
+      // routing so the next Irisy turn picks up the new system prompt.
+      const session = useSessionStateStore.getState();
+      if (def.id === IRISY_ITEM_ID) {
+        // Personal mode is the default companion. Switching from Coding
+        // / Cap mode back here clears projectDir + currentSkillId.
+        session.enterPersonalMode();
+      } else if (def.id === CODING_ITEM_ID) {
+        // bao 2026-06-04 fix: Coding chip used to bail when the user
+        // cancelled the project-dir prompt, blocking the /coding route
+        // from opening at all. The chip must always open the coding
+        // workspace; the project-dir prompt is a session-mode hint
+        // that is safe to skip — the existing /coding route handles
+        // the no-dir case via cs_spawn at $HOME.
+        const previous = session.projectDir;
+        const placeholder = previous ?? '~';
+        // eslint-disable-next-line no-alert
+        const picked = window.prompt(
+          'Project directory for Coding mode (optional — Pi will treat ' +
+            'this as its cwd). Cancel to skip.',
+          placeholder,
+        );
+        if (picked && picked.trim().length > 0) {
+          session.enterCodingMode(picked.trim());
+        } else if (previous) {
+          // User cancelled but a previous dir is set — keep Coding mode
+          // active rather than dropping back to Personal.
+          session.enterCodingMode(previous);
+        }
+        // No prior dir + cancelled = leave session mode unchanged but
+        // still open the workspace (fall through, do not return).
+      }
+      // Pool / Notes / Settings don't change session mode — they open a
+      // workspace tab. Cap-mode entry lives in Pool (Skills tab).
+
       // bao 2026-06-03 — L1 chip click must surface its workspace. Calling
       // `openSystemTab` alone registered the tab but left the main window
       // compact, so the user saw nothing change ("L1 vault button can't

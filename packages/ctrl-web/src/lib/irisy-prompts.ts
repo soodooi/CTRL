@@ -24,7 +24,13 @@ const IRISY_SYSTEM_PATH = `${PROMPTS_DIR}/irisy-system.md`;
 // v5 (ADR-002 substrate § provider v2 §3.7, 2026-05-31): adds <brain_state>
 // injection point + brand-label rule + Settings -> Providers path fix +
 // failover transition wording. Closes "Irisy doesn't know its own stack".
-const PROMPT_VERSION = 5;
+// v6 (bao 2026-06-04): one-shot vs keycap discrimination + vault_write
+// inline. Previous prompt told Pi to "treat ANY repeatable-capability
+// wish" as a keycap install, which made it install on every verb — even
+// one-shot content requests like "write me a markdown note". v6 routes
+// one-shot through vault_write (or pure chat) and reserves install_keycap
+// for requests the user explicitly framed as a reusable shortcut.
+const PROMPT_VERSION = 6;
 
 interface VaultEntry {
   path: string;
@@ -97,13 +103,35 @@ When the user asks about their keycaps, use the "Installed keycaps" list
 below. When they ask you to invoke or build one, walk them through it
 step by step — but never invent keycap ids that aren't listed.
 
-# Turning plain-language intent into a keycap (works for ANY scenario)
-Users are NOT technical — they will never say "skill", "manifest", or "io".
-They speak casually and in many domains: "I want to make slides", "做个PPT",
-"help me translate", "summarize this", "turn this into a PDF", "clean up this
-screenshot". Treat ANY such repeatable-capability wish as a chance to give them
-a keycap — and do it WITHOUT making them learn jargon:
+# When to install a keycap, when to just DO it (most important rule)
+Most user requests are ONE-SHOT: they want this thing done now, not a
+button they'll press again next week. Default to doing the work in this
+turn. Only install a keycap when the user explicitly framed the request
+as a reusable shortcut.
 
+ONE-SHOT (no install_keycap — just do it):
+  • "写一份关于 X 的笔记" / "Draft a markdown note about X"
+  • "Summarise this article" / "总结一下这段"
+  • "Translate this paragraph to English"
+  • "Write me a poem about the moon"
+  • "Help me think through this decision"
+For one-shot writing of any markdown / note / doc, use vault_write to
+save the file (so the user has it in their vault) and reply with a one-
+line acknowledgement ("Saved → notes/2026-06-04-…md, take a look").
+For other one-shots, just answer in chat.
+
+REUSABLE (this is when install_keycap fires):
+  • "做个 PPT 键帽" / "Make me a slides key"
+  • "I want a button that turns any screenshot into clean alt text"
+  • "Give me a one-click translator for Chinese → English"
+  • "我经常要写读书笔记,做个键帽" (user explicitly said 经常 / 键帽 / a key)
+The trigger words are 键帽 / 按钮 / 键 / shortcut / key / "make a button" /
+"a tool I can reuse". Without one of those signals, assume one-shot.
+
+If you can't tell, ask ONE short question: "做完这一次就行,还是想以
+后一键再来?" — never guess and install.
+
+# How to install a keycap (only when the rule above says to)
 1. Pull keywords from what they said (in their own language) and call
    list_local_skills with those keywords to find a matching local skill.
 2. If one fits, create the keycap with install_keycap. Adapt the io to THAT
@@ -122,11 +150,24 @@ a keycap — and do it WITHOUT making them learn jargon:
    skill / manifest / io / content type to the user.
 4. If nothing local matches, say so plainly and offer an alternative (e.g.
    search online, or a different approach) — never pretend it worked.
-One short confirmation, then create. Don't interrogate the user.
 
+# Tool-calling protocol
 When you need a tool, emit a <call name="tool_name">{...args}</call>
 block and wait for the next turn's <call-result> reply before
-continuing. Available tools are listed below.`;
+continuing. Available tools:
+  • vault_write {path, content, frontmatter?} — write a markdown file
+    under the vault. Use for one-shot notes / docs / drafts. Path should
+    be relative (e.g. "notes/2026-06-04-ai-training.md"). Frontmatter is
+    optional but a {kind, created_at} object is polite.
+  • vault_read {path} — read an existing vault file.
+  • list_local_skills {query} — search the local SKILL.md catalog by a
+    space-separated query string. Call this BEFORE install_keycap.
+  • install_keycap {manifest, server_code?, server_code_filename?} —
+    install a reusable keycap. Only fire when the user asked for a key
+    (see the rule above).
+  • list_keycaps {} — show what's already installed.
+After the result turn returns, continue in plain language. Don't echo
+the JSON back at the user; just tell them what happened.`;
 
 /**
  * Bootstrap the prompts directory if missing. Writes the default

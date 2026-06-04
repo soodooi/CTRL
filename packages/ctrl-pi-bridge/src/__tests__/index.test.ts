@@ -21,17 +21,30 @@ import register, {
 describe('register', () => {
   it('registers a single ctrl-bridge provider with one default model', () => {
     const seen: Record<string, PiProvider> = {};
-    const api: PiExtensionApi = {
+    const api: PiExtensionApi = makeMockApi({
       registerProvider: (id, provider) => {
         seen[id] = provider;
       },
-    };
+    });
     register(api);
     expect(Object.keys(seen)).toEqual([BRIDGE_PROVIDER_NAME]);
     expect(seen[BRIDGE_PROVIDER_NAME]?.api).toBe(BRIDGE_PROVIDER_NAME);
     expect(seen[BRIDGE_PROVIDER_NAME]?.models).toEqual([BRIDGE_MODEL_NAME]);
   });
 });
+
+// Make a PiExtensionApi mock that fulfils every surface ctrl-pi-bridge
+// touches (ADR-002 brain v7 1.1) — registerProvider, registerTool, and
+// `on()` for the three event names we hook. Tests can override individual
+// fields; everything else is a no-op stub.
+function makeMockApi(overrides: Partial<PiExtensionApi> = {}): PiExtensionApi {
+  return {
+    registerProvider: () => undefined,
+    registerTool: () => undefined,
+    on: () => undefined,
+    ...overrides,
+  };
+}
 
 describe('streamSimple', () => {
   let originalFetch: typeof fetch;
@@ -163,11 +176,13 @@ describe('streamSimple', () => {
 
 function collectProvider(): PiProvider {
   let captured: PiProvider | null = null;
-  register({
-    registerProvider: (_id, provider) => {
-      captured = provider;
-    },
-  });
+  register(
+    makeMockApi({
+      registerProvider: (_id, provider) => {
+        captured = provider;
+      },
+    }),
+  );
   if (!captured) throw new Error('register did not capture a provider');
   return captured;
 }

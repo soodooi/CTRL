@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — Pi brain · capability surface · provider router · crypto · subprocess · MCP bus · composition
-version: 5
+version: 7
 status: accepted
-last_updated: 2026-06-03
+last_updated: 2026-06-04
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003 }
@@ -17,6 +17,7 @@ sections:
   - { id: vault,                source: new-2026-06-01, note: "kernel vault primitives + feature-layer boundary; Daily Note + Sourcing are feature-layer (Irisy + frontend)" }
   - { id: smart-table-output,   source: new-2026-06-03, note: "keycap output unification — single SmartTable per keycap, schema in manifest output_capture" }
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
+  - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
 changelog:
   - v1 2026-05-31: module reorg — merged orig-003 (Pi brain) + orig-004 (capability surface) + orig-007 (crypto) + orig-012 (SubprocessActor + portable-pty) + orig-013 (kernel-as-MCP-server) + orig-024 (6-axis composition). **NEW** § provider — role routing (irisy.primary/fallback, keycap.default) + VMark-style PATH detect + introspection (brain_status). Closes the "Irisy doesn't know its own stack" gap (bao 2026-05-31).
   - v2 2026-05-31: § provider amendments (bao 3-校准 in implementation discussion):
@@ -26,6 +27,8 @@ changelog:
   - v3 2026-06-01: **NEW** §8 Vault — kernel primitive endpoints (21 commands) + explicit feature-layer boundary: Daily Note + Sourcing inbox are **feature-layer** (Irisy + frontend wire them via `vault/.ctrl/*.yaml` + `vault/templates/*.md`), kernel does not know about either concept. Retires frontend O(N) backlink scan + 3-pane VaultBrowser shell. §6 MCP tools list extended from 11 to 28 (kernel exposes vault.{backlinks,tags,notes_by_tag,mentions,orphans,broken_links,graph_data,rename,move,create_folder,set_starred,aliases,watch} on top of existing 8). Wiki-link Tiptap extension cherry-picked from seahop/kairo (MIT, Sean Hopkins 2026) — see `THIRD_PARTY_LICENSES/kairo-MIT.txt`. Decision lock + sourcing workflow design: `.olym/brainstorm/vault-md-management-2026-06-01.md`.
   - v4 2026-06-02: §8.6 shell integration amended — bao realignment "Vault is substrate, Notes is the L1 app". L1 chip relabelled **Notes** (id `notes`, path `/notes`); chip click uses `openSystemTab({kind:'route', path:'/notes'})` matching Pool/Coding. New `routes/notes.tsx` renders `<NotesApp />` (3-pane: NotesActions top bar + NotesTree left + NotesEditor center + NotesBacklinks right). Components live in `packages/ctrl-web/src/components/notes/*` as standalone files for future Irisy-app-system reuse. L2 column reservation kept but **no longer flipped for Notes** — the app composes inside a workspace tab body, not across the shell grid. §8.7 retirements extended: `L2VaultPanel.{tsx,module.css}` deleted, `BacklinksDrawer.{tsx,module.css}` deleted (backlinks live inside NotesApp right column), `routes/vault.tsx` deleted (replaced by `routes/notes.tsx`), Rust `expand_workspace_window_if_collapsed` command deleted. Editor lib forward-compat invariant: `@tiptap/*` + `@uiw/react-codemirror` + `mermaid` + `gray-matter` consumed as npm packages — thin React wrappers, no fork, no vendor.
   - v5 2026-06-03: **NEW §9 smart-table-output** + **NEW §10 embeddings**. §9 unifies keycap output capture as one SmartTable per keycap (markdown table file at `notes/keycap-runs/<keycap_id>.table.md`, schema in keycap manifest `output_capture`); supersedes "1-run-1-file sidecar markdown" idea from `.olym/brainstorm/openclaw-compat-2026-06-03.md` — Notion-style table beats sidecar markdown for browsability and inline edit. P4 product-decision (`.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`) locks "default-on, settings-wide kill-switch, per-keycap manifest opt-out". §10 adds the embeddings substrate the product spec depends on (Layer 3 Connect + Layer 4 Synthesize): local Ollama default with transparent fallback prompt (per product P1), SQLite BLOB storage (no sqlite-vss dep — flat cosine is fine for vault-scale up to ~50K notes), 5 new vault.* MCP tools, hybrid `vault.search` mode. Eight new acceptance items; brainstorm: `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`.
+  - v6 2026-06-04: **NEW §11 audit-ledger** — substrate primitive for self-evolution (ADR-001 §8) across the 6 loops. Reuses `kernel/persistence.rs` SQLite event store with a new event kind `system.self_evolution`; immutable rows record (loop_id, stage, typed_action, evidence, diagnosis, verify_result, autonomy_level). Queryable from Settings → 自我升级 → 最近事件 tab. Prune policy: 7 d high-resolution + 90 d day-level aggregate + month aggregate beyond (bao 2026-06-04 wave Q5). Per bao "整个系统都要自我升级成长 ... 沉, 唯一真相, 要经常整理 ADR".
+  - v7 2026-06-04: **§1 brain amendment — §1.1 ctrl-pi-bridge full extension surface** — bridge v1 used only `pi.registerProvider`, leaving Pi with 0 native tools (real-world Pi told user "我没有 skill 系统"). v7 expands bridge to 4 surfaces: `registerProvider` (existing) + `registerTool` × ~10 native tools (BYOK frontier path) + `on('before_agent_start')` chain-injecting ADR-005 §6 capability segments + `on('tool_call')` inspector stub (5-identical-calls loop guard) + `on('resources_discover')` exposing `~/.claude/skills/` as native Pi Skills. ctrl-pi-plugin spawn arg changes `--no-tools` → `--no-builtin-tools` so extension-registered tools stay loaded but Pi's default 7 (read/write/edit/bash/grep/find/ls) are off (kernel substrate stays the gatekeeper for vault writes etc). Provider-aware dispatch in `commands/irisy_chat.rs`: BYOK frontier ⇒ native tools, non-frontier (Volc/Qwen/Llama) ⇒ existing PWA XML loop (Cline operates under same constraint). 0 transitive deps invariant preserved via inline TypeBox mock. Paired with ADR-005 v4 §7. Brainstorm: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2.
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/004-cap.md
@@ -41,6 +44,24 @@ related:
 - **Bridge**: `packages/ctrl-pi-bridge/` ships in app Resources. Pi spawned with `--extension <bridge-path>`. Bridge uses Pi's official `RpcClient` + inlined `AssistantMessageEventStream`; HTTP-fetches `localhost:<port>/text-chat` (kernel provider endpoint, §3).
 - **No `pi /login` ever**: bridge auto-configures via env (`CTRL_PROVIDER_PORT` / `CTRL_PROVIDER_TOKEN`).
 - **Retired** (do not re-introduce): `brain_config.rs`, `commands/brain.rs`, `BrainListReply`, PWA `irisy-tools.ts` / `irisy-llm-runner.ts` (frontend ReAct), `~/.ctrl/active-brain` file, brain switcher UI.
+
+### §1.1 ctrl-pi-bridge surface — full extension API (v2 — 2026-06-04)
+
+v1 used **only** `pi.registerProvider`. v2 uses 4 Pi ExtensionAPI surfaces to close 3 failure modes traced 2026-06-04 (Pi 0 tool / XML protocol fragility / monolithic system prompt). Schema verified against `~/.ctrl/pi/node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts` (ADR-005 §7.2).
+
+| Surface | Used for | Closes |
+|---|---|---|
+| `pi.registerProvider('ctrl-bridge', {streamSimple})` | LLM calls route back to kernel provider chain (unchanged v1 behaviour) | — (substrate seam) |
+| `pi.registerTool<TParams>({...})` × ~10 tools | Native Pi function calling for BYOK frontier path. Tools = thin HTTP wrappers to kernel commands (vault_*, list_local_skills, install_keycap, keycap_run, brain_status) | B1 (Pi 0 tool) |
+| `pi.on('before_agent_start', ...)` | Returns `{systemPrompt}` — chain-injects ADR-005 §6 capability segments per turn based on keyword pre-screen | B3 (monolithic prompt) |
+| `pi.on('tool_call', ...)` | Inspector stub — vetoes repeated identical calls (loop guard); future home for ADR-006 §4 policy-envelope enforcement | safety baseline |
+| `pi.on('resources_discover', ...)` | Returns `{skillPaths: [...]}` so Pi auto-loads `~/.claude/skills/` as native Pi Skills (`/skill:name` slash commands). Shared discovery helper with kernel `list_local_skills` (one SSOT). | duplicate skill discovery code |
+
+**Spawn-arg change in ctrl-pi-plugin** (`packages/ctrl-pi-plugin/src/pi-bridge.ts`): `--no-tools` → `--no-builtin-tools`. The negation now only disables Pi's 7 default tools (`read` / `write` / `edit` / `bash` / `grep` / `find` / `ls`); tools registered via `pi.registerTool` from ctrl-pi-bridge stay loaded.
+
+**Dual-path tool routing** (ADR-005 §7.6): provider-aware switch in `commands/irisy_chat.rs`. BYOK frontier (anthropic/openai/claude-*/gpt-*) → native Pi tools. Non-frontier (Volc CF Workers AI / Qwen / Llama / DeepSeek defaults) → keep PWA `<call>` XML loop (`irisy-tool-dispatch.ts`) as fallback because these models JSON-format inconsistently (same constraint Cline operates under).
+
+**0 transitive deps invariant preserved**: ctrl-pi-bridge runtime-loads from `<.app>/Resources/pi-bridge/index.ts` where Node can't resolve to Pi's `node_modules`. TypeBox schemas are inline-mocked (~30 LOC `T.Object` / `T.String` / `T.Optional` returning plain JSON-Schema objects, cast `as unknown as TSchema` for TS).
 
 ## §2 Capability surface — 10 namespaces / 28 methods (frequency ≥3 rule + category exception)
 
@@ -480,6 +501,74 @@ Embeddings never leave the user's machine when in Ollama mode. The cloud-fallbac
 - `vault_list` `include_hidden` flag — today the frontend filters `.ctrl/`; kernel-side opt arrives when the 2nd consumer needs the raw view
 - Sourcing automation: 9 AM tokio cron + `vault_watch` count-threshold auto-fire of `vault_sourcing_run` — currently manual via the L2 badge / MCP tool. Irisy's LLM-backed routine will subsume both triggers.
 - Wikilink autocomplete popup — Tiptap suggestion plugin + tippy.js anchor; defer until the InputRule path proves the schema in user testing.
+
+## §11 Audit ledger v1 — self-evolution event store (NEW v6, 2026-06-04)
+
+bao 2026-06-04: "整个系统都要自我升级成长 ... 沉, 唯一真相, 要经常整理 ADR". The 6 self-evolution loops (ADR-001 §8) all need the same substrate: a kernel-side immutable record of every detect → diagnose → plan → execute → verify → learn event, queryable across loops, replay-able for postmortem, and accountable for the user's "what did Irisy change about me" question.
+
+### §11.1 Reuse, not new infra
+
+Build on `src-tauri/src/kernel/persistence.rs` (the existing SQLite event store), do not introduce a parallel persistence engine. Add one event kind:
+
+```rust
+// kernel/persistence.rs — extend, do not branch
+pub enum EventKind {
+    UserEvent { /* existing */ },
+    // ...
+    SelfEvolution(SelfEvolutionEvent),  // ← NEW v6
+}
+```
+
+### §11.2 Schema (P0 ship target)
+
+```sql
+CREATE TABLE IF NOT EXISTS self_evolution_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts_ms           INTEGER NOT NULL,
+    loop_id         TEXT    NOT NULL,    -- 'irisy_reflection' | 'provider_routing' | 'cap_curation' | 'vault_index' | 'system_self_healing' | 'mcp_skill_recommend'
+    stage           TEXT    NOT NULL,    -- 'detect' | 'diagnose' | 'plan' | 'execute' | 'verify' | 'learn'
+    typed_action    TEXT,                -- JSON-serialized SelfEvolutionAction (NULL until Plan stage)
+    evidence        TEXT,                -- raw signal / log excerpt (Detect input)
+    diagnosis       TEXT,                -- LLM causal hypothesis JSON (Diagnose output)
+    verify_result   TEXT,                -- 'recovered' | 'unchanged' | 'rolled_back' | NULL until Verify stage
+    autonomy_level  TEXT    NOT NULL,    -- 'L3' | 'L4' | 'L5' at the time of the event
+    correlation_id  TEXT    NOT NULL     -- groups all 6 stages of one loop execution
+);
+
+CREATE INDEX idx_sev_loop_ts ON self_evolution_events (loop_id, ts_ms DESC);
+CREATE INDEX idx_sev_corr ON self_evolution_events (correlation_id);
+```
+
+`correlation_id` is the join key linking Detect → … → Learn rows for one logical loop execution. Generated at Detect-stage write.
+
+### §11.3 Append-only + prune policy
+
+Rows are **append-only**. Prune is a separate `kernel::audit_ledger::prune()` job, never inline:
+
+- **0 → 7 d**: full resolution, all rows kept
+- **7 → 90 d**: day-level aggregate (counts per `(loop_id, stage, verify_result)`); detail rows deleted
+- **> 90 d**: month-level aggregate; day rows deleted
+
+User can opt to "preserve all" in Settings (off by default — vault grows unbounded otherwise).
+
+### §11.4 Producer / consumer contract
+
+- **Producers**: each loop's Detect/Diagnose/Plan/Execute/Verify/Learn stage writes one row before returning. Producers MUST set `loop_id` + `stage` + `correlation_id`; other fields stage-dependent. Producers MUST NOT mutate prior rows.
+- **Consumers**: PWA Settings → 自我升级 → 最近事件 tab reads via new Tauri command `audit_ledger_query(args: { loop_id?, since_ms?, limit })`. Read-only.
+- **Cross-loop replay**: `audit_ledger_replay(correlation_id)` returns ordered stage rows for one loop execution — debug + postmortem use.
+
+### §11.5 Invariants (locked)
+
+1. **Append-only** — no update, no delete (only `prune()` aggregating job).
+2. **Per-stage write** — Detect writes immediately on signal, Verify writes immediately on result. No batching that hides intermediate failures.
+3. **typed_action JSON-validates** before write (microkernel validator, ADR-006 § policy-envelope, P1). Untyped writes are rejected.
+4. **autonomy_level recorded at-execution-time**, never recomputed after — protects against retroactive policy changes hiding past auto-executions.
+
+### §11.6 Out of scope for v1
+
+- Cross-device sync of the audit ledger (each device has its own ledger; Loop 6 cross-user aggregation is opt-in + Loop 5 self-healing reads only local).
+- LLM-driven semantic search over the ledger (FTS5 substring is enough for "show me last week's provider failover" queries).
+- Real-time websocket push of audit events to PWA (poll-on-open is fine; users won't watch a live tail).
 
 ## Acceptance
 

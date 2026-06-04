@@ -1,19 +1,41 @@
-// @ctrl/pi-bridge — Pi extension that routes Pi's LLM calls back into the
-// CTRL kernel provider sub-system.
+// @ctrl/pi-bridge — Pi extension wiring CTRL's brain integration.
 //
-// Loaded into Pi via `pi --extension <bundled-path>` (see
-// shell/brain_supervisor.rs). On load, registers a single provider named
-// "ctrl-bridge" with Pi's extension API. Pi's agent loop then has one
-// provider, one model — "ctrl-bridge" / "default" — and every LLM call
-// goes through `streamSimple`, which HTTP-POSTs to a kernel endpoint
-// the Rust side owns (ADR-002 substrate § provider v2 lock #7).
+// v7 (ADR-002 substrate brain v7 1.1 + ADR-005 irisy v4 7 — 2026-06-04) —
+// uses 4 Pi ExtensionAPI surfaces to fix three real-world failure modes
+// (Pi 0 tool / XML protocol fragility / monolithic prompt):
 //
-// Rationale (ADR-002 substrate §2 + Round-2 finding): Pi has no MCP-client surface,
-// so the only seam for routing Pi's LLM call through the kernel provider
-// sub-system is `pi.registerProvider({ streamSimple })`. Keeping this
-// extension thin (one file, no transitive deps beyond Pi's own surface)
-// means upstream Pi version bumps either keep working or fail loudly at
-// extension-load time, never silently.
+//   1. pi.registerProvider('ctrl-bridge', {streamSimple})    — existing v1
+//   2. pi.registerTool(...) x 10 native Pi tools             — NEW v7
+//   3. pi.on('before_agent_start', ...)                      — NEW v7
+//   4. pi.on('tool_call', ...)                               — NEW v7
+//   5. pi.on('resources_discover', ...)                      — NEW v7
+//
+// Surface (1) routes Pi's LLM calls back into the kernel provider chain
+// (localhost:<CTRL_PROVIDER_PORT>/text-chat) where the v2 router (ADR-002
+// substrate provider v2 3.5) selects irisy.primary / irisy.fallback by
+// role. Surfaces (2)-(5) close the gaps traced 2026-06-04:
+//
+//   - Pre-v7 Pi had 0 native tools (ctrl-pi-plugin spawned it with
+//     --no-tools and the bridge never registered any). Surface (2)
+//     gives Pi native function calling for vault.* / skill.* / keycap.*
+//     on the BYOK frontier path.
+//   - Surface (3) chain-injects ADR-005 6 capability segments per turn,
+//     keyword-pre-screened against the user prompt, so Pi sees only the
+//     1-3 segments relevant to the request — fixing the "install_keycap
+//     for any verb" failure mode.
+//   - Surface (4) is an inspector stub today (5-identical-calls loop
+//     guard); future home for ADR-006 4 policy-envelope (autonomy ladder).
+//   - Surface (5) hands ~/.claude/skills/ to Pi as native Skills so the
+//     user gets /skill:<name> slash commands without symlinks.
+//
+// Keeping this extension thin (one file, no transitive deps beyond Pi's
+// own surface) means upstream Pi version bumps either keep working or
+// fail loudly at extension-load time, never silently. ADR-002 1
+// zero-deps invariant: Pi loads this from
+// <CTRL.app>/Contents/Resources/pi-bridge/index.ts where Node module
+// resolution cannot reach Pi's own node_modules/. We inline what we
+// need; we do NOT split into modules (that would either require a build
+// step or break resolution).
 //
 // streamSimple contract (per @mariozechner/pi-ai types):
 //   Returns AssistantMessageEventStream SYNCHRONOUSLY. All async work
@@ -42,15 +64,101 @@
 //     event: error
 //     data:  { "message": "..." }
 
+// Node builtins needed by surface (5) skill discovery + the loop guard.
+// Pi's runtime is Node 20+ so these import paths are stable.
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+
 export const BRIDGE_PROVIDER_NAME = 'ctrl-bridge';
 export const BRIDGE_MODEL_NAME = 'default';
 export const BRIDGE_ENV_PORT = 'CTRL_PROVIDER_PORT';
 export const BRIDGE_ENV_TOKEN = 'CTRL_PROVIDER_TOKEN';
 
-// ── Pi extension API surface (locally typed) ────────────────────────────
+// ─── Pi extension API surface (locally typed) ───────────────────────────
+//
+// We declare only the surfaces we actually call. Real definitions live in
+// ~/.ctrl/pi/node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts
+// — static import fails at runtime (node_modules unreachable from .app),
+// so the types are duplicated. If Pi's surface diverges, ctrl-pi-bridge
+// fails at extension-load time with a clear error, never silently.
+
+/** TypeBox-shaped schema. At runtime it's a JSON Schema object. The cast
+ *  via `as unknown as TSchema` lets us satisfy Pi's `TParams extends
+ *  TSchema` bound without taking a typebox npm dependency. */
+type TSchema = { readonly [K: string]: unknown };
+
+export interface PiToolDefinition {
+  name: string;
+  label: string;
+  description: string;
+  parameters: TSchema;
+  promptSnippet?: string;
+  promptGuidelines?: string[];
+  execute: (
+    toolCallId: string,
+    params: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+    onUpdate: ((details: unknown) => void) | undefined,
+    ctx: unknown,
+  ) => Promise<PiToolResult>;
+}
+
+export interface PiToolResult {
+  content: Array<{ type: 'text'; text: string }>;
+  details?: unknown;
+  isError?: boolean;
+}
+
+export interface PiBeforeAgentStartEvent {
+  type: 'before_agent_start';
+  prompt: string;
+  systemPrompt: string;
+  systemPromptOptions?: unknown;
+}
+
+export interface PiBeforeAgentStartResult {
+  systemPrompt?: string;
+}
+
+export interface PiToolCallEvent {
+  type: 'tool_call';
+  toolName: string;
+  input: Record<string, unknown>;
+}
+
+export interface PiToolCallResult {
+  block?: boolean;
+  reason?: string;
+}
+
+export interface PiResourcesDiscoverEvent {
+  type: 'resources_discover';
+  cwd: string;
+  reason: 'startup' | 'reload';
+}
+
+export interface PiResourcesDiscoverResult {
+  skillPaths?: string[];
+  promptPaths?: string[];
+  themePaths?: string[];
+}
+
+type PiHandler<E, R> = (evt: E, ctx: unknown) => Promise<R | void> | R | void;
 
 export interface PiExtensionApi {
   registerProvider: (id: string, provider: PiProvider) => void;
+  registerTool: (tool: PiToolDefinition) => void;
+  on(
+    event: 'before_agent_start',
+    handler: PiHandler<PiBeforeAgentStartEvent, PiBeforeAgentStartResult>,
+  ): void;
+  on(event: 'tool_call', handler: PiHandler<PiToolCallEvent, PiToolCallResult>): void;
+  on(
+    event: 'resources_discover',
+    handler: PiHandler<PiResourcesDiscoverEvent, PiResourcesDiscoverResult>,
+  ): void;
+  on(event: string, handler: (...args: unknown[]) => unknown): void;
 }
 
 export interface PiTextContent {
@@ -220,6 +328,7 @@ export class BridgeEventStream implements AsyncIterable<PiAssistantMessageEvent>
 // ── Registration ────────────────────────────────────────────────────────
 
 export default function register(pi: PiExtensionApi): void {
+  // 1. registerProvider — existing v1 behaviour (ADR-002 1).
   pi.registerProvider(BRIDGE_PROVIDER_NAME, {
     api: BRIDGE_PROVIDER_NAME,
     baseUrl: 'http://127.0.0.1',
@@ -227,6 +336,30 @@ export default function register(pi: PiExtensionApi): void {
     models: [BRIDGE_MODEL_NAME],
     streamSimple: (model, ctx, opts) => streamFromKernel(model, ctx, opts),
   });
+
+  // 2. registerTool x 10 — native Pi tools for BYOK frontier path
+  //    (ADR-005 7.3, 2026-06-04). Each tool is a thin HTTP-fetch
+  //    wrapper to the kernel provider port that proxies to a Tauri
+  //    command. Pi turns these into provider-native function call
+  //    schemas (Anthropic tool_use / OpenAI tools) so the model emits
+  //    structured tool calls instead of the XML fallback protocol.
+  for (const tool of buildKernelTools()) {
+    pi.registerTool(tool);
+  }
+
+  // 3. before_agent_start — chain-injects ADR-005 6 capability
+  //    segments into the system prompt per-turn, keyword-pre-screened
+  //    against evt.prompt. Resets the loop-guard counter on each turn.
+  pi.on('before_agent_start', beforeAgentStartHandler);
+
+  // 4. tool_call inspector — runaway-loop guard (5 identical calls in
+  //    a row -> block). Future home for ADR-006 4 policy-envelope.
+  pi.on('tool_call', toolCallInspectorHandler);
+
+  // 5. resources_discover — hand ~/.claude/skills/ to Pi as native
+  //    Skills so the user gets /skill:<name> slash commands without
+  //    symlinks (ADR-005 7.4).
+  pi.on('resources_discover', resourcesDiscoverHandler);
 }
 
 // ── streamSimple implementation ─────────────────────────────────────────
@@ -534,4 +667,659 @@ async function safeReadText(response: Response): Promise<string> {
 function describe(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+// ─── TypeBox-shaped schema helpers (inline, zero deps) ──────────────────
+//
+// Pi's `ToolDefinition.parameters` is typed `TParams extends TSchema`
+// where TSchema is from `@sinclair/typebox`. At runtime it just needs to
+// be a JSON Schema object. We can't depend on typebox (ADR-002 1 zero-
+// deps invariant), so we build the same shape inline.
+
+const T = {
+  Object(
+    properties: Record<string, TSchema>,
+    required: string[] = Object.keys(properties),
+  ): TSchema {
+    return {
+      type: 'object',
+      properties,
+      required,
+      additionalProperties: false,
+    };
+  },
+  String(description?: string): TSchema {
+    return description ? { type: 'string', description } : { type: 'string' };
+  },
+  Record(description?: string): TSchema {
+    return description
+      ? { type: 'object', additionalProperties: true, description }
+      : { type: 'object', additionalProperties: true };
+  },
+};
+
+// ─── Kernel tool wrappers (ADR-005 7.3, 2026-06-04) ─────────────────────
+//
+// Each tool calls the kernel HTTP bridge on CTRL_PROVIDER_PORT at the
+// tool-specific path /tool/<toolName>. Kernel side dispatches to the
+// matching Tauri command. Tools throw on transport failure; Pi shows
+// that error to the model so it can recover.
+
+interface KernelToolReply {
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+async function callKernelTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  signal: AbortSignal | undefined,
+): Promise<unknown> {
+  const port = process.env[BRIDGE_ENV_PORT];
+  if (!port) {
+    throw new Error(
+      `${BRIDGE_ENV_PORT} not set — Pi was started without the CTRL ` +
+        `provider port. Restart CTRL.`,
+    );
+  }
+  const url = `http://127.0.0.1:${port}/tool/${encodeURIComponent(toolName)}`;
+  const token = process.env[BRIDGE_ENV_TOKEN];
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(args),
+    signal,
+  });
+  if (!response.ok) {
+    const text = await safeReadText(response);
+    throw new Error(
+      `tool ${toolName}: HTTP ${response.status}` + (text ? `: ${text}` : ''),
+    );
+  }
+  const payload = (await response.json()) as KernelToolReply;
+  if (!payload.ok) {
+    throw new Error(payload.error || `tool ${toolName}: unknown error`);
+  }
+  return payload.result;
+}
+
+function toolReply(value: unknown): PiToolResult {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: typeof value === 'string' ? value : JSON.stringify(value, null, 2),
+      },
+    ],
+  };
+}
+
+function toolError(message: string): PiToolResult {
+  return {
+    content: [{ type: 'text', text: message }],
+    isError: true,
+  };
+}
+
+function buildKernelTools(): PiToolDefinition[] {
+  return [
+    // ─── C1: Note Writer ─────────────────────────────────────────────
+    {
+      name: 'vault_write',
+      label: 'Write note to vault',
+      description:
+        'Write a markdown note to the user vault. Use this for ONE-SHOT ' +
+        'writes. DO NOT call install_keycap when the user just wants a ' +
+        'note saved. Path is relative to vault root (e.g. ' +
+        '"notes/2026-06-04-poem.md"). Frontmatter is an optional ' +
+        'YAML-shaped JSON object.',
+      parameters: T.Object(
+        {
+          path: T.String('Relative path under vault root.'),
+          content: T.String('Markdown body, without --- framing.'),
+          frontmatter: T.Record('Optional YAML frontmatter object.'),
+        },
+        ['path', 'content'],
+      ),
+      promptSnippet: 'vault_write — save a note to the vault (one-shot writes only).',
+      execute: async (_id, params, signal) => {
+        try {
+          const reply = await callKernelTool('vault_write', params, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`vault_write: ${describe(e)}`);
+        }
+      },
+    },
+
+    // ─── C4: Knowledge Retriever ─────────────────────────────────────
+    {
+      name: 'vault_read',
+      label: 'Read vault note',
+      description: 'Read a markdown file from the vault; returns frontmatter + body.',
+      parameters: T.Object({
+        path: T.String('Relative path under vault root.'),
+      }),
+      execute: async (_id, params, signal) => {
+        try {
+          const reply = await callKernelTool('vault_read', params, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`vault_read: ${describe(e)}`);
+        }
+      },
+    },
+    {
+      name: 'vault_search',
+      label: 'Search vault',
+      description:
+        'Full-text search the vault (FTS5 with substring fallback). ' +
+        'Returns matching file paths.',
+      parameters: T.Object({
+        query: T.String('Search query.'),
+      }),
+      execute: async (_id, params, signal) => {
+        try {
+          const reply = await callKernelTool('vault_search', params, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`vault_search: ${describe(e)}`);
+        }
+      },
+    },
+    {
+      name: 'vault_tags',
+      label: 'List vault tags',
+      description: 'List every tag in the vault with usage count, descending.',
+      parameters: T.Object({}, []),
+      execute: async (_id, _params, signal) => {
+        try {
+          const reply = await callKernelTool('vault_tags', {}, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`vault_tags: ${describe(e)}`);
+        }
+      },
+    },
+    {
+      name: 'vault_backlinks',
+      label: 'Vault backlinks',
+      description: 'Get backlinks (other notes linking to this one) by path.',
+      parameters: T.Object({
+        path: T.String('Vault-relative path of the target note.'),
+      }),
+      execute: async (_id, params, signal) => {
+        try {
+          const reply = await callKernelTool('vault_backlinks', params, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`vault_backlinks: ${describe(e)}`);
+        }
+      },
+    },
+
+    // ─── C2: Cap Builder ─────────────────────────────────────────────
+    {
+      name: 'list_local_skills',
+      label: 'List skills',
+      description:
+        'List SKILL.md files installed under the CTRL skill directories. ' +
+        'Returns name + description + path. Pass a space-separated query ' +
+        'string to filter by token match.',
+      parameters: T.Object(
+        {
+          query: T.String('Optional space-separated query.'),
+        },
+        [],
+      ),
+      execute: async (_id, params, signal) => {
+        try {
+          const reply = await callKernelTool('list_local_skills', params, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`list_local_skills: ${describe(e)}`);
+        }
+      },
+    },
+    {
+      name: 'install_keycap',
+      label: 'Install keycap',
+      description:
+        'Install a REUSABLE keycap on the user keyboard. ONLY use when ' +
+        'the user explicitly asked for a reusable shortcut (they said ' +
+        '"a key for X", "a button I can reuse", "shortcut for Y", or the ' +
+        'language-equivalent triggers in the capability segment). For ' +
+        'one-shot writes / drafts / content generation, use vault_write ' +
+        'instead. When uncertain, ask one short question first; never ' +
+        'install on a guess.',
+      parameters: T.Object({
+        manifest: T.Record('Keycap manifest (JSON object with id + name + ...).'),
+        server_code: T.String('Optional MCP server TS source.'),
+        server_code_filename: T.String('Filename for server_code.'),
+      }),
+      execute: async (_id, params, signal) => {
+        try {
+          const reply = await callKernelTool('install_keycap', params, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`install_keycap: ${describe(e)}`);
+        }
+      },
+    },
+    {
+      name: 'list_keycaps',
+      label: 'List installed keycaps',
+      description: 'List the keycaps currently installed in the user keyboard.',
+      parameters: T.Object({}, []),
+      execute: async (_id, _params, signal) => {
+        try {
+          const reply = await callKernelTool('list_keycaps', {}, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`list_keycaps: ${describe(e)}`);
+        }
+      },
+    },
+
+    // ─── C3: Cap Invoker ─────────────────────────────────────────────
+    {
+      name: 'keycap_run',
+      label: 'Run keycap',
+      description:
+        'Run an already-installed keycap by id with the given args. Use ' +
+        'when the user names a specific keycap to invoke (e.g. "use ' +
+        'frontend-slide" or its language-equivalent trigger).',
+      parameters: T.Object({
+        keycap_id: T.String('The id of the keycap to run.'),
+        args: T.Record('Args matching keycap manifest io.inputs.'),
+      }),
+      execute: async (_id, params, signal) => {
+        try {
+          const reply = await callKernelTool('keycap_run', params, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`keycap_run: ${describe(e)}`);
+        }
+      },
+    },
+
+    // ─── C6: System Doctor ───────────────────────────────────────────
+    {
+      name: 'brain_status',
+      label: 'Brain status',
+      description:
+        'Get the current Irisy brain engine + provider status (which ' +
+        'provider is irisy.primary / irisy.fallback, BYOK key state, ' +
+        'last failover reason). Read-only.',
+      parameters: T.Object({}, []),
+      execute: async (_id, _params, signal) => {
+        try {
+          const reply = await callKernelTool('brain_status', {}, signal);
+          return toolReply(reply);
+        } catch (e: unknown) {
+          return toolError(`brain_status: ${describe(e)}`);
+        }
+      },
+    },
+  ];
+}
+
+// ─── before_agent_start — capability segment chain-injection ────────────
+//
+// ADR-005 6 + 7.4 (2026-06-04). The PWA sends a thin base persona; we
+// pre-screen the user prompt and append 1-3 capability segments. Each
+// segment teaches Pi WHEN to fire which tool, in English (Pi handles
+// bilingual user input natively).
+//
+// Chain semantics: if multiple extensions return {systemPrompt}, Pi
+// chains them in registration order. We always run first today because
+// ctrl-pi-bridge is the only extension loaded; the chain rule still
+// applies so future extensions can append after us without conflict.
+
+type CapabilityId =
+  | 'note_writer'
+  | 'cap_builder'
+  | 'cap_invoker'
+  | 'knowledge_retriever'
+  | 'system_doctor'
+  | 'coding_companion'
+  | 'conversation';
+
+const CAPABILITY_SEGMENTS: Record<CapabilityId, string> = {
+  note_writer: [
+    '## Note writing (C1)',
+    'When the user asks to write / save / draft a markdown note (in any',
+    'language — see the trigger keyword table) — call vault_write directly.',
+    'ONE-LINE acknowledgement with the path. NEVER install a keycap for a',
+    'one-shot write. Default save path:',
+    '  notes/<YYYY-MM-DD>-<short-slug>.md',
+    'Add minimal frontmatter: {kind: "note", created_at: "<ISO>"}.',
+  ].join('\n'),
+
+  cap_builder: [
+    '## Building a reusable keycap (C2)',
+    'ONLY fire when the user explicitly framed the request as a REUSABLE',
+    'shortcut — words like "a key for", "a shortcut for", "a button I can',
+    'press", "a tool I can reuse", or their language-equivalent triggers.',
+    'Without one of those trigger words, DO NOT call install_keycap.',
+    'Default to vault_write (C1) or plain chat (C8) instead. If ambiguous,',
+    'ask ONE short question: "Just do it once, or do you want a reusable',
+    'shortcut?" — never guess and install.',
+    '',
+    'To build: call list_local_skills with relevant keywords (in the',
+    "user's language), then install_keycap with a manifest. All manifest",
+    'text (name, icon, input/output labels) MUST be English even when the',
+    'user writes in another language — CTRL is English-first; keycaps',
+    'live on a shared keyboard.',
+  ].join('\n'),
+
+  cap_invoker: [
+    '## Running an installed keycap (C3)',
+    'When the user names a specific installed keycap to invoke ("use X",',
+    '"run X cap", or the language-equivalent trigger), call keycap_run',
+    'with the matching keycap_id. Get the id from list_keycaps if',
+    "uncertain. NEVER say \"I don't have skills\" — keycaps exist and you",
+    'can run them.',
+  ].join('\n'),
+
+  knowledge_retriever: [
+    '## Vault retrieval (C4)',
+    'When the user asks about their existing notes — "find my notes on X",',
+    '"what did I write last week", or language-equivalent triggers — use',
+    'vault_search first, then vault_read on the most relevant hits. Cite',
+    'results as path:line. Use vault_tags to enumerate available tags;',
+    'vault_backlinks to walk the link graph.',
+  ].join('\n'),
+
+  system_doctor: [
+    '## System status questions (C6)',
+    'When the user asks about provider / model / login / "which model am',
+    'I on", call brain_status, then answer in one short line referring',
+    'them to Settings -> Providers if they want to change anything. Do',
+    'NOT diagnose subsystems out loud. Do NOT name internal codenames',
+    '(Pi / claude-oauth / volc / kimi) — use the brand label from',
+    'brain_status.providers["irisy.primary"].label.',
+  ].join('\n'),
+
+  coding_companion: [
+    '## Coding mode (C7)',
+    'The user is in Coding mode; project_dir is set in their session.',
+    "Use Pi's built-in read / write / edit / bash / grep / find / ls",
+    'tools to explore + modify files in that directory. Report changes',
+    'as unified diffs in chat. Prefer vault_write for notes about the',
+    'project (session summary, design notes) rather than scattering',
+    'files in the project tree.',
+  ].join('\n'),
+
+  conversation: [
+    '## Conversation (C8)',
+    'When the user is just chatting ("who are you", "hello", or the',
+    'language-equivalent), answer in 1-2 short sentences. No tools,',
+    "no preamble. Match the user's language.",
+  ].join('\n'),
+};
+
+// ─── Trigger keyword tables (pure-ASCII source via \uXXXX escapes) ──────
+//
+// CTRL pre-commit hook forbids non-ASCII source. The majority of CTRL
+// users type in Chinese, so capability triggers must match CJK phrasings.
+// We use plain string literals built from \uXXXX escapes and compile via
+// `new RegExp(...)`. Source stays ASCII; runtime regex matches CJK input.
+//
+// Token map (auditable without a Unicode chart):
+//   键帽    = key+cap = keycap
+//   按钮    = button
+//   一键    = one-key
+//   快捷    = shortcut
+//   做个键      = "make a key"
+//   做个按钮 = "make a button"
+//   我经常       = "I often"
+//   用          = use
+//   跑          = run
+//   启动    = launch
+//   写笔记       = write-note
+//   草稿             = draft
+//   帮我写       = "help me write"
+//   写个             = "write a"
+//   写一份       = "write one"
+//   存到             = save-to
+//   存为             = save-as
+//   笔记             = note
+//   创建             = create
+//   搜                   = search
+//   查                   = look-up
+//   前几天       = "the past few days"
+//   历史             = history
+//   切换             = switch (long)
+//   切                   = switch (short)
+//   登录             = login
+//   哪个             = which-one
+//   什么模型 = "what model"
+//   代码             = code
+//   改下             = fix
+//   改个             = fix-one
+//   你是谁       = "who are you"
+//   哈喽             = hello
+//   怎么样       = "how is X"
+
+const CN_CAP_BUILDER =
+  '键帽|按钮|一键|快捷|' +
+  '做个键|做个按钮|我经常';
+
+const CN_CAP_INVOKER = '用\\s|跑\\s|启动';
+
+const CN_NOTE_WRITER =
+  '写笔记|草稿|帮我写|写个|' +
+  '写一份|存到|存为|笔记|创建';
+
+const CN_KNOWLEDGE_RETRIEVER = '搜|查|前几天|历史';
+
+const CN_SYSTEM_DOCTOR =
+  '切换|切\\s|登录|哪个|什么模型';
+
+const CN_CODING_COMPANION = '代码|改下|改个';
+
+const CN_CONVERSATION = '你是谁|哈喽|怎么样';
+
+const CAPABILITY_KEYWORDS: Record<CapabilityId, RegExp> = {
+  cap_builder: new RegExp(
+    '(' +
+      CN_CAP_BUILDER +
+      '|\\bshortcut\\b|\\bkeycap\\b|make.*\\bkey\\b|a button|' +
+      'reusable|build.*\\btool\\b|tool I can reuse)',
+    'i',
+  ),
+  cap_invoker: new RegExp(
+    '(' +
+      CN_CAP_INVOKER +
+      '|\\brun\\s|\\binvoke\\b|\\btrigger\\b|\\bfire\\b|' +
+      'use the .*cap|use my .*cap)',
+    'i',
+  ),
+  note_writer: new RegExp(
+    '(' +
+      CN_NOTE_WRITER +
+      '|\\bsave\\b|\\bdraft\\b|note about|\\bmarkdown\\b|\\bmd\\b)',
+    'i',
+  ),
+  knowledge_retriever: new RegExp(
+    '(' +
+      CN_KNOWLEDGE_RETRIEVER +
+      '|\\bfind\\b|\\bsearch\\b|\\blook up\\b|notes about|recent notes)',
+    'i',
+  ),
+  system_doctor: new RegExp(
+    '(' +
+      CN_SYSTEM_DOCTOR +
+      '|\\bprovider\\b|\\bmodel\\b|\\blogin\\b|\\bAPI key\\b|' +
+      '\\bsettings\\b)',
+    'i',
+  ),
+  coding_companion: new RegExp(
+    '(' +
+      CN_CODING_COMPANION +
+      '|\\bcode\\b|\\bbug\\b|\\bfix\\b|\\bdebug\\b|\\brefactor\\b|' +
+      '\\bimplement\\b|\\bgit\\b|\\bbuild\\b|\\btest\\b)',
+    'i',
+  ),
+  conversation: new RegExp(
+    '(' + CN_CONVERSATION + '|\\bhello\\b|\\bhi\\b|\\bwho are you\\b)',
+    'i',
+  ),
+};
+
+function pickCapabilities(prompt: string): CapabilityId[] {
+  const out: CapabilityId[] = [];
+  const text = prompt || '';
+  // cap_builder before note_writer — "make a key for X" must route to
+  // C2 instead of being treated as a generic write.
+  for (const cap of [
+    'cap_builder',
+    'cap_invoker',
+    'note_writer',
+    'knowledge_retriever',
+    'system_doctor',
+    'coding_companion',
+    'conversation',
+  ] as CapabilityId[]) {
+    const re = CAPABILITY_KEYWORDS[cap];
+    if (re.test(text)) {
+      out.push(cap);
+      if (out.length >= 3) break;
+    }
+  }
+  if (out.length === 0) out.push('conversation');
+  return out;
+}
+
+async function beforeAgentStartHandler(
+  evt: PiBeforeAgentStartEvent,
+): Promise<PiBeforeAgentStartResult> {
+  // Reset the tool_call loop guard at the start of every new turn.
+  recentCalls = [];
+
+  const capabilities = pickCapabilities(evt.prompt);
+  const appended = capabilities
+    .map((c) => CAPABILITY_SEGMENTS[c])
+    .filter((s): s is string => typeof s === 'string')
+    .join('\n\n');
+  if (!appended) return {};
+  const next = evt.systemPrompt
+    ? `${evt.systemPrompt}\n\n${appended}`
+    : appended;
+  return { systemPrompt: next };
+}
+
+// ─── tool_call inspector — runaway loop guard (ADR-005 7.4) ─────────────
+
+interface CallRecord {
+  toolName: string;
+  inputKey: string;
+}
+
+let recentCalls: CallRecord[] = [];
+const MAX_IDENTICAL_CALLS = 5;
+
+function inputKey(input: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(input);
+  } catch {
+    return String(input);
+  }
+}
+
+async function toolCallInspectorHandler(
+  evt: PiToolCallEvent,
+): Promise<PiToolCallResult> {
+  const key = inputKey(evt.input);
+  recentCalls.push({ toolName: evt.toolName, inputKey: key });
+  if (recentCalls.length > MAX_IDENTICAL_CALLS * 2) {
+    recentCalls = recentCalls.slice(-MAX_IDENTICAL_CALLS);
+  }
+
+  const tail = recentCalls.slice(-MAX_IDENTICAL_CALLS);
+  if (tail.length === MAX_IDENTICAL_CALLS) {
+    const first = tail[0];
+    const allSame = tail.every(
+      (r) => r.toolName === first?.toolName && r.inputKey === first?.inputKey,
+    );
+    if (allSame) {
+      recentCalls = [];
+      return {
+        block: true,
+        reason:
+          `Detected ${MAX_IDENTICAL_CALLS} identical ${evt.toolName} calls ` +
+          `in a row. Blocking to prevent infinite loop. The previous ` +
+          `attempts did not change the world; try a different approach.`,
+      };
+    }
+  }
+  return {};
+}
+
+// ─── resources_discover — bridge ~/.claude/skills into Pi Skills ────────
+//
+// ADR-005 7.4 (2026-06-04). CTRL skills live in ~/.claude/skills/
+// (user-managed) + ~/.claude/plugins/cache/<mkt>/<plugin>/<ver>/skills/
+// (plugin-supplied). Pi already understands SKILL.md but only scans
+// ~/.pi/agent/skills/ by default. We hand it the CTRL paths so the user
+// gets /skill:<name> slash commands without symlinks.
+
+async function resourcesDiscoverHandler(
+  _evt: PiResourcesDiscoverEvent,
+): Promise<PiResourcesDiscoverResult> {
+  const skillPaths: string[] = [];
+  const home = os.homedir();
+
+  // 1. User skills: ~/.claude/skills/<name>/SKILL.md
+  collectSkillsInto(path.join(home, '.claude', 'skills'), skillPaths);
+
+  // 2. Plugin-cached skills:
+  //    ~/.claude/plugins/cache/<mkt>/<plugin>/<ver>/skills/<name>/SKILL.md
+  const cacheRoot = path.join(home, '.claude', 'plugins', 'cache');
+  try {
+    for (const mkt of safeReadDir(cacheRoot)) {
+      const mktPath = path.join(cacheRoot, mkt);
+      for (const plugin of safeReadDir(mktPath)) {
+        const pluginPath = path.join(mktPath, plugin);
+        for (const version of safeReadDir(pluginPath)) {
+          collectSkillsInto(
+            path.join(pluginPath, version, 'skills'),
+            skillPaths,
+          );
+        }
+      }
+    }
+  } catch {
+    // Plugin cache absent on a fresh install — fine.
+  }
+
+  return { skillPaths };
+}
+
+function collectSkillsInto(rootDir: string, out: string[]): void {
+  for (const name of safeReadDir(rootDir)) {
+    const skillMd = path.join(rootDir, name, 'SKILL.md');
+    try {
+      if (fs.statSync(skillMd).isFile()) {
+        out.push(skillMd);
+      }
+    } catch {
+      // Not a skill dir — skip.
+    }
+  }
+}
+
+function safeReadDir(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
 }

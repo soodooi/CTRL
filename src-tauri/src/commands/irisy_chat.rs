@@ -65,6 +65,21 @@ pub struct IrisyChatStreamArgs {
     pub temperature: Option<f32>,
     #[serde(default)]
     pub max_tokens: Option<u32>,
+    // bao 2026-06-04 (3-mode P0): cap = a "hat" Pi wears for one turn.
+    // When `skill_id` is set, the kernel loads the matching SKILL.md
+    // (via `list_local_skills`) and prepends it as a system message so
+    // Pi operates under that skill for this turn. No subprocess spawn,
+    // no claude-CLI detour — same text.chat path Irisy already uses.
+    #[serde(default)]
+    pub skill_id: Option<String>,
+    // Pi 3-mode session hint ("assistant" | "coding" | "cap"). Currently
+    // informational — `skill_id.is_some()` is the de-facto cap-mode
+    // signal. Reserved for v2.x history scope + workdir routing.
+    #[serde(default)]
+    pub mode: Option<String>,
+    // Coding-mode project directory (Pi's cwd). Reserved for v2.x.
+    #[serde(default)]
+    pub project_dir: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -105,11 +120,82 @@ pub async fn irisy_chat_stream(
     Ok(())
 }
 
+/// Load the SKILL.md body for a given skill id (the user-facing cap name).
+/// Reuses `list_local_skills` so the discovery rules (~/.claude/skills/ +
+/// plugin caches) stay in one place — bao 2026-06-04 (`feedback_no_redundancy_one_ssot`).
+/// Returns `None` if the skill is not found or the SKILL.md cannot be read;
+/// the caller falls back to the default (no system prompt) so Irisy still
+/// works when a stale skill_id is passed.
+async fn load_skill_system_prompt(skill_id: &str) -> Option<String> {
+    let skills =
+        crate::commands::skills::list_local_skills(Some(skill_id.to_string()))
+            .await
+            .ok()?;
+    let skill = skills.into_iter().find(|s| s.name == skill_id)?;
+    std::fs::read_to_string(&skill.path).ok()
+}
+
+/// Build the mode-specific system header prepended to every Pi turn so
+/// the agent knows which session mode it is in and (for `coding`) which
+/// directory it should treat as cwd. We do NOT restart the Pi process
+/// to change cwd — that would be a heavy supervisor handshake for a
+/// signal Pi can already read from prompt context. Per Pi philosophy
+/// ("No MCP. Build CLI tools with READMEs.") the agent reads this hint
+/// and uses its built-in shell tool to cd as needed.
+fn build_mode_system_header(mode: Option<&str>, project_dir: Option<&str>) -> Option<String> {
+    let mode = mode.unwrap_or("personal");
+    match mode {
+        "coding" => {
+            let dir = project_dir.unwrap_or("~");
+            Some(format!(
+                "You are operating in CTRL's Coding mode. The user's \
+                 active project directory is `{dir}`. Treat this as your \
+                 working directory for the rest of this turn — `cd` there \
+                 with your shell tool before running build / test / git \
+                 commands. Prefer making changes inside this directory \
+                 rather than the user's home folder."
+            ))
+        }
+        "cap" => {
+            // Cap mode prepends the SKILL.md body (loaded separately) —
+            // no extra mode header needed; the SKILL.md is the prompt.
+            None
+        }
+        _ => {
+            // personal mode = default Irisy companion; no header needed
+            // because the PWA-side `buildSystemPrompt` already injects
+            // the Irisy persona + memory + keycap context.
+            None
+        }
+    }
+}
+
 async fn forward_to_brain(
     app: &AppHandle,
     request_id: &str,
     args: IrisyChatStreamArgs,
 ) -> Result<(), String> {
+    // Pi 3-mode injection: when `skill_id` is set, prepend the SKILL.md
+    // body as a system message — Pi "wears the cap" for this turn.
+    // When `mode == "coding"` and `project_dir` is set, prepend a
+    // shorter system header naming the cwd so Pi can route its tools
+    // there. Falls through silently if the skill is not found (stale id
+    // from a refresh race), preserving the conversation rather than 500ing.
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+    if let Some(skill_id) = args.skill_id.as_deref() {
+        if let Some(prompt) = load_skill_system_prompt(skill_id).await {
+            messages.push(json!({ "role": "system", "content": prompt }));
+        }
+    }
+    if let Some(header) =
+        build_mode_system_header(args.mode.as_deref(), args.project_dir.as_deref())
+    {
+        messages.push(json!({ "role": "system", "content": header }));
+    }
+    for m in args.messages.into_iter() {
+        messages.push(json!({ "role": m.role, "content": m.content }));
+    }
+
     let body = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -117,10 +203,7 @@ async fn forward_to_brain(
         "params": {
             "name": "text.chat",
             "arguments": {
-                "messages": args.messages
-                    .into_iter()
-                    .map(|m| json!({ "role": m.role, "content": m.content }))
-                    .collect::<Vec<_>>(),
+                "messages": messages,
                 "model": args.model,
             }
         }

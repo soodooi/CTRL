@@ -239,7 +239,15 @@ export class PiBridge {
 
     this.rpcStarting = (async () => {
       const { RpcClient } = await loadPiCodingAgent(this.pi);
-      const args: string[] = ['--no-tools'];
+      // ADR-002 substrate brain v7 1.1 + ADR-005 irisy v4 7 (2026-06-04):
+      // `--no-tools` previously stripped EVERY tool — including the ones
+      // ctrl-pi-bridge.registerTool() adds for the BYOK frontier path.
+      // `--no-builtin-tools` keeps extension-registered tools alive but
+      // disables Pi's 7 defaults (read/write/edit/bash/grep/find/ls) so
+      // the kernel substrate stays the gatekeeper for vault writes etc.
+      // Coding mode (C7, ADR-005 6.2) opts back into the built-ins via
+      // a per-turn override Pi handles internally — no flag flip needed.
+      const args: string[] = ['--no-builtin-tools'];
       const bridgeExt = process.env.CTRL_PI_BRIDGE_EXTENSION;
       if (bridgeExt && bridgeExt.length > 0) {
         args.unshift('--extension', bridgeExt);

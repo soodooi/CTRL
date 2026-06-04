@@ -36,6 +36,17 @@ export interface LLMStreamOptions {
   temperature?: number;
   max_tokens?: number;
   signal?: AbortSignal;
+  // bao 2026-06-04 (3-mode P0): cap = a hat Pi wears for one turn. When
+  // `skill_id` is set, the Rust irisy_chat_stream command resolves the
+  // matching SKILL.md and prepends it as a system message so Pi operates
+  // under that skill. No effect on the `chat_stream` (raw LLM) path —
+  // only irisy_chat_stream consumes this field.
+  skill_id?: string;
+  // Pi 3-mode session hint ("assistant" | "coding" | "cap"). Currently
+  // informational on the Rust side; reserved for v2.x history scoping.
+  mode?: string;
+  // Coding-mode project directory (Pi's cwd). Reserved for v2.x.
+  project_dir?: string;
 }
 
 export interface LLMTransport {
@@ -177,6 +188,11 @@ export class ChatStreamTransport implements LLMTransport {
           model: opts.model,
           temperature: opts.temperature,
           max_tokens: opts.max_tokens,
+          // 3-mode P0 fields — Rust side reads these on the
+          // irisy_chat_stream wire; chat_stream ignores them.
+          skill_id: opts.skill_id,
+          mode: opts.mode,
+          project_dir: opts.project_dir,
         },
       });
       while (true) {

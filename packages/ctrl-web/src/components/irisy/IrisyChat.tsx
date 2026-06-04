@@ -28,6 +28,11 @@ import {
 } from '@/lib/irisy-prompts';
 import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
+import { useSessionStateStore, sessionLabel } from '@/lib/session-state';
+import {
+  dispatchAllCalls,
+  formatResultsAsUserTurn,
+} from '@/lib/irisy-tool-dispatch';
 import styles from './IrisyChat.module.css';
 
 const CHAT_STORAGE_KEY = 'irisy:chat:v1';
@@ -405,6 +410,28 @@ export function IrisyChat(): React.ReactElement {
   const [chatError, setChatError] = useState<{ summary: string; detail: string } | null>(null);
   const [errorExpanded, setErrorExpanded] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  // bao 2026-06-04 (3-mode full): session state is global (persisted to
+  // localStorage via zustand) so Coding mode can be entered from L1
+  // PrimaryRail (file picker → enterCodingMode) while the chat picks up
+  // the change live. The catalog `availableSkills` stays local — it's a
+  // read-only directory listing pulled once on mount.
+  const mode = useSessionStateStore((s) => s.mode);
+  const currentSkillId = useSessionStateStore((s) => s.currentSkillId);
+  const projectDir = useSessionStateStore((s) => s.projectDir);
+  const wearCap = useSessionStateStore((s) => s.wearCap);
+  const removeCap = useSessionStateStore((s) => s.removeCap);
+  const [availableSkills, setAvailableSkills] = useState<
+    ReadonlyArray<{ name: string; description?: string | null; path: string }>
+  >([]);
+  useEffect(() => {
+    invoke<Array<{ name: string; description?: string | null; path: string }>>(
+      'list_local_skills',
+      { query: null },
+    )
+      .then((items) => setAvailableSkills(items ?? []))
+      .catch(() => setAvailableSkills([]));
+  }, []);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   // bao 2026-06-01: IME composition flag. React's controlled `value` + the
@@ -598,7 +625,14 @@ export function IrisyChat(): React.ReactElement {
       setMessages((prev) => [...prev, userMsg]);
       setInput('');
 
-      const history: LLMMessage[] = [
+      // bao 2026-06-04: Pi emits `<call name="X">{...}</call>` blocks to
+      // invoke local tools (prompt-taught XML protocol in
+      // lib/irisy-prompts.ts). The PWA dispatches each call against the
+      // matching Tauri command, feeds back `<call-result for="X">…`, and
+      // re-streams Pi for the follow-up turn. Capped at MAX_TOOL_ITERS
+      // hops per user message so a buggy chain can't spin forever.
+      const MAX_TOOL_ITERS = 5;
+      let history: LLMMessage[] = [
         {
           role: 'system',
           content: buildSystemPrompt(
@@ -616,55 +650,81 @@ export function IrisyChat(): React.ReactElement {
         { role: 'user', content: trimmed },
       ];
 
-      const assistantId = `a-${Date.now()}`;
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: assistantId,
-          role: 'assistant',
-          content: '',
-          streaming: true,
-        },
-      ]);
-
       try {
-        for await (const chunk of transport.stream(history)) {
-          if (chunk.error) {
-            // Pi RPC errors (timeout / Stderr / supervisor crash) used to
-            // get appended into the assistant bubble as raw text. Route
-            // them into the errorPanel surface instead so the bubble
-            // stays clean and the error can be expanded for the stderr
-            // tail. ADR-003 §7 chat polish.
-            setChatError(humanizePiError(String(chunk.error), activeBrain));
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, streaming: false } : m,
-              ),
-            );
-            return;
+        for (let iter = 0; iter < MAX_TOOL_ITERS; iter++) {
+          const assistantId = `a-${Date.now()}-${iter}`;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: assistantId,
+              role: 'assistant',
+              content: '',
+              streaming: true,
+            },
+          ]);
+
+          let assistantText = '';
+          let aborted = false;
+          for await (const chunk of transport.stream(history, {
+            skill_id: currentSkillId ?? undefined,
+            mode,
+            project_dir: projectDir ?? undefined,
+          })) {
+            if (chunk.error) {
+              // Pi RPC errors (timeout / Stderr / supervisor crash) get
+              // routed into the errorPanel surface so the bubble stays
+              // clean and the stderr tail can be expanded.
+              setChatError(humanizePiError(String(chunk.error), activeBrain));
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, streaming: false } : m,
+                ),
+              );
+              aborted = true;
+              break;
+            }
+            if (chunk.delta) {
+              assistantText += chunk.delta;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: m.content + chunk.delta }
+                    : m,
+                ),
+              );
+            }
+            if (chunk.done) break;
           }
-          if (chunk.delta) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, content: m.content + chunk.delta }
-                  : m,
-              ),
-            );
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, streaming: false } : m,
+            ),
+          );
+          if (aborted) return;
+
+          const results = await dispatchAllCalls(assistantText);
+          if (results.length === 0) {
+            // No tool calls in this turn — Pi is done. Break out so the
+            // composer unlocks instead of starting another stream.
+            break;
           }
-          if (chunk.done) break;
+
+          // History feeds Pi only — the raw `<call-result>` XML would
+          // look ugly in a user bubble, and the call card the assistant
+          // bubble already renders carries enough context for the human.
+          const resultsTurn = formatResultsAsUserTurn(results);
+          history = [
+            ...history,
+            { role: 'assistant', content: assistantText },
+            { role: 'user', content: resultsTurn },
+          ];
         }
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, streaming: false } : m,
-          ),
-        );
       } catch (e: unknown) {
         const detail = e instanceof Error ? e.message : String(e);
         setChatError(humanizePiError(detail, activeBrain));
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, streaming: false } : m,
+            m.role === 'assistant' && m.streaming ? { ...m, streaming: false } : m,
           ),
         );
       } finally {
@@ -675,9 +735,12 @@ export function IrisyChat(): React.ReactElement {
     [
       brainState,
       coreMemory,
+      currentSkillId,
       keycaps,
       longTermMemory,
       messages,
+      mode,
+      projectDir,
       sending,
       systemBase,
       transport,
@@ -797,6 +860,49 @@ export function IrisyChat(): React.ReactElement {
 
   return (
     <div className={styles.root}>
+      {/* Mode banner — bao 2026-06-04 (3-mode full): shows the current
+          session mode + worn cap. Personal hides (cleanest default);
+          Coding shows project dir; Cap shows the worn skill with × to
+          take off. Cap entry lives in Pool (the smart-table view); this
+          banner is the persistent indicator + remove control. */}
+      {(mode === 'cap' || mode === 'coding') && (
+        <div
+          style={{
+            padding: '6px 12px',
+            borderBottom: '1px solid var(--surface-border, rgba(0,0,0,0.08))',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 12,
+            background: 'var(--surface-elevated, rgba(0,0,0,0.02))',
+            color: 'var(--text-muted, #6b7280)',
+          }}
+        >
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {mode === 'cap' && currentSkillId ? `🎩 Cap · ${currentSkillId}` : null}
+            {mode === 'coding' && projectDir ? `💻 Coding · ${projectDir}` : null}
+          </span>
+          {mode === 'cap' && currentSkillId && (
+            <button
+              type="button"
+              onClick={() => removeCap()}
+              title="Take off cap (return to Personal)"
+              aria-label="Take off cap"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'inherit',
+                font: 'inherit',
+                padding: '0 4px',
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
       <div className={styles.scrollerWrap}>
         {messages.length > 0 && (
           <button
