@@ -2,19 +2,21 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — Pi brain · capability surface · provider router · crypto · subprocess · MCP bus · composition
-version: 4
+version: 5
 status: accepted
-last_updated: 2026-06-02
+last_updated: 2026-06-03
 deciders: [bao, zeus]
 sections:
-  - { id: brain,        source: orig-003 }
-  - { id: capability,   source: orig-004 }
-  - { id: provider,     source: new-2026-05-31, note: "VMark port + role routing + introspection" }
-  - { id: crypto,       source: orig-007 }
-  - { id: subprocess,   source: orig-012 }
-  - { id: mcp-bus,      source: orig-013 }
-  - { id: composition,  source: orig-024 }
-  - { id: vault,        source: new-2026-06-01, note: "kernel vault primitives + feature-layer boundary; Daily Note + Sourcing are feature-layer (Irisy + frontend)" }
+  - { id: brain,                source: orig-003 }
+  - { id: capability,           source: orig-004 }
+  - { id: provider,             source: new-2026-05-31, note: "VMark port + role routing + introspection" }
+  - { id: crypto,               source: orig-007 }
+  - { id: subprocess,           source: orig-012 }
+  - { id: mcp-bus,              source: orig-013 }
+  - { id: composition,          source: orig-024 }
+  - { id: vault,                source: new-2026-06-01, note: "kernel vault primitives + feature-layer boundary; Daily Note + Sourcing are feature-layer (Irisy + frontend)" }
+  - { id: smart-table-output,   source: new-2026-06-03, note: "keycap output unification — single SmartTable per keycap, schema in manifest output_capture" }
+  - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
 changelog:
   - v1 2026-05-31: module reorg — merged orig-003 (Pi brain) + orig-004 (capability surface) + orig-007 (crypto) + orig-012 (SubprocessActor + portable-pty) + orig-013 (kernel-as-MCP-server) + orig-024 (6-axis composition). **NEW** § provider — role routing (irisy.primary/fallback, keycap.default) + VMark-style PATH detect + introspection (brain_status). Closes the "Irisy doesn't know its own stack" gap (bao 2026-05-31).
   - v2 2026-05-31: § provider amendments (bao 3-校准 in implementation discussion):
@@ -23,6 +25,7 @@ changelog:
       (3) `irisy.fallback` is the CTRL-managed slot (CTRL pays Volc Doubao bill, future = ctrl-brand provider). Volc now has two manifest ids: `volc` (CTRL fallback, ctrl-managed creds) and `volc-byok` (user-elected, user keychain). brain_status() exposes `managed_by: "user" | "ctrl"`. Brand label "CTRL Cloud" hides codename from Irisy responses + failover messages.
   - v3 2026-06-01: **NEW** §8 Vault — kernel primitive endpoints (21 commands) + explicit feature-layer boundary: Daily Note + Sourcing inbox are **feature-layer** (Irisy + frontend wire them via `vault/.ctrl/*.yaml` + `vault/templates/*.md`), kernel does not know about either concept. Retires frontend O(N) backlink scan + 3-pane VaultBrowser shell. §6 MCP tools list extended from 11 to 28 (kernel exposes vault.{backlinks,tags,notes_by_tag,mentions,orphans,broken_links,graph_data,rename,move,create_folder,set_starred,aliases,watch} on top of existing 8). Wiki-link Tiptap extension cherry-picked from seahop/kairo (MIT, Sean Hopkins 2026) — see `THIRD_PARTY_LICENSES/kairo-MIT.txt`. Decision lock + sourcing workflow design: `.olym/brainstorm/vault-md-management-2026-06-01.md`.
   - v4 2026-06-02: §8.6 shell integration amended — bao realignment "Vault is substrate, Notes is the L1 app". L1 chip relabelled **Notes** (id `notes`, path `/notes`); chip click uses `openSystemTab({kind:'route', path:'/notes'})` matching Pool/Coding. New `routes/notes.tsx` renders `<NotesApp />` (3-pane: NotesActions top bar + NotesTree left + NotesEditor center + NotesBacklinks right). Components live in `packages/ctrl-web/src/components/notes/*` as standalone files for future Irisy-app-system reuse. L2 column reservation kept but **no longer flipped for Notes** — the app composes inside a workspace tab body, not across the shell grid. §8.7 retirements extended: `L2VaultPanel.{tsx,module.css}` deleted, `BacklinksDrawer.{tsx,module.css}` deleted (backlinks live inside NotesApp right column), `routes/vault.tsx` deleted (replaced by `routes/notes.tsx`), Rust `expand_workspace_window_if_collapsed` command deleted. Editor lib forward-compat invariant: `@tiptap/*` + `@uiw/react-codemirror` + `mermaid` + `gray-matter` consumed as npm packages — thin React wrappers, no fork, no vendor.
+  - v5 2026-06-03: **NEW §9 smart-table-output** + **NEW §10 embeddings**. §9 unifies keycap output capture as one SmartTable per keycap (markdown table file at `notes/keycap-runs/<keycap_id>.table.md`, schema in keycap manifest `output_capture`); supersedes "1-run-1-file sidecar markdown" idea from `.olym/brainstorm/openclaw-compat-2026-06-03.md` — Notion-style table beats sidecar markdown for browsability and inline edit. P4 product-decision (`.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`) locks "default-on, settings-wide kill-switch, per-keycap manifest opt-out". §10 adds the embeddings substrate the product spec depends on (Layer 3 Connect + Layer 4 Synthesize): local Ollama default with transparent fallback prompt (per product P1), SQLite BLOB storage (no sqlite-vss dep — flat cosine is fine for vault-scale up to ~50K notes), 5 new vault.* MCP tools, hybrid `vault.search` mode. Eight new acceptance items; brainstorm: `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`.
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/004-cap.md
@@ -340,6 +343,121 @@ Vault is the substrate; the L1 chip surfaces the **Notes** app (the first vault-
 
 - **Wiki-link Tiptap extension**: ported from seahop/kairo, MIT License, Copyright (c) 2026 Sean Hopkins. Verbatim license at `THIRD_PARTY_LICENSES/kairo-MIT.txt`. Port location TBD (likely `packages/ctrl-web/src/components/viewers/tiptap-wikilink/`).
 
+## §9 Smart table output — keycap output unification (NEW v5, 2026-06-03)
+
+> Spec: `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md` §5.6 + product decision P4
+> Driver: bao 2026-06-03 "keycap 走简单一点, 用智能表格列表形式怎么样"
+
+### §9.1 Lock
+
+Every keycap's run output is captured into **one** SmartTable per keycap, not one-file-per-run. On-disk shape: `vault/notes/keycap-runs/<keycap_id>.table.md` (vim test passes — opens as a normal markdown file with a frontmatter `schema:` + a markdown table body). The SmartTable substrate (`packages/ctrl-web/src/lib/smart-table.ts` + `components/viewers/SmartTableViewer.tsx`) already exists; §9 only adds the wiring from `keycap_runner` to it.
+
+### §9.2 Keycap manifest extension — `output_capture`
+
+```yaml
+# keycap manifest (per-keycap)
+output_capture:
+  enabled: true                                # default true; user can flip in Settings → Privacy
+  table_path: notes/keycap-runs/{keycap_id}.table.md
+  schema:
+    - { key: ts,           label: When,        type: date }
+    - { key: input_excerpt, label: Input,       type: text }
+    - { key: output_excerpt, label: Output,     type: text }
+    - { key: provider,     label: Provider,    type: text }
+    - { key: model,        label: Model,       type: text }
+    - { key: tokens,       label: Tokens,      type: number }
+    - { key: accepted,     label: Accepted,    type: checkbox }
+```
+
+Standard 7 columns are recommended (consistency across keycaps); keycap authors can extend with extra columns (e.g. OCR adds `confidence`, translate adds `lang_pair`). Schema additions must be backward-compatible with existing rows — when `keycap_runner` writes a row missing a new column, the column cell is empty.
+
+### §9.3 keycap_runner wiring
+
+After each `keycap.run` completes successfully:
+
+1. Read manifest `output_capture` block. If absent or `enabled: false`, do nothing.
+2. Read existing `<table_path>` via `vault.read`. If missing, create with the manifest schema as frontmatter + an empty table body.
+3. Call `smart_table.appendRow({ ts: now_iso, input_excerpt: truncate(input, 80), output_excerpt: truncate(output, 80), provider, model, tokens, accepted: false, …extras })`.
+4. Write back via `vault.write`. Index automatically picked up by FTS5 (`vault_index.upsert`).
+
+Errors here are warn-logged but never block the keycap's own response — output capture is a side effect, never a gate.
+
+### §9.4 Archival
+
+When `<table_path>` exceeds **500 rows**, `keycap_runner` rotates it: rename to `archive/<keycap_id>-<YYYY>-Q<N>.md` (current ISO quarter), then create a fresh empty table. The archive is also a normal markdown file under `vault/notes/keycap-runs/archive/`, indexed normally.
+
+### §9.5 User control
+
+- Settings → Privacy → **"Capture keycap outputs into vault tables"** master toggle. Default on. When off, no keycap writes to its table (still computes the run, just doesn't persist the row).
+- Per-keycap manifest can flip `enabled: false` for inherently private keycaps (e.g. an "auth" keycap that holds secrets).
+- Per-row: user can flip `accepted` to true (kept in vault long-term) or delete the row in the SmartTableViewer (full row deletion writes back through `vault.write`).
+
+### §9.6 Why not a SQL DB
+
+Considered (`FreeSQL` / Turso / Supabase) and rejected — see `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md` §3 "FreeSQL evaluation". SQL DB violates plain-text + vim test (philosophy #1) and creates a separate query surface to maintain. Markdown table is the right substrate because it is the user's vault data, not the engine's session data.
+
+---
+
+## §10 Embeddings substrate — Ollama + SQLite flat cosine (NEW v5, 2026-06-03)
+
+> Spec: `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md` §5.1, §5.5, §5.8, product decisions P1
+> Driver: closes Layer 3 Connect gap vs Mem.ai / Smart Connections / Reflect
+
+### §10.1 Lock
+
+Vault embeddings live in **kernel-local SQLite**, computed via **local Ollama** (`nomic-embed-text` model, 768-d), with a **transparent fallback prompt** when Ollama is unreachable: user picks (install Ollama / authorize cloud / disable autolink). No silent cloud fallback (per product P1).
+
+### §10.2 Storage
+
+New SQLite table in the existing kernel sqlite file (same one used for event store + vault_index):
+
+```sql
+CREATE TABLE IF NOT EXISTS vault_embeddings (
+  path        TEXT PRIMARY KEY,         -- vault-relative path
+  mtime_ms    INTEGER NOT NULL,         -- match against vault file mtime to detect staleness
+  content_hash TEXT NOT NULL,           -- SHA-256 of body — second-line cache invalidation
+  vector      BLOB NOT NULL,            -- 768 * f32 = 3072 bytes
+  embedded_at INTEGER NOT NULL          -- ms since epoch
+);
+```
+
+Cosine search is flat (full scan + dot product). At vault scale ~50K notes that is ~150 MB of vectors, single-digit ms per query in Rust. `sqlite-vss` extension is **not** added — flat scan is simpler, has no native-build dependency, and is fast enough for the 5-year target vault size.
+
+### §10.3 Provider
+
+`provider/ollama_embed.rs` — single HTTP client wrapping `POST http://127.0.0.1:11434/api/embeddings`. Connection probe on Runtime boot writes `embeddings.status: "available" | "unreachable" | "user-opted-out"` to runtime state. Auto-embed of a note only fires when status = available; otherwise the call is a no-op.
+
+Cloud fallback (Volc embeddings API or compatible OpenAI-shape) is wired but **off by default**. Enabled by Settings → Embeddings → "Allow cloud embeddings (your existing BYOK provider)". This honors P1 transparency.
+
+### §10.4 5 new MCP tools + Tauri commands
+
+| Tool | Args | Returns | Notes |
+|---|---|---|---|
+| `vault.embed_note` | `{ path }` | `{ vector_dims, cached }` | Idempotent — uses content_hash to skip re-embed |
+| `vault.reembed_all` | `{ force: bool }` | `{ embedded, skipped }` | Bulk; respects `force` for full rebuild |
+| `vault.embedding_status` | `{}` | `{ available, model, embedded, total, last_run_at }` | UI status pill |
+| `vault.semantic_search` | `{ query, limit, threshold? }` | `Vec<{ path, score, snippet }>` | Caller embeds query, returns sorted by cosine |
+| `vault.suggest_links` | `{ for_path, limit }` | `Vec<{ path, score, snippet }>` | Same as semantic_search but uses the source note's embedding instead of a query string |
+
+### §10.5 Hybrid mode on `vault.search`
+
+`vault.search` gets a new optional `mode: "bm25" \| "semantic" \| "hybrid"` arg (default `"hybrid"` when embeddings available, else `"bm25"`).
+
+Hybrid algorithm: BM25 top-30 (existing FTS5 path) → rerank by cosine of query embedding → return top-`limit` (default 10). Scoring is a weighted sum `0.4 * normalized_bm25 + 0.6 * cosine` (these constants live in `vault_embeddings.rs` and are tunable from a single place).
+
+### §10.6 Auto-embed lifecycle
+
+- On `vault.write`: enqueue an async embed task for that path (don't block the write).
+- On `Runtime::boot`: scan for paths in `vault_embeddings` whose mtime < file mtime, re-embed in background.
+- On `vault.delete`: drop the row.
+- Background queue is rate-limited (max 4 concurrent Ollama calls) so embed traffic doesn't drown the local model when a user pastes a huge note.
+
+### §10.7 Privacy
+
+Embeddings never leave the user's machine when in Ollama mode. The cloud-fallback path is **opt-in only** and the embedding payload (note body) goes through the user's already-configured provider — CTRL never proxies through a CTRL-managed endpoint for embeddings (different from `irisy.fallback` which is CTRL-managed for chat).
+
+---
+
 ### §8.9 Future work (not §8 v1)
 
 - Graph view UI (React Flow + D3-force from kairo stack — primitive `vault_graph_data` already in §8.3 #15)
@@ -401,6 +519,20 @@ Vault is the substrate; the L1 chip surfaces the **Notes** app (the first vault-
 - [x] Retirements: `routes/vault.tsx` reduced to a no-op rail activator; `components/vault/VaultBrowser.tsx` deleted; `components/vault/BacklinksPanel.tsx` deleted (no parallel old + new per §8.7).
 - [x] `THIRD_PARTY_LICENSES/kairo-MIT.txt` present with verbatim license + attribution.
 - [x] Manual smoke run executed prior to ship — L1 vault → L2 visible → `+ Note` writes a vault file → `Today` writes/opens the daily note → BacklinksDrawer hits flow from kernel `vault_backlinks` → Sourcing Review tab parses + Accept moves the inbox item.
+
+### Smart table output (§9 — NEW v5)
+- [x] §9.1 strategic lock — single SmartTable per keycap at `notes/keycap-runs/<id>.table.md` (P4 product decision recorded in brainstorm).
+- [ ] Keycap manifest `output_capture` field — schema + JSONSchema validation in `packages/ctrl-keycap-sdk/src/manifest-schema.ts`.
+- [ ] `keycap_runner` post-run hook wires output to `smart_table.appendRow` + `vault.write` via the standard 7-column schema (ts / input_excerpt / output_excerpt / provider / model / tokens / accepted).
+- [ ] Rotation at 500 rows to `archive/<id>-<YYYY>-QN.md`.
+- [ ] Settings → Privacy master toggle ("Capture keycap outputs into vault tables", default on).
+
+### Embeddings (§10 — NEW v5)
+- [ ] `src-tauri/src/kernel/vault_embeddings.rs` — SQLite table + flat cosine search + Ollama HTTP wrapper (`provider/ollama_embed.rs`).
+- [ ] 5 new Tauri commands + MCP tools: `vault.semantic_search`, `vault.embed_note`, `vault.reembed_all`, `vault.embedding_status`, `vault.suggest_links`.
+- [ ] `vault.search` mode arg (`bm25` | `semantic` | `hybrid`); default hybrid when embeddings available.
+- [ ] Auto-embed lifecycle: `vault.write` enqueues background embed; `Runtime::boot` re-embeds stale rows; `vault.delete` drops embedding row.
+- [ ] Cloud-fallback path (off by default) — Settings → Embeddings toggle. Honors product P1 (no silent cloud).
 
 ## Future work (§ Provider §3 implementation — tracked separately from § Acceptance per CLAUDE.md 灵活开发)
 

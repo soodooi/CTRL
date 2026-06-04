@@ -627,3 +627,52 @@ pub async fn vault_sourcing_pending(
         count: vault_sourcing::count_pending(&root),
     })
 }
+
+// ── SOUL.md surface (ADR-005 irisy v2 § soul-md-compat §4.3) ──────────
+//
+// Single-file persistent memory for Irisy lives at `vault/irisy/SOUL.md`,
+// shape per github.com/aaronjmars/soul.md. PWA + external MCP agents both
+// read/write through this surface so vanilla SOUL.md readers (Cursor /
+// Claude Code / OpenClaw companions) stay consistent with CTRL.
+
+const SOUL_REL_PATH: &str = "irisy/SOUL.md";
+
+#[derive(Debug, Serialize)]
+pub struct IrisySoulView {
+    pub path: String,
+    pub frontmatter: serde_json::Value,
+    pub body: String,
+    pub soul_md_version: String,
+}
+
+#[tauri::command]
+pub async fn irisy_soul_read() -> Result<IrisySoulView, String> {
+    let root = vault_root()?;
+    let entry = vault::read(&root, SOUL_REL_PATH)
+        .map_err(|e| format!("irisy_soul_read: {e}"))?;
+    let pin_path = root.join("irisy/.soul-md-version");
+    let pin = std::fs::read_to_string(&pin_path)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Ok(IrisySoulView {
+        path: entry.path,
+        frontmatter: entry.frontmatter,
+        body: entry.content,
+        soul_md_version: pin,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IrisySoulWriteArgs {
+    pub frontmatter: serde_json::Value,
+    pub body: String,
+}
+
+#[tauri::command]
+pub async fn irisy_soul_write(args: IrisySoulWriteArgs) -> Result<(), String> {
+    let root = vault_root()?;
+    vault::write(&root, SOUL_REL_PATH, &args.body, &args.frontmatter)
+        .map_err(|e| format!("irisy_soul_write: {e}"))?;
+    Ok(())
+}

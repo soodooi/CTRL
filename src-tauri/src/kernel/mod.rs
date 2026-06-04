@@ -31,6 +31,12 @@ pub mod persistence;
 pub mod provider;
 pub mod runtime;
 pub mod scheduler;
+// Vault embeddings substrate (ADR-002 v5 §10) — local Ollama
+// nomic-embed-text + SQLite BLOB flat cosine search. Memory
+// `decision_vault_adr_002_section_8`.
+pub mod vault_embeddings;
+// Keycap output capture (ADR-002 v5 §9) — single SmartTable per keycap.
+pub mod keycap_capture;
 // Daily-cron tick for vault sourcing. Spawned from Runtime::boot. See
 // ADR-002 substrate § vault v1 §8.4 + memory
 // `decision_vault_adr_002_section_8`.

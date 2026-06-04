@@ -16,6 +16,7 @@ import {
   vaultNotesByTag,
   vaultRootPath,
   vaultSearch,
+  vaultSemanticSearch,
 } from '@/lib/kernel';
 import styles from './Notes.module.css';
 
@@ -134,9 +135,20 @@ export const NotesTree = ({
   });
 
   const trimmed = query.trim();
+  // Hybrid search (ADR-002 v5 §10.5) — BM25 always runs; semantic
+  // search adds embeddings-based candidates when the query is long
+  // enough to be a "natural language" query (>= 4 chars). Results are
+  // merged, deduped, BM25 first then semantic-only candidates.
   const { data: searchHits = [] } = useQuery({
-    queryKey: ['vault-search', trimmed],
-    queryFn: () => vaultSearch(trimmed, 100),
+    queryKey: ['vault-hybrid-search', trimmed],
+    queryFn: async () => {
+      const bm25 = await vaultSearch(trimmed, 60);
+      if (trimmed.length < 4) return bm25;
+      const semantic = await vaultSemanticSearch(trimmed, 20).catch(() => []);
+      const seen = new Set(bm25);
+      const extra = semantic.map((h) => h.path).filter((p) => !seen.has(p));
+      return [...bm25, ...extra].slice(0, 100);
+    },
     enabled: trimmed.length > 1 && !tagFilter,
     staleTime: 2_000,
   });

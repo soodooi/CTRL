@@ -20,6 +20,7 @@ import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
 import {
   ensurePromptsBootstrap,
   loadIrisySystemPrompt,
+  loadIrisySystemPromptWithSoul,
   IRISY_SYSTEM_DEFAULT,
   loadBrainState,
   formatBrainStateBlock,
@@ -524,7 +525,9 @@ export function IrisyChat(): React.ReactElement {
       // <brain_state> block. Failures yield null and skip injection.
       const [coreMem, sysPrompt, brain] = await Promise.all([
         loadCoreMemory(),
-        loadIrisySystemPrompt(),
+        // SOUL.md substrate injection (ADR-005 v2 § soul-md-compat §4.3) —
+        // falls back to bare system prompt when SOUL.md is missing.
+        loadIrisySystemPromptWithSoul(),
         loadBrainState(),
       ]);
       if (cancelled) return;

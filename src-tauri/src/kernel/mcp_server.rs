@@ -160,6 +160,43 @@ pub struct VaultWatchArgs {
     pub since_ms: i64,
 }
 
+// SOUL.md write args (ADR-005 v2 § soul-md-compat §4.4)
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct IrisySoulSetArgs {
+    /// Frontmatter as a JSON object (gets serialised to YAML on disk).
+    pub frontmatter: serde_json::Value,
+    /// Markdown body after the frontmatter fence.
+    pub body: String,
+}
+
+// Vault embeddings args (ADR-002 v5 §10.4)
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultEmbedNoteArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultReembedAllArgs {
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultSemanticSearchArgs {
+    pub query: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub threshold: Option<f32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultSuggestLinksArgs {
+    pub for_path: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
 // ─── 5 NEW MCP tools (bao 2026-06-03 — close Irisy capability gap) ──────
 // Mirror the Tauri-only commands `vault_root_path` / `vault_delete` /
 // `vault_write_image` / `vault_rebuild_index` / `vault_sourcing_pending`
@@ -813,6 +850,201 @@ impl KernelMcpRouter {
             count
         ))]))
     }
+
+    // ── SOUL.md (ADR-005 irisy v2 § soul-md-compat §4.4) ───────────────
+    // External agents (Cursor / Claude Code / OpenClaw companions) read
+    // and write CTRL's Irisy soul through these MCP tools. Same surface
+    // PWA gets via Tauri commands.
+
+    /// irisy.soul_get — return vault/irisy/SOUL.md as `{frontmatter, body, soul_md_version}`.
+    #[tool(description = "Read the Irisy SOUL.md persistent memory (vault/irisy/SOUL.md)")]
+    async fn irisy_soul_get(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, "irisy/SOUL.md").map_err(map_vault_err)?;
+        let pin = std::fs::read_to_string(root.join("irisy/.soul-md-version"))
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let payload = serde_json::json!({
+            "path": entry.path,
+            "frontmatter": entry.frontmatter,
+            "body": entry.content,
+            "soul_md_version": pin,
+        });
+        let body = serde_json::to_string(&payload).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// irisy.soul_set — replace vault/irisy/SOUL.md with `{frontmatter, body}`.
+    /// External mutation goes through here so Irisy can surface a notify
+    /// event ("Cursor just rewrote your soul — review?").
+    #[tool(description = "Write the Irisy SOUL.md persistent memory")]
+    async fn irisy_soul_set(
+        &self,
+        Parameters(args): Parameters<IrisySoulSetArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        vault::write(&root, "irisy/SOUL.md", &args.body, &args.frontmatter)
+            .map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            String::from("irisy/SOUL.md updated"),
+        )]))
+    }
+
+    // ── 5 NEW Vault embeddings MCP tools (ADR-002 v5 §10.4, 2026-06-03) ────
+
+    /// vault.embed_note — embed a single note (idempotent via content_hash).
+    #[tool(description = "Embed a single vault note into the local embeddings index")]
+    async fn vault_embed_note(
+        &self,
+        Parameters(args): Parameters<VaultEmbedNoteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let hash = crate::kernel::vault_embeddings::content_hash(&entry.content);
+        let emb = open_embed_db()?;
+        if let Some((_m, cached_hash)) = emb
+            .cached_meta(&args.path)
+            .map_err(|e| McpError::internal_error(format!("embed cache: {e}"), None))?
+        {
+            if cached_hash == hash {
+                return Ok(CallToolResult::success(vec![Content::text(format!(
+                    "{{\"path\":{:?},\"vector_dims\":768,\"cached\":true}}",
+                    args.path
+                ))]));
+            }
+        }
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let vec = client
+            .embed(&entry.content)
+            .await
+            .map_err(|e| McpError::internal_error(format!("ollama: {e}"), None))?;
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        emb.upsert(&args.path, now_ms, &hash, &vec)
+            .map_err(|e| McpError::internal_error(format!("embed upsert: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "{{\"path\":{:?},\"vector_dims\":{},\"cached\":false}}",
+            args.path,
+            vec.len()
+        ))]))
+    }
+
+    /// vault.reembed_all — bulk re-embed. Respects `force`.
+    #[tool(description = "Re-embed all vault notes (bulk; respects content_hash unless force=true)")]
+    async fn vault_reembed_all(
+        &self,
+        Parameters(args): Parameters<VaultReembedAllArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let paths = vault::list(&root, None).map_err(map_vault_err)?;
+        let emb = open_embed_db()?;
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let mut embedded = 0usize;
+        let mut skipped = 0usize;
+        let mut failed = 0usize;
+        for p in paths {
+            let entry = match vault::read(&root, &p) {
+                Ok(e) => e,
+                Err(_) => {
+                    failed += 1;
+                    continue;
+                }
+            };
+            let hash = crate::kernel::vault_embeddings::content_hash(&entry.content);
+            if !args.force {
+                if let Ok(Some((_m, cached))) = emb.cached_meta(&p) {
+                    if cached == hash {
+                        skipped += 1;
+                        continue;
+                    }
+                }
+            }
+            match client.embed(&entry.content).await {
+                Ok(vec) => {
+                    let now_ms = chrono::Utc::now().timestamp_millis();
+                    if emb.upsert(&p, now_ms, &hash, &vec).is_ok() {
+                        embedded += 1;
+                    } else {
+                        failed += 1;
+                    }
+                }
+                Err(_) => failed += 1,
+            }
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "{{\"embedded\":{},\"skipped\":{},\"failed\":{}}}",
+            embedded, skipped, failed
+        ))]))
+    }
+
+    /// vault.embedding_status — snapshot of the index.
+    #[tool(description = "Snapshot of the vault embedding index (available / total / embedded / stale)")]
+    async fn vault_embedding_status(&self) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let total = vault::list(&root, None).map(|v| v.len()).unwrap_or(0);
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let provider_status = match client.probe().await {
+            Ok(_) => "available",
+            Err(_) => "unreachable",
+        };
+        let emb = open_embed_db()?;
+        let status = emb
+            .status(total, provider_status)
+            .map_err(|e| McpError::internal_error(format!("embed status: {e}"), None))?;
+        let body = serde_json::to_string(&status).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.semantic_search — cosine-similarity search for the query string.
+    #[tool(description = "Semantic-similarity vault search (cosine over local embeddings)")]
+    async fn vault_semantic_search(
+        &self,
+        Parameters(args): Parameters<VaultSemanticSearchArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let q = client
+            .embed(&args.query)
+            .await
+            .map_err(|e| McpError::internal_error(format!("ollama: {e}"), None))?;
+        let emb = open_embed_db()?;
+        let hits = emb
+            .search(&q, args.limit.unwrap_or(10), args.threshold)
+            .map_err(|e| McpError::internal_error(format!("embed search: {e}"), None))?;
+        let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault.suggest_links — find notes similar to a source path (autolink).
+    #[tool(description = "Suggest related notes for a given path (embeddings-based autolink)")]
+    async fn vault_suggest_links(
+        &self,
+        Parameters(args): Parameters<VaultSuggestLinksArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.for_path).map_err(map_vault_err)?;
+        let client = crate::kernel::provider::ollama_embed::OllamaEmbedClient::new();
+        let v = client
+            .embed(&entry.content)
+            .await
+            .map_err(|e| McpError::internal_error(format!("ollama: {e}"), None))?;
+        let emb = open_embed_db()?;
+        let mut hits = emb
+            .search(&v, args.limit.unwrap_or(5) + 1, None)
+            .map_err(|e| McpError::internal_error(format!("embed search: {e}"), None))?;
+        hits.retain(|h| h.path != args.for_path);
+        hits.truncate(args.limit.unwrap_or(5));
+        let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+}
+
+// Helper — open the embeddings DB at the standard path.
+fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, McpError> {
+    let home = std::env::var("HOME")
+        .map_err(|_| McpError::internal_error("HOME env var not set", None))?;
+    let path = std::path::PathBuf::from(home).join(".ctrl/embeddings.db");
+    crate::kernel::vault_embeddings::VaultEmbeddings::open(&path, "nomic-embed-text")
+        .map_err(|e| McpError::internal_error(format!("embed open: {e}"), None))
 }
 
 // ServerHandler impl — rmcp uses this for tools/list + tools/call dispatch.

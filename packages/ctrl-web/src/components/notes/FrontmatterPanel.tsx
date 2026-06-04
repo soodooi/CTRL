@@ -15,6 +15,7 @@ import {
   type ReactElement,
 } from 'react';
 import { vaultRead, vaultWrite } from '@/lib/kernel';
+import { readAiBlocks, type AiBlockEntry } from '@/lib/ai-block-metadata';
 import styles from './Notes.module.css';
 
 interface FrontmatterPanelProps {
@@ -85,6 +86,10 @@ export const FrontmatterPanel = ({ path }: FrontmatterPanelProps): ReactElement 
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // ai_blocks drill-down (§8.7 transparency): badge in header + expandable
+  // popover listing per-block metadata (provider/model/original-vs-rewrite).
+  const [aiBlocks, setAiBlocks] = useState<AiBlockEntry[]>([]);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -93,6 +98,9 @@ export const FrontmatterPanel = ({ path }: FrontmatterPanelProps): ReactElement 
       const fm = (entry.frontmatter ?? {}) as Record<string, unknown>;
       setRows(rowsFromFrontmatter(fm));
       setDirty(false);
+      // Re-fetch via dedicated helper so the type narrows cleanly.
+      const blocks = await readAiBlocks(path);
+      setAiBlocks(blocks);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('frontmatter load failed', err);
@@ -154,6 +162,17 @@ export const FrontmatterPanel = ({ path }: FrontmatterPanelProps): ReactElement 
           <span className={styles.fmLabel}>Frontmatter</span>
           {dirty ? <span className={styles.fmDirty}>•</span> : null}
         </button>
+        {aiBlocks.length > 0 ? (
+          <button
+            type="button"
+            className={styles.fmAiBadge}
+            onClick={() => setAiOpen((v) => !v)}
+            title="AI ops history — click for details"
+            aria-expanded={aiOpen}
+          >
+            AI ops: {aiBlocks.length}
+          </button>
+        ) : null}
         {open ? (
           <div className={styles.fmHeaderActions}>
             <button type="button" className={styles.fmAdd} onClick={handleAdd}>
@@ -170,6 +189,35 @@ export const FrontmatterPanel = ({ path }: FrontmatterPanelProps): ReactElement 
           </div>
         ) : null}
       </header>
+      {aiOpen && aiBlocks.length > 0 ? (
+        <div className={styles.fmAiDrawer}>
+          {aiBlocks.map((b) => (
+            <details key={b.id} className={styles.fmAiBlock}>
+              <summary className={styles.fmAiBlockSummary}>
+                <span className={styles.fmAiBlockAction}>{b.action}</span>
+                <span className={styles.fmAiBlockMeta}>
+                  {b.provider || '—'} · {b.model || '—'}
+                </span>
+                <span className={styles.fmAiBlockTs}>
+                  {new Date(b.accepted_at).toLocaleString()}
+                </span>
+              </summary>
+              <div className={styles.fmAiBlockBody}>
+                <div className={styles.fmAiBlockLabel}>Original</div>
+                <pre className={styles.fmAiBlockPre}>{b.original_text}</pre>
+                <div className={styles.fmAiBlockLabel}>Rewritten</div>
+                <pre className={styles.fmAiBlockPre}>{b.rewritten_text}</pre>
+                {b.user_input ? (
+                  <>
+                    <div className={styles.fmAiBlockLabel}>Input</div>
+                    <p className={styles.fmAiBlockInput}>{b.user_input}</p>
+                  </>
+                ) : null}
+              </div>
+            </details>
+          ))}
+        </div>
+      ) : null}
       {open ? (
         <div className={styles.fmRows}>
           {visibleRows.length === 0 ? (

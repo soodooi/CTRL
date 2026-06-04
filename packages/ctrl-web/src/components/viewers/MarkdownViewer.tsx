@@ -37,6 +37,11 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { vaultList } from '@/lib/kernel';
 import { useWorkspaceStore } from '@/lib/workspace-store';
+// ADR-002 v5 §10 + product spec §5.2 / P2 / P7 — Block AI ops floating
+// menu wired against the live Tiptap editor handle.
+import { BlockAiOps, type BlockAiResult } from '@/components/notes/BlockAiOps';
+import { stampAiBlock } from '@/lib/ai-block-metadata';
+import { vaultRelativePath } from '@/lib/viewer-uri';
 import styles from './Viewer.module.css';
 
 // Crude markdown ↔ HTML — enough to preserve headings / lists / code
@@ -374,6 +379,25 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
             onClick={handleClick}
           >
             <EditorContent editor={editor} />
+            {resource.editable ? (
+              <BlockAiOps
+                editor={editor as unknown as never}
+                onAccept={(result: BlockAiResult) => {
+                  // §8.7 transparency stamping — best-effort frontmatter
+                  // append; never blocks the editor.
+                  if (resource.uri.startsWith('vault://')) {
+                    const path = vaultRelativePath(resource.uri);
+                    void stampAiBlock({
+                      path,
+                      action: result.action,
+                      original: result.original,
+                      rewritten: result.rewritten,
+                      user_input: result.user_input,
+                    });
+                  }
+                }}
+              />
+            ) : null}
           </div>
         ) : (
           <CodeMirror

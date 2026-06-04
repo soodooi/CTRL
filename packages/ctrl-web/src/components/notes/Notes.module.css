@@ -1116,6 +1116,227 @@
 }
 .notesEditorToolbarGroup .notesEditorToolbarBtn:last-child { border-right: 0; }
 
+/* BlockAiOps — floating menu above a Tiptap selection. Positioned via
+   inline style left/top from selection rect; we just style the chrome. */
+.blockAiOps {
+  position: fixed;
+  z-index: 1000;
+  min-width: 280px;
+  max-width: 420px;
+  transform: translateY(-100%);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  padding: 6px;
+  font-size: 12px;
+  color: var(--color-text);
+}
+.blockAiOpsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 6px 6px;
+  border-bottom: 1px solid var(--color-border-soft);
+  margin-bottom: 4px;
+}
+.blockAiOpsTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.blockAiOpsClose {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.blockAiOpsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.blockAiOpsItem {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+.blockAiOpsItem:hover {
+  background: var(--color-bg-l1);
+}
+.blockAiOpsLabel { font-weight: 500; }
+.blockAiOpsDesc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.blockAiOpsForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 6px 6px;
+}
+.blockAiOpsInput {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  font: inherit;
+}
+.blockAiOpsInput:focus { outline: 1px solid var(--color-accent); }
+.blockAiOpsPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 6px 6px;
+}
+.blockAiOpsPreviewLabel {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.blockAiOpsPreviewBody {
+  margin: 0;
+  padding: 8px;
+  background: var(--color-bg-l1);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+  color: var(--color-text);
+}
+.blockAiOpsError {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-danger, #f87171);
+}
+.blockAiOpsActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 2px;
+}
+.blockAiOpsBtn,
+.blockAiOpsBtnPrimary {
+  appearance: none;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.blockAiOpsBtnPrimary {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
+}
+.blockAiOpsBtnPrimary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* AI ops drill-down in FrontmatterPanel (§8.7 transparency) */
+.fmAiBadge {
+  appearance: none;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+.fmAiBadge:hover { opacity: 0.9; }
+.fmAiDrawer {
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fmAiBlock {
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  background: var(--color-bg);
+  font-size: 11px;
+}
+.fmAiBlockSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.fmAiBlockSummary::-webkit-details-marker { display: none; }
+.fmAiBlockAction {
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.fmAiBlockMeta {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.fmAiBlockTs {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+.fmAiBlockBody {
+  border-top: 1px solid var(--color-border-soft);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fmAiBlockLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.fmAiBlockPre {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--color-bg-l1);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow: auto;
+}
+.fmAiBlockInput {
+  margin: 0;
+  font-style: italic;
+  color: var(--color-text-soft);
+}
+
 .treeBody {
   flex: 1;
   overflow-y: auto;
@@ -1768,6 +1989,15 @@
   gap: 8px;
   padding: 10px 12px 8px;
   border-bottom: 1px solid var(--color-border-soft);
+}
+
+/* Suggested links group inside the backlinks panel — visually
+   distinct so the embeddings-driven candidates don't read as
+   "real" backlinks. (ADR-002 v5 §10 / product spec §5.1) */
+.backlinksSuggestedHeader {
+  margin-top: 6px;
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
 }
 
 .backlinksTitle {

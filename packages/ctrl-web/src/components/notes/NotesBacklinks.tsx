@@ -1,16 +1,21 @@
 // NotesBacklinks — right column of the Notes app.
 //
-// (ADR-002 substrate § vault v1 §8.6 v4, 2026-06-02 — memory
-// `decision_vault_adr_002_section_8`.)
+// (ADR-002 substrate § vault v1 §8.6 v4 + v5 §10 embeddings, 2026-06-03 —
+// memory `decision_vault_adr_002_section_8`. Product spec §5.1 + §5.8.)
 //
-// Reads `vault_backlinks(activePath)` and surfaces the inbound link
-// list with snippet previews. Clicking a row selects that note in
-// the Notes app (via `onSelect`); this keeps NotesBacklinks
-// presentational while NotesApp owns the `selectedPath` state.
+// Surfaces two grouped lists:
+//   - **Backlinks** — explicit [[wikilinks]] pointing into the active note.
+//   - **Suggested** — embeddings-driven candidates from
+//     `vault.suggest_links`. Hidden when the embedding provider is
+//     unreachable (Ollama down + user opted-out of cloud) so the panel
+//     does not lie about availability.
+//
+// Both are clickable rows that route through `onSelect` — NotesBacklinks
+// stays presentational; NotesApp owns `selectedPath`.
 
 import { type ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { vaultBacklinks } from '@/lib/kernel';
+import { vaultBacklinks, vaultSuggestLinks } from '@/lib/kernel';
 import styles from './Notes.module.css';
 
 interface NotesBacklinksProps {
@@ -27,6 +32,17 @@ export const NotesBacklinks = ({
     queryFn: () => (path ? vaultBacklinks(path) : Promise.resolve([])),
     enabled: !!path,
     staleTime: 5_000,
+  });
+
+  // Embeddings-suggested links. Failure is silent (Ollama unreachable
+  // == feature unavailable, not an error to surface to the user). Cached
+  // 30s — when the user actively writes the editor will not re-fetch on
+  // every keystroke.
+  const { data: suggested = [] } = useQuery({
+    queryKey: ['vault-suggest-links', path],
+    queryFn: () => (path ? vaultSuggestLinks(path, 5).catch(() => []) : Promise.resolve([])),
+    enabled: !!path,
+    staleTime: 30_000,
   });
 
   return (
@@ -61,6 +77,32 @@ export const NotesBacklinks = ({
             ))}
           </ul>
         )}
+
+        {path && suggested.length > 0 ? (
+          <>
+            <header className={`${styles.backlinksHeader} ${styles.backlinksSuggestedHeader}`}>
+              <h2 className={styles.backlinksTitle}>Suggested</h2>
+              <span className={styles.backlinksCount}>{suggested.length}</span>
+            </header>
+            <ul className={styles.backlinksList}>
+              {suggested.map((hit) => (
+                <li key={`suggest:${hit.path}`}>
+                  <button
+                    type="button"
+                    className={styles.backlinksItem}
+                    onClick={() => onSelect(hit.path)}
+                    title={`${hit.path} · score ${hit.score.toFixed(2)}`}
+                  >
+                    <span className={styles.backlinksFrom}>{hit.path}</span>
+                    {hit.snippet ? (
+                      <span className={styles.backlinksSnippet}>{hit.snippet}</span>
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </div>
     </aside>
   );

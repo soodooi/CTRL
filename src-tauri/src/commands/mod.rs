@@ -37,6 +37,10 @@ pub mod stss;
 pub mod system;
 pub mod updater;
 pub mod vault;
+// Vault embeddings — 5 new commands (ADR-002 v5 §10.4)
+pub mod vault_embeddings;
+// Irisy synthesize — Layer 4 product surface (brainstorm §5.3/§5.5/§5.10)
+pub mod irisy_synth;
 pub mod workshop;
 
 /// Returns the `invoke_handler!` tuple for `tauri::Builder::invoke_handler`.
@@ -176,6 +180,19 @@ macro_rules! pwa_invoke_handler {
             // richer LLM pass on top of the same file).
             $crate::commands::vault::vault_sourcing_run,
             $crate::commands::vault::vault_sourcing_pending,
+            // SOUL.md — Irisy persistent memory file (ADR-005 v2 § soul-md-compat §4.3)
+            $crate::commands::vault::irisy_soul_read,
+            $crate::commands::vault::irisy_soul_write,
+            // Vault embeddings (ADR-002 v5 §10) — local Ollama + SQLite flat cosine
+            $crate::commands::vault_embeddings::vault_embed_note,
+            $crate::commands::vault_embeddings::vault_reembed_all,
+            $crate::commands::vault_embeddings::vault_embedding_status,
+            $crate::commands::vault_embeddings::vault_semantic_search,
+            $crate::commands::vault_embeddings::vault_suggest_links,
+            // Irisy synthesize — Layer 4 (question vault / cross-note / daily)
+            $crate::commands::irisy_synth::irisy_question_vault,
+            $crate::commands::irisy_synth::irisy_synthesize_notes,
+            $crate::commands::irisy_synth::irisy_daily_summarize,
             // git — vault-side CLI shim (§8.6 v5)
             $crate::commands::git::git_status,
             $crate::commands::git::git_init,

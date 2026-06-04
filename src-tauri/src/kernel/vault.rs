@@ -115,6 +115,11 @@ const SEED_DAILY_NOTES_YAML: &str = include_str!("vault_seed/daily-notes.yaml");
 const SEED_SOURCING_PROMPT: &str = include_str!("vault_seed/sourcing-prompt.md");
 const SEED_TEMPLATE_DAILY: &str = include_str!("vault_seed/template-daily.md");
 const SEED_TEMPLATE_MEETING: &str = include_str!("vault_seed/template-meeting.md");
+const SEED_IRISY_SOUL: &str = include_str!("vault_seed/irisy-soul.md");
+
+/// SOUL.md spec version pin (ADR-005 § soul-md-compat §4.6 churn policy).
+/// Bumped when CTRL adopts a newer upstream `aaronjmars/soul.md` revision.
+const SOUL_MD_VERSION: &str = "soul-md-v1.0.0 (2026-06-03)";
 
 fn seed_vault_feature_layer(root: &Path) {
     let _ = std::fs::create_dir_all(root.join(".ctrl"));
@@ -122,12 +127,19 @@ fn seed_vault_feature_layer(root: &Path) {
     let _ = std::fs::create_dir_all(root.join("sourcing"));
     let _ = std::fs::create_dir_all(root.join("daily"));
     let _ = std::fs::create_dir_all(root.join("templates"));
+    // ADR-005 irisy v2 § soul-md-compat (2026-06-03, memory
+    // `decision_openclaw_compat_layer`) — Irisy persistent memory.
+    let _ = std::fs::create_dir_all(root.join("irisy"));
+    let _ = std::fs::create_dir_all(root.join("notes").join("keycap-runs"));
+    let _ = std::fs::create_dir_all(root.join("notes").join("keycap-runs").join("archive"));
 
     write_if_missing(root, ".ctrl/sourcing.yaml", SEED_SOURCING_YAML);
     write_if_missing(root, ".ctrl/daily-notes.yaml", SEED_DAILY_NOTES_YAML);
     write_if_missing(root, ".ctrl/sourcing-prompt.md", SEED_SOURCING_PROMPT);
     write_if_missing(root, "templates/daily.md", SEED_TEMPLATE_DAILY);
     write_if_missing(root, "templates/meeting.md", SEED_TEMPLATE_MEETING);
+    write_if_missing(root, "irisy/SOUL.md", SEED_IRISY_SOUL);
+    write_if_missing(root, "irisy/.soul-md-version", SOUL_MD_VERSION);
 }
 
 fn write_if_missing(root: &Path, rel: &str, contents: &str) {

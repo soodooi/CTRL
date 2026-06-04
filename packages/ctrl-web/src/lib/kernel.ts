@@ -431,6 +431,99 @@ export const vaultSourcingPending = (
     args: { keycap_id: keycap_id ?? null },
   });
 
+// ADR-005 v2 § soul-md-compat §4.3 — SOUL.md Tauri surface.
+export interface IrisySoulView {
+  path: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+  soul_md_version: string;
+}
+export const irisySoulRead = (): Promise<IrisySoulView> =>
+  invoke('irisy_soul_read');
+export const irisySoulWrite = (
+  frontmatter: Record<string, unknown>,
+  body: string,
+): Promise<void> =>
+  invoke('irisy_soul_write', { args: { frontmatter, body } });
+
+// ADR-002 v5 §10 — vault embeddings TS surface.
+export interface EmbeddingHit {
+  path: string;
+  score: number;
+  snippet: string;
+}
+export interface EmbeddingStatus {
+  total: number;
+  embedded: number;
+  stale: number;
+  last_run_at_ms: number | null;
+  provider_status: string;
+  model: string;
+}
+
+export const vaultEmbedNote = (
+  path: string,
+): Promise<{ path: string; vector_dims: number; cached: boolean }> =>
+  invoke('vault_embed_note', { args: { path } });
+
+export const vaultReembedAll = (
+  force = false,
+): Promise<{ embedded: number; skipped: number; failed: number }> =>
+  invoke('vault_reembed_all', { args: { force } });
+
+export const vaultEmbeddingStatus = (): Promise<EmbeddingStatus> =>
+  invoke('vault_embedding_status');
+
+export const vaultSemanticSearch = (
+  query: string,
+  limit = 10,
+  threshold?: number,
+): Promise<EmbeddingHit[]> =>
+  invoke('vault_semantic_search', {
+    args: { query, limit, threshold: threshold ?? null },
+  });
+
+export const vaultSuggestLinks = (
+  for_path: string,
+  limit = 5,
+): Promise<EmbeddingHit[]> =>
+  invoke('vault_suggest_links', { args: { for_path, limit } });
+
+// Irisy synthesize — Layer 4 surface
+// (brainstorm §5.3 / §5.5 / §5.10)
+export interface QuestionVaultReply {
+  answer: string;
+  citations: string[];
+}
+export const irisyQuestionVault = (
+  question: string,
+  top_k = 6,
+): Promise<QuestionVaultReply> =>
+  invoke('irisy_question_vault', { args: { question, top_k } });
+
+export interface SynthesizeReply {
+  result: string;
+  written_to: string | null;
+}
+export const irisySynthesizeNotes = (
+  paths: string[],
+  instruction: string,
+  output_path?: string,
+): Promise<SynthesizeReply> =>
+  invoke('irisy_synthesize_notes', {
+    args: { paths, instruction, output_path: output_path ?? null },
+  });
+
+export interface DailySummarizeReply {
+  daily_path: string;
+  summary: string;
+  items_in_inbox: number;
+}
+export const irisyDailySummarize = (
+  date?: string,
+): Promise<DailySummarizeReply> =>
+  invoke('irisy_daily_summarize', { args: { date: date ?? null } });
+
 // ADR-002 § vault v1 §8.6 v5 (2026-06-03) — vault-side git via the
 // kernel-spawned git CLI. Mirrors src-tauri/src/commands/git.rs.
 
