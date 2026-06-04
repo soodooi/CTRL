@@ -460,6 +460,18 @@ Embeddings never leave the user's machine when in Ollama mode. The cloud-fallbac
 
 ### §8.9 Future work (not §8 v1)
 
+- §9 smart-table-output — Keycap manifest `output_capture` field + JSONSchema validation in `packages/ctrl-keycap-sdk/src/manifest-schema.ts` (today the kernel falls back to defaults when manifest absent).
+- §9 smart-table-output — Settings → Privacy master toggle ("Capture keycap outputs into vault tables", default on).
+- §9 smart-table-output — Wire provider / model / tokens into `run_keycap` so the captured row carries real values instead of empty strings.
+- §10 embeddings — Auto-embed lifecycle hooks (vault.write background enqueue, Runtime::boot stale re-embed, vault.delete drop row).
+- §10 embeddings — `vault.search` mode arg (`bm25` | `semantic` | `hybrid`) at the kernel-side (today hybrid is composed in the PWA NotesTree by parallel calls).
+- §10 embeddings — Settings → Embeddings cloud-fallback toggle (P1 transparency).
+- Product spec §5.4 Ctrl long-press global quick-capture window (`hotkey.rs` long-press detection + new Tauri window `quick-capture`).
+- Product spec §5.8 wikilink `[[` autosuggest Tiptap suggestion plugin.
+- Product spec §5.9 smart frontmatter suggest (Pi propose tags from `vault.tags` vocabulary after `vault.write`).
+- Product spec §5.11 ST-SS remote co-view (v1.1+ scope per ADR-005 §2).
+- Product spec §5.12 voice → vault (requires `audio.transcribe` provider).
+- Product spec §5.13 weekly + annual review (Pi-driven, weekly Sunday cron, annual end-of-year).
 - Graph view UI (React Flow + D3-force from kairo stack — primitive `vault_graph_data` already in §8.3 #15)
 - Dataview-like query (`vault.dataview_query(spec)`) — defer until 2nd consumer
 - Version history (snapshot table or libgit2 — defer)
@@ -522,17 +534,33 @@ Embeddings never leave the user's machine when in Ollama mode. The cloud-fallbac
 
 ### Smart table output (§9 — NEW v5)
 - [x] §9.1 strategic lock — single SmartTable per keycap at `notes/keycap-runs/<id>.table.md` (P4 product decision recorded in brainstorm).
-- [ ] Keycap manifest `output_capture` field — schema + JSONSchema validation in `packages/ctrl-keycap-sdk/src/manifest-schema.ts`.
-- [ ] `keycap_runner` post-run hook wires output to `smart_table.appendRow` + `vault.write` via the standard 7-column schema (ts / input_excerpt / output_excerpt / provider / model / tokens / accepted).
-- [ ] Rotation at 500 rows to `archive/<id>-<YYYY>-QN.md`.
-- [ ] Settings → Privacy master toggle ("Capture keycap outputs into vault tables", default on).
+- [x] `keycap_runner` post-run hook wires output to `notes/keycap-runs/<id>.table.md` via `kernel::keycap_capture::capture_row`. Standard 7-column schema (ts / input_excerpt / output_excerpt / provider / model / tokens / accepted). Provider/model/tokens default to empty until `run_keycap` exposes them; the row still lands. v0.1.158.
+- [x] Rotation at 500 rows to `notes/keycap-runs/archive/<stem>-<YYYY>-Q<N>.md`. v0.1.158.
+- [x] Vault seed creates `notes/keycap-runs/` + `notes/keycap-runs/archive/` directories (`kernel::vault::seed_vault_feature_layer`). v0.1.158.
 
 ### Embeddings (§10 — NEW v5)
-- [ ] `src-tauri/src/kernel/vault_embeddings.rs` — SQLite table + flat cosine search + Ollama HTTP wrapper (`provider/ollama_embed.rs`).
-- [ ] 5 new Tauri commands + MCP tools: `vault.semantic_search`, `vault.embed_note`, `vault.reembed_all`, `vault.embedding_status`, `vault.suggest_links`.
-- [ ] `vault.search` mode arg (`bm25` | `semantic` | `hybrid`); default hybrid when embeddings available.
-- [ ] Auto-embed lifecycle: `vault.write` enqueues background embed; `Runtime::boot` re-embeds stale rows; `vault.delete` drops embedding row.
-- [ ] Cloud-fallback path (off by default) — Settings → Embeddings toggle. Honors product P1 (no silent cloud).
+- [x] `src-tauri/src/kernel/vault_embeddings.rs` — SQLite BLOB + flat cosine (768d) + content_hash idempotence. 3 unit tests in-tree. v0.1.158.
+- [x] `src-tauri/src/kernel/provider/ollama_embed.rs` — nomic-embed-text HTTP client + probe. v0.1.158.
+- [x] 5 Tauri commands + MCP tools (`commands/vault_embeddings.rs` + `mcp_server.rs`): `vault.embed_note`, `vault.reembed_all`, `vault.embedding_status`, `vault.semantic_search`, `vault.suggest_links`. v0.1.158.
+- [x] Hybrid retrieval shipped via `NotesTree` parallel `vault_search` + `vault_semantic_search` merge on queries >= 4 chars; backlinks panel gains a "Suggested" group driven by `vault.suggest_links`. v0.1.158.
+
+### SOUL.md substrate (ADR-005 v2 § soul-md-compat — see ADR-005 acceptance, satisfied by 002 §9/§10 ship)
+- [x] `vault/irisy/SOUL.md` seed via `vault_seed/irisy-soul.md` + `.soul-md-version` pin. v0.1.158.
+- [x] `irisy_soul_read` / `irisy_soul_write` Tauri commands; `irisy.soul_get` / `irisy.soul_set` MCP tools. v0.1.158.
+- [x] `loadIrisySystemPromptWithSoul` injects SOUL.md body into every Pi turn (`packages/ctrl-web/src/lib/irisy-prompts.ts` + `IrisyChat.tsx`). v0.1.158.
+
+### Layer 4 synthesize (product brainstorm §5.3 / §5.5 / §5.10 — satisfied here)
+- [x] `commands/irisy_synth.rs` — 3 Tauri commands using `provider_registry.primary_text_chat`: `irisy_question_vault` (RAG with citations), `irisy_synthesize_notes` (cross-note merge), `irisy_daily_summarize` (sourcing → daily/{date}.md). v0.1.158.
+
+### Block AI ops (product brainstorm §5.2 / P2 / P7 — satisfied here)
+- [x] `lib/block-ai-ops.ts` — 6 actions (tighten / formalize / extract-actions / translate / continue / custom) streaming via `irisyChatTransport`. v0.1.158.
+- [x] `components/notes/BlockAiOps.tsx` floating menu; `Cmd+K` / `Ctrl+K` trigger anywhere with non-empty Tiptap selection. v0.1.158.
+- [x] Diff preview (streaming) + Accept replaces selection; Discard aborts the stream. v0.1.158.
+- [x] On accept, `stampAiBlock` appends a frontmatter `ai_blocks:` entry (provider/model/timestamp/original/rewritten/user_input). v0.1.158.
+
+### Transparency (product brainstorm §6.4 — satisfied here)
+- [x] `lib/ai-block-metadata.ts` — `stampAiBlock` + `readAiBlocks` for frontmatter round-trip. v0.1.158.
+- [x] `FrontmatterPanel` gains "AI ops: N" badge that opens a drawer listing each block's provider/model/timestamp + collapsible original-vs-rewritten preview. v0.1.158.
 
 ## Future work (§ Provider §3 implementation — tracked separately from § Acceptance per CLAUDE.md 灵活开发)
 
