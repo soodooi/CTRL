@@ -363,7 +363,14 @@ export class PiBridge {
       // `/text-chat` endpoint + legacy `/api/generate` Ollama adapter —
       // see brainstorm/irisy-capabilities-2026-06-04.md A14.
       env.PI_PROVIDER = env.PI_PROVIDER ?? 'ollama-local';
-      env.PI_MODEL = env.PI_MODEL ?? 'qwen2.5:7b';
+      // hermes3:8b — Hermes 3 fine-tunes Llama 3.1 specifically for
+      // tool calling and emits standard OpenAI / Anthropic tool format
+      // that pi-ai's `openai-completions` provider can parse directly.
+      // qwen2.5:7b was attempted first but emits a vendor-specific
+      // token-wrapped JSON that pi-ai sees as plain text — tools never
+      // fire. Users can override with the PI_MODEL env if they prefer
+      // a different local Ollama model.
+      env.PI_MODEL = env.PI_MODEL ?? 'hermes3:8b';
       // RpcClient passes provider/model to Pi via `--provider` and
       // `--model` CLI args (rpc-client.js L31-35), NOT env. The env
       // assignments above are kept for any downstream child that
