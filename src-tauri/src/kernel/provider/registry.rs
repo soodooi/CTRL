@@ -532,6 +532,13 @@ impl ProviderRegistry {
             let mut active = self.active.write().unwrap();
             active.insert(consumer.clone(), provider_id.to_string());
         }
+        // bao 2026-06-04: trial success ⇒ provider is healthy NOW. If a
+        // prior turn marked it failed (cooldown still active for up to
+        // PROVIDER_COOLDOWN_SECS), the next /text-chat would still skip
+        // it. Clearing here lets a manual re-pick from Settings →
+        // Providers immediately reactivate a previously-cooled-down
+        // provider without waiting out the 5 min window.
+        self.clear_failure(provider_id);
         self.persist_active_state();
         tracing::info!(
             provider = %provider_id,

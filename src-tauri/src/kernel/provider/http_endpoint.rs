@@ -141,8 +141,17 @@ async fn text_chat(
         temperature: req.temperature,
         max_tokens: req.max_tokens,
     };
+    // bao 2026-06-04: ctrl-pi-bridge forwards Pi's `PI_MODEL=default`
+    // env placeholder verbatim as the wire `model` field. Some
+    // adapters (Ollama in particular — exact tag resolution, no
+    // implicit `:latest`) 404 on `model="default"`. Treat the
+    // literal "default" sentinel as "no preference" so the adapter
+    // falls through to its manifest `models[0]` (qwen2.5:7b for
+    // ollama, claude-sonnet-* for anthropic, etc.).
+    let model_raw = req.model.unwrap_or_default();
+    let model = if model_raw == "default" { String::new() } else { model_raw };
     let opts = ChatOpts {
-        model: req.model.unwrap_or_default(),
+        model,
         deadline_ms: 120_000,
     };
     let _ = Capability::TextChat; // capability check hook (future)
