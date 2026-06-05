@@ -343,6 +343,26 @@ export class PiBridge {
       if (bridgeExt && bridgeExt.length > 0) {
         args.unshift('--extension', bridgeExt);
       }
+      // bao 2026-06-05: load pi-claude-auth so Pi picks up the user's
+      // Claude Code OAuth token from macOS Keychain automatically. This
+      // is what lets Pi use the Claude Pro subscription as a $0-marginal
+      // brain without forcing the user to enter an API key. Install
+      // happened at boot via brain_supervisor (or, until that lands,
+      // `npm install --save pi-claude-auth` in ~/.ctrl/pi/).
+      const piDir = process.env.CTRL_PI_BIN
+        ? // CTRL_PI_BIN = ~/.ctrl/pi/node_modules/.bin/pi → walk up.
+          process.env.CTRL_PI_BIN
+            .replace(/\/node_modules\/\.bin\/pi$/, '')
+        : process.env.HOME
+          ? `${process.env.HOME}/.ctrl/pi`
+          : null;
+      if (piDir) {
+        const claudeAuthExt = `${piDir}/node_modules/pi-claude-auth/dist/index.js`;
+        const { existsSync } = await import('node:fs');
+        if (existsSync(claudeAuthExt)) {
+          args.unshift('--extension', claudeAuthExt);
+        }
+      }
 
       const env: Record<string, string> = {};
       for (const [k, v] of Object.entries(process.env)) {
@@ -362,15 +382,23 @@ export class PiBridge {
       // silently disabled by routing every LLM call through the kernel
       // `/text-chat` endpoint + legacy `/api/generate` Ollama adapter —
       // see brainstorm/irisy-capabilities-2026-06-04.md A14.
-      env.PI_PROVIDER = env.PI_PROVIDER ?? 'ollama-local';
-      // hermes3:8b — Hermes 3 fine-tunes Llama 3.1 specifically for
-      // tool calling and emits standard OpenAI / Anthropic tool format
-      // that pi-ai's `openai-completions` provider can parse directly.
-      // qwen2.5:7b was attempted first but emits a vendor-specific
-      // token-wrapped JSON that pi-ai sees as plain text — tools never
-      // fire. Users can override with the PI_MODEL env if they prefer
-      // a different local Ollama model.
-      env.PI_MODEL = env.PI_MODEL ?? 'hermes3:8b';
+      // bao 2026-06-05 (second amendment): default to Claude via the
+      // pi-claude-auth extension which reads the user's Claude Code
+      // OAuth token from macOS Keychain (~/.pi/agent/settings.json
+      // auto-loads it). Pi-ai has a built-in `anthropic` provider that
+      // accepts that OAuth credential and handles native tool calling.
+      // hermes3:8b was attempted as a local zero-cost default but the
+      // 8B model could not sustain Irisy's system prompt (capability
+      // segments + brain state + 10 tool descriptions) without entering
+      // repetition loops and hallucinating its own model identity
+      // ("I am Claude"). Hermes 3 stays available in models.json for
+      // users who explicitly pick it via PI_MODEL env.
+      //
+      // Aligns with memory `feedback_default_to_user_cli_not_paid_
+      // providers` (bao 2026-05-31): "default is the user's claude cli,
+      // anything else costs". Claude Pro subscription = $0 marginal cost.
+      env.PI_PROVIDER = env.PI_PROVIDER ?? 'anthropic';
+      env.PI_MODEL = env.PI_MODEL ?? 'claude-sonnet-4-6';
       // RpcClient passes provider/model to Pi via `--provider` and
       // `--model` CLI args (rpc-client.js L31-35), NOT env. The env
       // assignments above are kept for any downstream child that
