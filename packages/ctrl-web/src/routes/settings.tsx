@@ -845,103 +845,22 @@ interface ActivationError {
   message: string;
 }
 
-export const SettingsProvidersPage = (): ReactElement => {
-  const queryClient = useQueryClient();
-  const brain = useQuery<BrainState | null>({
-    queryKey: ['brain-status'],
-    queryFn: loadBrainState,
-  });
-  const list = useQuery<ProviderListRow[]>({
-    queryKey: ['provider-list'],
-    queryFn: providerList,
-  });
-
-  const [activationError, setActivationError] = useState<ActivationError | null>(null);
-
-  const activation = useMutation({
-    mutationFn: providerSetActive,
-    onSuccess: () => {
-      setActivationError(null);
-      void queryClient.invalidateQueries({ queryKey: ['brain-status'] });
-      void queryClient.invalidateQueries({ queryKey: ['provider-list'] });
-    },
-  });
-
-  const handleActivate = useCallback(
-    (role: IrisyRole, providerId: string): void => {
-      setActivationError(null);
-      activation.mutate(
-        { role, provider_id: providerId },
-        {
-          onError: (err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err);
-            setActivationError({ role, providerId, message });
-          },
-        },
-      );
-    },
-    [activation],
-  );
-
-  const pendingProviderId = activation.isPending
-    ? activation.variables?.provider_id ?? null
-    : null;
-
-  const errorPerProvider = useMemo<Record<string, string>>(() => {
-    if (!activationError) return {};
-    return { [activationError.providerId]: activationError.message };
-  }, [activationError]);
-
-  const rows: ReadonlyArray<ProviderListRow> = list.data ?? [];
-
-  return (
-    <SettingsShell activeTab="providers">
-      {brain.isError && (
-        <p className={styles.brainError}>
-          Could not load current brain state — showing manifest list only.
-        </p>
-      )}
-      {list.isError && (
-        <p className={styles.brainError}>
-          Could not load provider manifests:{' '}
-          {list.error instanceof Error ? list.error.message : 'unknown error'}
-        </p>
-      )}
-      {IRISY_ROLES.map((spec) => {
-        const activeId = brain.data?.providers[spec.id]?.id ?? null;
-        return (
-          <RoleSection
-            key={spec.id}
-            spec={spec}
-            rows={rows}
-            activeProviderId={activeId}
-            pendingProviderId={pendingProviderId}
-            errorPerProvider={errorPerProvider}
-            onActivate={(providerId) => handleActivate(spec.id, providerId)}
-          />
-        );
-      })}
-      <Section
-        title="REST API keys (BYOK)"
-        description={
-          <>
-            Configure your own API keys for Anthropic, OpenAI, Volc, etc. in the{' '}
-            <Link to="/settings/ctrl" className={styles.tab}>
-              General tab
-            </Link>
-            . Once a key is set, the provider becomes Available here and can be
-            assigned to a role.
-          </>
-        }
-      >
-        <p className={styles.brainHelp}>
-          BYOK calls are billed to your own account. The CTRL-managed fallback
-          slot keeps working even when you have no BYOK keys configured.
-        </p>
-      </Section>
-    </SettingsShell>
-  );
-};
+// bao 2026-06-05 — providers v3. Previous version stacked 2 roles
+// (primary + fallback) × N candidate rows = ~18 rows of clickable
+// radios. Replaced by a single active-chip card (ProvidersBlock) per
+// the simplified design. Fallback is intentionally not user-facing
+// (memory `decision_irisy_fallback_is_ctrl_paid_volc_now`: ctrl-managed
+// safety net, user shouldn't have to think about it).
+export const SettingsProvidersPage = (): ReactElement => (
+  <SettingsShell activeTab="providers">
+    <Section
+      title="Irisy provider"
+      description="The brain Irisy talks to. Defaults to local Ollama via Pi-first; add a hosted provider to switch."
+    >
+      <ProvidersBlock />
+    </Section>
+  </SettingsShell>
+);
 
 export const SettingsLogsPage = (): ReactElement => {
   const update = useUpdateStatus();
