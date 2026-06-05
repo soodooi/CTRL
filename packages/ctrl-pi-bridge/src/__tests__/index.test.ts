@@ -41,6 +41,16 @@ function makeMockApi(overrides: Partial<PiExtensionApi> = {}): PiExtensionApi {
   return {
     registerProvider: () => undefined,
     registerTool: () => undefined,
+    // ADR-009 §1.2 / §1.3 / §1.4 new surfaces (P1-P5). All optional —
+    // the bridge guards every call with `if (pi.foo) {...}` so a Pi
+    // version that lacks them still loads cleanly. Mock returns no-op
+    // implementations so tests don't crash when calling them.
+    registerCommand: () => undefined,
+    registerMessageRenderer: () => undefined,
+    sendMessage: () => undefined,
+    sendUserMessage: () => undefined,
+    setActiveTools: () => undefined,
+    getActiveTools: () => [],
     on: () => undefined,
     ...overrides,
   };

@@ -144,11 +144,154 @@ export interface PiResourcesDiscoverResult {
   themePaths?: string[];
 }
 
+// ── ADR-009 §1.1 — new event surfaces (P1 / P4) ─────────────────────────
+
+/** Fired when Pi has just compacted a session. The `compactionEntry`
+ *  carries the LLM-generated `summary` we want to persist to the user's
+ *  vault so the compaction is auditable + searchable in vim. ADR-009
+ *  §3 D4 (落 vault, not Pi-internal-only). */
+export interface PiSessionCompactEvent {
+  type: 'session_compact';
+  compactionEntry: {
+    type: 'compaction';
+    id: string;
+    parentId: string | null;
+    timestamp: string;
+    summary: string;
+    firstKeptEntryId: string;
+    tokensBefore: number;
+    details?: unknown;
+    fromHook?: boolean;
+  };
+  fromExtension: boolean;
+}
+
+/** Fired at the start of each turn. Used by the curator-cadence tracker
+ *  (P4) + by the steering bridge to inject CTRL trigger nudges. */
+export interface PiTurnStartEvent {
+  type: 'turn_start';
+  turnIndex: number;
+  timestamp: number;
+}
+
+/** Fired at the end of each turn. Triggers P4 curator nudge when
+ *  turnIndex % N == 0, and lets ctrl-pi-bridge clear per-turn counters. */
+export interface PiTurnEndEvent {
+  type: 'turn_end';
+  turnIndex: number;
+  message: unknown;
+  toolResults: unknown[];
+}
+
+/** Fired when a tool finishes executing. isError=true → P4 reflection
+ *  trigger (sendUserMessage nextTurn "the last tool failed, look at why"). */
+export interface PiToolExecutionEndEvent {
+  type: 'tool_execution_end';
+  toolCallId: string;
+  toolName: string;
+  result: unknown;
+  isError: boolean;
+}
+
+/** Fired when an assistant message ends. Used for codename-leak audit
+ *  (P4 safety check) — the PWA render-filter is the primary defence,
+ *  this is just telemetry. */
+export interface PiMessageEndEvent {
+  type: 'message_end';
+  message: unknown;
+}
+
+export interface PiMessageEndResult {
+  message?: unknown;
+}
+
+/** Fired when an agent loop starts / ends. Status-bar latency tracking. */
+export interface PiAgentStartEvent {
+  type: 'agent_start';
+}
+
+export interface PiAgentEndEvent {
+  type: 'agent_end';
+  messages: unknown[];
+}
+
+/** Fired when a session ends. Used by P4 curator final pass — propose
+ *  1-3 playbook entries based on the just-finished session. */
+export interface PiSessionShutdownEvent {
+  type: 'session_shutdown';
+  reason: 'quit' | 'reload' | 'new' | 'resume' | 'fork';
+  targetSessionFile?: string;
+}
+
+/** Fired when raw user input arrives, before the agent processes it.
+ *  P5 slash-command pre-screen — if input starts with `/<cmd>` and
+ *  matches a registered CTRL command, bridge can handle it and prevent
+ *  the brain LLM round-trip. */
+export interface PiInputEvent {
+  type: 'input';
+  text: string;
+  images?: unknown[];
+  source: 'interactive' | 'rpc' | 'extension';
+}
+
+export type PiInputEventResult =
+  | { action: 'continue' }
+  | { action: 'transform'; text: string; images?: unknown[] }
+  | { action: 'handled' };
+
+// ── ADR-009 §1.2 / §1.3 — register surfaces + communication ─────────────
+
+/** ADR-009 P5 — slash command registration. User types `/<name> <args>`
+ *  in chat; Pi calls our handler with the raw args string. */
+export interface PiRegisteredCommand {
+  name: string;
+  description?: string;
+  handler: (args: string, ctx: unknown) => Promise<void> | void;
+}
+
+/** ADR-009 P3 — custom message type renderer. PWA shows `customType`
+ *  messages (curator-proposal / cap-discover / etc) with bespoke UI. */
+export type PiMessageRenderer = (
+  message: { customType: string; content: unknown; display?: unknown; details?: unknown },
+  options: { expanded: boolean },
+  theme: unknown,
+) => unknown;
+
+/** ADR-009 P4 — steering primitives. Pi delivers the custom message to
+ *  the running session per `deliverAs`. */
+export interface PiSendMessageOptions {
+  triggerTurn?: boolean;
+  deliverAs?: 'steer' | 'followUp' | 'nextTurn';
+}
+
+export interface PiSendUserMessageOptions {
+  deliverAs?: 'steer' | 'followUp';
+}
+
 type PiHandler<E, R> = (evt: E, ctx: unknown) => Promise<R | void> | R | void;
 
 export interface PiExtensionApi {
   registerProvider: (id: string, provider: PiProvider) => void;
   registerTool: (tool: PiToolDefinition) => void;
+  // ── ADR-009 §1.2 new registration surfaces ───────────────────────────
+  registerCommand?: (name: string, options: Omit<PiRegisteredCommand, 'name'>) => void;
+  registerMessageRenderer?: <T = unknown>(
+    customType: string,
+    renderer: PiMessageRenderer,
+  ) => void;
+  // ── ADR-009 §1.3 communication / steering ────────────────────────────
+  sendMessage?: <T = unknown>(
+    message: { customType: string; content: T; display?: unknown; details?: unknown },
+    options?: PiSendMessageOptions,
+  ) => void;
+  sendUserMessage?: (
+    content: string,
+    options?: PiSendUserMessageOptions,
+  ) => void;
+  // ── ADR-009 §1.4 runtime control ─────────────────────────────────────
+  setActiveTools?: (toolNames: string[]) => void;
+  getActiveTools?: () => string[];
+  // ── Hook subscription ────────────────────────────────────────────────
   on(
     event: 'before_agent_start',
     handler: PiHandler<PiBeforeAgentStartEvent, PiBeforeAgentStartResult>,
@@ -158,6 +301,21 @@ export interface PiExtensionApi {
     event: 'resources_discover',
     handler: PiHandler<PiResourcesDiscoverEvent, PiResourcesDiscoverResult>,
   ): void;
+  on(event: 'session_compact', handler: PiHandler<PiSessionCompactEvent, void>): void;
+  on(event: 'turn_start', handler: PiHandler<PiTurnStartEvent, void>): void;
+  on(event: 'turn_end', handler: PiHandler<PiTurnEndEvent, void>): void;
+  on(
+    event: 'tool_execution_end',
+    handler: PiHandler<PiToolExecutionEndEvent, void>,
+  ): void;
+  on(event: 'message_end', handler: PiHandler<PiMessageEndEvent, PiMessageEndResult>): void;
+  on(event: 'agent_start', handler: PiHandler<PiAgentStartEvent, void>): void;
+  on(event: 'agent_end', handler: PiHandler<PiAgentEndEvent, void>): void;
+  on(
+    event: 'session_shutdown',
+    handler: PiHandler<PiSessionShutdownEvent, void>,
+  ): void;
+  on(event: 'input', handler: PiHandler<PiInputEvent, PiInputEventResult>): void;
   on(event: string, handler: (...args: unknown[]) => unknown): void;
 }
 
@@ -343,8 +501,18 @@ export default function register(pi: PiExtensionApi): void {
   //    command. Pi turns these into provider-native function call
   //    schemas (Anthropic tool_use / OpenAI tools) so the model emits
   //    structured tool calls instead of the XML fallback protocol.
-  for (const tool of buildKernelTools()) {
+  const kernelTools = buildKernelTools();
+  for (const tool of kernelTools) {
     pi.registerTool(tool);
+  }
+
+  // 2b. ADR-009 P2 — mode-aware tool whitelist. We removed
+  //     `--no-builtin-tools` from ctrl-pi-plugin/pi-bridge.ts (commit
+  //     pending) so Pi starts with all built-ins registered, then we
+  //     restrict the active set here to extension tools only. Coding
+  //     mode toggles back the built-ins via /switch coding (P5).
+  if (pi.setActiveTools) {
+    pi.setActiveTools(kernelTools.map((t) => t.name));
   }
 
   // 3. before_agent_start — chain-injects ADR-005 6 capability
@@ -360,6 +528,35 @@ export default function register(pi: PiExtensionApi): void {
   //    Skills so the user gets /skill:<name> slash commands without
   //    symlinks (ADR-005 7.4).
   pi.on('resources_discover', resourcesDiscoverHandler);
+
+  // 6. ADR-009 P1 — session_compact. When Pi compacts the conversation
+  //    (token budget hit), persist the LLM-generated summary to vault
+  //    so the user can grep / vim / diff it. ADR-009 §3 D4.
+  pi.on('session_compact', sessionCompactHandler);
+
+  // 7. ADR-009 P4 — turn_end. Curator cadence (every N=5 turns)
+  //    triggers a followUp message asking Pi to propose playbook
+  //    updates. Per-turn counter lives in module state.
+  pi.on('turn_end', turnEndHandler.bind(null, pi));
+
+  // 8. ADR-009 P4 — tool_execution_end (isError=true → reflection).
+  //    When a kernel-tool call fails, queue a nextTurn user message
+  //    nudging Pi to diagnose so the user gets a "why did that fail"
+  //    answer without having to ask.
+  pi.on('tool_execution_end', toolExecutionEndHandler.bind(null, pi));
+
+  // 9. ADR-009 P4 — session_shutdown final curator pass. Propose
+  //    1-3 playbook entries summarising what we learned this session
+  //    (Hermes curator.py pattern, ADR-005 §5 reflection-loop).
+  pi.on('session_shutdown', sessionShutdownHandler.bind(null, pi));
+
+  // 10. ADR-009 P5 — slash commands. Pi routes `/<name> <args>` to
+  //     our handler before invoking the LLM, so deterministic intents
+  //     bypass natural-language classification entirely. Raycast
+  //     "surface = intent" pattern (brainstorm §0.2).
+  if (pi.registerCommand) {
+    registerSlashCommands(pi);
+  }
 }
 
 // ── streamSimple implementation ─────────────────────────────────────────
@@ -1322,4 +1519,320 @@ function safeReadDir(dir: string): string[] {
   } catch {
     return [];
   }
+}
+
+// ─── ADR-009 P1 — session_compact → vault summary ───────────────────────
+//
+// When Pi compacts a session (token-budget hit, automatic), persist the
+// LLM-generated summary into `vault/irisy/compacted/<date>-<session>.md`
+// so the user can grep / vim / git-diff what was forgotten. ADR-009 §3
+// D4 lock: compaction summary lives in vault, never Pi-internal-only —
+// vault is source of truth (`decision_ctrl_obsidian_philosophy`).
+
+async function sessionCompactHandler(evt: PiSessionCompactEvent): Promise<void> {
+  const entry = evt.compactionEntry;
+  if (!entry || !entry.summary || entry.summary.trim().length === 0) return;
+  const date = new Date().toISOString().slice(0, 10);
+  // entry.id may contain : / etc; sanitize to a vault-safe basename.
+  const sessionSlug = entry.id.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 64);
+  const vaultPath = `irisy/compacted/${date}-${sessionSlug}.md`;
+  const body = [
+    '# Compaction summary',
+    '',
+    `_Pi compacted this session at ${entry.timestamp}; ${entry.tokensBefore} tokens before compaction._`,
+    '',
+    entry.summary.trim(),
+  ].join('\n');
+  try {
+    await callKernelTool(
+      'vault_write',
+      {
+        path: vaultPath,
+        content: body,
+        frontmatter: {
+          kind: 'irisy-compaction',
+          created_at: entry.timestamp,
+          session_id: entry.id,
+          tokens_before: entry.tokensBefore,
+          first_kept_entry_id: entry.firstKeptEntryId,
+          from_extension: entry.fromHook === true,
+        },
+      },
+      undefined,
+    );
+  } catch {
+    // Best-effort: a vault write failure here must not crash Pi. The
+    // compaction has already happened on Pi's side; we just lose the
+    // audit log for this one event.
+  }
+}
+
+// ─── ADR-009 P4 — turn_end → curator cadence trigger ────────────────────
+
+const CURATOR_CADENCE = 5;
+let turnsSinceCuration = 0;
+
+async function turnEndHandler(
+  pi: PiExtensionApi,
+  evt: PiTurnEndEvent,
+): Promise<void> {
+  turnsSinceCuration += 1;
+  if (turnsSinceCuration < CURATOR_CADENCE) return;
+  turnsSinceCuration = 0;
+  if (!pi.sendMessage) return;
+  try {
+    pi.sendMessage(
+      {
+        customType: 'irisy-curator-nudge',
+        content: {
+          reason: 'cadence',
+          turnsSinceLast: CURATOR_CADENCE,
+          requestedAt: new Date().toISOString(),
+        },
+        display: {
+          title: 'Curator nudge',
+          summary: `${CURATOR_CADENCE} turns since last curation - consider proposing playbook updates.`,
+        },
+      },
+      { triggerTurn: false, deliverAs: 'followUp' },
+    );
+  } catch {
+    /* sendMessage shape mismatch is non-fatal */
+  }
+  void evt.turnIndex;
+}
+
+// ─── ADR-009 P4 — tool_execution_end (isError) → reflection trigger ─────
+
+async function toolExecutionEndHandler(
+  pi: PiExtensionApi,
+  evt: PiToolExecutionEndEvent,
+): Promise<void> {
+  if (!evt.isError) return;
+  if (!pi.sendUserMessage) return;
+  const tool = evt.toolName || 'unknown';
+  const resultSummary = summariseToolResult(evt.result);
+  try {
+    pi.sendUserMessage(
+      `Tool '${tool}' failed. Result: ${resultSummary}. Briefly tell me what blocked and one concrete next step. No apology.`,
+      { deliverAs: 'followUp' },
+    );
+  } catch {
+    /* non-fatal */
+  }
+}
+
+function summariseToolResult(result: unknown): string {
+  if (result == null) return '(no result)';
+  if (typeof result === 'string') return result.slice(0, 300);
+  try {
+    const s = JSON.stringify(result);
+    return s.length > 300 ? s.slice(0, 297) + '...' : s;
+  } catch {
+    return String(result).slice(0, 300);
+  }
+}
+
+// ─── ADR-009 P4 — session_shutdown → final curator pass ─────────────────
+
+async function sessionShutdownHandler(
+  pi: PiExtensionApi,
+  evt: PiSessionShutdownEvent,
+): Promise<void> {
+  turnsSinceCuration = 0;
+  recentCalls = [];
+  if (!pi.sendMessage) return;
+  try {
+    pi.sendMessage(
+      {
+        customType: 'irisy-curator-nudge',
+        content: {
+          reason: 'session_end',
+          shutdownReason: evt.reason,
+          requestedAt: new Date().toISOString(),
+        },
+        display: {
+          title: 'Curator nudge (session end)',
+          summary: 'Session ending - consider distilling 1 lasting lesson.',
+        },
+      },
+      { triggerTurn: false, deliverAs: 'followUp' },
+    );
+  } catch {
+    /* non-fatal */
+  }
+}
+
+// ─── ADR-009 P5 — slash commands (Raycast "surface = intent") ──────────
+//
+// User types `/<name> <args>` in chat; Pi routes to our handler before
+// the LLM round-trip. Deterministic intent surface — brain never has
+// to classify natural language for these. Brainstorm §0.2.
+//
+// Examples (kept English-only per CLAUDE.md code-language rule; CJK
+// args from users still flow through fine):
+//   /discover twenty crm
+//   /cap html-slides
+//   /note Read about LangChain 0.3 today
+//   /soul
+//   /switch coding
+
+function registerSlashCommands(pi: PiExtensionApi): void {
+  if (!pi.registerCommand) return;
+
+  pi.registerCommand('discover', {
+    description: 'Open Discover to find + install caps (skills / MCP servers).',
+    handler: (args, _ctx) => {
+      const query = (args || '').trim();
+      pi.sendMessage?.(
+        {
+          customType: 'irisy-open-discover',
+          content: { query },
+          display: {
+            title: 'Open Discover',
+            summary: query ? `Searching "${query}"...` : 'Browsing all caps...',
+          },
+        },
+        { triggerTurn: false },
+      );
+    },
+  });
+
+  pi.registerCommand('cap', {
+    description: 'Run an installed cap by id. Example: /cap html-slides topic',
+    handler: async (args, _ctx) => {
+      const trimmed = (args || '').trim();
+      if (!trimmed) {
+        pi.sendUserMessage?.(
+          'Tell me which cap to run, e.g. `/cap html-slides`.',
+          { deliverAs: 'followUp' },
+        );
+        return;
+      }
+      const [capId, ...rest] = trimmed.split(/\s+/);
+      const inputText = rest.join(' ');
+      try {
+        await callKernelTool(
+          'keycap_run',
+          { keycap_id: capId, input: { text: inputText } },
+          undefined,
+        );
+      } catch (err) {
+        pi.sendUserMessage?.(
+          `Cap '${capId}' failed to run: ${err instanceof Error ? err.message : String(err)}`,
+          { deliverAs: 'followUp' },
+        );
+      }
+    },
+  });
+
+  pi.registerCommand('note', {
+    description: 'Save a quick note to vault. Example: /note Read X today',
+    handler: async (args, _ctx) => {
+      const body = (args || '').trim();
+      if (!body) {
+        pi.sendUserMessage?.(
+          'Give me the note body, e.g. `/note Read about X today`.',
+          { deliverAs: 'followUp' },
+        );
+        return;
+      }
+      const date = new Date().toISOString().slice(0, 10);
+      // CJK range 一-鿿 kept as escape so source stays ASCII
+      // (CLAUDE.md code-language rule). Runtime regex still matches
+      // Chinese chars when the user's note body is in Chinese.
+      const slug =
+        body
+          .slice(0, 40)
+          .replace(/[^a-zA-Z0-9一-鿿]+/g, '-')
+          .replace(/^-|-$/g, '')
+          .toLowerCase() || 'note';
+      const vaultPath = `notes/${date}/${slug}.md`;
+      try {
+        await callKernelTool(
+          'vault_write',
+          {
+            path: vaultPath,
+            content: body,
+            frontmatter: {
+              kind: 'note',
+              created_at: new Date().toISOString(),
+              source: 'irisy-slash-note',
+            },
+          },
+          undefined,
+        );
+        pi.sendMessage?.(
+          {
+            customType: 'irisy-vault-write-ack',
+            content: { path: vaultPath },
+            display: { title: 'Saved', summary: vaultPath },
+          },
+          { triggerTurn: false },
+        );
+      } catch (err) {
+        pi.sendUserMessage?.(
+          `Could not save note: ${err instanceof Error ? err.message : String(err)}`,
+          { deliverAs: 'followUp' },
+        );
+      }
+    },
+  });
+
+  pi.registerCommand('soul', {
+    description: 'Open SOUL.md so you can edit how Irisy behaves.',
+    handler: (_args, _ctx) => {
+      pi.sendMessage?.(
+        {
+          customType: 'irisy-open-vault-tab',
+          content: { path: 'irisy/SOUL.md' },
+          display: {
+            title: 'Open SOUL.md',
+            summary: 'vault/irisy/SOUL.md',
+          },
+        },
+        { triggerTurn: false },
+      );
+    },
+  });
+
+  // /switch — toggle session mode + reshape Pi's active tool set
+  // accordingly. ADR-009 P2: coding mode enables the 7 Pi built-ins
+  // (read/write/edit/bash/grep/find/ls) on top of our 10 extension
+  // tools; personal / cap mode restricts to extension tools only so
+  // Pi can't quietly read user files outside vault.
+  pi.registerCommand('switch', {
+    description: 'Switch session mode. Example: /switch coding',
+    handler: (args, _ctx) => {
+      const mode = (args || '').trim().toLowerCase();
+      if (!['personal', 'coding', 'cap'].includes(mode)) {
+        pi.sendUserMessage?.(
+          'Modes are `personal` / `coding` / `cap`. Example: `/switch coding`.',
+          { deliverAs: 'followUp' },
+        );
+        return;
+      }
+      if (pi.setActiveTools) {
+        const kernelToolNames = buildKernelTools().map((t) => t.name);
+        const builtins = ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls'];
+        const active =
+          mode === 'coding'
+            ? [...kernelToolNames, ...builtins]
+            : kernelToolNames;
+        try {
+          pi.setActiveTools(active);
+        } catch {
+          /* tool name mismatch on Pi update — skip silently */
+        }
+      }
+      pi.sendMessage?.(
+        {
+          customType: 'irisy-mode-switch',
+          content: { mode },
+          display: { title: 'Mode', summary: `Now in ${mode} mode.` },
+        },
+        { triggerTurn: false },
+      );
+    },
+  });
 }
