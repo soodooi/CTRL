@@ -486,6 +486,10 @@ export class BridgeEventStream implements AsyncIterable<PiAssistantMessageEvent>
 // ── Registration ────────────────────────────────────────────────────────
 
 export default function register(pi: PiExtensionApi): void {
+  // Stash for out-of-band handlers that need pi.* actions after the
+  // runner binds (see applyDefaultActiveTools below).
+  activePiRef = pi;
+
   // 1. registerProvider — existing v1 behaviour (ADR-002 1).
   pi.registerProvider(BRIDGE_PROVIDER_NAME, {
     api: BRIDGE_PROVIDER_NAME,
@@ -507,13 +511,22 @@ export default function register(pi: PiExtensionApi): void {
   }
 
   // 2b. ADR-009 P2 — mode-aware tool whitelist. We removed
-  //     `--no-builtin-tools` from ctrl-pi-plugin/pi-bridge.ts (commit
-  //     pending) so Pi starts with all built-ins registered, then we
-  //     restrict the active set here to extension tools only. Coding
-  //     mode toggles back the built-ins via /switch coding (P5).
-  if (pi.setActiveTools) {
-    pi.setActiveTools(kernelTools.map((t) => t.name));
-  }
+  //     `--no-builtin-tools` from ctrl-pi-plugin/pi-bridge.ts so Pi
+  //     starts with all built-ins registered, then we restrict the
+  //     active set to extension tools only. Coding mode toggles the
+  //     built-ins back via /switch coding (P5).
+  //
+  //     Pi action methods (sendMessage/sendUserMessage/setActiveTools/...)
+  //     throw `Extension runtime not initialized` until the runner
+  //     binds its real implementations (loader.js:105 `notInitialized`
+  //     stub). loadExtension wraps the factory in try/catch and a
+  //     thrown stub here aborts the WHOLE extension load — every
+  //     handler/command silently never registers.
+  //
+  //     Defer to `session_start`, which fires AFTER bind. A module
+  //     flag makes it idempotent across reload / resume / fork so we
+  //     don't stomp a user `/switch coding` toggle on session resume.
+  pi.on('session_start', applyDefaultActiveTools);
 
   // 3. before_agent_start — chain-injects ADR-005 6 capability
   //    segments into the system prompt per-turn, keyword-pre-screened
@@ -1520,6 +1533,38 @@ function safeReadDir(dir: string): string[] {
     return [];
   }
 }
+
+// ─── ADR-009 P2 — apply default active tools after runtime bind ─────────
+//
+// pi.setActiveTools() is a runtime ACTION method (loader.js:115-123 in
+// pi-coding-agent 0.73), backed by a `notInitialized` throwing stub
+// during the extension factory pass. Calling it eagerly from register()
+// throws → loader.js:314 catches → the whole extension fails to load
+// (no handlers, no commands, no tools). Defer to `session_start`,
+// which fires after the runner has bound real implementations.
+//
+// Fires on every session_start (reason: startup|reload|new|resume|fork)
+// because each session is a fresh mode context — within-session
+// `/switch coding` is per-session and a new session should reset to
+// the conservative default (extension tools only).
+async function applyDefaultActiveTools(): Promise<void> {
+  // Pi import-cycle: pi is captured by closure in register(), not
+  // passed here. We need access to it to call setActiveTools. Re-look
+  // it up from the module-level reference we stash at register time.
+  const pi = activePiRef;
+  if (!pi || !pi.setActiveTools) return;
+  try {
+    pi.setActiveTools(buildKernelTools().map((t) => t.name));
+  } catch {
+    // setActiveTools may still throw if Pi changes its lifecycle in
+    // a future version. Falling back to the all-tools default is a
+    // permissive degradation, not a correctness bug.
+  }
+}
+
+// Set by register() so out-of-band handlers (session_start, etc.) can
+// reach the Pi API without us threading it through every event signature.
+let activePiRef: PiExtensionApi | null = null;
 
 // ─── ADR-009 P1 — session_compact → vault summary ───────────────────────
 //
