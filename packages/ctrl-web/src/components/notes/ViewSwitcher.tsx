@@ -1,20 +1,14 @@
-// ViewSwitcher — segmented control that flips the center pane of
-// NotesApp between Editor / Graph / Daily / Health.
-//
-// (ADR-002 substrate § vault v1 §8.6 v5, 2026-06-02 — kairo feature
-// parity batch.)
+// ViewSwitcher — 2-view toggle (Notes / Graph) matching kairo v0.1.0
+// upstream. Earlier kairo-parity batch (2026-06-02 v5) added Daily /
+// Health / Kanban / Diagram / Git views; bao 2026-06-05 reverted to
+// 1:1 kairo UI fidelity. The backend Tauri commands behind those
+// removed views (git_*, vault_*) are retained for Irisy MCP access —
+// see commands/git.rs + kernel/vault.rs.
 
 import { type ReactElement } from 'react';
 import styles from './Notes.module.css';
 
-export type NotesView =
-  | 'editor'
-  | 'graph'
-  | 'daily'
-  | 'health'
-  | 'kanban'
-  | 'diagram'
-  | 'git';
+export type NotesView = 'editor' | 'graph';
 
 interface ViewSwitcherProps {
   active: NotesView;
@@ -22,13 +16,8 @@ interface ViewSwitcherProps {
 }
 
 const VIEWS: ReadonlyArray<{ id: NotesView; label: string }> = [
-  { id: 'editor', label: 'Editor' },
+  { id: 'editor', label: 'Notes' },
   { id: 'graph', label: 'Graph' },
-  { id: 'daily', label: 'Daily' },
-  { id: 'health', label: 'Health' },
-  { id: 'kanban', label: 'Kanban' },
-  { id: 'diagram', label: 'Diagram' },
-  { id: 'git', label: 'Git' },
 ];
 
 export const ViewSwitcher = ({ active, onChange }: ViewSwitcherProps): ReactElement => (

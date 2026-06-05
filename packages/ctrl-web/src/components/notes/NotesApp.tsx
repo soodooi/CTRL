@@ -50,26 +50,11 @@ import { TagsPanel } from './TagsPanel';
 import { ViewSwitcher, type NotesView } from './ViewSwitcher';
 import styles from './Notes.module.css';
 
-// Lazy-load the heavy views so the PWA cold-start bundle (ADR-002
-// § crypto v1: ≤ 200 KB gzip critical path) doesn't drag in the
-// force-graph runtime until the user actually opens the Graph view.
+// Lazy-load Graph view so the force-graph runtime doesn't pull into
+// the PWA cold-start bundle (ADR-002 § crypto v1 ≤ 200 KB gzip
+// critical path).
 const GraphView = lazy(() =>
   import('./GraphView').then((m) => ({ default: m.GraphView })),
-);
-const HealthDashboard = lazy(() =>
-  import('./HealthDashboard').then((m) => ({ default: m.HealthDashboard })),
-);
-const DailyNotesCalendar = lazy(() =>
-  import('./DailyNotesCalendar').then((m) => ({ default: m.DailyNotesCalendar })),
-);
-const KanbanView = lazy(() =>
-  import('./KanbanView').then((m) => ({ default: m.KanbanView })),
-);
-const DiagramView = lazy(() =>
-  import('./DiagramView').then((m) => ({ default: m.DiagramView })),
-);
-const GitPanel = lazy(() =>
-  import('./GitPanel').then((m) => ({ default: m.GitPanel })),
 );
 
 const renderDailyTemplate = (raw: string): string => {
@@ -302,19 +287,7 @@ export const NotesApp = (): ReactElement => {
             <Suspense
               fallback={<div className={styles.viewFallback}>Loading view…</div>}
             >
-              {view === 'graph' ? (
-                <GraphView focusPath={selectedPath} onSelect={handleSelect} />
-              ) : view === 'health' ? (
-                <HealthDashboard onSelect={handleSelect} />
-              ) : view === 'daily' ? (
-                <DailyNotesCalendar onSelect={handleSelect} />
-              ) : view === 'kanban' ? (
-                <KanbanView />
-              ) : view === 'diagram' ? (
-                <DiagramView />
-              ) : view === 'git' ? (
-                <GitPanel />
-              ) : null}
+              <GraphView focusPath={selectedPath} onSelect={handleSelect} />
             </Suspense>
           )}
         </div>
