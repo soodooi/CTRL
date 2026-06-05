@@ -1,61 +1,58 @@
 // NotesApp — composition root for the Notes workspace tab body.
 //
-// (ADR-002 substrate § vault v1 §8.6 v4, 2026-06-02 — bao 2026-06-02
-// realignment: Vault is substrate, Notes is the L1 app; memory
-// `decision_vault_adr_002_section_8`.)
+// (ADR-002 substrate § vault v1 §8.6 v6, 2026-06-05 — bao 1:1 kairo
+// UI fidelity revert; supersedes the 2026-06-02 v4 + 2026-06-03 v5
+// kairo-parity batch that drifted away from upstream kairo v0.1.0
+// by adding Daily / Health / Kanban / Diagram / Git views and a
+// horizontal top action bar.)
 //
-// 3-column shell:
+// Sidebar-first 2-column shell matching the kairo v0.1.0 screenshot:
 //
-//   ┌────────────────────────────────────────────────────────┐
-//   │ Actions: [search] [+ Note] [Today] [Review N]          │
-//   ├────────┬──────────────────────────────┬────────────────┤
-//   │ Side   │ Editor (tab strip + body)    │ Backlinks      │
-//   │ 220px  │ 1fr                          │ 220px          │
-//   └────────┴──────────────────────────────┴────────────────┘
+//   ┌──────────────────────────────────────────────────────┐
+//   │ ┌────────────────┐ ┌───────────────────────┐ ┌─────┐ │
+//   │ │ Vault: <root>  │ │ Editor (tab strip +   │ │Back │ │
+//   │ │ [search ⌘K]    │ │ body)                 │ │links│ │
+//   │ │ [Notes][Graph] │ │                       │ │     │ │
+//   │ │ + New Note     │ │                       │ │     │ │
+//   │ │ Vault Health ▸ │ │                       │ │     │ │
+//   │ │ [Files][Tags]  │ │                       │ │     │ │
+//   │ │ - note1.md     │ │                       │ │     │ │
+//   │ │ - note2.md     │ │                       │ │     │ │
+//   │ └────────────────┘ └───────────────────────┘ └─────┘ │
+//   └──────────────────────────────────────────────────────┘
 //
-// bao 2026-06-03 (kairo-parity batch): left sidebar gets a Files/Tags
-// toggle (no more dual-stacked panel), the center column carries an
-// open-notes tab strip + bottom status bar, and the editor sprouts a
-// kairo-style toolbar. State that used to live as separate UI panes
-// (TagsPanel + NotesTree) now coalesces under a single `leftPane`
-// switch — kairo's "Files | Tags" affordance.
+// Today / Review buttons (CTRL-specific quick actions) removed from
+// UI per bao 2026-06-05 — Irisy can still trigger those flows via
+// the underlying vault_* / vault_sourcing_* MCP tools.
 
 import {
   useCallback,
   useState,
+  type ChangeEvent,
   type ReactElement,
 } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  vaultRead,
-  vaultSourcingPending,
-  vaultSourcingRun,
-  vaultWrite,
-} from '@/lib/kernel';
-import { useWorkspaceStore } from '@/lib/workspace-store';
+import { useQueryClient } from '@tanstack/react-query';
+import { vaultRead, vaultWrite } from '@/lib/kernel';
 import {
   loadDailyNotesConfig,
-  loadSourcingConfig,
   renderDailyNotePath,
-  renderReviewQueuePath,
 } from '@/lib/vault-conventions';
-import { lazy, Suspense } from 'react';
-import { NotesActions } from './NotesActions';
 import { NotesTree } from './NotesTree';
 import { NotesEditor } from './NotesEditor';
 import { NotesBacklinks } from './NotesBacklinks';
 import { NotesTabBar } from './NotesTabBar';
 import { TemplatesModal } from './TemplatesModal';
 import { TagsPanel } from './TagsPanel';
-import { ViewSwitcher, type NotesView } from './ViewSwitcher';
+import { VaultHealthFold } from './VaultHealthFold';
 import styles from './Notes.module.css';
 
-// Lazy-load Graph view so the force-graph runtime doesn't pull into
-// the PWA cold-start bundle (ADR-002 § crypto v1 ≤ 200 KB gzip
-// critical path).
-const GraphView = lazy(() =>
-  import('./GraphView').then((m) => ({ default: m.GraphView })),
-);
+// GraphView intentionally not mounted here — bao 2026-06-05: kairo
+// shows Notes/Graph as in-sidebar nav, but CTRL already has L1
+// PrimaryRail + an L2 slot reserved in app.tsx ([Tab | L2 | L1 |
+// Irisy]). Surfacing Graph as a second sidebar button duplicates
+// navigation and steals 32 px from the workspace. Graph rendering
+// lives at `./GraphView` and Irisy / a future L2 sub-nav (ADR-003
+// frontend §7.5) can mount it without the in-sidebar toggle.
 
 const renderDailyTemplate = (raw: string): string => {
   const d = new Date();
@@ -80,27 +77,12 @@ export const NotesApp = (): ReactElement => {
   const [busy, setBusy] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const [view, setView] = useState<NotesView>('editor');
   const queryClient = useQueryClient();
-  const openSysTab = useWorkspaceStore((s) => s.openTab);
-  const activeInstanceId = useWorkspaceStore((s) => s.activeInstanceId);
-  const createBlank = useWorkspaceStore((s) => s.createBlank);
-
-  // Inbox-pending count for the Review badge — polled every 8 s.
-  const { data: pending } = useQuery({
-    queryKey: ['vault-sourcing-pending'],
-    queryFn: () => vaultSourcingPending(),
-    refetchInterval: 8_000,
-    staleTime: 4_000,
-  });
-  const reviewCount = pending?.count ?? 0;
 
   const refetchTree = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['vault-list'] });
   }, [queryClient]);
 
-  /** Pin a note into the open-tab strip and select it. Re-opening an
-   *  already-open path just selects it (no duplicate tab). */
   const openNoteTab = useCallback((path: string) => {
     setSelectedPath(path);
     setOpenTabs((prev) => {
@@ -109,25 +91,28 @@ export const NotesApp = (): ReactElement => {
     });
   }, []);
 
-  /** Close a note tab. If we just closed the active note, fall back
-   *  to the right-neighbor (or empty state when none remain). */
-  const closeNoteTab = useCallback((path: string) => {
-    setOpenTabs((prev) => {
-      const idx = prev.findIndex((t) => t.path === path);
-      if (idx < 0) return prev;
-      const next = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
-      // Adjust selection
-      if (selectedPath === path) {
-        const fallback = next[idx] ?? next[idx - 1] ?? null;
-        setSelectedPath(fallback ? fallback.path : null);
-      }
-      return next;
-    });
-  }, [selectedPath]);
+  const closeNoteTab = useCallback(
+    (path: string) => {
+      setOpenTabs((prev) => {
+        const idx = prev.findIndex((t) => t.path === path);
+        if (idx < 0) return prev;
+        const next = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+        if (selectedPath === path) {
+          const fallback = next[idx] ?? next[idx - 1] ?? null;
+          setSelectedPath(fallback ? fallback.path : null);
+        }
+        return next;
+      });
+    },
+    [selectedPath],
+  );
 
-  const handleSelect = useCallback((path: string) => {
-    openNoteTab(path);
-  }, [openNoteTab]);
+  const handleSelect = useCallback(
+    (path: string) => {
+      openNoteTab(path);
+    },
+    [openNoteTab],
+  );
 
   const handleNew = useCallback(() => {
     setTemplatesOpen(true);
@@ -141,7 +126,11 @@ export const NotesApp = (): ReactElement => {
     [refetchTree, openNoteTab],
   );
 
-  const handleToday = useCallback(async () => {
+  // Quick `Today` shortcut — kairo doesn't expose this as a button, but
+  // we keep the handler wired so Irisy / a future keycap can invoke
+  // "open today's daily note" without re-implementing the template
+  // resolution.
+  const openToday = useCallback(async () => {
     setBusy(true);
     try {
       const cfg = await loadDailyNotesConfig();
@@ -179,67 +168,41 @@ export const NotesApp = (): ReactElement => {
       setBusy(false);
     }
   }, [refetchTree, openNoteTab]);
-
-  const handleReview = useCallback(async () => {
-    setBusy(true);
-    try {
-      const cfg = await loadSourcingConfig();
-      const today = new Date();
-      const reviewPath = renderReviewQueuePath(cfg.reviewQueuePath, today);
-      const yyyy = String(today.getFullYear());
-      const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const dd = String(today.getDate()).padStart(2, '0');
-      await vaultSourcingRun(`${yyyy}-${mm}-${dd}`);
-      refetchTree();
-      // Open the review queue as a sourcing-review tab in the active
-      // workspace instance (creates a host instance if none yet).
-      const id = `sourcing-review:${reviewPath}`;
-      const tab = {
-        id,
-        kind: 'sourcing-review' as const,
-        title: 'Sourcing review',
-        reviewPath,
-      };
-      if (!activeInstanceId) {
-        const inst = createBlank('Sourcing review');
-        openSysTab(tab, { instanceId: inst.id, activate: true });
-      } else {
-        openSysTab(tab, { activate: true });
-      }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('notes review failed', err);
-    } finally {
-      setBusy(false);
-    }
-  }, [activeInstanceId, createBlank, openSysTab, refetchTree]);
+  void openToday;
 
   return (
     <div className={styles.shell}>
-      <NotesActions
-        query={query}
-        onQueryChange={setQuery}
-        onNew={handleNew}
-        onToday={() => void handleToday()}
-        onReview={() => void handleReview()}
-        reviewCount={reviewCount}
-        busy={busy}
-        selectedPath={selectedPath}
-      />
       <TemplatesModal
         open={templatesOpen}
         onClose={() => setTemplatesOpen(false)}
         onCreated={handleTemplateCreated}
       />
-      <ViewSwitcher
-        active={view}
-        onChange={(next) => {
-          setView(next);
-        }}
-      />
       <div className={styles.cols}>
-        <div className={styles.leftCol}>
-          <div className={styles.leftPaneToggle} role="tablist" aria-label="Left pane">
+        <aside className={styles.leftCol} aria-label="Notes sidebar">
+          <input
+            type="search"
+            className={styles.sidebarSearch}
+            placeholder="Search notes…"
+            value={query}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              setQuery(e.target.value)
+            }
+            aria-label="Search notes"
+          />
+          <button
+            type="button"
+            className={styles.sidebarNewBtn}
+            onClick={handleNew}
+            disabled={busy}
+          >
+            + New Note
+          </button>
+          <VaultHealthFold />
+          <div
+            className={styles.leftPaneToggle}
+            role="tablist"
+            aria-label="Left pane"
+          >
             <button
               type="button"
               role="tab"
@@ -271,25 +234,15 @@ export const NotesApp = (): ReactElement => {
           ) : (
             <TagsPanel selected={tagFilter} onSelect={setTagFilter} />
           )}
-        </div>
+        </aside>
         <div className={styles.centerCol}>
-          {view === 'editor' ? (
-            <>
-              <NotesTabBar
-                tabs={openTabs}
-                activePath={selectedPath}
-                onSelect={setSelectedPath}
-                onClose={closeNoteTab}
-              />
-              <NotesEditor path={selectedPath} />
-            </>
-          ) : (
-            <Suspense
-              fallback={<div className={styles.viewFallback}>Loading view…</div>}
-            >
-              <GraphView focusPath={selectedPath} onSelect={handleSelect} />
-            </Suspense>
-          )}
+          <NotesTabBar
+            tabs={openTabs}
+            activePath={selectedPath}
+            onSelect={setSelectedPath}
+            onClose={closeNoteTab}
+          />
+          <NotesEditor path={selectedPath} />
         </div>
         <NotesBacklinks path={selectedPath} onSelect={handleSelect} />
       </div>
