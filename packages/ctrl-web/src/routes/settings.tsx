@@ -15,18 +15,10 @@ import {
   FormField,
   StatusPill,
   TextInput,
-  type StatusPillProps,
 } from '@/components/primitives';
 import { useTheme } from '@/hooks/useTheme';
 import { useKernelStatus } from '@/hooks/useKernelStatus';
-import {
-  deleteProvider,
-  listProviders,
-  setProviderKey,
-  testProvider,
-  type ProviderInfo,
-  type TestProviderResult,
-} from '@/lib/kernel';
+import { setProviderKey } from '@/lib/kernel';
 import type { ThemePreference } from '@/lib/theme';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { invoke } from '@/lib/bridge';
@@ -197,140 +189,168 @@ const ThemePicker = (): ReactElement => {
 
 // Provider row — one card per known provider. Inline edit + test +
 // delete; pending state disables both buttons. Errors surface inline
-// rather than via a global toast (we don't have one yet).
-interface ProviderRowProps {
-  provider: ProviderInfo;
-  onRefresh: () => Promise<void>;
+// ── Providers — simplified UI (bao 2026-06-05) ─────────────────────
+//
+// Previous design listed all 9 builtin providers as configurable rows
+// even when 8 of them were not configured. UX was noisy — most rows
+// were disabled placeholders for providers the user had never added
+// a key for. New design: one active chip + Change + Add buttons.
+//
+// Data sources:
+//   - providerList() → 9 builtin manifests, each with `ready` flag
+//     (true iff credentials resolve + adapter constructs without error)
+//   - loadBrainState() → currently-active providers per role
+//   - setProviderKey() → write API key into the macOS keychain
+//   - providerSetActive() → 1-token trial chat + bind role
+//
+// "Configured" = providers with `ready === true` (keyless local
+// adapters like Ollama also report ready when reachable).
+// "Unconfigured" = `ready === false`, candidates for the Add modal.
+
+interface ChangeMenuProps {
+  candidates: ProviderListRow[];
+  activeId: string | null;
+  onPick: (id: string) => void;
+  onClose: () => void;
+  busy: boolean;
 }
 
-const statusTone = (
-  provider: ProviderInfo,
-): StatusPillProps['tone'] =>
-  provider.is_active ? 'nominal' : 'offline';
+const ChangeMenu = ({
+  candidates,
+  activeId,
+  onPick,
+  onClose,
+  busy,
+}: ChangeMenuProps): ReactElement => (
+  <div className={styles.providerMenu} role="menu">
+    {candidates.length === 0 ? (
+      <p className={styles.providerMenuEmpty}>
+        Only one provider is configured. Add another from the “Add new”
+        button to switch between them.
+      </p>
+    ) : (
+      candidates.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          role="menuitem"
+          className={styles.providerMenuRow}
+          data-active={c.id === activeId || undefined}
+          onClick={() => onPick(c.id)}
+          disabled={busy || c.id === activeId}
+        >
+          <span className={styles.providerMenuLabel}>{c.label}</span>
+          <code className={styles.providerMenuSlug}>{c.id}</code>
+        </button>
+      ))
+    )}
+    <button
+      type="button"
+      className={styles.providerMenuClose}
+      onClick={onClose}
+      disabled={busy}
+    >
+      Close
+    </button>
+  </div>
+);
 
-const statusLabel = (provider: ProviderInfo): string =>
-  provider.is_active ? 'active' : 'not configured';
+interface AddModalProps {
+  candidates: ProviderListRow[];
+  onAdded: (id: string) => Promise<void>;
+  onClose: () => void;
+}
 
-const ProviderRow = ({ provider, onRefresh }: ProviderRowProps): ReactElement => {
+const AddModal = ({ candidates, onAdded, onClose }: AddModalProps): ReactElement => {
+  const [picked, setPicked] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
-  const [testResult, setTestResult] = useState<TestProviderResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const saveMutation = useMutation({
-    mutationFn: (key: string) =>
-      setProviderKey({ provider: provider.name, api_key: key }),
+    mutationFn: async (args: { id: string; key: string }) => {
+      await setProviderKey({ provider: args.id, api_key: args.key });
+    },
     onSuccess: async () => {
-      setApiKey('');
-      setError(null);
-      await onRefresh();
+      if (picked) await onAdded(picked);
     },
     onError: (e: unknown) =>
       setError(e instanceof Error ? e.message : String(e)),
   });
 
-  const testMutation = useMutation({
-    mutationFn: () => testProvider(provider.name),
-    onSuccess: (result) => {
-      setTestResult(result);
-      setError(null);
-    },
-    onError: (e: unknown) =>
-      setError(e instanceof Error ? e.message : String(e)),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: () => deleteProvider(provider.name),
-    onSuccess: async () => {
-      setApiKey('');
-      setTestResult(null);
-      setError(null);
-      await onRefresh();
-    },
-    onError: (e: unknown) =>
-      setError(e instanceof Error ? e.message : String(e)),
-  });
-
-  const busy =
-    saveMutation.isPending ||
-    testMutation.isPending ||
-    deleteMutation.isPending;
+  const pickedRow = useMemo(
+    () => candidates.find((c) => c.id === picked) ?? null,
+    [candidates, picked],
+  );
 
   return (
-    <div className={styles.providerRow}>
-      <div className={styles.providerHead}>
-        <div className={styles.providerIdentity}>
-          <h3 className={styles.providerName}>{provider.display_name}</h3>
-          <code className={styles.providerSlug}>{provider.name}</code>
-        </div>
-        <StatusPill tone={statusTone(provider)}>
-          {statusLabel(provider)}
-        </StatusPill>
-      </div>
-      <dl className={styles.providerMeta}>
-        <div>
-          <dt>Endpoint</dt>
-          <dd>{provider.base_url}</dd>
-        </div>
-        <div>
-          <dt>Default model</dt>
-          <dd>{provider.default_model}</dd>
-        </div>
-      </dl>
-      <FormField
-        label={provider.is_active ? 'Update API key' : 'API key'}
-        hint="Stored in macOS Keychain. Never leaves this device."
-      >
-        <TextInput
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder={provider.is_active ? '••••••••  (set, hidden)' : 'sk-…'}
-          autoComplete="off"
-          disabled={busy}
-        />
-      </FormField>
-      <div className={styles.providerActions}>
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={() => saveMutation.mutate(apiKey)}
-          disabled={busy || apiKey.trim().length === 0}
-        >
-          {saveMutation.isPending ? 'Saving…' : 'Save'}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => testMutation.mutate()}
-          disabled={busy || !provider.is_active}
-        >
-          {testMutation.isPending ? 'Testing…' : 'Test'}
-        </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          onClick={() => deleteMutation.mutate()}
-          disabled={busy || !provider.is_active}
-        >
-          {deleteMutation.isPending ? 'Removing…' : 'Remove'}
-        </Button>
-      </div>
-      {testResult && (
-        <p
-          className={styles.providerTestResult}
-          data-tone={testResult.success ? 'success' : 'danger'}
-        >
-          {testResult.success ? '✓' : '✗'} {testResult.message}
-          {testResult.model_count != null && (
-            <> · {testResult.model_count} models · {testResult.elapsed_ms}ms</>
+    <div className={styles.providerModalBackdrop} role="dialog" aria-modal="true">
+      <div className={styles.providerModal}>
+        <h3 className={styles.providerModalTitle}>Add provider</h3>
+        {!picked ? (
+          <div className={styles.providerModalList}>
+            {candidates.length === 0 ? (
+              <p className={styles.providerMenuEmpty}>
+                All known providers are already configured.
+              </p>
+            ) : (
+              candidates.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={styles.providerMenuRow}
+                  onClick={() => setPicked(c.id)}
+                >
+                  <span className={styles.providerMenuLabel}>{c.label}</span>
+                  <code className={styles.providerMenuSlug}>{c.id}</code>
+                </button>
+              ))
+            )}
+          </div>
+        ) : (
+          <>
+            <p className={styles.providerModalPickedLine}>
+              Adding <strong>{pickedRow?.label ?? picked}</strong>
+            </p>
+            <FormField
+              label="API key"
+              hint="Stored in macOS Keychain. Never leaves this device."
+            >
+              <TextInput
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-…"
+                autoComplete="off"
+                disabled={saveMutation.isPending}
+              />
+            </FormField>
+            {error && (
+              <p className={styles.providerError} role="alert">
+                {error}
+              </p>
+            )}
+          </>
+        )}
+        <div className={styles.providerModalActions}>
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          {picked && (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() =>
+                saveMutation.mutate({ id: picked, key: apiKey.trim() })
+              }
+              disabled={
+                saveMutation.isPending || apiKey.trim().length === 0
+              }
+            >
+              {saveMutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
           )}
-        </p>
-      )}
-      {error && (
-        <p className={styles.providerError} role="alert">
-          {error}
-        </p>
-      )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -338,13 +358,35 @@ const ProviderRow = ({ provider, onRefresh }: ProviderRowProps): ReactElement =>
 const ProvidersBlock = (): ReactElement => {
   const queryClient = useQueryClient();
   const providersQuery = useQuery({
-    queryKey: ['providers'],
-    queryFn: listProviders,
+    queryKey: ['providers-v2'],
+    queryFn: providerList,
+  });
+  const brainQuery = useQuery({
+    queryKey: ['brain-state'],
+    queryFn: loadBrainState,
+    refetchInterval: 8_000,
   });
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const refresh = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: ['providers'] });
+    await queryClient.invalidateQueries({ queryKey: ['providers-v2'] });
+    await queryClient.invalidateQueries({ queryKey: ['brain-state'] });
   }, [queryClient]);
+
+  const activateMutation = useMutation({
+    mutationFn: (id: string) =>
+      providerSetActive({ role: 'irisy.primary', provider_id: id }),
+    onSuccess: async () => {
+      setMenuOpen(false);
+      setError(null);
+      await refresh();
+    },
+    onError: (e: unknown) =>
+      setError(e instanceof Error ? e.message : String(e)),
+  });
 
   if (providersQuery.isPending) {
     return <p className={styles.providersFallback}>Loading providers…</p>;
@@ -361,12 +403,86 @@ const ProvidersBlock = (): ReactElement => {
   }
 
   const providers = providersQuery.data ?? [];
+  const configured = providers.filter((p) => p.ready);
+  const unconfigured = providers.filter((p) => !p.ready);
+  const brain = brainQuery.data ?? null;
+  const active = brain?.providers['irisy.primary'] ?? null;
+  // Active row data — prefer brain state (live), fall back to first
+  // configured manifest if brain hasn't responded yet.
+  const activeRow =
+    (active && providers.find((p) => p.id === active.id)) ??
+    configured[0] ??
+    null;
+  const activeLabel = active?.label ?? activeRow?.label ?? 'No provider';
+  const activeModel = activeRow?.models[0] ?? '—';
+  const healthy = active?.healthy ?? Boolean(activeRow?.ready);
+
+  const changeCandidates = configured.filter(
+    (c) => c.id !== (active?.id ?? activeRow?.id),
+  );
+
   return (
-    <div className={styles.providerStack}>
-      {providers.map((p) => (
-        <ProviderRow key={p.name} provider={p} onRefresh={refresh} />
-      ))}
-    </div>
+    <>
+      <div className={styles.providerActiveCard}>
+        <div className={styles.providerActiveHead}>
+          <span
+            className={styles.providerActiveDot}
+            data-healthy={healthy || undefined}
+            aria-hidden
+          />
+          <span className={styles.providerActiveLabel}>{activeLabel}</span>
+          <code className={styles.providerActiveModel}>{activeModel}</code>
+          <span className={styles.providerActiveStatus}>
+            {healthy ? 'Ready' : 'Not ready'}
+          </span>
+        </div>
+        <div className={styles.providerActiveActions}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setMenuOpen((v) => !v)}
+            disabled={configured.length <= 1}
+          >
+            ↻ Change
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => setAddOpen(true)}
+          >
+            + Add new
+          </Button>
+        </div>
+        {menuOpen && (
+          <ChangeMenu
+            candidates={changeCandidates}
+            activeId={active?.id ?? activeRow?.id ?? null}
+            onPick={(id) => activateMutation.mutate(id)}
+            onClose={() => setMenuOpen(false)}
+            busy={activateMutation.isPending}
+          />
+        )}
+        {error && (
+          <p className={styles.providerError} role="alert">
+            {error}
+          </p>
+        )}
+        <p className={styles.providerHint}>
+          Advanced: edit <code>~/.pi/agent/models.json</code> for full
+          control over models, endpoints, and routing.
+        </p>
+      </div>
+      {addOpen && (
+        <AddModal
+          candidates={unconfigured}
+          onClose={() => setAddOpen(false)}
+          onAdded={async () => {
+            setAddOpen(false);
+            await refresh();
+          }}
+        />
+      )}
+    </>
   );
 };
 
