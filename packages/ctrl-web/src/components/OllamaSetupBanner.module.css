@@ -1,0 +1,75 @@
+/* OllamaSetupBanner — fixed top strip while Pi-first setup is
+   incomplete. Stays inside CTRL global light theme (memory
+   `decision_ctrl_light_theme_default`); not scoped dark. */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  background: var(--color-bg-l1);
+  border-bottom: 1px solid var(--color-border-soft);
+  color: var(--color-text);
+  min-height: 36px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.label {
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.subtle {
+  color: var(--color-text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.action {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: var(--color-accent-fg, white);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+}
+
+.action:hover {
+  filter: brightness(1.08);
+}
+
+.progressTrack {
+  flex: 1;
+  min-width: 100px;
+  max-width: 240px;
+  height: 4px;
+  background: var(--color-bg-l2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 200ms ease-out;
+}
+
+.pct {
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  color: var(--color-text-soft);
+  min-width: 34px;
+  text-align: right;
+}

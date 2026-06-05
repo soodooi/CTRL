@@ -416,3 +416,27 @@ pub fn pi_upgrade_now() -> Result<PiStatusView, String> {
     crate::shell::BrainSupervisor::force_upgrade_and_restart()?;
     pi_status()
 }
+
+// ── Ollama install / model pull (Pi-first refactor, bao 2026-06-05) ────────
+
+#[tauri::command]
+pub fn ollama_status() -> Result<crate::shell::ollama_install::OllamaInstallStatus, String> {
+    // Fresh probe each time the PWA asks — cheap enough (a single
+    // `which` + a 5 s-timeout HTTP GET) and keeps the status accurate
+    // immediately after Ollama install / model pull completes.
+    Ok(crate::shell::ollama_install::probe_now())
+}
+
+#[tauri::command]
+pub fn ollama_pull_default(
+    app: tauri::AppHandle,
+) -> Result<crate::shell::ollama_install::OllamaInstallStatus, String> {
+    use tauri::Emitter;
+    let app_for_cb = app.clone();
+    crate::shell::ollama_install::spawn_pull_default(move |status| {
+        // Emit on every progress line; PWA banner re-renders. The
+        // event name matches the chat-stream-delta convention.
+        let _ = app_for_cb.emit("ollama-pull-progress", status);
+    })?;
+    Ok(crate::shell::ollama_install::current_status())
+}

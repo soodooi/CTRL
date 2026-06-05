@@ -38,6 +38,7 @@ import {
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
+import { OllamaSetupBanner } from './components/OllamaSetupBanner';
 import { KEYCAP_DRAG_MIME } from './components/Keyboard';
 import { RailProvider, PrimaryRail } from './components/PrimaryRail';
 import { InfraBar } from './components/InfraBar';
@@ -126,6 +127,7 @@ function RootShellInner(): ReactElement {
     >
       <div className={styles.status} data-testid="grid-status">
         <StatusBar />
+        <OllamaSetupBanner />
       </div>
       <div className={styles.l1} data-testid="grid-l1">
         <PrimaryRail />

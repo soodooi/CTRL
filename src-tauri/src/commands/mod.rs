@@ -66,6 +66,9 @@ macro_rules! pwa_invoke_handler {
             // pi_upgrade_now.
             $crate::commands::system::pi_status,
             $crate::commands::system::pi_upgrade_now,
+            // ollama install / hermes3:8b auto-pull (Pi-first, bao 2026-06-05)
+            $crate::commands::system::ollama_status,
+            $crate::commands::system::ollama_pull_default,
             // irisy — init status (kernel llm / Pi brain / mcp bridge)
             $crate::commands::irisy::irisy_init,
             // system — kernel health (PWA status bar Phase 1F)
