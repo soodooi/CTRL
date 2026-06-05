@@ -20,11 +20,21 @@
 // playbook curation is manual. Detect rules cover three primary cases.
 
 import { invoke } from './bridge';
-import { isFrontierNativeProvider } from './irisy-tool-dispatch';
+
+// bao 2026-06-05 Pi-first cleanup: `isFrontierNativeProvider` lived in
+// irisy-tool-dispatch which the PWA used to branch between XML overlay
+// and native function-call. Pi owns tool dispatch now, so the branch
+// is moot — every active provider is "frontier-native" from the PWA's
+// perspective (Pi handles native tool calling internally regardless
+// of which Claude/GPT/local model Pi happens to be routing to). The
+// frontmatter tag is kept for episode-log forward compatibility but
+// is unconditionally true.
 
 const PLAYBOOK_PATH = 'irisy/playbook.md';
 const REFLECT_PROMPT_PATH = 'irisy/reflect-prompt.md';
 const EPISODES_DIR = 'irisy/episodes';
+/** See the `frontier_native` field comment in writeEpisode for rationale. */
+const PI_FIRST_FRONTIER_NATIVE = true;
 
 export type ReflectTrigger =
   | 'user-correction'
@@ -197,7 +207,11 @@ export async function runReflection(args: {
           kind: 'irisy-episode',
           trigger: args.trigger,
           provider: args.activeProviderId ?? 'unknown',
-          frontier_native: isFrontierNativeProvider(args.activeProviderId),
+          // Pi-first era: every provider routed through Pi gets native
+          // tool calling, so this telemetry tag is uniformly true. Kept
+          // in frontmatter so older episode files stay queryable on the
+          // same key as new ones.
+          frontier_native: PI_FIRST_FRONTIER_NATIVE,
           created_at: new Date().toISOString(),
         },
       },

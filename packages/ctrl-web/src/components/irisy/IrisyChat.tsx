@@ -34,11 +34,16 @@ import {
 import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
 import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
 import { useSessionStateStore, sessionLabel } from '@/lib/session-state';
-import {
-  dispatchAllCalls,
-  formatResultsAsUserTurn,
-  isFrontierNativeProvider,
-} from '@/lib/irisy-tool-dispatch';
+// bao 2026-06-05 Pi-first cleanup: PWA-side XML tool dispatch
+// (`dispatchAllCalls` / `formatResultsAsUserTurn` /
+// `isFrontierNativeProvider`) removed. Pi runs its own agent loop
+// internally — it parses tool_use events from the LLM, dispatches
+// them via `pi.registerTool` callbacks (wired in ctrl-pi-bridge),
+// loops with tool_result back into the next LLM turn, and only
+// surfaces a `done` event with the final assistant text. The PWA-
+// side XML parse loop predated Pi-first and is now dead code that
+// fires once-per-turn and always returns []. `irisy-tool-dispatch.ts`
+// is deleted in this commit.
 import {
   detectReflectTrigger,
   isCorrectionMessage,
@@ -371,25 +376,29 @@ function buildSystemPrompt(
 ): string {
   const sections: string[] = [systemBase];
 
-  // ADR-002 substrate § provider v2 §3.7: inject the live brain state so
-  // Irisy answers "what model are you on" with the brand label, never the
-  // codename. Goes near the top so it sits above memory / keycap context.
-  if (brainState) {
-    sections.push(formatBrainStateBlock(brainState));
-  }
+  // bao 2026-06-05 Pi-first amendment to ADR-002 § provider v2 §3.7:
+  // the brain_state inject is INTENTIONALLY dropped. After d71a65a +
+  // 795d20a, Pi connects directly to its own LLM provider (Claude Pro
+  // via pi-claude-auth, or whatever PI_PROVIDER/PI_MODEL is set to).
+  // CTRL's provider_registry no longer routes the chat call, so the
+  // brain_state snapshot here lags Pi's real-time state — when CTRL
+  // still has `irisy.primary = ollama-local` in its registry but Pi
+  // is actually calling Claude, the LLM dutifully quotes the stale
+  // brand label and the user gets a wrong-model answer.
+  //
+  // Pi knows its own provider/model and the LLM can self-describe
+  // accurately without a CTRL-side injection. brainState is still
+  // loaded for the StatusBar / Settings → Providers chip (different
+  // surface), just not pushed into the system prompt.
+  void brainState;
 
-  // ADR-002 substrate § brain v7 §1.1 + ADR-005 irisy v4 §7.6 (2026-06-04,
-  // HOTFIX 2026-06-04 evening): Frontier-native overlay DISABLED. Pi
-  // 0.73.1's `registerTool()` surface needs verification — observed
-  // failure mode was Pi looping "Calling list_local_skills" without
-  // emitting either an XML <call> block OR a native function call,
-  // because the overlay told it to skip XML while registerTool was
-  // not actually exposing the tools to the model. Until the Pi
-  // extension surface is confirmed, every provider falls back to the
-  // proven PWA-XML loop (irisy-tool-dispatch). Phase 3 ADR-005 §7.6
-  // remains on paper; revisit after a one-file Pi sample proves the
-  // extension API contract.
-  void isFrontierNativeProvider; // keep import live for the revisit.
+  // bao 2026-06-05 Pi-first: the entire Frontier-native overlay
+  // discussion (ADR-002 § brain v7 §1.1 + ADR-005 irisy v4 §7.6 hotfix
+  // 2026-06-04) is now moot. Pi itself owns tool calling. There is no
+  // PWA-side XML overlay vs native function-call branching to choose
+  // between — Pi runs its agent loop natively, the PWA observes the
+  // final answer. The `isFrontierNativeProvider` import + this whole
+  // toggle were removed alongside irisy-tool-dispatch.ts.
 
   if (coreMemory.trim().length > 0) {
     sections.push(`# Core memory (loaded from vault/.irisy-memory/)\n${coreMemory.trim()}`);
@@ -681,12 +690,11 @@ export function IrisyChat(): React.ReactElement {
 
       // bao 2026-06-04: Pi emits `<call name="X">{...}</call>` blocks to
       // invoke local tools (prompt-taught XML protocol in
-      // lib/irisy-prompts.ts). The PWA dispatches each call against the
-      // matching Tauri command, feeds back `<call-result for="X">…`, and
-      // re-streams Pi for the follow-up turn. Capped at MAX_TOOL_ITERS
-      // hops per user message so a buggy chain can't spin forever.
-      const MAX_TOOL_ITERS = 5;
-      let history: LLMMessage[] = [
+      // bao 2026-06-05 Pi-first: Pi runs the full agent loop (tool
+      // dispatch + multi-hop tool_result feedback + safety cap) inside
+      // its own RPC server. PWA sends one user turn, observes the
+      // assistant's final text. No PWA-side MAX_TOOL_ITERS guard needed.
+      const history: LLMMessage[] = [
         {
           role: 'system',
           content: buildSystemPrompt(
@@ -706,142 +714,129 @@ export function IrisyChat(): React.ReactElement {
         { role: 'user', content: trimmed },
       ];
 
+      // bao 2026-06-05 Pi-first: removed the PWA `for(iter)` tool loop
+      // — Pi internally runs the full LLM → tool_use → tool_result →
+      // next-LLM-turn cycle and only surfaces the final assistant text
+      // through `transport.stream`. PWA observes one stream, accepts
+      // text + custom-message chunks, fires sleep-time reflection.
       try {
-        for (let iter = 0; iter < MAX_TOOL_ITERS; iter++) {
-          const assistantId = `a-${Date.now()}-${iter}`;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: assistantId,
-              role: 'assistant',
-              content: '',
-              streaming: true,
-            },
-          ]);
+        const assistantId = `a-${Date.now()}`;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantId,
+            role: 'assistant',
+            content: '',
+            streaming: true,
+          },
+        ]);
 
-          let assistantText = '';
-          let aborted = false;
-          for await (const chunk of transport.stream(history, {
-            skill_id: currentSkillId ?? undefined,
-            mode,
-            project_dir: projectDir ?? undefined,
-          })) {
-            if (chunk.error) {
-              // Pi RPC errors (timeout / Stderr / supervisor crash) get
-              // routed into the errorPanel surface so the bubble stays
-              // clean and the stderr tail can be expanded.
-              setChatError(humanizePiError(String(chunk.error), activeBrain));
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId ? { ...m, streaming: false } : m,
-                ),
-              );
-              aborted = true;
-              break;
-            }
-            if (chunk.delta) {
-              assistantText += chunk.delta;
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId && m.role === 'assistant'
-                    ? { ...m, content: m.content + chunk.delta }
-                    : m,
-                ),
-              );
-            }
-            if (chunk.custom) {
-              // ADR-009 P3 — Pi emitted a role=custom message via the
-              // slash command path. Insert it BEFORE the assistant
-              // placeholder so it reads as the user's intent, not as
-              // the assistant's reply. Falls back to append if the
-              // placeholder isn't in the list (shouldn't happen).
-              const customMsg = chunk.custom;
-              setMessages((prev) => {
-                const next: DisplayMessage[] = [...prev];
-                const idx = next.findIndex((m) => m.id === assistantId);
-                const entry: CustomDisplayMessage = {
-                  id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                  role: 'custom',
-                  custom: customMsg,
-                  streaming: false,
-                };
-                if (idx === -1) next.push(entry);
-                else next.splice(idx, 0, entry);
-                return next;
-              });
-            }
-            if (chunk.done) break;
-          }
-          // Stop the streaming spinner; also drop the assistant
-          // placeholder entirely when no text arrived (slash command
-          // ran without an LLM turn — keeping an empty bubble would
-          // confuse the user about whether anything happened).
-          setMessages((prev) =>
-            prev.flatMap((m) => {
-              if (m.id !== assistantId || m.role !== 'assistant') return [m];
-              if (assistantText.length === 0) return [];
-              return [{ ...m, streaming: false }];
-            }),
-          );
-          if (aborted) return;
-
-          const results = await dispatchAllCalls(assistantText);
-          if (results.length === 0) {
-            // No tool calls in this turn — Pi is done. Break out so the
-            // composer unlocks instead of starting another stream.
-            // ADR-005 irisy v4 §5 (2026-06-04): fire sleep-time
-            // reflection here. Best-effort, fire-and-forget so the
-            // user's next turn is never blocked. Only triggers when the
-            // Detect rules say it's worth writing an episode.
-            const trigger = detectReflectTrigger({
-              recentTurns: [],
-              lastTurnHadToolError: false,
-              lastUserTurnIsCorrection: isCorrectionMessage(trimmed),
-            });
-            if (trigger) {
-              const recentTurns: ReflectTurn[] = [
-                ...messages
-                  .slice(-6)
-                  .filter((m): m is TextDisplayMessage => m.role !== 'custom')
-                  .map((m) => ({ role: m.role, content: m.content })),
-                { role: 'user', content: trimmed },
-                { role: 'assistant', content: assistantText },
-              ];
-              const activeProviderId =
-                brainState?.providers?.['irisy.primary']?.id ?? null;
-              void runReflection({
-                trigger,
-                recentTurns,
-                activeProviderId,
-                streamFn: async (systemPrompt, userPrompt) => {
-                  let acc = '';
-                  for await (const chunk of transport.stream(
-                    [
-                      { role: 'system', content: systemPrompt },
-                      { role: 'user', content: userPrompt },
-                    ],
-                    {},
-                  )) {
-                    if (chunk.error) break;
-                    if (chunk.delta) acc += chunk.delta;
-                    if (chunk.done) break;
-                  }
-                  return acc;
-                },
-              });
-            }
+        let assistantText = '';
+        let aborted = false;
+        for await (const chunk of transport.stream(history, {
+          skill_id: currentSkillId ?? undefined,
+          mode,
+          project_dir: projectDir ?? undefined,
+        })) {
+          if (chunk.error) {
+            // Pi RPC errors (timeout / Stderr / supervisor crash) get
+            // routed into the errorPanel surface so the bubble stays
+            // clean and the stderr tail can be expanded.
+            setChatError(humanizePiError(String(chunk.error), activeBrain));
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, streaming: false } : m,
+              ),
+            );
+            aborted = true;
             break;
           }
+          if (chunk.delta) {
+            assistantText += chunk.delta;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId && m.role === 'assistant'
+                  ? { ...m, content: m.content + chunk.delta }
+                  : m,
+              ),
+            );
+          }
+          if (chunk.custom) {
+            // ADR-009 P3 — Pi emitted a role=custom message via the
+            // slash command path. Insert it BEFORE the assistant
+            // placeholder so it reads as the user's intent, not as
+            // the assistant's reply. Falls back to append if the
+            // placeholder isn't in the list (shouldn't happen).
+            const customMsg = chunk.custom;
+            setMessages((prev) => {
+              const next: DisplayMessage[] = [...prev];
+              const idx = next.findIndex((m) => m.id === assistantId);
+              const entry: CustomDisplayMessage = {
+                id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                role: 'custom',
+                custom: customMsg,
+                streaming: false,
+              };
+              if (idx === -1) next.push(entry);
+              else next.splice(idx, 0, entry);
+              return next;
+            });
+          }
+          if (chunk.done) break;
+        }
+        // Stop the streaming spinner; also drop the assistant
+        // placeholder entirely when no text arrived (slash command
+        // ran without an LLM turn — keeping an empty bubble would
+        // confuse the user about whether anything happened).
+        setMessages((prev) =>
+          prev.flatMap((m) => {
+            if (m.id !== assistantId || m.role !== 'assistant') return [m];
+            if (assistantText.length === 0) return [];
+            return [{ ...m, streaming: false }];
+          }),
+        );
+        if (aborted) return;
 
-          // History feeds Pi only — the raw `<call-result>` XML would
-          // look ugly in a user bubble, and the call card the assistant
-          // bubble already renders carries enough context for the human.
-          const resultsTurn = formatResultsAsUserTurn(results);
-          history = [
-            ...history,
+        // ADR-005 irisy v4 §5 (2026-06-04): fire sleep-time reflection
+        // after every turn. Best-effort, fire-and-forget so the user's
+        // next turn is never blocked. Only triggers when the Detect
+        // rules say it's worth writing an episode.
+        const trigger = detectReflectTrigger({
+          recentTurns: [],
+          lastTurnHadToolError: false,
+          lastUserTurnIsCorrection: isCorrectionMessage(trimmed),
+        });
+        if (trigger) {
+          const recentTurns: ReflectTurn[] = [
+            ...messages
+              .slice(-6)
+              .filter((m): m is TextDisplayMessage => m.role !== 'custom')
+              .map((m) => ({ role: m.role, content: m.content })),
+            { role: 'user', content: trimmed },
             { role: 'assistant', content: assistantText },
-            { role: 'user', content: resultsTurn },
           ];
+          const activeProviderId =
+            brainState?.providers?.['irisy.primary']?.id ?? null;
+          void runReflection({
+            trigger,
+            recentTurns,
+            activeProviderId,
+            streamFn: async (systemPrompt, userPrompt) => {
+              let acc = '';
+              for await (const chunk of transport.stream(
+                [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: userPrompt },
+                ],
+                {},
+              )) {
+                if (chunk.error) break;
+                if (chunk.delta) acc += chunk.delta;
+                if (chunk.done) break;
+              }
+              return acc;
+            },
+          });
         }
       } catch (e: unknown) {
         const detail = e instanceof Error ? e.message : String(e);
