@@ -349,15 +349,34 @@ export class PiBridge {
         if (typeof v === 'string') env[k] = v;
       }
       env.PI_OUTPUT_FORMAT = 'json';
-      if (bridgeExt && bridgeExt.length > 0) {
-        env.PI_PROVIDER = env.PI_PROVIDER ?? 'ctrl-bridge';
-        env.PI_MODEL = env.PI_MODEL ?? 'default';
-      }
+      // bao 2026-06-05 Pi-first refactor (ADR-009 §5 "do not re-implement
+      // capabilities Pi already provides" + memory
+      // `feedback_pi_is_core_use_upstream_surfaces`): Pi now connects
+      // directly to its own native LLM provider via
+      // ~/.pi/agent/models.json (currently seeds `ollama-local` running
+      // Ollama OpenAI-compat). The bridge extension is still loaded for
+      // tools / hooks / commands but is no longer registered as a Pi LLM
+      // provider. This restores Pi-native tool calling (`tool_use` /
+      // `tool_calls` events flow through pi-ai providers like
+      // `openai-completions`), which the previous `streamSimple` proxy
+      // silently disabled by routing every LLM call through the kernel
+      // `/text-chat` endpoint + legacy `/api/generate` Ollama adapter —
+      // see brainstorm/irisy-capabilities-2026-06-04.md A14.
+      env.PI_PROVIDER = env.PI_PROVIDER ?? 'ollama-local';
+      env.PI_MODEL = env.PI_MODEL ?? 'qwen2.5:7b';
+      // RpcClient passes provider/model to Pi via `--provider` and
+      // `--model` CLI args (rpc-client.js L31-35), NOT env. The env
+      // assignments above are kept for any downstream child that
+      // inherits them, but Pi itself only honors the constructor opts.
+      const provider = env.PI_PROVIDER;
+      const model = env.PI_MODEL;
 
       const client = new RpcClient({
         cliPath: this.pi.command,
         args,
         env,
+        provider,
+        model,
       });
       await client.start();
       this.rpc = client;

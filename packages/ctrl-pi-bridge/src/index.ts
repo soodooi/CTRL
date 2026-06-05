@@ -490,14 +490,24 @@ export default function register(pi: PiExtensionApi): void {
   // runner binds (see applyDefaultActiveTools below).
   activePiRef = pi;
 
-  // 1. registerProvider — existing v1 behaviour (ADR-002 1).
-  pi.registerProvider(BRIDGE_PROVIDER_NAME, {
-    api: BRIDGE_PROVIDER_NAME,
-    baseUrl: 'http://127.0.0.1',
-    apiKey: 'ctrl-bridge-streamSimple-bypass',
-    models: [BRIDGE_MODEL_NAME],
-    streamSimple: (model, ctx, opts) => streamFromKernel(model, ctx, opts),
-  });
+  // 1. registerProvider — DISABLED 2026-06-05 (bao Pi-first refactor).
+  //
+  // The bridge used to register a `ctrl-bridge` Pi LLM provider that
+  // round-tripped every chat call through `kernel /text-chat`. That
+  // pattern violated ADR-009 §5 ("do not re-implement capabilities Pi
+  // already provides") and silently disabled Pi's native tool calling:
+  // `streamSimple(ctx={messages, system})` has no `tools` field, so the
+  // 10 kernel tools registered below via `registerTool` were unreachable
+  // from any LLM the bridge proxied. See brainstorm/
+  // irisy-capabilities-2026-06-04.md A14 + debug session 2026-06-05.
+  //
+  // Pi now reads `~/.pi/agent/models.json` and connects directly to its
+  // native provider (default seed: `ollama-local` running Ollama
+  // OpenAI-compat at http://localhost:11434/v1). The tools / hooks /
+  // commands / message-renderer wiring below is unchanged — Pi sees the
+  // bridge as a capability extension, not an LLM provider.
+  //
+  // pi.registerProvider(BRIDGE_PROVIDER_NAME, { ... }); // intentionally removed
 
   // 2. registerTool x 10 — native Pi tools for BYOK frontier path
   //    (ADR-005 7.3, 2026-06-04). Each tool is a thin HTTP-fetch

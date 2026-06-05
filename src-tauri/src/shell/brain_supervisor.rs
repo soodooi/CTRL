@@ -342,7 +342,13 @@ fn spawn_brain(
         .current_dir(plugin_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        // bao 2026-06-05 debug session: was `Stdio::piped()` with no
+        // reader thread, which silently dropped Pi stderr after the
+        // ~64KB pipe buffer filled. Switch to `inherit()` so ctrl-pi-
+        // bridge `process.stderr.write(...)` debug lines surface in the
+        // tauri dev log. TODO post-debug: add a reader task forwarding
+        // to tracing for structured logs.
+        .stderr(Stdio::inherit());
     // Tell pi-plugin where Pi lives — overrides its own PATH/npx lookup
     // so we always use the version we installed under ~/.ctrl/pi/.
     cmd.env("CTRL_PI_BIN", pi_bin);
