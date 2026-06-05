@@ -89,6 +89,13 @@ struct StreamDelta {
     done: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    // ADR-009 P3 — when Pi emits a role=custom message (slash command
+    // intent, e.g. /discover, /switch), the MCP server relays it as
+    // SSE `event:custom`. We forward the same payload to PWA through
+    // the existing chat-stream-delta event so the chat hook stays one
+    // listener instead of two.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    custom: Option<serde_json::Value>,
 }
 
 #[tauri::command]
@@ -310,6 +317,28 @@ fn handle_sse_payload(
                     delta: p.delta,
                     done: false,
                     error: None,
+                    custom: None,
+                },
+            );
+        }
+        "custom" => {
+            // ADR-009 P3 — forward Pi role=custom payloads (slash
+            // command intents) to PWA unchanged. The PWA's IrisyChat
+            // dispatches on payload.customType to the right renderer.
+            // Treat unparseable payloads as a soft drop (Pi may add
+            // new customType shapes in future without us breaking).
+            let payload: serde_json::Value = match serde_json::from_str(data) {
+                Ok(v) => v,
+                Err(_) => return Ok(()),
+            };
+            let _ = app.emit(
+                "chat-stream-delta",
+                StreamDelta {
+                    request_id: request_id.to_string(),
+                    delta: String::new(),
+                    done: false,
+                    error: None,
+                    custom: Some(payload),
                 },
             );
         }
@@ -340,6 +369,7 @@ fn emit_done(app: &AppHandle, request_id: &str, error: Option<String>) {
             delta: String::new(),
             done: true,
             error,
+            custom: None,
         },
     );
 }

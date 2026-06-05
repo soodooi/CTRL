@@ -237,6 +237,12 @@ async function handleToolsCall(
       },
       {
         onChunk: (c) => writeSse(res, 'delta', { delta: c.delta }),
+        // ADR-009 P3 — relay Pi role=custom messages straight through
+        // to the kernel as a typed SSE `custom` event so the PWA can
+        // render slash-command UI affordances (open-discover, mode
+        // switch, vault-write-ack, ...). Payload shape is the same
+        // object Pi appended to its session jsonl.
+        onCustom: (m) => writeSse(res, 'custom', m),
         onFinal: (f) =>
           writeSse(res, 'done', {
             jsonrpc: '2.0',

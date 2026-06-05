@@ -16,7 +16,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElem
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
-import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
+import {
+  irisyChatTransport,
+  type IrisyCustomMessage,
+  type LLMMessage,
+} from '@/lib/llm-transport';
+import { IrisyCustomMessageView } from './IrisyCustomMessage';
 import {
   ensurePromptsBootstrap,
   loadIrisySystemPrompt,
@@ -69,12 +74,28 @@ interface IrisyStatus {
   active_brain?: string;
 }
 
-interface DisplayMessage {
+interface TextDisplayMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   streaming: boolean;
 }
+
+/** Custom (Pi role=custom) message rendered as an inline chip/banner.
+ *  Lives in chat history alongside text messages but is NOT sent back
+ *  to Pi as context (filtered out in the history map below), since
+ *  Pi already has its own session log entry for it. ADR-009 P3. */
+interface CustomDisplayMessage {
+  id: string;
+  role: 'custom';
+  custom: IrisyCustomMessage;
+  // streaming kept for shape uniformity with TextDisplayMessage so the
+  // restore-from-localStorage map (`{ ...m, streaming: false }`) stays
+  // a one-liner.
+  streaming: boolean;
+}
+
+type DisplayMessage = TextDisplayMessage | CustomDisplayMessage;
 
 const SEED_PROMPTS: readonly string[] = [
   'What can you do here?',
@@ -226,7 +247,10 @@ function humanizePiError(
 }
 
 interface AssistantBubbleProps {
-  message: DisplayMessage;
+  // Only the text variant ever reaches AssistantBubble — the render
+  // dispatch in the main map narrows by role before this is rendered.
+  // Custom messages get their own renderer.
+  message: TextDisplayMessage;
   /**
    * Elapsed ms since the assistant turn started. Zero when not streaming
    * (which lets the memo identity hold across unrelated chunk-driven
@@ -423,14 +447,11 @@ export function IrisyChat(): React.ReactElement {
       const parsed: unknown = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
       return parsed
-        .filter(
-          (m): m is DisplayMessage =>
-            typeof m === 'object' &&
-            m !== null &&
-            'role' in (m as Record<string, unknown>) &&
-            ((m as DisplayMessage).role === 'user' ||
-              (m as DisplayMessage).role === 'assistant'),
-        )
+        .filter((m): m is DisplayMessage => {
+          if (typeof m !== 'object' || m === null) return false;
+          const role = (m as Record<string, unknown>).role;
+          return role === 'user' || role === 'assistant' || role === 'custom';
+        })
         .map((m) => ({ ...m, streaming: false }));
     } catch {
       return [];
@@ -676,10 +697,12 @@ export function IrisyChat(): React.ReactElement {
             brainState,
           ),
         },
-        ...messages.map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        })),
+        // Strip custom messages — Pi already has them in its own
+        // session log (we send them, we don't replay them as context).
+        // Casts are narrow because the filter eliminates role='custom'.
+        ...messages
+          .filter((m): m is TextDisplayMessage => m.role !== 'custom')
+          .map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: trimmed },
       ];
 
@@ -720,18 +743,45 @@ export function IrisyChat(): React.ReactElement {
               assistantText += chunk.delta;
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantId
+                  m.id === assistantId && m.role === 'assistant'
                     ? { ...m, content: m.content + chunk.delta }
                     : m,
                 ),
               );
             }
+            if (chunk.custom) {
+              // ADR-009 P3 — Pi emitted a role=custom message via the
+              // slash command path. Insert it BEFORE the assistant
+              // placeholder so it reads as the user's intent, not as
+              // the assistant's reply. Falls back to append if the
+              // placeholder isn't in the list (shouldn't happen).
+              const customMsg = chunk.custom;
+              setMessages((prev) => {
+                const next: DisplayMessage[] = [...prev];
+                const idx = next.findIndex((m) => m.id === assistantId);
+                const entry: CustomDisplayMessage = {
+                  id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  role: 'custom',
+                  custom: customMsg,
+                  streaming: false,
+                };
+                if (idx === -1) next.push(entry);
+                else next.splice(idx, 0, entry);
+                return next;
+              });
+            }
             if (chunk.done) break;
           }
+          // Stop the streaming spinner; also drop the assistant
+          // placeholder entirely when no text arrived (slash command
+          // ran without an LLM turn — keeping an empty bubble would
+          // confuse the user about whether anything happened).
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId ? { ...m, streaming: false } : m,
-            ),
+            prev.flatMap((m) => {
+              if (m.id !== assistantId || m.role !== 'assistant') return [m];
+              if (assistantText.length === 0) return [];
+              return [{ ...m, streaming: false }];
+            }),
           );
           if (aborted) return;
 
@@ -750,10 +800,10 @@ export function IrisyChat(): React.ReactElement {
             });
             if (trigger) {
               const recentTurns: ReflectTurn[] = [
-                ...messages.slice(-6).map((m) => ({
-                  role: m.role,
-                  content: m.content,
-                })),
+                ...messages
+                  .slice(-6)
+                  .filter((m): m is TextDisplayMessage => m.role !== 'custom')
+                  .map((m) => ({ role: m.role, content: m.content })),
                 { role: 'user', content: trimmed },
                 { role: 'assistant', content: assistantText },
               ];
@@ -1017,6 +1067,17 @@ export function IrisyChat(): React.ReactElement {
           {messages.map((m, i) => {
             const prev = i > 0 ? messages[i - 1] : null;
             const showSep = prev != null && prev.role !== m.role;
+            // ADR-009 P3 — custom messages are inline chips/banners,
+            // rendered via dispatch before the text branches so the
+            // assistant/user TS narrows below.
+            if (m.role === 'custom') {
+              return (
+                <div key={m.id}>
+                  {showSep && <div className={styles.turnSeparator} />}
+                  <IrisyCustomMessageView msg={m.custom} />
+                </div>
+              );
+            }
             if (m.role === 'assistant') {
               return (
                 <div key={m.id}>

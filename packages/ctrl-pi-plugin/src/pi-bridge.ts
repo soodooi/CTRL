@@ -68,7 +68,26 @@ interface PiAgentEvent {
   message?: {
     role?: string;
     usage?: { input?: number; output?: number };
+    // Pi role=custom messages (sent via pi.sendMessage({customType,...}))
+    // carry the customType + content on the message object itself
+    // (agent-session.js:955 — appMessage shape). We surface them upward
+    // through StreamCallbacks.onCustom so the kernel can relay them to
+    // the PWA for slash-command-style UI rendering (ADR-009 P3).
+    customType?: string;
+    content?: unknown;
+    display?: unknown;
+    details?: unknown;
   };
+}
+
+/** Shape of a custom message after a no-turn `pi.sendMessage` (ADR-009 P5
+ *  slash commands). Mirrors Pi's CustomMessage interface but narrowed to
+ *  the fields PiBridge actually surfaces upward. */
+export interface PiCustomMessage {
+  customType: string;
+  content: unknown;
+  display?: unknown;
+  details?: unknown;
 }
 
 export interface ChatMessage {
@@ -110,6 +129,10 @@ export interface StreamCallbacks {
   onChunk: (c: ChatChunk) => void;
   onFinal: (f: ChatFinal) => void;
   onError: (e: Error) => void;
+  /** Fires when Pi emits a role=custom message (e.g. slash command
+   *  customType payload). Optional so existing call-sites keep working
+   *  unchanged. ADR-009 P3. */
+  onCustom?: (m: PiCustomMessage) => void;
 }
 
 const MAX_PROMPT_BYTES = 256 * 1024;
@@ -246,6 +269,18 @@ export class PiBridge {
               input_tokens: msg.usage.input,
               output_tokens: msg.usage.output,
             };
+          }
+          // Custom message landed — surface it upward so the kernel
+          // can relay to PWA for slash-command-style UI rendering
+          // (ADR-009 P3). Fire BEFORE the no-turn resolve so the
+          // callback runs while the stream is still alive.
+          if (msg?.role === 'custom' && typeof msg.customType === 'string') {
+            cb.onCustom?.({
+              customType: msg.customType,
+              content: msg.content,
+              display: msg.display,
+              details: msg.details,
+            });
           }
           // Slash-command custom message landed and no LLM turn has
           // begun → this prompt is done.

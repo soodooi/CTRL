@@ -25,10 +25,26 @@ export interface LLMMessage {
   content: string;
 }
 
+/** Custom message payload from Pi via the slash-command path (ADR-009
+ *  P3/P5). `customType` is one of the irisy-* names registered in
+ *  ctrl-pi-bridge; `content` / `display` shapes vary by customType and
+ *  are validated at the renderer dispatch site. */
+export interface IrisyCustomMessage {
+  customType: string;
+  content?: unknown;
+  display?: { title?: string; summary?: string };
+  details?: unknown;
+}
+
 export interface LLMChunk {
   delta: string;
   done: boolean;
   error?: string;
+  /** Set when this chunk carries a Pi custom message (slash command
+   *  intent). `delta` is empty in this case — the chat UI should
+   *  render the custom message via IrisyCustomMessage component, not
+   *  append text to the assistant bubble. */
+  custom?: IrisyCustomMessage;
 }
 
 export interface LLMStreamOptions {
@@ -117,6 +133,9 @@ interface ChatStreamDelta {
   delta: string;
   done: boolean;
   error?: string;
+  /** ADR-009 P3 — Pi custom message relayed by irisy_chat.rs through
+   *  the same chat-stream-delta channel. Skipped when absent. */
+  custom?: IrisyCustomMessage;
 }
 
 interface UnlistenFn {
@@ -211,6 +230,13 @@ export class ChatStreamTransport implements LLMTransport {
         if (next.error) {
           yield { delta: '', done: true, error: next.error };
           return;
+        }
+        if (next.custom) {
+          // ADR-009 P3 — emit the custom payload to the chat UI in its
+          // own chunk so the consumer can render it as a discrete
+          // entry. Text deltas in the same delivery cycle still flow
+          // through the `next.delta` branch on subsequent iterations.
+          yield { delta: '', done: false, custom: next.custom };
         }
         if (next.delta) yield { delta: next.delta, done: false };
         if (next.done) {
