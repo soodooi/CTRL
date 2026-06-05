@@ -40,6 +40,7 @@ import {
   runReflection,
   type ReflectTurn,
 } from '@/lib/irisy-reflection';
+import { cleanReplyText } from '@/lib/irisy-render-filter';
 import styles from './IrisyChat.module.css';
 
 const CHAT_STORAGE_KEY = 'irisy:chat:v1';
@@ -263,14 +264,26 @@ const AssistantBubble = memo(function AssistantBubble({
         {hasRenderable ? (
           segments.map((seg, idx) => {
             if (seg.kind === 'text') {
-              const text = seg.text;
-              if (text.trim().length === 0) return null;
+              // bao 2026-06-04: strip qwen-style "Goal / Progress /
+              // Done / Next Steps" reasoning scaffolds + <thinking>
+              // blocks + bare narration ("Calling list_local_skills...")
+              // + internal codenames (Pi / Claude / Ollama / vault_*
+              // / install_keycap / brain_status). 7B models can't
+              // suppress these via prompt — render-side filter is the
+              // backstop. See `lib/irisy-render-filter.ts` for the
+              // exact rules + SOTA verbatim quotes that informed them
+              // (Cursor "NEVER refer to tool names", Cline "STRICTLY
+              // FORBIDDEN from starting with 'Great'", Claude Code
+              // "less than 4 lines"). Brainstorm doc:
+              // `.olym/brainstorm/irisy-reply-specs-2026-06-04.md` §2.
+              const cleaned = cleanReplyText(seg.text);
+              if (cleaned.length === 0) return null;
               return (
                 <ReactMarkdown
                   key={`${message.id}-t-${idx}`}
                   remarkPlugins={[remarkGfm]}
                 >
-                  {text}
+                  {cleaned}
                 </ReactMarkdown>
               );
             }
