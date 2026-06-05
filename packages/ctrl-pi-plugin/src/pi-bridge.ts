@@ -173,16 +173,53 @@ export class PiBridge {
       let acc = '';
       let usage: ChatFinal['usage'];
       let settled = false;
+      let agentTurnStarted = false;
+      let noTurnWatchdog: ReturnType<typeof setTimeout> | null = null;
+
+      const clearWatchdog = () => {
+        if (noTurnWatchdog !== null) {
+          clearTimeout(noTurnWatchdog);
+          noTurnWatchdog = null;
+        }
+      };
 
       const settle = (fn: () => void) => {
         if (settled) return;
         settled = true;
+        clearWatchdog();
         unsubscribe();
         fn();
       };
 
+      // ADR-009 P5 (bao 2026-06-05 probe): when a slash command runs
+      // with `sendMessage({triggerTurn:false})`, Pi never emits
+      // `agent_start` / `agent_end` — it just pushes the custom message
+      // entry, fires `message_start` + `message_end` for it, and
+      // session.prompt() returns. Without a fallback signal the bridge
+      // would wait on agent_end forever. We resolve as soon as we know
+      // no LLM turn will run: either we see a `message_end` for a
+      // role=custom message (slash command sent a customType), or the
+      // post-prompt watchdog elapses without any agent_start at all
+      // (e.g. /cap that calls callKernelTool but never sendMessage).
+      const NO_TURN_WATCHDOG_MS = 1500;
+
+      const resolveAsNoTurn = () => {
+        settle(() => {
+          cb.onFinal({
+            text: acc, // typically empty for no-turn commands
+            usage,
+            duration_ms: Date.now() - started,
+            transport: 'rpc',
+          });
+          resolve();
+        });
+      };
+
       const unsubscribe = client.onEvent((evt: PiAgentEvent) => {
-        if (evt.type === 'message_update') {
+        if (evt.type === 'agent_start') {
+          agentTurnStarted = true;
+          clearWatchdog();
+        } else if (evt.type === 'message_update') {
           const ae = evt.assistantMessageEvent;
           if (ae?.type === 'text_delta' && typeof ae.delta === 'string') {
             acc += ae.delta;
@@ -210,6 +247,11 @@ export class PiBridge {
               output_tokens: msg.usage.output,
             };
           }
+          // Slash-command custom message landed and no LLM turn has
+          // begun → this prompt is done.
+          if (msg?.role === 'custom' && !agentTurnStarted) {
+            resolveAsNoTurn();
+          }
         } else if (evt.type === 'agent_end') {
           settle(() => {
             cb.onFinal({
@@ -223,13 +265,25 @@ export class PiBridge {
         }
       });
 
-      client.prompt(prompt).catch((e: unknown) => {
-        settle(() => {
-          const err = e instanceof Error ? e : new Error(String(e));
-          cb.onError(err);
-          reject(err);
+      client
+        .prompt(prompt)
+        .then(() => {
+          // Arm the watchdog AFTER preflight succeeds. Don't arm it
+          // before — if Pi rejects the prompt early, the catch below
+          // settles us first.
+          if (settled || agentTurnStarted) return;
+          noTurnWatchdog = setTimeout(() => {
+            noTurnWatchdog = null;
+            if (!agentTurnStarted) resolveAsNoTurn();
+          }, NO_TURN_WATCHDOG_MS);
+        })
+        .catch((e: unknown) => {
+          settle(() => {
+            const err = e instanceof Error ? e : new Error(String(e));
+            cb.onError(err);
+            reject(err);
+          });
         });
-      });
     });
   }
 
@@ -287,6 +341,21 @@ export class PiBridge {
 
 function assemblePrompt(messages: ChatMessage[]): string {
   if (messages.length === 0) return '';
+
+  // ADR-009 P5: when the latest user turn is a slash command, send the
+  // raw content (no `User: ` prefix). Pi's session.prompt detects slash
+  // commands via text.startsWith('/'); the role prefix would mask the
+  // leading slash and the command would fall through to the LLM as a
+  // normal user message — exactly what we observed before this fix
+  // (bao 2026-06-05 probe: `/discover RAG` got a generic LLM answer).
+  //
+  // For non-slash turns, keep the prefix join (existing behaviour for
+  // history-bearing multi-turn chats sent in by the kernel).
+  const last = messages[messages.length - 1];
+  if (last?.role === 'user' && last.content.trimStart().startsWith('/')) {
+    return last.content;
+  }
+
   return messages
     .map((m) => {
       if (m.role === 'system') return `System: ${m.content}`;
