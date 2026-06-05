@@ -46,16 +46,22 @@ async fn run_rest_ollama(
     max_tokens: Option<u64>,
 ) -> Result<(), String> {
     let client = http_client::shared()?;
-    let mut body = serde_json::json!({
+    // ADR-009 long-context hint (bao 2026-06-04 question on max
+    // conversation length) — Ollama defaults `num_ctx` to 2048
+    // regardless of what the model manifest claims it supports.
+    // qwen2.5:7b would forget after ~6 turns at that ceiling. Always
+    // request 32k (qwen2.5:7b native context per manifest); models
+    // that don't support 32k clamp to their own max with a warning.
+    let mut options = serde_json::json!({ "num_ctx": 32_768 });
+    if let Some(n) = max_tokens {
+        options["num_predict"] = serde_json::json!(n);
+    }
+    let body = serde_json::json!({
         "model": model,
         "prompt": prompt,
-        "stream": false
+        "stream": false,
+        "options": options,
     });
-    if let Some(n) = max_tokens {
-        body["options"] = serde_json::json!({
-            "num_predict": n,
-        });
-    }
 
     let resp = client
         .post(format!("{}/api/generate", endpoint))
