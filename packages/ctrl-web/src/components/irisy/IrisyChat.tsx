@@ -1069,7 +1069,12 @@ export function IrisyChat(): React.ReactElement {
               return (
                 <div key={m.id}>
                   {showSep && <div className={styles.turnSeparator} />}
-                  <IrisyCustomMessageView msg={m.custom} />
+                  <IrisyCustomMessageView
+                    msg={m.custom}
+                    onDismiss={() =>
+                      setMessages((prev) => prev.filter((x) => x.id !== m.id))
+                    }
+                  />
                 </div>
               );
             }

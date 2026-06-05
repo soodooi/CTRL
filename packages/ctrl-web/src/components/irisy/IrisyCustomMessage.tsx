@@ -20,14 +20,18 @@ import styles from './IrisyCustomMessage.module.css';
 
 interface Props {
   msg: IrisyCustomMessage;
+  /** Parent-supplied dismiss handler that removes this custom message
+   *  from the chat list. Optional so the dispatch site can pass it
+   *  only for messages that have a "skip / dismiss" affordance. */
+  onDismiss?: () => void;
 }
 
 // ── Dispatch ────────────────────────────────────────────────────────────
 
-export function IrisyCustomMessageView({ msg }: Props): JSX.Element {
+export function IrisyCustomMessageView({ msg, onDismiss }: Props): JSX.Element {
   switch (msg.customType) {
     case 'irisy-curator-nudge':
-      return <CuratorNudge msg={msg} />;
+      return <CuratorNudge msg={msg} onDismiss={onDismiss} />;
     case 'irisy-vault-write-ack':
       return <VaultWriteAck msg={msg} />;
     case 'irisy-open-discover':
@@ -79,7 +83,7 @@ interface CuratorNudgeContent {
   requestedAt?: string;
 }
 
-function CuratorNudge({ msg }: Props): JSX.Element {
+function CuratorNudge({ msg, onDismiss }: Props): JSX.Element {
   const content = (msg.content ?? {}) as CuratorNudgeContent;
   const summary =
     msg.display?.summary ??
@@ -136,9 +140,8 @@ function CuratorNudge({ msg }: Props): JSX.Element {
         <button
           type="button"
           className={styles.secondaryBtn}
-          onClick={() => {
-            /* Skip = no-op (the nudge stays in chat history as a record). */
-          }}
+          onClick={() => onDismiss?.()}
+          disabled={!onDismiss}
         >
           Skip
         </button>

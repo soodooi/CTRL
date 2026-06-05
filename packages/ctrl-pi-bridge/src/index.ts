@@ -1169,24 +1169,18 @@ function buildKernelTools(): PiToolDefinition[] {
       },
     },
 
-    // ─── C6: System Doctor ───────────────────────────────────────────
-    {
-      name: 'brain_status',
-      label: 'Brain status',
-      description:
-        'Get the current Irisy brain engine + provider status (which ' +
-        'provider is irisy.primary / irisy.fallback, BYOK key state, ' +
-        'last failover reason). Read-only.',
-      parameters: T.Object({}, []),
-      execute: async (_id, _params, signal) => {
-        try {
-          const reply = await callKernelTool('brain_status', {}, signal);
-          return toolReply(reply);
-        } catch (e: unknown) {
-          return toolError(`brain_status: ${describe(e)}`);
-        }
-      },
-    },
+    // bao 2026-06-05 Pi-first: `brain_status` REMOVED from Pi's tool
+    // surface. Reason: Pi-first means Pi connects directly to its own
+    // LLM provider (via pi-claude-auth → anthropic OAuth). CTRL's
+    // provider_registry no longer routes that call, so the brain_status
+    // tool returned a stale view ("irisy.primary = ollama-local") even
+    // when Pi was actually calling Claude. When the user asked "what
+    // model are you", Claude would call brain_status, get the stale
+    // CTRL view, and faithfully report "Ollama (local)" — which was
+    // wrong. Now Claude self-describes from its training knowledge.
+    // The brain_status Tauri command stays — Settings → Providers chip
+    // still uses it for CTRL provider_registry inspection (separate
+    // concern from Pi's runtime model).
   ];
 }
 
@@ -1260,11 +1254,11 @@ const CAPABILITY_SEGMENTS: Record<CapabilityId, string> = {
   system_doctor: [
     '## System status questions (C6)',
     'When the user asks about provider / model / login / "which model am',
-    'I on", call brain_status, then answer in one short line referring',
-    'them to Settings -> Providers if they want to change anything. Do',
-    'NOT diagnose subsystems out loud. Do NOT name internal codenames',
-    '(Pi / claude-oauth / volc / kimi) — use the brand label from',
-    'brain_status.providers["irisy.primary"].label.',
+    'I on", answer briefly from your own self-knowledge (your model),',
+    'and point them to Settings -> Providers if they want to change',
+    'anything. Do NOT diagnose subsystems out loud. Do NOT name',
+    'internal codenames (Pi / claude-oauth / volc / kimi / ollama-local',
+    '— these are CTRL routing primitives, not user-facing brand labels).',
   ].join('\n'),
 
   coding_companion: [
