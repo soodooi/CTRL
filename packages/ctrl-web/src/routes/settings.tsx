@@ -30,6 +30,7 @@ import {
 import type { ThemePreference } from '@/lib/theme';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { invoke } from '@/lib/bridge';
+import { useWorkspaceStore } from '@/lib/workspace-store';
 // ADR-002 substrate § provider v2 §3.6 — Providers tab data sources
 import { loadBrainState, type BrainState } from '@/lib/irisy-prompts';
 import {
@@ -82,33 +83,52 @@ const SettingsHeaderStatus = (): ReactElement => {
   );
 };
 
-const SettingsShell = ({ activeTab, children }: SettingsShellProps): ReactElement => (
-  <div className={styles.layout}>
-    <header className={styles.header}>
-      <div className={styles.headerRow}>
-        <h1 className={styles.pageTitle}>Settings</h1>
-        <SettingsHeaderStatus />
-      </div>
-      <nav className={styles.tabs} role="tablist" aria-label="Settings sections">
-        {TABS.map((t) => (
-          <Link
-            key={t.id}
-            to={t.to}
-            role="tab"
-            aria-selected={activeTab === t.id}
-            data-active={activeTab === t.id}
-            className={styles.tab}
-          >
-            {t.label}
-          </Link>
-        ))}
-      </nav>
-    </header>
-    <main className={styles.main} role="main">
-      {children}
-    </main>
-  </div>
-);
+const SettingsShell = ({ activeTab, children }: SettingsShellProps): ReactElement => {
+  // bao 2026-06-04: Settings is opened as a `kind: 'route'` workspace
+  // tab (PrimaryRail.handleSettingsClick) and the workspace shell
+  // renders the component pulled from `tab.path` in the zustand store.
+  // A plain TanStack `<Link>` only updates the URL — the workspace
+  // store keeps the old `tab.path` and re-renders the old component,
+  // so clicking "Providers" appeared to do nothing. Dispatch
+  // `openSystemTab` with the new path so the store + workspace
+  // re-render alongside the router navigation. Keep the Link href for
+  // a11y / right-click "open in new tab" / accessibility tree.
+  return (
+    <div className={styles.layout}>
+      <header className={styles.header}>
+        <div className={styles.headerRow}>
+          <h1 className={styles.pageTitle}>Settings</h1>
+          <SettingsHeaderStatus />
+        </div>
+        <nav className={styles.tabs} role="tablist" aria-label="Settings sections">
+          {TABS.map((t) => (
+            <Link
+              key={t.id}
+              to={t.to}
+              role="tab"
+              aria-selected={activeTab === t.id}
+              data-active={activeTab === t.id}
+              className={styles.tab}
+              onClick={() => {
+                useWorkspaceStore.getState().openSystemTab({
+                  id: 'settings',
+                  kind: 'route',
+                  path: t.to,
+                  title: 'Settings',
+                });
+              }}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </nav>
+      </header>
+      <main className={styles.main} role="main">
+        {children}
+      </main>
+    </div>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────
 // /settings → /settings/ctrl

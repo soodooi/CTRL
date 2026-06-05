@@ -51,12 +51,26 @@ impl CtrlChannelSink {
 }
 
 impl AiSink for CtrlChannelSink {
+    // bao 2026-06-04: was `blocking_send` — panics in tokio multi-thread
+    // runtime ("Cannot block the current thread from within a runtime")
+    // because every REST adapter calls these from inside an
+    // `async fn` spawned via `tokio::spawn`. Symptom: `/text-chat` SSE
+    // emitted only `event: done` with no `event: delta` — the worker
+    // task panicked on the first chunk send, dropped tx, and
+    // http_endpoint's `if !saw_finish { send done }` fallback fired.
+    //
+    // `try_send` is the right primitive here: the sender's mpsc channel
+    // is sized 16 in chat_stream and bridged to a 64-cap channel in
+    // http_endpoint, both with a single producer per stream and a
+    // consumer that drains immediately. Backpressure is irrelevant — if
+    // we ever filled 16 outstanding chunks the consumer is already
+    // dead. Drop is preferable to deadlock.
     fn chunk(&self, text: &str) {
         let chunk = ChatChunk {
             delta: text.to_string(),
             finish_reason: None,
         };
-        let _ = self.sender.blocking_send(Ok(chunk));
+        let _ = self.sender.try_send(Ok(chunk));
     }
 
     fn done(&self) {
@@ -64,12 +78,12 @@ impl AiSink for CtrlChannelSink {
             delta: String::new(),
             finish_reason: Some("stop".to_string()),
         };
-        let _ = self.sender.blocking_send(Ok(chunk));
+        let _ = self.sender.try_send(Ok(chunk));
     }
 
     fn error(&self, msg: &str) {
         let _ = self
             .sender
-            .blocking_send(Err(ProviderError::ProviderError(msg.to_string())));
+            .try_send(Err(ProviderError::ProviderError(msg.to_string())));
     }
 }

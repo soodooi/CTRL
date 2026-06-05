@@ -10,10 +10,16 @@ id = "ollama"
 label = "Ollama (local)"
 kind = "rest_ollama"
 endpoint = "http://localhost:11434"
+# bao 2026-06-04: qwen2.5:7b first — bao chose it as the primary local
+# brain. Adapter picks `models[0]` when the caller does not pin a model;
+# putting the user's actually-pulled tag first means CTRL works out of
+# the box without a Settings round-trip. Ollama tag resolution is exact
+# (no :latest fallback), so the explicit `:7b` suffix is load-bearing.
 models = [
+  "qwen2.5:7b",
+  "qwen2.5:14b",
   "llama3.2",
   "llama3.1",
-  "qwen2.5",
   "mistral",
 ]
 description = "Local Ollama runtime — 0 cost, runs entirely on your machine. Default endpoint http://localhost:11434."

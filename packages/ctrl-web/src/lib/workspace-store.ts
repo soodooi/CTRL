@@ -318,9 +318,17 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
               activeInstanceId: SYSTEM_INSTANCE_ID,
             };
           }
-          // Idempotent on tab.id — re-activate existing tab.
+          // Idempotent on tab.id — re-activate existing tab. When the
+          // caller passes a NEW shape for the same id (e.g. clicking
+          // the Providers tab in Settings updates `path` from
+          // `/settings/ctrl` to `/settings/providers`), merge the
+          // incoming tab over the existing one so WorkspaceShell's
+          // path-driven `resolveRouteComponent` switches. Idempotent
+          // on the (id, path) pair instead of just id. bao 2026-06-04.
           const hasTab = existing.tabs.some((t) => t.id === tab.id);
-          const nextTabs = hasTab ? existing.tabs : [...existing.tabs, tab];
+          const nextTabs = hasTab
+            ? existing.tabs.map((t) => (t.id === tab.id ? { ...t, ...tab } : t))
+            : [...existing.tabs, tab];
           return {
             instances: s.instances.map((i) =>
               i.id === SYSTEM_INSTANCE_ID

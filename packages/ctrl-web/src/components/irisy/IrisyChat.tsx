@@ -341,31 +341,18 @@ function buildSystemPrompt(
     sections.push(formatBrainStateBlock(brainState));
   }
 
-  // ADR-002 substrate § brain v7 §1.1 + ADR-005 irisy v4 §7.6 (2026-06-04):
-  // Frontier providers (Claude / GPT) get the kernel tools as
-  // native function calls via ctrl-pi-bridge's registerTool(). When
-  // that path is active, the static XML tool-calling protocol in
-  // IRISY_SYSTEM_DEFAULT becomes counterproductive — Pi would emit
-  // <call> XML the bridge already covers natively, and the chat
-  // bubble would leak that XML to the user. Overlay below tells Pi
-  // to prefer native calls and suppress XML emission. Non-frontier
-  // path (Volc / Qwen / Llama / Kimi / DeepSeek / Google) ignores
-  // this overlay; the XML loop in irisy-tool-dispatch handles it.
-  const activePrimaryId = brainState?.providers?.['irisy.primary']?.id ?? null;
-  if (isFrontierNativeProvider(activePrimaryId)) {
-    sections.push(
-      [
-        '# Tool calling — native path (overrides earlier XML protocol)',
-        'Your runtime exposes vault_write / vault_read / vault_search /',
-        'vault_tags / vault_backlinks / list_local_skills / list_keycaps /',
-        'install_keycap / keycap_run / brain_status as NATIVE function',
-        'calls. Use them via the function-calling API. Do NOT emit',
-        '`<call name="…">…</call>` XML blocks; the user will see the raw',
-        'tags in chat. Just call the tool, read the result, and continue',
-        'in plain language.',
-      ].join('\n'),
-    );
-  }
+  // ADR-002 substrate § brain v7 §1.1 + ADR-005 irisy v4 §7.6 (2026-06-04,
+  // HOTFIX 2026-06-04 evening): Frontier-native overlay DISABLED. Pi
+  // 0.73.1's `registerTool()` surface needs verification — observed
+  // failure mode was Pi looping "Calling list_local_skills" without
+  // emitting either an XML <call> block OR a native function call,
+  // because the overlay told it to skip XML while registerTool was
+  // not actually exposing the tools to the model. Until the Pi
+  // extension surface is confirmed, every provider falls back to the
+  // proven PWA-XML loop (irisy-tool-dispatch). Phase 3 ADR-005 §7.6
+  // remains on paper; revisit after a one-file Pi sample proves the
+  // extension API contract.
+  void isFrontierNativeProvider; // keep import live for the revisit.
 
   if (coreMemory.trim().length > 0) {
     sections.push(`# Core memory (loaded from vault/.irisy-memory/)\n${coreMemory.trim()}`);
