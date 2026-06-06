@@ -329,33 +329,51 @@ pub struct TestProviderResult {
 /// the boot-time precedence so "test passes here" ⇒ "adapter will load".
 #[tauri::command]
 pub async fn config_test_provider(
+    kernel: tauri::State<'_, crate::shell::KernelHandle>,
     args: TestProviderArgs,
 ) -> Result<TestProviderResult, String> {
-    // bao 2026-06-06 e: free-form provider — resolve from the kernel
-    // registry (which already loaded user manifests + builtin) instead
-    // of the legacy KNOWN_PROVIDERS hardcoded array. Read the api_key
-    // from the vault. Falls back to the old config.toml + keychain
-    // path only for legacy slugs that never had a vault entry.
+    // bao 2026-06-06 e fix #2: resolve via kernel registry, which covers
+    // BOTH builtin manifests (e.g. ollama, embedded with include_str!)
+    // AND user manifests (~/.ctrl/providers/*.toml). The first cut only
+    // looked at the user dir and silently failed for builtins.
+    use crate::kernel::provider::manifest::AuthSource;
     let slug = sanitize_slug(&args.provider)?;
     let started = Instant::now();
 
-    let api_key = crate::shell::credential_vault::get(&slug)
-        .map_err(|e| format!("vault read: {e}"))?
-        .unwrap_or_default();
-    let base_url = match read_user_manifest_endpoint(&slug) {
-        Some(url) => url,
+    let registry = &kernel.runtime.provider_registry;
+    registry.reload_user_dir();
+    let manifest = match registry.manifest_for(&slug) {
+        Some(m) => m,
         None => {
             return Ok(TestProviderResult {
                 success: false,
-                message: format!(
-                    "no manifest at ~/.ctrl/providers/{slug}.toml — re-Save this provider"
-                ),
+                message: format!("no manifest registered for {slug:?} — re-Save this provider"),
                 elapsed_ms: started.elapsed().as_millis() as u64,
                 model_count: None,
             });
         }
     };
-    if api_key.is_empty() {
+    let base_url = manifest
+        .endpoint
+        .clone()
+        .ok_or_else(|| format!("manifest {slug} has no endpoint"))?
+        .trim_end_matches('/')
+        .to_string();
+    // Resolve credential: AuthSource::None means no key needed (e.g. ollama).
+    let api_key = match &manifest.auth {
+        AuthSource::Keychain { account } => crate::shell::credential_vault::get(account)
+            .map_err(|e| format!("vault read: {e}"))?
+            .unwrap_or_default(),
+        AuthSource::Env { var } => std::env::var(var).unwrap_or_default(),
+        AuthSource::ConfigKey { field } => manifest
+            .config
+            .get(field)
+            .cloned()
+            .unwrap_or_default(),
+        AuthSource::None => String::new(),
+    };
+    let auth_required = !matches!(manifest.auth, AuthSource::None);
+    if auth_required && api_key.is_empty() {
         return Ok(TestProviderResult {
             success: false,
             message: "no api_key configured (vault empty) — re-Save this provider".into(),
@@ -368,13 +386,25 @@ pub async fn config_test_provider(
         .timeout(Duration::from_secs(5))
         .build()
         .map_err(|e| format!("reqwest client: {e}"))?;
-    let url = format!("{}/models", base_url.trim_end_matches('/'));
-    let resp = match client
-        .get(&url)
-        .bearer_auth(&api_key)
-        .send()
-        .await
+    // Ollama-native exposes /api/tags; OpenAI-compat exposes /v1/models
+    // (which most modern providers also expose at the root). Pick by
+    // manifest kind. bao 2026-06-06.
+    let url = if matches!(manifest.kind, crate::kernel::provider::manifest::ProviderKind::HttpApi)
+        && !base_url.ends_with("/v1")
+        && !base_url.contains("/v1/")
     {
+        format!("{}/v1/models", base_url)
+    } else if base_url.ends_with("/v1") {
+        format!("{}/models", base_url)
+    } else {
+        // Ollama-native fallback.
+        format!("{}/api/tags", base_url)
+    };
+    let mut req = client.get(&url);
+    if auth_required {
+        req = req.bearer_auth(&api_key);
+    }
+    let resp = match req.send().await {
         Ok(r) => r,
         Err(e) => {
             return Ok(TestProviderResult {
