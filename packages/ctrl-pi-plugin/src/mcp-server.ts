@@ -158,6 +158,64 @@ async function handleRequest(
     return;
   }
 
+  // bao 2026-06-05 "open all Pi capability" — generic RPC + sessions routes.
+  // /api/pi-rpc forwards {method, args} to PiBridge.callRpc which delegates
+  // to the underlying RpcClient. /api/sessions covers fs-level operations
+  // (list / delete) that do not need a warm RPC client. Both share the
+  // same auth as /mcp. JSON in, JSON out.
+  if (method === 'POST' && url === '/api/pi-rpc') {
+    if (!bridge) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: bridgeError?.message ?? 'pi bridge unavailable' }));
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      const { method: rpcMethod, args } = JSON.parse(body) as { method: string; args?: unknown[] };
+      if (typeof rpcMethod !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: '`method` must be a string' }));
+        return;
+      }
+      const result = await bridge.callRpc(rpcMethod, Array.isArray(args) ? args : []);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ result }));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+    }
+    return;
+  }
+  if (method === 'POST' && url === '/api/sessions') {
+    if (!bridge) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: bridgeError?.message ?? 'pi bridge unavailable' }));
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      const { op, path: sessionPath } = JSON.parse(body) as { op: string; path?: string };
+      if (op === 'list') {
+        const sessions = await bridge.listSessions();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ result: sessions }));
+        return;
+      }
+      if (op === 'delete' && typeof sessionPath === 'string') {
+        await bridge.deleteSession(sessionPath);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ result: { ok: true } }));
+        return;
+      }
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `unknown op "${op}"` }));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+    }
+    return;
+  }
+
   if (method !== 'POST' || url !== '/mcp') {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));

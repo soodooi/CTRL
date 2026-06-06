@@ -1412,6 +1412,36 @@ function pickCapabilities(prompt: string): CapabilityId[] {
   return out;
 }
 
+/** Build a 1-paragraph "your runtime is X" block from the live env Pi
+ *  was spawned with. Pi-first means CTRL no longer routes the LLM call;
+ *  the only honest source for "what am I?" is the Pi process's own
+ *  PI_PROVIDER + PI_MODEL env (set by ctrl-pi-plugin PiBridge before
+ *  RpcClient.start). We DO NOT call any external tool to look this up
+ *  — that's what got us into the stale-state loop when CTRL's
+ *  brain_status was the source. bao 2026-06-05 — "give Irisy the truth,
+ *  stop guessing". */
+function runtimeTruthBlock(): string {
+  const provider = process.env.PI_PROVIDER ?? 'unknown';
+  const model = process.env.PI_MODEL ?? 'unknown';
+  const isClaudeOAuth = provider === 'anthropic';
+  const billingHint = isClaudeOAuth
+    ? "no per-token cost (the user's Claude Pro/Max subscription via Claude Code OAuth — pi-claude-auth extension wired this)"
+    : provider.startsWith('ollama')
+      ? 'local Ollama, no network cost'
+      : 'see ~/.pi/agent/models.json for endpoint';
+  return [
+    '## Your runtime (truth, not a guess)',
+    `- Provider: ${provider}`,
+    `- Model: ${model}`,
+    `- Cost: ${billingHint}`,
+    '',
+    'When asked "what model are you", answer with the model + a short',
+    'phrase about the path. Do NOT say "I don\'t know" / "go check',
+    'Settings" / "no brain_state configured". You DO know — the values',
+    'above are the live runtime, set by the Pi process you are running in.',
+  ].join('\n');
+}
+
 async function beforeAgentStartHandler(
   evt: PiBeforeAgentStartEvent,
 ): Promise<PiBeforeAgentStartResult> {
@@ -1419,11 +1449,12 @@ async function beforeAgentStartHandler(
   recentCalls = [];
 
   const capabilities = pickCapabilities(evt.prompt);
-  const appended = capabilities
-    .map((c) => CAPABILITY_SEGMENTS[c])
-    .filter((s): s is string => typeof s === 'string')
-    .join('\n\n');
-  if (!appended) return {};
+  const segments = [runtimeTruthBlock()];
+  for (const c of capabilities) {
+    const seg = CAPABILITY_SEGMENTS[c];
+    if (typeof seg === 'string') segments.push(seg);
+  }
+  const appended = segments.join('\n\n');
   const next = evt.systemPrompt
     ? `${evt.systemPrompt}\n\n${appended}`
     : appended;
@@ -1552,18 +1583,24 @@ function safeReadDir(dir: string): string[] {
 // `/switch coding` is per-session and a new session should reset to
 // the conservative default (extension tools only).
 async function applyDefaultActiveTools(): Promise<void> {
-  // Pi import-cycle: pi is captured by closure in register(), not
-  // passed here. We need access to it to call setActiveTools. Re-look
-  // it up from the module-level reference we stash at register time.
-  const pi = activePiRef;
-  if (!pi || !pi.setActiveTools) return;
-  try {
-    pi.setActiveTools(buildKernelTools().map((t) => t.name));
-  } catch {
-    // setActiveTools may still throw if Pi changes its lifecycle in
-    // a future version. Falling back to the all-tools default is a
-    // permissive degradation, not a correctness bug.
-  }
+  // bao 2026-06-05: DO NOT restrict Pi's built-in tools.
+  //
+  // Previously this called pi.setActiveTools([10 kernel tool names]),
+  // restricting the active set to bridge-registered tools only. That
+  // silently excluded Pi's built-in WebSearch / WebFetch / Read / Write /
+  // Edit / Bash / Grep / Find / Ls / TodoWrite / Task / NotebookRead /
+  // NotebookEdit — making Irisy answer "I do not have internet" when the
+  // user asked for a web research task, and unable to organize files
+  // without installing extra keycaps.
+  //
+  // bao directive: do not exclude any of Pi's built-in capabilities; the
+  // assistant must default to the complete Pi tool surface. The persona
+  // layer must not silently strip what Pi already provides.
+  //
+  // The function is kept (instead of deleted) so future opt-in scope
+  // policy (e.g. user-explicit /scope minimal) can hook here.
+  // Aligns with irisy-build skill I5 ("tools come from outside Irisy").
+  return;
 }
 
 // Set by register() so out-of-band handlers (session_start, etc.) can

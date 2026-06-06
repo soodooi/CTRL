@@ -1,0 +1,202 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg);
+  font-size: 0.78rem;
+  position: relative;
+  z-index: 4;
+  flex-wrap: wrap;
+}
+
+.chipGroup {
+  position: relative;
+  display: inline-flex;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  min-width: 60px;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.chip:hover:not(:disabled),
+.chip:focus-visible {
+  color: var(--color-text);
+  background: var(--color-bg-l2);
+  border-color: var(--color-border);
+  outline: none;
+}
+
+.chip:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.chipIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chipLabel {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.72rem;
+}
+
+.chipCaret {
+  font-size: 0.65rem;
+  opacity: 0.6;
+}
+
+.chipThinking {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.thinking-low {
+  color: var(--color-info, #2563eb);
+}
+
+.thinking-medium {
+  color: var(--color-warning, #d97706);
+}
+
+.thinking-high {
+  color: var(--color-danger, #dc2626);
+  border-color: var(--color-danger, #dc2626);
+}
+
+.statsChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px dashed var(--color-border-soft);
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.statValue {
+  color: var(--color-text);
+}
+
+.statSep {
+  opacity: 0.4;
+}
+
+.chipGhost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-border-soft);
+  background: transparent;
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.chipGhost:hover:not(:disabled),
+.chipGhost:focus-visible {
+  color: var(--color-text);
+  background: var(--color-bg-l1);
+  border-color: var(--color-border);
+  outline: none;
+}
+
+.chipGhost:disabled {
+  opacity: 0.4;
+  cursor: progress;
+}
+
+.picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  min-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.pickerItem {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.pickerItem:hover,
+.pickerItem:focus-visible,
+.pickerItem[aria-selected="true"] {
+  background: var(--color-bg-l1);
+  outline: none;
+}
+
+.pickerProvider {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pickerModel {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.pickerCtx {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.error {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--color-danger, #dc2626);
+  padding: 3px 8px;
+  border: 1px solid var(--color-danger, #dc2626);
+  border-radius: 6px;
+  background: rgba(220, 38, 38, 0.05);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

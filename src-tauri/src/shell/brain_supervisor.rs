@@ -198,6 +198,27 @@ impl BrainSupervisor {
     }
 }
 
+/// Public refresh entry-point exposed via the `restart_brain` Tauri
+/// command. Kills the current ctrl-pi-mcp child; the supervise loop
+/// will detect the exit and respawn within ~500 ms with a fresh
+/// PiBridge (picking up any wrapper-file or `--extension` changes made
+/// since last spawn). Idempotent: if there is no warm child, returns Ok
+/// (next chat triggers a cold spawn anyway). bao 2026-06-05.
+pub fn restart() -> Result<(), String> {
+    let mut guard = child_slot()
+        .lock()
+        .map_err(|e| format!("child_slot lock poisoned: {e}"))?;
+    if let Some(mut child) = guard.take() {
+        child
+            .kill()
+            .map_err(|e| format!("kill brain child failed: {e}"))?;
+        tracing::info!("BrainSupervisor::restart: killed brain child, supervisor will respawn");
+    } else {
+        tracing::info!("BrainSupervisor::restart: no warm child to kill (cold)");
+    }
+    Ok(())
+}
+
 /// Kill any stray `ctrl-pi-mcp.ts` process holding the Pi MCP port
 /// from a previous CTRL.app lifetime. Idempotent + safe: matches by
 /// argv (only our own MCP entry), not by port alone, so an unrelated

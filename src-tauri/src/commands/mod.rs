@@ -30,6 +30,9 @@ pub mod irisy_chat;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
+// pi_rpc - full Pi RpcClient surface for the PWA (bao 2026-06-05).
+// Generic pass-through avoids per-method Rust boilerplate as Pi adds methods.
+pub mod pi_rpc;
 pub mod provider;
 pub mod skills;
 pub mod storage;
@@ -61,6 +64,12 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::chat::chat_stream,
             // irisy_chat — brain-routed streaming (Irisy → active brain keycap MCP)
             $crate::commands::irisy_chat::irisy_chat_stream,
+            // pi_rpc — full Pi RpcClient surface exposed as one generic command.
+            // PWA wraps via packages/ctrl-web/src/lib/usePiRpc.ts. bao 2026-06-05
+            // "open all Pi capability — every feature, surface to assistant".
+            $crate::commands::pi_rpc::pi_rpc,
+            $crate::commands::pi_rpc::pi_sessions,
+            $crate::commands::pi_rpc::restart_brain,
             // brain switcher retired per ADR-002 substrate — Pi is the sole brain.
             // Pi version + upgrade controls live in system::pi_status /
             // pi_upgrade_now.

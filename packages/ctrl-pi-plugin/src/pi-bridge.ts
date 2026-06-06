@@ -46,7 +46,38 @@ interface PiRpcClient {
   start(): Promise<void>;
   stop(): Promise<void>;
   onEvent(listener: (event: PiAgentEvent) => void): () => void;
-  prompt(message: string): Promise<void>;
+  prompt(message: string, images?: unknown[]): Promise<void>;
+  // Full RpcClient surface — bao 2026-06-05 "全量打开 PI 所有功能".
+  // Inlined here so PiBridge can `client[method]?.(...)` dispatch without
+  // importing Pi's d.ts statically (see comment above the interface).
+  steer?(message: string): Promise<void>;
+  followUp?(message: string): Promise<void>;
+  abort?(): Promise<void>;
+  newSession?(parentSession?: string): Promise<{ cancelled: boolean }>;
+  switchSession?(sessionPath: string): Promise<{ cancelled: boolean }>;
+  fork?(entryId: string): Promise<{ text: string; cancelled: boolean }>;
+  clone?(): Promise<{ cancelled: boolean }>;
+  getForkMessages?(): Promise<Array<{ entryId: string; text: string }>>;
+  setSessionName?(name: string): Promise<void>;
+  getState?(): Promise<unknown>;
+  getSessionStats?(): Promise<unknown>;
+  getMessages?(): Promise<unknown[]>;
+  setModel?(provider: string, modelId: string): Promise<{ provider: string; id: string }>;
+  cycleModel?(): Promise<unknown>;
+  getAvailableModels?(): Promise<unknown[]>;
+  setThinkingLevel?(level: string): Promise<void>;
+  cycleThinkingLevel?(): Promise<unknown>;
+  setSteeringMode?(mode: 'all' | 'one-at-a-time'): Promise<void>;
+  setFollowUpMode?(mode: 'all' | 'one-at-a-time'): Promise<void>;
+  compact?(customInstructions?: string): Promise<unknown>;
+  setAutoCompaction?(enabled: boolean): Promise<void>;
+  setAutoRetry?(enabled: boolean): Promise<void>;
+  abortRetry?(): Promise<void>;
+  bash?(command: string): Promise<unknown>;
+  abortBash?(): Promise<void>;
+  exportHtml?(outputPath?: string): Promise<{ path: string }>;
+  getCommands?(): Promise<unknown[]>;
+  getLastAssistantText?(): Promise<string | null>;
 }
 
 interface PiRpcClientCtor {
@@ -181,6 +212,106 @@ export class PiBridge {
       this.rpc.stop().catch(() => {});
       this.rpc = null;
     }
+  }
+
+  /** bao 2026-06-05 "open all Pi capability": generic pass-through for
+   *  any RpcClient method. The HTTP layer (mcp-server /api/pi-rpc)
+   *  forwards `{method, args}` here; we ensure the RPC client is started
+   *  and dispatch. Methods that don't exist on the client return an
+   *  error rather than silently ok. ADR-009 P10 (no swallowed errors). */
+  async callRpc(method: string, args: unknown[] = []): Promise<unknown> {
+    const client = await this.ensureRpc();
+    const fn = (client as unknown as Record<string, unknown>)[method];
+    if (typeof fn !== 'function') {
+      throw new Error(`PiBridge.callRpc: method "${method}" not on RpcClient`);
+    }
+    return await (fn as (...a: unknown[]) => Promise<unknown>).apply(client, args);
+  }
+
+  /** List Pi session jsonl files for the current cwd-slug. Pi stores
+   *  sessions at `~/.pi/agent/sessions/<slugified-cwd>/<ts>_<uuid>.jsonl`.
+   *  We read the directory directly (no RPC needed) and return metadata
+   *  parsed from each file's first 2 lines (header + first message). */
+  async listSessions(): Promise<Array<{
+    path: string;
+    id: string;
+    name: string | null;
+    createdAt: string;
+    firstMessage: string | null;
+    sizeBytes: number;
+  }>> {
+    const { readdir, stat, open } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { homedir } = await import('node:os');
+    // Slugify cwd the same way Pi does in dist/core/session-manager.js
+    // (leading slash dropped, remaining `/` -> `-`, wrap in `--...--`).
+    const cwd = process.cwd();
+    const slug = `--${cwd.replace(/^\//, '').replace(/\//g, '-')}--`;
+    const dir = join(homedir(), '.pi', 'agent', 'sessions', slug);
+    let entries: string[] = [];
+    try {
+      entries = await readdir(dir);
+    } catch {
+      return [];
+    }
+    const out: Array<{
+      path: string; id: string; name: string | null;
+      createdAt: string; firstMessage: string | null; sizeBytes: number;
+    }> = [];
+    for (const fname of entries) {
+      if (!fname.endsWith('.jsonl')) continue;
+      const path = join(dir, fname);
+      try {
+        const st = await stat(path);
+        const fh = await open(path, 'r');
+        try {
+          const buf = Buffer.alloc(8192);
+          const { bytesRead } = await fh.read(buf, 0, 8192, 0);
+          const lines = buf.subarray(0, bytesRead).toString('utf8').split('\n');
+          let name: string | null = null;
+          let id = fname.replace(/\.jsonl$/, '');
+          let firstMessage: string | null = null;
+          for (const raw of lines) {
+            if (!raw) continue;
+            try {
+              const j = JSON.parse(raw) as Record<string, unknown>;
+              if (j['type'] === 'session_header') {
+                if (typeof j['name'] === 'string') name = j['name'] as string;
+                if (typeof j['id'] === 'string') id = j['id'] as string;
+              } else if (firstMessage == null && j['type'] === 'message' && j['role'] === 'user') {
+                const content = j['content'];
+                if (typeof content === 'string') firstMessage = content.slice(0, 120);
+                else if (Array.isArray(content)) {
+                  const tx = content.find((c) => typeof c === 'object' && c !== null && (c as Record<string, unknown>)['type'] === 'text');
+                  if (tx) firstMessage = String((tx as Record<string, unknown>)['text'] ?? '').slice(0, 120);
+                }
+              }
+            } catch { /* skip malformed line */ }
+            if (name != null && firstMessage != null) break;
+          }
+          out.push({ path, id, name, createdAt: st.birthtime.toISOString(), firstMessage, sizeBytes: st.size });
+        } finally {
+          await fh.close();
+        }
+      } catch { /* skip unreadable */ }
+    }
+    out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return out;
+  }
+
+  /** Delete a session jsonl by path. Path must live under Pi's sessions
+   *  dir for the current cwd-slug; refuse paths outside as a guard. */
+  async deleteSession(sessionPath: string): Promise<void> {
+    const { unlink } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { homedir } = await import('node:os');
+    const cwd = process.cwd();
+    const slug = `--${cwd.replace(/^\//, '').replace(/\//g, '-')}--`;
+    const dir = join(homedir(), '.pi', 'agent', 'sessions', slug);
+    if (!sessionPath.startsWith(dir)) {
+      throw new Error(`deleteSession: path "${sessionPath}" outside sessions dir`);
+    }
+    await unlink(sessionPath);
   }
 
   // ── Internals ────────────────────────────────────────────────────────
@@ -357,10 +488,66 @@ export class PiBridge {
           ? `${process.env.HOME}/.ctrl/pi`
           : null;
       if (piDir) {
-        const claudeAuthExt = `${piDir}/node_modules/pi-claude-auth/dist/index.js`;
         const { existsSync } = await import('node:fs');
+        const claudeAuthExt = `${piDir}/node_modules/pi-claude-auth/dist/index.js`;
         if (existsSync(claudeAuthExt)) {
           args.unshift('--extension', claudeAuthExt);
+        }
+        // bao 2026-06-05: load irisy-persona — the user-facing persona layer
+        // defined per ~/.claude/skills/irisy-build/SKILL.md. Lives at a fixed
+        // path during dev; will move to npm install once published. [I7]
+        // surface-decoupled: this extension is the same one any wrapper (CLI,
+        // IDE, mobile, etc) loads — CTRL just spawns Pi with it included.
+        const irisyPersonaExt =
+          process.env.IRISY_PERSONA_EXTENSION ??
+          '/Users/mac/Documents/coding/irisy-persona/src/index.ts';
+        if (existsSync(irisyPersonaExt)) {
+          args.unshift('--extension', irisyPersonaExt);
+        }
+        // bao 2026-06-05: load irisy-web — registers web_search + web_fetch
+        // tools so Irisy can actually research the web. Pi 0.73.1 has no
+        // MCP host and no native web tools (verified via dist/ source
+        // inspection — `allToolNames = {read,bash,edit,write,grep,find,
+        // ls}`); without this extension the model knows the web exists
+        // but cannot reach it. web_fetch uses Jina Reader (no key, free);
+        // web_search uses Tavily if TAVILY_API_KEY env is set, else falls
+        // back to DuckDuckGo instant-answer. [P5] honest about which path
+        // served; [I5] tool layer external to persona; [AP9] no swallowed
+        // errors — failures surface to the user as tool isError messages.
+        const irisyWebExt =
+          process.env.IRISY_WEB_EXTENSION ??
+          '/Users/mac/Documents/coding/irisy-web/src/index.ts';
+        if (existsSync(irisyWebExt)) {
+          args.unshift('--extension', irisyWebExt);
+        }
+        // bao 2026-06-05: load irisy-preview — registers preview_html /
+        // preview_list / preview_stop tools so Irisy can show the user a
+        // live frontend preview (landing pages, prototypes, single-file
+        // apps). Static-only server on a free localhost port; LLM passes
+        // a file list, tool writes to /tmp/irisy-preview/{name}/ and
+        // returns the URL. For Vite/Next/dev-server cases the LLM should
+        // use Pi bash to run `npm run dev` manually. [I5] tool external
+        // to persona; [P5] honest about the static-only constraint.
+        const irisyPreviewExt =
+          process.env.IRISY_PREVIEW_EXTENSION ??
+          '/Users/mac/Documents/coding/irisy-preview/src/index.ts';
+        if (existsSync(irisyPreviewExt)) {
+          args.unshift('--extension', irisyPreviewExt);
+        }
+        // bao 2026-06-05: load irisy-mac — registers screenshot_take +
+        // ocr_image tools using macOS-native facilities (screencapture
+        // CLI + Apple Vision framework via a small Swift binary that is
+        // compiled on first OCR call). Darwin-only; the extension itself
+        // returns a clear platform error on non-macOS hosts so loading
+        // it on other platforms is a no-op. OCR needs Xcode Command
+        // Line Tools (swiftc); the tool returns an honest install hint
+        // if absent. No third-party OCR engine, no network. [P5] honest
+        // about platform limits; [AP9] no swallowed errors.
+        const irisyMacExt =
+          process.env.IRISY_MAC_EXTENSION ??
+          '/Users/mac/Documents/coding/irisy-mac/src/index.ts';
+        if (existsSync(irisyMacExt)) {
+          args.unshift('--extension', irisyMacExt);
         }
       }
 

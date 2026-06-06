@@ -9,6 +9,56 @@
 /* Clear-history is a floating icon top-right of the scroller — no
    dedicated row. Engine / MCP status lives in the global StatusBar.
    bao 2026-05-30: "一个 clear 按钮占了一行,浪费". */
+/* bao 2026-06-05 right-rail control stack — vertical 22x22 stack of
+   chat-level controls (History, Refresh brain, Stop, Clear). Each
+   button inherits clearFloating chrome so the visual is one family. */
+.controlRail {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+}
+
+.railButton {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.85;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.railButton:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--color-text);
+  background: var(--color-bg-l2);
+}
+
+.railButton:disabled {
+  opacity: 0.35;
+  cursor: progress;
+}
+
+.railStop {
+  color: var(--color-danger, #dc2626);
+  background: var(--color-bg-l1);
+}
+
+.railStop:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--color-danger, #dc2626);
+}
+
 .clearFloating {
   position: absolute;
   top: 6px;
