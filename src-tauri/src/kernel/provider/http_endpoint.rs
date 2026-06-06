@@ -626,10 +626,10 @@ async fn run_get_active_provider_details(
     // CTRL.app — see comment in `shell::keychain_subprocess`.
     let api_key = match &manifest.auth {
         AuthSource::Keychain { account } => {
-            crate::shell::keychain_subprocess::get(account.as_str())
-                .map_err(|e| format!("provider {id}: keychain read failed: {e}"))?
+            crate::shell::credential_vault::get(account.as_str())
+                .map_err(|e| format!("provider {id}: vault read failed: {e}"))?
                 .ok_or_else(|| {
-                    format!("provider {id}: no keychain entry for account {account:?}")
+                    format!("provider {id}: no vault entry for account {account:?}")
                 })?
         }
         AuthSource::Env { var } => std::env::var(var)

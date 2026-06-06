@@ -20,10 +20,14 @@ pub mod brain_supervisor;
 pub mod builtin_keycaps;
 pub mod hotkey;
 pub mod keychain;
-// bao 2026-06-05 d: provider keychain reads/writes go through this
-// subprocess-`security`-CLI helper. keyring v3 apple-native silently
-// non-persists in signed CTRL.app without entitlements.
+// bao 2026-06-05 d: provider keychain reads/writes used to go through
+// this subprocess-`security`-CLI helper. Kept for boot-time migration
+// only (vault reads keychain once to import any pre-vault entries).
 pub mod keychain_subprocess;
+// bao 2026-06-06: credential storage now lives in an encrypted file
+// vault at ~/.ctrl/credentials.dat. Option B per ctrl-provider-management
+// skill — cross-platform, no entitlements, no signed-app fragility.
+pub mod credential_vault;
 pub mod kernel_supervisor;
 pub mod lifecycle;
 pub mod ollama_install;

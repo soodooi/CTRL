@@ -823,15 +823,21 @@ fn legacy_account_aliases(account: &str) -> Vec<&'static str> {
 }
 
 fn keychain_read_with_aliases(primary: &str, aliases: &[&str]) -> Option<String> {
+    // bao 2026-06-06 e fix: shell out to `security` CLI here too. The
+    // keyring crate apple-native path returns no entry from signed
+    // CTRL.app even when the entry physically exists (verified via
+    // standalone unsigned probe + via `security find-generic-password`).
+    // Adapter construction silently failed for every user-added
+    // provider because credential resolution always returned None.
+    // bao 2026-06-06: read from encrypted file vault. Iterate the
+    // primary slug + any aliases. The vault is account-keyed only
+    // (no service namespace), so the two-loop over keychain services
+    // collapses into a single account lookup.
     let candidates: Vec<&str> = std::iter::once(primary).chain(aliases.iter().copied()).collect();
-    for service in [KEYCHAIN_SERVICE_PRIMARY, KEYCHAIN_SERVICE_LEGACY] {
-        for account in &candidates {
-            if let Ok(entry) = keyring::Entry::new(service, account) {
-                if let Ok(secret) = entry.get_password() {
-                    if !secret.is_empty() {
-                        return Some(secret);
-                    }
-                }
+    for account in &candidates {
+        if let Ok(Some(secret)) = crate::shell::credential_vault::get(account) {
+            if !secret.is_empty() {
+                return Some(secret);
             }
         }
     }

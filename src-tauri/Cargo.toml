@@ -38,8 +38,14 @@ ureq = { version = "2", features = ["json"] }
 # rustls-tls keeps the build OpenSSL-free for portable Tauri bundles.
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 toml = "0.8"
-keyring = "3"
+keyring = { version = "3", default-features = false, features = ["apple-native", "linux-native", "windows-native"] }
 directories = "5"
+# bao 2026-06-06: credential storage moved off the OS keychain into an
+# encrypted file vault. Cocoon = chacha20-poly1305 envelope; sha2 for
+# machine-bound key derivation; hostname for one of the entropy inputs.
+cocoon = "0.4"
+sha2 = "0.10"
+hostname = "0.4"
 # L1 Kernel deps
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "fs", "io-util", "process"] }
 async-trait = "0.1"

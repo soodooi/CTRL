@@ -199,7 +199,7 @@ pub async fn config_set_provider_key(args: SetProviderKeyArgs) -> Result<(), Str
     // user typed something to replace it.
     let key_provided = !args.api_key.trim().is_empty();
     if !key_provided {
-        let existing = crate::shell::keychain_subprocess::get(&slug)?;
+        let existing = crate::shell::credential_vault::get(&slug)?;
         if existing.is_none() {
             return Err("api_key is required for a new provider".into());
         }
@@ -231,8 +231,8 @@ pub async fn config_set_provider_key(args: SetProviderKeyArgs) -> Result<(), Str
 
     // 1) Keychain via `security` subprocess helper (works in signed CTRL.app).
     if key_provided {
-        crate::shell::keychain_subprocess::set(&slug, &args.api_key)?;
-        let readback = crate::shell::keychain_subprocess::get(&slug)?;
+        crate::shell::credential_vault::set(&slug, &args.api_key)?;
+        let readback = crate::shell::credential_vault::get(&slug)?;
         if readback.as_deref() != Some(args.api_key.as_str()) {
             return Err(format!(
                 "keychain readback mismatch: wrote {} bytes, read back {}",
@@ -410,36 +410,63 @@ pub struct DeleteProviderArgs {
 /// nothing's there.
 #[tauri::command]
 pub async fn config_delete_provider(args: DeleteProviderArgs) -> Result<(), String> {
-    let _ = lookup_known_provider(&args.provider)?;
+    // bao 2026-06-06 e fix: 3 delete bugs found.
+    //   1) lookup_known_provider() rejected user-created slugs (volc-doubao
+    //      etc.) because they are not in the legacy KNOWN_PROVIDERS array
+    //      — Delete silently no-op'd from the user's POV. Drop the lookup;
+    //      accept any sanitized slug.
+    //   2) keyring crate apple-native silently non-persists in signed app
+    //      (same root cause as the Save path). Use the subprocess helper.
+    //   3) Old impl only touched legacy ~/.ctrl/config.toml; new providers
+    //      live at ~/.ctrl/providers/<slug>.toml and were never deleted,
+    //      so the registry's reload_user_dir resurrected them on next
+    //      provider_list call. Delete the manifest file too.
+    let slug = sanitize_slug(&args.provider)?;
 
-    // 1) Keychain — `delete_password` errors when entry doesn't exist; we
-    //    treat both Ok and NotFound as success (idempotent).
-    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &args.provider) {
-        let _ = entry.delete_credential();
-    }
+    // 1) Keychain via `security` CLI subprocess (idempotent: helper treats
+    //    "not found" as Ok).
+    crate::shell::credential_vault::delete(&slug)?;
 
-    // 2) config.toml — drop the [providers.<name>] block entirely.
-    let path = match default_config_path() {
-        Some(p) => p,
-        None => return Ok(()), // HOME unset = no config to mutate
-    };
-    if !path.exists() {
-        return Ok(());
-    }
-    let raw = std::fs::read_to_string(&path).map_err(|e| format!("read config.toml: {e}"))?;
-    let mut doc: toml::Value =
-        toml::from_str(&raw).map_err(|e| format!("parse config.toml: {e}"))?;
-    if let Some(providers) = doc
-        .as_table_mut()
-        .and_then(|t| t.get_mut("providers"))
-        .and_then(|v| v.as_table_mut())
+    // 2) User manifest file at ~/.ctrl/providers/<slug>.toml.
+    if let Some(providers_dir) =
+        crate::kernel::provider::manifest::default_user_providers_dir()
     {
-        providers.remove(&args.provider);
+        let manifest_path = providers_dir.join(format!("{slug}.toml"));
+        if manifest_path.exists() {
+            std::fs::remove_file(&manifest_path).map_err(|e| {
+                format!("rm {}: {e}", manifest_path.display())
+            })?;
+        }
     }
-    let serialized =
-        toml::to_string_pretty(&doc).map_err(|e| format!("serialize config.toml: {e}"))?;
-    write_atomic(&path, &serialized)?;
-    tracing::info!(provider = %args.provider, "config_delete_provider ok");
+
+    // 3) Legacy ~/.ctrl/config.toml [providers.<name>] block — best-effort
+    //    cleanup for users migrating from the pre-refactor schema. Silent
+    //    when nothing's there.
+    if let Some(path) = default_config_path() {
+        if path.exists() {
+            if let Ok(raw) = std::fs::read_to_string(&path) {
+                if let Ok(mut doc) = toml::from_str::<toml::Value>(&raw) {
+                    let mut changed = false;
+                    if let Some(providers) = doc
+                        .as_table_mut()
+                        .and_then(|t| t.get_mut("providers"))
+                        .and_then(|v| v.as_table_mut())
+                    {
+                        if providers.remove(&slug).is_some() {
+                            changed = true;
+                        }
+                    }
+                    if changed {
+                        if let Ok(serialized) = toml::to_string_pretty(&doc) {
+                            let _ = write_atomic(&path, &serialized);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    tracing::info!(provider = %slug, "config_delete_provider ok");
     Ok(())
 }
 

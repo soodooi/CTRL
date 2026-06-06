@@ -58,6 +58,40 @@ pub fn set(account: &str, value: &str) -> Result<(), String> {
     }
 }
 
+/// Same as `get` but with a caller-supplied service name. Used by the
+/// kernel registry which historically searched both "app.ctrl" (primary)
+/// and "app.ctrl.spike" (current) services for backward compat.
+/// bao 2026-06-06 e fix.
+pub fn get_for_service(service: &str, account: &str) -> Result<Option<String>, String> {
+    if account.is_empty() {
+        return Err("keychain get: account is empty".into());
+    }
+    let output = Command::new("/usr/bin/security")
+        .args(["find-generic-password", "-s", service, "-a", account, "-w"])
+        .output()
+        .map_err(|e| format!("security find-generic-password spawn: {e}"))?;
+    if output.status.success() {
+        let value = String::from_utf8_lossy(&output.stdout).trim_end().to_string();
+        if value.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(value))
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("could not be found")
+            || stderr.contains("specified item could not be found")
+        {
+            Ok(None)
+        } else {
+            Err(format!(
+                "security find-generic-password failed (status {}): {}",
+                output.status, stderr
+            ))
+        }
+    }
+}
+
 /// Read a generic password value. Returns Ok(Some(value)) when entry
 /// exists, Ok(None) when not present (the most common "user hasn't
 /// configured this provider yet" case), Err on actual tool errors.

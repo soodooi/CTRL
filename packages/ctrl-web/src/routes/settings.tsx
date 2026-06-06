@@ -605,56 +605,51 @@ const ProvidersBlock = (): ReactElement => {
                 )}
               </div>
               <div className={styles.providerListActions}>
-                {p.ready ? (
-                  <>
-                    <button
-                      type="button"
-                      className={styles.providerListBtn}
-                      onClick={() => void runTest(p.id)}
-                      disabled={testingId === p.id}
-                    >
-                      {testingId === p.id ? '…' : 'Test'}
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.providerListBtn}
-                      onClick={() => { setPrefilledId(p.id); setAddOpen(true); }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.providerListBtn}
-                      data-tone="danger"
-                      onClick={() => {
-                        if (window.confirm(`Remove key for ${p.label}? This clears keychain + config.toml.`)) {
-                          deleteMutation.mutate(p.id);
-                        }
-                      }}
-                      disabled={deleteMutation.isPending}
-                    >
-                      Delete
-                    </button>
-                    {!isActive && (
-                      <button
-                        type="button"
-                        className={styles.providerListBtn}
-                        data-tone="primary"
-                        onClick={() => activateMutation.mutate(p.id)}
-                        disabled={activateMutation.isPending}
-                      >
-                        Set active
-                      </button>
-                    )}
-                  </>
-                ) : (
+                {/* bao 2026-06-06: always show Edit + Delete so a
+                    half-configured row (manifest present, credential
+                    resolve failed) is still manageable. Test + Set
+                    active only when ready. Add key only when missing. */}
+                <button
+                  type="button"
+                  className={styles.providerListBtn}
+                  onClick={() => { setPrefilledId(p.id); setAddOpen(true); }}
+                  title={p.ready ? 'Edit settings or replace key' : 'Add key / fix configuration'}
+                >
+                  {p.ready ? 'Edit' : 'Add key'}
+                </button>
+                <button
+                  type="button"
+                  className={styles.providerListBtn}
+                  data-tone="danger"
+                  onClick={() => {
+                    if (window.confirm(`Remove ${p.label}? This clears keychain + the user manifest file.`)) {
+                      deleteMutation.mutate(p.id);
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                  title="Remove this provider entirely"
+                >
+                  Delete
+                </button>
+                {p.ready && (
+                  <button
+                    type="button"
+                    className={styles.providerListBtn}
+                    onClick={() => void runTest(p.id)}
+                    disabled={testingId === p.id}
+                  >
+                    {testingId === p.id ? '…' : 'Test'}
+                  </button>
+                )}
+                {p.ready && !isActive && (
                   <button
                     type="button"
                     className={styles.providerListBtn}
                     data-tone="primary"
-                    onClick={() => { setPrefilledId(p.id); setAddOpen(true); }}
+                    onClick={() => activateMutation.mutate(p.id)}
+                    disabled={activateMutation.isPending}
                   >
-                    Add key
+                    Set active
                   </button>
                 )}
               </div>
