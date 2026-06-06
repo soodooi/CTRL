@@ -331,14 +331,34 @@ pub struct TestProviderResult {
 pub async fn config_test_provider(
     args: TestProviderArgs,
 ) -> Result<TestProviderResult, String> {
-    let known = lookup_known_provider(&args.provider)?;
+    // bao 2026-06-06 e: free-form provider — resolve from the kernel
+    // registry (which already loaded user manifests + builtin) instead
+    // of the legacy KNOWN_PROVIDERS hardcoded array. Read the api_key
+    // from the vault. Falls back to the old config.toml + keychain
+    // path only for legacy slugs that never had a vault entry.
+    let slug = sanitize_slug(&args.provider)?;
     let started = Instant::now();
 
-    let (api_key, base_url) = resolve_credentials(&args.provider, known)?;
+    let api_key = crate::shell::credential_vault::get(&slug)
+        .map_err(|e| format!("vault read: {e}"))?
+        .unwrap_or_default();
+    let base_url = match read_user_manifest_endpoint(&slug) {
+        Some(url) => url,
+        None => {
+            return Ok(TestProviderResult {
+                success: false,
+                message: format!(
+                    "no manifest at ~/.ctrl/providers/{slug}.toml — re-Save this provider"
+                ),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+                model_count: None,
+            });
+        }
+    };
     if api_key.is_empty() {
         return Ok(TestProviderResult {
             success: false,
-            message: "no api_key configured (config.toml + keychain both empty)".into(),
+            message: "no api_key configured (vault empty) — re-Save this provider".into(),
             elapsed_ms: started.elapsed().as_millis() as u64,
             model_count: None,
         });
@@ -471,6 +491,21 @@ pub async fn config_delete_provider(args: DeleteProviderArgs) -> Result<(), Stri
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
+
+/// Read the `endpoint = "…"` value from `~/.ctrl/providers/<slug>.toml`.
+/// bao 2026-06-06 e: used by config_test_provider so the smoke-test
+/// works for any user-saved provider (free-form), not just the legacy
+/// hardcoded ids.
+fn read_user_manifest_endpoint(slug: &str) -> Option<String> {
+    let dir = crate::kernel::provider::manifest::default_user_providers_dir()?;
+    let path = dir.join(format!("{slug}.toml"));
+    let text = std::fs::read_to_string(&path).ok()?;
+    let value: toml::Value = toml::from_str(&text).ok()?;
+    value
+        .get("endpoint")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim_end_matches('/').to_string())
+}
 
 /// Sanitize a user-supplied provider id. Accepts lowercased alphanumeric +
 /// `-` `_`. Replaces other chars with `-`, collapses runs, trims edges.
