@@ -18,7 +18,13 @@ import {
 } from '@/components/primitives';
 import { useTheme } from '@/hooks/useTheme';
 import { useKernelStatus } from '@/hooks/useKernelStatus';
-import { setProviderKey } from '@/lib/kernel';
+import {
+  deleteProvider,
+  listProviderTemplates,
+  setProviderKey,
+  testProvider,
+  type ProviderTemplate,
+} from '@/lib/kernel';
 import type { ThemePreference } from '@/lib/theme';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { invoke } from '@/lib/bridge';
@@ -256,99 +262,219 @@ const ChangeMenu = ({
 );
 
 interface AddModalProps {
-  candidates: ProviderListRow[];
+  /** Optional prefill — when set, the form opens in edit mode with id
+   *  read-only and other fields populated from the row. */
+  prefill?: ProviderListRow | null;
   onAdded: (id: string) => Promise<void>;
   onClose: () => void;
 }
 
-const AddModal = ({ candidates, onAdded, onClose }: AddModalProps): ReactElement => {
-  const [picked, setPicked] = useState<string | null>(null);
+// bao 2026-06-05 e refactor: AddModal is now a free-form provider editor
+// (industry pattern: OpenWebUI / Cursor / Continue / Roo Code). User
+// supplies display name, picks API protocol, types base URL + key +
+// default model. No hardcoded preset list. The backend
+// (config_set_provider_key) writes a manifest to ~/.ctrl/providers/<slug>.toml
+// + stores the key in macOS Keychain.
+// bao 2026-06-06: provider preset list = data, not code. PWA fetches
+// via Tauri `list_provider_templates` which reads bundled defaults +
+// merges `~/.ctrl/provider-templates.json` user override.
+// AddModal calls useQuery({ queryFn: listProviderTemplates }).
+
+const AddModal = ({ prefill, onAdded, onClose }: AddModalProps): ReactElement => {
+  const editMode = prefill != null;
+  const templatesQuery = useQuery({
+    queryKey: ['provider-templates'],
+    queryFn: listProviderTemplates,
+    staleTime: 60_000,
+  });
+  const templates: ProviderTemplate[] = templatesQuery.data ?? [];
+  const [templateId, setTemplateId] = useState<string>(editMode ? 'custom' : '');
+  const [displayName, setDisplayName] = useState(prefill?.label ?? '');
+  const [protocol, setProtocol] = useState<'openai' | 'anthropic'>('openai');
+  // Prefill base URL from existing manifest so user can edit one
+  // field without remembering the URL. bao 2026-06-06 UX fix.
+  const [baseUrl, setBaseUrl] = useState(prefill?.endpoint ?? '');
   const [apiKey, setApiKey] = useState('');
+  const [defaultModel, setDefaultModel] = useState(prefill?.models?.[0] ?? '');
   const [error, setError] = useState<string | null>(null);
 
-  const saveMutation = useMutation({
-    mutationFn: async (args: { id: string; key: string }) => {
-      await setProviderKey({ provider: args.id, api_key: args.key });
-    },
-    onSuccess: async () => {
-      if (picked) await onAdded(picked);
-    },
-    onError: (e: unknown) =>
-      setError(e instanceof Error ? e.message : String(e)),
-  });
+  // Apply template when picked (only in Add mode, not Edit).
+  const applyTemplate = useCallback((id: string) => {
+    setTemplateId(id);
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    setDisplayName(t.defaultName);
+    setProtocol(t.protocol);
+    setBaseUrl(t.baseUrl);
+    setDefaultModel(t.defaultModel);
+  }, [templates]);
 
-  const pickedRow = useMemo(
-    () => candidates.find((c) => c.id === picked) ?? null,
-    [candidates, picked],
+  // First mount (after templates load): apply the first template so the
+  // form is pre-filled. Users can switch via the dropdown.
+  useEffect(() => {
+    if (editMode) return;
+    if (templateId) return;
+    if (templates.length === 0) return;
+    const first = templates[0];
+    if (first) applyTemplate(first.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, templateId, editMode]);
+
+  const currentTemplate = useMemo(
+    () => templates.find((x) => x.id === templateId) ?? null,
+    [templates, templateId],
   );
+
+  const computedSlug = useMemo(() => {
+    if (editMode && prefill) return prefill.id;
+    return displayName
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 64);
+  }, [displayName, editMode, prefill]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!computedSlug) throw new Error('Name produces empty id');
+      if (!baseUrl.trim()) throw new Error('Base URL is required');
+      // Edit mode: empty API key means "keep existing keychain entry".
+      // Add mode: API key is mandatory. bao 2026-06-06 UX fix.
+      if (!editMode && !apiKey.trim()) throw new Error('API key is required');
+      await setProviderKey({
+        provider: computedSlug,
+        api_key: apiKey.trim(),
+        base_url: baseUrl.trim(),
+        default_model: defaultModel.trim() || undefined,
+        display_name: displayName.trim() || undefined,
+        api_protocol: protocol,
+      });
+    },
+    onSuccess: async () => { await onAdded(computedSlug); },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  });
 
   return (
     <div className={styles.providerModalBackdrop} role="dialog" aria-modal="true">
       <div className={styles.providerModal}>
-        <h3 className={styles.providerModalTitle}>Add provider</h3>
-        {!picked ? (
-          <div className={styles.providerModalList}>
-            {candidates.length === 0 ? (
-              <p className={styles.providerMenuEmpty}>
-                All known providers are already configured.
-              </p>
-            ) : (
-              candidates.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={styles.providerMenuRow}
-                  onClick={() => setPicked(c.id)}
-                >
-                  <span className={styles.providerMenuLabel}>{c.label}</span>
-                  <code className={styles.providerMenuSlug}>{c.id}</code>
-                </button>
-              ))
-            )}
-          </div>
-        ) : (
-          <>
-            <p className={styles.providerModalPickedLine}>
-              Adding <strong>{pickedRow?.label ?? picked}</strong>
-            </p>
-            <FormField
-              label="API key"
-              hint="Stored in macOS Keychain. Never leaves this device."
+        <h3 className={styles.providerModalTitle}>
+          {editMode ? `Edit ${prefill?.label}` : 'Add provider'}
+        </h3>
+        {!editMode && (
+          <FormField
+            label="Template"
+            hint="Pick a preset to auto-fill, then tweak as needed. Choose Custom for any OpenAI-compatible endpoint."
+          >
+            <select
+              value={templateId}
+              onChange={(e) => applyTemplate(e.target.value)}
+              disabled={saveMutation.isPending || templatesQuery.isPending}
+              style={{
+                width: '100%', padding: '6px 10px', fontSize: '0.85rem',
+                border: '1px solid var(--color-border)', borderRadius: 6,
+                background: 'var(--color-bg)', color: 'var(--color-text)',
+                fontFamily: 'inherit',
+              }}
             >
-              <TextInput
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-…"
-                autoComplete="off"
+              {templatesQuery.isPending && <option value="">Loading templates…</option>}
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+          </FormField>
+        )}
+        <FormField
+          label="Name"
+          hint={editMode
+            ? `id: ${prefill?.id} (cannot be changed once created)`
+            : `id will be: ${computedSlug || '(empty — type a name)'}`}
+        >
+          <TextInput
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="My OpenRouter"
+            autoComplete="off"
+            disabled={saveMutation.isPending || editMode}
+          />
+        </FormField>
+        <FormField label="API protocol">
+          <div style={{ display: 'flex', gap: 16, fontSize: '0.85rem' }}>
+            <label style={{ cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="api-protocol"
+                value="openai"
+                checked={protocol === 'openai'}
+                onChange={() => setProtocol('openai')}
                 disabled={saveMutation.isPending}
-              />
-            </FormField>
-            {error && (
-              <p className={styles.providerError} role="alert">
-                {error}
-              </p>
-            )}
-          </>
+              />{' '}
+              OpenAI-compatible
+            </label>
+            <label style={{ cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="api-protocol"
+                value="anthropic"
+                checked={protocol === 'anthropic'}
+                onChange={() => setProtocol('anthropic')}
+                disabled={saveMutation.isPending}
+              />{' '}
+              Anthropic Messages
+            </label>
+          </div>
+        </FormField>
+        <FormField label="Base URL" hint="Provider's API endpoint (no trailing slash).">
+          <TextInput
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://api.openai.com/v1"
+            autoComplete="off"
+            disabled={saveMutation.isPending}
+          />
+        </FormField>
+        <FormField
+          label="API key"
+          hint={editMode
+            ? 'Leave blank to keep the current key. Type to replace.'
+            : `${currentTemplate?.keyHint ?? 'Paste your API key.'} Stored in macOS Keychain. Never leaves this device.`}
+        >
+          <TextInput
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={editMode ? 'paste new key to replace' : 'sk-...'}
+            autoComplete="off"
+            disabled={saveMutation.isPending}
+          />
+        </FormField>
+        <FormField label="Default model" hint="Optional. Used when no model is explicitly chosen.">
+          <TextInput
+            value={defaultModel}
+            onChange={(e) => setDefaultModel(e.target.value)}
+            placeholder="gpt-4o-mini"
+            autoComplete="off"
+            disabled={saveMutation.isPending}
+          />
+        </FormField>
+        {error && (
+          <p className={styles.providerError} role="alert">{error}</p>
         )}
         <div className={styles.providerModalActions}>
-          <Button size="sm" variant="ghost" onClick={onClose}>
-            Cancel
+          <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => saveMutation.mutate()}
+            disabled={
+              saveMutation.isPending ||
+              !computedSlug ||
+              !baseUrl.trim() ||
+              (!editMode && !apiKey.trim())
+            }
+          >
+            {saveMutation.isPending ? 'Saving…' : (editMode ? 'Save' : 'Add')}
           </Button>
-          {picked && (
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() =>
-                saveMutation.mutate({ id: picked, key: apiKey.trim() })
-              }
-              disabled={
-                saveMutation.isPending || apiKey.trim().length === 0
-              }
-            >
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          )}
         </div>
       </div>
     </div>
@@ -370,6 +496,13 @@ const ProvidersBlock = (): ReactElement => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // bao 2026-06-05 e: providers = list + 4 per-row actions (Test / Edit /
+  // Delete / Set active). No chip card, no Change menu, no separate Edit
+  // modal — Edit = reopen Add modal with the same id; backend keychain
+  // helper uses -U so the key is overwritten in place.
+  const [prefilledId, setPrefilledId] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
 
   const refresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ['providers-v2'] });
@@ -387,6 +520,28 @@ const ProvidersBlock = (): ReactElement => {
     onError: (e: unknown) =>
       setError(e instanceof Error ? e.message : String(e)),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteProvider(id),
+    onSuccess: async () => { setError(null); await refresh(); },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  const runTest = async (id: string): Promise<void> => {
+    setTestingId(id);
+    setTestResults((prev) => ({ ...prev, [id]: { ok: false, message: '…' } }));
+    try {
+      const r = await testProvider(id);
+      setTestResults((prev) => ({ ...prev, [id]: { ok: r.success, message: r.message } }));
+    } catch (e) {
+      setTestResults((prev) => ({
+        ...prev,
+        [id]: { ok: false, message: e instanceof Error ? e.message : String(e) },
+      }));
+    } finally {
+      setTestingId(null);
+    }
+  };
 
   if (providersQuery.isPending) {
     return <p className={styles.providersFallback}>Loading providers…</p>;
@@ -421,63 +576,115 @@ const ProvidersBlock = (): ReactElement => {
     (c) => c.id !== (active?.id ?? activeRow?.id),
   );
 
+  const activeId = active?.id ?? activeRow?.id ?? null;
+
   return (
     <>
-      <div className={styles.providerActiveCard}>
-        <div className={styles.providerActiveHead}>
-          <span
-            className={styles.providerActiveDot}
-            data-healthy={healthy || undefined}
-            aria-hidden
-          />
-          <span className={styles.providerActiveLabel}>{activeLabel}</span>
-          <code className={styles.providerActiveModel}>{activeModel}</code>
-          <span className={styles.providerActiveStatus}>
-            {healthy ? 'Ready' : 'Not ready'}
-          </span>
-        </div>
-        <div className={styles.providerActiveActions}>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setMenuOpen((v) => !v)}
-            disabled={configured.length <= 1}
-          >
-            ↻ Change
-          </Button>
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() => setAddOpen(true)}
-          >
-            + Add new
-          </Button>
-        </div>
-        {menuOpen && (
-          <ChangeMenu
-            candidates={changeCandidates}
-            activeId={active?.id ?? activeRow?.id ?? null}
-            onPick={(id) => activateMutation.mutate(id)}
-            onClose={() => setMenuOpen(false)}
-            busy={activateMutation.isPending}
-          />
-        )}
-        {error && (
-          <p className={styles.providerError} role="alert">
-            {error}
-          </p>
-        )}
-        <p className={styles.providerHint}>
-          Advanced: edit <code>~/.pi/agent/models.json</code> for full
-          control over models, endpoints, and routing.
-        </p>
+      <ul className={styles.providerList}>
+        {providers.map((p) => {
+          const isActive = p.id === activeId;
+          const tr = testResults[p.id];
+          return (
+            <li key={p.id} className={styles.providerListRow} data-active={isActive}>
+              <div className={styles.providerListInfo}>
+                <span
+                  className={styles.providerListDot}
+                  data-healthy={(isActive ? healthy : p.ready) || undefined}
+                  aria-hidden
+                />
+                <span className={styles.providerListLabel}>{p.label}</span>
+                {isActive && <span className={styles.providerListBadge}>Active</span>}
+                <code className={styles.providerListModel}>{p.models[0] ?? '—'}</code>
+                {tr && (
+                  <span
+                    className={styles.providerListTest}
+                    style={{ color: tr.ok ? 'var(--color-success, #15803d)' : 'var(--color-danger, #dc2626)' }}
+                  >
+                    {tr.ok ? '✓' : '✗'} {tr.message}
+                  </span>
+                )}
+              </div>
+              <div className={styles.providerListActions}>
+                {p.ready ? (
+                  <>
+                    <button
+                      type="button"
+                      className={styles.providerListBtn}
+                      onClick={() => void runTest(p.id)}
+                      disabled={testingId === p.id}
+                    >
+                      {testingId === p.id ? '…' : 'Test'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.providerListBtn}
+                      onClick={() => { setPrefilledId(p.id); setAddOpen(true); }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.providerListBtn}
+                      data-tone="danger"
+                      onClick={() => {
+                        if (window.confirm(`Remove key for ${p.label}? This clears keychain + config.toml.`)) {
+                          deleteMutation.mutate(p.id);
+                        }
+                      }}
+                      disabled={deleteMutation.isPending}
+                    >
+                      Delete
+                    </button>
+                    {!isActive && (
+                      <button
+                        type="button"
+                        className={styles.providerListBtn}
+                        data-tone="primary"
+                        onClick={() => activateMutation.mutate(p.id)}
+                        disabled={activateMutation.isPending}
+                      >
+                        Set active
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.providerListBtn}
+                    data-tone="primary"
+                    onClick={() => { setPrefilledId(p.id); setAddOpen(true); }}
+                  >
+                    Add key
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className={styles.providerAddBar}>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => { setPrefilledId(null); setAddOpen(true); }}
+        >
+          + Add provider
+        </Button>
       </div>
+      {error && (
+        <p className={styles.providerError} role="alert">{error}</p>
+      )}
+      <p className={styles.providerHint}>
+        Advanced: edit <code>~/.pi/agent/models.json</code> for full
+        control over models, endpoints, and routing.
+      </p>
       {addOpen && (
         <AddModal
-          candidates={unconfigured}
-          onClose={() => setAddOpen(false)}
+          prefill={prefilledId ? providers.find((p) => p.id === prefilledId) ?? null : null}
+          onClose={() => { setAddOpen(false); setPrefilledId(null); }}
           onAdded={async () => {
             setAddOpen(false);
+            setPrefilledId(null);
             await refresh();
           }}
         />
@@ -752,6 +959,16 @@ interface ProviderRoleRowProps {
   isPending: boolean;
   errorText: string | null;
   onSelect: () => void;
+  // bao 2026-06-05 e: completeness — Add was not enough. Per-row CRUD
+  // actions surface Test (smoke-call provider /models), Edit (re-Add
+  // with same id, backend keychain helper updates via -U), Delete
+  // (clear keychain + config.toml). Each is optional in props so the
+  // row can render in legacy contexts without forcing the wiring.
+  onTest?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  isTesting?: boolean;
+  testResult?: { ok: boolean; message: string } | null;
 }
 
 const ProviderRoleRow = ({
@@ -760,20 +977,33 @@ const ProviderRoleRow = ({
   isPending,
   errorText,
   onSelect,
+  onTest,
+  onEdit,
+  onDelete,
+  isTesting,
+  testResult,
 }: ProviderRoleRowProps): ReactElement => {
   const detected = row.ready;
   const disabled = isPending || (!row.ready && !isActive);
+  const showActions = (onTest || onEdit || onDelete) && row.ready;
   return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={isActive}
-      aria-label={row.label}
-      disabled={disabled}
-      onClick={onSelect}
+    <div
       className={styles.brainCard}
       data-active={isActive}
       data-detected={detected}
+      role="radio"
+      aria-checked={isActive}
+      aria-label={row.label}
+      onClick={disabled ? undefined : onSelect}
+      onKeyDown={(e) => {
+        if (disabled) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      tabIndex={disabled ? -1 : 0}
+      style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : { cursor: 'pointer' }}
     >
       <span className={styles.brainRadio} aria-hidden />
       <div className={styles.brainBody}>
@@ -783,6 +1013,14 @@ const ProviderRoleRow = ({
         )}
         {errorText && (
           <span className={styles.brainError}>{errorText}</span>
+        )}
+        {testResult && (
+          <span
+            className={styles.brainError}
+            style={{ color: testResult.ok ? 'var(--color-success, #15803d)' : 'var(--color-danger, #dc2626)' }}
+          >
+            {testResult.ok ? '✓ ' : '✗ '}{testResult.message}
+          </span>
         )}
       </div>
       <div className={styles.brainTags}>
@@ -798,7 +1036,50 @@ const ProviderRoleRow = ({
           {detected ? 'Available' : 'Not configured'}
         </span>
       </div>
-    </button>
+      {showActions && (
+        <div
+          className={styles.brainActions}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Actions for ${row.label}`}
+        >
+          {onTest && (
+            <button
+              type="button"
+              className={styles.brainAction}
+              onClick={(e) => { e.stopPropagation(); onTest(); }}
+              disabled={isTesting}
+              title="Test this provider (1-token smoke chat)"
+              aria-label="Test provider"
+            >
+              {isTesting ? '…' : 'Test'}
+            </button>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              className={styles.brainAction}
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              title="Replace this provider's API key"
+              aria-label="Edit key"
+            >
+              Edit
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              className={styles.brainAction}
+              data-tone="danger"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              title="Remove this provider's key (keychain + config)"
+              aria-label="Delete provider"
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 

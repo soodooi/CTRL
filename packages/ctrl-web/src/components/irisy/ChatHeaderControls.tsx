@@ -174,25 +174,61 @@ export function ChatHeaderControls(): JSX.Element {
           <span className={styles.chipLabel}>{modelLabel}</span>
           <span className={styles.chipCaret} aria-hidden="true">▾</span>
         </button>
-        {open === 'model' && models.length > 0 && (
+        {open === 'model' && (() => {
+          // bao 2026-06-06: filter out Pi-SDK builtin providers that the
+          // user has NOT configured in CTRL Settings. Pi's
+          // getAvailableModels() returns dozens of preset providers
+          // (anthropic, openai, google, openrouter, etc.) — listing them
+          // all confused users into thinking they were available without
+          // setup. Only show providers whose id is registered through
+          // our kernel (ollama-local builtin + user-added slugs).
+          const piBuiltinSkip = new Set([
+            'anthropic', 'openai', 'google', 'groq', 'deepseek', 'kimi',
+            'ant-ling', 'azure-openai', 'minimax', 'xai', 'fireworks',
+            'together', 'openrouter', 'ai-gateway', 'zai',
+            'zai-coding-cn', 'mistral', 'moonshot', 'opencode',
+            'opencode-zen', 'cloudflare', 'xiaomi', 'amazon-bedrock',
+            'cerebras', 'nvidia', 'nvidia-nim', 'gemini', 'aws-bedrock',
+          ]);
+          const visible = models.filter((m) => !piBuiltinSkip.has(m.provider));
+          return (
           <ul className={styles.picker} role="listbox" aria-label="Available models">
-            {models.map((m) => (
-              <li key={`${m.provider}/${m.id}`}>
-                <button
-                  type="button"
-                  className={styles.pickerItem}
-                  onClick={() => void onPickModel(m)}
-                  role="option"
-                  aria-selected={state.model === m.id && state.provider === m.provider}
-                >
-                  <span className={styles.pickerProvider}>{m.provider}</span>
-                  <span className={styles.pickerModel}>{m.id}</span>
-                  <span className={styles.pickerCtx}>{(m.contextWindow / 1000).toFixed(0)}K{m.reasoning ? ' · 🧠' : ''}</span>
-                </button>
+            {visible.length === 0 ? (
+              // bao 2026-06-05 d: empty state. Previously the picker was
+              // hidden silently when `models.length === 0`, so clicking
+              // the chip did nothing — user thought the button was broken.
+              // Render a one-row hint that points them at the cause
+              // (no provider configured yet) + a deep link to Settings.
+              <li>
+                <div className={styles.pickerEmpty}>
+                  <strong>No models available.</strong>
+                  <br />
+                  <span>
+                    Add a provider key in <a href="/settings/providers">Settings → Providers</a>,
+                    then click Save. The model list reloads on the next session.
+                  </span>
+                </div>
               </li>
-            ))}
+            ) : (
+              visible.map((m) => (
+                <li key={`${m.provider}/${m.id}`}>
+                  <button
+                    type="button"
+                    className={styles.pickerItem}
+                    onClick={() => void onPickModel(m)}
+                    role="option"
+                    aria-selected={state.model === m.id && state.provider === m.provider}
+                  >
+                    <span className={styles.pickerProvider}>{m.provider}</span>
+                    <span className={styles.pickerModel}>{m.id}</span>
+                    <span className={styles.pickerCtx}>{(m.contextWindow / 1000).toFixed(0)}K{m.reasoning ? ' · 🧠' : ''}</span>
+                  </button>
+                </li>
+              ))
+            )}
           </ul>
-        )}
+          );
+        })()}
       </div>
 
       <button

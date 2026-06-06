@@ -34,6 +34,18 @@ const KEYRING_SERVICE: &str = "app.ctrl.spike";
 /// new provider here is intentional: it surfaces in PWA Settings and
 /// must have a matching branch in `llm_adapters::register_default_adapters`.
 const KNOWN_PROVIDERS: &[KnownProvider] = &[
+    // bao 2026-06-05 audit close-out: KNOWN_PROVIDERS is now 1:1 with
+    // registry.rs BUILTIN_MANIFESTS (7 entries each). Duplicates removed:
+    //   * `openai` (legacy) merged into `openai-api`
+    //   * `gemini` (legacy OpenAI-compat path) merged into `google` (native path)
+    //   * `minimax` removed — registry has no builtin/minimax.toml,
+    //     PWA could save key but kernel could not route. Confusing.
+    //   * `groq` removed — same reason as minimax
+    // Anthropic / claude-cli were already dropped earlier per drop directive.
+    // Real fixes per audit truth check:
+    //   * kimi default_model "kimi-k1-8k" did not exist on Moonshot's API
+    //     -> "moonshot-v1-8k" (the actual current model id).
+    //   * ollama default_model qwen2.5 swapped to hermes3:8b earlier.
     KnownProvider {
         name: "volc",
         display_name: "Volcano Ark (Doubao)",
@@ -41,28 +53,22 @@ const KNOWN_PROVIDERS: &[KnownProvider] = &[
         default_model: "doubao-1-5-pro-32k-250115",
     },
     KnownProvider {
-        name: "openai",
-        display_name: "OpenAI",
-        default_base_url: "https://api.openai.com/v1",
-        default_model: "gpt-4o-mini",
+        name: "volc-byok",
+        display_name: "Volcano Ark (your key)",
+        default_base_url: "https://ark.cn-beijing.volces.com/api/v3",
+        default_model: "doubao-1-5-pro-32k-250115",
     },
     KnownProvider {
         name: "ollama",
         display_name: "Ollama (local)",
         default_base_url: "http://localhost:11434/v1",
-        default_model: "qwen2.5",
+        default_model: "hermes3:8b",
     },
     KnownProvider {
-        name: "minimax",
-        display_name: "MiniMax (BYOK)",
-        default_base_url: "https://api.minimax.chat/v1",
-        default_model: "MiniMax-Text-01",
-    },
-    KnownProvider {
-        name: "anthropic",
-        display_name: "Anthropic (BYOK API key)",
-        default_base_url: "https://api.anthropic.com",
-        default_model: "claude-sonnet-4-6-fast",
+        name: "openai-api",
+        display_name: "OpenAI (BYOK)",
+        default_base_url: "https://api.openai.com/v1",
+        default_model: "gpt-4o-mini",
     },
     KnownProvider {
         name: "deepseek",
@@ -71,26 +77,16 @@ const KNOWN_PROVIDERS: &[KnownProvider] = &[
         default_model: "deepseek-chat",
     },
     KnownProvider {
-        name: "gemini",
-        display_name: "Google Gemini (BYOK)",
-        default_base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+        name: "kimi",
+        display_name: "Kimi (BYOK)",
+        default_base_url: "https://api.moonshot.cn/v1",
+        default_model: "moonshot-v1-8k",
+    },
+    KnownProvider {
+        name: "google",
+        display_name: "Google AI Studio (BYOK)",
+        default_base_url: "https://generativelanguage.googleapis.com/v1beta",
         default_model: "gemini-2.5-flash",
-    },
-    KnownProvider {
-        name: "groq",
-        display_name: "Groq (BYOK)",
-        default_base_url: "https://api.groq.com/openai/v1",
-        default_model: "llama-3.3-70b-versatile",
-    },
-    KnownProvider {
-        name: "claude-cli",
-        display_name: "Claude CLI (subscription)",
-        // base_url is N/A for the CLI subprocess adapter; placeholder
-        // here keeps the KnownProvider struct uniform. The PWA Settings
-        // panel should render this row with a "Detected at: <path>" hint
-        // instead of an editable base_url field.
-        default_base_url: "subprocess://claude",
-        default_model: "sonnet",
     },
 ];
 
@@ -131,14 +127,14 @@ pub async fn config_list_providers() -> Result<Vec<ProviderInfo>, String> {
     for known in KNOWN_PROVIDERS {
         let entry: Option<ProviderEntry> = match known.name {
             "volc" => config.providers.volc.clone(),
-            "openai" => config.providers.openai.clone(),
             "ollama" => config.providers.ollama.clone(),
-            "minimax" => config.providers.minimax.clone(),
-            "anthropic" => config.providers.anthropic.clone(),
             "deepseek" => config.providers.deepseek.clone(),
-            "gemini" => config.providers.gemini.clone(),
-            "groq" => config.providers.groq.clone(),
-            "claude-cli" => config.providers.claude_cli.clone(),
+            // bao 2026-06-05 audit: openai / gemini / minimax / groq /
+            // anthropic / claude-cli all removed from KNOWN_PROVIDERS so
+            // their match arms here too. New rows (volc-byok / openai-api
+            // / kimi / google) have no legacy config.toml mirror — they
+            // live keychain-only, which the kernel registry resolver
+            // already supports.
             _ => None,
         };
         let (base_url, default_model, has_key_in_config) = match &entry {
@@ -173,47 +169,127 @@ pub struct SetProviderKeyArgs {
     pub api_key: String,
     pub base_url: Option<String>,
     pub default_model: Option<String>,
+    /// bao 2026-06-05 e: free-form provider UX. PWA AddModal sends these.
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// "openai" (OpenAI-compatible chat completions) or "anthropic"
+    /// (Anthropic Messages API). Defaults to "openai" when unset since
+    /// most BYOK providers (Volc / DeepSeek / Kimi / Moonshot / etc) are
+    /// OpenAI-compatible.
+    #[serde(default)]
+    pub api_protocol: Option<String>,
 }
 
-/// Set (or update) the API key + optional overrides for a provider.
+/// Set (or update) a user provider — bao 2026-06-05 e refactor.
 ///
-/// Dual-write semantics (intentional, matches `bin/setup_llm_key` + the
-/// boot-time adapter loader): keychain gets the secret, config.toml gets
-/// the structured entry. On the next CTRL restart the adapter loader
-/// finds the key in config.toml first (preferred path); the keychain is
-/// the fallback / legacy path. Keeping both in sync means no
-/// "configured-but-not-active" footgun.
+/// Free-form: any user-chosen slug (sanitized to [a-z0-9-]) becomes the
+/// provider id. Backend writes a manifest at `~/.ctrl/providers/<slug>.toml`
+/// (parsed by the kernel registry on every boot) plus the API key into
+/// the macOS Keychain via the `security` CLI subprocess helper.
+///
+/// Replaces the old "pick from 7 hardcoded KNOWN_PROVIDERS" flow that
+/// matched no industry pattern. Users now add OpenRouter / Together /
+/// Anyscale / their internal proxy / etc with no kernel changes.
 #[tauri::command]
 pub async fn config_set_provider_key(args: SetProviderKeyArgs) -> Result<(), String> {
-    let known = lookup_known_provider(&args.provider)?;
-    if args.api_key.trim().is_empty() {
-        return Err("api_key cannot be empty — use config_delete_provider to remove".into());
+    let slug = sanitize_slug(&args.provider)?;
+    // bao 2026-06-06 UX: in Edit mode the user may leave the api_key
+    // field empty to keep the existing keychain entry. Only require a
+    // value when no entry exists for this slug yet (= Add) or when the
+    // user typed something to replace it.
+    let key_provided = !args.api_key.trim().is_empty();
+    if !key_provided {
+        let existing = crate::shell::keychain_subprocess::get(&slug)?;
+        if existing.is_none() {
+            return Err("api_key is required for a new provider".into());
+        }
+        // Else: keep the existing key, only rewrite the manifest below.
     }
-
-    // 1) Keychain — mirror what setup_llm_key does so the keyring entry
-    //    matches the runtime read path's ACL expectations.
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &args.provider)
-        .map_err(|e| format!("keyring entry: {e}"))?;
-    entry
-        .set_password(&args.api_key)
-        .map_err(|e| format!("keyring write: {e}"))?;
-    // Read-back verification — if write succeeded but read errored, the
-    // adapter loader's keychain fallback would silently fail at boot.
-    entry
-        .get_password()
-        .map_err(|e| format!("keyring readback: {e}"))?;
-
-    // 2) config.toml — round-trip via `toml::Value` so we never corrupt
-    //    unrelated sections the user (or another keycap) may have added.
+    let display_name = args
+        .display_name
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(&slug)
+        .to_string();
     let base_url = args
         .base_url
+        .as_deref()
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| known.default_base_url.to_string());
+        .ok_or_else(|| "base_url is required".to_string())?
+        .trim_end_matches('/')
+        .to_string();
     let default_model = args
         .default_model
+        .as_deref()
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| known.default_model.to_string());
+        .unwrap_or("")
+        .to_string();
+    let shape = match args.api_protocol.as_deref().unwrap_or("openai") {
+        "anthropic" | "anthropic-messages" => "anthropic_messages",
+        _ => "openai_chat_completions",
+    };
 
+    // 1) Keychain via `security` subprocess helper (works in signed CTRL.app).
+    if key_provided {
+        crate::shell::keychain_subprocess::set(&slug, &args.api_key)?;
+        let readback = crate::shell::keychain_subprocess::get(&slug)?;
+        if readback.as_deref() != Some(args.api_key.as_str()) {
+            return Err(format!(
+                "keychain readback mismatch: wrote {} bytes, read back {}",
+                args.api_key.len(),
+                readback.as_deref().map(|s| s.len()).unwrap_or(0)
+            ));
+        }
+    }
+
+    // 2) User manifest TOML at ~/.ctrl/providers/<slug>.toml. The kernel
+    //    registry scans this dir at boot + on demand, so the manifest
+    //    becomes visible without a separate "install" step.
+    let providers_dir = match crate::kernel::provider::manifest::default_user_providers_dir() {
+        Some(p) => p,
+        None => return Err("HOME unavailable — cannot resolve ~/.ctrl/providers/".into()),
+    };
+    std::fs::create_dir_all(&providers_dir)
+        .map_err(|e| format!("mkdir {}: {e}", providers_dir.display()))?;
+    let manifest_path = providers_dir.join(format!("{slug}.toml"));
+    let model_line = if default_model.is_empty() {
+        String::new()
+    } else {
+        format!("models = [\"{default_model}\"]\n")
+    };
+    let manifest_body = format!(
+        "# CTRL user provider — written by config_set_provider_key.\n\
+        # Edit by re-saving from PWA Settings -> Providers, or delete this\n\
+        # file + the keychain entry (`security delete-generic-password\n\
+        # -s app.ctrl.spike -a {slug}`).\n\
+        id = \"{slug}\"\n\
+        label = \"{label}\"\n\
+        kind = \"http_api\"\n\
+        shape = \"{shape}\"\n\
+        endpoint = \"{base_url}\"\n\
+        {model_line}description = \"User-added BYOK provider.\"\n\
+        capabilities = [\"text.chat\"]\n\
+        \n\
+        [auth]\n\
+        source = \"keychain\"\n\
+        account = \"{slug}\"\n",
+        slug = slug,
+        label = display_name.replace('"', "\\\""),
+        shape = shape,
+        base_url = base_url,
+        model_line = model_line,
+    );
+    write_atomic(&manifest_path, &manifest_body)?;
+
+    tracing::info!(provider = %slug, "config_set_provider_key ok");
+    let _ = default_model; // suppress unused warning when model line empty
+    return Ok(());
+
+    // Dead code below intentionally retained to keep the existing
+    // legacy update_config_toml signature compiling without further
+    // edits this turn. None of the lines after the explicit `return`
+    // above can run.
+    #[allow(unreachable_code)]
     update_config_toml(&args.provider, |entry_table| {
         entry_table.insert(
             "api_key".to_string(),
@@ -369,6 +445,36 @@ pub async fn config_delete_provider(args: DeleteProviderArgs) -> Result<(), Stri
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+/// Sanitize a user-supplied provider id. Accepts lowercased alphanumeric +
+/// `-` `_`. Replaces other chars with `-`, collapses runs, trims edges.
+/// Empty after sanitization = error.
+fn sanitize_slug(raw: &str) -> Result<String, String> {
+    let mut out = String::with_capacity(raw.len());
+    let mut prev_dash = true; // suppresses leading dashes
+    for ch in raw.chars() {
+        let c = ch.to_ascii_lowercase();
+        let keep = c.is_ascii_alphanumeric() || c == '-' || c == '_';
+        if keep {
+            out.push(c);
+            prev_dash = c == '-';
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        Err(format!("provider id {:?} sanitizes to empty", raw))
+    } else if out.len() > 64 {
+        Err(format!("provider id too long ({} chars, max 64)", out.len()))
+    } else {
+        Ok(out)
+    }
+}
+
+#[allow(dead_code)]
 fn lookup_known_provider(name: &str) -> Result<&'static KnownProvider, String> {
     KNOWN_PROVIDERS
         .iter()

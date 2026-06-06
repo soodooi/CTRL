@@ -34,6 +34,9 @@ pub mod memory;
 // Generic pass-through avoids per-method Rust boilerplate as Pi adds methods.
 pub mod pi_rpc;
 pub mod provider;
+// bao 2026-06-06: provider preset list = data file (bundled +
+// ~/.ctrl/provider-templates.json user override), not hardcoded.
+pub mod provider_templates;
 pub mod skills;
 pub mod storage;
 pub mod stss;
@@ -91,6 +94,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::provider::provider_list,
             $crate::commands::provider::provider_set_active,
             $crate::commands::provider::provider_detect,
+            $crate::commands::provider_templates::list_provider_templates,
             // system — explicit window hide for the StatusBar × button
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,

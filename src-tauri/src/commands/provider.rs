@@ -170,6 +170,10 @@ pub fn provider_list(
     kernel: State<'_, KernelHandle>,
 ) -> Result<Vec<ProviderListRow>, String> {
     let registry = &kernel.runtime.provider_registry;
+    // bao 2026-06-06: rescan ~/.ctrl/providers/*.toml so that user
+    // providers added via config_set_provider_key are visible without
+    // a CTRL restart. ~10 ms scan cost is acceptable for Settings UI.
+    registry.reload_user_dir();
     let entries = registry.list();
     let rows = entries
         .into_iter()

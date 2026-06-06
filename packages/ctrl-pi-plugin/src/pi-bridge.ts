@@ -489,10 +489,14 @@ export class PiBridge {
           : null;
       if (piDir) {
         const { existsSync } = await import('node:fs');
-        const claudeAuthExt = `${piDir}/node_modules/pi-claude-auth/dist/index.js`;
-        if (existsSync(claudeAuthExt)) {
-          args.unshift('--extension', claudeAuthExt);
-        }
+        // bao 2026-06-05 final: drop claude / anthropic everywhere so
+        // we stop fighting provider routing. pi-claude-auth no longer
+        // loaded. Default brain = ollama-local (hermes3:8b). To restore
+        // Claude later: uncomment the next 4 lines.
+        // const claudeAuthExt = `${piDir}/node_modules/pi-claude-auth/dist/index.js`;
+        // if (existsSync(claudeAuthExt)) {
+        //   args.unshift('--extension', claudeAuthExt);
+        // }
         // bao 2026-06-05: load irisy-persona — the user-facing persona layer
         // defined per ~/.claude/skills/irisy-build/SKILL.md. Lives at a fixed
         // path during dev; will move to npm install once published. [I7]
@@ -556,6 +560,30 @@ export class PiBridge {
         if (typeof v === 'string') env[k] = v;
       }
       env.PI_OUTPUT_FORMAT = 'json';
+      // bao 2026-06-05: source extra env from ~/.ctrl/.env so Tavily /
+      // Brave / etc. API keys reach irisy-web extension at spawn time
+      // without hardcoding them. KEY=value lines, # comments allowed.
+      // Existing process.env keys win on conflict (user-facing override).
+      try {
+        const { readFileSync, existsSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        const { homedir } = await import('node:os');
+        const ctrlEnvPath = join(homedir(), '.ctrl', '.env');
+        if (existsSync(ctrlEnvPath)) {
+          const text = readFileSync(ctrlEnvPath, 'utf-8');
+          for (const raw of text.split('\n')) {
+            const line = raw.trim();
+            if (!line || line.startsWith('#')) continue;
+            const eq = line.indexOf('=');
+            if (eq <= 0) continue;
+            const k = line.slice(0, eq).trim();
+            const v = line.slice(eq + 1).trim().replace(/^"(.*)"$/, '$1');
+            if (k && !(k in env)) env[k] = v;
+          }
+        }
+      } catch {
+        /* best-effort: missing file or read failure is not fatal */
+      }
       // bao 2026-06-05 Pi-first refactor (ADR-009 §5 "do not re-implement
       // capabilities Pi already provides" + memory
       // `feedback_pi_is_core_use_upstream_surfaces`): Pi now connects
@@ -584,8 +612,50 @@ export class PiBridge {
       // Aligns with memory `feedback_default_to_user_cli_not_paid_
       // providers` (bao 2026-05-31): "default is the user's claude cli,
       // anything else costs". Claude Pro subscription = $0 marginal cost.
-      env.PI_PROVIDER = env.PI_PROVIDER ?? 'anthropic';
-      env.PI_MODEL = env.PI_MODEL ?? 'claude-sonnet-4-6';
+      // bao 2026-06-05 final: anthropic / claude-oauth dropped.
+      // Default brain = local Ollama (hermes3:8b) because it is the only
+      // provider we currently have a credential for. Volc CTRL-paid key
+      // is not provisioned in keychain yet; when it is, swap default to
+      // 'volc' + 'doubao-1-5-pro-32k-241204' (or current Volc model id).
+      // bao 2026-06-05 c: provider is part of Irisy. Read
+      // ~/.ctrl/state/active-providers.json for the current
+      // irisy.primary id so Pi spawns pointing at it. ctrl-pi-bridge's
+      // session_start handler then resolves credentials + manifest via
+      // kernel /tool/get_active_provider_details and pi.registerProvider.
+      if (!env.PI_PROVIDER) {
+        try {
+          const { readFileSync, existsSync } = await import('node:fs');
+          const { join } = await import('node:path');
+          const { homedir } = await import('node:os');
+          const activeStatePath = join(homedir(), '.ctrl', 'state', 'active-providers.json');
+          if (existsSync(activeStatePath)) {
+            const parsed = JSON.parse(readFileSync(activeStatePath, 'utf-8')) as {
+              roles?: Record<string, string>;
+            };
+            const primary = parsed?.roles?.['irisy.primary'];
+            if (primary && typeof primary === 'string') env.PI_PROVIDER = primary;
+          }
+        } catch { /* fall through */ }
+      }
+      // bao 2026-06-05 e: Pi validates --provider at child startup,
+      // BEFORE extensions load. So passing `--provider volc-byok` causes
+      // Pi to exit with "Unknown provider" because ctrl-pi-bridge has
+      // not yet registered the volc-byok provider. Workaround:
+      // always spawn Pi with a known-valid bootstrap provider
+      // (ollama-local, present in models.json by default), let
+      // session_start register the real active provider, then the
+      // higher layer (here in PiBridge after client.start) issues
+      // setModel(active_provider, active_model) to switch.
+      //
+      // The PI_PROVIDER env var captured from `active-providers.json`
+      // above is now used as the *target* for the post-start setModel,
+      // not the spawn-time --provider arg.
+      const targetProvider = env.PI_PROVIDER;
+      env.PI_PROVIDER = 'ollama-local';
+      env.PI_MODEL = env.PI_MODEL ?? 'hermes3:8b';
+      if (targetProvider && targetProvider !== 'ollama-local') {
+        env.CTRL_TARGET_PROVIDER = targetProvider;
+      }
       // RpcClient passes provider/model to Pi via `--provider` and
       // `--model` CLI args (rpc-client.js L31-35), NOT env. The env
       // assignments above are kept for any downstream child that
@@ -601,6 +671,50 @@ export class PiBridge {
         model,
       });
       await client.start();
+      // bao 2026-06-05 e: after Pi's child boots with the bootstrap
+      // provider (ollama-local), session_start has run and the
+      // ctrl-pi-bridge extension has registered the active provider
+      // via pi.registerProvider. Now switch Pi's current model to the
+      // active provider's first model so subsequent prompts use the
+      // user's choice (e.g. volc-byok / doubao-1-5-pro-32k-250115).
+      if (targetProvider && targetProvider !== 'ollama-local') {
+        try {
+          const detailsResp = await fetch(`http://127.0.0.1:${process.env.CTRL_PROVIDER_PORT ?? '17878'}/tool/get_active_provider_details`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{}',
+          });
+          const detailsJson = (await detailsResp.json()) as {
+            ok?: boolean;
+            result?: { id?: string; models?: Array<{ id?: string }> };
+            error?: string;
+          };
+          const id = detailsJson?.result?.id;
+          const firstModel = detailsJson?.result?.models?.[0]?.id;
+          if (id && firstModel && client.setModel) {
+            // Retry: even with session_start now returning the
+            // registration promise, Pi may finalize registration after
+            // start() resolves under certain load. Retry up to 5 times
+            // with 200 ms backoff before giving up.
+            let lastErr: unknown = null;
+            for (let i = 0; i < 5; i++) {
+              try {
+                await client.setModel(id, firstModel);
+                lastErr = null;
+                break;
+              } catch (e) {
+                lastErr = e;
+                await new Promise((r) => setTimeout(r, 200));
+              }
+            }
+            if (lastErr) throw lastErr;
+          }
+        } catch (e) {
+          process.stderr.write(
+            `pi-bridge: setModel to ${targetProvider} failed: ${e instanceof Error ? e.message : String(e)}\n`,
+          );
+        }
+      }
       this.rpc = client;
       return client;
     })();

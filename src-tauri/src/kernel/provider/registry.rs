@@ -102,15 +102,17 @@ const CTRL_MANAGED_PROVIDER_IDS: &[&str] = &["volc"];
 /// presets ADR-002 substrate § provider v2 §3.2 + lock #6 mandate.
 /// v2 added `volc-byok` (separate slot from the CTRL-managed `volc`
 /// fallback) plus `google` + `ollama` (verbatim VMark REST adapters).
+// bao 2026-06-05 e: BYOK builtins (openai-api / volc-byok / kimi /
+// deepseek / google) removed from BUILTIN_MANIFESTS. Hardcoded preset
+// list was anti-pattern (industry default: user adds free-form custom
+// providers via `~/.ctrl/providers/<slug>.toml`, no preset clutter).
+// Only `ollama` (works without a key — local) stays builtin so a fresh
+// install has at least one runnable substrate. `volc` (CTRL-managed
+// fallback) also dropped — without a baked CTRL key it cannot chat,
+// so listing it just creates a confusing "not ready" row.
+// Users add providers via PWA AddModal -> config_set_provider_key
+// (which writes a user-owned .toml + keychain entry).
 const BUILTIN_MANIFESTS: &[(&str, &str)] = &[
-    ("claude-oauth", include_str!("builtin/claude-oauth.toml")),
-    ("anthropic-api", include_str!("builtin/anthropic-api.toml")),
-    ("openai-api", include_str!("builtin/openai-api.toml")),
-    ("volc", include_str!("builtin/volc.toml")),
-    ("volc-byok", include_str!("builtin/volc-byok.toml")),
-    ("kimi", include_str!("builtin/kimi.toml")),
-    ("deepseek", include_str!("builtin/deepseek.toml")),
-    ("google", include_str!("builtin/google.toml")),
     ("ollama", include_str!("builtin/ollama.toml")),
 ];
 
@@ -379,6 +381,7 @@ impl ProviderRegistry {
                 id: p.manifest.id.clone(),
                 label: p.manifest.label.clone(),
                 kind: p.manifest.kind.clone(),
+                endpoint: p.manifest.endpoint.clone(),
                 models: p.manifest.models.clone(),
                 description: p.manifest.description.clone(),
                 ready: p.provider.is_some(),
@@ -414,6 +417,31 @@ impl ProviderRegistry {
     /// (`CTRL_MANAGED_PROVIDER_IDS`) — when CTRL adds a ctrl-brand
     /// manifest, its id goes in that const and snapshot() reports it as
     /// `Ctrl` without touching the manifest schema.
+    /// Re-scan `~/.ctrl/providers/*.toml` and merge any new manifests
+    /// into the in-memory registry. bao 2026-06-06: PWA's
+    /// config_set_provider_key writes new user TOMLs but the registry
+    /// only scanned the dir once at boot, so newly added providers
+    /// did not show up in `provider_list` until restart. Calling this
+    /// before list() in the Tauri command makes saves visible
+    /// instantly. Idempotent + non-destructive (re-parsing the same
+    /// file replaces the manifest but keeps the loaded state shape).
+    pub fn reload_user_dir(&self) {
+        if let Some(dir) = default_user_providers_dir() {
+            if dir.exists() {
+                load_user_manifests(&dir, self);
+            }
+        }
+    }
+
+    /// Get the full parsed manifest for a provider id. Used by
+    /// http_endpoint::run_get_active_provider_details to hand
+    /// ctrl-pi-bridge the wire-shape + auth + models needed to
+    /// `pi.registerProvider`. bao 2026-06-05 b.
+    pub fn manifest_for(&self, id: &str) -> Option<Arc<super::manifest::ProviderManifest>> {
+        let providers = self.providers.read().unwrap();
+        providers.get(id).map(|lp| lp.manifest.clone())
+    }
+
     pub fn snapshot(&self, id: &str) -> Option<ProviderSnapshot> {
         let providers = self.providers.read().unwrap();
         let loaded = providers.get(id)?;
@@ -958,6 +986,11 @@ pub struct ProviderListEntry {
     pub id: String,
     pub label: String,
     pub kind: ProviderKind,
+    /// HTTP endpoint URL (when `kind = HttpApi`). Surfaces the manifest
+    /// `endpoint` so the PWA Edit modal can prefill the Base URL field
+    /// — bao 2026-06-06: previously empty in Edit, forcing user to
+    /// remember + retype, broken UX.
+    pub endpoint: Option<String>,
     pub models: Vec<String>,
     pub description: String,
     /// True iff credentials resolved AND adapter constructed without

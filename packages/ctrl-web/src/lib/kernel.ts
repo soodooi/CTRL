@@ -72,11 +72,33 @@ export interface ProviderInfo {
 export const listProviders = (): Promise<ProviderInfo[]> =>
   invoke('config_list_providers');
 
+/** bao 2026-06-06: provider preset list is data, not code. Kernel returns
+ *  bundled defaults merged with ~/.ctrl/provider-templates.json user
+ *  override (community / per-user contributable, no rebuild required). */
+export interface ProviderTemplate {
+  id: string;
+  label: string;
+  defaultName: string;
+  protocol: 'openai' | 'anthropic';
+  baseUrl: string;
+  defaultModel: string;
+  keyHint: string;
+}
+
+export const listProviderTemplates = (): Promise<ProviderTemplate[]> =>
+  invoke<ProviderTemplate[]>('list_provider_templates');
+
 export interface SetProviderKeyArgs {
+  /** Slug — sanitized server-side to [a-z0-9_-], used as keychain account
+   *  + manifest filename `~/.ctrl/providers/<slug>.toml`. */
   provider: string;
   api_key: string;
   base_url?: string;
   default_model?: string;
+  /** bao 2026-06-05 e: free-form provider fields. */
+  display_name?: string;
+  /** "openai" (default) or "anthropic". Maps to manifest `shape`. */
+  api_protocol?: 'openai' | 'anthropic';
 }
 
 export const setProviderKey = (args: SetProviderKeyArgs): Promise<void> =>

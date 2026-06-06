@@ -483,6 +483,13 @@ async fn tool_dispatch(
         "install_keycap" => run_install_keycap(args, &handle).await,
         "keycap_run" => run_keycap_dispatch(args, &handle).await,
         "brain_status" => run_brain_status(&handle).await,
+        // bao 2026-06-05 b: ctrl-pi-bridge calls this at session_start to
+        // resolve the active provider's full credentials and shape so it
+        // can `pi.registerProvider` Pi with a real OpenAI-/Anthropic-
+        // compat config. Replaces the previous direct /text-chat round-
+        // trip (which stripped tool_calls). Returned shape matches
+        // `KernelActiveProvider` in ctrl-pi-bridge/src/index.ts.
+        "get_active_provider_details" => run_get_active_provider_details(&handle).await,
         other => Err(format!("unknown tool: {other}")),
     };
     Json(match reply {
@@ -581,4 +588,80 @@ async fn run_keycap_dispatch(
 async fn run_brain_status(handle: &KernelHandle) -> Result<serde_json::Value, String> {
     let view = crate::commands::provider::brain_status_inner(handle)?;
     serde_json::to_value(view).map_err(|e| e.to_string())
+}
+
+/// Resolve the irisy.primary active provider's full registration shape
+/// for ctrl-pi-bridge. Output (JSON):
+///   { id, api, baseUrl, apiKey, models: [{id,name,contextWindow,maxTokens}] }
+/// where `api` is "openai-completions" or "anthropic-messages" (mapped
+/// from manifest HttpShape) so Pi can register the provider natively.
+async fn run_get_active_provider_details(
+    handle: &KernelHandle,
+) -> Result<serde_json::Value, String> {
+    use super::manifest::{AuthSource, HttpShape};
+    use super::r#trait::Consumer;
+
+    let registry = &handle.runtime.provider_registry;
+    let active = registry.active_state();
+    let id = active
+        .get(&Consumer::IrisyPrimary.id())
+        .cloned()
+        .ok_or_else(|| "no active provider for irisy.primary".to_string())?;
+    let manifest = registry
+        .manifest_for(&id)
+        .ok_or_else(|| format!("provider {id} not in registry"))?;
+
+    // Map HttpShape -> Pi's `Api` discriminator.
+    let api = match manifest.shape {
+        HttpShape::OpenaiChatCompletions => "openai-completions",
+        HttpShape::AnthropicMessages => "anthropic-messages",
+    };
+    let base_url = manifest
+        .endpoint
+        .clone()
+        .ok_or_else(|| format!("provider {id} has no endpoint"))?;
+
+    // Resolve credential via subprocess `security` CLI (bao 2026-06-05 d).
+    // The keyring v3 apple-native path silently non-persists in signed
+    // CTRL.app — see comment in `shell::keychain_subprocess`.
+    let api_key = match &manifest.auth {
+        AuthSource::Keychain { account } => {
+            crate::shell::keychain_subprocess::get(account.as_str())
+                .map_err(|e| format!("provider {id}: keychain read failed: {e}"))?
+                .ok_or_else(|| {
+                    format!("provider {id}: no keychain entry for account {account:?}")
+                })?
+        }
+        AuthSource::Env { var } => std::env::var(var)
+            .map_err(|_| format!("provider {id}: env var {var} not set"))?,
+        AuthSource::ConfigKey { field } => manifest
+            .config
+            .get(field)
+            .cloned()
+            .ok_or_else(|| format!("provider {id}: config key {field} missing"))?,
+        AuthSource::None => String::new(),
+    };
+
+    let models: Vec<serde_json::Value> = manifest
+        .models
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m,
+                "name": m,
+                "contextWindow": 200_000_i64,
+                "maxTokens": 8192_i64,
+                "reasoning": false,
+                "input": ["text"],
+            })
+        })
+        .collect();
+
+    Ok(serde_json::json!({
+        "id": id,
+        "api": api,
+        "baseUrl": base_url,
+        "apiKey": api_key,
+        "models": models,
+    }))
 }

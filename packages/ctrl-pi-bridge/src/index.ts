@@ -490,24 +490,36 @@ export default function register(pi: PiExtensionApi): void {
   // runner binds (see applyDefaultActiveTools below).
   activePiRef = pi;
 
-  // 1. registerProvider — DISABLED 2026-06-05 (bao Pi-first refactor).
+  // 1. registerProvider — RE-ENABLED 2026-06-05 b (bao directive
+  //    "provider is part of Irisy"). The DISABLED-block path forced Pi
+  //    to read ~/.pi/agent/models.json + connect directly to a
+  //    hardcoded provider (ollama-local), which made PWA Settings
+  //    -> Add Provider / Switch Provider do nothing for the actual
+  //    chat flow. New design: ctrl-pi-bridge at session_start reads
+  //    ~/.ctrl/state/active-providers.json via the kernel's
+  //    get_active_provider_details tool, then registers a Pi provider
+  //    with the resolved {api, baseUrl, apiKey, models} from the
+  //    matching builtin/*.toml + keychain. Pi sees the registered
+  //    provider as native (api: "openai-completions" et al), so
+  //    streaming + tool_calls all work end-to-end.
   //
-  // The bridge used to register a `ctrl-bridge` Pi LLM provider that
-  // round-tripped every chat call through `kernel /text-chat`. That
-  // pattern violated ADR-009 §5 ("do not re-implement capabilities Pi
-  // already provides") and silently disabled Pi's native tool calling:
-  // `streamSimple(ctx={messages, system})` has no `tools` field, so the
-  // 10 kernel tools registered below via `registerTool` were unreachable
-  // from any LLM the bridge proxied. See brainstorm/
-  // irisy-capabilities-2026-06-04.md A14 + debug session 2026-06-05.
+  //    The previous streamSimple/text-chat round-trip is intentionally
+  //    NOT used here — that path stripped tool_calls. Instead we hand
+  //    Pi the real provider credentials so Pi talks to Volc / DeepSeek
+  //    / OpenAI directly through its built-in adapters.
   //
-  // Pi now reads `~/.pi/agent/models.json` and connects directly to its
-  // native provider (default seed: `ollama-local` running Ollama
-  // OpenAI-compat at http://localhost:11434/v1). The tools / hooks /
-  // commands / message-renderer wiring below is unchanged — Pi sees the
-  // bridge as a capability extension, not an LLM provider.
-  //
-  // pi.registerProvider(BRIDGE_PROVIDER_NAME, { ... }); // intentionally removed
+  //    Switch UX: when user changes active-providers.json in PWA
+  //    (provider_set_active Tauri command), the kernel publishes an
+  //    "active-provider-changed" event; ctrl-pi-bridge re-reads + calls
+  //    pi.unregisterProvider(old) + pi.registerProvider(new). For v1
+  //    we kill+respawn the daemon on switch (BrainSupervisor::restart),
+  //    which is heavier but simpler. v2 will go event-driven.
+  // Return the promise (not void) so Pi's extension runner can await
+  // it. Without this, `client.start()` resolves while
+  // registerActiveProviderOnce is still mid-flight, and PiBridge's
+  // post-start `setModel("volc-byok", ...)` racing call sees an
+  // unregistered provider ("Model not found").
+  pi.on('session_start', () => registerActiveProviderOnce(pi));
 
   // 2. registerTool x 10 — native Pi tools for BYOK frontier path
   //    (ADR-005 7.3, 2026-06-04). Each tool is a thin HTTP-fetch
@@ -579,6 +591,83 @@ export default function register(pi: PiExtensionApi): void {
   //     "surface = intent" pattern (brainstorm §0.2).
   if (pi.registerCommand) {
     registerSlashCommands(pi);
+  }
+}
+
+// ── Active-provider registration (bao 2026-06-05 b) ───────────────────────
+
+let activeProviderRegistered = false;
+
+interface KernelActiveProvider {
+  id: string;
+  /** Pi `Api` discriminator, e.g. "openai-completions" / "anthropic-messages". */
+  api: string;
+  baseUrl: string;
+  apiKey: string;
+  models: Array<{
+    id: string;
+    name?: string;
+    contextWindow: number;
+    maxTokens: number;
+    input?: ('text' | 'image')[];
+    reasoning?: boolean;
+  }>;
+}
+
+/** session_start handler: call kernel for the active provider's resolved
+ *  credentials + manifest, then `pi.registerProvider`. Idempotent across
+ *  reload / resume / fork by checking the module flag. Failures are
+ *  surfaced via stderr (Pi keeps running on whatever the user's
+ *  models.json had, so chat doesn't 500 — but no Volc / DeepSeek
+ *  until next spawn). */
+async function registerActiveProviderOnce(pi: PiExtensionApi): Promise<void> {
+  if (activeProviderRegistered) return;
+  try {
+    // bao 2026-06-05 e: callKernelTool returns the unwrapped `result`
+    // value already (it parses { ok, result } envelope and returns
+    // result). Earlier code was treating it as a Pi tool-result
+    // envelope { content: [{ text }] } which is wrong here.
+    const details = (await callKernelTool(
+      'get_active_provider_details',
+      {},
+      undefined,
+    )) as KernelActiveProvider;
+    if (!details.id || !details.api || !details.baseUrl) {
+      process.stderr.write(
+        `ctrl-pi-bridge: incomplete provider details (id=${details.id}, api=${details.api}); skipping pi.registerProvider\n`,
+      );
+      return;
+    }
+    if (!pi.registerProvider) {
+      process.stderr.write(
+        'ctrl-pi-bridge: pi.registerProvider unavailable on this runtime; skipping\n',
+      );
+      return;
+    }
+    pi.registerProvider(details.id, {
+      name: details.id,
+      api: details.api,
+      baseUrl: details.baseUrl,
+      apiKey: details.apiKey,
+      authHeader: true,
+      models: details.models.map((m) => ({
+        id: m.id,
+        name: m.name ?? m.id,
+        reasoning: m.reasoning ?? false,
+        input: m.input ?? ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: m.contextWindow,
+        maxTokens: m.maxTokens,
+      })),
+    });
+    activeProviderRegistered = true;
+    process.stderr.write(
+      `ctrl-pi-bridge: registered active provider id=${details.id} api=${details.api} models=${details.models.length}\n`,
+    );
+  } catch (e) {
+    process.stderr.write(
+      `ctrl-pi-bridge: registerActiveProviderOnce failed: ${e instanceof Error ? e.message : String(e)}\n`,
+    );
   }
 }
 

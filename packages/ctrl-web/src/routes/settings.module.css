@@ -872,3 +872,31 @@
   color: var(--color-danger, #ef4444);
   font-style: normal;
 }
+
+/* bao 2026-06-05 e: provider list (Add/Edit/Delete/Test/Set-active inline) */
+.providerList { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.providerListRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--color-border-soft); border-radius: 8px; transition: border-color 120ms ease; }
+.providerListRow[data-active] { border-color: var(--color-border); background: var(--color-bg-l1); }
+.providerListInfo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.providerListDot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-muted); flex-shrink: 0; }
+.providerListDot[data-healthy] { background: var(--color-success, #15803d); }
+.providerListLabel { font-weight: 500; font-size: 0.88rem; }
+.providerListBadge { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; background: var(--color-success, #15803d); color: white; }
+.providerListModel { font-size: 0.72rem; color: var(--color-text-muted); font-family: ui-monospace, SFMono-Regular, monospace; }
+.providerListTest { font-size: 0.72rem; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.providerListActions { display: flex; gap: 4px; flex-shrink: 0; }
+.providerListBtn { background: transparent; border: 1px solid var(--color-border-soft); border-radius: 6px; padding: 4px 10px; font: inherit; font-size: 0.72rem; color: var(--color-text-muted); cursor: pointer; transition: color 120ms, background 120ms, border-color 120ms; }
+.providerListBtn:hover:not(:disabled) { color: var(--color-text); background: var(--color-bg-l2); border-color: var(--color-border); }
+.providerListBtn:disabled { opacity: 0.5; cursor: progress; }
+.providerListBtn[data-tone='primary'] { color: var(--color-text); border-color: var(--color-border); }
+.providerListBtn[data-tone='primary']:hover:not(:disabled) { background: var(--color-bg-l2); }
+.providerListBtn[data-tone='danger']:hover:not(:disabled) { color: var(--color-danger, #dc2626); border-color: var(--color-danger, #dc2626); background: rgba(220, 38, 38, 0.05); }
+
+/* legacy ProviderRoleRow per-row action group (unused in current
+   ProvidersBlock but referenced in case the RoleSection path is revived) */
+.brainActions { display: flex; gap: 4px; margin-left: 8px; }
+.brainAction { background: transparent; border: 1px solid var(--color-border-soft); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 0.72rem; color: var(--color-text-muted); cursor: pointer; }
+.brainAction:hover:not(:disabled) { color: var(--color-text); background: var(--color-bg-l2); }
+.brainAction[data-tone='danger']:hover:not(:disabled) { color: var(--color-danger, #dc2626); border-color: var(--color-danger, #dc2626); }
+
+.providerAddBar { display: flex; justify-content: flex-start; margin-top: 12px; }

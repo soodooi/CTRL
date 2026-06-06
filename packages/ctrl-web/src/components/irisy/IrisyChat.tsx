@@ -900,10 +900,21 @@ export function IrisyChat(): React.ReactElement {
   }, [sendMessage]);
 
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    // bao 2026-06-05 b: CJK IME Enter-confirm was dropping into send()
+    // because some IMEs (observed: Squirrel, macOS Pinyin) confirm a
+    // candidate without firing compositionend before the keydown — so
+    // `nativeEvent.isComposing` reads false. Fall back to the manual
+    // compositionstart ref AND the legacy keyCode 229 sentinel that
+    // every Chromium-based webview still emits during IME composition.
+    const native = e.nativeEvent as KeyboardEvent;
+    const composing =
+      native.isComposing ||
+      isComposingRef.current ||
+      native.keyCode === 229;
     if (
       e.key === 'Enter' &&
       !e.shiftKey &&
-      !e.nativeEvent.isComposing &&
+      !composing &&
       !e.metaKey &&
       !e.ctrlKey
     ) {

@@ -10,12 +10,16 @@ id = "ollama"
 label = "Ollama (local)"
 kind = "rest_ollama"
 endpoint = "http://localhost:11434"
-# bao 2026-06-04: qwen2.5:7b first — bao chose it as the primary local
-# brain. Adapter picks `models[0]` when the caller does not pin a model;
-# putting the user's actually-pulled tag first means CTRL works out of
-# the box without a Settings round-trip. Ollama tag resolution is exact
-# (no :latest fallback), so the explicit `:7b` suffix is load-bearing.
+# bao 2026-06-05: hermes3:8b first — bao explicitly retired qwen as
+# default and pinned to hermes ollama (tool-calling tuned, ships with
+# the CTRL bootstrap, ~5GB so fits 16GB M1 Pro). Adapter picks
+# `models[0]` when the caller does not pin a model; putting the user's
+# actually-pulled tag first means CTRL works out of the box without a
+# Settings round-trip. Ollama tag resolution is exact (no :latest
+# fallback), so the explicit `:8b` suffix is load-bearing. qwen2.5
+# entries kept as fallbacks for users who already pulled them.
 models = [
+  "hermes3:8b",
   "qwen2.5:7b",
   "qwen2.5:14b",
   "llama3.2",

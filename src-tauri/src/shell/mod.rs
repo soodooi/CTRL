@@ -20,6 +20,10 @@ pub mod brain_supervisor;
 pub mod builtin_keycaps;
 pub mod hotkey;
 pub mod keychain;
+// bao 2026-06-05 d: provider keychain reads/writes go through this
+// subprocess-`security`-CLI helper. keyring v3 apple-native silently
+// non-persists in signed CTRL.app without entitlements.
+pub mod keychain_subprocess;
 pub mod kernel_supervisor;
 pub mod lifecycle;
 pub mod ollama_install;

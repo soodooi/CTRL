@@ -6,8 +6,13 @@
   border-bottom: 1px solid var(--color-border-soft);
   background: var(--color-bg);
   font-size: 0.78rem;
+  /* bao 2026-06-05 fix: picker dropdown was visually overlapping chat
+     messages because the bar sat at z-index 4 (same as chat content)
+     and the picker inherited that context. Bump to 50 so the entire
+     bar (and the absolutely-positioned picker inside it) overlays
+     everything beneath. */
   position: relative;
-  z-index: 4;
+  z-index: 50;
   flex-wrap: wrap;
 }
 
@@ -132,17 +137,25 @@
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 30;
+  z-index: 100;
   list-style: none;
   margin: 0;
   padding: 4px;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  min-width: 260px;
-  max-height: 320px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  min-width: 320px;
+  max-width: 460px;
+  max-height: 380px;
   overflow-y: auto;
+  white-space: nowrap;
+}
+
+.pickerModel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pickerItem {
@@ -185,6 +198,23 @@
   font-size: 0.7rem;
   color: var(--color-text-muted);
   font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.pickerEmpty {
+  padding: 12px 14px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.pickerEmpty strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.pickerEmpty a {
+  color: var(--color-text);
+  text-decoration: underline;
 }
 
 .error {

@@ -1,0 +1,92 @@
+[
+  {
+    "id": "volc",
+    "label": "Volcano Ark / Doubao (ByteDance)",
+    "defaultName": "Volc Doubao",
+    "protocol": "openai",
+    "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+    "defaultModel": "doubao-1-5-pro-32k-250115",
+    "keyHint": "UUID format (e.g. a1b2c3d4-...); get at console.volcengine.com -> API Key Management"
+  },
+  {
+    "id": "openai",
+    "label": "OpenAI",
+    "defaultName": "OpenAI",
+    "protocol": "openai",
+    "baseUrl": "https://api.openai.com/v1",
+    "defaultModel": "gpt-4o-mini",
+    "keyHint": "sk-... or sk-proj-...; get at platform.openai.com/api-keys"
+  },
+  {
+    "id": "anthropic",
+    "label": "Anthropic Claude",
+    "defaultName": "Claude",
+    "protocol": "anthropic",
+    "baseUrl": "https://api.anthropic.com",
+    "defaultModel": "claude-sonnet-4-6",
+    "keyHint": "sk-ant-...; get at console.anthropic.com/settings/keys"
+  },
+  {
+    "id": "deepseek",
+    "label": "DeepSeek",
+    "defaultName": "DeepSeek",
+    "protocol": "openai",
+    "baseUrl": "https://api.deepseek.com/v1",
+    "defaultModel": "deepseek-chat",
+    "keyHint": "sk-...; get at platform.deepseek.com/api_keys"
+  },
+  {
+    "id": "kimi",
+    "label": "Moonshot Kimi",
+    "defaultName": "Kimi",
+    "protocol": "openai",
+    "baseUrl": "https://api.moonshot.cn/v1",
+    "defaultModel": "moonshot-v1-8k",
+    "keyHint": "sk-...; get at platform.moonshot.cn"
+  },
+  {
+    "id": "google",
+    "label": "Google AI Studio (Gemini)",
+    "defaultName": "Gemini",
+    "protocol": "openai",
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "defaultModel": "gemini-2.5-flash",
+    "keyHint": "AIzaSy...; get at aistudio.google.com/apikey"
+  },
+  {
+    "id": "openrouter",
+    "label": "OpenRouter",
+    "defaultName": "OpenRouter",
+    "protocol": "openai",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "defaultModel": "anthropic/claude-3.5-sonnet",
+    "keyHint": "sk-or-...; get at openrouter.ai/keys"
+  },
+  {
+    "id": "groq",
+    "label": "Groq",
+    "defaultName": "Groq",
+    "protocol": "openai",
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "defaultModel": "llama-3.3-70b-versatile",
+    "keyHint": "gsk_...; get at console.groq.com/keys"
+  },
+  {
+    "id": "together",
+    "label": "Together AI",
+    "defaultName": "Together",
+    "protocol": "openai",
+    "baseUrl": "https://api.together.xyz/v1",
+    "defaultModel": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "keyHint": "get at api.together.ai/settings/api-keys"
+  },
+  {
+    "id": "custom",
+    "label": "Custom (any OpenAI-compatible endpoint)",
+    "defaultName": "",
+    "protocol": "openai",
+    "baseUrl": "",
+    "defaultModel": "",
+    "keyHint": "paste your API key"
+  }
+]

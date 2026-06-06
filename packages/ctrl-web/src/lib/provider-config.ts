@@ -17,6 +17,9 @@ export interface ProviderListRow {
   id: string;
   label: string;
   kind: ProviderKind;
+  /** bao 2026-06-06: endpoint URL exposed so AddModal Edit mode can
+   *  prefill the Base URL field. */
+  endpoint: string | null;
   models: string[];
   description: string;
   /** True iff credentials resolved + adapter constructed without error. */
