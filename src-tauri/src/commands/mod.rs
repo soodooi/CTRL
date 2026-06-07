@@ -18,6 +18,10 @@
 // for context); module not declared so the file is not compiled.
 pub mod chat;
 pub mod code_space;
+// ADR-002 substrate § provider v11 §3.11 (2026-06-07): Coding L1 native
+// Pi TUI resolver — read coding.primary SSOT + resolve API key + return
+// spawn spec for PWA to hand to cs_spawn.
+pub mod coding;
 pub mod config;
 pub mod draft;
 pub mod draft_run;
@@ -91,6 +95,15 @@ macro_rules! pwa_invoke_handler {
             // provider_set_active: 2-role assignment with trial-verify
             // provider_detect: PATH scan for known CLIs (cached)
             $crate::commands::provider::brain_status,
+            // ADR-002 substrate § provider v9 §3.7 (2026-06-06): SSOT
+            // INTENT projection — Settings UI consumes this for "what
+            // did the user pick" (independent of Pi runtime state). The
+            // PWA *chip* reads `pi_rpc('getState')` directly (Pi truth).
+            $crate::commands::provider::get_active_providers,
+            // ADR-002 substrate § provider v11 §3.11 (2026-06-07):
+            // Coding L1 native Pi TUI spawn resolver. PWA gets spec,
+            // hands to cs_spawn — kernel-only credential lookup.
+            $crate::commands::coding::coding_resolve_spawn,
             $crate::commands::provider::provider_list,
             $crate::commands::provider::provider_set_active,
             $crate::commands::provider::provider_detect,
@@ -115,6 +128,9 @@ macro_rules! pwa_invoke_handler {
             // calling this when already expanded is a no-op; never collapses.
             // bao 2026-06-03: closes "L1 vault button can't open workspace".
             $crate::commands::system::ensure_workspace_window_expanded,
+            // ADR-002 substrate § provider v11 §3.11 (2026-06-07): L1
+            // chip click-toggle counterpart.
+            $crate::commands::system::collapse_workspace_window,
             // updater — safe macOS relaunch after auto-update (Chrome-style
             // detached helper, sidesteps the Tauri 2 race)
             $crate::commands::updater::safe_relaunch_after_update,

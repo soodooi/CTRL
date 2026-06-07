@@ -81,10 +81,17 @@ interface PiRpcClient {
 }
 
 interface PiRpcClientCtor {
+  // ADR-002 substrate § provider v9 §1.2 (2026-06-06): pass the real
+  // BYOK provider+model from SSOT directly to Pi's RpcClient ctor. Pi's
+  // actual RpcClient surface (~/.ctrl/pi/node_modules/@mariozechner/
+  // pi-coding-agent/dist/modes/rpc/rpc-client.d.ts L12-25) already
+  // exposes these fields; we mirror them here for the local subset typing.
   new (options: {
     cliPath?: string;
     args?: string[];
     env?: Record<string, string>;
+    provider?: string;
+    model?: string;
   }): PiRpcClient;
 }
 
@@ -617,104 +624,53 @@ export class PiBridge {
       // provider we currently have a credential for. Volc CTRL-paid key
       // is not provisioned in keychain yet; when it is, swap default to
       // 'volc' + 'doubao-1-5-pro-32k-241204' (or current Volc model id).
-      // bao 2026-06-05 c: provider is part of Irisy. Read
-      // ~/.ctrl/state/active-providers.json for the current
-      // irisy.primary id so Pi spawns pointing at it. ctrl-pi-bridge's
-      // session_start handler then resolves credentials + manifest via
-      // kernel /tool/get_active_provider_details and pi.registerProvider.
-      if (!env.PI_PROVIDER) {
-        try {
-          const { readFileSync, existsSync } = await import('node:fs');
-          const { join } = await import('node:path');
-          const { homedir } = await import('node:os');
-          const activeStatePath = join(homedir(), '.ctrl', 'state', 'active-providers.json');
-          if (existsSync(activeStatePath)) {
-            const parsed = JSON.parse(readFileSync(activeStatePath, 'utf-8')) as {
-              roles?: Record<string, string>;
-            };
-            const primary = parsed?.roles?.['irisy.primary'];
-            if (primary && typeof primary === 'string') env.PI_PROVIDER = primary;
-          }
-        } catch { /* fall through */ }
-      }
-      // bao 2026-06-05 e: Pi validates --provider at child startup,
-      // BEFORE extensions load. So passing `--provider volc-byok` causes
-      // Pi to exit with "Unknown provider" because ctrl-pi-bridge has
-      // not yet registered the volc-byok provider. Workaround:
-      // always spawn Pi with a known-valid bootstrap provider
-      // (ollama-local, present in models.json by default), let
-      // session_start register the real active provider, then the
-      // higher layer (here in PiBridge after client.start) issues
-      // setModel(active_provider, active_model) to switch.
+      // ADR-002 substrate § provider v9 §1.2 (2026-06-06): RETRACT the
+      // ctrl-bridge alias. Pi spawns with the REAL user-selected BYOK
+      // provider id from SSOT (~/.ctrl/state/active-providers.json
+      // irisy.primary), not a synthetic alias. The kernel HTTP endpoint
+      // /tool/get_active_provider_details resolves the manifest +
+      // credentials from keychain; we write that into ~/.pi/agent/
+      // models.json with `apiKey` as an env-var NAME reference (Pi's
+      // documented "API key or environment variable name" pattern in
+      // ProviderConfig.apiKey) and inject the real key as that env var
+      // into the child process. No plaintext credentials on disk.
       //
-      // The PI_PROVIDER env var captured from `active-providers.json`
-      // above is now used as the *target* for the post-start setModel,
-      // not the spawn-time --provider arg.
-      const targetProvider = env.PI_PROVIDER;
-      env.PI_PROVIDER = 'ollama-local';
-      env.PI_MODEL = env.PI_MODEL ?? 'hermes3:8b';
-      if (targetProvider && targetProvider !== 'ollama-local') {
-        env.CTRL_TARGET_PROVIDER = targetProvider;
+      // RETIRED in v9 (do NOT re-introduce):
+      //   - ctrl-bridge synthetic provider id + alias
+      //   - injectCtrlBridgeProvider()
+      //   - ctrl-pi-bridge `pi.registerProvider('ctrl-bridge', {streamSimple})`
+      //   - kernel-side streamSimple interception of LLM calls
+      //   - PI_PROVIDER / PI_MODEL / CTRL_TARGET_PROVIDER env vars
+      //   - post-spawn `client.setModel(target, firstModel)` switch
+      //
+      // The new injectActiveProviderForSpawn returns the {providerId,
+      // modelId, envVarName, envValue} the spawn needs.
+      let spawnSpec: SpawnSpec;
+      try {
+        spawnSpec = await injectActiveProviderForSpawn(
+          process.env.CTRL_PROVIDER_PORT ?? '17878',
+        );
+      } catch (e) {
+        process.stderr.write(
+          `pi-bridge: active-provider resolution failed: ${e instanceof Error ? e.message : String(e)}\n`,
+        );
+        throw e;
       }
-      // RpcClient passes provider/model to Pi via `--provider` and
-      // `--model` CLI args (rpc-client.js L31-35), NOT env. The env
-      // assignments above are kept for any downstream child that
-      // inherits them, but Pi itself only honors the constructor opts.
-      const provider = env.PI_PROVIDER;
-      const model = env.PI_MODEL;
+      // Inject the real key into child env under the documented var name.
+      // Pi's openai-completions / anthropic-messages adapters resolve
+      // `apiKey: "<ENV_VAR_NAME>"` to `process.env[ENV_VAR_NAME]` at the
+      // first LLM call — see Pi source `dist/core/model-registry.js`
+      // `resolveApiKey`. Real key never lands in models.json on disk.
+      env[spawnSpec.envVarName] = spawnSpec.envValue;
 
       const client = new RpcClient({
         cliPath: this.pi.command,
         args,
         env,
-        provider,
-        model,
+        provider: spawnSpec.providerId,
+        model: spawnSpec.modelId,
       });
       await client.start();
-      // bao 2026-06-05 e: after Pi's child boots with the bootstrap
-      // provider (ollama-local), session_start has run and the
-      // ctrl-pi-bridge extension has registered the active provider
-      // via pi.registerProvider. Now switch Pi's current model to the
-      // active provider's first model so subsequent prompts use the
-      // user's choice (e.g. volc-byok / doubao-1-5-pro-32k-250115).
-      if (targetProvider && targetProvider !== 'ollama-local') {
-        try {
-          const detailsResp = await fetch(`http://127.0.0.1:${process.env.CTRL_PROVIDER_PORT ?? '17878'}/tool/get_active_provider_details`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: '{}',
-          });
-          const detailsJson = (await detailsResp.json()) as {
-            ok?: boolean;
-            result?: { id?: string; models?: Array<{ id?: string }> };
-            error?: string;
-          };
-          const id = detailsJson?.result?.id;
-          const firstModel = detailsJson?.result?.models?.[0]?.id;
-          if (id && firstModel && client.setModel) {
-            // Retry: even with session_start now returning the
-            // registration promise, Pi may finalize registration after
-            // start() resolves under certain load. Retry up to 5 times
-            // with 200 ms backoff before giving up.
-            let lastErr: unknown = null;
-            for (let i = 0; i < 5; i++) {
-              try {
-                await client.setModel(id, firstModel);
-                lastErr = null;
-                break;
-              } catch (e) {
-                lastErr = e;
-                await new Promise((r) => setTimeout(r, 200));
-              }
-            }
-            if (lastErr) throw lastErr;
-          }
-        } catch (e) {
-          process.stderr.write(
-            `pi-bridge: setModel to ${targetProvider} failed: ${e instanceof Error ? e.message : String(e)}\n`,
-          );
-        }
-      }
       this.rpc = client;
       return client;
     })();
@@ -728,6 +684,205 @@ export class PiBridge {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Result of `injectActiveProviderForSpawn`: tells the caller what to pass to
+ * `RpcClient({provider, model, env})`. ADR-002 substrate § provider v9 §1.2.
+ */
+interface SpawnSpec {
+  /** Pi `--provider` argument — the real BYOK provider id from SSOT. */
+  providerId: string;
+  /** Pi `--model` argument — first model id from the provider's manifest. */
+  modelId: string;
+  /** Env var NAME to register as `apiKey` in models.json. */
+  envVarName: string;
+  /** Real credential value — caller injects under `envVarName` into child env. */
+  envValue: string;
+}
+
+/**
+ * Resolve the SSOT-selected provider into a Pi spawn spec + side-effect write
+ * its entry into `~/.pi/agent/models.json`. ADR-002 substrate § provider v9
+ * §1.2 (2026-06-06) — supersedes `injectCtrlBridgeProvider`.
+ *
+ * Flow:
+ *   1. Fetch `/tool/get_active_provider_details` on the kernel HTTP endpoint
+ *      (port = CTRL_PROVIDER_PORT). The kernel resolves the irisy.primary
+ *      provider id from `~/.ctrl/state/active-providers.json`, joins the
+ *      matching manifest TOML, pulls the credential from keychain, and
+ *      returns `{id, api, baseUrl, apiKey, models}`.
+ *   2. Compute an env-var NAME (`CTRL_PI_API_KEY_<UPPER_ID>`) and write the
+ *      models.json entry with `apiKey` = that NAME (Pi's documented "API key
+ *      or environment variable name" semantics — see
+ *      `ProviderConfig.apiKey` in pi-coding-agent dist types).
+ *   3. Return the env var name + the real value so the caller can inject it
+ *      into the child process env. The real credential is NEVER written to
+ *      disk — only the env var name is.
+ *
+ * Idempotent merge into existing models.json (preserves other providers).
+ */
+async function injectActiveProviderForSpawn(port: string): Promise<SpawnSpec> {
+  // ADR-002 substrate § provider v9 §1.2 — body of injectActiveProviderForSpawn.
+  const { existsSync, readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { homedir } = await import('node:os');
+
+  // Step 1 — Resolve SSOT-selected provider via kernel HTTP. The kernel
+  // joins SSOT + manifest + keychain into one response shape. If the
+  // kernel is unreachable, surface the error verbatim — there is no
+  // fallback to "ollama-local" placeholder anymore (v9 § failover retract).
+  type KernelModel = {
+    id: string;
+    name?: string;
+    contextWindow?: number;
+    maxTokens?: number;
+    reasoning?: boolean;
+    input?: Array<'text' | 'image'>;
+  };
+  type KernelActiveProvider = {
+    id: string;
+    api: string;
+    baseUrl: string;
+    apiKey: string;
+    models: KernelModel[];
+  };
+  const detailsUrl = `http://127.0.0.1:${port}/tool/get_active_provider_details`;
+  const resp = await fetch(detailsUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  if (!resp.ok) {
+    throw new Error(
+      `kernel /tool/get_active_provider_details returned HTTP ${resp.status}`,
+    );
+  }
+  const envelope = (await resp.json()) as {
+    ok?: boolean;
+    result?: KernelActiveProvider;
+    error?: string;
+  };
+  const details = envelope?.result;
+  if (!details || !details.id || !details.api || !details.baseUrl || !details.apiKey) {
+    throw new Error(
+      `kernel returned incomplete provider details (id=${details?.id}, ` +
+        `api=${details?.api}, baseUrl=${details?.baseUrl ? 'set' : 'missing'}, ` +
+        `apiKey=${details?.apiKey ? 'set' : 'missing'}). Configure a provider ` +
+        `in CTRL Settings → Providers first.`,
+    );
+  }
+  const firstModel = details.models?.[0];
+  if (!firstModel?.id) {
+    throw new Error(
+      `provider "${details.id}" has no models declared in its manifest`,
+    );
+  }
+
+  // Step 2 — Resolve target paths + compose env var name.
+  const piAgentDir = join(homedir(), '.pi', 'agent');
+  const modelsPath = join(piAgentDir, 'models.json');
+  if (!existsSync(piAgentDir)) {
+    mkdirSync(piAgentDir, { recursive: true });
+  }
+  // Sanitise the provider id into a SHELL_ENV_VAR shape.
+  const envVarName =
+    'CTRL_PI_API_KEY_' +
+    details.id.replace(/[^A-Za-z0-9]/g, '_').toUpperCase();
+
+  // Step 3 — Read existing models.json, upsert the provider entry with
+  // apiKey = envVarName (NOT the real value).
+  type ModelEntry = {
+    id: string;
+    name?: string;
+    contextWindow?: number;
+    maxTokens?: number;
+    reasoning?: boolean;
+    input?: Array<'text' | 'image'>;
+    cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  };
+  type ProviderEntry = {
+    name?: string;
+    baseUrl?: string;
+    api?: string;
+    apiKey?: string;
+    models?: ModelEntry[];
+  };
+  type ModelsFile = { providers?: Record<string, ProviderEntry> };
+
+  let existing: ModelsFile = {};
+  if (existsSync(modelsPath)) {
+    try {
+      existing = JSON.parse(readFileSync(modelsPath, 'utf-8')) as ModelsFile;
+    } catch {
+      existing = {};
+    }
+  }
+  const providers = existing.providers ?? {};
+  // ADR-002 substrate § provider v10 §12.7 (2026-06-07): Pi's latest
+  // model-registry requires explicit `$VAR` prefix for env var
+  // references — plain strings are now treated as literals. Writing
+  // the unprefixed name still works (Pi auto-migrates on startup with
+  // a warning) but prefixing eliminates the warning + locks the
+  // intent.
+  providers[details.id] = {
+    name: details.id,
+    baseUrl: details.baseUrl,
+    api: details.api,
+    apiKey: `$${envVarName}`,
+    models: details.models.map((m) => ({
+      id: m.id,
+      name: m.name ?? m.id,
+      reasoning: m.reasoning ?? false,
+      input: m.input ?? ['text'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: m.contextWindow ?? 200_000,
+      maxTokens: m.maxTokens ?? 8192,
+    })),
+  };
+  writeFileSync(modelsPath, JSON.stringify({ ...existing, providers }, null, 2));
+
+  // ADR-002 substrate § provider v10 §6.1 (2026-06-07): auto-wire kernel
+  // MCP server as a Pi mcpServer so Irisy gets kernel capabilities
+  // (clipboard / OCR / vault_index FTS5 / keychain / subprocess) as
+  // native Pi tools. Kernel MCP listens at 127.0.0.1:17873/mcp (see
+  // src-tauri/src/kernel/mcp_server.rs DEFAULT_LISTEN_ADDR).
+  // Settings.json is Pi's user-owned config (mcpServers, OAuth tokens,
+  // user prefs); we upsert ONLY the `ctrl-kernel` entry and leave any
+  // user-added mcpServers intact.
+  const kernelMcpPort = process.env.CTRL_KERNEL_MCP_PORT ?? '17873';
+  const kernelMcpToken = process.env.CTRL_KERNEL_MCP_TOKEN ?? '';
+  const settingsPath = join(piAgentDir, 'settings.json');
+  let settings: Record<string, unknown> = {};
+  if (existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, 'utf-8')) as Record<string, unknown>;
+    } catch {
+      settings = {};
+    }
+  }
+  const existingMcp = (settings.mcpServers ?? {}) as Record<string, unknown>;
+  const ctrlKernelEntry: Record<string, unknown> = {
+    url: `http://127.0.0.1:${kernelMcpPort}/mcp`,
+    transport: 'streamable-http',
+  };
+  if (kernelMcpToken.length > 0) {
+    // Per-boot bearer token. Kernel MCP server requires it; without the
+    // header Pi gets 401 from /mcp and the auto-connect silently fails.
+    ctrlKernelEntry.headers = { Authorization: `Bearer ${kernelMcpToken}` };
+  }
+  settings.mcpServers = {
+    ...existingMcp,
+    'ctrl-kernel': ctrlKernelEntry,
+  };
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+
+  return {
+    providerId: details.id,
+    modelId: firstModel.id,
+    envVarName,
+    envValue: details.apiKey,
+  };
+}
 
 function assemblePrompt(messages: ChatMessage[]): string {
   if (messages.length === 0) return '';

@@ -20,10 +20,13 @@
 //     ("show what the tool is doing in natural language" — Cursor 2.0
 //     verbatim, brainstorm §0.1)
 //
-// All filters run on the text segments produced by
-// `parseChatSegments` (IrisyChat.tsx) — `<call>` / `<call-result>`
-// blocks are already extracted upstream and rendered separately, so
-// the filter never sees them.
+// ADR-002 substrate § provider v9 §3.6 (2026-06-06). PWA-side XML
+// parser (`<call>` / `<call-result>` segment split) has been RETIRED —
+// Pi uses each provider's native function-calling protocol and emits
+// tool dispatches as separate `tool_use` / `tool_result` messages, not
+// inline in the assistant's text. This filter now runs on the full
+// assistant content string; the remaining hygiene (scaffolds /
+// thinking / narration / codenames) still applies.
 
 /** Headers (case-insensitive, line-anchored, optional Markdown #/##)
  *  that mark the start of a model reasoning scaffold. Encountering

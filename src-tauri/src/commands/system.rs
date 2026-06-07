@@ -364,6 +364,47 @@ pub fn ensure_workspace_window_expanded(app: tauri::AppHandle) -> Result<bool, S
     Ok(true)
 }
 
+/// Collapse the main window back to compact width when no L1 chip is
+/// actively presenting a workspace. Counterpart of
+/// `ensure_workspace_window_expanded`; idempotent when already compact.
+/// ADR-002 substrate § provider v11 §3.11 (2026-06-07): added so the L1
+/// chip click-toggle pattern (open → close → workspace collapses) has a
+/// kernel-side primitive; PrimaryRail calls this when the user clicks
+/// the active chip a second time. Returns `true` if it actually moved.
+#[tauri::command]
+pub fn collapse_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::{LogicalPosition, LogicalSize, Manager};
+
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitor = main
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+
+    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
+    let main_size = main.outer_size().map_err(|e| e.to_string())?;
+    let main_x = main_pos.x as f64 / scale;
+    let main_w = main_size.width as f64 / scale;
+    let main_h = main_size.height as f64 / scale;
+    let main_y = main_pos.y as f64 / scale;
+    let right_edge = main_x + main_w;
+
+    if main_w < EXPAND_THRESHOLD {
+        return Ok(false);
+    }
+
+    let next_w = MAIN_COMPACT_WIDTH;
+    let next_x = right_edge - next_w;
+    main.set_size(LogicalSize::new(next_w, main_h))
+        .map_err(|e| e.to_string())?;
+    main.set_position(LogicalPosition::new(next_x, main_y))
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 // ── Pi (sole brain) status + upgrade — ADR-002 substrate §4 ───────────────────────
 //
 // Replaces the retired `brain_list / brain_detect / brain_set_active`

@@ -16,10 +16,19 @@ use crate::kernel::stss_bridge::StssBridge;
 use crate::kernel::STSS_LISTEN_ADDR;
 
 /// Shared kernel handle managed by Tauri. Commands pull this via `State`.
+///
+/// `app` is plumbed in by `KernelSupervisor::start` so non-#[tauri::command]
+/// code paths (axum `/text-chat` failover handler in `http_endpoint.rs`)
+/// can `Emitter::emit` Tauri events without a `tauri::AppHandle` argument
+/// in their signature. ADR-002 substrate § provider v8 §3.5 (2026-06-06):
+/// failover emits `provider:routing-override` / `provider:routing-restored`
+/// so the chip + ctrl-pi-bridge `runtimeTruthBlock` can overlay the
+/// transient fallback label without polling.
 #[derive(Clone)]
 pub struct KernelHandle {
     pub runtime: Arc<KernelRuntime>,
     pub bridge: StssBridge,
+    pub app: AppHandle,
 }
 
 pub struct KernelSupervisor;
@@ -39,6 +48,7 @@ impl KernelSupervisor {
         let handle = KernelHandle {
             runtime: runtime.clone(),
             bridge: bridge_for_handle,
+            app: app.clone(),
         };
         app.manage(handle.clone());
 
@@ -55,6 +65,45 @@ impl KernelSupervisor {
             match crate::kernel::provider::http_endpoint::spawn(handle_for_endpoint).await {
                 Ok(port) => tracing::info!(port, "provider: HTTP endpoint listening (/text-chat + /tool/<name>)"),
                 Err(e) => tracing::warn!(error = %e, "provider: HTTP endpoint spawn failed"),
+            }
+        });
+
+        // ADR-002 substrate § provider v10 §6.1 (2026-06-07): start the
+        // kernel MCP server so Pi (via ctrl-pi-plugin's mcpServers
+        // upsert in `injectActiveProviderForSpawn`) auto-connects and
+        // gets kernel capabilities (clipboard / OCR / vault_index FTS5
+        // / keychain / subprocess) as native Pi tools. The per-boot
+        // bearer token is published via process env vars
+        // CTRL_KERNEL_MCP_TOKEN + CTRL_KERNEL_MCP_PORT; Pi child
+        // inherits these naturally (no env_clear in spawn_brain), and
+        // pi-bridge writes them as `Authorization: Bearer ...` header
+        // in ~/.pi/agent/settings.json mcpServers."ctrl-kernel".
+        let runtime_for_mcp = runtime.clone();
+        tauri::async_runtime::spawn(async move {
+            match crate::kernel::mcp_server::serve(
+                runtime_for_mcp,
+                None,
+                crate::kernel::MCP_SERVER_LISTEN_ADDR,
+            )
+            .await
+            {
+                Ok(h) => {
+                    tracing::info!(
+                        listen_addr = %h.listen_addr,
+                        "kernel: MCP server listening (Pi auto-connect via mcpServers)"
+                    );
+                    // SAFETY: set_var is unsafe in Rust 2024; we are at
+                    // single-threaded kernel boot, before any other task
+                    // reads env vars. Pi child inherits via Command env.
+                    std::env::set_var("CTRL_KERNEL_MCP_TOKEN", h.auth_token.as_str());
+                    let port = h
+                        .listen_addr
+                        .rsplit_once(':')
+                        .map(|(_, p)| p.to_string())
+                        .unwrap_or_else(|| "17873".to_string());
+                    std::env::set_var("CTRL_KERNEL_MCP_PORT", port);
+                }
+                Err(e) => tracing::warn!(error = %e, "kernel: MCP server spawn failed"),
             }
         });
 

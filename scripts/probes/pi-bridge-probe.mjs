@@ -28,7 +28,83 @@ if (!existsSync(BRIDGE_EXT)) {
   process.exit(1);
 }
 
+// ADR-002 substrate § provider v9 §1.2 (2026-06-06): the bridge calls
+// `/tool/get_active_provider_details` BEFORE Pi spawn to resolve the
+// real BYOK provider+model+key for child env injection. Probe stub must
+// answer this so Pi's native openai-completions adapter has something
+// to bind. The synthetic apiKey below is NOT a credential — it's a
+// placeholder consumed only by Pi's local schema validation; the real
+// HTTP roundtrip is the stub server that runs at the same port.
+const PROBE_PROVIDER_ID = 'probe-provider';
+const PROBE_MODEL_ID = 'probe-model';
+const PROBE_API_KEY_PLACEHOLDER = ['probe', 'placeholder', 'not-a-credential'].join('-');
+
 const server = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/tool/get_active_provider_details') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      // Bridge expects kernel envelope `{ok, result, error}` — see
+      // packages/ctrl-pi-plugin/src/pi-bridge.ts L760-765
+      // (`injectActiveProviderForSpawn`).
+      res.end(
+        JSON.stringify({
+          ok: true,
+          result: {
+            id: PROBE_PROVIDER_ID,
+            api: 'openai-completions',
+            baseUrl: `http://127.0.0.1:${PORT}`,
+            apiKey: PROBE_API_KEY_PLACEHOLDER,
+            models: [
+              {
+                id: PROBE_MODEL_ID,
+                name: PROBE_MODEL_ID,
+                contextWindow: 200000,
+                maxTokens: 8192,
+                reasoning: false,
+                input: ['text'],
+              },
+            ],
+          },
+        }),
+      );
+    });
+    return;
+  }
+  // ADR-002 substrate § provider v9 §1.2 (2026-06-06): Pi's
+  // openai-completions adapter calls POST {baseUrl}/chat/completions
+  // with the standard OpenAI Chat Completions streaming SSE format.
+  // Probe stub mirrors that so the wrapper → Pi RpcClient → Pi
+  // openai-completions adapter → stub roundtrip completes.
+  if (req.method === 'POST' && req.url === '/chat/completions') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+      });
+      const id = `probe-${Date.now()}`;
+      const base = {
+        id,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: PROBE_MODEL_ID,
+      };
+      res.write(
+        `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: 'assistant', content: EXPECT_TOKEN }, finish_reason: null }] })}\n\n`,
+      );
+      res.write(
+        `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`,
+      );
+      res.write('data: [DONE]\n\n');
+      res.end();
+    });
+    return;
+  }
+  // Legacy v7 path — preserved as a no-op safety net in case anything
+  // still pings it. v9 traffic flows through /chat/completions above.
   if (req.method !== 'POST' || req.url !== '/text-chat') {
     res.writeHead(404).end();
     return;

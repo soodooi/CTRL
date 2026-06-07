@@ -1,75 +1,97 @@
 // ChatHeaderControls — top-of-chat chip strip exposing Pi runtime
 // controls the user reaches for mid-conversation:
 //
-//   - ModelChip:    current provider/model; click opens picker
-//                   (getAvailableModels + setModel + cycleModel)
+//   - ModelChip:    current provider/model (read-only, click → Settings).
+//                   Data source = Pi getState (rpc.md SoT).
 //   - ThinkingChip: current thinking level (off/low/medium/high);
-//                   click cycles (cycleThinkingLevel)
+//                   click cycles (cycleThinkingLevel).
 //   - StatsChip:    turns + token usage from getSessionStats; click
-//                   refreshes
-//   - ExportButton: triggers exportHtml; opens path in the OS
+//                   refreshes.
+//   - ExportButton: triggers exportHtml; opens path in the OS.
 //
-// bao 2026-06-05 "open all Pi capability, best frontend practice":
-// each chip is a small focused control, keyboard-accessible (Enter +
-// arrow nav inside open pickers), no layout shift (reserves min-width
-// via CSS), error-tolerant (Pi call failures surface as inline error
-// text, not silent).
+// ADR-002 substrate § provider v9 §3.7 (2026-06-06). Retraction of v8
+// chip wiring (get_active_providers + active-providers-changed listeners).
+// Under v9, Pi spawns with the real BYOK provider+model from SSOT
+// (~/.ctrl/state/active-providers.json), so Pi's own getState IS the
+// truth — no kernel proxy needed. Provider switching goes through
+// Settings → SSOT mutation → provider_set_active → Pi RPC setModel
+// (v9 §3.5), and the chip refreshes via the 8 s poll (cheap RPC call).
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   cycleThinkingLevel,
   exportHtml,
-  getAvailableModels,
   getSessionStats,
-  setModel as setPiModel,
+  getState,
   setThinkingLevel,
-  type ModelInfo,
   type ThinkingLevel,
 } from '../../lib/usePiRpc';
 import styles from './ChatHeaderControls.module.css';
 
-interface State {
+// ── Pi state shape (mirrors @mariozechner/pi-coding-agent rpc.md getState) ──
+
+interface PiCurrentModel {
+  provider?: string;
+  id?: string;
+  name?: string;
+  label?: string;
+}
+
+interface PiState {
+  currentModel?: PiCurrentModel | null;
   provider?: string;
   model?: string;
+}
+
+// ── Pi SessionStats (mirrors agent-session.d.ts SessionStats) ──
+
+interface SessionStats {
+  userMessages?: number;
+  assistantMessages?: number;
+  tokens?: {
+    input?: number;
+    output?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+  contextUsage?: {
+    tokens?: number | null;
+    contextWindow?: number;
+    percent?: number | null;
+  };
+}
+
+interface State {
   thinking: ThinkingLevel;
-  turns?: number;
-  tokensIn?: number;
-  tokensOut?: number;
-}
-
-interface Stats {
-  turnCount?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-}
-
-interface SessionStateLike {
-  model?: { provider?: string; id?: string };
-  thinkingLevel?: ThinkingLevel;
+  piState: PiState | null;
+  stats: SessionStats | null;
 }
 
 export function ChatHeaderControls(): JSX.Element {
-  const [state, setState] = useState<State>({ thinking: 'off' });
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [open, setOpen] = useState<'model' | null>(null);
+  const navigate = useNavigate();
+  const [state, setState] = useState<State>({
+    thinking: 'off',
+    piState: null,
+    stats: null,
+  });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const pickerRef = useRef<HTMLDivElement | null>(null);
 
-  // Pull initial state + stats on mount.
+  // Both reads are Pi RPC calls (~1 ms IPC + Pi in-memory). Poll every
+  // 8 s catches stat changes and any out-of-band model swap that
+  // bypassed provider_set_active (e.g. Pi's own cycleModel command).
   const refresh = useCallback(async (): Promise<void> => {
     try {
-      const [stats, mods] = await Promise.all([
-        getSessionStats().catch(() => null) as Promise<Stats | null>,
-        getAvailableModels().catch(() => [] as ModelInfo[]),
+      const [piState, stats] = await Promise.all([
+        getState().catch(() => null) as Promise<PiState | null>,
+        getSessionStats().catch(() => null) as Promise<SessionStats | null>,
       ]);
-      setModels(mods);
       setState((prev) => ({
         ...prev,
-        turns: stats?.turnCount,
-        tokensIn: stats?.inputTokens,
-        tokensOut: stats?.outputTokens,
+        piState,
+        stats,
       }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -78,36 +100,9 @@ export function ChatHeaderControls(): JSX.Element {
 
   useEffect(() => {
     void refresh();
-    // Refresh stats every 8s while mounted so token count stays current.
     const id = window.setInterval(() => void refresh(), 8000);
     return () => window.clearInterval(id);
   }, [refresh]);
-
-  // Click-outside closes model picker.
-  useEffect(() => {
-    if (open !== 'model') return;
-    const onDoc = (e: MouseEvent): void => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setOpen(null);
-      }
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
-
-  const onPickModel = async (m: ModelInfo): Promise<void> => {
-    setBusy('model');
-    setError(null);
-    try {
-      await setPiModel(m.provider, m.id);
-      setState((prev) => ({ ...prev, provider: m.provider, model: m.id }));
-      setOpen(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  };
 
   const onCycleThinking = async (): Promise<void> => {
     setBusy('thinking');
@@ -116,8 +111,7 @@ export function ChatHeaderControls(): JSX.Element {
       const result = (await cycleThinkingLevel()) as { level?: ThinkingLevel } | null;
       const next = result?.level ?? nextThinking(state.thinking);
       setState((prev) => ({ ...prev, thinking: next }));
-    } catch (e) {
-      // Fall back to client-side cycle if Pi doesn't support cycle (e.g. no models scoped).
+    } catch {
       const next = nextThinking(state.thinking);
       try {
         await setThinkingLevel(next);
@@ -136,7 +130,6 @@ export function ChatHeaderControls(): JSX.Element {
     try {
       const result = (await exportHtml()) as { path?: string };
       if (result?.path) {
-        // Toast-style success indicator; sticks for 4 seconds.
         setError(`Exported to ${result.path}`);
         window.setTimeout(() => setError(null), 4000);
       }
@@ -147,89 +140,47 @@ export function ChatHeaderControls(): JSX.Element {
     }
   };
 
-  const modelLabel = state.model
-    ? `${state.model}`
-    : models[0]
-      ? `${models[0].id}`
-      : 'model…';
+  // Resolve provider/model from Pi state. Pi exposes `currentModel`
+  // (post-resolve) on top-level state; we fall back to the raw fields
+  // for older Pi versions that didn't surface currentModel.
+  const cm = state.piState?.currentModel ?? null;
+  const providerId = cm?.provider ?? state.piState?.provider ?? null;
+  const modelId = cm?.id ?? state.piState?.model ?? null;
+  const modelLabel = cm?.label ?? cm?.name ?? modelId ?? null;
+  const providerLabel = providerId ? humanizeProvider(providerId) : null;
+
+  const chipTitle =
+    providerLabel && modelLabel
+      ? `${providerLabel} · ${modelLabel}`
+      : providerLabel ?? 'No provider configured — click to open Settings';
+
+  const turnCount =
+    (state.stats?.userMessages ?? 0) + (state.stats?.assistantMessages ?? 0);
+  const totalTokens =
+    state.stats?.tokens?.total ??
+    (state.stats?.tokens?.input ?? 0) + (state.stats?.tokens?.output ?? 0);
 
   return (
     <div className={styles.bar} role="toolbar" aria-label="Chat runtime controls">
-      <div className={styles.chipGroup} ref={pickerRef}>
-        <button
-          type="button"
-          className={styles.chip}
-          onClick={() => setOpen(open === 'model' ? null : 'model')}
-          disabled={busy === 'model'}
-          aria-haspopup="listbox"
-          aria-expanded={open === 'model'}
-          title={state.provider ? `${state.provider} · ${modelLabel}` : 'Pick model'}
-        >
-          <span className={styles.chipIcon} aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" />
-            </svg>
-          </span>
-          <span className={styles.chipLabel}>{modelLabel}</span>
-          <span className={styles.chipCaret} aria-hidden="true">▾</span>
-        </button>
-        {open === 'model' && (() => {
-          // bao 2026-06-06: filter out Pi-SDK builtin providers that the
-          // user has NOT configured in CTRL Settings. Pi's
-          // getAvailableModels() returns dozens of preset providers
-          // (anthropic, openai, google, openrouter, etc.) — listing them
-          // all confused users into thinking they were available without
-          // setup. Only show providers whose id is registered through
-          // our kernel (ollama-local builtin + user-added slugs).
-          const piBuiltinSkip = new Set([
-            'anthropic', 'openai', 'google', 'groq', 'deepseek', 'kimi',
-            'ant-ling', 'azure-openai', 'minimax', 'xai', 'fireworks',
-            'together', 'openrouter', 'ai-gateway', 'zai',
-            'zai-coding-cn', 'mistral', 'moonshot', 'opencode',
-            'opencode-zen', 'cloudflare', 'xiaomi', 'amazon-bedrock',
-            'cerebras', 'nvidia', 'nvidia-nim', 'gemini', 'aws-bedrock',
-          ]);
-          const visible = models.filter((m) => !piBuiltinSkip.has(m.provider));
-          return (
-          <ul className={styles.picker} role="listbox" aria-label="Available models">
-            {visible.length === 0 ? (
-              // bao 2026-06-05 d: empty state. Previously the picker was
-              // hidden silently when `models.length === 0`, so clicking
-              // the chip did nothing — user thought the button was broken.
-              // Render a one-row hint that points them at the cause
-              // (no provider configured yet) + a deep link to Settings.
-              <li>
-                <div className={styles.pickerEmpty}>
-                  <strong>No models available.</strong>
-                  <br />
-                  <span>
-                    Add a provider key in <a href="/settings/providers">Settings → Providers</a>,
-                    then click Save. The model list reloads on the next session.
-                  </span>
-                </div>
-              </li>
-            ) : (
-              visible.map((m) => (
-                <li key={`${m.provider}/${m.id}`}>
-                  <button
-                    type="button"
-                    className={styles.pickerItem}
-                    onClick={() => void onPickModel(m)}
-                    role="option"
-                    aria-selected={state.model === m.id && state.provider === m.provider}
-                  >
-                    <span className={styles.pickerProvider}>{m.provider}</span>
-                    <span className={styles.pickerModel}>{m.id}</span>
-                    <span className={styles.pickerCtx}>{(m.contextWindow / 1000).toFixed(0)}K{m.reasoning ? ' · 🧠' : ''}</span>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-          );
-        })()}
-      </div>
+      <button
+        type="button"
+        className={styles.chip}
+        onClick={() => void navigate({ to: '/settings/providers' })}
+        title={chipTitle}
+        aria-label={chipTitle}
+      >
+        <span className={styles.chipIcon} aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" />
+          </svg>
+        </span>
+        <span className={styles.chipLabel}>
+          {providerLabel && modelLabel
+            ? `${providerLabel} · ${modelLabel}`
+            : providerLabel ?? 'configure provider'}
+        </span>
+      </button>
 
       <button
         type="button"
@@ -243,9 +194,9 @@ export function ChatHeaderControls(): JSX.Element {
       </button>
 
       <div className={styles.statsChip} title="Session stats (refreshed every 8s)">
-        <span className={styles.statValue}>{state.turns ?? '—'}</span>
+        <span className={styles.statValue}>{turnCount > 0 ? turnCount : '—'}</span>
         <span className={styles.statSep}>·</span>
-        <span className={styles.statValue}>{formatTokens((state.tokensIn ?? 0) + (state.tokensOut ?? 0))}</span>
+        <span className={styles.statValue}>{formatTokens(totalTokens)}</span>
       </div>
 
       <button
@@ -283,4 +234,23 @@ function formatTokens(n: number): string {
   if (n < 1000) return `${n} tok`;
   if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k tok`;
   return `${(n / 1_000_000).toFixed(2)}M tok`;
+}
+
+// Provider id → user-facing label. Kept inline (small, no churn risk)
+// rather than reaching into provider/registry which is a kernel-side
+// concern. Adding a provider here is the same churn as adding it in
+// Settings → Providers, where the canonical label lives.
+function humanizeProvider(id: string): string {
+  const map: Record<string, string> = {
+    'claude-oauth': 'Claude (OAuth)',
+    'anthropic-api': 'Anthropic API',
+    'openai-api': 'OpenAI API',
+    'volc': 'CTRL Cloud',
+    'volc-byok': 'Volc (BYOK)',
+    'kimi': 'Kimi',
+    'deepseek': 'DeepSeek',
+    'google': 'Google AI',
+    'ollama': 'Ollama (local)',
+  };
+  return map[id] ?? id;
 }

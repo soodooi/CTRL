@@ -190,56 +190,44 @@ export const PrimaryRail = (): ReactElement => {
         // / Cap mode back here clears projectDir + currentSkillId.
         session.enterPersonalMode();
       } else if (def.id === CODING_ITEM_ID) {
-        // bao 2026-06-04 fix: Coding chip used to bail when the user
-        // cancelled the project-dir prompt, blocking the /coding route
-        // from opening at all. The chip must always open the coding
-        // workspace; the project-dir prompt is a session-mode hint
-        // that is safe to skip — the existing /coding route handles
-        // the no-dir case via cs_spawn at $HOME.
-        const previous = session.projectDir;
-        const placeholder = previous ?? '~';
-        // eslint-disable-next-line no-alert
-        const picked = window.prompt(
-          'Project directory for Coding mode (optional — Pi will treat ' +
-            'this as its cwd). Cancel to skip.',
-          placeholder,
-        );
-        if (picked && picked.trim().length > 0) {
-          session.enterCodingMode(picked.trim());
-        } else if (previous) {
-          // User cancelled but a previous dir is set — keep Coding mode
-          // active rather than dropping back to Personal.
-          session.enterCodingMode(previous);
-        }
-        // No prior dir + cancelled = leave session mode unchanged but
-        // still open the workspace (fall through, do not return).
+        // ADR-002 substrate § provider v11 §3.11 (2026-06-07): Coding L1
+        // spawns Pi natively in xterm — no project-dir prompt, no Irisy
+        // session-mode handshake. Pi's own TUI handles cwd via `:cd` or
+        // `--cwd` flag if the user wants it; CTRL doesn't pre-pick.
+        // bao 2026-06-07 directive: every L1 chip is a click-toggle.
       }
-      // Pool / Notes / Settings don't change session mode — they open a
-      // workspace tab. Cap-mode entry lives in Pool (Skills tab).
 
-      // bao 2026-06-03 — L1 chip click must surface its workspace. Calling
-      // `openSystemTab` alone registered the tab but left the main window
-      // compact, so the user saw nothing change ("L1 vault button can't
-      // open workspace"). `ensure_workspace_window_expanded` is idempotent
-      // (no-op when already expanded) so clicking the same chip twice
-      // cannot collapse the workspace — the ▾ chevron stays the only
-      // collapse path, preserving the single-source model from the
-      // earlier `toggle_workspace_window` rationale.
+      // ADR-002 substrate § provider v11 §3.11 (2026-06-07) — L1 chips
+      // toggle: click opens + expands; second click on the active chip
+      // closes its tab and collapses the workspace. Pool / Notes /
+      // Coding share this. Switching across chips (Notes → Coding while
+      // workspace is open) opens Coding without collapsing.
       if (
         def.id === POOL_ITEM_ID ||
         def.id === CODING_ITEM_ID ||
         def.id === NOTES_ITEM_ID
       ) {
-        useWorkspaceStore.getState().openSystemTab({
+        const ws = useWorkspaceStore.getState();
+        const systemInstance = ws.instances.find((i) => i.id === 'ws-system');
+        const tabIsOpen = systemInstance?.tabs.some((t) => t.id === def.id) ?? false;
+        const tabIsActive = systemInstance?.activeTabId === def.id;
+        if (tabIsOpen && tabIsActive && workspaceOpen) {
+          if (systemInstance) ws.closeTab(systemInstance.id, def.id);
+          void invoke<boolean>('collapse_workspace_window')
+            .then(() => setWorkspaceOpen(false))
+            .catch(() => {
+              /* not all platforms expose the collapse cmd — best effort */
+            });
+          return;
+        }
+        ws.openSystemTab({
           id: def.id,
           kind: 'route',
           path: def.path,
           title: def.label,
         });
         void invoke<boolean>('ensure_workspace_window_expanded')
-          .then((didExpand) => {
-            if (didExpand) setWorkspaceOpen(true);
-          })
+          .then(() => setWorkspaceOpen(true))
           .catch(() => {
             /* browser PWA or unsupported platform — silently no-op */
           });

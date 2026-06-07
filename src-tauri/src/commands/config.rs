@@ -191,7 +191,11 @@ pub struct SetProviderKeyArgs {
 /// matched no industry pattern. Users now add OpenRouter / Together /
 /// Anyscale / their internal proxy / etc with no kernel changes.
 #[tauri::command]
-pub async fn config_set_provider_key(args: SetProviderKeyArgs) -> Result<(), String> {
+pub async fn config_set_provider_key(
+    app: tauri::AppHandle,
+    kernel: tauri::State<'_, crate::shell::KernelHandle>,
+    args: SetProviderKeyArgs,
+) -> Result<(), String> {
     let slug = sanitize_slug(&args.provider)?;
     // bao 2026-06-06 UX: in Edit mode the user may leave the api_key
     // field empty to keep the existing keychain entry. Only require a
@@ -281,6 +285,18 @@ pub async fn config_set_provider_key(args: SetProviderKeyArgs) -> Result<(), Str
     );
     write_atomic(&manifest_path, &manifest_body)?;
 
+    // Hot-reload: make the new/edited manifest visible to provider_list
+    // immediately, and notify the PWA so it can re-fetch + the user sees
+    // the row update without a manual refresh. bao 2026-06-06 Lock #6.
+    kernel.runtime.provider_registry.reload_user_dir();
+    use tauri::Emitter;
+    if let Err(e) = app.emit(
+        "active-providers-changed",
+        serde_json::json!({ "id": slug, "op": "save" }),
+    ) {
+        tracing::warn!(error = %e, "emit active-providers-changed (save) failed");
+    }
+
     tracing::info!(provider = %slug, "config_set_provider_key ok");
     let _ = default_model; // suppress unused warning when model line empty
     return Ok(());
@@ -321,133 +337,76 @@ pub struct TestProviderResult {
     pub model_count: Option<usize>,
 }
 
-/// Smoke-test a provider's key by calling its OpenAI-shape `/models`
-/// endpoint with the configured Bearer key. 5-second timeout — PWA shows
-/// the result in the Settings panel.
+/// Smoke-test a provider by running the **production chat code path** —
+/// `provider.chat_stream(prompt, opts)` with a 1-token "hi" — same
+/// function `set_active` uses to gate role binding. bao 2026-06-06:
+/// Test must equal Production. Sharing the SSOT (`verify::trial_chat`)
+/// guarantees Test pass implies the next real Pi turn will succeed.
 ///
-/// Uses the key from config.toml first, falls back to keychain — mirrors
-/// the boot-time precedence so "test passes here" ⇒ "adapter will load".
+/// The previous version probed `/models` directly via reqwest, which:
+///   1. Split-brain from production (different code path, different
+///      bug surface — Volc 404'd /v1/models, double-pathed /v1/v1).
+///   2. Required per-shape URL heuristics (`/models` vs `/api/tags`)
+///      that did not match each provider's actual /chat endpoint.
+///   3. Could pass even when chat_stream was broken (CLI binary
+///      missing, Anthropic 401 only fires on /messages).
 #[tauri::command]
 pub async fn config_test_provider(
     kernel: tauri::State<'_, crate::shell::KernelHandle>,
     args: TestProviderArgs,
 ) -> Result<TestProviderResult, String> {
-    // bao 2026-06-06 e fix #2: resolve via kernel registry, which covers
-    // BOTH builtin manifests (e.g. ollama, embedded with include_str!)
-    // AND user manifests (~/.ctrl/providers/*.toml). The first cut only
-    // looked at the user dir and silently failed for builtins.
-    use crate::kernel::provider::manifest::AuthSource;
     let slug = sanitize_slug(&args.provider)?;
     let started = Instant::now();
 
     let registry = &kernel.runtime.provider_registry;
     registry.reload_user_dir();
-    let manifest = match registry.manifest_for(&slug) {
-        Some(m) => m,
+    let provider = match registry.get(&slug) {
+        Some(p) => p,
         None => {
+            // Manifest absent OR present-but-no-credential. Surface a
+            // concrete actionable message instead of a generic "not
+            // found" — Settings UI shows this verbatim.
+            let detail = match registry.manifest_for(&slug) {
+                Some(_) => "credentials missing — re-Save this provider",
+                None => "no manifest registered — re-Save this provider",
+            };
             return Ok(TestProviderResult {
                 success: false,
-                message: format!("no manifest registered for {slug:?} — re-Save this provider"),
+                message: format!("{slug}: {detail}"),
                 elapsed_ms: started.elapsed().as_millis() as u64,
                 model_count: None,
             });
         }
     };
-    let base_url = manifest
-        .endpoint
-        .clone()
-        .ok_or_else(|| format!("manifest {slug} has no endpoint"))?
-        .trim_end_matches('/')
-        .to_string();
-    // Resolve credential: AuthSource::None means no key needed (e.g. ollama).
-    let api_key = match &manifest.auth {
-        AuthSource::Keychain { account } => crate::shell::credential_vault::get(account)
-            .map_err(|e| format!("vault read: {e}"))?
-            .unwrap_or_default(),
-        AuthSource::Env { var } => std::env::var(var).unwrap_or_default(),
-        AuthSource::ConfigKey { field } => manifest
-            .config
-            .get(field)
-            .cloned()
-            .unwrap_or_default(),
-        AuthSource::None => String::new(),
-    };
-    let auth_required = !matches!(manifest.auth, AuthSource::None);
-    if auth_required && api_key.is_empty() {
-        return Ok(TestProviderResult {
-            success: false,
-            message: "no api_key configured (vault empty) — re-Save this provider".into(),
-            elapsed_ms: started.elapsed().as_millis() as u64,
-            model_count: None,
-        });
-    }
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .map_err(|e| format!("reqwest client: {e}"))?;
-    // Ollama-native exposes /api/tags; OpenAI-compat exposes /v1/models
-    // (which most modern providers also expose at the root). Pick by
-    // manifest kind. bao 2026-06-06.
-    let url = if matches!(manifest.kind, crate::kernel::provider::manifest::ProviderKind::HttpApi)
-        && !base_url.ends_with("/v1")
-        && !base_url.contains("/v1/")
-    {
-        format!("{}/v1/models", base_url)
-    } else if base_url.ends_with("/v1") {
-        format!("{}/models", base_url)
-    } else {
-        // Ollama-native fallback.
-        format!("{}/api/tags", base_url)
-    };
-    let mut req = client.get(&url);
-    if auth_required {
-        req = req.bearer_auth(&api_key);
-    }
-    let resp = match req.send().await {
-        Ok(r) => r,
-        Err(e) => {
-            return Ok(TestProviderResult {
-                success: false,
-                message: format!("request failed: {e}"),
-                elapsed_ms: started.elapsed().as_millis() as u64,
-                model_count: None,
-            });
-        }
-    };
-
-    let status = resp.status();
-    let elapsed_ms = started.elapsed().as_millis() as u64;
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Ok(TestProviderResult {
-            success: false,
-            message: format!("HTTP {status}: {}", body.chars().take(200).collect::<String>()),
-            elapsed_ms,
-            model_count: None,
-        });
-    }
-    let body: serde_json::Value = match resp.json().await {
-        Ok(v) => v,
-        Err(e) => {
-            return Ok(TestProviderResult {
-                success: false,
-                message: format!("response body not JSON: {e}"),
+    match crate::kernel::provider::verify::trial_chat(provider.as_ref()).await {
+        Ok(reply) => {
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            registry.clear_failure(&slug);
+            // Truncate to keep the UI row single-line; full reply lives
+            // in the kernel trace if the user needs it.
+            let preview: String = reply.chars().take(80).collect();
+            Ok(TestProviderResult {
+                success: true,
+                message: if preview.is_empty() {
+                    "ok (empty reply)".into()
+                } else {
+                    format!("ok · \"{preview}\"")
+                },
                 elapsed_ms,
                 model_count: None,
-            });
+            })
         }
-    };
-    let model_count = body
-        .get("data")
-        .and_then(|v| v.as_array())
-        .map(|a| a.len());
-    Ok(TestProviderResult {
-        success: true,
-        message: format!("HTTP {status} · {}", url),
-        elapsed_ms,
-        model_count,
-    })
+        Err(e) => {
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            registry.mark_failure(&slug, &e.to_string());
+            Ok(TestProviderResult {
+                success: false,
+                message: e.to_string(),
+                elapsed_ms,
+                model_count: None,
+            })
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -459,7 +418,11 @@ pub struct DeleteProviderArgs {
 /// `[providers.<name>]` block from config.toml. Idempotent — silent when
 /// nothing's there.
 #[tauri::command]
-pub async fn config_delete_provider(args: DeleteProviderArgs) -> Result<(), String> {
+pub async fn config_delete_provider(
+    app: tauri::AppHandle,
+    kernel: tauri::State<'_, crate::shell::KernelHandle>,
+    args: DeleteProviderArgs,
+) -> Result<(), String> {
     // bao 2026-06-06 e fix: 3 delete bugs found.
     //   1) lookup_known_provider() rejected user-created slugs (volc-doubao
     //      etc.) because they are not in the legacy KNOWN_PROVIDERS array
@@ -514,6 +477,18 @@ pub async fn config_delete_provider(args: DeleteProviderArgs) -> Result<(), Stri
                 }
             }
         }
+    }
+
+    // Hot-reload: drop the manifest from the registry so subsequent
+    // provider_list calls do not resurrect the deleted row, and notify
+    // the PWA. bao 2026-06-06 Lock #6.
+    kernel.runtime.provider_registry.reload_user_dir();
+    use tauri::Emitter;
+    if let Err(e) = app.emit(
+        "active-providers-changed",
+        serde_json::json!({ "id": slug, "op": "delete" }),
+    ) {
+        tracing::warn!(error = %e, "emit active-providers-changed (delete) failed");
     }
 
     tracing::info!(provider = %slug, "config_delete_provider ok");

@@ -43,7 +43,9 @@ pub mod verify;
 pub mod ollama_embed;
 
 pub use r#trait::{Capability, Consumer, Provider, RouteChain};
-pub use registry::{ProviderHandle, ProviderListEntry, ProviderRegistry, RecordedFailover};
+pub use registry::{
+    ProviderHandle, ProviderListEntry, ProviderRegistry, RecordedFailover, RoutingOverride,
+};
 pub use detect::CliProviderEntry;
 pub use types::{
     ChatChunk, ChatMessage, ChatOpts, ChatPrompt, LlmChunk, LlmError, LlmMessage, LlmPrompt,

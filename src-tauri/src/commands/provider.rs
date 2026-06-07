@@ -12,6 +12,15 @@
 // the http_endpoint follow-up commit; this command already accepts the
 // shape so the PWA can render the field once events flow.
 
+// ADR-002 substrate § provider v9 §3.7 (2026-06-06): retract v8 SSOT
+// projection surface (get_active_providers + ActiveProvidersView +
+// RoutingOverride overlay). Under v9 Pi spawns with the real BYOK
+// provider+model directly, so Pi's getState is the truth for the chip
+// — kernel no longer projects SSOT for the PWA chip. Settings page
+// still calls provider_get_active to render the picker selection.
+// ADR-002 substrate § provider v9 §3.7 (2026-06-06): only RoutingOverride
+// import was retracted with the SSOT projection surface; ProviderManagedBy
+// + BTreeMap stay — still used by provider_list / brain_status.
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -99,7 +108,9 @@ pub(crate) fn brain_status_inner(
 
     let registry = &kernel.runtime.provider_registry;
     let mut providers: BTreeMap<String, RoleProvider> = BTreeMap::new();
-    for role in [Consumer::IrisyPrimary, Consumer::IrisyFallback] {
+    // ADR-002 substrate § provider v11 §3.11 (2026-06-07): include
+    // coding.primary so PWA Settings + chip see all 3 roles.
+    for role in [Consumer::IrisyPrimary, Consumer::IrisyFallback, Consumer::CodingPrimary] {
         let chain = registry.route_chain(&role);
         if let Some(active_id) = chain.primary.as_ref() {
             if let Some(snap) = registry.snapshot(active_id) {
@@ -205,18 +216,110 @@ pub struct ProviderSetActiveArgs {
 pub struct ProviderSetActiveReply {
     /// First chunk of the 1-token "hi" trial chat (verification proof).
     pub trial_reply: String,
+    /// ADR-002 substrate § provider v10 §3.9 (2026-06-07). Resolved model id
+    /// from the provider manifest's first declared model. PWA uses this
+    /// to call Pi RPC `setModel(provider_id, model_id)` immediately after
+    /// SSOT mutation — swapping Pi's active model in place (0 ms, no
+    /// daemon respawn, session preserved). `None` only when the provider
+    /// manifest declares no models (degenerate config).
+    pub model_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn provider_set_active(
+    app: tauri::AppHandle,
     kernel: State<'_, KernelHandle>,
     args: ProviderSetActiveArgs,
 ) -> Result<ProviderSetActiveReply, String> {
+    // ADR-002 substrate § provider v10 §3.9 (2026-06-07): SSOT mutation +
+    // resolve the manifest's first model so the PWA can immediately call
+    // Pi `setModel(provider_id, model_id)` for in-place swap.
     let consumer = Consumer::from_id(&args.role);
     let registry = &kernel.runtime.provider_registry;
     let trial_reply = registry
         .set_active(&args.provider_id, consumer)
         .await
         .map_err(|e| e.to_string())?;
-    Ok(ProviderSetActiveReply { trial_reply })
+    let model_id = registry.first_model_for(&args.provider_id);
+    // ADR-002 substrate § provider v8 §3.5 (2026-06-06): SSOT
+    // (~/.ctrl/state/active-providers.json) mutated; emit
+    // `active-providers-changed` so chip + Irisy self-report + Settings
+    // refresh. Renamed from `provider-changed` to anchor the event name
+    // to the SSOT it mirrors, not a generic provider-side event.
+    use tauri::Emitter;
+    if let Err(e) = app.emit(
+        "active-providers-changed",
+        serde_json::json!({ "id": args.provider_id, "op": "set_active", "role": args.role }),
+    ) {
+        tracing::warn!(error = %e, "emit active-providers-changed (set_active) failed");
+    }
+    Ok(ProviderSetActiveReply {
+        trial_reply,
+        model_id,
+    })
+}
+
+// ── ADR-002 substrate § provider v9 §3.7 (2026-06-06) — SSOT INTENT projection
+//
+// Per v9 retract: PWA *chip* now reads `pi_rpc('getState')` (Pi truth).
+// `get_active_providers` is kept as the **Settings INTENT** projection —
+// it reflects what the user *picked* in Settings (the SSOT in
+// `~/.ctrl/state/active-providers.json`), independent of Pi's current
+// runtime state. Settings UI consumes this to render "what did the user
+// pick"; the chip does not.
+//
+// v9 difference vs v8: no `routing_override` field (failover-driven UI
+// override events were retired with the fallback walking loop). The
+// projection is now a pure SSOT mirror.
+
+use crate::kernel::provider::registry::ProviderManagedBy as _ProviderManagedByForView;
+
+const CTRL_MANAGED_BRAND_LABEL_VIEW: &str = "CTRL Cloud";
+
+#[derive(Debug, Serialize)]
+pub struct ActiveRoleProvider {
+    pub id: String,
+    pub label: String,
+    pub model_id: Option<String>,
+    pub model_label: Option<String>,
+    pub managed_by: _ProviderManagedByForView,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ActiveProvidersView {
+    pub roles: BTreeMap<String, ActiveRoleProvider>,
+}
+
+#[tauri::command]
+pub fn get_active_providers(
+    kernel: State<'_, KernelHandle>,
+) -> Result<ActiveProvidersView, String> {
+    let registry = &kernel.runtime.provider_registry;
+    let mut roles: BTreeMap<String, ActiveRoleProvider> = BTreeMap::new();
+    // ADR-002 substrate § provider v11 §3.11 (2026-06-07): include
+    // coding.primary so PWA Settings + chip see all 3 roles.
+    for role in [Consumer::IrisyPrimary, Consumer::IrisyFallback, Consumer::CodingPrimary] {
+        let chain = registry.route_chain(&role);
+        if let Some(active_id) = chain.primary.as_ref() {
+            if let Some(snap) = registry.snapshot(active_id) {
+                let label = match snap.managed_by {
+                    _ProviderManagedByForView::Ctrl => CTRL_MANAGED_BRAND_LABEL_VIEW.to_string(),
+                    _ProviderManagedByForView::User => snap.label.clone(),
+                };
+                let model_id = registry.first_model_for(active_id);
+                let model_label = model_id.clone();
+                roles.insert(
+                    role.id(),
+                    ActiveRoleProvider {
+                        id: snap.id,
+                        label,
+                        model_id,
+                        model_label,
+                        managed_by: snap.managed_by,
+                    },
+                );
+            }
+        }
+    }
+    Ok(ActiveProvidersView { roles })
 }

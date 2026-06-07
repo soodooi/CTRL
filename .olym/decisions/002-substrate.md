@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — Pi brain · capability surface · provider router · crypto · subprocess · MCP bus · composition
-version: 7
+version: 9
 status: accepted
-last_updated: 2026-06-04
+last_updated: 2026-06-06
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003 }
@@ -29,6 +29,10 @@ changelog:
   - v5 2026-06-03: **NEW §9 smart-table-output** + **NEW §10 embeddings**. §9 unifies keycap output capture as one SmartTable per keycap (markdown table file at `notes/keycap-runs/<keycap_id>.table.md`, schema in keycap manifest `output_capture`); supersedes "1-run-1-file sidecar markdown" idea from `.olym/brainstorm/openclaw-compat-2026-06-03.md` — Notion-style table beats sidecar markdown for browsability and inline edit. P4 product-decision (`.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`) locks "default-on, settings-wide kill-switch, per-keycap manifest opt-out". §10 adds the embeddings substrate the product spec depends on (Layer 3 Connect + Layer 4 Synthesize): local Ollama default with transparent fallback prompt (per product P1), SQLite BLOB storage (no sqlite-vss dep — flat cosine is fine for vault-scale up to ~50K notes), 5 new vault.* MCP tools, hybrid `vault.search` mode. Eight new acceptance items; brainstorm: `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`.
   - v6 2026-06-04: **NEW §11 audit-ledger** — substrate primitive for self-evolution (ADR-001 §8) across the 6 loops. Reuses `kernel/persistence.rs` SQLite event store with a new event kind `system.self_evolution`; immutable rows record (loop_id, stage, typed_action, evidence, diagnosis, verify_result, autonomy_level). Queryable from Settings → 自我升级 → 最近事件 tab. Prune policy: 7 d high-resolution + 90 d day-level aggregate + month aggregate beyond (bao 2026-06-04 wave Q5). Per bao "整个系统都要自我升级成长 ... 沉, 唯一真相, 要经常整理 ADR".
   - v7 2026-06-04: **§1 brain amendment — §1.1 ctrl-pi-bridge full extension surface** — bridge v1 used only `pi.registerProvider`, leaving Pi with 0 native tools (real-world Pi told user "我没有 skill 系统"). v7 expands bridge to 4 surfaces: `registerProvider` (existing) + `registerTool` × ~10 native tools (BYOK frontier path) + `on('before_agent_start')` chain-injecting ADR-005 §6 capability segments + `on('tool_call')` inspector stub (5-identical-calls loop guard) + `on('resources_discover')` exposing `~/.claude/skills/` as native Pi Skills. ctrl-pi-plugin spawn arg changes `--no-tools` → `--no-builtin-tools` so extension-registered tools stay loaded but Pi's default 7 (read/write/edit/bash/grep/find/ls) are off (kernel substrate stays the gatekeeper for vault writes etc). Provider-aware dispatch in `commands/irisy_chat.rs`: BYOK frontier ⇒ native tools, non-frontier (Volc/Qwen/Llama) ⇒ existing PWA XML loop (Cline operates under same constraint). 0 transitive deps invariant preserved via inline TypeBox mock. Paired with ADR-005 v4 §7. Brainstorm: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2.
+  - v8 2026-06-06: **§1 + §3 system-level provider redesign — single SSOT, Pi single alias**. Earlier v8 draft (router `last_routed` mirror register + `brain_status.last_routed` field) RETRACTED as patch-style: it added a 4th routing state on top of 3 racing ones (active-providers.json / Pi spawn intent / setModel target / proposed last_routed). Root issue is the 3-state race itself. Locks: (1) **§3.5 SSOT** — `~/.ctrl/state/active-providers.json` is the ONLY truth for routed provider/model. Router reads it per `/text-chat` request (mtime-watched in-memory cache). No mirror state, no `last_routed`, no `brain_status.last_routed`. (2) **§1.2 Pi single alias** — Pi spawns ALWAYS with `--provider ctrl-bridge --model default`. `ctrl-pi-plugin` injects a synthetic `ctrl-bridge` provider into `~/.pi/agent/models.json` at spawn time (baseUrl points at kernel `/text-chat`, apiKey placeholder) so Pi's startup `--provider` validation passes before extensions load. Post-spawn `setModel(active, firstModel)` switch path RETIRED. `PI_PROVIDER` / `PI_MODEL` / `CTRL_TARGET_PROVIDER` env vars RETIRED. Pi has zero visibility into the real provider — it lives entirely in the router via SSOT read. (3) **§3.5 failover is transient override, not state mutation** — on primary call failure router routes the SAME request to fallback + emits Tauri event `provider:routing-override { active, reason, ts }`; on next successful primary call emits `provider:routing-restored`. `active-providers.json` is never written by failover (intent is not stolen). (4) **§3.7 chip + Irisy self-report** — PWA `ChatHeaderControls` + ctrl-pi-bridge `runtimeTruthBlock` read `invoke('get_active_providers')` + subscribe `provider:routing-override` / `active-providers-changed` Tauri events. `Pi.getState` is NEVER consulted for provider/model display. `process.env.PI_PROVIDER` is NEVER read. `brain_status` `last_routed` field RETIRED (added in v8 draft, removed in v8 final). Closes 3-state race that caused v0.1.170-173 chip patches + "Irisy 连真相都不知道" (bao 2026-06-06 "我只要系统, 正确的, 不要修修补补").
+  - v11 2026-06-07: **NEW §3.11 — Coding L1 role + on-demand native Pi TUI (0.1.181).** bao 2026-06-07 "把 coding 的 L1 功能完全使用 PI 完成了 L1 都是点击打开和关闭侧工作区" + "Irisy 和 coding 需要使用不一样的 provider". Locks: (1) **`Consumer::CodingPrimary`** enum variant + `coding.primary` SSOT role (parallel to `irisy.primary` / `irisy.fallback`). `route_chain` returns no fallback for this role — Coding errors surface in xterm, never silently fall through to Volc. (2) **On-demand native Pi process** — Coding L1 chip click invokes `coding_resolve_spawn` (new Tauri command) which reads the SSOT binding + resolves the API key from `credential_vault` + returns a `CodingSpawnSpec { command, args, env, provider_id, model_id, provider_label }`. PWA hands the spec to existing `cs_spawn` and navigates to `/code-space/$envId` where xterm.js renders the live PTY stream. No persona override, no Irisy prompt, no wrapper — Pi runs its native coding-agent CLI exactly as the upstream ships it (7 builtin file tools + bash + skills + native function calling all live). Independent process from the kernel-managed Irisy daemon. (3) **L1 click-toggle UX** — Pool / Notes / Coding chip clicks now check whether the chip's tab is already open AND active; if so the chip closes the tab and calls new `collapse_workspace_window` Tauri command. Switching between chips with the workspace open just switches tabs (no collapse). Project-dir prompt removed from Coding chip — Pi's TUI owns cwd. (4) **Settings → Providers** adds the "Coding primary" row alongside the two Irisy rows; provider_set_active accepts the new role unchanged thanks to the `Custom(String)` fallback variant.
+  - v10 2026-06-07: **§3 + §6 + NEW §12 — full Pi extension wiring ship (0.1.179).** Locks the 2026-06-07 batch that v9 left as cite-only refs: (1) **NEW §3.9 Switch provider UX** — `provider_set_active` reply carries `model_id` (first model from manifest); PWA `providerSetActive` calls Pi RPC `setModel(provider_id, model_id)` via dynamic import to swap Pi in-place (0 ms, no daemon respawn, session preserved). Formalises v9 changelog item (4). (2) **NEW §3.10 Provider template catalogue** — bundled `provider-templates.json` expanded 10 → 20 entries (added mistral / xai / perplexity / fireworks / azure-openai / vertex / bedrock / cloudflare / zhipu / qwen), each addressable via Settings → Providers add wizard. (3) **§6 amendment — kernel MCP server boot + Pi auto-connect**: `KernelSupervisor::start` now spawns `mcp_server::serve(runtime, None, MCP_SERVER_LISTEN_ADDR)` and publishes the per-boot bearer token via `CTRL_KERNEL_MCP_TOKEN` + `CTRL_KERNEL_MCP_PORT` env vars (Pi child inherits naturally, no `env_clear` in `spawn_brain`). `ctrl-pi-plugin::injectActiveProviderForSpawn` upserts a `ctrl-kernel` entry into `~/.pi/agent/settings.json` mcpServers with `transport: streamable-http` + `Authorization: Bearer <token>` header. Other mcpServer entries are left intact (user-editable). Pi auto-connects on next spawn — kernel's 28 vault.* + kv + llm + mcp.* tools become native Pi tools. (4) **NEW §12 Pi extension surface — full wiring** — see new section. (5) **`$VAR` apiKey prefix** — `models.json` apiKey written as `$<ENV_VAR_NAME>` (Pi's required explicit-env syntax; plain string is now treated as literal with deprecation warning). bao 2026-06-07 "全接" + "真相也要选择吗?" — Pi端点都开好的, 接 = 写 caller, 不是 wrap 工程; 已开的端点要在 ADR 上有 truth.
+  - v9 2026-06-06: **§1 + §3 — RETRACT v8 entirely. CTRL wraps Pi via Pi's published extension surface only.** bao 2026-06-06 "我从头一直是让你基于 PI 开发" + memory `feedback_pi_is_core_use_upstream_surfaces` (locked 2026-05-31, IGNORED in v8): wrapper must DELEGATE to Pi-exported surfaces, never reimplement what Pi already does. v8 (Pi single alias + ctrl-bridge streamSimple interception + CTRL-side router fallback + chip reading SSOT mirror) was 4 simultaneous wrapper-side reimplementations of Pi-native facilities. Each `apiKey: ""` / "Unknown provider" / "Connection error." stderr in the v0.1.170-176 series traces to one of those reimplementations. **Retractions**: (1) **§1.2 Pi single alias** RETRACTED. Pi spawns with the user-selected real BYOK provider id (`--provider <ssot-primary-id> --model <ssot-primary-model>`); `ctrl-pi-plugin` writes `~/.pi/agent/models.json` (Pi's designed config file) at spawn time with one entry per user-configured provider, `apiKey` = env var name reference (Pi `ProviderConfig.apiKey` documented as "API key or environment variable name"); CTRL pulls credentials from keychain → injects child env. No plaintext on disk. (2) **§3.5 router fallback chain** RETRACTED. Pi has no public fallback API today; CTRL does not invent a parallel one. The `RouteChain.fallbacks` walking loop, `record_failover`, `RoutingOverride`, `provider:routing-override` / `provider:routing-restored` events, and `ctrl-bridge` `streamSimple` interception are all RETIRED. When Pi exposes a fallback surface (e.g. `setAutoFallback`), CTRL adopts it — until then primary failure surfaces as a Pi error and the user re-picks in Settings. (3) **§3.7 chip data source** — chip reads `pi_rpc('getState')` (Pi's rpc.md-documented authoritative API). With Pi bound to the real provider directly, `getState().model.{provider, id}` IS the truth (matches user intent because Pi was spawned/setModel'd to it). `get_active_providers` Tauri command kept as INTENT projection for Settings UI only; chip uses Pi truth. (4) **Switch provider UX** — `provider_set_active` triggers an in-process Pi RPC `setModel(newProvider, newModelId)` via `/api/pi-rpc` (Pi runtime API, 0 ms, NO daemon respawn, session preserved). New user-added providers register via ctrl-pi-bridge `session_start` so models.json + extension stay in sync. (5) **PWA XML loop** RETIRED. PWA `<call>` parser, `irisy-prompts.ts` XML protocol injection, `irisy-tool-dispatch` artifacts deleted; tool calls flow through Pi-native function calling (`Context.tools` schema → BYOK adapter → `pi.registerTool().execute()`). (6) **Wrapper invariant** locked at substrate level: any wrapper code that re-implements a Pi-published surface (provider registry, LLM call, stream protocol, session, fork, compact, model resolution) is DEAD on arrival. Reviewer checklist requires citing the Pi surface delegated to. bao 2026-06-06 "全部按照 PI 做 能做吗 — 我从头一直是让你基于 PI 开发".
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/004-cap.md
@@ -62,6 +66,45 @@ v1 used **only** `pi.registerProvider`. v2 uses 4 Pi ExtensionAPI surfaces to cl
 **Dual-path tool routing** (ADR-005 §7.6): provider-aware switch in `commands/irisy_chat.rs`. BYOK frontier (anthropic/openai/claude-*/gpt-*) → native Pi tools. Non-frontier (Volc CF Workers AI / Qwen / Llama / DeepSeek defaults) → keep PWA `<call>` XML loop (`irisy-tool-dispatch.ts`) as fallback because these models JSON-format inconsistently (same constraint Cline operates under).
 
 **0 transitive deps invariant preserved**: ctrl-pi-bridge runtime-loads from `<.app>/Resources/pi-bridge/index.ts` where Node can't resolve to Pi's `node_modules`. TypeBox schemas are inline-mocked (~30 LOC `T.Object` / `T.String` / `T.Optional` returning plain JSON-Schema objects, cast `as unknown as TSchema` for TS).
+
+### §1.2 Pi single alias — Pi never sees the real provider (v8 — 2026-06-06, RETRACTED in v9)
+
+> **RETRACTED v9 2026-06-06** — see changelog. CTRL no longer interposes a synthetic `ctrl-bridge` provider; Pi spawns with the real user-selected BYOK provider id directly. The reasoning ("Pi validates `--provider` before extensions load") was real, but the v9 solution is to pre-write the real provider entry into `~/.pi/agent/models.json` BEFORE spawn (with `apiKey` as env-var-name reference, real credential injected via child env from keychain), satisfying Pi's startup validation honestly. No alias, no streamSimple interception, no `PI_PROVIDER` env shadowing. Section body below is preserved for change history only.
+
+
+
+Pi spawn args are ALWAYS `--provider ctrl-bridge --model default`. Pi's worldview is frozen: one provider, one model, immutable. The real provider/model selection happens in the router (§3.5), invisible to Pi.
+
+**Pi `--provider` startup validation**: Pi validates `--provider` against `~/.pi/agent/models.json` BEFORE extensions load (so `pi.registerProvider` in ctrl-pi-bridge cannot satisfy the check). Workaround: `ctrl-pi-plugin/pi-bridge.ts::ensureRpc()` writes a synthetic `ctrl-bridge` entry to `~/.pi/agent/models.json` BEFORE spawning Pi:
+
+```json
+{
+  "providers": {
+    "ctrl-bridge": {
+      "name": "CTRL Bridge",
+      "baseUrl": "http://127.0.0.1:<CTRL_PROVIDER_PORT>/text-chat",
+      "api": "openai-completions",
+      "apiKey": "ctrl-bridge-no-key-required",
+      "models": [
+        { "id": "default", "label": "CTRL Bridge", "input": ["text", "image"], "contextWindow": 200000, "maxTokens": 16384 }
+      ]
+    }
+  }
+}
+```
+
+ctrl-pi-bridge extension then `pi.registerProvider('ctrl-bridge', { streamSimple })` at load — registration OVERRIDES the models.json entry's outbound transport so requests go through `streamSimple` (which posts to kernel `/text-chat` with the real consumer role), not the models.json `baseUrl`. The models.json entry exists ONLY to pass startup validation.
+
+**Retired (do not re-introduce — v8 lock)**:
+- `--provider ollama-local --model hermes3:8b` bootstrap spawn args (replaced with `--provider ctrl-bridge --model default`).
+- Post-spawn `client.setModel(targetProvider, firstModel)` switch path in `ensureRpc()` after `client.start()` (`pi-bridge.ts` L680-720) — Pi's view stays `ctrl-bridge/default` for the life of the process.
+- Reading `~/.ctrl/state/active-providers.json` in `ensureRpc()` to derive `targetProvider`/`PI_PROVIDER` env (current `pi-bridge.ts` L620-655) — `ensureRpc()` no longer reads SSOT; SSOT is the router's job.
+- `PI_PROVIDER` env var (write at L654, read in ctrl-pi-bridge `runtimeTruthBlock`). Retired everywhere.
+- `PI_MODEL` env var (write at L655, read in ctrl-pi-bridge). Retired everywhere.
+- `CTRL_TARGET_PROVIDER` env var (write at L657). Retired.
+- `fetch http://127.0.0.1:<port>/tool/get_active_provider_details` call in `ensureRpc()` (L682) — replaced by the router-side SSOT read.
+
+**Consequence for chip + Irisy self-report**: Pi.getState().model is forever `{ id: "default", provider: "ctrl-bridge", ... }` — completely useless for display. Chip + Irisy read `get_active_providers()` (§3.7) instead. This is the system-level fix for the 3-state race.
 
 ## §2 Capability surface — 10 namespaces / 28 methods (frequency ≥3 rule + category exception)
 
@@ -132,7 +175,11 @@ capabilities = ["text.chat"]
 
 6 builtin presets ship Day-1: `claude-oauth`, `anthropic-api`, `openai-api`, `volc`, `kimi`, `deepseek`. User additions go to `~/.ctrl/providers/<id>.toml`. CN Anthropic-shape endpoints (api.moonshot.cn/anthropic, api.deepseek.com/anthropic) supported via preset.
 
-### §3.5 Role routing — consumer-aware (NEW, replaces single `text.chat` bucket) — v2 2-role model
+### §3.5 Role routing — consumer-aware (NEW, replaces single `text.chat` bucket) — v2 2-role model (PARTIALLY RETRACTED in v9)
+
+> **PARTIAL RETRACT v9 2026-06-06** — see changelog. The `RouteChain.fallbacks` walking loop, `record_failover`, `RoutingOverride`, `provider:routing-override` / `provider:routing-restored` events, and `ctrl-bridge` `streamSimple` interception are ALL RETIRED. Pi has no public fallback surface; CTRL does not invent a parallel one. SSOT (`active-providers.json`) is now used to **prepare Pi's models.json + child env at spawn time** (so Pi sees the real provider directly), not to mediate per-request routing inside CTRL. Section body below preserved for history; v9 implementation reads SSOT only at spawn / `setModel` switch time.
+
+
 
 **v2 amendment (bao 2026-05-31)**: dropped `keycap.default` role (keycap binds provider via manifest `brain_capabilities`, not via substrate-wide default). `irisy.primary` MUST be a detected user CLI — no auto-fallback to a paid provider. `irisy.fallback` is the CTRL-managed slot (paid by CTRL).
 
@@ -167,6 +214,12 @@ v1 → v2 migration: if file has the old single bucket `{"text.chat": "<id>"}`, 
 
 `/text-chat` SSE endpoint (port 17878) accepts `?consumer=<role>` query param. Pi bridge sets `consumer=irisy.primary`; on stream error/timeout, kernel auto-falls-back through `RouteChain.fallbacks` (default: `["volc"]`) + emits `provider:failover { from, to, reason }` event.
 
+**SSOT lock (v8 2026-06-06)**: `~/.ctrl/state/active-providers.json` is the SINGLE source of truth for routed provider/model. There is no `last_routed` mirror register, no router-internal routing-state cache for display. The router reads SSOT per `/text-chat` request (mtime-watched in-memory cache invalidated on file change + on `provider_set_active()`); the file IS the answer. Tauri command `get_active_providers()` returns the parsed SSOT (with full provider descriptors from `provider_list()` joined in) for chip + Irisy self-report. SSOT changes emit Tauri event `active-providers-changed { roles }` so subscribers refresh without polling.
+
+**Failover is transient override, not state mutation (v8)**: on primary call failure the router routes the SAME request to fallback + emits Tauri event `provider:routing-override { active, reason, ts }`. SSOT file is NOT written (user intent is not stolen by transient failure). On the next successful primary call, router emits `provider:routing-restored`. Chip overlays a ⚠ badge with the fallback label during the override window; cold display always reads SSOT directly.
+
+**Retired (was earlier v8 draft, removed as patch-style)**: `provider:routed` per-request truth event, `last_routed` register, `brain_status.last_routed` field. Adding a 4th routing state on top of 3 racing ones (SSOT / Pi spawn intent / setModel target / proposed last_routed) does not fix the race — it extends it. The system-level fix is to retire 2 of the 3 racing states (Pi spawn intent + setModel target — see §1.2) and treat SSOT as both intent AND truth.
+
 ### §3.6 Detect + auto-adopt UX (mirrors VMark detect + role assignment is CTRL-new) — v2
 
 **v2 amendment**: page renders **2 role sections** (not 3); `irisy.fallback` defaults `volc` at first boot without user action (CTRL-managed).
@@ -178,11 +231,15 @@ v1 → v2 migration: if file has the old single bucket `{"text.chat": "<id>"}`, 
 - Tauri command `provider_set_active(role, provider_id)` runs `trial_verify()` (1-token "hi", 5s deadline) before committing. Failure → keep previous, surface specific error.
 - `/settings/providers` page — **2 role sections** (Irisy primary / Irisy fallback) × radio rows with Available/Not-found badges. CLI providers listed first within each section, then `volc` (the CTRL fallback option, always shown as Available with "[CTRL-managed]" badge in fallback section). REST API (BYOK) section below — Anthropic / OpenAI / Google / Volc-BYOK / Kimi / DeepSeek / Ollama with Configure→ buttons. BYOK Volc is a separate row from CTRL-managed volc (different manifest id `volc-byok`).
 
-### §3.7 Introspection — Irisy self-awareness (closes bao 2026-05-31 root issue) — v2
+### §3.7 Introspection — Irisy self-awareness (closes bao 2026-05-31 root issue) — v2 (chip data source RETRACTED in v9)
+
+> **CHIP DATA SOURCE RETRACTED v9 2026-06-06** — see changelog. PWA `ChatHeaderControls` MUST read `pi_rpc('getState')` (Pi's rpc.md-documented authoritative API) for the displayed provider+model. With Pi bound to the real provider directly at spawn (§1.2 v9), `getState().model.{provider, id}` IS the truth — there is no longer a wrapper-side router to disagree with Pi. `get_active_providers` Tauri command remains as SETTINGS INTENT projection (Settings UI consumes it for "what did the user pick"); the chip uses Pi truth. `runtimeTruthBlock` in ctrl-pi-bridge reads `Context.model` (Pi's already-resolved current model) rather than fetching CTRL HTTP. Section body below preserved for history.
+
+
 
 **v2 amendment**: dropped `keycap.default` from the providers map. Fallback `volc` label = `"CTRL Cloud"` (brand-facing), not `"Volc Doubao"` (codename) — keeps user-facing layer abstracted so the future ctrl-brand swap is invisible.
 
-Tauri command `brain_status()`:
+Tauri command `brain_status()` (health view — NOT a routing-truth view; for routing-truth see `get_active_providers()`):
 ```json
 {
   "engine": { "id": "Pi", "version": "0.73.1", "healthy": true, "last_token_ms": 142 },
@@ -194,13 +251,108 @@ Tauri command `brain_status()`:
 }
 ```
 
+Tauri command `get_active_providers()` (v8 — routing truth, single SSOT projection):
+```json
+{
+  "roles": {
+    "irisy.primary":  { "id": "claude-oauth", "label": "Claude subscription", "model_id": "claude-sonnet-4-20250514", "model_label": "Claude Sonnet 4", "managed_by": "user" },
+    "irisy.fallback": { "id": "volc",         "label": "CTRL Cloud",          "model_id": "doubao-1-5-pro-32k-250115", "model_label": "Doubao Pro 32K", "managed_by": "ctrl" }
+  },
+  "override": null
+}
+```
+
+`override` is non-null only during a transient failover window: `{ active: "irisy.fallback", reason: "<error>", ts: "..." }`. Cleared by `provider:routing-restored` event on next successful primary call.
+
 `managed_by` field (v2): `"user"` = user-owned CLI or user BYOK key; `"ctrl"` = CTRL-paid fallback. Settings UI surfaces this so the user understands who pays for each path.
 
-Irisy system prompt v5 (ADR-005 § persona) injects `<brain_state>` block built from this. Irisy answers "你用什么模型" with **brand label** ("Claude 订阅" / "CTRL Cloud") — never RPC codename ("Pi" / "claude-oauth" / "volc" / "RpcClient"). On failover Irisy says "Claude 暂时连不上, 我切到 CTRL Cloud 了" — uses the typed event + brand label, not heuristics, not the `volc` codename.
+**Routing-truth read rules (v8 lock, supersedes earlier-draft v8)**:
+- PWA `ChatHeaderControls` calls `invoke('get_active_providers')` on mount + subscribes Tauri events `active-providers-changed` (SSOT mutation) + `provider:routing-override` / `provider:routing-restored` (transient failover). Cold-render = SSOT projection. Failover-render = overlay ⚠ badge with `override.active` label. **Never calls** `Pi.getState()` / `getAvailableModels()[0]` / reads `brain_state` for chip display.
+- ctrl-pi-bridge `runtimeTruthBlock` HTTP-fetches kernel `/api/active-providers` (mirror of `get_active_providers` Tauri command, same shape) at extension load + on SSOT-change webhook from kernel. **Never reads** `process.env.PI_PROVIDER` / `PI_MODEL` (both retired in §1.2).
+- Irisy system prompt v5 (ADR-005 § persona) injects `<brain_state>` block built from `get_active_providers()` output. Irisy answers "你用什么模型" with `roles["irisy.primary"].label + model_label` ("Claude 订阅 · Sonnet 4") — never RPC codename, never `Pi.getState().model.id`. During override, Irisy uses `roles[override.active].label` instead + says "Claude 暂时连不上, 我切到 CTRL Cloud 了" using the typed `provider:routing-override` payload.
 
 ### §3.8 Retirements
 
 Removed by this section (do not re-introduce): `brain_config.rs`, `commands/brain.rs`, `~/.ctrl/active-brain` file, `BrainListReply / BrainView`, single-`text.chat`-bucket assumption, hand-rolled RPC wire format in `ctrl-pi-bridge` (use Pi's `RpcClient`).
+
+### §3.9 Switch provider UX — in-place Pi `setModel` (v10 — 2026-06-07)
+
+Formalises v9 changelog item (4) — was cited in code but never had a section.
+
+`provider_set_active` Tauri command (mutates SSOT `~/.ctrl/state/active-providers.json`) returns:
+
+```rust
+pub struct ProviderSetActiveReply {
+    pub trial_reply: String,          // first chunk of the 1-token trial chat
+    pub model_id: Option<String>,     // first model from the provider's manifest
+}
+```
+
+PWA `providerSetActive` (`packages/ctrl-web/src/lib/provider-config.ts`):
+
+1. `await invoke('provider_set_active', { args })` — Tauri side mutates SSOT + runs trial verify.
+2. If `args.role === 'irisy.primary'` and `reply.model_id` is non-null, dynamic-import `usePiRpc` and call `setModel(args.provider_id, reply.model_id)` via Pi RPC `/api/pi-rpc` (Pi's published method on `RpcClient`).
+3. Failure of `setModel` is non-fatal: SSOT is the source of truth and the next Pi spawn picks up the new binding regardless.
+
+Effect: switching provider takes ~0 ms perceived, the running Pi session is preserved (no daemon respawn = no context loss). Required because v9 §1.2 binds Pi to the real provider at spawn; without an in-place swap, every Settings change would require restart_brain.
+
+### §3.11 Coding L1 — on-demand native Pi TUI (v11 — 2026-06-07)
+
+bao 2026-06-07: "把 coding 的 L1 功能完全使用 PI 完成了 L1 都是点击打开和关闭侧工作区" + "Irisy 和 coding 需要使用不一样的 provider".
+
+The Coding L1 chip spawns **a separate Pi process** (not the kernel-managed Irisy daemon) in native TUI mode, with its own provider+model. Independent SSOT slot, independent credentials, independent session — Pi's full coding-agent UX with zero CTRL interposition.
+
+**Role**
+
+- New `Consumer::CodingPrimary` (id `coding.primary`). Persisted in `~/.ctrl/state/active-providers.json` alongside `irisy.primary` / `irisy.fallback`.
+- `route_chain(CodingPrimary).fallbacks = []` — Coding never silently falls through to a different provider on auth failure. The error surfaces in xterm and the user re-picks in Settings.
+- `provider_set_active` accepts `role = "coding.primary"` unchanged (Consumer enum's `Custom(String)` fallback was already there; v11 promotes it to a first-class variant for readability).
+- `get_active_providers` iterates `[IrisyPrimary, IrisyFallback, CodingPrimary]` so PWA Settings + chip see all 3 roles.
+
+**Spawn path (`coding_resolve_spawn` Tauri command)**
+
+`src-tauri/src/commands/coding.rs::coding_resolve_spawn(provider_id_override)` returns:
+
+```rust
+pub struct CodingSpawnSpec {
+    pub command:        String,                 // ~/.ctrl/pi/node_modules/.bin/pi
+    pub args:           Vec<String>,            // ["--provider", id, "--model", model]
+    pub env:            HashMap<String,String>, // { CTRL_PI_API_KEY_<UPPER_ID>: <key> }
+    pub provider_id:    String,
+    pub model_id:       Option<String>,
+    pub provider_label: String,
+}
+```
+
+The API key is resolved kernel-side via `credential_vault::get(account)` from the provider's manifest AuthSource — it never crosses the Tauri IPC boundary as plain text. PWA hands the spec to existing `cs_spawn` (no new wire, reuses portable-pty + StssBridge).
+
+**L1 chip click-toggle UX**
+
+`PrimaryRail::handleNavClick` for Pool / Notes / Coding now:
+
+1. Queries `useWorkspaceStore` for the system instance + the chip's tab.
+2. If `tabIsOpen && tabIsActive && workspaceOpen` → `closeTab(systemInstance.id, def.id)` + new `collapse_workspace_window` Tauri command (compact width).
+3. Otherwise → `openSystemTab(...)` + `ensure_workspace_window_expanded`.
+
+Switching across chips while the workspace is open just switches tabs (no collapse). The project-directory `window.prompt` is removed from the Coding chip — Pi's TUI owns cwd via `:cd` / `--cwd`.
+
+**routes/coding.tsx**
+
+1. `csList()` — reuse any existing non-crashed Pi env (avoids spawning N Pi processes when the user clicks the chip repeatedly).
+2. Otherwise `invoke('coding_resolve_spawn')` then `cs_spawn(spec)`, then `navigate('/code-space/$envId')`.
+3. On error (no coding.primary configured, key missing), inline message + link to `/settings/providers`.
+
+**Settings — provider picker**
+
+`IRISY_ROLES` list extended to 3 rows: `irisy.primary` / `irisy.fallback` / `coding.primary`. The existing `ProviderRoleRow` component handles the new row unchanged because `providerSetActive({role, provider_id})` already accepts any role string. Users get a single Providers tab in Settings where they bind 3 roles to 3 (possibly different) providers — e.g. Volc → Irisy primary, CTRL Cloud → Irisy fallback, Claude (BYOK or OAuth) → Coding primary.
+
+**Why on-demand process (not RPC)**
+
+Pi's RPC mode (used by Irisy) wraps the agent loop and exposes 38 RpcClient methods, which is great for embedding chat in a PWA bubble — but it costs the native TUI affordances (live status line, slash commands rendering in-place, terminal-native scrollback, real PTY signals). Coding is a power-user surface; bao explicitly asked for "完全使用 PI" = the native Pi CLI experience. xterm + cs_spawn gives that for ~0 new code. Two Pi processes coexist cleanly because each has its own session dir under `~/.pi/agent/sessions/` and reads `~/.pi/agent/{models,settings}.json` for config.
+
+### §3.10 Provider template catalogue — 20 entries (v10 — 2026-06-07)
+
+`src-tauri/src/kernel/provider/provider-templates.json` ships 20 entries (was 10 in v3): volc · openai · anthropic · deepseek · kimi · google · openrouter · groq · together · mistral · xai · perplexity · fireworks · azure-openai · vertex · bedrock · cloudflare · zhipu · qwen · custom (free-form). All use `protocol: openai` (OpenAI-compatible REST shape) except `anthropic` (`protocol: anthropic`). Settings → Providers Add wizard renders one row per entry with `keyHint` as inline help. User overrides at `~/.ctrl/provider-templates.json` (merge rule: matching `id` replaces, new `id` appends).
 
 ## §4 Crypto — vodozemac (Matrix Olm) on all platforms
 
@@ -220,13 +372,34 @@ v1 ships no mesh layer (memory `feedback_reuse_existing_capability_first` 2026-0
 
 ## §6 MCP bus — kernel as MCP server :17873
 
-Kernel runs MCP **server** parallel to its `mcp_host` (client) — same `rmcp 1.7` crate, different features. Single bus for hermes/Irisy/external agents to consume kernel capabilities via MCP wire.
+Kernel runs MCP **server** parallel to its `mcp_host` (client) — same `rmcp 1.7` crate, different features. Single bus for Irisy/external agents to consume kernel capabilities via MCP wire.
 
 - **Bind**: `127.0.0.1:17873` (one above ST-SS bridge 17872). Never `0.0.0.0` — cross-device goes through mesh (§4), not MCP.
 - **Transport**: streamable-http (MCP 2025-03-26 spec). rmcp 1.7 + `server` + `transport-streamable-http-server` + `macros` + `schemars`. axum 0.8 hosts.
 - **Auth**: ephemeral Bearer token. Fresh UUID v4 on every kernel boot, never persisted. `Authorization: Bearer <token>` header; axum middleware checks before `/mcp`.
 - **Discovery**: Tauri command `mcp_server_info` returns `{ url, token }`.
 - **Tools (28, v3)**: `kernel.status` · `vault.{read,write,write_image,list,search,delete,root_path,rebuild_index,backlinks,tags,notes_by_tag,mentions,orphans,broken_links,graph_data,rename,move,create_folder,set_starred,aliases,watch}` (21) · `kv.{get,set}` · `llm.chat` · `mcp.{list_servers,proxy_list_tools,proxy_call_tool}`. Stream LLM stays on Tauri event channel (PWA only), not on MCP surface. Vault tool set expanded in v3 per §8.
+
+### §6.1 Boot wiring + Pi auto-connect (v10 — 2026-06-07)
+
+Before v10 the MCP server module existed but `serve()` was never called. v10 wires the boot:
+
+- **Server start** (`src-tauri/src/shell/kernel_supervisor.rs::start`): spawns `kernel::mcp_server::serve(runtime.clone(), None, MCP_SERVER_LISTEN_ADDR)` immediately after the provider HTTP endpoint. On success, publishes the per-boot bearer via `std::env::set_var("CTRL_KERNEL_MCP_TOKEN", h.auth_token.as_str())` + `set_var("CTRL_KERNEL_MCP_PORT", port)`. The set_var is safe here because it runs synchronously at kernel boot, before any task reads env. Pi child processes inherit naturally (no `env_clear` in `spawn_brain`).
+- **Pi auto-connect** (`packages/ctrl-pi-plugin/src/pi-bridge.ts::injectActiveProviderForSpawn`): right after writing `~/.pi/agent/models.json`, upsert `~/.pi/agent/settings.json` mcpServers entry:
+
+  ```json
+  {
+    "mcpServers": {
+      "ctrl-kernel": {
+        "url": "http://127.0.0.1:<port>/mcp",
+        "transport": "streamable-http",
+        "headers": { "Authorization": "Bearer <token>" }
+      }
+    }
+  }
+  ```
+
+  Other user-added mcpServers are preserved (upsert, not overwrite). Token from `process.env.CTRL_KERNEL_MCP_TOKEN`. Pi reads settings.json on every spawn, auto-connects, exposes the 28 kernel tools to the agent loop. Irisy's 8 fs-based tools (vault_* + skills) coexist with the 28 kernel MCP tools — both surface on `getCommands` / agent context.
 
 ## §7 Composition — 6-axis manifest (single substrate law)
 
@@ -661,6 +834,79 @@ User can opt to "preserve all" in Settings (off by default — vault grows unbou
 - First-boot: irisy.primary = highest-priority detected CLI silently + Irisy toast; irisy.fallback = `volc` (CTRL-managed) always active without user action
 - Irisy prompt v5 wired (depends on ADR-005 § persona implementation) — brand labels only ("Claude 订阅" / "CTRL Cloud"), never codenames
 - `/settings/providers` page rendered inside Settings workspace route (ADR-003 § nav-keyboard v2) — **2 role sections** × radio with Available/Not-found + [CTRL-managed] badges + REST API (BYOK) config below
+
+## §12 Pi extension surface — full wiring (NEW v10 — 2026-06-07)
+
+> bao 2026-06-07 "全接" — Pi 端点都暴露好的; "接" 不是 wrap 工程, 是给每个未接通端点写 1 行 caller. 这段把 `ctrl-pi-bridge` 的 caller 矩阵 SSOT 化, 后续每加 1 个端点就在这表里追 1 行.
+
+### §12.1 Hook events (28 registered)
+
+Every event in Pi's `ExtensionAPI.on()` union is registered. Handler tier:
+
+| Tier | Events | Handler body |
+|---|---|---|
+| Real business | `before_agent_start` (persona replace), `before_provider_request` (auto-RAG inject), `after_provider_response` (LLM cost audit), `tool_call` + `tool_result` (tool I/O audit), `turn_end` (turn usage audit), `user_bash` (shell audit), `agent_start` + `agent_end` + `session_start` + `session_compact` + `session_shutdown` (lifecycle audit), `model_select` + `thinking_level_select` (mode audit) | non-trivial logic |
+| Stub (extension point) | `resources_discover`, `session_before_switch`, `session_before_fork`, `session_before_compact`, `session_before_tree`, `session_tree`, `context`, `turn_start`, `message_start`, `message_update` (perf-sensitive), `message_end`, `tool_execution_start/update/end`, `input` | `() => undefined` (registered so future business can replace inline without re-shipping the bridge) |
+
+The stub-tier registrations are intentional and load-bearing: a future skill that wants to use e.g. `tool_execution_update` can write a 1-line replacement in this file — no contract change, no version bump, no upstream Pi PR.
+
+### §12.2 Auto-RAG via `before_provider_request`
+
+`ctrl-pi-bridge::register()` registers a `before_provider_request` handler that, for every LLM call:
+
+1. Pulls the last user message text.
+2. Calls `vaultSearchTopK(text, 3)` — naive substring scan over `walkMarkdown(vaultRoot)` (skip `irisy/audit/*` to avoid self-reference loops).
+3. If hits found, appends a `{role: 'system', content: 'Relevant snippets auto-fetched from the user\'s vault: …'}` message to `evt.messages` and returns `{messages: [...messages, ragSystem]}`.
+
+Pi merges the returned message list and proceeds with the LLM call. The user never explicitly invokes `vault_search` for ambient grounding — it happens automatically. Future: replace substring scan with `kernel.vault.search` via the §6.1 MCP auto-connect once Pi sees the kernel tools (FTS5-backed, faster, ranked).
+
+### §12.3 Audit log → `vault/irisy/audit/`
+
+`appendAuditLine(topic, line)` writes `- [ISO-8601] <line>` rows into `vault/irisy/audit/YYYY-MM-DD-<topic>.md`. Topics:
+
+- `llm-calls` — per-response: model id, input/output/cacheR/cacheW tokens
+- `tools` — per call/result: tool name + arg snippet + OK/FAIL
+- `turns` — per turn: messageCount, totalTokens
+- `sessions` — start / compact / shutdown
+- `lifecycle` — agent start / end
+- `mode` — model switch, thinking-level change
+- `user-bash` — user-issued shell commands (per `user_bash` event)
+
+Plain markdown, user vim-readable (CLAUDE.md vim test). All failures non-fatal — audit MUST NOT break the agent turn.
+
+### §12.4 Per-keycap `inherit_pi_tools` — `CTRL_INHERIT_PI_TOOLS` env
+
+Irisy default mode: persona explicitly denies Pi's 7 builtin tools (Read/Write/Edit/Bash/Grep/Find/LS). A keycap that needs them (Code, DevOps, Screen-record) declares `inherit_pi_tools: [Read, Bash, ...]` in its manifest. Kernel sets `CTRL_INHERIT_PI_TOOLS=<comma-separated>` on the Pi spawn env; `ctrl-pi-bridge::buildPersona` reads it, rewrites the deny block, and lists the inherited tools in the "## Runtime" section so the model knows what it's allowed to touch.
+
+Default (no env or empty) = Irisy mode = all 7 denied.
+
+### §12.5 `pi.registerFlag('ctrl-vault-root')`
+
+Lets users override `CTRL_VAULT_ROOT` from the Pi CLI (`pi --ctrl-vault-root /some/path …`). Otherwise the env var (set by kernel at Pi spawn) wins; finally `~/Documents/CTRL/vault` then `~/.ctrl/vault` per `resolveVaultRoot` priority.
+
+### §12.6 Wrapper invariant (formalises v9 changelog (6))
+
+Any wrapper code that re-implements a Pi-published surface (provider registry, LLM call, stream protocol, session, fork, compact, model resolution) is DEAD on arrival. Reviewer checklist requires citing the Pi surface delegated to. v8 (`ctrl-bridge` streamSimple + `registerProvider('ctrl-bridge')` + `runtimeTruthBlock` SSOT mirror) was the reference violation — all retracted in v9.
+
+The `registerProvider` call IS allowed for **ADD** (new provider id with bespoke logic — audit-proxy, private corp LLM, etc.) but NOT for **REPLACE** (intercepting an existing Pi-ai provider's stream).
+
+### §12.7 `$VAR` apiKey prefix
+
+Pi's model-registry now requires explicit `$VAR` prefix for env var references. Plain unprefixed strings get auto-migrated with a deprecation warning. `ctrl-pi-plugin::injectActiveProviderForSpawn` writes `apiKey: "$" + envVarName` directly (e.g. `apiKey: "$CTRL_PI_API_KEY_VOLC_DOUBAO"`) so no warning fires.
+
+### §12.8 Acceptance (v10 — 2026-06-07)
+
+- [x] `ctrl-pi-bridge/src/index.ts` registers 28 events (`pi.on()` for every event in Pi's `ExtensionAPI.on()` union) — verified by grep `pi\.on\(` count.
+- [x] `before_provider_request` handler returns vault-RAG-augmented `messages` when hits found.
+- [x] Audit lines appear under `~/Documents/CTRL/vault/irisy/audit/<date>-<topic>.md` after any chat turn.
+- [x] `CTRL_INHERIT_PI_TOOLS` env reaches `buildPersona()` — verified by `/irisy-paths` slash command output ("Inherit:" line).
+- [x] `pi.registerFlag('ctrl-vault-root', ...)` registered.
+- [x] `kernel_supervisor::start` spawns MCP server; `lsof -p $(pgrep ctrl) -iTCP -sTCP:LISTEN` shows `:17873` after boot.
+- [x] `~/.pi/agent/settings.json` contains `mcpServers.ctrl-kernel` entry with bearer header.
+- [x] `provider_set_active` reply carries `model_id`; PWA `providerSetActive` calls Pi `setModel` after success.
+- [x] `provider-templates.json` has 20 entries.
+- [x] `models.json` apiKey written with `$` prefix — verify with `grep '"apiKey":' ~/.pi/agent/models.json` returns `"$CTRL_PI_API_KEY_..."`.
+- [ ] `scripts/probes/irisy-eval.mjs` 9/9 PASS on a 0.1.179 install — pending bao update + run.
 
 ## Provenance
 

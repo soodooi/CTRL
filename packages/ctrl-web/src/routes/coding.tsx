@@ -1,24 +1,28 @@
-// Coding — thin entry into the coding workspace.
+// Coding — ADR-002 substrate § provider v11 §3.11 (2026-06-07).
 //
-// bao 2026-05-28 "you now have all the basic facilities, just compose it directly" +
-// "do you think I need a purely static coding page?".
+// L1 chip click → this route → resolve coding.primary from kernel SSOT →
+// spawn `pi --provider <id> --model <model>` in native TUI mode via the
+// existing Code Space PTY plumbing → navigate to /code-space/$envId
+// where xterm.js renders the live stream.
 //
-// Replaced the v0.1.49 static demo (hardcoded file tree, fake syntax-
-// highlighted code, fake terminal mock). /coding's job is to drop the
-// user straight into a live coding session — it doesn't render any
-// content itself.
+// bao 2026-06-07: the Coding L1 chip uses Pi natively (separate provider
+// from Irisy chat). Click toggles a side workspace tab; click again
+// closes it.
 //
-// Behavior:
-//   1. Read cs_list. If a non-crashed session exists, navigate to the
-//      most recent one (cs_list sorts started_at_iso desc already).
-//   2. If none, spawn a default login shell (`$SHELL -l`) at $HOME
-//      and navigate into the new env.
-//   3. Errors surface inline so the user isn't stuck on a spinner.
+// Behavior on mount:
+//   1. Reuse an existing non-crashed Pi coding session if one exists
+//      (avoids spawning 3 Pi processes when the user clicks the chip
+//      repeatedly).
+//   2. Otherwise resolve coding.primary via `coding_resolve_spawn`, then
+//      cs_spawn into a fresh Pi TUI.
+//   3. If coding.primary is not configured (or the key is missing),
+//      surface the kernel's error inline + link to Settings.
 //
-// All real coding surfaces (xterm + CompanionPane + view-mode switcher
-// + cs_* wire + opencode dark via global [data-theme='dark']) already
-// live in /code-space/$envId — this route just routes you there.
+// No persona override, no Irisy prompt, no wrapper layer — Pi runs its
+// native coding-agent CLI exactly as the upstream ships it (7 builtin
+// file tools + bash + skills + native function calling all live).
 
+import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useState, type ReactElement } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { csList, csSpawn } from '@/lib/kernel';
@@ -26,28 +30,36 @@ import { csList, csSpawn } from '@/lib/kernel';
 interface EnvLike {
   stream_id?: string;
   status?: string;
+  command?: string;
 }
 
-const pickActiveEnv = (raw: unknown): string | null => {
+interface CodingSpawnSpec {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  provider_id: string;
+  model_id: string | null;
+  provider_label: string;
+}
+
+const pickExistingCodingEnv = (raw: unknown): string | null => {
   if (!Array.isArray(raw)) return null;
   for (const item of raw as EnvLike[]) {
-    if (typeof item?.stream_id === 'string' && item.status !== 'crashed') {
-      return item.stream_id;
+    if (item?.status === 'crashed') continue;
+    const cmd = item?.command ?? '';
+    if (cmd.endsWith('/pi') || cmd === 'pi') {
+      if (typeof item.stream_id === 'string') return item.stream_id;
     }
   }
   return null;
 };
 
-const defaultShell = (): { command: string; args: ReadonlyArray<string> } => {
-  const shell =
-    (typeof process !== 'undefined' && process.env?.SHELL) || '/bin/zsh';
-  return { command: shell, args: ['-l'] };
-};
+type Phase = 'checking' | 'resolving' | 'spawning';
 
 export const CodingRoute = (): ReactElement => {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<'checking' | 'spawning'>('checking');
+  const [phase, setPhase] = useState<Phase>('checking');
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +67,7 @@ export const CodingRoute = (): ReactElement => {
       try {
         const envs = await csList();
         if (cancelled) return;
-        const existing = pickActiveEnv(envs);
+        const existing = pickExistingCodingEnv(envs);
         if (existing) {
           await navigate({
             to: '/code-space/$envId',
@@ -64,11 +76,19 @@ export const CodingRoute = (): ReactElement => {
           });
           return;
         }
+
+        setPhase('resolving');
+        const spec = await invoke<CodingSpawnSpec>('coding_resolve_spawn', {
+          args: { provider_id_override: null },
+        });
+        if (cancelled) return;
+
         setPhase('spawning');
-        const { command, args } = defaultShell();
-        const home =
-          (typeof process !== 'undefined' && process.env?.HOME) || undefined;
-        const reply = await csSpawn({ command, args, cwd: home });
+        const reply = await csSpawn({
+          command: spec.command,
+          args: spec.args,
+          env: spec.env,
+        });
         if (cancelled) return;
         await navigate({
           to: '/code-space/$envId',
@@ -104,12 +124,29 @@ export const CodingRoute = (): ReactElement => {
       {error ? (
         <>
           <span style={{ color: 'var(--color-danger)' }}>coding · failed</span>
-          <span style={{ textTransform: 'none', letterSpacing: 0 }}>
+          <span style={{ textTransform: 'none', letterSpacing: 0, maxWidth: 480, textAlign: 'center' }}>
             {error}
           </span>
+          <a
+            href="/settings/providers"
+            style={{
+              textTransform: 'none',
+              letterSpacing: 0,
+              color: 'var(--color-accent)',
+              textDecoration: 'underline',
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              void navigate({ to: '/settings/providers', replace: true });
+            }}
+          >
+            Open Settings → Providers
+          </a>
         </>
       ) : phase === 'spawning' ? (
-        <span>coding · starting shell…</span>
+        <span>coding · launching pi…</span>
+      ) : phase === 'resolving' ? (
+        <span>coding · resolving provider…</span>
       ) : (
         <span>coding · opening session…</span>
       )}

@@ -118,12 +118,24 @@ const BUILTIN_MANIFESTS: &[(&str, &str)] = &[
 
 pub type ProviderHandle = Arc<dyn Provider>;
 
+/// Where the manifest came from. PWA Settings groups rows by source
+/// (Available auto-detected vs. user-added BYOK). bao 2026-06-06.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderSource {
+    /// Shipped with CTRL (BUILTIN_MANIFESTS).
+    Builtin,
+    /// User-added at `~/.ctrl/providers/<id>.toml` via PWA AddModal.
+    User,
+}
+
 /// One loaded entry — instantiated adapter + the source manifest +
 /// whether the credential resolution succeeded at boot.
 struct LoadedProvider {
     manifest: Arc<ProviderManifest>,
     provider: Option<ProviderHandle>,
     load_error: Option<String>,
+    source: ProviderSource,
 }
 
 pub struct ProviderRegistry {
@@ -146,6 +158,13 @@ pub struct ProviderRegistry {
     /// transition without polling logs. ADR-002 substrate § provider
     /// v2 §3.5 + §3.7.
     last_failover: RwLock<Option<RecordedFailover>>,
+    /// Transient routing override while the primary is in outage. Read by
+    /// `commands::provider::get_active_providers` so the chip overlays the
+    /// fallback label until primary recovers. Set/cleared from
+    /// `http_endpoint` — kernel events surface to Tauri via
+    /// `KernelHandle::app::emit`. ADR-002 substrate § provider v8 §3.5
+    /// (2026-06-06).
+    routing_override: RwLock<Option<RoutingOverride>>,
     /// Recent-failure cache, keyed by manifest id. Populated by
     /// `mark_failure` (called from the http_endpoint fallback loop) and
     /// consulted via `is_in_cooldown` so subsequent Pi turns skip a
@@ -179,6 +198,24 @@ pub struct RecordedFailover {
     pub at_unix_ms: i64,
 }
 
+/// Transient routing override during a primary outage. ADR-002 substrate §
+/// provider v8 §3.5 (2026-06-06): when the primary chat_stream fails the
+/// router routes the same request to fallback + sets this state + emits
+/// `provider:routing-override` Tauri event. SSOT file (active-providers.json)
+/// is NOT mutated — user intent is not stolen by transient failure. On the
+/// next successful primary call the state clears + emits
+/// `provider:routing-restored`. PWA chip + ctrl-pi-bridge runtimeTruthBlock
+/// overlay this on top of `get_active_providers()` for the duration.
+#[derive(Debug, Clone, Serialize)]
+pub struct RoutingOverride {
+    /// Canonical role id of the fallback that is currently servicing the
+    /// primary's traffic, e.g. "irisy.fallback". Chip uses this to look
+    /// up the displayed label.
+    pub active: String,
+    pub reason: String,
+    pub at_unix_ms: i64,
+}
+
 impl ProviderRegistry {
     /// Build a registry from builtin TOMLs + `~/.ctrl/providers/*.toml`
     /// + legacy `~/.ctrl/config.toml` providers. Failures inside
@@ -190,13 +227,14 @@ impl ProviderRegistry {
             active: RwLock::new(BTreeMap::new()),
             active_state_path: default_active_state_path(),
             last_failover: RwLock::new(None),
+            routing_override: RwLock::new(None),
             provider_health: RwLock::new(BTreeMap::new()),
         };
 
         // 1. Builtin presets (always present).
         for (id, src) in BUILTIN_MANIFESTS {
             match parse_str(src, &format!("builtin/{id}.toml")) {
-                Ok(manifest) => registry.install_manifest(manifest),
+                Ok(manifest) => registry.install_manifest(manifest, ProviderSource::Builtin),
                 Err(e) => tracing::warn!(provider = %id, error = %e, "provider: builtin manifest parse failed"),
             }
         }
@@ -316,6 +354,50 @@ impl ProviderRegistry {
         *slot = Some(event);
     }
 
+    /// Set transient routing override. ADR-002 substrate § provider v8
+    /// §3.5 (2026-06-06): called from `http_endpoint` when the primary
+    /// chat_stream fails and a fallback is now servicing the role. The
+    /// SSOT file is NOT mutated (user intent is not stolen). Idempotent —
+    /// re-setting with the same value is a no-op for callers.
+    pub fn set_routing_override(&self, active_role: &str, reason: &str) {
+        let next = RoutingOverride {
+            active: active_role.to_string(),
+            reason: reason.to_string(),
+            at_unix_ms: now_unix_ms(),
+        };
+        let mut slot = self.routing_override.write().unwrap();
+        *slot = Some(next);
+    }
+
+    /// Clear the transient routing override. ADR-002 substrate § provider
+    /// v8 §3.5 (2026-06-06): called from `http_endpoint` when the primary
+    /// successfully services a request again. Idempotent on already-empty.
+    pub fn clear_routing_override(&self) {
+        let mut slot = self.routing_override.write().unwrap();
+        *slot = None;
+    }
+
+    /// Read the current routing override (if any). ADR-002 substrate §
+    /// provider v8 §3.7 (2026-06-06): consumed by
+    /// `commands::provider::get_active_providers` so the chip can overlay
+    /// the fallback label until primary recovers.
+    pub fn current_routing_override(&self) -> Option<RoutingOverride> {
+        self.routing_override.read().unwrap().clone()
+    }
+
+    /// Convenience: lookup the first model id declared by a provider
+    /// manifest, used by `get_active_providers` to render the default
+    /// model the router would pass to that provider. None when the
+    /// manifest has zero declared models (manifest authoring bug, surfaced
+    /// to the user as "(no model)" rather than silently falling back).
+    /// ADR-002 substrate § provider v8 §3.7 (2026-06-06).
+    pub fn first_model_for(&self, id: &str) -> Option<String> {
+        let providers = self.providers.read().unwrap();
+        providers
+            .get(id)
+            .and_then(|p| p.manifest.models.first().cloned())
+    }
+
     /// Read the most recent failover transition, or None when no
     /// transition has fired this session. Consumed by
     /// `commands::provider::brain_status`.
@@ -386,6 +468,7 @@ impl ProviderRegistry {
                 description: p.manifest.description.clone(),
                 ready: p.provider.is_some(),
                 load_error: p.load_error.clone(),
+                source: p.source,
                 capabilities: p
                     .manifest
                     .capabilities
@@ -495,8 +578,13 @@ impl ProviderRegistry {
             .cloned()
             .unwrap_or_else(|| CTRL_FALLBACK_PROVIDER_ID.to_string());
         drop(active);
+        // ADR-002 substrate § provider v11 §3.11 (2026-06-07): coding.primary
+        // has no fallback. Coding runs in on-demand Pi TUI; if the user's
+        // Claude key is down, surface the error in the xterm and let them
+        // re-pick — never silently spend Volc credits on coding work.
         let fallbacks = match consumer {
             Consumer::IrisyFallback => Vec::new(),
+            Consumer::CodingPrimary => Vec::new(),
             _ => {
                 let mut chain: Vec<String> = Vec::new();
                 // 1) Detected CLI manifests as fallbacks (v3 amendment).
@@ -542,11 +630,12 @@ impl ProviderRegistry {
         let provider = self
             .get(provider_id)
             .ok_or_else(|| ProviderError::ProviderNotFound(provider_id.to_string()))?;
-        // Both Irisy roles serve text.chat today; Custom(_) consumers
-        // skip the check (they own their own capability contract).
+        // Both Irisy roles + CodingPrimary serve text.chat today; Custom(_)
+        // consumers skip the check (they own their own capability contract).
+        // ADR-002 substrate § provider v11 §3.11 (2026-06-07).
         let needs_text_chat = matches!(
             consumer,
-            Consumer::IrisyPrimary | Consumer::IrisyFallback
+            Consumer::IrisyPrimary | Consumer::IrisyFallback | Consumer::CodingPrimary
         );
         if needs_text_chat && !provider.capabilities().contains(&Capability::TextChat) {
             return Err(ProviderError::ProviderError(format!(
@@ -613,7 +702,7 @@ impl ProviderRegistry {
     /// Install (or replace) one manifest. Resolves credentials, builds
     /// the matching adapter, stores both the live provider and the
     /// manifest itself for the Settings UI.
-    fn install_manifest(&self, manifest: ProviderManifest) {
+    fn install_manifest(&self, manifest: ProviderManifest, source: ProviderSource) {
         let id = manifest.id.clone();
         let arc = Arc::new(manifest);
         let (provider, load_error) = match instantiate(arc.clone()) {
@@ -630,6 +719,7 @@ impl ProviderRegistry {
                 manifest: arc,
                 provider,
                 load_error,
+                source,
             },
         );
     }
@@ -862,7 +952,7 @@ fn load_user_manifests(dir: &Path, registry: &ProviderRegistry) {
         }
         match parse_file(&path) {
             Ok(manifest) => {
-                registry.install_manifest(manifest);
+                registry.install_manifest(manifest, ProviderSource::User);
                 count += 1;
             }
             Err(e) => tracing::warn!(?path, error = %e, "provider: user manifest parse failed"),
@@ -1004,6 +1094,10 @@ pub struct ProviderListEntry {
     /// "set api key").
     pub ready: bool,
     pub load_error: Option<String>,
+    /// Where the manifest came from — drives Settings UI grouping
+    /// (Available [system] vs. Your providers [user-added]).
+    /// bao 2026-06-06.
+    pub source: ProviderSource,
     pub capabilities: Vec<String>,
 }
 

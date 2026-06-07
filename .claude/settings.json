@@ -47,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/pretool-lane-guard.js",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/pretool-lane-guard.js\"",
             "timeout": 5
           }
         ]
@@ -58,6 +58,37 @@
           {
             "type": "prompt",
             "prompt": "STEP 1 (do this FIRST): Extract file_path from $ARGUMENTS. If the path contains '/.olym/' OR '/.claude/' OR ends with '/CLAUDE.md' OR ends with '/README.md' OR is a .md file under docs/specs/handoffs/best-practice/reports/plans/resources, respond IMMEDIATELY with {\"decision\":\"approve\",\"reason\":\"documentation path — free-form prose allowed\"} and STOP.\n\nSTEP 2 (only if path NOT whitelisted): Check if this file edit introduces any of these violations in actual source code (.js/.ts/.vue/.jsx/.tsx/.go/.py/.json/.toml): 1) Hardcoding API keys or secrets (literal Bearer tokens, API_KEY=..., client_secret literals — NOT environment variable references). 2) Non-English text in code files (comments, strings, error messages — Chinese in .md files is always allowed). 3) Project-specific banned patterns from your CLAUDE.md (extend this prompt for your project). If any violation found, respond with {\"decision\":\"block\",\"reason\":\"<which violation, with line reference>\"}. Otherwise respond with {\"decision\":\"approve\"}.\n\nInput: $ARGUMENTS"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/verification-gate.cjs\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/adr-cite-gate.cjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/memory-load-injector.cjs\"",
+            "timeout": 5
           }
         ]
       }
@@ -78,7 +109,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/session-handoff-snapshot.js",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-handoff-snapshot.js\"",
             "timeout": 10
           }
         ]
@@ -89,7 +120,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/stop-handoffs-archive.js",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-handoffs-archive.js\"",
             "timeout": 10
           }
         ]

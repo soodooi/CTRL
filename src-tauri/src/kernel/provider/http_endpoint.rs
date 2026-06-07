@@ -25,9 +25,10 @@ use axum::{
     http::StatusCode,
     response::sse::{Event, Sse},
     response::IntoResponse,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
+use tauri::Emitter;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 
@@ -63,6 +64,10 @@ pub async fn spawn(handle: KernelHandle) -> Result<u16, String> {
         .local_addr()
         .map_err(|e| format!("local_addr: {e}"))?
         .port();
+    // ADR-002 substrate § provider v9 §3.7 (2026-06-06): retract
+    // /api/active-providers — Pi now spawns with the real provider+model
+    // directly, so Pi's `getState` is the truth. Nothing inside the Pi
+    // process needs to fetch SSOT projection any more.
     let app = Router::new()
         .route("/text-chat", post(text_chat))
         .route("/tool/{name}", post(tool_dispatch))
@@ -188,11 +193,15 @@ async fn text_chat(
         .unwrap_or(Consumer::IrisyPrimary);
     let chain = registry.route_chain(&consumer);
 
+    // ADR-002 substrate § provider v9 §3.5 (2026-06-06): fallback chain
+    // walking RETIRED. Pi has no public fallback API today; CTRL does
+    // not invent a parallel one. Only the primary is attempted; failure
+    // surfaces as a provider error and the user re-picks in Settings.
+    // `chain.fallbacks` is intentionally ignored here.
     let mut candidates: Vec<String> = Vec::new();
     if let Some(primary) = chain.primary.clone() {
         candidates.push(primary);
     }
-    candidates.extend(chain.fallbacks.clone());
     if candidates.is_empty() {
         // No primary AND no fallback configured for this consumer —
         // last-resort backstop (matches the v1 behaviour for callers
@@ -302,24 +311,30 @@ async fn text_chat(
                     }
                 });
                 chosen = Some((manifest_id.clone(), rx_bridge));
+                // ADR-002 substrate § provider v9 §3.5 (2026-06-06):
+                // retract v8 routing-override Tauri events
+                // (`provider:routing-override` / `routing-restored`) —
+                // PWA chip now reads Pi's `getState` directly. Failover
+                // is still recorded into the in-memory failover log
+                // (debug surface), but no UI side-effects fire.
                 if i > 0 {
-                    if let Some((from_id, err)) = primary_error.take() {
-                        registry.record_failover(
-                            &from_id,
-                            manifest_id,
-                            &err.to_string(),
-                        );
+                    let reason = if let Some((from_id, err)) = primary_error.take() {
+                        let r = err.to_string();
+                        registry.record_failover(&from_id, manifest_id, &r);
+                        r
                     } else if let Some(from_id) = primary_id.clone() {
-                        // Primary id existed but never tried (e.g. the
-                        // manifest wasn't registered) — still a
-                        // transition worth recording so brain_status
-                        // exposes the slot-swap.
-                        registry.record_failover(
-                            &from_id,
-                            manifest_id,
-                            "primary provider not registered",
-                        );
-                    }
+                        let r = "primary provider not registered".to_string();
+                        registry.record_failover(&from_id, manifest_id, &r);
+                        r
+                    } else {
+                        "primary unavailable".to_string()
+                    };
+                    tracing::info!(
+                        from = ?primary_id,
+                        to = %manifest_id,
+                        reason = %reason,
+                        "provider: fallback served (v9 — no UI override emitted)"
+                    );
                 }
                 break;
             }
@@ -665,3 +680,9 @@ async fn run_get_active_provider_details(
         "models": models,
     }))
 }
+
+// ADR-002 substrate § provider v9 §3.7 (2026-06-06). RETIRED:
+// /api/active-providers handler — Pi spawns with the real BYOK
+// provider+model now, so nothing inside the Pi process needs to fetch
+// SSOT projection. The Tauri `get_active_providers` command was retired
+// in the same amendment.

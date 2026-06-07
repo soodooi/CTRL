@@ -81,12 +81,102 @@
     "keyHint": "get at api.together.ai/settings/api-keys"
   },
   {
+    "id": "mistral",
+    "label": "Mistral",
+    "defaultName": "Mistral",
+    "protocol": "openai",
+    "baseUrl": "https://api.mistral.ai/v1",
+    "defaultModel": "mistral-large-latest",
+    "keyHint": "get at console.mistral.ai/api-keys"
+  },
+  {
+    "id": "xai",
+    "label": "xAI (Grok)",
+    "defaultName": "Grok",
+    "protocol": "openai",
+    "baseUrl": "https://api.x.ai/v1",
+    "defaultModel": "grok-2-latest",
+    "keyHint": "xai-...; get at console.x.ai"
+  },
+  {
+    "id": "perplexity",
+    "label": "Perplexity",
+    "defaultName": "Perplexity",
+    "protocol": "openai",
+    "baseUrl": "https://api.perplexity.ai",
+    "defaultModel": "llama-3.1-sonar-large-128k-online",
+    "keyHint": "pplx-...; get at perplexity.ai/settings/api"
+  },
+  {
+    "id": "fireworks",
+    "label": "Fireworks AI",
+    "defaultName": "Fireworks",
+    "protocol": "openai",
+    "baseUrl": "https://api.fireworks.ai/inference/v1",
+    "defaultModel": "accounts/fireworks/models/llama-v3p3-70b-instruct",
+    "keyHint": "fw-...; get at fireworks.ai/api-keys"
+  },
+  {
+    "id": "azure-openai",
+    "label": "Azure OpenAI Service",
+    "defaultName": "Azure OpenAI",
+    "protocol": "openai",
+    "baseUrl": "https://<resource>.openai.azure.com/openai/deployments/<deployment>",
+    "defaultModel": "gpt-4o",
+    "keyHint": "32-hex; replace <resource> + <deployment> in baseUrl with your values"
+  },
+  {
+    "id": "vertex",
+    "label": "Google Vertex AI",
+    "defaultName": "Vertex AI",
+    "protocol": "openai",
+    "baseUrl": "https://us-central1-aiplatform.googleapis.com/v1/projects/<project>/locations/us-central1/endpoints/openapi",
+    "defaultModel": "google/gemini-2.5-flash",
+    "keyHint": "OAuth access token; gcloud auth print-access-token"
+  },
+  {
+    "id": "bedrock",
+    "label": "AWS Bedrock",
+    "defaultName": "Bedrock",
+    "protocol": "openai",
+    "baseUrl": "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1",
+    "defaultModel": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "keyHint": "AWS access key/secret pair via SigV4 (preview shape)"
+  },
+  {
+    "id": "cloudflare",
+    "label": "Cloudflare Workers AI",
+    "defaultName": "Cloudflare AI",
+    "protocol": "openai",
+    "baseUrl": "https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1",
+    "defaultModel": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "keyHint": "Cloudflare API token with Workers AI scope; replace <account_id>"
+  },
+  {
+    "id": "zhipu",
+    "label": "Zhipu GLM",
+    "defaultName": "GLM",
+    "protocol": "openai",
+    "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+    "defaultModel": "glm-4-plus",
+    "keyHint": "get at open.bigmodel.cn/usercenter/apikeys"
+  },
+  {
+    "id": "qwen",
+    "label": "Alibaba Qwen (DashScope)",
+    "defaultName": "Qwen",
+    "protocol": "openai",
+    "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "defaultModel": "qwen-max",
+    "keyHint": "sk-...; get at dashscope.console.aliyun.com"
+  },
+  {
     "id": "custom",
     "label": "Custom (any OpenAI-compatible endpoint)",
     "defaultName": "",
     "protocol": "openai",
     "baseUrl": "",
     "defaultModel": "",
-    "keyHint": "paste your API key"
+    "keyHint": "paste your API key (catalog rev: ADR-002 substrate § provider v10 §3.10 — 2026-06-07)"
   }
 ]

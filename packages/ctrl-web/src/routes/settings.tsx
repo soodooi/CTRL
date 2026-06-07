@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   Button,
   FormField,
@@ -481,6 +482,98 @@ const AddModal = ({ prefill, onAdded, onClose }: AddModalProps): ReactElement =>
   );
 };
 
+// One row in the providers list. `kind` controls which actions are
+// rendered: builtin rows (Ollama and future CLI manifests) cannot be
+// Edited or Deleted — they are system-shipped — while user rows expose
+// the full 5 ops (Add/Edit/Delete/Test/Set active). bao 2026-06-06.
+interface ProviderRowProps {
+  p: ProviderListRow;
+  isActive: boolean;
+  isBuiltin: boolean;
+  healthy: boolean;
+  testResult: { ok: boolean; message: string } | null;
+  testing: boolean;
+  pendingActivate: boolean;
+  pendingDelete: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onTest: () => void;
+  onActivate: () => void;
+}
+
+const ProviderRow = ({
+  p, isActive, isBuiltin, healthy, testResult,
+  testing, pendingActivate, pendingDelete,
+  onEdit, onDelete, onTest, onActivate,
+}: ProviderRowProps): ReactElement => (
+  <li className={styles.providerListRow} data-active={isActive}>
+    <div className={styles.providerListInfo}>
+      <span
+        className={styles.providerListDot}
+        data-healthy={(isActive ? healthy : p.ready) || undefined}
+        aria-hidden
+      />
+      <span className={styles.providerListLabel}>{p.label}</span>
+      {isActive && <span className={styles.providerListBadge}>Active</span>}
+      <code className={styles.providerListModel}>{p.models[0] ?? '—'}</code>
+      {testResult && (
+        <span
+          className={styles.providerListTest}
+          style={{ color: testResult.ok ? 'var(--color-success, #15803d)' : 'var(--color-danger, #dc2626)' }}
+        >
+          {testResult.ok ? '✓' : '✗'} {testResult.message}
+        </span>
+      )}
+    </div>
+    <div className={styles.providerListActions}>
+      {!isBuiltin && (
+        <button
+          type="button"
+          className={styles.providerListBtn}
+          onClick={onEdit}
+          title={p.ready ? 'Edit settings or replace key' : 'Add key / fix configuration'}
+        >
+          {p.ready ? 'Edit' : 'Add key'}
+        </button>
+      )}
+      {!isBuiltin && (
+        <button
+          type="button"
+          className={styles.providerListBtn}
+          data-tone="danger"
+          onClick={onDelete}
+          disabled={pendingDelete}
+          title="Remove this provider entirely"
+        >
+          Delete
+        </button>
+      )}
+      {p.ready && (
+        <button
+          type="button"
+          className={styles.providerListBtn}
+          onClick={onTest}
+          disabled={testing}
+          title="Run the production chat path with a 1-token probe"
+        >
+          {testing ? '…' : 'Test'}
+        </button>
+      )}
+      {p.ready && !isActive && (
+        <button
+          type="button"
+          className={styles.providerListBtn}
+          data-tone="primary"
+          onClick={onActivate}
+          disabled={pendingActivate}
+        >
+          Set active
+        </button>
+      )}
+    </div>
+  </li>
+);
+
 const ProvidersBlock = (): ReactElement => {
   const queryClient = useQueryClient();
   const providersQuery = useQuery({
@@ -493,13 +586,8 @@ const ProvidersBlock = (): ReactElement => {
     refetchInterval: 8_000,
   });
 
-  const [menuOpen, setMenuOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // bao 2026-06-05 e: providers = list + 4 per-row actions (Test / Edit /
-  // Delete / Set active). No chip card, no Change menu, no separate Edit
-  // modal — Edit = reopen Add modal with the same id; backend keychain
-  // helper uses -U so the key is overwritten in place.
   const [prefilledId, setPrefilledId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
@@ -509,16 +597,24 @@ const ProvidersBlock = (): ReactElement => {
     await queryClient.invalidateQueries({ queryKey: ['brain-state'] });
   }, [queryClient]);
 
+  // Listen for kernel-emitted active-providers-changed events so save /
+  // delete / set_active in another window (or via the menu bar) refreshes
+  // this list without manual reload. ADR-002 substrate § provider v8 §3.5
+  // (2026-06-06) — event name anchors to the SSOT it mirrors
+  // (~/.ctrl/state/active-providers.json), not a generic provider event.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    void listen('active-providers-changed', () => {
+      void refresh();
+    }).then((u) => { unlisten = u; });
+    return () => { unlisten?.(); };
+  }, [refresh]);
+
   const activateMutation = useMutation({
     mutationFn: (id: string) =>
       providerSetActive({ role: 'irisy.primary', provider_id: id }),
-    onSuccess: async () => {
-      setMenuOpen(false);
-      setError(null);
-      await refresh();
-    },
-    onError: (e: unknown) =>
-      setError(e instanceof Error ? e.message : String(e)),
+    onSuccess: async () => { setError(null); await refresh(); },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
   });
 
   const deleteMutation = useMutation({
@@ -558,121 +654,82 @@ const ProvidersBlock = (): ReactElement => {
   }
 
   const providers = providersQuery.data ?? [];
-  const configured = providers.filter((p) => p.ready);
-  const unconfigured = providers.filter((p) => !p.ready);
+  const builtinRows = providers.filter((p) => p.source === 'builtin');
+  const userRows = providers.filter((p) => p.source === 'user');
   const brain = brainQuery.data ?? null;
   const active = brain?.providers['irisy.primary'] ?? null;
-  // Active row data — prefer brain state (live), fall back to first
-  // configured manifest if brain hasn't responded yet.
   const activeRow =
     (active && providers.find((p) => p.id === active.id)) ??
-    configured[0] ??
+    providers.find((p) => p.ready) ??
     null;
-  const activeLabel = active?.label ?? activeRow?.label ?? 'No provider';
-  const activeModel = activeRow?.models[0] ?? '—';
   const healthy = active?.healthy ?? Boolean(activeRow?.ready);
-
-  const changeCandidates = configured.filter(
-    (c) => c.id !== (active?.id ?? activeRow?.id),
-  );
-
   const activeId = active?.id ?? activeRow?.id ?? null;
+
+  const renderRow = (p: ProviderListRow): ReactElement => (
+    <ProviderRow
+      key={p.id}
+      p={p}
+      isActive={p.id === activeId}
+      isBuiltin={p.source === 'builtin'}
+      healthy={healthy}
+      testResult={testResults[p.id] ?? null}
+      testing={testingId === p.id}
+      pendingActivate={activateMutation.isPending}
+      pendingDelete={deleteMutation.isPending}
+      onEdit={() => { setPrefilledId(p.id); setAddOpen(true); }}
+      onDelete={() => {
+        if (window.confirm(`Remove ${p.label}? This clears the vault entry + the user manifest file.`)) {
+          deleteMutation.mutate(p.id);
+        }
+      }}
+      onTest={() => void runTest(p.id)}
+      onActivate={() => activateMutation.mutate(p.id)}
+    />
+  );
 
   return (
     <>
-      <ul className={styles.providerList}>
-        {providers.map((p) => {
-          const isActive = p.id === activeId;
-          const tr = testResults[p.id];
-          return (
-            <li key={p.id} className={styles.providerListRow} data-active={isActive}>
-              <div className={styles.providerListInfo}>
-                <span
-                  className={styles.providerListDot}
-                  data-healthy={(isActive ? healthy : p.ready) || undefined}
-                  aria-hidden
-                />
-                <span className={styles.providerListLabel}>{p.label}</span>
-                {isActive && <span className={styles.providerListBadge}>Active</span>}
-                <code className={styles.providerListModel}>{p.models[0] ?? '—'}</code>
-                {tr && (
-                  <span
-                    className={styles.providerListTest}
-                    style={{ color: tr.ok ? 'var(--color-success, #15803d)' : 'var(--color-danger, #dc2626)' }}
-                  >
-                    {tr.ok ? '✓' : '✗'} {tr.message}
-                  </span>
-                )}
-              </div>
-              <div className={styles.providerListActions}>
-                {/* bao 2026-06-06: always show Edit + Delete so a
-                    half-configured row (manifest present, credential
-                    resolve failed) is still manageable. Test + Set
-                    active only when ready. Add key only when missing. */}
-                <button
-                  type="button"
-                  className={styles.providerListBtn}
-                  onClick={() => { setPrefilledId(p.id); setAddOpen(true); }}
-                  title={p.ready ? 'Edit settings or replace key' : 'Add key / fix configuration'}
-                >
-                  {p.ready ? 'Edit' : 'Add key'}
-                </button>
-                <button
-                  type="button"
-                  className={styles.providerListBtn}
-                  data-tone="danger"
-                  onClick={() => {
-                    if (window.confirm(`Remove ${p.label}? This clears keychain + the user manifest file.`)) {
-                      deleteMutation.mutate(p.id);
-                    }
-                  }}
-                  disabled={deleteMutation.isPending}
-                  title="Remove this provider entirely"
-                >
-                  Delete
-                </button>
-                {p.ready && (
-                  <button
-                    type="button"
-                    className={styles.providerListBtn}
-                    onClick={() => void runTest(p.id)}
-                    disabled={testingId === p.id}
-                  >
-                    {testingId === p.id ? '…' : 'Test'}
-                  </button>
-                )}
-                {p.ready && !isActive && (
-                  <button
-                    type="button"
-                    className={styles.providerListBtn}
-                    data-tone="primary"
-                    onClick={() => activateMutation.mutate(p.id)}
-                    disabled={activateMutation.isPending}
-                  >
-                    Set active
-                  </button>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      <div className={styles.providerAddBar}>
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={() => { setPrefilledId(null); setAddOpen(true); }}
-        >
-          + Add provider
-        </Button>
+      {/* Available — system-shipped (Ollama + future CLI manifests).
+          Auto-detected, no key needed. Cannot be edited or deleted. */}
+      <div className={styles.providerGroup}>
+        <h3 className={styles.providerGroupTitle}>Available</h3>
+        <p className={styles.providerGroupHint}>
+          Auto-detected on this device. No setup required.
+        </p>
+        {builtinRows.length === 0 ? (
+          <p className={styles.providersFallback}>No detected providers.</p>
+        ) : (
+          <ul className={styles.providerList}>{builtinRows.map(renderRow)}</ul>
+        )}
       </div>
+
+      {/* Your providers — user-added via AddModal. Full CRUD. */}
+      <div className={styles.providerGroup}>
+        <h3 className={styles.providerGroupTitle}>Your providers</h3>
+        <p className={styles.providerGroupHint}>
+          BYOK endpoints you added. Stored in the local encrypted vault.
+        </p>
+        {userRows.length === 0 ? (
+          <p className={styles.providersFallback}>
+            No BYOK providers yet. Add one to use Anthropic, OpenAI, Volc, etc.
+          </p>
+        ) : (
+          <ul className={styles.providerList}>{userRows.map(renderRow)}</ul>
+        )}
+        <div className={styles.providerAddBar}>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => { setPrefilledId(null); setAddOpen(true); }}
+          >
+            + Add provider
+          </Button>
+        </div>
+      </div>
+
       {error && (
         <p className={styles.providerError} role="alert">{error}</p>
       )}
-      <p className={styles.providerHint}>
-        Advanced: edit <code>~/.pi/agent/models.json</code> for full
-        control over models, endpoints, and routing.
-      </p>
       {addOpen && (
         <AddModal
           prefill={prefilledId ? providers.find((p) => p.id === prefilledId) ?? null : null}
@@ -933,6 +990,9 @@ interface IrisyRoleSpec {
   description: string;
 }
 
+// ADR-002 substrate § provider v11 §3.11 (2026-06-07): coding.primary
+// row added so users can bind a separate provider (e.g. Claude/Codex)
+// for the Coding L1 workspace native Pi TUI, independent of Irisy chat.
 const IRISY_ROLES: ReadonlyArray<IrisyRoleSpec> = [
   {
     id: 'irisy.primary',
@@ -945,6 +1005,12 @@ const IRISY_ROLES: ReadonlyArray<IrisyRoleSpec> = [
     label: 'Irisy fallback',
     description:
       'CTRL-managed safety net so a fresh install without a CLI still has a working AI path.',
+  },
+  {
+    id: 'coding.primary',
+    label: 'Coding primary',
+    description:
+      'Provider used when you click the Coding L1 chip. Spawns Pi native TUI with this provider — independent of Irisy chat. Recommended: Claude (BYOK API key or Pro subscription via Pi OAuth).',
   },
 ];
 

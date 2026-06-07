@@ -12,6 +12,11 @@ import type { ProviderManagedBy } from './irisy-prompts';
 /** Mirrors Rust `ProviderKind` (manifest.rs). */
 export type ProviderKind = 'cli_one_shot' | 'cli_claude_persistent' | 'http_api';
 
+/** Where the manifest came from. PWA Settings groups by source —
+ *  `builtin` = system-shipped (Ollama and future CLI manifests),
+ *  `user` = added via PWA AddModal (BYOK). bao 2026-06-06. */
+export type ProviderSource = 'builtin' | 'user';
+
 /** One row in the Providers picker. Mirrors Rust `ProviderListRow`. */
 export interface ProviderListRow {
   id: string;
@@ -25,6 +30,7 @@ export interface ProviderListRow {
   /** True iff credentials resolved + adapter constructed without error. */
   ready: boolean;
   load_error: string | null;
+  source: ProviderSource;
   capabilities: string[];
   managed_by: ProviderManagedBy;
 }
@@ -35,7 +41,9 @@ export async function providerList(): Promise<ProviderListRow[]> {
 }
 
 /** Canonical role ids. Mirrors Rust `Consumer::id()`. */
-export type IrisyRole = 'irisy.primary' | 'irisy.fallback';
+// ADR-002 substrate § provider v11 §3.11 (2026-06-07): coding.primary
+// added — Coding L1 workspace spawns Pi native TUI with its own provider.
+export type IrisyRole = 'irisy.primary' | 'irisy.fallback' | 'coding.primary';
 
 export interface ProviderSetActiveArgs {
   role: IrisyRole | string;
@@ -45,15 +53,38 @@ export interface ProviderSetActiveArgs {
 export interface ProviderSetActiveReply {
   /** First chunk of the 1-token trial chat (verification proof). */
   trial_reply: string;
+  /** ADR-002 substrate § provider v10 §3.9 (2026-06-07). Resolved model id
+   *  from the provider manifest's first declared model — fed into Pi's
+   *  in-place `setModel(provider_id, model_id)` for 0-ms swap. */
+  model_id: string | null;
 }
 
 /**
  * Bind a provider to a role after a successful 1-token trial chat.
  * On verify failure the registry keeps the previous binding intact and
  * the promise rejects with the provider's error message.
+ *
+ * ADR-002 substrate § provider v10 §3.9 (2026-06-07). After the SSOT
+ * mutation succeeds + trial chat passes, push the new (provider, model)
+ * pair into the running Pi session via `setModel` RPC — swaps Pi's
+ * active model in place (0 ms, NO daemon respawn, session preserved).
+ *
+ * Failure to call Pi setModel is non-fatal: SSOT is the source of truth
+ * and the next Pi spawn will pick the new binding up. The promise still
+ * resolves so Settings UX flows.
  */
 export async function providerSetActive(
   args: ProviderSetActiveArgs,
 ): Promise<ProviderSetActiveReply> {
-  return invoke<ProviderSetActiveReply>('provider_set_active', { args });
+  const reply = await invoke<ProviderSetActiveReply>('provider_set_active', { args });
+  if (args.role === 'irisy.primary' && reply.model_id) {
+    try {
+      const { setModel } = await import('./usePiRpc');
+      await setModel(args.provider_id, reply.model_id);
+    } catch (e) {
+      // SSOT mutated; respawn path picks it up. Log + continue.
+      console.warn('[provider-config] Pi setModel in-place swap skipped:', e);
+    }
+  }
+  return reply;
 }

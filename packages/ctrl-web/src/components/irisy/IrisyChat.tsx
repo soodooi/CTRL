@@ -113,112 +113,16 @@ const SEED_PROMPTS: readonly string[] = [
   'Help me make a clipboard mcp.',
 ];
 
-// Pi emits tool invocations as XML-like markup inside assistant turns
-// (see lib/irisy-prompts.ts IRISY_SYSTEM_DEFAULT). The PWA must parse
-// these out of the chat stream so the user sees a compact card instead
-// of raw `<call name="..."><...></call>` text. ADR-003 §7 chat surface
-// expectations — Irisy is a polished assistant, not a console.
-type ChatSegment =
-  | { kind: 'text'; text: string }
-  | { kind: 'call'; tool: string; args: string; closed: boolean }
-  | { kind: 'result'; tool: string; body: string };
-
-function parseChatSegments(content: string): ChatSegment[] {
-  // Both regexes are local-scope to avoid module-level shared `lastIndex`
-  // landmines (review P1: a module-level g-flag regex leaks state across
-  // calls if any early-return forgets to reset it). Local instances reset
-  // on every call by construction; allocation cost is sub-microsecond.
-  const blockRe = /<(call-result|call)\s+(?:name|for)="([^"]+)"\s*>([\s\S]*?)<\/\1>/g;
-  const partialOpenRe = /<(call-result|call)\s+(?:name|for)="([^"]+)"\s*>([\s\S]*)$/;
-  const segments: ChatSegment[] = [];
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-  while ((match = blockRe.exec(content)) !== null) {
-    if (match.index > cursor) {
-      segments.push({ kind: 'text', text: content.slice(cursor, match.index) });
-    }
-    const tag = match[1] ?? '';
-    const name = match[2] ?? '';
-    const body = (match[3] ?? '').trim();
-    if (tag === 'call') {
-      segments.push({ kind: 'call', tool: name, args: body, closed: true });
-    } else {
-      segments.push({ kind: 'result', tool: name, body });
-    }
-    cursor = blockRe.lastIndex;
-  }
-  const tail = content.slice(cursor);
-  const partial = partialOpenRe.exec(tail);
-  if (partial) {
-    const head = tail.slice(0, partial.index);
-    if (head.length > 0) segments.push({ kind: 'text', text: head });
-    const tag = partial[1] ?? '';
-    const name = partial[2] ?? '';
-    const body = partial[3] ?? '';
-    if (tag === 'call') {
-      segments.push({ kind: 'call', tool: name, args: body, closed: false });
-    } else {
-      segments.push({ kind: 'result', tool: name, body });
-    }
-  } else if (tail.length > 0) {
-    segments.push({ kind: 'text', text: tail });
-  }
-  return segments;
-}
-
-interface ToolCardProps {
-  tool: string;
-  body: string;
-  direction: 'call' | 'result';
-  running: boolean;
-}
-
-// React.memo so streaming chunks on the parent assistant bubble don't
-// re-render every ToolCard in the message — only the currently streaming
-// card whose `running` prop flips. Without this, every delta on a long
-// turn forces a full re-render of all prior tool cards (review P2).
-const ToolCard = memo(function ToolCard({
-  tool,
-  body,
-  direction,
-  running,
-}: ToolCardProps): ReactElement {
-  const [open, setOpen] = useState(false);
-  const arrow = direction === 'call' ? '→' : '←';
-  const title = `${arrow} ${tool}`;
-  const formatted = useMemo(() => {
-    const trimmed = body.trim();
-    if (!trimmed) return '';
-    try {
-      return JSON.stringify(JSON.parse(trimmed), null, 2);
-    } catch {
-      return trimmed;
-    }
-  }, [body]);
-  const hasBody = formatted.length > 0;
-  return (
-    <div className={styles.toolCard}>
-      <button
-        type="button"
-        className={styles.toolCardHeader}
-        onClick={() => setOpen((v) => !v)}
-        disabled={!hasBody}
-        aria-expanded={open}
-      >
-        <span className={styles.toolCardChevron}>
-          {hasBody ? (open ? '▾' : '▸') : '·'}
-        </span>
-        <span className={styles.toolCardTitle}>{title}</span>
-        {running && (
-          <span className={styles.toolCardRunning} aria-live="polite">
-            running…
-          </span>
-        )}
-      </button>
-      {open && hasBody && <pre className={styles.toolCardBody}>{formatted}</pre>}
-    </div>
-  );
-});
+// ADR-002 substrate § provider v9 §3.6 (2026-06-06). RETIRED: PWA-side
+// `<call name="X">{...}</call>` XML parser + ToolCard split-render.
+// Under v9 Pi spawns with the real BYOK provider+model directly, so it
+// uses each provider's NATIVE function-calling protocol (Anthropic
+// tool_use blocks / OpenAI tool_calls) — no XML scaffolding in the
+// assistant's text stream. Tool invocations surface to the PWA as
+// separate `tool_use` / `tool_result` message entries from Pi's
+// getMessages RPC, which the dispatch upstream routes to the
+// CustomDisplayMessage render path, not into AssistantBubble.
+// AssistantBubble now renders assistant text as straight markdown.
 
 // Translate Pi RPC error strings into a friendlier first line. Pi's
 // rpc-client throws raw strings like "Timeout waiting for response to
@@ -280,15 +184,23 @@ const AssistantBubble = memo(function AssistantBubble({
   onSave,
 }: AssistantBubbleProps): ReactElement {
   const isStreaming = message.streaming;
-  const segments = useMemo(
-    () => parseChatSegments(message.content),
+  // ADR-002 substrate § provider v9 §3.6 (2026-06-06). Tool calls now
+  // arrive as separate Pi messages routed to CustomDisplayMessage; the
+  // text bubble only ever holds the assistant's prose. Cleanup pipeline:
+  // strip qwen-style "Goal / Progress / Done / Next Steps" reasoning
+  // scaffolds + <thinking> blocks + bare narration ("Calling …") +
+  // internal codenames (Pi / Claude / Ollama / vault_* / install_mcp /
+  // brain_status). 7B models can't suppress via prompt — render-side
+  // filter is the backstop. See `lib/irisy-render-filter.ts` for rules
+  // + SOTA verbatim quotes (Cursor "NEVER refer to tool names", Cline
+  // "STRICTLY FORBIDDEN from starting with 'Great'", Claude Code "less
+  // than 4 lines"). Brainstorm: `.olym/brainstorm/irisy-reply-specs-
+  // 2026-06-04.md` §2.
+  const cleaned = useMemo(
+    () => cleanReplyText(message.content),
     [message.content],
   );
-  const hasRenderable =
-    message.content.length > 0 &&
-    segments.some((s) =>
-      s.kind === 'text' ? s.text.trim().length > 0 : true,
-    );
+  const hasRenderable = cleaned.length > 0;
   return (
     <article
       className={`${styles.assistantBubble} ${styles.markdownBody}`}
@@ -296,52 +208,7 @@ const AssistantBubble = memo(function AssistantBubble({
     >
       <div className={styles.bubbleContent}>
         {hasRenderable ? (
-          segments.map((seg, idx) => {
-            if (seg.kind === 'text') {
-              // bao 2026-06-04: strip qwen-style "Goal / Progress /
-              // Done / Next Steps" reasoning scaffolds + <thinking>
-              // blocks + bare narration ("Calling list_local_skills...")
-              // + internal codenames (Pi / Claude / Ollama / vault_*
-              // / install_mcp / brain_status). 7B models can't
-              // suppress these via prompt — render-side filter is the
-              // backstop. See `lib/irisy-render-filter.ts` for the
-              // exact rules + SOTA verbatim quotes that informed them
-              // (Cursor "NEVER refer to tool names", Cline "STRICTLY
-              // FORBIDDEN from starting with 'Great'", Claude Code
-              // "less than 4 lines"). Brainstorm doc:
-              // `.olym/brainstorm/irisy-reply-specs-2026-06-04.md` §2.
-              const cleaned = cleanReplyText(seg.text);
-              if (cleaned.length === 0) return null;
-              return (
-                <ReactMarkdown
-                  key={`${message.id}-t-${idx}`}
-                  remarkPlugins={[remarkGfm]}
-                >
-                  {cleaned}
-                </ReactMarkdown>
-              );
-            }
-            if (seg.kind === 'call') {
-              return (
-                <ToolCard
-                  key={`${message.id}-c-${idx}`}
-                  tool={seg.tool}
-                  body={seg.args}
-                  direction="call"
-                  running={!seg.closed}
-                />
-              );
-            }
-            return (
-              <ToolCard
-                key={`${message.id}-r-${idx}`}
-                tool={seg.tool}
-                body={seg.body}
-                direction="result"
-                running={false}
-              />
-            );
-          })
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
         ) : isStreaming ? (
           <div className={styles.thinking}>
             <span className={styles.thinkingDots}>
@@ -698,12 +565,12 @@ export function IrisyChat(): React.ReactElement {
       setMessages((prev) => [...prev, userMsg]);
       setInput('');
 
-      // bao 2026-06-04: Pi emits `<call name="X">{...}</call>` blocks to
-      // invoke local tools (prompt-taught XML protocol in
-      // bao 2026-06-05 Pi-first: Pi runs the full agent loop (tool
-      // dispatch + multi-hop tool_result feedback + safety cap) inside
-      // its own RPC server. PWA sends one user turn, observes the
-      // assistant's final text. No PWA-side MAX_TOOL_ITERS guard needed.
+      // ADR-002 substrate § provider v9 §3.6 (2026-06-06). Pi runs the
+      // full agent loop (native function calling via Anthropic tool_use
+      // / OpenAI tool_calls per the spawned provider, tool dispatch,
+      // multi-hop tool_result feedback, safety cap) inside its own RPC
+      // server. PWA sends one user turn, observes the assistant's final
+      // text. No PWA-side iter guard, no XML scaffolding in the stream.
       const history: LLMMessage[] = [
         {
           role: 'system',
