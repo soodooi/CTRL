@@ -15,18 +15,19 @@ sections:
   - { id: mcp-bus,              source: orig-013 }
   - { id: composition,          source: orig-024 }
   - { id: vault,                source: new-2026-06-01, note: "kernel vault primitives + feature-layer boundary; Daily Note + Sourcing are feature-layer (Irisy + frontend)" }
-  - { id: smart-table-output,   source: new-2026-06-03, note: "keycap output unification — single SmartTable per keycap, schema in manifest output_capture" }
+  - { id: smart-table-output,   source: new-2026-06-03, note: "mcp output unification — single SmartTable per mcp, schema in manifest output_capture" }
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
 changelog:
-  - v1 2026-05-31: module reorg — merged orig-003 (Pi brain) + orig-004 (capability surface) + orig-007 (crypto) + orig-012 (SubprocessActor + portable-pty) + orig-013 (kernel-as-MCP-server) + orig-024 (6-axis composition). **NEW** § provider — role routing (irisy.primary/fallback, keycap.default) + VMark-style PATH detect + introspection (brain_status). Closes the "Irisy doesn't know its own stack" gap (bao 2026-05-31).
+  - v12 2026-06-07: **terminology unification — "keycap" retired, "mcp" is the system-wide name.** bao 2026-06-07 "要不都叫 mcp 吧 不然好像你不理解, 用户也不理解" / "那你全量改吧". Memory `decision_keycap_collapses_to_mcp_meta_ux_layer` (2026-06-05) extended from doc-level to symbols + filenames + workspace package names. Mechanical changes: 126 source files sed-replaced + 13 file renames + 7 follow-up filename renames + 2 workspace package renames (`@ctrl/keycap-sdk` → `@ctrl/mcp-sdk`, `packages/ctrl-keycaps/` → `packages/ctrl-mcps/`) + 8 ADRs sed-rewritten + CLAUDE.md "Keycap manifest model" section retitled. Memory slug filenames preserved (e.g. `decision_pi_is_sole_brain_hermes_is_keycap.md` — those are file paths, not concept names). `mcp` now denotes both the manifest model in ADR §7 composition v1 AND the runtime substrate in ADR-004 § execution v1; the two are the same thing under one vocabulary. Verified: cargo + tsc green; commit refactor c45907a.
+  - v1 2026-05-31: module reorg — merged orig-003 (Pi brain) + orig-004 (capability surface) + orig-007 (crypto) + orig-012 (SubprocessActor + portable-pty) + orig-013 (kernel-as-MCP-server) + orig-024 (6-axis composition). **NEW** § provider — role routing (irisy.primary/fallback, mcp.default) + VMark-style PATH detect + introspection (brain_status). Closes the "Irisy doesn't know its own stack" gap (bao 2026-05-31).
   - v2 2026-05-31: § provider amendments (bao 3-校准 in implementation discussion):
-      (1) drop `keycap.default` role — keycap binds provider via manifest `brain_capabilities`, not via substrate-wide default (2-role model: irisy.primary + irisy.fallback only).
+      (1) drop `mcp.default` role — mcp binds provider via manifest `brain_capabilities`, not via substrate-wide default (2-role model: irisy.primary + irisy.fallback only).
       (2) `irisy.primary` MUST be a detected user CLI (`claude > codex > gemini > aider`); removed "else volc" auto-fallback — primary path is augmentation, CTRL doesn't silently spend money there.
       (3) `irisy.fallback` is the CTRL-managed slot (CTRL pays Volc Doubao bill, future = ctrl-brand provider). Volc now has two manifest ids: `volc` (CTRL fallback, ctrl-managed creds) and `volc-byok` (user-elected, user keychain). brain_status() exposes `managed_by: "user" | "ctrl"`. Brand label "CTRL Cloud" hides codename from Irisy responses + failover messages.
   - v3 2026-06-01: **NEW** §8 Vault — kernel primitive endpoints (21 commands) + explicit feature-layer boundary: Daily Note + Sourcing inbox are **feature-layer** (Irisy + frontend wire them via `vault/.ctrl/*.yaml` + `vault/templates/*.md`), kernel does not know about either concept. Retires frontend O(N) backlink scan + 3-pane VaultBrowser shell. §6 MCP tools list extended from 11 to 28 (kernel exposes vault.{backlinks,tags,notes_by_tag,mentions,orphans,broken_links,graph_data,rename,move,create_folder,set_starred,aliases,watch} on top of existing 8). Wiki-link Tiptap extension cherry-picked from seahop/kairo (MIT, Sean Hopkins 2026) — see `THIRD_PARTY_LICENSES/kairo-MIT.txt`. Decision lock + sourcing workflow design: `.olym/brainstorm/vault-md-management-2026-06-01.md`.
   - v4 2026-06-02: §8.6 shell integration amended — bao realignment "Vault is substrate, Notes is the L1 app". L1 chip relabelled **Notes** (id `notes`, path `/notes`); chip click uses `openSystemTab({kind:'route', path:'/notes'})` matching Pool/Coding. New `routes/notes.tsx` renders `<NotesApp />` (3-pane: NotesActions top bar + NotesTree left + NotesEditor center + NotesBacklinks right). Components live in `packages/ctrl-web/src/components/notes/*` as standalone files for future Irisy-app-system reuse. L2 column reservation kept but **no longer flipped for Notes** — the app composes inside a workspace tab body, not across the shell grid. §8.7 retirements extended: `L2VaultPanel.{tsx,module.css}` deleted, `BacklinksDrawer.{tsx,module.css}` deleted (backlinks live inside NotesApp right column), `routes/vault.tsx` deleted (replaced by `routes/notes.tsx`), Rust `expand_workspace_window_if_collapsed` command deleted. Editor lib forward-compat invariant: `@tiptap/*` + `@uiw/react-codemirror` + `mermaid` + `gray-matter` consumed as npm packages — thin React wrappers, no fork, no vendor.
-  - v5 2026-06-03: **NEW §9 smart-table-output** + **NEW §10 embeddings**. §9 unifies keycap output capture as one SmartTable per keycap (markdown table file at `notes/keycap-runs/<keycap_id>.table.md`, schema in keycap manifest `output_capture`); supersedes "1-run-1-file sidecar markdown" idea from `.olym/brainstorm/openclaw-compat-2026-06-03.md` — Notion-style table beats sidecar markdown for browsability and inline edit. P4 product-decision (`.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`) locks "default-on, settings-wide kill-switch, per-keycap manifest opt-out". §10 adds the embeddings substrate the product spec depends on (Layer 3 Connect + Layer 4 Synthesize): local Ollama default with transparent fallback prompt (per product P1), SQLite BLOB storage (no sqlite-vss dep — flat cosine is fine for vault-scale up to ~50K notes), 5 new vault.* MCP tools, hybrid `vault.search` mode. Eight new acceptance items; brainstorm: `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`.
+  - v5 2026-06-03: **NEW §9 smart-table-output** + **NEW §10 embeddings**. §9 unifies mcp output capture as one SmartTable per mcp (markdown table file at `notes/mcp-runs/<mcp_id>.table.md`, schema in mcp manifest `output_capture`); supersedes "1-run-1-file sidecar markdown" idea from `.olym/brainstorm/openclaw-compat-2026-06-03.md` — Notion-style table beats sidecar markdown for browsability and inline edit. P4 product-decision (`.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`) locks "default-on, settings-wide kill-switch, per-mcp manifest opt-out". §10 adds the embeddings substrate the product spec depends on (Layer 3 Connect + Layer 4 Synthesize): local Ollama default with transparent fallback prompt (per product P1), SQLite BLOB storage (no sqlite-vss dep — flat cosine is fine for vault-scale up to ~50K notes), 5 new vault.* MCP tools, hybrid `vault.search` mode. Eight new acceptance items; brainstorm: `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`.
   - v6 2026-06-04: **NEW §11 audit-ledger** — substrate primitive for self-evolution (ADR-001 §8) across the 6 loops. Reuses `kernel/persistence.rs` SQLite event store with a new event kind `system.self_evolution`; immutable rows record (loop_id, stage, typed_action, evidence, diagnosis, verify_result, autonomy_level). Queryable from Settings → 自我升级 → 最近事件 tab. Prune policy: 7 d high-resolution + 90 d day-level aggregate + month aggregate beyond (bao 2026-06-04 wave Q5). Per bao "整个系统都要自我升级成长 ... 沉, 唯一真相, 要经常整理 ADR".
   - v7 2026-06-04: **§1 brain amendment — §1.1 ctrl-pi-bridge full extension surface** — bridge v1 used only `pi.registerProvider`, leaving Pi with 0 native tools (real-world Pi told user "我没有 skill 系统"). v7 expands bridge to 4 surfaces: `registerProvider` (existing) + `registerTool` × ~10 native tools (BYOK frontier path) + `on('before_agent_start')` chain-injecting ADR-005 §6 capability segments + `on('tool_call')` inspector stub (5-identical-calls loop guard) + `on('resources_discover')` exposing `~/.claude/skills/` as native Pi Skills. ctrl-pi-plugin spawn arg changes `--no-tools` → `--no-builtin-tools` so extension-registered tools stay loaded but Pi's default 7 (read/write/edit/bash/grep/find/ls) are off (kernel substrate stays the gatekeeper for vault writes etc). Provider-aware dispatch in `commands/irisy_chat.rs`: BYOK frontier ⇒ native tools, non-frontier (Volc/Qwen/Llama) ⇒ existing PWA XML loop (Cline operates under same constraint). 0 transitive deps invariant preserved via inline TypeBox mock. Paired with ADR-005 v4 §7. Brainstorm: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2.
   - v8 2026-06-06: **§1 + §3 system-level provider redesign — single SSOT, Pi single alias**. Earlier v8 draft (router `last_routed` mirror register + `brain_status.last_routed` field) RETRACTED as patch-style: it added a 4th routing state on top of 3 racing ones (active-providers.json / Pi spawn intent / setModel target / proposed last_routed). Root issue is the 3-state race itself. Locks: (1) **§3.5 SSOT** — `~/.ctrl/state/active-providers.json` is the ONLY truth for routed provider/model. Router reads it per `/text-chat` request (mtime-watched in-memory cache). No mirror state, no `last_routed`, no `brain_status.last_routed`. (2) **§1.2 Pi single alias** — Pi spawns ALWAYS with `--provider ctrl-bridge --model default`. `ctrl-pi-plugin` injects a synthetic `ctrl-bridge` provider into `~/.pi/agent/models.json` at spawn time (baseUrl points at kernel `/text-chat`, apiKey placeholder) so Pi's startup `--provider` validation passes before extensions load. Post-spawn `setModel(active, firstModel)` switch path RETIRED. `PI_PROVIDER` / `PI_MODEL` / `CTRL_TARGET_PROVIDER` env vars RETIRED. Pi has zero visibility into the real provider — it lives entirely in the router via SSOT read. (3) **§3.5 failover is transient override, not state mutation** — on primary call failure router routes the SAME request to fallback + emits Tauri event `provider:routing-override { active, reason, ts }`; on next successful primary call emits `provider:routing-restored`. `active-providers.json` is never written by failover (intent is not stolen). (4) **§3.7 chip + Irisy self-report** — PWA `ChatHeaderControls` + ctrl-pi-bridge `runtimeTruthBlock` read `invoke('get_active_providers')` + subscribe `provider:routing-override` / `active-providers-changed` Tauri events. `Pi.getState` is NEVER consulted for provider/model display. `process.env.PI_PROVIDER` is NEVER read. `brain_status` `last_routed` field RETIRED (added in v8 draft, removed in v8 final). Closes 3-state race that caused v0.1.170-173 chip patches + "Irisy 连真相都不知道" (bao 2026-06-06 "我只要系统, 正确的, 不要修修补补").
@@ -56,7 +57,7 @@ v1 used **only** `pi.registerProvider`. v2 uses 4 Pi ExtensionAPI surfaces to cl
 | Surface | Used for | Closes |
 |---|---|---|
 | `pi.registerProvider('ctrl-bridge', {streamSimple})` | LLM calls route back to kernel provider chain (unchanged v1 behaviour) | — (substrate seam) |
-| `pi.registerTool<TParams>({...})` × ~10 tools | Native Pi function calling for BYOK frontier path. Tools = thin HTTP wrappers to kernel commands (vault_*, list_local_skills, install_keycap, keycap_run, brain_status) | B1 (Pi 0 tool) |
+| `pi.registerTool<TParams>({...})` × ~10 tools | Native Pi function calling for BYOK frontier path. Tools = thin HTTP wrappers to kernel commands (vault_*, list_local_skills, install_mcp, mcp_run, brain_status) | B1 (Pi 0 tool) |
 | `pi.on('before_agent_start', ...)` | Returns `{systemPrompt}` — chain-injects ADR-005 §6 capability segments per turn based on keyword pre-screen | B3 (monolithic prompt) |
 | `pi.on('tool_call', ...)` | Inspector stub — vetoes repeated identical calls (loop guard); future home for ADR-006 §4 policy-envelope enforcement | safety baseline |
 | `pi.on('resources_discover', ...)` | Returns `{skillPaths: [...]}` so Pi auto-loads `~/.claude/skills/` as native Pi Skills (`/skill:name` slash commands). Shared discovery helper with kernel `list_local_skills` (one SSOT). | duplicate skill discovery code |
@@ -108,7 +109,7 @@ ctrl-pi-bridge extension then `pi.registerProvider('ctrl-bridge', { streamSimple
 
 ## §2 Capability surface — 10 namespaces / 28 methods (frequency ≥3 rule + category exception)
 
-Methods enter the kernel surface iff consumed by ≥3 keycaps across the v1 corpus, **OR** they are `mcp.*` / `platform.notify` (infrastructure), **OR** they belong to a brain-capability category (text / image / audio / embed) — category exception so multi-modal brain ships coherently (§7 amends frequency ≥3).
+Methods enter the kernel surface iff consumed by ≥3 mcps across the v1 corpus, **OR** they are `mcp.*` / `platform.notify` (infrastructure), **OR** they belong to a brain-capability category (text / image / audio / embed) — category exception so multi-modal brain ships coherently (§7 amends frequency ≥3).
 
 | # | Namespace | v1 methods |
 |---|---|---|
@@ -123,7 +124,7 @@ Methods enter the kernel surface iff consumed by ≥3 keycaps across the v1 corp
 | 9 | `mcp` | `spawn`, `invoke_tool`, `list_tools`, `notifications` |
 | 10 | `platform` | `notify`, `hotkey`, `window_list`, `window_focus`, `os_filter` |
 
-v1.1 promotion candidates (keycap-local until 2nd consumer): `process.spawn`, `network.local_rpc`, `oauth.broker`, `stss.{publish,subscribe}`.
+v1.1 promotion candidates (mcp-local until 2nd consumer): `process.spawn`, `network.local_rpc`, `oauth.broker`, `stss.{publish,subscribe}`.
 
 **Implementation**: `src-tauri/src/kernel/capability.rs` + `commands/mod.rs` registry. Hand-written Rust + `packages/ctrl-kernel-sdk` TS type-gen.
 
@@ -181,10 +182,10 @@ capabilities = ["text.chat"]
 
 
 
-**v2 amendment (bao 2026-05-31)**: dropped `keycap.default` role (keycap binds provider via manifest `brain_capabilities`, not via substrate-wide default). `irisy.primary` MUST be a detected user CLI — no auto-fallback to a paid provider. `irisy.fallback` is the CTRL-managed slot (paid by CTRL).
+**v2 amendment (bao 2026-05-31)**: dropped `mcp.default` role (mcp binds provider via manifest `brain_capabilities`, not via substrate-wide default). `irisy.primary` MUST be a detected user CLI — no auto-fallback to a paid provider. `irisy.fallback` is the CTRL-managed slot (paid by CTRL).
 
 ```rust
-pub enum Consumer { IrisyPrimary, IrisyFallback, Custom(String) }  // v2: dropped KeycapDefault
+pub enum Consumer { IrisyPrimary, IrisyFallback, Custom(String) }  // v2: dropped McpDefault
 
 pub struct RouteChain {
     primary: ProviderId,
@@ -210,7 +211,7 @@ Persisted at `~/.ctrl/state/active-providers.json` (v2 schema):
 }
 ```
 
-v1 → v2 migration: if file has the old single bucket `{"text.chat": "<id>"}`, the loader writes `roles.irisy.primary = <id>` and `roles.irisy.fallback = "volc"`. If file has v1 `roles.keycap.default`, the loader drops that key.
+v1 → v2 migration: if file has the old single bucket `{"text.chat": "<id>"}`, the loader writes `roles.irisy.primary = <id>` and `roles.irisy.fallback = "volc"`. If file has v1 `roles.mcp.default`, the loader drops that key.
 
 `/text-chat` SSE endpoint (port 17878) accepts `?consumer=<role>` query param. Pi bridge sets `consumer=irisy.primary`; on stream error/timeout, kernel auto-falls-back through `RouteChain.fallbacks` (default: `["volc"]`) + emits `provider:failover { from, to, reason }` event.
 
@@ -237,7 +238,7 @@ v1 → v2 migration: if file has the old single bucket `{"text.chat": "<id>"}`, 
 
 
 
-**v2 amendment**: dropped `keycap.default` from the providers map. Fallback `volc` label = `"CTRL Cloud"` (brand-facing), not `"Volc Doubao"` (codename) — keeps user-facing layer abstracted so the future ctrl-brand swap is invisible.
+**v2 amendment**: dropped `mcp.default` from the providers map. Fallback `volc` label = `"CTRL Cloud"` (brand-facing), not `"Volc Doubao"` (codename) — keeps user-facing layer abstracted so the future ctrl-brand swap is invisible.
 
 Tauri command `brain_status()` (health view — NOT a routing-truth view; for routing-truth see `get_active_providers()`):
 ```json
@@ -368,7 +369,7 @@ v1 ships no mesh layer (memory `feedback_reuse_existing_capability_first` 2026-0
 - **Events** in: `Subprocess.{Stdin, Resize, Signal}`. Events out: `Subprocess.{Stdout, Exit, Spawned}`.
 - **Manifest** `ActorManifest.prototype = "subprocess"` carries `{ command, args, env, cwd, pty: {cols,rows} }`.
 - **Supervisor**: single SubprocessActor crash never crashes kernel (panic catch + Error Event). 256 MB RAM cap per actor (OS rlimit / Job Object).
-- **Used by**: Code Space tile keycaps (claude-code / cursor / aider / bash), CLI providers (§3 adapters).
+- **Used by**: Code Space tile mcps (claude-code / cursor / aider / bash), CLI providers (§3 adapters).
 
 ## §6 MCP bus — kernel as MCP server :17873
 
@@ -403,7 +404,7 @@ Before v10 the MCP server module existed but `serve()` was never called. v10 wir
 
 ## §7 Composition — 6-axis manifest (single substrate law)
 
-Keycap manifest declares 6 axes; runtime atomically provisions all declared resources at install (no first-run wizard). Single law replaces 4-way schema drift.
+Mcp manifest declares 6 axes; runtime atomically provisions all declared resources at install (no first-run wizard). Single law replaces 4-way schema drift.
 
 | # | Axis | What |
 |---|---|---|
@@ -411,15 +412,15 @@ Keycap manifest declares 6 axes; runtime atomically provisions all declared reso
 | 1 | `capabilities` | subset of §2 namespaces + `file.{read,write}_allowlist` |
 | 2 | `brain_capabilities` | typed multi-provider (text.chat / image.generate / audio.stt …) with optional `provider_pin` |
 | 3 | `mcp_servers` | Pattern D bindings (spawn + tool allowlist) |
-| 4 | `skills` | SKILL.md refs resolved via 3-tier chain (`vault/skills/` > `~/.claude/skills/` > keycap bundle) — first hit wins, no merge |
+| 4 | `skills` | SKILL.md refs resolved via 3-tier chain (`vault/skills/` > `~/.claude/skills/` > mcp bundle) — first hit wins, no merge |
 | 5 | `ui_surface` | 9-enum (none/notification/modal/clipboard/html-output/chat-stream/picker/form/canvas) |
 | 6 | `cap_asset` | install-time provisioning: `cap_asset.files` (immutable bundle) + `cap_asset.vault` (user-facing folder + seed) |
 
-**Persona lives inside `cap_asset.files`** as per-keycap markdown — not a separate axis. Vault override `vault/keycaps/<id>/persona.md` wins; single lookup, no global persona library.
+**Persona lives inside `cap_asset.files`** as per-mcp markdown — not a separate axis. Vault override `vault/mcps/<id>/persona.md` wins; single lookup, no global persona library.
 
-**SSOT**: `packages/ctrl-keycap-sdk/src/manifest-schema.ts`. Other representations are derivatives (PWA Zod re-exports; Rust serde mirrors with golden file test).
+**SSOT**: `packages/ctrl-mcp-sdk/src/manifest-schema.ts`. Other representations are derivatives (PWA Zod re-exports; Rust serde mirrors with golden file test).
 
-**Builtin vs user keycap** = one metadata flag. `manifest.builtin = true` → ships from `packages/ctrl-keycaps/builtin/<id>/`, re-seeds on every launch (self-repairs deletion). `builtin = false` → `~/.ctrl/keycaps/<id>/`, uninstallable.
+**Builtin vs user mcp** = one metadata flag. `manifest.builtin = true` → ships from `packages/ctrl-mcps/builtin/<id>/`, re-seeds on every launch (self-repairs deletion). `builtin = false` → `~/.ctrl/mcps/<id>/`, uninstallable.
 
 **Multi-modal category exception** to §2 frequency ≥3 rule: image.generate / image.edit / image.understand / audio.stt enter v1 even with 1 consumer each — "做海报得有 image 大模型, 我们是双重 brain" (bao 2026-05-30). Frequency rule still governs non-brain namespaces.
 
@@ -441,12 +442,12 @@ Keycap manifest declares 6 axes; runtime atomically provisions all declared reso
 ~/Documents/CTRL/                   ← vault root (vault_root_path())
     notes/                          ← user main namespace
     daily/                          ← Daily Note convention (path_template-driven, §8.4)
-    sourcing/                       ← user inbox (clipboard/OCR/link keycaps write here)
+    sourcing/                       ← user inbox (clipboard/OCR/link mcps write here)
     templates/                      ← template files (user can fork; default 2 seeded)
         daily.md
         meeting.md
-    skills/                         ← per-keycap skill override (ADR-002 §7)
-    keycaps/<id>/                   ← per-keycap vault override (cap_asset.vault)
+    skills/                         ← per-mcp skill override (ADR-002 §7)
+    mcps/<id>/                   ← per-mcp vault override (cap_asset.vault)
     .ctrl/                          ← CTRL-managed config (hidden in tree, vault_list opt-in)
         sourcing.yaml
         daily-notes.yaml
@@ -492,7 +493,7 @@ Two user-facing features live above kernel — kernel does not know about them:
 
 **Daily Note** — `vault/.ctrl/daily-notes.yaml` defines `path_template`, `template` ref, `frontmatter_default`, `auto_create_on_first_write`. `lib/vault-conventions.ts` reads the yaml and composes the path; Irisy reads the same yaml when user asks "建今天的 daily". Both call `vault.write` low-level. Kernel sees only a `vault_write(daily/2026-06-01.md, body, fm)`.
 
-**Sourcing inbox + integration routine** — `vault/sourcing/` is just a folder; clipboard / OCR / link keycaps `vault.write` into it. `vault/.ctrl/sourcing.yaml` defines triggers (cron 9am + count threshold + manual command, all three concurrent), target root, review queue path. `vault/.ctrl/sourcing-prompt.md` is the user-editable prompt for Irisy's integration routine. Irisy runs the routine (composed from `vault.list(prefix='sourcing/')` + `vault.read` + `vault.tags` + `vault.search` + `vault.write` to `.ctrl/review-queue/<date>.md` + `platform.notify`). Kernel never touches the routine logic.
+**Sourcing inbox + integration routine** — `vault/sourcing/` is just a folder; clipboard / OCR / link mcps `vault.write` into it. `vault/.ctrl/sourcing.yaml` defines triggers (cron 9am + count threshold + manual command, all three concurrent), target root, review queue path. `vault/.ctrl/sourcing-prompt.md` is the user-editable prompt for Irisy's integration routine. Irisy runs the routine (composed from `vault.list(prefix='sourcing/')` + `vault.read` + `vault.tags` + `vault.search` + `vault.write` to `.ctrl/review-queue/<date>.md` + `platform.notify`). Kernel never touches the routine logic.
 
 This boundary is load-bearing: it lets users (advanced) replace Daily Note convention by editing yaml without code changes, and lets Irisy's integration prompt evolve via vault file edit. Plain-text philosophy satisfied (`decision_ctrl_obsidian_philosophy`).
 
@@ -509,7 +510,7 @@ Per memory `decision_vmark_not_substrate_use_open_stack` (no VMark sidecar):
 
 ### §8.6 Shell integration (ADR-003 frontend § shell v4) — v4 (bao 2026-06-02)
 
-Vault is the substrate; the L1 chip surfaces the **Notes** app (the first vault-using app). Future apps that read vault data (e.g. Weekly Review, Meeting Notes) can also register as L1 chips or as Irisy-spawned keycaps without entering this section.
+Vault is the substrate; the L1 chip surfaces the **Notes** app (the first vault-using app). Future apps that read vault data (e.g. Weekly Review, Meeting Notes) can also register as L1 chips or as Irisy-spawned mcps without entering this section.
 
 - L1 PrimaryRail chip = **Notes** (id `notes`, label `Notes`, path `/notes`, icon = open-book glyph).
 - Chip click uses `useWorkspaceStore.getState().openSystemTab({kind:'route', path:'/notes', title:'Notes'})` matching the Pool / Coding pattern. No L2 column flip, no auto window expand — the user opens the workspace via the ▾ chevron as elsewhere.
@@ -537,22 +538,22 @@ Vault is the substrate; the L1 chip surfaces the **Notes** app (the first vault-
 
 - **Wiki-link Tiptap extension**: ported from seahop/kairo, MIT License, Copyright (c) 2026 Sean Hopkins. Verbatim license at `THIRD_PARTY_LICENSES/kairo-MIT.txt`. Port location TBD (likely `packages/ctrl-web/src/components/viewers/tiptap-wikilink/`).
 
-## §9 Smart table output — keycap output unification (NEW v5, 2026-06-03)
+## §9 Smart table output — mcp output unification (NEW v5, 2026-06-03)
 
 > Spec: `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md` §5.6 + product decision P4
-> Driver: bao 2026-06-03 "keycap 走简单一点, 用智能表格列表形式怎么样"
+> Driver: bao 2026-06-03 "mcp 走简单一点, 用智能表格列表形式怎么样"
 
 ### §9.1 Lock
 
-Every keycap's run output is captured into **one** SmartTable per keycap, not one-file-per-run. On-disk shape: `vault/notes/keycap-runs/<keycap_id>.table.md` (vim test passes — opens as a normal markdown file with a frontmatter `schema:` + a markdown table body). The SmartTable substrate (`packages/ctrl-web/src/lib/smart-table.ts` + `components/viewers/SmartTableViewer.tsx`) already exists; §9 only adds the wiring from `keycap_runner` to it.
+Every mcp's run output is captured into **one** SmartTable per mcp, not one-file-per-run. On-disk shape: `vault/notes/mcp-runs/<mcp_id>.table.md` (vim test passes — opens as a normal markdown file with a frontmatter `schema:` + a markdown table body). The SmartTable substrate (`packages/ctrl-web/src/lib/smart-table.ts` + `components/viewers/SmartTableViewer.tsx`) already exists; §9 only adds the wiring from `mcp_runner` to it.
 
-### §9.2 Keycap manifest extension — `output_capture`
+### §9.2 Mcp manifest extension — `output_capture`
 
 ```yaml
-# keycap manifest (per-keycap)
+# mcp manifest (per-mcp)
 output_capture:
   enabled: true                                # default true; user can flip in Settings → Privacy
-  table_path: notes/keycap-runs/{keycap_id}.table.md
+  table_path: notes/mcp-runs/{mcp_id}.table.md
   schema:
     - { key: ts,           label: When,        type: date }
     - { key: input_excerpt, label: Input,       type: text }
@@ -563,27 +564,27 @@ output_capture:
     - { key: accepted,     label: Accepted,    type: checkbox }
 ```
 
-Standard 7 columns are recommended (consistency across keycaps); keycap authors can extend with extra columns (e.g. OCR adds `confidence`, translate adds `lang_pair`). Schema additions must be backward-compatible with existing rows — when `keycap_runner` writes a row missing a new column, the column cell is empty.
+Standard 7 columns are recommended (consistency across mcps); mcp authors can extend with extra columns (e.g. OCR adds `confidence`, translate adds `lang_pair`). Schema additions must be backward-compatible with existing rows — when `mcp_runner` writes a row missing a new column, the column cell is empty.
 
-### §9.3 keycap_runner wiring
+### §9.3 mcp_runner wiring
 
-After each `keycap.run` completes successfully:
+After each `mcp.run` completes successfully:
 
 1. Read manifest `output_capture` block. If absent or `enabled: false`, do nothing.
 2. Read existing `<table_path>` via `vault.read`. If missing, create with the manifest schema as frontmatter + an empty table body.
 3. Call `smart_table.appendRow({ ts: now_iso, input_excerpt: truncate(input, 80), output_excerpt: truncate(output, 80), provider, model, tokens, accepted: false, …extras })`.
 4. Write back via `vault.write`. Index automatically picked up by FTS5 (`vault_index.upsert`).
 
-Errors here are warn-logged but never block the keycap's own response — output capture is a side effect, never a gate.
+Errors here are warn-logged but never block the mcp's own response — output capture is a side effect, never a gate.
 
 ### §9.4 Archival
 
-When `<table_path>` exceeds **500 rows**, `keycap_runner` rotates it: rename to `archive/<keycap_id>-<YYYY>-Q<N>.md` (current ISO quarter), then create a fresh empty table. The archive is also a normal markdown file under `vault/notes/keycap-runs/archive/`, indexed normally.
+When `<table_path>` exceeds **500 rows**, `mcp_runner` rotates it: rename to `archive/<mcp_id>-<YYYY>-Q<N>.md` (current ISO quarter), then create a fresh empty table. The archive is also a normal markdown file under `vault/notes/mcp-runs/archive/`, indexed normally.
 
 ### §9.5 User control
 
-- Settings → Privacy → **"Capture keycap outputs into vault tables"** master toggle. Default on. When off, no keycap writes to its table (still computes the run, just doesn't persist the row).
-- Per-keycap manifest can flip `enabled: false` for inherently private keycaps (e.g. an "auth" keycap that holds secrets).
+- Settings → Privacy → **"Capture mcp outputs into vault tables"** master toggle. Default on. When off, no mcp writes to its table (still computes the run, just doesn't persist the row).
+- Per-mcp manifest can flip `enabled: false` for inherently private mcps (e.g. an "auth" mcp that holds secrets).
 - Per-row: user can flip `accepted` to true (kept in vault long-term) or delete the row in the SmartTableViewer (full row deletion writes back through `vault.write`).
 
 ### §9.6 Why not a SQL DB
@@ -654,9 +655,9 @@ Embeddings never leave the user's machine when in Ollama mode. The cloud-fallbac
 
 ### §8.9 Future work (not §8 v1)
 
-- §9 smart-table-output — Keycap manifest `output_capture` field + JSONSchema validation in `packages/ctrl-keycap-sdk/src/manifest-schema.ts` (today the kernel falls back to defaults when manifest absent).
-- §9 smart-table-output — Settings → Privacy master toggle ("Capture keycap outputs into vault tables", default on).
-- §9 smart-table-output — Wire provider / model / tokens into `run_keycap` so the captured row carries real values instead of empty strings.
+- §9 smart-table-output — Mcp manifest `output_capture` field + JSONSchema validation in `packages/ctrl-mcp-sdk/src/manifest-schema.ts` (today the kernel falls back to defaults when manifest absent).
+- §9 smart-table-output — Settings → Privacy master toggle ("Capture mcp outputs into vault tables", default on).
+- §9 smart-table-output — Wire provider / model / tokens into `run_mcp` so the captured row carries real values instead of empty strings.
 - §10 embeddings — Auto-embed lifecycle hooks (vault.write background enqueue, Runtime::boot stale re-embed, vault.delete drop row).
 - §10 embeddings — `vault.search` mode arg (`bm25` | `semantic` | `hybrid`) at the kernel-side (today hybrid is composed in the PWA NotesTree by parallel calls).
 - §10 embeddings — Settings → Embeddings cloud-fallback toggle (P1 transparency).
@@ -756,7 +757,7 @@ User can opt to "preserve all" in Settings (off by default — vault grows unbou
 ### Capability (§2)
 - [x] Surface lives in `src-tauri/src/kernel/capability.rs` + `commands/mod.rs`. Verified.
 - [x] `packages/ctrl-kernel-sdk` TS exports per namespace. Verified.
-- [x] Builtin manifest validation in `shell/builtin_keycaps.rs` boot. Verified.
+- [x] Builtin manifest validation in `shell/builtin_mcps.rs` boot. Verified.
 
 ### Provider (§3 — NEW, all items in § Future work below)
 
@@ -795,10 +796,10 @@ User can opt to "preserve all" in Settings (off by default — vault grows unbou
 - [x] Manual smoke run executed prior to ship — L1 vault → L2 visible → `+ Note` writes a vault file → `Today` writes/opens the daily note → BacklinksDrawer hits flow from kernel `vault_backlinks` → Sourcing Review tab parses + Accept moves the inbox item.
 
 ### Smart table output (§9 — NEW v5)
-- [x] §9.1 strategic lock — single SmartTable per keycap at `notes/keycap-runs/<id>.table.md` (P4 product decision recorded in brainstorm).
-- [x] `keycap_runner` post-run hook wires output to `notes/keycap-runs/<id>.table.md` via `kernel::keycap_capture::capture_row`. Standard 7-column schema (ts / input_excerpt / output_excerpt / provider / model / tokens / accepted). Provider/model/tokens default to empty until `run_keycap` exposes them; the row still lands. v0.1.158.
-- [x] Rotation at 500 rows to `notes/keycap-runs/archive/<stem>-<YYYY>-Q<N>.md`. v0.1.158.
-- [x] Vault seed creates `notes/keycap-runs/` + `notes/keycap-runs/archive/` directories (`kernel::vault::seed_vault_feature_layer`). v0.1.158.
+- [x] §9.1 strategic lock — single SmartTable per mcp at `notes/mcp-runs/<id>.table.md` (P4 product decision recorded in brainstorm).
+- [x] `mcp_runner` post-run hook wires output to `notes/mcp-runs/<id>.table.md` via `kernel::mcp_capture::capture_row`. Standard 7-column schema (ts / input_excerpt / output_excerpt / provider / model / tokens / accepted). Provider/model/tokens default to empty until `run_mcp` exposes them; the row still lands. v0.1.158.
+- [x] Rotation at 500 rows to `notes/mcp-runs/archive/<stem>-<YYYY>-Q<N>.md`. v0.1.158.
+- [x] Vault seed creates `notes/mcp-runs/` + `notes/mcp-runs/archive/` directories (`kernel::vault::seed_vault_feature_layer`). v0.1.158.
 
 ### Embeddings (§10 — NEW v5)
 - [x] `src-tauri/src/kernel/vault_embeddings.rs` — SQLite BLOB + flat cosine (768d) + content_hash idempotence. 3 unit tests in-tree. v0.1.158.
@@ -874,9 +875,9 @@ Pi merges the returned message list and proceeds with the LLM call. The user nev
 
 Plain markdown, user vim-readable (CLAUDE.md vim test). All failures non-fatal — audit MUST NOT break the agent turn.
 
-### §12.4 Per-keycap `inherit_pi_tools` — `CTRL_INHERIT_PI_TOOLS` env
+### §12.4 Per-mcp `inherit_pi_tools` — `CTRL_INHERIT_PI_TOOLS` env
 
-Irisy default mode: persona explicitly denies Pi's 7 builtin tools (Read/Write/Edit/Bash/Grep/Find/LS). A keycap that needs them (Code, DevOps, Screen-record) declares `inherit_pi_tools: [Read, Bash, ...]` in its manifest. Kernel sets `CTRL_INHERIT_PI_TOOLS=<comma-separated>` on the Pi spawn env; `ctrl-pi-bridge::buildPersona` reads it, rewrites the deny block, and lists the inherited tools in the "## Runtime" section so the model knows what it's allowed to touch.
+Irisy default mode: persona explicitly denies Pi's 7 builtin tools (Read/Write/Edit/Bash/Grep/Find/LS). A mcp that needs them (Code, DevOps, Screen-record) declares `inherit_pi_tools: [Read, Bash, ...]` in its manifest. Kernel sets `CTRL_INHERIT_PI_TOOLS=<comma-separated>` on the Pi spawn env; `ctrl-pi-bridge::buildPersona` reads it, rewrites the deny block, and lists the inherited tools in the "## Runtime" section so the model knows what it's allowed to touch.
 
 Default (no env or empty) = Irisy mode = all 7 denied.
 

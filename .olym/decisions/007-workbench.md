@@ -1,7 +1,7 @@
 ---
 adr_id: 007
 module: workbench
-title: CTRL workbench — keycap-composition canvas (React Flow + dnd-kit) + Irisy-led skill discovery (kernel-local first, ctrl-cloud Worker for production)
+title: CTRL workbench — mcp-composition canvas (React Flow + dnd-kit) + Irisy-led skill discovery (kernel-local first, ctrl-cloud Worker for production)
 version: 1
 status: accepted
 last_updated: 2026-05-31
@@ -10,21 +10,21 @@ sections:
   - { id: canvas,     source: orig-022 }
   - { id: discovery,  source: orig-023 }
 changelog:
-  - v1 2026-05-31: module reorg — merged orig-022 (workbench = sanctioned keycap-composition canvas) + orig-023 (skill discovery — kernel-local first 走通, ctrl-cloud Worker for production).
+  - v1 2026-05-31: module reorg — merged orig-022 (workbench = sanctioned mcp-composition canvas) + orig-023 (skill discovery — kernel-local first 走通, ctrl-cloud Worker for production).
 related:
   - .olym/decisions/002-substrate.md
   - .olym/decisions/004-cap.md
   - .olym/decisions/005-irisy.md
 ---
 
-## §1 Keycap = one-shot. Workbench = composition canvas (they coexist)
+## §1 Mcp = one-shot. Workbench = composition canvas (they coexist)
 
-ADR-001 §6 anti-list says "Workflow editor (Coze / n8n 已经做了)". This ADR carves out: CTRL is not a **generic** workflow editor (we don't compete with Coze/n8n on arbitrary API orchestration); CTRL **does** have a **keycap-composition canvas** that wires *keycaps* (themselves MCP tools / skills) into a standing workspace.
+ADR-001 §6 anti-list says "Workflow editor (Coze / n8n 已经做了)". This ADR carves out: CTRL is not a **generic** workflow editor (we don't compete with Coze/n8n on arbitrary API orchestration); CTRL **does** have a **mcp-composition canvas** that wires *mcps* (themselves MCP tools / skills) into a standing workspace.
 
 | Surface | Nature |
 |---|---|
-| **Keycap** (unchanged) | One-shot. A single keycap pressed from the keyboard = one atomic action. No keycap becomes a multi-step wizard. |
-| **Workbench** (new, `/workbench`) | Composition canvas. Power-user level-1 route. A place to assemble keycaps into a durable workspace / mini-app, not a per-invocation flow rebuilt each time. |
+| **Mcp** (unchanged) | One-shot. A single mcp pressed from the keyboard = one atomic action. No mcp becomes a multi-step wizard. |
+| **Workbench** (new, `/workbench`) | Composition canvas. Power-user level-1 route. A place to assemble mcps into a durable workspace / mini-app, not a per-invocation flow rebuilt each time. |
 
 bao 2026-05-29: "连线这种 workflow, 目前看是需要的; 现成的, 我们做集成." — wiring IS needed; use ready-made libraries, do not build a node editor from scratch.
 
@@ -32,39 +32,39 @@ bao 2026-05-29: "连线这种 workflow, 目前看是需要的; 现成的, 我们
 
 Per § canvas decision below (researched + locked):
 
-- **React Flow** (`@xyflow/react`, MIT) — wiring canvas, integrated as library, lazy-loaded into `/workbench` only. Custom nodes render the real keycap card. We do NOT write our own node editor.
+- **React Flow** (`@xyflow/react`, MIT) — wiring canvas, integrated as library, lazy-loaded into `/workbench` only. Custom nodes render the real mcp card. We do NOT write our own node editor.
 - **dnd-kit** (MIT) — Pool → Keyboard palette drag + reorder (also used by ADR-003 § nav-keyboard).
 - **JSON Schema** — I/O port types (aligns with MCP tool I/O, ADR-002 § mcp-bus).
 - **Forbidden**: any built-in dataflow *engine* from another lib (Flowise / Langflow / n8n / ComfyUI / Dify); any GPL / fair-code dep. React Flow is canvas-only.
 
 ## §3 Thin orchestrator (CTRL-owned, not borrowed engine)
 
-React Flow is design-time only. The graph compiles to a clean execution IR. **Thin CTRL-owned orchestrator** topologically walks it: read graph → topo → call each keycap through the existing executor (subprocess + mcp_host + sandbox) → route I/O edge-by-edge with JSON Schema check per hop. Not an n8n-class engine — read graph, run, done.
+React Flow is design-time only. The graph compiles to a clean execution IR. **Thin CTRL-owned orchestrator** topologically walks it: read graph → topo → call each mcp through the existing executor (subprocess + mcp_host + sandbox) → route I/O edge-by-edge with JSON Schema check per hop. Not an n8n-class engine — read graph, run, done.
 
 ## §4 Two legs of composition
 
 | Leg | Mechanism |
 |---|---|
-| **In-app** | Workbench orchestrator (§3) wires keycaps on the canvas |
-| **Outsourced** | External workflow engine (n8n / Zapier / Make) the user already runs is wrapped as a **single keycap** via MCP Server Trigger (`install_keycap_from_mcp`) or webhook. Whole flow collapses to one one-shot keycap; execution stays on the external instance |
+| **In-app** | Workbench orchestrator (§3) wires mcps on the canvas |
+| **Outsourced** | External workflow engine (n8n / Zapier / Make) the user already runs is wrapped as a **single mcp** via MCP Server Trigger (`install_mcp_from_mcp`) or webhook. Whole flow collapses to one one-shot mcp; execution stays on the external instance |
 
 This is how CTRL gets "flows" without embedding a workflow engine.
 
-## §5 Keycap object — standardized + incremental
+## §5 Mcp object — standardized + incremental
 
-`create keycap` produces standardized declarative keycap object (Zod manifest, ADR-002 § composition / `@ctrl/keycap-sdk`). Gains:
+`create mcp` produces standardized declarative mcp object (Zod manifest, ADR-002 § composition / `@ctrl/mcp-sdk`). Gains:
 - `source: "skill"` source type (alongside builtin / mcp / oauth / local_agent / stss)
 - `io` block (JSON Schema input/output ports)
 
-Re-added to SDK (these were removed to keep PR #62 a clean slate). Full "all components of a keycap" list + I/O schema vocabulary built **incrementally** per keycap.
+Re-added to SDK (these were removed to keep PR #62 a clean slate). Full "all components of a mcp" list + I/O schema vocabulary built **incrementally** per mcp.
 
 ## §6 Hard rules (this ADR holds)
 
 - React Flow is canvas-only; execution NEVER leaves CTRL executor
 - No GPL / fair-code deps; no borrowed dataflow engine
 - Ports are JSON Schema, validated structurally at connect-time (NOT string type names)
-- A single keycap stays one-shot; composition is an additive layer
-- The canvas only composes **keycaps** (MCP tools/skills), never raw API nodes; if a need looks like "arbitrary API orchestration", the answer is "wrap it as an external-engine keycap" (§4), not "add a node type"
+- A single mcp stays one-shot; composition is an additive layer
+- The canvas only composes **mcps** (MCP tools/skills), never raw API nodes; if a need looks like "arbitrary API orchestration", the answer is "wrap it as an external-engine mcp" (§4), not "add a node type"
 
 ## §7 Skill discovery — kernel-local first (走通), ctrl-cloud Worker for production
 
@@ -74,9 +74,9 @@ bao 2026-05-29: "本地先走通" + "不是每个用户都有 github repo 的". 
 
 ### Phase 1 — kernel-local (走通, zero cloud)
 
-Kernel runs whole first-keycap pipeline locally:
+Kernel runs whole first-mcp pipeline locally:
 - **Search** = GitHub code search using dev/BYOK PAT in macOS Keychain (bao's token for walk-through; advanced user's own later)
-- **Install** = anonymous public clone/fetch → `~/.ctrl/keycaps/<id>/`
+- **Install** = anonymous public clone/fetch → `~/.ctrl/mcps/<id>/`
 - **Run** = Pi
 
 Proves frontend-slides end-to-end. Does NOT violate "no local `wrangler dev`" — that bans running the Worker locally; kernel making HTTPS call is not that.
@@ -100,15 +100,15 @@ Endpoint: `GET /skills/search?q=<query>&source=<registry|skill|all>&page=<n>` �
 
 bao 2026-05-29: "保留一个 Irisy 搜索就行". One surface — Irisy. Discovery is conversational, never a search box.
 
-- Irisy gains `search_skills` (Phase 1: kernel command; Phase 2: `ctrl-skills` Worker) and `install_skill_as_keycap` (clone/fetch → write `skill`-variant manifest) in its tool registry
+- Irisy gains `search_skills` (Phase 1: kernel command; Phase 2: `ctrl-skills` Worker) and `install_skill_as_mcp` (clone/fetch → write `skill`-variant manifest) in its tool registry
 - User says "I want HTML slide decks" → Irisy turns into keywords → searches → reasons over results → recommends frontend-slides → installs → lands on Keyboard
-- **No manual search box**. Pool stays browse view of *installed* keycaps; does NOT get GitHub-skill search box. Finding new skills is Irisy's job (memory `feedback_no_redundancy_one_ssot`)
+- **No manual search box**. Pool stays browse view of *installed* mcps; does NOT get GitHub-skill search box. Finding new skills is Irisy's job (memory `feedback_no_redundancy_one_ssot`)
 
 ### §9 Hard rules (this ADR holds, Phase 2)
 
 - Tokens NEVER leave Worker
 - No local `wrangler dev`; staging on `*.workers.dev`
-- Desktop must still create keycap from `owner/repo` without ctrl-cloud
+- Desktop must still create mcp from `owner/repo` without ctrl-cloud
 - Worker returns normalized CTRL envelope, not raw upstream JSON
 - Edge caching on Leg B mandatory, not optional
 - CORS allows CTRL app origins (PWA dev origin, Tauri scheme, deployed PWA), not wildcard
@@ -122,17 +122,17 @@ bao 2026-05-29: "保留一个 Irisy 搜索就行". One surface — Irisy. Discov
 
 ### Canvas (§1-§6, v1.1+ scope)
 
-- Re-add `skill` source + `io` (JSON Schema ports) to `@ctrl/keycap-sdk` — foundation step
+- Re-add `skill` source + `io` (JSON Schema ports) to `@ctrl/mcp-sdk` — foundation step
 - `/workbench` route scaffold (lazy React Flow + dnd-kit + Irisy side-pane)
 - Thin orchestrator (graph IR → topo walk → executor → I/O routing) + JSON Schema `isValidConnection`
-- Keycap "all components" list + I/O schema vocabulary filled incrementally per keycap
+- Mcp "all components" list + I/O schema vocabulary filled incrementally per mcp
 
 ### Discovery Phase 1 (kernel-local 走通)
 
 - Kernel `search_skills { query }` via GitHub code search + PAT-in-Keychain (document setup, don't make bao guess service name)
-- Kernel install-from-skill — anonymous public clone/fetch → `~/.ctrl/keycaps/<id>/` + write `skill`-variant manifest
-- Irisy tools `search_skills` + `install_skill_as_keycap` wired
-- Kernel `run_keycap` skill dispatch (Pi reads SKILL.md) + viewer render → frontend-slides end-to-end
+- Kernel install-from-skill — anonymous public clone/fetch → `~/.ctrl/mcps/<id>/` + write `skill`-variant manifest
+- Irisy tools `search_skills` + `install_skill_as_mcp` wired
+- Kernel `run_mcp` skill dispatch (Pi reads SKILL.md) + viewer render → frontend-slides end-to-end
 
 ### Discovery Phase 2 (ctrl-cloud production, deferred)
 

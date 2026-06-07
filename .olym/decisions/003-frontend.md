@@ -14,7 +14,7 @@ sections:
 changelog:
   - v1 2026-05-31: module reorg — merged orig-002 (PWA pivot + Irisy-as-sole-entry + Keyboard drag-install) + orig-020 (VMark stack adoption: Tiptap + CodeMirror 6 + mermaid + smart table + vault browser).
   - v2 2026-05-31: § nav-keyboard — Settings enters L1 (bao "L1 上的 setting 页面, 点击打开就是 setting 页面, 其中一个页面就是 providers"). Replaces v1 "Settings via StatusBar cog". L1 buttons under `▾`: [Chat] [New] [Vault] [Coding] [Settings]. Each opens its route in workspace EXPANDED area; no floating cog.
-  - v3 2026-06-01: NEW § shell-4col — 4-column shell `[L1 | L2 | Tab | Irisy]` lock-in. bao multi-message校准 in workspace tab refactor (2026-06-01 session, ~$720 cost). Keycap surface (separate Tauri child window) retired in concept; ship still has bugs (see § shell-4col known-bugs list). v0.1.127 → v0.1.132 released during this session.
+  - v3 2026-06-01: NEW § shell-4col — 4-column shell `[L1 | L2 | Tab | Irisy]` lock-in. bao multi-message校准 in workspace tab refactor (2026-06-01 session, ~$720 cost). Mcp surface (separate Tauri child window) retired in concept; ship still has bugs (see § shell-4col known-bugs list). v0.1.127 → v0.1.132 released during this session.
   - v4 2026-06-01: § shell-4col §7.1 column-order amendment — bao "顺序是工作区（内有tab），L2，L1，Irisy". Column model reordered LEFT→RIGHT to `[Tab | L2 | L1 | Irisy]`. L1 is now anchored immediately left of Irisy (not far-left). Rationale: Irisy + L1 stay visually pinned at the monitor's right; Workspace grows leftward when expanded, with L2 sandwiched between Workspace and L1. Compact mode still renders only L1 (48) + Irisy (430) = 478 px because Workspace and L2 collapse to 0. Anti-pattern §7.8 entry added: do NOT render L1 at column index 1.
 related:
   - .olym/decisions/001-spine.md
@@ -26,18 +26,18 @@ related:
 
 UI layer = single `packages/ctrl-web` (React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa). Same bundle runs in Tauri 2 WebView on desktop AND any browser on mobile. Bridge: Tauri 2 `invoke()` on desktop (intra-process), WebSocket + token on mobile (127.0.0.1:17872, intra-device).
 
-L0 native shell (`src-tauri/src/shell/`) stays ≤ ~500 LOC Rust — hotkey / tray / window / keychain / kernel_supervisor only. All UI / settings / keycap workspace live inside PWA — no native UI windows beyond shell-summoned WebView.
+L0 native shell (`src-tauri/src/shell/`) stays ≤ ~500 LOC Rust — hotkey / tray / window / keychain / kernel_supervisor only. All UI / settings / mcp workspace live inside PWA — no native UI windows beyond shell-summoned WebView.
 
 ## §2 L1 navigation — single Irisy entry
 
-User-facing single entry: **Irisy** (Pi's expression). User does NOT switch between assistant/creator/coding modes — Pi internally dispatches based on conversation context + active keycaps' skills.
+User-facing single entry: **Irisy** (Pi's expression). User does NOT switch between assistant/creator/coding modes — Pi internally dispatches based on conversation context + active mcps' skills.
 
 L1 nav lives on the left rail (48 px, ADR-001 §4 ui-ux), top to bottom:
 
 ```
 [▾ / ▴]        ← workspace toggle (always top, never goes away)
 [Chat]         ← builtin-assist persona (Irisy default chat)
-[New]          ← builtin-create persona (make a keycap)
+[New]          ← builtin-create persona (make a mcp)
 [Vault]        ← /vault browser
 [Coding]       ← Code Space (ADR-005 § remote-view surface)
    (spacer)
@@ -46,7 +46,7 @@ L1 nav lives on the left rail (48 px, ADR-001 §4 ui-ux), top to bottom:
 
 Each L1 button (NOT just `▾`) opens the workspace area in EXPANDED state and renders the corresponding route as the workspace content. Settings is no exception — clicking L1 Settings opens `/settings` in the workspace area; `/settings/providers` / `/settings/brain` / etc. are sub-pages inside the Settings page. There is NO floating cog in StatusBar / corner — the workspace IS the design target for these pages (bao 2026-05-31: "L1 上的 setting 页面, 点击打开就是 setting 页面, 其中一个页面就是 providers").
 
-User-facing intents only; never expose keycap ids like "Assist" / "Create" / "Pool" / "Provider" — internal codenames stay internal (ADR-005 § persona v1).
+User-facing intents only; never expose mcp ids like "Assist" / "Create" / "Pool" / "Provider" — internal codenames stay internal (ADR-005 § persona v1).
 
 Workspace layout — 2 visual states only:
 - **COMPANION** (default, 430 px): `[L1 48] [Irisy chat 382]`
@@ -56,15 +56,15 @@ Window right edge anchored top-right of primary monitor. Expansion grows leftwar
 
 ## §3 Keyboard = drag-install dock
 
-The Keyboard (always-on left grid) is the **drag-target for keycap installation**. Replaces Pool's install-button flow.
+The Keyboard (always-on left grid) is the **drag-target for mcp installation**. Replaces Pool's install-button flow.
 
 | Drag source → Keyboard | Effect |
 |---|---|
-| Pool keycap card | Installs to `~/.ctrl/keycaps/<id>/`, runs ADR-002 § composition cap_asset provisioning, keycap appears on grid |
-| External `.zip` / `keycap.json` | Same after manifest validation |
+| Pool mcp card | Installs to `~/.ctrl/mcps/<id>/`, runs ADR-002 § composition cap_asset provisioning, mcp appears on grid |
+| External `.zip` / `mcp.json` | Same after manifest validation |
 | GitHub URL | Fetch manifest, validate, install (ADR-007 § skill-discovery path) |
-| Keycap → trash zone | Uninstall (`rm -rf ~/.ctrl/keycaps/<id>/`) |
-| Keycap → reorder | Persists Keyboard layout state |
+| Mcp → trash zone | Uninstall (`rm -rf ~/.ctrl/mcps/<id>/`) |
+| Mcp → reorder | Persists Keyboard layout state |
 
 Drop-zone highlights on valid drag; reject + toast on invalid manifest. Post-install: Irisy detects new active skills in next turn. No restart, no "enable" toggle.
 
@@ -88,7 +88,7 @@ VMark is a **compatibility commitment, not a substrate** (memory `decision_vmark
 | `image/*` | `ImageViewer` | `<img>` + zoom toggle |
 | `text/*` (generic) | `CodeViewer` | CodeMirror 6 no lang |
 
-All viewers `lazy()` — critical-path stays under 200 KB mobile cap. Triple-axis viewer resource model: `source ∈ {vault, keycap, system}` × `editable: bool` × `companion?: string`.
+All viewers `lazy()` — critical-path stays under 200 KB mobile cap. Triple-axis viewer resource model: `source ∈ {vault, mcp, system}` × `editable: bool` × `companion?: string`.
 
 ## §5 Vault browser `/vault`
 
@@ -104,11 +104,11 @@ Three-pane VMark-style entry into `~/Documents/CTRL/`:
 - Save delegates to `vault_write` (preserves frontmatter)
 - Backlinks scans client-side for `[[stem]]` + `[label](path.md)` — kernel index follow-up
 
-`VaultBrowser` reused inside Pool keycap detail panel ("edit prompt.md").
+`VaultBrowser` reused inside Pool mcp detail panel ("edit prompt.md").
 
 ## §7 Shell 4-col layout (v3 2026-06-01; v4 column order 2026-06-01) — `[Tab | L2 | L1 | Irisy]`
 
-**Why this section exists**: bao 2026-06-01 multi-message refactor (`你怎么这么蠢？无非就是最简单的tab和导航` + `L2和tab，是两个东西` + `keycap这个是pool` + 5 release iterations v0.1.127 → v0.1.132). The previous 2-col `[L1 | Irisy]` shell could not host the workspace tab paradigm; an ad-hoc Tauri child window (`WorkspaceSurface` + `toggle_workspace_window`) was filling that role and conflicting with the inline cockpit. This section locks the canonical 4-column shell.
+**Why this section exists**: bao 2026-06-01 multi-message refactor (`你怎么这么蠢？无非就是最简单的tab和导航` + `L2和tab，是两个东西` + `mcp这个是pool` + 5 release iterations v0.1.127 → v0.1.132). The previous 2-col `[L1 | Irisy]` shell could not host the workspace tab paradigm; an ad-hoc Tauri child window (`WorkspaceSurface` + `toggle_workspace_window`) was filling that role and conflicting with the inline cockpit. This section locks the canonical 4-column shell.
 
 ### §7.1 Column model (v4 ordering — bao 2026-06-01 `顺序是工作区（内有tab），L2，L1，Irisy`)
 
@@ -118,7 +118,7 @@ LEFT → RIGHT:
 |---|---|---|
 | **Tab** (leftmost) | 0 (no workspace) / 1fr (any workspace instance open) | Workspace tab content — `<WorkspaceShell />` from `components/workspace/`. Renders `InstanceSwitcher` (pill row) + `TabBar` (horizontal tabs) + active tab body. Grows leftward when expanded. |
 | **L2** | 0 (compact) / 200px (when active L1 has sub-nav) | Secondary nav for the active L1 item — VS Code-style sidebar. Reserved column; sub-nav components land per L1 item as needed. **L2 and Tab are two separate things** (bao explicit). |
-| **L1** | 48px fixed | Primary nav rail. Vertical icon-only chips: ▾ (window expand toggle, top), Irisy, Keycap pool, Coding, Settings (bottom). Anchored immediately left of Irisy. Always visible. |
+| **L1** | 48px fixed | Primary nav rail. Vertical icon-only chips: ▾ (window expand toggle, top), Irisy, Mcp pool, Coding, Settings (bottom). Anchored immediately left of Irisy. Always visible. |
 | **Irisy** (rightmost) | 430px fixed | Always-on right pane. `<IrisyChat />` + `<InfraBar />` (kernel/MCP/vault chips at bottom). Anchored to monitor right edge. |
 
 CSS file: `packages/ctrl-web/src/app.module.css`. Driven by `--l1-width / --l2-width / --tab-width / --irisy-pane-width` CSS vars + `data-workspace-open / data-l2-open` attributes on `.shell`. Status bar spans all 4 columns at top via `grid-template-areas`. v3 had columns in `[L1 L2 Tab Irisy]` order; v4 reorders to `[Tab L2 L1 Irisy]` per bao spec — L1 stays glued to Irisy's left, Tab grows leftward.
@@ -134,15 +134,15 @@ CSS file: `packages/ctrl-web/src/app.module.css`. Driven by `--l1-width / --l2-w
 |---|---|
 | ▾ (top) | Tauri `toggle_workspace_window` — manual window expand/compact only. |
 | Irisy | `navigate('/')` — Irisy is always rendered in the .irisy column; clicking refocuses route only. |
-| Keycap pool | `openSystemTab({id:'pool', path:'/pool', title:'Keycap pool'})` — opens a route tab in the singleton "system" workspace instance. Window is NOT auto-expanded. |
+| Mcp pool | `openSystemTab({id:'pool', path:'/pool', title:'Mcp pool'})` — opens a route tab in the singleton "system" workspace instance. Window is NOT auto-expanded. |
 | Coding | `openSystemTab({id:'coding', path:'/coding', title:'Coding'})`. |
 | Settings (bottom) | `openSystemTab({id:'settings', path:'/settings/ctrl', title:'Settings'})`. |
 
-System instance: `workspace-store.ts::openSystemTab(tab)` — singleton id `ws-system`, layout `tabs`, idempotent on `tab.id`. Non-keycap L1 chips share this instance.
+System instance: `workspace-store.ts::openSystemTab(tab)` — singleton id `ws-system`, layout `tabs`, idempotent on `tab.id`. Non-mcp L1 chips share this instance.
 
-### §7.4 Keycap page = Pool route (NOT a separate Tauri window)
+### §7.4 Mcp page = Pool route (NOT a separate Tauri window)
 
-bao 2026-06-01: `keycap这个是pool，用于管理keycaps`. The legacy `WorkspaceSurface` (separate Tauri child window opened by `toggle_workspace_window` with `?surface=workspace`) is **retired in concept**. The keycap grid view is the `/pool` route, opened as a Tab in the main window via the L1 "Keycap pool" chip.
+bao 2026-06-01: `mcp这个是pool，用于管理mcps`. The legacy `WorkspaceSurface` (separate Tauri child window opened by `toggle_workspace_window` with `?surface=workspace`) is **retired in concept**. The mcp grid view is the `/pool` route, opened as a Tab in the main window via the L1 "Mcp pool" chip.
 
 `main.tsx` no longer branches on `?surface=workspace` — it always renders `<App />`. The Rust `toggle_workspace_window` command was repurposed to drive main-window left-edge resize (per the system.rs comment); future work should rename it to `toggle_main_window_expanded` and retire `?surface=workspace` query handling end-to-end.
 
@@ -213,7 +213,7 @@ Schema language minimal (key/label/type/options?/min?/max?). Anything more compl
 
 ## Future work
 
-- Keyboard drag-install: external `.zip` / `keycap.json` drop + GitHub URL drag from address bar + trash zone uninstall + grid reorder persistence
+- Keyboard drag-install: external `.zip` / `mcp.json` drop + GitHub URL drag from address bar + trash zone uninstall + grid reorder persistence
 - Settings page L1 entry — `/settings` route renders inside workspace EXPANDED area; sub-pages `/settings/providers` (ADR-002 § provider) / `/settings/brain` (Pi status) / `/settings/appearance` / `/settings/editor` / `/settings/language` / `/settings/shortcuts` left rail with content panel right (§2 v2 amend)
 
 ## Provenance

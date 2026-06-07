@@ -1,7 +1,7 @@
 ---
 adr_id: 005
 module: irisy
-title: CTRL Irisy — 8-stage keycap lifecycle + remote co-view primitives + persona rule
+title: CTRL Irisy — 8-stage mcp lifecycle + remote co-view primitives + persona rule
 version: 4
 status: accepted
 last_updated: 2026-06-04
@@ -15,34 +15,34 @@ sections:
   - { id: capability-decomposition,   source: new-2026-06-04, note: "8 子能力分解 (Note Writer / Cap Builder / Cap Invoker / Knowledge Retriever / Memory Curator / System Doctor / Coding Companion / Conversation) — 替代 monolithic prompt, 每能力独立 segment + 触发词 + 工具集 + 输出规范" }
   - { id: pi-extension-integration,   source: new-2026-06-04, note: "ctrl-pi-bridge 完整接 Pi extension API: registerTool (~10 native Pi tools, BYOK 路径) + on('before_agent_start') chain-inject capability segments + on('tool_call') inspector stub + on('resources_discover') 贡献 ~/.claude/skills 给 Pi 自带 Skills 系统. PWA XML loop 保留作 Volc 弱模型 fallback." }
 changelog:
-  - v1 2026-05-31: module reorg — merged orig-016 (8-stage keycap lifecycle) + orig-017 (remote co-view = Irisy primitives) + lifted orig-024 §7 persona rule into this ADR + amended persona rule with prompt v5 (brain self-awareness with brand labels).
+  - v1 2026-05-31: module reorg — merged orig-016 (8-stage mcp lifecycle) + orig-017 (remote co-view = Irisy primitives) + lifted orig-024 §7 persona rule into this ADR + amended persona rule with prompt v5 (brain self-awareness with brand labels).
   - v2 2026-06-03: NEW §4 soul-md-compat — Irisy persistent memory adopts the SOUL.md spec (github.com/aaronjmars/soul.md) verbatim, ecosystem-aligned with OpenClaw (350k stars, 2,999+ ClawHub skills, WorkBuddy compat) and Claude Code. CTRL-only extensions land in an `x-ctrl:` frontmatter namespace so vanilla SOUL.md readers stay forward-compatible. Driven by bao 2026-06-03 competitive research summarised in `.olym/brainstorm/openclaw-compat-2026-06-03.md`.
   - v3 2026-06-04: **NEW §5 self-reflection-loop** — Irisy implements Loop 1 of ADR-001 §8 self-evolution. Three layers: client-side rule-based **Detect** (failure signals → episodes), Pi background subagent **Reflect** (Letta-code stateless mode, idle-30min trigger), playbook **Improve** (injected into next IrisyChat system prompt). Reuses ADR-002 §11 audit-ledger for cross-loop accountability. Per bao "不仅仅 Irisy LLM, 整个系统都要自我升级成长 — Irisy 自己有自我成长的能力". Brainstorm: `.olym/brainstorm/irisy-self-reflection-loop-2026-06-04.md` + `.olym/brainstorm/system-self-evolution-2026-06-04.md` §3.1.
-  - v4 2026-06-04: **NEW §6 capability-decomposition + §7 pi-extension-integration** — root-cause fix for "Pi 一切动词都 install_keycap" + "Pi 说我没 skill 系统" 实测 fail. ctrl-pi-bridge 升级从 provider-only → registerTool + 3 hook (before_agent_start chain / tool_call inspector / resources_discover skills 贡献), Pi `--no-tools` → `--no-builtin-tools` (撤 7 个 built-in 但保 extension 注册的). System prompt 从 monolithic 200 行 → thin base (~30 行) + 8 capability segment, 通过 `before_agent_start` hook 按关键词动态注入 (token cache 友好). PWA `<call>` XML loop 保留作 Volc Qwen/Llama 弱模型 fallback. 调研: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2 §3 (Pi/Letta/Cline/Goose/Cursor 对标) + §8 (background agent 深拉源码).
+  - v4 2026-06-04: **NEW §6 capability-decomposition + §7 pi-extension-integration** — root-cause fix for "Pi 一切动词都 install_mcp" + "Pi 说我没 skill 系统" 实测 fail. ctrl-pi-bridge 升级从 provider-only → registerTool + 3 hook (before_agent_start chain / tool_call inspector / resources_discover skills 贡献), Pi `--no-tools` → `--no-builtin-tools` (撤 7 个 built-in 但保 extension 注册的). System prompt 从 monolithic 200 行 → thin base (~30 行) + 8 capability segment, 通过 `before_agent_start` hook 按关键词动态注入 (token cache 友好). PWA `<call>` XML loop 保留作 Volc Qwen/Llama 弱模型 fallback. 调研: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2 §3 (Pi/Letta/Cline/Goose/Cursor 对标) + §8 (background agent 深拉源码).
 related:
   - .olym/decisions/002-substrate.md
   - .olym/decisions/003-frontend.md
 ---
 
-## §1 8-stage keycap lifecycle
+## §1 8-stage mcp lifecycle
 
 Irisy = vertically-cross-cutting companion. **8 stages**, each with explicit role + UI surface.
 
 | # | Stage | User intent | Irisy role | UI surface |
 |---|---|---|---|---|
-| 1 | Discovery | "what tools exist for X?" | Recommend keycaps by use-case query; surface MCP marketplace + agentskills.io results | Pool overlay, Irisy as filter/rank layer |
-| 2 | Creation | "I need a keycap that does X" | Co-author manifest + tool code | Creator drawer (chat / manifest / code preview) |
-| 3 | Config | "set up this keycap for me" | Walk through `config_schema`; suggest defaults | Inline Irisy bubble on first invocation OR Settings |
-| 4 | Invoke | "do this" | Disambiguate vague intent → keycap selection; pre-fill args; explain expected result | Keyboard tile long-press / quick-action overlay |
-| 5 | Collab | "explain what just happened" / iterate | Annotate output; chain to next keycap; co-edit | Workspace tab side-panel (drawer adjacent to active tab) |
+| 1 | Discovery | "what tools exist for X?" | Recommend mcps by use-case query; surface MCP marketplace + agentskills.io results | Pool overlay, Irisy as filter/rank layer |
+| 2 | Creation | "I need a mcp that does X" | Co-author manifest + tool code | Creator drawer (chat / manifest / code preview) |
+| 3 | Config | "set up this mcp for me" | Walk through `config_schema`; suggest defaults | Inline Irisy bubble on first invocation OR Settings |
+| 4 | Invoke | "do this" | Disambiguate vague intent → mcp selection; pre-fill args; explain expected result | Keyboard tile long-press / quick-action overlay |
+| 5 | Collab | "explain what just happened" / iterate | Annotate output; chain to next mcp; co-edit | Workspace tab side-panel (drawer adjacent to active tab) |
 | 6 | Debug | "didn't work — why?" | Read stderr / ST-SS error cells; suggest fix; offer to amend manifest | Workspace tab inline error overlay |
-| 7 | Improvement | "this could be better at X" | Capture as Patch-tier amendment (ADR-004 §4); offer upstream PR when applicable | Bubble after repeat use; long-press → "improve this keycap" |
+| 7 | Improvement | "this could be better at X" | Capture as Patch-tier amendment (ADR-004 §4); offer upstream PR when applicable | Bubble after repeat use; long-press → "improve this mcp" |
 | 8 | Retire | "I don't use this anymore" | Help uninstall / archive; preserve vault data; reset keychain tokens | Settings drawer when usage falls below threshold |
 
 **Companion ≠ in-your-face**:
 - Default visibility = bubble (collapsed); user click → drawer
 - **Single user-facing persona** (memory `decision_one_persona_irisy` 🔒) — Irisy never switches; internal sub-modes invisible
-- **First-class PWA page**, not a keycap (memory `decision_irisy_is_pwa_native_not_keycap` 🔒)
+- **First-class PWA page**, not a mcp (memory `decision_irisy_is_pwa_native_not_keycap` 🔒)
 - Drawer slides from bottom or right; never full-screen takeover (ADR-003 § nav-keyboard)
 
 Stage 7 → 2 loopback (Improvement feeds new Creation) is the creator-economy flywheel.
@@ -57,8 +57,8 @@ Memory `project_remote_co_view_is_irisy` 🔒 — 远程同屏 / mirror / 跨设
 
 1. **`session.observe`** — viewer-side Irisy subscribes to host-side kernel's ST-SS workspace cell stream (filtered by allow-list of cell kinds). Read-only by default.
 2. **`session.share`** — host-side Irisy generates ephemeral share URL (`ctrl://session/<id>?token=<...>`). Token authenticates viewer kernel to host kernel's MCP wire (ADR-002 § mcp-bus, port 17873 OR relay-traversed equivalent for cross-device).
-3. **`session.takeover`** — viewer can send Op events back to host (clipboard write / keycap invoke / Irisy say). Requires explicit allow-list in `share` token (capability-scoped per ADR-004 §1).
-4. **`session.narrate`** — viewer's Irisy renders narration overlay: "your phone Irisy is observing your PC; current keycap = X; recent action = Y". Generated client-side from cell stream.
+3. **`session.takeover`** — viewer can send Op events back to host (clipboard write / mcp invoke / Irisy say). Requires explicit allow-list in `share` token (capability-scoped per ADR-004 §1).
+4. **`session.narrate`** — viewer's Irisy renders narration overlay: "your phone Irisy is observing your PC; current mcp = X; recent action = Y". Generated client-side from cell stream.
 
 **Wire**:
 - Same-LAN (mDNS-discovered): direct WebRTC peer via vodozemac Olm (same Olm session that mesh uses)
@@ -72,7 +72,7 @@ Memory `project_remote_co_view_is_irisy` 🔒 — 远程同屏 / mirror / 跨设
 
 ## §3 Persona rule + prompt v5 (binding)
 
-**Persona is per-keycap** — lives inside `cap_asset.files` as markdown (ADR-002 § composition axis 6). Vault override `vault/keycaps/<id>/persona.md` wins; no global persona library, no shared persona indirection.
+**Persona is per-mcp** — lives inside `cap_asset.files` as markdown (ADR-002 § composition axis 6). Vault override `vault/mcps/<id>/persona.md` wins; no global persona library, no shared persona indirection.
 
 **Irisy prompt v5** (`vault/.irisy-prompts/irisy-system.md`):
 
@@ -115,7 +115,7 @@ that gap.
 
 ### §4.2 CTRL extensions — the `x-ctrl:` frontmatter namespace
 
-CTRL-only fields (Pi provider routing hints, keycap activation rules,
+CTRL-only fields (Pi provider routing hints, mcp activation rules,
 vault layout overrides, etc.) live under an `x-ctrl:` frontmatter
 key. Vanilla SOUL.md readers (OpenClaw, Claude Code, future
 implementations) ignore unknown keys, so the file stays
@@ -131,7 +131,7 @@ voice:
   tone: direct
 tools:
   - id: clipboard
-    surface: keycap
+    surface: mcp
 memory:
   long_term: ".irisy-memory/long-term.md"
   episodes:  ".irisy-memory/episodes/"
@@ -141,7 +141,7 @@ x-ctrl:
   provider_routing:
     primary: claude-oauth
     fallback: volc
-  keycap_activation:
+  mcp_activation:
     auto_invoke_on_paste: false
   vault_layout:
     review_queue: ".ctrl/review-queue/"
@@ -171,11 +171,11 @@ the kairo parity Notes app).
 
 ### §4.4 Bridge to OpenClaw skills (forward reference)
 
-CTRL keycap manifests and OpenClaw skill manifests are bidirectionally
+CTRL mcp manifests and OpenClaw skill manifests are bidirectionally
 convertible per the "marketplace bridge" move recorded in the
 brainstorm doc. The schema bridge will land in **ADR-002 substrate
 §7 composition v1 amendment** in a follow-up session (paired with the
-`packages/ctrl-keycap-sdk/src/openclaw-bridge.ts` transformer). This
+`packages/ctrl-mcp-sdk/src/openclaw-bridge.ts` transformer). This
 section asserts the intent; the schema lock lives in ADR-002.
 
 ### §4.5 First-boot seed
@@ -326,7 +326,7 @@ Pi 0.73.1 declares `./hooks` package.json export but the dist directory is empty
 
 ### §6.1 Why decompose
 
-Pre-v4 Irisy ran one monolithic `IRISY_SYSTEM_DEFAULT` block (~200 行, 8 topics interleaved). Real-world failure mode: Pi anchored on the most repeated rule ("install_keycap for any wish") and ignored the antecedent ("only when user said 键帽/key/shortcut"). bao 2026-06-04 实测: "创建一个 md" → Pi went straight to install_keycap with frontend-slide skill instead of vault_write. **Root cause** = no decomposition: Pi can't down-weight the wrong path because every rule is in scope every turn.
+Pre-v4 Irisy ran one monolithic `IRISY_SYSTEM_DEFAULT` block (~200 行, 8 topics interleaved). Real-world failure mode: Pi anchored on the most repeated rule ("install_mcp for any wish") and ignored the antecedent ("only when user said 键帽/key/shortcut"). bao 2026-06-04 实测: "创建一个 md" → Pi went straight to install_mcp with frontend-slide skill instead of vault_write. **Root cause** = no decomposition: Pi can't down-weight the wrong path because every rule is in scope every turn.
 
 Industry consensus (`.olym/brainstorm/irisy-pipeline-2026-06-04.md` §3): Letta uses per-agent-type prompt templates (`letta/prompts/system_prompts/*.py`); Cline uses `TemplateEngine.resolve(template, context, vars)` with `components/` + `variants/`. Both decompose by **task context**, not by topic.
 
@@ -337,18 +337,18 @@ Each capability has: trigger words / scenes, owned kernel tools (Tauri command n
 | # | Capability | Triggers (CN / EN) | Tools | Output |
 |---|---|---|---|---|
 | **C1** | **Note Writer** | "写笔记 / 草稿 X / 帮我写 md / draft a note / save this" | `vault_write` | one-line ack + path link |
-| **C2** | **Cap Builder** | "做个键帽 / 键 / 按钮 / 一键 X / 我经常 X / a key for / a shortcut" | `list_local_skills` + `install_keycap` | one-line confirm new cap |
-| **C3** | **Cap Invoker** | "用 frontend-slide / 跑那个键 / run X cap / 触发 X" | `keycap_run` (new Tauri command) | streamed cap output + status |
+| **C2** | **Cap Builder** | "做个键帽 / 键 / 按钮 / 一键 X / 我经常 X / a key for / a shortcut" | `list_local_skills` + `install_mcp` | one-line confirm new cap |
+| **C3** | **Cap Invoker** | "用 frontend-slide / 跑那个键 / run X cap / 触发 X" | `mcp_run` (new Tauri command) | streamed cap output + status |
 | **C4** | **Knowledge Retriever** | "我前几天写啥 / 关于 X 的笔记 / 搜下 vault / find my notes on X" | `vault_search` + `vault_read` + `vault_tags` + `vault_backlinks` | cited extracts with `path:line` |
 | **C5** | **Memory Curator** | bg trigger (every N=5 turn OR idle 30min OR user-asked) | `vault.read SOUL.md` + `vault.write` (x-ctrl:lessons frontmatter) | silent — sleep-time subagent (§5) |
 | **C6** | **System Doctor** | "切 provider / 我用什么 model / Irisy 慢 / 怎么登录 / where's my key" | `brain_status` (read-only) | one-line指引 to Settings → Providers |
 | **C7** | **Coding Companion** | session.mode == 'coding' OR project_dir set OR "code this / fix bug / 改下代码" | Pi 自带 read/write/edit/bash/grep/find/ls + `vault_write` | unified-diff style change report |
 | **C8** | **Conversation** | "你是谁 / 哈喽 / Irisy 怎么样 / 你能做什么" | none | natural language, 1-2 sentences |
 
-**Trigger discipline** (the lock that fixes the install_keycap bug):
+**Trigger discipline** (the lock that fixes the install_mcp bug):
 - C2 fires ONLY when user used 键帽/键/按钮/一键/key/shortcut/button/tool I can reuse. **Default = C1 (one-shot write) or C8 (chat)**, NEVER C2.
 - When user's intent is ambiguous, the assistant asks ONE short question: "做完这一次就行,还是想以后一键再来?" Then routes accordingly.
-- C3 fires when user names a known keycap by id or display name; routes to `keycap_run` (Tauri command, ADR-007 § cap-run v1 referenced below).
+- C3 fires when user names a known mcp by id or display name; routes to `mcp_run` (Tauri command, ADR-007 § cap-run v1 referenced below).
 
 ### §6.3 Segment storage
 
@@ -364,10 +364,10 @@ The vault override path (`vault/.irisy-prompts/<segment>.md`) is preserved per �
 - [ ] `IRISY_BASE_PERSONA` extracted; old `IRISY_SYSTEM_DEFAULT` constant removed (single SSOT, per `feedback_no_redundancy_one_ssot`).
 - [ ] 8 capability segments in `IRISY_CAPABILITY_SEGMENTS`; each ≤ 25 lines, no redundant rules across segments.
 - [ ] `pickCapabilitySegments()` keyword table covers CN + EN trigger variants from §6.2.
-- [ ] `buildSystemPrompt()` order: base persona → `<brain_state>` → core memory → SOUL.md → selected capability segments → installed keycaps list.
-- [ ] Manual test 5 case: "创建一个 md" → only C1 segment loaded → vault_write fires, no install_keycap.
-- [ ] Manual test: "做个 PPT 键帽" → C2 segment loaded → install_keycap fires.
-- [ ] Manual test: "用 frontend-slide" → C3 segment loaded → keycap_run fires (assumes keycap installed).
+- [ ] `buildSystemPrompt()` order: base persona → `<brain_state>` → core memory → SOUL.md → selected capability segments → installed mcps list.
+- [ ] Manual test 5 case: "创建一个 md" → only C1 segment loaded → vault_write fires, no install_mcp.
+- [ ] Manual test: "做个 PPT 键帽" → C2 segment loaded → install_mcp fires.
+- [ ] Manual test: "用 frontend-slide" → C3 segment loaded → mcp_run fires (assumes mcp installed).
 - [ ] Manual test: "我用什么 model" → C6 segment loaded → one-line answer with brand label, no diagnostic verbiage.
 
 ---
@@ -414,9 +414,9 @@ Pi ToolDefinition is TypeBox-shaped (TParams extends TSchema). ctrl-pi-bridge **
 | `vault_tags` | C4 | `vault_tags` |
 | `vault_backlinks` | C4 | `vault_backlinks` |
 | `list_local_skills` | C2 (Cap Builder) | `list_local_skills` |
-| `install_keycap` | C2 | `install_keycap` |
-| `list_keycaps` | C2/C3 | `list_keycaps` |
-| `keycap_run` | C3 (Cap Invoker) | NEW Tauri command per §7.5 |
+| `install_mcp` | C2 | `install_mcp` |
+| `list_mcps` | C2/C3 | `list_mcps` |
+| `mcp_run` | C3 (Cap Invoker) | NEW Tauri command per §7.5 |
 | `brain_status` | C6 (System Doctor) | `brain_status` |
 
 C7 (Coding Companion) uses Pi's own `read` / `write` / `edit` / `bash` / `grep` / `find` / `ls` — kept enabled by switching `--no-tools` → `--no-builtin-tools` (negates only the built-in default; extension-registered tools still load).
@@ -429,9 +429,9 @@ C7 (Coding Companion) uses Pi's own `read` / `write` / `edit` / `bash` / `grep` 
 
 **`resources_discover`**: scan `~/.claude/skills/*/SKILL.md` + `~/.ctrl/plugins/cache/**/SKILL.md` and return them as `skillPaths`. Pi auto-loads as native Skills, exposing `/skill:<name>` slash commands. CTRL's own `list_local_skills` Tauri command keeps the same discovery code (§7.3) so both surfaces share one source of truth (`feedback_no_redundancy_one_ssot`).
 
-### §7.5 New Tauri command — `keycap_run` (for C3)
+### §7.5 New Tauri command — `mcp_run` (for C3)
 
-Tauri command `keycap_run({keycap_id: string, args: Record<string, unknown>}) → KeycapInvocation`. Locates the manifest in `~/.ctrl/keycaps/<keycap_id>/`, spawns its runtime (MCP server / built-in handler / local agent per ADR-004 §1), pipes args, streams result back through the same `chat-stream-delta` Tauri event (so ctrl-pi-bridge can render output inline). When the keycap is a SKILL-derived one, the args dict is the skill's `{{var}}` placeholders.
+Tauri command `mcp_run({mcp_id: string, args: Record<string, unknown>}) → McpInvocation`. Locates the manifest in `~/.ctrl/mcps/<mcp_id>/`, spawns its runtime (MCP server / built-in handler / local agent per ADR-004 §1), pipes args, streams result back through the same `chat-stream-delta` Tauri event (so ctrl-pi-bridge can render output inline). When the mcp is a SKILL-derived one, the args dict is the skill's `{{var}}` placeholders.
 
 ### §7.6 PWA XML fallback retention
 
@@ -453,11 +453,11 @@ The XML segment is added to the system prompt only when the fallback path is act
 - [ ] `pi.on('tool_call')` inspector: 5 identical calls in a row → block with reason "tool loop detected"; verified by unit test.
 - [ ] `pi.on('resources_discover')` returns at least the same skills `list_local_skills` Tauri command finds; both share helper in `packages/ctrl-pi-bridge/src/skills-discover.ts`.
 - [ ] `ctrl-pi-plugin/src/pi-bridge.ts:242` changed: `--no-tools` → `--no-builtin-tools`; new `--skill` args appended for each discovered skill file (delegates to Pi's own loader).
-- [ ] New Tauri command `keycap_run` in `src-tauri/src/commands/kernel.rs`, registered in `commands/mod.rs`.
+- [ ] New Tauri command `mcp_run` in `src-tauri/src/commands/kernel.rs`, registered in `commands/mod.rs`.
 - [ ] Provider-based path selection in `commands/irisy_chat.rs::forward_to_brain`: route via active `brain_status.irisy.primary.id` (frontier ⇒ native tools / non-frontier ⇒ XML).
 - [ ] Manual: BYOK Anthropic Pro → ctrl-pi-bridge native function calling fires; vault_write tool call visible in Pi event stream as `tool_use`, not XML in chat content.
 - [ ] Manual: Volc default → XML `<call>` loop fires (regression guard).
-- [ ] Manual: "用 frontend-slide" → keycap_run invokes and streams output through chat panel.
+- [ ] Manual: "用 frontend-slide" → mcp_run invokes and streams output through chat panel.
 
 ## Acceptance
 
@@ -469,7 +469,7 @@ The XML segment is added to the system prompt only when the fallback path is act
 - [x] ADR direction recorded; v1 ships none of these (v1.1+ scope). Closed at "decision recorded".
 
 ### Persona + prompt v5 (§3)
-- [x] Persona is per-keycap `cap_asset.files/persona.md`; vault override path declared. ADR-002 § composition axis 6 closes the schema side.
+- [x] Persona is per-mcp `cap_asset.files/persona.md`; vault override path declared. ADR-002 § composition axis 6 closes the schema side.
 
 ### SOUL.md compat (§4 — NEW v2)
 - [x] Strategic lock recorded — SOUL.md spec adopted verbatim, `x-ctrl:` namespace reserved for CTRL extensions, ecosystem stance documented in `.olym/brainstorm/openclaw-compat-2026-06-03.md` and memory `decision_openclaw_compat_layer`. Code follow-up tracked in **Future work** below (deferred batch, not a blocker for ongoing P0 fixes).
@@ -477,22 +477,22 @@ The XML segment is added to the system prompt only when the fallback path is act
 
 - Irisy prompt v5 — bumps `PROMPT_VERSION` 4 → 5 in `packages/ctrl-web/src/lib/irisy-prompts.ts`; replaces v4 "no codenames" hard-ban with "brand labels only + self-aware via brain_status + failover transition + Settings deflect". Lands with ADR-002 § provider §3.7 introspection wiring.
 - Stages 2-7 (Creation / Config / Invoke / Collab / Debug / Improvement) UI surfaces — v1.1+ scope (memory `feedback_no_planning_no_phasing`)
-- Stage 8 (Retire) Settings drawer for low-usage keycaps
-- Cross-stage conversation history via `LocalStorage` namespace `irisy:<stage>:<keycap_id>`
+- Stage 8 (Retire) Settings drawer for low-usage mcps
+- Cross-stage conversation history via `LocalStorage` namespace `irisy:<stage>:<mcp_id>`
 - Remote co-view § 4 primitives (session.observe / share / takeover / narrate) — v1.1+ scope
 - §4 SOUL.md compat — code follow-up batch (deferred to next session, not a release blocker):
   - `vault/irisy/SOUL.md` first-boot seed via `seed_vault_feature_layer` (template at `vault_seed/irisy-soul.md`)
   - `vault/irisy/.soul-md-version` pin file recording upstream commit/tag
   - Kernel commands `irisy_soul_read` / `irisy_soul_write` surfacing `{frontmatter, body}`
   - MCP tools `irisy.soul_get` / `irisy.soul_set` on :17873 — external agents (Cursor, Claude Code) can read+write CTRL's soul; write emits `platform.notify`
-  - Seeded SOUL.md template demonstrates `x-ctrl:` namespace with provider routing + keycap activation example
+  - Seeded SOUL.md template demonstrates `x-ctrl:` namespace with provider routing + mcp activation example
   - Pi brain prompt v5 (or v6) injects SOUL.md body verbatim per turn
   - CLAUDE.md "Design Philosophy" cross-link to §4
-- §4.4 keycap manifest ↔ OpenClaw skill bridge — schema lock lands in **ADR-002 § composition v1 amendment** (next session, paired with `packages/ctrl-keycap-sdk/src/openclaw-bridge.ts` transformer and Pool import flow). Independent of the §4 SOUL.md compat acceptance items.
+- §4.4 mcp manifest ↔ OpenClaw skill bridge — schema lock lands in **ADR-002 § composition v1 amendment** (next session, paired with `packages/ctrl-mcp-sdk/src/openclaw-bridge.ts` transformer and Pool import flow). Independent of the §4 SOUL.md compat acceptance items.
 
 ## Provenance
 
-- §1 ← orig-016 (Irisy 8-stage keycap lifecycle, 2026-05-22, accepted)
+- §1 ← orig-016 (Irisy 8-stage mcp lifecycle, 2026-05-22, accepted)
 - §2 ← orig-017 (Remote co-view = Irisy primitives, 2026-05-22, accepted, v1.1+ scope)
 - §3 ← orig-024 §7 (Irisy persona rule, 2026-05-30) + amendment 2026-05-31 (prompt v5 replaces v4 "no codenames" with brand-label + self-aware policy; closes bao 2026-05-31 root issue "Irisy doesn't know its own stack")
 - §4 ← NEW 2026-06-03. Driven by bao competitive research dump (OpenClaw 350k stars / WorkBuddy compat / SOUL.md cross-tool recognition); locks ecosystem alignment that memory `decision_pi_is_sole_brain_hermes_is_keycap` half-committed to. Full strategic analysis at `.olym/brainstorm/openclaw-compat-2026-06-03.md`.

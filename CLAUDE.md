@@ -71,7 +71,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 1. **本地是 truth, 云是 mirror** — 所有读走本地；写本地立即可见, 异步推云。云不在 → 降级运行, 不 hard fail。
 2. **端侧化优先** — OAuth (本机 loopback callback, 不走 CTRL cloud proxy) / LLM (Volc 云 + Ollama 端侧 dual) / sync (mesh P2P, ADR-002 substrate § crypto v1) / RAG (本机 SQLite FTS5 + WASM embed) / OCR (本机 Vision framework) 都端侧实现。**ctrl-cloud 是 augmentation, 不是 dependency**——用户拔网 / 不用 ctrl-cloud, CTRL 完整可用。
 3. **Ctrl-key 是唯一入口** — 用户永不打开飞书 / Notion / Linear 等第三方 app；CTRL workspace 区 render 所有数据类型 (viewer registry by content type, 不是 by platform)。
-4. **One-shot, not flows** — 一个 keycap = 一个原子动作。无 wizard / 无 multi-step / 无 dialog tree。
+4. **One-shot, not flows** — 一个 mcp = 一个原子动作。无 wizard / 无 multi-step / 无 dialog tree。
 5. **AI 是 pipe, 不是 sidebar** — 发收消息 / 处理内容时 AI 默认 in-line 处理 (润色 / 摘要 / 抽 action item / 翻译), 可关默认开。
 6. **Transparency by drill-down** — 任何 AI / 抽象处理都可长按 / hover 看 raw 数据 (飞书原文 / AI 改后 / 本地草稿三层视图)。
 7. **Pi 是唯一 brain** *(ADR-002 substrate § brain v1; hermes 彻底移除 2026-05-28 PR #62)* — Irisy 跑 agent loop 永远走 **Pi** (`@mariozechner/pi-coding-agent`, MIT, lazy install via `~/.ctrl/pi/`). kernel `text.chat` 调用通过 provider router (ADR-002 substrate § provider v1) 路由到当前 active provider, Pi 通过 ctrl-bridge 扩展 HTTP-fetch kernel `/text-chat` endpoint. **hermes 已彻底移除** — 不再作 keycap, 无 kernel / PWA 接线, `packages/ctrl-hermes-plugin/` 已删. hermes 的长效记忆优点已原生落在 Irisy (`vault/irisy/SOUL.md` + `.irisy-memory/`).
@@ -80,7 +80,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 
 - **没有"导出"功能** — 数据从来没被进口过, vault 文件夹就是数据
 - **OAuth tokens 存 macOS Keychain** — CTRL 团队 server 不在 token 流量里
-- **keycap manifest = markdown + JSON frontmatter** — 不是 binary blob, 用户可手编可 git diff
+- **mcp manifest = markdown + JSON frontmatter** — 不是 binary blob, 用户可手编可 git diff (mcp = 用户 + 代理共享 vocab, 替代"keycap" 2026-06-07)
 - **vault layout 由用户决定** — CTRL 提供 default policy (flat / by-day / by-entity), 用户可换；不 hardcode 目录结构
 - **第三方 backend (飞书 / Notion / Slack) 是 sync provider** — 不是 source of truth, 本地永远赢冲突
 - **CTRL-native vault stack** *(2026-05-25)* — viewer 用 **Tiptap** (markdown WYSIWYG+source) + **CodeMirror 6** (code/JSON/YAML/TOML/HTML) + **mermaid.js** (mermaid) + iframe+CSP (HTML sandbox) + browser-native (SVG); 索引用 **SQLite FTS5** (kernel `vault_index.rs`) + 自实现 backlink/tag scanner. VMark 用的也是同样开源 stack — 不需要把 VMark 作 substrate, 直接 npm 装这些 lib 即可
@@ -99,11 +99,11 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 2. **kernel** — Rust microkernel + 公共服务 (provider / vault / storage / mcp / stss / mesh)
 3. **Pi** ★ — 核心 brain, 唯一 agent loop
 4. **provider** — Pi 用的 LLM 调用 (kernel/provider/ 子系统)
-5. **keycap** — Pi 调的 tool (subprocess via MCP)
+5. **mcp** — Pi 调的 tool (subprocess via MCP) — 此前称 "keycap", 2026-06-07 改名跟 MCP 生态对齐
 
 **5 kernel primitives** (L1 内): Actor / Capability / Event / Channel / Effect.
 
-**5 keycap sources** (Pi 工具注入路径): MCP servers / Big-platform OAuth / Local agents / ST-SS shared windows / Built-in.
+**5 mcp sources** (Pi 工具注入路径): MCP servers / Big-platform OAuth / Local agents / ST-SS shared windows / Built-in.
 
 物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 spine § layers v1 — Pi-centric 是 logical view, 4 层是 implementation view, 两图并存.
 
@@ -164,7 +164,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | UI | Single PWA (`packages/ctrl-web`) — React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa |
 | Vault viewers | **Tiptap** (markdown WYSIWYG+source) + **CodeMirror 6** (code/JSON/YAML/TOML/HTML) + **mermaid.js** (mermaid graphs) + iframe+CSP (HTML sandbox) — content-type viewer registry, replaces VMark MCP sidecar (S15 deprecated 2026-05-25) |
 | Vault index | SQLite FTS5 (`src-tauri/src/kernel/vault_index.rs`) + backlink scanner + tag scanner (kernel-native, no VMark dep) |
-| Brain (sole) | **Pi** (`@mariozechner/pi-coding-agent`, MIT, lazy npm install to `~/.ctrl/pi/`) — kernel routes `text.chat` via provider router (ADR-002 substrate § provider v1); Pi consumes via ctrl-bridge extension. **hermes fully removed** (2026-05-28, PR #62) — not a brain, not a keycap, package deleted. ADR-002 substrate § brain v1. |
+| Brain (sole) | **Pi** (`@mariozechner/pi-coding-agent`, MIT, lazy npm install to `~/.ctrl/pi/`) — kernel routes `text.chat` via provider router (ADR-002 substrate § provider v1); Pi consumes via ctrl-bridge extension. **hermes fully removed** (2026-05-28, PR #62) — not a brain, not an mcp, package deleted. ADR-002 substrate § brain v1. |
 | Web ↔ Rust bridge | Tauri 2 `invoke()` on desktop (intra-process), WebSocket + token on mobile |
 | Stream protocol | ST-SS (CBOR Cell/Op) |
 | Package manager | npm workspaces |
@@ -186,19 +186,21 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 
 ---
 
-## Keycap manifest model
+## MCP manifest model
 
-Every keycap = declarative manifest (Zod schema). 5 source types: builtin / mcp / oauth / local_agent / stss.
+Every mcp = declarative manifest (Zod schema). 5 source types: builtin / mcp-server / oauth / local_agent / stss.
 
-详细 schema: ADR-002 substrate § composition v1 + `packages/ctrl-keycap-sdk/src/manifest-schema.ts` (SSOT).
+> 2026-06-07: "keycap" 退役为 UX 装饰概念, 技术端统一称 "mcp" 跟 MCP 生态对齐. memory `decision_keycap_collapses_to_mcp_meta_ux_layer` (2026-06-05) 已升级 — 都叫 mcp, skills 也是 mcp.
+
+详细 schema: ADR-002 substrate § composition v1 + `packages/ctrl-mcp-sdk/src/manifest-schema.ts` (SSOT).
 
 AI 创作助手 generates manifests from natural language. User never writes JSON unless they want to (advanced mode).
 
 ---
 
-## Top 15 keycaps (v1 scope)
+## Top 15 mcps (v1 scope)
 
-| # | Keycap | Tier |
+| # | MCP | Tier |
 |---|---|---|
 | 1-5 | Clipboard AI / OCR / Translate / Text / Chat | P0 v1.0 |
 | 6-10 | 窗口 / PDF / LaTeX / 智识 / 屏幕录 | P1 v1.1 |

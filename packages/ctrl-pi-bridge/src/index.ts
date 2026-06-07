@@ -12,7 +12,7 @@
 //
 // Run standalone with:
 //   pi --provider <user-cli-or-byok> --extension /path/to/irisy.ts
-// CTRL.app integration is intentionally NOT here (bao "先不要管 ctrl").
+// CTRL.app integration is intentionally NOT here (ADR-002 substrate § brain v1 — bridge stays minimal; defer ctrl wiring).
 //
 // Local Pi typing: We mirror `~/.ctrl/pi/node_modules/@mariozechner/
 // pi-coding-agent/dist/core/extensions/types.d.ts` for the subset we
@@ -653,7 +653,7 @@ async function appendAuditLine(topic: string, line: string): Promise<void> {
   }
 }
 
-// ADR-002 § vault v1 §8 (2026-06-01) + bao 2026-06-07 "全接": vault auto-
+// ADR-002 § vault v1 §8 (2026-06-01) + bao 2026-06-07 "wire-everything": vault auto-
 // RAG. Search vault for the last user-message text on every LLM call;
 // inject top-3 substring matches as a system message so the model can
 // ground its answer in user notes without the user typing `vault_search`

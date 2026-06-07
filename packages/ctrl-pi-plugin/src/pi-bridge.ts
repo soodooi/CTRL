@@ -47,7 +47,7 @@ interface PiRpcClient {
   stop(): Promise<void>;
   onEvent(listener: (event: PiAgentEvent) => void): () => void;
   prompt(message: string, images?: unknown[]): Promise<void>;
-  // Full RpcClient surface — bao 2026-06-05 "全量打开 PI 所有功能".
+  // Full RpcClient surface — ADR-002 substrate § brain v1 (bao 2026-06-05: expose every Pi RPC method).
   // Inlined here so PiBridge can `client[method]?.(...)` dispatch without
   // importing Pi's d.ts statically (see comment above the interface).
   steer?(message: string): Promise<void>;

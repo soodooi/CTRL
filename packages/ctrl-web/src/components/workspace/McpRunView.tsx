@@ -1,6 +1,6 @@
-// McpRunView — the run-time WORKSPACE for a mcp (the 工作区, not the
-// 工作台). Generic + reusable: it renders ANY mcp from its manifest —
-// an input form derived from manifest.io.inputs, a Run action that calls the
+// McpRunView — the run-time workspace for a mcp (the run-pane, not the toolbar).
+// Generic + reusable: it renders ANY mcp from its manifest —
+// ADR-004 cap § execution v1 (2026-06-07 rename: keycap -> mcp).
 // kernel run pipe, a LIVE output pane (the brain's progress streamed cell by
 // cell over mcp-<id>), and the produced artifact shown through the
 // content-type viewer registry (HtmlViewer for slides, MarkdownViewer for
