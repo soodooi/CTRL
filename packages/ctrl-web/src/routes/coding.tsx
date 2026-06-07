@@ -1,87 +1,17 @@
-// Coding — ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11).
+// Coding — ADR-002 substrate § brain v14 (2026-06-07).
 //
-// L1 chip click → this route → cs_spawn the bundled `pi` binary → xterm.
-// No provider resolution, no api-key injection, no SSOT lookup, no error
-// page. Pi reads ~/.pi/agent/models.json + ~/.pi/agent/settings.json
-// itself; same config the Irisy chat panel uses (chat = `pi --mode rpc`
-// via ctrl-pi-bridge, coding tab = `pi` TUI — one binary, one config).
+// Clean placeholder during the Pi-native coding module rebuild.
+// v11 (cs_spawn pi TUI inside xterm) + v13 (slim cs_spawn) both wrapped
+// what Pi already provides as `pi-coding-agent`. v14 rebuilds the
+// Coding tab as a 2nd `pi --mode rpc` process with its own bridge
+// extension (mirrors the Irisy chat pattern, no wrapper layer).
 //
-// Behavior on mount:
-//   1. Look for an existing non-crashed Pi env; if found, navigate to it.
-//   2. Otherwise resolve the bundled Pi binary path + cs_spawn it.
-//   3. Pi's own startup UX handles "no provider configured" — it prompts
-//      via `pi config` or stderr. CTRL does not wrap that.
+// Until v14 ships, the tab renders this notice so the L1 chip remains
+// discoverable but never throws "no tab renderer".
 
-import { invoke } from '@tauri-apps/api/core';
-import { useEffect, type ReactElement } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { csList, csSpawn } from '@/lib/kernel';
-
-interface EnvLike {
-  stream_id?: string;
-  status?: string;
-  command?: string;
-}
-
-interface PiBinaryPath {
-  path: string;
-}
-
-const pickExistingCodingEnv = (raw: unknown): string | null => {
-  if (!Array.isArray(raw)) return null;
-  for (const item of raw as EnvLike[]) {
-    if (item?.status === 'crashed') continue;
-    const cmd = item?.command ?? '';
-    if (cmd.endsWith('/pi') || cmd === 'pi') {
-      if (typeof item.stream_id === 'string') return item.stream_id;
-    }
-  }
-  return null;
-};
+import type { ReactElement } from 'react';
 
 export const CodingRoute = (): ReactElement => {
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const envs = await csList();
-        if (cancelled) return;
-        const existing = pickExistingCodingEnv(envs);
-        if (existing) {
-          await navigate({
-            to: '/code-space/$envId',
-            params: { envId: existing },
-            replace: true,
-          });
-          return;
-        }
-
-        const { path: piPath } = await invoke<PiBinaryPath>('pi_binary_path');
-        if (cancelled) return;
-
-        const reply = await csSpawn({
-          command: piPath,
-          args: [],
-          env: {},
-        });
-        if (cancelled) return;
-        await navigate({
-          to: '/code-space/$envId',
-          params: { envId: reply.stream_id },
-          replace: true,
-        });
-      } catch {
-        // Pi prints its own startup diagnostics to stderr (handled by the
-        // xterm stream). No PWA error page — that would be a wrapper.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [navigate]);
-
   return (
     <div
       style={{
@@ -89,14 +19,26 @@ export const CodingRoute = (): ReactElement => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        flexDirection: 'column',
+        gap: 'var(--space-3)',
+        padding: 'var(--space-6)',
         color: 'var(--color-text-muted)',
         fontFamily: 'var(--font-mono)',
         fontSize: 'var(--text-mono-sm)',
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
+        textAlign: 'center',
+        maxWidth: 520,
+        margin: '0 auto',
       }}
     >
-      coding · launching pi…
+      <span style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        coding · rebuilding
+      </span>
+      <span style={{ letterSpacing: 0 }}>
+        Pi-native coding module is being rebuilt as a 2nd pi --mode rpc
+        process (mirrors Irisy). For now, ask Irisy directly — Pi has
+        read/write/edit/bash built in, so coding requests work in the
+        chat panel.
+      </span>
     </div>
   );
 };

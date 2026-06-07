@@ -18,11 +18,10 @@
 // for context); module not declared so the file is not compiled.
 pub mod chat;
 pub mod code_space;
-// ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11): only
-// keeps `pi_binary_path` so the PWA can cs_spawn the bundled Pi. All
-// provider resolution + key injection + SSOT lookup removed — Pi does
-// that itself via ~/.pi/agent/models.json.
-pub mod coding;
+// ADR-002 substrate § brain v14 (2026-06-07, retracts v13): Pi-native
+// coding module being rebuilt as a 2nd `pi --mode rpc` process with its
+// own bridge extension (mirrors Irisy pattern, not the cs_spawn TUI
+// wrapper). Module reintroduced in the next ADR amendment.
 pub mod config;
 pub mod draft;
 pub mod draft_run;
@@ -101,10 +100,9 @@ macro_rules! pwa_invoke_handler {
             // did the user pick" (independent of Pi runtime state). The
             // PWA *chip* reads `pi_rpc('getState')` directly (Pi truth).
             $crate::commands::provider::get_active_providers,
-            // ADR-002 substrate § brain v13 (2026-06-07): Pi binary path
-            // helper so PWA can cs_spawn the bundled Pi. No provider
-            // resolution — Pi reads ~/.pi/agent/models.json itself.
-            $crate::commands::coding::pi_binary_path,
+            // ADR-002 substrate § brain v14 (2026-06-07): coding-related
+            // Tauri commands removed for clean rebuild. Will reintroduce
+            // as coding_chat_* commands fronting a 2nd Pi RPC process.
             $crate::commands::provider::provider_list,
             $crate::commands::provider::provider_set_active,
             $crate::commands::provider::provider_detect,

@@ -34,7 +34,6 @@ import type { IrisyState } from './primitives/IrisyMascot';
 import { invoke } from '../lib/bridge';
 import { useWorkspaceStore } from '../lib/workspace-store';
 import { useSessionStateStore } from '../lib/session-state';
-import { ensureCodingEnv } from '../lib/coding-spawn';
 import styles from './PrimaryRail.module.css';
 
 // L1 nav ids — bao 2026-05-30 (ADR-003 frontend §2): ▾ workspace toggle (top) +
@@ -221,46 +220,22 @@ export const PrimaryRail = (): ReactElement => {
             });
           return;
         }
-        // ADR-002 substrate § brain v13 (2026-06-07): Coding chip spawns
-        // bundled Pi BEFORE opening the tab so the tab path is
-        // /code-space/<envId> — the system tab body renders the xterm
-        // directly (CodeSpaceDetailRoute). Navigate-after-mount does not
-        // work for system tabs (they have their own routing).
-        const openTabAt = (path: string) => {
-          ws.openSystemTab({
-            id: def.id,
-            kind: 'route',
-            path,
-            title: def.label,
+        ws.openSystemTab({
+          id: def.id,
+          kind: 'route',
+          path: def.path,
+          title: def.label,
+        });
+        void invoke<boolean>('ensure_workspace_window_expanded')
+          .then(() => setWorkspaceOpen(true))
+          .catch(() => {
+            /* browser PWA or unsupported platform — silently no-op */
           });
-          void invoke<boolean>('ensure_workspace_window_expanded')
-            .then(() => setWorkspaceOpen(true))
-            .catch(() => {
-              /* browser PWA or unsupported platform — silently no-op */
-            });
-        };
-        if (def.id === CODING_ITEM_ID) {
-          openTabAt(def.path);
-          void ensureCodingEnv()
-            .then((envId) => {
-              ws.openSystemTab({
-                id: def.id,
-                kind: 'route',
-                path: `/code-space/${envId}`,
-                title: def.label,
-              });
-            })
-            .catch((e) => {
-              console.error('[coding] cs_spawn failed:', e);
-            });
-        } else {
-          openTabAt(def.path);
-        }
         return;
       }
       void navigate({ to: def.path });
     },
-    [navigate, setActiveRailId, workspaceOpen],
+    [navigate, setActiveRailId],
   );
 
   const handleSettingsClick = useCallback(() => {
