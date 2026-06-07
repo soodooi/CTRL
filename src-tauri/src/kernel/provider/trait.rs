@@ -124,15 +124,14 @@ pub enum Consumer {
     /// Always seeded at boot so a fresh install without any CLI still
     /// has a working AI path.
     IrisyFallback,
-    /// `coding.primary` — ADR-002 substrate § provider v11 §3.11
-    /// (2026-06-07). Separate role for the Coding L1 workspace which
-    /// spawns Pi in native TUI mode (xterm + cs_spawn) and uses its
-    /// own provider+model independent of Irisy chat. Lets users run
-    /// Claude (BYOK key or Pro OAuth subscription) for code work while
-    /// keeping Volc / Qwen / Ollama on the Irisy ambient chat path.
-    CodingPrimary,
     /// Free-form consumer id — reserved for mcps / future modes that
     /// declare their own routing slot without an enum bump.
+    ///
+    /// ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11):
+    /// `CodingPrimary` variant REMOVED. Pi already owns provider
+    /// selection via `~/.pi/agent/models.json`; CTRL does not maintain
+    /// a parallel SSOT slot for the Coding L1 chip. Same Pi binary,
+    /// same config — chat panel and coding TUI share state.
     Custom(String),
 }
 
@@ -143,7 +142,6 @@ impl Consumer {
         match self {
             Self::IrisyPrimary => "irisy.primary".to_string(),
             Self::IrisyFallback => "irisy.fallback".to_string(),
-            Self::CodingPrimary => "coding.primary".to_string(),
             Self::Custom(s) => s.clone(),
         }
     }
@@ -155,7 +153,8 @@ impl Consumer {
         match s {
             "irisy.primary" => Self::IrisyPrimary,
             "irisy.fallback" => Self::IrisyFallback,
-            "coding.primary" => Self::CodingPrimary,
+            // ADR-002 substrate § brain v13 (2026-06-07): retracted slot
+            // falls through to Custom so existing SSOT files don't crash.
             other => Self::Custom(other.to_string()),
         }
     }

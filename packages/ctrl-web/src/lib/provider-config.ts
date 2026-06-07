@@ -41,9 +41,10 @@ export async function providerList(): Promise<ProviderListRow[]> {
 }
 
 /** Canonical role ids. Mirrors Rust `Consumer::id()`. */
-// ADR-002 substrate § provider v11 §3.11 (2026-06-07): coding.primary
-// added — Coding L1 workspace spawns Pi native TUI with its own provider.
-export type IrisyRole = 'irisy.primary' | 'irisy.fallback' | 'coding.primary';
+// ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11):
+// coding.primary REMOVED. Pi reads ~/.pi/agent/models.json itself —
+// no separate CTRL routing slot for the Coding L1 chip.
+export type IrisyRole = 'irisy.primary' | 'irisy.fallback';
 
 export interface ProviderSetActiveArgs {
   role: IrisyRole | string;

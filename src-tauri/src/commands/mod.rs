@@ -18,9 +18,10 @@
 // for context); module not declared so the file is not compiled.
 pub mod chat;
 pub mod code_space;
-// ADR-002 substrate § provider v11 §3.11 (2026-06-07): Coding L1 native
-// Pi TUI resolver — read coding.primary SSOT + resolve API key + return
-// spawn spec for PWA to hand to cs_spawn.
+// ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11): only
+// keeps `pi_binary_path` so the PWA can cs_spawn the bundled Pi. All
+// provider resolution + key injection + SSOT lookup removed — Pi does
+// that itself via ~/.pi/agent/models.json.
 pub mod coding;
 pub mod config;
 pub mod draft;
@@ -100,10 +101,10 @@ macro_rules! pwa_invoke_handler {
             // did the user pick" (independent of Pi runtime state). The
             // PWA *chip* reads `pi_rpc('getState')` directly (Pi truth).
             $crate::commands::provider::get_active_providers,
-            // ADR-002 substrate § provider v11 §3.11 (2026-06-07):
-            // Coding L1 native Pi TUI spawn resolver. PWA gets spec,
-            // hands to cs_spawn — kernel-only credential lookup.
-            $crate::commands::coding::coding_resolve_spawn,
+            // ADR-002 substrate § brain v13 (2026-06-07): Pi binary path
+            // helper so PWA can cs_spawn the bundled Pi. No provider
+            // resolution — Pi reads ~/.pi/agent/models.json itself.
+            $crate::commands::coding::pi_binary_path,
             $crate::commands::provider::provider_list,
             $crate::commands::provider::provider_set_active,
             $crate::commands::provider::provider_detect,

@@ -110,7 +110,8 @@ pub(crate) fn brain_status_inner(
     let mut providers: BTreeMap<String, RoleProvider> = BTreeMap::new();
     // ADR-002 substrate § provider v11 §3.11 (2026-06-07): include
     // coding.primary so PWA Settings + chip see all 3 roles.
-    for role in [Consumer::IrisyPrimary, Consumer::IrisyFallback, Consumer::CodingPrimary] {
+    // ADR-002 substrate § brain v13 (2026-06-07): CodingPrimary retracted.
+    for role in [Consumer::IrisyPrimary, Consumer::IrisyFallback] {
         let chain = registry.route_chain(&role);
         if let Some(active_id) = chain.primary.as_ref() {
             if let Some(snap) = registry.snapshot(active_id) {
@@ -298,7 +299,8 @@ pub fn get_active_providers(
     let mut roles: BTreeMap<String, ActiveRoleProvider> = BTreeMap::new();
     // ADR-002 substrate § provider v11 §3.11 (2026-06-07): include
     // coding.primary so PWA Settings + chip see all 3 roles.
-    for role in [Consumer::IrisyPrimary, Consumer::IrisyFallback, Consumer::CodingPrimary] {
+    // ADR-002 substrate § brain v13 (2026-06-07): CodingPrimary retracted.
+    for role in [Consumer::IrisyPrimary, Consumer::IrisyFallback] {
         let chain = registry.route_chain(&role);
         if let Some(active_id) = chain.primary.as_ref() {
             if let Some(snap) = registry.snapshot(active_id) {

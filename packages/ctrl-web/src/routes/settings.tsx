@@ -990,27 +990,22 @@ interface IrisyRoleSpec {
   description: string;
 }
 
-// ADR-002 substrate § provider v11 §3.11 (2026-06-07): coding.primary
-// row added so users can bind a separate provider (e.g. Claude/Codex)
-// for the Coding L1 workspace native Pi TUI, independent of Irisy chat.
+// ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11):
+// coding.primary row REMOVED. The Coding L1 chip spawns Pi natively;
+// Pi picks provider from ~/.pi/agent/models.json (same SSOT used by
+// the Irisy chat panel, since both are the same Pi binary).
 const IRISY_ROLES: ReadonlyArray<IrisyRoleSpec> = [
   {
     id: 'irisy.primary',
     label: 'Irisy primary',
     description:
-      'Your own CLI (Claude / Codex / Gemini / Aider). No CTRL cost — augmentation slot.',
+      'Your own CLI (Claude / Codex / Gemini / Aider). No CTRL cost — augmentation slot. Also drives the Coding L1 native Pi TUI.',
   },
   {
     id: 'irisy.fallback',
     label: 'Irisy fallback',
     description:
       'CTRL-managed safety net so a fresh install without a CLI still has a working AI path.',
-  },
-  {
-    id: 'coding.primary',
-    label: 'Coding primary',
-    description:
-      'Provider used when you click the Coding L1 chip. Spawns Pi native TUI with this provider — independent of Irisy chat. Recommended: Claude (BYOK API key or Pro subscription via Pi OAuth).',
   },
 ];
 

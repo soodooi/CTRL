@@ -1,29 +1,19 @@
-// Coding — ADR-002 substrate § provider v11 §3.11 (2026-06-07).
+// Coding — ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11).
 //
-// L1 chip click → this route → resolve coding.primary from kernel SSOT →
-// spawn `pi --provider <id> --model <model>` in native TUI mode via the
-// existing Code Space PTY plumbing → navigate to /code-space/$envId
-// where xterm.js renders the live stream.
-//
-// bao 2026-06-07: the Coding L1 chip uses Pi natively (separate provider
-// from Irisy chat). Click toggles a side workspace tab; click again
-// closes it.
+// L1 chip click → this route → cs_spawn the bundled `pi` binary → xterm.
+// No provider resolution, no api-key injection, no SSOT lookup, no error
+// page. Pi reads ~/.pi/agent/models.json + ~/.pi/agent/settings.json
+// itself; same config the Irisy chat panel uses (chat = `pi --mode rpc`
+// via ctrl-pi-bridge, coding tab = `pi` TUI — one binary, one config).
 //
 // Behavior on mount:
-//   1. Reuse an existing non-crashed Pi coding session if one exists
-//      (avoids spawning 3 Pi processes when the user clicks the chip
-//      repeatedly).
-//   2. Otherwise resolve coding.primary via `coding_resolve_spawn`, then
-//      cs_spawn into a fresh Pi TUI.
-//   3. If coding.primary is not configured (or the key is missing),
-//      surface the kernel's error inline + link to Settings.
-//
-// No persona override, no Irisy prompt, no wrapper layer — Pi runs its
-// native coding-agent CLI exactly as the upstream ships it (7 builtin
-// file tools + bash + skills + native function calling all live).
+//   1. Look for an existing non-crashed Pi env; if found, navigate to it.
+//   2. Otherwise resolve the bundled Pi binary path + cs_spawn it.
+//   3. Pi's own startup UX handles "no provider configured" — it prompts
+//      via `pi config` or stderr. CTRL does not wrap that.
 
 import { invoke } from '@tauri-apps/api/core';
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, type ReactElement } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { csList, csSpawn } from '@/lib/kernel';
 
@@ -33,13 +23,8 @@ interface EnvLike {
   command?: string;
 }
 
-interface CodingSpawnSpec {
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-  provider_id: string;
-  model_id: string | null;
-  provider_label: string;
+interface PiBinaryPath {
+  path: string;
 }
 
 const pickExistingCodingEnv = (raw: unknown): string | null => {
@@ -54,12 +39,8 @@ const pickExistingCodingEnv = (raw: unknown): string | null => {
   return null;
 };
 
-type Phase = 'checking' | 'resolving' | 'spawning';
-
 export const CodingRoute = (): ReactElement => {
   const navigate = useNavigate();
-  const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<Phase>('checking');
 
   useEffect(() => {
     let cancelled = false;
@@ -77,17 +58,13 @@ export const CodingRoute = (): ReactElement => {
           return;
         }
 
-        setPhase('resolving');
-        const spec = await invoke<CodingSpawnSpec>('coding_resolve_spawn', {
-          args: { provider_id_override: null },
-        });
+        const { path: piPath } = await invoke<PiBinaryPath>('pi_binary_path');
         if (cancelled) return;
 
-        setPhase('spawning');
         const reply = await csSpawn({
-          command: spec.command,
-          args: spec.args,
-          env: spec.env,
+          command: piPath,
+          args: [],
+          env: {},
         });
         if (cancelled) return;
         await navigate({
@@ -95,9 +72,9 @@ export const CodingRoute = (): ReactElement => {
           params: { envId: reply.stream_id },
           replace: true,
         });
-      } catch (e) {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
+      } catch {
+        // Pi prints its own startup diagnostics to stderr (handled by the
+        // xterm stream). No PWA error page — that would be a wrapper.
       }
     })();
     return () => {
@@ -112,8 +89,6 @@ export const CodingRoute = (): ReactElement => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        flexDirection: 'column',
-        gap: 'var(--space-3)',
         color: 'var(--color-text-muted)',
         fontFamily: 'var(--font-mono)',
         fontSize: 'var(--text-mono-sm)',
@@ -121,35 +96,7 @@ export const CodingRoute = (): ReactElement => {
         textTransform: 'uppercase',
       }}
     >
-      {error ? (
-        <>
-          <span style={{ color: 'var(--color-danger)' }}>coding · failed</span>
-          <span style={{ textTransform: 'none', letterSpacing: 0, maxWidth: 480, textAlign: 'center' }}>
-            {error}
-          </span>
-          <a
-            href="/settings/providers"
-            style={{
-              textTransform: 'none',
-              letterSpacing: 0,
-              color: 'var(--color-accent)',
-              textDecoration: 'underline',
-            }}
-            onClick={(e) => {
-              e.preventDefault();
-              void navigate({ to: '/settings/providers', replace: true });
-            }}
-          >
-            Open Settings → Providers
-          </a>
-        </>
-      ) : phase === 'spawning' ? (
-        <span>coding · launching pi…</span>
-      ) : phase === 'resolving' ? (
-        <span>coding · resolving provider…</span>
-      ) : (
-        <span>coding · opening session…</span>
-      )}
+      coding · launching pi…
     </div>
   );
 };

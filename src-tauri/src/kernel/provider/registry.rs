@@ -578,13 +578,11 @@ impl ProviderRegistry {
             .cloned()
             .unwrap_or_else(|| CTRL_FALLBACK_PROVIDER_ID.to_string());
         drop(active);
-        // ADR-002 substrate § provider v11 §3.11 (2026-06-07): coding.primary
-        // has no fallback. Coding runs in on-demand Pi TUI; if the user's
-        // Claude key is down, surface the error in the xterm and let them
-        // re-pick — never silently spend Volc credits on coding work.
+        // ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11):
+        // coding.primary slot removed. Pi owns its own provider via
+        // ~/.pi/agent/models.json; no separate CTRL routing slot.
         let fallbacks = match consumer {
             Consumer::IrisyFallback => Vec::new(),
-            Consumer::CodingPrimary => Vec::new(),
             _ => {
                 let mut chain: Vec<String> = Vec::new();
                 // 1) Detected CLI manifests as fallbacks (v3 amendment).
@@ -630,12 +628,12 @@ impl ProviderRegistry {
         let provider = self
             .get(provider_id)
             .ok_or_else(|| ProviderError::ProviderNotFound(provider_id.to_string()))?;
-        // Both Irisy roles + CodingPrimary serve text.chat today; Custom(_)
-        // consumers skip the check (they own their own capability contract).
-        // ADR-002 substrate § provider v11 §3.11 (2026-06-07).
+        // Both Irisy roles serve text.chat today; Custom(_) consumers skip
+        // the check (they own their own capability contract).
+        // ADR-002 substrate § brain v13 (2026-06-07, retracts CodingPrimary).
         let needs_text_chat = matches!(
             consumer,
-            Consumer::IrisyPrimary | Consumer::IrisyFallback | Consumer::CodingPrimary
+            Consumer::IrisyPrimary | Consumer::IrisyFallback
         );
         if needs_text_chat && !provider.capabilities().contains(&Capability::TextChat) {
             return Err(ProviderError::ProviderError(format!(
