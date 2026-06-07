@@ -394,14 +394,17 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   // PrimaryRail (file picker → enterCodingMode) while the chat picks up
   // the change live. The catalog `availableSkills` stays local — it's a
   // read-only directory listing pulled once on mount.
-  // ADR-002 substrate § brain v15 (2026-06-07): forceMode overrides the
-  // store mode for this IrisyChat instance. Used by the L1 Coding tab to
-  // mount a chat that always targets Pi's coding session — independent of
-  // whatever the Irisy homepage is currently set to.
-  const storeMode = useSessionStateStore((s) => s.mode);
-  const effectiveMode: 'assistant' | 'coding' =
-    forceMode ?? (storeMode === 'coding' ? 'coding' : 'assistant');
-  const mode = effectiveMode;
+  // ADR-002 substrate § brain v15 (2026-06-07): keep the store's full
+  // SessionMode (`personal | coding | cap`) for UI rendering — the cap
+  // banner + "Coding · <projectDir>" indicator both read `mode === 'cap'`
+  // and `mode === 'coding'` further down. `wireMode` is the narrowed
+  // on-wire value sent to Pi: cap mode is still an Irisy-persona turn
+  // (Pi just gets the skill text prepended as system content via skill_id),
+  // so wire it as 'assistant'; only explicit Coding tab (forceMode) or the
+  // store's 'coding' selection routes to Pi's coding session.
+  const mode = useSessionStateStore((s) => s.mode);
+  const wireMode: 'assistant' | 'coding' =
+    forceMode ?? (mode === 'coding' ? 'coding' : 'assistant');
   // ADR-002 substrate § brain v15 (2026-06-07): persistKey was bound at top
   // of component via the synchronous readInitialMode() snapshot so the
   // useState initializer could pick the right localStorage key on first
@@ -661,7 +664,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         let aborted = false;
         for await (const chunk of transport.stream(history, {
           skill_id: currentSkillId ?? undefined,
-          mode,
+          mode: wireMode,
           project_dir: projectDir ?? undefined,
         })) {
           if (chunk.error) {
