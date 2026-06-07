@@ -1,0 +1,10 @@
+{
+  "name": "@ctrl/mcps",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "Source-of-truth for CTRL's bundled builtin mcps (ADR-024 v2 — currently builtin-irisy, merged from builtin-assist + builtin-create per ADR-002 amend 2026-05-30; user mcps install into ~/.ctrl/mcps/). Bundled into CTRL.app/Contents/Resources/mcps/builtin/ at build time; seeded into ~/.ctrl/mcps/ on every launch (shell/builtin_mcps.rs).",
+  "scripts": {
+    "validate": "echo 'mcp manifest validation lands when ctrl-mcp-sdk schema is finalized'"
+  }
+}

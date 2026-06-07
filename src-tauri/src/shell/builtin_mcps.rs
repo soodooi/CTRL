@@ -1,10 +1,10 @@
-// Builtin keycaps bootstrap.
+// Builtin mcps bootstrap.
 //
-// CTRL ships a small set of "builtin" keycaps under
-// `packages/ctrl-keycaps/builtin/<id>/` (dev) or
-// `<bundle>/Contents/Resources/keycaps/<id>/` (installed app). On every
+// CTRL ships a small set of "builtin" mcps under
+// `packages/ctrl-mcps/builtin/<id>/` (dev) or
+// `<bundle>/Contents/Resources/mcps/<id>/` (installed app). On every
 // launch we walk that source set; for each builtin id that isn't already
-// present at `~/.ctrl/keycaps/<id>/`, we copy the manifest + assets in.
+// present at `~/.ctrl/mcps/<id>/`, we copy the manifest + assets in.
 //
 // Why on every launch (not just first run): users can permanently delete a
 // builtin folder by accident; the next launch should heal that. Existing
@@ -25,26 +25,26 @@ use std::path::{Path, PathBuf};
 
 /// Subdirectory under the bundle / repo that holds the builtin source set.
 /// Each subfolder is `<bundle>/<BUILTIN_SRC_RELATIVE>/<id>/manifest.json`.
-const BUILTIN_SRC_RELATIVE: &str = "packages/ctrl-keycaps/builtin";
+const BUILTIN_SRC_RELATIVE: &str = "packages/ctrl-mcps/builtin";
 
 /// Subpath inside the macOS `.app` bundle's Contents/Resources/ where the
-/// builtin keycap source lands (per tauri.conf.json bundle.resources).
-const BUNDLE_RESOURCE_SUBPATH: &str = "keycaps/builtin";
+/// builtin mcp source lands (per tauri.conf.json bundle.resources).
+const BUNDLE_RESOURCE_SUBPATH: &str = "mcps/builtin";
 
 /// Locate the builtin source directory.
 ///
 /// Priority:
-///   1. `CTRL_BUILTIN_KEYCAPS_DIR` env var (testing / packaging override)
-///   2. Walk up from `current_exe` looking for `packages/ctrl-keycaps/builtin`
+///   1. `CTRL_BUILTIN_MCPS_DIR` env var (testing / packaging override)
+///   2. Walk up from `current_exe` looking for `packages/ctrl-mcps/builtin`
 ///      (dev mode + `tauri dev` + run-in-repo)
 ///   3. Walk up from `current_dir` (same purpose; helps when exec path is odd)
-///   4. Installed `.app` bundle's `Contents/Resources/keycaps/builtin/` —
+///   4. Installed `.app` bundle's `Contents/Resources/mcps/builtin/` —
 ///      derived from `current_exe` by stripping `MacOS/<binary>` and
 ///      appending `Resources/<BUNDLE_RESOURCE_SUBPATH>`. tauri.conf.json
 ///      bundle.resources includes the directory so this path exists at
 ///      runtime on installed .app builds.
 fn find_source_dir() -> Option<PathBuf> {
-    if let Ok(dir) = std::env::var("CTRL_BUILTIN_KEYCAPS_DIR") {
+    if let Ok(dir) = std::env::var("CTRL_BUILTIN_MCPS_DIR") {
         // ECC review H8: log loudly when the env override is honored so a
         // compromised env shows up in trace. This bypass exists for tests
         // + packaging; it should never appear in normal user logs.
@@ -52,7 +52,7 @@ fn find_source_dir() -> Option<PathBuf> {
         if p.is_dir() {
             tracing::warn!(
                 path = %p.display(),
-                "BuiltinKeycaps: CTRL_BUILTIN_KEYCAPS_DIR override honored — \
+                "BuiltinMcps: CTRL_BUILTIN_MCPS_DIR override honored — \
                  this should only happen during tests / packaging"
             );
             return Some(p);
@@ -79,8 +79,8 @@ fn find_source_dir() -> Option<PathBuf> {
     }
 
     // (2) Repo walk-up — DEBUG BUILDS ONLY. ECC review H8: in release builds
-    // a malicious CWD (`/tmp/attacker/packages/ctrl-keycaps/builtin/...`)
-    // would pass this walk and seed attacker-controlled keycaps. Release
+    // a malicious CWD (`/tmp/attacker/packages/ctrl-mcps/builtin/...`)
+    // would pass this walk and seed attacker-controlled mcps. Release
     // builds rely on the bundle path above; dev / tauri-dev / cargo-test
     // use this walk.
     #[cfg(debug_assertions)]
@@ -110,13 +110,13 @@ fn find_source_dir() -> Option<PathBuf> {
     None
 }
 
-/// Resolve the on-disk install root — `~/.ctrl/keycaps/`.
+/// Resolve the on-disk install root — `~/.ctrl/mcps/`.
 fn install_root() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
-    Some(PathBuf::from(home).join(".ctrl").join("keycaps"))
+    Some(PathBuf::from(home).join(".ctrl").join("mcps"))
 }
 
-/// Max recursion depth for copy_tree — bounds keycap layout. ECC review C1
+/// Max recursion depth for copy_tree — bounds mcp layout. ECC review C1
 /// flagged that symlink cycles in source would stack-overflow without this.
 const COPY_MAX_DEPTH: u8 = 8;
 
@@ -151,7 +151,7 @@ fn copy_tree_inner(src: &Path, dst: &Path, depth: u8) -> std::io::Result<usize> 
     if depth > COPY_MAX_DEPTH {
         return Err(std::io::Error::new(
             ErrorKind::Other,
-            format!("BuiltinKeycaps: copy depth exceeds {COPY_MAX_DEPTH} at {dst:?}"),
+            format!("BuiltinMcps: copy depth exceeds {COPY_MAX_DEPTH} at {dst:?}"),
         ));
     }
 
@@ -175,7 +175,7 @@ fn copy_tree_inner(src: &Path, dst: &Path, depth: u8) -> std::io::Result<usize> 
             tracing::warn!(
                 ?src_path,
                 name = %name_str,
-                "BuiltinKeycaps: refusing entry with path-special filename"
+                "BuiltinMcps: refusing entry with path-special filename"
             );
             continue;
         }
@@ -184,7 +184,7 @@ fn copy_tree_inner(src: &Path, dst: &Path, depth: u8) -> std::io::Result<usize> 
         if file_type.is_symlink() {
             tracing::warn!(
                 ?src_path,
-                "BuiltinKeycaps: refusing symlink in source (security)"
+                "BuiltinMcps: refusing symlink in source (security)"
             );
             continue;
         }
@@ -200,7 +200,7 @@ fn copy_tree_inner(src: &Path, dst: &Path, depth: u8) -> std::io::Result<usize> 
                 Ok(meta) if meta.file_type().is_symlink() => {
                     tracing::warn!(
                         ?dst_path,
-                        "BuiltinKeycaps: refusing to copy onto symlink at destination"
+                        "BuiltinMcps: refusing to copy onto symlink at destination"
                     );
                     continue;
                 }
@@ -224,7 +224,7 @@ fn copy_tree_inner(src: &Path, dst: &Path, depth: u8) -> std::io::Result<usize> 
                 Err(e) => return Err(e),
             }
         }
-        // Skip everything else (block devices, fifos, etc.) — keycaps are
+        // Skip everything else (block devices, fifos, etc.) — mcps are
         // markdown + JSON + SVG; nothing else belongs here.
     }
     Ok(written)
@@ -236,8 +236,8 @@ fn vault_root() -> Option<PathBuf> {
 }
 
 /// ADR-002 substrate § composition v1 axis 6 (`cap_asset.vault`): provision the user-facing vault
-/// folder declared in the keycap's manifest. Reads
-/// `~/.ctrl/keycaps/<id>/manifest.json`, extracts `cap_asset.vault.path`
+/// folder declared in the mcp's manifest. Reads
+/// `~/.ctrl/mcps/<id>/manifest.json`, extracts `cap_asset.vault.path`
 /// + `cap_asset.vault.seed`, and creates the folder + seed files under
 /// the user's vault. Idempotent — existing user files are preserved
 /// (no overwrite; same contract as copy_tree_no_overwrite).
@@ -246,7 +246,7 @@ fn vault_root() -> Option<PathBuf> {
 /// this call (0 when the vault was already provisioned). Returns
 /// Err(...) only on actual filesystem errors; missing or malformed
 /// `cap_asset.vault` is silently skipped (Ok(0)) because not every
-/// keycap declares one.
+/// mcp declares one.
 fn provision_cap_asset_vault(install_dir: &Path) -> std::io::Result<usize> {
     use std::io::ErrorKind;
 
@@ -261,7 +261,7 @@ fn provision_cap_asset_vault(install_dir: &Path) -> std::io::Result<usize> {
             tracing::warn!(
                 ?install_dir,
                 error = %e,
-                "BuiltinKeycaps: malformed manifest.json, skipping vault provision"
+                "BuiltinMcps: malformed manifest.json, skipping vault provision"
             );
             return Ok(0);
         }
@@ -284,7 +284,7 @@ fn provision_cap_asset_vault(install_dir: &Path) -> std::io::Result<usize> {
     if rel_path.contains("..") || rel_path.starts_with('/') {
         tracing::warn!(
             path = %rel_path,
-            "BuiltinKeycaps: refusing cap_asset.vault.path with traversal/absolute components"
+            "BuiltinMcps: refusing cap_asset.vault.path with traversal/absolute components"
         );
         return Ok(0);
     }
@@ -317,7 +317,7 @@ fn provision_cap_asset_vault(install_dir: &Path) -> std::io::Result<usize> {
         if dest.contains("..") || dest.starts_with('/') {
             tracing::warn!(
                 dest,
-                "BuiltinKeycaps: refusing seed entry with traversal/absolute dest"
+                "BuiltinMcps: refusing seed entry with traversal/absolute dest"
             );
             continue;
         }
@@ -359,7 +359,7 @@ fn provision_cap_asset_vault(install_dir: &Path) -> std::io::Result<usize> {
 }
 
 /// Walk the builtin source directory; for each `<id>` subfolder, ensure
-/// `~/.ctrl/keycaps/<id>/` exists and contains the bundled `manifest.json`
+/// `~/.ctrl/mcps/<id>/` exists and contains the bundled `manifest.json`
 /// + `assets/`. Existing user files are preserved.
 ///
 /// Idempotent; safe to call on every boot. Errors don't propagate — a
@@ -368,25 +368,25 @@ fn provision_cap_asset_vault(install_dir: &Path) -> std::io::Result<usize> {
 pub fn ensure_builtins_installed() {
     let Some(src_root) = find_source_dir() else {
         tracing::warn!(
-            "BuiltinKeycaps: source dir not found (looked for {}); skipping bootstrap. \
-             Set CTRL_BUILTIN_KEYCAPS_DIR to override or run from the repo so dev resolution works.",
+            "BuiltinMcps: source dir not found (looked for {}); skipping bootstrap. \
+             Set CTRL_BUILTIN_MCPS_DIR to override or run from the repo so dev resolution works.",
             BUILTIN_SRC_RELATIVE
         );
         return;
     };
     let Some(dst_root) = install_root() else {
-        tracing::warn!("BuiltinKeycaps: HOME not set; can't resolve ~/.ctrl/keycaps");
+        tracing::warn!("BuiltinMcps: HOME not set; can't resolve ~/.ctrl/mcps");
         return;
     };
     if let Err(e) = fs::create_dir_all(&dst_root) {
-        tracing::error!(error = %e, dst = %dst_root.display(), "BuiltinKeycaps: create install root failed");
+        tracing::error!(error = %e, dst = %dst_root.display(), "BuiltinMcps: create install root failed");
         return;
     }
 
     let entries = match fs::read_dir(&src_root) {
         Ok(e) => e,
         Err(e) => {
-            tracing::error!(error = %e, src = %src_root.display(), "BuiltinKeycaps: read source dir failed");
+            tracing::error!(error = %e, src = %src_root.display(), "BuiltinMcps: read source dir failed");
             return;
         }
     };
@@ -402,7 +402,7 @@ pub fn ensure_builtins_installed() {
             Ok(s) => s,
             Err(_) => continue,
         };
-        // Skip non-keycap subfolders (e.g. a top-level README without a manifest).
+        // Skip non-mcp subfolders (e.g. a top-level README without a manifest).
         if !src_dir.join("manifest.json").is_file() {
             continue;
         }
@@ -412,10 +412,10 @@ pub fn ensure_builtins_installed() {
             Ok(n) => {
                 if n > 0 {
                     tracing::info!(
-                        keycap = %id,
+                        mcp = %id,
                         files_copied = n,
                         pre_existed,
-                        "BuiltinKeycaps: seeded"
+                        "BuiltinMcps: seeded"
                     );
                     seeded += 1;
                     copied_files += n;
@@ -424,29 +424,29 @@ pub fn ensure_builtins_installed() {
             Err(e) => {
                 tracing::error!(
                     error = %e,
-                    keycap = %id,
+                    mcp = %id,
                     src = %src_dir.display(),
                     dst = %dst_dir.display(),
-                    "BuiltinKeycaps: seed failed"
+                    "BuiltinMcps: seed failed"
                 );
             }
         }
-        // ADR-002 substrate § composition v1 P1.8: provision the keycap's cap_asset.vault folder
+        // ADR-002 substrate § composition v1 P1.8: provision the mcp's cap_asset.vault folder
         // (creates ~/Documents/CTRL/<vault.path>/ + seed files). Idempotent
         // — existing user files are preserved. Failures here are logged
         // but don't block the rest of the boot.
         match provision_cap_asset_vault(&dst_dir) {
             Ok(n) if n > 0 => tracing::info!(
-                keycap = %id,
+                mcp = %id,
                 seed_files_written = n,
-                "BuiltinKeycaps: cap_asset.vault provisioned"
+                "BuiltinMcps: cap_asset.vault provisioned"
             ),
             Ok(_) => { /* nothing to do or already provisioned */ }
             Err(e) => {
                 tracing::error!(
                     error = %e,
-                    keycap = %id,
-                    "BuiltinKeycaps: cap_asset.vault provision failed"
+                    mcp = %id,
+                    "BuiltinMcps: cap_asset.vault provision failed"
                 );
             }
         }
@@ -457,7 +457,7 @@ pub fn ensure_builtins_installed() {
         copied_files,
         src = %src_root.display(),
         dst = %dst_root.display(),
-        "BuiltinKeycaps: bootstrap complete"
+        "BuiltinMcps: bootstrap complete"
     );
 }
 
@@ -484,7 +484,7 @@ mod tests {
         let src = TempDir::new().unwrap();
         fs::write(src.path().join("persona.md"), "BUNDLED").unwrap();
         let dst_holder = TempDir::new().unwrap();
-        let dst = dst_holder.path().join("keycap");
+        let dst = dst_holder.path().join("mcp");
         fs::create_dir(&dst).unwrap();
         fs::write(dst.join("persona.md"), "USER_EDIT").unwrap();
         let n = copy_tree_no_overwrite(src.path(), &dst).unwrap();

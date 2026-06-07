@@ -1,4 +1,4 @@
-// [H-2026-05-18-001] Zod schema for keycap manifests (lane-B subset of
+// [H-2026-05-18-001] Zod schema for mcp manifests (lane-B subset of
 // `.olym/specs/tool-manifest/spec.md` v0.1).
 //
 // Permissive on capability tokens (string | object with single key) since
@@ -11,7 +11,7 @@ import { z } from 'zod';
 const semver = z.string().regex(/^\d+\.\d+\.\d+$/);
 const kebab = z.string().regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/);
 
-const keycapColor = z.enum(['cobalt', 'amber', 'jade', 'platinum', 'graphite']);
+const mcpColor = z.enum(['cobalt', 'amber', 'jade', 'platinum', 'graphite']);
 
 const builtinSource = z.object({
   type: z.literal('builtin'),
@@ -123,7 +123,7 @@ const actorFlow = z.object({
   }),
 });
 
-export const KeycapManifest = z.object({
+export const McpManifest = z.object({
   id: kebab,
   version: semver,
   name: z.string().min(1),
@@ -133,20 +133,20 @@ export const KeycapManifest = z.object({
     contact: z.string().email().optional(),
   }),
   icon: z.string().min(1),
-  keycap_color: keycapColor,
+  mcp_color: mcpColor,
   source,
   capabilities: z.array(capabilityToken).min(1),
   triggers: z.array(trigger).min(1),
   flow: actorFlow,
 });
 
-export type KeycapManifest = z.infer<typeof KeycapManifest>;
+export type McpManifest = z.infer<typeof McpManifest>;
 
 // ── Error classification ───────────────────────────────────────────────
 //
 // `structural` = wrong type/shape — surface to LLM silently for auto-retry.
 // `semantic`   = passes Zod but fails a contextual rule (e.g. id clashes
-//                with an installed keycap) — surface to the user in chat.
+//                with an installed mcp) — surface to the user in chat.
 
 export type IrisyZodErrorKind = 'structural' | 'semantic';
 
@@ -163,8 +163,8 @@ export interface ValidateContext {
 export function validateManifest(
   draft: unknown,
   ctx: ValidateContext,
-): { ok: true; manifest: KeycapManifest } | { ok: false; errors: IrisyZodError[] } {
-  const parsed = KeycapManifest.safeParse(draft);
+): { ok: true; manifest: McpManifest } | { ok: false; errors: IrisyZodError[] } {
+  const parsed = McpManifest.safeParse(draft);
   if (!parsed.success) {
     const errors = parsed.error.issues.map((issue) => ({
       kind: 'structural' as const,
@@ -179,7 +179,7 @@ export function validateManifest(
     semanticErrors.push({
       kind: 'semantic',
       path: 'id',
-      message: `keycap id "${parsed.data.id}" already exists — pick another name.`,
+      message: `mcp id "${parsed.data.id}" already exists — pick another name.`,
     });
   }
 

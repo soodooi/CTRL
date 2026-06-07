@@ -87,7 +87,7 @@
 }
 
 /* Kind-coded left edge — quiet accent strip that ties the pill to its
-   source keycap kind. 2px so it's a tell not a feature. */
+   source mcp kind. 2px so it's a tell not a feature. */
 .pill[data-kind='brain']::before {
   content: '';
   position: absolute;

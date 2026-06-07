@@ -1,4 +1,4 @@
-// Cache — transient blob store, LRU-evicted, per-keycap scoped.
+// Cache — transient blob store, LRU-evicted, per-mcp scoped.
 //
 // Sibling to vault.* (long-form markdown, source of truth) and
 // localstorage.* (persistent JSON KV, structured state). Cache holds

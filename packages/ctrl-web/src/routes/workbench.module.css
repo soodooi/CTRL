@@ -73,8 +73,8 @@
   min-height: 0;
 }
 
-/* Custom keycap node on the canvas. `--card-color` is set per-node from
-   the manifest's keycap_color; left as the outer fallback chain so a
+/* Custom mcp node on the canvas. `--card-color` is set per-node from
+   the manifest's mcp_color; left as the outer fallback chain so a
    node without a manifest color still picks up the standard border. */
 .node {
   display: flex;

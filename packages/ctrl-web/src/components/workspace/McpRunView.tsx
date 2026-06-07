@@ -1,24 +1,24 @@
-// KeycapRunView — the run-time WORKSPACE for a keycap (the 工作区, not the
-// 工作台). Generic + reusable: it renders ANY keycap from its manifest —
+// McpRunView — the run-time WORKSPACE for a mcp (the 工作区, not the
+// 工作台). Generic + reusable: it renders ANY mcp from its manifest —
 // an input form derived from manifest.io.inputs, a Run action that calls the
 // kernel run pipe, a LIVE output pane (the brain's progress streamed cell by
-// cell over keycap-<id>), and the produced artifact shown through the
+// cell over mcp-<id>), and the produced artifact shown through the
 // content-type viewer registry (HtmlViewer for slides, MarkdownViewer for
 // docs, …).
 //
 // This is substrate, not business logic: it knows nothing about "slides".
-// Irisy composes a keycap by declaring io.inputs/outputs in the manifest;
+// Irisy composes a mcp by declaring io.inputs/outputs in the manifest;
 // this view renders + runs + streams whatever was declared. See
 // feedback_build_system_not_business.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { invoke } from '@/lib/bridge';
-import { runKeycap } from '@/lib/kernel';
+import { runMcp } from '@/lib/kernel';
 import { useCellStream } from '@/hooks/useCellStream';
 import { ViewerHost } from '@/components/viewers/ViewerHost';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
-import styles from './KeycapRunView.module.css';
+import styles from './McpRunView.module.css';
 
 interface IoPort {
   id: string;
@@ -26,7 +26,7 @@ interface IoPort {
   schema?: { type?: string; title?: string };
 }
 
-interface KeycapManifest {
+interface McpManifest {
   io?: { inputs?: IoPort[] };
 }
 
@@ -37,23 +37,23 @@ interface RunOutput {
   artifacts?: string[];
 }
 
-interface KeycapRunViewProps {
-  keycapId: string;
+interface McpRunViewProps {
+  mcpId: string;
 }
 
 const FREEFORM_PORT: IoPort = { id: '__input', label: 'Input' };
 
-export const KeycapRunView = ({ keycapId }: KeycapRunViewProps): ReactElement => {
+export const McpRunView = ({ mcpId }: McpRunViewProps): ReactElement => {
   const [inputs, setInputs] = useState<IoPort[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [running, setRunning] = useState(false);
   const [outputPath, setOutputPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Live progress: subscribe to the keycap's output stream only while a run is
+  // Live progress: subscribe to the mcp's output stream only while a run is
   // in flight. The kernel publishes the brain's chunks as llm_response cells on
-  // keycap-<id> (commands/skills.rs::publish_delta).
-  const stream = useCellStream(running ? `keycap-${keycapId}` : null);
+  // mcp-<id> (commands/skills.rs::publish_delta).
+  const stream = useCellStream(running ? `mcp-${mcpId}` : null);
   const liveText = useMemo(
     () =>
       stream.events
@@ -72,14 +72,14 @@ export const KeycapRunView = ({ keycapId }: KeycapRunViewProps): ReactElement =>
     if (el) el.scrollTop = el.scrollHeight;
   }, [liveText]);
 
-  // Pull the keycap's declared input ports from its manifest. Falls back to a
+  // Pull the mcp's declared input ports from its manifest. Falls back to a
   // single freeform field when the manifest declares no io.inputs.
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
-        const manifest = await invoke<KeycapManifest>('read_keycap_manifest', {
-          args: { keycap_id: keycapId },
+        const manifest = await invoke<McpManifest>('read_mcp_manifest', {
+          args: { mcp_id: mcpId },
         });
         if (alive) setInputs(manifest.io?.inputs ?? []);
       } catch {
@@ -89,7 +89,7 @@ export const KeycapRunView = ({ keycapId }: KeycapRunViewProps): ReactElement =>
     return () => {
       alive = false;
     };
-  }, [keycapId]);
+  }, [mcpId]);
 
   const fields = inputs.length > 0 ? inputs : [FREEFORM_PORT];
 
@@ -106,7 +106,7 @@ export const KeycapRunView = ({ keycapId }: KeycapRunViewProps): ReactElement =>
         })
         .join('\n')
         .trim();
-      const res = await runKeycap(keycapId, { text, ...values });
+      const res = await runMcp(mcpId, { text, ...values });
       const out = res.output as RunOutput;
       if (out?.primary) {
         setOutputPath(out.primary);
@@ -118,7 +118,7 @@ export const KeycapRunView = ({ keycapId }: KeycapRunViewProps): ReactElement =>
     } finally {
       setRunning(false);
     }
-  }, [fields, values, keycapId]);
+  }, [fields, values, mcpId]);
 
   // Result view — the produced artifact, with a way back to a fresh run.
   if (outputPath) {

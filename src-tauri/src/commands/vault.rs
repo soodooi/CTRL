@@ -10,7 +10,7 @@
 //   - No "export" command — files are on disk, vim / Obsidian / Finder open them
 //
 // Capability gating (kernel::capability::CapabilityBroker) will mediate which
-// keycap can write where in a follow-up commit. Today every keycap shares the
+// mcp can write where in a follow-up commit. Today every mcp shares the
 // vault root; isolation lands when manifest-declared capability scopes do.
 
 use crate::kernel::capability::{CapToken, CapabilityBroker};
@@ -29,15 +29,15 @@ fn vault_root() -> Result<PathBuf, String> {
 }
 
 /// Resolve the caller's capability + check the required token. Absent
-/// keycap_id falls back to "ctrl-system" (full-access) so Settings UI /
+/// mcp_id falls back to "ctrl-system" (full-access) so Settings UI /
 /// first-run wizard / debug calls keep working without manifest setup.
-fn check_cap(keycap_id: Option<&str>, required: &CapToken) -> Result<(), String> {
-    let id = keycap_id.unwrap_or("ctrl-system");
-    let cap = capability_resolver::resolve_for_keycap(id);
+fn check_cap(mcp_id: Option<&str>, required: &CapToken) -> Result<(), String> {
+    let id = mcp_id.unwrap_or("ctrl-system");
+    let cap = capability_resolver::resolve_for_mcp(id);
     let broker = CapabilityBroker::new();
     broker.check(&cap, required).map_err(|e| {
-        tracing::warn!(keycap_id = %id, token = ?required, error = %e, "vault: capability check rejected");
-        format!("capability denied for keycap {id:?}: {e}")
+        tracing::warn!(mcp_id = %id, token = ?required, error = %e, "vault: capability check rejected");
+        format!("capability denied for mcp {id:?}: {e}")
     })
 }
 
@@ -51,12 +51,12 @@ pub struct VaultWriteArgs {
     /// JSON object that becomes the YAML frontmatter block. Must be an
     /// object; nested objects + scalar arrays are supported.
     pub frontmatter: serde_json::Value,
-    /// Calling keycap's id. When present, the broker checks that this
-    /// keycap holds a `VaultWrite { path_glob }` token whose prefix
+    /// Calling mcp's id. When present, the broker checks that this
+    /// mcp holds a `VaultWrite { path_glob }` token whose prefix
     /// matches `path`. Absent = "ctrl-system" full-access (Settings /
     /// first-run / debug).
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -70,7 +70,7 @@ pub struct VaultWriteReply {
 #[tauri::command]
 pub async fn vault_write(args: VaultWriteArgs) -> Result<VaultWriteReply, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultWrite {
             path_glob: args.path.clone(),
         },
@@ -100,7 +100,7 @@ pub struct VaultWriteImageArgs {
     pub sidecar_body: String,
     pub sidecar_frontmatter: serde_json::Value,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -131,7 +131,7 @@ pub async fn vault_write_image(
     args: VaultWriteImageArgs,
 ) -> Result<VaultWriteImageReply, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultWrite {
             path_glob: args.image_path.clone(),
         },
@@ -164,13 +164,13 @@ pub async fn vault_write_image(
 pub struct VaultReadArgs {
     pub path: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn vault_read(args: VaultReadArgs) -> Result<VaultEntry, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: args.path.clone(),
         },
@@ -184,7 +184,7 @@ pub struct VaultListArgs {
     /// Optional subdirectory under the vault root; absent = whole vault.
     pub subdir: Option<String>,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
@@ -192,7 +192,7 @@ pub async fn vault_list(args: VaultListArgs) -> Result<Vec<String>, String> {
     // List requires read on the subdir (or whole vault root if absent).
     let probe_path = args.subdir.clone().unwrap_or_default();
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: probe_path,
         },
@@ -207,7 +207,7 @@ pub struct VaultSearchArgs {
     #[serde(default = "default_search_limit")]
     pub limit: usize,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 fn default_search_limit() -> usize {
@@ -218,7 +218,7 @@ fn default_search_limit() -> usize {
 pub async fn vault_search(args: VaultSearchArgs) -> Result<Vec<String>, String> {
     // Search reads the whole vault; require VaultRead "*".
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: String::new(),
         },
@@ -231,13 +231,13 @@ pub async fn vault_search(args: VaultSearchArgs) -> Result<Vec<String>, String> 
 pub struct VaultDeleteArgs {
     pub path: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn vault_delete(args: VaultDeleteArgs) -> Result<(), String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultWrite {
             path_glob: args.path.clone(),
         },
@@ -280,13 +280,13 @@ fn stringify_vault_error(e: VaultError) -> String {
 pub struct VaultGraphQueryArgs {
     pub path: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn vault_backlinks(args: VaultGraphQueryArgs) -> Result<Vec<BacklinkHit>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: String::new(),
         },
@@ -299,13 +299,13 @@ pub async fn vault_backlinks(args: VaultGraphQueryArgs) -> Result<Vec<BacklinkHi
 #[derive(Debug, Deserialize)]
 pub struct VaultEmptyArgs {
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn vault_tags(args: VaultEmptyArgs) -> Result<Vec<TagCount>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: String::new(),
         },
@@ -319,7 +319,7 @@ pub async fn vault_tags(args: VaultEmptyArgs) -> Result<Vec<TagCount>, String> {
 pub struct VaultNotesByTagArgs {
     pub tag: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
@@ -327,7 +327,7 @@ pub async fn vault_notes_by_tag(
     args: VaultNotesByTagArgs,
 ) -> Result<Vec<String>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: String::new(),
         },
@@ -341,13 +341,13 @@ pub async fn vault_notes_by_tag(
 pub struct VaultMentionsArgs {
     pub text: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn vault_mentions(args: VaultMentionsArgs) -> Result<Vec<MentionHit>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: String::new(),
         },
@@ -360,7 +360,7 @@ pub async fn vault_mentions(args: VaultMentionsArgs) -> Result<Vec<MentionHit>, 
 #[tauri::command]
 pub async fn vault_orphans(args: VaultEmptyArgs) -> Result<Vec<String>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: String::new(),
         },
@@ -373,7 +373,7 @@ pub async fn vault_orphans(args: VaultEmptyArgs) -> Result<Vec<String>, String> 
 #[tauri::command]
 pub async fn vault_broken_links(args: VaultEmptyArgs) -> Result<Vec<BrokenLink>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: String::new(),
         },
@@ -386,7 +386,7 @@ pub async fn vault_broken_links(args: VaultEmptyArgs) -> Result<Vec<BrokenLink>,
 #[tauri::command]
 pub async fn vault_graph_data(args: VaultEmptyArgs) -> Result<GraphData, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: String::new(),
         },
@@ -405,7 +405,7 @@ pub struct VaultRenameArgs {
     pub from: String,
     pub to: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 /// Move (or rename) a markdown file inside the vault. The kernel does
@@ -415,7 +415,7 @@ pub struct VaultRenameArgs {
 #[tauri::command]
 pub async fn vault_rename(args: VaultRenameArgs) -> Result<(), String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultWrite {
             path_glob: args.to.clone(),
         },
@@ -429,7 +429,7 @@ pub async fn vault_rename(args: VaultRenameArgs) -> Result<(), String> {
 #[tauri::command]
 pub async fn vault_move(args: VaultRenameArgs) -> Result<(), String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultWrite {
             path_glob: args.to.clone(),
         },
@@ -451,7 +451,7 @@ fn rename_inner(from: &str, to: &str) -> Result<(), String> {
 pub struct VaultCreateFolderArgs {
     pub path: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 /// Create an empty subdirectory under the vault root. Idempotent —
@@ -459,7 +459,7 @@ pub struct VaultCreateFolderArgs {
 #[tauri::command]
 pub async fn vault_create_folder(args: VaultCreateFolderArgs) -> Result<(), String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultWrite {
             path_glob: args.path.clone(),
         },
@@ -476,7 +476,7 @@ pub struct VaultSetStarredArgs {
     pub path: String,
     pub starred: bool,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 /// Toggle the `starred:` frontmatter scalar. Implemented as
@@ -486,7 +486,7 @@ pub struct VaultSetStarredArgs {
 #[tauri::command]
 pub async fn vault_set_starred(args: VaultSetStarredArgs) -> Result<(), String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultWrite {
             path_glob: args.path.clone(),
         },
@@ -510,7 +510,7 @@ pub async fn vault_set_starred(args: VaultSetStarredArgs) -> Result<(), String> 
 pub struct VaultAliasesArgs {
     pub path: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 /// Read frontmatter `aliases:` for a note. Empty list when none set or
@@ -519,7 +519,7 @@ pub struct VaultAliasesArgs {
 #[tauri::command]
 pub async fn vault_aliases(args: VaultAliasesArgs) -> Result<Vec<String>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: args.path.clone(),
         },
@@ -554,7 +554,7 @@ pub struct VaultWatchRecentArgs {
     /// dropped from the ring buffer regardless.
     pub since_ms: i64,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 /// Drain recent filesystem events from the vault watcher ring buffer
@@ -566,7 +566,7 @@ pub async fn vault_watch_recent(
     args: VaultWatchRecentArgs,
 ) -> Result<Vec<VaultWatchEvent>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: String::new(),
         },
@@ -590,7 +590,7 @@ pub struct VaultSourcingRunArgs {
     /// local-tz "today" — kernel-side cron passes the UTC date.
     pub date: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
@@ -598,7 +598,7 @@ pub async fn vault_sourcing_run(
     args: VaultSourcingRunArgs,
 ) -> Result<SourcingRunReport, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultWrite {
             path_glob: ".ctrl/review-queue/".to_string(),
         },
@@ -617,7 +617,7 @@ pub async fn vault_sourcing_pending(
     args: VaultEmptyArgs,
 ) -> Result<VaultSourcingPendingReply, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::VaultRead {
             path_glob: "sourcing/".to_string(),
         },

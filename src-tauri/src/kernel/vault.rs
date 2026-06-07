@@ -10,9 +10,9 @@
 // Layout policy is user-decided. CTRL ships a sane default (by-day for
 // time-series content, flat for entity-named content) but a user can
 // point the kernel at their existing Obsidian vault, change the layout
-// policy, or write arbitrary path hints from a keycap.
+// policy, or write arbitrary path hints from a mcp.
 //
-// The kernel module owns IO only — capability-level surface (which keycap
+// The kernel module owns IO only — capability-level surface (which mcp
 // can read/write which paths) lives in `kernel::capability`; PWA-facing
 // Tauri commands wrap this module and apply capability checks.
 
@@ -135,8 +135,8 @@ fn seed_vault_feature_layer(root: &Path) {
     // ADR-005 irisy v2 § soul-md-compat (2026-06-03, memory
     // `decision_openclaw_compat_layer`) — Irisy persistent memory.
     let _ = std::fs::create_dir_all(root.join("irisy"));
-    let _ = std::fs::create_dir_all(root.join("notes").join("keycap-runs"));
-    let _ = std::fs::create_dir_all(root.join("notes").join("keycap-runs").join("archive"));
+    let _ = std::fs::create_dir_all(root.join("notes").join("mcp-runs"));
+    let _ = std::fs::create_dir_all(root.join("notes").join("mcp-runs").join("archive"));
 
     write_if_missing(root, ".ctrl/sourcing.yaml", SEED_SOURCING_YAML);
     write_if_missing(root, ".ctrl/daily-notes.yaml", SEED_DAILY_NOTES_YAML);
@@ -436,7 +436,7 @@ fn walk_markdown(
 
 /// Reject path traversal (`..`), absolute paths, and Windows drive
 /// prefixes. Vault writes must stay inside the vault root no matter
-/// what a keycap claims.
+/// what a mcp claims.
 pub fn sanitize_relative_path(p: &str) -> Result<PathBuf, VaultError> {
     if p.starts_with('/') || p.starts_with('\\') {
         return Err(VaultError::InvalidPath(format!(

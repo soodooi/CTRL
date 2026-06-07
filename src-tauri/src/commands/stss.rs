@@ -61,14 +61,14 @@ pub async fn publish(
     kernel: State<'_, KernelHandle>,
 ) -> Result<(), String> {
     // Strict OpKind mapping — pre-merge review flagged the previous silent
-    // fallback to KeycapInvoked. Unknown kinds now return an error so caller
+    // fallback to McpInvoked. Unknown kinds now return an error so caller
     // bugs (typo in the kind string) surface instead of producing
     // semantically wrong events.
     let kind = match args.kind.as_str() {
         "hotkey_triggered" => OpKind::HotkeyTriggered,
-        "keycap_invoked" => OpKind::KeycapInvoked,
-        "keycap_completed" => OpKind::KeycapCompleted,
-        "keycap_failed" => OpKind::KeycapFailed,
+        "mcp_invoked" => OpKind::McpInvoked,
+        "mcp_completed" => OpKind::McpCompleted,
+        "mcp_failed" => OpKind::McpFailed,
         "actor_spawned" => OpKind::ActorSpawned,
         "actor_terminated" => OpKind::ActorTerminated,
         "llm_call_started" => OpKind::LlmCallStarted,

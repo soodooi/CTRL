@@ -16,7 +16,7 @@ applyTheme(getStoredTheme());
 const root = document.getElementById('root');
 if (!root) throw new Error('PWA root element missing');
 
-// bao 2026-06-01: keycap page (WorkspaceSurface) retired. Cockpit now
+// bao 2026-06-01: mcp page (WorkspaceSurface) retired. Cockpit now
 // hosts the workspace tab area inline (L1 + L2 + Tab + Irisy 4-col
 // shell). The `?surface=workspace` branch is removed; any URL surface
 // param is ignored. Toggling the main window 430 ↔ 1600 still works

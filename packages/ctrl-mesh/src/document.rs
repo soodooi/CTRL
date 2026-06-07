@@ -2,7 +2,7 @@
 //
 // v1.0 ships 3 documents (per ADR-002 substrate §6.1):
 //   - mesh.devices       — paired device roster
-//   - mesh.keycaps       — installed keycap pool (manifests + last-used)
+//   - mesh.mcps       — installed mcp pool (manifests + last-used)
 //   - mesh.preferences   — user settings (LWW)
 //
 // v1.1 adds:
@@ -43,7 +43,7 @@ impl std::fmt::Display for DocumentId {
 /// V1.0 document inventory. Sprint 4 binds each to an Automerge schema.
 pub const V1_DOCUMENTS: &[&str] = &[
     "mesh.devices",
-    "mesh.keycaps",
+    "mesh.mcps",
     "mesh.preferences",
 ];
 

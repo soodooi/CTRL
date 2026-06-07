@@ -32,26 +32,26 @@ export const kernelStatus = (): Promise<KernelStatus> =>
 // .olym/skills/thorvg/SKILL.md §1 / brand-tokens §12.2). Today the
 // kernel ships single-glyph strings; consumers must run the value
 // through `normalizeIcon()` from `lib/icon.ts` before rendering.
-export interface KeycapSummary {
+export interface McpSummary {
   id: string;
   name: string;
-  keycap_color: string;
+  mcp_color: string;
   icon: Icon | string;
 }
 
-export const listKeycaps = (): Promise<KeycapSummary[]> =>
-  invoke('list_keycaps');
+export const listMcps = (): Promise<McpSummary[]> =>
+  invoke('list_mcps');
 
 export interface McpInstallArgs {
   server_url: string;
   tool_name: string;
   display_name: string;
-  keycap_color?: string;
+  mcp_color?: string;
   icon?: string;
 }
 
-export const installKeycapFromMcp = (args: McpInstallArgs): Promise<KeycapSummary> =>
-  invoke('install_keycap_from_mcp', { args });
+export const installMcpFromMcp = (args: McpInstallArgs): Promise<McpSummary> =>
+  invoke('install_mcp_from_mcp', { args });
 
 // === Provider config (Settings → General) ===
 //
@@ -117,13 +117,13 @@ export const testProvider = (provider: string): Promise<TestProviderResult> =>
 export const deleteProvider = (provider: string): Promise<void> =>
   invoke('config_delete_provider', { args: { provider } });
 
-export interface RunKeycapResult {
+export interface RunMcpResult {
   output: unknown;
   duration_ms: number;
 }
 
-export const runKeycap = (keycap_id: string, input: unknown): Promise<RunKeycapResult> =>
-  invoke('run_keycap', { args: { keycap_id, input } });
+export const runMcp = (mcp_id: string, input: unknown): Promise<RunMcpResult> =>
+  invoke('run_mcp', { args: { mcp_id, input } });
 
 export const mcpCall = (
   server_url: string,
@@ -135,15 +135,15 @@ export const mcpCall = (
 export const listMcpServers = (): Promise<string[]> => invoke('list_mcp_servers');
 
 /**
- * Open the dedicated workspace window for a keycap activation.
+ * Open the dedicated workspace window for a mcp activation.
  *
  * Per bao 2026-05-14: workspace is a SECOND window, separate from the
- * launcher pool, opened on demand per selected keycap. The workspace
+ * launcher pool, opened on demand per selected mcp. The workspace
  * window reuses across activations (single window, route reflects the
- * latest keycap).
+ * latest mcp).
  */
-export const openWorkspace = (keycap_id: string): Promise<void> =>
-  invoke('open_workspace', { keycap_id });
+export const openWorkspace = (mcp_id: string): Promise<void> =>
+  invoke('open_workspace', { mcp_id });
 
 export interface StreamHandle {
   stream_id: string;
@@ -262,7 +262,7 @@ export interface VaultWriteArgs {
   path: string;
   content: string;
   frontmatter: Record<string, unknown>;
-  keycap_id?: string;
+  mcp_id?: string;
 }
 
 export interface VaultWriteReply {
@@ -273,28 +273,28 @@ export interface VaultWriteReply {
 export const vaultWrite = (args: VaultWriteArgs): Promise<VaultWriteReply> =>
   invoke('vault_write', { args });
 
-export const vaultRead = (path: string, keycap_id?: string): Promise<VaultEntry> =>
-  invoke('vault_read', { args: { path, keycap_id: keycap_id ?? null } });
+export const vaultRead = (path: string, mcp_id?: string): Promise<VaultEntry> =>
+  invoke('vault_read', { args: { path, mcp_id: mcp_id ?? null } });
 
 export const vaultList = (
   subdir?: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<string[]> =>
   invoke('vault_list', {
-    args: { subdir: subdir ?? null, keycap_id: keycap_id ?? null },
+    args: { subdir: subdir ?? null, mcp_id: mcp_id ?? null },
   });
 
 export const vaultSearch = (
   query: string,
   limit = 50,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<string[]> =>
   invoke('vault_search', {
-    args: { query, limit, keycap_id: keycap_id ?? null },
+    args: { query, limit, mcp_id: mcp_id ?? null },
   });
 
-export const vaultDelete = (path: string, keycap_id?: string): Promise<void> =>
-  invoke('vault_delete', { args: { path, keycap_id: keycap_id ?? null } });
+export const vaultDelete = (path: string, mcp_id?: string): Promise<void> =>
+  invoke('vault_delete', { args: { path, mcp_id: mcp_id ?? null } });
 
 export const vaultRootPath = (): Promise<string> => invoke('vault_root_path');
 
@@ -346,81 +346,81 @@ export interface VaultWatchEvent {
 
 export const vaultBacklinks = (
   path: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<BacklinkHit[]> =>
-  invoke('vault_backlinks', { args: { path, keycap_id: keycap_id ?? null } });
+  invoke('vault_backlinks', { args: { path, mcp_id: mcp_id ?? null } });
 
-export const vaultTags = (keycap_id?: string): Promise<TagCount[]> =>
-  invoke('vault_tags', { args: { keycap_id: keycap_id ?? null } });
+export const vaultTags = (mcp_id?: string): Promise<TagCount[]> =>
+  invoke('vault_tags', { args: { mcp_id: mcp_id ?? null } });
 
 export const vaultNotesByTag = (
   tag: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<string[]> =>
-  invoke('vault_notes_by_tag', { args: { tag, keycap_id: keycap_id ?? null } });
+  invoke('vault_notes_by_tag', { args: { tag, mcp_id: mcp_id ?? null } });
 
 export const vaultMentions = (
   text: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<MentionHit[]> =>
-  invoke('vault_mentions', { args: { text, keycap_id: keycap_id ?? null } });
+  invoke('vault_mentions', { args: { text, mcp_id: mcp_id ?? null } });
 
-export const vaultOrphans = (keycap_id?: string): Promise<string[]> =>
-  invoke('vault_orphans', { args: { keycap_id: keycap_id ?? null } });
+export const vaultOrphans = (mcp_id?: string): Promise<string[]> =>
+  invoke('vault_orphans', { args: { mcp_id: mcp_id ?? null } });
 
-export const vaultBrokenLinks = (keycap_id?: string): Promise<BrokenLink[]> =>
-  invoke('vault_broken_links', { args: { keycap_id: keycap_id ?? null } });
+export const vaultBrokenLinks = (mcp_id?: string): Promise<BrokenLink[]> =>
+  invoke('vault_broken_links', { args: { mcp_id: mcp_id ?? null } });
 
-export const vaultGraphData = (keycap_id?: string): Promise<GraphData> =>
-  invoke('vault_graph_data', { args: { keycap_id: keycap_id ?? null } });
+export const vaultGraphData = (mcp_id?: string): Promise<GraphData> =>
+  invoke('vault_graph_data', { args: { mcp_id: mcp_id ?? null } });
 
 export const vaultRename = (
   from: string,
   to: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<void> =>
-  invoke('vault_rename', { args: { from, to, keycap_id: keycap_id ?? null } });
+  invoke('vault_rename', { args: { from, to, mcp_id: mcp_id ?? null } });
 
 export const vaultMove = (
   from: string,
   to: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<void> =>
-  invoke('vault_move', { args: { from, to, keycap_id: keycap_id ?? null } });
+  invoke('vault_move', { args: { from, to, mcp_id: mcp_id ?? null } });
 
 export const vaultCreateFolder = (
   path: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<void> =>
   invoke('vault_create_folder', {
-    args: { path, keycap_id: keycap_id ?? null },
+    args: { path, mcp_id: mcp_id ?? null },
   });
 
 export const vaultSetStarred = (
   path: string,
   starred: boolean,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<void> =>
   invoke('vault_set_starred', {
-    args: { path, starred, keycap_id: keycap_id ?? null },
+    args: { path, starred, mcp_id: mcp_id ?? null },
   });
 
 export const vaultAliases = (
   path: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<string[]> =>
-  invoke('vault_aliases', { args: { path, keycap_id: keycap_id ?? null } });
+  invoke('vault_aliases', { args: { path, mcp_id: mcp_id ?? null } });
 
 export const vaultWatchRecent = (
   since_ms: number,
   prefix?: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<VaultWatchEvent[]> =>
   invoke('vault_watch_recent', {
     args: {
       since_ms,
       prefix: prefix ?? null,
-      keycap_id: keycap_id ?? null,
+      mcp_id: mcp_id ?? null,
     },
   });
 
@@ -440,17 +440,17 @@ export interface SourcingPendingReply {
 
 export const vaultSourcingRun = (
   date: string,
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<SourcingRunReport> =>
   invoke('vault_sourcing_run', {
-    args: { date, keycap_id: keycap_id ?? null },
+    args: { date, mcp_id: mcp_id ?? null },
   });
 
 export const vaultSourcingPending = (
-  keycap_id?: string,
+  mcp_id?: string,
 ): Promise<SourcingPendingReply> =>
   invoke('vault_sourcing_pending', {
-    args: { keycap_id: keycap_id ?? null },
+    args: { mcp_id: mcp_id ?? null },
   });
 
 // ADR-005 v2 § soul-md-compat §4.3 — SOUL.md Tauri surface.

@@ -8,7 +8,7 @@
 //   3. Kernel daemon supervision (spawn + restart)
 //   4. OS keychain (BYOK API key storage)
 //
-// Everything else — product UI, keycap runtime, marketplace, manifest editor —
+// Everything else — product UI, mcp runtime, marketplace, manifest editor —
 // lives in `packages/ctrl-web` (the PWA) and reaches the kernel through Tauri 2
 // `invoke()` handlers declared in `crate::commands::*`.
 //
@@ -17,7 +17,7 @@
 // HotkeyService.cs, tray + window glue, lifecycle wiring).
 
 pub mod brain_supervisor;
-pub mod builtin_keycaps;
+pub mod builtin_mcps;
 pub mod hotkey;
 pub mod keychain;
 // bao 2026-06-05 d: provider keychain reads/writes used to go through

@@ -1,7 +1,7 @@
-/* KeycapMenu — small popover. Absolute-positioned by the caller; this
+/* McpMenu — small popover. Absolute-positioned by the caller; this
    module styles the inner panel only so the parent owns placement.
 
-   Trigger: tiny 3-dot button anchored top-right of a keycap cell. Hidden
+   Trigger: tiny 3-dot button anchored top-right of a mcp cell. Hidden
    until cap is hovered or menu is open (parent toggles via data-attr). */
 
 .trigger {

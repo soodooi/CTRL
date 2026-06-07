@@ -1,11 +1,11 @@
 // Icon Lab — comparative renderer playground.
 // Goal: decide whether ThorVG (via @lottiefiles/dotlottie-react) is the
-// right unified renderer for CTRL keycaps + workshop preview cards.
+// right unified renderer for CTRL mcps + workshop preview cards.
 //
 // Three sections:
 //   1) Source picker — paste any LottieFiles URL, or pick a preset chip.
 //   2) Side-by-side mini comparison — same source rendered by 4 stacks
-//      at keycap (48px) size. Cells are click-to-toggle.
+//      at mcp (48px) size. Cells are click-to-toggle.
 //   3) ThorVG hero showcase — 320px preview with the full dotLottie
 //      control surface: speed / direction / frame scrubber / loop /
 //      mode. lottie-web cannot match any of this.
@@ -20,27 +20,27 @@ import {
 import { DotLottieReact, type DotLottie } from '@lottiefiles/dotlottie-react';
 import Lottie, { type LottieRefCurrentProps } from 'lottie-react';
 import { IconRenderer } from '@/components/primitives';
-import { KeycapCard } from '@/components/KeycapCard';
+import { McpCard } from '@/components/McpCard';
 import { inferIconKindFromUrl } from '@/lib/icon';
-import type { KeycapSummary } from '@/lib/kernel';
+import type { McpSummary } from '@/lib/kernel';
 import styles from './icon-lab.module.css';
 
-// Mock keycap summaries used only inside icon-lab to validate the
-// IconRenderer at production keycap size (36px icon, full bevel + label).
-// NOT wired into the real `list_keycaps` path — per
+// Mock mcp summaries used only inside icon-lab to validate the
+// IconRenderer at production mcp size (36px icon, full bevel + label).
+// NOT wired into the real `list_mcps` path — per
 // feedback_no_mock_data_in_production these stay scoped to the dev
 // playground.
-const MOCK_KEYCAPS: ReadonlyArray<KeycapSummary> = [
+const MOCK_MCPS: ReadonlyArray<McpSummary> = [
   {
     id: 'mock-ocr',
     name: 'OCR',
-    keycap_color: 'platinum',
+    mcp_color: 'platinum',
     icon: { kind: 'lottie', src: '/lottie/ocr.json' },
   },
   {
     id: 'mock-screenshot',
     name: 'Screenshot',
-    keycap_color: 'graphite',
+    mcp_color: 'graphite',
     icon: { kind: 'lottie', src: '/lottie/screenshot.json' },
   },
 ];
@@ -86,7 +86,7 @@ const PRESETS: ReadonlyArray<Preset> = [
     name: 'confetti (.lottie)',
     src: '/lottie/confetti.lottie',
     format: 'lottie',
-    note: 'short celebration animation — analogous to keycap success / completion feedback',
+    note: 'short celebration animation — analogous to mcp success / completion feedback',
   },
 ];
 
@@ -456,7 +456,7 @@ export const IconLabRoute = (): ReactElement => {
           <p className={styles.intro}>
             Decide whether ThorVG (via dotLottie) replaces our SVG + lottie-web
             split. Paste a Lottie URL or pick a preset, then compare visual
-            fidelity at keycap size and explore the dotLottie control surface
+            fidelity at mcp size and explore the dotLottie control surface
             in the hero showcase.
           </p>
         </div>
@@ -471,7 +471,7 @@ export const IconLabRoute = (): ReactElement => {
             One primitive (<code>IconRenderer</code>) dispatches by{' '}
             <code>Icon.kind</code>. Static variants render natively; lottie /
             dotlottie variants lazy-load ThorVG WASM. This is the production
-            path every keycap, mascot, and workshop card goes through.
+            path every mcp, mascot, and workshop card goes through.
           </p>
         </header>
         <div className={styles.grid}>
@@ -479,14 +479,14 @@ export const IconLabRoute = (): ReactElement => {
             <IconRenderer
               icon={{ kind: 'glyph', char: 'T' }}
               size={48}
-              ariaLabel="translate keycap"
+              ariaLabel="translate mcp"
             />
           </MiniCell>
           <MiniCell label="kind: glyph (2-char)" running={false} onToggle={() => {}}>
             <IconRenderer
               icon={{ kind: 'glyph', char: 'Aa' }}
               size={48}
-              ariaLabel="font keycap"
+              ariaLabel="font mcp"
             />
           </MiniCell>
           <MiniCell label="kind: dotlottie" running={true} onToggle={() => {}}>
@@ -510,7 +510,7 @@ export const IconLabRoute = (): ReactElement => {
 
       <section className={styles.section}>
         <header className={styles.sectionHead}>
-          <h2 className={styles.sectionTitle}>1 · side-by-side at keycap size</h2>
+          <h2 className={styles.sectionTitle}>1 · side-by-side at mcp size</h2>
           <p className={styles.sectionSub}>
             Same source, 4 renderers, 48px output. Click any cell to toggle
             animation. {currentPreset?.note ? `(${currentPreset.note})` : null}
@@ -568,9 +568,9 @@ export const IconLabRoute = (): ReactElement => {
 
       <section className={styles.section}>
         <header className={styles.sectionHead}>
-          <h2 className={styles.sectionTitle}>3 · keycap mock — OCR + Screenshot @ production size</h2>
+          <h2 className={styles.sectionTitle}>3 · mcp mock — OCR + Screenshot @ production size</h2>
           <p className={styles.sectionSub}>
-            Two mock keycaps mounted through the real <code>KeycapCard</code> at
+            Two mock mcps mounted through the real <code>McpCard</code> at
             the keyboard&apos;s actual bevel + 36px icon size. Validates the
             full path: <code>normalizeIcon</code> → <code>IconRenderer</code> →
             ThorVG WASM inside a production card chrome (LED, embossed icon,
@@ -579,14 +579,14 @@ export const IconLabRoute = (): ReactElement => {
             brackets pulsing with a center capture dot).
           </p>
         </header>
-        <div className={styles.keycapRow}>
-          {MOCK_KEYCAPS.map((kc) => (
-            <KeycapCard
+        <div className={styles.mcpRow}>
+          {MOCK_MCPS.map((kc) => (
+            <McpCard
               key={kc.id}
-              keycap={kc}
+              mcp={kc}
               onActivate={() => {
-                // Dev playground — no real keycap behind these. The real
-                // production wire goes through useKeycaps() in the Keyboard.
+                // Dev playground — no real mcp behind these. The real
+                // production wire goes through useMcps() in the Keyboard.
               }}
             />
           ))}

@@ -1,16 +1,16 @@
-// InstallKeycapTile — a single keycap-sized "empty slot" tile that opens
-// the keycap install flow. Anchors the `/` route just above ChatInput.
+// InstallMcpTile — a single mcp-sized "empty slot" tile that opens
+// the mcp install flow. Anchors the `/` route just above ChatInput.
 //
 // Per bao 2026-05-26 "open all three paths, handle them with abstraction,
 // do it the most minimal way — they're all solvable with a single id":
 //   1. click           → navigate /pool (browse + install)
-//   2. drop  keycap-id → already-installed payload, surface a hint
+//   2. drop  mcp-id → already-installed payload, surface a hint
 //   3. drop  manifest  → defer to /pool (Phase 1D wires the manifest
 //                        parsing inside Pool's install drawer)
 //
 // All three paths funnel into the same `onActivate` callback so the
 // consumer keeps a single install entry-point. The tile is presentation
-// only; it never invokes `install_keycap` directly.
+// only; it never invokes `install_mcp` directly.
 
 import {
   useCallback,
@@ -19,31 +19,31 @@ import {
   type ReactElement,
 } from 'react';
 import { cx } from './cx';
-import styles from './InstallKeycapTile.module.css';
+import styles from './InstallMcpTile.module.css';
 
-const KEYCAP_DRAG_MIME = 'application/x-ctrl-keycap-id';
+const MCP_DRAG_MIME = 'application/x-ctrl-mcp-id';
 const URI_MIME = 'text/uri-list';
 
-export interface InstallKeycapTilePayload {
-  kind: 'click' | 'keycap-id' | 'uri' | 'file';
-  /** For 'keycap-id': the dragged keycap id. For 'uri': the URL. */
+export interface InstallMcpTilePayload {
+  kind: 'click' | 'mcp-id' | 'uri' | 'file';
+  /** For 'mcp-id': the dragged mcp id. For 'uri': the URL. */
   value?: string;
   /** For 'file': the dropped file (manifest JSON). */
   file?: File;
 }
 
-export interface InstallKeycapTileProps {
+export interface InstallMcpTileProps {
   /** Called for click + every accepted drop. Consumer routes the payload
    *  through the kernel mutation. Defaults to a no-op so the tile stays
    *  usable in fixtures. */
-  onActivate?: (payload: InstallKeycapTilePayload) => void;
+  onActivate?: (payload: InstallMcpTilePayload) => void;
   /** Tile label below the glyph. */
   label?: string;
-  /** Tile aria-label, defaults to "Install a keycap". */
+  /** Tile aria-label, defaults to "Install a mcp". */
   ariaLabel?: string;
-  /** Visual size in px. Defaults to the canonical keycap-sm token (64)
+  /** Visual size in px. Defaults to the canonical mcp-sm token (64)
    *  so the install slot lines up with the Keyboard 4×4 cap right next
-   *  to it on `/`. Bump to 88 (keycap-md) only inside catalog surfaces. */
+   *  to it on `/`. Bump to 88 (mcp-md) only inside catalog surfaces. */
   size?: number;
   className?: string;
 }
@@ -51,19 +51,19 @@ export interface InstallKeycapTileProps {
 const acceptsDrag = (e: DragEvent<HTMLElement>): boolean => {
   const types = Array.from(e.dataTransfer.types);
   return (
-    types.includes(KEYCAP_DRAG_MIME) ||
+    types.includes(MCP_DRAG_MIME) ||
     types.includes(URI_MIME) ||
     types.includes('Files')
   );
 };
 
-export const InstallKeycapTile = ({
+export const InstallMcpTile = ({
   onActivate,
   label = 'Install',
-  ariaLabel = 'Install a keycap',
+  ariaLabel = 'Install a mcp',
   size = 64,
   className,
-}: InstallKeycapTileProps): ReactElement => {
+}: InstallMcpTileProps): ReactElement => {
   const [dragOver, setDragOver] = useState(false);
 
   const handleClick = useCallback(() => {
@@ -87,9 +87,9 @@ export const InstallKeycapTile = ({
       e.preventDefault();
       setDragOver(false);
       const dt = e.dataTransfer;
-      const keycapId = dt.getData(KEYCAP_DRAG_MIME);
-      if (keycapId) {
-        onActivate?.({ kind: 'keycap-id', value: keycapId });
+      const mcpId = dt.getData(MCP_DRAG_MIME);
+      if (mcpId) {
+        onActivate?.({ kind: 'mcp-id', value: mcpId });
         return;
       }
       const uri = dt.getData(URI_MIME);

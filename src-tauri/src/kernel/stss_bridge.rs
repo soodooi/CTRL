@@ -85,7 +85,7 @@ impl StssBridge {
     }
 
     /// Publish an Op (acks / state-machine events). Used by scheduler to
-    /// surface keycap_invoked / keycap_completed back to the PWA.
+    /// surface mcp_invoked / mcp_completed back to the PWA.
     pub fn publish_op(&self, op: Op) {
         let _ = self.events.send(Event::Op(op));
     }

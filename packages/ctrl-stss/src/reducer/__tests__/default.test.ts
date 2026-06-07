@@ -121,7 +121,7 @@ describe('DefaultReducer', () => {
       ref: 10,
       ops: [
         createOp({
-          kind: 'keycap_invoked',
+          kind: 'mcp_invoked',
           target: 'clipboard-ai',
           payload: { mode: 'rewrite' },
           ts_ms: 1_100,
@@ -133,7 +133,7 @@ describe('DefaultReducer', () => {
     const { snapshot, semanticOps } = r.apply(df);
     expect(snapshot.cells.size).toBe(1); // unchanged
     expect(semanticOps).toHaveLength(2);
-    expect(semanticOps[0]?.kind).toBe('keycap_invoked');
+    expect(semanticOps[0]?.kind).toBe('mcp_invoked');
     expect(semanticOps[1]?.kind).toBe('file_saved');
   });
 

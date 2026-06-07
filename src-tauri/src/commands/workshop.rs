@@ -24,8 +24,8 @@ use crate::commands::draft;
 pub struct WorkshopAddStepArgs {
     pub draft_id: String,
     /// The step JSON to insert. Caller is responsible for the step's
-    /// shape matching the KeycapManifest Step union (drafts can be
-    /// incomplete, so we don't validate here — install_keycap will).
+    /// shape matching the McpManifest Step union (drafts can be
+    /// incomplete, so we don't validate here — install_mcp will).
     pub step: serde_json::Value,
     /// 0-based index after which to insert. `None` = append. Negative
     /// or out-of-range = clamped to a valid position.

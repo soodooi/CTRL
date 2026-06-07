@@ -63,7 +63,7 @@ const SYSTEM_TOP_LEVEL = new Set([
   '.irisy-prompts',  // Irisy prompt cache
   '.irisy-sessions', // Irisy past sessions
   'irisy',           // Irisy state (SOUL.md will land in here per ADR-005 §4)
-  'keycaps',         // keycap builtin resources (substrate)
+  'mcps',         // mcp builtin resources (substrate)
   'assets',          // images/audio/pdf/attachments — handled via attachment viewer
 ]);
 
@@ -195,7 +195,7 @@ export const NotesTree = ({
             {rootPath}
           </p>
         ) : null}
-        <label className={styles.treeSystemToggle} title="Show CTRL system folders (.ctrl, irisy, keycaps, …)">
+        <label className={styles.treeSystemToggle} title="Show CTRL system folders (.ctrl, irisy, mcps, …)">
           <input
             type="checkbox"
             checked={showSystem}

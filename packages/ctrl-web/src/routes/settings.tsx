@@ -721,7 +721,7 @@ export const SettingsCtrlPage = (): ReactElement => (
     </Section>
     <Section
       title="Hotkey"
-      description="Single-key chord to summon CTRL. The hotkey is reserved by the launcher, not by any individual keycap."
+      description="Single-key chord to summon CTRL. The hotkey is reserved by the launcher, not by any individual mcp."
     >
       <HotkeyBlock />
     </Section>
@@ -901,13 +901,13 @@ const UPDATE_LOG: ReadonlyArray<UpdateLogEntry> = [
     version: '0.1.40',
     date: '2026-05-26',
     summary:
-      'PWA polish lap — polar white v0.5 tokens · pupil-blink baked in lottie · right-rail L1 fixed (route-pushed items channel removed) · new InstallKeycapTile primitive · Modal + ConfirmDialog primitives (portal + focus-trap) · Settings rewritten with real controls.',
+      'PWA polish lap — polar white v0.5 tokens · pupil-blink baked in lottie · right-rail L1 fixed (route-pushed items channel removed) · new InstallMcpTile primitive · Modal + ConfirmDialog primitives (portal + focus-trap) · Settings rewritten with real controls.',
   },
   {
     version: '0.1.39',
     date: '2026-05-25',
     summary:
-      'VMark stack adoption — Tiptap markdown WYSIWYG · CodeMirror 6 · mermaid.js · SmartTable viewer · Vault browser + backlinks · ADR-001 spine amendment (Pi sole brain, hermes demoted to keycap).',
+      'VMark stack adoption — Tiptap markdown WYSIWYG · CodeMirror 6 · mermaid.js · SmartTable viewer · Vault browser + backlinks · ADR-001 spine amendment (Pi sole brain, hermes demoted to mcp).',
   },
   {
     version: '0.1.34',

@@ -1,7 +1,7 @@
 // Sparkline — minimal inline SVG trend line.
 //
 // One of CTRL's L1 data-viz primitives. No external chart lib; ~50 LOC.
-// Use for any keycap workspace that wants to glance a 24-point trend
+// Use for any mcp workspace that wants to glance a 24-point trend
 // inside a stat tile / sidebar item / activity card.
 //
 // Public surface intentionally tiny:

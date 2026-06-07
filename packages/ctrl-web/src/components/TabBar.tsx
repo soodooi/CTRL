@@ -27,7 +27,7 @@ interface TabBarProps {
 const KIND_LABEL: Record<Tab['kind'], string> = {
   'external-embed': 'EMBED',
   'vault-md': 'DOC',
-  'keycap-output': 'OUT',
+  'mcp-output': 'OUT',
   'session-stream': 'LIVE',
   // ADR-002 § vault v1 §8.6 (2026-06-01).
   'sourcing-review': 'INBOX',
@@ -39,7 +39,7 @@ const KIND_LABEL: Record<Tab['kind'], string> = {
 const KIND_ICON: Record<Tab['kind'], Icon> = {
   'external-embed': { kind: 'glyph', char: '⤢' },
   'vault-md': { kind: 'glyph', char: '⌬' },
-  'keycap-output': { kind: 'glyph', char: '◉' },
+  'mcp-output': { kind: 'glyph', char: '◉' },
   'session-stream': { kind: 'lottie', src: '/lottie/pulse.json' },
   // Tray glyph for the sourcing review tab.
   'sourcing-review': { kind: 'glyph', char: '⌽' },

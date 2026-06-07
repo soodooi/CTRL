@@ -171,7 +171,7 @@ fn build_mode_system_header(mode: Option<&str>, project_dir: Option<&str>) -> Op
         _ => {
             // personal mode = default Irisy companion; no header needed
             // because the PWA-side `buildSystemPrompt` already injects
-            // the Irisy persona + memory + keycap context.
+            // the Irisy persona + memory + mcp context.
             None
         }
     }

@@ -1,27 +1,27 @@
-// KeycapOutputPane — the live OUTPUT surface beside Irisy's chat.
+// McpOutputPane — the live OUTPUT surface beside Irisy's chat.
 //
-// Per bao 2026-05-29: conversational keycaps reuse Irisy's sidebar for input;
-// this pane is the reusable output half. It reads keycap-output-store (set when
-// Irisy runs a keycap), streams the brain's progress live over keycap-<id>
+// Per bao 2026-05-29: conversational mcps reuse Irisy's sidebar for input;
+// this pane is the reusable output half. It reads mcp-output-store (set when
+// Irisy runs a mcp), streams the brain's progress live over mcp-<id>
 // while the run is in flight, then renders the produced artifact through the
 // content-type viewer registry. Idle until the first run.
 
 import { useEffect, useMemo, useRef } from 'react';
 import type { ReactElement } from 'react';
-import { useKeycapOutputStore } from '@/lib/keycap-output-store';
+import { useMcpOutputStore } from '@/lib/mcp-output-store';
 import { useCellStream } from '@/hooks/useCellStream';
 import { ViewerHost } from '@/components/viewers/ViewerHost';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
-import styles from './KeycapOutputPane.module.css';
+import styles from './McpOutputPane.module.css';
 
-export const KeycapOutputPane = (): ReactElement => {
-  const keycapId = useKeycapOutputStore((s) => s.keycapId);
-  const running = useKeycapOutputStore((s) => s.running);
-  const outputPath = useKeycapOutputStore((s) => s.outputPath);
-  const error = useKeycapOutputStore((s) => s.error);
+export const McpOutputPane = (): ReactElement => {
+  const mcpId = useMcpOutputStore((s) => s.mcpId);
+  const running = useMcpOutputStore((s) => s.running);
+  const outputPath = useMcpOutputStore((s) => s.outputPath);
+  const error = useMcpOutputStore((s) => s.error);
 
-  // Subscribe to the keycap's output stream only while a run is in flight.
-  const stream = useCellStream(running && keycapId ? `keycap-${keycapId}` : null);
+  // Subscribe to the mcp's output stream only while a run is in flight.
+  const stream = useCellStream(running && mcpId ? `mcp-${mcpId}` : null);
   const liveText = useMemo(
     () =>
       stream.events
@@ -76,7 +76,7 @@ export const KeycapOutputPane = (): ReactElement => {
           <p className={styles.error}>{error}</p>
         ) : (
           <p className={styles.hint}>
-            Output appears here when Irisy runs a keycap.
+            Output appears here when Irisy runs a mcp.
           </p>
         )}
       </div>

@@ -1,4 +1,4 @@
-// Icon — discriminated union consumed by the keycap surface, workshop
+// Icon — discriminated union consumed by the mcp surface, workshop
 // preview cards, and Irisy mascot. Single rendering target: ThorVG WASM
 // (via @lottiefiles/dotlottie-react) when animated; native browser SVG /
 // CSS span when static. No mixed React-SVG + lottie-web stacks.
@@ -30,7 +30,7 @@ export const iconSchema = z.discriminatedUnion('kind', [
 
 export type Icon = z.infer<typeof iconSchema>;
 
-// Derive a 1-2 char glyph from a keycap name when no real icon ships.
+// Derive a 1-2 char glyph from a mcp name when no real icon ships.
 // Used by both the legacy back-compat path and as the WASM-loading
 // fallback for lottie/dotlottie variants.
 export const deriveGlyph = (name: string): string => {

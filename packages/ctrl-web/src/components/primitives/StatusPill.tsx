@@ -1,7 +1,7 @@
 // StatusPill — label chip. L1 primitive.
 //
 // Tone-driven small badge used for "installed" / "MCP" / "running"
-// labels on cards, list rows, keycap manifests. Pairs with Led when
+// labels on cards, list rows, mcp manifests. Pairs with Led when
 // you need both a dot and a text label.
 
 import type { ReactElement, ReactNode } from 'react';

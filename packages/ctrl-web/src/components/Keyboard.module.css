@@ -1,4 +1,4 @@
-/* Keyboard — permanent left rail. Pure keycap grid + scenario bar +
+/* Keyboard — permanent left rail. Pure mcp grid + scenario bar +
    page dots. No search, no system row — those moved to the right rail
    / ⌘K palette per bao 2026-05-23. */
 
@@ -67,14 +67,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Keycap grid — 4×4 ─────────────────────────────────────── */
+/* ── Mcp grid — 4×4 ─────────────────────────────────────── */
 
 /* PCB frame — wraps the 4×4 grid in a slightly recessed inset. Reads
    like a real keyboard plate without literal skeuomorphism. */
 .grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--keycap-gap);
+  gap: var(--mcp-gap);
   padding: var(--space-3);
   background: color-mix(in oklab, var(--color-bg-l1), var(--ink) 8%);
   border: 1px solid var(--color-border);
@@ -207,7 +207,7 @@
 }
 
 /* Empty cells = ghost slots. Almost invisible — they preserve the
-   4×4 rhythm without competing with real keycaps for attention. */
+   4×4 rhythm without competing with real mcps for attention. */
 .capEmpty {
   background: transparent;
   border: 1px solid color-mix(in oklab, var(--color-border-soft), transparent 60%);

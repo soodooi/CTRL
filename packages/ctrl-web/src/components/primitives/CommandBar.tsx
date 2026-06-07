@@ -23,7 +23,7 @@ export interface CommandItem {
   label: string;
   /** Short visual badge (2-3 chars) shown left of the label. */
   glyph?: string;
-  /** Right-aligned hint, e.g. "keycap" / "route". */
+  /** Right-aligned hint, e.g. "mcp" / "route". */
   hint?: string;
 }
 

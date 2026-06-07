@@ -37,14 +37,14 @@ const BRAND_SLOT_MAP: Readonly<Record<string, string>> = {
   slot_text_muted: '--color-text-muted',
   slot_bg: '--color-bg-l0',
 
-  // Keycap palette — five colors keyed by keycap_color manifest field
-  slot_keycap_cobalt: '--keycap-cobalt',
-  slot_keycap_amber: '--keycap-amber',
-  slot_keycap_jade: '--keycap-jade',
-  slot_keycap_platinum: '--keycap-platinum',
-  slot_keycap_graphite: '--keycap-graphite',
+  // Mcp palette — five colors keyed by mcp_color manifest field
+  slot_mcp_cobalt: '--mcp-cobalt',
+  slot_mcp_amber: '--mcp-amber',
+  slot_mcp_jade: '--mcp-jade',
+  slot_mcp_platinum: '--mcp-platinum',
+  slot_mcp_graphite: '--mcp-graphite',
 
-  // Status palette — for state-driven keycap output
+  // Status palette — for state-driven mcp output
   slot_status_success: '--color-success',
   slot_status_warning: '--color-warning',
   slot_status_danger: '--color-danger',

@@ -1,9 +1,9 @@
-/* KeycapCard — Pool keycap tile. Industrial OP-1 keycap aesthetic:
+/* McpCard — Pool mcp tile. Industrial OP-1 mcp aesthetic:
    colored face + top sheen + bottom bevel + LED hairline.
    Per-color text is driven by `data-face` (light/dark) set in TSX. */
 
 .card {
-  --card-color: var(--keycap-platinum);
+  --card-color: var(--mcp-platinum);
   --card-text: var(--paper);
   --card-text-soft: color-mix(in oklab, var(--paper), transparent 25%);
   position: relative;
@@ -12,8 +12,8 @@
   justify-content: flex-end;
   align-items: center;
   gap: var(--space-1);
-  width: var(--keycap-size-md);
-  height: var(--keycap-size-md);
+  width: var(--mcp-size-md);
+  height: var(--mcp-size-md);
   padding: var(--space-3);
   background:
     linear-gradient(
@@ -29,7 +29,7 @@
     /* outer drop — heavier so the cap lifts off the paper */
     0 2px 6px -1px color-mix(in oklab, var(--card-color), black 60%) ,
     0 8px 16px -8px color-mix(in oklab, var(--card-color), transparent 50%),
-    /* top sheen + bottom edge bevel — physical keycap rim */
+    /* top sheen + bottom edge bevel — physical mcp rim */
     inset 0 1px 0 0 color-mix(in oklab, white, transparent 70%),
     inset 0 -3px 0 0 color-mix(in oklab, var(--card-color), black 25%);
   cursor: pointer;
@@ -40,7 +40,7 @@
     transform var(--duration-fast) var(--ease-out-expo);
 }
 
-/* Light keycap faces (amber / platinum) — swap text + soft to dark ink. */
+/* Light mcp faces (amber / platinum) — swap text + soft to dark ink. */
 .card[data-face='light'] {
   --card-text: var(--ink);
   --card-text-soft: color-mix(in oklab, var(--ink), transparent 35%);
@@ -73,7 +73,7 @@
   outline-offset: 4px;
 }
 
-/* LED hairline — sits in the keycap face, lights up on hover. */
+/* LED hairline — sits in the mcp face, lights up on hover. */
 .led {
   position: absolute;
   top: 7px;

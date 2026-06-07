@@ -4,7 +4,7 @@
  *
  * The well-known literals enable autocompletion + exhaustiveness checks
  * in CTRL-aware code, while the `(string & {})` trick keeps the type
- * permissive for keycap authors who publish custom kinds.
+ * permissive for mcp authors who publish custom kinds.
  *
  * Receivers MUST tolerate unknown kinds (forward-compat — silently
  * forward, do not throw).
@@ -53,8 +53,8 @@ export type CellKind =
 export type OpKind =
   // v0.6 base
   | 'delete'
-  | 'keycap_invoked'
-  | 'keycap_completed'
+  | 'mcp_invoked'
+  | 'mcp_completed'
   | 'hotkey_triggered'
   | 'app_focus_changed'
   | 'file_saved'
@@ -98,8 +98,8 @@ export const KNOWN_CELL_KINDS = [
 export const KNOWN_OP_KINDS = [
   // v0.6 base
   'delete',
-  'keycap_invoked',
-  'keycap_completed',
+  'mcp_invoked',
+  'mcp_completed',
   'hotkey_triggered',
   'app_focus_changed',
   'file_saved',

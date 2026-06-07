@@ -1,4 +1,4 @@
-//! `run_keycap_draft` — sandboxed execution of a draft manifest for
+//! `run_mcp_draft` — sandboxed execution of a draft manifest for
 //! workshop preview pane. Returns a per-step trace (n8n-style) so the
 //! canvas can render "input → output" for every step + spot failures
 //! without having to dig through logs.
@@ -28,8 +28,8 @@ use crate::kernel::provider::{LlmMessage, LlmPrompt};
 use crate::shell::KernelHandle;
 
 #[derive(Debug, Deserialize)]
-pub struct RunKeycapDraftArgs {
-    /// Full KeycapManifest JSON. We don't lock to the typed schema
+pub struct RunMcpDraftArgs {
+    /// Full McpManifest JSON. We don't lock to the typed schema
     /// here — drafts are intentionally incomplete, and the runner
     /// surfaces shape errors as trace entries rather than refusing
     /// outright. PWA shows them per-step.
@@ -57,7 +57,7 @@ pub struct StepTrace {
 }
 
 #[derive(Debug, Serialize)]
-pub struct RunKeycapDraftResult {
+pub struct RunMcpDraftResult {
     pub action_id: String,
     pub steps: Vec<StepTrace>,
     pub total_duration_ms: u64,
@@ -66,10 +66,10 @@ pub struct RunKeycapDraftResult {
 }
 
 #[tauri::command]
-pub async fn run_keycap_draft(
-    args: RunKeycapDraftArgs,
+pub async fn run_mcp_draft(
+    args: RunMcpDraftArgs,
     kernel: State<'_, KernelHandle>,
-) -> Result<RunKeycapDraftResult, String> {
+) -> Result<RunMcpDraftResult, String> {
     let started = Instant::now();
 
     let actions = args
@@ -173,7 +173,7 @@ pub async fn run_keycap_draft(
         final_output = output_value;
     }
 
-    Ok(RunKeycapDraftResult {
+    Ok(RunMcpDraftResult {
         action_id,
         steps: traces,
         total_duration_ms: started.elapsed().as_millis() as u64,
@@ -208,7 +208,7 @@ async fn run_one_step(
         // Blocked — recursive side effects + composition can't safely
         // be sandboxed in v1 (per bao Q2 alignment).
         "vault-write" => StepOutcome::Blocked(
-            "vault-write is blocked in draft mode — runs only after install_keycap"
+            "vault-write is blocked in draft mode — runs only after install_mcp"
                 .into(),
         ),
         "mcp-invoke" => StepOutcome::Blocked(

@@ -4,9 +4,9 @@
 // a leaf field sets `fieldPending` on the store and focuses the chat
 // input (ChatPane handles the focus side via effect). The user never
 // edits values directly (ADR-004 cap § execution v1 §6) — they describe the change in chat
-// and Irisy emits a <keycap-patch> token.
+// and Irisy emits a <mcp-patch> token.
 
-import { useKeycapCreatorStore } from '@/lib/irisy-keycap-store';
+import { useMcpCreatorStore } from '@/lib/irisy-mcp-store';
 import styles from './ManifestPreview.module.css';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -126,11 +126,11 @@ function renderValue(props: TreeProps, indent: number): React.ReactNode {
 }
 
 export function ManifestPreview(): React.ReactElement {
-  const draft = useKeycapCreatorStore((s) => s.manifestDraft);
-  const pending = useKeycapCreatorStore((s) => s.fieldPending);
-  const validated = useKeycapCreatorStore((s) => s.validated);
-  const errors = useKeycapCreatorStore((s) => s.errors);
-  const setFieldPending = useKeycapCreatorStore((s) => s.setFieldPending);
+  const draft = useMcpCreatorStore((s) => s.manifestDraft);
+  const pending = useMcpCreatorStore((s) => s.fieldPending);
+  const validated = useMcpCreatorStore((s) => s.validated);
+  const errors = useMcpCreatorStore((s) => s.errors);
+  const setFieldPending = useMcpCreatorStore((s) => s.setFieldPending);
 
   const isEmpty = Object.keys(draft).length === 0;
 

@@ -1,4 +1,4 @@
-/* /pool — keycap catalog / back-office.
+/* /pool — mcp catalog / back-office.
  *
  * Layout inside the workspace area:
  *   ┌─────────────────────────────────────────────────────┐
@@ -7,7 +7,7 @@
  *   │ filter chips: 6 source pills (All / Built-in / MCP /  │
  *   │   OAuth / Local / ST-SS)                              │
  *   ├─────────────────────────────────────────────────────┤
- *   │ grid: keycap cards, 88px square, auto-fill            │
+ *   │ grid: mcp cards, 88px square, auto-fill            │
  *   └─────────────────────────────────────────────────────┘
  */
 
@@ -245,7 +245,7 @@
 }
 
 /* ── Adjustment tier badge (Config / Patch / Fork) ───────────────────
-   Per memory decision_keycap_3_tier_adjustment: 90% Config, ~10% Patch,
+   Per memory decision_mcp_3_tier_adjustment: 90% Config, ~10% Patch,
    rare Fork. Visual weight reflects user-modification depth — Config
    is the calm baseline, Fork loudest. */
 .adjustmentBadge {

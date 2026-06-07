@@ -1,6 +1,6 @@
 // Manifest layout primitives — Stack / Heading / Text.
 //
-// Presentation-only utility wrappers a keycap manifest can name in its
+// Presentation-only utility wrappers a mcp manifest can name in its
 // JSON layout spec. These bridge the gap between "I want a vertical
 // column with gap-3 padding" and the React DOM without forcing the
 // manifest author to write CSS.

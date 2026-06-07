@@ -3,7 +3,7 @@
 //
 // Exposes the kernel's capability surface as MCP tools so that:
 //   • Irisy (in-process via Tauri WebView)
-//   • Brain keycaps (e.g. @ctrl/pi-plugin, separate MCP server process)
+//   • Brain mcps (e.g. @ctrl/pi-plugin, separate MCP server process)
 //   • External AI agents on the user's machine (Cursor, etc.)
 // all consume the same backend through a single MCP wire — tools/list +
 // tools/call instead of N bespoke RPC surfaces.
@@ -16,7 +16,7 @@
 // What this module does NOT do:
 //   • Bind 0.0.0.0 / accept LAN clients (mesh covered by ADR-002 substrate)
 //   • Issue long-lived tokens (each kernel boot = new token; the in-process
-//     PWA and brain keycaps both fetch fresh via Tauri commands)
+//     PWA and brain mcps both fetch fresh via Tauri commands)
 //   • Implement business logic — every tool is a thin call into existing
 //     kernel modules (vault, local_storage, llm_port, mcp_host) so tests
 //     stay against those modules, not the MCP envelope.
@@ -221,7 +221,7 @@ pub struct VaultWriteImageArgs {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct KvGetArgs {
-    /// Namespace (typically the keycap id).
+    /// Namespace (typically the mcp id).
     pub namespace: String,
     pub key: String,
 }
@@ -586,8 +586,8 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
-    /// kv.get — per-keycap persistent key/value read.
-    #[tool(description = "Read a persistent key from per-keycap local storage")]
+    /// kv.get — per-mcp persistent key/value read.
+    #[tool(description = "Read a persistent key from per-mcp local storage")]
     async fn kv_get(
         &self,
         Parameters(args): Parameters<KvGetArgs>,
@@ -604,8 +604,8 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
-    /// kv.set — per-keycap persistent key/value write.
-    #[tool(description = "Write a persistent key into per-keycap local storage")]
+    /// kv.set — per-mcp persistent key/value write.
+    #[tool(description = "Write a persistent key into per-mcp local storage")]
     async fn kv_set(
         &self,
         Parameters(args): Parameters<KvSetArgs>,
@@ -689,8 +689,8 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
-    /// http.get — fetch any HTTPS URL. Base keycap atomic. Used by
-    /// composite keycaps that need to read external API data (RSS,
+    /// http.get — fetch any HTTPS URL. Base mcp atomic. Used by
+    /// composite mcps that need to read external API data (RSS,
     /// REST, webhook ping). Body returned as a string; caller parses
     /// JSON if applicable.
     #[tool(description = "HTTP GET request — fetch a URL and return status + body + headers")]
@@ -703,8 +703,8 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
-    /// http.post — POST to any HTTPS URL. Base keycap atomic. Used by
-    /// composite keycaps that need to trigger external workflows
+    /// http.post — POST to any HTTPS URL. Base mcp atomic. Used by
+    /// composite mcps that need to trigger external workflows
     /// (n8n webhooks, Coze bot API, generic REST POST).
     #[tool(description = "HTTP POST request — send JSON or text body and return status + body + headers")]
     async fn http_post(
@@ -1063,7 +1063,7 @@ impl ServerHandler for KernelMcpRouter {
         info.server_info = implementation;
         info.instructions = Some(
             "CTRL Kernel MCP server. Exposes vault.*, kv.*, llm.chat, \
-             and mcp.proxy_* tools so AI agents (Irisy, brain keycaps, \
+             and mcp.proxy_* tools so AI agents (Irisy, brain mcps, \
              Cursor) can read/write the user's local data and route LLM \
              calls through the kernel."
                 .to_string(),

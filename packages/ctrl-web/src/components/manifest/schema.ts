@@ -1,4 +1,4 @@
-// Manifest layout schema — the JSON shape a keycap (or any consumer)
+// Manifest layout schema — the JSON shape a mcp (or any consumer)
 // uses to declare its workspace UI.
 //
 // Inspirations: Microsoft Adaptive Cards, Slack Block Kit, Airbnb SDUI.

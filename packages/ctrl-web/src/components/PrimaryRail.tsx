@@ -9,13 +9,13 @@
 // column), not an L1 peer.
 //
 // 2026-05-30 (ADR-003 frontend §2): L1 nav = `[Irisy, Coding]` 2 chips. Create
-// removed — keycap-designer is an internal Irisy mode per memory
+// removed — mcp-designer is an internal Irisy mode per memory
 // `decision_one_persona_irisy`.
 //
 // 2026-05-31 (ADR-003 frontend §7): the legacy `L2Panel` + `useL2` API is gone.
 // L2 is now a shell-level reserved column (left of L1, in `app.module.css`)
 // driven by the NSWindow's active tab. L1 chips will be rewired to open
-// NSWindow with chip-specific content (Keycap / Vault / Coding /
+// NSWindow with chip-specific content (Mcp / Vault / Coding /
 // Settings) in a follow-up PR; for now they keep the legacy route nav
 // so navigation does not break during the transition.
 
@@ -38,7 +38,7 @@ import styles from './PrimaryRail.module.css';
 
 // L1 nav ids — bao 2026-05-30 (ADR-003 frontend §2): ▾ workspace toggle (top) +
 // 2 nav (Irisy / Coding) + Settings (bottom). ADR-003 frontend §7 target is 4
-// chips (Keycap / Vault / Coding / Settings) opening NSWindow content;
+// chips (Mcp / Vault / Coding / Settings) opening NSWindow content;
 // rewiring deferred to a follow-up PR.
 const IRISY_ITEM_ID = 'builtin-irisy';
 const CODING_ITEM_ID = 'coding';
@@ -149,7 +149,7 @@ const NotesIcon = (): ReactElement => (
 
 const NAV_ITEMS: ReadonlyArray<RailDef> = [
   { id: IRISY_ITEM_ID, label: 'Irisy', path: '/', icon: <IrisyIcon /> },
-  { id: POOL_ITEM_ID, label: 'Keycap pool', path: '/pool', icon: <PoolIcon /> },
+  { id: POOL_ITEM_ID, label: 'Mcp pool', path: '/pool', icon: <PoolIcon /> },
   { id: NOTES_ITEM_ID, label: 'Notes', path: '/notes', icon: <NotesIcon /> },
   { id: CODING_ITEM_ID, label: 'Coding', path: '/coding', icon: <CodingIcon /> },
 ];

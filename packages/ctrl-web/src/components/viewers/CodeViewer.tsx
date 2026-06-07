@@ -1,7 +1,7 @@
 // CodeViewer — generic code viewer for content types not covered by a
 // dedicated module. Uses CodeMirror 6 with no language extension; the
 // editor still gets line numbers + fold gutter + bracket matching but
-// no syntax highlight. Lighter than per-language packs when a keycap
+// no syntax highlight. Lighter than per-language packs when a mcp
 // returns a one-off file type (e.g. text/rust, text/python).
 
 import type { ReactElement } from 'react';

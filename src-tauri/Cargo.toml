@@ -54,7 +54,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 ciborium = "0.2"           # CBOR encoding (ST-SS wire format)
 rusqlite = { version = "0.32", features = ["bundled"] }  # event store
 # wasmtime removed 2026-05-25 — see ADR-001 amendment 4th 校准 (v1 architecture
-# design philosophy). v1 keycaps are mixed-language subprocesses (Node/Python/
+# design philosophy). v1 mcps are mixed-language subprocesses (Node/Python/
 # Rust/Bash) which WASM cannot uniformly sandbox. Tauri 2 Capability + Isolation
 # Pattern + CSP already provide plugin-host isolation; subprocess process
 # isolation covers untrusted code. Re-evaluate via WasmEdge (8MB vs wasmtime

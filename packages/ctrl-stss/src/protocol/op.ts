@@ -18,10 +18,10 @@ import type { OpKind } from './kind.js';
 /**
  * A typed action event.
  *
- * @example keycap invocation
+ * @example mcp invocation
  * ```ts
  * const op: Op = {
- *   kind: 'keycap_invoked',
+ *   kind: 'mcp_invoked',
  *   ts_ms: 1715472002_100,
  *   target: 'clipboard-ai',
  *   payload: { trigger: 'hotkey', args: { mode: 'rewrite' } },
@@ -49,7 +49,7 @@ export interface Op {
    * Optional reference. For `kind: 'delete'`, this is the cell id to
    * remove (required and non-empty — see {@link DeleteOp} for the
    * narrowed type). For semantic kinds it is free-form (file path,
-   * keycap id, window handle, etc.).
+   * mcp id, window handle, etc.).
    */
   readonly target?: string;
   readonly payload?: unknown;

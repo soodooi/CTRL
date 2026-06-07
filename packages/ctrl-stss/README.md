@@ -1,6 +1,6 @@
 # @ctrl/stss
 
-CTRL profile of the **ST-SS** (Spatio-Temporal Semantic Stream) protocol — the wire format every keycap, hardware device, and external desktop app uses to publish into the CTRL kernel.
+CTRL profile of the **ST-SS** (Spatio-Temporal Semantic Stream) protocol — the wire format every mcp, hardware device, and external desktop app uses to publish into the CTRL kernel.
 
 > See [ADR-001 §3 §4](../../.olym/decisions/001-system-architecture.md) for where ST-SS sits in CTRL's 4-layer architecture, and [`.olym/specs/stss-protocol/spec.md`](../../.olym/specs/stss-protocol/spec.md) for the protocol-level reference. This package is the TypeScript reference implementation of that spec.
 
@@ -15,9 +15,9 @@ ST-SS               :  [semantic stream: function foo() { return 1; }]
 
 CTRL v1 uses ST-SS for three things — all derived from CTRL's mental model, not remote viewing:
 
-1. **Desktop AI app integration** — any Tauri / Electron / native app publishes a stream to register as a CTRL keycap source.
+1. **Desktop AI app integration** — any Tauri / Electron / native app publishes a stream to register as a CTRL mcp source.
 2. **Hardware sensor stream** — AI glasses / voice recorders / desktop cameras / e-ink readers / AI rings emit semantic events, not raw audio/video.
-3. **Cross-device AI memory** — keycap invocations, LLM responses, and tool results stream into the event store and replay across devices.
+3. **Cross-device AI memory** — mcp invocations, LLM responses, and tool results stream into the event store and replay across devices.
 
 What ST-SS in `@ctrl/stss` deliberately **does not do** in v1:
 

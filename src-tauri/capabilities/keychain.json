@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "keychain",
-  "description": "BYOK keychain access — store_key / get_key / delete_key commands. Currently granted to the main window so the Settings route can manage Anthropic/OpenAI keys. When WASM keycaps land (P7), they MUST NOT inherit this capability — sandbox-level secrets flow only through the kernel's LLM proxy, never through direct keychain reads from userland.",
+  "description": "BYOK keychain access — store_key / get_key / delete_key commands. Currently granted to the main window so the Settings route can manage Anthropic/OpenAI keys. When WASM mcps land (P7), they MUST NOT inherit this capability — sandbox-level secrets flow only through the kernel's LLM proxy, never through direct keychain reads from userland.",
   "windows": ["main"],
   "permissions": []
 }

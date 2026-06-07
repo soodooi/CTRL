@@ -30,9 +30,9 @@ export type CellKind =
   | 'context_snapshot';
 
 export type OpKind =
-  | 'keycap_invoked'
-  | 'keycap_completed'
-  | 'keycap_failed'
+  | 'mcp_invoked'
+  | 'mcp_completed'
+  | 'mcp_failed'
   | 'actor_spawned'
   | 'actor_terminated'
   | 'hotkey_triggered'

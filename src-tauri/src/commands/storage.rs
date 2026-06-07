@@ -1,12 +1,12 @@
 // Storage Tauri commands — LocalStorage (persistent KV) + Cache (LRU blob).
 //
 // Two siblings to the vault.* surface:
-//   localstorage.* — small persistent JSON values per keycap (user prefs,
+//   localstorage.* — small persistent JSON values per mcp (user prefs,
 //                    last-used choices, draft text). Backed by SQLite.
 //   cache.*        — transient blobs with optional TTL, LRU-evicted at
 //                    256 MB total. Backed by SQLite index + flat blob files.
 //
-// Both per-keycap scoped via the `scope` argument (capability gating on
+// Both per-mcp scoped via the `scope` argument (capability gating on
 // top of this in a follow-up commit).
 
 use crate::kernel::cache::{self, Cache, CacheError, DEFAULT_MAX_BYTES};
@@ -18,13 +18,13 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
-fn check_cap(keycap_id: Option<&str>, required: &CapToken) -> Result<(), String> {
-    let id = keycap_id.unwrap_or("ctrl-system");
-    let cap = capability_resolver::resolve_for_keycap(id);
+fn check_cap(mcp_id: Option<&str>, required: &CapToken) -> Result<(), String> {
+    let id = mcp_id.unwrap_or("ctrl-system");
+    let cap = capability_resolver::resolve_for_mcp(id);
     let broker = CapabilityBroker::new();
     broker.check(&cap, required).map_err(|e| {
-        tracing::warn!(keycap_id = %id, token = ?required, error = %e, "storage: capability check rejected");
-        format!("capability denied for keycap {id:?}: {e}")
+        tracing::warn!(mcp_id = %id, token = ?required, error = %e, "storage: capability check rejected");
+        format!("capability denied for mcp {id:?}: {e}")
     })
 }
 
@@ -56,7 +56,7 @@ pub struct LocalStorageGetArgs {
     pub scope: String,
     pub key: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
@@ -64,7 +64,7 @@ pub async fn localstorage_get(
     args: LocalStorageGetArgs,
 ) -> Result<Option<serde_json::Value>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::KvRead {
             namespace: args.scope.clone(),
         },
@@ -80,13 +80,13 @@ pub struct LocalStorageSetArgs {
     pub key: String,
     pub value: serde_json::Value,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn localstorage_set(args: LocalStorageSetArgs) -> Result<(), String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::KvWrite {
             namespace: args.scope.clone(),
         },
@@ -101,13 +101,13 @@ pub struct LocalStorageRemoveArgs {
     pub scope: String,
     pub key: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn localstorage_remove(args: LocalStorageRemoveArgs) -> Result<(), String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::KvWrite {
             namespace: args.scope.clone(),
         },
@@ -121,13 +121,13 @@ pub async fn localstorage_remove(args: LocalStorageRemoveArgs) -> Result<(), Str
 pub struct LocalStorageListArgs {
     pub scope: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn localstorage_list(args: LocalStorageListArgs) -> Result<Vec<StorageEntry>, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::KvRead {
             namespace: args.scope.clone(),
         },
@@ -141,13 +141,13 @@ pub async fn localstorage_list(args: LocalStorageListArgs) -> Result<Vec<Storage
 pub struct LocalStorageClearArgs {
     pub scope: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn localstorage_clear(args: LocalStorageClearArgs) -> Result<usize, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::KvWrite {
             namespace: args.scope.clone(),
         },
@@ -164,7 +164,7 @@ pub struct CacheGetArgs {
     pub scope: String,
     pub key: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -178,7 +178,7 @@ pub struct CacheGetReply {
 #[tauri::command]
 pub async fn cache_get(args: CacheGetArgs) -> Result<CacheGetReply, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::CacheRead {
             scope: args.scope.clone(),
         },
@@ -200,13 +200,13 @@ pub struct CacheSetArgs {
     /// Optional TTL in milliseconds. Absent = never expires (until LRU).
     pub ttl_ms: Option<i64>,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn cache_set(args: CacheSetArgs) -> Result<(), String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::CacheWrite {
             scope: args.scope.clone(),
         },
@@ -224,13 +224,13 @@ pub struct CacheRemoveArgs {
     pub scope: String,
     pub key: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn cache_remove(args: CacheRemoveArgs) -> Result<(), String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::CacheWrite {
             scope: args.scope.clone(),
         },
@@ -244,13 +244,13 @@ pub async fn cache_remove(args: CacheRemoveArgs) -> Result<(), String> {
 pub struct CacheClearArgs {
     pub scope: String,
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn cache_clear(args: CacheClearArgs) -> Result<usize, String> {
     check_cap(
-        args.keycap_id.as_deref(),
+        args.mcp_id.as_deref(),
         &CapToken::CacheWrite {
             scope: args.scope.clone(),
         },

@@ -1,38 +1,38 @@
-// Capability resolver — given a keycap_id, returns the Capability
-// (bundle of CapTokens) that keycap is authorized to use.
+// Capability resolver — given a mcp_id, returns the Capability
+// (bundle of CapTokens) that mcp is authorized to use.
 //
 // Resolution order:
-//   1. Seed keycaps shipped with CTRL — hardcoded capability set
+//   1. Seed mcps shipped with CTRL — hardcoded capability set
 //      (ctrl-chat / clipboard-ai / ai-translate / ai-text / ai-ocr).
 //      These eventually migrate to manifest-driven; hardcoded keeps v1
 //      moving without writing seed manifests.
-//   2. Installed keycaps — read the manifest at
-//      ~/.ctrl/keycaps/<id>/manifest.json, parse the `capabilities`
+//   2. Installed mcps — read the manifest at
+//      ~/.ctrl/mcps/<id>/manifest.json, parse the `capabilities`
 //      array of CapToken JSON values.
-//   3. Unknown keycap_id → Capability::empty() (deny by default).
+//   3. Unknown mcp_id → Capability::empty() (deny by default).
 //
-// The special keycap_id "ctrl-system" returns full-access capability —
-// used by Tauri commands when no keycap context is provided (debug /
-// Settings UI / first-run wizard). PWA-side commands inside run_keycap
-// MUST pass the real keycap_id so the per-keycap scoping kicks in.
+// The special mcp_id "ctrl-system" returns full-access capability —
+// used by Tauri commands when no mcp context is provided (debug /
+// Settings UI / first-run wizard). PWA-side commands inside run_mcp
+// MUST pass the real mcp_id so the per-mcp scoping kicks in.
 
 use crate::kernel::capability::{CapToken, Capability};
 use std::fs;
 use std::path::PathBuf;
 
-pub fn resolve_for_keycap(keycap_id: &str) -> Capability {
-    if let Some(cap) = resolve_seed(keycap_id) {
+pub fn resolve_for_mcp(mcp_id: &str) -> Capability {
+    if let Some(cap) = resolve_seed(mcp_id) {
         return cap;
     }
-    if let Some(cap) = resolve_installed(keycap_id) {
+    if let Some(cap) = resolve_installed(mcp_id) {
         return cap;
     }
     Capability::empty()
 }
 
-fn resolve_seed(keycap_id: &str) -> Option<Capability> {
-    let tokens = match keycap_id {
-        // The 5 v1 launch seed keycaps. They speak text.chat + read/write
+fn resolve_seed(mcp_id: &str) -> Option<Capability> {
+    let tokens = match mcp_id {
+        // The 5 v1 launch seed mcps. They speak text.chat + read/write
         // the user's clipboard + own a scoped slice of the storage tiers.
         "ctrl-chat" | "clipboard-ai" | "ai-translate" | "ai-text" | "ai-ocr" => vec![
             CapToken::LlmCall {
@@ -50,20 +50,20 @@ fn resolve_seed(keycap_id: &str) -> Option<Capability> {
                 path_glob: "*".to_string(),
             },
             CapToken::KvRead {
-                namespace: keycap_id.to_string(),
+                namespace: mcp_id.to_string(),
             },
             CapToken::KvWrite {
-                namespace: keycap_id.to_string(),
+                namespace: mcp_id.to_string(),
             },
             CapToken::CacheRead {
-                scope: keycap_id.to_string(),
+                scope: mcp_id.to_string(),
             },
             CapToken::CacheWrite {
-                scope: keycap_id.to_string(),
+                scope: mcp_id.to_string(),
             },
         ],
-        // Trusted system context — used when no keycap_id is passed.
-        // Future tightening: drop this; require explicit keycap_id every call.
+        // Trusted system context — used when no mcp_id is passed.
+        // Future tightening: drop this; require explicit mcp_id every call.
         "ctrl-system" => vec![
             CapToken::LlmCall {
                 model: "*".to_string(),
@@ -99,12 +99,12 @@ fn resolve_seed(keycap_id: &str) -> Option<Capability> {
     Some(Capability::new(tokens))
 }
 
-fn resolve_installed(keycap_id: &str) -> Option<Capability> {
+fn resolve_installed(mcp_id: &str) -> Option<Capability> {
     let home = std::env::var("HOME").ok()?;
     let manifest_path = PathBuf::from(home)
         .join(".ctrl")
-        .join("keycaps")
-        .join(keycap_id)
+        .join("mcps")
+        .join(mcp_id)
         .join("manifest.json");
     let bytes = fs::read(&manifest_path).ok()?;
     let manifest: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
@@ -119,7 +119,7 @@ fn resolve_installed(keycap_id: &str) -> Option<Capability> {
             Ok(token) => tokens.push(token),
             Err(e) => {
                 tracing::warn!(
-                    keycap_id = %keycap_id,
+                    mcp_id = %mcp_id,
                     error = %e,
                     "capability_resolver: skipping malformed token in manifest"
                 );
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn seed_ctrl_chat_has_vault_and_llm() {
-        let cap = resolve_for_keycap("ctrl-chat");
+        let cap = resolve_for_mcp("ctrl-chat");
         assert!(cap.contains(&CapToken::LlmCall {
             model: "*".to_string(),
             max_tokens: None,
@@ -143,7 +143,7 @@ mod tests {
         assert!(cap.contains(&CapToken::VaultWrite {
             path_glob: "*".to_string(),
         }));
-        // Scoped to own keycap_id, not other keycaps
+        // Scoped to own mcp_id, not other mcps
         assert!(cap.contains(&CapToken::KvWrite {
             namespace: "ctrl-chat".to_string(),
         }));
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn ctrl_system_has_wildcard_storage_access() {
-        let cap = resolve_for_keycap("ctrl-system");
+        let cap = resolve_for_mcp("ctrl-system");
         assert!(cap.contains(&CapToken::KvWrite {
             namespace: "*".to_string(),
         }));
@@ -164,8 +164,8 @@ mod tests {
     }
 
     #[test]
-    fn unknown_keycap_returns_empty() {
-        let cap = resolve_for_keycap("never-installed-foo");
+    fn unknown_mcp_returns_empty() {
+        let cap = resolve_for_mcp("never-installed-foo");
         assert_eq!(cap.tokens().count(), 0);
     }
 }

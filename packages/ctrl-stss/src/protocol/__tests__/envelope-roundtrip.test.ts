@@ -73,7 +73,7 @@ describe('envelope round-trip', () => {
       ],
       ops: [
         createOp({
-          kind: 'keycap_invoked',
+          kind: 'mcp_invoked',
           target: 'clipboard-ai',
           payload: { mode: 'rewrite' },
           ts_ms: 2_100,
@@ -100,7 +100,7 @@ describe('envelope round-trip', () => {
         cell_kinds: ['clipboard_snapshot'],
         needs_capability: ['ClipboardRead'],
       },
-      intent: 'ctrl-keycap',
+      intent: 'ctrl-mcp',
     });
 
     const welcome = createWelcome({

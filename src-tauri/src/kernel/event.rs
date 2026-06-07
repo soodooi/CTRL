@@ -61,9 +61,9 @@ pub enum CellKind {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum OpKind {
-    KeycapInvoked,
-    KeycapCompleted,
-    KeycapFailed,
+    McpInvoked,
+    McpCompleted,
+    McpFailed,
     ActorSpawned,
     ActorTerminated,
     HotkeyTriggered,
@@ -80,9 +80,9 @@ pub enum OpKind {
     // only mutation message").
     MeshDeviceJoined,
     MeshDeviceLeft,
-    MeshKeycapAdded,
-    MeshKeycapRemoved,
-    MeshKeycapUsedAt,
+    MeshMcpAdded,
+    MeshMcpRemoved,
+    MeshMcpUsedAt,
     MeshPreferenceUpdated,
     // ADR-002 substrate § subprocess v1 §3 — SubprocessActor 6 lifecycle events (kernel-internal,
     // NOT for ST-SS wire emission; the subprocess_stss_adapter translates

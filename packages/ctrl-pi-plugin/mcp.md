@@ -15,16 +15,16 @@ description:
     SKILL.md (agentskills.io open standard) and talks to any major LLM
     provider via Pi's own provider config.
 
-    This keycap wraps Pi as an MCP server so Irisy and any other MCP
+    This mcp wraps Pi as an MCP server so Irisy and any other MCP
     client can call it through the standard `text.chat` capability. Pi
     manages its own provider — CTRL is provider-passthrough for brain
-    keycaps by design (no second copy of credentials in CTRL config).
+    mcps by design (no second copy of credentials in CTRL config).
 icon: BrainCircuit
-keycap_color: cobalt
+mcp_color: cobalt
 category: brain
 tags: [brain, agent, llm, coding-agent, default]
 
-# Brain keycap target — orthogonal to `variant`. See
+# Brain mcp target — orthogonal to `variant`. See
 # .olym/specs/tool-manifest/spec.md §13 (pluggable agent runtime).
 target: brain
 capability: text.chat
@@ -103,7 +103,7 @@ actions:
 
 # Pi (default brain)
 
-Pi is CTRL's default brain keycap as of 2026-05-25 (bao verbal approval —
+Pi is CTRL's default brain mcp as of 2026-05-25 (bao verbal approval —
 see `.olym/handoffs/H-2026-05-25-001-pi-default-brain.md`).
 
 ## Why Pi over a custom brain
@@ -122,7 +122,7 @@ see `.olym/handoffs/H-2026-05-25-001-pi-default-brain.md`).
 
 ## Install
 
-This keycap ships with the bridge runtime (`@ctrl/pi-plugin`). The Pi
+This mcp ships with the bridge runtime (`@ctrl/pi-plugin`). The Pi
 binary itself is **not** bundled — CTRL is augmentation, not distributor.
 Install Pi once with:
 
@@ -146,7 +146,7 @@ OpenAI / Google / xAI / Groq / Cerebras / Mistral / OpenRouter).
 ## How the kernel finds this
 
 The kernel's brain router (zeus lane, separate handoff) reads the
-`target: brain` + `capability: text.chat` fields and treats this keycap
+`target: brain` + `capability: text.chat` fields and treats this mcp
 as the answer for any text-completion request from Irisy. To swap brains
-(e.g. to hermes-as-optional), the user replaces the active brain keycap
+(e.g. to hermes-as-optional), the user replaces the active brain mcp
 in `~/.ctrl/active-brain` — no kernel rebuild required.

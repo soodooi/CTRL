@@ -1,7 +1,7 @@
 // /pool — Cap catalog (smart-table view, bao 2026-06-04).
 //
-// Renamed conceptually from "Pool of installed keycaps" to a unified
-// catalog of caps. bao 2026-06-04: "the old keycap pool is too complex,
+// Renamed conceptually from "Pool of installed mcps" to a unified
+// catalog of caps. bao 2026-06-04: "the old mcp pool is too complex,
 // switch to a smart table" -- the card grid is gone, replaced by a
 // TanStack-Table v8 grid that surfaces source / name / description /
 // actions per row.
@@ -29,7 +29,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { invoke } from '@/lib/bridge';
-import { listKeycaps, openWorkspace, type KeycapSummary } from '@/lib/kernel';
+import { listMcps, openWorkspace, type McpSummary } from '@/lib/kernel';
 import { useRail } from '@/components/PrimaryRail';
 import { useSessionStateStore } from '@/lib/session-state';
 import { StatusPill, type LedTone } from '@/components/primitives';
@@ -69,7 +69,7 @@ const SOURCE_TONE: Record<CapSource, LedTone> = {
   skill: 'nominal',
 };
 
-const inferKeycapSource = (k: KeycapSummary): CapSource => {
+const inferMcpSource = (k: McpSummary): CapSource => {
   if (k.id.startsWith('ctrl.builtin.')) return 'builtin';
   if (k.id.startsWith('mcp:')) return 'mcp';
   if (k.id.startsWith('oauth:')) return 'oauth';
@@ -78,11 +78,11 @@ const inferKeycapSource = (k: KeycapSummary): CapSource => {
   return 'builtin';
 };
 
-const toRowFromKeycap = (k: KeycapSummary): CapRow => ({
-  rowKey: `keycap:${k.id}`,
+const toRowFromMcp = (k: McpSummary): CapRow => ({
+  rowKey: `mcp:${k.id}`,
   id: k.id,
   name: k.name,
-  source: inferKeycapSource(k),
+  source: inferMcpSource(k),
   description: k.id,
 });
 
@@ -131,9 +131,9 @@ export const PoolRoute = (): ReactElement => {
   const [activationError, setActivationError] = useState<string | null>(null);
   const [wearStatus, setWearStatus] = useState<string | null>(null);
 
-  const { data: keycaps = [], isLoading: keycapsLoading } = useQuery({
-    queryKey: ['keycaps'],
-    queryFn: listKeycaps,
+  const { data: mcps = [], isLoading: mcpsLoading } = useQuery({
+    queryKey: ['mcps'],
+    queryFn: listMcps,
   });
 
   const { data: skills = [], isLoading: skillsLoading } = useQuery({
@@ -141,13 +141,13 @@ export const PoolRoute = (): ReactElement => {
     queryFn: () => invoke<LocalSkillItem[]>('list_local_skills', { query: null }),
   });
 
-  const isLoading = keycapsLoading || skillsLoading;
+  const isLoading = mcpsLoading || skillsLoading;
 
   const rows = useMemo<CapRow[]>(() => {
-    const keycapRows = keycaps.map(toRowFromKeycap);
+    const mcpRows = mcps.map(toRowFromMcp);
     const skillRows = (skills ?? []).map(toRowFromSkill);
-    return [...keycapRows, ...skillRows];
-  }, [keycaps, skills]);
+    return [...mcpRows, ...skillRows];
+  }, [mcps, skills]);
 
   const counts = useMemo(() => {
     const tally: Record<CapSource | 'all', number> = {
@@ -175,10 +175,10 @@ export const PoolRoute = (): ReactElement => {
     window.setTimeout(() => setWearStatus(null), 4000);
   };
 
-  const handleRun = (keycapId: string): void => {
-    void openWorkspace(keycapId).catch((err: unknown) => {
+  const handleRun = (mcpId: string): void => {
+    void openWorkspace(mcpId).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : 'Unexpected error';
-      setActivationError(`Run failed for "${keycapId}": ${msg}`);
+      setActivationError(`Run failed for "${mcpId}": ${msg}`);
     });
   };
 

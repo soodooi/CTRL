@@ -2,7 +2,7 @@
  * Stream identifier helpers — structure on top of the wire-level
  * `Envelope.source` string.
  *
- * Convention: `<publisher>:<instance>`. Publisher is the keycap /
+ * Convention: `<publisher>:<instance>`. Publisher is the mcp /
  * extension / device family (e.g. `clipboard-ai`, `vscode-companion`,
  * `eink-boox-mira5`); instance is a stable per-running-process or
  * per-device identifier. Implementations MAY use any string for

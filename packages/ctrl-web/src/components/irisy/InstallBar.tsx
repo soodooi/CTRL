@@ -5,14 +5,14 @@
 // Install CTA.
 //
 // 2026-05-30 (ECC review C5): the historical "backend in progress" gate
-// referred to zeus's Z2 install_keycap Tauri command, which shipped at
+// referred to zeus's Z2 install_mcp Tauri command, which shipped at
 // commands/kernel.rs:197 long ago. The prop + greyed-out branch are
 // retired; the CTA is always live as long as the manifest is installable.
 
 import {
   selectInstallable,
-  useKeycapCreatorStore,
-} from '@/lib/irisy-keycap-store';
+  useMcpCreatorStore,
+} from '@/lib/irisy-mcp-store';
 import styles from './InstallBar.module.css';
 
 interface InstallBarProps {
@@ -21,9 +21,9 @@ interface InstallBarProps {
 }
 
 export function InstallBar({ onInstall }: InstallBarProps): React.ReactElement {
-  const installable = useKeycapCreatorStore(selectInstallable);
-  const phase = useKeycapCreatorStore((s) => s.phase);
-  const errors = useKeycapCreatorStore((s) => s.errors);
+  const installable = useMcpCreatorStore(selectInstallable);
+  const phase = useMcpCreatorStore((s) => s.phase);
+  const errors = useMcpCreatorStore((s) => s.errors);
 
   const structuralCount = errors.filter((e) => e.kind === 'structural').length;
   const semanticCount = errors.filter((e) => e.kind === 'semantic').length;
@@ -34,11 +34,11 @@ export function InstallBar({ onInstall }: InstallBarProps): React.ReactElement {
   const buttonLabel = (() => {
     if (installing) return 'Installing…';
     if (phase === 'installed') return '✓ Installed';
-    return '▸ Install keycap';
+    return '▸ Install mcp';
   })();
 
   const buttonTitle = installable
-    ? 'Land manifest + server.ts at ~/.ctrl/keycaps/<id>/'
+    ? 'Land manifest + server.ts at ~/.ctrl/mcps/<id>/'
     : 'Finish slot-filling first';
 
   return (

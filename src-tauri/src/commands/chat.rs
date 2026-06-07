@@ -11,8 +11,8 @@
 // every chunk as a Tauri event. `request_id` lets the PWA multiplex
 // multiple concurrent streams across the same listener.
 //
-// Capability gating: optional `keycap_id` arg lets a caller declare
-// the keycap context for future per-keycap LlmCall token checks.
+// Capability gating: optional `mcp_id` arg lets a caller declare
+// the mcp context for future per-mcp LlmCall token checks.
 // Absent = trusted "ctrl-system" (Settings UI / direct dev call).
 
 use crate::kernel::capability::{CapToken, CapabilityBroker};
@@ -32,10 +32,10 @@ pub struct ChatStreamArgs {
     pub temperature: Option<f32>,
     #[serde(default)]
     pub max_tokens: Option<u32>,
-    /// Optional caller keycap id. Future hardening will require this
+    /// Optional caller mcp id. Future hardening will require this
     /// for non-trusted contexts; today absent → "ctrl-system".
     #[serde(default)]
-    pub keycap_id: Option<String>,
+    pub mcp_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,8 +62,8 @@ pub async fn chat_stream(
     // Capability check — LlmCall, model name is the glob target.
     let model = args.model.clone().unwrap_or_default();
     {
-        let id = args.keycap_id.as_deref().unwrap_or("ctrl-system");
-        let cap = capability_resolver::resolve_for_keycap(id);
+        let id = args.mcp_id.as_deref().unwrap_or("ctrl-system");
+        let cap = capability_resolver::resolve_for_mcp(id);
         let required = CapToken::LlmCall {
             model: if model.is_empty() {
                 "*".to_string()
@@ -74,8 +74,8 @@ pub async fn chat_stream(
         };
         let broker = CapabilityBroker::new();
         broker.check(&cap, &required).map_err(|e| {
-            tracing::warn!(keycap_id = %id, model = %model, error = %e, "chat_stream: capability rejected");
-            format!("capability denied for keycap {id:?}: {e}")
+            tracing::warn!(mcp_id = %id, model = %model, error = %e, "chat_stream: capability rejected");
+            format!("capability denied for mcp {id:?}: {e}")
         })?;
     }
 

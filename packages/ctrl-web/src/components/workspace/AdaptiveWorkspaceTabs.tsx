@@ -1,6 +1,6 @@
-// AdaptiveWorkspaceTabs — renders a keycap's v3 workspace declaration.
+// AdaptiveWorkspaceTabs — renders a mcp's v3 workspace declaration.
 //
-// ADR-003 frontend §7.3 universal adaptive workspace: a keycap manifest declares
+// ADR-003 frontend §7.3 universal adaptive workspace: a mcp manifest declares
 // `ui_surface.workspace.tabs[]`; this component is the **presentation
 // shell** that turns that declaration into the NSWindow's interior.
 //
@@ -17,19 +17,19 @@
 // NOT in scope (next PR per ADR-003 frontend §7.5):
 //   - Viewer dispatch (`tab.viewer` → ViewerHost / chat-stream / form).
 //   - L2 sub-nav rendering inside the shell's L2 slot.
-//   - NSWindow content router that picks WHICH keycap's tabs to mount.
+//   - NSWindow content router that picks WHICH mcp's tabs to mount.
 //   - Tauri event bridge between NSWindow child and main window.
 
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
-import type { WorkspaceTab } from '@ctrl/keycap-sdk';
+import type { WorkspaceTab } from '@ctrl/mcp-sdk';
 import styles from './AdaptiveWorkspaceTabs.module.css';
 
 interface AdaptiveWorkspaceTabsProps {
-  /** Tab declarations from a keycap manifest's `ui_surface.workspace.tabs[]`. */
+  /** Tab declarations from a mcp manifest's `ui_surface.workspace.tabs[]`. */
   tabs: ReadonlyArray<WorkspaceTab>;
   /** Initial active tab id. Defaults to `tabs[0].id`. */
   initialActiveId?: string;
-  /** Fires when the user switches tabs; useful for keycap-side state sync. */
+  /** Fires when the user switches tabs; useful for mcp-side state sync. */
   onActiveChange?: (tabId: string) => void;
 }
 

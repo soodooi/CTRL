@@ -2,8 +2,8 @@
 //
 // Per bao 2026-05-25 + 2026-05-25 architecture review: a workspace is
 // NOT a separately-managed user-facing template gallery. Its shape is
-// DERIVED from the keycap's (source × target). One canonical lookup
-// table, edited in code. Power users override per-keycap via the
+// DERIVED from the mcp's (source × target). One canonical lookup
+// table, edited in code. Power users override per-mcp via the
 // manifest's optional `workspace?` field.
 //
 // This module is the lookup. `workspace-store.ts` is where instances
@@ -11,7 +11,7 @@
 
 import type { TabKind } from './tab-store';
 
-export type KeycapKind =
+export type McpKind =
   | 'mcp-tool' // 90% default (kernel MCP server exposing tools)
   | 'brain' // text.chat producer (pi)
   | 'oauth-platform' // feishu / notion / linear OAuth-backed
@@ -29,7 +29,7 @@ export type WorkspaceLayout = 'single' | 'tabs' | 'split-h' | 'split-v';
 export interface TabSpec {
   kind: TabKind;
   title: string;
-  /** Tab-kind specific seed. `keycap-output` gets `{keycapId}`, etc. */
+  /** Tab-kind specific seed. `mcp-output` gets `{mcpId}`, etc. */
   initialState?: Record<string, unknown>;
 }
 
@@ -47,10 +47,10 @@ export interface ShapeSpec {
  * 'split-h' / 'split-v' = future, currently fall back to 'tabs' in the
  * renderer until a Pane split component lands.
  */
-export const SHAPE_BY_KIND: Readonly<Record<KeycapKind, ShapeSpec>> = {
+export const SHAPE_BY_KIND: Readonly<Record<McpKind, ShapeSpec>> = {
   'mcp-tool': {
     layout: 'single',
-    tabs: [{ kind: 'keycap-output', title: 'Run' }],
+    tabs: [{ kind: 'mcp-output', title: 'Run' }],
   },
   brain: {
     layout: 'tabs',
@@ -60,7 +60,7 @@ export const SHAPE_BY_KIND: Readonly<Record<KeycapKind, ShapeSpec>> = {
     layout: 'tabs',
     tabs: [
       { kind: 'external-embed', title: 'Viewer' },
-      { kind: 'keycap-output', title: 'Actions' },
+      { kind: 'mcp-output', title: 'Actions' },
     ],
   },
   'local-cli': {
@@ -73,16 +73,16 @@ export const SHAPE_BY_KIND: Readonly<Record<KeycapKind, ShapeSpec>> = {
   },
   builtin: {
     layout: 'single',
-    tabs: [{ kind: 'keycap-output', title: 'Output' }],
+    tabs: [{ kind: 'mcp-output', title: 'Output' }],
   },
 };
 
 /**
- * Stand-in until zeus's D1 envelope ships `target` + `source` per-keycap.
+ * Stand-in until zeus's D1 envelope ships `target` + `source` per-mcp.
  * Mirrors the inferTarget/inferSource logic from pool.tsx — the moment
  * the real fields land, drop this in favor of reading `k.target`.
  */
-export const inferKindFromId = (id: string): KeycapKind => {
+export const inferKindFromId = (id: string): McpKind => {
   if (id === 'pi') return 'brain';
   if (id.startsWith('mcp:')) return 'mcp-tool';
   if (id.startsWith('oauth:')) return 'oauth-platform';
@@ -91,6 +91,6 @@ export const inferKindFromId = (id: string): KeycapKind => {
   return 'mcp-tool'; // safest builtin default — most builtins are MCP tools
 };
 
-/** Look up the shape for a keycap. Always returns a shape — never null. */
-export const deriveShape = (keycapId: string): ShapeSpec =>
-  SHAPE_BY_KIND[inferKindFromId(keycapId)];
+/** Look up the shape for a mcp. Always returns a shape — never null. */
+export const deriveShape = (mcpId: string): ShapeSpec =>
+  SHAPE_BY_KIND[inferKindFromId(mcpId)];

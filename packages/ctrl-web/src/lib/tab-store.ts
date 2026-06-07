@@ -13,7 +13,7 @@ import type { Icon } from './icon';
 export type TabKind =
   | 'external-embed' // iframe pointing at an external dashboard
   | 'vault-md' // markdown doc from the user's vault
-  | 'keycap-output' // output surface for an invoked keycap
+  | 'mcp-output' // output surface for an invoked mcp
   | 'session-stream' // live stream (chat / code-space env)
   | 'sourcing-review' // ADR-002 § vault v1 §8.6 (2026-06-01) — review the Irisy
   //                  sourcing inbox proposals (`.ctrl/review-queue/<date>.md`)
@@ -37,9 +37,9 @@ export interface VaultMdTab extends BaseTab {
   kind: 'vault-md';
   vaultPath: string;
 }
-export interface KeycapOutputTab extends BaseTab {
-  kind: 'keycap-output';
-  keycapId: string;
+export interface McpOutputTab extends BaseTab {
+  kind: 'mcp-output';
+  mcpId: string;
   invocationId: string;
 }
 export interface SessionStreamTab extends BaseTab {
@@ -59,7 +59,7 @@ export interface SourcingReviewTab extends BaseTab {
 export type Tab =
   | ExternalEmbedTab
   | VaultMdTab
-  | KeycapOutputTab
+  | McpOutputTab
   | SessionStreamTab
   | SourcingReviewTab
   | RouteTab;

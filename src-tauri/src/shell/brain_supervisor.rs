@@ -10,7 +10,7 @@
 //
 //   2. The `@ctrl/pi-plugin` MCP server (`ctrl-pi-mcp` on
 //      `127.0.0.1:17874`). The MCP server is the wire that PWA Irisy +
-//      keycaps talk to (`tools/call text.chat`). It spawns Pi as a
+//      mcps talk to (`tools/call text.chat`). It spawns Pi as a
 //      `pi rpc` subprocess; we inject `CTRL_PI_BRIDGE_EXTENSION` (path
 //      to the bundled `@ctrl/pi-bridge`) + `CTRL_PROVIDER_PORT` env so
 //      Pi's LLM calls route into the kernel provider sub-system

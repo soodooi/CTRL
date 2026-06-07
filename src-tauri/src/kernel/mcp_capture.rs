@@ -1,13 +1,13 @@
-// kernel::keycap_capture — keycap output to SmartTable capture (§9).
+// kernel::mcp_capture — mcp output to SmartTable capture (§9).
 //
 // (ADR-002 substrate v5 §9 smart-table-output, 2026-06-03 — brainstorm
 // `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md` product
-// decision P4 "smart table list shape per keycap".)
+// decision P4 "smart table list shape per mcp".)
 //
 // Best-effort side effect — failures are warn-logged and never block
-// the keycap response. Capture row schema is the standard 7-column
+// the mcp response. Capture row schema is the standard 7-column
 // `(ts, input_excerpt, output_excerpt, provider, model, tokens, accepted)`;
-// when a keycap manifest declares extra columns those land too via the
+// when a mcp manifest declares extra columns those land too via the
 // optional `extra` map.
 
 use std::path::Path;
@@ -44,12 +44,12 @@ fn truncate(s: &str, n: usize) -> String {
     }
 }
 
-/// Append a row to the keycap's SmartTable. Best-effort; logs+swallows
-/// any error. `extras` lets callers pass keycap-specific extra columns
+/// Append a row to the mcp's SmartTable. Best-effort; logs+swallows
+/// any error. `extras` lets callers pass mcp-specific extra columns
 /// (e.g. `confidence` for OCR).
 pub fn capture_row(
     vault_root: &Path,
-    keycap_id: &str,
+    mcp_id: &str,
     input: &Value,
     output: &Value,
     provider: Option<&str>,
@@ -57,7 +57,7 @@ pub fn capture_row(
     tokens: Option<u64>,
     extras: Option<Vec<(String, String)>>,
 ) {
-    let Some(cfg) = load_capture_cfg(vault_root, keycap_id) else {
+    let Some(cfg) = load_capture_cfg(vault_root, mcp_id) else {
         return;
     };
     if !cfg.enabled {
@@ -66,7 +66,7 @@ pub fn capture_row(
     let table_path = cfg
         .table_path
         .clone()
-        .unwrap_or_else(|| format!("notes/keycap-runs/{keycap_id}.table.md"));
+        .unwrap_or_else(|| format!("notes/mcp-runs/{mcp_id}.table.md"));
 
     let input_excerpt = truncate(&value_to_excerpt(input), 80);
     let output_excerpt = truncate(&value_to_excerpt(output), 80);
@@ -78,7 +78,7 @@ pub fn capture_row(
     if let Err(e) = append_to_table(
         vault_root,
         &table_path,
-        keycap_id,
+        mcp_id,
         cfg.schema.as_deref(),
         &ts,
         &input_excerpt,
@@ -88,15 +88,15 @@ pub fn capture_row(
         &tokens,
         extras.as_deref(),
     ) {
-        tracing::warn!(keycap_id, error = %e, "keycap_capture: append failed");
+        tracing::warn!(mcp_id, error = %e, "mcp_capture: append failed");
     }
 }
 
-/// Read `~/.ctrl/keycaps/<id>/manifest.{json,yaml,yml}` and pull the
+/// Read `~/.ctrl/mcps/<id>/manifest.{json,yaml,yml}` and pull the
 /// `output_capture` block. Returns None when missing / malformed.
-fn load_capture_cfg(_vault_root: &Path, keycap_id: &str) -> Option<OutputCaptureCfg> {
+fn load_capture_cfg(_vault_root: &Path, mcp_id: &str) -> Option<OutputCaptureCfg> {
     let home = std::env::var("HOME").ok()?;
-    let base = Path::new(&home).join(".ctrl/keycaps").join(keycap_id);
+    let base = Path::new(&home).join(".ctrl/mcps").join(mcp_id);
     for filename in &["manifest.json", "manifest.yaml", "manifest.yml"] {
         let path = base.join(filename);
         if !path.exists() {
@@ -129,11 +129,11 @@ fn value_to_excerpt(v: &Value) -> String {
 
 /// Append a row to the markdown table file. Creates the file (header +
 /// frontmatter schema) when absent. Rotates the file to
-/// `archive/{keycap}-{YYYY}-Q{N}.md` once it exceeds 500 row lines.
+/// `archive/{mcp}-{YYYY}-Q{N}.md` once it exceeds 500 row lines.
 fn append_to_table(
     vault_root: &Path,
     table_rel: &str,
-    keycap_id: &str,
+    mcp_id: &str,
     schema: Option<&[Value]>,
     ts: &str,
     input_excerpt: &str,
@@ -172,7 +172,7 @@ fn append_to_table(
     }
 
     let frontmatter = format!(
-        "---\ntitle: {keycap_id} runs\nkeycap: {keycap_id}\ntype: keycap-output-table\n---\n\n"
+        "---\ntitle: {mcp_id} runs\nmcp: {mcp_id}\ntype: mcp-output-table\n---\n\n"
     );
 
     let separator = format!(
@@ -269,7 +269,7 @@ fn archive_path_for(table_rel: &str) -> String {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("table");
-    format!("notes/keycap-runs/archive/{stem}-{year}-Q{quarter}.md")
+    format!("notes/mcp-runs/archive/{stem}-{year}-Q{quarter}.md")
 }
 
 use chrono::Datelike;
@@ -288,7 +288,7 @@ mod tests {
     fn append_writes_header_on_empty_file() {
         let dir = tempdir().unwrap();
         let root = dir.path();
-        let rel = "notes/keycap-runs/ocr.table.md";
+        let rel = "notes/mcp-runs/ocr.table.md";
         let result = append_to_table(
             root,
             rel,

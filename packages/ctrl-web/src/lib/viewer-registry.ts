@@ -1,12 +1,12 @@
 // Viewer registry — the workspace's content-rendering surface.
 //
 // Three dimensions per the architecture review (decided 2026-05-25):
-//   - location: vault | keycap | system  (where the resource lives)
+//   - location: vault | mcp | system  (where the resource lives)
 //   - editable: boolean                  (can the viewer write back?)
 //   - companion: string?                 (sidecar URI, e.g. PDF + .pdf.md)
 //
 // MIME alone doesn't pick the viewer — `text/markdown` from a vault note
-// is editable + persisted to the vault; the same MIME from a keycap
+// is editable + persisted to the vault; the same MIME from a mcp
 // prompt is editable + persisted as a Config-tier patch; from a system
 // log it's read-only. Same viewer body, three save handlers.
 //
@@ -22,7 +22,7 @@
 
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 
-export type ViewerLocation = 'vault' | 'keycap' | 'system';
+export type ViewerLocation = 'vault' | 'mcp' | 'system';
 
 export interface ViewerResource {
   location: ViewerLocation;
@@ -153,7 +153,7 @@ export const resolveViewer = (contentType: string): LazyViewer => {
 
 /**
  * Convenience to register a viewer at runtime (e.g. from a feature
- * flag or a keycap-supplied custom viewer). Mutates the singleton —
+ * flag or a mcp-supplied custom viewer). Mutates the singleton —
  * call once at module init, not from render.
  */
 export const registerViewer = (

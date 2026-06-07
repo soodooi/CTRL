@@ -1,7 +1,7 @@
 # @ctrl/pi-plugin
 
 > Pi → MCP wrapper. Exposes [Pi](https://github.com/badlogic/pi-mono)
-> (a minimalist coding agent) as a CTRL **brain keycap** so Irisy and
+> (a minimalist coding agent) as a CTRL **brain mcp** so Irisy and
 > any other MCP client can call it through the standard `text.chat`
 > capability.
 
@@ -10,16 +10,16 @@
 
 ## Why this exists
 
-CTRL keycap manifests have a `target` axis (orthogonal to `variant`):
+CTRL mcp manifests have a `target` axis (orthogonal to `variant`):
 
-- `target: mcp-tool` — most keycaps (90%). One-shot tool call.
-- `target: hermes-skill` — optional, rich SKILL.md-driven keycaps.
+- `target: mcp-tool` — most mcps (90%). One-shot tool call.
+- `target: hermes-skill` — optional, rich SKILL.md-driven mcps.
 - **`target: brain`** — pluggable agent runtime. **This package**.
 
-The keycap manifest says "use `text.chat`"; the bridge translates that
+The mcp manifest says "use `text.chat`"; the bridge translates that
 into a Pi subprocess invocation, streams tokens back as MCP progress
 events, and lets Pi own its own LLM provider config. CTRL is
-provider-passthrough for brain keycaps — we do not stash a second copy
+provider-passthrough for brain mcps — we do not stash a second copy
 of the user's API keys.
 
 ## What's in here
@@ -30,7 +30,7 @@ of the user's API keys.
 | `src/pi-bridge.ts`                | Spawn Pi (`pi rpc` preferred, `pi -q --json` fallback). Stream tokens. |
 | `src/mcp-server.ts`               | Tiny streamable-HTTP MCP server. One tool: `text.chat`.                |
 | `bin/ctrl-pi-mcp.ts`              | CLI entrypoint. Prints `{event:"ready", url, mcp, health}` on stdout.  |
-| `keycap.md`                       | Manifest template — copied to `~/.ctrl/keycaps/pi/` at install time.   |
+| `mcp.md`                       | Manifest template — copied to `~/.ctrl/mcps/pi/` at install time.   |
 
 ## Install Pi (one-time, user-side)
 

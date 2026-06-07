@@ -1,4 +1,4 @@
-// [H-2026-05-18-001] ChatPane — left zone of the keycap-creator shell.
+// [H-2026-05-18-001] ChatPane — left zone of the mcp-creator shell.
 //
 // History scroller + input + patience pip. The input is auto-focused, and
 // its placeholder is mode-aware: default vs. field-pending refinement.
@@ -6,8 +6,8 @@
 import { useEffect, useRef, type FormEvent } from 'react';
 import {
   selectInstallable,
-  useKeycapCreatorStore,
-} from '@/lib/irisy-keycap-store';
+  useMcpCreatorStore,
+} from '@/lib/irisy-mcp-store';
 import { PatiencePip } from './PatiencePip';
 import styles from './ChatPane.module.css';
 
@@ -17,10 +17,10 @@ interface ChatPaneProps {
 }
 
 export function ChatPane({ onSubmit, busy }: ChatPaneProps): React.ReactElement {
-  const messages = useKeycapCreatorStore((s) => s.messages);
-  const fieldPending = useKeycapCreatorStore((s) => s.fieldPending);
-  const errors = useKeycapCreatorStore((s) => s.errors);
-  const installable = useKeycapCreatorStore(selectInstallable);
+  const messages = useMcpCreatorStore((s) => s.messages);
+  const fieldPending = useMcpCreatorStore((s) => s.fieldPending);
+  const errors = useMcpCreatorStore((s) => s.errors);
+  const installable = useMcpCreatorStore(selectInstallable);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -81,7 +81,7 @@ export function ChatPane({ onSubmit, busy }: ChatPaneProps): React.ReactElement 
       <div ref={scrollerRef} className={styles.history}>
         {messages.length === 0 && (
           <div className={`${styles.bubble} ${styles.assistant}`}>
-            Hi. Describe the keycap you want — what it does, when to trigger.
+            Hi. Describe the mcp you want — what it does, when to trigger.
           </div>
         )}
         {messages.map((m) => (

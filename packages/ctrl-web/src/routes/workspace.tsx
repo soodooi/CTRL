@@ -3,16 +3,16 @@
 // Two modes coexist by URL shape:
 //   (1) /workspace                — multi-instance shell (today's PWA flow,
 //       driven by workspace-store + WorkspaceShell)
-//   (2) /workspace?keycap_id=foo  — legacy dedicated Tauri window route,
-//       reads a single keycap_id from URL/hash and renders its
+//   (2) /workspace?mcp_id=foo  — legacy dedicated Tauri window route,
+//       reads a single mcp_id from URL/hash and renders its
 //       cell-stream feed (kept for the Rust shell that opens a dedicated
 //       workspace window per ADR-003 frontend § nav-keyboard v2 —
 //       workspace area opens via L1 ▾, lives in main window's leftward
-//       expansion; the legacy keycap_id query path is preserved for the
+//       expansion; the legacy mcp_id query path is preserved for the
 //       Rust shell that still calls it directly during transition)
 //
 // Both paths land here so the existing Tauri window code that navigates
-// `/workspace?keycap_id=...` keeps working while the multi-instance UI
+// `/workspace?mcp_id=...` keeps working while the multi-instance UI
 // owns the unparameterised entry point.
 
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
@@ -21,13 +21,13 @@ import { formatHHMMSS } from '@/hooks/useWallClock';
 import { WorkspaceShell } from '@/components/workspace/WorkspaceShell';
 import styles from './workspace.module.css';
 
-const readKeycapId = (): string | null => {
+const readMcpId = (): string | null => {
   if (typeof window === 'undefined') return null;
   const url = new URL(window.location.href);
-  if (url.searchParams.has('keycap_id')) return url.searchParams.get('keycap_id');
+  if (url.searchParams.has('mcp_id')) return url.searchParams.get('mcp_id');
   const hash = url.hash;
   const hashQs = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
-  return new URLSearchParams(hashQs).get('keycap_id');
+  return new URLSearchParams(hashQs).get('mcp_id');
 };
 
 const renderPayload = (payload: unknown): string => {
@@ -56,32 +56,32 @@ const eventKindClass = (event: EventRecord): string => {
         return cls(styles.cellDefault);
     }
   }
-  if (event.kind === 'keycap_failed') return cls(styles.opFailed);
-  if (event.kind === 'keycap_completed') return cls(styles.opComplete);
+  if (event.kind === 'mcp_failed') return cls(styles.opFailed);
+  if (event.kind === 'mcp_completed') return cls(styles.opComplete);
   return cls(styles.opDefault);
 };
 
 interface WorkspaceRouteProps {
   /**
-   * Override the keycap id source. When omitted the route reads the id from
+   * Override the mcp id source. When omitted the route reads the id from
    * the URL (default behavior used by the dedicated Tauri workspace window).
    */
-  keycapId?: string | null;
+  mcpId?: string | null;
 }
 
-const LegacyKeycapStreamView = ({
-  keycapId,
+const LegacyMcpStreamView = ({
+  mcpId,
 }: {
-  keycapId: string;
+  mcpId: string;
 }): ReactElement => {
-  const streamId = useMemo(() => `keycap-${keycapId}`, [keycapId]);
+  const streamId = useMemo(() => `mcp-${mcpId}`, [mcpId]);
   const { events, status, error } = useCellStream(streamId);
   return (
     <div className={styles.layout}>
       <header className={styles.header}>
         <h1 className={styles.title}>Workspace</h1>
         <p className={styles.subtitle}>
-          Keycap <code className={styles.code}>{keycapId}</code>
+          Mcp <code className={styles.code}>{mcpId}</code>
           <span className={`${cls(styles.status)} ${cls(styles[`status_${status}`])}`}>
             {status}
           </span>
@@ -116,30 +116,30 @@ const ShellFallback = (): ReactElement => (
     <header className={styles.header}>
       <h1 className={styles.title}>Workspace</h1>
       <p className={styles.subtitle}>
-        Click a keycap on the left, or drop one here to open it.
+        Click a mcp on the left, or drop one here to open it.
       </p>
     </header>
   </div>
 );
 
 export const WorkspaceRoute = ({
-  keycapId: keycapIdProp,
+  mcpId: mcpIdProp,
 }: WorkspaceRouteProps = {}): ReactElement => {
-  const [urlKeycapId, setUrlKeycapId] = useState<string | null>(() => readKeycapId());
-  const keycapId = keycapIdProp !== undefined ? keycapIdProp : urlKeycapId;
+  const [urlMcpId, setUrlMcpId] = useState<string | null>(() => readMcpId());
+  const mcpId = mcpIdProp !== undefined ? mcpIdProp : urlMcpId;
 
   useEffect(() => {
-    if (keycapIdProp !== undefined) return;
-    const onHashChange = (): void => setUrlKeycapId(readKeycapId());
+    if (mcpIdProp !== undefined) return;
+    const onHashChange = (): void => setUrlMcpId(readMcpId());
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, [keycapIdProp]);
+  }, [mcpIdProp]);
 
-  // Legacy single-keycap stream mode — only when an explicit id is in
+  // Legacy single-mcp stream mode — only when an explicit id is in
   // the URL (dedicated Tauri window flow). Multi-instance shell owns
   // everything else.
-  if (keycapId) {
-    return <LegacyKeycapStreamView keycapId={keycapId} />;
+  if (mcpId) {
+    return <LegacyMcpStreamView mcpId={mcpId} />;
   }
 
   return <WorkspaceShell fallback={<ShellFallback />} />;

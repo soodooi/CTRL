@@ -1,7 +1,7 @@
 // asset-uri — CTRL asset URI scheme resolver.
 //
-// The `ctrl-asset://` custom scheme lets keycap-bundled assets at
-// `~/.ctrl/keycaps/<id>/assets/<path>` and vault assets at
+// The `ctrl-asset://` custom scheme lets mcp-bundled assets at
+// `~/.ctrl/mcps/<id>/assets/<path>` and vault assets at
 // `~/Documents/CTRL/assets/<path>` be fetched without an `invoke` round-trip.
 //
 // Stub status (2026-05-25): the Tauri protocol handler that resolves
@@ -13,7 +13,7 @@
 
 export const CTRL_ASSET_SCHEME = 'ctrl-asset:' as const;
 
-export type AssetRoot = 'keycaps' | 'vault' | 'brand' | 'cache';
+export type AssetRoot = 'mcps' | 'vault' | 'brand' | 'cache';
 
 /**
  * Build a `ctrl-asset://<root>/<rest>` URI. No path encoding is applied
@@ -22,9 +22,9 @@ export type AssetRoot = 'keycaps' | 'vault' | 'brand' | 'cache';
 export const buildAssetUri = (root: AssetRoot, ...segments: string[]): string =>
   `${CTRL_ASSET_SCHEME}//${root}/${segments.join('/')}`;
 
-/** Convenience: keycap-bundled asset path. */
-export const keycapAssetUri = (keycapId: string, relPath: string): string =>
-  buildAssetUri('keycaps', keycapId, 'assets', relPath);
+/** Convenience: mcp-bundled asset path. */
+export const mcpAssetUri = (mcpId: string, relPath: string): string =>
+  buildAssetUri('mcps', mcpId, 'assets', relPath);
 
 /** Convenience: vault-side asset path under `~/Documents/CTRL/assets/`. */
 export const vaultAssetUri = (relPath: string): string =>
@@ -53,7 +53,7 @@ export const parseAssetUri = (uri: string): ParsedAssetUri | null => {
   const path = after.slice(slash + 1);
   if (!path) return null;
   if (
-    root !== 'keycaps' &&
+    root !== 'mcps' &&
     root !== 'vault' &&
     root !== 'brand' &&
     root !== 'cache'

@@ -1,5 +1,5 @@
 // FileDropzone — drag/click upload area. L1 primitive for T3 file
-// keycaps (OCR, PDF assist, screenshot annotate, …) and any
+// mcps (OCR, PDF assist, screenshot annotate, …) and any
 // composer that needs an image attachment.
 
 import {

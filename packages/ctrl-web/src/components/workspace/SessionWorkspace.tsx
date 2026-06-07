@@ -1,8 +1,8 @@
 // SessionWorkspace — T5 session-type workspace template.
 //
 // Layout = HistorySidebar (220px) + active session content (flex).
-// Used by any keycap whose workspace.kind === 'session': Irisy default,
-// Translate-with-history, Email-draft, ChatX-keycap, etc.
+// Used by any mcp whose workspace.kind === 'session': Irisy default,
+// Translate-with-history, Email-draft, ChatX-mcp, etc.
 //
 // Composed entirely from L1 primitives (HistorySidebar). The template
 // itself only contributes the 2-col grid + content frame.

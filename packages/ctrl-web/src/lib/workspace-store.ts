@@ -1,7 +1,7 @@
 // workspace-store — multi-instance workspace state.
 //
 // A "workspace" here is an INSTANCE: a bundle of tabs + layout spawned
-// from a keycap (or blank). Multiple instances coexist; the user
+// from a mcp (or blank). Multiple instances coexist; the user
 // switches between them with the InstanceSwitcher pill row, and each
 // instance owns its own tab tree, active tab, and layout.
 //
@@ -16,16 +16,16 @@ import type { Tab } from './tab-store';
 import {
   deriveShape,
   inferKindFromId,
-  type KeycapKind,
+  type McpKind,
   type WorkspaceLayout,
 } from './workspace-shape';
 
 export interface WorkspaceInstance {
   id: string;
-  /** Keycap that drove createFromKeycap; null = blank instance. */
-  keycapId: string | null;
+  /** Mcp that drove createFromMcp; null = blank instance. */
+  mcpId: string | null;
   /** Cached kind for badge / overrides without re-deriving every render. */
-  kind: KeycapKind;
+  kind: McpKind;
   title: string;
   layout: WorkspaceLayout;
   tabs: Tab[];
@@ -40,10 +40,10 @@ interface WorkspaceStoreState {
   instances: WorkspaceInstance[];
   activeInstanceId: string | null;
 
-  /** Spawn an instance from a keycap. Idempotent on (keycapId): clicking
-   *  the same keycap again focuses the existing instance rather than
+  /** Spawn an instance from a mcp. Idempotent on (mcpId): clicking
+   *  the same mcp again focuses the existing instance rather than
    *  duplicating. Use `duplicateInstance` to explicitly fork. */
-  createFromKeycap: (keycap: { id: string; name: string }) => WorkspaceInstance;
+  createFromMcp: (mcp: { id: string; name: string }) => WorkspaceInstance;
 
   /** Spawn an empty instance — for a future "Create blank workspace"
    *  affordance. Not surfaced in v1 UI but the API ships now so the
@@ -68,7 +68,7 @@ interface WorkspaceStoreState {
   reset: () => void;
 
   /** Open a tab in the singleton "system" instance (Settings / Pool /
-   *  Vault / etc. — non-keycap routes invoked from L1). The system
+   *  Vault / etc. — non-mcp routes invoked from L1). The system
    *  instance is created on first call with layout = `tabs` so the
    *  TabBar shows even with a single tab. Idempotent on tab.id. */
   openSystemTab: (tab: Tab) => void;
@@ -86,24 +86,24 @@ const newId = (prefix: string): string =>
 
 const spawnTabsFromShape = (
   shape: ReturnType<typeof deriveShape>,
-  keycapId: string | null,
+  mcpId: string | null,
 ): Tab[] =>
   shape.tabs.map((spec, idx): Tab => {
     const tabId = newId('tab');
     const base = { id: tabId, title: spec.title, kind: spec.kind } as const;
     switch (spec.kind) {
-      case 'keycap-output':
+      case 'mcp-output':
         return {
           ...base,
-          kind: 'keycap-output',
-          keycapId: keycapId ?? 'blank',
+          kind: 'mcp-output',
+          mcpId: mcpId ?? 'blank',
           invocationId: newId('inv'),
         };
       case 'session-stream':
         return {
           ...base,
           kind: 'session-stream',
-          streamId: keycapId ? `keycap-${keycapId}` : `blank-${idx}`,
+          streamId: mcpId ? `mcp-${mcpId}` : `blank-${idx}`,
         };
       case 'external-embed':
         return { ...base, kind: 'external-embed', url: 'about:blank' };
@@ -124,10 +124,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
     (set, get) => ({
       ...initial,
 
-      createFromKeycap: (keycap) => {
-        // Idempotent: same keycap → focus existing instance.
+      createFromMcp: (mcp) => {
+        // Idempotent: same mcp → focus existing instance.
         const existing = get().instances.find(
-          (i) => i.keycapId === keycap.id,
+          (i) => i.mcpId === mcp.id,
         );
         if (existing) {
           set((s) => ({
@@ -138,14 +138,14 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           }));
           return existing;
         }
-        const kind = inferKindFromId(keycap.id);
-        const shape = deriveShape(keycap.id);
-        const tabs = spawnTabsFromShape(shape, keycap.id);
+        const kind = inferKindFromId(mcp.id);
+        const shape = deriveShape(mcp.id);
+        const tabs = spawnTabsFromShape(shape, mcp.id);
         const inst: WorkspaceInstance = {
           id: newId('ws'),
-          keycapId: keycap.id,
+          mcpId: mcp.id,
           kind,
-          title: keycap.name,
+          title: mcp.name,
           layout: shape.layout,
           tabs,
           activeTabId: tabs[0]?.id ?? null,
@@ -161,7 +161,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
       createBlank: (title = 'Untitled') => {
         const inst: WorkspaceInstance = {
           id: newId('ws'),
-          keycapId: null,
+          mcpId: null,
           kind: 'builtin',
           title,
           layout: 'single',
@@ -305,7 +305,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           if (!existing) {
             const inst: WorkspaceInstance = {
               id: SYSTEM_INSTANCE_ID,
-              keycapId: null,
+              mcpId: null,
               kind: 'builtin',
               title: 'System',
               layout: 'tabs',

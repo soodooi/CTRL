@@ -1,7 +1,7 @@
 // viewer-uri — URI scheme resolution for viewer resources.
 //
 // The viewer registry accepts heterogeneous URIs because vault notes,
-// keycap bundle assets, system-temp paths, and remote previews all share
+// mcp bundle assets, system-temp paths, and remote previews all share
 // the same render surface. This module hides the dispatch so each viewer
 // stays focused on its content-type concerns instead of fetch plumbing.
 //
@@ -9,7 +9,7 @@
 //   vault://<rel/path>   — markdown / asset under the user's vault root,
 //                          loaded via vault_read Tauri command (text body
 //                          only; frontmatter is exposed separately).
-//   ctrl-asset://...     — keycap-bundled or vault-asset URI per
+//   ctrl-asset://...     — mcp-bundled or vault-asset URI per
 //                          asset-uri.ts. Today depends on the protocol
 //                          handler (zeus gap D2); falls back to a clear
 //                          error in the viewer until that lands.

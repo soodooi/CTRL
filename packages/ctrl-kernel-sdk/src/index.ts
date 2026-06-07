@@ -3,7 +3,7 @@
 // Exposes 5 primitives mirrored from Rust kernel:
 //   Actor / Capability / Event / Channel / Effect
 //
-// Userland actors (L3 keycaps) target this SDK. Concrete implementation
+// Userland actors (L3 mcps) target this SDK. Concrete implementation
 // routes via Tauri invoke to L1 Kernel. P2 will wire the bridge.
 
 export type { Event, Cell, Op, CellKind, OpKind, EventFilter } from './event.js';

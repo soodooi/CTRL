@@ -1,4 +1,4 @@
-// [H-2026-05-18-001] Zustand store for the Irisy keycap-creator pane.
+// [H-2026-05-18-001] Zustand store for the Irisy mcp-creator pane.
 //
 // Holds the chat transcript, accumulated slot values, composed manifest
 // draft, generated server.ts source, validation results, and the state
@@ -11,12 +11,12 @@ import {
   extractEmittedArtifact,
   parseIrisyOutput,
   type SlotEvent,
-} from './irisy-keycap-slots';
+} from './irisy-mcp-slots';
 import {
   validateManifest,
   type IrisyZodError,
-  type KeycapManifest,
-} from './irisy-keycap-zod';
+  type McpManifest,
+} from './irisy-mcp-zod';
 
 export type CreatorPhase =
   | 'empty'
@@ -47,7 +47,7 @@ export interface CreatorState {
   slots: Record<string, unknown>;
   manifestDraft: Record<string, unknown>;
   serverTs: string | null;
-  validated: KeycapManifest | null;
+  validated: McpManifest | null;
   errors: IrisyZodError[];
 
   // phase + flags
@@ -123,7 +123,7 @@ const initialState = (): Pick<
   installedIds: new Set<string>(),
 });
 
-export const useKeycapCreatorStore = create<CreatorState>((set, get) => ({
+export const useMcpCreatorStore = create<CreatorState>((set, get) => ({
   ...initialState(),
 
   hydratePrefill(prefill) {

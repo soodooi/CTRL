@@ -3,7 +3,7 @@
 // instance below, instance's active tab content fills the body.
 //
 // Empty state: when no instance is open (first run or after closing
-// the last one), shows a neutral "drop a keycap here" hint. Drag handler
+// the last one), shows a neutral "drop a mcp here" hint. Drag handler
 // for the drop is wired one level up in app.tsx so the entire workspace
 // area is a valid target, not just this rectangle.
 
@@ -17,7 +17,7 @@ import { resourceFromVaultPath } from '@/lib/viewer-resource';
 import { vaultRead, vaultWrite } from '@/lib/kernel';
 import { InstanceSwitcher } from './InstanceSwitcher';
 import { EmbedView } from './EmbedView';
-import { KeycapRunView } from './KeycapRunView';
+import { McpRunView } from './McpRunView';
 // ADR-002 substrate § vault v1 §8.6 v4 (bao 2026-06-02): backlinks live
 // inside the Notes app tab (right column), not as a workspace bottom
 // drawer. Sourcing review remains its own workspace tab kind so the
@@ -123,8 +123,8 @@ const renderTabBody = (tab: Tab): ReactElement => {
       // ADR-002 § vault v1 §8.6 (2026-06-01) — review the day's
       // sourcing proposals (`.ctrl/review-queue/<date>.md`).
       return <SourcingReviewTab reviewPath={tab.reviewPath} />;
-    case 'keycap-output':
-      return <KeycapRunView keycapId={tab.keycapId} />;
+    case 'mcp-output':
+      return <McpRunView mcpId={tab.mcpId} />;
     case 'session-stream':
       return (
         <div className={styles.placeholder}>
@@ -213,7 +213,7 @@ export const WorkspaceShell = ({ fallback }: WorkspaceShellProps): ReactElement 
           <div className={styles.placeholder}>
             <span className={styles.placeholderKind}>empty instance</span>
             <p className={styles.placeholderHint}>
-              No tabs in this workspace yet. Drag a keycap from the left rail
+              No tabs in this workspace yet. Drag a mcp from the left rail
               to add one.
             </p>
           </div>

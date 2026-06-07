@@ -1,14 +1,14 @@
-// LocalStorage — persistent JSON key/value store, per-keycap scoped.
+// LocalStorage — persistent JSON key/value store, per-mcp scoped.
 //
 // Sibling to vault.* (long-form markdown) and cache.* (transient blobs).
-// LocalStorage holds the small persistent state a keycap needs to remember
+// LocalStorage holds the small persistent state a mcp needs to remember
 // between invocations: user preferences, last-used choices, draft text,
 // "did I onboard?" flags. Raycast's `LocalStorage` equivalent.
 //
 // Per CLAUDE.md design philosophy:
 //   - SQLite is a public format; `sqlite3 ~/.ctrl/state/localstorage.db`
 //     inspects everything.
-//   - Per-keycap scoping prevents one keycap from snooping another's state
+//   - Per-mcp scoping prevents one mcp from snooping another's state
 //     (capability gating layered on top in a follow-up commit).
 //   - Values are arbitrary JSON — frontmatter-style structure, not opaque
 //     binary blobs.
@@ -195,9 +195,9 @@ mod tests {
     #[test]
     fn set_then_get_roundtrip() {
         let (path, s) = fresh_storage("rt");
-        s.set("my-keycap", "last_query", &serde_json::json!("hello"))
+        s.set("my-mcp", "last_query", &serde_json::json!("hello"))
             .unwrap();
-        let v = s.get("my-keycap", "last_query").unwrap().unwrap();
+        let v = s.get("my-mcp", "last_query").unwrap().unwrap();
         assert_eq!(v, serde_json::json!("hello"));
         let _ = std::fs::remove_file(&path);
     }

@@ -25,7 +25,7 @@ pub enum CapToken {
     },
     // Storage — vault (Obsidian-compatible markdown, $HOME/.ctrl/vault/)
     // Per CLAUDE.md design philosophy, vault is the user's data; this
-    // token gates *which keycap* writes *which path prefix*, not whether
+    // token gates *which mcp* writes *which path prefix*, not whether
     // the data itself is private (the user always owns it).
     VaultRead {
         /// Prefix match against vault-relative paths. "*" allows full vault.
@@ -34,14 +34,14 @@ pub enum CapToken {
     VaultWrite {
         path_glob: String,
     },
-    // Storage — localstorage (per-keycap persistent JSON KV)
+    // Storage — localstorage (per-mcp persistent JSON KV)
     KvRead {
         namespace: String,
     },
     KvWrite {
         namespace: String,
     },
-    // Storage — cache (per-keycap transient LRU blob)
+    // Storage — cache (per-mcp transient LRU blob)
     CacheRead {
         scope: String,
     },
@@ -67,9 +67,9 @@ pub enum CapToken {
         tool_glob: String,
     },
     // OAuth — Pattern E (ADR-004 cap § execution v1 §5.2)
-    // Grants a keycap permission to obtain and use OAuth tokens for a given
+    // Grants a mcp permission to obtain and use OAuth tokens for a given
     // provider. Token issuance + storage handled by kernel OAuth runtime;
-    // keycap never touches the raw token, only the Effect dispatches through
+    // mcp never touches the raw token, only the Effect dispatches through
     // a provider-scoped client.
     OAuthAccess {
         provider: String,
@@ -162,7 +162,7 @@ impl CapabilityBroker {
 
     /// Check whether a capability authorizes a given token usage.
     /// Exact-match for tokens with no glob fields; prefix-match for tokens
-    /// with `path_glob` / `url_glob` (so a keycap holding
+    /// with `path_glob` / `url_glob` (so a mcp holding
     /// `VaultWrite { path_glob: "chats/" }` can write `chats/2026/x.md`
     /// without listing every concrete path).
     pub fn check(&self, cap: &Capability, required: &CapToken) -> Result<(), CapabilityError> {
@@ -180,7 +180,7 @@ impl CapabilityBroker {
 /// Does a held token authorize a requested token? Exact match by default;
 /// glob-bearing variants match by literal prefix or "*" wildcard. KvRead/
 /// Write + CacheRead/Write also support "*" as namespace/scope wildcard
-/// so a system keycap (ctrl-system) can declare full-access without
+/// so a system mcp (ctrl-system) can declare full-access without
 /// enumerating every concrete scope.
 fn token_authorizes(held: &CapToken, requested: &CapToken) -> bool {
     use CapToken::*;
@@ -337,13 +337,13 @@ mod tests {
     fn cache_scope_exact_match() {
         let broker = CapabilityBroker::new();
         let held = Capability::new(vec![CapToken::CacheWrite {
-            scope: "my-keycap".into(),
+            scope: "my-mcp".into(),
         }]);
         assert!(broker
             .check(
                 &held,
                 &CapToken::CacheWrite {
-                    scope: "my-keycap".into(),
+                    scope: "my-mcp".into(),
                 },
             )
             .is_ok());
@@ -351,7 +351,7 @@ mod tests {
             .check(
                 &held,
                 &CapToken::CacheWrite {
-                    scope: "other-keycap".into(),
+                    scope: "other-mcp".into(),
                 },
             )
             .is_err());

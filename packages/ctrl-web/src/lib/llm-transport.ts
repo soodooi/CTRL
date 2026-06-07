@@ -1,7 +1,7 @@
 // [H-2026-05-18-001] LLMTransport — Volc-default, OpenAI-shape messages,
 // transport-agnostic.
 //
-// v1 production impl: RunKeycapTransport — single-shot via the kernel
+// v1 production impl: RunMcpTransport — single-shot via the kernel
 // builtin `ctrl.builtin.text-chat` (zeus Z3a). UI fake-streams the result
 // by chunking 5 chars / 25ms so the chat pane reads like a stream until
 // zeus Z3b ships true streaming.
@@ -12,11 +12,11 @@
 //
 // Zero legacy-provider strings in this file — per ADR-006 cross-cutting § byok-no-claude v1 + memory
 // `feedback_no_claude_in_production`. The PWA never sees an apiKey; auth
-// stays inside the Rust process by going through `run_keycap` /
+// stays inside the Rust process by going through `run_mcp` /
 // `chat_stream` Tauri commands.
 
 import { invoke } from './bridge';
-import { runKeycap, type RunKeycapResult } from './kernel';
+import { runMcp, type RunMcpResult } from './kernel';
 
 export type LLMRole = 'system' | 'user' | 'assistant';
 
@@ -69,43 +69,43 @@ export interface LLMTransport {
   stream(messages: LLMMessage[], opts?: LLMStreamOptions): AsyncIterable<LLMChunk>;
 }
 
-// ── C: single-shot via runKeycap('ctrl.builtin.text-chat', ...) ──────────
+// ── C: single-shot via runMcp('ctrl.builtin.text-chat', ...) ──────────
 // The kernel builtin reads `volc-credentials.json` for default model + key
 // (zeus Z3a). Pseudo-streams the returned content so the chat pane animates
 // while we wait for Z3b.
 
-interface RunKeycapTextChatInput extends Record<string, unknown> {
+interface RunMcpTextChatInput extends Record<string, unknown> {
   messages: LLMMessage[];
   model?: string;
   temperature?: number;
 }
 
-interface RunKeycapTextChatOutput {
+interface RunMcpTextChatOutput {
   content: string;
 }
 
 const PSEUDO_STREAM_CHUNK = 5;
 const PSEUDO_STREAM_TICK_MS = 25;
 
-export class RunKeycapTransport implements LLMTransport {
+export class RunMcpTransport implements LLMTransport {
   async *stream(
     messages: LLMMessage[],
     opts: LLMStreamOptions = {},
   ): AsyncIterable<LLMChunk> {
-    const input: RunKeycapTextChatInput = { messages };
+    const input: RunMcpTextChatInput = { messages };
     if (opts.model !== undefined) input.model = opts.model;
     if (opts.temperature !== undefined) input.temperature = opts.temperature;
 
-    let result: RunKeycapResult;
+    let result: RunMcpResult;
     try {
-      result = await runKeycap('ctrl.builtin.text-chat', input);
+      result = await runMcp('ctrl.builtin.text-chat', input);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'unknown error';
       yield { delta: '', done: true, error: message };
       return;
     }
 
-    const output = result.output as RunKeycapTextChatOutput | null | undefined;
+    const output = result.output as RunMcpTextChatOutput | null | undefined;
     const full = typeof output?.content === 'string' ? output.content : '';
 
     for (let i = 0; i < full.length; i += PSEUDO_STREAM_CHUNK) {
@@ -144,8 +144,8 @@ interface UnlistenFn {
 
 export class ChatStreamTransport implements LLMTransport {
   // `commandName` lets one class drive both wires:
-  //   - 'chat_stream'        → raw LLM (kernel llm_port direct, keycap-internal)
-  //   - 'irisy_chat_stream'  → BrainRouter inline → active brain keycap MCP
+  //   - 'chat_stream'        → raw LLM (kernel llm_port direct, mcp-internal)
+  //   - 'irisy_chat_stream'  → BrainRouter inline → active brain mcp MCP
   // Both emit the same chat-stream-delta event shape; only the Tauri
   // command name differs.
   constructor(
@@ -259,7 +259,7 @@ export function defaultTransport(): LLMTransport {
   return new ChatStreamTransport(true, 'chat_stream');
 }
 
-// Irisy → active brain keycap (Pi default) via kernel's BrainRouter inline
+// Irisy → active brain mcp (Pi default) via kernel's BrainRouter inline
 // dispatch. Use this for the general Irisy companion chat path. Pi runs its
 // own agent loop + tools through its own MCP client; the PWA stays
 // single-turn streaming on this side.

@@ -9,7 +9,7 @@
 // `spawn_from_manifest`: the entry point the runtime calls when a manifest
 // of `prototype: "subprocess"` lands. Other prototypes return
 // `SchedulerError::UnknownPrototype` until their well-known Actor subclass
-// is wired in (KeycapActor wiring is P5, MCPServerActor is its own handoff).
+// is wired in (McpActor wiring is P5, MCPServerActor is its own handoff).
 
 use crate::kernel::actor::{Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority};
 use crate::kernel::capability::Capability;

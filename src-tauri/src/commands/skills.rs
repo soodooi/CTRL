@@ -133,9 +133,9 @@ fn parse_item(item: &serde_json::Value) -> Option<SkillResult> {
 }
 
 // ── Skill executor (ADR-007 workbench § canvas v1 / ADR-007 workbench § discovery v1, cc-switch-native run model) ──────────
-// Runs a `skill`-variant keycap. The kernel does NOT orchestrate the skill —
+// Runs a `skill`-variant mcp. The kernel does NOT orchestrate the skill —
 // the active brain CLI does (it already has the skill in its skills dir). The
-// kernel only: (1) hands the brain the keycap's working folder in the vault,
+// kernel only: (1) hands the brain the mcp's working folder in the vault,
 // (2) routes the user input as a task that activates the named skill, (3)
 // reports back which artifact files the run produced. The brain (Claude Code)
 // writes the result with its own Write tool. See feedback_build_system_not_business.
@@ -147,17 +147,17 @@ const SKILL_RUN_TIMEOUT_SECS: u64 = 240;
 /// uses 1 (text reply); a file-writing skill needs room to write + refine.
 const SKILL_RUN_MAX_TURNS: &str = "24";
 
-/// Run a skill keycap: hand the named local skill + the user input to the
-/// active brain CLI, running inside the keycap's vault working folder, and
+/// Run a skill mcp: hand the named local skill + the user input to the
+/// active brain CLI, running inside the mcp's vault working folder, and
 /// return the vault-relative paths of whatever artifact(s) it wrote.
 pub async fn run_skill(
     bridge: &StssBridge,
     stream_id: &str,
-    keycap_id: &str,
+    mcp_id: &str,
     skill: &str,
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    // Skill keycaps need a CLI that can use tools + write files. Claude Code
+    // Skill mcps need a CLI that can use tools + write files. Claude Code
     // is the verified one. Resolve the binary path the same way the
     // provider sub-system does — `claude-oauth` preset's manifest exposes
     // the `claude` binary (ADR-002 substrate § provider v2). Fall back to plain `claude` on
@@ -174,16 +174,16 @@ pub async fn run_skill(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "claude".to_string());
 
-    // Per-keycap working folder in the VAULT — plain, user-visible files (the
+    // Per-mcp working folder in the VAULT — plain, user-visible files (the
     // user can open the generated deck in vim / Finder; local is truth).
     let vault = crate::kernel::vault::default_vault_root()
         .ok_or_else(|| "HOME not set; no vault root".to_string())?;
-    let workdir = vault.join("keycaps").join(keycap_id);
+    let workdir = vault.join("mcps").join(mcp_id);
     std::fs::create_dir_all(&workdir)
         .map_err(|e| format!("create workdir {}: {e}", workdir.display()))?;
 
     tracing::info!(
-        keycap_id,
+        mcp_id,
         skill,
         binary = %binary,
         workdir = %workdir.display(),
@@ -216,17 +216,17 @@ pub async fn run_skill(
         .collect();
     artifacts.sort();
     if artifacts.is_empty() {
-        tracing::error!(keycap_id, skill, "run_skill: produced no files");
+        tracing::error!(mcp_id, skill, "run_skill: produced no files");
         return Err("the skill run produced no files".to_string());
     }
-    tracing::info!(keycap_id, skill, ?artifacts, "run_skill: artifacts");
+    tracing::info!(mcp_id, skill, ?artifacts, "run_skill: artifacts");
     // Primary = first renderable artifact (html), else first file.
     let primary = artifacts
         .iter()
         .find(|n| n.to_lowercase().ends_with(".html"))
         .cloned()
         .unwrap_or_else(|| artifacts[0].clone());
-    let rel = |name: &str| format!("keycaps/{keycap_id}/{name}");
+    let rel = |name: &str| format!("mcps/{mcp_id}/{name}");
 
     Ok(serde_json::json!({
         "artifacts": artifacts.iter().map(|a| rel(a)).collect::<Vec<_>>(),
@@ -329,8 +329,8 @@ async fn run_brain_agentic(
     Ok(())
 }
 
-/// Publish one assistant chunk on the keycap's output stream. The PWA's
-/// `useCellStream(keycap-<id>)` decodes these and renders them live.
+/// Publish one assistant chunk on the mcp's output stream. The PWA's
+/// `useCellStream(mcp-<id>)` decodes these and renders them live.
 fn publish_delta(bridge: &StssBridge, stream_id: &str, delta: &str) {
     let ts_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -436,7 +436,7 @@ fn content_type_for(name: &str) -> &'static str {
 
 // ── Local skill discovery ───────────────────────────────────────────────────
 // Irisy needs to know which skills the active brain already has locally (user
-// skills + installed plugin skills) so it can compose a keycap manifest that
+// skills + installed plugin skills) so it can compose a mcp manifest that
 // references one by name. This is the no-token path — distinct from
 // `search_skills` (GitHub, needs a PAT). System primitive only; Irisy decides
 // what to do with the list (feedback_build_system_not_business).
@@ -488,7 +488,7 @@ pub async fn list_local_skills(query: Option<String>) -> Result<Vec<LocalSkill>,
 
     // Filter by query so Irisy gets only the relevant few, not the whole
     // catalog. Token-based (match ANY word) — the brain often passes a phrase
-    // like "HTML slide keycap"; a whole-string match would miss "frontend-
+    // like "HTML slide mcp"; a whole-string match would miss "frontend-
     // slides", but the token "slide" hits it.
     if let Some(q) = query.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         let tokens: Vec<String> = q

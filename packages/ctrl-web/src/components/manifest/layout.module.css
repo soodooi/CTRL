@@ -1,5 +1,5 @@
 /* Manifest layout primitives — Stack / Heading / Text.
-   Presentation-only utility wrappers that keycap manifests can name. */
+   Presentation-only utility wrappers that mcp manifests can name. */
 
 .stack {
   display: flex;

@@ -33,14 +33,14 @@ impl ShellLifecycle {
         KernelSupervisor::start(app)?;
         KernelSupervisor::wait_ready(5_000)?;
 
-        // Seed builtin keycaps under ~/.ctrl/keycaps/. Idempotent (existing
+        // Seed builtin mcps under ~/.ctrl/mcps/. Idempotent (existing
         // user files are never overwritten); heals accidentally-deleted
         // builtins on every launch. Per ADR-002 substrate § composition v1 — `builtin = true` in the
-        // manifest is the only distinction from user keycaps; everything
+        // manifest is the only distinction from user mcps; everything
         // else (routing / dispatch / capability gates / vault scoping)
         // works identically.
-        tracing::info!("ShellLifecycle::boot — seeding builtin keycaps");
-        super::builtin_keycaps::ensure_builtins_installed();
+        tracing::info!("ShellLifecycle::boot — seeding builtin mcps");
+        super::builtin_mcps::ensure_builtins_installed();
 
         // Pi is the sole brain — keep it always connected. Spawns + supervises
         // the @ctrl/pi-plugin MCP server (ctrl-pi-mcp on :17874) so the user

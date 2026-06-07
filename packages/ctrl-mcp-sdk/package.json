@@ -1,8 +1,8 @@
 {
-  "name": "@ctrl/keycap-sdk",
+  "name": "@ctrl/mcp-sdk",
   "version": "0.1.0",
   "private": true,
-  "description": "Standardized keycap interface for CTRL clients (Irisy / PWA / future Janus). Wraps MCP protocol + Tauri invoke + REST so consumers don't care which underlying transport a keycap uses.",
+  "description": "Standardized mcp interface for CTRL clients (Irisy / PWA / future Janus). Wraps MCP protocol + Tauri invoke + REST so consumers don't care which underlying transport a mcp uses.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

@@ -127,7 +127,7 @@ export const NotesApp = (): ReactElement => {
   );
 
   // Quick `Today` shortcut — kairo doesn't expose this as a button, but
-  // we keep the handler wired so Irisy / a future keycap can invoke
+  // we keep the handler wired so Irisy / a future mcp can invoke
   // "open today's daily note" without re-implementing the template
   // resolution.
   const openToday = useCallback(async () => {

@@ -35,8 +35,8 @@ pub mod scheduler;
 // nomic-embed-text + SQLite BLOB flat cosine search. Memory
 // `decision_vault_adr_002_section_8`.
 pub mod vault_embeddings;
-// Keycap output capture (ADR-002 v5 §9) — single SmartTable per keycap.
-pub mod keycap_capture;
+// Mcp output capture (ADR-002 v5 §9) — single SmartTable per mcp.
+pub mod mcp_capture;
 // Daily-cron tick for vault sourcing. Spawned from Runtime::boot. See
 // ADR-002 substrate § vault v1 §8.4 + memory
 // `decision_vault_adr_002_section_8`.

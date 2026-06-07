@@ -4,11 +4,11 @@
 // highlighting in v1 (Athena's setup didn't either); JetBrains Mono +
 // brand tokens carry the visual weight.
 
-import { useKeycapCreatorStore } from '@/lib/irisy-keycap-store';
+import { useMcpCreatorStore } from '@/lib/irisy-mcp-store';
 import styles from './CodePreview.module.css';
 
 export function CodePreview(): React.ReactElement {
-  const serverTs = useKeycapCreatorStore((s) => s.serverTs);
+  const serverTs = useMcpCreatorStore((s) => s.serverTs);
 
   return (
     <section className={styles.pane} aria-label="MCP server source preview">

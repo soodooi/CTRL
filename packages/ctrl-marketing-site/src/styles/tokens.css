@@ -8,12 +8,12 @@
   --ctrl-blue-dark: #16267d;
   --ctrl-blue-light: #5a8aef;
 
-  /* Color — keycap accents */
-  --keycap-cobalt: #1e3fb0;
-  --keycap-amber: #e59f2b;
-  --keycap-jade: #1fa570;
-  --keycap-platinum: #d5d6da;
-  --keycap-graphite: #3e4046;
+  /* Color — mcp accents */
+  --mcp-cobalt: #1e3fb0;
+  --mcp-amber: #e59f2b;
+  --mcp-jade: #1fa570;
+  --mcp-platinum: #d5d6da;
+  --mcp-graphite: #3e4046;
 
   /* Color — neutrals (dark default) */
   --graphite: #131517;

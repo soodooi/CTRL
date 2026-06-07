@@ -12,7 +12,7 @@ upstream attribution required by MIT.
 
 - **Repository**: https://github.com/badlogic/pi-mono
 - **License**: MIT
-- **Role in CTRL**: default brain keycap runtime (per ADR / handoff
+- **Role in CTRL**: default brain mcp runtime (per ADR / handoff
   H-2026-05-25-001, 2026-05-25).
 
 ```

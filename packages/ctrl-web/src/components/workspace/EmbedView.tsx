@@ -1,7 +1,7 @@
 // EmbedView — workspace tab content for an external embed (iframe).
 //
 // Renders an external admin/dashboard URL in a sandboxed iframe so a
-// keycap that ships its own web UI can live in a CTRL tab. The Tauri
+// mcp that ships its own web UI can live in a CTRL tab. The Tauri
 // CSP frame-src must allowlist the origin (tauri.conf.json).
 //
 // Sandbox attrs allow scripts + same-origin + forms + popups so the

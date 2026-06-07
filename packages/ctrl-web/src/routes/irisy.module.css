@@ -72,8 +72,8 @@
   }
 }
 
-/* Chat-mode run surface: Irisy chat + live keycap output side by side.
-   The output column only mounts once a keycap has been run, so an idle
+/* Chat-mode run surface: Irisy chat + live mcp output side by side.
+   The output column only mounts once a mcp has been run, so an idle
    chat keeps the full width. */
 .runSplit {
   display: flex;

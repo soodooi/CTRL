@@ -1,33 +1,33 @@
-// ctrl-asset:// Tauri custom URI scheme — serves keycap-bundled assets to the
+// ctrl-asset:// Tauri custom URI scheme — serves mcp-bundled assets to the
 // PWA without invoke() round-trips or base64 inlining.
 //
 // URL contract (locked by ADR-001 spine amendment 2026-05-25, decision D2):
-//   ctrl-asset://keycaps/<keycap-id>/<relative-path>
-//     → file at ~/.ctrl/keycaps/<keycap-id>/<relative-path>
+//   ctrl-asset://mcps/<mcp-id>/<relative-path>
+//     → file at ~/.ctrl/mcps/<mcp-id>/<relative-path>
 //
 // Concrete examples the PWA uses:
-//   ctrl-asset://keycaps/translate/assets/icon.svg
-//   ctrl-asset://keycaps/translate/assets/prompt.md
-//   ctrl-asset://keycaps/pi/keycap.md
+//   ctrl-asset://mcps/translate/assets/icon.svg
+//   ctrl-asset://mcps/translate/assets/prompt.md
+//   ctrl-asset://mcps/pi/mcp.md
 //
 // Security:
-//   * Only files under `~/.ctrl/keycaps/` are reachable. Path traversal
+//   * Only files under `~/.ctrl/mcps/` are reachable. Path traversal
 //     (`..`, absolute path components) is rejected with 403.
 //   * Symlinks are resolved and re-checked — a symlink that escapes the
-//     keycap root is rejected.
+//     mcp root is rejected.
 //   * Read-only — no PUT / POST / DELETE handling (browser won't issue
 //     those for `<img>` / `fetch()` GETs, but we still bail loud).
 //
 // Future v1.x adds `ctrl-asset://vault/...` for read-only access to the
 // user's vault attachments (gated by capability). v1.0 keeps the surface
-// to keycap-bundled assets only.
+// to mcp-bundled assets only.
 
 use std::path::{Path, PathBuf};
 use tauri::http::{Response, StatusCode};
 use tauri::{Builder, Runtime, UriSchemeContext};
 
 const SCHEME: &str = "ctrl-asset";
-const ROOT_NAMESPACE: &str = "keycaps";
+const ROOT_NAMESPACE: &str = "mcps";
 
 pub fn register<R: Runtime>(builder: Builder<R>) -> Builder<R> {
     builder.register_uri_scheme_protocol(SCHEME, handle)
@@ -47,8 +47,8 @@ fn handle<R: Runtime>(
 
     // Two URL shapes possible depending on how the OS/webview parses the
     // custom scheme:
-    //   ctrl-asset://keycaps/<id>/<rest>  → host = "keycaps", path = "/<id>/<rest>"
-    //   ctrl-asset://keycaps/<id>/<rest>  → host = "",         path = "/keycaps/<id>/<rest>"
+    //   ctrl-asset://mcps/<id>/<rest>  → host = "mcps", path = "/<id>/<rest>"
+    //   ctrl-asset://mcps/<id>/<rest>  → host = "",         path = "/mcps/<id>/<rest>"
     // Accept either; reject everything else.
     let segments: Vec<&str> = if host == ROOT_NAMESPACE {
         raw_path.trim_start_matches('/').split('/').collect()
@@ -58,33 +58,33 @@ fn handle<R: Runtime>(
         if parts.next() != Some(ROOT_NAMESPACE) {
             return error_response(
                 StatusCode::NOT_FOUND,
-                "ctrl-asset:// only serves `keycaps/<id>/...` in v1.0",
+                "ctrl-asset:// only serves `mcps/<id>/...` in v1.0",
             );
         }
         parts.next().unwrap_or("").split('/').collect()
     } else {
         return error_response(
             StatusCode::NOT_FOUND,
-            "ctrl-asset:// only serves `keycaps/<id>/...` in v1.0",
+            "ctrl-asset:// only serves `mcps/<id>/...` in v1.0",
         );
     };
 
     if segments.len() < 2 || segments[0].is_empty() {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "URL must look like ctrl-asset://keycaps/<id>/<file>",
+            "URL must look like ctrl-asset://mcps/<id>/<file>",
         );
     }
 
-    let keycap_id = segments[0];
+    let mcp_id = segments[0];
     let relative = segments[1..].join("/");
 
-    let keycap_root = match resolved_keycap_root(keycap_id) {
+    let mcp_root = match resolved_mcp_root(mcp_id) {
         Ok(p) => p,
         Err(e) => return error_response(StatusCode::NOT_FOUND, &e),
     };
 
-    let resolved = match safe_resolve(&keycap_root, &relative) {
+    let resolved = match safe_resolve(&mcp_root, &relative) {
         Ok(p) => p,
         Err(e) => return error_response(StatusCode::FORBIDDEN, &e),
     };
@@ -109,21 +109,21 @@ fn handle<R: Runtime>(
     }
 }
 
-fn resolved_keycap_root(keycap_id: &str) -> Result<PathBuf, String> {
-    if keycap_id.contains('/')
-        || keycap_id.contains('\\')
-        || keycap_id == "."
-        || keycap_id == ".."
-        || keycap_id.is_empty()
+fn resolved_mcp_root(mcp_id: &str) -> Result<PathBuf, String> {
+    if mcp_id.contains('/')
+        || mcp_id.contains('\\')
+        || mcp_id == "."
+        || mcp_id == ".."
+        || mcp_id.is_empty()
     {
-        return Err("invalid keycap id".to_string());
+        return Err("invalid mcp id".to_string());
     }
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let root = PathBuf::from(home).join(".ctrl").join("keycaps").join(keycap_id);
+    let root = PathBuf::from(home).join(".ctrl").join("mcps").join(mcp_id);
     // canonicalize fails if the dir doesn't exist — surface as 404 rather
-    // than 500 (a missing keycap is a user-visible state, not a bug).
+    // than 500 (a missing mcp is a user-visible state, not a bug).
     root.canonicalize()
-        .map_err(|_| format!("keycap '{keycap_id}' is not installed"))
+        .map_err(|_| format!("mcp '{mcp_id}' is not installed"))
 }
 
 fn safe_resolve(root: &Path, relative: &str) -> Result<PathBuf, String> {
@@ -143,10 +143,10 @@ fn safe_resolve(root: &Path, relative: &str) -> Result<PathBuf, String> {
     let canon = candidate
         .canonicalize()
         .map_err(|_| "file not found".to_string())?;
-    // Final guard: canonical result must remain inside the keycap root even
+    // Final guard: canonical result must remain inside the mcp root even
     // if a symlink dragged us out.
     if !canon.starts_with(root) {
-        return Err("symlink escaped keycap root".to_string());
+        return Err("symlink escaped mcp root".to_string());
     }
     Ok(canon)
 }

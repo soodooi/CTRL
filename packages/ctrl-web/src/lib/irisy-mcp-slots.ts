@@ -1,9 +1,9 @@
-// [H-2026-05-18-001] Parser for Irisy's keycap-creator control tokens.
+// [H-2026-05-18-001] Parser for Irisy's mcp-creator control tokens.
 //
 // Tokens (one per line, mid-message OK):
-//   <keycap-slot field="dot.path">value-or-json</keycap-slot>
-//   <keycap-ready/>
-//   <keycap-patch field="dot.path">new-value-or-json</keycap-patch>
+//   <mcp-slot field="dot.path">value-or-json</mcp-slot>
+//   <mcp-ready/>
+//   <mcp-patch field="dot.path">new-value-or-json</mcp-patch>
 //
 // Values are JSON-decoded if they parse as valid JSON; otherwise treated
 // as raw strings. The PWA writes these into the Zustand store, which then
@@ -24,15 +24,15 @@ export interface ParsedIrisyOutput {
   slots: SlotEvent[];
   /** Patch tokens accumulated in order. */
   patches: PatchEvent[];
-  /** True if <keycap-ready/> was emitted in this segment. */
+  /** True if <mcp-ready/> was emitted in this segment. */
   ready: boolean;
   /** Prose with all control tokens stripped — what to render in the chat bubble. */
   cleanText: string;
 }
 
-const SLOT_RE = /<keycap-slot\s+field="([^"]+)">([\s\S]*?)<\/keycap-slot>/g;
-const PATCH_RE = /<keycap-patch\s+field="([^"]+)">([\s\S]*?)<\/keycap-patch>/g;
-const READY_RE = /<keycap-ready\s*\/>/g;
+const SLOT_RE = /<mcp-slot\s+field="([^"]+)">([\s\S]*?)<\/mcp-slot>/g;
+const PATCH_RE = /<mcp-patch\s+field="([^"]+)">([\s\S]*?)<\/mcp-patch>/g;
+const READY_RE = /<mcp-ready\s*\/>/g;
 
 function tryJson(raw: string): unknown {
   const trimmed = raw.trim();

@@ -1,4 +1,4 @@
-// KeycapMenu — hover-reveal 3-dot popover on a keycap cell.
+// McpMenu — hover-reveal 3-dot popover on a mcp cell.
 //
 // Per the UX research (PlayCanvas right-click → Duplicate, n8n hover
 // ellipsis → context menu, Dify card 3-dot → Duplicate): a small
@@ -14,9 +14,9 @@ import {
   type ReactElement,
   type RefObject,
 } from 'react';
-import styles from './KeycapMenu.module.css';
+import styles from './McpMenu.module.css';
 
-export interface KeycapMenuItem {
+export interface McpMenuItem {
   id: string;
   label: string;
   /** Optional keyboard shortcut hint shown right-aligned. */
@@ -28,23 +28,23 @@ export interface KeycapMenuItem {
   onSelect: () => void;
 }
 
-interface KeycapMenuProps {
+interface McpMenuProps {
   /** Element the menu is anchored under. Used for outside-click detection
    *  and for the popover's positioning ref. */
   anchorRef: RefObject<HTMLElement | null>;
-  items: ReadonlyArray<KeycapMenuItem>;
+  items: ReadonlyArray<McpMenuItem>;
   onDismiss: () => void;
 }
 
-export const KeycapMenu = ({
+export const McpMenu = ({
   anchorRef,
   items,
   onDismiss,
-}: KeycapMenuProps): ReactElement => {
+}: McpMenuProps): ReactElement => {
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
   // Outside click + Esc dismissal. Capture-phase listener so it fires
-  // before the synthetic event reaches a sibling keycap's onClick.
+  // before the synthetic event reaches a sibling mcp's onClick.
   useEffect(() => {
     const onPointer = (e: PointerEvent): void => {
       const t = e.target;
@@ -97,7 +97,7 @@ export const KeycapMenu = ({
       ref={popoverRef}
       className={styles.menu}
       role="menu"
-      aria-label="Keycap actions"
+      aria-label="Mcp actions"
       onKeyDown={handleNav}
     >
       {items.map((item) => (
@@ -146,9 +146,9 @@ interface MenuTriggerProps {
 
 /** The visible 3-dot button that opens the menu. Hover-revealed via
  *  CSS in the cell that contains it (set `.cap:hover .menuTrigger`). */
-export const KeycapMenuTrigger = ({
+export const McpMenuTrigger = ({
   onClick,
-  ariaLabel = 'Keycap actions',
+  ariaLabel = 'Mcp actions',
 }: MenuTriggerProps): ReactElement => (
   <button
     type="button"

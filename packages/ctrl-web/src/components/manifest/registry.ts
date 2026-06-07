@@ -1,5 +1,5 @@
 // Manifest component registry — the explicit allowlist of components a
-// keycap manifest can name. Untrusted manifests CAN ONLY mount what's
+// mcp manifest can name. Untrusted manifests CAN ONLY mount what's
 // here; unknown names render a fallback placeholder.
 //
 // The registry is intentionally separate from the primitives barrel so

@@ -51,7 +51,7 @@ pub const ENV_PORT_OVERRIDE: &str = "CTRL_PROVIDER_PORT";
 ///
 /// State = `KernelHandle` (ADR-002 substrate § brain v7 §1.1, 2026-06-04):
 /// /text-chat pulls the registry out of `handle.runtime.provider_registry`,
-/// /tool/<name> needs the full handle for run_keycap event publishing +
+/// /tool/<name> needs the full handle for run_mcp event publishing +
 /// mcp_host access.
 pub async fn spawn(handle: KernelHandle) -> Result<u16, String> {
     let port = resolve_port();
@@ -447,7 +447,7 @@ fn into_sse_stream(
 //
 // Dispatch policy: each branch reuses the existing Tauri command body's
 // inner free function (vault_root + check_cap + vault::* / vault_graph::*
-// / skills::list_local_skills / kernel.rs::run_keycap). One SSOT for the
+// / skills::list_local_skills / kernel.rs::run_mcp). One SSOT for the
 // business logic — this file is glue only.
 
 #[derive(serde::Serialize)]
@@ -479,9 +479,9 @@ async fn tool_dispatch(
         "vault_tags" => run_vault_tags(args).await,
         "vault_backlinks" => run_vault_backlinks(args).await,
         "list_local_skills" => run_list_local_skills(args).await,
-        "list_keycaps" => run_list_keycaps().await,
-        "install_keycap" => run_install_keycap(args, &handle).await,
-        "keycap_run" => run_keycap_dispatch(args, &handle).await,
+        "list_mcps" => run_list_mcps().await,
+        "install_mcp" => run_install_mcp(args, &handle).await,
+        "mcp_run" => run_mcp_dispatch(args, &handle).await,
         "brain_status" => run_brain_status(&handle).await,
         // bao 2026-06-05 b: ctrl-pi-bridge calls this at session_start to
         // resolve the active provider's full credentials and shape so it
@@ -547,41 +547,41 @@ async fn run_list_local_skills(args: serde_json::Value) -> Result<serde_json::Va
     serde_json::to_value(reply).map_err(|e| e.to_string())
 }
 
-async fn run_list_keycaps() -> Result<serde_json::Value, String> {
-    // list_keycaps' Tauri body only reads ~/.ctrl/keycaps/; rebuild that
+async fn run_list_mcps() -> Result<serde_json::Value, String> {
+    // list_mcps' Tauri body only reads ~/.ctrl/mcps/; rebuild that
     // logic here (one-liner) so we don't fight the `State<KernelHandle>`
     // injection in the original.
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let dir = PathBuf::from(home).join(".ctrl").join("keycaps");
+    let dir = PathBuf::from(home).join(".ctrl").join("mcps");
     let summaries = crate::commands::kernel::list_installed_in(&dir);
     serde_json::to_value(summaries).map_err(|e| e.to_string())
 }
 
-async fn run_install_keycap(
+async fn run_install_mcp(
     args: serde_json::Value,
     handle: &KernelHandle,
 ) -> Result<serde_json::Value, String> {
-    let parsed = parse_args::<crate::commands::kernel::InstallKeycapArgs>(args)?;
-    // Reuse install_into via the shared keycap dir helper. Replicates the
+    let parsed = parse_args::<crate::commands::kernel::InstallMcpArgs>(args)?;
+    // Reuse install_into via the shared mcp dir helper. Replicates the
     // Tauri command body's logic minus the `State<KernelHandle>` extractor.
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let dir = PathBuf::from(home).join(".ctrl").join("keycaps");
+    let dir = PathBuf::from(home).join(".ctrl").join("mcps");
     let summary = crate::commands::kernel::install_into(&dir, &parsed)?;
-    tracing::info!(keycap_id = %summary.id, "install_keycap (via /tool) ok");
+    tracing::info!(mcp_id = %summary.id, "install_mcp (via /tool) ok");
     let _ = handle; // reserved for future capability-broker hook
     serde_json::to_value(summary).map_err(|e| e.to_string())
 }
 
-async fn run_keycap_dispatch(
+async fn run_mcp_dispatch(
     args: serde_json::Value,
     handle: &KernelHandle,
 ) -> Result<serde_json::Value, String> {
-    let parsed = parse_args::<crate::commands::kernel::RunKeycapArgs>(args)?;
-    // Reuse the existing run_keycap inner body — it publishes
-    // KeycapInvoked / KeycapCompleted / KeycapFailed Ops so the PWA
+    let parsed = parse_args::<crate::commands::kernel::RunMcpArgs>(args)?;
+    // Reuse the existing run_mcp inner body — it publishes
+    // McpInvoked / McpCompleted / McpFailed Ops so the PWA
     // workspace pane shows Pi-driven invocations identically to user
-    // clicks. Single SSOT for keycap execution.
-    let result = crate::commands::kernel::run_keycap_inner(parsed, handle).await?;
+    // clicks. Single SSOT for mcp execution.
+    let result = crate::commands::kernel::run_mcp_inner(parsed, handle).await?;
     serde_json::to_value(result).map_err(|e| e.to_string())
 }
 

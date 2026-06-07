@@ -3,7 +3,7 @@
 // Schema follows .olym/specs/kernel/spec.md §5:
 //   events    — append-only with secondary indexes
 //   actors    — actor registry with capability + state snapshot
-//   manifests — cached keycap manifests
+//   manifests — cached mcp manifests
 //
 // Optional CRDT layer (P11+) syncs cross-device via Yjs/Automerge.
 // P2.1 skeleton — bootstrap + schema only. Query/replay API in P2.5.

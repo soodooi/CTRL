@@ -17,13 +17,13 @@ use tauri::State;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FirstRunState {
-    /// `~/.ctrl/keycaps/` doesn't exist yet. Kernel hasn't seeded builtin
-    /// keycaps from the app bundle Resources/keycaps/. PWA should render
+    /// `~/.ctrl/mcps/` doesn't exist yet. Kernel hasn't seeded builtin
+    /// mcps from the app bundle Resources/mcps/. PWA should render
     /// a "Setting up CTRL…" empty state and avoid showing the keyboard.
     Copying,
-    /// `~/.ctrl/keycaps/` exists. May be empty, may have keycaps. PWA
+    /// `~/.ctrl/mcps/` exists. May be empty, may have mcps. PWA
     /// renders the normal keyboard + Pool empty-state hint when zero
-    /// keycaps installed.
+    /// mcps installed.
     Ready,
 }
 
@@ -79,8 +79,8 @@ fn detect_first_run_state() -> FirstRunState {
         Ok(h) if !h.is_empty() => h,
         _ => return FirstRunState::Copying,
     };
-    let keycaps = PathBuf::from(home).join(".ctrl").join("keycaps");
-    if keycaps.is_dir() {
+    let mcps = PathBuf::from(home).join(".ctrl").join("mcps");
+    if mcps.is_dir() {
         FirstRunState::Ready
     } else {
         FirstRunState::Copying

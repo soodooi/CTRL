@@ -20,7 +20,7 @@ fn device_id_fresh_has_dev_prefix() {
 #[test]
 fn v1_documents_match_adr_003() {
     // ADR-002 substrate §6.1: v1.0 ships 3 documents.
-    assert_eq!(V1_DOCUMENTS, &["mesh.devices", "mesh.keycaps", "mesh.preferences"]);
+    assert_eq!(V1_DOCUMENTS, &["mesh.devices", "mesh.mcps", "mesh.preferences"]);
 }
 
 #[test]

@@ -3,7 +3,7 @@
 //! On the first PWA → Tauri `irisy_init` call:
 //!   1. probe the kernel's LLM port — is a brain adapter (Volc/BYOK) wired?
 //!   2. probe the Pi brain plugin (`@ctrl/pi-plugin` MCP server `/healthz`)
-//!   3. write `~/.ctrl/state/kernel-handshake.json` so a brain keycap's
+//!   3. write `~/.ctrl/state/kernel-handshake.json` so a brain mcp's
 //!      MCP client can reach the kernel MCP server (ADR-002 substrate § mcp-bus v1) with a token
 //!
 //! Pi is the sole brain (ADR-001 spine amendment 2026-05-25). When Pi isn't

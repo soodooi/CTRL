@@ -1,6 +1,6 @@
 // SvgViewer — inline-render SVG markup directly. Browser-native, zero
 // deps. Source-mode toggles to a CodeMirror buffer for editing. Used for
-// keycap icon.svg files (~/.ctrl/keycaps/<id>/assets/icon.svg) and any
+// mcp icon.svg files (~/.ctrl/mcps/<id>/assets/icon.svg) and any
 // SVG asset in the vault.
 
 import { useState, type ReactElement } from 'react';

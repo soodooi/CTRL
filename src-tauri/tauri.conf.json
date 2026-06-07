@@ -40,7 +40,7 @@
     "active": true,
     "targets": ["app", "dmg"],
     "resources": {
-      "../packages/ctrl-keycaps/builtin": "keycaps/builtin",
+      "../packages/ctrl-mcps/builtin": "mcps/builtin",
       "../packages/ctrl-pi-bridge/src/index.ts": "pi-bridge/index.ts",
       "../packages/ctrl-pi-plugin/bin": "ctrl-pi-plugin/bin",
       "../packages/ctrl-pi-plugin/src": "ctrl-pi-plugin/src",
@@ -55,7 +55,7 @@
     ],
     "category": "Productivity",
     "shortDescription": "Press Ctrl. Get any AI tool.",
-    "longDescription": "CTRL is an ambient AI launcher. Tap Ctrl to summon a keycap workspace of curated AI tools — clipboard AI, OCR, translate, MCP tools, and more.",
+    "longDescription": "CTRL is an ambient AI launcher. Tap Ctrl to summon a mcp workspace of curated AI tools — clipboard AI, OCR, translate, MCP tools, and more.",
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "CTRL Dev Signing",

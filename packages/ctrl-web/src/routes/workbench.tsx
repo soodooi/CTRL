@@ -1,9 +1,9 @@
-// Workbench — level-1 keycap-composition canvas (ADR-007 workbench § canvas v1).
+// Workbench — level-1 mcp-composition canvas (ADR-007 workbench § canvas v1).
 //
 // React Flow is the wiring surface ONLY (canvas-only; execution stays in the
 // CTRL executor — no borrowed dataflow engine). The palette lists the user's
-// installed keycaps (real list_keycaps, no mock); dragging one onto the canvas
-// drops a node that renders the actual keycap. The Irisy side-pane is the
+// installed mcps (real list_mcps, no mock); dragging one onto the canvas
+// drops a node that renders the actual mcp. The Irisy side-pane is the
 // co-pilot (graph-patch tool calls land in a later increment).
 //
 // Per decision_pwa_two_panel_layout this renders inside the workspace pane —
@@ -37,38 +37,38 @@ import {
   type NodeTypes,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
+import { listMcps, type McpSummary } from '@/lib/kernel';
 import { normalizeIcon } from '@/lib/icon';
 import { IconRenderer } from '@/components/primitives';
 import styles from './workbench.module.css';
 
-const DRAG_MIME = 'application/ctrl-keycap-node';
+const DRAG_MIME = 'application/ctrl-mcp-node';
 
-type KeycapNodeData = { keycap: KeycapSummary };
-type KeycapNode = Node<KeycapNodeData, 'keycap'>;
+type McpNodeData = { mcp: McpSummary };
+type McpNode = Node<McpNodeData, 'mcp'>;
 
-// Custom node — renders the real keycap (brief §3: nodes show the actual
-// keycap, not default boxes). Left handle = input port, right = output;
+// Custom node — renders the real mcp (brief §3: nodes show the actual
+// mcp, not default boxes). Left handle = input port, right = output;
 // JSON Schema typed-port validation lands with the io schema work.
-function KeycapNodeView({ data }: NodeProps<KeycapNode>): ReactElement {
-  const { keycap } = data;
-  const icon = normalizeIcon(keycap.icon, keycap.name);
+function McpNodeView({ data }: NodeProps<McpNode>): ReactElement {
+  const { mcp } = data;
+  const icon = normalizeIcon(mcp.icon, mcp.name);
   return (
-    <div className={styles.node} data-color={keycap.keycap_color}>
+    <div className={styles.node} data-color={mcp.mcp_color}>
       <Handle type="target" position={Position.Left} className={styles.handle} />
       <span className={styles.nodeIcon} aria-hidden="true">
-        <IconRenderer icon={icon} size={26} ariaLabel={keycap.name} />
+        <IconRenderer icon={icon} size={26} ariaLabel={mcp.name} />
       </span>
-      <span className={styles.nodeLabel}>{keycap.name}</span>
+      <span className={styles.nodeLabel}>{mcp.name}</span>
       <Handle type="source" position={Position.Right} className={styles.handle} />
     </div>
   );
 }
 
-const nodeTypes: NodeTypes = { keycap: KeycapNodeView };
+const nodeTypes: NodeTypes = { mcp: McpNodeView };
 
 function Canvas(): ReactElement {
-  const [nodes, setNodes, onNodesChange] = useNodesState<KeycapNode>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<McpNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { screenToFlowPosition } = useReactFlow();
 
@@ -88,18 +88,18 @@ function Canvas(): ReactElement {
       const raw = event.dataTransfer.getData(DRAG_MIME);
       if (!raw) return;
       event.preventDefault();
-      let keycap: KeycapSummary;
+      let mcp: McpSummary;
       try {
-        keycap = JSON.parse(raw) as KeycapSummary;
+        mcp = JSON.parse(raw) as McpSummary;
       } catch {
         return;
       }
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      const node: KeycapNode = {
-        id: `${keycap.id}:${Date.now()}`,
-        type: 'keycap',
+      const node: McpNode = {
+        id: `${mcp.id}:${Date.now()}`,
+        type: 'mcp',
         position,
-        data: { keycap },
+        data: { mcp },
       };
       setNodes((nds) => nds.concat(node));
     },
@@ -126,41 +126,41 @@ function Canvas(): ReactElement {
 }
 
 function Palette(): ReactElement {
-  const { data: keycaps = [], isLoading, isError } = useQuery({
-    queryKey: ['keycaps'],
-    queryFn: listKeycaps,
+  const { data: mcps = [], isLoading, isError } = useQuery({
+    queryKey: ['mcps'],
+    queryFn: listMcps,
   });
 
-  const onDragStart = (event: DragEvent<HTMLDivElement>, keycap: KeycapSummary): void => {
-    event.dataTransfer.setData(DRAG_MIME, JSON.stringify(keycap));
+  const onDragStart = (event: DragEvent<HTMLDivElement>, mcp: McpSummary): void => {
+    event.dataTransfer.setData(DRAG_MIME, JSON.stringify(mcp));
     event.dataTransfer.effectAllowed = 'copy';
   };
 
   return (
-    <aside className={styles.palette} aria-label="Keycap palette">
-      <h2 className={styles.sectionTitle}>Keycaps</h2>
+    <aside className={styles.palette} aria-label="Mcp palette">
+      <h2 className={styles.sectionTitle}>Mcps</h2>
       {isLoading ? (
         <p className={styles.hint}>Loading…</p>
       ) : isError ? (
         <p className={styles.hint}>Kernel unreachable.</p>
-      ) : keycaps.length === 0 ? (
-        <p className={styles.hint}>No keycaps yet — install some from Pool.</p>
+      ) : mcps.length === 0 ? (
+        <p className={styles.hint}>No mcps yet — install some from Pool.</p>
       ) : (
         <div className={styles.paletteList}>
-          {keycaps.map((keycap) => (
+          {mcps.map((mcp) => (
             <div
-              key={keycap.id}
+              key={mcp.id}
               className={styles.paletteItem}
               draggable
-              onDragStart={(event) => onDragStart(event, keycap)}
-              title={`Drag ${keycap.name} onto the canvas`}
+              onDragStart={(event) => onDragStart(event, mcp)}
+              title={`Drag ${mcp.name} onto the canvas`}
             >
               <IconRenderer
-                icon={normalizeIcon(keycap.icon, keycap.name)}
+                icon={normalizeIcon(mcp.icon, mcp.name)}
                 size={18}
-                ariaLabel={keycap.name}
+                ariaLabel={mcp.name}
               />
-              <span className={styles.paletteLabel}>{keycap.name}</span>
+              <span className={styles.paletteLabel}>{mcp.name}</span>
             </div>
           ))}
         </div>

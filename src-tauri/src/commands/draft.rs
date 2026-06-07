@@ -1,19 +1,19 @@
-//! Workshop draft storage — CRUD over `~/.ctrl/keycaps/.drafts/<id>/`.
+//! Workshop draft storage — CRUD over `~/.ctrl/mcps/.drafts/<id>/`.
 //!
 //! Drafts are authoring-time state, not user knowledge. Live OUTSIDE
-//! the vault (per memory `decision_keycap_base_vs_functional_layer` +
+//! the vault (per memory `decision_mcp_base_vs_functional_layer` +
 //! workshop research: drafts are tooling, vault is content). mesh does
 //! NOT sync drafts — they're per-device editing state.
 //!
 //! Layout:
-//!   ~/.ctrl/keycaps/.drafts/<draft-id>/
-//!     manifest.json              # current edit state (KeycapManifest shape)
+//!   ~/.ctrl/mcps/.drafts/<draft-id>/
+//!     manifest.json              # current edit state (McpManifest shape)
 //!     runs/<timestamp>-<id>.json # n8n-style execution trace history (LRU, last 20)
 //!     .git/                       # opt-in, written by separate `draft_git_init` (future)
 //!
 //! draft_id is opaque to the kernel (PWA generates; canonical form =
-//! short ulid or uuid). When install_keycap promotes the draft, the
-//! manifest's `id` field becomes the real keycap id; the draft_id is
+//! short ulid or uuid). When install_mcp promotes the draft, the
+//! manifest's `id` field becomes the real mcp id; the draft_id is
 //! discarded with the draft directory.
 
 use serde::{Deserialize, Serialize};
@@ -100,9 +100,9 @@ pub async fn draft_read(args: DraftReadArgs) -> Result<DraftReadReply, String> {
 #[derive(Debug, Deserialize)]
 pub struct DraftSaveArgs {
     pub draft_id: String,
-    /// Full KeycapManifest JSON. Kernel does NOT validate the shape here
+    /// Full McpManifest JSON. Kernel does NOT validate the shape here
     /// (drafts are by definition incomplete); validation happens at
-    /// install_keycap promotion time.
+    /// install_mcp promotion time.
     pub manifest: serde_json::Value,
 }
 
@@ -164,7 +164,7 @@ pub async fn draft_delete(args: DraftDeleteArgs) -> Result<(), String> {
 #[derive(Debug, Deserialize)]
 pub struct DraftRecordRunArgs {
     pub draft_id: String,
-    /// Execution trace JSON — shape is run_keycap_draft's `RunResult`
+    /// Execution trace JSON — shape is run_mcp_draft's `RunResult`
     /// (see commands/draft_run.rs once D2 lands). Kernel only writes the
     /// blob verbatim; consumers parse on read.
     pub trace: serde_json::Value,
@@ -236,7 +236,7 @@ fn drafts_root() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME env var not set".to_string())?;
     Ok(PathBuf::from(home)
         .join(".ctrl")
-        .join("keycaps")
+        .join("mcps")
         .join(DRAFTS_SUBDIR))
 }
 

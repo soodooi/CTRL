@@ -4,7 +4,7 @@
 // Pool detail panel etc.
 
 import type { Tab } from './tab-store';
-import { keycapAssetUri } from './asset-uri';
+import { mcpAssetUri } from './asset-uri';
 import { vaultUri } from './viewer-uri';
 import type { ViewerResource } from './viewer-registry';
 
@@ -42,7 +42,7 @@ export const inferCompanionUri = (uri: string): string | undefined => {
  *
  * Uses `vault://` (routed through `vault_read`) rather than
  * `ctrl-asset://vault/...` — bao 2026-06-02 LOAD FAILED root cause:
- * `asset_scheme.rs` only serves `ctrl-asset://keycaps/<id>/...`, every
+ * `asset_scheme.rs` only serves `ctrl-asset://mcps/<id>/...`, every
  * other host is rejected. The original `vaultAssetUri` produced a URI
  * that the protocol handler had no clause for, so every Notes editor
  * load failed silently. `vault://` is handled in `fetchUriAsText`
@@ -55,16 +55,16 @@ export const resourceFromVaultPath = (vaultPath: string): ViewerResource => ({
   companion: inferCompanionUri(vaultPath),
 });
 
-/** Convert a keycap-internal asset (prompt.md, manifest, etc) into a
+/** Convert a mcp-internal asset (prompt.md, manifest, etc) into a
  *  viewer resource. Editable maps to writing back via Config-tier patch. */
-export const resourceFromKeycapAsset = (
-  keycapId: string,
+export const resourceFromMcpAsset = (
+  mcpId: string,
   relPath: string,
   editable = true,
 ): ViewerResource => ({
-  location: 'keycap',
+  location: 'mcp',
   contentType: inferContentTypeFromPath(relPath),
-  uri: keycapAssetUri(keycapId, relPath),
+  uri: mcpAssetUri(mcpId, relPath),
   editable,
   companion: inferCompanionUri(relPath),
 });

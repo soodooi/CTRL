@@ -12,7 +12,7 @@
  *
  * This is a TRIAL — `--ctrl-blue` kept as a back-compat alias pointing at
  * the new primary so any component still referencing it gets the new
- * tone. Keycap palette and oklch motion tokens retained.
+ * tone. Mcp palette and oklch motion tokens retained.
  *
  * If reverting: restore the v0.5 :root block (see git history of this
  * file at commit d1cc153 or earlier).
@@ -30,14 +30,14 @@
   --color-on-primary: #FFFFFF;
   --color-secondary: #14B8A6;
 
-  /* === Keycap palette (retained from v0.5) ================
-     Independent of brand swap so installed-keycap visual
+  /* === Mcp palette (retained from v0.5) ================
+     Independent of brand swap so installed-mcp visual
      identity persists across theme trials. */
-  --keycap-cobalt: oklch(0.58 0.20 252);
-  --keycap-amber: oklch(0.76 0.18 78);
-  --keycap-jade: oklch(0.66 0.17 158);
-  --keycap-platinum: oklch(0.90 0.012 252);
-  --keycap-graphite: oklch(0.34 0.012 252);
+  --mcp-cobalt: oklch(0.58 0.20 252);
+  --mcp-amber: oklch(0.76 0.18 78);
+  --mcp-jade: oklch(0.66 0.17 158);
+  --mcp-platinum: oklch(0.90 0.012 252);
+  --mcp-graphite: oklch(0.34 0.012 252);
 
   /* === Neutral primitives (v0.7 — paper + ink, editorial) ====
      bao 2026-05-31 P0: drop mint/coral SaaS-clone palette. Paper-
@@ -82,7 +82,7 @@
   --color-info: var(--status-info);
 
   /* LLM cell stripe — amber distinguishes from cobalt user voice. */
-  --color-llm-accent: var(--keycap-amber);
+  --color-llm-accent: var(--mcp-amber);
 
   /* iframe color-scheme hint — flips with theme. */
   --color-scheme: light;
@@ -97,15 +97,15 @@
   --statusbar-height: 40px;
   --keyboard-width: 320px;
   --rightrail-width: 80px;
-  /* Keycap size scale — canonical for any keycap-shaped surface.
+  /* Mcp size scale — canonical for any mcp-shaped surface.
      `sm` is the Keyboard daily grid and the install slot next to it
      (they sit side-by-side on `/`, so they MUST match).
-     `md` is for catalog / showcase surfaces (KeycapCard demo, Pool
-     in the future when its catalog card collapses to keycap shape). */
-  --keycap-size-sm: 64px;
-  --keycap-size-md: 88px;
-  --keycap-size: var(--keycap-size-sm); /* legacy alias */
-  --keycap-gap: 12px;
+     `md` is for catalog / showcase surfaces (McpCard demo, Pool
+     in the future when its catalog card collapses to mcp shape). */
+  --mcp-size-sm: 64px;
+  --mcp-size-md: 88px;
+  --mcp-size: var(--mcp-size-sm); /* legacy alias */
+  --mcp-gap: 12px;
   --bottomtab-height: 0px;
 
   /* === Typography (skill v0.6 — Plus Jakarta Sans) ========= */

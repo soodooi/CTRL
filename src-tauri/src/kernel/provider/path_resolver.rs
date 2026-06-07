@@ -15,7 +15,7 @@
 //
 // `augmented_path()` prepends these dirs so spawned child processes
 // reach their shims (the existing `kernel::subprocess_actor` already
-// does this for keycap processes; this module exposes the same logic
+// does this for mcp processes; this module exposes the same logic
 // to the provider sub-system so new CLI / REST adapters share one
 // resolver instead of each rolling their own).
 //

@@ -32,7 +32,7 @@ import {
   type BrainState,
 } from '@/lib/irisy-prompts';
 import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
-import { listKeycaps, type KeycapSummary } from '@/lib/kernel';
+import { listMcps, type McpSummary } from '@/lib/kernel';
 import { useSessionStateStore, sessionLabel } from '@/lib/session-state';
 // bao 2026-06-05 Pi-first cleanup: PWA-side XML tool dispatch
 // (`dispatchAllCalls` / `formatResultsAsUserTurn` /
@@ -109,8 +109,8 @@ type DisplayMessage = TextDisplayMessage | CustomDisplayMessage;
 
 const SEED_PROMPTS: readonly string[] = [
   'What can you do here?',
-  'List my keycaps.',
-  'Help me make a clipboard keycap.',
+  'List my mcps.',
+  'Help me make a clipboard mcp.',
 ];
 
 // Pi emits tool invocations as XML-like markup inside assistant turns
@@ -302,7 +302,7 @@ const AssistantBubble = memo(function AssistantBubble({
               // Done / Next Steps" reasoning scaffolds + <thinking>
               // blocks + bare narration ("Calling list_local_skills...")
               // + internal codenames (Pi / Claude / Ollama / vault_*
-              // / install_keycap / brain_status). 7B models can't
+              // / install_mcp / brain_status). 7B models can't
               // suppress these via prompt — render-side filter is the
               // backstop. See `lib/irisy-render-filter.ts` for the
               // exact rules + SOTA verbatim quotes that informed them
@@ -374,7 +374,7 @@ const AssistantBubble = memo(function AssistantBubble({
 
 function buildSystemPrompt(
   systemBase: string,
-  keycaps: ReadonlyArray<KeycapSummary>,
+  mcps: ReadonlyArray<McpSummary>,
   longTermMemory: string,
   coreMemory: string,
   brainState: BrainState | null,
@@ -415,16 +415,16 @@ function buildSystemPrompt(
     );
   }
 
-  if (keycaps.length === 0) {
+  if (mcps.length === 0) {
     sections.push(
-      '# Installed keycaps\n(none yet — you can install one by dragging a card onto the Keyboard, or ask Irisy to make one)',
+      '# Installed mcps\n(none yet — you can install one by dragging a card onto the Keyboard, or ask Irisy to make one)',
     );
   } else {
-    const lines = keycaps.map(
-      (k) => `- ${k.id} · ${k.name} · ${k.icon} (${k.keycap_color})`,
+    const lines = mcps.map(
+      (k) => `- ${k.id} · ${k.name} · ${k.icon} (${k.mcp_color})`,
     );
     sections.push(
-      `# Installed keycaps (${keycaps.length})\n${lines.join('\n')}`,
+      `# Installed mcps (${mcps.length})\n${lines.join('\n')}`,
     );
   }
   return sections.join('\n\n');
@@ -433,7 +433,7 @@ function buildSystemPrompt(
 export function IrisyChat(): React.ReactElement {
   const [status, setStatus] = useState<IrisyStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [keycaps, setKeycaps] = useState<KeycapSummary[]>([]);
+  const [mcps, setMcps] = useState<McpSummary[]>([]);
   const [longTermMemory, setLongTermMemory] = useState<string>('');
   const [coreMemory, setCoreMemory] = useState<string>('');
   const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_DEFAULT);
@@ -591,10 +591,10 @@ export function IrisyChat(): React.ReactElement {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [statusResult, keycapsResult, memoryResult] =
+      const [statusResult, mcpsResult, memoryResult] =
         await Promise.allSettled([
           invoke<IrisyStatus>('irisy_init'),
-          listKeycaps(),
+          listMcps(),
           invoke<{ body?: string; path?: string }>('vault_read', {
             args: { path: 'irisy/SOUL.md' },
           }),
@@ -606,8 +606,8 @@ export function IrisyChat(): React.ReactElement {
         const e = statusResult.reason;
         setStatusError(e instanceof Error ? e.message : 'irisy_init failed');
       }
-      if (keycapsResult.status === 'fulfilled') {
-        setKeycaps(keycapsResult.value);
+      if (mcpsResult.status === 'fulfilled') {
+        setMcps(mcpsResult.value);
       }
       if (memoryResult.status === 'fulfilled') {
         const body = memoryResult.value?.body;
@@ -709,7 +709,7 @@ export function IrisyChat(): React.ReactElement {
           role: 'system',
           content: buildSystemPrompt(
             systemBase,
-            keycaps,
+            mcps,
             longTermMemory,
             coreMemory,
             brainState,
@@ -865,7 +865,7 @@ export function IrisyChat(): React.ReactElement {
       brainState,
       coreMemory,
       currentSkillId,
-      keycaps,
+      mcps,
       longTermMemory,
       messages,
       mode,
@@ -979,7 +979,7 @@ export function IrisyChat(): React.ReactElement {
                 automatically once Pi is reachable.
               </p>
               <p className={styles.upgradeHint}>
-                Keycaps still work — drag one onto the Keyboard to install,
+                Mcps still work — drag one onto the Keyboard to install,
                 click a cell to run.
               </p>
             </div>

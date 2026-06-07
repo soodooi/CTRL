@@ -14,7 +14,7 @@
 //     serialization
 //   • internal codename leaks (Pi / Claude / Ollama / Volc / vault_*
 //     / install_* / brain_status) — bao 2026-05-22
-//     `decision_pi_is_sole_brain_hermes_is_keycap` + ADR-002 §3.7
+//     `decision_pi_is_sole_brain_hermes_is_mcp` + ADR-002 §3.7
 //     brand-label rule
 //   • bare narration lines like "Calling list_local_skills..."
 //     ("show what the tool is doing in natural language" — Cursor 2.0
@@ -103,9 +103,9 @@ const CODENAME_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bvault_tags\b/g, 'list your tags'],
   [/\bvault_backlinks\b/g, 'check backlinks'],
   [/\blist_local_skills\b/g, 'look up local skills'],
-  [/\binstall_keycap\b/g, 'add a key'],
-  [/\blist_keycaps\b/g, 'list your keys'],
-  [/\bkeycap_run\b/g, 'run that key'],
+  [/\binstall_mcp\b/g, 'add a key'],
+  [/\blist_mcps\b/g, 'list your keys'],
+  [/\bmcp_run\b/g, 'run that key'],
   [/\bbrain_status\b/g, 'check status'],
   // process plumbing
   [/\bctrl-pi-bridge\b/gi, ''],

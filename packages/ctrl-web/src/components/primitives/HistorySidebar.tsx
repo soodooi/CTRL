@@ -2,7 +2,7 @@
 // an optional "+ new" button at top. L1 navigation primitive.
 //
 // Drives the left rail of any session-type workspace (Irisy default,
-// chat keycaps, Code Space env switcher when used in compact mode).
+// chat mcps, Code Space env switcher when used in compact mode).
 // Generic on item shape — each item carries id + title + optional
 // tone dot (uses Led primitive for the dot indicator).
 

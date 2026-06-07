@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "license": "UNLICENSED",
-  "description": "Pi (badlogic/pi-mono coding agent) wrapped as a CTRL brain keycap — exposes Pi over a local MCP server (HTTP/JSON-RPC) so Irisy and any other MCP client can call it through the standard text.chat capability.",
+  "description": "Pi (badlogic/pi-mono coding agent) wrapped as a CTRL brain mcp — exposes Pi over a local MCP server (HTTP/JSON-RPC) so Irisy and any other MCP client can call it through the standard text.chat capability.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "bin": {
     "ctrl-pi-mcp": "./bin/ctrl-pi-mcp.ts"
   },
-  "files": ["src", "bin", "keycap.md", "THIRD_PARTY_LICENSES.md", "README.md"],
+  "files": ["src", "bin", "mcp.md", "THIRD_PARTY_LICENSES.md", "README.md"],
   "scripts": {
     "start": "node --experimental-strip-types bin/ctrl-pi-mcp.ts",
     "build": "tsc",

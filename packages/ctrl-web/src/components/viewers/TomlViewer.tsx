@@ -1,6 +1,6 @@
 // TomlViewer — CodeMirror 6 via @codemirror/legacy-modes (no first-party
 // TOML lang ships in CodeMirror 6 core). Used for ~/.ctrl/config.toml
-// and keycap `config.toml` files (the Config-tier adjustment surface).
+// and mcp `config.toml` files (the Config-tier adjustment surface).
 
 import { useMemo, type ReactElement } from 'react';
 import CodeMirror from '@uiw/react-codemirror';

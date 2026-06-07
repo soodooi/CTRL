@@ -57,7 +57,7 @@ pub enum ActorPriority {
     Hardware = 0,
     /// LLM streaming chunks.
     LlmStream = 1,
-    /// User-initiated keycap invocation, UI.
+    /// User-initiated mcp invocation, UI.
     UserAction = 2,
     /// Background analytics, market sync.
     Background = 3,

@@ -9,7 +9,7 @@
 //                      and `npm run test:health`.
 //
 // We deliberately ship a minimal hand-rolled MCP surface here rather than
-// pulling in the official SDK: keeps the brain-keycap glue small enough to
+// pulling in the official SDK: keeps the brain-mcp glue small enough to
 // audit in one sitting, and matches the CTRL kernel's other MCP server (the
 // kernel writes its own MCP server too — see ADR-002 substrate § mcp-bus v1 in CLAUDE.md).
 
@@ -43,7 +43,7 @@ const TEXT_CHAT_TOOL = {
     'assembled message in the tools/call result. Pi handles its own ' +
     'provider configuration (Anthropic / OpenAI / Google / xAI / Groq / ' +
     'Cerebras / Mistral / OpenRouter) via ~/.pi/config — CTRL is provider-' +
-    'passthrough for brain keycaps by design.',
+    'passthrough for brain mcps by design.',
   inputSchema: {
     type: 'object',
     properties: {

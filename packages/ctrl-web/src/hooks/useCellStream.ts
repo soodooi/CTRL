@@ -24,9 +24,9 @@ export type CellKind =
   | 'context_snapshot';
 
 export type OpKind =
-  | 'keycap_invoked'
-  | 'keycap_completed'
-  | 'keycap_failed'
+  | 'mcp_invoked'
+  | 'mcp_completed'
+  | 'mcp_failed'
   | 'actor_spawned'
   | 'actor_terminated'
   | 'hotkey_triggered'
@@ -38,9 +38,9 @@ export type OpKind =
   | 'cursor_moved'
   | 'mesh_device_joined'
   | 'mesh_device_left'
-  | 'mesh_keycap_added'
-  | 'mesh_keycap_removed'
-  | 'mesh_keycap_used_at'
+  | 'mesh_mcp_added'
+  | 'mesh_mcp_removed'
+  | 'mesh_mcp_used_at'
   | 'mesh_preference_updated';
 
 export interface CellRecord {

@@ -182,15 +182,15 @@
   max-width: 760px;
 }
 
-/* Mock keycap row — mirrors the keyboard's actual cell footprint so the
-   IconRenderer is exercised at the real keycap dimensions. */
-.keycapRow {
+/* Mock mcp row — mirrors the keyboard's actual cell footprint so the
+   IconRenderer is exercised at the real mcp dimensions. */
+.mcpRow {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
   padding: var(--space-4) 0;
 }
-.keycapRow > * {
+.mcpRow > * {
   width: 120px;
   height: 120px;
 }

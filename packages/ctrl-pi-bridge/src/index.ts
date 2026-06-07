@@ -17,11 +17,11 @@
 //
 //   - Pre-v7 Pi had 0 native tools (ctrl-pi-plugin spawned it with
 //     --no-tools and the bridge never registered any). Surface (2)
-//     gives Pi native function calling for vault.* / skill.* / keycap.*
+//     gives Pi native function calling for vault.* / skill.* / mcp.*
 //     on the BYOK frontier path.
 //   - Surface (3) chain-injects ADR-005 6 capability segments per turn,
 //     keyword-pre-screened against the user prompt, so Pi sees only the
-//     1-3 segments relevant to the request — fixing the "install_keycap
+//     1-3 segments relevant to the request — fixing the "install_mcp
 //     for any verb" failure mode.
 //   - Surface (4) is an inspector stub today (5-identical-calls loop
 //     guard); future home for ADR-006 4 policy-envelope (autonomy ladder).
@@ -1084,7 +1084,7 @@ function buildKernelTools(): PiToolDefinition[] {
       label: 'Write note to vault',
       description:
         'Write a markdown note to the user vault. Use this for ONE-SHOT ' +
-        'writes. DO NOT call install_keycap when the user just wants a ' +
+        'writes. DO NOT call install_mcp when the user just wants a ' +
         'note saved. Path is relative to vault root (e.g. ' +
         '"notes/2026-06-04-poem.md"). Frontmatter is an optional ' +
         'YAML-shaped JSON object.',
@@ -1197,10 +1197,10 @@ function buildKernelTools(): PiToolDefinition[] {
       },
     },
     {
-      name: 'install_keycap',
-      label: 'Install keycap',
+      name: 'install_mcp',
+      label: 'Install mcp',
       description:
-        'Install a REUSABLE keycap on the user keyboard. ONLY use when ' +
+        'Install a REUSABLE mcp on the user keyboard. ONLY use when ' +
         'the user explicitly asked for a reusable shortcut (they said ' +
         '"a key for X", "a button I can reuse", "shortcut for Y", or the ' +
         'language-equivalent triggers in the capability segment). For ' +
@@ -1208,52 +1208,52 @@ function buildKernelTools(): PiToolDefinition[] {
         'instead. When uncertain, ask one short question first; never ' +
         'install on a guess.',
       parameters: T.Object({
-        manifest: T.Record('Keycap manifest (JSON object with id + name + ...).'),
+        manifest: T.Record('Mcp manifest (JSON object with id + name + ...).'),
         server_code: T.String('Optional MCP server TS source.'),
         server_code_filename: T.String('Filename for server_code.'),
       }),
       execute: async (_id, params, signal) => {
         try {
-          const reply = await callKernelTool('install_keycap', params, signal);
+          const reply = await callKernelTool('install_mcp', params, signal);
           return toolReply(reply);
         } catch (e: unknown) {
-          return toolError(`install_keycap: ${describe(e)}`);
+          return toolError(`install_mcp: ${describe(e)}`);
         }
       },
     },
     {
-      name: 'list_keycaps',
-      label: 'List installed keycaps',
-      description: 'List the keycaps currently installed in the user keyboard.',
+      name: 'list_mcps',
+      label: 'List installed mcps',
+      description: 'List the mcps currently installed in the user keyboard.',
       parameters: T.Object({}, []),
       execute: async (_id, _params, signal) => {
         try {
-          const reply = await callKernelTool('list_keycaps', {}, signal);
+          const reply = await callKernelTool('list_mcps', {}, signal);
           return toolReply(reply);
         } catch (e: unknown) {
-          return toolError(`list_keycaps: ${describe(e)}`);
+          return toolError(`list_mcps: ${describe(e)}`);
         }
       },
     },
 
     // ─── C3: Cap Invoker ─────────────────────────────────────────────
     {
-      name: 'keycap_run',
-      label: 'Run keycap',
+      name: 'mcp_run',
+      label: 'Run mcp',
       description:
-        'Run an already-installed keycap by id with the given args. Use ' +
-        'when the user names a specific keycap to invoke (e.g. "use ' +
+        'Run an already-installed mcp by id with the given args. Use ' +
+        'when the user names a specific mcp to invoke (e.g. "use ' +
         'frontend-slide" or its language-equivalent trigger).',
       parameters: T.Object({
-        keycap_id: T.String('The id of the keycap to run.'),
-        args: T.Record('Args matching keycap manifest io.inputs.'),
+        mcp_id: T.String('The id of the mcp to run.'),
+        args: T.Record('Args matching mcp manifest io.inputs.'),
       }),
       execute: async (_id, params, signal) => {
         try {
-          const reply = await callKernelTool('keycap_run', params, signal);
+          const reply = await callKernelTool('mcp_run', params, signal);
           return toolReply(reply);
         } catch (e: unknown) {
-          return toolError(`keycap_run: ${describe(e)}`);
+          return toolError(`mcp_run: ${describe(e)}`);
         }
       },
     },
@@ -1299,35 +1299,35 @@ const CAPABILITY_SEGMENTS: Record<CapabilityId, string> = {
     '## Note writing (C1)',
     'When the user asks to write / save / draft a markdown note (in any',
     'language — see the trigger keyword table) — call vault_write directly.',
-    'ONE-LINE acknowledgement with the path. NEVER install a keycap for a',
+    'ONE-LINE acknowledgement with the path. NEVER install a mcp for a',
     'one-shot write. Default save path:',
     '  notes/<YYYY-MM-DD>-<short-slug>.md',
     'Add minimal frontmatter: {kind: "note", created_at: "<ISO>"}.',
   ].join('\n'),
 
   cap_builder: [
-    '## Building a reusable keycap (C2)',
+    '## Building a reusable mcp (C2)',
     'ONLY fire when the user explicitly framed the request as a REUSABLE',
     'shortcut — words like "a key for", "a shortcut for", "a button I can',
     'press", "a tool I can reuse", or their language-equivalent triggers.',
-    'Without one of those trigger words, DO NOT call install_keycap.',
+    'Without one of those trigger words, DO NOT call install_mcp.',
     'Default to vault_write (C1) or plain chat (C8) instead. If ambiguous,',
     'ask ONE short question: "Just do it once, or do you want a reusable',
     'shortcut?" — never guess and install.',
     '',
     'To build: call list_local_skills with relevant keywords (in the',
-    "user's language), then install_keycap with a manifest. All manifest",
+    "user's language), then install_mcp with a manifest. All manifest",
     'text (name, icon, input/output labels) MUST be English even when the',
-    'user writes in another language — CTRL is English-first; keycaps',
+    'user writes in another language — CTRL is English-first; mcps',
     'live on a shared keyboard.',
   ].join('\n'),
 
   cap_invoker: [
-    '## Running an installed keycap (C3)',
-    'When the user names a specific installed keycap to invoke ("use X",',
-    '"run X cap", or the language-equivalent trigger), call keycap_run',
-    'with the matching keycap_id. Get the id from list_keycaps if',
-    "uncertain. NEVER say \"I don't have skills\" — keycaps exist and you",
+    '## Running an installed mcp (C3)',
+    'When the user names a specific installed mcp to invoke ("use X",',
+    '"run X cap", or the language-equivalent trigger), call mcp_run',
+    'with the matching mcp_id. Get the id from list_mcps if',
+    "uncertain. NEVER say \"I don't have skills\" — mcps exist and you",
     'can run them.',
   ].join('\n'),
 
@@ -1376,7 +1376,7 @@ const CAPABILITY_SEGMENTS: Record<CapabilityId, string> = {
 // `new RegExp(...)`. Source stays ASCII; runtime regex matches CJK input.
 //
 // Token map (auditable without a Unicode chart):
-//   \u952E\u5E3D    = key+cap = keycap
+//   \u952E\u5E3D    = key+cap = mcp
 //   \u6309\u94AE    = button
 //   \u4E00\u952E    = one-key
 //   \u5FEB\u6377    = shortcut
@@ -1434,7 +1434,7 @@ const CAPABILITY_KEYWORDS: Record<CapabilityId, RegExp> = {
   cap_builder: new RegExp(
     '(' +
       CN_CAP_BUILDER +
-      '|\\bshortcut\\b|\\bkeycap\\b|make.*\\bkey\\b|a button|' +
+      '|\\bshortcut\\b|\\bmcp\\b|make.*\\bkey\\b|a button|' +
       'reusable|build.*\\btool\\b|tool I can reuse)',
     'i',
   ),
@@ -1680,7 +1680,7 @@ async function applyDefaultActiveTools(): Promise<void> {
   // Edit / Bash / Grep / Find / Ls / TodoWrite / Task / NotebookRead /
   // NotebookEdit — making Irisy answer "I do not have internet" when the
   // user asked for a web research task, and unable to organize files
-  // without installing extra keycaps.
+  // without installing extra mcps.
   //
   // bao directive: do not exclude any of Pi's built-in capabilities; the
   // assistant must default to the complete Pi tool surface. The persona
@@ -1888,8 +1888,8 @@ function registerSlashCommands(pi: PiExtensionApi): void {
       const inputText = rest.join(' ');
       try {
         await callKernelTool(
-          'keycap_run',
-          { keycap_id: capId, input: { text: inputText } },
+          'mcp_run',
+          { mcp_id: capId, input: { text: inputText } },
           undefined,
         );
       } catch (err) {

@@ -21,7 +21,7 @@ import type { HardwareProfile } from './hardware.js';
  * care about. Assigns structurally into
  * `HelloPayload.capabilities` / `WelcomePayload.accepted_capabilities`.
  *
- * @example sender (clipboard keycap)
+ * @example sender (clipboard mcp)
  * ```ts
  * const caps: CtrlCapabilities = {
  *   cell_kinds: ['clipboard_snapshot'],

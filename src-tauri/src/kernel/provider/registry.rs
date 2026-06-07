@@ -15,7 +15,7 @@
 // Boot seeds irisy.fallback = "volc" so a fresh install without any
 // detected CLI still has a working AI path.
 // Migration: v0 file `{"text.chat":"<id>"}` -> roles.irisy.primary = <id>;
-// v1 file with `keycap.default` -> drop that key.
+// v1 file with `mcp.default` -> drop that key.
 //
 // Builtin TOMLs are embedded via `include_str!` so a packaged release
 // always has them even if the user's `~/.ctrl/providers/` is empty.
@@ -665,7 +665,7 @@ impl ProviderRegistry {
     ///   -> migrates to `roles.irisy.primary = <id>` (the lone bucket
     ///   becomes the new primary; IrisyFallback gets seeded separately).
     /// - **v1** (3-role): `{"roles": {"irisy.primary":..., "irisy.fallback":...,
-    ///   "keycap.default":...}}` -> drops `keycap.default`, keeps the rest.
+    ///   "mcp.default":...}}` -> drops `mcp.default`, keeps the rest.
     /// - **v2** (2-role): `{"roles": {"irisy.primary":..., "irisy.fallback":...}}`
     ///   -> loaded as-is.
     ///
@@ -690,9 +690,9 @@ impl ProviderRegistry {
         let mut migrated_from: Option<&'static str> = None;
         if let Ok(envelope) = serde_json::from_str::<ActiveStateV2>(&raw) {
             roles = envelope.roles;
-            // v1 -> v2: drop `keycap.default` if present.
-            if roles.remove("keycap.default").is_some() {
-                migrated_from = Some("v1 (3-role with keycap.default)");
+            // v1 -> v2: drop `mcp.default` if present.
+            if roles.remove("mcp.default").is_some() {
+                migrated_from = Some("v1 (3-role with mcp.default)");
             }
         } else if let Ok(flat) = serde_json::from_str::<BTreeMap<String, String>>(&raw) {
             // v0 single-bucket: `{"text.chat": "<id>"}` -> roles.irisy.primary

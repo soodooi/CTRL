@@ -89,7 +89,7 @@ test('C: opening a system tab expands Tab while L2 stays collapsed', async ({ pa
       id: 'pool',
       kind: 'route',
       path: '/pool',
-      title: 'Keycap pool',
+      title: 'Mcp pool',
     });
   });
   await page.waitForSelector('[data-testid="shell"][data-workspace-open="true"]', {

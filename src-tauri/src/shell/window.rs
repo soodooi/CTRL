@@ -214,20 +214,20 @@ impl WindowController {
         Ok(w)
     }
 
-    /// Open (or focus) the workspace window with a specific keycap loaded.
+    /// Open (or focus) the workspace window with a specific mcp loaded.
     ///
-    /// Per bao 2026-05-14: the workspace is a standalone window, corresponding to the selected keycap. Workspace window
-    /// is rebuilt fresh per activation so the new keycap_id query param
+    /// Per bao 2026-05-14: the workspace is a standalone window, corresponding to the selected mcp. Workspace window
+    /// is rebuilt fresh per activation so the new mcp_id query param
     /// drives the route from a clean WebView state (same destroy + rebuild
     /// trick as the main window).
-    pub fn open_workspace(app: &AppHandle, keycap_id: &str) -> Result<()> {
+    pub fn open_workspace(app: &AppHandle, mcp_id: &str) -> Result<()> {
         // If a workspace window already exists, destroy it so the rebuild
-        // below loads the new keycap_id cleanly.
+        // below loads the new mcp_id cleanly.
         if let Some(existing) = app.get_webview_window("workspace") {
             let _ = existing.destroy();
         }
-        let safe_keycap = keycap_id.replace(['\'', '"', '\\', '\n', '\r'], "");
-        let url = format!("/workspace?keycap_id={safe_keycap}");
+        let safe_mcp = mcp_id.replace(['\'', '"', '\\', '\n', '\r'], "");
+        let url = format!("/workspace?mcp_id={safe_mcp}");
         let w = WebviewWindowBuilder::new(app, "workspace", WebviewUrl::App(url.into()))
             .title("CTRL · Workspace")
             .inner_size(640.0, 480.0)
@@ -242,11 +242,11 @@ impl WindowController {
             .resizable(true)
             .build()?;
         install_close_intercept(&w, app, "workspace");
-        tracing::info!("workspace window built for keycap_id={}", keycap_id);
+        tracing::info!("workspace window built for mcp_id={}", mcp_id);
         Ok(())
     }
 
-    /// Close (destroy) the workspace window. Called by the keycap actor on
+    /// Close (destroy) the workspace window. Called by the mcp actor on
     /// completion, by the PWA close button, or by Esc.
     pub fn close_workspace(app: &AppHandle) -> Result<()> {
         if let Some(w) = app.get_webview_window("workspace") {
@@ -348,7 +348,7 @@ mod cloak {
 
 /// Install a WindowEvent::CloseRequested handler that intercepts the OS X
 /// button. Main launcher: cloak (preserves PWA state, instant re-show).
-/// Workspace window: destroy (workspaces are per-keycap, no preserved state).
+/// Workspace window: destroy (workspaces are per-mcp, no preserved state).
 pub(crate) fn install_close_intercept(w: &WebviewWindow, app: &AppHandle, label: &str) {
     let app_for_event = app.clone();
     let label_owned = label.to_string();

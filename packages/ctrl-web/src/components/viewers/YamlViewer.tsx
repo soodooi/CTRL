@@ -1,4 +1,4 @@
-// YamlViewer — CodeMirror 6 + lang-yaml. Used for keycap manifests
+// YamlViewer — CodeMirror 6 + lang-yaml. Used for mcp manifests
 // (the YAML frontmatter block exported on its own) and *.yaml config.
 
 import type { ReactElement } from 'react';

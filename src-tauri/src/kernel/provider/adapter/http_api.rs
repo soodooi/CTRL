@@ -7,7 +7,7 @@
 // helpers; the public `HttpApiProvider` struct is shape-agnostic.
 //
 // All HTTP work goes through one `reqwest::Client` per provider so we
-// keep connection pooling across back-to-back keycap turns.
+// keep connection pooling across back-to-back mcp turns.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

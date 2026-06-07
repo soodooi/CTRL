@@ -65,9 +65,9 @@ export { Modal } from './Modal';
 export type { ModalProps } from './Modal';
 export { ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps } from './ConfirmDialog';
-export { InstallKeycapTile } from './InstallKeycapTile';
+export { InstallMcpTile } from './InstallMcpTile';
 export type {
-  InstallKeycapTileProps,
-  InstallKeycapTilePayload,
-} from './InstallKeycapTile';
+  InstallMcpTileProps,
+  InstallMcpTilePayload,
+} from './InstallMcpTile';
 export { IconRenderer } from './IconRenderer';

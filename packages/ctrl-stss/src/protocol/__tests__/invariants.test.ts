@@ -37,7 +37,7 @@ describe('createCell invariants', () => {
 
 describe('createOp / createDeleteOp invariants', () => {
   it('createOp rejects negative ts_ms', () => {
-    expect(() => createOp({ kind: 'keycap_invoked', ts_ms: -1 })).toThrow(RangeError);
+    expect(() => createOp({ kind: 'mcp_invoked', ts_ms: -1 })).toThrow(RangeError);
   });
 
   it('createDeleteOp rejects empty target', () => {
@@ -55,7 +55,7 @@ describe('createOp / createDeleteOp invariants', () => {
   });
 
   it('isDeleteOp rejects a non-delete kind', () => {
-    const op = createOp({ kind: 'keycap_invoked', target: 'x', ts_ms: 100 });
+    const op = createOp({ kind: 'mcp_invoked', target: 'x', ts_ms: 100 });
     expect(isDeleteOp(op)).toBe(false);
   });
 });

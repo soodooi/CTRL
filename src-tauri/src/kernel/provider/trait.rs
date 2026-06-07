@@ -22,7 +22,7 @@
 // replaces the v1 capability-keyed active map. 2 roles only:
 // `irisy.primary` (user CLI, 0 CTRL cost — augmentation) and
 // `irisy.fallback` (CTRL-managed paid slot, currently `volc`).
-// `keycap.default` dropped — keycaps bind providers via manifest
+// `mcp.default` dropped — mcps bind providers via manifest
 // `brain_capabilities`, not via a substrate-wide role.
 
 use async_trait::async_trait;
@@ -109,7 +109,7 @@ pub trait Provider: Send + Sync {
 // ── ADR-002 substrate § provider v2 — role-aware routing ─────────────
 
 /// Consumer role — who is asking for a provider. v2 collapsed from 3 to 2
-/// roles after bao 2026-05-31 amendment (drop keycap.default): keycaps
+/// roles after bao 2026-05-31 amendment (drop mcp.default): mcps
 /// bind providers via their manifest `brain_capabilities`, not via a
 /// substrate-wide default. `Custom(String)` reserves namespace for future
 /// per-consumer overrides without re-bumping the enum.
@@ -124,7 +124,7 @@ pub enum Consumer {
     /// Always seeded at boot so a fresh install without any CLI still
     /// has a working AI path.
     IrisyFallback,
-    /// Free-form consumer id — reserved for keycaps / future modes that
+    /// Free-form consumer id — reserved for mcps / future modes that
     /// declare their own routing slot without an enum bump.
     Custom(String),
 }

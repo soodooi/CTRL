@@ -20,7 +20,7 @@
 //
 // v2 amendment (2026-05-31): role-aware routing replaces capability-
 // keyed active map. 2 roles only: irisy.primary (user CLI, 0 CTRL cost)
-// + irisy.fallback (CTRL-managed paid `volc`). keycap.default dropped.
+// + irisy.fallback (CTRL-managed paid `volc`). mcp.default dropped.
 // Volc has two manifest ids: `volc` (CTRL fallback) + `volc-byok` (user).
 //
 // Retires the pre-amendment scatter of `brain_config.rs` (kept by the

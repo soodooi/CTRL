@@ -1,5 +1,5 @@
-/* InstallKeycapTile — empty-slot keycap with a `+` glyph. Sits as a
- * presentational sibling of real keycaps; uses a dashed contour so it
+/* InstallMcpTile — empty-slot mcp with a `+` glyph. Sits as a
+ * presentational sibling of real mcps; uses a dashed contour so it
  * reads as "vacant" without competing with installed caps' 5-layer
  * shadow stack. */
 
@@ -13,7 +13,7 @@
   padding: 0;
   background: var(--color-bg-l0);
   /* 1.5px dashed border in `--color-border` reads as "empty slot" on
-     polar paper without screaming for attention. The keycap silhouette
+     polar paper without screaming for attention. The mcp silhouette
      is preserved via radius so the slot still feels like a cap shape. */
   border: 1.5px dashed var(--color-border);
   border-radius: var(--radius-lg);

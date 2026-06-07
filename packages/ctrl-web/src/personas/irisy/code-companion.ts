@@ -5,7 +5,7 @@
 // prompt is English-only; runnable commands MUST be emitted as fenced
 // ```bash / ```sh blocks so the UI can offer one-click send-to-terminal.
 //
-// SSOT note: keycap-creator.ts mirrors a .olym/personas/irisy/ SSOT file
+// SSOT note: mcp-creator.ts mirrors a .olym/personas/irisy/ SSOT file
 // for that mode. This persona is born TS-side first (no SSOT mirror yet)
 // to avoid blocking the v1 ship on a parallel doc edit; promote to
 // .olym/personas/irisy/code-companion.md when the persona stabilises.

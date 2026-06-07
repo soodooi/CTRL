@@ -39,7 +39,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
 import { OllamaSetupBanner } from './components/OllamaSetupBanner';
-import { KEYCAP_DRAG_MIME } from './components/Keyboard';
+import { MCP_DRAG_MIME } from './components/Keyboard';
 import { RailProvider, PrimaryRail } from './components/PrimaryRail';
 import { InfraBar } from './components/InfraBar';
 import { IrisyChat } from './components/irisy/IrisyChat';
@@ -82,18 +82,18 @@ function useTrayBridge(): void {
 function RootShellInner(): ReactElement {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const createFromKeycap = useWorkspaceStore((s) => s.createFromKeycap);
+  const createFromMcp = useWorkspaceStore((s) => s.createFromMcp);
   const workspaceOpen = useWorkspaceStore((s) => s.instances.length > 0);
   const [dragOver, setDragOver] = useState(false);
   useCompanionWindow();
 
   // Drag-over only flips when our custom MIME is present — text drags
   // from outside the cockpit don't paint the drop affordance.
-  const hasKeycapPayload = (e: DragEvent<HTMLElement>): boolean =>
-    Array.from(e.dataTransfer.types).includes(KEYCAP_DRAG_MIME);
+  const hasMcpPayload = (e: DragEvent<HTMLElement>): boolean =>
+    Array.from(e.dataTransfer.types).includes(MCP_DRAG_MIME);
 
   const handleDragOver = useCallback((e: DragEvent<HTMLElement>) => {
-    if (!hasKeycapPayload(e)) return;
+    if (!hasMcpPayload(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     setDragOver(true);
@@ -105,18 +105,18 @@ function RootShellInner(): ReactElement {
 
   const handleDrop = useCallback(
     async (e: DragEvent<HTMLElement>) => {
-      if (!hasKeycapPayload(e)) return;
+      if (!hasMcpPayload(e)) return;
       e.preventDefault();
       setDragOver(false);
-      const id = e.dataTransfer.getData(KEYCAP_DRAG_MIME);
+      const id = e.dataTransfer.getData(MCP_DRAG_MIME);
       if (!id) return;
-      const cache = queryClient.getQueryData<Array<{ id: string; name: string }>>(['keycaps']);
+      const cache = queryClient.getQueryData<Array<{ id: string; name: string }>>(['mcps']);
       const summary = cache?.find((k) => k.id === id);
       if (!summary) return;
-      createFromKeycap({ id: summary.id, name: summary.name });
+      createFromMcp({ id: summary.id, name: summary.name });
       await navigate({ to: '/workspace' });
     },
-    [createFromKeycap, navigate, queryClient],
+    [createFromMcp, navigate, queryClient],
   );
 
   return (
@@ -151,7 +151,7 @@ function RootShellInner(): ReactElement {
       </div>
       {/* Hidden Outlet host — legacy routes still mount here but render
           invisibly. Drag-over handler retained on the hidden node so the
-          shell-level keycap drop in `app.tsx` still works during transition;
+          shell-level mcp drop in `app.tsx` still works during transition;
           full route retirement = next PR (ADR-003 frontend §7.5). */}
       <div
         className={styles.outletHidden}

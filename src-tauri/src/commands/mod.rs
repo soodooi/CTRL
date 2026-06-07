@@ -6,7 +6,7 @@
 // the invocation is allowed.
 //
 // Commands grouped by domain:
-//   • kernel   — keycap install / list / run; MCP introspection + invoke
+//   • kernel   — mcp install / list / run; MCP introspection + invoke
 //   • stss     — subscribe / publish / list streams
 //   • memory   — read_log / append / query AI memory event store
 //   • keychain — BYOK API key store / get / delete
@@ -56,16 +56,16 @@ macro_rules! pwa_invoke_handler {
     () => {
         tauri::generate_handler![
             // kernel
-            $crate::commands::kernel::list_keycaps,
-            $crate::commands::kernel::install_keycap,
-            $crate::commands::kernel::install_keycap_from_mcp,
-            $crate::commands::kernel::run_keycap,
-            $crate::commands::kernel::uninstall_keycap,
-            $crate::commands::kernel::read_keycap_manifest,
-            $crate::commands::kernel::set_keycap_config,
-            // chat — raw streaming LLM via Tauri events (keycap-internal use)
+            $crate::commands::kernel::list_mcps,
+            $crate::commands::kernel::install_mcp,
+            $crate::commands::kernel::install_mcp_from_mcp,
+            $crate::commands::kernel::run_mcp,
+            $crate::commands::kernel::uninstall_mcp,
+            $crate::commands::kernel::read_mcp_manifest,
+            $crate::commands::kernel::set_mcp_config,
+            // chat — raw streaming LLM via Tauri events (mcp-internal use)
             $crate::commands::chat::chat_stream,
-            // irisy_chat — brain-routed streaming (Irisy → active brain keycap MCP)
+            // irisy_chat — brain-routed streaming (Irisy → active brain mcp MCP)
             $crate::commands::irisy_chat::irisy_chat_stream,
             // pi_rpc — full Pi RpcClient surface exposed as one generic command.
             // PWA wraps via packages/ctrl-web/src/lib/usePiRpc.ts. bao 2026-06-05
@@ -142,7 +142,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::config::config_set_provider_key,
             $crate::commands::config::config_test_provider,
             $crate::commands::config::config_delete_provider,
-            // draft — workshop authoring state under ~/.ctrl/keycaps/.drafts/
+            // draft — workshop authoring state under ~/.ctrl/mcps/.drafts/
             $crate::commands::draft::draft_list,
             $crate::commands::draft::draft_read,
             $crate::commands::draft::draft_save,
@@ -150,7 +150,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::draft::draft_record_run,
             $crate::commands::draft::draft_list_runs,
             // draft_run — sandbox execution + per-step trace for canvas preview
-            $crate::commands::draft_run::run_keycap_draft,
+            $crate::commands::draft_run::run_mcp_draft,
             // workshop — composite canvas operations (read-modify-save in one call)
             $crate::commands::workshop::workshop_add_step,
             $crate::commands::workshop::workshop_update_step,
@@ -215,13 +215,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::git::git_commit_all,
             $crate::commands::git::git_push,
             $crate::commands::git::git_log,
-            // localstorage — small persistent JSON KV per keycap
+            // localstorage — small persistent JSON KV per mcp
             $crate::commands::storage::localstorage_get,
             $crate::commands::storage::localstorage_set,
             $crate::commands::storage::localstorage_remove,
             $crate::commands::storage::localstorage_list,
             $crate::commands::storage::localstorage_clear,
-            // cache — transient blob LRU per keycap
+            // cache — transient blob LRU per mcp
             $crate::commands::storage::cache_get,
             $crate::commands::storage::cache_set,
             $crate::commands::storage::cache_remove,

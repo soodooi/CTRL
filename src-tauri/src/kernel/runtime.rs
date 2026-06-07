@@ -34,10 +34,10 @@ pub struct KernelRuntime {
     pub effect_executor: Arc<EffectExecutor>,
     pub event_store: Arc<EventStore>,
     /// Provider sub-system (ADR-002 substrate § provider v2). Backs `text.chat` for Pi (via
-    /// the bridge HTTP endpoint), Irisy direct invokes, and keycap MCP
+    /// the bridge HTTP endpoint), Irisy direct invokes, and mcp MCP
     /// `llm.chat` tool. Replaces the legacy `llm_port` router.
     pub provider_registry: Arc<ProviderRegistry>,
-    /// Per-keycap persistent JSON KV opened against ls_default_db_path so the
+    /// Per-mcp persistent JSON KV opened against ls_default_db_path so the
     /// MCP server's kv.* tools share state with Tauri storage commands. None
     /// when HOME isn't resolvable (CI / sandboxed test runs).
     pub local_storage: Option<Arc<LocalStorage>>,
@@ -78,7 +78,7 @@ impl KernelRuntime {
 
         let mcp_host = Arc::new(McpHost::new());
         // Hydrate the MCP server registry from disk so previously
-        // installed Pattern D keycaps re-register without the user
+        // installed Pattern D mcps re-register without the user
         // re-running the install wizard each launch. Connections lazy-
         // establish on first invoke; this only reloads descriptors.
         if let Some(reg_path) = McpHost::default_registry_path() {

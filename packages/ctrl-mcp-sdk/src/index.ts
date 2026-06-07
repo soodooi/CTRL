@@ -1,15 +1,15 @@
-// @ctrl/keycap-sdk — single stable interface for any client that consumes
-// keycaps (Irisy / PWA components / future Janus persona / 3rd-party).
+// @ctrl/mcp-sdk — single stable interface for any client that consumes
+// mcps (Irisy / PWA components / future Janus persona / 3rd-party).
 //
 // Underlying transport (MCP / Tauri direct / REST) is hidden. ADR-004 cap § execution v1 §5
-// says keycap = MCP server outward, but builtin / OAuth-wrap variants
+// says mcp = MCP server outward, but builtin / OAuth-wrap variants
 // historically dispatch via Tauri invoke. SDK normalises both paths.
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 // Re-export manifest schema types + Zod parsers so consumers don't reach
-// into a deeper module path (`@ctrl/keycap-sdk/manifest-schema`). Keep
+// into a deeper module path (`@ctrl/mcp-sdk/manifest-schema`). Keep
 // the surface flat: one package, one import path.
 export type {
   L2NavItem,
@@ -28,34 +28,34 @@ export {
 
 /* ---------- Types ---------- */
 
-export interface KeycapInfo {
+export interface McpInfo {
   id: string;
   name: string;
   description?: string;
-  /** Tools exposed by this keycap (MCP tool names). Empty = single-action keycap. */
-  tools: KeycapToolInfo[];
-  /** What kind of keycap implementation backs this. */
+  /** Tools exposed by this mcp (MCP tool names). Empty = single-action mcp. */
+  tools: McpToolInfo[];
+  /** What kind of mcp implementation backs this. */
   variant: 'builtin' | 'mcp-server' | 'oauth' | 'cli-wrapper' | 'stss-publisher';
   /** Optional platform restriction. */
   platforms?: Array<'macos' | 'windows' | 'linux'>;
 }
 
-export interface KeycapToolInfo {
+export interface McpToolInfo {
   name: string;
   description?: string;
   /** JSON Schema describing accepted args. */
   inputSchema?: unknown;
 }
 
-export interface KeycapResult {
+export interface McpResult {
   status: 'ok' | 'error' | 'cancelled' | 'permission_denied';
-  /** Tool output payload. Shape depends on the keycap. */
+  /** Tool output payload. Shape depends on the mcp. */
   data?: unknown;
   error?: string;
 }
 
-export interface KeycapEvent {
-  keycapId: string;
+export interface McpEvent {
+  mcpId: string;
   kind: 'started' | 'progress' | 'output' | 'completed' | 'failed';
   ts: number;
   payload?: unknown;
@@ -66,9 +66,9 @@ export type Unsubscribe = () => void;
 /* ---------- API ---------- */
 
 /**
- * List installed keycaps available to the current user.
+ * List installed mcps available to the current user.
  */
-export async function listKeycaps(): Promise<KeycapInfo[]> {
+export async function listMcps(): Promise<McpInfo[]> {
   try {
     // Tauri path first (desktop).
     const tools = await invoke<unknown[]>('list_tools');
@@ -80,16 +80,16 @@ export async function listKeycaps(): Promise<KeycapInfo[]> {
 }
 
 /**
- * Invoke a specific tool on a keycap. The keycap variant determines whether
+ * Invoke a specific tool on a mcp. The mcp variant determines whether
  * this routes through MCP, Tauri direct command, or REST.
  */
-export async function invokeKeycap(
+export async function invokeMcp(
   id: string,
   tool: string,
   args: unknown = {},
-): Promise<KeycapResult> {
+): Promise<McpResult> {
   try {
-    // Pattern G builtin shortcut: screenshot keycap has a dedicated Tauri cmd.
+    // Pattern G builtin shortcut: screenshot mcp has a dedicated Tauri cmd.
     if (id === 'ctrl.builtin.screenshot') {
       const r = await invoke<{ status: string; error?: string }>(
         'screenshot_capture',
@@ -100,7 +100,7 @@ export async function invokeKeycap(
         error: r.error,
       };
     }
-    // Generic Tauri path: run_action (current builtin / pre-MCP keycaps).
+    // Generic Tauri path: run_action (current builtin / pre-MCP mcps).
     const out = await invoke<unknown>('run_action', { id, tool, args });
     return { status: 'ok', data: out };
   } catch (e: unknown) {
@@ -112,15 +112,15 @@ export async function invokeKeycap(
 }
 
 /**
- * Subscribe to keycap lifecycle events (started / progress / output / done / failed).
+ * Subscribe to mcp lifecycle events (started / progress / output / done / failed).
  * Returns an unsubscribe function.
  */
-export async function onKeycapEvent(
-  handler: (event: KeycapEvent) => void,
+export async function onMcpEvent(
+  handler: (event: McpEvent) => void,
 ): Promise<Unsubscribe> {
   try {
-    const unlisten: UnlistenFn = await listen<KeycapEvent>(
-      'keycap:event',
+    const unlisten: UnlistenFn = await listen<McpEvent>(
+      'mcp:event',
       (e) => handler(e.payload),
     );
     return unlisten;
@@ -131,7 +131,7 @@ export async function onKeycapEvent(
 
 /* ---------- Helpers ---------- */
 
-function mapStatus(s: string): KeycapResult['status'] {
+function mapStatus(s: string): McpResult['status'] {
   switch (s) {
     case 'copied':
     case 'ok':
@@ -146,14 +146,14 @@ function mapStatus(s: string): KeycapResult['status'] {
   }
 }
 
-function normaliseToolDescriptor(raw: unknown): KeycapInfo {
+function normaliseToolDescriptor(raw: unknown): McpInfo {
   const r = raw as {
     id?: string;
     name?: string;
     description?: string;
     tools?: Array<{ name: string; description?: string; input_schema?: unknown }>;
-    variant?: KeycapInfo['variant'];
-    platforms?: KeycapInfo['platforms'];
+    variant?: McpInfo['variant'];
+    platforms?: McpInfo['platforms'];
   };
   return {
     id: r.id ?? 'unknown',

@@ -189,7 +189,7 @@ function OpenDiscover({ msg }: Props): JSX.Element {
   const content = (msg.content ?? {}) as OpenDiscoverContent;
   const query = content.query?.trim() ?? '';
 
-  // ADR-009 P3: a `/discover <query>` slash auto-opens the Keycap pool
+  // ADR-009 P3: a `/discover <query>` slash auto-opens the Mcp pool
   // tab (CTRL's current "browse caps" surface — bao 2026-06-03 lockdown
   // §1 unifies pool + discover under the same workspace surface).
   useOnceOnMount(() => {
@@ -197,7 +197,7 @@ function OpenDiscover({ msg }: Props): JSX.Element {
       id: 'pool',
       kind: 'route',
       path: '/pool',
-      title: 'Keycap pool',
+      title: 'Mcp pool',
     });
     expandWorkspace();
   });

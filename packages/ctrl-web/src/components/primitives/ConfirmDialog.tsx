@@ -3,7 +3,7 @@
 // Use this when the surface is "do you want to do this?" — destructive
 // resets, irreversible writes, anything where a single misclick on a
 // scattered backdrop should not commit. For form-style modals (Code
-// Space new env, keycap editor) reach for `Modal` directly and own the
+// Space new env, mcp editor) reach for `Modal` directly and own the
 // body markup.
 
 import { useRef, type ReactElement, type ReactNode } from 'react';

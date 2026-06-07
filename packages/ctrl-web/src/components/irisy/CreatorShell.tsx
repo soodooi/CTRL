@@ -1,4 +1,4 @@
-// [H-2026-05-18-001] CreatorShell — 3-zone layout for keycap-creator mode.
+// [H-2026-05-18-001] CreatorShell — 3-zone layout for mcp-creator mode.
 //
 //   ┌───────────────────────────────────────────────────────────┐
 //   │ Topbar (route-level)                       Discard ╳      │

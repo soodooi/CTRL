@@ -2,7 +2,7 @@
   "name": "@ctrl/cli",
   "version": "0.1.0",
   "private": true,
-  "description": "ctrl CLI — scaffold / dev / publish keycaps.",
+  "description": "ctrl CLI — scaffold / dev / publish mcps.",
   "type": "module",
   "bin": {
     "ctrl": "./bin/ctrl.js"
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ctrl/keycap-sdk": "*"
+    "@ctrl/mcp-sdk": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

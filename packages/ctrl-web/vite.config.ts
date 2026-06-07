@@ -12,7 +12,7 @@ const pkg = JSON.parse(
 // Zustand + vite-plugin-pwa. CSS modules + design tokens (no Tailwind by
 // default — protects against template look). framer-motion stayed in the
 // stack lock for future surfaces but is currently removed from the bundle
-// — KeycapCard is pure CSS, ClockStrip is static text.
+// — McpCard is pure CSS, ClockStrip is static text.
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
