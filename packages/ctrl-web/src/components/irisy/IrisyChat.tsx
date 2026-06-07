@@ -58,7 +58,29 @@ import { SessionListModal } from './SessionListModal';
 import { ChatHeaderControls } from './ChatHeaderControls';
 import styles from './IrisyChat.module.css';
 
-const CHAT_STORAGE_KEY = 'irisy:chat:v1';
+/** Base storage key. ADR-002 substrate § brain v15 (2026-06-07): Coding L1
+ *  tab passes `mode="coding"` and its history persists under a separate
+ *  suffix so Irisy + Coding chats never bleed into each other. */
+const persistKey_BASE = 'irisy:chat:v1';
+function chatStorageKey(mode: 'assistant' | 'coding'): string {
+  return mode === 'coding'
+    ? `${persistKey_BASE}:coding`
+    : persistKey_BASE;
+}
+
+/** Synchronous snapshot of the store's current mode for the IrisyChat
+ *  useState initializer (runs once before any subscription is wired).
+ *  ADR-002 substrate § brain v15 (2026-06-07). */
+function readInitialMode(): 'assistant' | 'coding' {
+  if (typeof window === 'undefined') return 'assistant';
+  try {
+    return useSessionStateStore.getState().mode === 'coding'
+      ? 'coding'
+      : 'assistant';
+  } catch {
+    return 'assistant';
+  }
+}
 
 interface KernelLlmStatus {
   adapter: string | null;
@@ -297,7 +319,23 @@ function buildSystemPrompt(
   return sections.join('\n\n');
 }
 
-export function IrisyChat(): React.ReactElement {
+/** ADR-002 substrate § brain v15 (2026-06-07) — `forceMode` lets the L1
+ *  Coding tab mount this chat with `mode="coding"` independent of the
+ *  global session-state store (which the Irisy tab also reads from). When
+ *  unset, behaves exactly as before: reads `mode` from the store, so the
+ *  homepage Irisy chat keeps tracking project-dir / cap toggles. */
+interface IrisyChatProps {
+  forceMode?: 'assistant' | 'coding';
+}
+
+export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElement {
+  // ADR-002 substrate § brain v15 (2026-06-07): resolve mode BEFORE the
+  // useState initializer so it can pick the mode-specific storage key on
+  // first render. `useSessionStateStore.getState()` reads the store
+  // synchronously without subscribing — the subscribed read below keeps
+  // the chat reactive to store changes for the no-forceMode case.
+  const persistKey = chatStorageKey(forceMode ?? readInitialMode());
+
   const [status, setStatus] = useState<IrisyStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [mcps, setMcps] = useState<McpSummary[]>([]);
@@ -316,14 +354,14 @@ export function IrisyChat(): React.ReactElement {
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get('fresh') === '1') {
-        window.localStorage.removeItem(CHAT_STORAGE_KEY);
+        window.localStorage.removeItem(persistKey);
         return [];
       }
     } catch {
       // URL parsing failed — fall through to normal restore path
     }
     try {
-      const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
+      const raw = window.localStorage.getItem(persistKey);
       if (!raw) return [];
       const parsed: unknown = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
@@ -356,7 +394,18 @@ export function IrisyChat(): React.ReactElement {
   // PrimaryRail (file picker → enterCodingMode) while the chat picks up
   // the change live. The catalog `availableSkills` stays local — it's a
   // read-only directory listing pulled once on mount.
-  const mode = useSessionStateStore((s) => s.mode);
+  // ADR-002 substrate § brain v15 (2026-06-07): forceMode overrides the
+  // store mode for this IrisyChat instance. Used by the L1 Coding tab to
+  // mount a chat that always targets Pi's coding session — independent of
+  // whatever the Irisy homepage is currently set to.
+  const storeMode = useSessionStateStore((s) => s.mode);
+  const effectiveMode: 'assistant' | 'coding' =
+    forceMode ?? (storeMode === 'coding' ? 'coding' : 'assistant');
+  const mode = effectiveMode;
+  // ADR-002 substrate § brain v15 (2026-06-07): persistKey was bound at top
+  // of component via the synchronous readInitialMode() snapshot so the
+  // useState initializer could pick the right localStorage key on first
+  // render. We keep using that one to avoid mid-session key churn.
   const currentSkillId = useSessionStateStore((s) => s.currentSkillId);
   const projectDir = useSessionStateStore((s) => s.projectDir);
   const wearCap = useSessionStateStore((s) => s.wearCap);
@@ -399,10 +448,10 @@ export function IrisyChat(): React.ReactElement {
     if (typeof window === 'undefined') return;
     try {
       if (messages.length === 0) {
-        window.localStorage.removeItem(CHAT_STORAGE_KEY);
+        window.localStorage.removeItem(persistKey);
       } else {
         window.localStorage.setItem(
-          CHAT_STORAGE_KEY,
+          persistKey,
           JSON.stringify(messages),
         );
       }

@@ -118,9 +118,24 @@ type PiEventName =
   | 'user_bash'
   | 'input';
 
+/** Subset of Pi's `ExtensionContext.sessionManager` we read from event
+ *  handlers. ADR-002 substrate § brain v15 (2026-06-07) — Coding mode
+ *  routes prompts to a named session ("coding-default") and this hook
+ *  reads `getSessionName()` to skip the Irisy persona override so Pi
+ *  falls back to its default coding-agent system prompt. */
+interface PiSessionManagerView {
+  getSessionName?(): string | undefined;
+  getSessionId?(): string;
+  getSessionFile?(): string;
+}
+
+interface PiEventCtx {
+  sessionManager?: PiSessionManagerView;
+}
+
 type PiEventHandler = (
   event: unknown,
-  ctx: unknown,
+  ctx: PiEventCtx,
 ) => Promise<unknown> | unknown;
 
 interface RegisterFlagOptions {
@@ -692,6 +707,17 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+/** ADR-002 substrate § brain v15 (2026-06-07) — return true when the active
+ *  Pi session belongs to the Coding L1 tab. PiBridge tags Coding sessions
+ *  with name `coding-default` (currently the only Coding session; future
+ *  per-workspace sessions would still share the `coding-` prefix). The hook
+ *  callbacks above short-circuit on `true` so Pi keeps its default
+ *  coding-agent system prompt and vault-RAG injection stays off. */
+function isCodingSession(ctx: PiEventCtx): boolean {
+  const name = ctx.sessionManager?.getSessionName?.();
+  return typeof name === 'string' && name.startsWith('coding-');
+}
+
 function safeStringField(obj: unknown, field: string): string {
   if (!isRecord(obj)) return '';
   const v = obj[field];
@@ -715,14 +741,25 @@ export default function register(pi: ExtensionApi): void {
   // (verified in @mariozechner/pi-coding-agent dist/core/agent-session.js
   // L792-797). Returning persona ALONE prevents Pi's default coding-mode
   // self-description from leaking into Irisy.
+  //
+  // ADR-002 substrate § brain v15 (2026-06-07) — Coding-mode skip. When
+  // the active Pi session is named `coding-*` (set by PiBridge per the
+  // Coding L1 tab), we return undefined here so Pi keeps its default
+  // coding-agent system prompt + tool set. Same Pi process serves both
+  // Irisy + Coding tabs via per-mode named sessions.
   const persona = buildPersona();
-  pi.on('before_agent_start', () => {
+  pi.on('before_agent_start', (_evt, ctx) => {
+    if (isCodingSession(ctx)) return; // Pi default coding-agent prompt
     return { systemPrompt: persona };
   });
 
   // ── RAG — auto-inject vault hits on every LLM call ─────────────────────
   // ADR-002 substrate § provider v10 §12.2 (2026-06-07) — auto-RAG.
-  pi.on('before_provider_request', async (evt) => {
+  // ADR-002 substrate § brain v15 (2026-06-07) — Coding-mode skip applies
+  // here too; RAG snippets shape Irisy's reasoning over user notes, not
+  // Pi's coding session over a codebase.
+  pi.on('before_provider_request', async (evt, ctx) => {
+    if (isCodingSession(ctx)) return;
     const messages = isRecord(evt) && Array.isArray(evt.messages) ? evt.messages : [];
     const last = [...messages].reverse().find((m) => isRecord(m) && m.role === 'user');
     const userText = safeStringField(last, 'content');

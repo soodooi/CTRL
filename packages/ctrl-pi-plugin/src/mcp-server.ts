@@ -73,6 +73,16 @@ const TEXT_CHAT_TOOL = {
           'Working directory Pi sees through its read/write/edit/bash tools. ' +
           'Defaults to the MCP server\'s cwd.',
       },
+      mode: {
+        type: 'string',
+        enum: ['assistant', 'coding'],
+        description:
+          'Pi session mode. "assistant" (default) = Irisy persona + vault ' +
+          'tools; "coding" = Pi default coding-agent (Read/Write/Edit/Bash/' +
+          'Grep/Find/LS, no Irisy persona). Routes the turn to a named ' +
+          'session ("irisy-default" / "coding-default") so both modes ' +
+          'coexist in one Pi process. ADR-002 substrate § brain v15.',
+      },
     },
     required: ['messages'],
   },
@@ -292,6 +302,7 @@ async function handleToolsCall(
         provider: args.provider,
         model: args.model,
         cwd: args.cwd,
+        mode: args.mode,
       },
       {
         onChunk: (c) => writeSse(res, 'delta', { delta: c.delta }),
@@ -323,6 +334,8 @@ async function handleToolsCall(
   }
 
   // Non-streaming: accumulate then return a single JSON-RPC response.
+  // ADR-002 substrate § brain v15 (2026-06-07): forward `mode` to bridge
+  // so the non-stream path routes to the same per-mode session as SSE.
   let acc = '';
   await new Promise<void>((resolve) => {
     bridge
@@ -332,6 +345,7 @@ async function handleToolsCall(
           provider: args.provider,
           model: args.model,
           cwd: args.cwd,
+          mode: args.mode,
         },
         {
           onChunk: (c) => {
@@ -446,5 +460,11 @@ interface ToolCallParams {
     provider?: string;
     model?: string;
     cwd?: string;
+    // ADR-002 substrate § brain v15 (2026-06-07): per-mode session
+    // routing. "assistant" → Irisy persona session, "coding" → Pi default
+    // coding-agent session. Both modes share one Pi process; PiBridge
+    // resolves to a named session and the persona extension reads the
+    // session name via ctx.sessionManager.getSessionName().
+    mode?: 'assistant' | 'coding';
   };
 }

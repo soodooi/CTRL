@@ -144,6 +144,15 @@ export interface ChatRequest {
   /** Working directory for Pi (controls which workspace it has visibility
    *  into). Defaults to `process.cwd()`. */
   cwd?: string;
+  /** ADR-002 substrate § brain v15 (2026-06-07) — per-mode session
+   *  routing. "assistant" (default) → named session "irisy-default"
+   *  (Irisy persona applies). "coding" → named session "coding-default"
+   *  (persona extension reads ctx.sessionManager.getSessionName(), sees
+   *  the "coding-" prefix, returns undefined from before_agent_start so
+   *  Pi keeps its default coding-agent system prompt). Both sessions
+   *  share one Pi RPC process — switchSession + a per-bridge mutex
+   *  serialise concurrent prompts from the two PWA tabs. */
+  mode?: 'assistant' | 'coding';
 }
 
 export interface ChatChunk {
@@ -175,11 +184,29 @@ export interface StreamCallbacks {
 
 const MAX_PROMPT_BYTES = 256 * 1024;
 
+/** ADR-002 substrate § brain v15 (2026-06-07). Named session per mode —
+ *  both modes coexist in one Pi RPC process, but only one is the "active"
+ *  session at any moment. The bridge cache + mutex below ensure (a) we
+ *  reuse the same on-disk session across PWA chats so history compacts in
+ *  one place, and (b) concurrent Irisy + Coding prompts can't fight over
+ *  switchSession() / prompt() ordering. */
+const MODE_SESSION_NAMES: Record<'assistant' | 'coding', string> = {
+  assistant: 'irisy-default',
+  coding: 'coding-default',
+};
+
 export class PiBridge {
   private readonly pi: PiBinary;
   private warm = false;
   private rpc: PiRpcClient | null = null;
   private rpcStarting: Promise<PiRpcClient> | null = null;
+  /** mode → session file path (resolved once per bridge lifetime; survives
+   *  Pi process restart via listSessions() lookup on first miss). */
+  private readonly sessionPaths = new Map<'assistant' | 'coding', string>();
+  /** Tail of a serialised chat queue. Each chat() chains on this so the
+   *  session-switch + prompt sequence runs atomically; concurrent callers
+   *  await their predecessor instead of racing the active-session pointer. */
+  private chatChain: Promise<void> = Promise.resolve();
 
   constructor(pi: PiBinary) {
     this.pi = pi;
@@ -205,12 +232,84 @@ export class PiBridge {
       return;
     }
 
+    // ADR-002 substrate § brain v15 (2026-06-07): serialise chats so the
+    // ensureModeSession → prompt sequence is atomic. Without this, two
+    // concurrent invocations could each switchSession() under the other,
+    // sending the wrong tab's prompt to the wrong session. We chain on
+    // `chatChain` (the previous chat's completion promise) so callers FIFO
+    // through the bridge while preserving streaming for each.
+    const prev = this.chatChain;
+    let release: () => void = () => {};
+    this.chatChain = new Promise<void>((r) => {
+      release = r;
+    });
+    try {
+      await prev;
+    } catch {
+      // A previous chat throwing must not poison the chain — swallow and
+      // proceed; the previous caller already saw its own onError.
+    }
+
+    const mode: 'assistant' | 'coding' = req.mode === 'coding' ? 'coding' : 'assistant';
     const started = Date.now();
     try {
+      await this.ensureModeSession(mode);
       await this.runPrompt(prompt, cb, started);
       this.warm = true;
     } catch (e: unknown) {
       cb.onError(e instanceof Error ? e : new Error(String(e)));
+    } finally {
+      release();
+    }
+  }
+
+  /** Ensure the named session for `mode` exists and is the Pi RPC's active
+   *  session. Cache resolves once per bridge lifetime; on a cache miss we
+   *  try `listSessions()` (recovers across CTRL restart) before creating a
+   *  fresh one. ADR-002 substrate § brain v15. */
+  private async ensureModeSession(mode: 'assistant' | 'coding'): Promise<void> {
+    const client = await this.ensureRpc();
+    const sessionName = MODE_SESSION_NAMES[mode];
+    let target = this.sessionPaths.get(mode);
+
+    if (!target) {
+      // Recovery path — Pi keeps session files on disk; a fresh PiBridge
+      // after CTRL restart should pick the existing named session rather
+      // than proliferate "irisy-default" / "coding-default" sessions on
+      // every launch.
+      const sessions = await this.listSessions();
+      const found = sessions.find((s) => s.name === sessionName);
+      if (found) {
+        target = found.path;
+      } else {
+        await callOptional(client, 'newSession');
+        await callOptional(client, 'setSessionName', sessionName);
+        const stateRaw = (await callOptional(client, 'getState')) as unknown;
+        const sessionFile =
+          isRecord(stateRaw) && typeof stateRaw['sessionFile'] === 'string'
+            ? (stateRaw['sessionFile'] as string)
+            : null;
+        if (!sessionFile) {
+          throw new Error(
+            `PiBridge.ensureModeSession(${mode}): getState() returned no sessionFile`,
+          );
+        }
+        target = sessionFile;
+      }
+      this.sessionPaths.set(mode, target);
+    }
+
+    // Only switch if Pi's active session is not already the target — saves
+    // a round-trip on the common case where the user is chatting the same
+    // tab repeatedly. switchSession runs Pi's session-shutdown hooks, so
+    // skipping the no-op switch also avoids unnecessary persona reloads.
+    const stateRaw = (await callOptional(client, 'getState')) as unknown;
+    const activeFile =
+      isRecord(stateRaw) && typeof stateRaw['sessionFile'] === 'string'
+        ? (stateRaw['sessionFile'] as string)
+        : null;
+    if (activeFile !== target) {
+      await callOptional(client, 'switchSession', target);
     }
   }
 
@@ -684,6 +783,36 @@ export class PiBridge {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+/** Type guard — narrow `unknown` to a plain object so field-access type-checks.
+ *  Shared by the session-state probe in `ensureModeSession` and the spawn-spec
+ *  fallback in `injectActiveProviderForSpawn`. */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** Invoke an optional method on `PiRpcClient`. The interface marks every
+ *  non-essential method as `?:` so a wrapper code path can still typecheck
+ *  against an older Pi without the method; at runtime we throw a clear
+ *  error rather than letting `undefined()` blow up.
+ *  ADR-002 substrate § brain v15 (2026-06-07) — newSession / setSessionName /
+ *  switchSession / getState are all `?:` on PiRpcClient by design (the
+ *  inlined view in this file is intentionally a subset of Pi's `d.ts`). */
+async function callOptional(
+  client: PiRpcClient,
+  method:
+    | 'newSession'
+    | 'setSessionName'
+    | 'switchSession'
+    | 'getState',
+  ...args: unknown[]
+): Promise<unknown> {
+  const fn = (client as unknown as Record<string, unknown>)[method];
+  if (typeof fn !== 'function') {
+    throw new Error(`PiBridge: RpcClient is missing optional method "${method}"`);
+  }
+  return await (fn as (...a: unknown[]) => Promise<unknown>).apply(client, args);
+}
 
 /**
  * Result of `injectActiveProviderForSpawn`: tells the caller what to pass to

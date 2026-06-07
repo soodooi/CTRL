@@ -203,6 +203,14 @@ async fn forward_to_brain(
         messages.push(json!({ "role": m.role, "content": m.content }));
     }
 
+    // ADR-002 substrate § brain v15 (2026-06-07, supersedes v14): wire
+    // `mode` ("assistant" | "coding") through to the MCP tool/call args
+    // so PiBridge can route the prompt to a per-mode named session
+    // (irisy-default / coding-default). Both sessions live inside the
+    // single Pi process; the persona extension reads
+    // `ctx.sessionManager.getSessionName()` and skips its Irisy
+    // override when the prefix is "coding-", leaving Pi's default
+    // coding-agent system prompt in place. bao 2026-06-07 B1 path.
     let body = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -212,6 +220,7 @@ async fn forward_to_brain(
             "arguments": {
                 "messages": messages,
                 "model": args.model,
+                "mode": args.mode,
             }
         }
     });
