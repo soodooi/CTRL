@@ -55,10 +55,11 @@ impl TrayController {
             .show_menu_on_left_click(true)
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "open-config" => {
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.show();
-                        let _ = w.set_skip_taskbar(false);
-                        let _ = w.set_focus();
+                    // reveal() handles the DWM-cloak case correctly — a bare
+                    // w.show() does NOT uncloak a cloaked WebView2 window, so
+                    // on Windows the config screen never appeared.
+                    if let Err(err) = WindowController::reveal(app) {
+                        tracing::error!(?err, "tray open-config reveal failed");
                     }
                     if let Err(err) = app.emit(EVENT_OPEN_CONFIG, ()) {
                         tracing::error!(?err, "failed to emit tray:open-config");

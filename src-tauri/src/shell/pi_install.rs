@@ -99,10 +99,21 @@ fn update_status<F: FnOnce(&mut PiInstallStatus)>(mutate: F) {
     }
 }
 
+/// Cross-platform home directory. On Windows `HOME` is usually unset, so
+/// prefer `directories::BaseDirs` (which resolves `%USERPROFILE%` /
+/// known-folder API), then fall back to `USERPROFILE`, then `HOME`.
+fn home_dir() -> Option<PathBuf> {
+    if let Some(base) = directories::BaseDirs::new() {
+        return Some(base.home_dir().to_path_buf());
+    }
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
+}
+
 /// `~/.ctrl/pi/` — the user-owned install root.
 pub fn install_root() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".ctrl").join("pi"))
+    Some(home_dir()?.join(".ctrl").join("pi"))
 }
 
 /// Absolute path to the installed Pi binary, or None when not installed.
@@ -297,16 +308,20 @@ fn install_via_npm(is_upgrade: bool) -> std::io::Result<()> {
         .arg("--silent")
         .arg(&pkg);
     if let Some(parent) = npm.parent() {
-        let parent_str = parent.to_string_lossy().to_string();
-        let existing = std::env::var("PATH").unwrap_or_default();
-        let new_path = if existing.is_empty() {
-            parent_str
-        } else if existing.split(':').any(|p| p == parent_str) {
-            existing
+        // Prepend npm's parent dir to PATH using the platform path
+        // separator (`:` on unix, `;` on Windows) so the npm script can
+        // resolve node. Skip if it's already present.
+        let existing = std::env::var_os("PATH").unwrap_or_default();
+        let already_present = std::env::split_paths(&existing).any(|p| p == parent);
+        if already_present {
+            cmd.env("PATH", existing);
         } else {
-            format!("{parent_str}:{existing}")
-        };
-        cmd.env("PATH", new_path);
+            let mut dirs = vec![parent.to_path_buf()];
+            dirs.extend(std::env::split_paths(&existing));
+            if let Ok(joined) = std::env::join_paths(dirs) {
+                cmd.env("PATH", joined);
+            }
+        }
     }
     let output = cmd.output()?;
     if !output.status.success() {
@@ -353,7 +368,26 @@ fn fetch_latest_npm_version() -> Result<String, String> {
 }
 
 fn read_pi_version(pi_bin: &Path) -> Option<String> {
-    let output = Command::new(pi_bin).arg("--version").output().ok()?;
+    // On Windows a `.cmd`/`.bat` shim can't be exec'd directly by
+    // CreateProcess — it must run through the command interpreter.
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let ext = pi_bin
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase());
+        if matches!(ext.as_deref(), Some("cmd") | Some("bat")) {
+            let mut c = Command::new("cmd");
+            c.arg("/C").arg(pi_bin);
+            c
+        } else {
+            Command::new(pi_bin)
+        }
+    };
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = Command::new(pi_bin);
+
+    let output = cmd.arg("--version").output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -373,20 +407,28 @@ fn find_binary(name: &str) -> Option<PathBuf> {
             return Some(p);
         }
     }
+    // Probe each PATH dir for the bare name and, on Windows, the executable
+    // variants (`npm` is shipped as `npm.cmd`; `.exe` for native binaries).
+    #[cfg(target_os = "windows")]
+    let names: Vec<String> =
+        vec![name.to_string(), format!("{name}.cmd"), format!("{name}.exe")];
+    #[cfg(not(target_os = "windows"))]
+    let names: Vec<String> = vec![name.to_string()];
+
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
+            for n in &names {
+                let candidate = dir.join(n);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
             }
         }
     }
-    // Common install locations a Finder-launched .app doesn't see.
-    for fallback in [
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-    ] {
+    // Common install locations a Finder-launched .app doesn't see. POSIX
+    // only — these paths are meaningless on Windows.
+    #[cfg(not(windows))]
+    for fallback in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
         let candidate = PathBuf::from(fallback).join(name);
         if candidate.is_file() {
             return Some(candidate);

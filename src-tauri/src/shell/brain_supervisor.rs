@@ -224,6 +224,7 @@ pub fn restart() -> Result<(), String> {
 /// argv (only our own MCP entry), not by port alone, so an unrelated
 /// process on 17874 is left alone. Sends SIGTERM, waits 200 ms, then
 /// SIGKILL anything still alive.
+#[cfg(not(windows))]
 fn reap_orphan_pi() {
     let output = std::process::Command::new("pgrep")
         .args(["-f", "ctrl-pi-mcp.ts"])
@@ -255,6 +256,48 @@ fn reap_orphan_pi() {
     for pid in &pids {
         let _ = std::process::Command::new("kill")
             .args(["-9", &pid.to_string()])
+            .status();
+    }
+}
+
+/// Windows orphan reaper. `pgrep`/`kill` don't exist; use WMIC to match the
+/// orphan by command line (only our own MCP entry, never by port alone) and
+/// `taskkill /F` to take it down. Best-effort: a missing WMIC (deprecated on
+/// some Win11 builds) just no-ops, matching the unix branch's tolerance.
+#[cfg(windows)]
+fn reap_orphan_pi() {
+    let output = std::process::Command::new("wmic")
+        .args([
+            "process",
+            "where",
+            "commandline like '%ctrl-pi-mcp%'",
+            "get",
+            "processid",
+        ])
+        .output();
+    let Ok(out) = output else { return };
+    if !out.status.success() {
+        return;
+    }
+    let self_pid = std::process::id();
+    let pids: Vec<u32> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        // WMIC prints a `ProcessId` header line + blank lines; keep only
+        // numeric rows and never include our own pid.
+        .filter_map(|s| s.trim().parse::<u32>().ok())
+        .filter(|p| *p != self_pid)
+        .collect();
+    if pids.is_empty() {
+        return;
+    }
+    tracing::info!(
+        count = pids.len(),
+        ?pids,
+        "BrainSupervisor: reaping orphan ctrl-pi-mcp processes from previous lifetime"
+    );
+    for pid in &pids {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
             .status();
     }
 }
@@ -391,16 +434,19 @@ fn spawn_brain(
     // shim exits 127 ("command not found") and brain_supervisor enters
     // a respawn loop. bao 2026-05-31: "pi rpc exited (code=127)".
     if let Some(parent) = node.parent() {
-        let parent_str = parent.to_string_lossy().to_string();
-        let existing = std::env::var("PATH").unwrap_or_default();
-        let new_path = if existing.is_empty() {
-            parent_str.clone()
-        } else if existing.split(':').any(|p| p == parent_str) {
-            existing
+        // Prepend node's dir to PATH using the platform path separator
+        // (`:` unix, `;` Windows). Mirrors find_node()'s split_paths usage.
+        let existing = std::env::var_os("PATH").unwrap_or_default();
+        let already_present = std::env::split_paths(&existing).any(|p| p == parent);
+        if already_present {
+            cmd.env("PATH", existing);
         } else {
-            format!("{parent_str}:{existing}")
-        };
-        cmd.env("PATH", new_path);
+            let mut dirs = vec![parent.to_path_buf()];
+            dirs.extend(std::env::split_paths(&existing));
+            if let Ok(joined) = std::env::join_paths(dirs) {
+                cmd.env("PATH", joined);
+            }
+        }
     }
     cmd.spawn()
 }
@@ -469,11 +515,16 @@ fn find_pi_plugin_dir() -> Option<PathBuf> {
     // `CTRL.app/Contents/MacOS/ctrl` for the binary and
     // `CTRL.app/Contents/Resources/ctrl-pi-plugin/` for the bundled plugin.
     if let Ok(exe) = std::env::current_exe() {
-        let candidates: [Option<PathBuf>; 2] = [
+        let candidates: [Option<PathBuf>; 3] = [
             // macOS bundle: ../Resources/ctrl-pi-plugin
             exe.parent()
                 .and_then(|p| p.parent())
                 .map(|p| p.join("Resources").join("ctrl-pi-plugin")),
+            // Windows bundle: <exe_dir>/resources/ctrl-pi-plugin (Tauri
+            // lays bundled resources in a lowercase `resources/` sibling of
+            // the exe; macOS uses `../Resources/`).
+            exe.parent()
+                .map(|p| p.join("resources").join("ctrl-pi-plugin")),
             // Generic next-to-exe layout
             exe.parent().map(|p| p.join("ctrl-pi-plugin")),
         ];
@@ -561,27 +612,63 @@ fn find_node() -> Option<PathBuf> {
         }
     }
     let mut candidates: Vec<PathBuf> = Vec::new();
-    // nvm: ~/.nvm/versions/node/<ver>/bin/node — prefer the highest version.
-    if let Some(home) = std::env::var_os("HOME") {
-        let nvm = PathBuf::from(home).join(".nvm/versions/node");
-        if let Ok(entries) = std::fs::read_dir(&nvm) {
-            let mut versions: Vec<PathBuf> = entries
-                .flatten()
-                .map(|e| e.path().join("bin/node"))
-                .filter(|p| p.is_file())
-                .collect();
-            versions.sort();
-            if let Some(latest) = versions.pop() {
-                candidates.push(latest);
+
+    // POSIX install locations a Finder-launched .app can't see.
+    #[cfg(not(windows))]
+    {
+        // nvm: ~/.nvm/versions/node/<ver>/bin/node — prefer the highest version.
+        if let Some(home) = std::env::var_os("HOME") {
+            let nvm = PathBuf::from(home).join(".nvm/versions/node");
+            if let Ok(entries) = std::fs::read_dir(&nvm) {
+                let mut versions: Vec<PathBuf> = entries
+                    .flatten()
+                    .map(|e| e.path().join("bin/node"))
+                    .filter(|p| p.is_file())
+                    .collect();
+                versions.sort();
+                if let Some(latest) = versions.pop() {
+                    candidates.push(latest);
+                }
+            }
+        }
+        candidates.push(PathBuf::from("/opt/homebrew/bin/node"));
+        candidates.push(PathBuf::from("/usr/local/bin/node"));
+        candidates.push(PathBuf::from("/usr/bin/node"));
+    }
+
+    // Windows install locations the Tauri-spawned process may not have on PATH.
+    #[cfg(windows)]
+    {
+        if let Some(pf) = std::env::var_os("ProgramFiles") {
+            candidates.push(PathBuf::from(pf).join("nodejs").join("node.exe"));
+        }
+        // nvm-windows: %APPDATA%\nvm\<ver>\node.exe — prefer the highest version.
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            let nvm = PathBuf::from(appdata).join("nvm");
+            if let Ok(entries) = std::fs::read_dir(&nvm) {
+                let mut versions: Vec<PathBuf> = entries
+                    .flatten()
+                    .map(|e| e.path().join("node.exe"))
+                    .filter(|p| p.is_file())
+                    .collect();
+                versions.sort();
+                if let Some(latest) = versions.pop() {
+                    candidates.push(latest);
+                }
             }
         }
     }
-    candidates.push(PathBuf::from("/opt/homebrew/bin/node"));
-    candidates.push(PathBuf::from("/usr/local/bin/node"));
-    candidates.push(PathBuf::from("/usr/bin/node"));
+
+    // PATH scan — probe `node` and, on Windows, `node.exe`.
+    #[cfg(windows)]
+    let node_names: [&str; 2] = ["node.exe", "node"];
+    #[cfg(not(windows))]
+    let node_names: [&str; 1] = ["node"];
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
-            candidates.push(dir.join("node"));
+            for n in node_names {
+                candidates.push(dir.join(n));
+            }
         }
     }
     candidates.into_iter().find(|p| p.is_file())

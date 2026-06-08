@@ -31,6 +31,18 @@ mod shell;
 /// only way to diagnose boot / hotkey / Accessibility behavior in the shipped
 /// app. The log is truncated on each launch (fresh per run); best-effort —
 /// falls back to stderr-only if `$HOME` can't be resolved.
+/// Cross-platform home directory. On Windows `HOME` is usually unset, so
+/// prefer `directories::BaseDirs` (`%USERPROFILE%` / known-folder API),
+/// then fall back to `USERPROFILE`, then `HOME`.
+fn home_dir() -> Option<std::path::PathBuf> {
+    if let Some(base) = directories::BaseDirs::new() {
+        return Some(base.home_dir().to_path_buf());
+    }
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(std::path::PathBuf::from)
+}
+
 fn init_tracing() {
     use tracing_subscriber::prelude::*;
 
@@ -38,24 +50,35 @@ fn init_tracing() {
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     let stderr_layer = tracing_subscriber::fmt::layer();
 
-    let log_path = std::env::var_os("HOME").map(|home| {
-        let dir = std::path::PathBuf::from(home).join(".ctrl");
+    let log_path = home_dir().map(|home| {
+        let dir = home.join(".ctrl");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("ctrl.log");
         let _ = std::fs::File::create(&path); // truncate: fresh log per launch
         path
     });
 
+    // The platform null device — `NUL` on Windows, `/dev/null` elsewhere.
+    let null_device = if cfg!(windows) { "NUL" } else { "/dev/null" };
+
     match log_path {
         Some(path) => {
             let file_layer = tracing_subscriber::fmt::layer()
                 .with_ansi(false)
-                .with_writer(move || {
-                    std::fs::OpenOptions::new()
+                .with_writer(move || -> Box<dyn std::io::Write> {
+                    match std::fs::OpenOptions::new()
                         .create(true)
                         .append(true)
                         .open(&path)
-                        .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap())
+                    {
+                        Ok(f) => Box::new(f),
+                        // Fall back to the null device, then stderr, so a
+                        // failed log open can never panic the writer.
+                        Err(_) => match std::fs::File::create(null_device) {
+                            Ok(f) => Box::new(f),
+                            Err(_) => Box::new(std::io::stderr()),
+                        },
+                    }
                 });
             let _ = tracing_subscriber::registry()
                 .with(filter)

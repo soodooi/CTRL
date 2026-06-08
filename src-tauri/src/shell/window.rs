@@ -132,11 +132,18 @@ impl WindowController {
             let was_cloaked = cloak::is_cloaked(&w).unwrap_or(false);
             if was_cloaked {
                 tracing::info!("WindowController::toggle — uncloak (show)");
+                // Permit the foreground transition before uncloaking — Win11
+                // blocks SetForegroundWindow from a background process, so
+                // without this set_focus() below silently leaves keyboard
+                // focus in the previously-active app and the user can't type
+                // into Irisy.
+                cloak::allow_set_foreground();
                 cloak::set(&w, false);
                 // Reset hotkey state when window is shown to prevent interference
                 super::hotkey::HotkeyController::reset_state();
-                // Don't set focus - this allows hotkey to work while window is visible
-                // let _ = w.set_focus();
+                // Pull keyboard focus to the launcher so the user can type
+                // into Irisy immediately after summoning.
+                let _ = w.set_focus();
             } else {
                 tracing::info!("WindowController::toggle — cloak (hide)");
                 cloak::set(&w, true);
@@ -278,7 +285,12 @@ impl WindowController {
             // Mirrors toggle()'s hide branch.
             #[cfg(target_os = "macos")]
             let _ = w.hide();
-            #[cfg(not(target_os = "macos"))]
+            // Windows: cloak (not destroy) so the WebView2 PWA state survives
+            // — destroying discards the mounted PWA and forces a ~300ms cold
+            // rebuild on next summon. Mirrors toggle()'s cloak branch.
+            #[cfg(target_os = "windows")]
+            cloak::set(&w, true);
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             let _ = w.destroy();
         }
         // Sync hide the input companion window too.
@@ -302,9 +314,30 @@ mod cloak {
     use windows_sys::Win32::Graphics::Dwm::{
         DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_CLOAK, DWMWA_CLOAKED,
     };
+    use windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
+
+    /// `ASFW_ANY` — permit any process to call SetForegroundWindow. We use
+    /// this (rather than our own PID) because `GetCurrentProcessId` would
+    /// require the `Win32_System_Threading` feature; `ASFW_ANY` only needs
+    /// `Win32_UI_WindowsAndMessaging`, which is already enabled. The window
+    /// is uncloaked + focused immediately after, so the relaxed permission
+    /// has no practical exposure window.
+    const ASFW_ANY: u32 = u32::MAX;
 
     fn hwnd(w: &WebviewWindow) -> Option<HWND> {
         w.hwnd().ok().map(|h| h.0 as HWND)
+    }
+
+    /// Lift Win11's foreground-lock so the subsequent `set_focus()` actually
+    /// pulls keyboard focus to the launcher instead of being demoted to a
+    /// taskbar flash. Best-effort; a failure just means focus may stay put.
+    pub(super) fn allow_set_foreground() {
+        // SAFETY: AllowSetForegroundWindow is a documented Win32 API taking a
+        // process id (or ASFW_ANY). No pointers, no aliasing — the call is
+        // sound regardless of return value.
+        unsafe {
+            AllowSetForegroundWindow(ASFW_ANY);
+        }
     }
 
     pub(super) fn set(w: &WebviewWindow, cloaked: bool) {
