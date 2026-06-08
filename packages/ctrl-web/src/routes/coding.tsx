@@ -1,27 +1,56 @@
-// Coding — ADR-002 substrate § brain v15 (2026-06-07).
+// Coding — ADR-002 substrate § brain v16 (2026-06-07).
 //
-// Pi-native coding tab. Shares the same Pi RPC process as the Irisy
-// homepage chat (port 17874) but pins `forceMode="coding"` so the
-// IrisyChat component:
-//   1. Sends `mode:"coding"` to the kernel `irisy_chat_stream` command,
-//      which forwards it through the MCP `text.chat` tool arguments.
-//   2. PiBridge.ensureModeSession routes the prompt to a named session
-//      `coding-default` (created on first use, reused across PWA reloads
-//      via listSessions lookup so the on-disk history stays in one file).
-//   3. Both persona extensions (CTRL-bundled `packages/ctrl-pi-bridge` +
-//      external `irisy-persona`) read `ctx.sessionManager.getSessionName()`
-//      and short-circuit on the `coding-` prefix, leaving Pi with its
-//      default coding-agent system prompt + 7 builtin tools
-//      (Read / Write / Edit / Bash / Grep / Find / LS) untouched.
-//   4. Chat history persists under its own `irisy:chat:v1:coding`
-//      localStorage key so the two tabs never bleed into each other.
+// L1 Coding tab — 2-column split:
+//   left  ~40% = `<CodingArtifactPane />` (files Pi has Write/Edit'd,
+//                 fetched via `pi_rpc('getMessages')` after each chat
+//                 done event)
+//   right ~60% = `<IrisyChat forceMode="coding" />` (Pi default
+//                 coding-agent persona — Irisy persona extension
+//                 short-circuits on the `coding-` session name prefix
+//                 set by `PiBridge.ensureModeSession`)
 //
-// v11 (cs_spawn pi TUI inside xterm) + v13 (slim cs_spawn) + v14 (clean
-// placeholder) baselined the rebuild. This is the Pi-native ship.
+// v15 shipped the Pi-native routing (forceMode + mode wire + per-mode
+// session + persona dual-skip) but kept the chat as a single pane,
+// which left code dumped inline in the chat bubble. v16 splits the UX
+// so the chat stays focused on dialog while file output lands in a
+// dedicated viewer (bao 2026-06-07 ask: split layout for Coding).
 
 import type { ReactElement } from 'react';
 import { IrisyChat } from '@/components/irisy/IrisyChat';
+import { CodingArtifactPane } from '@/components/coding/CodingArtifactPane';
 
 export const CodingRoute = (): ReactElement => {
-  return <IrisyChat forceMode="coding" />;
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'row',
+        minHeight: 0,
+        minWidth: 0,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          flex: '0 0 40%',
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+        }}
+      >
+        <CodingArtifactPane />
+      </div>
+      <div
+        style={{
+          flex: '1 1 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+        }}
+      >
+        <IrisyChat forceMode="coding" />
+      </div>
+    </div>
+  );
 };
