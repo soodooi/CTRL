@@ -24,6 +24,44 @@ use serde_json::Value;
 const PI_RPC_URL: &str = "http://127.0.0.1:17874/api/pi-rpc";
 const PI_SESSIONS_URL: &str = "http://127.0.0.1:17874/api/sessions";
 
+/// Allowlist of Pi RpcClient methods reachable through this pass-through.
+///
+/// The command previously forwarded ANY `method` string straight to Pi,
+/// so a compromised/abusive PWA context could invoke unintended internal
+/// RPC surface. We gate on the exact set the PWA's typed wrappers expose
+/// (`packages/ctrl-web/src/lib/usePiRpc.ts`); adding a Pi method is a
+/// one-line edit here. Keep this in sync with the TS wrappers.
+const ALLOWED_PI_RPC_METHODS: &[&str] = &[
+    "newSession",
+    "switchSession",
+    "fork",
+    "clone",
+    "getForkMessages",
+    "setSessionName",
+    "getState",
+    "getSessionStats",
+    "getMessages",
+    "getLastAssistantText",
+    "steer",
+    "followUp",
+    "abort",
+    "setSteeringMode",
+    "setFollowUpMode",
+    "getAvailableModels",
+    "setModel",
+    "cycleModel",
+    "setThinkingLevel",
+    "cycleThinkingLevel",
+    "compact",
+    "setAutoCompaction",
+    "setAutoRetry",
+    "abortRetry",
+    "bash",
+    "abortBash",
+    "exportHtml",
+    "getCommands",
+];
+
 #[derive(Debug, Serialize, Deserialize)]
 struct RpcReq {
     method: String,
@@ -41,6 +79,10 @@ struct RpcResp {
 /// error string from Pi.
 #[tauri::command]
 pub async fn pi_rpc(method: String, args: Option<Vec<Value>>) -> Result<Value, String> {
+    if !ALLOWED_PI_RPC_METHODS.contains(&method.as_str()) {
+        tracing::warn!(method = %method, "pi_rpc: rejected non-allowlisted method");
+        return Err(format!("pi_rpc: method {method:?} is not permitted"));
+    }
     let req = RpcReq {
         method,
         args: args.unwrap_or_default(),

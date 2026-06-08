@@ -21,6 +21,7 @@ use anyhow::Result;
 use futures::{SinkExt, StreamExt};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use subtle::ConstantTimeEq;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
@@ -30,7 +31,7 @@ use tokio_tungstenite::{accept_hdr_async, WebSocketStream};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::kernel::event::{Cell, Event, Op};
+use crate::kernel::event::{Cell, Event, Op, OpKind};
 
 /// WS listen address. Mirrors ADR-003 frontend §3 "kernel daemon @ localhost:17872".
 pub const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:17872";
@@ -41,6 +42,51 @@ pub const BROADCAST_BUFFER: usize = 64;
 
 /// Outcome of authorizing an inbound Op. Returning Err short-circuits dispatch.
 pub type CapabilityCheck = Arc<dyn Fn(&Op) -> Result<(), String> + Send + Sync>;
+
+/// Restrictive default authorization for inbound Ops from anonymous WS
+/// clients (the PWA). A full per-session `CapabilityBroker` model for WS
+/// clients does not exist yet, so until it lands we DENY by default and
+/// permit ONLY the Op kinds the PWA legitimately originates over the bridge.
+///
+/// The allowlist is derived from `event.rs`, where the inbound (PWA → kernel)
+/// Op kinds are explicitly documented:
+///   - SubprocessStdin / SubprocessResize / SubprocessSignal  (subprocess v1)
+///   - AgentPrompt / AgentInterrupt / EnvSignal / FileRequest (v0.7 coding-env)
+///   - HotkeyTriggered                                        (UI hotkey relay)
+///
+/// Everything else — MCP lifecycle, LLM call events, actor lifecycle, mesh
+/// sync events, and the outbound Subprocess{Stdout,Exit,Spawned} echoes — is
+/// kernel/actor-originated and MUST NOT be accepted from a WS client, as that
+/// would let an authenticated-but-untrusted client forge privileged events.
+fn is_pwa_originated(kind: OpKind) -> bool {
+    matches!(
+        kind,
+        OpKind::SubprocessStdin
+            | OpKind::SubprocessResize
+            | OpKind::SubprocessSignal
+            | OpKind::AgentPrompt
+            | OpKind::AgentInterrupt
+            | OpKind::EnvSignal
+            | OpKind::FileRequest
+            | OpKind::HotkeyTriggered
+    )
+}
+
+/// Build the default capability check: a restrictive allowlist (deny-by-default)
+/// over inbound Op kinds. Keeps the `CapabilityCheck` shape so call sites are
+/// unchanged. Replaces the former allow-all stub (OWASP A01 blocker).
+fn default_cap_check() -> CapabilityCheck {
+    Arc::new(|op: &Op| {
+        if is_pwa_originated(op.kind) {
+            Ok(())
+        } else {
+            Err(format!(
+                "op kind {:?} is not permitted from a WS client (deny-by-default allowlist)",
+                op.kind
+            ))
+        }
+    })
+}
 
 /// Public handle the rest of the kernel uses to push events out + receive
 /// Ops from the world. Clone freely; broadcast::Sender supports many writers.
@@ -97,10 +143,11 @@ impl StssBridge {
         F: Fn(Op) + Send + Sync + 'static,
     {
         let on_op_arc: Arc<dyn Fn(Op) + Send + Sync> = Arc::new(on_op);
-        // Default capability check: allow everything (the kernel wires real
-        // CapabilityBroker as it lands). The shape stays so the call site
-        // doesn't change.
-        let allow_all: CapabilityCheck = Arc::new(|_op: &Op| Ok(()));
+        // Default capability check: restrictive deny-by-default allowlist over
+        // inbound Op kinds (see `default_cap_check`). Replaces the former
+        // allow-all stub. The kernel can swap in a real per-session
+        // CapabilityBroker later; the shape stays so the call site is stable.
+        let cap_check = default_cap_check();
 
         let listener = TcpListener::bind(addr).await?;
         info!("kernel::stss_bridge listening on {addr}");
@@ -112,7 +159,7 @@ impl StssBridge {
                     Ok((stream, peer)) => {
                         let bridge_for_conn = bridge.clone();
                         let on_op = on_op_arc.clone();
-                        let cap = allow_all.clone();
+                        let cap = cap_check.clone();
                         let expected_token = bridge.auth_token.clone();
                         tokio::spawn(async move {
                             if let Err(e) = handle_connection(
@@ -162,7 +209,7 @@ async fn handle_connection(
         move |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
             let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("");
             let provided = extract_query_param(path_and_query, "token").unwrap_or_default();
-            if provided == expected_token.as_str() {
+            if tokens_match(provided, expected_token.as_str()) {
                 Ok(resp)
             } else {
                 let mut err = ErrorResponse::new(Some("missing or invalid token".into()));
@@ -259,6 +306,22 @@ async fn send_event(
     Ok(())
 }
 
+/// Constant-time auth-token comparison. Avoids the timing oracle of `==` /
+/// `str::eq`, which short-circuits at the first differing byte and leaks how
+/// much of a guessed prefix is correct.
+///
+/// `subtle::ct_eq` is only constant-time over equal-length inputs; comparing
+/// differing lengths still varies in time. The auth token is a fixed-length
+/// UUID generated per process, so its length is not secret — we reject a
+/// length mismatch up front (no secret bytes inspected), then run the
+/// constant-time byte compare on the equal-length case.
+fn tokens_match(provided: &str, expected: &str) -> bool {
+    if provided.len() != expected.len() {
+        return false;
+    }
+    provided.as_bytes().ct_eq(expected.as_bytes()).into()
+}
+
 /// Minimal URL query string parser — pulls the first `key=value` pair whose
 /// key matches `name`. Avoids pulling in the `url` crate for a single use.
 fn extract_query_param<'a>(path_and_query: &'a str, name: &str) -> Option<&'a str> {
@@ -284,5 +347,60 @@ mod tests {
         assert_eq!(extract_query_param("/socket?token=", "token"), Some(""));
         assert_eq!(extract_query_param("/socket", "token"), None);
         assert_eq!(extract_query_param("/socket?other=1", "token"), None);
+    }
+
+    #[test]
+    fn tokens_match_constant_time_semantics() {
+        assert!(tokens_match("abc123", "abc123"));
+        assert!(!tokens_match("abc123", "abc124"));
+        // length mismatch (prefix of the real token) must not authorize
+        assert!(!tokens_match("abc", "abc123"));
+        assert!(!tokens_match("", "abc123"));
+        assert!(tokens_match("", ""));
+    }
+
+    fn op(kind: OpKind) -> Op {
+        Op {
+            kind,
+            ts_ms: 0,
+            stream_id: None,
+            payload: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn default_cap_check_allows_pwa_originated_kinds() {
+        let cap = default_cap_check();
+        for kind in [
+            OpKind::SubprocessStdin,
+            OpKind::SubprocessResize,
+            OpKind::SubprocessSignal,
+            OpKind::AgentPrompt,
+            OpKind::AgentInterrupt,
+            OpKind::EnvSignal,
+            OpKind::FileRequest,
+            OpKind::HotkeyTriggered,
+        ] {
+            assert!(cap(&op(kind)).is_ok(), "expected {kind:?} to be allowed");
+        }
+    }
+
+    #[test]
+    fn default_cap_check_denies_privileged_kinds() {
+        let cap = default_cap_check();
+        // Kernel/actor-originated kinds a WS client must never be able to forge.
+        for kind in [
+            OpKind::McpInvoked,
+            OpKind::McpCompleted,
+            OpKind::LlmCallStarted,
+            OpKind::ActorSpawned,
+            OpKind::ActorTerminated,
+            OpKind::MeshDeviceJoined,
+            OpKind::SubprocessStdout,
+            OpKind::SubprocessExit,
+            OpKind::SubprocessSpawned,
+        ] {
+            assert!(cap(&op(kind)).is_err(), "expected {kind:?} to be denied");
+        }
     }
 }

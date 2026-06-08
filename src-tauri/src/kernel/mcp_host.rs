@@ -68,9 +68,65 @@ pub enum McpServerSource {
     Http { url: String },
 }
 
+/// Shell interpreters that can `eval` an arbitrary string. Spawning any
+/// of these with an eval-style flag turns the "local binary" source into
+/// arbitrary shell execution, so we reject that combination.
+const SHELL_INTERPRETERS: &[&str] = &["sh", "bash", "zsh", "dash", "ash", "fish", "cmd", "powershell", "pwsh"];
+
+/// Argument flags that make a shell interpreter read a command from a
+/// string/stdin rather than a script file (`sh -c '...'`, `pwsh -Command`).
+const SHELL_EVAL_FLAGS: &[&str] = &["-c", "-e", "/c", "/k", "-command", "-encodedcommand"];
+
 impl McpServerSource {
+    /// Validate a `Local` source before it is ever turned into a spawn
+    /// Command (OWASP A03 — arbitrary binary / command execution).
+    ///
+    /// Rules:
+    ///   - `command` MUST be an absolute path (reject relative names that
+    ///     resolve via PATH — an attacker-planted `node` shadow, etc.).
+    ///   - reject shell interpreters (`sh`/`bash`/`cmd`/`powershell`/…)
+    ///     combined with an eval-style flag (`-c`/`/c`/`-Command`/…),
+    ///     which would let a manifest run an arbitrary command string.
+    ///   - the resolved path MUST exist and canonicalize to a file.
+    /// Npm/Pypi/Http sources have a fixed, trusted launcher and are not
+    /// subject to these checks.
+    pub fn validate(&self) -> Result<(), McpHostError> {
+        let McpServerSource::Local { command, args } = self else {
+            return Ok(());
+        };
+        let path = Path::new(command);
+        if !path.is_absolute() {
+            return Err(McpHostError::CommandRejected(format!(
+                "local command must be an absolute path, got {command:?}"
+            )));
+        }
+        let file_stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if SHELL_INTERPRETERS.contains(&file_stem.as_str()) {
+            let has_eval_flag = args.iter().any(|a| {
+                let lowered = a.to_ascii_lowercase();
+                SHELL_EVAL_FLAGS.contains(&lowered.as_str())
+            });
+            if has_eval_flag {
+                return Err(McpHostError::CommandRejected(format!(
+                    "shell interpreter {file_stem:?} with an eval flag is not allowed"
+                )));
+            }
+        }
+        // Canonicalize last: confirms the binary exists and resolves
+        // symlinks/`..` so the spawned path is the real on-disk target.
+        std::fs::canonicalize(path).map_err(|e| {
+            McpHostError::CommandRejected(format!("local command {command:?} not resolvable: {e}"))
+        })?;
+        Ok(())
+    }
+
     /// Build the spawn Command for child-process transports.
-    /// Returns None for Http source.
+    /// Returns None for Http source. Callers MUST call `validate()` first
+    /// for untrusted sources (see `McpHost::connect`).
     pub fn to_command(&self) -> Option<Command> {
         match self {
             McpServerSource::Npm { package, args } => {
@@ -144,6 +200,10 @@ impl McpHost {
                 .cloned()
                 .ok_or_else(|| McpHostError::NotInstalled(server_id.into()))?
         };
+
+        // OWASP A03: reject unsafe Local sources (relative path / shell
+        // eval) before spawning anything.
+        desc.source.validate()?;
 
         let cmd = desc
             .source
@@ -309,6 +369,8 @@ pub enum McpHostError {
     NotConnected(String),
     #[error("transport not supported: {0}")]
     TransportUnsupported(String),
+    #[error("local command rejected: {0}")]
+    CommandRejected(String),
     #[error("failed to spawn child process: {0}")]
     SpawnFailed(String),
     #[error("MCP handshake failed: {0}")]

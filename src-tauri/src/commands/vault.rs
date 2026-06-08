@@ -645,8 +645,26 @@ pub struct IrisySoulView {
     pub soul_md_version: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub struct IrisySoulReadArgs {
+    /// Calling mcp's id. Absent = "ctrl-system" full-access (PWA /
+    /// first-run / debug), matching every other vault command. Scopes the
+    /// `VaultRead` capability check to the SOUL.md path.
+    #[serde(default)]
+    pub mcp_id: Option<String>,
+}
+
 #[tauri::command]
-pub async fn irisy_soul_read() -> Result<IrisySoulView, String> {
+pub async fn irisy_soul_read(
+    args: Option<IrisySoulReadArgs>,
+) -> Result<IrisySoulView, String> {
+    let args = args.unwrap_or_default();
+    check_cap(
+        args.mcp_id.as_deref(),
+        &CapToken::VaultRead {
+            path_glob: SOUL_REL_PATH.to_string(),
+        },
+    )?;
     let root = vault_root()?;
     let entry = vault::read(&root, SOUL_REL_PATH)
         .map_err(|e| format!("irisy_soul_read: {e}"))?;
@@ -667,10 +685,22 @@ pub async fn irisy_soul_read() -> Result<IrisySoulView, String> {
 pub struct IrisySoulWriteArgs {
     pub frontmatter: serde_json::Value,
     pub body: String,
+    /// Calling mcp's id. Absent = "ctrl-system" full-access (PWA /
+    /// first-run / debug), matching every other vault command. Scopes the
+    /// `VaultWrite` capability check to the SOUL.md path so an arbitrary
+    /// caller cannot plant prompt-injection into Irisy's persistent memory.
+    #[serde(default)]
+    pub mcp_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn irisy_soul_write(args: IrisySoulWriteArgs) -> Result<(), String> {
+    check_cap(
+        args.mcp_id.as_deref(),
+        &CapToken::VaultWrite {
+            path_glob: SOUL_REL_PATH.to_string(),
+        },
+    )?;
     let root = vault_root()?;
     vault::write(&root, SOUL_REL_PATH, &args.body, &args.frontmatter)
         .map_err(|e| format!("irisy_soul_write: {e}"))?;

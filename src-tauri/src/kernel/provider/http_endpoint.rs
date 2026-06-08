@@ -21,15 +21,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
+    body::Body,
+    extract::{Path, Request, State},
+    http::{header, HeaderMap, StatusCode},
+    middleware::{self, Next},
     response::sse::{Event, Sse},
-    response::IntoResponse,
-    routing::{get, post},
+    response::{IntoResponse, Response},
+    routing::post,
     Json, Router,
 };
-use tauri::Emitter;
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
 use tokio::net::TcpListener;
 
 use super::registry::ProviderRegistry;
@@ -44,6 +46,12 @@ use crate::shell::KernelHandle;
 pub const DEFAULT_PORT: u16 = 17878;
 pub const ENV_PORT_OVERRIDE: &str = "CTRL_PROVIDER_PORT";
 
+/// Env var carrying the per-boot bearer token. Provisioned synchronously
+/// by `KernelSupervisor::start` before any task spawns (shared with Pi's
+/// provider extension via process-env inheritance). Mirrors the
+/// `CTRL_KERNEL_MCP_TOKEN` scheme used by the kernel MCP server.
+pub const ENV_PROVIDER_TOKEN: &str = "CTRL_PROVIDER_TOKEN";
+
 /// Spawn the axum server on a background tokio task. Returns the bound
 /// port (useful when port 0 was requested or the env-var override
 /// pointed at a different port). The server runs until the tokio
@@ -55,6 +63,20 @@ pub const ENV_PORT_OVERRIDE: &str = "CTRL_PROVIDER_PORT";
 /// /tool/<name> needs the full handle for run_mcp event publishing +
 /// mcp_host access.
 pub async fn spawn(handle: KernelHandle) -> Result<u16, String> {
+    // Fail closed: the endpoint exposes provider routing + kernel-tool
+    // dispatch (vault read/write, mcp install/run). Refusing to serve when
+    // the token is absent is safer than serving unauthenticated. The token
+    // is always set by KernelSupervisor::start at boot, so an empty/unset
+    // value here means a boot-sequence regression — surface it loudly.
+    let token = match std::env::var(ENV_PROVIDER_TOKEN) {
+        Ok(t) if !t.is_empty() => Arc::new(t),
+        _ => {
+            return Err(format!(
+                "{ENV_PROVIDER_TOKEN} unset/empty — refusing to serve provider endpoint without auth"
+            ));
+        }
+    };
+
     let port = resolve_port();
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
     let listener = TcpListener::bind(addr)
@@ -68,9 +90,15 @@ pub async fn spawn(handle: KernelHandle) -> Result<u16, String> {
     // /api/active-providers — Pi now spawns with the real provider+model
     // directly, so Pi's `getState` is the truth. Nothing inside the Pi
     // process needs to fetch SSOT projection any more.
+    //
+    // OWASP A01: every route is gated by `require_bearer`, which also
+    // rejects cross-origin browser requests (no CORS reflection). This is
+    // a loopback-only endpoint for the in-process Pi provider extension —
+    // there is no legitimate cross-origin caller.
     let app = Router::new()
         .route("/text-chat", post(text_chat))
         .route("/tool/{name}", post(tool_dispatch))
+        .layer(middleware::from_fn_with_state(token, require_bearer))
         .with_state(handle);
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, app).await {
@@ -86,6 +114,37 @@ fn resolve_port() -> u16 {
         Ok(raw) => raw.parse().unwrap_or(DEFAULT_PORT),
         Err(_) => DEFAULT_PORT,
     }
+}
+
+/// Auth + CORS gate for every provider route (OWASP A01).
+///
+/// 1. Cross-origin denial: a present `Origin` header means a browser
+///    issued the request. This endpoint serves only the same-process Pi
+///    provider extension; we never reflect `Origin` and reject any
+///    cross-origin call outright (no `Access-Control-Allow-Origin` is
+///    ever emitted, so browsers also block reading the response).
+/// 2. Bearer auth: require `Authorization: Bearer <CTRL_PROVIDER_TOKEN>`,
+///    compared in constant time to avoid a timing side channel.
+async fn require_bearer(
+    State(expected): State<Arc<String>>,
+    headers: HeaderMap,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    if headers.contains_key(header::ORIGIN) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    match extract_bearer(&headers) {
+        Some(t) if bool::from(t.as_bytes().ct_eq(expected.as_bytes())) => Ok(next.run(req).await),
+        _ => Err(StatusCode::UNAUTHORIZED),
+    }
+}
+
+fn extract_bearer(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
 }
 
 #[derive(Debug, Deserialize)]
