@@ -1,221 +1,169 @@
-// Unit tests for the Pi bridge extension. We exercise the registration
-// shape + the SSE parsing path via a stubbed `fetch`. End-to-end is
-// covered by the brain supervisor's integration test.
+// Unit tests for the Pi bridge extension's `register()` entry point.
 //
-// Contract under test (bao 2026-05-31 118-trail rewrite): streamSimple
-// returns a BridgeEventStream synchronously. Errors flow through the
-// stream as `error` events (Pi's `AssistantMessageEventStream` shape) —
-// they do NOT throw out of streamSimple itself.
+// Contract under test (ADR-002 substrate § provider v9/v10 + brain v15):
+// the extension was rewritten away from registering an LLM provider
+// (`registerProvider` + `streamSimple`) toward a THIN extension that only
+// wires Pi's published `ExtensionAPI`: `pi.on(...)` event hooks (persona,
+// vault-RAG, audit), `pi.registerTool(...)` for vault + skill tools,
+// `pi.registerFlag(...)`, and `pi.registerCommand(...)`. These tests assert
+// that new surface — register() must NOT call registerProvider, and it must
+// wire the expected event handlers + tools.
 
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import register, {
-  BRIDGE_ENV_PORT,
-  BRIDGE_MODEL_NAME,
-  BRIDGE_PROVIDER_NAME,
-  BridgeEventStream,
-  type PiAssistantMessageEvent,
-  type PiExtensionApi,
-  type PiProvider,
-} from '../index.js';
+import { describe, expect, it, vi } from 'vitest';
+import register from '../index.js';
 
-describe('register', () => {
-  it('registers a single ctrl-bridge provider with one default model', () => {
-    const seen: Record<string, PiProvider> = {};
-    const api: PiExtensionApi = makeMockApi({
-      registerProvider: (id, provider) => {
-        seen[id] = provider;
-      },
-    });
-    register(api);
-    expect(Object.keys(seen)).toEqual([BRIDGE_PROVIDER_NAME]);
-    expect(seen[BRIDGE_PROVIDER_NAME]?.api).toBe(BRIDGE_PROVIDER_NAME);
-    expect(seen[BRIDGE_PROVIDER_NAME]?.models).toEqual([BRIDGE_MODEL_NAME]);
-  });
-});
+// Structural mirror of the subset of Pi's ExtensionAPI that register()
+// touches. The real interface is not exported from index.ts (it is a local
+// contract snapshot), so we mirror it here for the mock.
+interface ToolLike {
+  name: string;
+  execute: (...a: unknown[]) => Promise<unknown>;
+}
+interface MockApi {
+  on: ReturnType<typeof vi.fn>;
+  registerTool: ReturnType<typeof vi.fn>;
+  registerCommand: ReturnType<typeof vi.fn>;
+  registerFlag: ReturnType<typeof vi.fn>;
+  registerProvider: ReturnType<typeof vi.fn>;
+}
 
-// Make a PiExtensionApi mock that fulfils every surface ctrl-pi-bridge
-// touches (ADR-002 brain v7 1.1) — registerProvider, registerTool, and
-// `on()` for the three event names we hook. Tests can override individual
-// fields; everything else is a no-op stub.
-function makeMockApi(overrides: Partial<PiExtensionApi> = {}): PiExtensionApi {
+function makeMockApi(): MockApi {
   return {
-    registerProvider: () => undefined,
-    registerTool: () => undefined,
-    // ADR-009 §1.2 / §1.3 / §1.4 new surfaces (P1-P5). All optional —
-    // the bridge guards every call with `if (pi.foo) {...}` so a Pi
-    // version that lacks them still loads cleanly. Mock returns no-op
-    // implementations so tests don't crash when calling them.
-    registerCommand: () => undefined,
-    registerMessageRenderer: () => undefined,
-    sendMessage: () => undefined,
-    sendUserMessage: () => undefined,
-    setActiveTools: () => undefined,
-    getActiveTools: () => [],
-    on: () => undefined,
-    ...overrides,
+    on: vi.fn(),
+    registerTool: vi.fn(),
+    registerCommand: vi.fn(),
+    registerFlag: vi.fn(),
+    registerProvider: vi.fn(),
   };
 }
 
-describe('streamSimple', () => {
-  let originalFetch: typeof fetch;
-  let originalPort: string | undefined;
+/** Collect the event names register() subscribed via pi.on(). */
+function subscribedEvents(api: MockApi): string[] {
+  return api.on.mock.calls.map((c) => c[0] as string);
+}
 
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-    originalPort = process.env[BRIDGE_ENV_PORT];
-    process.env[BRIDGE_ENV_PORT] = '17875';
+/** Find the handler register() bound for a given pi.on() event. */
+function handlerFor(
+  api: MockApi,
+  event: string,
+): (event: unknown, ctx: unknown) => Promise<unknown> | unknown {
+  const call = api.on.mock.calls.find((c) => c[0] === event);
+  if (!call) throw new Error(`no handler registered for "${event}"`);
+  return call[1] as (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
+}
+
+/** Collect registered tool names. */
+function registeredToolNames(api: MockApi): string[] {
+  return api.registerTool.mock.calls.map((c) => (c[0] as ToolLike).name);
+}
+
+describe('register — new ExtensionAPI contract', () => {
+  it('does NOT register an LLM provider (provider was retired in v9)', () => {
+    const api = makeMockApi();
+    register(api as never);
+    expect(api.registerProvider).not.toHaveBeenCalled();
   });
 
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    if (originalPort === undefined) {
-      delete process.env[BRIDGE_ENV_PORT];
-    } else {
-      process.env[BRIDGE_ENV_PORT] = originalPort;
+  it('wires the core event hooks (persona, RAG, audit, lifecycle)', () => {
+    const api = makeMockApi();
+    register(api as never);
+    const events = subscribedEvents(api);
+    // Persona override + auto-RAG + the audit/lifecycle hooks the extension
+    // depends on must all be present.
+    for (const required of [
+      'before_agent_start',
+      'before_provider_request',
+      'after_provider_response',
+      'tool_call',
+      'tool_result',
+      'turn_end',
+      'user_bash',
+      'agent_start',
+      'agent_end',
+      'session_start',
+    ]) {
+      expect(events).toContain(required);
     }
   });
 
-  it('emits start / text_start / text_delta / text_end / done sequence', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      sseResponse([
-        'event: delta',
-        'data: {"delta":"hello "}',
-        '',
-        'event: delta',
-        'data: {"delta":"world"}',
-        '',
-        'event: done',
-        'data: {"stop_reason":"end_turn"}',
-        '',
-      ]),
-    ) as unknown as typeof fetch;
-
-    const provider = collectProvider();
-    const stream = provider.streamSimple(BRIDGE_MODEL_NAME, {
-      messages: [{ role: 'user', content: 'hi' }],
-    });
-    expect(stream).toBeInstanceOf(BridgeEventStream);
-
-    const events = await drain(stream);
-    const types = events.map((e) => e.type);
-    expect(types).toEqual([
-      'start',
-      'text_start',
-      'text_delta',
-      'text_delta',
-      'text_end',
-      'done',
-    ]);
-
-    const deltas = events.filter(
-      (e): e is Extract<PiAssistantMessageEvent, { type: 'text_delta' }> =>
-        e.type === 'text_delta',
-    );
-    expect(deltas.map((e) => e.delta)).toEqual(['hello ', 'world']);
-
-    const done = events.find(
-      (e): e is Extract<PiAssistantMessageEvent, { type: 'done' }> =>
-        e.type === 'done',
-    );
-    expect(done?.reason).toBe('stop');
-    expect(done?.message.content).toEqual([
-      { type: 'text', text: 'hello world' },
-    ]);
-
-    const final = await stream.result();
-    expect(final.stopReason).toBe('stop');
-    expect(final.content).toEqual([{ type: 'text', text: 'hello world' }]);
+  it('registers the vault + skill tools', () => {
+    const api = makeMockApi();
+    register(api as never);
+    const names = registeredToolNames(api);
+    // Vault tool surface.
+    for (const vaultTool of [
+      'vault_write',
+      'vault_read',
+      'vault_list',
+      'vault_search',
+      'vault_tags',
+      'vault_backlinks',
+    ]) {
+      expect(names).toContain(vaultTool);
+    }
+    // Skill tool surface.
+    expect(names).toContain('list_skills');
+    expect(names).toContain('read_skill');
   });
 
-  it('emits an error event when the port env is missing', async () => {
-    delete process.env[BRIDGE_ENV_PORT];
-    const provider = collectProvider();
-    const events = await drain(
-      provider.streamSimple(BRIDGE_MODEL_NAME, {
-        messages: [{ role: 'user', content: 'hi' }],
-      }),
-    );
-    const errEvent = events.find(
-      (e): e is Extract<PiAssistantMessageEvent, { type: 'error' }> =>
-        e.type === 'error',
-    );
-    expect(errEvent).toBeDefined();
-    expect(errEvent?.error.errorMessage).toMatch(/CTRL_PROVIDER_PORT/);
-  });
-
-  it('emits an error event when the server returns a non-2xx status', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response('oops', { status: 503, statusText: 'Service Unavailable' }),
-    ) as unknown as typeof fetch;
-    const provider = collectProvider();
-    const events = await drain(
-      provider.streamSimple(BRIDGE_MODEL_NAME, {
-        messages: [{ role: 'user', content: 'hi' }],
-      }),
-    );
-    const errEvent = events.find(
-      (e): e is Extract<PiAssistantMessageEvent, { type: 'error' }> =>
-        e.type === 'error',
-    );
-    expect(errEvent?.error.errorMessage).toMatch(/HTTP 503/);
-  });
-
-  it('propagates an SSE `error` event as a stream error event', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      sseResponse([
-        'event: error',
-        'data: {"message":"provider crashed"}',
-        '',
-      ]),
-    ) as unknown as typeof fetch;
-    const provider = collectProvider();
-    const events = await drain(
-      provider.streamSimple(BRIDGE_MODEL_NAME, {
-        messages: [{ role: 'user', content: 'hi' }],
-      }),
-    );
-    const errEvent = events.find(
-      (e): e is Extract<PiAssistantMessageEvent, { type: 'error' }> =>
-        e.type === 'error',
-    );
-    expect(errEvent?.error.errorMessage).toMatch(/provider crashed/);
+  it('registers the irisy-paths slash command and the vault-root flag', () => {
+    const api = makeMockApi();
+    register(api as never);
+    const commandNames = api.registerCommand.mock.calls.map((c) => c[0] as string);
+    expect(commandNames).toContain('irisy-paths');
+    const flagNames = api.registerFlag.mock.calls.map((c) => c[0] as string);
+    expect(flagNames).toContain('ctrl-vault-root');
   });
 });
 
-// ── helpers ────────────────────────────────────────────────────────────
-
-function collectProvider(): PiProvider {
-  let captured: PiProvider | null = null;
-  register(
-    makeMockApi({
-      registerProvider: (_id, provider) => {
-        captured = provider;
-      },
-    }),
-  );
-  if (!captured) throw new Error('register did not capture a provider');
-  return captured;
-}
-
-async function drain(
-  stream: AsyncIterable<PiAssistantMessageEvent>,
-): Promise<PiAssistantMessageEvent[]> {
-  const out: PiAssistantMessageEvent[] = [];
-  for await (const e of stream) out.push(e);
-  return out;
-}
-
-function sseResponse(lines: string[]): Response {
-  const body = lines.join('\n') + '\n';
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(encoder.encode(body));
-      controller.close();
-    },
+describe('before_agent_start — persona override', () => {
+  it('returns a systemPrompt override in the default (assistant) session', () => {
+    const api = makeMockApi();
+    register(api as never);
+    const handler = handlerFor(api, 'before_agent_start');
+    // No sessionManager → not a coding session → persona applies.
+    const result = handler({ type: 'before_agent_start' }, {}) as
+      | { systemPrompt?: string }
+      | undefined;
+    expect(result).toBeDefined();
+    expect(typeof result?.systemPrompt).toBe('string');
+    expect(result?.systemPrompt).toContain('You are Irisy');
   });
-  return new Response(stream, {
-    status: 200,
-    headers: { 'Content-Type': 'text/event-stream' },
+
+  it('skips the persona override for a coding-* session (Pi keeps its default prompt)', () => {
+    const api = makeMockApi();
+    register(api as never);
+    const handler = handlerFor(api, 'before_agent_start');
+    const ctx = {
+      sessionManager: { getSessionName: () => 'coding-default' },
+    };
+    const result = handler({ type: 'before_agent_start' }, ctx);
+    expect(result).toBeUndefined();
   });
-}
+});
+
+describe('before_provider_request — auto-RAG', () => {
+  it('does not inject when the user text is too short to RAG', async () => {
+    const api = makeMockApi();
+    register(api as never);
+    const handler = handlerFor(api, 'before_provider_request');
+    const evt = { messages: [{ role: 'user', content: 'hi' }] };
+    // Short query (<6 chars) → vaultSearchTopK returns [] → no injection.
+    const result = await handler(evt, {});
+    expect(result).toBeUndefined();
+  });
+
+  it('skips RAG entirely for a coding-* session', async () => {
+    const api = makeMockApi();
+    register(api as never);
+    const handler = handlerFor(api, 'before_provider_request');
+    const ctx = {
+      sessionManager: { getSessionName: () => 'coding-default' },
+    };
+    const evt = {
+      messages: [{ role: 'user', content: 'a sufficiently long query string' }],
+    };
+    const result = await handler(evt, ctx);
+    expect(result).toBeUndefined();
+  });
+});

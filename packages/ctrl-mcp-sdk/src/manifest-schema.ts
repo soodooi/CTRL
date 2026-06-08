@@ -367,8 +367,8 @@ const VaultWriteStep = StepCommon.extend({
  *  to know transport details.
  *
  *  `target.kind` decides routing:
- *    mcp  → kernel run_mcp(id, action_id, inputs)
- *    mcp     → kernel mcp_proxy_call(server_id, tool_name, args)
+ *    mcp         → kernel run_mcp(id, action_id, inputs)
+ *    mcp-server  → kernel mcp_proxy_call(server_id, tool_name, args)
  *
  *  Matches the more abstract design favored after the 2026-05 workshop
  *  research pass (n8n / Pipedream show value in polymorphic step refs;
@@ -376,10 +376,10 @@ const VaultWriteStep = StepCommon.extend({
 const InvokeStep = StepCommon.extend({
   type: z.literal('invoke'),
   target: z.object({
-    kind: z.enum(['mcp', 'mcp']),
-    /** Provider-specific id. mcp → mcp.id. mcp → "server_id/tool". */
+    kind: z.enum(['mcp', 'mcp-server']),
+    /** Provider-specific id. mcp → mcp.id. mcp-server → "server_id/tool". */
     id: z.string().min(1),
-    /** mcp.kind only: which action to invoke (default: mcp's first action). */
+    /** mcp kind only: which action to invoke (default: mcp's first action). */
     action: z.string().optional(),
   }),
   /** Mustache-templated arg passing into the target. */

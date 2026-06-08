@@ -401,7 +401,7 @@ export function isEnvelope(value: unknown): value is Envelope {
   if (!VALID_TYPES.has(v.type as EnvelopeType)) return false;
   if (typeof v.source !== 'string') return false;
   if (v.source.length === 0 || v.source.length > SOURCE_MAX_LENGTH) return false;
-  if (typeof v.seq !== 'number' || !Number.isFinite(v.seq) || v.seq < 0) return false;
+  if (typeof v.seq !== 'number' || !Number.isInteger(v.seq) || v.seq < 0) return false;
   if (typeof v.ts_ms !== 'number' || !Number.isFinite(v.ts_ms) || v.ts_ms < 0) return false;
   if (typeof v.payload !== 'object' || v.payload === null) return false;
   return true;
