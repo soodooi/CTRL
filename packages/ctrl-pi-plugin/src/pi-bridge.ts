@@ -762,8 +762,11 @@ export class PiBridge {
       // `resolveApiKey`. Real key never lands in models.json on disk.
       env[spawnSpec.envVarName] = spawnSpec.envValue;
 
+      // RpcClient spawns `node <cliPath>`, so cliPath must be the cli.js entry,
+      // not the `.bin/pi.cmd` wrapper (which `node` can't parse on Windows).
+      const cliEntry = resolvePiCliEntry(this.pi) ?? this.pi.command;
       const client = new RpcClient({
-        cliPath: this.pi.command,
+        cliPath: cliEntry,
         args,
         env,
         provider: spawnSpec.providerId,
@@ -1037,6 +1040,26 @@ function assemblePrompt(messages: ChatMessage[]): string {
       return `User: ${m.content}`;
     })
     .join('\n\n');
+}
+
+/** Resolve the Pi CLI entry JS that `RpcClient` spawns as `node <cli.js>`.
+ *  `pi.command` may be a `.bin/pi` symlink (unix, which `node` follows) or a
+ *  `.bin/pi.cmd` batch wrapper (Windows) — the latter is NOT a JS file, so
+ *  `node pi.cmd` fails and Irisy chat never starts on Windows. Resolving to
+ *  the package's `dist/cli.js` runs identically on every OS. Returns null when
+ *  the package layout is unexpected; caller falls back to `pi.command`. */
+function resolvePiCliEntry(pi: PiBinary): string | null {
+  // Already a JS entry (e.g. CTRL_PI_BIN pointed straight at dist/cli.js).
+  if (/\.[cm]?js$/i.test(pi.command) && existsSync(pi.command)) return pi.command;
+  const binDir = dirname(pi.command);
+  const candidates = [
+    join(binDir, '..', '@mariozechner', 'pi-coding-agent', 'dist', 'cli.js'),
+    join(binDir, '..', '..', '@mariozechner', 'pi-coding-agent', 'dist', 'cli.js'),
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return null;
 }
 
 /** Dynamic-import `@mariozechner/pi-coding-agent` from wherever Pi was
