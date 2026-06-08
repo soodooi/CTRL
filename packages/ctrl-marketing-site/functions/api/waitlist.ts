@@ -36,10 +36,12 @@ export const onRequestPost: PagesFunction = async ({ request }) => {
     return json({ ok: false, error: "invalid_email" }, 400);
   }
 
+  // Log a non-identifying signup marker only. Raw email / IP / UA are PII and
+  // must not land in CF Worker logs (retained ~7d). Email domain is coarse
+  // enough for funnel analytics without identifying the signer.
+  const emailDomain = email.slice(email.indexOf("@") + 1);
   console.log("waitlist_signup", {
-    email,
-    ip: request.headers.get("cf-connecting-ip") ?? null,
-    ua: request.headers.get("user-agent") ?? null,
+    emailDomain,
     ts: new Date().toISOString(),
   });
 

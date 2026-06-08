@@ -40,6 +40,11 @@ pub const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:17872";
 /// this many backlog events; the publisher never blocks.
 pub const BROADCAST_BUFFER: usize = 64;
 
+/// Maximum accepted inbound WS frame size (CBOR Op). Frames above this are
+/// dropped before deserialization to bound per-connection memory. Ops carry
+/// clipboard text / prompts / ids — 4 MiB is generous for legitimate traffic.
+pub const MAX_INBOUND_FRAME_BYTES: usize = 4 * 1024 * 1024;
+
 /// Outcome of authorizing an inbound Op. Returning Err short-circuits dispatch.
 pub type CapabilityCheck = Arc<dyn Fn(&Op) -> Result<(), String> + Send + Sync>;
 
@@ -269,6 +274,16 @@ fn handle_inbound(
     on_op: &Arc<dyn Fn(Op) + Send + Sync>,
     cap: &CapabilityCheck,
 ) {
+    // Bound the frame before deserialization. An authenticated client (or a
+    // compromised in-app WebView) could otherwise send an arbitrarily large
+    // Binary frame and force the full payload into memory before decode.
+    if bytes.len() > MAX_INBOUND_FRAME_BYTES {
+        warn!(
+            "[{peer}] inbound frame {} bytes exceeds {MAX_INBOUND_FRAME_BYTES} cap; dropped",
+            bytes.len()
+        );
+        return;
+    }
     let event: Event = match ciborium::from_reader(bytes) {
         Ok(e) => e,
         Err(e) => {
