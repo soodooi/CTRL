@@ -252,11 +252,13 @@ function ModeSwitch({ msg }: Props): JSX.Element {
   const content = (msg.content ?? {}) as ModeSwitchContent;
   const mode = content.mode?.trim() ?? 'personal';
   const label = useMemo(() => {
+    // ADR-002 substrate § brain v17 (2026-06-07): cap mode retired; the
+    // bridge may still emit legacy `mode: 'cap'` payloads from older Pi
+    // sessions on disk, so we keep a fallback label rather than render
+    // an empty pill.
     switch (mode) {
       case 'coding':
         return 'Coding mode — file tools enabled';
-      case 'cap':
-        return 'Cap mode';
       case 'personal':
         return 'Personal mode';
       default:

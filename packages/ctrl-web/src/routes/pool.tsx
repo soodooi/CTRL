@@ -124,8 +124,12 @@ const SOURCES_FOR_FILTER: ReadonlyArray<{ id: CapSource | 'all'; label: string }
 ];
 
 export const PoolRoute = (): ReactElement => {
+  // ADR-002 substrate § brain v17 (2026-06-07): `wearCap` retired with the
+  // cap mode. Skills are now invocable references Irisy reads on demand
+  // (via list_skills / read_skill); skill rows render as docs only, no
+  // "wear" button. The on-tab status banner stays as scaffolding for any
+  // future action-row affordance.
   const { setIrisyState } = useRail();
-  const wearCap = useSessionStateStore((s) => s.wearCap);
   const [activeFilter, setActiveFilter] = useState<CapSource | 'all'>('all');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [activationError, setActivationError] = useState<string | null>(null);
@@ -163,17 +167,10 @@ export const PoolRoute = (): ReactElement => {
     return tally;
   }, [rows]);
 
-  const handleWear = (skillId: string): void => {
-    // bao 2026-06-04: Pool runs inside the workspace child window;
-    // `navigate('/')` here would only change the workspace's internal
-    // route, not surface the main-window Irisy chat. The session-state
-    // store is persisted to localStorage which is origin-wide, so the
-    // main IrisyChat picks up the worn cap automatically — the user
-    // just needs to switch to the main window (Ctrl hotkey).
-    wearCap(skillId);
-    setWearStatus(`Cap put on: ${skillId} — switch to Irisy (Ctrl) to chat`);
-    window.setTimeout(() => setWearStatus(null), 4000);
-  };
+  // ADR-002 substrate § brain v17 (2026-06-07): wear-cap action retired
+  // along with the cap mode. Skill rows render as documentation; users
+  // invoke skills by naming them in chat so Irisy reads SKILL.md on
+  // demand via her list_skills / read_skill tools.
 
   const handleRun = (mcpId: string): void => {
     void openWorkspace(mcpId).catch((err: unknown) => {
@@ -209,25 +206,11 @@ export const PoolRoute = (): ReactElement => {
         header: '',
         cell: (info) => {
           const row = info.row.original;
+          // ADR-002 substrate § brain v17 (2026-06-07): skill rows have no
+          // action button — invocation is by name in chat, not by pinning
+          // a session-state slot. Other source types keep the Run flow.
           if (row.source === 'skill') {
-            return (
-              <button
-                type="button"
-                onClick={() => handleWear(row.id)}
-                style={{
-                  padding: '4px 12px',
-                  border: '1px solid var(--accent, #4f46e5)',
-                  background: 'var(--accent, #4f46e5)',
-                  color: 'white',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Wear cap
-              </button>
-            );
+            return null;
           }
           return (
             <button

@@ -207,11 +207,11 @@ line acknowledgement ("Saved → notes/2026-06-04-…md, take a look").
 For other one-shots, just answer in chat.
 
 REUSABLE (this is when install_mcp fires):
-  • "做个 PPT 键帽" / "Make me a slides key"
+  • "Make me a slides tool" / "做个 PPT 工具"
   • "I want a button that turns any screenshot into clean alt text"
   • "Give me a one-click translator for Chinese → English"
-  • "我经常要写读书笔记,做个键帽" (user explicitly said 经常 / 键帽 / a key)
-The trigger words are 键帽 / 按钮 / 键 / shortcut / key / "make a button" /
+  • "我经常要写读书笔记,给我做个工具" (user explicitly said 经常 / 工具 / a tool)
+The trigger words are 工具 / 按钮 / 键 / shortcut / key / "make a button" /
 "a tool I can reuse". Without one of those signals, assume one-shot.
 
 If you can't tell, ask ONE short question: "做完这一次就行,还是想以

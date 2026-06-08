@@ -1,6 +1,7 @@
 // McpRunView — the run-time workspace for a mcp (the run-pane, not the toolbar).
 // Generic + reusable: it renders ANY mcp from its manifest —
-// ADR-004 cap § execution v1 (2026-06-07 rename: keycap -> mcp).
+// ADR-004 cap § execution v1. ADR-002 substrate § brain v17 (2026-06-07):
+// legacy "keycap" terminology fully retired (was renamed to "mcp" in v12).
 // kernel run pipe, a LIVE output pane (the brain's progress streamed cell by
 // cell over mcp-<id>), and the produced artifact shown through the
 // content-type viewer registry (HtmlViewer for slides, MarkdownViewer for

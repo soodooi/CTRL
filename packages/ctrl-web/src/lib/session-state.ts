@@ -1,21 +1,24 @@
-// session-state — Pi 3-mode global state (bao 2026-06-04).
+// session-state — Pi 2-mode global state.
 //
-// CTRL surfaces Pi through three modes that share one Pi process but
-// differ in system prompt + working directory + history scope:
+// ADR-002 substrate § brain v17 (2026-06-07): the cap mode (Pi "wears the
+// hat" of a SKILL.md) is RETIRED along with the keycap concept it was
+// derived from (memory `decision_keycap_collapses_to_mcp_meta_ux_layer`,
+// bao 2026-06-07 "去掉 keycap 概念 你会更加清晰"). Skills survive as
+// invocable references that Irisy reads on demand via the `list_skills` /
+// `read_skill` tools — they are not a session mode and they do not get
+// pinned to the next turn via UI state. To use a skill, the user names
+// it in the prompt ("use the foo skill to ..."); Irisy looks it up + acts.
 //
-//   • personal  : default Irisy companion. cwd = vault root. Pi has no
-//                 cap, no project — just chats as Irisy persona.
-//   • coding    : Pi is a coding agent inside a chosen project dir. The
-//                 cwd is injected into Pi's system prompt (we do NOT
-//                 restart the Pi process; cwd switch via prompt is
-//                 enough for v1, per `feedback_reuse_existing_capability_first`).
-//   • cap       : Pi "wears the hat" of a SKILL.md. The kernel prepends
-//                 the SKILL.md body as a system message for that turn
-//                 (see commands/irisy_chat.rs `load_skill_system_prompt`).
+// Remaining modes:
 //
-// Picking a cap auto-implies cap mode; setting a project dir implies
-// coding mode; clearing both returns to personal. Modes are mutually
-// exclusive — wearing a cap inside coding mode is v2.x scope.
+//   • personal  : default Irisy companion. cwd = vault root. Pi runs as
+//                 Irisy persona.
+//   • coding    : Coding L1 tab. Pi runs as its default coding agent
+//                 (Irisy persona extension short-circuits on the
+//                 `coding-` session-name prefix per v15 §brain).
+//                 The `projectDir` field is reserved for the not-yet-
+//                 shipped project picker; until then Pi uses its launch
+//                 cwd.
 //
 // Persisted to localStorage so a tab close / reload restores the last
 // session intent (same pattern as `workspace-store`).
@@ -23,12 +26,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type SessionMode = 'personal' | 'coding' | 'cap';
+export type SessionMode = 'personal' | 'coding';
 
 interface SessionState {
   mode: SessionMode;
-  /** Active SKILL.md name when mode === 'cap'; otherwise null. */
-  currentSkillId: string | null;
   /** Absolute path of the project directory when mode === 'coding'. */
   projectDir: string | null;
   /** Last picker timestamp — lets the UI animate banner changes. */
@@ -37,44 +38,25 @@ interface SessionState {
   // Actions
   enterPersonalMode: () => void;
   enterCodingMode: (projectDir: string) => void;
-  wearCap: (skillId: string) => void;
-  removeCap: () => void;
 }
 
 export const useSessionStateStore = create<SessionState>()(
   persist(
     (set) => ({
       mode: 'personal',
-      currentSkillId: null,
       projectDir: null,
       lastChangedAt: Date.now(),
 
       enterPersonalMode: () =>
         set({
           mode: 'personal',
-          currentSkillId: null,
           projectDir: null,
           lastChangedAt: Date.now(),
         }),
       enterCodingMode: (projectDir) =>
         set({
           mode: 'coding',
-          currentSkillId: null,
           projectDir,
-          lastChangedAt: Date.now(),
-        }),
-      wearCap: (skillId) =>
-        set({
-          mode: 'cap',
-          currentSkillId: skillId,
-          // Keep projectDir when wearing a cap from coding mode — v2.x
-          // will reconcile; for now cap takes over the system prompt.
-          lastChangedAt: Date.now(),
-        }),
-      removeCap: () =>
-        set({
-          mode: 'personal',
-          currentSkillId: null,
           lastChangedAt: Date.now(),
         }),
     }),
@@ -83,7 +65,6 @@ export const useSessionStateStore = create<SessionState>()(
       // Don't persist `lastChangedAt` — it's transient UI state.
       partialize: (s) => ({
         mode: s.mode,
-        currentSkillId: s.currentSkillId,
         projectDir: s.projectDir,
       }),
     },
@@ -91,10 +72,9 @@ export const useSessionStateStore = create<SessionState>()(
 );
 
 /** Stable label for the top banner (mode banner reads this). */
-export function sessionLabel(s: Pick<SessionState, 'mode' | 'currentSkillId' | 'projectDir'>): string {
-  if (s.mode === 'cap' && s.currentSkillId) {
-    return `Cap · ${s.currentSkillId}`;
-  }
+export function sessionLabel(
+  s: Pick<SessionState, 'mode' | 'projectDir'>,
+): string {
   if (s.mode === 'coding' && s.projectDir) {
     // Shorten ~/long/path/to/X to ~/.../X for the banner.
     const parts = s.projectDir.split('/').filter(Boolean);

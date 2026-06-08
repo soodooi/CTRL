@@ -43,7 +43,9 @@ export const McpVariant = z.enum([
   'local-agent',     // long-running local process (Pattern C)
   'skill',           // SKILL.md run by the active brain — the workbench's
                      // primary create path (source/SKILL.md → ctrl skill →
-                     // 键帽). See ADR-007 workbench § canvas v1.
+                     // mcp). See ADR-007 workbench § canvas v1.
+                     // ADR-002 substrate § brain v17 (2026-06-07): keycap
+                     // concept retired; collapses into mcp + skill.
 ]);
 export type McpVariant = z.infer<typeof McpVariant>;
 

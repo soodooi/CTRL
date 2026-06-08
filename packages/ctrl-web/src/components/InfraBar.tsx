@@ -1,9 +1,15 @@
 // InfraBar — substrate-state chip row at the bottom of the Irisy chat
 // pane (= directly above the input window's top edge in companion mode).
 //
-// bao 2026-05-30: "底座, 基础设施放在对话框上方, 基础设施包括 provider
-// mcp, 键帽等" + 校正 "CTRL logo 右侧是 KRN 的指示灯, 其他的在对话框
-// 底部". This bar carries the substrate state (ENGINE, MCP count, VAULT
+// bao 2026-05-30 (substrate-state placement): the substrate row
+// (ENGINE, provider, mcps) sits directly above the input window, not in
+// the StatusBar top zone. The CTRL logo's KRN indicator lives in the
+// header; everything else lives in this bar at the bottom of the
+// chat pane.
+// ADR-002 substrate § brain v17 (2026-06-07): legacy "keycap" word
+// retired from the comment alongside the concept.
+//
+// This bar carries the substrate state (ENGINE, MCP count, VAULT
 // file count) that previously cluttered the StatusBar's top zone.
 
 import type { ReactElement } from 'react';

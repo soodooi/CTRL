@@ -394,25 +394,21 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   // PrimaryRail (file picker → enterCodingMode) while the chat picks up
   // the change live. The catalog `availableSkills` stays local — it's a
   // read-only directory listing pulled once on mount.
-  // ADR-002 substrate § brain v15 (2026-06-07): keep the store's full
-  // SessionMode (`personal | coding | cap`) for UI rendering — the cap
-  // banner + "Coding · <projectDir>" indicator both read `mode === 'cap'`
-  // and `mode === 'coding'` further down. `wireMode` is the narrowed
-  // on-wire value sent to Pi: cap mode is still an Irisy-persona turn
-  // (Pi just gets the skill text prepended as system content via skill_id),
-  // so wire it as 'assistant'; only explicit Coding tab (forceMode) or the
-  // store's 'coding' selection routes to Pi's coding session.
+  // ADR-002 substrate § brain v17 (2026-06-07): SessionMode is now
+  // `'personal' | 'coding'` — the legacy `cap` mode (Pi "wears" a SKILL.md
+  // as a one-shot hat) was retired along with the keycap concept it was
+  // derived from. Skills are invocable references Irisy reads on demand
+  // via `list_skills` / `read_skill`; they are not a session mode. The
+  // `wireMode` narrowing below maps the 2-mode store to the on-wire enum
+  // the kernel + mcp-server + PiBridge agree on (`'assistant' | 'coding'`).
   const mode = useSessionStateStore((s) => s.mode);
   const wireMode: 'assistant' | 'coding' =
     forceMode ?? (mode === 'coding' ? 'coding' : 'assistant');
-  // ADR-002 substrate § brain v15 (2026-06-07): persistKey was bound at top
-  // of component via the synchronous readInitialMode() snapshot so the
-  // useState initializer could pick the right localStorage key on first
-  // render. We keep using that one to avoid mid-session key churn.
-  const currentSkillId = useSessionStateStore((s) => s.currentSkillId);
+  // persistKey was bound at top of component via the synchronous
+  // readInitialMode() snapshot so the useState initializer could pick the
+  // right localStorage key on first render. We keep using that one to
+  // avoid mid-session key churn. ADR-002 substrate § brain v15.
   const projectDir = useSessionStateStore((s) => s.projectDir);
-  const wearCap = useSessionStateStore((s) => s.wearCap);
-  const removeCap = useSessionStateStore((s) => s.removeCap);
   const [availableSkills, setAvailableSkills] = useState<
     ReadonlyArray<{ name: string; description?: string | null; path: string }>
   >([]);
@@ -663,7 +659,6 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         let assistantText = '';
         let aborted = false;
         for await (const chunk of transport.stream(history, {
-          skill_id: currentSkillId ?? undefined,
           mode: wireMode,
           project_dir: projectDir ?? undefined,
         })) {
@@ -780,10 +775,11 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         setSendingStartedAt(null);
       }
     },
+    // ADR-002 substrate § brain v17 (2026-06-07): currentSkillId removed
+    // from session-state along with the retired cap mode; deps shrink.
     [
       brainState,
       coreMemory,
-      currentSkillId,
       mcps,
       longTermMemory,
       messages,
@@ -919,12 +915,11 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
 
   return (
     <div className={styles.root}>
-      {/* Mode banner — bao 2026-06-04 (3-mode full): shows the current
-          session mode + worn cap. Personal hides (cleanest default);
-          Coding shows project dir; Cap shows the worn skill with × to
-          take off. Cap entry lives in Pool (the smart-table view); this
-          banner is the persistent indicator + remove control. */}
-      {(mode === 'cap' || mode === 'coding') && (
+      {/* Mode banner — ADR-002 substrate § brain v17 (2026-06-07).
+          Cap mode + keycap concept retired; banner now only fires for
+          coding mode with a project dir set. Personal mode hides
+          entirely (cleanest default). */}
+      {mode === 'coding' && projectDir && (
         <div
           style={{
             padding: '6px 12px',
@@ -938,28 +933,8 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
           }}
         >
           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {mode === 'cap' && currentSkillId ? `🎩 Cap · ${currentSkillId}` : null}
-            {mode === 'coding' && projectDir ? `💻 Coding · ${projectDir}` : null}
+            {`Coding · ${projectDir}`}
           </span>
-          {mode === 'cap' && currentSkillId && (
-            <button
-              type="button"
-              onClick={() => removeCap()}
-              title="Take off cap (return to Personal)"
-              aria-label="Take off cap"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'inherit',
-                font: 'inherit',
-                padding: '0 4px',
-                lineHeight: 1,
-              }}
-            >
-              ×
-            </button>
-          )}
         </div>
       )}
       <ChatHeaderControls />

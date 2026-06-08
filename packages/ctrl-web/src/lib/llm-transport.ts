@@ -52,14 +52,14 @@ export interface LLMStreamOptions {
   temperature?: number;
   max_tokens?: number;
   signal?: AbortSignal;
-  // bao 2026-06-04 (3-mode P0): cap = a hat Pi wears for one turn. When
-  // `skill_id` is set, the Rust irisy_chat_stream command resolves the
-  // matching SKILL.md and prepends it as a system message so Pi operates
-  // under that skill. No effect on the `chat_stream` (raw LLM) path —
-  // only irisy_chat_stream consumes this field.
+  // ADR-002 substrate § brain v17 (2026-06-07): kept as an optional
+  // per-prompt parameter so a future slash-command flow can prepend a
+  // skill's SKILL.md as a system message for one turn. The cap-mode UX
+  // that used to set this from session state was retired with keycap.
   skill_id?: string;
-  // Pi 3-mode session hint ("assistant" | "coding" | "cap"). Currently
-  // informational on the Rust side; reserved for v2.x history scoping.
+  // Pi session mode hint ("assistant" | "coding"). ADR-002 substrate
+  // § brain v17 (2026-06-07): the legacy "cap" value was retired with
+  // the keycap concept; only the two real modes flow through.
   mode?: string;
   // Coding-mode project directory (Pi's cwd). Reserved for v2.x.
   project_dir?: string;

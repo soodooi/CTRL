@@ -48,7 +48,7 @@ export default defineConfig({
       manifest: {
         name: 'CTRL',
         short_name: 'CTRL',
-        description: '按 Ctrl 唤起 · 一键帽一 AI 工具',
+        description: 'Press Ctrl to summon · one key, one AI tool',
         theme_color: '#1E3FB0',
         background_color: '#131517',
         display: 'standalone',
