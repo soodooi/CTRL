@@ -34,6 +34,7 @@ import {
   type ReactElement,
   type RefObject,
 } from 'react';
+import { z } from 'zod';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listMcps, type McpSummary } from '@/lib/kernel';
@@ -57,6 +58,15 @@ export const MCP_DRAG_MIME = 'application/x-ctrl-mcp-id';
  *  `install_mcp`. Distinct from MCP_DRAG_MIME (which carries an
  *  already-installed id) so the drop handler can tell intent apart. */
 export const MCP_INSTALL_MIME = 'application/x-ctrl-mcp-manifest';
+
+/** Minimal shape gate for a remotely-fetched MCP manifest. The kernel's
+ *  `install_mcp` performs authoritative validation, but a URL drop is the
+ *  least-trusted source (attacker-influenced origin), so we reject any
+ *  response that doesn't at least look like a named manifest before it
+ *  ever reaches invoke(). Kept permissive (passthrough) on extra keys. */
+const remoteManifestSchema = z
+  .object({ name: z.string().min(1) })
+  .passthrough();
 
 /** Toast auto-dismiss timer for install/uninstall feedback. */
 const TOAST_DISMISS_MS = 4000;
@@ -257,14 +267,25 @@ export const Keyboard = (): ReactElement => {
       if (uri) {
         const url = uri.split('\n')[0]?.trim();
         if (!url) return null;
+        // SSRF guard (OWASP A10): a dropped URI is attacker-influenced
+        // and the response is installed as an MCP manifest. Only allow
+        // https: — reject http:, file:, data:, and intranet-reachable
+        // schemes so a drag payload can't pivot to a local/internal host
+        // over a non-TLS channel.
+        let parsedUrl: URL;
         try {
-          const res = await fetch(url, { mode: 'cors' });
+          parsedUrl = new URL(url);
+        } catch {
+          return null;
+        }
+        if (parsedUrl.protocol !== 'https:') return null;
+        try {
+          const res = await fetch(parsedUrl.toString(), { mode: 'cors' });
           if (!res.ok) return null;
           const parsed: unknown = await res.json();
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            return parsed as Record<string, unknown>;
-          }
-          return null;
+          const validated = remoteManifestSchema.safeParse(parsed);
+          if (!validated.success) return null;
+          return validated.data as Record<string, unknown>;
         } catch {
           return null;
         }

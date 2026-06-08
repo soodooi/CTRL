@@ -38,6 +38,7 @@ use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, Stream
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler};
 use serde::Deserialize;
 use std::sync::Arc;
+use subtle::ConstantTimeEq;
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -1081,8 +1082,8 @@ pub async fn serve(
     runtime: Arc<KernelRuntime>,
     local_storage: Option<Arc<LocalStorage>>,
     addr: &str,
+    token: Arc<String>,
 ) -> Result<McpServerHandle> {
-    let token = Arc::new(Uuid::new_v4().to_string());
     let token_for_mw = token.clone();
 
     let router_factory = move || Ok(KernelMcpRouter::new(runtime.clone(), local_storage.clone()));
@@ -1096,7 +1097,12 @@ pub async fn serve(
         let expected = token_for_mw.clone();
         async move {
             match extract_bearer(&headers) {
-                Some(t) if t == expected.as_str() => Ok::<Response, StatusCode>(next.run(req).await),
+                // Constant-time compare to avoid leaking the token via
+                // response-timing side channels (the `==` short-circuits
+                // on the first mismatching byte).
+                Some(t) if bool::from(t.as_bytes().ct_eq(expected.as_bytes())) => {
+                    Ok::<Response, StatusCode>(next.run(req).await)
+                }
                 _ => Err(StatusCode::UNAUTHORIZED),
             }
         }
@@ -1149,6 +1155,85 @@ fn map_serde_err(e: serde_json::Error) -> McpError {
 /// that the MCP caller parses: `{ status: u16, body: String, headers: {} }`.
 /// Errors map to McpError::internal_error with the underlying message
 /// so creator-side debugging is straightforward.
+/// Hard ceiling for the caller-supplied request timeout. A composite mcp
+/// must not be able to pin a kernel worker on a slow/hostile endpoint
+/// indefinitely. 60s is generous for any legitimate REST/RSS fetch.
+const HTTP_MAX_TIMEOUT_MS: u64 = 60_000;
+const HTTP_DEFAULT_TIMEOUT_MS: u64 = 30_000;
+
+/// Reject SSRF vectors before any network call (OWASP A10). Composite
+/// mcps pass arbitrary `url`; without this an mcp could read the cloud
+/// metadata endpoint (169.254.169.254), hit other loopback services
+/// (the kernel's own :17873 MCP server, :17878 provider endpoint), or
+/// reach RFC1918 LAN hosts. Only public http(s) destinations are allowed.
+fn validate_outbound_url(url: &str) -> Result<(), McpError> {
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| McpError::invalid_params(format!("invalid url {url}: {e}"), None))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(McpError::invalid_params(
+                format!("scheme {other:?} not allowed (http/https only)"),
+                None,
+            ));
+        }
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| McpError::invalid_params(format!("url {url} has no host"), None))?;
+
+    // Block by literal IP when the host parses as one; block obvious
+    // loopback/metadata names regardless.
+    let lowered = host.to_ascii_lowercase();
+    if lowered == "localhost"
+        || lowered.ends_with(".localhost")
+        || lowered == "metadata"
+        || lowered == "metadata.google.internal"
+    {
+        return Err(McpError::invalid_params(
+            format!("host {host:?} is not a permitted destination"),
+            None,
+        ));
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        if is_blocked_ip(&ip) {
+            return Err(McpError::invalid_params(
+                format!("ip {ip} is private/loopback/link-local — blocked (SSRF guard)"),
+                None,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// True for any IP range an mcp must not be able to reach: loopback,
+/// RFC1918 private, link-local (incl. 169.254.0.0/16 cloud metadata),
+/// unspecified, and IPv6 unique-local fc00::/7 / loopback / mapped.
+fn is_blocked_ip(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()        // 127.0.0.0/8
+                || v4.is_private()  // 10/8, 172.16/12, 192.168/16
+                || v4.is_link_local() // 169.254.0.0/16 (AWS/GCP metadata)
+                || v4.is_unspecified() // 0.0.0.0
+                || v4.is_broadcast()
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback() // ::1
+                || v6.is_unspecified()
+                // fc00::/7 unique-local
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                // fe80::/10 link-local
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                // ::ffff:0:0/96 IPv4-mapped → re-check the embedded v4
+                || v6
+                    .to_ipv4_mapped()
+                    .map(|m| is_blocked_ip(&std::net::IpAddr::V4(m)))
+                    .unwrap_or(false)
+        }
+    }
+}
+
 async fn http_request(
     method: reqwest::Method,
     url: String,
@@ -1156,7 +1241,10 @@ async fn http_request(
     body: Option<serde_json::Value>,
     timeout_ms: Option<u64>,
 ) -> Result<String, McpError> {
-    let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(30_000));
+    validate_outbound_url(&url)?;
+    let timeout = std::time::Duration::from_millis(
+        timeout_ms.unwrap_or(HTTP_DEFAULT_TIMEOUT_MS).min(HTTP_MAX_TIMEOUT_MS),
+    );
     let client = reqwest::Client::builder()
         .timeout(timeout)
         .build()
@@ -1219,7 +1307,10 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-401");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let token = Arc::new(Uuid::new_v4().to_string());
+        let handle = serve(runtime, None, "127.0.0.1:0", token)
+            .await
+            .expect("serve");
         let url = handle.url();
 
         let resp = reqwest::Client::new()
@@ -1241,7 +1332,10 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-ok");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let seed = Arc::new(Uuid::new_v4().to_string());
+        let handle = serve(runtime, None, "127.0.0.1:0", seed)
+            .await
+            .expect("serve");
         let url = handle.url();
         let token = handle.auth_token.as_ref().clone();
 

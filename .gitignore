@@ -6,11 +6,11 @@ dist/
 .pnpm-store/
 
 # Rust / Tauri
+# Cargo.lock IS committed (CLAUDE.md hard rule: reproducible builds) — only
+# build artifacts are ignored.
 src-tauri/target/
-src-tauri/Cargo.lock
 src-tauri/gen/
 packages/*/target/
-packages/*/Cargo.lock
 
 # macOS
 .DS_Store

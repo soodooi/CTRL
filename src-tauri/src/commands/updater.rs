@@ -12,14 +12,20 @@
 // Fix (the Chrome / Cursor / Linear pattern):
 //   1. Verify the new bundle is intact (Info.plist exists, CFBundleVersion
 //      readable) — abort if the install left a broken .app.
-//   2. Spawn a detached `/bin/sh` helper that:
-//        a. polls until the current process is gone (`kill -0 <pid>`)
-//        b. sleeps another 500ms so launchd settles
-//        c. `open` the new .app — LSLaunchServices launches a clean new
-//           process, the single-instance plugin sees no live instance and
-//           lets it through.
-//   3. Cleanly shut down our own Pi brain child + exit immediately. By
-//      the time the helper's `open` fires, this PID is gone, no race.
+//   2. On a detached background thread (the "relaunch helper"):
+//        a. sleep briefly so this command's response flushes to the PWA
+//        b. cleanly shut down our own Pi brain child
+//        c. sleep a settle window so launchd quiesces
+//        d. spawn `/usr/bin/open <bundle>` DIRECTLY (no `/bin/sh -c`, the
+//           bundle path is a single argv element so a path containing
+//           quotes/spaces cannot inject — OWASP A03 fix, bao 2026-06-08)
+//        e. exit the process — LaunchServices then launches a clean new
+//           instance and the single-instance plugin sees no live process.
+//
+// Previously this built a `/bin/sh -c` script with the bundle path
+// single-quoted via `format!`, which a path containing `'` could escape
+// to inject arbitrary shell. The shell is gone entirely; the path is never
+// interpolated into a command string.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -78,36 +84,38 @@ pub fn safe_relaunch_after_update() -> Result<(), String> {
         let root = bundle_root();
         verify_bundle(&root)?;
 
-        let pid = std::process::id();
-        let bundle_str = root.to_string_lossy().to_string();
-        // The shell guards a 30s ceiling so a wedged process can't keep
-        // the helper alive indefinitely. The `open` call relaunches the
-        // app cleanly via LaunchServices (respects codesign + AX state).
-        let script = format!(
-            "i=0; while kill -0 {pid} 2>/dev/null && [ $i -lt 150 ]; do sleep 0.2; i=$((i+1)); done; sleep 0.5; /usr/bin/open '{bundle_str}'"
-        );
-
-        Command::new("/bin/sh")
-            .arg("-c")
-            .arg(&script)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("spawn relaunch helper failed: {e}"))?;
-
-        // Clean up the Pi brain child so port 17874 isn't held when the
-        // new instance comes up. Mirrors the explicit-quit path in
-        // lib.rs ExitRequested handler.
-        crate::shell::BrainSupervisor::shutdown();
-
-        // Exit from a background thread so this command's response can
-        // serialize back to the PWA before the process dies. Using
-        // std::process::exit bypasses Tauri's ExitRequested prevent_exit
-        // handler — that's intentional; auto-update is the canonical
+        // Run the relaunch sequence on a detached background thread so this
+        // command's response can serialize back to the PWA before the
+        // process dies. std::process::exit bypasses Tauri's ExitRequested
+        // prevent_exit handler — intentional; auto-update is the canonical
         // "actually exit now" path.
-        std::thread::spawn(|| {
+        std::thread::spawn(move || {
+            // a. Let the command response flush to the PWA.
             std::thread::sleep(Duration::from_millis(150));
+
+            // b. Clean up the Pi brain child so port 17874 isn't held when
+            //    the new instance comes up. Mirrors the explicit-quit path
+            //    in lib.rs ExitRequested handler.
+            crate::shell::BrainSupervisor::shutdown();
+
+            // c. Settle window so launchd quiesces before relaunch.
+            std::thread::sleep(Duration::from_millis(500));
+
+            // d. Relaunch via LaunchServices. The bundle path is passed as a
+            //    single argv element — no shell, no string interpolation, so
+            //    a path with quotes/spaces cannot inject. `open` returns once
+            //    LaunchServices has accepted the request.
+            if let Err(e) = Command::new("/usr/bin/open")
+                .arg(&root)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+            {
+                tracing::error!(error = %e, "relaunch: /usr/bin/open spawn failed");
+            }
+
+            // e. Exit so the single-instance plugin sees no live process.
             std::process::exit(0);
         });
 

@@ -15,8 +15,9 @@
  *   current snapshot unchanged with empty `semanticOps` / `errors`
  *
  * Throws {@link MissingKeyframeError} if a delta arrives before any
- * keyframe has been applied. Throws {@link EnvelopeInvalidError} on
- * cross-source delta or a malformed `'delete'` op missing target.
+ * keyframe has been applied. Throws {@link EnvelopeInvalidError} on a
+ * non-monotonic delta (`seq <= lastSeq`), a cross-source delta, or a
+ * malformed `'delete'` op missing target.
  *
  * @packageDocumentation
  */
@@ -80,6 +81,13 @@ export class DefaultReducer implements Reducer {
     if (isDelta(envelope)) {
       if (this.snapshot.lastKeyframeSeq === null) {
         throw new MissingKeyframeError(envelope.ref);
+      }
+      if (envelope.seq <= this.snapshot.lastSeq) {
+        throw new EnvelopeInvalidError(
+          `Non-monotonic delta: seq ${envelope.seq} <= lastSeq ` +
+            `${this.snapshot.lastSeq}. Replayed or out-of-order deltas are ` +
+            `rejected to prevent silent state rollback.`,
+        );
       }
       if (
         this.snapshot.source !== null &&

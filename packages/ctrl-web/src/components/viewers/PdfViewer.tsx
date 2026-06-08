@@ -13,7 +13,7 @@ export const PdfViewer = ({ resource }: ViewerProps): ReactElement => {
     <a
       href={resource.companion}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener noreferrer"
       className={styles.companionLink}
       title="Open extracted text sidecar"
     >

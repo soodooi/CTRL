@@ -209,13 +209,30 @@ fn token_authorizes(held: &CapToken, requested: &CapToken) -> bool {
     }
 }
 
-/// Minimal glob: `*` matches anything; otherwise literal-prefix match.
-/// Avoids a globset dep for v1 — most policies are `"*"` or `"prefix/"`.
+/// Minimal glob: `*` matches anything; otherwise a *segment-boundary* prefix
+/// match. Avoids a globset dep for v1 — most policies are `"*"` or `"prefix/"`.
+///
+/// A plain `starts_with` is prefix-confusion-vulnerable (OWASP A01): a held
+/// pattern of `"notes"` would authorize `"notes-evil/secret.md"`. We instead
+/// authorize iff the requested value is exactly the held pattern, or the held
+/// pattern is a parent path segment — i.e. `requested == held` or
+/// `requested` begins with `"{held}/"`. This means `"notes"` authorizes
+/// `"notes"` and `"notes/x.md"` but NOT `"notes-evil/..."`.
 fn glob_authorizes(held_pattern: &str, requested_value: &str) -> bool {
     if held_pattern == "*" {
         return true;
     }
-    requested_value.starts_with(held_pattern)
+    if requested_value == held_pattern {
+        return true;
+    }
+    // Treat a trailing-slash held pattern (e.g. "chats/") and a bare segment
+    // (e.g. "notes") uniformly: only authorize at a path-segment boundary.
+    let boundary = if held_pattern.ends_with('/') {
+        held_pattern.to_string()
+    } else {
+        format!("{held_pattern}/")
+    };
+    requested_value.starts_with(&boundary)
 }
 
 impl Default for CapabilityBroker {
@@ -331,6 +348,47 @@ mod tests {
                 },
             )
             .is_err());
+    }
+
+    #[test]
+    fn glob_prefix_only_authorizes_at_segment_boundary() {
+        // Bare segment held pattern must not prefix-confuse a sibling
+        // ("notes" must NOT authorize "notes-evil/..."). OWASP A01 regression.
+        assert!(glob_authorizes("notes", "notes"));
+        assert!(glob_authorizes("notes", "notes/secret.md"));
+        assert!(!glob_authorizes("notes", "notes-evil/secret.md"));
+        assert!(!glob_authorizes("notes", "notesX"));
+        // Trailing-slash held pattern behaves the same at the boundary.
+        assert!(glob_authorizes("chats/", "chats/2026/x.md"));
+        assert!(!glob_authorizes("chats/", "chats-evil/x.md"));
+        // Wildcard still authorizes anything.
+        assert!(glob_authorizes("*", "anything/at/all"));
+    }
+
+    #[test]
+    fn vault_write_prefix_confusion_is_rejected() {
+        let broker = CapabilityBroker::new();
+        let held = Capability::new(vec![CapToken::VaultWrite {
+            path_glob: "notes".into(),
+        }]);
+        // sibling directory sharing the prefix must be rejected
+        assert!(broker
+            .check(
+                &held,
+                &CapToken::VaultWrite {
+                    path_glob: "notes-evil/secret.md".into(),
+                },
+            )
+            .is_err());
+        // legitimate child under the segment boundary is allowed
+        assert!(broker
+            .check(
+                &held,
+                &CapToken::VaultWrite {
+                    path_glob: "notes/today.md".into(),
+                },
+            )
+            .is_ok());
     }
 
     #[test]

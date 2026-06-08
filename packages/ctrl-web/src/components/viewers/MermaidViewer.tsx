@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
+import DOMPurify from 'dompurify';
 import mermaid from 'mermaid';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { useViewerResource } from './useViewerResource';
@@ -50,7 +51,11 @@ export const MermaidViewer = ({ resource }: ViewerProps): ReactElement => {
       .render(id, content)
       .then(({ svg: out }) => {
         if (!cancelled) {
-          setSvg(out);
+          // securityLevel:'strict' already strips HTML labels, but the
+          // rendered SVG is still injected via dangerouslySetInnerHTML
+          // into the invoke()-capable WebView — defense in depth via
+          // DOMPurify's SVG profile before it reaches the DOM.
+          setSvg(DOMPurify.sanitize(out, { USE_PROFILES: { svg: true } }));
           setRenderError(null);
         }
       })

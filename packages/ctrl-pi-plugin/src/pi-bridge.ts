@@ -184,6 +184,46 @@ export interface StreamCallbacks {
 
 const MAX_PROMPT_BYTES = 256 * 1024;
 
+/** Allowlist of PiRpcClient method names the HTTP `/api/pi-rpc` route may
+ *  dispatch. Derived from the PiRpcClient interface above. Anything not in
+ *  this set — including prototype-chain footguns like `__proto__`,
+ *  `constructor`, `prototype` — is rejected before dispatch so an attacker
+ *  cannot reach arbitrary object properties or built-in methods through the
+ *  `client[method]` lookup. bao 2026-06-07 audit (CRITICAL). */
+const PI_RPC_ALLOWED_METHODS: ReadonlySet<string> = new Set<string>([
+  'start',
+  'stop',
+  'prompt',
+  'steer',
+  'followUp',
+  'abort',
+  'newSession',
+  'switchSession',
+  'fork',
+  'clone',
+  'getForkMessages',
+  'setSessionName',
+  'getState',
+  'getSessionStats',
+  'getMessages',
+  'setModel',
+  'cycleModel',
+  'getAvailableModels',
+  'setThinkingLevel',
+  'cycleThinkingLevel',
+  'setSteeringMode',
+  'setFollowUpMode',
+  'compact',
+  'setAutoCompaction',
+  'setAutoRetry',
+  'abortRetry',
+  'bash',
+  'abortBash',
+  'exportHtml',
+  'getCommands',
+  'getLastAssistantText',
+]);
+
 /** ADR-002 substrate § brain v15 (2026-06-07). Named session per mode —
  *  both modes coexist in one Pi RPC process, but only one is the "active"
  *  session at any moment. The bridge cache + mutex below ensure (a) we
@@ -326,6 +366,14 @@ export class PiBridge {
    *  and dispatch. Methods that don't exist on the client return an
    *  error rather than silently ok. ADR-009 P10 (no swallowed errors). */
   async callRpc(method: string, args: unknown[] = []): Promise<unknown> {
+    // Allowlist gate (bao 2026-06-07 audit, CRITICAL): `method` arrives from
+    // an untrusted HTTP body (mcp-server /api/pi-rpc). Reject anything not on
+    // the explicit PiRpcClient allowlist BEFORE the property lookup so a
+    // caller can never reach `__proto__` / `constructor` / `prototype` or any
+    // inherited built-in method.
+    if (!PI_RPC_ALLOWED_METHODS.has(method)) {
+      throw new Error(`PiBridge.callRpc: method "${method}" is not allowed`);
+    }
     const client = await this.ensureRpc();
     const fn = (client as unknown as Record<string, unknown>)[method];
     if (typeof fn !== 'function') {
@@ -608,10 +656,10 @@ export class PiBridge {
         // path during dev; will move to npm install once published. [I7]
         // surface-decoupled: this extension is the same one any wrapper (CLI,
         // IDE, mobile, etc) loads — CTRL just spawns Pi with it included.
-        const irisyPersonaExt =
-          process.env.IRISY_PERSONA_EXTENSION ??
-          '/Users/mac/Documents/coding/irisy-persona/src/index.ts';
-        if (existsSync(irisyPersonaExt)) {
+        // No hardcoded dev path: if the env var is unset the extension is
+        // simply not loaded (CLAUDE.md no-hardcoded-paths + info-leak guard).
+        const irisyPersonaExt = process.env.IRISY_PERSONA_EXTENSION ?? null;
+        if (irisyPersonaExt && existsSync(irisyPersonaExt)) {
           args.unshift('--extension', irisyPersonaExt);
         }
         // bao 2026-06-05: load irisy-web — registers web_search + web_fetch
@@ -624,10 +672,9 @@ export class PiBridge {
         // back to DuckDuckGo instant-answer. [P5] honest about which path
         // served; [I5] tool layer external to persona; [AP9] no swallowed
         // errors — failures surface to the user as tool isError messages.
-        const irisyWebExt =
-          process.env.IRISY_WEB_EXTENSION ??
-          '/Users/mac/Documents/coding/irisy-web/src/index.ts';
-        if (existsSync(irisyWebExt)) {
+        // No hardcoded dev path: unset env var → extension not loaded.
+        const irisyWebExt = process.env.IRISY_WEB_EXTENSION ?? null;
+        if (irisyWebExt && existsSync(irisyWebExt)) {
           args.unshift('--extension', irisyWebExt);
         }
         // bao 2026-06-05: load irisy-preview — registers preview_html /
@@ -638,10 +685,9 @@ export class PiBridge {
         // returns the URL. For Vite/Next/dev-server cases the LLM should
         // use Pi bash to run `npm run dev` manually. [I5] tool external
         // to persona; [P5] honest about the static-only constraint.
-        const irisyPreviewExt =
-          process.env.IRISY_PREVIEW_EXTENSION ??
-          '/Users/mac/Documents/coding/irisy-preview/src/index.ts';
-        if (existsSync(irisyPreviewExt)) {
+        // No hardcoded dev path: unset env var → extension not loaded.
+        const irisyPreviewExt = process.env.IRISY_PREVIEW_EXTENSION ?? null;
+        if (irisyPreviewExt && existsSync(irisyPreviewExt)) {
           args.unshift('--extension', irisyPreviewExt);
         }
         // bao 2026-06-05: load irisy-mac — registers screenshot_take +
@@ -653,10 +699,9 @@ export class PiBridge {
         // Line Tools (swiftc); the tool returns an honest install hint
         // if absent. No third-party OCR engine, no network. [P5] honest
         // about platform limits; [AP9] no swallowed errors.
-        const irisyMacExt =
-          process.env.IRISY_MAC_EXTENSION ??
-          '/Users/mac/Documents/coding/irisy-mac/src/index.ts';
-        if (existsSync(irisyMacExt)) {
+        // No hardcoded dev path: unset env var → extension not loaded.
+        const irisyMacExt = process.env.IRISY_MAC_EXTENSION ?? null;
+        if (irisyMacExt && existsSync(irisyMacExt)) {
           args.unshift('--extension', irisyMacExt);
         }
       }
@@ -856,6 +901,17 @@ async function injectActiveProviderForSpawn(port: string): Promise<SpawnSpec> {
   const { join } = await import('node:path');
   const { homedir } = await import('node:os');
 
+  // Validate the port (bao 2026-06-07 audit, MEDIUM): `port` originates from
+  // process.env.CTRL_PROVIDER_PORT and is interpolated into the request URL.
+  // Reject anything that is not an integer in the valid TCP range so a
+  // malformed env var fails loudly instead of producing a bogus URL.
+  const portNum = Number(port);
+  if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+    throw new Error(
+      `CTRL_PROVIDER_PORT must be an integer in 1..65535 (got "${port}")`,
+    );
+  }
+
   // Step 1 — Resolve SSOT-selected provider via kernel HTTP. The kernel
   // joins SSOT + manifest + keychain into one response shape. If the
   // kernel is unreachable, surface the error verbatim — there is no
@@ -875,10 +931,18 @@ async function injectActiveProviderForSpawn(port: string): Promise<SpawnSpec> {
     apiKey: string;
     models: KernelModel[];
   };
-  const detailsUrl = `http://127.0.0.1:${port}/tool/get_active_provider_details`;
+  const detailsUrl = `http://127.0.0.1:${portNum}/tool/get_active_provider_details`;
+  // SHARED CONTRACT (2026-06-07): the CTRL provider endpoint now requires a
+  // Bearer token (env CTRL_PROVIDER_TOKEN). Send it when present so the
+  // Rust-side auth gate accepts the request.
+  const providerToken = process.env.CTRL_PROVIDER_TOKEN;
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (providerToken && providerToken.length > 0) {
+    headers.Authorization = `Bearer ${providerToken}`;
+  }
   const resp = await fetch(detailsUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: '{}',
   });
   if (!resp.ok) {

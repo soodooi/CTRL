@@ -52,6 +52,33 @@ impl KernelSupervisor {
         };
         app.manage(handle.clone());
 
+        // ── Boot-time env provisioning (MUST precede every tokio::spawn) ──
+        //
+        // `std::env::set_var` mutates process-global state with no
+        // synchronization; in Rust 2024 it is `unsafe` precisely because a
+        // concurrent reader is a data race. We therefore generate every
+        // per-boot secret and publish all env vars here — synchronously, on
+        // the single boot thread, BEFORE any async task is spawned. Tasks
+        // (and the Pi child process) then only ever *read* these vars.
+        //
+        //   CTRL_KERNEL_MCP_TOKEN / _PORT — kernel-as-MCP-server bearer +
+        //     port; Pi auto-connects via mcpServers."ctrl-kernel".
+        //   CTRL_PROVIDER_TOKEN — bearer required by the provider HTTP
+        //     endpoint (http_endpoint.rs, port CTRL_PROVIDER_PORT/17878);
+        //     Pi's provider extension sends it as `Authorization: Bearer …`.
+        let mcp_token = Arc::new(uuid::Uuid::new_v4().to_string());
+        let provider_token = uuid::Uuid::new_v4().to_string();
+        let mcp_port = crate::kernel::MCP_SERVER_LISTEN_ADDR
+            .rsplit_once(':')
+            .map(|(_, p)| p.to_string())
+            .unwrap_or_else(|| "17873".to_string());
+        // SAFETY (forward-compat with edition 2024, where set_var is
+        // `unsafe`): single-threaded kernel boot, executed before any
+        // tokio::spawn below — no concurrent env reader exists yet.
+        std::env::set_var("CTRL_KERNEL_MCP_TOKEN", mcp_token.as_str());
+        std::env::set_var("CTRL_KERNEL_MCP_PORT", &mcp_port);
+        std::env::set_var("CTRL_PROVIDER_TOKEN", &provider_token);
+
         // ADR-002 substrate § brain v7 §1.1 + ADR-005 irisy v4 §7.5 (2026-06-04):
         // Pi-facing HTTP endpoint serves both /text-chat (provider router)
         // and /tool/<name> (kernel-tool dispatch for BYOK frontier-native
@@ -73,36 +100,27 @@ impl KernelSupervisor {
         // upsert in `injectActiveProviderForSpawn`) auto-connects and
         // gets kernel capabilities (clipboard / OCR / vault_index FTS5
         // / keychain / subprocess) as native Pi tools. The per-boot
-        // bearer token is published via process env vars
-        // CTRL_KERNEL_MCP_TOKEN + CTRL_KERNEL_MCP_PORT; Pi child
-        // inherits these naturally (no env_clear in spawn_brain), and
-        // pi-bridge writes them as `Authorization: Bearer ...` header
+        // bearer token + port were generated and published to env above
+        // (pre-spawn); we hand the same `mcp_token` to `serve` so the
+        // endpoint and CTRL_KERNEL_MCP_TOKEN stay in lockstep. Pi child
+        // inherits these env vars naturally (no env_clear in spawn_brain)
+        // and pi-bridge writes them as `Authorization: Bearer ...` header
         // in ~/.pi/agent/settings.json mcpServers."ctrl-kernel".
         let runtime_for_mcp = runtime.clone();
+        let mcp_token_for_serve = mcp_token.clone();
         tauri::async_runtime::spawn(async move {
             match crate::kernel::mcp_server::serve(
                 runtime_for_mcp,
                 None,
                 crate::kernel::MCP_SERVER_LISTEN_ADDR,
+                mcp_token_for_serve,
             )
             .await
             {
-                Ok(h) => {
-                    tracing::info!(
-                        listen_addr = %h.listen_addr,
-                        "kernel: MCP server listening (Pi auto-connect via mcpServers)"
-                    );
-                    // SAFETY: set_var is unsafe in Rust 2024; we are at
-                    // single-threaded kernel boot, before any other task
-                    // reads env vars. Pi child inherits via Command env.
-                    std::env::set_var("CTRL_KERNEL_MCP_TOKEN", h.auth_token.as_str());
-                    let port = h
-                        .listen_addr
-                        .rsplit_once(':')
-                        .map(|(_, p)| p.to_string())
-                        .unwrap_or_else(|| "17873".to_string());
-                    std::env::set_var("CTRL_KERNEL_MCP_PORT", port);
-                }
+                Ok(h) => tracing::info!(
+                    listen_addr = %h.listen_addr,
+                    "kernel: MCP server listening (Pi auto-connect via mcpServers)"
+                ),
                 Err(e) => tracing::warn!(error = %e, "kernel: MCP server spawn failed"),
             }
         });

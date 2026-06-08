@@ -378,8 +378,33 @@ async function handleToolsCall(
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
+/** Hosts considered loopback-only — safe to run without a Bearer token. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
+  '127.0.0.1',
+  '::1',
+  'localhost',
+]);
+
+function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host);
+}
+
 function authorised(req: IncomingMessage, config: ServerConfig): boolean {
-  if (!config.token) return true; // localhost-only no-auth mode
+  if (!config.token) {
+    // No-auth mode is only safe on a loopback bind. If the operator bound
+    // the server to a non-loopback host without setting CTRL_PI_TOKEN, refuse
+    // every request rather than exposing Pi to the network unauthenticated.
+    // bao 2026-06-07 audit (HIGH).
+    if (!isLoopbackHost(config.host)) {
+      process.stderr.write(
+        `ctrl-pi-brain: REFUSING request — host "${config.host}" is not ` +
+          `loopback and CTRL_PI_TOKEN is unset. Set CTRL_PI_TOKEN to bind ` +
+          `to a non-loopback interface.\n`,
+      );
+      return false;
+    }
+    return true; // loopback-only no-auth mode
+  }
   const header = req.headers['authorization'];
   if (typeof header !== 'string') return false;
   const expected = `Bearer ${config.token}`;
@@ -388,13 +413,21 @@ function authorised(req: IncomingMessage, config: ServerConfig): boolean {
   return Buffer.compare(Buffer.from(header), Buffer.from(expected)) === 0;
 }
 
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
+  // Track a running byte total instead of re-concatenating every iteration —
+  // the old `Buffer.concat(chunks).length` check was O(n^2) over body size.
+  // Concat once after the loop. bao 2026-06-07 audit (HIGH).
+  let totalBytes = 0;
   for await (const chunk of req) {
-    chunks.push(chunk as Buffer);
-    if (Buffer.concat(chunks).length > 4 * 1024 * 1024) {
+    const buf = chunk as Buffer;
+    totalBytes += buf.length;
+    if (totalBytes > MAX_BODY_BYTES) {
       throw new Error('request body too large');
     }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks).toString('utf8');
 }
