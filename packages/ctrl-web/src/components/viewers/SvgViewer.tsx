@@ -3,8 +3,9 @@
 // mcp icon.svg files (~/.ctrl/mcps/<id>/assets/icon.svg) and any
 // SVG asset in the vault.
 
-import { useState, type ReactElement } from 'react';
+import { useMemo, useState, type ReactElement } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
+import DOMPurify from 'dompurify';
 import { html } from '@codemirror/lang-html'; // SVG ≈ XML; lang-html covers it
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { useViewerResource } from './useViewerResource';
@@ -15,6 +16,19 @@ export const SvgViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
+
+  // Vault SVG is user-controlled but renders inside the Tauri WebView
+  // with full invoke() access — raw <script>, onload, and
+  // xlink:href="javascript:" would be XSS→RCE. Sanitize with the
+  // DOMPurify SVG profile before inline injection. Editing the source
+  // is untouched; only the rendered preview is sanitized.
+  const safeSvg = useMemo(
+    () =>
+      DOMPurify.sanitize(content ?? '', {
+        USE_PROFILES: { svg: true, svgFilters: true },
+      }),
+    [content],
+  );
 
   const rightActions = (
     <div className={styles.modeToggle}>
@@ -50,13 +64,15 @@ export const SvgViewer = ({ resource }: ViewerProps): ReactElement => {
       <div className={mode === 'preview' ? styles.frameBody : styles.scroll}>
         {mode === 'preview' ? (
           <div className={styles.svgStage}>
-            {/* SVG is XML — dangerouslySetInnerHTML is the canonical
-                way to inline-render trusted vault content. The vault is
-                user-controlled, not arbitrary third-party HTML. */}
+            {/* SVG is XML — inline-rendered via dangerouslySetInnerHTML.
+                The markup is sanitized through DOMPurify's SVG profile
+                first (strips <script>, on* handlers, javascript: URLs)
+                because the vault is user-controlled and the WebView has
+                invoke() access. */}
             <div
               className={styles.svgFigure}
               // eslint-disable-next-line react/no-danger
-              dangerouslySetInnerHTML={{ __html: content ?? '' }}
+              dangerouslySetInnerHTML={{ __html: safeSvg }}
             />
           </div>
         ) : (

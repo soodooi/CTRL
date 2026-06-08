@@ -46,6 +46,21 @@ interface CellProps {
   onChange: (next: string) => void;
 }
 
+// Only http/https/mailto are safe to expose as a clickable href. A raw
+// vault cell can hold `javascript:` or `data:` URLs which would execute
+// on click inside the invoke()-capable WebView, so anything else falls
+// back to plain text.
+const SAFE_URL_SCHEMES = ['http:', 'https:', 'mailto:'];
+
+const safeHref = (value: string): string | null => {
+  try {
+    const parsed = new URL(value);
+    return SAFE_URL_SCHEMES.includes(parsed.protocol) ? value : null;
+  } catch {
+    return null;
+  }
+};
+
 const Cell = ({ col, value, editable, onChange }: CellProps): ReactElement => {
   const common = {
     className: styles.tableCell,
@@ -107,19 +122,31 @@ const Cell = ({ col, value, editable, onChange }: CellProps): ReactElement => {
           onChange={(e) => onChange(e.target.value)}
         />
       );
-    case 'url':
-      return editable ? (
-        <input
-          {...common}
-          type="url"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      ) : (
-        <a href={value} target="_blank" rel="noreferrer" className={styles.tableLink}>
+    case 'url': {
+      if (editable) {
+        return (
+          <input
+            {...common}
+            type="url"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        );
+      }
+      const href = safeHref(value);
+      return href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.tableLink}
+        >
           {value}
         </a>
+      ) : (
+        <span className={styles.tableLink}>{value}</span>
       );
+    }
     default:
       return (
         <input

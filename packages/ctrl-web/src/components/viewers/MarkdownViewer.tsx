@@ -119,35 +119,39 @@ const escapeHtml = (s: string): string =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-const inline = (s: string, resolver?: WikilinkResolver): string => {
-  // Convert `[[target]]` first — before the `[label](href)` rule —
-  // so wikilink syntax never gets caught by the markdown-link regex.
-  // Absent resolver = assume target resolves (paints as a normal
-  // wikilink). Broken-link styling requires the caller to pass an
-  // actual resolver.
-  const wikilinked = s.replace(/\[\[([^\]\n|]+)(?:\|[^\]\n]+)?\]\]/g, (_, raw: string) => {
-    const target = raw.trim();
-    const resolved = resolver ? resolver(target) : true;
-    return renderWikilinkInline(target, !resolved);
-  });
-  return escapeHtml(wikilinked)
-    // The wikilink HTML we just emitted contains `<` `>` etc — undo
-    // that escape pass by detecting the literal token. Escape is
-    // necessary on the rest of the line, but our token is a single
-    // span fragment we trust.
-    .replace(
-      /&lt;span data-wikilink[\s\S]+?&lt;\/span&gt;/g,
-      (m) =>
-        m
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/&amp;/g, '&'),
-    )
+// Inline markdown formatting applied to an already-escaped, wikilink-free
+// text segment. Kept separate from inline() so the wikilink HTML we emit
+// is never fed back through these rules.
+const inlineFormat = (escaped: string): string =>
+  escaped
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noopener noreferrer">$1</a>');
+
+const WIKILINK_RE = /\[\[([^\]\n|]+)(?:\|[^\]\n]+)?\]\]/g;
+
+const inline = (s: string, resolver?: WikilinkResolver): string => {
+  // Split the line into alternating plain-text and wikilink segments.
+  // Plain text is escaped (so a vault string that merely *looks* like a
+  // wikilink span fragment stays inert), while the wikilink HTML is
+  // produced by renderWikilinkInline and emitted verbatim. There is no
+  // escape-then-unescape round trip, so crafted `<span data-wikilink…>`
+  // input can never be promoted back into live HTML.
+  let out = '';
+  let lastIndex = 0;
+  WIKILINK_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = WIKILINK_RE.exec(s)) !== null) {
+    const plain = s.slice(lastIndex, match.index);
+    out += inlineFormat(escapeHtml(plain));
+    const target = match[1]!.trim();
+    const resolved = resolver ? resolver(target) : true;
+    out += renderWikilinkInline(target, !resolved);
+    lastIndex = match.index + match[0].length;
+  }
+  out += inlineFormat(escapeHtml(s.slice(lastIndex)));
+  return out;
 };
 
 const htmlToMarkdown = (html: string): string => {
