@@ -1080,10 +1080,13 @@ async function loadPiCodingAgent(pi: PiBinary): Promise<{
     join(binDir, '..', '@mariozechner', 'pi-coding-agent'),
     join(binDir, '..', '..', '@mariozechner', 'pi-coding-agent'),
   ];
+  // Node's ESM loader rejects a bare absolute path on Windows (`import('D:\\...')`
+  // -> "Received protocol 'd:'"); an absolute path must be a file:// URL.
+  const { pathToFileURL } = await import('node:url');
   for (const c of candidates) {
     const entry = join(c, 'dist', 'index.js');
     if (existsSync(entry)) {
-      return (await import(entry)) as { RpcClient: PiRpcClientCtor };
+      return (await import(pathToFileURL(entry).href)) as { RpcClient: PiRpcClientCtor };
     }
   }
   return (await import('@mariozechner/pi-coding-agent')) as {

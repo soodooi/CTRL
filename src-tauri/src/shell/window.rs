@@ -89,8 +89,11 @@ impl WindowController {
         };
         #[cfg(target_os = "windows")]
         {
+            cloak::allow_set_foreground();
             cloak::set(&w, false);
             super::hotkey::HotkeyController::reset_state();
+            cloak::force_foreground(&w);
+            let _ = w.set_focus();
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -141,8 +144,11 @@ impl WindowController {
                 cloak::set(&w, false);
                 // Reset hotkey state when window is shown to prevent interference
                 super::hotkey::HotkeyController::reset_state();
-                // Pull keyboard focus to the launcher so the user can type
-                // into Irisy immediately after summoning.
+                // Force the window into the foreground input queue, then hand
+                // focus to the webview. Without the AttachThreadInput-based
+                // force, an uncloaked window takes mouse clicks but keystrokes
+                // still route to the previously-active app (Irisy unusable).
+                cloak::force_foreground(&w);
                 let _ = w.set_focus();
             } else {
                 tracing::info!("WindowController::toggle — cloak (hide)");
@@ -314,7 +320,12 @@ mod cloak {
     use windows_sys::Win32::Graphics::Dwm::{
         DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_CLOAK, DWMWA_CLOAKED,
     };
-    use windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
+    use windows_sys::Win32::System::Threading::AttachThreadInput;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        AllowSetForegroundWindow, BringWindowToTop, GetForegroundWindow,
+        GetWindowThreadProcessId, SetForegroundWindow,
+    };
 
     /// `ASFW_ANY` — permit any process to call SetForegroundWindow. We use
     /// this (rather than our own PID) because `GetCurrentProcessId` would
@@ -337,6 +348,43 @@ mod cloak {
         // sound regardless of return value.
         unsafe {
             AllowSetForegroundWindow(ASFW_ANY);
+        }
+    }
+
+    /// Force the launcher to the foreground and give it keyboard focus. After a
+    /// DWM uncloak the window is visible but Win11 keeps it out of the
+    /// foreground input queue, so mouse clicks land but keystrokes route to the
+    /// previously-active app (the user sees a caret but cannot type). Attaching
+    /// our window thread's input queue to the foreground thread's lets
+    /// SetForegroundWindow actually take effect — the standard Win32
+    /// foreground-lock workaround. Best-effort; failures leave focus as-is.
+    pub(super) fn force_foreground(w: &WebviewWindow) {
+        let Some(h) = hwnd(w) else { return };
+        // SAFETY: every call is a documented Win32 API on a valid HWND / thread
+        // id. AttachThreadInput is balanced (attach then detach) so no input-
+        // queue state leaks; null foreground and zero thread ids are guarded.
+        unsafe {
+            let fg = GetForegroundWindow();
+            if fg == h {
+                SetFocus(h);
+                return;
+            }
+            let fg_thread = if fg.is_null() {
+                0
+            } else {
+                GetWindowThreadProcessId(fg, std::ptr::null_mut())
+            };
+            let our_thread = GetWindowThreadProcessId(h, std::ptr::null_mut());
+            let attached = fg_thread != 0 && fg_thread != our_thread;
+            if attached {
+                AttachThreadInput(fg_thread, our_thread, 1);
+            }
+            BringWindowToTop(h);
+            SetForegroundWindow(h);
+            SetFocus(h);
+            if attached {
+                AttachThreadInput(fg_thread, our_thread, 0);
+            }
         }
     }
 

@@ -428,6 +428,21 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   // setInput while composing; commit the final string on compositionend.
   const isComposingRef = useRef(false);
 
+  // Focus the composer when the launcher is summoned. On macOS window
+  // activation lands keyboard focus on the textarea naturally; on Windows the
+  // DWM cloak/uncloak reveal path leaves the webview unfocused, so after
+  // pressing Ctrl the user sees the window but can't type. Re-focus on every
+  // window focus gain (each Ctrl summon) plus once on mount.
+  useEffect(() => {
+    const focusInput = () => {
+      if (document.activeElement === inputRef.current) return;
+      inputRef.current?.focus();
+    };
+    focusInput();
+    window.addEventListener('focus', focusInput);
+    return () => window.removeEventListener('focus', focusInput);
+  }, []);
+
   // Tick elapsed time while a send is in flight so the user sees that
   // something is happening on long calls.
   useEffect(() => {
