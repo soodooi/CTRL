@@ -42,6 +42,7 @@ import styles from './PrimaryRail.module.css';
 // rewiring deferred to a follow-up PR.
 const IRISY_ITEM_ID = 'builtin-irisy';
 const CODING_ITEM_ID = 'coding';
+const ASSISTANT_ITEM_ID = 'assistant';
 const POOL_ITEM_ID = 'pool';
 // ADR-002 § vault v1 §8.6 v4 (bao 2026-06-02): Vault is the substrate.
 // The L1 chip surfaces the **Notes** app (the first vault-using app);
@@ -95,6 +96,18 @@ const CodingIcon = (): ReactElement => (
     <polyline points="8 7 3 12 8 17" />
     <polyline points="16 7 21 12 16 17" />
     <line x1="14" y1="5" x2="10" y2="19" />
+  </svg>
+);
+
+const AssistantIcon = (): ReactElement => (
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+    <path d="M12 8a4 4 0 0 0-4 4v1a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-1a4 4 0 0 0-4-4z" />
+    <path d="M7 19v-2" />
+    <path d="M12 19v-2" />
+    <path d="M17 19v-2" />
+    <path d="M5 19h14" />
   </svg>
 );
 
@@ -152,11 +165,13 @@ const NAV_ITEMS: ReadonlyArray<RailDef> = [
   { id: POOL_ITEM_ID, label: 'Mcp pool', path: '/pool', icon: <PoolIcon /> },
   { id: NOTES_ITEM_ID, label: 'Notes', path: '/notes', icon: <NotesIcon /> },
   { id: CODING_ITEM_ID, label: 'Coding', path: '/coding', icon: <CodingIcon /> },
+  { id: ASSISTANT_ITEM_ID, label: 'Assistant', path: '/assistant', icon: <AssistantIcon /> },
 ];
 
 const SETTINGS_PATH = '/settings/ctrl';
 
 const idForPath = (pathname: string): string => {
+  if (pathname.startsWith('/assistant')) return ASSISTANT_ITEM_ID;
   if (pathname.startsWith('/coding')) return CODING_ITEM_ID;
   if (pathname.startsWith('/pool')) return POOL_ITEM_ID;
   if (pathname.startsWith('/notes')) return NOTES_ITEM_ID;

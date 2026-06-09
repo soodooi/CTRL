@@ -13,7 +13,10 @@ use anyhow::Result;
 use tauri::{AppHandle, Manager};
 
 use super::window::install_close_intercept;
-use super::{BrainSupervisor, HotkeyController, KernelSupervisor, TrayController, WindowController};
+use super::{
+    BrainSupervisor, HermesSupervisor, HotkeyController, KernelSupervisor, OpencodeSupervisor,
+    TrayController, WindowController,
+};
 
 pub struct ShellLifecycle;
 
@@ -47,6 +50,16 @@ impl ShellLifecycle {
         // never starts it by hand. Non-blocking + graceful (Volc fallback).
         tracing::info!("ShellLifecycle::boot — starting Pi brain supervisor");
         BrainSupervisor::start(app);
+
+        // opencode is the coding brain — keep it always connected. Spawns + supervises
+        // opencode serve (headless HTTP server) on a random port. Non-blocking.
+        tracing::info!("ShellLifecycle::boot — starting opencode supervisor");
+        OpencodeSupervisor::start(app);
+
+        // Hermes is the assistant brain — keep it always connected. Spawns + supervises
+        // hermes mcp serve (stdio MCP server). Non-blocking.
+        tracing::info!("ShellLifecycle::boot — starting Hermes supervisor");
+        HermesSupervisor::start(app);
 
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;

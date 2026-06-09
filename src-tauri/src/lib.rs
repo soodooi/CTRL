@@ -22,6 +22,7 @@
 
 mod asset_scheme;
 mod commands;
+mod credential_vault;
 mod error;
 mod kernel;
 mod shell;
@@ -126,6 +127,8 @@ pub fn run() {
                 api.prevent_exit();
             } else {
                 shell::BrainSupervisor::shutdown();
+                shell::OpencodeSupervisor::shutdown();
+                shell::HermesSupervisor::shutdown();
             }
         }
         _ => {}
