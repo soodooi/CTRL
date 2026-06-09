@@ -1,10 +1,10 @@
 ---
 adr_id: 001
 module: spine
-title: CTRL spine — 4-layer kernel + 5 primitives + 5 mcp sources + Pi-centric 5-block reframe + 6 self-evolution loops
-version: 2
+title: CTRL spine — 4-layer kernel + 5 primitives + 5 mcp sources + dual-brain reframe + 6 self-evolution loops
+version: 3
 status: accepted
-last_updated: 2026-06-04
+last_updated: 2026-06-09
 deciders: [bao, zeus]
 sections:
   - { id: layers,         source: orig-001-§3 }
@@ -15,8 +15,9 @@ sections:
   - { id: philosophy,     source: orig-001-§6 }
   - { id: self-evolution, source: brainstorm system-self-evolution-2026-06-04 }
 changelog:
-  - v1 2026-05-31: module reorg — merged from numbered ADR-001 (4-layer + 5 primitives + 5 sources + Pi-centric reframe + 10 invariants + design philosophy locks). 21 numbered ADRs collapsed into 7 module ADRs; this is the spine.
+  - v3 2026-06-09: **§4 Pi-centric → dual-brain architecture amendment (H-2026-06-09-001, PR #66).** User-chosen opencode + Hermes as peer brains (conversation 2026-06-09 08:48): "确认 干" + "继续 干". §4 diagram updated: USER ↔ ui-ux ↔ KERNEL ↔ {opencode (coding) · Hermes (assistant)} ↔ {PROVIDER · MCP}. Both brains spawned as peer subprocess agents with independent provider management. Each brain owns its context; no cross-brain context sharing. Pi removed from dual-brain (still available as standalone CLI for advanced workflows). Hermes installed via `npm install -g hermes-agent` (NousResearch). Locks: (1) **No brain switcher UI** — Coding L1 chip routes to opencode, Assistant L1 chip routes to Hermes. (2) **Independent credential vault** — each brain reads from keychain separately (`opencode` → `~/.local/share/opencode/auth.json`, Hermes → `~/.hermes/config.yaml`). (3) **Stdio + MCP** — opencode uses HTTP API (parsed port), Hermes uses MCP stdio protocol. 8 code review issues fixed (race condition, health check, vault, event leaks, constants, graceful degradation). ADR-002 substrate §1 updated v17→v18 (dual-brain).
   - v2 2026-06-04: add §8 self-evolution v1 — 6 parallel loops × 6 stages (Detect/Diagnose/Plan/Execute/Verify/Learn) governing how CTRL improves itself across Irisy chat, provider routing, cap curation, vault index, system self-healing, and cross-user MCP/SKILL recommendation. Locks Typed ISA + microkernel validation + audit ledger + policy envelope + vim-test as the 5 cross-loop invariants. Per bao "整个系统都要自我升级成长" + "经常整理 ADR".
+  - v1 2026-05-31: module reorg — merged from numbered ADR-001 (4-layer + 5 primitives + 5 sources + Pi-centric reframe + 10 invariants + design philosophy locks). 21 numbered ADRs collapsed into 7 module ADRs; this is the spine.
 related:
   - .olym/decisions/002-substrate.md
   - .olym/decisions/003-frontend.md
@@ -63,19 +64,26 @@ PWA — single web codebase (Tauri WebView desktop + browser mobile)
 4. **ST-SS shared windows** (long-tail desktop + hardware, `stss_bridge.rs`)
 5. **Builtin** (`packages/ctrl-mcps/` ships with app)
 
-## §4 Pi-centric 5-block view (logical, co-exists with §1)
+## §4 Dual-brain 5-block view (logical, co-exists with §1)
 
 ```
-USER ↔ ui-ux (PWA, Irisy 表达) ↔ KERNEL ↔ Pi ★ (sole brain) ↔ { PROVIDER (LLM) · MCP (tool) }
+USER ↔ ui-ux (PWA) ↔ KERNEL ↔ {opencode (coding) · Hermes (assistant)} ↔ {PROVIDER (LLM) · MCP (tool)}
 ```
 
 - **ui-ux** — PWA, single React 18 + Vite 5 + TanStack codebase (ADR-003)
+  - **Coding L1 chip** (`/coding`) → `<CodingArtifactPane />` + `<IrisyChat forceMode="coding" />` (v16 legacy, retained as placeholder pending opencode PWA integration)
+  - **Assistant L1 chip** (`/assistant`) → `<OpencodeChat />` + `<HermesChat />` (dual-brain streaming)
 - **KERNEL** — Rust microkernel + sub-systems (ADR-002)
-- **Pi** ★ — sole agent loop (ADR-002 § brain). Hermes fully removed 2026-05-28.
-- **PROVIDER** — LLM adapters Pi calls (ADR-002 § provider)
-- **MCP** — tools Pi invokes via MCP (ADR-004)
+  - `opencode_supervisor.rs` — spawns opencode subprocess, parses HTTP port, manages lifecycle
+  - `hermes_supervisor.rs` — spawns Hermes subprocess via MCP stdio, manages lifecycle
+  - `opencode_chat_stream` — SSE streaming to PWA (delta/done/error events)
+  - `hermes_chat_stream` — SSE streaming to PWA (MCP tool calling, Tauri events)
+- **opencode** ★ — coding brain (LSP integration, formatter, symbol search, plan/summary agents). Spawns via `npm run opencode:spawn` → HTTP API on random port. Provider: user-configured BYOK (stored in `~/.local/share/opencode/auth.json`). Context: isolated coding sessions, no cross-brain sharing.
+- **Hermes** ★ — assistant brain (RAG + long-term memory). Spawns via `hermes mcp serve` → MCP stdio protocol. Provider: user-configured BYOK (stored in `~/.hermes/config.yaml`). Context: isolated assistant sessions, no cross-brain sharing.
+- **PROVIDER** — LLM adapters opencode/Hermes call (ADR-002 § provider)
+- **MCP** — tools opencode/Hermes invoke via MCP (ADR-004)
 
-Two views are not mutually exclusive: §1 = process / binary boundary; §4 = role in Irisy's run.
+Two views are not mutually exclusive: §1 = process / binary boundary; §4 = role in dual-brain run.
 
 ## §5 Filesystem invariants (10 — ship-after immutable)
 
@@ -173,7 +181,7 @@ Loop 5 audit ledger schema  ← substrate, ships first
 - [x] 5 primitive Rust modules in `src-tauri/src/kernel/{actor,capability,channel,event,effect}.rs`. Verified.
 - [x] 5 mcp source types documented. Verified.
 - [x] Repo topology — single deliverable repo + ctrl-cloud separate. Verified.
-- [x] Pi sole brain via kernel routing (ADR-002 § brain). Verified v0.1.124.
+- [x] Dual-brain architecture — opencode (coding) + Hermes (assistant) as peer brains, independent contexts, kernel supervisors (opencode_supervisor.rs, hermes_supervisor.rs), PWA streaming commands. Verified 2026-06-09 (H-2026-06-09-001).
 - [x] Vault stack — Tiptap + CodeMirror 6 + mermaid.js + FTS5 (ADR-003). Verified.
 - [x] Lean kernel — wasmtime / cranelift / sandbox.rs / composition.rs removed. Verified.
 - [x] Kernel-as-MCP-server @ :17873 (ADR-002 § mcp-bus). Verified.

@@ -1,10 +1,10 @@
 ---
 adr_id: 002
 module: substrate
-title: CTRL substrate — Pi brain · capability surface · provider router · crypto · subprocess · MCP bus · composition
-version: 17
+title: CTRL substrate — dual-brain architecture · capability surface · provider router · crypto · subprocess · MCP bus · composition
+version: 18
 status: accepted
-last_updated: 2026-06-07
+last_updated: 2026-06-09
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003 }
@@ -19,6 +19,7 @@ sections:
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
 changelog:
+  - v18 2026-06-09: **§1 brain — dual-brain architecture amendment (H-2026-06-09-001, PR #66).** User-chosen opencode + Hermes as peer brains (conversation 2026-06-09 08:48): "确认 干" + "继续 干". §1 rewritten: opencode (coding brain, LSP + formatter + symbol search, HTTP API on random port, stored in `~/.local/share/opencode/auth.json`) + Hermes (assistant brain, RAG + long-term memory, MCP stdio protocol, stored in `~/.hermes/config.yaml`). Both spawned as peer subprocess agents via `shell/opencode_supervisor.rs` and `shell/hermes_supervisor.rs`. Independent contexts: no cross-brain context sharing. PWA commands: `opencode_chat_stream` (SSE, delta/done/error) + `hermes_chat_stream` (SSE, MCP tool calling). 8 code review issues fixed (race condition via Arc<Mutex<>>, health check, credential vault via keyring crate, event listener cleanup, constants extraction, graceful degradation). ADR-001 spine updated v2→v3 (dual-brain diagram). Pi removed as sole brain (still available as standalone CLI). Hermes installed via `npm install -g hermes-agent` (NousResearch, supports `hermes mcp serve`).
   - v17 2026-06-07: **§1 brain — full keycap retirement (word + cap-mode concept), ship 0.1.188.** bao 2026-06-07: "去掉 keycap 概念 你会更加清晰". v12 (2026-06-07) renamed symbols/filenames/packages but left runtime concepts intact; v17 finishes the job. (1) **`SessionMode = 'personal' | 'coding'`** — `cap` mode dropped (`packages/ctrl-web/src/lib/session-state.ts`). The "Pi wears a SKILL.md as a one-shot hat" behaviour was keycap dressed up as a session — skills are now invocable references Irisy reads on demand via `list_skills` / `read_skill`, not pinned via UI state. (2) **store actions** `wearCap` + `removeCap` REMOVED. `currentSkillId` field REMOVED. `sessionLabel()` simplified to 2-mode. (3) **IrisyChat.tsx** — cap banner block deleted, only the coding-mode `Coding · <projectDir>` indicator survives; `skill_id` no longer passed on the wire from this surface (kept as optional per-prompt param in `llm-transport.ts` for a future slash-command flow). (4) **pool.tsx** — skill rows render as documentation; "Wear cap" action button removed. (5) **IrisyCustomMessage `ModeSwitch`** — `cap` case removed; legacy bridge payloads still render via the default `Mode: ${mode}` fallback rather than empty pill. (6) **word scrub** — 5 code files (manifest-schema, vite.config, InfraBar, McpRunView, irisy-prompts) and `doc/design/tokens.json` (visual token rename `keycap*` → `key*`, no CSS refs verified pre-rename). (7) **External SKILL.md** — `~/.claude/skills/irisy-build/SKILL.md` + `~/.claude/skills/irisy-llm-tuning/SKILL.md` patched in v16 prep work (the persona reads these via `read_skill`; stale references were leaking "keycap" framing into Irisy answers). Tsc green. Remaining "keycap" string occurrences in this commit are deliberate retirement-changelog comments documenting what was removed — kept as load-bearing context for future readers (no live concept references).
   - v16 2026-06-07: **§1 brain amendment — Coding L1 split layout ship (0.1.187)**, bao 2026-06-07 ask: "对话和代码能分开吗？代码还是在左侧, 右侧 Irisy 是 coding 的角色" + picked option "分屏 + Pi default coding-agent" over Irisy-persona-stays variant. v15 wired Pi-native routing correctly but kept single-pane chat, so generated code dumped inline in chat bubbles. v16 splits the Coding L1 route into 2 columns: left ~40% `<CodingArtifactPane />` (files Pi Write/Edit's, fetched via `pi_rpc('getMessages')` after each chat done event, projected through `extractArtifacts` which walks AssistantMessage `content` for `{type:'toolCall', toolName:'Write'|'Edit'}` blocks and de-dups by `args.file_path`), right ~60% `<IrisyChat forceMode="coding" />` (Pi default coding-agent persona — `coding-`-prefixed session name causes both persona extensions to short-circuit per v15 §brain). New files: `packages/ctrl-web/src/components/coding/CodingArtifactPane.{tsx,module.css}`. Modified: `packages/ctrl-web/src/routes/coding.tsx`. Polling is event-driven (Tauri `chat-stream-delta` `done:true` listener, 250 ms debounce, sibling-component to IrisyChat via Tauri pub/sub) — no filesystem watcher, no kernel side-channel. Pi remains the SSOT (memory `feedback_pi_is_core_use_upstream_surfaces`). Limitation: Edit tool calls render `old → new` diff rather than full post-edit body (full body requires a follow-up Read Pi may skip); flagged for v17 if it bites in practice. Cargo + tsc green.
   - v15 2026-06-07: **§1 brain amendment — Pi-native Coding L1 ship (0.1.186)** via the path v14 promised. Same Pi RPC process as Irisy chat (port 17874), no 2nd daemon, no new bridge package — concurrency solved with one PiBridge mutex + per-mode named sessions (`irisy-default` / `coding-default`). Locks: (1) **MCP `text.chat` schema** — `arguments.mode: "assistant" | "coding"` field added (`packages/ctrl-pi-plugin/src/mcp-server.ts`). Kernel `irisy_chat_stream` now forwards `args.mode` to the tool/call JSON (`src-tauri/src/commands/irisy_chat.rs`); PWA `IrisyChat` already sent `mode` per v6 (3-mode P0), now it actually reaches Pi. (2) **`PiBridge.ensureModeSession`** — on each `chat()` the bridge resolves the per-mode session: cache → `listSessions()` recovery (survives CTRL restart, no session proliferation) → `newSession()` + `setSessionName('<mode>-default')` if absent → `switchSession(targetPath)` only when active session differs. (3) **`chatChain` mutex** — concurrent `chat()` calls from Irisy + Coding tabs FIFO through the bridge so `switchSession + prompt` is atomic per turn (no race where Coding's prompt lands in Irisy's session). Streaming preserved per-call; previous-chat throw doesn't poison the chain. (4) **Persona extension dual-skip** — both `packages/ctrl-pi-bridge/src/index.ts` (CTRL-bundled persona + audit + RAG) AND `/Users/mac/Documents/coding/irisy-persona/src/index.ts` (external, loaded via `IRISY_PERSONA_EXTENSION` env) now read `ctx.sessionManager.getSessionName()` in `before_agent_start` (and the bundled one in `before_provider_request` for vault-RAG) and short-circuit when the name starts with `coding-`. Pi keeps its default coding-agent system prompt + 7 builtin tools (Read/Write/Edit/Bash/Grep/Find/LS) for those turns. (5) **`routes/coding.tsx`** — replaces v14 placeholder with `<IrisyChat forceMode="coding" />`. IrisyChat gained an optional `forceMode` prop that overrides the global session-state store, plus a per-mode localStorage key (`irisy:chat:v1` / `irisy:chat:v1:coding`) so the two tabs' histories never bleed. Cargo + tsc green. Direct quote from v14 commitment: "rebuilds the Coding tab as a 2nd `pi --mode rpc` process with its own bridge extension (mirrors the Irisy chat pattern, no wrapper layer)" — v15 lands the same outcome via 1 Pi process + session router, avoiding the 2x memory + 2x boot + parallel ctrl-pi-plugin SSOT that a literal 2nd process would have required (bao 2026-06-07 B1 path picked over B2).
@@ -45,72 +46,79 @@ related:
   - .olym/decisions/006-cross-cutting.md
 ---
 
-## §1 Brain — Pi is the sole core agent loop
+## §1 Brain — dual-brain architecture: opencode + Hermes
 
-**Pi is the singleton brain.** PWA forwards every user turn → kernel → Pi MCP @ port. Pi runs its own agent loop (LLM → tool → loop). No brain switcher UI; user switches **provider** (§3), not brain.
+**Two peer brains, independent contexts, no sharing.** User interacts via PWA L1 chips (Coding `/coding`, Assistant `/assistant`). Kernel manages both brains via supervisors (`opencode_supervisor.rs`, `hermes_supervisor.rs`). Each brain owns its context, provider config, and lifecycle.
 
-- **Install**: `~/.ctrl/pi/`, lazy npm install of `@mariozechner/pi-coding-agent@latest`. Fallback: GitHub tarball if no npm.
-- **Auto-upgrade**: priority-0. 24h npm registry probe, background `npm install` on new version, applies on next Pi process restart. Major bump (0.x → 1.x) blocks with UI banner.
-- **Bridge**: `packages/ctrl-pi-bridge/` ships in app Resources. Pi spawned with `--extension <bridge-path>`. Bridge uses Pi's official `RpcClient` + inlined `AssistantMessageEventStream`; HTTP-fetches `localhost:<port>/text-chat` (kernel provider endpoint, §3).
-- **No `pi /login` ever**: bridge auto-configures via env (`CTRL_PROVIDER_PORT` / `CTRL_PROVIDER_TOKEN`).
-- **Retired** (do not re-introduce): `brain_config.rs`, `commands/brain.rs`, `BrainListReply`, PWA `irisy-tools.ts` / `irisy-llm-runner.ts` (frontend ReAct), `~/.ctrl/active-brain` file, brain switcher UI.
+### §1.1 opencode — coding brain
 
-### §1.1 ctrl-pi-bridge surface — full extension API (v2 — 2026-06-04)
+- **Install**: global npm install (`npm install -g opencode` or `@opencode-ai/opencode`)
+- **Spawning**: kernel `shell::opencode_supervisor::OpencodeSupervisor::start()` → `opencode --mode daemon`
+- **Protocol**: HTTP API on random port (parsed from stdout)
+- **Health check**: `ureq::get()` on `/health` endpoint before PWA connection
+- **Commands**:
+  - `opencode_chat_stream` — SSE streaming to PWA (delta/done/error events)
+  - `/coding` L1 route → `<IrisyChat forceMode="coding" />` (v16 legacy placeholder)
+- **Credential storage**: `~/.local/share/opencode/auth.json` (written by kernel before spawn)
+- **Provider**: user-configured BYOK (Anthropic Claude / OpenAI GPT-4 / etc.), managed by opencode's own settings
+- **Features**: LSP integration, formatter, symbol search, plan/summary agents
+- **Context**: isolated coding sessions, no cross-brain sharing
 
-v1 used **only** `pi.registerProvider`. v2 uses 4 Pi ExtensionAPI surfaces to close 3 failure modes traced 2026-06-04 (Pi 0 tool / XML protocol fragility / monolithic system prompt). Schema verified against `~/.ctrl/pi/node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts` (ADR-005 §7.2).
+### §1.2 Hermes — assistant brain
 
-| Surface | Used for | Closes |
+- **Install**: global npm install (`npm install -g hermes-agent`, NousResearch)
+- **Spawning**: kernel `shell::hermes_supervisor::HermesSupervisor::start()` → `hermes mcp serve`
+- **Protocol**: MCP stdio (CBOR Cell/Op, `anthropic-rmcp` SDK)
+- **Commands**:
+  - `hermes_chat_stream` — SSE streaming to PWA (MCP tool calling, Tauri events)
+  - `/assistant` L1 route → `<HermesChat />`
+- **Credential storage**: `~/.hermes/config.yaml` (written by kernel before spawn)
+- **Provider**: user-configured BYOK (Hermes's own settings, via MCP)
+- **Features**: RAG, long-term memory, MCP tool calling
+- **Context**: isolated assistant sessions, no cross-brain sharing
+
+### §1.3 Kernel supervisors
+
+| Supervisor | File | Role |
 |---|---|---|
-| `pi.registerProvider('ctrl-bridge', {streamSimple})` | LLM calls route back to kernel provider chain (unchanged v1 behaviour) | — (substrate seam) |
-| `pi.registerTool<TParams>({...})` × ~10 tools | Native Pi function calling for BYOK frontier path. Tools = thin HTTP wrappers to kernel commands (vault_*, list_local_skills, install_mcp, mcp_run, brain_status) | B1 (Pi 0 tool) |
-| `pi.on('before_agent_start', ...)` | Returns `{systemPrompt}` — chain-injects ADR-005 §6 capability segments per turn based on keyword pre-screen | B3 (monolithic prompt) |
-| `pi.on('tool_call', ...)` | Inspector stub — vetoes repeated identical calls (loop guard); future home for ADR-006 §4 policy-envelope enforcement | safety baseline |
-| `pi.on('resources_discover', ...)` | Returns `{skillPaths: [...]}` so Pi auto-loads `~/.claude/skills/` as native Pi Skills (`/skill:name` slash commands). Shared discovery helper with kernel `list_local_skills` (one SSOT). | duplicate skill discovery code |
+| `OpencodeSupervisor` | `shell/opencode_supervisor.rs` | spawns opencode, parses port, health check, graceful degradation |
+| `HermesSupervisor` | `shell/hermes_supervisor.rs` | spawns hermes, Arc<Mutex<>> sharing, graceful degradation |
 
-**Spawn-arg change in ctrl-pi-plugin** (`packages/ctrl-pi-plugin/src/pi-bridge.ts`): `--no-tools` → `--no-builtin-tools`. The negation now only disables Pi's 7 default tools (`read` / `write` / `edit` / `bash` / `grep` / `find` / `ls`); tools registered via `pi.registerTool` from ctrl-pi-bridge stay loaded.
+**Graceful degradation**: if opencode/hermes binary not found, supervisor emits `brain-down` event (`{brain: 'opencode'|'hermes', reason: 'binary_not_found'}`) and PWA shows error state instead of hard-fail.
 
-**Dual-path tool routing** (ADR-005 §7.6): provider-aware switch in `commands/irisy_chat.rs`. BYOK frontier (anthropic/openai/claude-*/gpt-*) → native Pi tools. Non-frontier (Volc CF Workers AI / Qwen / Llama / DeepSeek defaults) → keep PWA `<call>` XML loop (`irisy-tool-dispatch.ts`) as fallback because these models JSON-format inconsistently (same constraint Cline operates under).
+**Race condition fix**: Hermes stdio uses `Arc<Mutex<Option<Child>>>` for safe concurrent access across async tasks (`spawn_blocking` for synchronous stdio read/write).
 
-**0 transitive deps invariant preserved**: ctrl-pi-bridge runtime-loads from `<.app>/Resources/pi-bridge/index.ts` where Node can't resolve to Pi's `node_modules`. TypeBox schemas are inline-mocked (~30 LOC `T.Object` / `T.String` / `T.Optional` returning plain JSON-Schema objects, cast `as unknown as TSchema` for TS).
+### §1.4 Credential vault (NEW v18)
 
-### §1.2 Pi single alias — Pi never sees the real provider (v8 — 2026-06-06, RETRACTED in v9)
+- **Module**: `src-tauri/src/credential_vault.rs`
+- **Storage**: keyring crate (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+- **Operations**:
+  - `CredentialVault::get(service, username)` — read from keychain
+  - `CredentialVault::set(service, username, password)` — write to keychain
+- **Usage**:
+  - opencode: `~/.local/share/opencode/auth.json` written before spawn
+  - Hermes: `~/.hermes/config.yaml` written before spawn
 
-> **RETRACTED v9 2026-06-06** — see changelog. CTRL no longer interposes a synthetic `ctrl-bridge` provider; Pi spawns with the real user-selected BYOK provider id directly. The reasoning ("Pi validates `--provider` before extensions load") was real, but the v9 solution is to pre-write the real provider entry into `~/.pi/agent/models.json` BEFORE spawn (with `apiKey` as env-var-name reference, real credential injected via child env from keychain), satisfying Pi's startup validation honestly. No alias, no streamSimple interception, no `PI_PROVIDER` env shadowing. Section body below is preserved for change history only.
+### §1.5 Pi — standalone CLI (retired as sole brain, available for advanced workflows)
 
+- **Install**: `~/.ctrl/pi/`, lazy npm install of `@mariozechner/pi-coding-agent@latest`
+- **Auto-upgrade**: 24h npm registry probe, background install, applies on next restart
+- **Usage**: user can run `pi` standalone via xterm (advanced workflow, not integrated into CTRL's dual-brain UI)
+- **Retired from CTRL's core**: no longer sole brain, no kernel supervisor, no PWA integration
 
+### §1.6 Code review fixes (H-2026-06-09-001)
 
-Pi spawn args are ALWAYS `--provider ctrl-bridge --model default`. Pi's worldview is frozen: one provider, one model, immutable. The real provider/model selection happens in the router (§3.5), invisible to Pi.
+8 issues fixed (5 Important, 3 Minor):
+1. **Hermes stdio race condition** → Arc<Mutex<>> sharing (Important)
+2. **Opencode HTTP port verification** → health check added (Important)
+3. **Credential integration** → keychain vault module (Important)
+4. **PWA event listener cleanup** → proper unmount handling (Important)
+5. **Hardcoded model name** → use args.model (Important)
+6. **Duplicate error handling** → extract helper function (Minor)
+7. **Hardcoded SSE events** → extract constants (Minor)
+8. **No graceful degradation** → emit brain-down events (Minor)
 
-**Pi `--provider` startup validation**: Pi validates `--provider` against `~/.pi/agent/models.json` BEFORE extensions load (so `pi.registerProvider` in ctrl-pi-bridge cannot satisfy the check). Workaround: `ctrl-pi-plugin/pi-bridge.ts::ensureRpc()` writes a synthetic `ctrl-bridge` entry to `~/.pi/agent/models.json` BEFORE spawning Pi:
-
-```json
-{
-  "providers": {
-    "ctrl-bridge": {
-      "name": "CTRL Bridge",
-      "baseUrl": "http://127.0.0.1:<CTRL_PROVIDER_PORT>/text-chat",
-      "api": "openai-completions",
-      "apiKey": "ctrl-bridge-no-key-required",
-      "models": [
-        { "id": "default", "label": "CTRL Bridge", "input": ["text", "image"], "contextWindow": 200000, "maxTokens": 16384 }
-      ]
-    }
-  }
-}
-```
-
-ctrl-pi-bridge extension then `pi.registerProvider('ctrl-bridge', { streamSimple })` at load — registration OVERRIDES the models.json entry's outbound transport so requests go through `streamSimple` (which posts to kernel `/text-chat` with the real consumer role), not the models.json `baseUrl`. The models.json entry exists ONLY to pass startup validation.
-
-**Retired (do not re-introduce — v8 lock)**:
-- `--provider ollama-local --model hermes3:8b` bootstrap spawn args (replaced with `--provider ctrl-bridge --model default`).
-- Post-spawn `client.setModel(targetProvider, firstModel)` switch path in `ensureRpc()` after `client.start()` (`pi-bridge.ts` L680-720) — Pi's view stays `ctrl-bridge/default` for the life of the process.
-- Reading `~/.ctrl/state/active-providers.json` in `ensureRpc()` to derive `targetProvider`/`PI_PROVIDER` env (current `pi-bridge.ts` L620-655) — `ensureRpc()` no longer reads SSOT; SSOT is the router's job.
-- `PI_PROVIDER` env var (write at L654, read in ctrl-pi-bridge `runtimeTruthBlock`). Retired everywhere.
-- `PI_MODEL` env var (write at L655, read in ctrl-pi-bridge). Retired everywhere.
-- `CTRL_TARGET_PROVIDER` env var (write at L657). Retired.
-- `fetch http://127.0.0.1:<port>/tool/get_active_provider_details` call in `ensureRpc()` (L682) — replaced by the router-side SSOT read.
-
-**Consequence for chip + Irisy self-report**: Pi.getState().model is forever `{ id: "default", provider: "ctrl-bridge", ... }` — completely useless for display. Chip + Irisy read `get_active_providers()` (§3.7) instead. This is the system-level fix for the 3-state race.
+**No brain switcher UI**: Coding L1 chip routes to opencode, Assistant L1 chip routes to Hermes. Provider selection is per-brain, not per-system.
 
 ## §2 Capability surface — 10 namespaces / 28 methods (frequency ≥3 rule + category exception)
 
