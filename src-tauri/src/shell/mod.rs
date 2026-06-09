@@ -18,6 +18,7 @@
 
 pub mod brain_supervisor;
 pub mod builtin_mcps;
+pub mod hermes_supervisor;
 pub mod hotkey;
 pub mod keychain;
 // bao 2026-06-05 d: provider keychain reads/writes used to go through
@@ -31,14 +32,17 @@ pub mod credential_vault;
 pub mod kernel_supervisor;
 pub mod lifecycle;
 pub mod ollama_install;
+pub mod opencode_supervisor;
 pub mod pi_install;
 pub mod tray;
 pub mod window;
 
 pub use brain_supervisor::BrainSupervisor;
+pub use hermes_supervisor::HermesSupervisor;
 pub use hotkey::HotkeyController;
 pub use keychain::KeychainStore;
 pub use kernel_supervisor::{KernelHandle, KernelSupervisor};
 pub use lifecycle::ShellLifecycle;
+pub use opencode_supervisor::OpencodeSupervisor;
 pub use tray::TrayController;
 pub use window::WindowController;

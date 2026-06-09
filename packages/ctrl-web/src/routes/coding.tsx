@@ -1,22 +1,12 @@
-// Coding — ADR-002 substrate § brain v16 (2026-06-07).
+// Coding — H-2026-06-09-001 (opencode brain).
 //
 // L1 Coding tab — 2-column split:
-//   left  ~40% = `<CodingArtifactPane />` (files Pi has Write/Edit'd,
-//                 fetched via `pi_rpc('getMessages')` after each chat
-//                 done event)
-//   right ~60% = `<IrisyChat forceMode="coding" />` (Pi default
-//                 coding-agent persona — Irisy persona extension
-//                 short-circuits on the `coding-` session name prefix
-//                 set by `PiBridge.ensureModeSession`)
-//
-// v15 shipped the Pi-native routing (forceMode + mode wire + per-mode
-// session + persona dual-skip) but kept the chat as a single pane,
-// which left code dumped inline in the chat bubble. v16 splits the UX
-// so the chat stays focused on dialog while file output lands in a
-// dedicated viewer (bao 2026-06-07 ask: split layout for Coding).
+//   left  ~40% = `<CodingArtifactPane />` (files opencode edited,
+//                 fetched via opencode API)
+//   right ~60% = `<OpencodeChat />` (opencode HTTP API)
 
 import type { ReactElement } from 'react';
-import { IrisyChat } from '@/components/irisy/IrisyChat';
+import { OpencodeChat } from '@/components/opencode/OpencodeChat';
 import { CodingArtifactPane } from '@/components/coding/CodingArtifactPane';
 
 export const CodingRoute = (): ReactElement => {
@@ -49,7 +39,7 @@ export const CodingRoute = (): ReactElement => {
           minWidth: 0,
         }}
       >
-        <IrisyChat forceMode="coding" />
+        <OpencodeChat />
       </div>
     </div>
   );

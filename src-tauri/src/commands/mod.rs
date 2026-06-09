@@ -25,7 +25,11 @@ pub mod code_space;
 pub mod config;
 pub mod draft;
 pub mod draft_run;
-// ADR-002 § vault v1 §8.6 v5 (2026-06-03) — vault-side git via git CLI
+// H-2026-06-09-001 — Hermes (assistant) brain MCP client
+pub mod hermes_chat;
+// H-2026-06-09-001 — opencode (coding) brain HTTP client
+pub mod opencode_chat;
+// ADR-002 substrate § vault v1 §8.6 v5 (2026-06-01) — vault-side git via git CLI
 // (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
 // panel: status / init / commit_all / push / log.
 pub mod git;
@@ -47,7 +51,7 @@ pub mod stss;
 pub mod system;
 pub mod updater;
 pub mod vault;
-// Vault embeddings — 5 new commands (ADR-002 v5 §10.4)
+// Vault embeddings — 5 new commands (ADR-002 v5 §10)
 pub mod vault_embeddings;
 // Irisy synthesize — Layer 4 product surface (brainstorm §5.3/§5.5/§5.10)
 pub mod irisy_synth;
@@ -71,6 +75,10 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::chat::chat_stream,
             // irisy_chat — brain-routed streaming (Irisy → active brain mcp MCP)
             $crate::commands::irisy_chat::irisy_chat_stream,
+            // hermes_chat — assistant brain streaming (Hermes MCP)
+            $crate::commands::hermes_chat::hermes_chat_stream,
+            // opencode_chat — coding brain streaming (opencode HTTP API)
+            $crate::commands::opencode_chat::opencode_chat_stream,
             // pi_rpc — full Pi RpcClient surface exposed as one generic command.
             // PWA wraps via packages/ctrl-web/src/lib/usePiRpc.ts. bao 2026-06-05
             // "open all Pi capability — every feature, surface to assistant".
