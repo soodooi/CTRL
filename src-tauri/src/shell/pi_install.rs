@@ -299,6 +299,25 @@ fn install_via_npm(is_upgrade: bool) -> std::io::Result<()> {
     // bao 2026-05-31 (ADR-002 substrate acceptance #4 close-out): ctrl.log was
     // surfacing `env: node: No such file or directory` every boot —
     // auto-upgrade silently never ran, Pi stayed stale.
+    // On Windows npm is an `npm.cmd` shim that CreateProcess can't run
+    // directly — invoke it through the command interpreter (same as
+    // read_pi_version). Args after the script are forwarded to npm.
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let is_script = npm
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| matches!(e.to_ascii_lowercase().as_str(), "cmd" | "bat"))
+            .unwrap_or(false);
+        if is_script {
+            let mut c = Command::new("cmd");
+            c.arg("/C").arg(&npm);
+            c
+        } else {
+            Command::new(&npm)
+        }
+    };
+    #[cfg(not(target_os = "windows"))]
     let mut cmd = Command::new(&npm);
     cmd.arg("install")
         .arg("--prefix")
@@ -409,9 +428,12 @@ fn find_binary(name: &str) -> Option<PathBuf> {
     }
     // Probe each PATH dir for the bare name and, on Windows, the executable
     // variants (`npm` is shipped as `npm.cmd`; `.exe` for native binaries).
+    // On Windows prefer the executable shims (`npm.cmd`/`npm.exe`) over the
+    // bare extensionless name, which is a unix bash script CreateProcess
+    // rejects with ERROR_BAD_EXE_FORMAT (os error 193).
     #[cfg(target_os = "windows")]
     let names: Vec<String> =
-        vec![name.to_string(), format!("{name}.cmd"), format!("{name}.exe")];
+        vec![format!("{name}.cmd"), format!("{name}.exe"), name.to_string()];
     #[cfg(not(target_os = "windows"))]
     let names: Vec<String> = vec![name.to_string()];
 
