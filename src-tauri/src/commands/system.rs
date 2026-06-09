@@ -258,6 +258,57 @@ const MAIN_EXPANDED_WIDTH: f64 = 1600.0;
 /// Threshold separating compact from expanded for the toggle decision.
 const EXPAND_THRESHOLD: f64 = 1000.0;
 
+/// Current main-window CONTENT width in logical px. The width constants above
+/// are content widths, so expand/collapse decisions must compare against the
+/// INNER width — not `outer_size`, which includes the window frame.
+fn main_inner_width(main: &tauri::WebviewWindow) -> Result<f64, String> {
+    let monitor = main
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+    let inner = main.inner_size().map_err(|e| e.to_string())?;
+    Ok(inner.width as f64 / scale)
+}
+
+/// Resize the main window to `next_inner_w` (logical content width) keeping its
+/// current OUTER right edge and top fixed, so L1 + Irisy never move on screen
+/// (ADR-003 §7: L1 and Irisy keep a fixed screen position; only the left edge
+/// slides).
+///
+/// `set_size` sets the CONTENT rect while `outer_*` report the framed rect; on
+/// Windows the drop shadow / borders make them differ, so a naive
+/// `right_edge - next_w` anchor drifts the window right by the frame width
+/// every toggle. We compensate with `frame_w = outer_w - inner_w`, which is 0
+/// on a true borderless window (macOS) — making this a no-op there.
+fn resize_main_keep_right_edge(
+    main: &tauri::WebviewWindow,
+    next_inner_w: f64,
+) -> Result<(), String> {
+    use tauri::{LogicalPosition, LogicalSize};
+    let monitor = main
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no current monitor".to_string())?;
+    let scale = monitor.scale_factor();
+    let pos = main.outer_position().map_err(|e| e.to_string())?;
+    let outer = main.outer_size().map_err(|e| e.to_string())?;
+    let inner = main.inner_size().map_err(|e| e.to_string())?;
+    let x = pos.x as f64 / scale;
+    let y = pos.y as f64 / scale;
+    let outer_w = outer.width as f64 / scale;
+    let inner_w = inner.width as f64 / scale;
+    let inner_h = inner.height as f64 / scale;
+    let frame_w = outer_w - inner_w;
+    let right_edge = x + outer_w;
+    let next_x = right_edge - next_inner_w - frame_w;
+    main.set_size(LogicalSize::new(next_inner_w, inner_h))
+        .map_err(|e| e.to_string())?;
+    main.set_position(LogicalPosition::new(next_x, y))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Toggle main-window between COMPACT (478) and EXPANDED (1600). Returns
 /// `Ok(true)` when the window is now expanded (workspace tab area
 /// visible), `Ok(false)` when collapsed back to companion size.
@@ -272,7 +323,7 @@ const EXPAND_THRESHOLD: f64 = 1000.0;
 /// Also destroys any pre-v3 leftover `workspace` child window.
 #[tauri::command]
 pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
-    use tauri::{LogicalPosition, LogicalSize, Manager};
+    use tauri::Manager;
 
     if let Some(stale) = app.get_webview_window("workspace") {
         // Pre-v3 builds spawned a "workspace" child window; v3 retired
@@ -287,34 +338,13 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
     let main = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
-    let monitor = main
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no current monitor".to_string())?;
-    let scale = monitor.scale_factor();
 
-    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
-    let main_size = main.outer_size().map_err(|e| e.to_string())?;
-    let main_x = main_pos.x as f64 / scale;
-    let main_w = main_size.width as f64 / scale;
-    let main_h = main_size.height as f64 / scale;
-    let main_y = main_pos.y as f64 / scale;
-    let right_edge = main_x + main_w;
-
-    let (next_w, expanded) = if main_w >= EXPAND_THRESHOLD {
+    let (next_w, expanded) = if main_inner_width(&main)? >= EXPAND_THRESHOLD {
         (MAIN_COMPACT_WIDTH, false)
     } else {
         (MAIN_EXPANDED_WIDTH, true)
     };
-
-    // Anchor the right edge to its current screen position; left edge moves.
-    let next_x = right_edge - next_w;
-
-    main.set_size(LogicalSize::new(next_w, main_h))
-        .map_err(|e| e.to_string())?;
-    main.set_position(LogicalPosition::new(next_x, main_y))
-        .map_err(|e| e.to_string())?;
-
+    resize_main_keep_right_edge(&main, next_w)?;
     Ok(expanded)
 }
 
@@ -332,35 +362,16 @@ pub fn toggle_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
 /// ▾ chevron remains the single collapse path.
 #[tauri::command]
 pub fn ensure_workspace_window_expanded(app: tauri::AppHandle) -> Result<bool, String> {
-    use tauri::{LogicalPosition, LogicalSize, Manager};
+    use tauri::Manager;
 
     let main = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
-    let monitor = main
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no current monitor".to_string())?;
-    let scale = monitor.scale_factor();
 
-    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
-    let main_size = main.outer_size().map_err(|e| e.to_string())?;
-    let main_x = main_pos.x as f64 / scale;
-    let main_w = main_size.width as f64 / scale;
-    let main_h = main_size.height as f64 / scale;
-    let main_y = main_pos.y as f64 / scale;
-    let right_edge = main_x + main_w;
-
-    if main_w >= EXPAND_THRESHOLD {
+    if main_inner_width(&main)? >= EXPAND_THRESHOLD {
         return Ok(false);
     }
-
-    let next_w = MAIN_EXPANDED_WIDTH;
-    let next_x = right_edge - next_w;
-    main.set_size(LogicalSize::new(next_w, main_h))
-        .map_err(|e| e.to_string())?;
-    main.set_position(LogicalPosition::new(next_x, main_y))
-        .map_err(|e| e.to_string())?;
+    resize_main_keep_right_edge(&main, MAIN_EXPANDED_WIDTH)?;
     Ok(true)
 }
 
@@ -373,35 +384,16 @@ pub fn ensure_workspace_window_expanded(app: tauri::AppHandle) -> Result<bool, S
 /// the active chip a second time. Returns `true` if it actually moved.
 #[tauri::command]
 pub fn collapse_workspace_window(app: tauri::AppHandle) -> Result<bool, String> {
-    use tauri::{LogicalPosition, LogicalSize, Manager};
+    use tauri::Manager;
 
     let main = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
-    let monitor = main
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no current monitor".to_string())?;
-    let scale = monitor.scale_factor();
 
-    let main_pos = main.outer_position().map_err(|e| e.to_string())?;
-    let main_size = main.outer_size().map_err(|e| e.to_string())?;
-    let main_x = main_pos.x as f64 / scale;
-    let main_w = main_size.width as f64 / scale;
-    let main_h = main_size.height as f64 / scale;
-    let main_y = main_pos.y as f64 / scale;
-    let right_edge = main_x + main_w;
-
-    if main_w < EXPAND_THRESHOLD {
+    if main_inner_width(&main)? < EXPAND_THRESHOLD {
         return Ok(false);
     }
-
-    let next_w = MAIN_COMPACT_WIDTH;
-    let next_x = right_edge - next_w;
-    main.set_size(LogicalSize::new(next_w, main_h))
-        .map_err(|e| e.to_string())?;
-    main.set_position(LogicalPosition::new(next_x, main_y))
-        .map_err(|e| e.to_string())?;
+    resize_main_keep_right_edge(&main, MAIN_COMPACT_WIDTH)?;
     Ok(true)
 }
 
