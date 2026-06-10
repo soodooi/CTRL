@@ -96,10 +96,9 @@ pub fn safe_relaunch_after_update() -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("spawn relaunch helper failed: {e}"))?;
 
-        // Clean up the Pi brain child so port 17874 isn't held when the
-        // new instance comes up. Mirrors the explicit-quit path in
-        // lib.rs ExitRequested handler.
-        crate::shell::BrainSupervisor::shutdown();
+        // ADR-002 substrate §1 v19 (2026-06-09): no kernel-side brain
+        // supervisor to shut down. Agent subprocesses launched via
+        // commands::agents will exit when the parent process dies.
 
         // Exit from a background thread so this command's response can
         // serialize back to the PWA before the process dies. Using

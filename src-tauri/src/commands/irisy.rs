@@ -106,16 +106,15 @@ pub async fn irisy_init(
 }
 
 async fn probe_pi() -> PiStatus {
-    // ADR-002 substrate: Pi now runs as a stdin RPC subprocess (no HTTP server);
-    // reachability = "supervisor reports a live child". Version comes
-    // from the install metadata cache. PWA shows install/upgrade UI by
-    // calling `pi_status` (commands/system.rs) for the richer surface.
-    let install = crate::shell::pi_install::current_status();
-    let port = crate::shell::brain_supervisor::provider_port();
+    // ADR-002 substrate §1 v19 (2026-06-09): Pi exited the CTRL hot path.
+    // The PiStatus shape is kept for one release so the PWA's existing
+    // status header doesn't crash; reachable is hard-false and version
+    // is None. The next PWA release replaces this probe with the 3-agent
+    // status surface (commands::agents::agent_status x3).
     PiStatus {
-        mcp_url: format!("rpc://pi/extension/ctrl-bridge@{port}"),
-        reachable: crate::shell::brain_supervisor::is_running(),
-        version: install.installed_version,
+        mcp_url: String::new(),
+        reachable: false,
+        version: None,
     }
 }
 

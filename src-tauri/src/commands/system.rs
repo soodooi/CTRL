@@ -434,29 +434,13 @@ pub struct PiStatusView {
     pub provider_port: u16,
 }
 
-#[tauri::command]
-pub fn pi_status() -> Result<PiStatusView, String> {
-    let install = crate::shell::pi_install::current_status();
-    Ok(PiStatusView {
-        installed_version: install.installed_version,
-        latest_version: install.latest_version,
-        upgrade_available: install.upgrade_available,
-        major_update_blocked: install.major_update_blocked,
-        last_upgrade_error: install.last_upgrade_error,
-        last_probe_ms: install.last_probe_ms,
-        pi_bin: install.pi_bin,
-        install_root: install.install_root,
-        running: crate::shell::brain_supervisor::is_running(),
-        last_error: crate::shell::brain_supervisor::last_error(),
-        provider_port: crate::shell::brain_supervisor::provider_port(),
-    })
-}
-
-#[tauri::command]
-pub fn pi_upgrade_now() -> Result<PiStatusView, String> {
-    crate::shell::BrainSupervisor::force_upgrade_and_restart()?;
-    pi_status()
-}
+// ADR-002 substrate §1 v19 (2026-06-09, H-2026-06-09-002):
+//   pi_status + pi_upgrade_now retired. Pi exited CTRL hot path. Per-agent
+//   install/status now goes through `commands::agents::{install_agent,
+//   launch_agent, agent_status, stop_agent, list_agents}`. The PiStatusView
+//   struct above is kept declared so its Serialize derive doesn't fail when
+//   downstream callers in `commands/mod.rs` invoke_handler! macro reference
+//   absent symbols — those commands are already unregistered.
 
 // ── Ollama install / model pull (Pi-first refactor, bao 2026-06-05) ────────
 
