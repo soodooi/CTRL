@@ -592,9 +592,9 @@ mod tests {
         };
         let mut actor = SubprocessActor::new("e2e", spec, tx);
         let ctx = ActorContext {
-            self_id: crate::kernel::ActorId::from_str("e2e"),
+            self_id: crate::kernel::actor::ActorId::from_str("e2e"),
             parent_id: None,
-            capability: crate::kernel::Capability::empty(),
+            capability: crate::kernel::capability::Capability::empty(),
             deadline_ms: None,
         };
         actor.on_spawn(&ctx).await;
