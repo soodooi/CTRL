@@ -1,39 +1,43 @@
 ---
 adr_id: 006
 module: cross-cutting
-title: CTRL cross-cutting — BYOK no-Claude in production + global English first + plain-text philosophy
-version: 2
+title: CTRL cross-cutting — BYOK aggregator-first + global English first + plain-text philosophy + policy envelope
+version: 3
 status: accepted
-last_updated: 2026-06-04
+last_updated: 2026-06-09
 deciders: [bao, zeus]
 sections:
-  - { id: byok-no-claude,    source: orig-005 }
+  - { id: byok-aggregator,   source: orig-005 + H-2026-06-09-002 校准 }
   - { id: global-english,    source: orig-014 }
   - { id: plain-text,        source: orig-015 }
   - { id: policy-envelope,   source: new-2026-06-04, note: "L3/L4/L5 autonomy ladder + blast-radius limit + typed-ISA validation — invariants reused across all 6 self-evolution loops (ADR-001 §8)." }
 changelog:
   - v1 2026-05-31: module reorg — merged orig-005 (no Claude/Anthropic SDK in production runtime) + orig-014 (global English first) + orig-015 (plain-text / "Obsidian" philosophy).
   - v2 2026-06-04: **NEW §4 policy-envelope** — single autonomy ladder (L3 suggest-only / L4 low-risk auto / L5 full auto) + blast-radius limit + typed-ISA validation, reused across the 6 self-evolution loops (ADR-001 §8). Source: UUMit L3-L5 (cap-design-v2 §14 #8) generalised cross-loop. Per bao "整个系统都要自我升级成长 ... 唯一真相, 要经常整理 ADR".
+  - v3 2026-06-09: **§1 reframed BYOK no-Claude → BYOK aggregator-first** (H-2026-06-09-002). bao 校准: "我们卖工具+平台, 不卖模型" extended to multi-modal. Per ADR-002 v19 §13 (3-capability-face SSOT, API face = aggregator differentiator), CTRL ships **fal.ai BYOK adapter** as flagship aggregator (985 image/video/audio endpoints — FLUX 2, Seedream 5.0, Recraft V3, Nano Banana Pro, Kling 3.0, Veo 3.1, Hunyuan Video). Codex 锁单家 gpt-image-2; CTRL 接 fal.ai 拿 985 模型. The no-Anthropic-SDK-in-hot-path rule stays — but applies to ALL single-brand vendors equally (Anthropic / OpenAI / Tencent Yuanbao / xAI / Mistral). Aggregator endpoints (fal.ai, OpenRouter-like, LiteLLM-pattern) are exceptions: user BYOK to the aggregator key, CTRL loads aggregator SDK only on user activation. **No CTRL-bundled default model spend** — first-launch default = `none` (user picks fal.ai or Anthropic or OpenAI BYOK). Removes the implicit "CTRL CF Workers AI default" path that existed v1-v2 — bao memory `feedback_default_to_user_cli_not_paid_providers` (2026-05-31) already校准了 this for CLI; v19 extends to all API providers including CTRL-managed fallback.
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/002-substrate.md
 ---
 
-## §1 BYOK — no Claude/Anthropic SDK in CTRL production runtime
+## §1 BYOK — aggregator-first, no single-brand SDK in hot path (v3 2026-06-09)
 
-CTRL production runtime **only** calls AI through user-configured provider (ADR-002 § provider):
+CTRL production runtime **only** calls AI through user-configured provider (ADR-002 § provider). CTRL **does NOT ship a default model spend** — bao 2026-05-31 `feedback_default_to_user_cli_not_paid_providers` extended to all API providers in v3:
 
-- **Default subscription** = CF Workers AI (Qwen-3 / Llama-3.3, bundled, CN-reachable via Tokyo)
-- **BYOK advanced** = user actively adds Anthropic API key / OpenAI key / local Ollama / Volc. Key existence + invocation are user actions, never CTRL defaults
-- **Dev-time only** = `experiments/claude-cli-shim/` and Claude CLI are contributor local tools, NOT shipped binary
+- **First-launch default** = `none`. User onboarding shows provider catalogue (fal.ai aggregator card highlighted) and asks user to pick / fill BYOK key.
+- **fal.ai (NEW v3, flagship aggregator)** — single BYOK key unlocks 985 endpoints across image (FLUX 2 / Seedream / Recraft / Nano Banana Pro / etc., 406 total) / video (Kling 3.0 / Veo 3.1 / Hunyuan Video / etc., 450 total) / audio / 3D / speech. Adapter loads only when user fills fal.ai key in Settings → Providers. This is the v19 战术 differentiator vs Codex single-brand gpt-image-2 lock-in. Spec: ADR-002 §13.4.
+- **Single-brand BYOK** = Anthropic / OpenAI / Hunyuan / DeepSeek / xAI / Mistral / etc. Each adapter loads only when user fills that brand's key. Settings → Providers lists 20 templates (ADR-002 §3.10 v10).
+- **Local Ollama** = privacy tier; runs on user machine, 0 CTRL cost, 0 vendor key. Already wired (ADR-002 §10 embeddings).
+- **Dev-time only** = `claude-code` / `aider` etc. as Code Space environment presets are NOT a violation — user choice, not CTRL-bundled.
 
 **Rules**:
-- Anthropic SDK / OpenAI SDK / similar must NOT load on the production hot path
-- They MAY load only when user has filled own key in Settings → Providers
-- User-facing references to external CLIs (`claude-code` / `aider` as Code Space env presets) are NOT a violation — user choice, not CTRL-bundled
-- CN users open-box-usable on default CF Workers AI path
+- ANY single-brand provider SDK (Anthropic / OpenAI / Tencent Yuanbao / xAI) MUST NOT load on the production hot path.
+- They MAY load only when user has filled that vendor's key in Settings → Providers.
+- **Aggregator adapters are exceptions** — fal.ai (image/video/audio aggregator), OpenRouter-pattern (LLM aggregator), LiteLLM-style proxy. These load on user BYOK to the aggregator endpoint, NOT on the upstream vendor key. The aggregator brokerage IS the value-add — same exemption logic as MCP server registry.
+- CTRL never auto-fallbacks user requests to a CTRL-paid endpoint. The "irisy.fallback = CTRL volc" path (memory `decision_irisy_fallback_is_ctrl_paid_volc_now` 2026-05-31) IS RETIRED in v3 — no CTRL-paid fallback at all. User who picks no provider gets a clear "no provider configured" message + onboarding link.
+- CN users open-box-usable via fal.ai aggregator (proxied via Cloudflare/Tokyo) + Volc BYOK option.
 
-**Why**: CN OPC users don't have Anthropic API key + don't install Claude CLI; default Claude = dead-on-arrival. Memory `feedback_no_claude_in_production` 🔒.
+**Why aggregator-first**: 4 friend products (Claude Desktop / Codex / WorkBuddy / CodeBuddy) all brand-lock the API face — that's their billing model. CTRL doesn't sell brains; it sells the **stitching layer** (Ctrl hotkey + ambient workspace + 3-capability-face). Aggregator API face is the商业模式上 differentiator: 4 友商 商业模式上做不出来 (他们靠卖自家脑回本). Memory `feedback_no_claude_in_production` 🔒 + memory `decision_ctrl_repositioned_as_aggregator` (2026-06-03) 🔒.
 
 ## §2 Global English first
 
