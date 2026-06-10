@@ -1,13 +1,14 @@
 ---
 adr_id: 002
 module: substrate
-title: CTRL substrate — dual-brain architecture · capability surface · provider router · crypto · subprocess · MCP bus · composition
-version: 18
+title: CTRL substrate — 3-agent aggregator · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
+version: 19
 status: accepted
 last_updated: 2026-06-09
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003 }
+  - { id: capability-faces,     source: H-2026-06-09-002 conversation, note: "3-face SSOT — MCP / API / Skills 互补不塌缩" }
   - { id: capability,           source: orig-004 }
   - { id: provider,             source: new-2026-05-31, note: "VMark port + role routing + introspection" }
   - { id: crypto,               source: orig-007 }
@@ -19,7 +20,8 @@ sections:
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
 changelog:
-  - v18 2026-06-09: **§1 brain — dual-brain architecture amendment (H-2026-06-09-001, PR #66).** User-chosen opencode + Hermes as peer brains (conversation 2026-06-09 08:48): "确认 干" + "继续 干". §1 rewritten: opencode (coding brain, LSP + formatter + symbol search, HTTP API on random port, stored in `~/.local/share/opencode/auth.json`) + Hermes (assistant brain, RAG + long-term memory, MCP stdio protocol, stored in `~/.hermes/config.yaml`). Both spawned as peer subprocess agents via `shell/opencode_supervisor.rs` and `shell/hermes_supervisor.rs`. Independent contexts: no cross-brain context sharing. PWA commands: `opencode_chat_stream` (SSE, delta/done/error) + `hermes_chat_stream` (SSE, MCP tool calling). 8 code review issues fixed (race condition via Arc<Mutex<>>, health check, credential vault via keyring crate, event listener cleanup, constants extraction, graceful degradation). ADR-001 spine updated v2→v3 (dual-brain diagram). Pi removed as sole brain (still available as standalone CLI). Hermes installed via `npm install -g hermes-agent` (NousResearch, supports `hermes mcp serve`).
+  - v19 2026-06-09: **§1 brain — dual-brain supervisor model FULLY RETRACTED. Replaced by 3-agent aggregator (H-2026-06-09-002).** bao framing校准 (2026-06-09 conversation): "Irisy 是表象", "hermes opencode kairo 都是外部的", "现在重要的是前端". The v18 supervisor model (`opencode_supervisor.rs` / `hermes_supervisor.rs` / `brain_supervisor.rs`) over-engineered the kernel — supervised brains, owned their lifecycle, persisted per-brain credential files. Replaced by thin **agent integration**: kernel `agent_installer.rs` + `agent_launcher.rs` only (no supervise, no restart, no per-brain config write). 3 external agents (hermes / opencode / kairo) lazy-installed to `~/.ctrl/agents/<name>/` and launched on-demand. PWA directly consumes each agent's native endpoint (opencode HTTP, hermes MCP stdio, kairo webview). **NEW §12 capability-faces** locks 3-face SSOT: MCP (协议) + API (provider router, fal.ai flagship) + Skills (markdown SKILL.md, Claude Code Skills schema). Supersedes 2026-06-05 `decision_keycap_collapses_to_mcp_meta_ux_layer` over-塌缩. **§8 Vault stack lock (Tiptap+CodeMirror+FTS5) RETIRED** — kairo (MIT external) owns notes editing + wiki-link + backlink + git; CTRL exposes `~/Documents/CTRL/Notes/` via MCP for agents only. Retirements: `shell/{brain,opencode,hermes}_supervisor.rs`, `commands/{opencode,hermes}_chat.rs`, `commands/pi_rpc.rs`, `bin/e2e_verification.rs`, `packages/ctrl-pi-bridge/`, `packages/ctrl-pi-plugin/`, `shell/pi_install.rs`. PWA `IrisyChat forceMode="coding"` legacy retired — `/coding` connects to opencode HTTP directly. fal.ai BYOK adapter lands in §3 provider router as flagship API-face exemplar (985 endpoints vs Codex 1-model lock). ADR-001 spine v3 → v4 paired update. NO brain switcher UI still holds (PWA L1 chip routes statically).
+  - v18 2026-06-09: **§1 brain — dual-brain architecture amendment (H-2026-06-09-001, PR #84). RETRACTED by v19 same day. Kept in changelog for provenance.** User-chosen opencode + Hermes as peer brains (conversation 2026-06-09 08:48): "确认 干" + "继续 干". §1 rewritten: opencode (coding brain, LSP + formatter + symbol search, HTTP API on random port, stored in `~/.local/share/opencode/auth.json`) + Hermes (assistant brain, RAG + long-term memory, MCP stdio protocol, stored in `~/.hermes/config.yaml`). Both spawned as peer subprocess agents via `shell/opencode_supervisor.rs` and `shell/hermes_supervisor.rs`. Independent contexts: no cross-brain context sharing. PWA commands: `opencode_chat_stream` (SSE, delta/done/error) + `hermes_chat_stream` (SSE, MCP tool calling). 8 code review issues fixed (race condition via Arc<Mutex<>>, health check, credential vault via keyring crate, event listener cleanup, constants extraction, graceful degradation). ADR-001 spine updated v2→v3 (dual-brain diagram). Pi removed as sole brain (still available as standalone CLI). Hermes installed via `npm install -g hermes-agent` (NousResearch, supports `hermes mcp serve`).
   - v17 2026-06-07: **§1 brain — full keycap retirement (word + cap-mode concept), ship 0.1.188.** bao 2026-06-07: "去掉 keycap 概念 你会更加清晰". v12 (2026-06-07) renamed symbols/filenames/packages but left runtime concepts intact; v17 finishes the job. (1) **`SessionMode = 'personal' | 'coding'`** — `cap` mode dropped (`packages/ctrl-web/src/lib/session-state.ts`). The "Pi wears a SKILL.md as a one-shot hat" behaviour was keycap dressed up as a session — skills are now invocable references Irisy reads on demand via `list_skills` / `read_skill`, not pinned via UI state. (2) **store actions** `wearCap` + `removeCap` REMOVED. `currentSkillId` field REMOVED. `sessionLabel()` simplified to 2-mode. (3) **IrisyChat.tsx** — cap banner block deleted, only the coding-mode `Coding · <projectDir>` indicator survives; `skill_id` no longer passed on the wire from this surface (kept as optional per-prompt param in `llm-transport.ts` for a future slash-command flow). (4) **pool.tsx** — skill rows render as documentation; "Wear cap" action button removed. (5) **IrisyCustomMessage `ModeSwitch`** — `cap` case removed; legacy bridge payloads still render via the default `Mode: ${mode}` fallback rather than empty pill. (6) **word scrub** — 5 code files (manifest-schema, vite.config, InfraBar, McpRunView, irisy-prompts) and `doc/design/tokens.json` (visual token rename `keycap*` → `key*`, no CSS refs verified pre-rename). (7) **External SKILL.md** — `~/.claude/skills/irisy-build/SKILL.md` + `~/.claude/skills/irisy-llm-tuning/SKILL.md` patched in v16 prep work (the persona reads these via `read_skill`; stale references were leaking "keycap" framing into Irisy answers). Tsc green. Remaining "keycap" string occurrences in this commit are deliberate retirement-changelog comments documenting what was removed — kept as load-bearing context for future readers (no live concept references).
   - v16 2026-06-07: **§1 brain amendment — Coding L1 split layout ship (0.1.187)**, bao 2026-06-07 ask: "对话和代码能分开吗？代码还是在左侧, 右侧 Irisy 是 coding 的角色" + picked option "分屏 + Pi default coding-agent" over Irisy-persona-stays variant. v15 wired Pi-native routing correctly but kept single-pane chat, so generated code dumped inline in chat bubbles. v16 splits the Coding L1 route into 2 columns: left ~40% `<CodingArtifactPane />` (files Pi Write/Edit's, fetched via `pi_rpc('getMessages')` after each chat done event, projected through `extractArtifacts` which walks AssistantMessage `content` for `{type:'toolCall', toolName:'Write'|'Edit'}` blocks and de-dups by `args.file_path`), right ~60% `<IrisyChat forceMode="coding" />` (Pi default coding-agent persona — `coding-`-prefixed session name causes both persona extensions to short-circuit per v15 §brain). New files: `packages/ctrl-web/src/components/coding/CodingArtifactPane.{tsx,module.css}`. Modified: `packages/ctrl-web/src/routes/coding.tsx`. Polling is event-driven (Tauri `chat-stream-delta` `done:true` listener, 250 ms debounce, sibling-component to IrisyChat via Tauri pub/sub) — no filesystem watcher, no kernel side-channel. Pi remains the SSOT (memory `feedback_pi_is_core_use_upstream_surfaces`). Limitation: Edit tool calls render `old → new` diff rather than full post-edit body (full body requires a follow-up Read Pi may skip); flagged for v17 if it bites in practice. Cargo + tsc green.
   - v15 2026-06-07: **§1 brain amendment — Pi-native Coding L1 ship (0.1.186)** via the path v14 promised. Same Pi RPC process as Irisy chat (port 17874), no 2nd daemon, no new bridge package — concurrency solved with one PiBridge mutex + per-mode named sessions (`irisy-default` / `coding-default`). Locks: (1) **MCP `text.chat` schema** — `arguments.mode: "assistant" | "coding"` field added (`packages/ctrl-pi-plugin/src/mcp-server.ts`). Kernel `irisy_chat_stream` now forwards `args.mode` to the tool/call JSON (`src-tauri/src/commands/irisy_chat.rs`); PWA `IrisyChat` already sent `mode` per v6 (3-mode P0), now it actually reaches Pi. (2) **`PiBridge.ensureModeSession`** — on each `chat()` the bridge resolves the per-mode session: cache → `listSessions()` recovery (survives CTRL restart, no session proliferation) → `newSession()` + `setSessionName('<mode>-default')` if absent → `switchSession(targetPath)` only when active session differs. (3) **`chatChain` mutex** — concurrent `chat()` calls from Irisy + Coding tabs FIFO through the bridge so `switchSession + prompt` is atomic per turn (no race where Coding's prompt lands in Irisy's session). Streaming preserved per-call; previous-chat throw doesn't poison the chain. (4) **Persona extension dual-skip** — both `packages/ctrl-pi-bridge/src/index.ts` (CTRL-bundled persona + audit + RAG) AND `/Users/mac/Documents/coding/irisy-persona/src/index.ts` (external, loaded via `IRISY_PERSONA_EXTENSION` env) now read `ctx.sessionManager.getSessionName()` in `before_agent_start` (and the bundled one in `before_provider_request` for vault-RAG) and short-circuit when the name starts with `coding-`. Pi keeps its default coding-agent system prompt + 7 builtin tools (Read/Write/Edit/Bash/Grep/Find/LS) for those turns. (5) **`routes/coding.tsx`** — replaces v14 placeholder with `<IrisyChat forceMode="coding" />`. IrisyChat gained an optional `forceMode` prop that overrides the global session-state store, plus a per-mode localStorage key (`irisy:chat:v1` / `irisy:chat:v1:coding`) so the two tabs' histories never bleed. Cargo + tsc green. Direct quote from v14 commitment: "rebuilds the Coding tab as a 2nd `pi --mode rpc` process with its own bridge extension (mirrors the Irisy chat pattern, no wrapper layer)" — v15 lands the same outcome via 1 Pi process + session router, avoiding the 2x memory + 2x boot + parallel ctrl-pi-plugin SSOT that a literal 2nd process would have required (bao 2026-06-07 B1 path picked over B2).
@@ -46,79 +48,87 @@ related:
   - .olym/decisions/006-cross-cutting.md
 ---
 
-## §1 Brain — dual-brain architecture: opencode + Hermes
+## §1 Brain — 3-agent aggregator (external integration, no supervisor)
 
-**Two peer brains, independent contexts, no sharing.** User interacts via PWA L1 chips (Coding `/coding`, Assistant `/assistant`). Kernel manages both brains via supervisors (`opencode_supervisor.rs`, `hermes_supervisor.rs`). Each brain owns its context, provider config, and lifecycle.
+> **v19 (2026-06-09)**: v18 dual-brain supervisor model RETRACTED in full. Kernel no longer supervises brains. **3 external agents** (hermes / opencode / kairo) are lazy-installed + launched-on-demand; PWA directly consumes their native endpoints.
 
-### §1.1 opencode — coding brain
+CTRL kernel = **thin install + launch + bridge + keychain**, NOT a runtime owner of brains. 4 friend products (Claude Desktop / Codex / WorkBuddy / CodeBuddy) bundle a single-brand brain; CTRL is the **aggregator** layer.
 
-- **Install**: global npm install (`npm install -g opencode` or `@opencode-ai/opencode`)
-- **Spawning**: kernel `shell::opencode_supervisor::OpencodeSupervisor::start()` → `opencode --mode daemon`
-- **Protocol**: HTTP API on random port (parsed from stdout)
-- **Health check**: `ureq::get()` on `/health` endpoint before PWA connection
-- **Commands**:
-  - `opencode_chat_stream` — SSE streaming to PWA (delta/done/error events)
-  - `/coding` L1 route → `<IrisyChat forceMode="coding" />` (v16 legacy placeholder)
-- **Credential storage**: `~/.local/share/opencode/auth.json` (written by kernel before spawn)
-- **Provider**: user-configured BYOK (Anthropic Claude / OpenAI GPT-4 / etc.), managed by opencode's own settings
-- **Features**: LSP integration, formatter, symbol search, plan/summary agents
-- **Context**: isolated coding sessions, no cross-brain sharing
+### §1.1 The 3 agents (all external, all MIT/open source, all lazy-installed)
 
-### §1.2 Hermes — assistant brain
+| Agent | Role | Upstream | Endpoint | PWA route |
+|---|---|---|---|---|
+| **hermes** | Assistant (RAG, long-term memory, dialog) | `npm install -g hermes-agent` (NousResearch, MIT) | MCP stdio | `/assistant` |
+| **opencode** | Coding (LSP, formatter, plan, subagents, native Skills) | `npm install -g opencode-ai` (MIT) | HTTP API (random port) | `/coding` |
+| **kairo** | Notes / PKM (markdown + wiki-link + backlink + native git) | binary download (MIT) | webview (mounts `~/Documents/CTRL/Notes/`) | `/notes` |
 
-- **Install**: global npm install (`npm install -g hermes-agent`, NousResearch)
-- **Spawning**: kernel `shell::hermes_supervisor::HermesSupervisor::start()` → `hermes mcp serve`
-- **Protocol**: MCP stdio (CBOR Cell/Op, `anthropic-rmcp` SDK)
-- **Commands**:
-  - `hermes_chat_stream` — SSE streaming to PWA (MCP tool calling, Tauri events)
-  - `/assistant` L1 route → `<HermesChat />`
-- **Credential storage**: `~/.hermes/config.yaml` (written by kernel before spawn)
-- **Provider**: user-configured BYOK (Hermes's own settings, via MCP)
-- **Features**: RAG, long-term memory, MCP tool calling
-- **Context**: isolated assistant sessions, no cross-brain sharing
+**Cross-agent invariant**: each agent owns its own context + session storage. No CTRL-mediated context sharing — if user wants opencode to read a note, the route is `kairo file → ~/Documents/CTRL/Notes/ → CTRL mcp_server :17873 exposes notes.read → opencode invokes via MCP`. The agents talk **through CTRL's MCP server**, never through a private kernel API.
 
-### §1.3 Kernel supervisors
+### §1.2 Install path (`~/.ctrl/agents/<name>/`)
 
-| Supervisor | File | Role |
+```
+~/.ctrl/agents/
+  hermes/
+    manifest.json        # { name, version, install_at, endpoint_type: "mcp-stdio", entry_cmd }
+    node_modules/...     # npm install --prefix . hermes-agent
+  opencode/
+    manifest.json        # { endpoint_type: "http-port", entry_cmd, port_parse_regex }
+    node_modules/...
+  kairo/
+    manifest.json        # { endpoint_type: "webview", workspace_path }
+    bin/kairo            # native binary
+```
+
+`rm -rf ~/.ctrl/agents/` = full uninstall, no side effects.
+
+### §1.3 Kernel modules (replace supervisor)
+
+| Module | File | Role |
 |---|---|---|
-| `OpencodeSupervisor` | `shell/opencode_supervisor.rs` | spawns opencode, parses port, health check, graceful degradation |
-| `HermesSupervisor` | `shell/hermes_supervisor.rs` | spawns hermes, Arc<Mutex<>> sharing, graceful degradation |
+| **agent_installer** | `shell/agent_installer.rs` | probe node → `npm install --prefix ~/.ctrl/agents/<name> <pkg>` → write manifest. Idempotent. First-launch onboarding wizard triggers all 3 in parallel. |
+| **agent_launcher** | `shell/agent_launcher.rs` | spawn child process from `manifest.entry_cmd`, parse endpoint (port from stdout / pipe handle / webview URL), return to PWA via `invoke('launch_agent', { name })`. No supervise. No restart. **PWA owns retry** on `launch_agent` invocation failure. |
+| **agent_commands** | `commands/agents.rs` | Tauri commands: `install_agent` / `launch_agent` / `stop_agent` / `agent_status` / `list_agents`. |
+| **unified keychain** | `shell/credential_vault.rs` (already exists, retained) | one BYOK key in keychain → injected as env var at agent launch (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / etc.). Agents do NOT write their own `auth.json` / `config.yaml` — CTRL injects via env. |
 
-**Graceful degradation**: if opencode/hermes binary not found, supervisor emits `brain-down` event (`{brain: 'opencode'|'hermes', reason: 'binary_not_found'}`) and PWA shows error state instead of hard-fail.
+**No `*_supervisor.rs`**: kernel never observes brain health, never restarts. PWA's `useAgent(name)` hook catches launch errors → shows reconnect button.
 
-**Race condition fix**: Hermes stdio uses `Arc<Mutex<Option<Child>>>` for safe concurrent access across async tasks (`spawn_blocking` for synchronous stdio read/write).
+### §1.4 What's RETIRED in v19
 
-### §1.4 Credential vault (NEW v18)
+- ❌ `src-tauri/src/shell/brain_supervisor.rs`
+- ❌ `src-tauri/src/shell/opencode_supervisor.rs`
+- ❌ `src-tauri/src/shell/hermes_supervisor.rs`
+- ❌ `src-tauri/src/shell/pi_install.rs`
+- ❌ `src-tauri/src/commands/opencode_chat.rs`
+- ❌ `src-tauri/src/commands/hermes_chat.rs`
+- ❌ `src-tauri/src/commands/pi_rpc.rs`
+- ❌ `src-tauri/src/bin/e2e_verification.rs`
+- ❌ `packages/ctrl-pi-bridge/`
+- ❌ `packages/ctrl-pi-plugin/`
+- ❌ PWA `/coding` `<IrisyChat forceMode="coding" />` legacy wrapper
+- ❌ "Pi single alias" `ctrl-bridge` provider, models.json `$VAR` injection, `setModel` switch UX (§3.9 v10), kernel-MCP Pi auto-connect (§6.1 v10) — Pi exits CTRL's hot path entirely. Pi remains usable as a standalone CLI installed by the user via npm; CTRL doesn't install it, doesn't wrap it, doesn't compose with it.
+- ❌ `~/.local/share/opencode/auth.json` + `~/.hermes/config.yaml` writing (replaced by env-var injection)
+- ❌ `irisy.primary` / `irisy.fallback` / `coding.primary` consumer roles (Irisy is no longer a brain — it's PWA persona)
+- ❌ §8 Vault stack lock (Tiptap+CodeMirror+FTS5) — kairo owns editor (§8 v6 amend)
+- ❌ ADR-008 + ADR-009 (Pi-surface integration ADRs — Pi exited core)
 
-- **Module**: `src-tauri/src/credential_vault.rs`
-- **Storage**: keyring crate (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-- **Operations**:
-  - `CredentialVault::get(service, username)` — read from keychain
-  - `CredentialVault::set(service, username, password)` — write to keychain
-- **Usage**:
-  - opencode: `~/.local/share/opencode/auth.json` written before spawn
-  - Hermes: `~/.hermes/config.yaml` written before spawn
+### §1.5 Irisy reframe (was sole brain v17, dual-brain peer v18, now persona shell v19)
 
-### §1.5 Pi — standalone CLI (retired as sole brain, available for advanced workflows)
+**Irisy = PWA persona layer only** (chat avatar + anti-sycophancy filter + system-prompt injection). Not a runtime, not a brain, not a process. When user "talks to Irisy", the message routes to whichever of the 3 agents matches the active L1 chip (default `/assistant` → hermes). Irisy's job:
 
-- **Install**: `~/.ctrl/pi/`, lazy npm install of `@mariozechner/pi-coding-agent@latest`
-- **Auto-upgrade**: 24h npm registry probe, background install, applies on next restart
-- **Usage**: user can run `pi` standalone via xterm (advanced workflow, not integrated into CTRL's dual-brain UI)
-- **Retired from CTRL's core**: no longer sole brain, no kernel supervisor, no PWA integration
+1. Inject CTRL substrate context (Notes folder via MCP, active provider info, OS context) into agent prompt
+2. Render agent stream output through the PWA chat UI (Tiptap render + mermaid + code highlight)
+3. Run sycophancy/apology filter on agent output (markdown patterns in `packages/ctrl-web/src/lib/persona-filter/patterns.md` — relocated from `packages/ctrl-pi-bridge/data/persona-patterns.md`)
+4. Provide drill-down (long-press → see raw agent output before filter)
 
-### §1.6 Code review fixes (H-2026-06-09-001)
+ADR-005 § persona amended in parallel (v3 → v4).
 
-8 issues fixed (5 Important, 3 Minor):
-1. **Hermes stdio race condition** → Arc<Mutex<>> sharing (Important)
-2. **Opencode HTTP port verification** → health check added (Important)
-3. **Credential integration** → keychain vault module (Important)
-4. **PWA event listener cleanup** → proper unmount handling (Important)
-5. **Hardcoded model name** → use args.model (Important)
-6. **Duplicate error handling** → extract helper function (Minor)
-7. **Hardcoded SSE events** → extract constants (Minor)
-8. **No graceful degradation** → emit brain-down events (Minor)
+### §1.6 Code review fixes from H-2026-06-09-001 — historical only
 
-**No brain switcher UI**: Coding L1 chip routes to opencode, Assistant L1 chip routes to Hermes. Provider selection is per-brain, not per-system.
+The 8 fixes from v18 (race condition / health check / credential / event leak / etc.) are kept in changelog for provenance but no longer apply because the supervisors they belonged to are deleted in v19.
+
+### §1.7 Why this isn't "yet another pivot"
+
+v17 (Pi sole brain) → v18 (dual-brain supervisor) → v19 (3-agent aggregator) trace one consistent direction: **less CTRL ownership of the brain, more external integration**. v17 wrapped Pi tightly; v18 added 2 supervisors (worse, not better — same wrap pattern, doubled); v19 removes all wrap. This is the **right** end-state per bao memories `feedback_pi_is_core_use_upstream_surfaces` (2026-05-31), `feedback_no_redundancy_one_ssot` (2026-05-28), `feedback_build_system_not_business` (2026-05-28), and `decision_ctrl_lean_substrate_scheduler_executor_tools` (2026-05-28). Kernel does what only a kernel can do (install + launch + keychain + MCP bus); everything else is external.
 
 ## §2 Capability surface — 10 namespaces / 28 methods (frequency ≥3 rule + category exception)
 
@@ -437,7 +447,17 @@ Mcp manifest declares 6 axes; runtime atomically provisions all declared resourc
 
 **Multi-modal category exception** to §2 frequency ≥3 rule: image.generate / image.edit / image.understand / audio.stt enter v1 even with 1 consumer each — "做海报得有 image 大模型, 我们是双重 brain" (bao 2026-05-30). Frequency rule still governs non-brain namespaces.
 
-## §8 Vault — markdown PKM substrate (NEW v3, 2026-06-01)
+## §8 Vault — RETIRED in v19 (kairo external replaces CTRL-owned editor stack)
+
+> **v19 (2026-06-09)**: §8 v3-v6 content RETRACTED. CTRL no longer owns the notes editor + index. **kairo (external MIT)** owns markdown editing + wiki-link + backlink + native git + diagram. CTRL kernel keeps `~/Documents/CTRL/Notes/` as the canonical storage path, exposes it via MCP server (`notes.search` / `notes.read` / `notes.write`) so agents (hermes / opencode) can access. `notes_index.rs` (FTS5) kept as optional MCP convenience layer — kairo's own index is primary. PWA `/notes` route embeds kairo via webview pointed at workspace path.
+>
+> **No "vault" word inside CTRL** going forward. bao 2026-06-09: "我没有 vault 这个概念" — rename to "Notes" everywhere. Migration tracked in H-2026-06-09-002 task #6.
+>
+> **What changed**: editor lib lock (Tiptap + CodeMirror 6 + mermaid.js + gray-matter) dropped from substrate ADR — kairo bundles its own. PWA `NotesApp` 3-pane (NotesActions / NotesTree / NotesEditor / NotesBacklinks) deleted — webview to kairo replaces. Wiki-link Tiptap extension port (§8.8) RETIRED — kairo has native wiki-link.
+>
+> **What survives**: invariant filesystem layout (`~/Documents/CTRL/Notes/` flat markdown + frontmatter + tags), vim-test (user can open notes folder in vim/Obsidian after uninstalling CTRL), kernel MCP endpoints for agent access (subset of v3 21-command list — keep `notes.{search,read,write,list,backlinks}` for agent consumption, retire `notes.{rename,move,create_folder,set_starred,aliases,watch,graph_data}` which kairo owns directly).
+
+### §8 v3-v6 (historical, RETIRED 2026-06-09) — markdown PKM substrate
 
 **Why this section exists**: bao 2026-06-01 — vault MD management is a substrate concern (storage + index + integrity), but Daily Note / Sourcing inbox / templates are **feature-layer** (Irisy + frontend wire them via vault-internal config). Earlier `VaultBrowser.tsx` 3-pane shell predates ADR-003 4-col app shell and conflicts with it. Decision driver: memory `feedback_build_system_not_business` ("我建系统不建业务") + `decision_ctrl_obsidian_philosophy` (plain-text vault, vim test).
 
@@ -849,7 +869,87 @@ User can opt to "preserve all" in Settings (off by default — vault grows unbou
 - Irisy prompt v5 wired (depends on ADR-005 § persona implementation) — brand labels only ("Claude 订阅" / "CTRL Cloud"), never codenames
 - `/settings/providers` page rendered inside Settings workspace route (ADR-003 § nav-keyboard v2) — **2 role sections** × radio with Available/Not-found + [CTRL-managed] badges + REST API (BYOK) config below
 
-## §12 Pi extension surface — full wiring (NEW v10 — 2026-06-07)
+## §13 Capability faces — 3-face SSOT (NEW v19 — 2026-06-09)
+
+> bao 2026-06-09 校正: "CTRL 还是有 skills, 我计划是 MCP, api, skills 这三个能力面". Supersedes 2026-06-05 `decision_keycap_collapses_to_mcp_meta_ux_layer` (which塌缩 keycap → MCP only; the 塌缩 missed that Skills is a peer surface, not a meta layer on top of MCP). v19 locks **three互补不塌缩** capability faces.
+
+### §13.1 The 3 faces
+
+| Face | Protocol | Wire-in (CTRL hosts) | Wire-out (CTRL calls) | Examples |
+|---|---|---|---|---|
+| **MCP** | Model Context Protocol (stdio / Streamable HTTP per Nov 2025 spec) | `kernel/mcp_server.rs :17873` exposes 28 tools (Notes / clipboard / OCR / provider router / etc.) | `kernel/mcp_host.rs` connects to community MCP servers (Figma / Linear / Notion / etc.) | clipboard.read, notes.search, figma-mcp, smart-connections-mcp |
+| **API** | REST / WebSocket / SDK | n/a (CTRL doesn't host outbound APIs) | `kernel/provider/adapter/api/*.rs` adapters (fal.ai, Anthropic, OpenAI, Hunyuan, DeepSeek, Volc) routed by `provider/router.rs` per typed capability (`image.generate` / `video.generate` / `text.chat` / `audio.tts` / `text.embed` / `text.transform`) | **fal.ai is flagship** (985 endpoints aggregating FLUX 2 / Seedream 5.0 / Recraft V3 / Nano Banana Pro / Kling 3.0 / Veo 3.1 / Hunyuan Video). BYOK only — user pays the upstream. |
+| **Skills** | markdown `SKILL.md` + script body (Claude Code Skills schema, also adopted by Codex, WorkBuddy, CodeBuddy) | n/a | `~/.ctrl/skills/<id>/SKILL.md`, invokable by any of the 3 agents (hermes / opencode / kairo) via `list_skills` + `read_skill` substrate calls | `$imagegen` (fal.ai default FLUX 2 Pro), `$refactor`, `$summarize-note`, `$ocr-image` |
+
+### §13.2 Why three and not two
+
+- **MCP ≠ API**: MCP wraps tool invocation with a session + capability scope + JSON-RPC envelope. API is direct REST/SDK. fal.ai is API not MCP because aggregating 985 endpoints inside a single MCP server is not the natural shape (each endpoint has different schema, billing is per-call). Provider routing is also CTRL's billing-of-record surface (BYOK keychain → env injection), which doesn't fit MCP's tool-call shape.
+- **Skills ≠ MCP**: Skills are **markdown documents** the agent reads to learn a workflow (no protocol, no session — just "read this, then do steps inside it"). MCP tools are **callable functions**. A skill may call zero or many MCP tools and may call zero or many APIs; Skills compose the other two faces. This composition is **why Skills exist as a peer face** — without them, you can't capture multi-step workflows in a single user-shareable artifact.
+
+### §13.3 Friend-product comparison (locks the differentiator)
+
+| Product | MCP | API | Skills | Differentiator |
+|---|---|---|---|---|
+| Claude Desktop (Anthropic) | ✅ Extensions, 9,400+ servers | ❌ Anthropic-only (single brand) | ✅ Artifacts + Claude Code Skills | API face is brand-locked |
+| Codex (OpenAI) | ✅ Figma MCP + Streamable HTTP | ❌ gpt-image-2 only (single brand) | ✅ `$imagegen` + reusable bundles | API face is brand-locked |
+| WorkBuddy (Tencent) | ✅ MCP + 20+ skill packages | ❌ Hunyuan/DeepSeek/GLM/Kimi/MiniMax (brand-locked to Tencent ecosystem) | ✅ Skill packages | API face is ecosystem-locked |
+| CodeBuddy (Tencent) | ✅ MCP + ACP + SDK | ❌ Yuanbao + DeepSeek (brand-locked) | ✅ Skills (2.0) | API face is ecosystem-locked |
+| **CTRL** | ✅ kernel mcp_server :17873 + mcp_host | ✅ **fal.ai (985 endpoints) + Anthropic + OpenAI + Hunyuan + DeepSeek + Volc — BYOK 任意** | ✅ `~/.ctrl/skills/` (Claude Code schema) | **API face is the aggregator** — only product on this list whose API face isn't locked to one brain vendor |
+
+### §13.4 fal.ai BYOK adapter — flagship API-face implementation (v19 ship target)
+
+- **Module**: `src-tauri/src/kernel/provider/adapter/api/fal_ai.rs`
+- **Trait**: implements `ProviderAdapter` (existing trait in `provider/trait.rs`)
+- **Capabilities mapped**: `image.generate` (`fal-ai/flux-pro/v2` default) / `video.generate` (`fal-ai/kling-3.0/text-to-video` default) / `audio.tts` (`fal-ai/elevenlabs/tts/v3` default) / `text.embed` (n/a; embeddings stay on Ollama per §10) — model picker via skill arg or settings UI.
+- **Wire**: POST `https://fal.run/<endpoint>` with `Authorization: Key <FAL_API_KEY>`; supports both sync (`fal.subscribe`) and queue (`fal.queue`) modes; CTRL uses queue for >5s jobs.
+- **BYOK**: API key from macOS Keychain (`ctrl-credential-vault::get("fal-ai", "default")`); injected into adapter via `provider_register("fal-ai", { key: keychain_ref })`. No plaintext on disk.
+- **Provider template**: new entry in `provider-templates.json` with `category: "api-aggregator"`, `capabilities: ["image.generate", "video.generate", "audio.tts"]`, `byok_required: true`.
+- **Skills coupling**: `~/.ctrl/skills/imagegen/SKILL.md` invokes `image.generate` capability — CTRL routes to fal.ai if `fal-ai` is the active provider for that capability, else falls back to next-priority provider (Anthropic gpt-image-2-equivalent if user has BYOK there, etc.).
+
+Codex 1 model lock vs CTRL 985 model aggregator: this is the v19 战术 differentiator. ADR-006 cross-cutting § byok-no-claude v2 amend allows fal.ai BYOK (aggregator endpoint, not a single-brand provider) as an exception to the no-Claude-SDK lock.
+
+### §13.5 Skills SSOT (replaces ADR-001 §5 invariant #9 phrasing)
+
+Skills live at `~/.ctrl/skills/<id>/SKILL.md` (markdown body) optionally with `script.{ts,js,py,sh}` sibling. Schema matches Anthropic Claude Code Skills (also used by Codex `$skill` + WorkBuddy skill packages + CodeBuddy Skills 2.0):
+
+```yaml
+---
+name: imagegen
+description: Generate images from a text prompt
+capabilities: [image.generate]
+default_args:
+  model: fal-ai/flux-pro/v2
+  size: "1024x1024"
+trigger:
+  slash: /imagegen
+  alias: ["$imagegen", "$img"]
+---
+
+# Image generation
+
+Use `image.generate` capability with the model from default_args (user can override
+via `/imagegen --model fal-ai/seedream/v5 prompt here`). Returns image URL + saves to
+`~/Documents/CTRL/Notes/_attachments/<timestamp>.png`.
+```
+
+Skills face is **cross-agent**: hermes / opencode / kairo can each call `list_skills()` + `read_skill(id)` via the CTRL MCP server. A skill triggered in `/coding` (opencode) might call `image.generate` (API face routing to fal.ai) — the agent doesn't need to know fal.ai exists; it just calls the capability.
+
+### §13.6 Migration from §7 composition + §6 mcp-bus
+
+- `§7 composition` (6-axis manifest) — still applies to **MCP face only** (the `manifest.yaml` of an MCP server). Doesn't apply to Skills (Skills use Claude Code schema, not 6-axis). Doesn't apply to API (API is provider-template + adapter, not manifest).
+- `§6 mcp-bus` (kernel as MCP server) — unchanged; this IS the MCP-face implementation.
+
+### §13.7 What this section RETIRES
+
+- 2026-06-05 memory `decision_keycap_collapses_to_mcp_meta_ux_layer` partial塌缩 (Skills was treated as MCP `_meta`; v19 promotes Skills back to peer face).
+- ADR-005 § lifecycle treating "mcp" as the sole capability concept — Skills is peer (ADR-005 v3 → v4 amend).
+- ADR-007 § cap-curation framing "everything is a cap" — three faces means three curation surfaces (MCP discover / Provider catalogue / Skills index).
+
+## §12 Pi extension surface — RETIRED in v19 (Pi exited CTRL hot path)
+
+> **v19 (2026-06-09)**: This entire section is RETIRED. Pi was sole brain (v17), then dual-brain peer (v18), now exited the architecture (v19). `ctrl-pi-bridge` and `ctrl-pi-plugin` packages are deleted. The 28-event handler matrix, auto-RAG `before_provider_request`, audit-log writer, `CTRL_INHERIT_PI_TOOLS`, `$VAR` apiKey prefix, MCP auto-connect to Pi — all RETIRED because Pi is no longer launched by the kernel. Auto-RAG logic and audit log writing move to **hermes** as a CTRL skill (`~/.ctrl/skills/auto-rag/SKILL.md`) so the behavior survives the architecture change.
+
+### Original §12 content (v10 — 2026-06-07) — RETIRED
 
 > bao 2026-06-07 "全接" — Pi 端点都暴露好的; "接" 不是 wrap 工程, 是给每个未接通端点写 1 行 caller. 这段把 `ctrl-pi-bridge` 的 caller 矩阵 SSOT 化, 后续每加 1 个端点就在这表里追 1 行.
 
