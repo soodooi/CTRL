@@ -16,7 +16,7 @@
 | Pattern | When written |
 |---|---|
 | `<H-id>-quality.md` | After each dispatch (background) |
-| `eod-YYYY-MM-DD.md` | EOD aggregate (zeus foreground at day end) |
+| `YYYY-MM-DD-eod-quality.md` | EOD aggregate (zeus foreground at day end; pattern consumed by `fleet-status.sh` `$today-eod*.md` glob) |
 | `<date>-incident.md` | Incident post-mortem (P1 audit) |
 | `<date>-rollback.md` | Post-rollback audit |
 

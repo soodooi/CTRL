@@ -2,7 +2,10 @@
 title: "H-2026-06-09-001 ADR Amendments"
 date: 2026-06-09
 handoff: H-2026-06-09-001
+status: superseded
 ---
+
+> **SUPERSEDED 2026-06-09** by H-2026-06-09-002 (3-agent aggregator, ADR-001 spine v4 + ADR-002 substrate v19). Historical record only — the dual-brain amendments below were shipped then retracted the same day.
 
 ## ADR Amendments for H-2026-06-09-001 Dual-Brain Architecture
 

@@ -81,7 +81,9 @@ function loadHandoffs() {
   if (!existsSync(HANDOFFS_DIR)) return [];
   const handoffs = [];
   for (const file of readdirSync(HANDOFFS_DIR)) {
-    if (!file.startsWith('H-') || !file.endsWith('.md')) continue;
+    // Strict id match (H-YYYY-MM-DD-NNN.md) so companion docs like
+    // H-2026-06-09-001-ADR-amendments.md don't show up as handoffs.
+    if (!/^H-\d{4}-\d{2}-\d{2}-\d{3}\.md$/.test(file)) continue;
     const path = join(HANDOFFS_DIR, file);
     const text = readFileSync(path, 'utf8');
     const fm = parseFrontmatter(text);
