@@ -631,7 +631,7 @@ fn parse_inline_sequence(s: &str) -> Option<Vec<serde_json::Value>> {
     let mut out: Vec<serde_json::Value> = Vec::new();
     let mut buf = String::new();
     let mut in_quote: Option<char> = None;
-    let mut push_token = |buf: &mut String, out: &mut Vec<serde_json::Value>| {
+    let push_token = |buf: &mut String, out: &mut Vec<serde_json::Value>| {
         let trimmed = buf.trim();
         if !trimmed.is_empty() {
             out.push(parse_yaml_scalar(trimmed));

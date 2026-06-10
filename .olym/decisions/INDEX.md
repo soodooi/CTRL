@@ -1,23 +1,25 @@
 <!-- ADR Index — 7 module ADRs. Single source of truth. Code MUST reference `(ADR-NNN <module> § <section> v<N>)` in comments. Amendments bump `version:` in ADR frontmatter; new ADRs only created if a new **module** appears. -->
 
-# CTRL ADRs — module-organized, 7 total
+# CTRL ADRs — module-organized, 7 active + 2 retired
 
-| # | Module | Title | Sections | Version | Status | Last updated |
-|---|---|---|---|---|---|---|
-| [001](./001-spine.md) | spine | 4-layer kernel + 5 primitives + 5 mcp sources + Pi-centric reframe | layers · primitives · sources · pi-centric · invariants · philosophy | v1 | accepted | 2026-05-31 |
-| [002](./002-substrate.md) | substrate | Pi brain · capability surface · provider router · crypto · subprocess · MCP bus · composition · vault · **smart-table-output** · **embeddings** | brain · capability · provider · crypto · subprocess · mcp-bus · composition · vault · smart-table-output · embeddings | v5 | accepted | 2026-06-03 |
-| [003](./003-frontend.md) | frontend | Single PWA + Irisy-as-sole-entry + Keyboard drag-install + vault viewer stack + 4-col shell | pwa · nav-keyboard · vault-stack · shell-4col | v3 | accepted | 2026-06-01 |
-| [004](./004-cap.md) | cap | Mcp execution model + Tauri updater + 4-layer × 3-tier auto-update | execution · updater · auto-update | v1 | accepted | 2026-05-31 |
-| [005](./005-irisy.md) | irisy | 8-stage mcp lifecycle + remote co-view + persona rule + **SOUL.md compat** | lifecycle · remote-view · persona · soul-md-compat | v2 | accepted | 2026-06-03 |
-| [006](./006-cross-cutting.md) | cross-cutting | BYOK no-Claude in production + global English first + plain-text philosophy | byok-no-claude · global-english · plain-text | v1 | accepted | 2026-05-31 |
-| [007](./007-workbench.md) | workbench | Mcp-composition canvas (React Flow + dnd-kit) + Irisy-led skill discovery | canvas · discovery | v1 | accepted | 2026-05-31 |
+| # | Module | Title | Version | Status | Last updated |
+|---|---|---|---|---|---|
+| [001](./001-spine.md) | spine | 4-layer kernel + 5 primitives + 5 mcp sources + **3-agent aggregator** + **3-capability-face** + 6 self-evolution loops | v4 | accepted | 2026-06-09 |
+| [002](./002-substrate.md) | substrate | **3-agent aggregator** · capability surface · **3-capability-face** · provider router · crypto · subprocess · MCP bus · composition | v19 | accepted | 2026-06-09 |
+| [003](./003-frontend.md) | frontend | Single PWA + **5-chip 3-agent aggregator L1** + Keyboard drag-install + 4-col shell | v5 | accepted | 2026-06-09 |
+| [004](./004-cap.md) | cap | Mcp execution model + Tauri updater + 4-layer × 3-tier auto-update | v1 | accepted | 2026-05-31 |
+| [005](./005-irisy.md) | irisy | **PWA persona shell** + sycophancy filter + system-prompt injection + drill-down (3-agent aggregator era) | v5 | accepted | 2026-06-09 |
+| [006](./006-cross-cutting.md) | cross-cutting | **BYOK aggregator-first** + global English first + plain-text philosophy + policy envelope | v3 | accepted | 2026-06-09 |
+| [007](./007-workbench.md) | workbench | Mcp-composition canvas (React Flow + dnd-kit) + Irisy-led skill discovery | v1 | accepted | 2026-05-31 |
+| [008](./008-irisy-assistant.md) | irisy-assistant | Irisy reply specs / user intents / Irisy capabilities / Irisy pipeline | — | **retired** by 001 v4 + 002 v19 | 2026-06-09 |
+| [009](./009-pi-surface-integration.md) | pi-surface-integration | ctrl-pi-bridge full Pi extension wiring (12 hooks + 6 communication APIs) | — | **retired** by 001 v4 + 002 v19 | 2026-06-09 |
 
 ## Module map → code locations
 
 | Module | Owns | Code locations |
 |---|---|---|
 | spine | overall architecture, 5 primitives, anti-list | `src-tauri/src/kernel/{actor,capability,channel,event,effect}.rs` |
-| substrate | brain spawn, capability surface, provider router, crypto, subprocess, MCP bus, manifest composition, **vault primitives + index** | `src-tauri/src/kernel/` (provider/, mcp_server.rs, mcp_host.rs, subprocess_actor.rs, vault.rs, vault_index.rs) + `src-tauri/src/commands/vault.rs` + `packages/ctrl-pi-bridge/` + `packages/ctrl-pi-plugin/` |
+| substrate | agent installer + launcher, capability surface, provider router (including fal.ai API face), crypto, subprocess, MCP bus, manifest composition, Notes folder MCP exposure | `src-tauri/src/kernel/` (provider/, mcp_server.rs, mcp_host.rs, subprocess_actor.rs, notes.rs, notes_index.rs) + `src-tauri/src/commands/{vault,agents,image}.rs` + `src-tauri/src/shell/{agent_installer,agent_launcher}.rs` |
 | frontend | PWA shell, L1 nav, Keyboard, vault browser, viewers | `packages/ctrl-web/` |
 | cap | mcp execution (MCP outward / Actor inward), updater, auto-update tiers | `src-tauri/src/kernel/actor.rs` + `scripts/release.sh` + `packages/ctrl-mcps/` |
 | irisy | 8-stage UX, remote co-view primitives, persona prompts | `packages/ctrl-web/src/routes/irisy.tsx` + `packages/ctrl-web/src/lib/irisy-prompts.ts` |

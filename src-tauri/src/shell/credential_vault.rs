@@ -79,7 +79,7 @@ fn load() -> Result<BTreeMap<String, String>, String> {
     let mut seed = [0u8; 32];
     let h = Sha256::digest(BUNDLE_ID.as_bytes());
     seed.copy_from_slice(&h);
-    let mut cocoon = MiniCocoon::from_key(&key, &seed);
+    let cocoon = MiniCocoon::from_key(&key, &seed);
     let plaintext = cocoon
         .unwrap(&bytes)
         .map_err(|e| format!("vault decrypt: {e:?}"))?;

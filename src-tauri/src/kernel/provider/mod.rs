@@ -42,12 +42,10 @@ pub mod verify;
 // to a cloud provider.
 pub mod ollama_embed;
 
-pub use r#trait::{Capability, Consumer, Provider, RouteChain};
+pub use r#trait::Consumer;
 pub use registry::{
-    ProviderHandle, ProviderListEntry, ProviderRegistry, RecordedFailover, RoutingOverride,
+    ProviderListEntry, ProviderRegistry, RecordedFailover,
 };
-pub use detect::CliProviderEntry;
 pub use types::{
-    ChatChunk, ChatMessage, ChatOpts, ChatPrompt, LlmChunk, LlmError, LlmMessage, LlmPrompt,
-    ProviderError,
+    ChatOpts, LlmChunk, LlmError, LlmMessage, LlmPrompt,
 };
