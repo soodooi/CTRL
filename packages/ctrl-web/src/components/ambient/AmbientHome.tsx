@@ -14,7 +14,7 @@
 // UI registry (lib/ui-registry) so the agent / user / content-type can
 // invoke any UI piece on demand.
 
-import { useCallback, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Group, Panel, Separator } from 'react-resizable-panels';
@@ -24,6 +24,8 @@ import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
 import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
 import { detectPart, renderPart, partLayout, type PartSpec } from '@/lib/ui-registry';
 import { loadConnectors, invokeConnectorTool, type ConnectorTool, type ConnectorManifest } from '@/lib/connector';
+import { ProviderPicker } from './ProviderPicker';
+import { invoke } from '@tauri-apps/api/core';
 import styles from './AmbientHome.module.css';
 
 interface Msg {
@@ -43,8 +45,22 @@ export function AmbientHome(): ReactElement {
   const [streaming, setStreaming] = useState(false);
   const [part, setPart] = useState<PartSpec | null>(null);
   const [routePill, setRoutePill] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [modelLabel, setModelLabel] = useState<string>('Model');
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  // Show the current model in the top bar (click to switch).
+  useEffect(() => {
+    void invoke<{ roles: Record<string, { label: string; model_id: string | null }> }>(
+      'get_active_providers',
+    )
+      .then((v) => {
+        const p = v.roles['irisy.primary'];
+        if (p) setModelLabel(p.model_id ? `${p.label} · ${p.model_id}` : p.label);
+      })
+      .catch(() => {});
+  }, [pickerOpen]);
 
   const newChat = useCallback(() => {
     setMessages([]);
@@ -218,6 +234,14 @@ export function AmbientHome(): ReactElement {
       <div className={styles.topbar} data-tauri-drag-region>
         <span className={styles.brand}>Irisy</span>
         <div className={styles.topActions}>
+          <button
+            type="button"
+            className={styles.modelChip}
+            onClick={() => setPickerOpen(true)}
+            title="Switch model"
+          >
+            {modelLabel}
+          </button>
           {messages.length > 0 && (
             <button type="button" className={styles.topBtn} onClick={newChat} title="New chat">
               New
@@ -233,6 +257,12 @@ export function AmbientHome(): ReactElement {
           </button>
         </div>
       </div>
+      {pickerOpen && (
+        <ProviderPicker
+          onClose={() => setPickerOpen(false)}
+          onActivated={(label, m) => setModelLabel(`${label} · ${m}`)}
+        />
+      )}
       <AnimatePresence mode="wait">
         {surface === 'empty' ? (
           <motion.div
