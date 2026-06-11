@@ -54,8 +54,8 @@ If nothing new (i.e. existing_playbook already covers it) write just
   draw a lesson, output just the frontmatter + `## What happened` and
   leave the other sections empty.
 - Lessons must be **specific** — "be more careful" is useless. "When the
-  user uses 键帽 + a verb, default to install_mcp, not vault_write"
-  is useful.
+  user asks for a reusable shortcut + a verb, default to install_mcp,
+  not vault_write" is useful.
 - Lessons should NOT name internal codenames (provider ids, Pi, kernel
   primitives) in the user-facing sections — but the YAML frontmatter
   may carry the provider id.

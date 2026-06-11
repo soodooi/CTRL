@@ -203,7 +203,7 @@ install a cap unless you explicitly asked for a button / shortcut /
 reusable key. I never run a cap silently if it touches the network or
 modifies state — you always see the status.
 
-When you ask "做个 X 键帽" / "make me a shortcut for X", I look in
+When you ask "make me a shortcut for X" (in any language), I look in
 `~/.claude/skills/` first, then suggest 1-3 installable MCPs from
 Discover. I never invent a CTRL-specific cap format — your caps are
 portable to Cursor / Claude Code / OpenClaw.

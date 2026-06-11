@@ -10,7 +10,7 @@
 // per-PWA-session, stopped when the PWA route unmounts.
 
 use crate::shell::agent_installer::{install, is_installed, read_manifest, AgentName};
-use crate::shell::agent_launcher::{launch, AgentEndpoint};
+use crate::shell::agent_launcher::AgentEndpoint;
 use crate::shell::KernelHandle;
 use serde::Serialize;
 use tauri::State;
@@ -37,13 +37,21 @@ pub async fn install_agent(name: String, force: Option<bool>) -> Result<InstallR
 }
 
 #[tauri::command]
-pub async fn launch_agent(name: String) -> Result<AgentEndpoint, String> {
+pub async fn launch_agent(
+    name: String,
+    kernel: State<'_, KernelHandle>,
+) -> Result<AgentEndpoint, String> {
     let agent = AgentName::from_str(&name).map_err(|e| e.to_string())?;
+    // Unified provider injection (ADR-002 §1.3): feed the active CTRL
+    // provider into the agent so opencode/hermes use the same BYOK config
+    // the user picked — configure once, every face uses it.
+    let provider_env = kernel.runtime.provider_registry.agent_env_injection();
     // The child handle is dropped here; on Unix the child inherits SIGHUP
     // and is reaped when the parent exits. For long-lived launches we'll
     // hold the handle in a process registry, but for the initial wire we
     // surface the endpoint and let the PWA own the lifecycle.
-    let launched = launch(&agent).map_err(|e| e.to_string())?;
+    let launched = crate::shell::agent_launcher::launch_with_env(&agent, &provider_env)
+        .map_err(|e| e.to_string())?;
     Ok(launched.endpoint)
 }
 
@@ -126,7 +134,10 @@ pub async fn connect_agent_mcp(
 /// 2026-06-10). Bridge surface until the kernel ACP streaming client
 /// lands (ADR-002 substrate §1.1 v20); hermes memory + skills still apply.
 #[tauri::command]
-pub async fn assistant_oneshot(prompt: String) -> Result<String, String> {
+pub async fn assistant_oneshot(
+    prompt: String,
+    kernel: State<'_, KernelHandle>,
+) -> Result<String, String> {
     use crate::shell::agent_installer::{ensure_uvx, HERMES_ONESHOT_SPEC};
 
     let agent = AgentName::Hermes;
@@ -134,12 +145,18 @@ pub async fn assistant_oneshot(prompt: String) -> Result<String, String> {
         return Err("hermes not installed — call install_agent first".to_string());
     }
     let uvx = ensure_uvx().map_err(|e| e.to_string())?;
+    // Unified provider injection (ADR-002 §1.3) — hermes uses the same
+    // BYOK key the user picked in CTRL.
+    let provider_env = kernel.runtime.provider_registry.agent_env_injection();
 
+    let mut cmd = tokio::process::Command::new(uvx);
+    cmd.args(["--from", HERMES_ONESHOT_SPEC, "hermes", "-z", &prompt]);
+    for (k, v) in &provider_env {
+        cmd.env(k, v);
+    }
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(180),
-        tokio::process::Command::new(uvx)
-            .args(["--from", HERMES_ONESHOT_SPEC, "hermes", "-z", &prompt])
-            .output(),
+        cmd.output(),
     )
     .await
     .map_err(|_| "hermes one-shot timed out after 180 s".to_string())?

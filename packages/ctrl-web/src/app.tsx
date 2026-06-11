@@ -41,6 +41,13 @@ import { StatusBar } from './components/StatusBar';
 import { OllamaSetupBanner } from './components/OllamaSetupBanner';
 import { MCP_DRAG_MIME } from './components/Keyboard';
 import { RailProvider, PrimaryRail } from './components/PrimaryRail';
+import { AmbientWorkbench } from './components/ambient/AmbientWorkbench';
+
+// ADR-003 §8 v6 morphing-conversation rebuild. Default ON — the new
+// centered ambient surface replaces the legacy 4-column shell as the home.
+// Set localStorage `ctrl:legacy-shell` = '1' to fall back to the old shell.
+const USE_AMBIENT =
+  typeof window === 'undefined' || window.localStorage.getItem('ctrl:legacy-shell') !== '1';
 import { InfraBar } from './components/InfraBar';
 import { IrisyChat } from './components/irisy/IrisyChat';
 import { WorkspaceShell } from './components/workspace/WorkspaceShell';
@@ -119,6 +126,10 @@ function RootShellInner(): ReactElement {
     [createFromMcp, navigate, queryClient],
   );
 
+  if (USE_AMBIENT) {
+    return <AmbientWorkbench />;
+  }
+
   return (
     <div
       className={styles.shell}
@@ -166,6 +177,10 @@ function RootShellInner(): ReactElement {
   );
 }
 
+// ADR-003 §8 v6 — the ambient surface is the home; other routes (settings /
+// coding / notes / pool) render via the router inside AmbientWorkbench, which
+// keeps the persistent sidebar mounted across every route.
+
 function RootShell(): ReactElement {
   useTrayBridge();
   return (
@@ -200,9 +215,6 @@ const CodeSpaceRoute = lazy(() =>
 );
 const CodingRoute = lazy(() =>
   import('./routes/coding').then((m) => ({ default: m.CodingRoute })),
-);
-const AssistantRoute = lazy(() =>
-  import('./routes/assistant').then((m) => ({ default: m.AssistantRoute })),
 );
 const CodeSpaceDetailRoute = lazy(() =>
   import('./routes/code-space').then((m) => ({ default: m.CodeSpaceDetailRoute })),
@@ -357,15 +369,6 @@ const codingRoute = createRoute({
     </Suspense>
   ),
 });
-const assistantRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/assistant',
-  component: () => (
-    <Suspense fallback={<LazyFallback />}>
-      <AssistantRoute />
-    </Suspense>
-  ),
-});
 const codeSpaceDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/code-space/$envId',
@@ -399,7 +402,6 @@ const routeTree = rootRoute.addChildren([
   codeSpaceRoute,
   codeSpaceDetailRoute,
   codingRoute,
-  assistantRoute,
   iconLabRoute,
 ]);
 

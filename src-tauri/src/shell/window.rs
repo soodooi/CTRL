@@ -207,7 +207,7 @@ impl WindowController {
             .skip_taskbar(true)
             .focused(true)
             .center()
-            .resizable(false)
+            .resizable(true)
             .build()?;
         install_close_intercept(&w, app, "main");
         Ok(w)
