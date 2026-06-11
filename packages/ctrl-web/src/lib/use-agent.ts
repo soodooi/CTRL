@@ -5,10 +5,12 @@
 // the retry loop ("PWA owns retry" — §1.3): ensure installed → resolve an
 // endpoint → expose status + retry() for the reconnect button.
 //
-// Endpoint resolution per agent:
-//   opencode → invoke('launch_agent')      → { kind: 'http_port', port }
-//   hermes   → invoke('connect_agent_mcp') → { kind: 'mcp_server', server_id, tools }
-//   kairo    → invoke('launch_agent')      → { kind: 'webview', workspace_path }
+// Endpoint resolution per agent (upstreams verified 2026-06-10,
+// ADR-002 substrate §1.1 v20):
+//   opencode → invoke('launch_agent') → { kind: 'http_port', port }
+//   hermes   → install-only; chat goes through invoke('assistant_oneshot')
+//              until the kernel ACP streaming client lands
+//   kairo    → invoke('launch_agent') → { kind: 'webview', url, workspace_path }
 
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -17,21 +19,16 @@ export type AgentName = 'hermes' | 'opencode' | 'kairo';
 
 export type AgentEndpoint =
   | { kind: 'http_port'; port: number }
-  | { kind: 'mcp_stdio'; pid: number }
-  | { kind: 'webview'; workspace_path: string }
-  | { kind: 'mcp_server'; server_id: string; tools: string[] };
+  | { kind: 'acp_stdio'; pid: number }
+  | { kind: 'webview'; url: string; workspace_path: string }
+  | { kind: 'oneshot' };
 
 export type AgentStatus = 'idle' | 'installing' | 'launching' | 'ready' | 'error';
 
-interface ConnectedAgentMcp {
-  server_id: string;
-  tools: string[];
-}
-
 async function resolveEndpoint(name: AgentName): Promise<AgentEndpoint> {
   if (name === 'hermes') {
-    const conn = await invoke<ConnectedAgentMcp>('connect_agent_mcp', { name });
-    return { kind: 'mcp_server', server_id: conn.server_id, tools: conn.tools };
+    // hermes is launched per call (uvx one-shot) — nothing to hold open.
+    return { kind: 'oneshot' };
   }
   return invoke<AgentEndpoint>('launch_agent', { name });
 }

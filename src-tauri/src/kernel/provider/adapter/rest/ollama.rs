@@ -46,7 +46,7 @@ async fn run_rest_ollama(
     max_tokens: Option<u64>,
 ) -> Result<(), String> {
     let client = http_client::shared()?;
-    // ADR-009 long-context hint (bao 2026-06-04 question on max
+    // ADR-002 substrate §10 long-context hint (orig ADR-009, retired) (bao 2026-06-04 question on max
     // conversation length) — Ollama defaults `num_ctx` to 2048
     // regardless of what the model manifest claims it supports.
     // qwen2.5:7b would forget after ~6 turns at that ceiling. Always

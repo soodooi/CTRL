@@ -51,10 +51,9 @@ import {
   type ReflectTurn,
 } from '@/lib/irisy-reflection';
 import { cleanReplyText } from '@/lib/irisy-render-filter';
-// bao 2026-06-05 "open all Pi capability — full surface to assistant".
-// Right-rail controls + top chip bar call into Pi RpcClient via usePiRpc.
-import { abort as piAbort, compact as piCompact, newSession as piNewSession, refreshBrain } from '@/lib/usePiRpc';
-import { SessionListModal } from './SessionListModal';
+// ADR-002 substrate §1 v19 (2026-06-09): Pi RPC rail controls (sessions /
+// compact / refresh brain / abort) retired with Pi. The rail keeps only
+// the local-state affordances (new chat, clear).
 import { ChatHeaderControls } from './ChatHeaderControls';
 import styles from './IrisyChat.module.css';
 
@@ -116,7 +115,7 @@ interface TextDisplayMessage {
 /** Custom (Pi role=custom) message rendered as an inline chip/banner.
  *  Lives in chat history alongside text messages but is NOT sent back
  *  to Pi as context (filtered out in the history map below), since
- *  Pi already has its own session log entry for it. ADR-009 P3. */
+ *  Pi already has its own session log entry for it. ADR-005 irisy v5 (custom-message relay; orig ADR-009 retired). */
 interface CustomDisplayMessage {
   id: string;
   role: 'custom';
@@ -252,7 +251,7 @@ const AssistantBubble = memo(function AssistantBubble({
           className={styles.saveBtn}
           title="Save this reply to vault/irisy/replies/"
           onClick={() => void onSave(message.id, message.content)}
-          aria-label="Save reply to vault"
+          aria-label="Save reply to Notes"
         >
           ✓
         </button>
@@ -383,11 +382,6 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const [chatError, setChatError] = useState<{ summary: string; detail: string } | null>(null);
   const [errorExpanded, setErrorExpanded] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  // bao 2026-06-05: Pi RpcClient surface — full method set wired via
-  // usePiRpc. Modal + toast state stays local; the wrappers fire-and-
-  // forget so the parent does not need extra reducer plumbing.
-  const [showSessions, setShowSessions] = useState(false);
-  const [brainBusy, setBrainBusy] = useState<'refresh' | 'stop' | null>(null);
 
   // bao 2026-06-04 (3-mode full): session state is global (persisted to
   // localStorage via zustand) so Coding mode can be entered from L1
@@ -686,7 +680,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
             );
           }
           if (chunk.custom) {
-            // ADR-009 P3 — Pi emitted a role=custom message via the
+            // ADR-005 irisy v5 (custom-message relay; orig ADR-009 retired) — Pi emitted a role=custom message via the
             // slash command path. Insert it BEFORE the assistant
             // placeholder so it reads as the user's intent, not as
             // the assistant's reply. Falls back to append if the
@@ -903,7 +897,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         <div className={styles.composer}>
           <textarea
             className={styles.composerInput}
-            placeholder="Pi is wiring up…"
+            placeholder="Connecting…"
             rows={1}
             disabled
             aria-label="Message Irisy (disabled during upgrade)"
@@ -939,36 +933,19 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       )}
       <ChatHeaderControls />
       <div className={styles.scrollerWrap}>
-        {/* bao 2026-06-05 right-rail control stack — vertical, 22x22 each,
-            mirrors the existing clearFloating style. Order top-to-bottom:
-            History (always visible), Refresh brain (always),
-            Stop (only while streaming), Clear (only with messages). */}
+        {/* Right-rail control stack — vertical, 22x22 each. ADR-002
+            substrate §1 v19: the Pi RPC controls (history / compact /
+            refresh brain / abort) retired with Pi; what remains operates
+            on local PWA state only. */}
         <div className={styles.controlRail}>
           <button
             type="button"
             className={styles.railButton}
-            onClick={() => setShowSessions(true)}
-            aria-label="Conversation history"
-            title="History"
-          >
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
-              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className={styles.railButton}
-            onClick={async () => {
-              try {
-                await piNewSession();
-                setMessages([]);
-                setChatError(null);
-                setStatusMessage('Started new Pi session.');
-                window.setTimeout(() => setStatusMessage(null), 2500);
-              } catch (e) {
-                setStatusMessage(`New session failed: ${e instanceof Error ? e.message : String(e)}`);
-              }
+            onClick={() => {
+              setMessages([]);
+              setChatError(null);
+              setStatusMessage('Started new chat.');
+              window.setTimeout(() => setStatusMessage(null), 2500);
             }}
             aria-label="New conversation"
             title="New chat"
@@ -979,79 +956,6 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
           </button>
-          <button
-            type="button"
-            className={styles.railButton}
-            onClick={async () => {
-              try {
-                await piCompact();
-                setStatusMessage('Context compacted by Pi.');
-                window.setTimeout(() => setStatusMessage(null), 2500);
-              } catch (e) {
-                setStatusMessage(`Compact failed: ${e instanceof Error ? e.message : String(e)}`);
-              }
-            }}
-            aria-label="Compact context now"
-            title="Compact now"
-          >
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
-              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="4 14 10 14 10 20" />
-              <polyline points="20 10 14 10 14 4" />
-              <line x1="14" y1="10" x2="21" y2="3" />
-              <line x1="3" y1="21" x2="10" y2="14" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className={styles.railButton}
-            onClick={async () => {
-              setBrainBusy('refresh');
-              try {
-                await refreshBrain();
-                setStatusMessage('Brain refreshed — next message will use new wrapper/extensions.');
-                window.setTimeout(() => setStatusMessage(null), 3500);
-              } catch (e) {
-                setStatusMessage(`Refresh failed: ${e instanceof Error ? e.message : String(e)}`);
-              } finally {
-                setBrainBusy(null);
-              }
-            }}
-            disabled={brainBusy != null}
-            aria-label="Refresh brain (kill + respawn Pi daemon)"
-            title="Refresh brain"
-          >
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
-              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="23 4 23 10 17 10" />
-              <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
-            </svg>
-          </button>
-          {sending && (
-            <button
-              type="button"
-              className={`${styles.railButton} ${styles.railStop}`}
-              onClick={async () => {
-                setBrainBusy('stop');
-                try {
-                  await piAbort();
-                  setStatusMessage('Stopped.');
-                  window.setTimeout(() => setStatusMessage(null), 2000);
-                } catch (e) {
-                  setStatusMessage(`Stop failed: ${e instanceof Error ? e.message : String(e)}`);
-                } finally {
-                  setBrainBusy(null);
-                }
-              }}
-              disabled={brainBusy === 'stop'}
-              aria-label="Stop generation"
-              title="Stop"
-            >
-              <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true">
-                <rect x="6" y="6" width="12" height="12" rx="1.5" />
-              </svg>
-            </button>
-          )}
           {messages.length > 0 && (
             <button
               type="button"
@@ -1068,21 +972,6 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
             </button>
           )}
         </div>
-        <SessionListModal
-          open={showSessions}
-          onClose={() => setShowSessions(false)}
-          onResumed={(path) => {
-            // Switching session changes Pi's active jsonl; the PWA's
-            // localStorage history is no longer authoritative. Easiest
-            // honest UX for MVP: clear the PWA panel and let the user
-            // resume the conversation by typing. A richer pass will
-            // call getMessages() and rebuild DisplayMessage[].
-            setMessages([]);
-            setChatError(null);
-            setStatusMessage(`Resumed Pi session ${path.split('/').pop()}`);
-            window.setTimeout(() => setStatusMessage(null), 3500);
-          }}
-        />
         {/* Legacy clearFloating retained for compatibility but visually
             replaced by railButton — kept hidden so the test selector
             (aria-label=Clear conversation) inside controlRail still
@@ -1111,7 +1000,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
           {messages.map((m, i) => {
             const prev = i > 0 ? messages[i - 1] : null;
             const showSep = prev != null && prev.role !== m.role;
-            // ADR-009 P3 — custom messages are inline chips/banners,
+            // ADR-005 irisy v5 (custom-message relay; orig ADR-009 retired) — custom messages are inline chips/banners,
             // rendered via dispatch before the text branches so the
             // assistant/user TS narrows below.
             if (m.role === 'custom') {

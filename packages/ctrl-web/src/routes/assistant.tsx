@@ -1,9 +1,10 @@
-// Assistant — hermes via the kernel MCP bus.
+// Assistant — hermes (NousResearch) one-shot bridge.
 //
-// ADR-002 substrate §1 v19 (2026-06-09, 3-agent aggregator): hermes is an
-// mcp-stdio agent connected through connect_agent_mcp; chat goes through
-// the existing mcp_call command (kernel owns the MCP bus, §1.3). The
-// retired hermes_chat_stream SSE bridge is gone. PWA owns retry.
+// ADR-002 substrate §1.1 v20 (2026-06-10): upstream verification showed
+// hermes embeds via ACP stdio (Agent Client Protocol), not MCP, and has
+// no MCP `chat` tool. Until the kernel ACP streaming client lands, chat
+// goes through invoke('assistant_oneshot') — `hermes -z` prints only the
+// final answer; hermes memory + skills still apply. PWA owns retry.
 
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -19,24 +20,6 @@ interface Message {
   timestamp: number;
 }
 
-const CHAT_TOOL = 'chat';
-
-// MCP CallToolResult — extract the text content blocks.
-function extractToolText(result: unknown): string {
-  if (typeof result === 'string') return result;
-  if (result && typeof result === 'object') {
-    const r = result as { content?: Array<{ type?: string; text?: string }> };
-    if (Array.isArray(r.content)) {
-      const text = r.content
-        .filter((c) => c.type === 'text' && typeof c.text === 'string')
-        .map((c) => c.text)
-        .join('');
-      if (text) return text;
-    }
-  }
-  return JSON.stringify(result);
-}
-
 export function AssistantRoute() {
   const agent = useAgent('hermes');
   const [input, setInput] = useState('');
@@ -44,12 +27,10 @@ export function AssistantRoute() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const serverId = agent.endpoint?.kind === 'mcp_server' ? agent.endpoint.server_id : null;
-  const hasChatTool =
-    agent.endpoint?.kind === 'mcp_server' ? agent.endpoint.tools.includes(CHAT_TOOL) : false;
+  const ready = agent.status === 'ready';
 
   const sendMessage = async () => {
-    if (!input.trim() || isSending || !serverId) return;
+    if (!input.trim() || isSending || !ready) return;
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -64,21 +45,18 @@ export function AssistantRoute() {
     setError(null);
 
     try {
-      const result = await invoke<unknown>('mcp_call', {
-        args: {
-          server_id: serverId,
-          tool_name: CHAT_TOOL,
-          args: {
-            messages: history.map((m) => ({ role: m.role, content: m.content })),
-          },
-        },
+      // hermes one-shot takes a single prompt; hermes's own persistent
+      // memory carries cross-turn context, so we send just the new turn.
+      void history;
+      const reply = await invoke<string>('assistant_oneshot', {
+        prompt: userMessage.content,
       });
       setMessages((prev) => [
         ...prev,
         {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: extractToolText(result),
+          content: reply,
           timestamp: Date.now(),
         },
       ]);
@@ -96,7 +74,7 @@ export function AssistantRoute() {
           <div className={styles.empty}>
             <h2>Hermes Assistant</h2>
             {agent.status === 'installing' && <p>Installing hermes…</p>}
-            {agent.status === 'launching' && <p>Connecting hermes to the MCP bus…</p>}
+            {agent.status === 'launching' && <p>Preparing hermes…</p>}
             {agent.status === 'error' && (
               <>
                 <p>Hermes failed to start: {agent.error}</p>
@@ -107,19 +85,7 @@ export function AssistantRoute() {
             )}
           </div>
         )}
-        {agent.status === 'ready' && !hasChatTool && (
-          <div className={styles.empty}>
-            <h2>Hermes Assistant</h2>
-            <p>
-              Hermes is connected but exposes no `{CHAT_TOOL}` tool (available:{' '}
-              {agent.endpoint?.kind === 'mcp_server' && agent.endpoint.tools.length > 0
-                ? agent.endpoint.tools.join(', ')
-                : 'none'}
-              ).
-            </p>
-          </div>
-        )}
-        {agent.status === 'ready' && hasChatTool && messages.length === 0 && (
+        {agent.status === 'ready' && messages.length === 0 && (
           <div className={styles.empty}>
             <h2>Hermes Assistant</h2>
             <p>
@@ -169,12 +135,12 @@ export function AssistantRoute() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type your assistant task..."
-          disabled={isSending || agent.status !== 'ready' || !hasChatTool}
+          disabled={isSending || !ready}
           className={styles.input}
         />
         <button
           type="submit"
-          disabled={isSending || !input.trim() || agent.status !== 'ready' || !hasChatTool}
+          disabled={isSending || !input.trim() || !ready}
           className={styles.sendButton}
         >
           {isSending ? '...' : 'Send'}
