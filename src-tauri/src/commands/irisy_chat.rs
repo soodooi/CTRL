@@ -148,6 +148,47 @@ async fn forward_to_provider(
         });
     }
 
+    // Assistant-mode hermes-first branch (ADR-002 substrate §1.1 v20): when
+    // the hermes agent is installed, route the turn through it (its own
+    // persistent memory + skills) and emit the answer; fall back to the
+    // provider router when hermes is absent or errors so offline / fresh
+    // installs stay usable (CLAUDE.md derived rule #2). Coding mode is owned
+    // by opencode, so it skips this branch.
+    let coding_mode = args.mode.as_deref() == Some("coding");
+    if !coding_mode
+        && crate::shell::agent_installer::is_installed(
+            &crate::shell::agent_installer::AgentName::Hermes,
+        )
+    {
+        if let Some(last_user) = messages.iter().rev().find(|m| m.role == "user") {
+            match crate::commands::agents::run_hermes_oneshot(
+                &last_user.content,
+                registry.as_ref(),
+            )
+            .await
+            {
+                Ok(answer) => {
+                    if !answer.is_empty() {
+                        let _ = app.emit(
+                            "chat-stream-delta",
+                            StreamDelta {
+                                request_id: request_id.to_string(),
+                                delta: answer,
+                                done: false,
+                                error: None,
+                                custom: None,
+                            },
+                        );
+                    }
+                    emit_done(app, request_id, None);
+                    return Ok(());
+                }
+                // Degrade to the provider router on hermes failure.
+                Err(_e) => {}
+            }
+        }
+    }
+
     let prompt = ChatPrompt {
         system: None,
         messages,

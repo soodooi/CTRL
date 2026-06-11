@@ -129,14 +129,15 @@ pub async fn connect_agent_mcp(
     Ok(ConnectedAgentMcp { server_id, tools })
 }
 
-/// One-shot hermes answer — `uvx --from hermes-agent==<pin> hermes -z "<prompt>"`
+/// Core hermes one-shot — `uvx --from hermes-agent==<pin> hermes -z "<prompt>"`
 /// prints only the final answer to stdout (verified upstream oneshot.py,
-/// 2026-06-10). Bridge surface until the kernel ACP streaming client
-/// lands (ADR-002 substrate §1.1 v20); hermes memory + skills still apply.
-#[tauri::command]
-pub async fn assistant_oneshot(
-    prompt: String,
-    kernel: State<'_, KernelHandle>,
+/// 2026-06-10). Shared by the `assistant_oneshot` command and the
+/// irisy_chat hermes-first branch (ADR-002 substrate §1.1 v20). hermes keeps
+/// its own persistent memory + skills, so callers pass a single prompt
+/// (typically the latest user turn) rather than the whole history.
+pub async fn run_hermes_oneshot(
+    prompt: &str,
+    registry: &crate::kernel::provider::registry::ProviderRegistry,
 ) -> Result<String, String> {
     use crate::shell::agent_installer::{ensure_uvx, HERMES_ONESHOT_SPEC};
 
@@ -147,10 +148,10 @@ pub async fn assistant_oneshot(
     let uvx = ensure_uvx().map_err(|e| e.to_string())?;
     // Unified provider injection (ADR-002 §1.3) — hermes uses the same
     // BYOK key the user picked in CTRL.
-    let provider_env = kernel.runtime.provider_registry.agent_env_injection();
+    let provider_env = registry.agent_env_injection();
 
     let mut cmd = tokio::process::Command::new(uvx);
-    cmd.args(["--from", HERMES_ONESHOT_SPEC, "hermes", "-z", &prompt]);
+    cmd.args(["--from", HERMES_ONESHOT_SPEC, "hermes", "-z", prompt]);
     for (k, v) in &provider_env {
         cmd.env(k, v);
     }
@@ -170,6 +171,16 @@ pub async fn assistant_oneshot(
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// One-shot hermes answer surfaced to the PWA (bridge until the ACP
+/// streaming client lands, ADR-002 substrate §1.1 v20).
+#[tauri::command]
+pub async fn assistant_oneshot(
+    prompt: String,
+    kernel: State<'_, KernelHandle>,
+) -> Result<String, String> {
+    run_hermes_oneshot(&prompt, &kernel.runtime.provider_registry).await
 }
 
 #[tauri::command]
