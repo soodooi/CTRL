@@ -63,6 +63,10 @@ export interface AmbientHomeProps {
   toolRequest: ToolRequest | null;
   /** Bumped by the shell when "Irisy" is selected, to reset the chat. */
   irisyNonce: number;
+  /** Collapsed (display:none) while a route owns the main column. The
+   *  component stays MOUNTED so chat state + nonce effects survive route
+   *  visits — never unmount it, or the nonce effects replay on remount. */
+  hidden: boolean;
 }
 
 const SPRING = { type: 'spring', stiffness: 420, damping: 36 } as const;
@@ -75,6 +79,7 @@ export function AmbientHome({
   onToggleDrawer,
   toolRequest,
   irisyNonce,
+  hidden,
 }: AmbientHomeProps): ReactElement {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -215,8 +220,9 @@ export function AmbientHome({
     if (m && t) void runToolRef.current(m, t);
   }, [toolRequest]);
 
-  // Reset the chat when the shell selects "Irisy" (nonce bump). Skip the
-  // initial 0 so a fresh mount keeps any in-progress conversation.
+  // Reset the chat when the shell selects "Irisy" (nonce bump). Since this
+  // component stays mounted across routes (hidden, not unmounted), the
+  // effect fires only on a real bump — never replays on a route return.
   useEffect(() => {
     if (irisyNonce > 0) newChat();
   }, [irisyNonce, newChat]);
@@ -268,7 +274,7 @@ export function AmbientHome({
   );
 
   return (
-    <div className={styles.root} data-surface={surface}>
+    <div className={styles.root} data-surface={surface} hidden={hidden}>
       <div className={styles.topbar} data-tauri-drag-region>
         <button
           type="button"

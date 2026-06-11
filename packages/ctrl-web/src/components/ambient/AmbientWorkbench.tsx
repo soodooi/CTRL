@@ -30,6 +30,10 @@ export function AmbientWorkbench(): ReactElement {
   const [view, setView] = useState<'chat' | 'discover'>('chat');
   const [toolRequest, setToolRequest] = useState<ToolRequest | null>(null);
   const [irisyNonce, setIrisyNonce] = useState(0);
+  // Which sidebar entry is highlighted on home ('irisy' | 'discover' |
+  // `${connectorId}.${toolName}`). Routes own their own nav, so off-home
+  // nothing is highlighted.
+  const [navSel, setNavSel] = useState<string>('irisy');
 
   // Show the active model in the sidebar chip (click to switch).
   useEffect(() => {
@@ -55,19 +59,22 @@ export function AmbientWorkbench(): ReactElement {
       if (!isHome) void navigate({ to: '/' });
       if (s.kind === 'irisy') {
         setView('chat');
+        setNavSel('irisy');
         setIrisyNonce((n) => n + 1);
       } else if (s.kind === 'tool') {
         setView('chat');
+        setNavSel(`${s.connectorId}.${s.toolName}`);
         setToolRequest({ connectorId: s.connectorId, toolName: s.toolName, nonce: Date.now() });
       } else if (s.kind === 'discover') {
         setView('discover');
+        setNavSel('discover');
       }
     },
     [navigate, isHome],
   );
 
   // Only highlight a sidebar entry on home; routed pages own their own nav.
-  const activeSection = isHome ? (view === 'discover' ? 'discover' : 'irisy') : '';
+  const activeSection = isHome ? navSel : '';
 
   return (
     <div className={styles.workbench} data-drawer={drawerOpen || undefined} data-testid="shell">
@@ -80,17 +87,20 @@ export function AmbientWorkbench(): ReactElement {
       />
       {drawerOpen && <div className={styles.scrim} onClick={() => setDrawerOpen(false)} />}
 
-      {isHome ? (
-        <AmbientHome
-          view={view}
-          onView={setView}
-          modelLabel={modelLabel}
-          onOpenPicker={() => setPickerOpen(true)}
-          onToggleDrawer={() => setDrawerOpen((v) => !v)}
-          toolRequest={toolRequest}
-          irisyNonce={irisyNonce}
-        />
-      ) : (
+      {/* AmbientHome stays MOUNTED across every route (collapsed when a
+          route owns the column) so chat state survives a Settings/Notes
+          visit and the nonce effects never replay on a remount. */}
+      <AmbientHome
+        view={view}
+        onView={setView}
+        modelLabel={modelLabel}
+        onOpenPicker={() => setPickerOpen(true)}
+        onToggleDrawer={() => setDrawerOpen((v) => !v)}
+        toolRequest={toolRequest}
+        irisyNonce={irisyNonce}
+        hidden={!isHome}
+      />
+      {!isHome && (
         <div className={styles.routeHost}>
           <div className={styles.routeTopbar} data-tauri-drag-region>
             <button

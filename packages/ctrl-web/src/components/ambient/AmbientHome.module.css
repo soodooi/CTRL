@@ -12,6 +12,12 @@
   overflow: hidden;
 }
 
+/* Stays mounted but collapsed while a route owns the column — the class
+   `display:flex` would otherwise win over the bare `hidden` attribute. */
+.root[hidden] {
+  display: none;
+}
+
 /* ── slim top bar (calm chrome — command-surface-over-nav) ─────── */
 .topbar {
   flex: none;
