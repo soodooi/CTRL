@@ -1,12 +1,12 @@
 /* Notes app — 2-pane workspace tab body (sidebar + editor + backlinks).
-   (ADR-002 substrate § vault v1 §8.6 v6, 2026-06-05 — bao kairo 1:1
-   revert; previously v4 2026-06-02 + v5 2026-06-03 kairo-parity batch
-   which drifted with a top action bar + 7 views + light theme.)
+   (ADR-002 substrate § vault v1 §8.6 v6.)
 
-   bao 2026-06-05: /notes runs scoped dark theme matching kairo v0.1.0
-   screenshot. CTRL global light-default decision (decision_ctrl_light
-   _theme_default 2026-05-25) stays intact — these overrides only
-   apply inside .shell, not to the rest of the PWA. */
+   bao 2026-06-11: /notes now FOLLOWS THE GLOBAL THEME (light default).
+   The 2026-06-05 scoped dark override (kairo v0.1.0 parity) is retired —
+   it read as a jarring theme break from the rest of the light PWA. The
+   component inherits the global --color-* token set (so it also follows
+   a global Dark/System switch); only one token the global set names
+   differently is bridged below. */
 
 .shell {
   display: flex;
@@ -15,17 +15,8 @@
   width: 100%;
   overflow: hidden;
 
-  /* Scoped dark palette — matches kairo v0.1.0 dark navy. */
-  --color-bg-l0: #13182a;
-  --color-bg-l1: #1a2138;
-  --color-bg-l2: #232b48;
-  --color-bg-elevated: #2a3358;
-  --color-text: #e5e9f5;
-  --color-text-soft: #aab2c8;
-  --color-text-muted: #6c7896;
-  --color-border-soft: rgba(255, 255, 255, 0.07);
-  --color-border: rgba(255, 255, 255, 0.14);
-  --color-accent: #6d7af0;
+  /* Bridge the single token Notes uses under a different global name. */
+  --color-bg-elevated: var(--color-surface-elevated);
 
   background: var(--color-bg-l0);
   color: var(--color-text);
