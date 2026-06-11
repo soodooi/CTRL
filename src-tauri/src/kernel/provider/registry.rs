@@ -45,7 +45,7 @@ use super::adapter::{
 };
 use super::manifest::{
     default_active_state_path, default_user_providers_dir, legacy_config_path, parse_file,
-    parse_str, AuthSource, ProviderKind, ProviderManifest,
+    parse_str, AuthSource, HttpShape, ProviderKind, ProviderManifest,
 };
 use super::r#trait::{Capability, Consumer, Provider, RouteChain};
 
@@ -553,6 +553,56 @@ impl ProviderRegistry {
             .iter()
             .map(|(c, id)| (c.id(), id.clone()))
             .collect()
+    }
+
+    /// Unified provider injection (ADR-002 §1.3): resolve the active
+    /// `irisy.primary` provider into the standard env vars the external
+    /// agents (opencode, hermes) honor, so all three faces share ONE
+    /// BYOK config — configure once in CTRL, every face uses it.
+    ///
+    /// Maps the active provider's shape to the convention:
+    ///   anthropic-shape -> ANTHROPIC_API_KEY (+ ANTHROPIC_BASE_URL)
+    ///   openai-shape     -> OPENAI_API_KEY    (+ OPENAI_BASE_URL)
+    /// (openai-compatible covers doubao / deepseek / kimi / qwen / etc.)
+    /// Returns an empty map when no HTTP provider is active or the key is
+    /// not resolvable — agents then fall back to their own config.
+    pub fn agent_env_injection(&self) -> BTreeMap<String, String> {
+        let mut env = BTreeMap::new();
+        let id = {
+            let active = self.active.read().unwrap();
+            match active.get(&Consumer::IrisyPrimary) {
+                Some(id) => id.clone(),
+                None => return env,
+            }
+        };
+        let providers = self.providers.read().unwrap();
+        let Some(loaded) = providers.get(&id) else {
+            return env;
+        };
+        let m = &loaded.manifest;
+        if m.kind != ProviderKind::HttpApi {
+            // CLI providers (claude-oauth) own their auth; don't inject.
+            return env;
+        }
+        let key = match resolve_auth(m) {
+            Ok(k) if !k.is_empty() => k,
+            _ => return env,
+        };
+        match m.shape {
+            HttpShape::AnthropicMessages => {
+                env.insert("ANTHROPIC_API_KEY".into(), key);
+                if let Some(ep) = &m.endpoint {
+                    env.insert("ANTHROPIC_BASE_URL".into(), ep.clone());
+                }
+            }
+            HttpShape::OpenaiChatCompletions => {
+                env.insert("OPENAI_API_KEY".into(), key);
+                if let Some(ep) = &m.endpoint {
+                    env.insert("OPENAI_BASE_URL".into(), ep.clone());
+                }
+            }
+        }
+        env
     }
 
     /// Build the resolution chain for one consumer (primary + ordered

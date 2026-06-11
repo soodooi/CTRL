@@ -72,6 +72,17 @@ fn wait_for_stdout_line(
 }
 
 pub fn launch(name: &AgentName) -> Result<LaunchedAgent> {
+    launch_with_env(name, &std::collections::BTreeMap::new())
+}
+
+/// Launch with a unified provider env injection (ADR-002 §1.3): the
+/// caller passes the active CTRL provider's env (ANTHROPIC_API_KEY /
+/// OPENAI_API_KEY + BASE_URL) so opencode + hermes use the SAME BYOK
+/// config the user picked in CTRL — configure once, every face uses it.
+pub fn launch_with_env(
+    name: &AgentName,
+    provider_env: &std::collections::BTreeMap<String, String>,
+) -> Result<LaunchedAgent> {
     let manifest = read_manifest(name)
         .ok_or_else(|| anyhow!("agent not installed — call install_agent first"))?;
 
@@ -84,6 +95,9 @@ pub fn launch(name: &AgentName) -> Result<LaunchedAgent> {
     let mut cmd = Command::new(program);
     for a in args {
         cmd.arg(a);
+    }
+    for (k, v) in provider_env {
+        cmd.env(k, v);
     }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
