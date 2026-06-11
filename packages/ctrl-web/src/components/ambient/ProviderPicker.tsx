@@ -150,11 +150,13 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
                       />
                     </label>
                     {error && <div className={styles.error}>{error}</div>}
+                    {/* A key is required unless this provider is already the
+                        active one (then an empty field keeps the stored key). */}
                     <button
                       type="button"
                       className={styles.use}
                       onClick={() => void apply()}
-                      disabled={busy}
+                      disabled={busy || (!apiKey.trim() && active?.id !== t.id)}
                     >
                       {busy ? 'Verifying…' : 'Use this provider'}
                     </button>

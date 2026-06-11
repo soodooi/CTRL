@@ -83,6 +83,13 @@ export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: Sideb
       >
         <span className={styles.sideIcon}>⊕</span> Discover
       </button>
+      <button
+        type="button"
+        className={styles.sideItem}
+        onClick={() => onSelect({ kind: 'route', to: '/settings' })}
+      >
+        <span className={styles.sideIcon}>⚙</span> Settings
+      </button>
       <button type="button" className={styles.sideModel} onClick={onModel} title="Switch model">
         {modelLabel}
       </button>

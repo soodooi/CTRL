@@ -62,20 +62,22 @@
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
 }
 
-/* ── empty state: centered launcher ───────────────────────────── */
+/* ── empty state: centered launcher (scrolls when it overflows) ── */
 .empty {
   width: 100%;
   max-width: 620px;
-  margin: auto;
-  padding: 0 24px;
+  max-height: 100%;
+  margin: 0 auto;
+  padding: 32px 24px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0;
+  overflow-y: auto;
 }
 
 .greeting {
@@ -90,6 +92,56 @@
   margin: 6px 0 24px;
   font-size: 14px;
   color: var(--text-muted, #6e6e73);
+  text-align: center;
+}
+
+/* ── first-run CTAs (so a new user knows the next step) ────────── */
+.ctaPrimary {
+  align-self: center;
+  margin-top: 4px;
+  padding: 13px 26px;
+  border: none;
+  border-radius: 12px;
+  background: var(--primary, #3b5bdb);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 22px rgba(59, 91, 219, 0.28);
+  transition: transform 0.08s ease, box-shadow 0.15s ease;
+}
+
+.ctaPrimary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 12px 30px rgba(59, 91, 219, 0.34);
+}
+
+.ctaSecondary {
+  align-self: center;
+  margin-top: 18px;
+  padding: 9px 16px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted, #6e6e73);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.ctaSecondary:hover {
+  border-color: var(--primary-ring, rgba(59, 91, 219, 0.3));
+  color: var(--primary, #3b5bdb);
+}
+
+.tryLabel {
+  margin-top: 22px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-subtle, #98989d);
   text-align: center;
 }
 

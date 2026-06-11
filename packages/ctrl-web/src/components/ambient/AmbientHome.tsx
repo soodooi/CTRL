@@ -46,7 +46,6 @@ export function AmbientHome(): ReactElement {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [part, setPart] = useState<PartSpec | null>(null);
-  const [routePill, setRoutePill] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [modelLabel, setModelLabel] = useState<string>('Model');
   const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
@@ -69,7 +68,6 @@ export function AmbientHome(): ReactElement {
   const newChat = useCallback(() => {
     setMessages([]);
     setPart(null);
-    setRoutePill(null);
     setInput('');
   }, []);
 
@@ -82,6 +80,8 @@ export function AmbientHome(): ReactElement {
   }, []);
 
   const surface: Surface = part ? 'chat-part' : messages.length > 0 ? 'chat' : 'empty';
+  // Gate the first-run CTA on whether any model is wired up yet.
+  const hasProvider = modelLabel !== 'Model';
 
   const send = useCallback(async (text: string) => {
     const trimmed = text.trim();
@@ -91,17 +91,6 @@ export function AmbientHome(): ReactElement {
     const asstId = `a-${Date.now()}`;
     setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '' }]);
     setStreaming(true);
-
-    // Lightweight intent pill (transparent routing — the agent-driven
-    // version lands with the capability router). Heuristic for now.
-    const lower = trimmed.toLowerCase();
-    setRoutePill(
-      /\b(html|page|poster|web|site)\b/.test(lower)
-        ? 'Building'
-        : /\b(code|refactor|bug|function)\b/.test(lower)
-          ? 'Coding'
-          : 'Answering',
-    );
 
     try {
       const history: LLMMessage[] = [...messages, userMsg].map((m) => ({
@@ -155,9 +144,8 @@ export function AmbientHome(): ReactElement {
     inputRef.current?.focus();
   }, []);
 
-  // Connected systems (spec §0.5) — each connector tool is a clickable
-  // card; click -> real HTTP call (or mock) -> morph to a table/record.
-  const connectors = loadConnectors();
+  // Run a connector tool — real HTTP call (or mock) -> morph to a
+  // table/record on the surface. Invoked from the sidebar's "Your tools".
   const runConnectorTool = useCallback(
     async (manifest: ConnectorManifest, tool: ConnectorTool) => {
       if (streaming) return;
@@ -171,7 +159,6 @@ export function AmbientHome(): ReactElement {
           { id: `u-${Date.now()}`, role: 'user', content: `${manifest.title}: ${tool.title ?? tool.name}` },
           { id: `a-${Date.now()}`, role: 'assistant', content: `Here is **${tool.title ?? tool.name}** from ${manifest.title}.` },
         ]);
-        setRoutePill(manifest.title);
         setPart({ kind, content, title: `${manifest.title} · ${tool.title ?? tool.name}` });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -278,7 +265,7 @@ export function AmbientHome(): ReactElement {
         </button>
         <span className={styles.brand}>Irisy</span>
         <div className={styles.topActions}>
-          {messages.length > 0 && (
+          {view === 'chat' && messages.length > 0 && (
             <button type="button" className={styles.topBtn} onClick={newChat} title="New chat">
               New
             </button>
@@ -305,70 +292,49 @@ export function AmbientHome(): ReactElement {
             transition={SPRING}
           >
             <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
-            <p className={styles.subtitle}>What do you want to do?</p>
-            {composer}
-            {/* The 3 faces — assistant is this chat; Coding + Notes open
-                their workspaces (opencode / kairo). */}
-            <div className={styles.faces}>
+            <p className={styles.subtitle}>
+              Your private AI workspace — it runs on your machine, your data stays yours.
+            </p>
+
+            {!hasProvider ? (
+              // Primary CTA: nothing works until a model is connected.
               <button
                 type="button"
-                className={styles.face}
-                onClick={() => void navigate({ to: '/coding' })}
+                className={styles.ctaPrimary}
+                onClick={() => setPickerOpen(true)}
               >
-                <span className={styles.faceIcon}>{'</>'}</span>
-                <span className={styles.faceLabel}>Coding</span>
-                <span className={styles.faceHint}>Write code with opencode</span>
+                Connect your AI to start →
               </button>
-              <button
-                type="button"
-                className={styles.face}
-                onClick={() => void navigate({ to: '/notes' })}
-              >
-                <span className={styles.faceIcon}>✎</span>
-                <span className={styles.faceLabel}>Notes</span>
-                <span className={styles.faceHint}>Your markdown knowledge base</span>
-              </button>
-            </div>
-            <div className={styles.floor}>
-              {floorCapabilities()
-                .slice(0, 8)
-                .map((cap) => (
-                  <motion.button
-                    key={cap.id}
-                    type="button"
-                    className={styles.card}
-                    onClick={() => onPickCapability(cap)}
-                    whileHover={{ y: -2 }}
-                    transition={SPRING}
-                    title={cap.hint}
-                  >
-                    <span className={styles.cardLabel}>{cap.label}</span>
-                    <span className={styles.cardHint}>{cap.hint}</span>
-                  </motion.button>
-                ))}
-            </div>
-            {connectors.length > 0 && (
-              <div className={styles.systems}>
-                <div className={styles.systemsLabel}>Connected systems</div>
+            ) : (
+              <>
+                {composer}
+                <div className={styles.tryLabel}>Try one of these</div>
                 <div className={styles.floor}>
-                  {connectors.flatMap((m) =>
-                    m.tools.map((t) => (
+                  {floorCapabilities()
+                    .slice(0, 6)
+                    .map((cap) => (
                       <motion.button
-                        key={`${m.id}.${t.name}`}
+                        key={cap.id}
                         type="button"
                         className={styles.card}
-                        onClick={() => void runConnectorTool(m, t)}
+                        onClick={() => onPickCapability(cap)}
                         whileHover={{ y: -2 }}
                         transition={SPRING}
-                        title={t.description ?? t.name}
+                        title={cap.hint}
                       >
-                        <span className={styles.cardLabel}>{t.title ?? t.name}</span>
-                        <span className={styles.cardHint}>{m.title}</span>
+                        <span className={styles.cardLabel}>{cap.label}</span>
+                        <span className={styles.cardHint}>{cap.hint}</span>
                       </motion.button>
-                    )),
-                  )}
+                    ))}
                 </div>
-              </div>
+                <button
+                  type="button"
+                  className={styles.ctaSecondary}
+                  onClick={() => setView('discover')}
+                >
+                  Connect your tools →
+                </button>
+              </>
             )}
           </motion.div>
         ) : (
@@ -384,7 +350,6 @@ export function AmbientHome(): ReactElement {
               <Group orientation="horizontal" className={styles.split}>
                 <Panel defaultSize={(1 - partLayout(part.kind).preferredRatio) * 100} minSize={28}>
                   <div className={styles.chatPane}>
-                    {routePill && <div className={styles.pill}>{`-> ${routePill}`}</div>}
                     {conversation}
                     {composer}
                   </div>
@@ -404,7 +369,6 @@ export function AmbientHome(): ReactElement {
               </Group>
             ) : (
               <div className={styles.chatPaneCentered}>
-                {routePill && <div className={styles.pill}>{`-> ${routePill}`}</div>}
                 {conversation}
                 {composer}
               </div>
