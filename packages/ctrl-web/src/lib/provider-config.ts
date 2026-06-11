@@ -54,9 +54,7 @@ export interface ProviderSetActiveArgs {
 export interface ProviderSetActiveReply {
   /** First chunk of the 1-token trial chat (verification proof). */
   trial_reply: string;
-  /** ADR-002 substrate § provider v10 §3.9 (2026-06-07). Resolved model id
-   *  from the provider manifest's first declared model — fed into Pi's
-   *  in-place `setModel(provider_id, model_id)` for 0-ms swap. */
+  /** Resolved model id from the provider manifest's first declared model. */
   model_id: string | null;
 }
 
@@ -65,27 +63,13 @@ export interface ProviderSetActiveReply {
  * On verify failure the registry keeps the previous binding intact and
  * the promise rejects with the provider's error message.
  *
- * ADR-002 substrate § provider v10 §3.9 (2026-06-07). After the SSOT
- * mutation succeeds + trial chat passes, push the new (provider, model)
- * pair into the running Pi session via `setModel` RPC — swaps Pi's
- * active model in place (0 ms, NO daemon respawn, session preserved).
- *
- * Failure to call Pi setModel is non-fatal: SSOT is the source of truth
- * and the next Pi spawn will pick the new binding up. The promise still
- * resolves so Settings UX flows.
+ * The SSOT mutation is the whole job — ADR-002 substrate §1 v19
+ * (2026-06-09) retired the §3.9 Pi `setModel` in-place push along with
+ * Pi itself; consumers of the provider router pick the new binding up
+ * from the registry on their next request.
  */
 export async function providerSetActive(
   args: ProviderSetActiveArgs,
 ): Promise<ProviderSetActiveReply> {
-  const reply = await invoke<ProviderSetActiveReply>('provider_set_active', { args });
-  if (args.role === 'irisy.primary' && reply.model_id) {
-    try {
-      const { setModel } = await import('./usePiRpc');
-      await setModel(args.provider_id, reply.model_id);
-    } catch (e) {
-      // SSOT mutated; respawn path picks it up. Log + continue.
-      console.warn('[provider-config] Pi setModel in-place swap skipped:', e);
-    }
-  }
-  return reply;
+  return invoke<ProviderSetActiveReply>('provider_set_active', { args });
 }

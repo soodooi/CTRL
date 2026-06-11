@@ -1,8 +1,10 @@
 // /settings — single page with an inline tab strip at the top.
 //
-//   /settings/ctrl    → General (theme picker, BYOK providers, hotkey readout)
-//   /settings/brain   → Brain   (cc-switch style switcher, [deleted ADR-021 brain switcher — superseded by ADR-002 substrate § brain v1 Pi singleton])
-//   /settings/logs    → Logs    (release log + installed pill + Check for Updates)
+//   /settings/ctrl      → General   (theme picker, hotkey readout)
+//   /settings/providers → Providers (2-role picker, ADR-002 § provider §3.6)
+//   /settings/logs      → Logs      (release log + installed pill + Check for Updates)
+//
+// /settings/brain retired with Pi (ADR-002 substrate §1 v19, 2026-06-09).
 //
 // Bare /settings redirects to /settings/ctrl so legacy tray / keyboard
 // links keep landing somewhere sensible.
@@ -44,13 +46,13 @@ import styles from './settings.module.css';
 // Shared tab shell
 // ─────────────────────────────────────────────────────────────
 
-type SettingsTab = 'ctrl' | 'providers' | 'brain' | 'logs';
+type SettingsTab = 'ctrl' | 'providers' | 'logs';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string; to: string }> = [
   { id: 'ctrl', label: 'General', to: '/settings/ctrl' },
   // ADR-002 substrate § provider v2 §3.6 — 2-role provider picker
   { id: 'providers', label: 'Providers', to: '/settings/providers' },
-  { id: 'brain', label: 'Model Integration', to: '/settings/brain' },
+  // brain tab retired with Pi (ADR-002 substrate §1 v19, 2026-06-09)
   { id: 'logs', label: 'Logs', to: '/settings/logs' },
 ];
 
@@ -786,153 +788,13 @@ export const SettingsCtrlPage = (): ReactElement => (
 );
 
 // ─────────────────────────────────────────────────────────────
-// /settings/brain  ([deleted ADR-021 brain switcher — superseded by ADR-002 substrate § brain v1 Pi singleton] — cc-switch / VMark / opencode style)
+// /settings/brain — RETIRED (ADR-002 substrate §1 v19, 2026-06-09)
 // ─────────────────────────────────────────────────────────────
-
-// ADR-002 substrate §5 — brain switcher retired. Pi is the sole brain (singleton);
-// no `brain_list / brain_detect / brain_set_active` calls. Settings → Brain
-// reads `pi_status` (system.rs) + binds "Upgrade now" to `pi_upgrade_now`.
-// bao 2026-05-31 (ADR-002 substrate acceptance #5 close-out): legacy BrainListReply
-// + multi-radio switcher removed in this commit.
-
-interface PiStatusView {
-  installed_version: string | null;
-  latest_version: string | null;
-  upgrade_available: boolean;
-  major_update_blocked: boolean;
-  last_upgrade_error: string | null;
-  last_probe_ms: number;
-  pi_bin: string | null;
-  install_root: string | null;
-  running: boolean;
-  last_error: string | null;
-  provider_port: number;
-}
-
-export const SettingsBrainPage = (): ReactElement => {
-  const [status, setStatus] = useState<PiStatusView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [upgrading, setUpgrading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (): Promise<void> => {
-    try {
-      const result = await invoke<PiStatusView>('pi_status');
-      setStatus(result);
-      setError(null);
-    } catch (e: unknown) {
-      const detail = e instanceof Error ? e.message : String(e);
-      setError(`pi_status failed: ${detail}`);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const upgrade = useCallback(async (): Promise<void> => {
-    setUpgrading(true);
-    try {
-      const result = await invoke<PiStatusView>('pi_upgrade_now');
-      setStatus(result);
-      setError(null);
-    } catch (e: unknown) {
-      const detail = e instanceof Error ? e.message : String(e);
-      setError(`pi_upgrade_now failed: ${detail}`);
-    } finally {
-      setUpgrading(false);
-    }
-  }, []);
-
-  return (
-    <SettingsShell activeTab="brain">
-      <div className={styles.brainHeader}>
-        <div className={styles.brainHeaderText}>
-          <h2 className={styles.brainTitle}>Brain</h2>
-          <p className={styles.brainHelp}>
-            Pi is the sole brain (ADR-002 substrate §1). Provider selection happens in
-            Settings → Providers — this pane shows Pi&apos;s version, runtime
-            health, and lets you trigger a manual upgrade.
-          </p>
-        </div>
-        <div className={styles.brainActions}>
-          <button
-            type="button"
-            className={styles.brainButton}
-            onClick={() => void upgrade()}
-            disabled={upgrading || loading || !status?.upgrade_available}
-          >
-            {upgrading
-              ? 'Upgrading…'
-              : status?.upgrade_available
-                ? 'Upgrade now'
-                : 'Up to date'}
-          </button>
-        </div>
-      </div>
-
-      {error && <p className={styles.brainError}>{error}</p>}
-
-      {loading ? (
-        <p className={styles.sectionSubtitle}>Loading Pi status…</p>
-      ) : status == null ? null : (
-        <ul className={styles.brainList}>
-          <li
-            className={styles.brainCard}
-            data-active={status.running}
-            data-detected={status.installed_version != null}
-          >
-            <div className={styles.brainBody}>
-              <span className={styles.brainName}>Pi</span>
-              <span className={styles.brainDetail}>
-                {status.pi_bin ?? '(not installed)'}
-                {status.installed_version
-                  ? ` · v${status.installed_version}`
-                  : ''}
-                {status.latest_version &&
-                status.latest_version !== status.installed_version
-                  ? ` · latest v${status.latest_version}`
-                  : ''}
-                {` · provider :${status.provider_port}`}
-              </span>
-              <div className={styles.brainTags}>
-                {status.running ? (
-                  <span className={styles.brainTag} data-tone="good">
-                    running
-                  </span>
-                ) : (
-                  <span className={styles.brainTag} data-tone="warn">
-                    not running
-                  </span>
-                )}
-                {status.major_update_blocked && (
-                  <span className={styles.brainTag} data-tone="warn">
-                    major update pending review
-                  </span>
-                )}
-                {status.last_error && (
-                  <span className={styles.brainTag} data-tone="bad">
-                    {status.last_error}
-                  </span>
-                )}
-                {status.last_upgrade_error && (
-                  <span className={styles.brainTag} data-tone="warn">
-                    upgrade error: {status.last_upgrade_error}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className={styles.brainStatus}>
-              {status.running ? 'active' : 'idle'}
-            </div>
-          </li>
-        </ul>
-      )}
-    </SettingsShell>
-  );
-};
+// Pi exited the hot path with the 3-agent aggregator, taking the
+// pi_status / pi_upgrade_now panel with it. Provider selection lives in
+// Settings → Providers; per-agent install state surfaces via
+// commands/agents.rs (agent_status / list_agents) when an agents
+// settings pane lands.
 
 // ─────────────────────────────────────────────────────────────
 // /settings/logs

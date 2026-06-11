@@ -186,9 +186,6 @@ const SettingsRedirect = lazy(() =>
 const SettingsCtrlPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsCtrlPage })),
 );
-const SettingsBrainPage = lazy(() =>
-  import('./routes/settings').then((m) => ({ default: m.SettingsBrainPage })),
-);
 const SettingsProvidersPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsProvidersPage })),
 );
@@ -312,15 +309,6 @@ const settingsCtrlRoute = createRoute({
     </Suspense>
   ),
 });
-const settingsBrainRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/settings/brain',
-  component: () => (
-    <Suspense fallback={<LazyFallback />}>
-      <SettingsBrainPage />
-    </Suspense>
-  ),
-});
 const settingsProvidersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/providers',
@@ -406,7 +394,6 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
   settingsCtrlRoute,
   settingsProvidersRoute,
-  settingsBrainRoute,
   settingsLogsRoute,
   irisyRoute,
   codeSpaceRoute,

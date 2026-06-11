@@ -58,8 +58,8 @@ export const InfraBar = (): ReactElement => {
       <InfraChip
         label="ENGINE"
         value={engine}
-        title={`Active brain: ${engine}`}
-        onClick={() => void navigate({ to: '/settings/brain' })}
+        title={`Active provider: ${engine}`}
+        onClick={() => void navigate({ to: '/settings/providers' })}
       />
       <InfraChip
         label="MCP"

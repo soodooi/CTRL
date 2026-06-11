@@ -107,13 +107,10 @@ macro_rules! pwa_invoke_handler {
             // provider_detect: PATH scan for known CLIs (cached)
             $crate::commands::provider::brain_status,
             // ADR-002 substrate § provider v9 §3.7 (2026-06-06): SSOT
-            // INTENT projection — Settings UI consumes this for "what
-            // did the user pick" (independent of Pi runtime state). The
-            // PWA *chip* reads `pi_rpc('getState')` directly (Pi truth).
+            // INTENT projection — Settings UI and the PWA chat-header
+            // chip both consume this (Pi runtime truth retired with Pi,
+            // ADR-002 §1 v19).
             $crate::commands::provider::get_active_providers,
-            // ADR-002 substrate § brain v14 (2026-06-07): coding-related
-            // Tauri commands removed for clean rebuild. Will reintroduce
-            // as coding_chat_* commands fronting a 2nd Pi RPC process.
             $crate::commands::provider::provider_list,
             $crate::commands::provider::provider_set_active,
             $crate::commands::provider::provider_detect,
