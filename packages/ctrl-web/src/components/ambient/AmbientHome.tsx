@@ -26,6 +26,7 @@ import { detectPart, renderPart, partLayout, type PartSpec } from '@/lib/ui-regi
 import { loadConnectors, invokeConnectorTool, type ConnectorTool, type ConnectorManifest } from '@/lib/connector';
 import { ProviderPicker } from './ProviderPicker';
 import { Sidebar, type SidebarSection } from './Sidebar';
+import { Discover } from './Discover';
 import { invoke } from '@tauri-apps/api/core';
 import styles from './AmbientHome.module.css';
 
@@ -49,6 +50,7 @@ export function AmbientHome(): ReactElement {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [modelLabel, setModelLabel] = useState<string>('Model');
   const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
+  const [view, setView] = useState<'chat' | 'discover'>('chat');
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -235,25 +237,23 @@ export function AmbientHome(): ReactElement {
     (s: SidebarSection) => {
       setDrawerOpen(false);
       if (s.kind === 'irisy') {
+        setView('chat');
         newChat();
       } else if (s.kind === 'route') {
         void navigate({ to: s.to });
       } else if (s.kind === 'tool') {
+        setView('chat');
         const m = loadConnectors().find((c) => c.id === s.connectorId);
         const t = m?.tools.find((x) => x.name === s.toolName);
         if (m && t) void runConnectorTool(m, t);
       } else if (s.kind === 'discover') {
-        // Discover (share-and-be-shared commons) — placeholder for now.
-        setMessages((prev) => [
-          ...prev,
-          { id: `a-${Date.now()}`, role: 'assistant', content: 'Discover — the shared tools commons — is coming. Tools others share will install here, locally.' },
-        ]);
+        setView('discover');
       }
     },
     [navigate, newChat, runConnectorTool],
   );
 
-  const activeSection = part ? 'irisy' : 'irisy';
+  const activeSection = view === 'discover' ? 'discover' : 'irisy';
 
   return (
     <div className={styles.shell} data-drawer={drawerOpen || undefined}>
@@ -291,8 +291,11 @@ export function AmbientHome(): ReactElement {
           onActivated={(label, m) => setModelLabel(`${label} · ${m}`)}
         />
       )}
+      {view === 'discover' && (
+        <Discover onInstalled={() => setView('discover')} styles={styles} />
+      )}
       <AnimatePresence mode="wait">
-        {surface === 'empty' ? (
+        {view === 'chat' && (surface === 'empty' ? (
           <motion.div
             key="empty"
             className={styles.empty}
@@ -407,7 +410,7 @@ export function AmbientHome(): ReactElement {
               </div>
             )}
           </motion.div>
-        )}
+        ))}
       </AnimatePresence>
       </div>
     </div>

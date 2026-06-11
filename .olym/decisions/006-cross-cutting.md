@@ -103,6 +103,10 @@ bao 2026-06-11 (locked after several refinement rounds; memory `project-ctrl-pos
 
 Write-ops to connected products still gate (intent → review → approve → execute; §4 autonomy ladder). The CRM/ERP/Feishu examples are connectors an OPC plugs in, not products CTRL ships.
 
+**Mobile = thin UI client; compute on the PC (bao 2026-06-11).** Mobile (PWA) is NOT a local-compute node — no agents/models/data on the phone. ALL compute/agents/tools/data run on the user's PC (desktop CTRL kernel); mobile views results + sends commands + receives deliverables. Phone connects to the user's OWN PC (same-WiFi local, or outbound ctrl-relay E2E over internet — ADR-002 § crypto). Sharpens the Feishu contrast: Feishu's shell is ByteDance's cloud; CTRL's mobile shell is the user's own PC; data stays on the PC. Build rule: no agents/compute in the PWA.
+
+**Share & be shared = share DEFINITIONS, not data (bao 2026-06-11).** A tool = a self-contained plain-text definition (manifest.toml + optional skill.md / opencode code / ui.json) — git-diffable, no user data, no keys (auth is a keychain `key_ref`, never the key). **Share** = package the definition → publish to the Discover commons (holds ONLY definitions/listings, never user content — allowed under §3.8 cloud scope) OR export file/link. **Be-shared** = browse Discover → one-click install the definition → runs locally on the receiver's OWN data + keys. Only definitions travel; data + keys never leave any machine (vs Feishu/Coze where agent + data live in their cloud). Like sharing a recipe not the meal. Reciprocal/free (zero-marginal-cost text); monetize the substrate, commons stays free.
+
 | Lock | Detail |
 |---|---|
 | **Moat = local + sovereign** | System data **never leaves the machine / intranet**; AI front-end runs locally; no CTRL account; BYOK. The thing cloud AI (ChatGPT-enterprise, SaaS Copilots) structurally can't offer. Drives enterprise willingness-to-pay + stickiness — likely stronger than the consumer angle. |

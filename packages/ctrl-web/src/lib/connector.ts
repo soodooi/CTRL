@@ -77,6 +77,37 @@ export function saveConnector(manifest: ConnectorManifest): void {
   window.localStorage.setItem(LS_KEY, JSON.stringify(next));
 }
 
+// ── share & be shared: DEFINITIONS travel, data/keys never do ─────────
+// (ADR-006 §5) A tool definition is the manifest with all auth secrets and
+// fixtures stripped — it already only holds a keychain key_ref, never a key
+// or any user data. The receiver installs the definition and supplies their
+// OWN key + data. Like sharing a recipe, not the meal.
+
+/** Strip everything user-specific (mock data, key_ref) — share only the
+ *  shape: id / title / base_url / auth type / endpoint->tool map / render. */
+export function exportConnector(manifest: ConnectorManifest): string {
+  const clean: ConnectorManifest = {
+    ...manifest,
+    use_mock: false,
+    auth: manifest.auth
+      ? { type: manifest.auth.type, header: manifest.auth.header } // drop key_ref
+      : undefined,
+    tools: manifest.tools.map(({ mock: _mock, ...t }) => t),
+  };
+  return JSON.stringify(clean, null, 2);
+}
+
+/** Install a shared definition (be-shared). Validates the shape, then it
+ *  appears in "Your tools" — the user wires their own key + base_url. */
+export function importConnector(json: string): ConnectorManifest {
+  const m = JSON.parse(json) as ConnectorManifest;
+  if (!m.id || !m.title || !Array.isArray(m.tools)) {
+    throw new Error('not a valid CTRL tool definition');
+  }
+  saveConnector(m);
+  return m;
+}
+
 /** Resolve the auth key. Kernel keychain first (Tauri), else a local fallback. */
 async function resolveKey(manifest: ConnectorManifest): Promise<string | null> {
   const ref = manifest.auth?.key_ref;

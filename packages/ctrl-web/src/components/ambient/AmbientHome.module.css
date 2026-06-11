@@ -633,3 +633,47 @@
   .split { flex-direction: column; }
   .empty { padding: 0 16px; }
 }
+
+/* ── Discover (share & be shared commons) — ADR-006 §5 ────────── */
+.discover {
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 28px 24px;
+  overflow-y: auto;
+}
+.discoverTitle { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+.discoverSub { margin: 6px 0 20px; font-size: 13px; color: var(--text-muted, #6e6e73); line-height: 1.5; }
+.discoverSection {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-subtle, #98989d); margin: 18px 0 10px;
+}
+.discoverGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.discoverCard {
+  display: flex; flex-direction: column; gap: 4px; padding: 14px;
+  background: var(--card, #fff); border: 1px solid var(--border, rgba(0,0,0,0.08)); border-radius: 12px;
+}
+.discoverCardName { font-size: 14px; font-weight: 600; color: var(--text, #1d1d1f); }
+.discoverCardMeta { font-size: 11.5px; color: var(--text-subtle, #98989d); }
+.discoverInstall {
+  align-self: flex-start; margin-top: 6px; padding: 6px 14px; font-size: 12.5px; font-weight: 600;
+  color: #fff; background: var(--primary, #3b5bdb); border: none; border-radius: 8px; cursor: pointer;
+}
+.discoverInstall:disabled { opacity: 0.5; cursor: default; }
+.discoverShare {
+  align-self: flex-start; margin-top: 6px; padding: 6px 14px; font-size: 12.5px; font-weight: 600;
+  color: var(--primary, #3b5bdb); background: var(--primary-soft, rgba(59,91,219,0.08));
+  border: 1px solid var(--primary-ring, rgba(59,91,219,0.18)); border-radius: 8px; cursor: pointer;
+}
+.discoverPaste { margin-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+.discoverPasteLabel { font-size: 12.5px; color: var(--text-muted, #6e6e73); }
+.discoverPasteBox {
+  font-family: var(--font-mono, 'SF Mono', monospace); font-size: 12px; padding: 10px 12px;
+  border: 1px solid var(--border, rgba(0,0,0,0.1)); border-radius: 9px; resize: vertical; outline: none;
+}
+.discoverPasteBox:focus { border-color: var(--primary, #3b5bdb); }
+.discoverMsg {
+  margin-top: 14px; padding: 10px 12px; font-size: 12.5px; line-height: 1.5;
+  color: var(--cool, #0ca678); background: rgba(12,166,120,0.08); border-radius: 9px;
+  white-space: pre-wrap; word-break: break-word;
+}
