@@ -276,6 +276,28 @@ export function AmbientHome(): ReactElement {
             <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
             <p className={styles.subtitle}>What do you want to do?</p>
             {composer}
+            {/* The 3 faces — assistant is this chat; Coding + Notes open
+                their workspaces (opencode / kairo). */}
+            <div className={styles.faces}>
+              <button
+                type="button"
+                className={styles.face}
+                onClick={() => void navigate({ to: '/coding' })}
+              >
+                <span className={styles.faceIcon}>{'</>'}</span>
+                <span className={styles.faceLabel}>Coding</span>
+                <span className={styles.faceHint}>Write code with opencode</span>
+              </button>
+              <button
+                type="button"
+                className={styles.face}
+                onClick={() => void navigate({ to: '/notes' })}
+              >
+                <span className={styles.faceIcon}>✎</span>
+                <span className={styles.faceLabel}>Notes</span>
+                <span className={styles.faceHint}>Your markdown knowledge base</span>
+              </button>
+            </div>
             <div className={styles.floor}>
               {floorCapabilities()
                 .slice(0, 8)

@@ -588,18 +588,43 @@ impl ProviderRegistry {
             Ok(k) if !k.is_empty() => k,
             _ => return env,
         };
+        // ADR-002 substrate §1.3 v19 (2026-06-11): opencode reads its
+        // provider config from OPENCODE_CONFIG_CONTENT (the generic keys
+        // below cover hermes, which reads ANTHROPIC_API_KEY/OPENAI_API_KEY
+        // directly). Build the explicit provider+model so opencode works
+        // with the user's actual CTRL provider, including openai-compatible
+        // ones (doubao / deepseek / kimi / qwen).
+        let model = m.models.first().cloned().unwrap_or_default();
         match m.shape {
             HttpShape::AnthropicMessages => {
-                env.insert("ANTHROPIC_API_KEY".into(), key);
+                env.insert("ANTHROPIC_API_KEY".into(), key.clone());
                 if let Some(ep) = &m.endpoint {
                     env.insert("ANTHROPIC_BASE_URL".into(), ep.clone());
                 }
+                let cfg = serde_json::json!({
+                    "provider": { "anthropic": { "options": { "apiKey": key } } },
+                    "model": format!("anthropic/{model}"),
+                });
+                env.insert("OPENCODE_CONFIG_CONTENT".into(), cfg.to_string());
             }
             HttpShape::OpenaiChatCompletions => {
-                env.insert("OPENAI_API_KEY".into(), key);
-                if let Some(ep) = &m.endpoint {
-                    env.insert("OPENAI_BASE_URL".into(), ep.clone());
+                env.insert("OPENAI_API_KEY".into(), key.clone());
+                let base = m.endpoint.clone().unwrap_or_default();
+                if !base.is_empty() {
+                    env.insert("OPENAI_BASE_URL".into(), base.clone());
                 }
+                let cfg = serde_json::json!({
+                    "provider": {
+                        "ctrl": {
+                            "npm": "@ai-sdk/openai-compatible",
+                            "name": m.label,
+                            "options": { "baseURL": base, "apiKey": key },
+                            "models": { model.clone(): {} },
+                        }
+                    },
+                    "model": format!("ctrl/{model}"),
+                });
+                env.insert("OPENCODE_CONFIG_CONTENT".into(), cfg.to_string());
             }
         }
         env

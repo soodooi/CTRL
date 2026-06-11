@@ -442,3 +442,53 @@
   font-family: var(--font-mono, 'SF Mono', monospace);
 }
 .modelChip:hover { border-color: var(--primary-ring, rgba(59, 91, 219, 0.2)); color: var(--text, #1d1d1f); }
+
+/* ── the 3 faces (Coding / Notes open their workspaces) ───────── */
+.faces {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.face {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 14px 16px;
+  text-align: left;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
+}
+
+.face:hover {
+  border-color: var(--primary, #3b5bdb);
+  background: var(--primary-soft, rgba(59, 91, 219, 0.05));
+}
+
+.face:active {
+  transform: translateY(0.5px);
+}
+
+.faceIcon {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--primary, #3b5bdb);
+  font-family: var(--font-mono, 'SF Mono', monospace);
+  margin-bottom: 2px;
+}
+
+.faceLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #1d1d1f);
+}
+
+.faceHint {
+  font-size: 11.5px;
+  color: var(--text-subtle, #98989d);
+}
