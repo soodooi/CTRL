@@ -215,7 +215,7 @@ export function AmbientHome(): ReactElement {
 
   return (
     <div className={styles.root} data-surface={surface}>
-      <div className={styles.topbar}>
+      <div className={styles.topbar} data-tauri-drag-region>
         <span className={styles.brand}>Irisy</span>
         <div className={styles.topActions}>
           {messages.length > 0 && (

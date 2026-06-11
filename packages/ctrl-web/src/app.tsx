@@ -196,13 +196,15 @@ function AmbientShell(): ReactElement {
   return (
     <div className={styles.ambientRoot} data-testid="shell">
       <div className={styles.routeHost}>
-        <button
-          type="button"
-          className={styles.backBar}
-          onClick={() => void navigate({ to: '/' })}
-        >
-          ← Irisy
-        </button>
+        <div className={styles.routeTopbar} data-tauri-drag-region>
+          <button
+            type="button"
+            className={styles.backBar}
+            onClick={() => void navigate({ to: '/' })}
+          >
+            ← Irisy
+          </button>
+        </div>
         <div className={styles.routeBody}>
           <Outlet />
         </div>

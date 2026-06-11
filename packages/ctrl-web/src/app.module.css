@@ -162,10 +162,19 @@
   width: 100%;
   height: 100%;
 }
+.routeTopbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 12px;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
 .backBar {
   flex: none;
-  align-self: flex-start;
-  margin: 10px 0 0 12px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
   padding: 6px 12px;
   font-size: 12px;
   font-weight: 600;

@@ -20,6 +20,9 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 14px;
+  -webkit-app-region: drag; /* frameless window — drag from the top bar */
+  app-region: drag;
+  user-select: none;
 }
 
 .brand {
@@ -32,6 +35,8 @@
 .topActions {
   display: flex;
   gap: 6px;
+  -webkit-app-region: no-drag; /* buttons stay clickable */
+  app-region: no-drag;
 }
 
 .topBtn {
