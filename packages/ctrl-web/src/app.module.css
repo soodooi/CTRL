@@ -147,42 +147,5 @@
     0 0 0 2px color-mix(in oklab, var(--color-success), transparent 80%);
 }
 
-/* ADR-003 §8 v6 — ambient surface root (replaces the 4-col shell home). */
-.ambientRoot {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-}
-
-/* ADR-003 §8 v6 — route host inside the ambient shell (settings/coding/etc). */
-.routeHost {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-}
-.routeTopbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  height: 40px;
-  padding: 0 12px;
-  -webkit-app-region: drag;
-  app-region: drag;
-}
-.backBar {
-  flex: none;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted, #6e6e73);
-  background: var(--card, #fff);
-  border: 1px solid var(--border, rgba(0,0,0,0.08));
-  border-radius: 8px;
-  cursor: pointer;
-}
-.backBar:hover { color: var(--primary, #3b5bdb); border-color: var(--primary-ring, rgba(59,91,219,0.2)); }
-.routeBody { flex: 1; min-height: 0; overflow: auto; }
+/* ADR-003 §8 v6 — ambient surface shell moved to AmbientHome.module.css
+   (.workbench / .routeHost) so the persistent sidebar can own the layout. */

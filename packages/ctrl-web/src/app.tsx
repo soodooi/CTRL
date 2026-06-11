@@ -34,7 +34,6 @@ import {
   createRoute,
   Outlet,
   useNavigate,
-  useRouterState,
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -42,7 +41,7 @@ import { StatusBar } from './components/StatusBar';
 import { OllamaSetupBanner } from './components/OllamaSetupBanner';
 import { MCP_DRAG_MIME } from './components/Keyboard';
 import { RailProvider, PrimaryRail } from './components/PrimaryRail';
-import { AmbientHome } from './components/ambient/AmbientHome';
+import { AmbientWorkbench } from './components/ambient/AmbientWorkbench';
 
 // ADR-003 §8 v6 morphing-conversation rebuild. Default ON — the new
 // centered ambient surface replaces the legacy 4-column shell as the home.
@@ -128,7 +127,7 @@ function RootShellInner(): ReactElement {
   );
 
   if (USE_AMBIENT) {
-    return <AmbientShell />;
+    return <AmbientWorkbench />;
   }
 
   return (
@@ -179,39 +178,8 @@ function RootShellInner(): ReactElement {
 }
 
 // ADR-003 §8 v6 — the ambient surface is the home; other routes (settings /
-// coding / notes / pool) still render via the router, with a slim back bar.
-// Keeps the morphing conversation as the heart while the faces stay reachable.
-function AmbientShell(): ReactElement {
-  const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const isHome = pathname === '/' || pathname === '/irisy' || pathname === '';
-
-  if (isHome) {
-    return (
-      <div className={styles.ambientRoot} data-testid="shell">
-        <AmbientHome />
-      </div>
-    );
-  }
-  return (
-    <div className={styles.ambientRoot} data-testid="shell">
-      <div className={styles.routeHost}>
-        <div className={styles.routeTopbar} data-tauri-drag-region>
-          <button
-            type="button"
-            className={styles.backBar}
-            onClick={() => void navigate({ to: '/' })}
-          >
-            ← Irisy
-          </button>
-        </div>
-        <div className={styles.routeBody}>
-          <Outlet />
-        </div>
-      </div>
-    </div>
-  );
-}
+// coding / notes / pool) render via the router inside AmbientWorkbench, which
+// keeps the persistent sidebar mounted across every route.
 
 function RootShell(): ReactElement {
   useTrayBridge();

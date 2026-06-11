@@ -1,11 +1,17 @@
 // AmbientHome — the morphing conversation surface (ADR-003 §8 v6).
 //
+// This is the MAIN COLUMN content (chat / discover) that sits to the
+// right of the persistent sidebar. The shell chrome (sidebar, model
+// picker, mobile drawer) lives in AmbientWorkbench so it survives route
+// changes; AmbientHome is driven by props and owns only chat state.
+//
 // One ambient surface that morphs between three states via a CSS
 // grid-template-areas state machine + Framer Motion layout animation:
 //   empty       — centered greeting + big composer + capability floor
 //   chat        — conversation + composer
-//   chat-part   — conversation | part panel (resizable), when a turn
-//                 produces a renderable UI part (html/code/...).
+//   chat-part   — conversation | part panel (resizable, vertical on
+//                 narrow screens), when a turn produces a renderable UI
+//                 part (html/code/...).
 //
 // Low-barrier for general users (bao 2026-06-11): the empty state SHOWS
 // concrete clickable capabilities (the floor) instead of a blank box;
@@ -15,7 +21,6 @@
 // invoke any UI piece on demand.
 
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import ReactMarkdown from 'react-markdown';
@@ -23,11 +28,13 @@ import remarkGfm from 'remark-gfm';
 import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
 import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
 import { detectPart, renderPart, partLayout, type PartSpec } from '@/lib/ui-registry';
-import { loadConnectors, invokeConnectorTool, type ConnectorTool, type ConnectorManifest } from '@/lib/connector';
-import { ProviderPicker } from './ProviderPicker';
-import { Sidebar, type SidebarSection } from './Sidebar';
+import {
+  loadConnectors,
+  invokeConnectorTool,
+  type ConnectorTool,
+  type ConnectorManifest,
+} from '@/lib/connector';
 import { Discover } from './Discover';
-import { invoke } from '@tauri-apps/api/core';
 import styles from './AmbientHome.module.css';
 
 interface Msg {
@@ -38,32 +45,55 @@ interface Msg {
 
 type Surface = 'empty' | 'chat' | 'chat-part';
 
+// A sidebar tool click, forwarded from the shell. `nonce` makes each
+// request a fresh object so the effect runs exactly once per click.
+export interface ToolRequest {
+  connectorId: string;
+  toolName: string;
+  nonce: number;
+}
+
+export interface AmbientHomeProps {
+  view: 'chat' | 'discover';
+  onView: (v: 'chat' | 'discover') => void;
+  modelLabel: string;
+  onOpenPicker: () => void;
+  onToggleDrawer: () => void;
+  /** Tool the shell sidebar asked to run (null until a click). */
+  toolRequest: ToolRequest | null;
+  /** Bumped by the shell when "Irisy" is selected, to reset the chat. */
+  irisyNonce: number;
+}
+
 const SPRING = { type: 'spring', stiffness: 420, damping: 36 } as const;
 
-export function AmbientHome(): ReactElement {
-  const navigate = useNavigate();
+export function AmbientHome({
+  view,
+  onView,
+  modelLabel,
+  onOpenPicker,
+  onToggleDrawer,
+  toolRequest,
+  irisyNonce,
+}: AmbientHomeProps): ReactElement {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [part, setPart] = useState<PartSpec | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [modelLabel, setModelLabel] = useState<string>('Model');
-  const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
-  const [view, setView] = useState<'chat' | 'discover'>('chat');
+  const [isNarrow, setIsNarrow] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
-  // Show the current model in the top bar (click to switch).
+  // Stack the part panel below the chat (vertical resize) on phones
+  // instead of side-by-side — the real fix for the prior CSS override.
   useEffect(() => {
-    void invoke<{ roles: Record<string, { label: string; model_id: string | null }> }>(
-      'get_active_providers',
-    )
-      .then((v) => {
-        const p = v.roles['irisy.primary'];
-        if (p) setModelLabel(p.model_id ? `${p.label} · ${p.model_id}` : p.label);
-      })
-      .catch(() => {});
-  }, [pickerOpen]);
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: 720px)');
+    const update = (): void => setIsNarrow(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   const newChat = useCallback(() => {
     setMessages([]);
@@ -174,6 +204,23 @@ export function AmbientHome(): ReactElement {
     [streaming],
   );
 
+  // Run the tool the shell sidebar requested. Keyed on the request object
+  // (fresh per click) via a ref so a streaming toggle never re-fires it.
+  const runToolRef = useRef(runConnectorTool);
+  runToolRef.current = runConnectorTool;
+  useEffect(() => {
+    if (!toolRequest) return;
+    const m = loadConnectors().find((c) => c.id === toolRequest.connectorId);
+    const t = m?.tools.find((x) => x.name === toolRequest.toolName);
+    if (m && t) void runToolRef.current(m, t);
+  }, [toolRequest]);
+
+  // Reset the chat when the shell selects "Irisy" (nonce bump). Skip the
+  // initial 0 so a fresh mount keeps any in-progress conversation.
+  useEffect(() => {
+    if (irisyNonce > 0) newChat();
+  }, [irisyNonce, newChat]);
+
   const composer = (
     <form
       className={styles.composer}
@@ -220,44 +267,13 @@ export function AmbientHome(): ReactElement {
     </div>
   );
 
-  const onSidebarSelect = useCallback(
-    (s: SidebarSection) => {
-      setDrawerOpen(false);
-      if (s.kind === 'irisy') {
-        setView('chat');
-        newChat();
-      } else if (s.kind === 'route') {
-        void navigate({ to: s.to });
-      } else if (s.kind === 'tool') {
-        setView('chat');
-        const m = loadConnectors().find((c) => c.id === s.connectorId);
-        const t = m?.tools.find((x) => x.name === s.toolName);
-        if (m && t) void runConnectorTool(m, t);
-      } else if (s.kind === 'discover') {
-        setView('discover');
-      }
-    },
-    [navigate, newChat, runConnectorTool],
-  );
-
-  const activeSection = view === 'discover' ? 'discover' : 'irisy';
-
   return (
-    <div className={styles.shell} data-drawer={drawerOpen || undefined}>
-      <Sidebar
-        active={activeSection}
-        onSelect={onSidebarSelect}
-        modelLabel={modelLabel}
-        onModel={() => setPickerOpen(true)}
-        styles={styles}
-      />
-      {drawerOpen && <div className={styles.scrim} onClick={() => setDrawerOpen(false)} />}
-      <div className={styles.root} data-surface={surface}>
+    <div className={styles.root} data-surface={surface}>
       <div className={styles.topbar} data-tauri-drag-region>
         <button
           type="button"
           className={styles.menuBtn}
-          onClick={() => setDrawerOpen((v) => !v)}
+          onClick={onToggleDrawer}
           title="Menu"
           aria-label="Menu"
         >
@@ -272,14 +288,8 @@ export function AmbientHome(): ReactElement {
           )}
         </div>
       </div>
-      {pickerOpen && (
-        <ProviderPicker
-          onClose={() => setPickerOpen(false)}
-          onActivated={(label, m) => setModelLabel(`${label} · ${m}`)}
-        />
-      )}
       {view === 'discover' && (
-        <Discover onInstalled={() => setView('discover')} styles={styles} />
+        <Discover onInstalled={() => onView('discover')} styles={styles} />
       )}
       <AnimatePresence mode="wait">
         {view === 'chat' && (surface === 'empty' ? (
@@ -300,11 +310,7 @@ export function AmbientHome(): ReactElement {
                 managed fallback route, so never hide the composer — just
                 invite connecting a BYOK model when none is set as primary. */}
             {!hasProvider && (
-              <button
-                type="button"
-                className={styles.ctaPrimary}
-                onClick={() => setPickerOpen(true)}
-              >
+              <button type="button" className={styles.ctaPrimary} onClick={onOpenPicker}>
                 Connect your AI to start →
               </button>
             )}
@@ -328,11 +334,7 @@ export function AmbientHome(): ReactElement {
                   </motion.button>
                 ))}
             </div>
-            <button
-              type="button"
-              className={styles.ctaSecondary}
-              onClick={() => setView('discover')}
-            >
+            <button type="button" className={styles.ctaSecondary} onClick={() => onView('discover')}>
               Connect your tools →
             </button>
           </motion.div>
@@ -346,7 +348,11 @@ export function AmbientHome(): ReactElement {
             transition={SPRING}
           >
             {part ? (
-              <Group orientation="horizontal" className={styles.split}>
+              <Group
+                key={isNarrow ? 'v' : 'h'}
+                orientation={isNarrow ? 'vertical' : 'horizontal'}
+                className={styles.split}
+              >
                 <Panel defaultSize={(1 - partLayout(part.kind).preferredRatio) * 100} minSize={28}>
                   <div className={styles.chatPane}>
                     {conversation}
@@ -375,7 +381,6 @@ export function AmbientHome(): ReactElement {
           </motion.div>
         ))}
       </AnimatePresence>
-      </div>
     </div>
   );
 }
