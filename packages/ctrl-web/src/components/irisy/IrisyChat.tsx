@@ -55,6 +55,7 @@ import { cleanReplyText } from '@/lib/irisy-render-filter';
 // compact / refresh brain / abort) retired with Pi. The rail keeps only
 // the local-state affordances (new chat, clear).
 import { ChatHeaderControls } from './ChatHeaderControls';
+import { CapabilityFloor } from './CapabilityFloor';
 import styles from './IrisyChat.module.css';
 
 /** Base storage key. ADR-002 substrate § brain v15 (2026-06-07): Coding L1
@@ -127,12 +128,6 @@ interface CustomDisplayMessage {
 }
 
 type DisplayMessage = TextDisplayMessage | CustomDisplayMessage;
-
-const SEED_PROMPTS: readonly string[] = [
-  'What can you do here?',
-  'Draft a note outlining my week.',
-  'Translate this sentence to English: ...',
-];
 
 // ADR-002 substrate § provider v9 §3.6 (2026-06-06). RETIRED: PWA-side
 // `<call name="X">{...}</call>` XML parser + ToolCard split-render.
@@ -982,23 +977,18 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
 
         <div className={`${styles.scroller} irisy-scroll`} ref={scrollerRef}>
           {messages.length === 0 && (
-            <div className={styles.welcome}>
-              <h2>Hi, I&rsquo;m Irisy.</h2>
-              <p>I live inside CTRL. Ask me anything — or try:</p>
-              <ul>
-                {SEED_PROMPTS.map((p) => (
-                  <li key={p}>
-                    <button
-                      type="button"
-                      onClick={() => void sendMessage(p)}
-                      disabled={sending}
-                    >
-                      {p}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <CapabilityFloor
+              disabled={sending}
+              onPick={(cap) => {
+                // Low-barrier: pre-fill the composer with a ready-to-
+                // complete starter so the user sees what to do next
+                // instead of a blank box (ADR-003 §8 v6). If the starter
+                // is already a complete prompt, the user can just hit
+                // Enter; otherwise they finish the sentence.
+                setInput(cap.starter ?? `${cap.label}: `);
+                inputRef.current?.focus();
+              }}
+            />
           )}
           {messages.map((m, i) => {
             const prev = i > 0 ? messages[i - 1] : null;

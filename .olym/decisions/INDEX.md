@@ -6,7 +6,7 @@
 |---|---|---|---|---|---|
 | [001](./001-spine.md) | spine | 4-layer kernel + 5 primitives + 5 mcp sources + **3-agent aggregator** + **3-capability-face** + 6 self-evolution loops | v4 | accepted | 2026-06-09 |
 | [002](./002-substrate.md) | substrate | **3-agent aggregator** · capability surface · **3-capability-face** · provider router · crypto · subprocess · MCP bus · composition | v20 | accepted | 2026-06-10 |
-| [003](./003-frontend.md) | frontend | Single PWA + **5-chip 3-agent aggregator L1** + Keyboard drag-install + 4-col shell | v5 | accepted | 2026-06-09 |
+| [003](./003-frontend.md) | frontend | Single PWA + **morphing-conversation rebuild (§8)** + 5-chip L1 + 4-col shell | v6 | accepted | 2026-06-11 |
 | [004](./004-cap.md) | cap | Mcp execution model + Tauri updater + 4-layer × 3-tier auto-update | v1 | accepted | 2026-05-31 |
 | [005](./005-irisy.md) | irisy | **PWA persona shell** + sycophancy filter + system-prompt injection + drill-down (3-agent aggregator era) | v5 | accepted | 2026-06-09 |
 | [006](./006-cross-cutting.md) | cross-cutting | **BYOK aggregator-first** + global English first + plain-text philosophy + policy envelope | v3 | accepted | 2026-06-09 |

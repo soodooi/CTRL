@@ -1,0 +1,70 @@
+/* CapabilityFloor — low-barrier capability cards (ADR-003 §8 v6).
+   Industrial-precise / key visual system, design tokens from doc/design. */
+
+.floor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 12px 8px;
+}
+
+.greeting {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text, #1d1d1f);
+  letter-spacing: -0.01em;
+}
+
+.sub {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-muted, #6e6e73);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
+}
+
+.card:hover:not(:disabled) {
+  border-color: var(--primary-ring, rgba(59, 91, 219, 0.18));
+  background: var(--primary-soft, rgba(59, 91, 219, 0.06));
+}
+
+.card:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.card:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cardLabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text, #1d1d1f);
+  line-height: 1.25;
+}
+
+.cardHint {
+  font-size: 11px;
+  color: var(--text-subtle, #98989d);
+  line-height: 1.3;
+}

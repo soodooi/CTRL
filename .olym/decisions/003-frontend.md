@@ -2,7 +2,7 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 5
+version: 6
 status: accepted
 last_updated: 2026-06-09
 deciders: [bao, zeus, daedalus]
@@ -18,6 +18,7 @@ changelog:
   - v3 2026-06-01: NEW § shell-4col — 4-column shell `[L1 | L2 | Tab | Irisy]` lock-in. bao multi-message校准 in workspace tab refactor (2026-06-01 session, ~$720 cost). Mcp surface (separate Tauri child window) retired in concept; ship still has bugs (see § shell-4col known-bugs list). v0.1.127 → v0.1.132 released during this session.
   - v4 2026-06-01: § shell-4col §7.1 column-order amendment — bao "顺序是工作区（内有tab），L2，L1，Irisy". Column model reordered LEFT→RIGHT to `[Tab | L2 | L1 | Irisy]`. L1 is now anchored immediately left of Irisy (not far-left). Rationale: Irisy + L1 stay visually pinned at the monitor's right; Workspace grows leftward when expanded, with L2 sandwiched between Workspace and L1. Compact mode still renders only L1 (48) + Irisy (430) = 478 px because Workspace and L2 collapse to 0. Anti-pattern §7.8 entry added: do NOT render L1 at column index 1.
   - v5 2026-06-09: **§ nav-keyboard → § nav-l1 — 5-chip 3-agent aggregator L1 (H-2026-06-09-002).** bao 2026-06-09 校准: 3 agents (hermes / opencode / kairo) are external; CTRL is the aggregator壳. L1 chips reorganized as 5 first-class routes mapping directly to capability surfaces: **Irisy** (PWA persona shell, default chat) / **Mcp pool** (MCP face discovery) / **Notes** (kairo webview) / **Coding** (opencode HTTP API + xterm) / **Assistant** (hermes MCP stdio). § vault-stack RETIRED — kairo owns markdown editor + wiki-link + backlink + git; CTRL doesn't ship its own editor. § agent-routes NEW: lock per-route agent endpoint contracts (kairo webview path / opencode HTTP port discovery / hermes MCP stdio handshake). Settings + Pool stay as before. § shell-4col 4-column shell preserved — agent routes render inside `[Tab]` column. Pre-v5 components retired in PWA: `IrisyChat forceMode="coding"` wrapper, `NotesApp` 3-pane (NotesTree/NotesEditor/NotesBacklinks), `MarkdownViewer` Tiptap shell, `BacklinksPanel`. PWA picks up sycophancy filter (relocated from `packages/ctrl-pi-bridge/data/persona-patterns.md` → `packages/ctrl-web/src/lib/persona-filter/patterns.md`).
+  - v6 2026-06-11: **§8 NEW — morphing-conversation rebuild.** bao 2026-06-11 校准: CTRL is not a shell, it's an advanced UX paradigm at the app layer (UX + 通讯 + agent optimization); domain breadth via MCP/CLI/Skills, not built verticals. Synthesized from a 6-track product benchmark (launcher/routing/cockpit + marketing/office/finance verticals). Locks: one ambient morphing conversation (input-first floating surface), intent routing with visible pill + ambiguity-adaptive response (Lovable 3-way), morph-to-output-type via the 12-viewer registry, agent-workspace pane + tool stream, 3-layer drill-down, point-edit + checkpoint + accept/reject gate, capability-agnostic routing to the open MCP/CLI/Skill set, ambient scheduled tasks. §7 4-col shell + § nav-l1 5-chip SUPERSEDED for the home surface (chips survive as morph-layer shortcuts). 6-slice build sequence in §8.4. Invariants preserved: Ctrl summon · floating popup · Irisy(hermes) · coding(opencode) · kairo(notes).
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/002-substrate.md
@@ -195,6 +196,62 @@ schema:
 vim opens as markdown table. Obsidian/VMark render as plain markdown table. CTRL `SmartTableViewer` = editable Tanstack Table with per-column cell editors (text/number/date/checkbox/tags/select/url). Edit → re-serialize → `vault_write` preserves schema block + frontmatter.
 
 Schema language minimal (key/label/type/options?/min?/max?). Anything more complex stays markdown/yaml viewer.
+
+## §8 Morphing-conversation rebuild (v6 — 2026-06-11)
+
+bao 2026-06-11: CTRL is NOT a shell wrapping 3 OSS agents — that's commodity. The product is an **advanced UX interaction paradigm at the application layer**, core = UX + communication (通讯) + agent optimization. The 3 OSS engines (hermes/opencode/kairo) are swappable; domain breadth (marketing/office/finance/anything) comes from the open ecosystem of **MCP servers + CLI + Skills** (3-capability-face, ADR-002), NOT from CTRL building verticals. This section locks the rebuild, synthesized from a 6-track product benchmark (Raycast/Spotlight/Alfred/ChatGPT/Cursor/Warp/Zed; ChatGPT-Canvas/Claude-Artifacts/Perplexity/Replit/Lovable/v0; Manus/Devin/Flowith/public.com/TradingView/Bloomberg; Gamma/Jasper/Descript/HeyGen; M365-Copilot/Gemini/Coda/Rows/Granola). Invariants (fixed): Ctrl-key summon · floating popup form · Irisy 助理 (hermes) · Irisy coding (opencode) · kairo notes · everything else rebuildable.
+
+### §8.1 Concept — one ambient morphing conversation
+
+Ctrl summons a floating, input-first, ephemeral surface. The user talks to **one** Irisy. CTRL classifies intent and ROUTES it — to a core agent OR any installed MCP/CLI/Skill — shown transparently. The surface MORPHS to the output type (chat inline; coding/notes/data/html open a side panel via the content-type viewer registry). The conversation is the spine/transcript; artifacts leave reopenable chips. The frontend is **capability-agnostic**: it routes + renders + lets the user install missing capabilities, and hardcodes no vertical.
+
+### §8.2 Locked decisions (each backed by ≥2 benchmarked products)
+
+**A. Shell (summon + surface)**
+- Input-first, always-focused, vertically anchored; empty state = bare input bar; surface height animates to content; auto-collapse on blur. *(Raycast Compact, Spotlight)*
+- Esc = back one level / dismiss at root; Enter = primary action; modifier-Enter = secondary; every action shows its shortcut. *(Raycast Action Panel)*
+
+**B. One conversation → intelligent routing (the core)**
+- One universal input, intent-routed, NOT a tab per capability. `@` grounds on vault files (cap ~20 refs); `/` invokes actions/skills/mcp. *(Warp universal input, Word `/file`, Raycast)*
+- **Routing pill shown before work starts** — `→ Coding` / `→ Notes` / `→ <mcp>` / `Answering`. Hidden routing is the #1 anti-pattern. *(Perplexity modes, Zed tool indicators)*
+- **Ambiguity-adaptive response** (the answer to "how does Irisy decide"): intent clear → do it directly; visually/strategically open → show 2-5 variant cards side-by-side; key decision missing → ask ONE tight structured question set. Never a mandatory wizard. *(Lovable 3-way fork)*
+- Capabilities = open set: 3 core agents + any installed MCP/CLI/Skill. Missing capability → Irisy discovers + suggests install (Mcp pool / Discover). *(ADR-002 3-capability-face)*
+
+**C. Morph to output type (the "functional windows")**
+- **Render the answer AS the native artifact**, not a chat bubble describing it (a chart object, a table, an editable doc, an HTML view). *(Excel charts/pivots, Rows cells)*
+- One neutral content model → many render targets; flip target without regenerating; output-type switch on the artifact. *(Gamma cards, Canva Magic Switch)*
+- Conversation drives the artifact; artifact stays primary in a side panel beside the chat. The 12 existing viewers (Markdown/Code/Html/Json/Yaml/Toml/Svg/Image/Pdf/Mermaid/SmartTable/Fallback) are the morph targets. *(Claude Artifacts, ChatGPT Canvas, TradingView)*
+
+**D. Transparency + agent workspace (the "通讯" core)**
+- **Agent-workspace side pane ("X's Computer")**: live step/activity stream of what the engine is doing, with mid-task take-over/interrupt. *(Manus, Devin, ChatGPT virtual computer)*
+- Capability/tool selection shown, not hidden; tool calls render inline as they fire. *(Zed)*
+- **3-layer drill-down**: processed result → raw model output → sources/prompt/context injected. Every figure/summary keeps a provenance link to the raw vault item. *(Anthropic visible thinking, Perplexity citations, Outlook summary)*
+
+**E. Edit + safety (the "trust")**
+- Inline-targeted edit + scoped regenerate (smallest unit), never destructive full-regenerate. *(Gamma per-card, Excel per-cell)*
+- Point-don't-describe: select element on the artifact → edit inline / property panel / NL-with-selection-attached / annotate-sketch. *(Lovable, v0)*
+- Stage-then-apply (pending edits) + version history; checkpoint-restore on every file/vault mutation → maps to vault git. *(v0 pending-edits, Zed checkpoints)*
+- Accept/reject/iterate gate (Keep it / Regenerate / Discard); consequential actions (money/destructive) → "intent → reviewable workflow → approve → execute". Never silent overwrite. *(Word, public.com, ChatGPT permission gates)*
+- Fixed quick-action chips for the common 80% (Rephrase/Shorten/Summarize/Action-items); free-text for the rest. *(Gemini Docs, Granola)*
+
+**F. Ambient / OS-level (the ambition)**
+- Recurring/scheduled tasks from the conversation ("every Mon 9:00 refresh these metrics"); async heavy jobs you can leave and return to. *(ChatGPT tasks, public.com, HeyGen jobs)*
+- Capture sparse → enhance async, local-first, no bot joins; AI-as-pipe over clipboard/screen/audio. *(Granola)*
+- Persistent brand/voice/style + saved context as **markdown+frontmatter in the vault** (vim test). *(Jasper Brand Voice, Lovable design brief)*
+- AI-as-column: one instruction applied per-row across structured vault data. *(Coda, Rows, Notion)*
+
+### §8.3 Anti-patterns (hard bans — all converged across tracks)
+Feature potpourri / tab-soup / disconnected point-solutions (Genspark cautionary, Copy.ai thesis, Warp critique) · hidden/silent routing · sidebar-only AI that describes instead of producing the artifact · black-box agent with no visible plan/tools/takeover · destructive full-regenerate or silent overwrite · mandatory wizards / over-questioning trivial asks · un-cited numbers / hidden data sources · acting on consequential intent without a review gate · mandatory cloud/account/embeddings before first value · over-dense simultaneous dashboards.
+
+### §8.4 Build sequence (slices, each version-bumped + verified)
+1. **Ambient conversation shell** — input-first anchored surface + routing pill + ambiguity-adaptive scaffold. Reuses IrisyChat transport.
+2. **Morph layer** — conversation → side-panel artifact via the existing ViewerHost registry; output-type switch; artifact chips in-thread.
+3. **Agent-workspace pane + tool stream** — live activity + take-over, wired to opencode `/event` + MCP tool calls.
+4. **Edit + safety** — inline/point edit, pending-apply, checkpoint (vault git), accept/reject gate.
+5. **Capability routing to open set** — MCP/CLI/Skill discovery + install + route, capability-agnostic.
+6. **Ambient** — scheduled tasks, async jobs, brand-voice-as-markdown, AI-as-column.
+
+Slices 1-2 realize the core "one morphing conversation"; 3-4 the transparency+trust moat; 5-6 the open-ecosystem + ambient-OS reach. The pre-v6 4-column shell (§7) and 5-chip nav (§ nav-l1) are SUPERSEDED for the home surface by §8.1; chips survive only as capability shortcuts inside the morph layer.
 
 ## Dependencies
 
