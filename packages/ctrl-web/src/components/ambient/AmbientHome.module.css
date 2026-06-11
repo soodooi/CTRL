@@ -63,8 +63,11 @@
   border-color: var(--border, rgba(0, 0, 0, 0.08));
 }
 
-/* the AnimatePresence content area fills the rest, centered */
-.root > div:not(.topbar) {
+/* The AnimatePresence content area (empty / working) fills the rest and
+   centers its child. Discover is excluded — it is a top-anchored scrolling
+   page, not a centered launcher; the flex+center here would otherwise lay
+   its title/text/cards out in a row and break the layout. */
+.root > div:not(.topbar):not(.discover) {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -655,6 +658,8 @@
 
 /* ── Discover (share & be shared commons) — ADR-006 §5 ────────── */
 .discover {
+  flex: 1;
+  min-height: 0;
   width: 100%;
   max-width: 680px;
   margin: 0 auto;
