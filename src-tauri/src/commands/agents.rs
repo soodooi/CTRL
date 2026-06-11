@@ -129,6 +129,53 @@ pub async fn connect_agent_mcp(
     Ok(ConnectedAgentMcp { server_id, tools })
 }
 
+/// Mirror the active CTRL provider into hermes's own config file
+/// (`~/.hermes/.env`). hermes does NOT read injected process env (verified
+/// 2026-06-11 — it reports "No inference provider configured" and points to
+/// ~/.hermes/.env), so CTRL's unified provider injection (ADR-002 §1.3) is
+/// written there instead. Only the key + base_url vars are mirrored
+/// (OPENCODE_CONFIG_CONTENT is opencode-only); existing user lines are
+/// preserved (merge, not clobber). No active HTTP provider -> leave the file
+/// untouched so the user's own hermes setup survives.
+fn write_hermes_dotenv(env: &std::collections::BTreeMap<String, String>) -> Result<(), String> {
+    const MANAGED: [&str; 4] = [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+    ];
+    if MANAGED.iter().all(|k| !env.contains_key(*k)) {
+        return Ok(());
+    }
+    let base =
+        directories::BaseDirs::new().ok_or_else(|| "could not resolve home dir".to_string())?;
+    let dir = base.home_dir().join(".hermes");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create ~/.hermes: {e}"))?;
+    let path = dir.join(".env");
+
+    // Keep every existing line whose key we do NOT manage, then append ours.
+    let mut lines: Vec<String> = Vec::new();
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        for line in existing.lines() {
+            let is_managed = line
+                .split_once('=')
+                .map(|(k, _)| MANAGED.contains(&k.trim()))
+                .unwrap_or(false);
+            if !is_managed {
+                lines.push(line.to_string());
+            }
+        }
+    }
+    for k in MANAGED {
+        if let Some(v) = env.get(k) {
+            lines.push(format!("{k}={v}"));
+        }
+    }
+    std::fs::write(&path, format!("{}\n", lines.join("\n")))
+        .map_err(|e| format!("write ~/.hermes/.env: {e}"))?;
+    Ok(())
+}
+
 /// Core hermes one-shot — `uvx --from hermes-agent==<pin> hermes -z "<prompt>"`
 /// prints only the final answer to stdout (verified upstream oneshot.py,
 /// 2026-06-10). Shared by the `assistant_oneshot` command and the
@@ -146,9 +193,12 @@ pub async fn run_hermes_oneshot(
         return Err("hermes not installed — call install_agent first".to_string());
     }
     let uvx = ensure_uvx().map_err(|e| e.to_string())?;
-    // Unified provider injection (ADR-002 §1.3) — hermes uses the same
-    // BYOK key the user picked in CTRL.
+    // Unified provider injection (ADR-002 §1.3) — hermes uses the same BYOK
+    // provider the user picked in CTRL. hermes reads it from ~/.hermes/.env
+    // (not process env), so mirror it there; the process env below stays as
+    // a fallback for hermes builds that do read it.
     let provider_env = registry.agent_env_injection();
+    write_hermes_dotenv(&provider_env)?;
 
     let mut cmd = tokio::process::Command::new(uvx);
     cmd.args(["--from", HERMES_ONESHOT_SPEC, "hermes", "-z", prompt]);
