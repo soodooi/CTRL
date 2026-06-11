@@ -127,15 +127,13 @@ pub async fn connect_agent_mcp(
 /// lands (ADR-002 substrate §1.1 v20); hermes memory + skills still apply.
 #[tauri::command]
 pub async fn assistant_oneshot(prompt: String) -> Result<String, String> {
-    use crate::kernel::provider::path_resolver::resolve_binary_path;
-    use crate::shell::agent_installer::HERMES_ONESHOT_SPEC;
+    use crate::shell::agent_installer::{ensure_uvx, HERMES_ONESHOT_SPEC};
 
     let agent = AgentName::Hermes;
     if !is_installed(&agent) {
         return Err("hermes not installed — call install_agent first".to_string());
     }
-    let uvx = resolve_binary_path("uvx")
-        .ok_or_else(|| "uv not found on PATH — install it first".to_string())?;
+    let uvx = ensure_uvx().map_err(|e| e.to_string())?;
 
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(180),
