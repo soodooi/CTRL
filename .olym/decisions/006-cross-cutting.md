@@ -2,7 +2,7 @@
 adr_id: 006
 module: cross-cutting
 title: CTRL cross-cutting — BYOK aggregator-first + global English first + plain-text philosophy + policy envelope
-version: 3
+version: 4
 status: accepted
 last_updated: 2026-06-09
 deciders: [bao, zeus]
@@ -15,6 +15,7 @@ changelog:
   - v1 2026-05-31: module reorg — merged orig-005 (no Claude/Anthropic SDK in production runtime) + orig-014 (global English first) + orig-015 (plain-text / "Obsidian" philosophy).
   - v2 2026-06-04: **NEW §4 policy-envelope** — single autonomy ladder (L3 suggest-only / L4 low-risk auto / L5 full auto) + blast-radius limit + typed-ISA validation, reused across the 6 self-evolution loops (ADR-001 §8). Source: UUMit L3-L5 (cap-design-v2 §14 #8) generalised cross-loop. Per bao "整个系统都要自我升级成长 ... 唯一真相, 要经常整理 ADR".
   - v3 2026-06-09: **§1 reframed BYOK no-Claude → BYOK aggregator-first** (H-2026-06-09-002). bao 校准: "我们卖工具+平台, 不卖模型" extended to multi-modal. Per ADR-002 v19 §13 (3-capability-face SSOT, API face = aggregator differentiator), CTRL ships **fal.ai BYOK adapter** as flagship aggregator (985 image/video/audio endpoints — FLUX 2, Seedream 5.0, Recraft V3, Nano Banana Pro, Kling 3.0, Veo 3.1, Hunyuan Video). Codex 锁单家 gpt-image-2; CTRL 接 fal.ai 拿 985 模型. The no-Anthropic-SDK-in-hot-path rule stays — but applies to ALL single-brand vendors equally (Anthropic / OpenAI / Tencent Yuanbao / xAI / Mistral). Aggregator endpoints (fal.ai, OpenRouter-like, LiteLLM-pattern) are exceptions: user BYOK to the aggregator key, CTRL loads aggregator SDK only on user activation. **No CTRL-bundled default model spend** — first-launch default = `none` (user picks fal.ai or Anthropic or OpenAI BYOK). Removes the implicit "CTRL CF Workers AI default" path that existed v1-v2 — bao memory `feedback_default_to_user_cli_not_paid_providers` (2026-05-31) already校准了 this for CLI; v19 extends to all API providers including CTRL-managed fallback.
+  - v4 2026-06-11: **NEW §5 business-system integration** — bao 2026-06-11: CTRL's primary commercial play = local AI front-end unifying business systems (CRM / cross-border ERP / 飞书 / SAP) via MCP. Zero architecture change (systems = MCP servers on the existing bus). Moat = local connection + data sovereignty (data never leaves machine/intranet) — cloud AI structurally can't match. Connectors = ecosystem supply, CTRL = client + manifest spec/SDK. Write-ops gated through review (maps to §4 autonomy ladder). Reinforces CTRL owning its rendering layer (resolves kairo toward CTRL-native). Memory `project-ctrl-local-ai-frontend-over-business-systems`.
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/002-substrate.md
@@ -80,6 +81,20 @@ CTRL = user-augmentation, NOT knowledge intermediary. Memory `decision_ctrl_obsi
 7. **Vault layout is user-policy, not hardcoded** — CTRL provides default templates (flat / by-day / by-entity); user can swap. Mcp writes declare `path_glob` capability (ADR-004 §1); kernel does NOT enforce directory structure.
 
 8. **Cloud (`ctrl-cloud`) scope locked** — allowed: billing settlement, marketplace listing, NAT-traversal relay, push-notification fanout. NOT allowed: user content storage, AI inference proxy (BYOK direct to provider), knowledge graph hosting.
+
+## §5 Business-system integration — local AI front-end, data sovereignty moat (NEW v4, 2026-06-11)
+
+bao 2026-06-11: CTRL's primary commercial play is a **local AI front-end that unifies access to business systems via MCP** — CRM, cross-border ERP, 飞书/钉钉, SAP, etc. Architecturally this is zero-change: those systems are **MCP servers** on the kernel MCP bus (ADR-002 § mcp-bus :17873). CTRL stays frontend + router + renderer; system data flows back and renders in the morphing surface (ADR-003 §8) via the viewer/part registry (tables / record cards / dashboards). Capabilities = the open MCP/CLI/Skills set — a CRM/ERP is just another connector.
+
+| Lock | Detail |
+|---|---|
+| **Moat = local + sovereign** | System data **never leaves the machine / intranet**; AI front-end runs locally; no CTRL account; BYOK. The thing cloud AI (ChatGPT-enterprise, SaaS Copilots) structurally can't offer. Drives enterprise willingness-to-pay + stickiness — likely stronger than the consumer angle. |
+| **Connectors = supply, CTRL = client** | CTRL ships the MCP manifest spec + SDK. Key connectors (Salesforce / major cross-border ERPs) built by CTRL team; long tail by third parties / customer IT / existing MCP ecosystem (Composio / Smithery / official). Not bespoke CTRL features. |
+| **Write-ops gated** | Writes to business systems (ERP inventory, CRM orders — high-risk) MUST go through "intent → reviewable workflow → approve → execute" (research: public.com / ChatGPT permission gates; ADR-003 §8.2 E). **Read-first, write-with-explicit-approval.** Maps to §4 policy-envelope autonomy ladder + blast-radius. |
+| **Reinforces CTRL-owns-rendering** | System data renders inside CTRL's unified morphing surface (its own viewer/part registry), NOT an embedded foreign app. Resolves the kairo/notes question toward CTRL-native rendering. |
+| **Two GTMs, one platform** | Consumer (low-barrier general user) and enterprise (system integration) share ONE platform; pick a lead wedge per go-to-market. Enterprise/data-sovereignty has stronger pay signals. |
+
+Aligns with §1 (BYOK aggregator-first — "sell tools + platform, not models") and §3 (local-is-truth). Memory `project-ctrl-local-ai-frontend-over-business-systems`.
 
 ## §4 Policy envelope — L3/L4/L5 autonomy + blast-radius + typed-ISA (NEW v2, 2026-06-04)
 

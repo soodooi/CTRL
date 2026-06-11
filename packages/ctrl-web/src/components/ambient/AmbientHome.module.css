@@ -1,0 +1,356 @@
+/* AmbientHome — centered morphing surface (ADR-003 §8 v6).
+   Industrial-precise / key visual system. Tokens from doc/design. */
+
+.root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  background: var(--bg, #f5f5f7);
+  color: var(--text, #1d1d1f);
+  font-family: var(--font-ui, -apple-system, 'Inter', 'PingFang SC', system-ui, sans-serif);
+  overflow: hidden;
+}
+
+/* ── empty state: centered launcher ───────────────────────────── */
+.empty {
+  width: 100%;
+  max-width: 620px;
+  margin: auto;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.greeting {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.subtitle {
+  margin: 6px 0 24px;
+  font-size: 14px;
+  color: var(--text-muted, #6e6e73);
+  text-align: center;
+}
+
+/* ── composer (shared) ────────────────────────────────────────── */
+.composer {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--card, #fff);
+  border: 1px solid var(--border-strong, rgba(0, 0, 0, 0.14));
+  border-radius: 14px;
+  padding: 10px 10px 10px 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.composer:focus-within {
+  border-color: var(--primary, #3b5bdb);
+  box-shadow: 0 0 0 3px var(--primary-ring, rgba(59, 91, 219, 0.18));
+}
+
+.input {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text, #1d1d1f);
+  max-height: 160px;
+  padding: 4px 0;
+}
+
+.input::placeholder {
+  color: var(--text-subtle, #98989d);
+}
+
+.send {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 9px;
+  background: var(--primary, #3b5bdb);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.12s ease, transform 0.06s ease;
+}
+
+.send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.send:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+/* ── capability floor (the low-barrier cards) ─────────────────── */
+.floor {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 13px 15px;
+  text-align: left;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.card:hover {
+  border-color: var(--primary-ring, rgba(59, 91, 219, 0.2));
+  background: var(--primary-soft, rgba(59, 91, 219, 0.05));
+}
+
+.cardLabel {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.cardHint {
+  font-size: 11.5px;
+  color: var(--text-subtle, #98989d);
+  line-height: 1.3;
+}
+
+/* ── working states: chat / chat+part ─────────────────────────── */
+.working {
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+
+.split {
+  width: 100%;
+  height: 100%;
+}
+
+.chatPane,
+.chatPaneCentered {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  gap: 12px;
+}
+
+.chatPaneCentered {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.pill {
+  flex: none;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary, #3b5bdb);
+  background: var(--primary-soft, rgba(59, 91, 219, 0.08));
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+.scroller {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 4px;
+}
+
+.msg {
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.msg.user {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--primary, #3b5bdb);
+  color: #fff;
+  padding: 9px 13px;
+  border-radius: 14px 14px 4px 14px;
+}
+
+.msg.assistant {
+  align-self: flex-start;
+  max-width: 92%;
+  color: var(--text, #1d1d1f);
+}
+
+.msg.assistant :global(p) {
+  margin: 0 0 8px;
+}
+
+/* ── part panel ───────────────────────────────────────────────── */
+.handle {
+  width: 1px;
+  background: var(--border, rgba(0, 0, 0, 0.08));
+  position: relative;
+  cursor: col-resize;
+}
+
+.handle::after {
+  content: '';
+  position: absolute;
+  inset: 0 -4px;
+}
+
+.handle:hover {
+  background: var(--primary, #3b5bdb);
+}
+
+.partPane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-elev, #fff);
+}
+
+.partHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted, #6e6e73);
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+.partClose {
+  border: none;
+  background: transparent;
+  color: var(--text-subtle, #98989d);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.partClose:hover {
+  background: var(--destructive-soft, rgba(224, 49, 49, 0.08));
+  color: var(--destructive, #e03131);
+}
+
+.partBody {
+  flex: 1;
+  overflow: auto;
+}
+
+.partBody :global(.part-code) {
+  margin: 0;
+  padding: 14px;
+  font-family: var(--font-mono, 'SF Mono', 'JetBrains Mono', monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.partBody :global(.part-markdown) {
+  padding: 16px 18px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ── system-data parts (CRM/ERP via MCP) — ADR-006 §5 ─────────── */
+.partBody :global(.part-table-wrap) {
+  overflow: auto;
+  height: 100%;
+}
+
+.partBody :global(.part-table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.partBody :global(.part-table th) {
+  position: sticky;
+  top: 0;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted, #6e6e73);
+  background: var(--bg, #f5f5f7);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-strong, rgba(0, 0, 0, 0.14));
+  white-space: nowrap;
+}
+
+.partBody :global(.part-table td) {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.06));
+  vertical-align: top;
+}
+
+.partBody :global(.part-table tr:hover td) {
+  background: var(--primary-soft, rgba(59, 91, 219, 0.04));
+}
+
+.partBody :global(.part-record) {
+  margin: 0;
+  padding: 14px 16px;
+}
+
+.partBody :global(.part-record-row) {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.06));
+  font-size: 13px;
+}
+
+.partBody :global(.part-record-row dt) {
+  color: var(--text-muted, #6e6e73);
+  font-weight: 500;
+}
+
+.partBody :global(.part-record-row dd) {
+  margin: 0;
+  color: var(--text, #1d1d1f);
+  word-break: break-word;
+}
+
+.partBody :global(.part-mermaid) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  height: 100%;
+}
+
+.partBody :global(.part-mermaid svg) {
+  max-width: 100%;
+  height: auto;
+}

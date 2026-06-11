@@ -1,0 +1,223 @@
+// AmbientHome — the morphing conversation surface (ADR-003 §8 v6).
+//
+// One ambient surface that morphs between three states via a CSS
+// grid-template-areas state machine + Framer Motion layout animation:
+//   empty       — centered greeting + big composer + capability floor
+//   chat        — conversation + composer
+//   chat-part   — conversation | part panel (resizable), when a turn
+//                 produces a renderable UI part (html/code/...).
+//
+// Low-barrier for general users (bao 2026-06-11): the empty state SHOWS
+// concrete clickable capabilities (the floor) instead of a blank box;
+// the conversation is the flexible ceiling. Real chat via the existing
+// irisyChatTransport — no new backend. Parts render through the flexible
+// UI registry (lib/ui-registry) so the agent / user / content-type can
+// invoke any UI piece on demand.
+
+import { useCallback, useRef, useState, type ReactElement } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Group, Panel, Separator } from 'react-resizable-panels';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
+import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
+import { detectPart, renderPart, partLayout, type PartSpec } from '@/lib/ui-registry';
+import styles from './AmbientHome.module.css';
+
+interface Msg {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+type Surface = 'empty' | 'chat' | 'chat-part';
+
+const SPRING = { type: 'spring', stiffness: 420, damping: 36 } as const;
+
+export function AmbientHome(): ReactElement {
+  const [input, setInput] = useState('');
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [streaming, setStreaming] = useState(false);
+  const [part, setPart] = useState<PartSpec | null>(null);
+  const [routePill, setRoutePill] = useState<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  const surface: Surface = part ? 'chat-part' : messages.length > 0 ? 'chat' : 'empty';
+
+  const send = useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || streaming) return;
+    setInput('');
+    const userMsg: Msg = { id: `u-${Date.now()}`, role: 'user', content: trimmed };
+    const asstId = `a-${Date.now()}`;
+    setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '' }]);
+    setStreaming(true);
+
+    // Lightweight intent pill (transparent routing — the agent-driven
+    // version lands with the capability router). Heuristic for now.
+    const lower = trimmed.toLowerCase();
+    setRoutePill(
+      /\b(html|page|poster|web|site)\b/.test(lower)
+        ? 'Building'
+        : /\b(code|refactor|bug|function)\b/.test(lower)
+          ? 'Coding'
+          : 'Answering',
+    );
+
+    try {
+      const history: LLMMessage[] = [...messages, userMsg].map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+      let acc = '';
+      for await (const chunk of irisyChatTransport().stream(history)) {
+        const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
+        if (!delta) continue;
+        acc += delta;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === asstId ? { ...m, content: acc } : m)),
+        );
+        requestAnimationFrame(() => {
+          scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+        });
+      }
+      // Morph a renderable part out of the reply if present.
+      const detected = detectPart(acc);
+      if (detected) setPart(detected);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === asstId ? { ...m, content: `Error: ${msg}` } : m)),
+      );
+    } finally {
+      setStreaming(false);
+    }
+  }, [messages, streaming]);
+
+  const onPickCapability = useCallback((cap: Capability) => {
+    setInput(cap.starter ?? `${cap.label}: `);
+    inputRef.current?.focus();
+  }, []);
+
+  const composer = (
+    <form
+      className={styles.composer}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void send(input);
+      }}
+    >
+      <textarea
+        ref={inputRef}
+        className={styles.input}
+        value={input}
+        rows={1}
+        placeholder="Ask Irisy, or pick something above…"
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            void send(input);
+          }
+        }}
+        disabled={streaming}
+      />
+      <button type="submit" className={styles.send} disabled={streaming || !input.trim()}>
+        {streaming ? '···' : '↑'}
+      </button>
+    </form>
+  );
+
+  const conversation = (
+    <div className={styles.scroller} ref={scrollerRef}>
+      {messages.map((m) => (
+        <div key={m.id} className={`${styles.msg} ${styles[m.role]}`}>
+          {m.role === 'assistant' ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content || '…'}</ReactMarkdown>
+          ) : (
+            m.content
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className={styles.root} data-surface={surface}>
+      <AnimatePresence mode="wait">
+        {surface === 'empty' ? (
+          <motion.div
+            key="empty"
+            className={styles.empty}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={SPRING}
+          >
+            <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
+            <p className={styles.subtitle}>What do you want to do?</p>
+            {composer}
+            <div className={styles.floor}>
+              {floorCapabilities()
+                .slice(0, 8)
+                .map((cap) => (
+                  <motion.button
+                    key={cap.id}
+                    type="button"
+                    className={styles.card}
+                    onClick={() => onPickCapability(cap)}
+                    whileHover={{ y: -2 }}
+                    transition={SPRING}
+                    title={cap.hint}
+                  >
+                    <span className={styles.cardLabel}>{cap.label}</span>
+                    <span className={styles.cardHint}>{cap.hint}</span>
+                  </motion.button>
+                ))}
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="working"
+            className={styles.working}
+            layout
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={SPRING}
+          >
+            {part ? (
+              <Group orientation="horizontal" className={styles.split}>
+                <Panel defaultSize={(1 - partLayout(part.kind).preferredRatio) * 100} minSize={28}>
+                  <div className={styles.chatPane}>
+                    {routePill && <div className={styles.pill}>{`-> ${routePill}`}</div>}
+                    {conversation}
+                    {composer}
+                  </div>
+                </Panel>
+                <Separator className={styles.handle} />
+                <Panel defaultSize={partLayout(part.kind).preferredRatio * 100} minSize={24}>
+                  <div className={styles.partPane}>
+                    <div className={styles.partHeader}>
+                      <span>{part.title ?? part.kind}</span>
+                      <button type="button" className={styles.partClose} onClick={() => setPart(null)}>
+                        ✕
+                      </button>
+                    </div>
+                    <div className={styles.partBody}>{renderPart(part)}</div>
+                  </div>
+                </Panel>
+              </Group>
+            ) : (
+              <div className={styles.chatPaneCentered}>
+                {routePill && <div className={styles.pill}>{`-> ${routePill}`}</div>}
+                {conversation}
+                {composer}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

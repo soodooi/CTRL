@@ -146,3 +146,11 @@
   box-shadow:
     0 0 0 2px color-mix(in oklab, var(--color-success), transparent 80%);
 }
+
+/* ADR-003 §8 v6 — ambient surface root (replaces the 4-col shell home). */
+.ambientRoot {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+}

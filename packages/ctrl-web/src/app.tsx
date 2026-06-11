@@ -41,6 +41,13 @@ import { StatusBar } from './components/StatusBar';
 import { OllamaSetupBanner } from './components/OllamaSetupBanner';
 import { MCP_DRAG_MIME } from './components/Keyboard';
 import { RailProvider, PrimaryRail } from './components/PrimaryRail';
+import { AmbientHome } from './components/ambient/AmbientHome';
+
+// ADR-003 §8 v6 morphing-conversation rebuild. Default ON — the new
+// centered ambient surface replaces the legacy 4-column shell as the home.
+// Set localStorage `ctrl:legacy-shell` = '1' to fall back to the old shell.
+const USE_AMBIENT =
+  typeof window === 'undefined' || window.localStorage.getItem('ctrl:legacy-shell') !== '1';
 import { InfraBar } from './components/InfraBar';
 import { IrisyChat } from './components/irisy/IrisyChat';
 import { WorkspaceShell } from './components/workspace/WorkspaceShell';
@@ -118,6 +125,14 @@ function RootShellInner(): ReactElement {
     },
     [createFromMcp, navigate, queryClient],
   );
+
+  if (USE_AMBIENT) {
+    return (
+      <div className={styles.ambientRoot} data-testid="shell">
+        <AmbientHome />
+      </div>
+    );
+  }
 
   return (
     <div
