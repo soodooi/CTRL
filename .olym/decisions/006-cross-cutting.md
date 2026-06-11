@@ -2,7 +2,7 @@
 adr_id: 006
 module: cross-cutting
 title: CTRL cross-cutting — BYOK aggregator-first + global English first + plain-text philosophy + policy envelope
-version: 4
+version: 5
 status: accepted
 last_updated: 2026-06-09
 deciders: [bao, zeus]
@@ -12,6 +12,7 @@ sections:
   - { id: plain-text,        source: orig-015 }
   - { id: policy-envelope,   source: new-2026-06-04, note: "L3/L4/L5 autonomy ladder + blast-radius limit + typed-ISA validation — invariants reused across all 6 self-evolution loops (ADR-001 §8)." }
 changelog:
+  - v5 2026-06-11: **§5 reframed — positioning locked: CTRL = the local AI OS for the one-person company (OPC).** bao 2026-06-11 (multi-round refinement). Target = OPC (solopreneur/indie/micro-business), the sweet middle between mass-consumer (no moat) and big-enterprise (unsellable by a small team). CTRL's role = local/private/AI-native ACCESS+INTEGRATION layer for OPC products (a local Feishu/Lark alternative giving mobile+PC reach), NOT a one-prompt tool generator, NOT us shipping a CRM. Economy = **share & be shared** (commons/reciprocity like GitHub/HF/npm/MCP registry), NOT buy & sell. Monetize the substrate (subscription), commons stays free as the network-effect moat. Memory `project-ctrl-positioning-opc-share-and-be-shared`. v4 business-system-integration framing folded in as the connector mechanism.
   - v1 2026-05-31: module reorg — merged orig-005 (no Claude/Anthropic SDK in production runtime) + orig-014 (global English first) + orig-015 (plain-text / "Obsidian" philosophy).
   - v2 2026-06-04: **NEW §4 policy-envelope** — single autonomy ladder (L3 suggest-only / L4 low-risk auto / L5 full auto) + blast-radius limit + typed-ISA validation, reused across the 6 self-evolution loops (ADR-001 §8). Source: UUMit L3-L5 (cap-design-v2 §14 #8) generalised cross-loop. Per bao "整个系统都要自我升级成长 ... 唯一真相, 要经常整理 ADR".
   - v3 2026-06-09: **§1 reframed BYOK no-Claude → BYOK aggregator-first** (H-2026-06-09-002). bao 校准: "我们卖工具+平台, 不卖模型" extended to multi-modal. Per ADR-002 v19 §13 (3-capability-face SSOT, API face = aggregator differentiator), CTRL ships **fal.ai BYOK adapter** as flagship aggregator (985 image/video/audio endpoints — FLUX 2, Seedream 5.0, Recraft V3, Nano Banana Pro, Kling 3.0, Veo 3.1, Hunyuan Video). Codex 锁单家 gpt-image-2; CTRL 接 fal.ai 拿 985 模型. The no-Anthropic-SDK-in-hot-path rule stays — but applies to ALL single-brand vendors equally (Anthropic / OpenAI / Tencent Yuanbao / xAI / Mistral). Aggregator endpoints (fal.ai, OpenRouter-like, LiteLLM-pattern) are exceptions: user BYOK to the aggregator key, CTRL loads aggregator SDK only on user activation. **No CTRL-bundled default model spend** — first-launch default = `none` (user picks fal.ai or Anthropic or OpenAI BYOK). Removes the implicit "CTRL CF Workers AI default" path that existed v1-v2 — bao memory `feedback_default_to_user_cli_not_paid_providers` (2026-05-31) already校准了 this for CLI; v19 extends to all API providers including CTRL-managed fallback.
@@ -82,9 +83,23 @@ CTRL = user-augmentation, NOT knowledge intermediary. Memory `decision_ctrl_obsi
 
 8. **Cloud (`ctrl-cloud`) scope locked** — allowed: billing settlement, marketplace listing, NAT-traversal relay, push-notification fanout. NOT allowed: user content storage, AI inference proxy (BYOK direct to provider), knowledge graph hosting.
 
-## §5 Business-system integration — local AI front-end, data sovereignty moat (NEW v4, 2026-06-11)
+## §5 Positioning — the local AI OS for the one-person company (v5 2026-06-11, supersedes v4 framing)
 
-bao 2026-06-11: CTRL's primary commercial play is a **local AI front-end that unifies access to business systems via MCP** — CRM, cross-border ERP, 飞书/钉钉, SAP, etc. Architecturally this is zero-change: those systems are **MCP servers** on the kernel MCP bus (ADR-002 § mcp-bus :17873). CTRL stays frontend + router + renderer; system data flows back and renders in the morphing surface (ADR-003 §8) via the viewer/part registry (tables / record cards / dashboards). Capabilities = the open MCP/CLI/Skills set — a CRM/ERP is just another connector.
+bao 2026-06-11 (locked after several refinement rounds; memory `project-ctrl-positioning-opc-share-and-be-shared`):
+
+**Target = the One-Person Company (OPC / 一人公司).** Solopreneur / indie founder / freelancer / micro-business run by one person — does a whole company's work alone, needs AI as their team, wants business data kept local/private, self-serves (no enterprise sales), is both creator and consumer. The sweet middle: not mass-consumer (no moat vs ChatGPT), not big-enterprise (a small team can't run that sales motion). Underserved + growing.
+
+**CTRL's role = the local / private / AI-native ACCESS + INTEGRATION layer for OPC products.** NOT "one sentence generates the tool" (one capability, not the core). The OPC has BUILT their product by their own means; CTRL connects to it (MCP / manifest / connector) and gives it **mobile + PC reach, locally + privately** — the same job people currently outsource to **Feishu/Lark** (connect your product → get mobile + PC clients / bots / mini-programs), except CTRL is local + private + AI-native where Feishu is cloud. CTRL is already a multi-platform client (Tauri PC + PWA mobile), so it can BE that layer. Architecturally zero-change: products are MCP connectors on the bus (ADR-002 § mcp-bus :17873); CTRL stays router + renderer; data flows back into the workbench (ADR-003 §8). [needs research: how OPCs give products mobile+PC reach today and the pain CTRL removes.]
+
+**Economy = share & be shared, NOT buy & sell.** Not a marketplace with take-rate. OPCs SHARE what they build (tools/connectors = git-diffable plain-text definitions, no lock-in) into a commons and BENEFIT from others' shares — like GitHub / Hugging Face / npm / the MCP registry. Network effect compounds through reciprocity. Fits §1 (BYOK), §3 (plain-text, no lock-in), and CTRL building-on + giving-back-to the OSS/MCP ecosystem.
+
+**Monetization = the substrate, not the commons.** Subscribe to CTRL (the workbench + its AI build/integration engine) — like GitHub sells the platform while sharing is free. The commons stays free and IS the network-effect moat, not a revenue line.
+
+**Moat:** local + private (cloud platforms like Feishu structurally cannot be — their model is the cloud) + unifies the OPC's whole stack + AI-native + open share-and-be-shared ecosystem.
+
+**NOT:** us building/selling a CRM; enterprise CRM/ERP sales; a buy/sell marketplace; "AI generates everything from one prompt" as the headline.
+
+Write-ops to connected products still gate (intent → review → approve → execute; §4 autonomy ladder). The CRM/ERP/Feishu examples are connectors an OPC plugs in, not products CTRL ships.
 
 | Lock | Detail |
 |---|---|
