@@ -108,6 +108,24 @@ impl KernelSupervisor {
             }
         });
 
+        // Agent resource-pack prefetch (bao 2026-06-10: agents live
+        // OUTSIDE the app bundle in ~/.ctrl/, downloaded as resource
+        // packs right after install — independent upgrade cadence,
+        // installer stays lean). Best-effort + idempotent: install()
+        // returns the cached manifest when already present; failures
+        // are logged and retried lazily on first route visit (PWA
+        // useAgent), never blocking boot or the user.
+        tauri::async_runtime::spawn_blocking(|| {
+            use crate::shell::agent_installer::{install, AgentName};
+            for agent in [AgentName::Kairo, AgentName::Opencode, AgentName::Hermes] {
+                let label = agent.as_str();
+                match install(agent, false) {
+                    Ok(m) => tracing::info!(agent = label, version = %m.version, "agent resource pack ready"),
+                    Err(e) => tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)"),
+                }
+            }
+        });
+
         // Code Space env registry — coding remote desktop v1 (zeus Z1, ST-SS spec v0.7).
         // commands::code_space::cs_* invocations pull this State to spawn /
         // control SubprocessActor instances. Independent from KernelHandle so
