@@ -296,8 +296,10 @@ export function AmbientHome(): ReactElement {
               Your private AI workspace — it runs on your machine, your data stays yours.
             </p>
 
-            {!hasProvider ? (
-              // Primary CTA: nothing works until a model is connected.
+            {/* Non-blocking nudge: the chat may already answer via the
+                managed fallback route, so never hide the composer — just
+                invite connecting a BYOK model when none is set as primary. */}
+            {!hasProvider && (
               <button
                 type="button"
                 className={styles.ctaPrimary}
@@ -305,37 +307,34 @@ export function AmbientHome(): ReactElement {
               >
                 Connect your AI to start →
               </button>
-            ) : (
-              <>
-                {composer}
-                <div className={styles.tryLabel}>Try one of these</div>
-                <div className={styles.floor}>
-                  {floorCapabilities()
-                    .slice(0, 6)
-                    .map((cap) => (
-                      <motion.button
-                        key={cap.id}
-                        type="button"
-                        className={styles.card}
-                        onClick={() => onPickCapability(cap)}
-                        whileHover={{ y: -2 }}
-                        transition={SPRING}
-                        title={cap.hint}
-                      >
-                        <span className={styles.cardLabel}>{cap.label}</span>
-                        <span className={styles.cardHint}>{cap.hint}</span>
-                      </motion.button>
-                    ))}
-                </div>
-                <button
-                  type="button"
-                  className={styles.ctaSecondary}
-                  onClick={() => setView('discover')}
-                >
-                  Connect your tools →
-                </button>
-              </>
             )}
+            {composer}
+            <div className={styles.tryLabel}>Try one of these</div>
+            <div className={styles.floor}>
+              {floorCapabilities()
+                .slice(0, 6)
+                .map((cap) => (
+                  <motion.button
+                    key={cap.id}
+                    type="button"
+                    className={styles.card}
+                    onClick={() => onPickCapability(cap)}
+                    whileHover={{ y: -2 }}
+                    transition={SPRING}
+                    title={cap.hint}
+                  >
+                    <span className={styles.cardLabel}>{cap.label}</span>
+                    <span className={styles.cardHint}>{cap.hint}</span>
+                  </motion.button>
+                ))}
+            </div>
+            <button
+              type="button"
+              className={styles.ctaSecondary}
+              onClick={() => setView('discover')}
+            >
+              Connect your tools →
+            </button>
           </motion.div>
         ) : (
           <motion.div
