@@ -1,21 +1,32 @@
 ---
 id: 008-irisy-assistant
-status: draft
+status: retired
+retired_by: ADR-001 v4 + ADR-002 v19 (3-agent aggregator, H-2026-06-09-002, 2026-06-09)
+retired_reason: |
+  Irisy is no longer a brain / agent runtime. v19 reframes Irisy as **PWA persona shell**
+  (avatar + sycophancy filter + system-prompt injection + drill-down). The assistant role
+  belongs to **hermes** (external NousResearch agent, lazy-installed via npm).
+  This ADR's content (Irisy reply specs, user intents, Irisy capabilities, Irisy pipeline)
+  was authored when Irisy was the sole agent (v17). Most of it migrates to hermes (skills +
+  prompt segments), with the persona-shell concerns moving to ADR-005 v4. No content carries
+  forward unchanged.
 created: 2026-06-04
 owner: bao
 supersedes: []
 amends: []
 related:
-  - 001-spine
-  - 002-substrate
-  - 004-cap
-  - 005-irisy
-  - 006-cross-cutting
+  - 001-spine (v4 supersedes Irisy-as-brain framing)
+  - 002-substrate (v19 supersedes Pi/Irisy substrate)
+  - 005-irisy (v4 reframes persona-shell role)
 sources:
   - .olym/brainstorm/irisy-reply-specs-2026-06-04.md
   - .olym/brainstorm/user-intents-2026-06-04.md
   - .olym/brainstorm/irisy-capabilities-2026-06-04.md
   - .olym/brainstorm/irisy-pipeline-2026-06-04.md
+---
+
+> **RETIRED 2026-06-09** by ADR-001 v4 + ADR-002 v19 (3-agent aggregator). Irisy is now PWA persona shell, not agent runtime. See ADR-005 v4 + ADR-002 §1 v19 for the new model. Original content kept below for provenance only.
+
 ---
 
 # ADR-008 Irisy assistant — identity, memory, skill/MCP routing

@@ -179,7 +179,9 @@ if [[ -d "$audits_dir" ]]; then
   fi
 
   # P0 #5 fix: phase transition trigger
-  startup_end="2026-05-28"
+  # Window per .olym/audits/zeus-quality/README.md + baseline-2026-05-31.md:
+  # startup 2026-05-31 -> 2026-06-30, then weekly cadence + >=3 threshold.
+  startup_end="2026-06-30"
   today_epoch=$(date +%s)
   if [[ "$(uname)" == "Darwin" ]]; then
     end_epoch=$(date -j -f "%Y-%m-%d" "$startup_end" +%s 2>/dev/null || echo 0)

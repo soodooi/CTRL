@@ -1,6 +1,21 @@
 ---
 id: 009-pi-surface-integration
-status: draft
+status: retired
+retired_by: ADR-001 v4 + ADR-002 v19 (3-agent aggregator, H-2026-06-09-002, 2026-06-09)
+retired_reason: |
+  Pi has exited CTRL's hot path entirely in v19. The 3-agent aggregator is **hermes + opencode + kairo**
+  (all external MIT, lazy-installed to ~/.ctrl/agents/). Pi remains usable as a standalone CLI installed
+  by the user via npm; CTRL doesn't install it, wrap it, or compose with it. `ctrl-pi-bridge` and
+  `ctrl-pi-plugin` packages are deleted in this branch.
+
+  The Pi-extension wiring this ADR locked (12 hooks, 6 communication APIs, N tool/command/renderer
+  registrations, auto-RAG, audit log, $VAR apiKey prefix, MCP auto-connect) is all retired — the
+  agents CTRL now integrates (hermes / opencode / kairo) expose their own native protocols (MCP stdio /
+  HTTP / webview). CTRL kernel = thin install + launch + bridge + keychain.
+
+  Useful auto-RAG and audit-log behaviors migrate to **CTRL skills** (`~/.ctrl/skills/auto-rag/SKILL.md`,
+  `~/.ctrl/skills/audit-log/SKILL.md`) so the behavior survives the architecture change while staying
+  cross-agent (any of the 3 agents can invoke).
 created: 2026-06-04
 owner: bao
 supersedes: []
@@ -11,6 +26,10 @@ amends:
 sources:
   - .olym/brainstorm/irisy-pipeline-2026-06-04.md
   - ~/.ctrl/pi/node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts (Pi 0.73 verbatim)
+---
+
+> **RETIRED 2026-06-09** by ADR-001 v4 + ADR-002 v19 (3-agent aggregator). Pi exited CTRL hot path; `ctrl-pi-bridge` + `ctrl-pi-plugin` deleted. See ADR-002 §1 v19 for new 3-agent integration model. Original content kept below for provenance only.
+
 ---
 
 # ADR-009 Pi extension surface — full integration

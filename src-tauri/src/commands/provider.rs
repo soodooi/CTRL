@@ -98,11 +98,16 @@ pub fn brain_status(
 pub(crate) fn brain_status_inner(
     kernel: &KernelHandle,
 ) -> Result<BrainStatusView, String> {
-    let install = crate::shell::pi_install::current_status();
+    // ADR-002 substrate §1 v19 (2026-06-09): the EngineStatus shape was
+    // designed around Pi-as-sole-brain. In the 3-agent aggregator era this
+    // field reports a synthetic "aggregator" engine — the PWA's chip UI
+    // moves to per-agent status (commands::agents::agent_status) in the
+    // next release. Kept as a stable shape so the existing PWA build
+    // doesn't break during the transition.
     let engine = EngineStatus {
         id: ENGINE_ID,
-        version: install.installed_version,
-        healthy: crate::shell::brain_supervisor::is_running(),
+        version: None,
+        healthy: true,
         last_token_ms: None,
     };
 

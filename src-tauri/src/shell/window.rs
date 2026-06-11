@@ -34,7 +34,6 @@
 use anyhow::Result;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
-use super::hotkey;
 
 pub struct WindowController;
 
@@ -119,7 +118,7 @@ impl WindowController {
     pub fn toggle(app: &AppHandle) -> Result<()> {
         let Some(w) = Self::main(app) else {
             tracing::info!("WindowController::toggle — main missing, rebuilding");
-            let w = Self::build_main(app)?;
+            let _w = Self::build_main(app)?;
             #[cfg(target_os = "windows")]
             cloak::set(&w, false);
             // Don't set focus - this allows hotkey to work while window is visible

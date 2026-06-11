@@ -22,7 +22,6 @@
 
 mod asset_scheme;
 mod commands;
-mod credential_vault;
 mod error;
 mod kernel;
 mod shell;
@@ -120,15 +119,13 @@ pub fn run() {
         // Launcher contract (mirrors the Windows path): closing the last
         // window must NOT quit the tray-resident app. code = None means
         // user-initiated (window closed / Cmd-Q) → keep running in the tray.
-        // code = Some(_) is an explicit shutdown (tray Quit) → kill the Pi
-        // brain child so the next launch doesn't collide on port 17874.
+        // code = Some(_) is an explicit shutdown (tray Quit) — ADR-002 §1 v19:
+        // no kernel-side brain supervisors, so no per-brain shutdown call.
+        // Agent processes launched via agent_launcher are owned by the PWA
+        // session lifetime; they exit naturally when their parent webview closes.
         tauri::RunEvent::ExitRequested { api, code, .. } => {
             if code.is_none() {
                 api.prevent_exit();
-            } else {
-                shell::BrainSupervisor::shutdown();
-                shell::OpencodeSupervisor::shutdown();
-                shell::HermesSupervisor::shutdown();
             }
         }
         _ => {}
@@ -173,13 +170,11 @@ pub fn run() {
     app.run(|_app_handle, event| {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
             // code = None means user-initiated (last window closed / Quit).
-            // code = Some(_) means explicit shutdown (tray Quit menu) — let it through.
+            // code = Some(_) means explicit shutdown (tray Quit menu) — let it
+            // through. ADR-002 §1 v19: agents are PWA-session-scoped, no
+            // kernel-side shutdown hook required.
             if code.is_none() {
                 api.prevent_exit();
-            } else {
-                // Real quit — kill the Pi brain child so the next launch
-                // doesn't collide on port 17874.
-                shell::BrainSupervisor::shutdown();
             }
         }
     });

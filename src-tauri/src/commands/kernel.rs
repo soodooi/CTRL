@@ -393,7 +393,6 @@ fn derive_server_id(source: &crate::kernel::mcp_host::McpServerSource) -> String
     format!("mcp-{:x}", h.finish())
 }
 
-use crate::kernel::mcp_host::McpHostError;
 
 #[derive(Debug, Deserialize)]
 pub struct RunMcpArgs {

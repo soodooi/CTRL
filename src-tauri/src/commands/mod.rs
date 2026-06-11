@@ -14,21 +14,23 @@
 // Skeleton stage (sub-PR b): each handler returns NotImplementedYet so the
 // JS bridge can be wired before kernel integration in sub-PR c.
 
-// brain retired per ADR-002 substrate (Pi is the sole brain — see file header
-// for context); module not declared so the file is not compiled.
+// ADR-002 substrate §1 v19 (3-agent aggregator) retirements:
+//   pub mod hermes_chat;   ← v18 supervisor-shaped command (retired)
+//   pub mod opencode_chat; ← v18 supervisor-shaped command (retired)
+//   pub mod pi_rpc;        ← Pi exited CTRL hot path (retired)
+// PWA now connects directly to each agent's native endpoint via the new
+// `agents` command surface (install_agent / launch_agent / agent_status /
+// stop_agent). Streaming + tool calling happen agent-to-PWA, not kernel-mediated.
+pub mod agents;
 pub mod chat;
+// ADR-002 substrate § capability-faces v19 §13.4 (2026-06-09): image
+// generation surface. Currently fal.ai-only; multi-provider routing for
+// image.generate lands when the second image provider is wired.
+pub mod image;
 pub mod code_space;
-// ADR-002 substrate § brain v14 (2026-06-07, retracts v13): Pi-native
-// coding module being rebuilt as a 2nd `pi --mode rpc` process with its
-// own bridge extension (mirrors Irisy pattern, not the cs_spawn TUI
-// wrapper). Module reintroduced in the next ADR amendment.
 pub mod config;
 pub mod draft;
 pub mod draft_run;
-// H-2026-06-09-001 — Hermes (assistant) brain MCP client
-pub mod hermes_chat;
-// H-2026-06-09-001 — opencode (coding) brain HTTP client
-pub mod opencode_chat;
 // ADR-002 substrate § vault v1 §8.6 v5 (2026-06-01) — vault-side git via git CLI
 // (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
 // panel: status / init / commit_all / push / log.
@@ -38,9 +40,6 @@ pub mod irisy_chat;
 pub mod kernel;
 pub mod keychain;
 pub mod memory;
-// pi_rpc - full Pi RpcClient surface for the PWA (bao 2026-06-05).
-// Generic pass-through avoids per-method Rust boilerplate as Pi adds methods.
-pub mod pi_rpc;
 pub mod provider;
 // bao 2026-06-06: provider preset list = data file (bundled +
 // ~/.ctrl/provider-templates.json user override), not hardcoded.
@@ -73,23 +72,27 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::set_mcp_config,
             // chat — raw streaming LLM via Tauri events (mcp-internal use)
             $crate::commands::chat::chat_stream,
-            // irisy_chat — brain-routed streaming (Irisy → active brain mcp MCP)
+            // irisy_chat — Irisy persona PWA shell streaming endpoint.
+            // ADR-005 v5: Irisy = persona shell, not brain. Routes to whichever
+            // agent matches the active L1 chip (default hermes via /assistant).
             $crate::commands::irisy_chat::irisy_chat_stream,
-            // hermes_chat — assistant brain streaming (Hermes MCP)
-            $crate::commands::hermes_chat::hermes_chat_stream,
-            // opencode_chat — coding brain streaming (opencode HTTP API)
-            $crate::commands::opencode_chat::opencode_chat_stream,
-            // pi_rpc — full Pi RpcClient surface exposed as one generic command.
-            // PWA wraps via packages/ctrl-web/src/lib/usePiRpc.ts. bao 2026-06-05
-            // "open all Pi capability — every feature, surface to assistant".
-            $crate::commands::pi_rpc::pi_rpc,
-            $crate::commands::pi_rpc::pi_sessions,
-            $crate::commands::pi_rpc::restart_brain,
-            // brain switcher retired per ADR-002 substrate — Pi is the sole brain.
-            // Pi version + upgrade controls live in system::pi_status /
-            // pi_upgrade_now.
-            $crate::commands::system::pi_status,
-            $crate::commands::system::pi_upgrade_now,
+            // agents — 3-agent aggregator (ADR-002 §1 v19): install / launch /
+            // stop / status. PWA owns retry; kernel does not supervise.
+            $crate::commands::agents::install_agent,
+            $crate::commands::agents::launch_agent,
+            $crate::commands::agents::stop_agent,
+            $crate::commands::agents::agent_status,
+            $crate::commands::agents::list_agents,
+            // connect_agent_mcp — hermes (mcp-stdio) onto the kernel MCP bus
+            // (ADR-002 §1.3 v19); PWA chats via mcp_call afterwards.
+            $crate::commands::agents::connect_agent_mcp,
+            // image — fal.ai BYOK image generation (ADR-002 §13.4 v19)
+            $crate::commands::image::image_generate,
+            // ADR-002 §1 v19 retirements (commands no longer registered):
+            //   hermes_chat::hermes_chat_stream — PWA now talks MCP stdio directly
+            //   opencode_chat::opencode_chat_stream — PWA now talks HTTP directly
+            //   pi_rpc::{pi_rpc, pi_sessions, restart_brain} — Pi exited
+            //   system::{pi_status, pi_upgrade_now} — Pi install retired
             // ollama install / hermes3:8b auto-pull (Pi-first, bao 2026-06-05)
             $crate::commands::system::ollama_status,
             $crate::commands::system::ollama_pull_default,

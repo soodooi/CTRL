@@ -59,19 +59,5 @@ pub mod vault_watch;
 // LLM-backed version on top of the same review-queue file.
 pub mod vault_sourcing;
 
-pub use actor::{Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority};
-pub use capability::{CapToken, Capability, CapabilityBroker, CapabilityError};
-pub use channel::{Channel, ChannelError, ChannelOptions, ChannelRx, ChannelTx, DropPolicy};
-pub use effect::{Effect, EffectExecutor, HttpMethod};
-pub use event::{Cell, CellKind, Event, EventBus, EventFilter, Op, OpKind};
-pub use provider::{LlmChunk, LlmError, LlmMessage, LlmPrompt};
-pub use mcp_host::{McpHost, McpServerDescriptor, McpServerSource, McpToolDescriptor};
-pub use mcp_server::{McpServerHandle, DEFAULT_LISTEN_ADDR as MCP_SERVER_LISTEN_ADDR};
-pub use persistence::EventStore;
-pub use runtime::{KernelBootError, KernelRuntime};
-pub use scheduler::{ActorEntry, Scheduler, SchedulerError, SpawnResult};
+pub use mcp_server::DEFAULT_LISTEN_ADDR as MCP_SERVER_LISTEN_ADDR;
 pub use stss_bridge::{StssBridge, DEFAULT_LISTEN_ADDR as STSS_LISTEN_ADDR};
-pub use subprocess_actor::{
-    PtySpec, SubprocessActor, SubprocessOutbox, SubprocessSpawnError, SubprocessSpec,
-    DEFAULT_MEM_CAP_BYTES, DEFAULT_OUTBOX_CAPACITY,
-};

@@ -24,7 +24,6 @@ use std::time::Duration;
 
 use chrono::{Datelike, Local, Timelike};
 
-use crate::kernel::vault;
 use crate::kernel::vault_sourcing;
 
 /// Spawn the daily sourcing scheduler on the supplied tokio runtime.

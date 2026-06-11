@@ -13,10 +13,7 @@ use anyhow::Result;
 use tauri::{AppHandle, Manager};
 
 use super::window::install_close_intercept;
-use super::{
-    BrainSupervisor, HermesSupervisor, HotkeyController, KernelSupervisor, OpencodeSupervisor,
-    TrayController, WindowController,
-};
+use super::{HotkeyController, KernelSupervisor, TrayController, WindowController};
 
 pub struct ShellLifecycle;
 
@@ -45,21 +42,12 @@ impl ShellLifecycle {
         tracing::info!("ShellLifecycle::boot — seeding builtin mcps");
         super::builtin_mcps::ensure_builtins_installed();
 
-        // Pi is the sole brain — keep it always connected. Spawns + supervises
-        // the @ctrl/pi-plugin MCP server (ctrl-pi-mcp on :17874) so the user
-        // never starts it by hand. Non-blocking + graceful (Volc fallback).
-        tracing::info!("ShellLifecycle::boot — starting Pi brain supervisor");
-        BrainSupervisor::start(app);
-
-        // opencode is the coding brain — keep it always connected. Spawns + supervises
-        // opencode serve (headless HTTP server) on a random port. Non-blocking.
-        tracing::info!("ShellLifecycle::boot — starting opencode supervisor");
-        OpencodeSupervisor::start(app);
-
-        // Hermes is the assistant brain — keep it always connected. Spawns + supervises
-        // hermes mcp serve (stdio MCP server). Non-blocking.
-        tracing::info!("ShellLifecycle::boot — starting Hermes supervisor");
-        HermesSupervisor::start(app);
+        // ADR-002 substrate § brain v19 (3-agent aggregator): kernel no longer
+        // supervises brains. The 3 external agents (hermes / opencode / kairo)
+        // are lazy-installed under ~/.ctrl/agents/<name>/ on first use, then
+        // launched on-demand via shell::agent_launcher when the PWA invokes
+        // launch_agent. There is no kernel-side supervision loop. Pi exited the
+        // CTRL hot path in v19 — BrainSupervisor + ctrl-pi-bridge are retired.
 
         tracing::info!("ShellLifecycle::boot — installing tray");
         TrayController::install(app)?;

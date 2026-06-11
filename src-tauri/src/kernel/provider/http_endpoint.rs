@@ -25,10 +25,9 @@ use axum::{
     http::StatusCode,
     response::sse::{Event, Sse},
     response::IntoResponse,
-    routing::{get, post},
+    routing::post,
     Json, Router,
 };
-use tauri::Emitter;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 

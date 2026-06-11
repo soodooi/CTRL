@@ -40,11 +40,7 @@
     "active": true,
     "targets": ["app", "dmg"],
     "resources": {
-      "../packages/ctrl-mcps/builtin": "mcps/builtin",
-      "../packages/ctrl-pi-bridge/src/index.ts": "pi-bridge/index.ts",
-      "../packages/ctrl-pi-plugin/bin": "ctrl-pi-plugin/bin",
-      "../packages/ctrl-pi-plugin/src": "ctrl-pi-plugin/src",
-      "../packages/ctrl-pi-plugin/package.json": "ctrl-pi-plugin/package.json"
+      "../packages/ctrl-mcps/builtin": "mcps/builtin"
     },
     "icon": [
       "icons/32x32.png",

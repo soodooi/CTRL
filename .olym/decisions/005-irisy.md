@@ -1,24 +1,25 @@
 ---
 adr_id: 005
 module: irisy
-title: CTRL Irisy — 8-stage mcp lifecycle + remote co-view primitives + persona rule
-version: 4
+title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down (3-agent aggregator era)
+version: 5
 status: accepted
-last_updated: 2026-06-04
+last_updated: 2026-06-09
 deciders: [bao, zeus, hephaestus]
 sections:
-  - { id: lifecycle,                  source: orig-016 }
-  - { id: remote-view,                source: orig-017 }
-  - { id: persona,                    source: orig-024-§7 + new-2026-05-31-prompt-v5 }
-  - { id: soul-md-compat,             source: new-2026-06-03, note: "OpenClaw/SOUL.md ecosystem alignment per bao competitive research" }
-  - { id: self-reflection-loop,       source: new-2026-06-04, note: "Loop 1 of ADR-001 §8 self-evolution — Detect/Reflect/Improve 三步, sleep-time subagent (Letta-code pattern), Pi writes playbook + lessons into vault, system prompt picks up next turn." }
-  - { id: capability-decomposition,   source: new-2026-06-04, note: "8 子能力分解 (Note Writer / Cap Builder / Cap Invoker / Knowledge Retriever / Memory Curator / System Doctor / Coding Companion / Conversation) — 替代 monolithic prompt, 每能力独立 segment + 触发词 + 工具集 + 输出规范" }
-  - { id: pi-extension-integration,   source: new-2026-06-04, note: "ctrl-pi-bridge 完整接 Pi extension API: registerTool (~10 native Pi tools, BYOK 路径) + on('before_agent_start') chain-inject capability segments + on('tool_call') inspector stub + on('resources_discover') 贡献 ~/.claude/skills 给 Pi 自带 Skills 系统. PWA XML loop 保留作 Volc 弱模型 fallback." }
+  - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004) }
+  - { id: remote-view,                source: orig-017 — preserved (still Irisy's UX surface) }
+  - { id: persona-shell,              source: H-2026-06-09-002 校准 (replaces persona v4 brain-self-awareness lock) }
+  - { id: soul-md-compat,             source: new-2026-06-03 — RETIRED in v5 (SOUL.md spec applies to hermes agent memory, not Irisy) }
+  - { id: self-reflection-loop,       source: new-2026-06-04 — MIGRATED to hermes via SKILL.md (Irisy is no longer an agent) }
+  - { id: capability-decomposition,   source: new-2026-06-04 — RETIRED in v5 (no Irisy system prompt — agents own their prompts) }
+  - { id: pi-extension-integration,   source: new-2026-06-04 — RETIRED in v5 (Pi exited CTRL hot path, ctrl-pi-bridge deleted) }
 changelog:
   - v1 2026-05-31: module reorg — merged orig-016 (8-stage mcp lifecycle) + orig-017 (remote co-view = Irisy primitives) + lifted orig-024 §7 persona rule into this ADR + amended persona rule with prompt v5 (brain self-awareness with brand labels).
   - v2 2026-06-03: NEW §4 soul-md-compat — Irisy persistent memory adopts the SOUL.md spec (github.com/aaronjmars/soul.md) verbatim, ecosystem-aligned with OpenClaw (350k stars, 2,999+ ClawHub skills, WorkBuddy compat) and Claude Code. CTRL-only extensions land in an `x-ctrl:` frontmatter namespace so vanilla SOUL.md readers stay forward-compatible. Driven by bao 2026-06-03 competitive research summarised in `.olym/brainstorm/openclaw-compat-2026-06-03.md`.
   - v3 2026-06-04: **NEW §5 self-reflection-loop** — Irisy implements Loop 1 of ADR-001 §8 self-evolution. Three layers: client-side rule-based **Detect** (failure signals → episodes), Pi background subagent **Reflect** (Letta-code stateless mode, idle-30min trigger), playbook **Improve** (injected into next IrisyChat system prompt). Reuses ADR-002 §11 audit-ledger for cross-loop accountability. Per bao "不仅仅 Irisy LLM, 整个系统都要自我升级成长 — Irisy 自己有自我成长的能力". Brainstorm: `.olym/brainstorm/irisy-self-reflection-loop-2026-06-04.md` + `.olym/brainstorm/system-self-evolution-2026-06-04.md` §3.1.
   - v4 2026-06-04: **NEW §6 capability-decomposition + §7 pi-extension-integration** — root-cause fix for "Pi 一切动词都 install_mcp" + "Pi 说我没 skill 系统" 实测 fail. ctrl-pi-bridge 升级从 provider-only → registerTool + 3 hook (before_agent_start chain / tool_call inspector / resources_discover skills 贡献), Pi `--no-tools` → `--no-builtin-tools` (撤 7 个 built-in 但保 extension 注册的). System prompt 从 monolithic 200 行 → thin base (~30 行) + 8 capability segment, 通过 `before_agent_start` hook 按关键词动态注入 (token cache 友好). PWA `<call>` XML loop 保留作 Volc Qwen/Llama 弱模型 fallback. 调研: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2 §3 (Pi/Letta/Cline/Goose/Cursor 对标) + §8 (background agent 深拉源码).
+  - v5 2026-06-09: **Irisy reframed as PWA persona shell (H-2026-06-09-002).** bao 2026-06-09 校准: "Irisy 是表象". Irisy is **no longer a brain / agent runtime** — the brain role belongs to 3 external agents (hermes / opencode / kairo per ADR-002 §1 v19). Irisy is now the PWA UX persona layer: (1) **Avatar + branding** — Irisy character, voice, blink animation (Lottie). (2) **System-prompt injection** — wraps user message with CTRL substrate context (active provider info, Notes folder path, OS hint) before routing to whichever agent matches active L1 chip (default `/assistant` → hermes). (3) **Sycophancy filter** — `packages/ctrl-web/src/lib/persona-filter/patterns.md` (relocated from retired `packages/ctrl-pi-bridge/data/persona-patterns.md`). (4) **Drill-down** — long-press / Alt-click reveals raw agent output before filter. RETIRED sections: lifecycle (moves to ADR-004 § mcp execution), soul-md-compat (applies to hermes memory, not Irisy), self-reflection-loop (migrates to hermes as `~/.ctrl/skills/auto-reflect/SKILL.md`), capability-decomposition (no Irisy system prompt — agents own theirs), pi-extension-integration (Pi exited, ctrl-pi-bridge deleted). Per memory `feedback_no_redundancy_one_ssot` 🔒: hermes is the sole substrate-level agent memory primitive — Irisy doesn't duplicate.
 related:
   - .olym/decisions/002-substrate.md
   - .olym/decisions/003-frontend.md

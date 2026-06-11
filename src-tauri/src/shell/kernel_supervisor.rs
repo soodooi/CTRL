@@ -58,8 +58,9 @@ impl KernelSupervisor {
         // function-calling). Spawned here — not from KernelRuntime::boot —
         // so the /tool dispatcher reuses the same KernelHandle Tauri
         // commands hold (single SSOT, no shadow `bridge` copy).
-        // Must bind BEFORE BrainSupervisor::start so Pi finds the endpoint
-        // on first /text-chat fetch.
+        // Bound at boot so any provider-router consumer finds the endpoint
+        // on first /text-chat fetch (BrainSupervisor + Pi retired by
+        // ADR-002 substrate §1 v19 — 3-agent aggregator).
         let handle_for_endpoint = handle.clone();
         tauri::async_runtime::spawn(async move {
             match crate::kernel::provider::http_endpoint::spawn(handle_for_endpoint).await {

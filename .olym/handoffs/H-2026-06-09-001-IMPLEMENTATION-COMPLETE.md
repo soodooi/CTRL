@@ -1,7 +1,9 @@
 # H-2026-06-09-001 Implementation Complete
 
+> **SUPERSEDED 2026-06-09** by H-2026-06-09-002 (3-agent aggregator, ADR-001 spine v4 + ADR-002 substrate v19). Historical record only — the dual-brain implementation below was shipped (PR #84, 3e837ed) then retracted the same day. Known frozen-in error: the ADR-002 bump claimed below as "v11 → v12" was actually v17 → v18.
+
 **Date**: 2026-06-09
-**Status**: ✅ Ready for bao review + ADR approval
+**Status**: superseded (was: ready for bao review + ADR approval)
 
 ## Summary
 

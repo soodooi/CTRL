@@ -104,17 +104,13 @@ pub async fn irisy_chat_stream(
     _kernel: State<'_, KernelHandle>,
     app: AppHandle,
 ) -> Result<(), String> {
-    // Fail-fast surface: if the supervisor knows the brain isn't up,
-    // surface its specific reason instead of a 5 s TCP timeout.
-    if let Some(reason) = crate::shell::brain_supervisor::last_error() {
-        let request_id = args.request_id.clone();
-        let app_clone = app.clone();
-        let msg = format!("Pi brain not started: {reason}");
-        tokio::spawn(async move {
-            emit_done(&app_clone, &request_id, Some(msg));
-        });
-        return Ok(());
-    }
+    // ADR-005 irisy § persona-shell v5 (2026-06-09): Irisy is no longer a
+    // brain — the chat call routes to the active agent (default hermes via
+    // /assistant L1 chip). The supervisor-error fail-fast surface from v18
+    // is retired alongside brain_supervisor.rs. PWA's per-agent launch flow
+    // already surfaces "agent not installed" errors before this command is
+    // invoked.
+    let _ = app; // retain handle param for the next iteration's emit_done usage
 
     let request_id = args.request_id.clone();
     let app_clone = app.clone();
@@ -236,12 +232,10 @@ async fn forward_to_brain(
     }
 
     let response = req.json(&body).send().await.map_err(|e| {
-        let hint = crate::shell::brain_supervisor::last_error()
-            .map(|r| format!(" (supervisor: {r})"))
-            .unwrap_or_default();
-        format!(
-            "Pi brain not reachable at {PI_BRAIN_MCP_URL}: {e}{hint}"
-        )
+        // ADR-005 irisy § persona-shell v5 (2026-06-09): supervisor hint
+        // retired; PWA owns agent reachability messaging through the
+        // per-agent launch UX.
+        format!("Irisy chat endpoint unreachable at {PI_BRAIN_MCP_URL}: {e}")
     })?;
 
     if !response.status().is_success() {

@@ -58,6 +58,15 @@ const HOME_BIN_SUFFIXES: &[&str] = &[
 /// allocation per spawn site, which is the right trade given the
 /// memory cost of caching a String with lifetime hooks).
 pub fn augmented_path() -> String {
+    augment(std::env::var("PATH").ok())
+}
+
+/// Pure core of [`augmented_path`] per ADR-002 substrate § provider v2
+/// §3.3 (2026-05-31): takes the inherited PATH as a parameter so tests
+/// can exercise the merge logic without mutating process-global state
+/// (a leaked `set_var("PATH", ...)` breaks every later PTY-spawn test
+/// in the same process).
+fn augment(inherited: Option<String>) -> String {
     let mut parts: Vec<String> = Vec::new();
     for d in KNOWN_BIN_DIRS {
         parts.push((*d).to_string());
@@ -71,7 +80,7 @@ pub fn augmented_path() -> String {
             parts.push(p.to_string_lossy().into_owned());
         }
     }
-    if let Ok(inherited) = std::env::var("PATH") {
+    if let Some(inherited) = inherited {
         // Preserve the inherited PATH at the end so user-set entries
         // remain reachable, while our augmentations win on conflict.
         parts.push(inherited);
@@ -137,11 +146,15 @@ mod tests {
 
     #[test]
     fn augmented_path_preserves_inherited_when_present() {
-        // SAFETY: setting PATH for a test is fine — single-threaded test
-        // process; revert on drop via a guard would be over-engineering.
-        std::env::set_var("PATH", "/tmp/ctrl-augmented-test");
-        let p = augmented_path();
+        // Exercise the merge logic via the pure core — never set the
+        // process-global PATH from a test: cargo test runs every test in
+        // one process, so a leaked set_var breaks later PTY-spawn tests.
+        let p = augment(Some("/tmp/ctrl-augmented-test".into()));
         assert!(p.contains("/tmp/ctrl-augmented-test"));
+        assert!(
+            p.ends_with("/tmp/ctrl-augmented-test"),
+            "inherited PATH must come last so augmentations win: {p}"
+        );
     }
 
     #[test]

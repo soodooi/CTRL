@@ -7,6 +7,11 @@
 // ollama) coexist with the generic streaming `http_api.rs`; manifests
 // pick a kind per provider.
 
+// ADR-002 substrate § capability-faces v19 §13.4 (2026-06-09): `api/`
+// holds aggregator endpoints (fal.ai) that route per typed capability
+// (image.generate / video.generate / audio.tts) outside the chat-stream
+// shape of the Provider trait.
+pub mod api;
 pub mod cli;
 pub mod http_api;
 pub mod rest;

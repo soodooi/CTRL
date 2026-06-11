@@ -45,7 +45,7 @@ use super::adapter::{
 };
 use super::manifest::{
     default_active_state_path, default_user_providers_dir, legacy_config_path, parse_file,
-    parse_str, AuthSource, ManifestError, ProviderKind, ProviderManifest,
+    parse_str, AuthSource, ProviderKind, ProviderManifest,
 };
 use super::r#trait::{Capability, Consumer, Provider, RouteChain};
 
@@ -1100,7 +1100,6 @@ pub struct ProviderListEntry {
 }
 
 // Re-export the inner ManifestError type for the rest of the kernel.
-pub use super::manifest::ManifestError as ProviderManifestError;
 
 /// Current Unix millis. Used as `RecordedFailover::at_unix_ms`. Returns
 /// 0 if the system clock is somehow before Unix epoch (won't happen on
