@@ -30,6 +30,7 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<ProviderTemplate | null>(null);
   const [model, setModel] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +53,7 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
   const pick = (t: ProviderTemplate): void => {
     setSelected(t);
     setModel(t.defaultModel);
+    setBaseUrl(t.baseUrl);
     setApiKey('');
     setError(null);
   };
@@ -64,7 +66,7 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
       await setProviderKey({
         provider: selected.id,
         api_key: apiKey, // empty = keep existing keychain entry
-        base_url: selected.baseUrl,
+        base_url: (baseUrl.trim() || selected.baseUrl).replace(/\/$/, ''),
         default_model: model.trim() || selected.defaultModel,
         display_name: selected.defaultName,
         api_protocol: selected.protocol,
@@ -128,6 +130,14 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
                         value={model}
                         onChange={(e) => setModel(e.target.value)}
                         placeholder={t.defaultModel}
+                      />
+                    </label>
+                    <label className={styles.field}>
+                      <span>Base URL (e.g. international endpoint)</span>
+                      <input
+                        value={baseUrl}
+                        onChange={(e) => setBaseUrl(e.target.value)}
+                        placeholder={t.baseUrl}
                       />
                     </label>
                     <label className={styles.field}>
