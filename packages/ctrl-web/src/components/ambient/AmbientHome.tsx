@@ -22,6 +22,7 @@ import remarkGfm from 'remark-gfm';
 import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
 import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
 import { detectPart, renderPart, partLayout, type PartSpec } from '@/lib/ui-registry';
+import { loadConnectors, invokeConnectorTool, type ConnectorTool, type ConnectorManifest } from '@/lib/connector';
 import styles from './AmbientHome.module.css';
 
 interface Msg {
@@ -100,6 +101,38 @@ export function AmbientHome(): ReactElement {
     inputRef.current?.focus();
   }, []);
 
+  // Connected systems (spec §0.5) — each connector tool is a clickable
+  // card; click -> real HTTP call (or mock) -> morph to a table/record.
+  const connectors = loadConnectors();
+  const runConnectorTool = useCallback(
+    async (manifest: ConnectorManifest, tool: ConnectorTool) => {
+      if (streaming) return;
+      setStreaming(true);
+      try {
+        const out = await invokeConnectorTool(manifest, tool.name);
+        const content = JSON.stringify(out.result);
+        const kind = Array.isArray(out.result) ? 'table' : 'record';
+        setMessages((prev) => [
+          ...prev,
+          { id: `u-${Date.now()}`, role: 'user', content: `${manifest.title}: ${tool.title ?? tool.name}` },
+          { id: `a-${Date.now()}`, role: 'assistant', content: `Here is **${tool.title ?? tool.name}** from ${manifest.title}.` },
+        ]);
+        setRoutePill(manifest.title);
+        setPart({ kind, content, title: `${manifest.title} · ${tool.title ?? tool.name}` });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setMessages((prev) => [
+          ...prev,
+          { id: `u-${Date.now()}`, role: 'user', content: `${manifest.title}: ${tool.name}` },
+          { id: `a-${Date.now()}`, role: 'assistant', content: `Could not reach ${manifest.title}: ${msg}` },
+        ]);
+      } finally {
+        setStreaming(false);
+      }
+    },
+    [streaming],
+  );
+
   const composer = (
     <form
       className={styles.composer}
@@ -176,6 +209,29 @@ export function AmbientHome(): ReactElement {
                   </motion.button>
                 ))}
             </div>
+            {connectors.length > 0 && (
+              <div className={styles.systems}>
+                <div className={styles.systemsLabel}>Connected systems</div>
+                <div className={styles.floor}>
+                  {connectors.flatMap((m) =>
+                    m.tools.map((t) => (
+                      <motion.button
+                        key={`${m.id}.${t.name}`}
+                        type="button"
+                        className={styles.card}
+                        onClick={() => void runConnectorTool(m, t)}
+                        whileHover={{ y: -2 }}
+                        transition={SPRING}
+                        title={t.description ?? t.name}
+                      >
+                        <span className={styles.cardLabel}>{t.title ?? t.name}</span>
+                        <span className={styles.cardHint}>{m.title}</span>
+                      </motion.button>
+                    )),
+                  )}
+                </div>
+              </div>
+            )}
           </motion.div>
         ) : (
           <motion.div
