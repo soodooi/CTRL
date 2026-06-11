@@ -95,7 +95,9 @@ bao 2026-06-11 (locked after several refinement rounds; memory `project-ctrl-pos
 
 **Monetization = the substrate, not the commons.** Subscribe to CTRL (the workbench + its AI build/integration engine) — like GitHub sells the platform while sharing is free. The commons stays free and IS the network-effect moat, not a revenue line.
 
-**Moat:** local + private (cloud platforms like Feishu structurally cannot be — their model is the cloud) + unifies the OPC's whole stack + AI-native + open share-and-be-shared ecosystem.
+**Universal/open vs closed gardens + low difficulty (bao 2026-06-11):** the closest competitors — Doubao / Coze (扣子, ByteDance agent platform) / Feishu — also connect many agents but are **closed** (one vendor's cloud + models + ecosystem). CTRL's edge = **通用化 (universal/open)**: any model (BYOK), any agent (3 OSS engines + MCP/CLI/Skills), any system (connectors), no lock-in, local+private — the open neutral layer where they are walled gardens. And **降低使用难度 (low difficulty)** is a first-class pillar: the OPC is often non-technical with no team, so connecting + using must be far easier than Feishu open-platform / Coze builder / raw MCP config.
+
+**Moat:** local + private (Feishu/Doubao structurally can't be — their model is the cloud) + universal/open (vs closed gardens) + unifies the OPC's whole stack + AI-native + low difficulty + open share-and-be-shared ecosystem.
 
 **NOT:** us building/selling a CRM; enterprise CRM/ERP sales; a buy/sell marketplace; "AI generates everything from one prompt" as the headline.
 

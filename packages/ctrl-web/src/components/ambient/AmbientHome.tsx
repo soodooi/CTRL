@@ -25,6 +25,7 @@ import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
 import { detectPart, renderPart, partLayout, type PartSpec } from '@/lib/ui-registry';
 import { loadConnectors, invokeConnectorTool, type ConnectorTool, type ConnectorManifest } from '@/lib/connector';
 import { ProviderPicker } from './ProviderPicker';
+import { Sidebar, type SidebarSection } from './Sidebar';
 import { invoke } from '@tauri-apps/api/core';
 import styles from './AmbientHome.module.css';
 
@@ -47,6 +48,7 @@ export function AmbientHome(): ReactElement {
   const [routePill, setRoutePill] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [modelLabel, setModelLabel] = useState<string>('Model');
+  const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -229,32 +231,58 @@ export function AmbientHome(): ReactElement {
     </div>
   );
 
+  const onSidebarSelect = useCallback(
+    (s: SidebarSection) => {
+      setDrawerOpen(false);
+      if (s.kind === 'irisy') {
+        newChat();
+      } else if (s.kind === 'route') {
+        void navigate({ to: s.to });
+      } else if (s.kind === 'tool') {
+        const m = loadConnectors().find((c) => c.id === s.connectorId);
+        const t = m?.tools.find((x) => x.name === s.toolName);
+        if (m && t) void runConnectorTool(m, t);
+      } else if (s.kind === 'discover') {
+        // Discover (share-and-be-shared commons) — placeholder for now.
+        setMessages((prev) => [
+          ...prev,
+          { id: `a-${Date.now()}`, role: 'assistant', content: 'Discover — the shared tools commons — is coming. Tools others share will install here, locally.' },
+        ]);
+      }
+    },
+    [navigate, newChat, runConnectorTool],
+  );
+
+  const activeSection = part ? 'irisy' : 'irisy';
+
   return (
-    <div className={styles.root} data-surface={surface}>
+    <div className={styles.shell} data-drawer={drawerOpen || undefined}>
+      <Sidebar
+        active={activeSection}
+        onSelect={onSidebarSelect}
+        modelLabel={modelLabel}
+        onModel={() => setPickerOpen(true)}
+        styles={styles}
+      />
+      {drawerOpen && <div className={styles.scrim} onClick={() => setDrawerOpen(false)} />}
+      <div className={styles.root} data-surface={surface}>
       <div className={styles.topbar} data-tauri-drag-region>
+        <button
+          type="button"
+          className={styles.menuBtn}
+          onClick={() => setDrawerOpen((v) => !v)}
+          title="Menu"
+          aria-label="Menu"
+        >
+          ☰
+        </button>
         <span className={styles.brand}>Irisy</span>
         <div className={styles.topActions}>
-          <button
-            type="button"
-            className={styles.modelChip}
-            onClick={() => setPickerOpen(true)}
-            title="Switch model"
-          >
-            {modelLabel}
-          </button>
           {messages.length > 0 && (
             <button type="button" className={styles.topBtn} onClick={newChat} title="New chat">
               New
             </button>
           )}
-          <button
-            type="button"
-            className={styles.topBtn}
-            onClick={() => void navigate({ to: '/settings/providers' })}
-            title="Settings"
-          >
-            Settings
-          </button>
         </div>
       </div>
       {pickerOpen && (
@@ -381,6 +409,7 @@ export function AmbientHome(): ReactElement {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }
