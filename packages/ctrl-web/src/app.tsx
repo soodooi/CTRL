@@ -34,6 +34,7 @@ import {
   createRoute,
   Outlet,
   useNavigate,
+  useRouterState,
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -127,11 +128,7 @@ function RootShellInner(): ReactElement {
   );
 
   if (USE_AMBIENT) {
-    return (
-      <div className={styles.ambientRoot} data-testid="shell">
-        <AmbientHome />
-      </div>
-    );
+    return <AmbientShell />;
   }
 
   return (
@@ -176,6 +173,39 @@ function RootShellInner(): ReactElement {
         onDrop={handleDrop}
       >
         <Outlet />
+      </div>
+    </div>
+  );
+}
+
+// ADR-003 §8 v6 — the ambient surface is the home; other routes (settings /
+// coding / notes / pool) still render via the router, with a slim back bar.
+// Keeps the morphing conversation as the heart while the faces stay reachable.
+function AmbientShell(): ReactElement {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isHome = pathname === '/' || pathname === '/irisy' || pathname === '';
+
+  if (isHome) {
+    return (
+      <div className={styles.ambientRoot} data-testid="shell">
+        <AmbientHome />
+      </div>
+    );
+  }
+  return (
+    <div className={styles.ambientRoot} data-testid="shell">
+      <div className={styles.routeHost}>
+        <button
+          type="button"
+          className={styles.backBar}
+          onClick={() => void navigate({ to: '/' })}
+        >
+          ← Irisy
+        </button>
+        <div className={styles.routeBody}>
+          <Outlet />
+        </div>
       </div>
     </div>
   );

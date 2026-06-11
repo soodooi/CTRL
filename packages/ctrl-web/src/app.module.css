@@ -154,3 +154,26 @@
   width: 100vw;
   height: 100vh;
 }
+
+/* ADR-003 §8 v6 — route host inside the ambient shell (settings/coding/etc). */
+.routeHost {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+.backBar {
+  flex: none;
+  align-self: flex-start;
+  margin: 10px 0 0 12px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #6e6e73);
+  background: var(--card, #fff);
+  border: 1px solid var(--border, rgba(0,0,0,0.08));
+  border-radius: 8px;
+  cursor: pointer;
+}
+.backBar:hover { color: var(--primary, #3b5bdb); border-color: var(--primary-ring, rgba(59,91,219,0.2)); }
+.routeBody { flex: 1; min-height: 0; overflow: auto; }

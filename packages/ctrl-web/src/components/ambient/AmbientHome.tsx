@@ -15,6 +15,7 @@
 // invoke any UI piece on demand.
 
 import { useCallback, useRef, useState, type ReactElement } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import ReactMarkdown from 'react-markdown';
@@ -36,6 +37,7 @@ type Surface = 'empty' | 'chat' | 'chat-part';
 const SPRING = { type: 'spring', stiffness: 420, damping: 36 } as const;
 
 export function AmbientHome(): ReactElement {
+  const navigate = useNavigate();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -43,6 +45,21 @@ export function AmbientHome(): ReactElement {
   const [routePill, setRoutePill] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  const newChat = useCallback(() => {
+    setMessages([]);
+    setPart(null);
+    setRoutePill(null);
+    setInput('');
+  }, []);
+
+  // Auto-grow the composer to its content (cheap, works in every webview).
+  const autoGrow = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, []);
 
   const surface: Surface = part ? 'chat-part' : messages.length > 0 ? 'chat' : 'empty';
 
@@ -86,10 +103,27 @@ export function AmbientHome(): ReactElement {
       // Morph a renderable part out of the reply if present.
       const detected = detectPart(acc);
       if (detected) setPart(detected);
+      // Empty stream usually means no provider is configured yet.
+      if (acc.trim().length === 0) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === asstId
+              ? {
+                  ...m,
+                  content:
+                    'No AI provider is set up yet. Open **Settings -> Providers** to add one (your own API key, or CTRL Cloud).',
+                }
+              : m,
+          ),
+        );
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      const friendly = /provider|no provider|unreachable|configured/i.test(msg)
+        ? 'No AI provider is set up yet. Open Settings -> Providers to add one.'
+        : `Error: ${msg}`;
       setMessages((prev) =>
-        prev.map((m) => (m.id === asstId ? { ...m, content: `Error: ${msg}` } : m)),
+        prev.map((m) => (m.id === asstId ? { ...m, content: friendly } : m)),
       );
     } finally {
       setStreaming(false);
@@ -147,7 +181,10 @@ export function AmbientHome(): ReactElement {
         value={input}
         rows={1}
         placeholder="Ask Irisy, or pick something above…"
-        onChange={(e) => setInput(e.target.value)}
+        onChange={(e) => {
+          setInput(e.target.value);
+          autoGrow();
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -178,6 +215,24 @@ export function AmbientHome(): ReactElement {
 
   return (
     <div className={styles.root} data-surface={surface}>
+      <div className={styles.topbar}>
+        <span className={styles.brand}>Irisy</span>
+        <div className={styles.topActions}>
+          {messages.length > 0 && (
+            <button type="button" className={styles.topBtn} onClick={newChat} title="New chat">
+              New
+            </button>
+          )}
+          <button
+            type="button"
+            className={styles.topBtn}
+            onClick={() => void navigate({ to: '/settings/providers' })}
+            title="Settings"
+          >
+            Settings
+          </button>
+        </div>
+      </div>
       <AnimatePresence mode="wait">
         {surface === 'empty' ? (
           <motion.div
