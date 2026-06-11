@@ -459,9 +459,12 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   // Irisy is broken or slow.
   const transport = useMemo(() => irisyChatTransport(), []);
   const activeBrain = status?.active_brain ?? 'pi';
-  const piReady = status?.pi?.reachable === true;
-  const upgradeStub =
-    statusError != null || (activeBrain === 'pi' && status != null && !piReady);
+  // Post-v19 the Pi probe is dead logic (always unreachable) — gating
+  // the composer on it locked fresh installs behind a permanent
+  // "being upgraded" stub. The provider router handles the no-provider
+  // case with a real error message pointing at Settings instead.
+  const upgradeStub = statusError != null;
+  void activeBrain;
 
   const clearConversation = useCallback((): void => {
     setMessages([]);

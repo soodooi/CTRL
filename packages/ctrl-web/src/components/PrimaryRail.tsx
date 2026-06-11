@@ -220,7 +220,8 @@ export const PrimaryRail = (): ReactElement => {
       if (
         def.id === POOL_ITEM_ID ||
         def.id === CODING_ITEM_ID ||
-        def.id === NOTES_ITEM_ID
+        def.id === NOTES_ITEM_ID ||
+        def.id === ASSISTANT_ITEM_ID
       ) {
         const ws = useWorkspaceStore.getState();
         const systemInstance = ws.instances.find((i) => i.id === 'ws-system');
