@@ -1,6 +1,6 @@
 // Ollama install + default-model auto-pull.
 //
-// Pi-first refactor (bao 2026-06-05, ADR-009 §5): Pi connects directly
+// Pi-first refactor (bao 2026-06-05, ADR-002 substrate §10 (orig ADR-009 §5, retired)): Pi connects directly
 // to its native LLM provider via ~/.pi/agent/models.json, which defaults
 // to `ollama-local` running Ollama OpenAI-compat at
 // http://localhost:11434/v1 with hermes3:8b. That assumes the user

@@ -1,11 +1,11 @@
-// ctrl new-keycap — scaffold a keycap project from template.
+// ctrl new-mcp — scaffold a mcp project from template.
 //
 // Default = TypeScript MCP server (@modelcontextprotocol/sdk + zod).
 // --py flag swaps to Python (mcp[cli] / FastMCP).
 //
 // Layout produced (TS):
 //   <name>/
-//   ├── manifest.yaml        keycap declaration (per ADR-004 cap § execution v1 spec)
+//   ├── manifest.yaml        mcp declaration (per ADR-004 cap § execution v1 spec)
 //   ├── package.json
 //   ├── tsconfig.json
 //   ├── src/server.ts        MCP server skeleton, one tool stub
@@ -35,12 +35,12 @@ function slugify(s) {
 export async function run(argv) {
   const { name, lang } = parseArgs(argv);
   if (!name) {
-    console.error('usage: ctrl new-keycap <name> [--ts | --py]');
+    console.error('usage: ctrl new-mcp <name> [--ts | --py]');
     process.exit(1);
   }
   const slug = slugify(name);
   if (!slug) {
-    console.error('invalid keycap name');
+    console.error('invalid mcp name');
     process.exit(1);
   }
   const dir = resolve(process.cwd(), slug);
@@ -59,7 +59,7 @@ export async function run(argv) {
   } else {
     await scaffoldPy(dir, slug);
   }
-  console.log(`✓ scaffolded ${lang.toUpperCase()} keycap: ${slug}`);
+  console.log(`✓ scaffolded ${lang.toUpperCase()} mcp: ${slug}`);
   console.log('');
   console.log(`Next:`);
   console.log(`  cd ${slug}`);
@@ -72,7 +72,7 @@ export async function run(argv) {
     console.log(`  python -m server`);
   }
   console.log(``);
-  console.log(`Then in CTRL desktop: Pool → your new keycap appears (after kernel re-scan).`);
+  console.log(`Then in CTRL desktop: Pool → your new mcp appears (after kernel re-scan).`);
 }
 
 async function scaffoldTs(dir, slug) {
@@ -114,10 +114,10 @@ async function scaffoldTs(dir, slug) {
     include: ['src/**/*'],
   }, null, 2) + '\n');
 
-  await w('manifest.yaml', `# CTRL keycap manifest (ADR-004 cap § execution v1 §implemented_by spec — v0.2 schema TBD)
+  await w('manifest.yaml', `# CTRL mcp manifest (ADR-004 cap § execution v1 §implemented_by spec — v0.2 schema TBD)
 id: my.${slug}
 name: ${slug}
-description: A new CTRL keycap built from \`ctrl new-keycap\`.
+description: A new CTRL mcp built from \`ctrl new-mcp\`.
 variant: mcp-server
 runtime:
   command: node
@@ -181,7 +181,7 @@ await server.connect(transport);
   await w('.gitignore', `node_modules/\ndist/\n.npmrc\n`);
   await w('README.md', `# ${slug}
 
-A CTRL keycap (MCP server). Scaffolded by \`ctrl new-keycap\`.
+A CTRL mcp (MCP server). Scaffolded by \`ctrl new-mcp\`.
 
 ## Run
 
@@ -192,7 +192,7 @@ npm run dev          # tsx watch — auto-reload during dev
 
 ## Add to CTRL desktop
 
-The manifest \`manifest.yaml\` declares this keycap. To make it appear in
+The manifest \`manifest.yaml\` declares this mcp. To make it appear in
 Pool, register the manifest with the running CTRL kernel:
 
 \`\`\`sh
@@ -201,8 +201,8 @@ ctrl dev .           # auto-registers + watches src/
 
 ## Manifest spec
 
-See [ADR-004 cap § execution v1](../../.claude/ADR/010-keycap-execution-model.md) for the
-keycap execution model (MCP outward, actor inward).
+See [ADR-004 cap § execution v1](../../.claude/ADR/010-mcp-execution-model.md) for the
+mcp execution model (MCP outward, actor inward).
 `);
 }
 
@@ -213,7 +213,7 @@ async function scaffoldPy(dir, slug) {
   await w('pyproject.toml', `[project]
 name = "${slug}"
 version = "0.1.0"
-description = "A CTRL keycap built from \`ctrl new-keycap\`."
+description = "A CTRL mcp built from \`ctrl new-mcp\`."
 requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=1.0.0",
@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
   await w('manifest.yaml', `id: my.${slug}
 name: ${slug}
-description: A new CTRL keycap built from \`ctrl new-keycap\`.
+description: A new CTRL mcp built from \`ctrl new-mcp\`.
 variant: mcp-server
 runtime:
   command: python
@@ -271,7 +271,7 @@ tools:
   await w('.gitignore', `__pycache__/\n.venv/\n*.egg-info/\ndist/\n`);
   await w('README.md', `# ${slug}
 
-A CTRL keycap (MCP server, Python). Scaffolded by \`ctrl new-keycap --py\`.
+A CTRL mcp (MCP server, Python). Scaffolded by \`ctrl new-mcp --py\`.
 
 ## Run
 

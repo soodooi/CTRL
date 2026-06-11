@@ -25,7 +25,7 @@ export interface LLMMessage {
   content: string;
 }
 
-/** Custom message payload from Pi via the slash-command path (ADR-009
+/** Custom message payload from Pi via the slash-command path (ADR-002 substrate (orig ADR-009 retired by v19)
  *  P3/P5). `customType` is one of the irisy-* names registered in
  *  ctrl-pi-bridge; `content` / `display` shapes vary by customType and
  *  are validated at the renderer dispatch site. */
@@ -133,7 +133,7 @@ interface ChatStreamDelta {
   delta: string;
   done: boolean;
   error?: string;
-  /** ADR-009 P3 — Pi custom message relayed by irisy_chat.rs through
+  /** ADR-002 substrate (orig ADR-009 retired by v19) P3 — Pi custom message relayed by irisy_chat.rs through
    *  the same chat-stream-delta channel. Skipped when absent. */
   custom?: IrisyCustomMessage;
 }
@@ -232,7 +232,7 @@ export class ChatStreamTransport implements LLMTransport {
           return;
         }
         if (next.custom) {
-          // ADR-009 P3 — emit the custom payload to the chat UI in its
+          // ADR-002 substrate (orig ADR-009 retired by v19) P3 — emit the custom payload to the chat UI in its
           // own chunk so the consumer can render it as a discrete
           // entry. Text deltas in the same delivery cycle still flow
           // through the `next.delta` branch on subsequent iterations.

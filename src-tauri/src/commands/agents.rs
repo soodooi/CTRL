@@ -121,6 +121,42 @@ pub async fn connect_agent_mcp(
     Ok(ConnectedAgentMcp { server_id, tools })
 }
 
+/// One-shot hermes answer — `uvx --from hermes-agent==<pin> hermes -z "<prompt>"`
+/// prints only the final answer to stdout (verified upstream oneshot.py,
+/// 2026-06-10). Bridge surface until the kernel ACP streaming client
+/// lands (ADR-002 substrate §1.1 v20); hermes memory + skills still apply.
+#[tauri::command]
+pub async fn assistant_oneshot(prompt: String) -> Result<String, String> {
+    use crate::kernel::provider::path_resolver::resolve_binary_path;
+    use crate::shell::agent_installer::HERMES_ONESHOT_SPEC;
+
+    let agent = AgentName::Hermes;
+    if !is_installed(&agent) {
+        return Err("hermes not installed — call install_agent first".to_string());
+    }
+    let uvx = resolve_binary_path("uvx")
+        .ok_or_else(|| "uv not found on PATH — install it first".to_string())?;
+
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(180),
+        tokio::process::Command::new(uvx)
+            .args(["--from", HERMES_ONESHOT_SPEC, "hermes", "-z", &prompt])
+            .output(),
+    )
+    .await
+    .map_err(|_| "hermes one-shot timed out after 180 s".to_string())?
+    .map_err(|e| format!("hermes spawn failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "hermes exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 #[tauri::command]
 pub async fn list_agents() -> Result<Vec<String>, String> {
     Ok(["hermes", "opencode", "kairo"]

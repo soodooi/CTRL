@@ -86,6 +86,9 @@ macro_rules! pwa_invoke_handler {
             // connect_agent_mcp — hermes (mcp-stdio) onto the kernel MCP bus
             // (ADR-002 §1.3 v19); PWA chats via mcp_call afterwards.
             $crate::commands::agents::connect_agent_mcp,
+            // assistant_oneshot — hermes -z bridge until the ACP
+            // streaming client lands (ADR-002 §1.1 v20, 2026-06-10).
+            $crate::commands::agents::assistant_oneshot,
             // image — fal.ai BYOK image generation (ADR-002 §13.4 v19)
             $crate::commands::image::image_generate,
             // ADR-002 §1 v19 retirements (commands no longer registered):

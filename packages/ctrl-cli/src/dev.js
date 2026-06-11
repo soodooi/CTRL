@@ -1,6 +1,6 @@
-// ctrl dev — start keycap in dev mode + auto-register with running CTRL kernel.
+// ctrl dev — start mcp in dev mode + auto-register with running CTRL kernel.
 //
-// v0.1 stub: just runs the keycap's `npm run dev` (TS) or `python -m server` (py)
+// v0.1 stub: just runs the mcp's `npm run dev` (TS) or `python -m server` (py)
 // and prints the runtime command line. Full kernel registration via dynamic
 // `--mcp-config` injection lands once Zeus exposes a kernel JSON-RPC for
 // "register MCP server at runtime" (TODO).
@@ -15,7 +15,7 @@ export async function run(argv) {
 
   if (!existsSync(manifestPath)) {
     console.error(`no manifest.yaml found at ${manifestPath}`);
-    console.error(`run \`ctrl new-keycap <name>\` first, or cd into a keycap project.`);
+    console.error(`run \`ctrl new-mcp <name>\` first, or cd into a mcp project.`);
     process.exit(1);
   }
 
@@ -33,7 +33,7 @@ export async function run(argv) {
     cmd = 'python';
     args = ['-m', 'server'];
   } else {
-    console.error('no package.json or pyproject.toml — not a recognised keycap project');
+    console.error('no package.json or pyproject.toml — not a recognised mcp project');
     process.exit(1);
   }
 

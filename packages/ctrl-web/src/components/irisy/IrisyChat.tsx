@@ -115,7 +115,7 @@ interface TextDisplayMessage {
 /** Custom (Pi role=custom) message rendered as an inline chip/banner.
  *  Lives in chat history alongside text messages but is NOT sent back
  *  to Pi as context (filtered out in the history map below), since
- *  Pi already has its own session log entry for it. ADR-009 P3. */
+ *  Pi already has its own session log entry for it. ADR-005 irisy v5 (custom-message relay; orig ADR-009 retired). */
 interface CustomDisplayMessage {
   id: string;
   role: 'custom';
@@ -251,7 +251,7 @@ const AssistantBubble = memo(function AssistantBubble({
           className={styles.saveBtn}
           title="Save this reply to vault/irisy/replies/"
           onClick={() => void onSave(message.id, message.content)}
-          aria-label="Save reply to vault"
+          aria-label="Save reply to Notes"
         >
           ✓
         </button>
@@ -680,7 +680,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
             );
           }
           if (chunk.custom) {
-            // ADR-009 P3 — Pi emitted a role=custom message via the
+            // ADR-005 irisy v5 (custom-message relay; orig ADR-009 retired) — Pi emitted a role=custom message via the
             // slash command path. Insert it BEFORE the assistant
             // placeholder so it reads as the user's intent, not as
             // the assistant's reply. Falls back to append if the
@@ -897,7 +897,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         <div className={styles.composer}>
           <textarea
             className={styles.composerInput}
-            placeholder="Pi is wiring up…"
+            placeholder="Connecting…"
             rows={1}
             disabled
             aria-label="Message Irisy (disabled during upgrade)"
@@ -1000,7 +1000,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
           {messages.map((m, i) => {
             const prev = i > 0 ? messages[i - 1] : null;
             const showSep = prev != null && prev.role !== m.role;
-            // ADR-009 P3 — custom messages are inline chips/banners,
+            // ADR-005 irisy v5 (custom-message relay; orig ADR-009 retired) — custom messages are inline chips/banners,
             // rendered via dispatch before the text branches so the
             // assistant/user TS narrows below.
             if (m.role === 'custom') {

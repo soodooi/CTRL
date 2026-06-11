@@ -1,14 +1,21 @@
 // Opencode chat — direct HTTP streaming renderer.
 //
-// ADR-002 substrate §1 v19 (2026-06-09, 3-agent aggregator): /coding talks
-// to the opencode HTTP API directly (launch_agent → http_port endpoint);
-// the kernel SSE bridge is retired. PWA owns retry (§1.3).
+// ADR-002 substrate §1 v20 (2026-06-10): /coding talks to the opencode
+// HTTP API directly (launch_agent → http_port endpoint). Real wire
+// verified against opencode 1.17: prompt_async + global /event SSE bus
+// (no per-request stream). PWA owns retry (§1.3).
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAgent } from '@/lib/use-agent';
-import { createOpencodeSession, streamOpencodePrompt } from '@/lib/opencode-chat';
+import {
+  createOpencodeSession,
+  promptOpencodeAsync,
+  sessionReducer,
+  setActiveOpencodePort,
+  subscribeOpencodeEvents,
+} from '@/lib/opencode-chat';
 import styles from './OpencodeChat.module.css';
 
 interface Message {
@@ -25,8 +32,16 @@ export function OpencodeChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
 
   const port = agent.endpoint?.kind === 'http_port' ? agent.endpoint.port : null;
+
+  useEffect(() => () => unsubRef.current?.(), []);
+
+  useEffect(() => {
+    setActiveOpencodePort(port);
+    return () => setActiveOpencodePort(null);
+  }, [port]);
 
   const appendToLastAssistant = (delta: string) => {
     setMessages((prev) => {
@@ -61,20 +76,31 @@ export function OpencodeChat() {
       if (!sessionIdRef.current) {
         sessionIdRef.current = await createOpencodeSession(port);
       }
-      await streamOpencodePrompt(
-        { port, sessionId: sessionIdRef.current, message: userMessage.content },
-        {
+      const sessionId = sessionIdRef.current;
+      unsubRef.current?.();
+      unsubRef.current = subscribeOpencodeEvents(
+        port,
+        sessionReducer(sessionId, {
           onDelta: appendToLastAssistant,
-          onDone: () => setIsStreaming(false),
+          onDone: () => {
+            setIsStreaming(false);
+            unsubRef.current?.();
+            unsubRef.current = null;
+          },
           onError: (message) => {
             setError(message);
             setIsStreaming(false);
+            unsubRef.current?.();
+            unsubRef.current = null;
           },
-        },
+        }),
       );
+      await promptOpencodeAsync(port, sessionId, userMessage.content);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setIsStreaming(false);
+      unsubRef.current?.();
+      unsubRef.current = null;
     }
   };
 

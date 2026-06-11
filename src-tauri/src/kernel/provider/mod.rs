@@ -33,6 +33,9 @@ pub mod legacy_config;
 pub mod manifest;
 pub mod path_resolver;
 pub mod registry;
+// Shared text.chat candidate walking (ADR-002 § provider v9 §3.5) —
+// one SSOT consumed by http_endpoint + commands/irisy_chat.
+pub mod routing;
 #[path = "trait.rs"]
 pub mod r#trait;
 pub mod types;
@@ -47,5 +50,5 @@ pub use registry::{
     ProviderListEntry, ProviderRegistry, RecordedFailover,
 };
 pub use types::{
-    ChatOpts, LlmChunk, LlmError, LlmMessage, LlmPrompt,
+    ChatOpts, LlmMessage, LlmPrompt,
 };

@@ -1,148 +1,195 @@
-// Opencode direct HTTP client — ADR-002 substrate §1 v19 (2026-06-09,
-// 3-agent aggregator): /coding talks to the opencode HTTP API directly;
-// the kernel SSE bridge (opencode_chat_stream) is retired.
-//
-// Endpoint shapes mirror the wire validated by the retired kernel bridge:
-//   POST {base}/session                      → { id }
-//   POST {base}/session/{id}/prompt          → SSE stream
-//     event: delta  data: { delta }
-//     event: done   data: {}
-//     event: error  data: { message }
-// A non-SSE JSON response degrades gracefully to a single delta.
+// Opencode direct HTTP client — real API verified against opencode 1.17
+// docs + generated SDK on 2026-06-10 (ADR-002 substrate §1 v20):
+//   POST /session                         -> Session { id, ... }
+//   POST /session/{id}/prompt_async       -> 204 (fire-and-forget)
+//   GET  /event                           -> global SSE bus of
+//        { type, properties } events; text deltas arrive as
+//        message.part.updated (properties.delta), completion as
+//        session.idle, errors as session.error, file writes as
+//        file.edited.
+// There is no per-request SSE stream — one bus subscription per server,
+// reduced per session.
 
-export interface OpencodeStreamHandlers {
-  onDelta: (delta: string) => void;
-  onDone: () => void;
-  onError: (message: string) => void;
+export interface OpencodeEvent {
+  type: string;
+  properties: Record<string, unknown>;
 }
 
-export interface OpencodePromptArgs {
-  port: number;
-  sessionId: string;
-  message: string;
-  signal?: AbortSignal;
-}
+export type OpencodeBusListener = (evt: OpencodeEvent) => void;
 
 function baseUrl(port: number): string {
   return `http://127.0.0.1:${port}`;
 }
 
 export async function createOpencodeSession(port: number): Promise<string> {
-  const res = await fetch(`${baseUrl(port)}/session`, { method: 'POST' });
+  const res = await fetch(`${baseUrl(port)}/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
   if (!res.ok) {
     throw new Error(`opencode session create failed: ${res.status} ${await res.text()}`);
   }
-  const body = (await res.json()) as { id?: string };
-  if (!body.id) throw new Error('opencode session create returned no id');
-  return body.id;
+  const session = (await res.json()) as { id?: string };
+  if (!session.id) throw new Error('opencode session create returned no id');
+  return session.id;
 }
 
-export async function streamOpencodePrompt(
-  args: OpencodePromptArgs,
-  handlers: OpencodeStreamHandlers,
+export async function promptOpencodeAsync(
+  port: number,
+  sessionId: string,
+  text: string,
 ): Promise<void> {
-  const res = await fetch(`${baseUrl(args.port)}/session/${args.sessionId}/prompt`, {
+  const res = await fetch(`${baseUrl(port)}/session/${sessionId}/prompt_async`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ parts: [{ type: 'text', text: args.message }] }),
-    signal: args.signal,
+    body: JSON.stringify({ parts: [{ type: 'text', text }] }),
   });
   if (!res.ok) {
-    handlers.onError(`opencode prompt failed: ${res.status} ${await res.text()}`);
-    return;
+    throw new Error(`opencode prompt failed: ${res.status} ${await res.text()}`);
   }
-
-  const contentType = res.headers.get('content-type') ?? '';
-  if (!contentType.includes('text/event-stream')) {
-    // Non-streaming server build — render the whole reply at once.
-    const text = await res.text();
-    if (text) handlers.onDelta(extractPlainText(text));
-    handlers.onDone();
-    return;
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) {
-    handlers.onError('opencode prompt returned no readable body');
-    return;
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let eventName = '';
-  let dataLines: string[] = [];
-  let doneFired = false;
-  const fireDone = () => {
-    if (doneFired) return;
-    doneFired = true;
-    handlers.onDone();
-  };
-
-  const dispatch = () => {
-    const data = dataLines.join('\n');
-    dataLines = [];
-    const name = eventName;
-    eventName = '';
-    if (name === 'delta') {
-      try {
-        const parsed = JSON.parse(data) as { delta?: string };
-        if (parsed.delta) handlers.onDelta(parsed.delta);
-      } catch {
-        if (data) handlers.onDelta(data);
-      }
-    } else if (name === 'error') {
-      let message = data;
-      try {
-        const parsed = JSON.parse(data) as { message?: string };
-        if (parsed.message) message = parsed.message;
-      } catch {
-        // keep raw data as the message
-      }
-      handlers.onError(message || 'opencode stream error');
-    } else if (name === 'done') {
-      fireDone();
-    }
-  };
-
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let nl = buffer.indexOf('\n');
-    while (nl >= 0) {
-      const line = buffer.slice(0, nl).replace(/\r$/, '');
-      buffer = buffer.slice(nl + 1);
-      if (line === '') {
-        if (eventName || dataLines.length > 0) dispatch();
-      } else if (line.startsWith('event: ')) {
-        eventName = line.slice(7).trim();
-      } else if (line.startsWith('data: ')) {
-        dataLines.push(line.slice(6));
-      }
-      nl = buffer.indexOf('\n');
-    }
-  }
-  // Stream closed without an explicit done event — treat as done so the
-  // UI never hangs in the streaming state.
-  if (eventName || dataLines.length > 0) dispatch();
-  fireDone();
 }
 
-function extractPlainText(body: string): string {
-  try {
-    const parsed = JSON.parse(body) as {
-      parts?: Array<{ type?: string; text?: string }>;
-      text?: string;
-    };
-    if (parsed.parts) {
-      return parsed.parts
-        .filter((p) => p.type === 'text' && p.text)
-        .map((p) => p.text)
-        .join('');
-    }
-    if (parsed.text) return parsed.text;
-  } catch {
-    // not JSON — return as-is
+// ── Event bus (one per port, shared by chat + artifact pane) ──────────
+
+interface Bus {
+  listeners: Set<OpencodeBusListener>;
+  abort: AbortController;
+}
+
+const buses = new Map<number, Bus>();
+
+/** Subscribe to the server's /event SSE bus. Returns an unsubscribe fn.
+ *  The underlying connection is shared per port and closed when the last
+ *  listener unsubscribes. */
+export function subscribeOpencodeEvents(
+  port: number,
+  listener: OpencodeBusListener,
+): () => void {
+  let bus = buses.get(port);
+  if (!bus) {
+    const abort = new AbortController();
+    bus = { listeners: new Set(), abort };
+    buses.set(port, bus);
+    void pumpEvents(port, bus, abort.signal);
   }
-  return body;
+  bus.listeners.add(listener);
+  return () => {
+    const b = buses.get(port);
+    if (!b) return;
+    b.listeners.delete(listener);
+    if (b.listeners.size === 0) {
+      b.abort.abort();
+      buses.delete(port);
+    }
+  };
+}
+
+async function pumpEvents(port: number, bus: Bus, signal: AbortSignal): Promise<void> {
+  try {
+    const res = await fetch(`${baseUrl(port)}/event`, {
+      headers: { Accept: 'text/event-stream' },
+      signal,
+    });
+    const reader = res.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl = buffer.indexOf('\n');
+      while (nl >= 0) {
+        const line = buffer.slice(0, nl).replace(/\r$/, '');
+        buffer = buffer.slice(nl + 1);
+        if (line.startsWith('data: ')) {
+          try {
+            const evt = JSON.parse(line.slice(6)) as OpencodeEvent;
+            for (const l of bus.listeners) l(evt);
+          } catch {
+            // non-JSON keepalive — ignore
+          }
+        }
+        nl = buffer.indexOf('\n');
+      }
+    }
+  } catch {
+    // aborted or connection lost — listeners see silence; chat surfaces
+    // its own request errors, and the artifact pane just stops updating.
+  } finally {
+    buses.delete(port);
+  }
+}
+
+// ── Per-session reduction helpers ─────────────────────────────────────
+
+export interface SessionStreamHandlers {
+  onDelta: (delta: string) => void;
+  onDone: () => void;
+  onError: (message: string) => void;
+}
+
+/** Reduce bus events for one session into delta/done/error callbacks. */
+export function sessionReducer(
+  sessionId: string,
+  handlers: SessionStreamHandlers,
+): OpencodeBusListener {
+  return (evt) => {
+    const props = evt.properties as {
+      sessionID?: string;
+      delta?: string;
+      part?: { sessionID?: string; type?: string };
+      error?: { data?: { message?: string }; name?: string };
+    };
+    switch (evt.type) {
+      case 'message.part.updated': {
+        if (props.part?.sessionID !== sessionId) return;
+        if (props.part?.type === 'text' && typeof props.delta === 'string') {
+          handlers.onDelta(props.delta);
+        }
+        return;
+      }
+      case 'session.idle': {
+        if (props.sessionID === sessionId) handlers.onDone();
+        return;
+      }
+      case 'session.error': {
+        if (props.sessionID && props.sessionID !== sessionId) return;
+        const message =
+          props.error?.data?.message ?? props.error?.name ?? 'opencode session error';
+        handlers.onError(message);
+        return;
+      }
+      default:
+    }
+  };
+}
+
+/** Extract edited-file paths from bus events (for the artifact pane). */
+export function fileEditedPath(evt: OpencodeEvent): string | null {
+  if (evt.type !== 'file.edited') return null;
+  const file = (evt.properties as { file?: unknown }).file;
+  return typeof file === 'string' ? file : null;
+}
+
+// ── Active server slot (shared between chat + artifact pane) ──────────
+// OpencodeChat publishes the launched port; sibling panes subscribe
+// without triggering a second launch_agent.
+
+type PortListener = (port: number | null) => void;
+let activePort: number | null = null;
+const portListeners = new Set<PortListener>();
+
+export function setActiveOpencodePort(port: number | null): void {
+  activePort = port;
+  for (const l of portListeners) l(port);
+}
+
+export function subscribeActiveOpencodePort(listener: PortListener): () => void {
+  listener(activePort);
+  portListeners.add(listener);
+  return () => {
+    portListeners.delete(listener);
+  };
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// ctrl — CTRL keycap CLI entry point.
+// ctrl — CTRL mcp CLI entry point.
 // Subcommands:
-//   ctrl new-keycap <name> [--ts | --py]   scaffold a new keycap project
+//   ctrl new-mcp <name> [--ts | --py]   scaffold a new mcp project
 //   ctrl dev [path]                        start dev server, auto-register with running CTRL
 //   ctrl publish [path]                    push to ctrl-market (v1.1)
 //
@@ -17,9 +17,9 @@ const rest = args.slice(1);
 
 async function main() {
   switch (cmd) {
-    case 'new-keycap':
+    case 'new-mcp':
     case 'new': {
-      const { run } = await import(join(__dirname, '..', 'src', 'new-keycap.js'));
+      const { run } = await import(join(__dirname, '..', 'src', 'new-mcp.js'));
       await run(rest);
       break;
     }
@@ -42,12 +42,12 @@ async function main() {
     case '--help':
     case 'help':
     case undefined:
-      console.log(`ctrl — CTRL keycap CLI
+      console.log(`ctrl — CTRL mcp CLI
 
 Commands:
-  ctrl new-keycap <name>          Scaffold a new keycap (TypeScript MCP server)
-  ctrl new-keycap <name> --py     Scaffold in Python instead
-  ctrl dev [path]                 Start keycap in dev mode (auto-registers)
+  ctrl new-mcp <name>          Scaffold a new mcp (TypeScript MCP server)
+  ctrl new-mcp <name> --py     Scaffold in Python instead
+  ctrl dev [path]                 Start mcp in dev mode (auto-registers)
   ctrl publish [path]             Push to ctrl-market  (v1.1, not yet)
   ctrl version                    Show CLI version
 `);

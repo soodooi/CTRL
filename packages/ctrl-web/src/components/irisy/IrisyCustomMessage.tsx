@@ -1,5 +1,5 @@
 // IrisyCustomMessage — dispatch + 5 renderers for Pi `role=custom`
-// messages emitted by ctrl-pi-bridge slash command handlers (ADR-009 P3
+// messages emitted by ctrl-pi-bridge slash command handlers (ADR-005 irisy v5 (custom-message relay; orig ADR-009 retired)
 // / P5). The chat UI inserts one of these inline alongside text bubbles
 // so user slash intents (open Discover, write to vault, switch mode...)
 // produce visible feedback even when no LLM turn ran.
@@ -189,7 +189,7 @@ function OpenDiscover({ msg }: Props): JSX.Element {
   const content = (msg.content ?? {}) as OpenDiscoverContent;
   const query = content.query?.trim() ?? '';
 
-  // ADR-009 P3: a `/discover <query>` slash auto-opens the Mcp pool
+  // ADR-005 irisy v5 (custom-message relay; orig ADR-009 retired): a `/discover <query>` slash auto-opens the Mcp pool
   // tab (CTRL's current "browse caps" surface — bao 2026-06-03 lockdown
   // §1 unifies pool + discover under the same workspace surface).
   useOnceOnMount(() => {

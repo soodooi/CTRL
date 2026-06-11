@@ -72,7 +72,7 @@ const SettingsHeaderStatus = (): ReactElement => {
   const vaultCount = status?.vault_files ?? null;
   return (
     <div className={styles.headerStatus} aria-label="Substrate status">
-      <span className={styles.headerChip} title={`Active brain: ${engine}`}>
+      <span className={styles.headerChip} title={`Active provider: ${engine}`}>
         <span className={styles.headerChipLabel}>ENGINE</span>
         <span className={styles.headerChipValue}>{engine}</span>
       </span>

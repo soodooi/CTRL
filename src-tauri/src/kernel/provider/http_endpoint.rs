@@ -32,8 +32,9 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 
 use super::registry::ProviderRegistry;
+use super::routing::route_text_chat;
 use super::r#trait::{Capability, Consumer};
-use super::types::{ChatChunk, ChatMessage, ChatOpts, ChatPrompt, ProviderError};
+use super::types::{ChatMessage, ChatOpts, ChatPrompt};
 use crate::shell::KernelHandle;
 
 /// Default loopback port. Brain lane spawn-Pi may override via
@@ -190,207 +191,22 @@ async fn text_chat(
         .as_deref()
         .map(Consumer::from_id)
         .unwrap_or(Consumer::IrisyPrimary);
-    let chain = registry.route_chain(&consumer);
 
-    // ADR-002 substrate § provider v9 §3.5 (2026-06-06): fallback chain
-    // walking RETIRED. Pi has no public fallback API today; CTRL does
-    // not invent a parallel one. Only the primary is attempted; failure
-    // surfaces as a provider error and the user re-picks in Settings.
-    // `chain.fallbacks` is intentionally ignored here.
-    let mut candidates: Vec<String> = Vec::new();
-    if let Some(primary) = chain.primary.clone() {
-        candidates.push(primary);
-    }
-    if candidates.is_empty() {
-        // No primary AND no fallback configured for this consumer —
-        // last-resort backstop (matches the v1 behaviour for callers
-        // that haven't migrated to `consumer=`).
-        if let Some(provider) = registry.primary_text_chat() {
-            let rx = match provider.chat_stream(&prompt, &opts).await {
-                Ok(rx) => rx,
-                Err(e) => {
-                    return (
-                        StatusCode::BAD_GATEWAY,
-                        format!("provider chat_stream failed: {e}"),
-                    )
-                        .into_response();
-                }
+    // Candidate walking + cooldown + first-chunk peek live in
+    // provider::routing::route_text_chat (extracted 2026-06-10, ADR-002
+    // § provider v9 §3.5) so this endpoint and commands/irisy_chat
+    // share one implementation.
+    match route_text_chat(&registry, &consumer, &prompt, &opts).await {
+        Ok((_provider_id, rx)) => Sse::new(into_sse_stream(rx)).into_response(),
+        Err(detail) => {
+            let status = if detail.contains("no provider configured") {
+                StatusCode::PRECONDITION_FAILED
+            } else {
+                StatusCode::BAD_GATEWAY
             };
-            return Sse::new(into_sse_stream(rx)).into_response();
-        }
-        return (
-            StatusCode::PRECONDITION_FAILED,
-            "no provider configured for text.chat",
-        )
-            .into_response();
-    }
-
-    let primary_id = candidates.first().cloned();
-    let mut primary_error: Option<(String, ProviderError)> = None;
-    let mut chosen: Option<(String, _)> = None;
-
-    let n_candidates = candidates.len();
-    for (i, manifest_id) in candidates.iter().enumerate() {
-        // 0) Skip a primary that recently failed AND there is at least
-        //    one fallback left to try. Saves the ~300 ms claude CLI
-        //    spawn while a Claude OAuth outage holds. ADR-002 substrate
-        //    § provider v2 §3.5 M2 amendment 2026-06-04.
-        if i == 0 && n_candidates > 1 && registry.is_in_cooldown(manifest_id) {
-            tracing::info!(
-                provider = %manifest_id,
-                "provider: primary in cooldown, skipping to fallback"
-            );
-            primary_error = Some((
-                manifest_id.clone(),
-                ProviderError::ProviderError(format!(
-                    "{manifest_id}: in cooldown after recent failure"
-                )),
-            ));
-            continue;
-        }
-        let Some(provider) = registry.get(manifest_id) else {
-            continue;
-        };
-        // 1) chat_stream() construction may fail synchronously (binary
-        //    not on PATH, manifest credential missing). Treat as a chain
-        //    step failure and walk on.
-        let mut rx = match provider.chat_stream(&prompt, &opts).await {
-            Ok(rx) => rx,
-            Err(e) => {
-                registry.mark_failure(manifest_id, &e.to_string());
-                if i == 0 {
-                    primary_error = Some((manifest_id.clone(), e));
-                } else {
-                    tracing::warn!(
-                        provider = %manifest_id,
-                        error = %e,
-                        "provider: fallback candidate chat_stream failed; walking chain"
-                    );
-                }
-                continue;
-            }
-        };
-        // 2) First-chunk peek (ADR-002 substrate § provider v2 §3.5 M1
-        //    amendment 2026-06-04). Many failure modes — Claude OAuth
-        //    expired/refresh failed, Volc 401, network error inside the
-        //    provider's worker task — surface as the FIRST stream item
-        //    being Err, not as chat_stream() returning Err. Without this
-        //    peek, http_endpoint commits `chosen` immediately and pipes
-        //    the failed stream into SSE; the fallback chain never runs
-        //    and the user sees "Claude did not respond" (Pi user-facing
-        //    fallback message). bao 2026-06-03 confirmed this exact
-        //    symptom in production.
-        match rx.recv().await {
-            Some(Ok(first_chunk)) => {
-                // M2 success path — clear any prior cooldown for this
-                // provider so the slot reopens immediately if a previous
-                // turn had marked it bad.
-                registry.clear_failure(manifest_id);
-                // Bridge the head + tail: re-inject first_chunk into a
-                // fresh channel + forward subsequent items. Lets the SSE
-                // path consume what we already pulled plus everything
-                // else the provider's worker emits.
-                let (tx_bridge, rx_bridge) =
-                    tokio::sync::mpsc::channel::<Result<ChatChunk, ProviderError>>(64);
-                if tx_bridge.send(Ok(first_chunk)).await.is_err() {
-                    // SSE consumer dropped already — give up on this
-                    // candidate but don't treat it as a chain failure
-                    // (the request is gone, walking is pointless).
-                    return (
-                        StatusCode::BAD_GATEWAY,
-                        "client closed before first chunk forwarded",
-                    )
-                        .into_response();
-                }
-                tokio::spawn(async move {
-                    while let Some(item) = rx.recv().await {
-                        if tx_bridge.send(item).await.is_err() {
-                            break;
-                        }
-                    }
-                });
-                chosen = Some((manifest_id.clone(), rx_bridge));
-                // ADR-002 substrate § provider v9 §3.5 (2026-06-06):
-                // retract v8 routing-override Tauri events
-                // (`provider:routing-override` / `routing-restored`) —
-                // PWA chip now reads Pi's `getState` directly. Failover
-                // is still recorded into the in-memory failover log
-                // (debug surface), but no UI side-effects fire.
-                if i > 0 {
-                    let reason = if let Some((from_id, err)) = primary_error.take() {
-                        let r = err.to_string();
-                        registry.record_failover(&from_id, manifest_id, &r);
-                        r
-                    } else if let Some(from_id) = primary_id.clone() {
-                        let r = "primary provider not registered".to_string();
-                        registry.record_failover(&from_id, manifest_id, &r);
-                        r
-                    } else {
-                        "primary unavailable".to_string()
-                    };
-                    tracing::info!(
-                        from = ?primary_id,
-                        to = %manifest_id,
-                        reason = %reason,
-                        "provider: fallback served (v9 — no UI override emitted)"
-                    );
-                }
-                break;
-            }
-            Some(Err(e)) => {
-                // Stream-level failure (CLI auth expired, 401, partial
-                // crash). Walk to next candidate. M1 critical path.
-                registry.mark_failure(manifest_id, &e.to_string());
-                if i == 0 {
-                    primary_error = Some((manifest_id.clone(), e));
-                } else {
-                    tracing::warn!(
-                        provider = %manifest_id,
-                        error = %e,
-                        "provider: fallback candidate stream-level error; walking chain"
-                    );
-                }
-                continue;
-            }
-            None => {
-                // Worker task closed the channel before emitting
-                // anything — treat as transport failure, walk on.
-                let synthetic = ProviderError::ProviderError(format!(
-                    "{manifest_id}: stream closed before first chunk"
-                ));
-                registry.mark_failure(manifest_id, &synthetic.to_string());
-                if i == 0 {
-                    primary_error = Some((manifest_id.clone(), synthetic));
-                } else {
-                    tracing::warn!(
-                        provider = %manifest_id,
-                        "provider: fallback candidate closed without first chunk; walking chain"
-                    );
-                }
-                continue;
-            }
+            (status, detail).into_response()
         }
     }
-
-    let Some((_chosen_id, rx)) = chosen else {
-        // Every candidate refused — surface the primary's error if we
-        // captured one, otherwise generic.
-        let detail = primary_error
-            .map(|(_, e)| e.to_string())
-            .unwrap_or_else(|| "all providers in route chain refused".to_string());
-        return (
-            StatusCode::BAD_GATEWAY,
-            format!("provider chat_stream failed: {detail}"),
-        )
-            .into_response();
-    };
-
-    // Convert mpsc<Result<ChatChunk>> into SSE Events. Match the wire
-    // shape the PWA's `handle_sse_payload` already expects:
-    //   event: delta\ndata: {"delta": "..."}
-    //   event: done\ndata: {}
-    //   event: error\ndata: {"message": "..."}
-    Sse::new(into_sse_stream(rx)).into_response()
 }
 
 fn into_sse_stream(
