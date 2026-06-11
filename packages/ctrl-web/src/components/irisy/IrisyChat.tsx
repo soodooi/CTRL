@@ -130,8 +130,8 @@ type DisplayMessage = TextDisplayMessage | CustomDisplayMessage;
 
 const SEED_PROMPTS: readonly string[] = [
   'What can you do here?',
-  'List my mcps.',
-  'Help me make a clipboard mcp.',
+  'Draft a note outlining my week.',
+  'Translate this sentence to English: ...',
 ];
 
 // ADR-002 substrate § provider v9 §3.6 (2026-06-06). RETIRED: PWA-side
