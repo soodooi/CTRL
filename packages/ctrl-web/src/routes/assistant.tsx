@@ -1,14 +1,15 @@
-// Assistant — H-2026-06-09-001 (Hermes assistant).
+// Assistant — hermes via the kernel MCP bus.
 //
-// PWA Assistant tab — Hermes MCP server.
-//
-// This is a simplified version of IrisyChat, adapted for Hermes' MCP server.
+// ADR-002 substrate §1 v19 (2026-06-09, 3-agent aggregator): hermes is an
+// mcp-stdio agent connected through connect_agent_mcp; chat goes through
+// the existing mcp_call command (kernel owns the MCP bus, §1.3). The
+// retired hermes_chat_stream SSE bridge is gone. PWA owns retry.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useOpencodeChatStream } from '@/lib/opencode-chat';
+import { useAgent } from '@/lib/use-agent';
 import styles from './assistant.module.css';
 
 interface Message {
@@ -18,15 +19,37 @@ interface Message {
   timestamp: number;
 }
 
+const CHAT_TOOL = 'chat';
+
+// MCP CallToolResult — extract the text content blocks.
+function extractToolText(result: unknown): string {
+  if (typeof result === 'string') return result;
+  if (result && typeof result === 'object') {
+    const r = result as { content?: Array<{ type?: string; text?: string }> };
+    if (Array.isArray(r.content)) {
+      const text = r.content
+        .filter((c) => c.type === 'text' && typeof c.text === 'string')
+        .map((c) => c.text)
+        .join('');
+      if (text) return text;
+    }
+  }
+  return JSON.stringify(result);
+}
+
 export function AssistantRoute() {
+  const agent = useAgent('hermes');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [currentResponse, setCurrentResponse] = useState('');
+  const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const serverId = agent.endpoint?.kind === 'mcp_server' ? agent.endpoint.server_id : null;
+  const hasChatTool =
+    agent.endpoint?.kind === 'mcp_server' ? agent.endpoint.tools.includes(CHAT_TOOL) : false;
+
   const sendMessage = async () => {
-    if (!input.trim() || isStreaming) return;
+    if (!input.trim() || isSending || !serverId) return;
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -34,118 +57,82 @@ export function AssistantRoute() {
       content: input,
       timestamp: Date.now(),
     };
-
-    setMessages((prev) => [...prev, userMessage]);
+    const history = [...messages, userMessage];
+    setMessages(history);
     setInput('');
-
-    const assistantMessage: Message = {
-      id: `assistant-${Date.now()}`,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-    };
-    setMessages((prev) => [...prev, assistantMessage]);
-
-    setIsStreaming(true);
-    setCurrentResponse('');
+    setIsSending(true);
     setError(null);
 
-    const request_id = `req-${Date.now()}`;
-
     try {
-      await invoke<void>('hermes_chat_stream', {
+      const result = await invoke<unknown>('mcp_call', {
         args: {
-          request_id,
-          messages: messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          server_id: serverId,
+          tool_name: CHAT_TOOL,
+          args: {
+            messages: history.map((m) => ({ role: m.role, content: m.content })),
+          },
         },
       });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: extractToolText(result),
+          timestamp: Date.now(),
+        },
+      ]);
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setError(errMsg);
-      setIsStreaming(false);
-      return;
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSending(false);
     }
-
-    const cleanup = await (async () => {
-      const { listen } = await import('@tauri-apps/api/event');
-      let unlisten: (() => void) | null = null;
-      let mounted = true;
-
-      const unlistenFn = await listen<unknown>('hermes-chat-delta', (event) => {
-        if (!mounted) return;
-
-        const payload = event.payload as {
-          request_id: string;
-          delta: string;
-          done: boolean;
-          error?: string;
-        };
-
-        if (payload.request_id !== request_id) {
-          return;
-        }
-
-        if (payload.done) {
-          setIsStreaming(false);
-          setMessages((prev) => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            if (last?.role === 'assistant') {
-              last.content = currentResponse;
-            }
-            return updated;
-          });
-          setCurrentResponse('');
-          return;
-        }
-
-        if (payload.error) {
-          setIsStreaming(false);
-          setCurrentResponse(`Error: ${payload.error}`);
-          return;
-        }
-
-        setCurrentResponse((prev) => prev + payload.delta);
-
-        setMessages((prev) => {
-          const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last?.role === 'assistant') {
-            last.content = currentResponse + payload.delta;
-          }
-          return updated;
-        });
-      });
-
-      unlisten = unlistenFn;
-
-      return () => {
-        mounted = false;
-        unlisten?.();
-      };
-    })();
-
-    return cleanup;
   };
 
   return (
     <div className={styles.container}>
       <div className={styles.messages}>
-        {messages.length === 0 && (
+        {agent.status !== 'ready' && (
+          <div className={styles.empty}>
+            <h2>Hermes Assistant</h2>
+            {agent.status === 'installing' && <p>Installing hermes…</p>}
+            {agent.status === 'launching' && <p>Connecting hermes to the MCP bus…</p>}
+            {agent.status === 'error' && (
+              <>
+                <p>Hermes failed to start: {agent.error}</p>
+                <button type="button" onClick={() => void agent.retry()} className={styles.sendButton}>
+                  Reconnect
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {agent.status === 'ready' && !hasChatTool && (
+          <div className={styles.empty}>
+            <h2>Hermes Assistant</h2>
+            <p>
+              Hermes is connected but exposes no `{CHAT_TOOL}` tool (available:{' '}
+              {agent.endpoint?.kind === 'mcp_server' && agent.endpoint.tools.length > 0
+                ? agent.endpoint.tools.join(', ')
+                : 'none'}
+              ).
+            </p>
+          </div>
+        )}
+        {agent.status === 'ready' && hasChatTool && messages.length === 0 && (
           <div className={styles.empty}>
             <h2>Hermes Assistant</h2>
             <p>
               Powered by{' '}
-              <a href="https://github.com/hermes-ai/hermes" target="_blank" rel="noopener noreferrer">
+              <a
+                href="https://github.com/NousResearch/hermes-agent"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 Hermes
               </a>
             </p>
-            <p>
-              Features: RAG, embeddings,对话能力强，知识检索
-            </p>
+            <p>Features: RAG, embeddings, long-term memory, knowledge retrieval</p>
           </div>
         )}
         {messages.map((msg) => (
@@ -167,12 +154,14 @@ export function AssistantRoute() {
             </div>
           </div>
         ))}
+        {isSending && <div className={styles.empty}>Hermes is thinking…</div>}
+        {error && <div className={styles.empty}>Error: {error}</div>}
       </div>
       <form
         className={styles.inputForm}
         onSubmit={(e) => {
           e.preventDefault();
-          sendMessage();
+          void sendMessage();
         }}
       >
         <input
@@ -180,11 +169,15 @@ export function AssistantRoute() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type your assistant task..."
-          disabled={isStreaming}
+          disabled={isSending || agent.status !== 'ready' || !hasChatTool}
           className={styles.input}
         />
-        <button type="submit" disabled={isStreaming || !input.trim()} className={styles.sendButton}>
-          {isStreaming ? '...' : 'Send'}
+        <button
+          type="submit"
+          disabled={isSending || !input.trim() || agent.status !== 'ready' || !hasChatTool}
+          className={styles.sendButton}
+        >
+          {isSending ? '...' : 'Send'}
         </button>
       </form>
     </div>

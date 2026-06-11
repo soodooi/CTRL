@@ -83,6 +83,9 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::agents::stop_agent,
             $crate::commands::agents::agent_status,
             $crate::commands::agents::list_agents,
+            // connect_agent_mcp — hermes (mcp-stdio) onto the kernel MCP bus
+            // (ADR-002 §1.3 v19); PWA chats via mcp_call afterwards.
+            $crate::commands::agents::connect_agent_mcp,
             // image — fal.ai BYOK image generation (ADR-002 §13.4 v19)
             $crate::commands::image::image_generate,
             // ADR-002 §1 v19 retirements (commands no longer registered):

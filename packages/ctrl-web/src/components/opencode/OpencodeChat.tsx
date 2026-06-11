@@ -1,13 +1,14 @@
-// Opencode chat — simplified streaming renderer.
+// Opencode chat — direct HTTP streaming renderer.
 //
-// H-2026-06-09-001 — opencode (coding) + Hermes (assistant) as peer agent processes.
-//
-// This is a simplified version of IrisyChat, adapted for opencode's HTTP API.
+// ADR-002 substrate §1 v19 (2026-06-09, 3-agent aggregator): /coding talks
+// to the opencode HTTP API directly (launch_agent → http_port endpoint);
+// the kernel SSE bridge is retired. PWA owns retry (§1.3).
 
-import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useAgent } from '@/lib/use-agent';
+import { createOpencodeSession, streamOpencodePrompt } from '@/lib/opencode-chat';
 import styles from './OpencodeChat.module.css';
 
 interface Message {
@@ -18,15 +19,28 @@ interface Message {
 }
 
 export function OpencodeChat() {
+  const agent = useAgent('opencode');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [currentResponse, setCurrentResponse] = useState('');
-  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+
+  const port = agent.endpoint?.kind === 'http_port' ? agent.endpoint.port : null;
+
+  const appendToLastAssistant = (delta: string) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const last = updated[updated.length - 1];
+      if (last?.role === 'assistant') {
+        updated[updated.length - 1] = { ...last, content: last.content + delta };
+      }
+      return updated;
+    });
+  };
 
   const sendMessage = async () => {
-    if (!input.trim() || isStreaming) return;
+    if (!input.trim() || isStreaming || port === null) return;
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -34,108 +48,55 @@ export function OpencodeChat() {
       content: input,
       timestamp: Date.now(),
     };
-
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      { id: `assistant-${Date.now()}`, role: 'assistant', content: '', timestamp: Date.now() },
+    ]);
     setInput('');
-
-    // Create assistant message placeholder
-    const assistantMessage: Message = {
-      id: `assistant-${Date.now()}`,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-    };
-    setMessages((prev) => [...prev, assistantMessage]);
-
     setIsStreaming(true);
-    setCurrentResponse('');
     setError(null);
 
-    const request_id = `req-${Date.now()}`;
-
     try {
-      await invoke<void>('opencode_chat_stream', {
-        args: {
-          request_id,
-          session_id: sessionId,
-          message: userMessage.content,
+      if (!sessionIdRef.current) {
+        sessionIdRef.current = await createOpencodeSession(port);
+      }
+      await streamOpencodePrompt(
+        { port, sessionId: sessionIdRef.current, message: userMessage.content },
+        {
+          onDelta: appendToLastAssistant,
+          onDone: () => setIsStreaming(false),
+          onError: (message) => {
+            setError(message);
+            setIsStreaming(false);
+          },
         },
-      });
+      );
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setError(errMsg);
+      setError(err instanceof Error ? err.message : String(err));
       setIsStreaming(false);
-      return;
     }
-
-    // Listen for opencode-chat-delta events
-    const setupListener = async () => {
-      const { listen } = await import('@tauri-apps/api/event');
-
-      const unlisten = await listen<unknown>('opencode-chat-delta', (event) => {
-        const payload = event.payload as {
-          request_id: string;
-          delta: string;
-          done: boolean;
-          error?: string;
-        };
-
-        if (payload.request_id !== request_id) {
-          return;
-        }
-
-        if (payload.done) {
-          setIsStreaming(false);
-          // Update the last assistant message with the final content
-          setMessages((prev) => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            if (last?.role === 'assistant') {
-              last.content = currentResponse;
-            }
-            return updated;
-          });
-          setCurrentResponse('');
-          return;
-        }
-
-        if (payload.error) {
-          setIsStreaming(false);
-          setCurrentResponse(`Error: ${payload.error}`);
-          return;
-        }
-
-        // Accumulate delta
-        setCurrentResponse((prev) => prev + payload.delta);
-
-        // Update the assistant message in real-time
-        setMessages((prev) => {
-          const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last?.role === 'assistant') {
-            last.content = currentResponse + payload.delta;
-          }
-          return updated;
-        });
-      });
-
-      return unlisten;
-    };
-
-    let cleanup: (() => void) | null = null;
-    setupListener().then((fn) => {
-      cleanup = fn;
-    });
-
-    return () => {
-      cleanup?.();
-    };
   };
 
   return (
     <div className={styles.container}>
       <div className={styles.messages}>
-        {messages.length === 0 && (
+        {agent.status !== 'ready' && (
+          <div className={styles.empty}>
+            <h2>opencode Coding Assistant</h2>
+            {agent.status === 'installing' && <p>Installing opencode…</p>}
+            {agent.status === 'launching' && <p>Starting opencode…</p>}
+            {agent.status === 'error' && (
+              <>
+                <p>opencode failed to start: {agent.error}</p>
+                <button type="button" onClick={() => void agent.retry()} className={styles.sendButton}>
+                  Reconnect
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {agent.status === 'ready' && messages.length === 0 && (
           <div className={styles.empty}>
             <h2>opencode Coding Assistant</h2>
             <p>
@@ -169,12 +130,13 @@ export function OpencodeChat() {
             </div>
           </div>
         ))}
+        {error && <div className={styles.empty}>Error: {error}</div>}
       </div>
       <form
         className={styles.inputForm}
         onSubmit={(e) => {
           e.preventDefault();
-          sendMessage();
+          void sendMessage();
         }}
       >
         <input
@@ -182,10 +144,14 @@ export function OpencodeChat() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type your coding task..."
-          disabled={isStreaming}
+          disabled={isStreaming || agent.status !== 'ready'}
           className={styles.input}
         />
-        <button type="submit" disabled={isStreaming || !input.trim()} className={styles.sendButton}>
+        <button
+          type="submit"
+          disabled={isStreaming || !input.trim() || agent.status !== 'ready'}
+          className={styles.sendButton}
+        >
           {isStreaming ? '...' : 'Send'}
         </button>
       </form>
