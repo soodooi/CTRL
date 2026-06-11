@@ -115,9 +115,14 @@ async function pumpEvents(port: number, bus: Bus, signal: AbortSignal): Promise<
       }
     }
   } catch {
-    // aborted or connection lost — listeners see silence; chat surfaces
-    // its own request errors, and the artifact pane just stops updating.
+    // aborted or connection lost — fall through to the close fan-out.
   } finally {
+    // Fan out a synthetic close event so per-session reducers can
+    // unlock their composers instead of waiting forever (P1: an SSE
+    // drop mid-stream must not strand isStreaming=true).
+    for (const l of bus.listeners) {
+      l({ type: 'bus.closed', properties: {} });
+    }
     buses.delete(port);
   }
 }
@@ -152,6 +157,10 @@ export function sessionReducer(
       }
       case 'session.idle': {
         if (props.sessionID === sessionId) handlers.onDone();
+        return;
+      }
+      case 'bus.closed': {
+        handlers.onError('opencode connection lost — send again to reconnect');
         return;
       }
       case 'session.error': {

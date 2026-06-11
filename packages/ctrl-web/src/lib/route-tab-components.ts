@@ -15,6 +15,9 @@ export const ROUTE_TAB_COMPONENTS: Record<string, LazyExoticComponent<ComponentT
   '/settings/providers': lazy(() =>
     import('@/routes/settings').then((m) => ({ default: m.SettingsProvidersPage })),
   ),
+  '/assistant': lazy(() =>
+    import('@/routes/assistant').then((m) => ({ default: m.AssistantRoute })),
+  ),
   // '/settings/brain' retired with Pi (ADR-002 substrate §1 v19)
   '/settings/logs': lazy(() =>
     import('@/routes/settings').then((m) => ({ default: m.SettingsLogsPage })),
