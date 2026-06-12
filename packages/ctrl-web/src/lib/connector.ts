@@ -189,47 +189,10 @@ export async function invokeConnectorTool(
   };
 }
 
-// ── Bundled first-party connector: iris-crm (Twenty) ──────────────────
-// Ships with mock fixtures so the morphing surface demonstrates the full
-// "system data -> table/record" flow with Twenty offline. Set use_mock=false
-// (or start Twenty + paste an API key) to hit the real CRM.
-const BUNDLED_CONNECTORS: ConnectorManifest[] = [
-  {
-    id: 'iris-crm',
-    title: 'Iris CRM',
-    base_url: 'http://localhost:3000',
-    auth: { type: 'bearer', key_ref: 'keychain:com.ctrl/iris-crm' },
-    use_mock: true,
-    tools: [
-      {
-        name: 'list_people',
-        title: 'List contacts',
-        description: 'List CRM contacts',
-        method: 'GET',
-        path: '/rest/people',
-        result_path: 'data.people',
-        render: 'table',
-        read_only: true,
-        mock: [
-          { name: 'Li Wei', company: 'Acme Trading', email: 'liwei@acme.example', stage: 'Lead' },
-          { name: 'Sara Kim', company: 'Globex', email: 'sara@globex.example', stage: 'Qualified' },
-          { name: 'Tom Reyes', company: 'Initech', email: 'tom@initech.example', stage: 'Won' },
-        ],
-      },
-      {
-        name: 'list_opportunities',
-        title: 'List opportunities',
-        description: 'Open sales opportunities',
-        method: 'GET',
-        path: '/rest/opportunities',
-        result_path: 'data.opportunities',
-        render: 'table',
-        read_only: true,
-        mock: [
-          { name: 'Acme Q3 reorder', amount: 42000, currency: 'USD', stage: 'Proposal', close: '2026-07-15' },
-          { name: 'Globex pilot', amount: 12000, currency: 'USD', stage: 'Negotiation', close: '2026-06-30' },
-        ],
-      },
-    ],
-  },
-];
+// CTRL ships with NO bundled business connectors (bao 2026-06-11). CTRL does
+// not embed a CRM or any business tool — embedding `iris-crm` was a violation
+// of CTRL's own rule ("don't build a CRM") and of the positioning (the user
+// searches / installs / configures their own connectors; CTRL is the access
+// layer, not a bundled product). The user installs connectors themselves from
+// Discover (share-and-be-shared). Empty by default.
+const BUNDLED_CONNECTORS: ConnectorManifest[] = [];
