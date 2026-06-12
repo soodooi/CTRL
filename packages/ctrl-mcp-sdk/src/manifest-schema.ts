@@ -674,6 +674,42 @@ export const CapAsset = z.object({
 });
 export type CapAsset = z.infer<typeof CapAsset>;
 
+// ── Provision (axis 7 — install-time toolchain + env injection) ──────────
+// ADR-002 substrate § composition v21. Installs external toolchains a
+// feature pack needs (node / wrangler) — distinct from cap_asset (axis 6),
+// which only copies static files. Per-tool resolution order: `check` →
+// CTRL built-in downloader (`~/.ctrl/tools/<id>/`) → system pkg-mgr
+// fallback → manual. `env` values resolve `{{secret:<key>}}` from keychain
+// at inject time, never reaching the LLM (decision 0004).
+
+const ToolInstallVia = z.object({
+  via: z.enum(['brew', 'winget', 'npm', 'apt']),
+  pkg: z.string().min(1),
+  /** npm global (-g). Ignored by non-npm managers. */
+  global: z.boolean().optional(),
+});
+
+const ProvisionTool = z.object({
+  id: z.string().min(1).regex(/^[a-z0-9.\-_]+$/, {
+    message: 'tool id must be lowercase alphanumeric + . - _',
+  }),
+  /** Shell probe detecting an existing install; non-zero exit = absent. */
+  check: z.string().min(1),
+  /** System-pkg-mgr fallback install hints, keyed by os ('macos' /
+   *  'windows' / 'linux') or 'any'. The built-in downloader (tool registry
+   *  by id) is tried FIRST; these apply only when it has no entry / fails. */
+  install: z.record(z.string(), ToolInstallVia).optional(),
+});
+
+export const Provision = z.object({
+  tools: z.array(ProvisionTool).default([]),
+  /** Env vars injected into the pack's actions/subprocesses. A value may
+   *  reference a keychain secret via `{{secret:<config_key>}}`, resolved
+   *  kernel-side at inject time — never exposed to the LLM (decision 0004). */
+  env: z.record(z.string(), z.string()).default({}),
+});
+export type Provision = z.infer<typeof Provision>;
+
 // ── Top-level manifest ───────────────────────────────────────────────────
 
 export const McpManifest = z.object({
@@ -835,6 +871,13 @@ export const McpManifest = z.object({
    *  templates; `vault.path` reserves the mcp's user-facing folder
    *  with optional seed structure. */
   cap_asset: CapAsset.optional(),
+
+  /** Install-time toolchain + env injection (ADR-002 substrate § composition
+   *  v21 axis 7). v2 only. `tools[]` resolved built-in-downloader-first
+   *  (`~/.ctrl/tools/`) → system pkg-mgr fallback; `env` pulls
+   *  `{{secret:<key>}}` from keychain at inject time (never the LLM —
+   *  decision 0004). Distinct from cap_asset (copies files, not toolchains). */
+  provision: Provision.optional(),
 });
 export type McpManifest = z.infer<typeof McpManifest>;
 

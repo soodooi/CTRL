@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — 3-agent aggregator · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 20
+version: 21
 status: accepted
-last_updated: 2026-06-10
+last_updated: 2026-06-12
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003 }
@@ -20,6 +20,7 @@ sections:
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
 changelog:
+  - v21 2026-06-12: **§7 composition — feature pack model + axis 7 `provision` (bao 2026-06-12; dogfood decisions in vault/ctrl/decisions/0005).** 「功能包」(feature pack) locked as the USER-FACING name for an installable manifest — code keeps "mcp", all PWA copy → 功能包 (extends v12 keycap→mcp from a code-rename to a user-name). Feature pack = universal shell for "plug any API → orchestrate → on-demand UI": one schema fills wildly different worlds — CF Workers 开发 (cli-wrapper + CF token + deploy/logs) AND HubStudio 营销 (network HTTP allowlist + API key + manage-accounts/batch-post + AI rewrite + account-matrix UI); 想要什么出什么 UI = the pack declares `ui_surface`, the AI creator generates it from one intent sentence; CTRL stays a substrate — scenarios (营销/开发/CRM) grow as packs, not built-ins. NEW **axis 7 `provision`** (toolchain install + env), closing the gap cap_asset left (cap_asset only copies static files; provision installs external toolchains): `tools[]` (id/check/install) resolved built-in-downloader-FIRST (`~/.ctrl/tools/<id>/`, same lazy-install lineage as pi/kairo, isolated, removed on uninstall) → system pkg-mgr fallback (brew/winget/npm via `install.<os>.via`) → manual guidance; `env` resolves `{{secret:<key>}}` from keychain at inject time, never touching the LLM (decision 0004 — secrets never reach Irisy). One-time base infra: a tool registry (tool id → per-platform prebuilt binary URL + checksum) the downloader queries by id. Distribution bundle = Anthropic `.mcpb` (reused, not a custom format). Discover = the pack store — intent → Irisy 收敛 1-3 (curation, NOT a Quicker 8000 long-tail wall) + scene-grouped browse + search; create = AI generates the pack from natural language (user writes no JSON unless advanced); same format both ends → 造的=别人挑的源头 (share-and-be-shared). Research backing: vault/ctrl/research/{opensuse,quicker}.md (YaST Patterns 成组一键 + Dolphin KIO transparent-mount + Quicker 场景面板). Schema lands in `manifest-schema.ts` (provision Zod axis); Rust base (tool registry / built-in downloader / provision runner / .mcpb install) follows. ADR-001 spine pairing TBD.
   - v20 2026-06-10: §1.1 upstream verification corrections (full web research, H-2026-06-09-002): **hermes** = NousResearch/hermes-agent (PyPI via uv; npm "hermes-agent" is an unofficial third-party pip shim — banned); endpoint corrected MCP stdio → **ACP stdio** (`hermes-acp`; no MCP `chat` tool exists upstream); interim chat bridge = `assistant_oneshot` (`hermes -z`) until the kernel ACP streaming client lands. **opencode** real API: `POST /session` + `POST /session/{id}/prompt_async` + global `GET /event` SSE bus (no per-request stream); announce line `opencode server listening on <url>`; creds inject via env/`OPENCODE_CONFIG_CONTENT`; `file.edited` events feed the artifact pane. **kairo codename resolves to SilverBullet 2.8.1** (silverbulletmd, MIT, single Go binary, plain-md folder, wikilink+backlink, frame-clean) — launched with `SB_SHELL_BACKEND=off SB_RUNTIME_API=0 SB_DISABLE_SERVICE_WORKER=1` (upstream /.shell executes arbitrary commands; never expose). §1.5: Irisy chat now routes through the in-process provider router (`provider/routing.rs`, one SSOT shared with /text-chat) — the dead Pi MCP hop (127.0.0.1:17874) removed from `irisy_chat_stream`. Agent-first hermes routing layers on next.
   - v19 2026-06-09: **§1 brain — dual-brain supervisor model FULLY RETRACTED. Replaced by 3-agent aggregator (H-2026-06-09-002).** bao framing校准 (2026-06-09 conversation): "Irisy 是表象", "hermes opencode kairo 都是外部的", "现在重要的是前端". The v18 supervisor model (`opencode_supervisor.rs` / `hermes_supervisor.rs` / `brain_supervisor.rs`) over-engineered the kernel — supervised brains, owned their lifecycle, persisted per-brain credential files. Replaced by thin **agent integration**: kernel `agent_installer.rs` + `agent_launcher.rs` only (no supervise, no restart, no per-brain config write). 3 external agents (hermes / opencode / kairo) lazy-installed to `~/.ctrl/agents/<name>/` and launched on-demand. PWA directly consumes each agent's native endpoint (opencode HTTP, hermes MCP stdio, kairo webview). **NEW §12 capability-faces** locks 3-face SSOT: MCP (协议) + API (provider router, fal.ai flagship) + Skills (markdown SKILL.md, Claude Code Skills schema). Supersedes 2026-06-05 `decision_keycap_collapses_to_mcp_meta_ux_layer` over-塌缩. **§8 Vault stack lock (Tiptap+CodeMirror+FTS5) RETIRED** — kairo (MIT external) owns notes editing + wiki-link + backlink + git; CTRL exposes `~/Documents/CTRL/Notes/` via MCP for agents only. Retirements: `shell/{brain,opencode,hermes}_supervisor.rs`, `commands/{opencode,hermes}_chat.rs`, `commands/pi_rpc.rs`, `bin/e2e_verification.rs`, `packages/ctrl-pi-bridge/`, `packages/ctrl-pi-plugin/`, `shell/pi_install.rs`. PWA `IrisyChat forceMode="coding"` legacy retired — `/coding` connects to opencode HTTP directly. fal.ai BYOK adapter lands in §3 provider router as flagship API-face exemplar (985 endpoints vs Codex 1-model lock). ADR-001 spine v3 → v4 paired update. NO brain switcher UI still holds (PWA L1 chip routes statically).
   - v18 2026-06-09: **§1 brain — dual-brain architecture amendment (H-2026-06-09-001, PR #84). RETRACTED by v19 same day. Kept in changelog for provenance.** User-chosen opencode + Hermes as peer brains (conversation 2026-06-09 08:48): "确认 干" + "继续 干". §1 rewritten: opencode (coding brain, LSP + formatter + symbol search, HTTP API on random port, stored in `~/.local/share/opencode/auth.json`) + Hermes (assistant brain, RAG + long-term memory, MCP stdio protocol, stored in `~/.hermes/config.yaml`). Both spawned as peer subprocess agents via `shell/opencode_supervisor.rs` and `shell/hermes_supervisor.rs`. Independent contexts: no cross-brain context sharing. PWA commands: `opencode_chat_stream` (SSE, delta/done/error) + `hermes_chat_stream` (SSE, MCP tool calling). 8 code review issues fixed (race condition via Arc<Mutex<>>, health check, credential vault via keyring crate, event listener cleanup, constants extraction, graceful degradation). ADR-001 spine updated v2→v3 (dual-brain diagram). Pi removed as sole brain (still available as standalone CLI). Hermes installed via `npm install -g hermes-agent` (NousResearch, supports `hermes mcp serve`).
@@ -439,6 +440,7 @@ Mcp manifest declares 6 axes; runtime atomically provisions all declared resourc
 | 4 | `skills` | SKILL.md refs resolved via 3-tier chain (`vault/skills/` > `~/.claude/skills/` > mcp bundle) — first hit wins, no merge |
 | 5 | `ui_surface` | 9-enum (none/notification/modal/clipboard/html-output/chat-stream/picker/form/canvas) |
 | 6 | `cap_asset` | install-time provisioning: `cap_asset.files` (immutable bundle) + `cap_asset.vault` (user-facing folder + seed) |
+| 7 | `provision` | install-time toolchain + env (v21): `tools[]` (id + check + install hints) resolved built-in-downloader-first → system pkg-mgr fallback; `env` values pull `{{secret:<key>}}` from keychain at inject time |
 
 **Persona lives inside `cap_asset.files`** as per-mcp markdown — not a separate axis. Vault override `vault/mcps/<id>/persona.md` wins; single lookup, no global persona library.
 
@@ -447,6 +449,46 @@ Mcp manifest declares 6 axes; runtime atomically provisions all declared resourc
 **Builtin vs user mcp** = one metadata flag. `manifest.builtin = true` → ships from `packages/ctrl-mcps/builtin/<id>/`, re-seeds on every launch (self-repairs deletion). `builtin = false` → `~/.ctrl/mcps/<id>/`, uninstallable.
 
 **Multi-modal category exception** to §2 frequency ≥3 rule: image.generate / image.edit / image.understand / audio.stt enter v1 even with 1 consumer each — "做海报得有 image 大模型, 我们是双重 brain" (bao 2026-05-30). Frequency rule still governs non-brain namespaces.
+
+### §7.1 Feature pack — the user-facing unit (v21, bao 2026-06-12)
+
+**「功能包」(feature pack) = the USER-FACING name for an installable manifest.** Users say "装个功能包" / "卸了这个功能包"; the word `mcp` stays a code-internal term (manifest model here in §7, runtime in ADR-004) the user never sees. All PWA copy uses 功能包. Extends v12 (keycap→mcp, a code-side rename) — for the *user* the name is 功能包.
+
+A feature pack is the **universal shell** for *"plug any API/service in → orchestrate → surface a UI on demand"*. One schema fills wildly different worlds:
+- **CF Workers 开发**: `cli-wrapper` (wrangler) + secret (CF token) + actions (deploy/logs/preview) + deploy-log UI.
+- **HubStudio 营销**: `network` HTTP allowlist (HubStudio API) + secret (API key) + actions (manage accounts / batch-post) + `text.chat` AI rewrite (pipe) + account-matrix UI.
+
+The shell is fixed; the content (接什么 API / 什么 secret / 什么动作 / 什么 UI) is per-pack. **想要什么出什么 UI** = the pack declares `ui_surface`, the workbench renders it; the AI creator generates that declaration from one intent sentence. CTRL stays a substrate — concrete scenarios (营销/开发/CRM) grow as packs, **not built-ins** (CTRL 不长胖,胖的是 pack 库; cf. vault/ctrl/decisions/0003).
+
+### §7.2 Axis 7 `provision` — toolchain install + env (v21)
+
+Axis 6 `cap_asset` only *copies static files*; axis 7 `provision` *installs external toolchains* (node / wrangler) a pack needs.
+
+```jsonc
+"provision": {
+  "tools": [
+    { "id": "node",     "check": "node --version",
+      "install": { "macos": {"via":"brew","pkg":"node"}, "windows": {"via":"winget","pkg":"OpenJS.NodeJS"} } },
+    { "id": "wrangler", "check": "wrangler --version",
+      "install": { "any": {"via":"npm","pkg":"wrangler","global":true} } }
+  ],
+  "env": { "CLOUDFLARE_API_TOKEN": "{{secret:cf_api_token}}" }   // value pulled from keychain
+}
+```
+
+**Per-tool resolution order** (bao 2026-06-12 — built-in downloader primary):
+1. run `check` (`wrangler --version`) → skip if already present.
+2. absent → **CTRL built-in downloader**: pull prebuilt binary to `~/.ctrl/tools/<id>/`, prepend to the pack env PATH. Same lazy-install lineage as `~/.ctrl/pi/`, `~/.ctrl/agents/kairo/` — isolated, no system pollution, removed on uninstall.
+3. downloader miss / fail → **fallback system pkg-mgr** (brew / winget / npm, reads `install.<os>.via`).
+4. all fail → friendly error + manual guidance.
+
+**Base infra (one-time)**: a **tool registry** (tool id → per-platform prebuilt binary URL + checksum) the downloader queries by id. Base-layer, not pack content.
+
+**Secrets never touch Irisy/LLM** (decision 0004): `{{secret:<key>}}` in `env` resolves from keychain at injection time, kernel-side; the LLM only ever sees a "configured ✓" boolean.
+
+### §7.3 Packaging + distribution (v21)
+
+Feature-pack file = a v2 mcp manifest (markdown + JSON frontmatter, git-diffable, AI-generatable). Distribution bundle = **Anthropic `.mcpb`** (reused, not a custom format — ecosystem-aligned). **Discover = the pack store**: intent → Irisy 收敛 1-3 (curation, NOT a Quicker-style 8000 long-tail wall) + scene-grouped browse + search. **Create = AI creator** generates the pack from natural language (user writes no JSON unless advanced). Same format both ends → 造的=别人挑的源头 (share-and-be-shared).
 
 ## §8 Vault — RETIRED in v19 (kairo external replaces CTRL-owned editor stack)
 
