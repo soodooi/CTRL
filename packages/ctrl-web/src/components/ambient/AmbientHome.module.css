@@ -565,6 +565,14 @@
   padding: 4px 10px 10px;
 }
 
+.sideVersion {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-subtle, #98989d);
+  font-family: var(--font-mono, 'SF Mono', monospace);
+}
+
 .sideLabel {
   font-size: 10px;
   font-weight: 700;

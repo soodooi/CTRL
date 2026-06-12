@@ -8,8 +8,10 @@
 // Selecting an item drives the main area: Irisy -> conversation; a tool ->
 // its app UI; Notes/Coding -> their faces (routes); Discover -> the commons.
 
-import { type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import { loadConnectors } from '@/lib/connector';
+import { APP_VERSION } from '@/lib/app-meta';
 
 export type SidebarSection =
   | { kind: 'irisy' }
@@ -27,9 +29,18 @@ interface SidebarProps {
 
 export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: SidebarProps): ReactElement {
   const connectors = loadConnectors();
+  // Show the running version right in the brand so bao can see at a glance
+  // whether the app updated (the point of bump-version). Runtime version from
+  // Tauri (updates on kernel rebuild); falls back to the build-time constant.
+  const [version, setVersion] = useState(APP_VERSION);
+  useEffect(() => {
+    void getVersion().then(setVersion).catch(() => {});
+  }, []);
   return (
     <aside className={styles.sidebar} data-tauri-drag-region>
-      <div className={styles.sideBrand}>CTRL</div>
+      <div className={styles.sideBrand}>
+        CTRL <span className={styles.sideVersion}>v{version}</span>
+      </div>
 
       <button
         type="button"
