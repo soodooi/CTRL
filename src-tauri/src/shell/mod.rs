@@ -37,6 +37,8 @@ pub mod window;
 // No supervisor — PWA owns retry.
 pub mod agent_installer;
 pub mod agent_launcher;
+// Built-in tool downloader for feature-pack provision (ADR-002 §7.2 v21).
+pub mod tool_installer;
 
 pub use hotkey::HotkeyController;
 pub use keychain::KeychainStore;
