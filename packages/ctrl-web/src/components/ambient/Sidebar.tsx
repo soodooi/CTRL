@@ -8,13 +8,18 @@
 // Selecting an item drives the main area: Irisy -> conversation; a tool ->
 // its app UI; Notes/Coding -> their faces (routes); Discover -> the commons.
 
-import { type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import { loadConnectors } from '@/lib/connector';
+import { APP_VERSION } from '@/lib/app-meta';
+import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
+import { loadInstalledPacks } from '@/lib/feature-pack';
 
 export type SidebarSection =
   | { kind: 'irisy' }
   | { kind: 'tool'; connectorId: string; toolName: string; label: string; sub: string }
   | { kind: 'route'; to: string }
+  | { kind: 'feature-pack'; pack: FeaturePack }
   | { kind: 'discover' };
 
 interface SidebarProps {
@@ -27,9 +32,23 @@ interface SidebarProps {
 
 export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: SidebarProps): ReactElement {
   const connectors = loadConnectors();
+  // Show the running version right in the brand so bao can see at a glance
+  // whether the app updated (the point of bump-version). Runtime version from
+  // Tauri (updates on kernel rebuild); falls back to the build-time constant.
+  const [version, setVersion] = useState(APP_VERSION);
+  useEffect(() => {
+    void getVersion().then(setVersion).catch(() => {});
+  }, []);
+  // Installed feature packs (mcps whose manifest declares actions).
+  const [packs, setPacks] = useState<FeaturePack[]>([]);
+  useEffect(() => {
+    void loadInstalledPacks().then(setPacks).catch(() => {});
+  }, []);
   return (
     <aside className={styles.sidebar} data-tauri-drag-region>
-      <div className={styles.sideBrand}>CTRL</div>
+      <div className={styles.sideBrand}>
+        CTRL <span className={styles.sideVersion}>v{version}</span>
+      </div>
 
       <button
         type="button"
@@ -73,6 +92,23 @@ export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: Sideb
       <button type="button" className={styles.sideItem} onClick={() => onSelect({ kind: 'route', to: '/coding' })}>
         <span className={styles.sideIcon}>{'</>'}</span> Coding
       </button>
+
+      {packs.length > 0 && (
+        <>
+          <div className={styles.sideLabel}>Packs</div>
+          {packs.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`${styles.sideItem} ${active === `pack.${p.id}` ? styles.sideItemActive : ''}`}
+              onClick={() => onSelect({ kind: 'feature-pack', pack: p })}
+              title={p.summary}
+            >
+              <span className={styles.sideIcon}>{p.icon ?? '⚡'}</span> {p.name}
+            </button>
+          ))}
+        </>
+      )}
 
       <div className={styles.sideSpacer} />
 

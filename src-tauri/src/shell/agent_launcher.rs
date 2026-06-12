@@ -144,7 +144,19 @@ pub fn launch_with_env(
                 .env("SB_DISABLE_SERVICE_WORKER", "1")
                 .args(["-L", "127.0.0.1", "-p", &port.to_string()])
                 .arg(&workspace);
-            let child = cmd.spawn().map_err(|e| anyhow!("spawn agent: {}", e))?;
+            let mut child = cmd.spawn().map_err(|e| anyhow!("spawn agent: {}", e))?;
+            // Wait until SilverBullet ACTUALLY serves before handing the URL to
+            // the webview — otherwise the iframe loads too early (connection
+            // refused → blank Notes pane). The announce line is
+            // "SilverBullet is now running: http://...". This also drains
+            // stdout via the reader thread so the pipe never fills and stalls
+            // the process. Timeout is non-fatal: return the URL anyway so a
+            // slow start still wires up once it comes online.
+            let _ = wait_for_stdout_line(
+                &mut child,
+                |l| l.contains("is now running"),
+                Duration::from_secs(15),
+            );
             Ok(LaunchedAgent {
                 endpoint: AgentEndpoint::Webview {
                     url: format!("http://127.0.0.1:{port}/"),

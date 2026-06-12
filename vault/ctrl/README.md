@@ -5,8 +5,10 @@
 > 通过 vim test:每个文件都是 plain markdown,任何工具能开,你永远拥有。
 
 ## 现状 (2026-06-11)
-- 版本:0.1.216 · 分支:main(PR #89/#90/#91 已合)
-- 定位锁定:**本地 AI 项目大脑 / context 层,互补 coding agent** —— 见 [decisions/0001](decisions/0001-ctrl-is-the-project-brain-not-a-coding-tool.md)
+- 版本:0.1.219
+- **CTRL 的产品定位**:模块化、意图驱动、用户拥有的本地 AI 工作台 —— 每个能力(coding/CRM/notes)都是**可安装模块**,不内置;一个 primitive(mcp manifest)+ 意图浮现 + store。「Raycast meets local-first」→ [decisions/0003](decisions/0003-ctrl-is-modular-intent-platform.md)
+- **这个 vault 的角色**:CTRL 自己的项目大脑 —— 本地 AI 项目大脑 / context 层,互补 coding agent → [decisions/0001](decisions/0001-ctrl-is-the-project-brain-not-a-coding-tool.md)
+- 待落地:把 Coding/Notes 从固定 face 改成可装模块 + 意图浮现 + Discover=模块 store → [open-questions](open-questions.md)
 
 ## 入口 (Map of Content)
 - **日志** [`log/`](log/) — 每天的开发进展(append-only)

@@ -249,6 +249,18 @@ const IconLabRoute = import.meta.env.DEV
       }),
     );
 
+const PackLabRoute = import.meta.env.DEV
+  ? lazy(() =>
+      import('./routes/pack-lab').then((m) => ({ default: m.PackLabRoute })),
+    )
+  : lazy(() =>
+      Promise.resolve({
+        default: (): ReactElement => (
+          <div style={{ padding: 24 }}>pack-lab is dev-only.</div>
+        ),
+      }),
+    );
+
 const LazyFallback = (): ReactElement => (
   <div style={{
     padding: 'var(--space-6)',
@@ -388,6 +400,16 @@ const iconLabRoute = createRoute({
   ),
 });
 
+const packLabRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/pack-lab',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <PackLabRoute />
+    </Suspense>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   poolRoute,
@@ -403,6 +425,7 @@ const routeTree = rootRoute.addChildren([
   codeSpaceDetailRoute,
   codingRoute,
   iconLabRoute,
+  packLabRoute,
 ]);
 
 const router = createRouter({
