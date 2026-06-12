@@ -151,7 +151,7 @@ export const GraphView = ({ focusPath, onSelect }: GraphViewProps): ReactElement
           <p className={styles.muted}>Loading graph…</p>
         ) : nodes.length === 0 ? (
           <p className={styles.muted}>
-            {filter ? 'No nodes match the filter.' : 'Vault has no graph data yet.'}
+            {filter ? 'No nodes match the filter.' : 'No graph data yet.'}
           </p>
         ) : (
           <ForceGraph2D

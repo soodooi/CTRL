@@ -39,7 +39,7 @@ export const VaultHealthFold = (): ReactElement => {
         >
           ▸
         </span>
-        <span>Vault Health</span>
+        <span>Notes Health</span>
         <span className={styles.healthFoldCount}>{total}</span>
       </button>
       {open ? (

@@ -209,7 +209,7 @@ export const NotesTree = ({
           <p className={styles.muted}>Loading…</p>
         ) : grouped.length === 0 ? (
           <p className={styles.muted}>
-            {trimmed.length > 1 ? 'No matches' : 'Vault is empty'}
+            {trimmed.length > 1 ? 'No matches' : 'No notes yet'}
           </p>
         ) : (
           grouped.map(({ folder, items }) => (
