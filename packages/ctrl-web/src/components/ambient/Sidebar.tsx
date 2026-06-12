@@ -13,7 +13,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { loadConnectors } from '@/lib/connector';
 import { APP_VERSION } from '@/lib/app-meta';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
-import { loadInstalledPacks } from '@/lib/feature-pack';
+import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
 
 export type SidebarSection =
   | { kind: 'irisy' }
@@ -42,7 +42,12 @@ export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: Sideb
   // Installed feature packs (mcps whose manifest declares actions).
   const [packs, setPacks] = useState<FeaturePack[]>([]);
   useEffect(() => {
-    void loadInstalledPacks().then(setPacks).catch(() => {});
+    const refresh = (): void => {
+      void loadInstalledPacks().then(setPacks).catch(() => {});
+    };
+    refresh();
+    window.addEventListener(PACKS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
   }, []);
   return (
     <aside className={styles.sidebar} data-tauri-drag-region>

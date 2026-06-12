@@ -9,7 +9,7 @@
 // Later: a real shared index (git-backed / MCP-registry-style / CTRL-cloud
 // listing — listings only, never user content per ADR-006 §3.8).
 
-import { useState, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import {
   exportConnector,
   importConnector,
@@ -17,6 +17,13 @@ import {
   saveConnector,
   type ConnectorManifest,
 } from '@/lib/connector';
+import {
+  OFFICIAL_PACKS,
+  installPack,
+  loadInstalledPacks,
+  PACKS_CHANGED_EVENT,
+  type PackListing,
+} from '@/lib/feature-pack';
 
 interface DiscoverProps {
   onInstalled: (m: ConnectorManifest) => void;
@@ -72,6 +79,32 @@ const COMMONS: ConnectorManifest[] = [
 export function Discover({ onInstalled, styles }: DiscoverProps): ReactElement {
   const [paste, setPaste] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
+  const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
+  const [installingId, setInstallingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const refresh = (): void => {
+      void loadInstalledPacks()
+        .then((ps) => setInstalledIds(new Set(ps.map((p) => p.id))))
+        .catch(() => {});
+    };
+    refresh();
+    window.addEventListener(PACKS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
+  }, []);
+
+  const installFeaturePack = async (p: PackListing): Promise<void> => {
+    setInstallingId(p.id);
+    setMsg(null);
+    try {
+      await installPack(p.manifest);
+      setMsg(`Installed "${p.name}" — it's now under Packs in the sidebar.`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstallingId(null);
+    }
+  };
 
   const install = (m: ConnectorManifest): void => {
     saveConnector(m);
@@ -109,6 +142,29 @@ export function Discover({ onInstalled, styles }: DiscoverProps): ReactElement {
         Tools one-person companies share. Install one — it runs locally on
         <strong> your</strong> data and keys. Only the tool definition travels, never data.
       </p>
+
+      <div className={styles.discoverSection}>Feature packs — install</div>
+      <div className={styles.discoverGrid}>
+        {OFFICIAL_PACKS.map((p) => {
+          const installed = installedIds.has(p.id);
+          return (
+            <div key={p.id} className={styles.discoverCard}>
+              <div className={styles.discoverCardName}>
+                {p.icon} {p.name}
+              </div>
+              <div className={styles.discoverCardMeta}>{p.summary}</div>
+              <button
+                type="button"
+                className={styles.discoverInstall}
+                disabled={installed || installingId === p.id}
+                onClick={() => void installFeaturePack(p)}
+              >
+                {installed ? 'Installed' : installingId === p.id ? 'Installing…' : 'Install'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
 
       <div className={styles.discoverSection}>Your tools — share a definition</div>
       <div className={styles.discoverGrid}>
