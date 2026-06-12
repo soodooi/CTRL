@@ -12,11 +12,14 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { loadConnectors } from '@/lib/connector';
 import { APP_VERSION } from '@/lib/app-meta';
+import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
+import { DEMO_CF_WORKERS } from '@/lib/feature-pack-demo';
 
 export type SidebarSection =
   | { kind: 'irisy' }
   | { kind: 'tool'; connectorId: string; toolName: string; label: string; sub: string }
   | { kind: 'route'; to: string }
+  | { kind: 'feature-pack'; pack: FeaturePack }
   | { kind: 'discover' };
 
 interface SidebarProps {
@@ -83,6 +86,17 @@ export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: Sideb
       </button>
       <button type="button" className={styles.sideItem} onClick={() => onSelect({ kind: 'route', to: '/coding' })}>
         <span className={styles.sideIcon}>{'</>'}</span> Coding
+      </button>
+
+      {/* Installed feature packs. Demo entry until list_mcps wiring (block 2). */}
+      <div className={styles.sideLabel}>Packs</div>
+      <button
+        type="button"
+        className={`${styles.sideItem} ${active === `pack.${DEMO_CF_WORKERS.id}` ? styles.sideItemActive : ''}`}
+        onClick={() => onSelect({ kind: 'feature-pack', pack: DEMO_CF_WORKERS })}
+        title={DEMO_CF_WORKERS.summary}
+      >
+        <span className={styles.sideIcon}>⚡</span> {DEMO_CF_WORKERS.name}
       </button>
 
       <div className={styles.sideSpacer} />

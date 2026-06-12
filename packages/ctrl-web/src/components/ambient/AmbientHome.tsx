@@ -35,6 +35,11 @@ import {
   type ConnectorManifest,
 } from '@/lib/connector';
 import { Discover } from './Discover';
+import {
+  FeaturePackScene,
+  type FeaturePack,
+} from '@/components/featurepack/FeaturePackScene';
+import { runPackAction } from '@/lib/feature-pack-demo';
 import styles from './AmbientHome.module.css';
 
 interface Msg {
@@ -53,6 +58,13 @@ export interface ToolRequest {
   nonce: number;
 }
 
+// A request to open a feature pack's scene panel alongside Irisy. `nonce`
+// makes each open a fresh object so the effect runs once per request.
+export interface PackRequest {
+  pack: FeaturePack;
+  nonce: number;
+}
+
 export interface AmbientHomeProps {
   view: 'chat' | 'discover';
   onView: (v: 'chat' | 'discover') => void;
@@ -61,6 +73,9 @@ export interface AmbientHomeProps {
   onToggleDrawer: () => void;
   /** Tool the shell sidebar asked to run (null until a click). */
   toolRequest: ToolRequest | null;
+  /** Feature pack to open in the scene panel alongside Irisy (null until a
+   *  pack is selected). */
+  packRequest: PackRequest | null;
   /** Bumped by the shell when "Irisy" is selected, to reset the chat. */
   irisyNonce: number;
   /** Collapsed (display:none) while a route owns the main column. The
@@ -78,6 +93,7 @@ export function AmbientHome({
   onOpenPicker,
   onToggleDrawer,
   toolRequest,
+  packRequest,
   irisyNonce,
   hidden,
 }: AmbientHomeProps): ReactElement {
@@ -85,6 +101,9 @@ export function AmbientHome({
   const [messages, setMessages] = useState<Msg[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [part, setPart] = useState<PartSpec | null>(null);
+  // The feature pack shown in the scene panel (right column); Irisy stays in
+  // the left column. Independent of `part` (Irisy's own morphed output).
+  const [scene, setScene] = useState<FeaturePack | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -103,6 +122,7 @@ export function AmbientHome({
   const newChat = useCallback(() => {
     setMessages([]);
     setPart(null);
+    setScene(null);
     setInput('');
   }, []);
 
@@ -114,7 +134,10 @@ export function AmbientHome({
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, []);
 
-  const surface: Surface = part ? 'chat-part' : messages.length > 0 ? 'chat' : 'empty';
+  const surface: Surface =
+    part || scene ? 'chat-part' : messages.length > 0 ? 'chat' : 'empty';
+  // Right-column width: scene panels sit a touch wider than text parts.
+  const rightRatio = scene ? 0.52 : part ? partLayout(part.kind).preferredRatio : 0.42;
   // Gate the first-run CTA on whether any model is wired up yet.
   const hasProvider = modelLabel !== 'Model';
 
@@ -219,6 +242,12 @@ export function AmbientHome({
     const t = m?.tools.find((x) => x.name === toolRequest.toolName);
     if (m && t) void runToolRef.current(m, t);
   }, [toolRequest]);
+
+  // Open the requested feature pack in the scene panel (Irisy stays alongside
+  // in the left column). Keyed on the fresh request object per selection.
+  useEffect(() => {
+    if (packRequest) setScene(packRequest.pack);
+  }, [packRequest]);
 
   // Reset the chat when the shell selects "Irisy" (nonce bump). Since this
   // component stays mounted across routes (hidden, not unmounted), the
@@ -353,29 +382,52 @@ export function AmbientHome({
             animate={{ opacity: 1 }}
             transition={SPRING}
           >
-            {part ? (
+            {part || scene ? (
               <Group
                 key={isNarrow ? 'v' : 'h'}
                 orientation={isNarrow ? 'vertical' : 'horizontal'}
                 className={styles.split}
               >
-                <Panel defaultSize={(1 - partLayout(part.kind).preferredRatio) * 100} minSize={28}>
+                <Panel defaultSize={(1 - rightRatio) * 100} minSize={28}>
                   <div className={styles.chatPane}>
                     {conversation}
                     {composer}
                   </div>
                 </Panel>
                 <Separator className={styles.handle} />
-                <Panel defaultSize={partLayout(part.kind).preferredRatio * 100} minSize={24}>
-                  <div className={styles.partPane}>
-                    <div className={styles.partHeader}>
-                      <span>{part.title ?? part.kind}</span>
-                      <button type="button" className={styles.partClose} onClick={() => setPart(null)}>
+                <Panel defaultSize={rightRatio * 100} minSize={24}>
+                  {scene ? (
+                    <div className={styles.scenePane}>
+                      <button
+                        type="button"
+                        className={styles.sceneClose}
+                        onClick={() => setScene(null)}
+                        aria-label="Close pack"
+                      >
                         ✕
                       </button>
+                      <FeaturePackScene
+                        pack={scene}
+                        onRunAction={(id) => runPackAction(scene.id, id)}
+                      />
                     </div>
-                    <div className={styles.partBody}>{renderPart(part)}</div>
-                  </div>
+                  ) : (
+                    part && (
+                      <div className={styles.partPane}>
+                        <div className={styles.partHeader}>
+                          <span>{part.title ?? part.kind}</span>
+                          <button
+                            type="button"
+                            className={styles.partClose}
+                            onClick={() => setPart(null)}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className={styles.partBody}>{renderPart(part)}</div>
+                      </div>
+                    )
+                  )}
                 </Panel>
               </Group>
             ) : (

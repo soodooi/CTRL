@@ -16,7 +16,7 @@ import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { invoke } from '@tauri-apps/api/core';
 import { Sidebar, type SidebarSection } from './Sidebar';
 import { ProviderHub } from './ProviderHub';
-import { AmbientHome, type ToolRequest } from './AmbientHome';
+import { AmbientHome, type ToolRequest, type PackRequest } from './AmbientHome';
 import styles from './AmbientHome.module.css';
 
 export function AmbientWorkbench(): ReactElement {
@@ -29,6 +29,7 @@ export function AmbientWorkbench(): ReactElement {
   const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
   const [view, setView] = useState<'chat' | 'discover'>('chat');
   const [toolRequest, setToolRequest] = useState<ToolRequest | null>(null);
+  const [packRequest, setPackRequest] = useState<PackRequest | null>(null);
   const [irisyNonce, setIrisyNonce] = useState(0);
   // Which sidebar entry is highlighted on home ('irisy' | 'discover' |
   // `${connectorId}.${toolName}`). Routes own their own nav, so off-home
@@ -68,6 +69,10 @@ export function AmbientWorkbench(): ReactElement {
       } else if (s.kind === 'discover') {
         setView('discover');
         setNavSel('discover');
+      } else if (s.kind === 'feature-pack') {
+        setView('chat');
+        setNavSel(`pack.${s.pack.id}`);
+        setPackRequest({ pack: s.pack, nonce: Date.now() });
       }
     },
     [navigate, isHome],
@@ -97,6 +102,7 @@ export function AmbientWorkbench(): ReactElement {
         onOpenPicker={() => setPickerOpen(true)}
         onToggleDrawer={() => setDrawerOpen((v) => !v)}
         toolRequest={toolRequest}
+        packRequest={packRequest}
         irisyNonce={irisyNonce}
         hidden={!isHome}
       />
