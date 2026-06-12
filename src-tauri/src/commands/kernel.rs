@@ -248,6 +248,130 @@ pub async fn install_mcp(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct InstallMcpbArgs {
+    /// Absolute path to the `.mcpb` bundle on disk.
+    pub mcpb_path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InstallMcpbResult {
+    pub summary: McpSummary,
+    /// Tool binaries the built-in downloader installed during provision.
+    pub provisioned_tools: Vec<String>,
+    /// Env keys injected (values omitted — secrets never leave the kernel,
+    /// decision 0004).
+    pub provisioned_env_keys: Vec<String>,
+}
+
+/// Install a feature pack from a `.mcpb` bundle (Anthropic format — a zip of
+/// manifest.json + assets, ADR-002 substrate § composition v21 §7.3):
+/// unpack → reuse install_into → copy assets → run provision (toolchain +
+/// env/secret inject). Unpack + tool downloads run on a blocking thread.
+#[tauri::command]
+pub async fn install_mcpb(
+    args: InstallMcpbArgs,
+    _kernel: State<'_, KernelHandle>,
+) -> Result<InstallMcpbResult, String> {
+    let mcpb_path = PathBuf::from(&args.mcpb_path);
+    if !mcpb_path.exists() {
+        return Err(format!("mcpb not found: {}", mcpb_path.display()));
+    }
+    let dir = mcp_dir()?;
+    let result = tokio::task::spawn_blocking(move || install_mcpb_blocking(&mcpb_path, &dir))
+        .await
+        .map_err(|e| format!("install_mcpb task join: {e}"))??;
+    tracing::info!(mcp_id = %result.summary.id, "install_mcpb ok");
+    Ok(result)
+}
+
+fn install_mcpb_blocking(mcpb_path: &Path, dir: &Path) -> Result<InstallMcpbResult, String> {
+    // 1. unpack the .mcpb (zip) into a staging dir.
+    let staging = dir.join(".mcpb-staging");
+    let _ = fs::remove_dir_all(&staging);
+    fs::create_dir_all(&staging).map_err(|e| format!("create staging: {e}"))?;
+    let unzip = std::process::Command::new("unzip")
+        .arg("-o")
+        .arg(mcpb_path)
+        .arg("-d")
+        .arg(&staging)
+        .output()
+        .map_err(|e| format!("unzip mcpb (is unzip available?): {e}"))?;
+    if !unzip.status.success() {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(format!(
+            "unzip mcpb failed: {}",
+            String::from_utf8_lossy(&unzip.stderr)
+        ));
+    }
+
+    // 2. read + parse manifest.json.
+    let manifest_bytes = fs::read(staging.join("manifest.json"))
+        .map_err(|e| format!("read manifest.json from mcpb: {e}"))?;
+    let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("parse manifest.json: {e}"))?;
+
+    // 3. install (writes manifest into ~/.ctrl/mcps/<id>/) — reuse install_into.
+    let install_args = InstallMcpArgs {
+        manifest: manifest.clone(),
+        server_code: String::new(),
+        server_code_filename: String::new(),
+    };
+    let summary = install_into(dir, &install_args)?;
+
+    // 4. copy bundle assets (everything but manifest.json) into the pack dir.
+    let target = dir.join(&summary.id);
+    copy_bundle_assets(&staging, &target)?;
+    let _ = fs::remove_dir_all(&staging);
+
+    // 5. run provision: toolchain install + env/secret injection.
+    let provision = crate::shell::provision_runner::run_provision(&summary.id, &manifest)
+        .map_err(|e| format!("provision '{}': {e}", summary.id))?;
+
+    Ok(InstallMcpbResult {
+        provisioned_tools: provision
+            .tool_bins
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect(),
+        provisioned_env_keys: provision.env.keys().cloned().collect(),
+        summary,
+    })
+}
+
+/// Copy every entry under `staging` except manifest.json into `target`.
+fn copy_bundle_assets(staging: &Path, target: &Path) -> Result<(), String> {
+    for entry in fs::read_dir(staging).map_err(|e| format!("read staging: {e}"))? {
+        let entry = entry.map_err(|e| format!("staging entry: {e}"))?;
+        if entry.file_name() == "manifest.json" {
+            continue;
+        }
+        let from = entry.path();
+        let to = target.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            fs::copy(&from, &to).map_err(|e| format!("copy asset: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir_recursive(from: &Path, to: &Path) -> Result<(), String> {
+    fs::create_dir_all(to).map_err(|e| format!("create {to:?}: {e}"))?;
+    for entry in fs::read_dir(from).map_err(|e| format!("read {from:?}: {e}"))? {
+        let entry = entry.map_err(|e| format!("entry: {e}"))?;
+        let from_p = entry.path();
+        let to_p = to.join(entry.file_name());
+        if from_p.is_dir() {
+            copy_dir_recursive(&from_p, &to_p)?;
+        } else {
+            fs::copy(&from_p, &to_p).map_err(|e| format!("copy: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
 pub struct McpInstallArgs {
     /// MCP server source — tells the kernel how to spawn / connect:
     ///   { "kind": "npm",   "package": "@modelcontextprotocol/server-puppeteer", "args": [] }
