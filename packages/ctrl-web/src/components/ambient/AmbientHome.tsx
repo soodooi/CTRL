@@ -39,7 +39,7 @@ import {
   FeaturePackScene,
   type FeaturePack,
 } from '@/components/featurepack/FeaturePackScene';
-import { runPackAction } from '@/lib/feature-pack-demo';
+import { runInstalledPackAction } from '@/lib/feature-pack';
 import styles from './AmbientHome.module.css';
 
 interface Msg {
@@ -408,7 +408,7 @@ export function AmbientHome({
                       </button>
                       <FeaturePackScene
                         pack={scene}
-                        onRunAction={(id) => runPackAction(scene.id, id)}
+                        onRunAction={(id) => runInstalledPackAction(scene.id, id)}
                       />
                     </div>
                   ) : (

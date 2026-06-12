@@ -13,7 +13,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { loadConnectors } from '@/lib/connector';
 import { APP_VERSION } from '@/lib/app-meta';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
-import { DEMO_CF_WORKERS } from '@/lib/feature-pack-demo';
+import { loadInstalledPacks } from '@/lib/feature-pack';
 
 export type SidebarSection =
   | { kind: 'irisy' }
@@ -38,6 +38,11 @@ export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: Sideb
   const [version, setVersion] = useState(APP_VERSION);
   useEffect(() => {
     void getVersion().then(setVersion).catch(() => {});
+  }, []);
+  // Installed feature packs (mcps whose manifest declares actions).
+  const [packs, setPacks] = useState<FeaturePack[]>([]);
+  useEffect(() => {
+    void loadInstalledPacks().then(setPacks).catch(() => {});
   }, []);
   return (
     <aside className={styles.sidebar} data-tauri-drag-region>
@@ -88,16 +93,22 @@ export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: Sideb
         <span className={styles.sideIcon}>{'</>'}</span> Coding
       </button>
 
-      {/* Installed feature packs. Demo entry until list_mcps wiring (block 2). */}
-      <div className={styles.sideLabel}>Packs</div>
-      <button
-        type="button"
-        className={`${styles.sideItem} ${active === `pack.${DEMO_CF_WORKERS.id}` ? styles.sideItemActive : ''}`}
-        onClick={() => onSelect({ kind: 'feature-pack', pack: DEMO_CF_WORKERS })}
-        title={DEMO_CF_WORKERS.summary}
-      >
-        <span className={styles.sideIcon}>⚡</span> {DEMO_CF_WORKERS.name}
-      </button>
+      {packs.length > 0 && (
+        <>
+          <div className={styles.sideLabel}>Packs</div>
+          {packs.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`${styles.sideItem} ${active === `pack.${p.id}` ? styles.sideItemActive : ''}`}
+              onClick={() => onSelect({ kind: 'feature-pack', pack: p })}
+              title={p.summary}
+            >
+              <span className={styles.sideIcon}>{p.icon ?? '⚡'}</span> {p.name}
+            </button>
+          ))}
+        </>
+      )}
 
       <div className={styles.sideSpacer} />
 
