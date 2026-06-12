@@ -386,6 +386,15 @@ const InvokeStep = StepCommon.extend({
   inputs: z.record(z.string(), z.string()).optional(),
 });
 
+/** Shell step — run a command line with the pack's provisioned env (tool
+ *  PATH + {{secret}}-resolved vars). stdout is the step output. The minimal
+ *  executable step for cli-wrapper feature packs (ADR-002 substrate §
+ *  composition v21 §7.2 — run_action executes these). */
+const ShellStep = StepCommon.extend({
+  type: z.literal('shell'),
+  command: z.string().min(1),
+});
+
 export const Step = z.discriminatedUnion('type', [
   CaptureClipboardStep,
   WriteClipboardStep,
@@ -397,6 +406,7 @@ export const Step = z.discriminatedUnion('type', [
   McpInvokeStep,
   VaultWriteStep,
   InvokeStep,
+  ShellStep,
 ]);
 export type Step = z.infer<typeof Step>;
 

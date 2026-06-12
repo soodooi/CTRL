@@ -68,6 +68,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::install_mcpb,
             $crate::commands::kernel::install_mcp_from_mcp,
             $crate::commands::kernel::run_mcp,
+            $crate::commands::kernel::run_action,
             $crate::commands::kernel::uninstall_mcp,
             $crate::commands::kernel::read_mcp_manifest,
             $crate::commands::kernel::set_mcp_config,
