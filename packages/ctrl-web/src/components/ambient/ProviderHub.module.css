@@ -23,6 +23,18 @@
   font-family: var(--font-ui, -apple-system, 'Inter', system-ui, sans-serif);
 }
 
+/* Inline mode: embedded in Settings → Providers, no modal chrome. */
+.panelInline {
+  width: 100%;
+  max-width: 720px;
+  max-height: none;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow: visible;
+}
+
 .header {
   display: flex;
   align-items: flex-start;

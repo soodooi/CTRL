@@ -40,6 +40,7 @@ import {
   type IrisyRole,
   type ProviderListRow,
 } from '@/lib/provider-config';
+import { ProviderHub } from '@/components/ambient/ProviderHub';
 import styles from './settings.module.css';
 
 // ─────────────────────────────────────────────────────────────
@@ -1054,9 +1055,9 @@ export const SettingsProvidersPage = (): ReactElement => (
   <SettingsShell activeTab="providers">
     <Section
       title="Irisy provider"
-      description="The brain Irisy talks to. Defaults to local Ollama via Pi-first; add a hosted provider to switch."
+      description="Pick the model Irisy uses. Paste your API key once — Volc, Zhipu, Claude and more — and switch anytime."
     >
-      <ProvidersBlock />
+      <ProviderHub inline />
     </Section>
   </SettingsShell>
 );
