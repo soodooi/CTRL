@@ -13,6 +13,15 @@
 - [ ] **recall**:本地 RAG(FTS5 + embeddings)接到 Irisy,能问答这个 vault
 - [ ] 这个 vault 要不要移进 CTRL Notes vault(`~/Documents/CTRL/Notes/`),让 CTRL app 自己能看(真 dogfood)
 
+## 模块化平台落地(最大的方向,全是「移除表面积」)
+- [ ] **Coding / Notes 从 sidebar 固定 face → 可安装模块**(sidebar 不再硬编码它们)
+- [ ] **模块按意图浮现**:Irisy 匹配已装模块的 manifest 描述,只加载 1-3 个(progressive disclosure)
+- [ ] **Discover = 模块 store**:按场景组织、一键装(.mcpb 式 bundle)、key → keychain、AI 从一句话生成 manifest
+- [ ] **coding 模块**:wrap opencode / Claude Code / Codex 成可装模块(BYOK)= 获客 beachhead
+- [ ] 节奏 + 砍什么由 bao 定;原则:只一个 primitive(模块),无菜单膨胀,curation,场景组织
+
 ## 其它
+- [ ] **logo**:bao 给干净版(无网格底)→ 换掉 sidebar 纯文字 "CTRL"
+- [ ] **Sonnet 真机测**:bao 在 CTRL 配了 anthropic(key 在 keychain),要让 hermes 用上需写进 ~/.hermes/.env
 - [ ] worktree lanes(`feat/pwa-irisy-single-entry`、`feat/remote-window-share-spike`)+ open PR #83 要不要合
-- [ ] 定位写进 ADR:CTRL = 项目大脑 是否 amend ADR-001 spine / ADR-005 irisy(避免跟实装漂移)
+- [ ] 定位写进 ADR:CTRL = 项目大脑 + 模块化平台,amend ADR-001 spine / ADR-005 irisy(避免跟实装漂移 —— 现在 ADR 还把 Coding/Notes 当固定 face)
