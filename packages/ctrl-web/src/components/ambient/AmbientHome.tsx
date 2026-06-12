@@ -146,6 +146,24 @@ export function AmbientHome({
     if (!trimmed || streaming) return;
     setInput('');
     const userMsg: Msg = { id: `u-${Date.now()}`, role: 'user', content: trimmed };
+    // Readiness gate (bao 2026-06-12: check the env + guide, don't go silent):
+    // with no model wired, don't stream into the void — the user would just
+    // see a spinner forever if the backend hangs. Irisy speaks up and opens
+    // the model picker so it's fixable in one step.
+    if (!hasProvider) {
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        {
+          id: `a-${Date.now()}`,
+          role: 'assistant',
+          content:
+            "I don't have a model yet, so I can't reply. I've opened the model picker — pick a provider and paste your key, then ask me again.",
+        },
+      ]);
+      onOpenPicker();
+      return;
+    }
     const asstId = `a-${Date.now()}`;
     setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '' }]);
     setStreaming(true);
@@ -195,7 +213,7 @@ export function AmbientHome({
     } finally {
       setStreaming(false);
     }
-  }, [messages, streaming]);
+  }, [messages, streaming, hasProvider, onOpenPicker]);
 
   const onPickCapability = useCallback((cap: Capability) => {
     setInput(cap.starter ?? `${cap.label}: `);
