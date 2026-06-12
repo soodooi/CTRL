@@ -39,6 +39,8 @@ pub mod agent_installer;
 pub mod agent_launcher;
 // Built-in tool downloader for feature-pack provision (ADR-002 §7.2 v21).
 pub mod tool_installer;
+// Provision runner — check → install (downloader/pkg-mgr) → env+secret inject.
+pub mod provision_runner;
 
 pub use hotkey::HotkeyController;
 pub use keychain::KeychainStore;
