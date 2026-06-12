@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { invoke } from '@tauri-apps/api/core';
 import { Sidebar, type SidebarSection } from './Sidebar';
-import { ProviderPicker } from './ProviderPicker';
+import { ProviderHub } from './ProviderHub';
 import { AmbientHome, type ToolRequest } from './AmbientHome';
 import styles from './AmbientHome.module.css';
 
@@ -123,9 +123,9 @@ export function AmbientWorkbench(): ReactElement {
       )}
 
       {pickerOpen && (
-        <ProviderPicker
+        <ProviderHub
           onClose={() => setPickerOpen(false)}
-          onActivated={(label, m) => setModelLabel(`${label} · ${m}`)}
+          onActivated={(label, m) => setModelLabel(m ? `${label} · ${m}` : label)}
         />
       )}
     </div>
