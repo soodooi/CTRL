@@ -15,6 +15,7 @@ import {
   type PackListing,
 } from '@/lib/feature-pack';
 import type { ConnectorManifest } from '@/lib/connector';
+import { PackCreator } from './PackCreator';
 import styles from './Discover.module.css';
 
 interface DiscoverProps {
@@ -32,6 +33,7 @@ export function Discover(_props: DiscoverProps): ReactElement {
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [creatorOpen, setCreatorOpen] = useState(false);
 
   useEffect(() => {
     const refresh = (): void => {
@@ -106,7 +108,7 @@ export function Discover(_props: DiscoverProps): ReactElement {
             <h4>Nothing fits? Have Irisy build one</h4>
             <p>Say "I want a tool that does X" — Irisy generates a pack, you review and install. No JSON.</p>
           </div>
-          <button type="button" className={styles.createBtn}>Create</button>
+          <button type="button" className={styles.createBtn} onClick={() => setCreatorOpen(true)}>Create</button>
         </div>
 
         {showFeatured && (
@@ -166,6 +168,12 @@ export function Discover(_props: DiscoverProps): ReactElement {
 
         {msg != null && <div className={styles.msg}>{msg}</div>}
       </div>
+      {creatorOpen && (
+        <PackCreator
+          onClose={() => setCreatorOpen(false)}
+          onInstalled={() => setMsg("Installed your pack — it's now under Packs in the sidebar.")}
+        />
+      )}
     </div>
   );
 }
