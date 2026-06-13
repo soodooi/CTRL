@@ -55,3 +55,94 @@ export function runInstalledPackAction(packId: string, actionId: string): Promis
     args: { mcp_id: packId, action_id: actionId },
   });
 }
+
+// ── Install (the user's action — Discover one-click) ──────────────────────
+
+/** Event the sidebar listens for to reload its installed-packs list after
+ *  an install/uninstall. */
+export const PACKS_CHANGED_EVENT = 'ctrl:packs-changed';
+
+export interface PackListing {
+  id: string;
+  name: string;
+  icon: string;
+  summary: string;
+  category: string;
+  installs?: string;
+  rating?: string;
+  /** Full manifest installed via install_mcp. */
+  manifest: Record<string, unknown>;
+}
+
+// Manifest factory — keeps the bundled catalog terse.
+const shellAction = (id: string, name: string, command: string): Record<string, unknown> => ({
+  id,
+  name,
+  input: 'none',
+  output: 'workspace',
+  steps: [{ type: 'shell', command }],
+});
+const packManifest = (
+  id: string,
+  name: string,
+  icon: string,
+  short: string,
+  actions: Record<string, unknown>[],
+): Record<string, unknown> => ({
+  manifest_version: 2,
+  id,
+  name,
+  version: '1.0.0',
+  author: { name: 'CTRL' },
+  description: { short },
+  icon,
+  mcp_color: 'graphite',
+  variant: 'builtin',
+  actions,
+});
+
+/** Official feature packs installable in one click from Discover. A real
+ *  registry / .mcpb listings come later; this is the bundled set. */
+export const OFFICIAL_PACKS: PackListing[] = [
+  {
+    id: 'dev-box', name: 'Dev Box', icon: '🧰', category: 'Dev',
+    summary: 'Local dev shortcuts — node / system / date',
+    installs: '1.1k', rating: '4.6',
+    manifest: packManifest('dev-box', 'Dev Box', '🧰', 'Local dev shortcuts', [
+      shellAction('node', 'Node version', 'node --version'),
+      shellAction('sys', 'System', 'uname -a'),
+      shellAction('date', 'Date', 'date'),
+    ]),
+  },
+  {
+    id: 'git-box', name: 'Git Box', icon: '🔀', category: 'Dev',
+    summary: 'Git status / recent commits / branches',
+    installs: '840', rating: '4.5',
+    manifest: packManifest('git-box', 'Git Box', '🔀', 'Git shortcuts', [
+      shellAction('status', 'Status', 'git status --short'),
+      shellAction('log', 'Recent commits', 'git log --oneline -10'),
+      shellAction('branch', 'Branches', 'git branch -a'),
+    ]),
+  },
+  {
+    id: 'disk-box', name: 'Disk Box', icon: '💾', category: 'System',
+    summary: 'Disk / memory / CPU at a glance',
+    installs: '610', rating: '4.4',
+    manifest: packManifest('disk-box', 'Disk Box', '💾', 'System resources', [
+      shellAction('disk', 'Disk usage', 'df -h'),
+      shellAction('mem', 'Memory', 'vm_stat'),
+      shellAction('cpu', 'CPU', 'sysctl -n machdep.cpu.brand_string'),
+    ]),
+  },
+];
+
+/** Install a feature pack from its manifest (writes to ~/.ctrl/mcps via
+ *  install_mcp), then signals the sidebar to reload its pack list. */
+export async function installPack(manifest: Record<string, unknown>): Promise<void> {
+  await invoke('install_mcp', {
+    args: { manifest, server_code: '', server_code_filename: '' },
+  });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(PACKS_CHANGED_EVENT));
+  }
+}

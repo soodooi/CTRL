@@ -137,6 +137,42 @@
   background: var(--color-bg-l0);
 }
 
+/* Simplified Notes toolbar — files / backlinks toggles + tabs (bao 2026-06-12). */
+.notesToolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+.toolbarTabs {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.toolBtn {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 15px;
+}
+.toolBtn:hover {
+  background: var(--color-bg-l2);
+}
+.toolBtn[data-on] {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
 .viewFallback {
   display: flex;
   align-items: center;

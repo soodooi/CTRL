@@ -1,161 +1,171 @@
-// Discover — the share-and-be-shared commons (ADR-006 §5).
+// Discover — app-store-style feature pack browser (ADR-006 §5).
 //
-// Browse tool DEFINITIONS others have shared and install them locally; they
-// run on YOUR own data + keys. Only definitions travel — no user data, no
-// keys (the manifest holds a keychain key_ref, never a key). Like a recipe
-// box: take a recipe, cook it with your own ingredients.
-//
-// v0: a small bundled commons of sample shared tools + a paste/import box.
-// Later: a real shared index (git-backed / MCP-registry-style / CTRL-cloud
-// listing — listings only, never user content per ADR-006 §3.8).
+// bao 2026-06-12: the old Discover was a dead hardcoded card list — no search,
+// no categories, couldn't hold many packs. Rebuilt app-store style: prominent
+// search (most sessions start with a query), category chips, a card grid that
+// scales, a featured banner, and a "create one" CTA (flexible, not a fixed
+// catalog). Registry-driven by OFFICIAL_PACKS; a real .mcpb registry lands later.
 
-import { useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import {
-  exportConnector,
-  importConnector,
-  loadConnectors,
-  saveConnector,
-  type ConnectorManifest,
-} from '@/lib/connector';
+  OFFICIAL_PACKS,
+  installPack,
+  loadInstalledPacks,
+  PACKS_CHANGED_EVENT,
+  type PackListing,
+} from '@/lib/feature-pack';
+import type { ConnectorManifest } from '@/lib/connector';
+import styles from './Discover.module.css';
 
 interface DiscoverProps {
+  /** Kept for call-site compatibility; packs signal via PACKS_CHANGED_EVENT. */
   onInstalled: (m: ConnectorManifest) => void;
+  /** Legacy shared style map — unused now (Discover owns Discover.module.css). */
   styles: Record<string, string>;
 }
 
-// Bundled commons (sample shared tool definitions — no keys, no data).
-const COMMONS: ConnectorManifest[] = [
-  {
-    id: 'invoice-gen',
-    title: 'Invoice generator',
-    base_url: 'http://localhost:0',
-    tools: [
-      {
-        name: 'list_invoices',
-        title: 'List invoices',
-        description: 'Your recent invoices',
-        method: 'GET',
-        path: '/invoices',
-        render: 'table',
-        read_only: true,
-        mock: [
-          { no: 'INV-001', client: 'Acme', amount: 1200, status: 'Paid' },
-          { no: 'INV-002', client: 'Globex', amount: 800, status: 'Sent' },
-        ],
-      },
-    ],
-    use_mock: true,
-  },
-  {
-    id: 'lead-tracker',
-    title: 'Lead tracker',
-    base_url: 'http://localhost:0',
-    tools: [
-      {
-        name: 'list_leads',
-        title: 'List leads',
-        description: 'Your sales leads',
-        method: 'GET',
-        path: '/leads',
-        render: 'table',
-        read_only: true,
-        mock: [
-          { name: 'Jane Doe', source: 'Referral', stage: 'New' },
-          { name: 'Sam Lee', source: 'Website', stage: 'Contacted' },
-        ],
-      },
-    ],
-    use_mock: true,
-  },
-];
+const CATEGORIES = ['All', ...Array.from(new Set(OFFICIAL_PACKS.map((p) => p.category)))];
 
-export function Discover({ onInstalled, styles }: DiscoverProps): ReactElement {
-  const [paste, setPaste] = useState('');
+export function Discover(_props: DiscoverProps): ReactElement {
+  const [query, setQuery] = useState('');
+  const [cat, setCat] = useState('All');
+  const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
+  const [installingId, setInstallingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const install = (m: ConnectorManifest): void => {
-    saveConnector(m);
-    onInstalled(m);
-    setMsg(`Installed "${m.title}" — it's now in Your tools, running on your machine.`);
-  };
+  useEffect(() => {
+    const refresh = (): void => {
+      void loadInstalledPacks()
+        .then((ps) => setInstalledIds(new Set(ps.map((p) => p.id))))
+        .catch(() => {});
+    };
+    refresh();
+    window.addEventListener(PACKS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
+  }, []);
 
-  const installPaste = (): void => {
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return OFFICIAL_PACKS.filter((p) => {
+      if (cat !== 'All' && p.category !== cat) return false;
+      if (!q) return true;
+      return `${p.name} ${p.summary} ${p.category}`.toLowerCase().includes(q);
+    });
+  }, [query, cat]);
+
+  const install = async (p: PackListing): Promise<void> => {
+    setInstallingId(p.id);
+    setMsg(null);
     try {
-      const m = importConnector(paste.trim());
-      onInstalled(m);
-      setPaste('');
-      setMsg(`Installed "${m.title}". Add your key + base URL in the tool to connect your data.`);
+      await installPack(p.manifest);
+      setMsg(`Installed "${p.name}" — it's now under Packs in the sidebar.`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstallingId(null);
     }
   };
 
-  const share = async (m: ConnectorManifest): Promise<void> => {
-    const def = exportConnector(m);
-    try {
-      await navigator.clipboard.writeText(def);
-      setMsg(`Copied "${m.title}" definition to clipboard — send it to anyone. No keys or data included.`);
-    } catch {
-      setMsg(def); // clipboard blocked — show the definition to copy manually
-    }
-  };
-
-  const mine = loadConnectors();
+  const featured = OFFICIAL_PACKS[0];
+  const showFeatured = cat === 'All' && !query && featured;
 
   return (
-    <div className={styles.discover}>
-      <h1 className={styles.discoverTitle}>Discover</h1>
-      <p className={styles.discoverSub}>
-        Tools one-person companies share. Install one — it runs locally on
-        <strong> your</strong> data and keys. Only the tool definition travels, never data.
-      </p>
+    <div className={styles.root}>
+      <div className={styles.top}>
+        <div className={styles.titleRow}>
+          <span className={styles.title}>Discover</span>
+          <span className={styles.titleSub}>Feature packs — install one, or create your own</span>
+        </div>
+        <div className={styles.search}>
+          <span>🔍</span>
+          <input
+            className={styles.searchInput}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search packs, or say what you want to do…"
+          />
+        </div>
+        <div className={styles.chips}>
+          {CATEGORIES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`${styles.chip} ${cat === c ? styles.chipOn : ''}`}
+              onClick={() => setCat(c)}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <div className={styles.discoverSection}>Your tools — share a definition</div>
-      <div className={styles.discoverGrid}>
-        {mine.map((m) => (
-          <div key={m.id} className={styles.discoverCard}>
-            <div className={styles.discoverCardName}>{m.title}</div>
-            <div className={styles.discoverCardMeta}>{m.tools.length} tool(s)</div>
-            <button type="button" className={styles.discoverShare} onClick={() => void share(m)}>
-              Share
+      <div className={styles.scroll}>
+        <div className={styles.create}>
+          <span className={styles.createIc}>✦</span>
+          <div className={styles.createBody}>
+            <h4>Nothing fits? Have Irisy build one</h4>
+            <p>Say "I want a tool that does X" — Irisy generates a pack, you review and install. No JSON.</p>
+          </div>
+          <button type="button" className={styles.createBtn}>Create</button>
+        </div>
+
+        {showFeatured && (
+          <div className={styles.featured}>
+            <span className={styles.bigIc}>{featured.icon}</span>
+            <div className={styles.fBody}>
+              <div className={styles.fTag}>Featured</div>
+              <h3>{featured.name}</h3>
+              <p>{featured.summary}</p>
+            </div>
+            <button
+              type="button"
+              className={styles.installBtn}
+              disabled={installedIds.has(featured.id) || installingId === featured.id}
+              onClick={() => void install(featured)}
+            >
+              {installedIds.has(featured.id) ? 'Installed' : 'Install'}
             </button>
           </div>
-        ))}
-      </div>
+        )}
 
-      <div className={styles.discoverSection}>From the commons — install</div>
-      <div className={styles.discoverGrid}>
-        {COMMONS.map((m) => (
-          <div key={m.id} className={styles.discoverCard}>
-            <div className={styles.discoverCardName}>{m.title}</div>
-            <div className={styles.discoverCardMeta}>{m.tools.length} tool(s)</div>
-            <button type="button" className={styles.discoverInstall} onClick={() => install(m)}>
-              Install
-            </button>
-          </div>
-        ))}
-      </div>
+        <div className={styles.secHead}>
+          <span className={styles.secTitle}>{cat === 'All' ? 'All packs' : cat}</span>
+        </div>
+        <div className={styles.grid}>
+          {filtered.map((p) => {
+            const got = installedIds.has(p.id);
+            return (
+              <div key={p.id} className={styles.card}>
+                <div className={styles.cardTop}>
+                  <span className={styles.cardIc}>{p.icon}</span>
+                  <span className={styles.cardName}>{p.name}</span>
+                </div>
+                <div className={styles.cardDesc}>{p.summary}</div>
+                <div className={styles.cardFoot}>
+                  <span className={styles.cardMeta}>
+                    {p.installs != null && <b>{p.installs}</b>}
+                    {p.installs != null ? ' installs' : ''}
+                    {p.rating != null ? ` · ★ ${p.rating}` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    className={`${styles.cardBtn} ${got ? styles.cardBtnGot : ''}`}
+                    disabled={got || installingId === p.id}
+                    onClick={() => void install(p)}
+                  >
+                    {got ? 'Installed' : installingId === p.id ? '…' : 'Install'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className={styles.empty}>No packs match. Try "Create" above.</div>
+          )}
+        </div>
 
-      <div className={styles.discoverPaste}>
-        <div className={styles.discoverPasteLabel}>Got a shared tool definition? Paste it:</div>
-        <textarea
-          className={styles.discoverPasteBox}
-          value={paste}
-          onChange={(e) => setPaste(e.target.value)}
-          placeholder='{"id":"my-tool","title":"...","tools":[...]}'
-          rows={4}
-        />
-        <button
-          type="button"
-          className={styles.discoverInstall}
-          onClick={installPaste}
-          disabled={!paste.trim()}
-        >
-          Install from definition
-        </button>
+        {msg != null && <div className={styles.msg}>{msg}</div>}
       </div>
-
-      {msg && <div className={styles.discoverMsg}>{msg}</div>}
     </div>
   );
 }

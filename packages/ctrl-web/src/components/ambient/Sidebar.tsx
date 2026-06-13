@@ -13,13 +13,14 @@ import { getVersion } from '@tauri-apps/api/app';
 import { loadConnectors } from '@/lib/connector';
 import { APP_VERSION } from '@/lib/app-meta';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
-import { loadInstalledPacks } from '@/lib/feature-pack';
+import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
 
 export type SidebarSection =
   | { kind: 'irisy' }
   | { kind: 'tool'; connectorId: string; toolName: string; label: string; sub: string }
   | { kind: 'route'; to: string }
   | { kind: 'feature-pack'; pack: FeaturePack }
+  | { kind: 'notes' }
   | { kind: 'discover' };
 
 interface SidebarProps {
@@ -42,7 +43,12 @@ export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: Sideb
   // Installed feature packs (mcps whose manifest declares actions).
   const [packs, setPacks] = useState<FeaturePack[]>([]);
   useEffect(() => {
-    void loadInstalledPacks().then(setPacks).catch(() => {});
+    const refresh = (): void => {
+      void loadInstalledPacks().then(setPacks).catch(() => {});
+    };
+    refresh();
+    window.addEventListener(PACKS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
   }, []);
   return (
     <aside className={styles.sidebar} data-tauri-drag-region>
@@ -86,7 +92,11 @@ export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: Sideb
       )}
 
       <div className={styles.sideLabel}>Workspaces</div>
-      <button type="button" className={styles.sideItem} onClick={() => onSelect({ kind: 'route', to: '/notes' })}>
+      <button
+        type="button"
+        className={`${styles.sideItem} ${active === 'notes' ? styles.sideItemActive : ''}`}
+        onClick={() => onSelect({ kind: 'notes' })}
+      >
         <span className={styles.sideIcon}>✎</span> Notes
       </button>
       <button type="button" className={styles.sideItem} onClick={() => onSelect({ kind: 'route', to: '/coding' })}>

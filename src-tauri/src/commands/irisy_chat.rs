@@ -154,8 +154,17 @@ async fn forward_to_provider(
     // provider router when hermes is absent or errors so offline / fresh
     // installs stay usable (CLAUDE.md derived rule #2). Coding mode is owned
     // by opencode, so it skips this branch.
+    // Hermes-first routing toggle (bao 2026-06-12, decision A): ALL hermes code
+    // stays, but hermes does NOT intercept the turn while its one-shot path is
+    // slow/blocking (uvx cold start, 180 s timeout, no streaming). Irisy uses
+    // the provider router (the user's configured Claude / Volc) — fast +
+    // reliable. Flip back to true once hermes ships ACP streaming (ADR-002 §1.1
+    // "layers on next"); hermes then becomes an optional brain feature pack,
+    // not a hardcoded interceptor.
+    const HERMES_FIRST: bool = false;
     let coding_mode = args.mode.as_deref() == Some("coding");
-    if !coding_mode
+    if HERMES_FIRST
+        && !coding_mode
         && crate::shell::agent_installer::is_installed(
             &crate::shell::agent_installer::AgentName::Hermes,
         )
