@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CTRL Notes — UI prototype</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f7f7f8;
+    --bg-elev: #fbfbfc;
+    --text: #1d1d1f;
+    --text-muted: #6e6e73;
+    --text-subtle: #9b9ba1;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.14);
+    --primary: #4f46e5;
+    --primary-soft: #eef0fd;
+    --primary-ring: #c7cbf6;
+    --jade: #1a7f5a;
+    --jade-soft: #e6f4ee;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font);
+    color: var(--text);
+    background: var(--bg);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── rail (icon sidebar) ───────────────────────────────── */
+  .rail {
+    width: 52px;
+    flex: none;
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 0;
+    gap: 4px;
+  }
+  .rail .brand { font-size: 11px; font-weight: 800; letter-spacing: .04em; color: var(--text); margin-bottom: 12px; }
+  .rail .ic {
+    width: 34px; height: 34px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 16px; cursor: pointer;
+  }
+  .rail .ic.active { background: var(--primary-soft); color: var(--primary); }
+  .rail .ic:hover { background: #ececf1; }
+  .rail .sp { flex: 1; }
+
+  /* ── Irisy column (alongside) ──────────────────────────── */
+  .irisy {
+    width: 340px;
+    flex: none;
+    order: 2;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+  }
+  .irisy-head {
+    padding: 14px 16px 10px;
+    font-size: 13px; font-weight: 700; color: var(--text);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .irisy-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--jade); }
+  .chat { flex: 1; overflow-y: auto; padding: 6px 16px 12px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { font-size: 13.5px; line-height: 1.55; }
+  .msg.you { align-self: flex-end; background: var(--primary); color: #fff; padding: 8px 12px; border-radius: 14px 14px 4px 14px; max-width: 80%; }
+  .msg.iris { color: var(--text); }
+  .msg.iris .who { font-size: 11px; color: var(--text-subtle); margin-bottom: 3px; }
+  .ai-chip {
+    margin-top: 8px; display: inline-flex; gap: 6px; flex-wrap: wrap;
+  }
+  .ai-chip button {
+    font: inherit; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--primary-ring); background: var(--primary-soft); color: var(--primary);
+    padding: 5px 10px; border-radius: 8px; cursor: pointer;
+  }
+  .composer {
+    margin: 10px 14px 14px; border: 1px solid var(--border-strong); border-radius: 14px;
+    padding: 10px 12px; display: flex; align-items: center; gap: 8px;
+    color: var(--text-subtle); font-size: 13.5px;
+  }
+  .composer .send { margin-left: auto; width: 26px; height: 26px; border-radius: 8px; background: var(--primary-soft); color: var(--primary); display: flex; align-items: center; justify-content: center; }
+
+  /* ── Notes column (big, simple) ────────────────────────── */
+  .notes { flex: 1; order: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  .notes-top {
+    height: 46px; flex: none; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; padding: 0 18px;
+  }
+  .crumb { font-size: 13px; color: var(--text-muted); }
+  .crumb b { color: var(--text); font-weight: 600; }
+  .notes-tools { margin-left: auto; display: flex; gap: 4px; }
+  .tool { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); cursor: pointer; font-size: 15px; }
+  .tool:hover { background: var(--bg-soft); }
+  .tool.on { background: var(--primary-soft); color: var(--primary); }
+  .saved { font-size: 11.5px; color: var(--jade); display: flex; align-items: center; gap: 5px; }
+  .saved .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--jade); }
+
+  .editor-wrap { flex: 1; overflow-y: auto; display: flex; justify-content: center; }
+  .editor {
+    width: 100%; max-width: 760px; padding: 40px 32px 120px; font-size: 15.5px; line-height: 1.72; color: var(--text);
+  }
+  .editor h1 { font-size: 30px; font-weight: 800; letter-spacing: -.01em; margin-bottom: 6px; }
+  .editor .meta { font-size: 12.5px; color: var(--text-subtle); font-family: var(--mono); margin-bottom: 26px; }
+  .editor h2 { font-size: 19px; font-weight: 700; margin: 30px 0 10px; }
+  .editor p { margin: 10px 0; }
+  .editor ul { margin: 8px 0 8px 22px; }
+  .editor li { margin: 5px 0; }
+  .editor strong { font-weight: 700; }
+  .editor code { font-family: var(--mono); font-size: 13px; background: var(--bg-soft); padding: 2px 6px; border-radius: 5px; }
+  .editor pre { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; overflow-x: auto; margin: 14px 0; }
+  .editor pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.6; }
+  .editor table { border-collapse: collapse; margin: 14px 0; font-size: 14px; width: 100%; }
+  .editor th, .editor td { border: 1px solid var(--border); padding: 7px 12px; text-align: left; }
+  .editor th { background: var(--bg-soft); font-weight: 600; }
+  .editor blockquote { border-left: 3px solid var(--primary-ring); padding-left: 14px; color: var(--text-muted); margin: 12px 0; }
+  .tag { display: inline-block; font-size: 12px; color: var(--primary); background: var(--primary-soft); padding: 1px 8px; border-radius: 20px; }
+
+  /* floating drawer hint (files tree tucked away) */
+  .drawer-note { position: absolute; left: 64px; bottom: 14px; font-size: 11px; color: var(--text-subtle); }
+</style>
+</head>
+<body>
+  <!-- icon rail: tree + backlinks live behind buttons, not as columns -->
+  <aside class="rail">
+    <div class="brand">C</div>
+    <div class="ic" title="Irisy">✦</div>
+    <div class="ic active" title="Notes">✎</div>
+    <div class="ic" title="Coding">&lt;/&gt;</div>
+    <div class="sp"></div>
+    <div class="ic" title="Discover">⊕</div>
+    <div class="ic" title="Settings">⚙</div>
+  </aside>
+
+  <!-- Irisy stays ALONGSIDE the note (the AI layer: capture / recall) -->
+  <section class="irisy">
+    <div class="irisy-head"><span class="dot"></span> Irisy</div>
+    <div class="chat">
+      <div class="msg you">这个收敛架构,hermes 为啥退成开关?</div>
+      <div class="msg iris">
+        <div class="who">Irisy</div>
+        因为 hermes 的 one-shot 走 uvx,冷启动慢、最多卡 180s,把你配的 Claude 挡在后面。开关关掉后 Irisy 直接走 provider router(Claude 秒回),hermes 代码全留,等它流式 ready 再翻回来。
+        <div class="ai-chip">
+          <button>↳ 记进这篇笔记</button>
+          <button>⌕ 问整个知识库</button>
+        </div>
+      </div>
+      <div class="msg you">我们还在哪提过 180s 这个数?</div>
+      <div class="msg iris">
+        <div class="who">Irisy · recall</div>
+        在 <b>log/2026-06-12</b> 和 <b>research/notes-and-ai-kb</b> 旁的讨论里都提过 —— 要我把这三处串成一条决策线吗?
+      </div>
+    </div>
+    <div class="composer">问 Irisy,或让它记一笔… <span class="send">↑</span></div>
+  </section>
+
+  <!-- Notes: ONE big simple editor. tree/backlinks tucked into the toolbar. -->
+  <section class="notes">
+    <div class="notes-top">
+      <span class="crumb">ctrl / decisions / <b>0006 收敛架构</b></span>
+      <div class="notes-tools">
+        <div class="tool" title="Files">☰</div>
+        <div class="tool" title="Backlinks">↩</div>
+        <div class="tool on" title="Edit / Reading">✎</div>
+      </div>
+      <span class="saved" style="margin-left:12px"><span class="dot"></span> Saved</span>
+    </div>
+    <div class="editor-wrap">
+      <div class="editor">
+        <h1>0006 — 收敛架构</h1>
+        <div class="meta">decisions/0006 · updated 2026-06-12 · <span class="tag">architecture</span></div>
+
+        <p><strong>Irisy</strong> 是表象,用一个 <strong>brain</strong> 回复 —— 默认走 provider router(你配的 Claude/Volc,秒回),hermes 只是可选 brain 功能包。</p>
+
+        <h2>三句话锁死</h2>
+        <ul>
+          <li>Irisy = 表象,用 brain 回复;默认 provider router,hermes 可选。</li>
+          <li>三引擎 = 三类功能包(hermes / kairo / opencode),不再硬编码。</li>
+          <li>知识库 = Notes 底座 + kairo(看) + Irisy recall(问) + supply(喂)。</li>
+        </ul>
+
+        <h2>现在做 vs 以后</h2>
+        <table>
+          <tr><th>现在</th><th>以后</th></tr>
+          <tr><td>Irisy 走 Claude(秒回)</td><td>hermes 做成 brain 功能包</td></tr>
+          <tr><td>Notes 内置查看</td><td>RAG recall / supply</td></tr>
+          <tr><td>功能包能装(Dev Box)</td><td>三引擎全功能包化</td></tr>
+        </table>
+
+        <blockquote>vault 这词废弃 → Notes。数据 = Notes,工具看它,内置够用。</blockquote>
+
+        <pre><code>const HERMES_FIRST = false; // 开关:hermes 不抢路</code></pre>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

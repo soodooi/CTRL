@@ -20,6 +20,7 @@ export type SidebarSection =
   | { kind: 'tool'; connectorId: string; toolName: string; label: string; sub: string }
   | { kind: 'route'; to: string }
   | { kind: 'feature-pack'; pack: FeaturePack }
+  | { kind: 'notes' }
   | { kind: 'discover' };
 
 interface SidebarProps {
@@ -91,7 +92,11 @@ export function Sidebar({ active, onSelect, modelLabel, onModel, styles }: Sideb
       )}
 
       <div className={styles.sideLabel}>Workspaces</div>
-      <button type="button" className={styles.sideItem} onClick={() => onSelect({ kind: 'route', to: '/notes' })}>
+      <button
+        type="button"
+        className={`${styles.sideItem} ${active === 'notes' ? styles.sideItemActive : ''}`}
+        onClick={() => onSelect({ kind: 'notes' })}
+      >
         <span className={styles.sideIcon}>✎</span> Notes
       </button>
       <button type="button" className={styles.sideItem} onClick={() => onSelect({ kind: 'route', to: '/coding' })}>

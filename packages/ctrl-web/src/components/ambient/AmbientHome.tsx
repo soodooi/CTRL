@@ -40,6 +40,7 @@ import {
   type FeaturePack,
 } from '@/components/featurepack/FeaturePackScene';
 import { runInstalledPackAction } from '@/lib/feature-pack';
+import { NotesApp } from '@/components/notes/NotesApp';
 import styles from './AmbientHome.module.css';
 
 interface Msg {
@@ -76,6 +77,8 @@ export interface AmbientHomeProps {
   /** Feature pack to open in the scene panel alongside Irisy (null until a
    *  pack is selected). */
   packRequest: PackRequest | null;
+  /** Bumped to open Notes alongside Irisy (output left, Irisy right). */
+  openNotesNonce: number;
   /** Bumped by the shell when "Irisy" is selected, to reset the chat. */
   irisyNonce: number;
   /** Collapsed (display:none) while a route owns the main column. The
@@ -94,6 +97,7 @@ export function AmbientHome({
   onToggleDrawer,
   toolRequest,
   packRequest,
+  openNotesNonce,
   irisyNonce,
   hidden,
 }: AmbientHomeProps): ReactElement {
@@ -103,7 +107,7 @@ export function AmbientHome({
   const [part, setPart] = useState<PartSpec | null>(null);
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
-  const [scene, setScene] = useState<FeaturePack | null>(null);
+  const [scene, setScene] = useState<FeaturePack | 'notes' | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -137,7 +141,7 @@ export function AmbientHome({
   const surface: Surface =
     part || scene ? 'chat-part' : messages.length > 0 ? 'chat' : 'empty';
   // Right-column width: scene panels sit a touch wider than text parts.
-  const rightRatio = scene ? 0.52 : part ? partLayout(part.kind).preferredRatio : 0.42;
+  const rightRatio = scene === 'notes' ? 0.62 : scene ? 0.52 : part ? partLayout(part.kind).preferredRatio : 0.42;
   // Gate the first-run CTA on whether any model is wired up yet.
   const hasProvider = modelLabel !== 'Model';
 
@@ -266,6 +270,11 @@ export function AmbientHome({
   useEffect(() => {
     if (packRequest) setScene(packRequest.pack);
   }, [packRequest]);
+
+  // Open Notes alongside Irisy (output left, Irisy right) when sidebar asks.
+  useEffect(() => {
+    if (openNotesNonce > 0) setScene('notes');
+  }, [openNotesNonce]);
 
   // Reset the chat when the shell selects "Irisy" (nonce bump). Since this
   // component stays mounted across routes (hidden, not unmounted), the
@@ -406,15 +415,22 @@ export function AmbientHome({
                 orientation={isNarrow ? 'vertical' : 'horizontal'}
                 className={styles.split}
               >
-                <Panel defaultSize={(1 - rightRatio) * 100} minSize={28}>
-                  <div className={styles.chatPane}>
-                    {conversation}
-                    {composer}
-                  </div>
-                </Panel>
-                <Separator className={styles.handle} />
+                {/* Output / scene LEFT (F-pattern focus), Irisy chat RIGHT —
+                    ergonomics (bao 2026-06-12). */}
                 <Panel defaultSize={rightRatio * 100} minSize={24}>
-                  {scene ? (
+                  {scene === 'notes' ? (
+                    <div className={styles.scenePane}>
+                      <button
+                        type="button"
+                        className={styles.sceneClose}
+                        onClick={() => setScene(null)}
+                        aria-label="Close Notes"
+                      >
+                        ✕
+                      </button>
+                      <NotesApp />
+                    </div>
+                  ) : scene ? (
                     <div className={styles.scenePane}>
                       <button
                         type="button"
@@ -446,6 +462,13 @@ export function AmbientHome({
                       </div>
                     )
                   )}
+                </Panel>
+                <Separator className={styles.handle} />
+                <Panel defaultSize={(1 - rightRatio) * 100} minSize={28}>
+                  <div className={styles.chatPane}>
+                    {conversation}
+                    {composer}
+                  </div>
                 </Panel>
               </Group>
             ) : (
