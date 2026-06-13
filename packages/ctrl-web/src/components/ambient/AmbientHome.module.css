@@ -693,14 +693,13 @@
 }
 
 /* ── Discover (share & be shared commons) — ADR-006 §5 ────────── */
+/* Host for the Discover component (full bleed; Discover owns its own layout +
+   scroll in Discover.module.css). Named `.discover` so the centering rule
+   above (`:not(.discover)`) excludes it. */
 .discover {
   flex: 1;
   min-height: 0;
   width: 100%;
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 28px 24px;
-  overflow-y: auto;
 }
 .discoverTitle { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
 .discoverSub { margin: 6px 0 20px; font-size: 13px; color: var(--text-muted, #6e6e73); line-height: 1.5; }

@@ -351,7 +351,9 @@ export function AmbientHome({
         </div>
       </div>
       {view === 'discover' && (
-        <Discover onInstalled={() => onView('discover')} styles={styles} />
+        <div className={styles.discover}>
+          <Discover onInstalled={() => onView('discover')} styles={styles} />
+        </div>
       )}
       <AnimatePresence mode="wait">
         {view === 'chat' && (surface === 'empty' ? (

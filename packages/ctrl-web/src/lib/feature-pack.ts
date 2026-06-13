@@ -67,36 +67,72 @@ export interface PackListing {
   name: string;
   icon: string;
   summary: string;
+  category: string;
+  installs?: string;
+  rating?: string;
   /** Full manifest installed via install_mcp. */
   manifest: Record<string, unknown>;
 }
 
-const DEV_BOX_MANIFEST: Record<string, unknown> = {
+// Manifest factory — keeps the bundled catalog terse.
+const shellAction = (id: string, name: string, command: string): Record<string, unknown> => ({
+  id,
+  name,
+  input: 'none',
+  output: 'workspace',
+  steps: [{ type: 'shell', command }],
+});
+const packManifest = (
+  id: string,
+  name: string,
+  icon: string,
+  short: string,
+  actions: Record<string, unknown>[],
+): Record<string, unknown> => ({
   manifest_version: 2,
-  id: 'dev-box',
-  name: 'Dev Box',
+  id,
+  name,
   version: '1.0.0',
   author: { name: 'CTRL' },
-  description: { short: 'Local dev shortcuts — run common checks' },
-  icon: '🧰',
+  description: { short },
+  icon,
   mcp_color: 'graphite',
   variant: 'builtin',
-  actions: [
-    { id: 'node', name: 'Node version', input: 'none', output: 'workspace', steps: [{ type: 'shell', command: 'node --version' }] },
-    { id: 'sys', name: 'System', input: 'none', output: 'workspace', steps: [{ type: 'shell', command: 'uname -a' }] },
-    { id: 'date', name: 'Date', input: 'none', output: 'workspace', steps: [{ type: 'shell', command: 'date' }] },
-  ],
-};
+  actions,
+});
 
-/** Official feature packs a user can install in one click from Discover.
- *  A real registry / .mcpb listings come later; this is the bundled set. */
+/** Official feature packs installable in one click from Discover. A real
+ *  registry / .mcpb listings come later; this is the bundled set. */
 export const OFFICIAL_PACKS: PackListing[] = [
   {
-    id: 'dev-box',
-    name: 'Dev Box',
-    icon: '🧰',
-    summary: 'Local dev shortcuts — run common checks (node / system / date)',
-    manifest: DEV_BOX_MANIFEST,
+    id: 'dev-box', name: 'Dev Box', icon: '🧰', category: 'Dev',
+    summary: 'Local dev shortcuts — node / system / date',
+    installs: '1.1k', rating: '4.6',
+    manifest: packManifest('dev-box', 'Dev Box', '🧰', 'Local dev shortcuts', [
+      shellAction('node', 'Node version', 'node --version'),
+      shellAction('sys', 'System', 'uname -a'),
+      shellAction('date', 'Date', 'date'),
+    ]),
+  },
+  {
+    id: 'git-box', name: 'Git Box', icon: '🔀', category: 'Dev',
+    summary: 'Git status / recent commits / branches',
+    installs: '840', rating: '4.5',
+    manifest: packManifest('git-box', 'Git Box', '🔀', 'Git shortcuts', [
+      shellAction('status', 'Status', 'git status --short'),
+      shellAction('log', 'Recent commits', 'git log --oneline -10'),
+      shellAction('branch', 'Branches', 'git branch -a'),
+    ]),
+  },
+  {
+    id: 'disk-box', name: 'Disk Box', icon: '💾', category: 'System',
+    summary: 'Disk / memory / CPU at a glance',
+    installs: '610', rating: '4.4',
+    manifest: packManifest('disk-box', 'Disk Box', '💾', 'System resources', [
+      shellAction('disk', 'Disk usage', 'df -h'),
+      shellAction('mem', 'Memory', 'vm_stat'),
+      shellAction('cpu', 'CPU', 'sysctl -n machdep.cpu.brand_string'),
+    ]),
   },
 ];
 

@@ -1,0 +1,97 @@
+/* Discover — app-store-style feature pack browser. ADR-006 §5.
+   bao 2026-06-12: prominent search + categories + card grid + create CTA. */
+
+.root {
+  /* Short-name aliases this file uses (the AmbientHome stack uses these with
+     fallbacks; Discover owns its own module so define them locally — scoped,
+     doesn't touch the rest of the shell). Light values. */
+  --primary: #3b5bdb;
+  --primary-soft: #eef0fd;
+  --primary-ring: #c7cbf6;
+  --bg: #ffffff;
+  --bg-elev: #fbfbfc;
+  --bg-soft: #f7f7f8;
+  --card: #ffffff;
+  --text: #1d1d1f;
+  --text-muted: #6e6e73;
+  --text-subtle: #9b9ba1;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+/* sticky header: title + prominent search + category chips */
+.top { flex: none; padding: 22px 28px 0; border-bottom: 1px solid var(--border); }
+.titleRow { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.title { font-size: 22px; font-weight: 800; letter-spacing: -.01em; color: var(--text); }
+.titleSub { font-size: 12.5px; color: var(--text-subtle); }
+.search {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border-strong, var(--border)); border-radius: 12px;
+  padding: 11px 14px; background: var(--bg-elev, var(--card)); max-width: 600px;
+}
+.searchInput { flex: 1; border: none; outline: none; background: none; font: inherit; font-size: 14.5px; color: var(--text); }
+.searchInput::placeholder { color: var(--text-subtle); }
+.chips { display: flex; gap: 8px; margin-top: 14px; padding-bottom: 14px; overflow-x: auto; }
+.chip {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--text-muted);
+  padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
+  background: var(--bg); cursor: pointer; white-space: nowrap;
+}
+.chipOn { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.scroll { flex: 1; overflow-y: auto; padding: 20px 28px 50px; }
+
+/* create CTA */
+.create {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 24px;
+  border: 1px dashed var(--border-strong, var(--border)); border-radius: 14px;
+  padding: 16px 18px; background: var(--bg-elev, var(--card));
+}
+.createIc { font-size: 22px; color: var(--primary); }
+.createBody { flex: 1; }
+.createBody h4 { font-size: 14px; font-weight: 700; color: var(--text); }
+.createBody p { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+.createBtn { font: inherit; font-size: 13px; font-weight: 700; border: none; background: var(--primary); color: #fff; padding: 9px 18px; border-radius: 10px; cursor: pointer; }
+
+/* featured */
+.featured {
+  display: flex; align-items: center; gap: 16px; margin-bottom: 26px;
+  border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px;
+  background: linear-gradient(120deg, var(--primary-soft), var(--bg));
+}
+.bigIc { font-size: 34px; }
+.fBody { flex: 1; }
+.fTag { font-size: 11px; font-weight: 700; color: var(--primary); letter-spacing: .06em; text-transform: uppercase; }
+.fBody h3 { font-size: 18px; font-weight: 800; color: var(--text); margin: 3px 0; }
+.fBody p { font-size: 13px; color: var(--text-muted); }
+.installBtn { font: inherit; font-size: 13px; font-weight: 700; border: none; background: var(--primary); color: #fff; padding: 9px 20px; border-radius: 10px; cursor: pointer; }
+.installBtn:disabled { background: var(--bg-soft, var(--card)); color: var(--text-subtle); }
+
+/* section + grid */
+.secHead { margin: 22px 0 12px; }
+.secTitle { font-size: 15px; font-weight: 700; color: var(--text); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 13px; }
+.card {
+  border: 1px solid var(--border); border-radius: 14px; padding: 15px;
+  background: var(--bg); display: flex; flex-direction: column; gap: 8px;
+  transition: border-color .12s, box-shadow .12s;
+}
+.card:hover { border-color: var(--primary-ring); box-shadow: 0 4px 14px rgba(0,0,0,.05); }
+.cardTop { display: flex; align-items: center; gap: 10px; }
+.cardIc { font-size: 21px; }
+.cardName { font-size: 14.5px; font-weight: 700; color: var(--text); }
+.cardDesc { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; flex: 1; }
+.cardFoot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.cardMeta { font-size: 11.5px; color: var(--text-subtle); }
+.cardMeta b { color: var(--text-muted); }
+.cardBtn { font: inherit; font-size: 12px; font-weight: 700; border: 1px solid var(--primary-ring); background: var(--primary-soft); color: var(--primary); padding: 5px 12px; border-radius: 8px; cursor: pointer; }
+.cardBtnGot { border-color: var(--border); background: var(--bg-soft, var(--card)); color: var(--text-subtle); }
+
+.empty { grid-column: 1 / -1; padding: 40px; text-align: center; color: var(--text-subtle); font-size: 13px; }
+.msg { margin-top: 18px; font-size: 13px; color: var(--text-muted); }
