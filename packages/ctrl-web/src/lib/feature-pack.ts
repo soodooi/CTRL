@@ -105,6 +105,27 @@ const packManifest = (
  *  registry / .mcpb listings come later; this is the bundled set. */
 export const OFFICIAL_PACKS: PackListing[] = [
   {
+    id: 'cf-workers', name: 'CF Workers', icon: '⚡', category: 'Dev',
+    summary: 'Deploy Cloudflare Workers — needs your CF API token',
+    installs: '2.4k', rating: '4.8',
+    manifest: {
+      manifest_version: 2, id: 'cf-workers', name: 'CF Workers', version: '1.0.0',
+      author: { name: 'CTRL' }, description: { short: 'Deploy Cloudflare Workers' },
+      icon: '⚡', mcp_color: 'graphite', variant: 'builtin',
+      config_schema: {
+        fields: [{
+          key: 'cf_api_token', kind: 'secret', label: 'Cloudflare API Token',
+          description: 'Get it at dash.cloudflare.com/profile/api-tokens', required: true,
+        }],
+      },
+      provision: { tools: [], env: { CLOUDFLARE_API_TOKEN: '{{secret:cf_api_token}}' } },
+      actions: [{
+        id: 'check', name: 'Check token', input: 'none', output: 'workspace',
+        steps: [{ type: 'shell', command: 'echo "Cloudflare token: ${CLOUDFLARE_API_TOKEN:+configured}"' }],
+      }],
+    },
+  },
+  {
     id: 'dev-box', name: 'Dev Box', icon: '🧰', category: 'Dev',
     summary: 'Local dev shortcuts — node / system / date',
     installs: '1.1k', rating: '4.6',
@@ -153,4 +174,31 @@ export async function uninstallPack(packId: string): Promise<void> {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(PACKS_CHANGED_EVENT));
   }
+}
+
+export interface SecretField {
+  key: string;
+  label: string;
+  description?: string;
+}
+
+/** Secret fields a pack declares (config_schema fields with kind: secret). */
+export function packSecretFields(manifest: Record<string, unknown>): SecretField[] {
+  const cs = manifest.config_schema as
+    | { fields?: { key: string; kind: string; label: string; description?: string }[] }
+    | undefined;
+  if (!cs?.fields) return [];
+  return cs.fields
+    .filter((f) => f.kind === 'secret')
+    .map((f) => ({ key: f.key, label: f.label, description: f.description }));
+}
+
+/** Store a pack secret in the keychain (account namespaced per the provision
+ *  runner: mcp:<id>:<field>); the value never touches the LLM (decision 0004). */
+export async function storePackSecret(
+  mcpId: string,
+  fieldKey: string,
+  value: string,
+): Promise<void> {
+  await invoke('store_key', { account: `mcp:${mcpId}:${fieldKey}`, value });
 }

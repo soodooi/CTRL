@@ -12,11 +12,14 @@ import {
   installPack,
   uninstallPack,
   loadInstalledPacks,
+  packSecretFields,
   PACKS_CHANGED_EVENT,
   type PackListing,
+  type SecretField,
 } from '@/lib/feature-pack';
 import type { ConnectorManifest } from '@/lib/connector';
 import { PackCreator } from './PackCreator';
+import { PackConfig } from './PackConfig';
 import styles from './Discover.module.css';
 
 interface DiscoverProps {
@@ -38,6 +41,11 @@ export function Discover(_props: DiscoverProps): ReactElement {
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
+  const [configPack, setConfigPack] = useState<{
+    mcpId: string;
+    name: string;
+    fields: SecretField[];
+  } | null>(null);
 
   useEffect(() => {
     const refresh = (): void => {
@@ -64,7 +72,12 @@ export function Discover(_props: DiscoverProps): ReactElement {
     setMsg(null);
     try {
       await installPack(p.manifest);
-      setMsg(`Installed "${p.name}" — it's now under Packs in the sidebar.`);
+      const secrets = packSecretFields(p.manifest);
+      if (secrets.length > 0) {
+        setConfigPack({ mcpId: p.id, name: p.name, fields: secrets });
+      } else {
+        setMsg(`Installed "${p.name}" — it's now under Packs in the sidebar.`);
+      }
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -234,6 +247,15 @@ export function Discover(_props: DiscoverProps): ReactElement {
         <PackCreator
           onClose={() => setCreatorOpen(false)}
           onInstalled={() => setMsg("Installed your pack — it's now under Packs in the sidebar.")}
+        />
+      )}
+      {configPack != null && (
+        <PackConfig
+          mcpId={configPack.mcpId}
+          packName={configPack.name}
+          fields={configPack.fields}
+          onClose={() => setConfigPack(null)}
+          onDone={() => setMsg(`Configured "${configPack.name}" — key saved to your keychain.`)}
         />
       )}
     </div>
