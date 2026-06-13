@@ -50,6 +50,18 @@ interface Msg {
   content: string;
 }
 
+// Quick hooks — the quicker-style high-frequency actions kept ALWAYS in view
+// above the composer (bao 2026-06-12: integrate the functions users reach for
+// daily as the traffic-driver that lifts open-frequency past the weekly-habit
+// threshold). Curated from the zero-install floor; short labels for the rail.
+const QUICK_HOOKS: { id: string; icon: string; label: string }[] = [
+  { id: 'tone-translate', icon: '🌐', label: 'Translate' },
+  { id: 'draft-polish', icon: '✍️', label: 'Polish' },
+  { id: 'summarize', icon: '⊟', label: 'Summarize' },
+  { id: 'extract-actions', icon: '✓', label: 'Actions' },
+  { id: 'plan', icon: '🗂', label: 'Plan' },
+];
+
 type Surface = 'empty' | 'chat' | 'chat-part';
 
 // A sidebar tool click, forwarded from the shell. `nonce` makes each
@@ -410,6 +422,30 @@ export function AmbientHome({
     </div>
   );
 
+  // Always-in-view quicker-style hooks above the composer — the daily
+  // high-frequency actions that pull a user back to open CTRL (bao 2026-06-12).
+  const floorCaps = floorCapabilities();
+  const quickRow = (
+    <div className={styles.quickRow}>
+      {QUICK_HOOKS.map((h) => {
+        const cap = floorCaps.find((c) => c.id === h.id);
+        if (!cap) return null;
+        return (
+          <button
+            key={h.id}
+            type="button"
+            className={styles.quickChip}
+            onClick={() => onPickCapability(cap)}
+            title={cap.hint}
+          >
+            <span className={styles.quickIcon}>{h.icon}</span>
+            {h.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className={styles.root} data-surface={surface} hidden={hidden}>
       <div className={styles.topbar} data-tauri-drag-region>
@@ -503,6 +539,7 @@ export function AmbientHome({
                 <Panel defaultSize={(1 - rightRatio) * 100} minSize={28}>
                   <div className={styles.chatPane}>
                     {conversation}
+                    {quickRow}
                     {composer}
                   </div>
                 </Panel>
@@ -557,6 +594,7 @@ export function AmbientHome({
             ) : (
               <div className={styles.chatPaneCentered}>
                 {conversation}
+                {quickRow}
                 {composer}
               </div>
             )}

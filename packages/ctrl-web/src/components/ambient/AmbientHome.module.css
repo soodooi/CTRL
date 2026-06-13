@@ -346,6 +346,39 @@
   border-radius: 8px;
 }
 
+/* ── Quick hooks (quicker-style high-frequency actions, above composer) ── */
+.quickRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 2px 2px;
+}
+
+.quickChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, #1d1d1f);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
+  background: var(--bg-soft, #f7f7f8);
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.quickChip:hover {
+  border-color: var(--color-primary, #4f46e5);
+  background: var(--color-primary-soft, #eef0fd);
+  color: var(--color-primary, #4f46e5);
+}
+.quickIcon {
+  font-size: 13px;
+  line-height: 1;
+}
+
 /* ── part panel ───────────────────────────────────────────────── */
 .handle {
   width: 1px;
