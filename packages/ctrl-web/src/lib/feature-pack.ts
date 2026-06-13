@@ -146,3 +146,11 @@ export async function installPack(manifest: Record<string, unknown>): Promise<vo
     window.dispatchEvent(new Event(PACKS_CHANGED_EVENT));
   }
 }
+
+/** Uninstall a feature pack (removes ~/.ctrl/mcps/<id>); signals the sidebar. */
+export async function uninstallPack(packId: string): Promise<void> {
+  await invoke('uninstall_mcp', { args: { mcp_id: packId } });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(PACKS_CHANGED_EVENT));
+  }
+}

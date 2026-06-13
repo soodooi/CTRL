@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import {
   OFFICIAL_PACKS,
   installPack,
+  uninstallPack,
   loadInstalledPacks,
   PACKS_CHANGED_EVENT,
   type PackListing,
@@ -32,6 +33,7 @@ export function Discover(_props: DiscoverProps): ReactElement {
   const [cat, setCat] = useState('All');
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [installingId, setInstallingId] = useState<string | null>(null);
+  const [uninstallingId, setUninstallingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
 
@@ -65,6 +67,19 @@ export function Discover(_props: DiscoverProps): ReactElement {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setInstallingId(null);
+    }
+  };
+
+  const uninstall = async (p: PackListing): Promise<void> => {
+    setUninstallingId(p.id);
+    setMsg(null);
+    try {
+      await uninstallPack(p.id);
+      setMsg(`Removed "${p.name}".`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUninstallingId(null);
     }
   };
 
@@ -149,14 +164,25 @@ export function Discover(_props: DiscoverProps): ReactElement {
                     {p.installs != null ? ' installs' : ''}
                     {p.rating != null ? ` · ★ ${p.rating}` : ''}
                   </span>
-                  <button
-                    type="button"
-                    className={`${styles.cardBtn} ${got ? styles.cardBtnGot : ''}`}
-                    disabled={got || installingId === p.id}
-                    onClick={() => void install(p)}
-                  >
-                    {got ? 'Installed' : installingId === p.id ? '…' : 'Install'}
-                  </button>
+                  {got ? (
+                    <button
+                      type="button"
+                      className={`${styles.cardBtn} ${styles.cardBtnGot}`}
+                      disabled={uninstallingId === p.id}
+                      onClick={() => void uninstall(p)}
+                    >
+                      {uninstallingId === p.id ? '…' : 'Remove'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.cardBtn}
+                      disabled={installingId === p.id}
+                      onClick={() => void install(p)}
+                    >
+                      {installingId === p.id ? '…' : 'Install'}
+                    </button>
+                  )}
                 </div>
               </div>
             );
