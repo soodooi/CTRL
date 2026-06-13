@@ -1473,7 +1473,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 /* Tiptap renders the contenteditable with class `.ProseMirror`. The
@@ -1483,7 +1483,10 @@
 .editor :global(.ProseMirror) {
   font-size: 16px;
   line-height: 1.7;
-  padding: 16px 24px;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 36px 28px 100px;
   min-height: 100%;
   color: var(--color-text);
 }
