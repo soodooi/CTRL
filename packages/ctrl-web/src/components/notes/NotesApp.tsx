@@ -74,6 +74,11 @@ export const NotesApp = (): ReactElement => {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
   const [leftPane, setLeftPane] = useState<LeftPane>('files');
+  // Simplified layout (bao 2026-06-12): files tree + backlinks collapse into
+  // toolbar toggles so the editor gets the room. Tree open by default (find a
+  // note), backlinks closed.
+  const [treeOpen, setTreeOpen] = useState(true);
+  const [backlinksOpen, setBacklinksOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -178,73 +183,101 @@ export const NotesApp = (): ReactElement => {
         onCreated={handleTemplateCreated}
       />
       <div className={styles.cols}>
-        <aside className={styles.leftCol} aria-label="Notes sidebar">
-          <input
-            type="search"
-            className={styles.sidebarSearch}
-            placeholder="Search notes…"
-            value={query}
-            onChange={(e: ChangeEvent<HTMLInputElement>) =>
-              setQuery(e.target.value)
-            }
-            aria-label="Search notes"
-          />
-          <button
-            type="button"
-            className={styles.sidebarNewBtn}
-            onClick={handleNew}
-            disabled={busy}
-          >
-            + New Note
-          </button>
-          <VaultHealthFold />
-          <div
-            className={styles.leftPaneToggle}
-            role="tablist"
-            aria-label="Left pane"
-          >
+        {treeOpen && (
+          <aside className={styles.leftCol} aria-label="Notes sidebar">
+            <input
+              type="search"
+              className={styles.sidebarSearch}
+              placeholder="Search notes…"
+              value={query}
+              onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                setQuery(e.target.value)
+              }
+              aria-label="Search notes"
+            />
             <button
               type="button"
-              role="tab"
-              aria-selected={leftPane === 'files'}
-              className={styles.leftPaneToggleBtn}
-              data-active={leftPane === 'files' || undefined}
-              onClick={() => setLeftPane('files')}
+              className={styles.sidebarNewBtn}
+              onClick={handleNew}
+              disabled={busy}
             >
-              Files
+              + New Note
             </button>
+            <VaultHealthFold />
+            <div
+              className={styles.leftPaneToggle}
+              role="tablist"
+              aria-label="Left pane"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={leftPane === 'files'}
+                className={styles.leftPaneToggleBtn}
+                data-active={leftPane === 'files' || undefined}
+                onClick={() => setLeftPane('files')}
+              >
+                Files
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={leftPane === 'tags'}
+                className={styles.leftPaneToggleBtn}
+                data-active={leftPane === 'tags' || undefined}
+                onClick={() => setLeftPane('tags')}
+              >
+                Tags
+              </button>
+            </div>
+            {leftPane === 'files' ? (
+              <NotesTree
+                query={query}
+                selectedPath={selectedPath}
+                onSelect={handleSelect}
+                tagFilter={tagFilter}
+              />
+            ) : (
+              <TagsPanel selected={tagFilter} onSelect={setTagFilter} />
+            )}
+          </aside>
+        )}
+        <div className={styles.centerCol}>
+          <div className={styles.notesToolbar}>
             <button
               type="button"
-              role="tab"
-              aria-selected={leftPane === 'tags'}
-              className={styles.leftPaneToggleBtn}
-              data-active={leftPane === 'tags' || undefined}
-              onClick={() => setLeftPane('tags')}
+              className={styles.toolBtn}
+              data-on={treeOpen || undefined}
+              onClick={() => setTreeOpen((v) => !v)}
+              title="Files"
+              aria-label="Toggle files"
             >
-              Tags
+              ☰
+            </button>
+            <div className={styles.toolbarTabs}>
+              <NotesTabBar
+                tabs={openTabs}
+                activePath={selectedPath}
+                onSelect={setSelectedPath}
+                onClose={closeNoteTab}
+              />
+            </div>
+            <button
+              type="button"
+              className={styles.toolBtn}
+              data-on={backlinksOpen || undefined}
+              onClick={() => setBacklinksOpen((v) => !v)}
+              title="Backlinks"
+              aria-label="Toggle backlinks"
+            >
+              ↩
             </button>
           </div>
-          {leftPane === 'files' ? (
-            <NotesTree
-              query={query}
-              selectedPath={selectedPath}
-              onSelect={handleSelect}
-              tagFilter={tagFilter}
-            />
-          ) : (
-            <TagsPanel selected={tagFilter} onSelect={setTagFilter} />
-          )}
-        </aside>
-        <div className={styles.centerCol}>
-          <NotesTabBar
-            tabs={openTabs}
-            activePath={selectedPath}
-            onSelect={setSelectedPath}
-            onClose={closeNoteTab}
-          />
           <NotesEditor path={selectedPath} />
         </div>
-        <NotesBacklinks path={selectedPath} onSelect={handleSelect} />
+        {backlinksOpen && (
+          <NotesBacklinks path={selectedPath} onSelect={handleSelect} />
+        )}
       </div>
     </div>
   );
