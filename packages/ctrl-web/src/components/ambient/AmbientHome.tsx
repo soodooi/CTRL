@@ -41,6 +41,7 @@ import {
 } from '@/components/featurepack/FeaturePackScene';
 import { runInstalledPackAction } from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
+import { vaultRead, vaultWrite, vaultSearch } from '@/lib/kernel';
 import styles from './AmbientHome.module.css';
 
 interface Msg {
@@ -219,6 +220,64 @@ export function AmbientHome({
     }
   }, [messages, streaming, hasProvider, onOpenPicker]);
 
+  // Irisy capture/recall (bao 2026-06-12: the two AI chips under a reply).
+  // Capture = append this reply to today's Irisy log note (vault is truth).
+  // Recall = answer the last question grounded in matching notes (light RAG).
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const captureToNotes = useCallback(async (content: string) => {
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate(),
+    ).padStart(2, '0')}`;
+    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const path = `irisy/log-${day}.md`;
+    let body = '';
+    try {
+      const entry = await vaultRead(path);
+      body = entry.body;
+    } catch {
+      // New log file for today.
+    }
+    const next = `${body.trimEnd()}\n\n## ${time}\n\n${content}\n`.replace(/^\n+/, '');
+    try {
+      await vaultWrite({
+        path,
+        content: next,
+        frontmatter: { title: `Irisy log ${day}`, tags: ['irisy-log'] },
+      });
+      setNotice(`Saved to Notes — ${path}`);
+    } catch (e) {
+      setNotice(e instanceof Error ? `Could not save: ${e.message}` : 'Could not save.');
+    }
+  }, []);
+
+  const askKnowledgeBase = useCallback(async () => {
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const q = lastUser?.content.trim();
+    if (!q) return;
+    let context = '';
+    try {
+      const hits = await vaultSearch(q, 5);
+      const parts: string[] = [];
+      for (const p of hits.slice(0, 3)) {
+        try {
+          const entry = await vaultRead(p);
+          parts.push(`# ${p}\n${entry.body.slice(0, 700)}`);
+        } catch {
+          // Skip unreadable hit.
+        }
+      }
+      context = parts.join('\n\n---\n\n');
+    } catch {
+      // Search index not ready — fall through to a plain answer.
+    }
+    const prompt = context
+      ? `Answer using my notes below. Cite the file names you used. If the notes don't cover it, say so.\n\n=== MY NOTES ===\n${context}\n\n=== QUESTION ===\n${q}`
+      : `Answer from my knowledge base. (No notes matched "${q}" yet — answer from general knowledge and say the notes were empty.)\n\n${q}`;
+    void send(prompt);
+  }, [messages, send]);
+
   const onPickCapability = useCallback((cap: Capability) => {
     setInput(cap.starter ?? `${cap.label}: `);
     inputRef.current?.focus();
@@ -315,17 +374,39 @@ export function AmbientHome({
     </form>
   );
 
+  const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant')?.id;
   const conversation = (
     <div className={styles.scroller} ref={scrollerRef}>
       {messages.map((m) => (
         <div key={m.id} className={`${styles.msg} ${styles[m.role]}`}>
           {m.role === 'assistant' ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content || '…'}</ReactMarkdown>
+            <>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content || '…'}</ReactMarkdown>
+              {m.id === lastAssistantId && m.content.trim() && !streaming && (
+                <div className={styles.aiChips}>
+                  <button
+                    type="button"
+                    className={styles.aiChip}
+                    onClick={() => void captureToNotes(m.content)}
+                  >
+                    ↳ Save to a note
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.aiChip}
+                    onClick={() => void askKnowledgeBase()}
+                  >
+                    ⌕ Ask my knowledge base
+                  </button>
+                </div>
+              )}
+            </>
           ) : (
             m.content
           )}
         </div>
       ))}
+      {notice != null && <div className={styles.notice}>{notice}</div>}
     </div>
   );
 
@@ -417,8 +498,15 @@ export function AmbientHome({
                 orientation={isNarrow ? 'vertical' : 'horizontal'}
                 className={styles.split}
               >
-                {/* Output / scene LEFT (F-pattern focus), Irisy chat RIGHT —
-                    ergonomics (bao 2026-06-12). */}
+                {/* L1 | Irisy chat LEFT | output bar (L2 + output) RIGHT
+                    (bao 2026-06-12: layout = L1 | Irisy | output bar). */}
+                <Panel defaultSize={(1 - rightRatio) * 100} minSize={28}>
+                  <div className={styles.chatPane}>
+                    {conversation}
+                    {composer}
+                  </div>
+                </Panel>
+                <Separator className={styles.handle} />
                 <Panel defaultSize={rightRatio * 100} minSize={24}>
                   {scene === 'notes' ? (
                     <div className={styles.scenePane}>
@@ -464,13 +552,6 @@ export function AmbientHome({
                       </div>
                     )
                   )}
-                </Panel>
-                <Separator className={styles.handle} />
-                <Panel defaultSize={(1 - rightRatio) * 100} minSize={28}>
-                  <div className={styles.chatPane}>
-                    {conversation}
-                    {composer}
-                  </div>
                 </Panel>
               </Group>
             ) : (

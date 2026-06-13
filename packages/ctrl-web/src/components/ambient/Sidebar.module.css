@@ -1,0 +1,71 @@
+/* L1 — minimal icon rail (bao 2026-06-12: layout = L1 | Irisy | output bar).
+   Icon-only launcher; labels live in tooltips so the rail stays ~52px. */
+
+.rail {
+  width: 52px;
+  flex: none;
+  background: var(--color-bg-l1, #f7f7f8);
+  border-right: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 4px;
+}
+
+.brand {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: var(--color-text, #1d1d1f);
+  margin-bottom: 10px;
+  cursor: default;
+  user-select: none;
+}
+
+.ic {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #6e6e73);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ic:hover {
+  background: var(--color-bg-l2, rgba(0, 0, 0, 0.04));
+  color: var(--color-text, #1d1d1f);
+}
+.ic.active {
+  background: var(--color-primary-soft, #eef0fd);
+  color: var(--color-primary, #4f46e5);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.model {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: transparent;
+  color: var(--color-text-muted, #6e6e73);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.model:hover {
+  border-color: var(--color-primary, #4f46e5);
+  color: var(--color-primary, #4f46e5);
+}

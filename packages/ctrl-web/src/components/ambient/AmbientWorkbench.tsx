@@ -93,7 +93,6 @@ export function AmbientWorkbench(): ReactElement {
         onSelect={onSidebarSelect}
         modelLabel={modelLabel}
         onModel={() => setPickerOpen(true)}
-        styles={styles}
       />
       {drawerOpen && <div className={styles.scrim} onClick={() => setDrawerOpen(false)} />}
 

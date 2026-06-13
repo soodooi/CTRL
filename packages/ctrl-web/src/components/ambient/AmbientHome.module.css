@@ -313,6 +313,39 @@
   margin: 0 0 8px;
 }
 
+/* ── Irisy AI chips (capture / recall under the latest reply) ──── */
+.aiChips {
+  margin-top: 8px;
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.aiChip {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--color-primary-ring, #c7cbf6);
+  background: var(--color-primary-soft, #eef0fd);
+  color: var(--color-primary, #4f46e5);
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.aiChip:hover {
+  background: var(--color-primary-soft-hover, #e2e6fc);
+}
+
+.notice {
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--color-jade, #1a7f5a);
+  background: var(--color-jade-soft, rgba(26, 127, 90, 0.08));
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+
 /* ── part panel ───────────────────────────────────────────────── */
 .handle {
   width: 1px;
