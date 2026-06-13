@@ -100,6 +100,19 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
               <button
                 type="button"
                 className={styles.secondary}
+                onClick={() =>
+                  void navigator.clipboard?.writeText(
+                    JSON.stringify(draftToManifest(draft), null, 2),
+                  )
+                }
+                disabled={installing}
+                title="Copy the pack JSON to share with someone"
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                className={styles.secondary}
                 onClick={() => void generate()}
                 disabled={generating || installing}
               >

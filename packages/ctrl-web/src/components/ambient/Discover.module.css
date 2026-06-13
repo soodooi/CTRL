@@ -93,5 +93,21 @@
 .cardBtn { font: inherit; font-size: 12px; font-weight: 700; border: 1px solid var(--primary-ring); background: var(--primary-soft); color: var(--primary); padding: 5px 12px; border-radius: 8px; cursor: pointer; }
 .cardBtnGot { border-color: var(--border); background: var(--bg-soft, var(--card)); color: var(--text-subtle); }
 
+.importRow { margin: 16px 0 4px; }
+.importSummary { font-size: 13px; color: var(--text-muted); cursor: pointer; }
+.importBox {
+  width: 100%;
+  max-width: 600px;
+  margin: 10px 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+  resize: vertical;
+  background: var(--bg-elev);
+  color: var(--text);
+}
+
 .empty { grid-column: 1 / -1; padding: 40px; text-align: center; color: var(--text-subtle); font-size: 13px; }
 .msg { margin-top: 18px; font-size: 13px; color: var(--text-muted); }

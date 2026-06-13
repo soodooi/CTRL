@@ -36,6 +36,8 @@ export function Discover(_props: DiscoverProps): ReactElement {
   const [uninstallingId, setUninstallingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     const refresh = (): void => {
@@ -83,6 +85,21 @@ export function Discover(_props: DiscoverProps): ReactElement {
     }
   };
 
+  const importPack = async (): Promise<void> => {
+    setImporting(true);
+    setMsg(null);
+    try {
+      const manifest = JSON.parse(importText.trim()) as Record<string, unknown>;
+      await installPack(manifest);
+      setImportText('');
+      setMsg('Imported a shared pack — it\'s now under Packs in the sidebar.');
+    } catch (e) {
+      setMsg(e instanceof Error ? `Import failed: ${e.message}` : String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const featured = OFFICIAL_PACKS[0];
   const showFeatured = cat === 'All' && !query && featured;
 
@@ -125,6 +142,25 @@ export function Discover(_props: DiscoverProps): ReactElement {
           </div>
           <button type="button" className={styles.createBtn} onClick={() => setCreatorOpen(true)}>Create</button>
         </div>
+
+        <details className={styles.importRow}>
+          <summary className={styles.importSummary}>Have a shared pack? Paste it</summary>
+          <textarea
+            className={styles.importBox}
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            placeholder={'{"name":"...","actions":[...]}'}
+            rows={3}
+          />
+          <button
+            type="button"
+            className={styles.createBtn}
+            disabled={!importText.trim() || importing}
+            onClick={() => void importPack()}
+          >
+            {importing ? 'Importing…' : 'Import'}
+          </button>
+        </details>
 
         {showFeatured && (
           <div className={styles.featured}>
