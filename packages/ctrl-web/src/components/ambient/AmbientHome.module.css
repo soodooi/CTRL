@@ -28,7 +28,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
+  /* No right padding: statusRight must reach the window edge so its width
+     equals the Irisy column's and its left border lands exactly on the
+     x = W − irisyWidth grid line (bao 2026-06-13: lines must align). */
+  padding: 0 0 0 14px;
   background: var(--color-bg-l0);
   border-bottom: 1px solid var(--color-border-soft);
   -webkit-app-region: drag;
@@ -53,7 +56,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding-left: 17px;
+  box-sizing: border-box;
+  padding: 0 14px 0 17px;
   border-left: 1px solid var(--color-border-soft);
   -webkit-app-region: no-drag;
   app-region: no-drag;
@@ -410,6 +414,7 @@
    order (no CSS order flips): work area (flex) | L1 rail (its own width) |
    divider | Irisy (fixed, draggable, ALWAYS far-right). */
 .fourCol {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -427,34 +432,47 @@
   min-width: 0;
 }
 
-/* Draggable divider between the L1 rail and Irisy (resizes Irisy).
-   bao 2026-06-13: 7px hit area for an easy grab, but only a 1px centred
-   hairline shows by default — it lights teal on hover/drag so the divider
-   reads as precise furniture, not a heavy bar. The Irisy column drops its
-   own border-left so the two never stack into a double line. */
+/* Draggable divider — the resize handle that SITS ON the Irisy grid line
+   (bao 2026-06-13: lines must align). It's absolutely positioned over the
+   Irisy column's left edge (right = irisyWidth, set inline) instead of
+   taking flex width, so it never pushes a second offset hairline next to
+   the real line. The visible line IS irisyCol's border-left; the divider
+   only thickens + tints it teal on hover/drag. translateX(50%) centres the
+   hit area on the edge. */
 .divider {
-  width: 7px;
-  flex: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 11px;
+  transform: translateX(50%);
+  z-index: 5;
   cursor: col-resize;
   background: transparent;
-  position: relative;
 }
 .divider::after {
   content: '';
   position: absolute;
-  inset: 0 3px;
-  background: var(--color-border-soft, rgba(0, 0, 0, 0.05));
-  transition: background 0.14s ease;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 0.14s ease, width 0.14s ease;
 }
 .divider:hover::after,
 .divider:active::after {
   background: var(--color-primary);
+  width: 2px;
 }
 
+/* Irisy column — its border-left is THE main vertical grid line, continuous
+   with the first-line statusRight border-left directly above it. */
 .irisyCol {
   flex: none;
   display: flex;
   min-height: 0;
+  border-left: 1px solid var(--color-border-soft);
 }
 .irisyCol > .chatPane {
   flex: 1;

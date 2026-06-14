@@ -717,6 +717,7 @@ export function AmbientHome({
             {!isNarrow && (
               <div
                 className={styles.divider}
+                style={{ right: irisyWidth }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   startIrisyDrag(e.clientX);
