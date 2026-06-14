@@ -2,21 +2,21 @@
    bao 2026-06-12: prominent search + categories + card grid + create CTA. */
 
 .root {
-  /* Short-name aliases this file uses (the AmbientHome stack uses these with
-     fallbacks; Discover owns its own module so define them locally — scoped,
-     doesn't touch the rest of the shell). Light values. */
-  --primary: #3b5bdb;
-  --primary-soft: #eef0fd;
-  --primary-ring: #c7cbf6;
-  --bg: #ffffff;
-  --bg-elev: #fbfbfc;
-  --bg-soft: #f7f7f8;
-  --card: #ffffff;
-  --text: #1d1d1f;
-  --text-muted: #6e6e73;
-  --text-subtle: #9b9ba1;
-  --border: rgba(0, 0, 0, 0.08);
-  --border-strong: rgba(0, 0, 0, 0.14);
+  /* Map this module's short names onto the global design tokens (bao
+     2026-06-13: was hardcoded blue-violet + cool-grey, bypassing the
+     paper+ink+teal system — same root cause as the rest of the shell). */
+  --primary: var(--color-primary);
+  --primary-soft: var(--color-primary-soft);
+  --primary-ring: var(--color-primary-ring);
+  --bg: var(--color-bg-l0);
+  --bg-elev: var(--color-bg-l0);
+  --bg-soft: var(--color-bg-l1);
+  --card: var(--color-bg-l0);
+  --text: var(--color-text);
+  --text-muted: var(--color-text-muted);
+  --text-subtle: var(--color-text-faint);
+  --border: var(--color-border);
+  --border-strong: var(--color-border);
 
   display: flex;
   flex-direction: column;
