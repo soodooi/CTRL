@@ -19,55 +19,113 @@
 }
 
 /* ── slim top bar (calm chrome — command-surface-over-nav) ─────── */
-.topbar {
+/* Status bar — the window's first line (bao 2026-06-13: refined to a proper
+   editor-chrome row; mono labels = letterpress feel, paper floor, hairline
+   underline). Left: CTRL wordmark + location. Right: actions + model chip. */
+.statusbar {
   flex: none;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 14px;
-  -webkit-app-region: drag; /* frameless window — drag from the top bar */
+  background: var(--color-bg-l0);
+  border-bottom: 1px solid var(--color-border-soft);
+  -webkit-app-region: drag;
   app-region: drag;
   user-select: none;
 }
-
-.brand {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text, #1d1d1f);
-}
-
-.topActions {
+.statusLeft,
+.statusRight {
   display: flex;
-  gap: 6px;
-  -webkit-app-region: no-drag; /* buttons stay clickable */
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: no-drag;
   app-region: no-drag;
 }
 
-.topBtn {
+.wordmark {
+  font-family: var(--font-display);
   font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted, #6e6e73);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  padding: 4px 10px;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.16em;
+  color: var(--color-text);
 }
 
-.topBtn:hover {
-  background: var(--card, #fff);
-  color: var(--text, #1d1d1f);
-  border-color: var(--border, rgba(0, 0, 0, 0.08));
+.statusSep {
+  width: 1px;
+  height: 13px;
+  background: var(--color-border);
+  flex: none;
+}
+
+.statusContext {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+}
+
+.statusBtn {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart);
+}
+.statusBtn:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-text);
+}
+
+.modelChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-pill);
+  padding: 4px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color var(--duration-fast) var(--ease-out-quart);
+}
+.modelChip:hover {
+  border-color: var(--color-border);
+}
+.modelDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-faint);
+  flex: none;
+}
+.modelDot[data-on] {
+  background: var(--color-primary);
 }
 
 /* The AnimatePresence content area (empty / working) fills the rest and
    centers its child. Discover is excluded — it is a top-anchored scrolling
    page, not a centered launcher; the flex+center here would otherwise lay
    its title/text/cards out in a row and break the layout. */
-.root > div:not(.topbar):not(.discover) {
+.root > div:not(.statusbar):not(.discover) {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -242,19 +300,21 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
-  padding: 13px 15px;
+  gap: 4px;
+  padding: 14px 16px;
   text-align: left;
-  background: var(--card, #fff);
-  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
-  border-radius: 12px;
+  background: var(--color-bg-l0);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color var(--duration-fast) var(--ease-out-quart),
+    box-shadow var(--duration-fast) var(--ease-out-quart);
 }
 
 .card:hover {
-  border-color: var(--primary-ring, rgba(59, 91, 219, 0.2));
-  background: var(--primary-soft, rgba(59, 91, 219, 0.05));
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-md);
 }
 
 .cardLabel {

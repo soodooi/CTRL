@@ -523,35 +523,59 @@ export function AmbientHome({
     </div>
   );
 
+  const contextLabel =
+    view === 'discover'
+      ? 'Discover'
+      : scene === 'notes'
+      ? 'Notes'
+      : scene
+      ? scene.name
+      : part
+      ? part.title ?? part.kind
+      : 'Home';
+
   return (
     <div className={styles.root} data-surface={surface} hidden={hidden}>
-      <div className={styles.topbar} data-tauri-drag-region>
-        <span className={styles.brand}>CTRL</span>
-        <button
-          type="button"
-          className={styles.menuBtn}
-          onClick={onToggleDrawer}
-          title="Menu"
-          aria-label="Menu"
-        >
-          ☰
-        </button>
-        <div className={styles.topActions}>
+      {/* Status bar — the window's first line. Left: CTRL wordmark + current
+          location. Right: model/connection status + chat actions. Spans the
+          window; reads like an editor chrome row (bao 2026-06-13). */}
+      <div className={styles.statusbar} data-tauri-drag-region>
+        <div className={styles.statusLeft}>
+          <span className={styles.wordmark}>CTRL</span>
+          <span className={styles.statusSep} aria-hidden="true" />
+          <span className={styles.statusContext}>{contextLabel}</span>
+        </div>
+        <div className={styles.statusRight}>
           {view === 'chat' && messages.length > 0 && (
             <>
               <button
                 type="button"
-                className={styles.topBtn}
+                className={styles.statusBtn}
                 onClick={copyConversation}
                 title="Copy the whole conversation"
               >
                 Copy
               </button>
-              <button type="button" className={styles.topBtn} onClick={newChat} title="New chat">
+              <button
+                type="button"
+                className={styles.statusBtn}
+                onClick={newChat}
+                title="New chat"
+              >
                 New
               </button>
+              <span className={styles.statusSep} aria-hidden="true" />
             </>
           )}
+          <button
+            type="button"
+            className={styles.modelChip}
+            onClick={onOpenPicker}
+            title="Model & providers"
+          >
+            <span className={styles.modelDot} data-on={hasProvider || undefined} />
+            {hasProvider ? modelLabel : 'Connect AI'}
+          </button>
         </div>
       </div>
       <AnimatePresence mode="wait">

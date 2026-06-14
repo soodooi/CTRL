@@ -1,5 +1,32 @@
 @import './tokens.css';
 
+/* Short-name aliases → design tokens (bao 2026-06-13 UI pass).
+   The ambient shell + notes components used --bg / --text / --primary short
+   names with HARDCODED cool-grey + blue-violet fallbacks, bypassing the
+   paper+ink+teal editorial system in tokens.css. Mapping them here makes the
+   whole shell inherit the real design system in one place. */
+:root {
+  --bg: var(--color-bg-l0);
+  --bg-soft: var(--color-bg-l1);
+  --bg-elev: var(--color-bg-l0);
+  --bg-code: var(--color-bg-l2);
+  --text: var(--color-text);
+  --text-muted: var(--color-text-muted);
+  --text-subtle: var(--color-text-faint);
+  --color-text-subtle: var(--color-text-faint);
+  --border: var(--color-border);
+  --border-strong: var(--color-border);
+  --primary: var(--color-primary);
+  --mono: var(--font-mono);
+  --color-jade: var(--color-primary);
+  --color-jade-soft: color-mix(in oklch, var(--color-primary) 10%, var(--color-bg-l0));
+  --color-primary-soft: color-mix(in oklch, var(--color-primary) 12%, var(--color-bg-l0));
+  --color-primary-soft-hover: color-mix(in oklch, var(--color-primary) 18%, var(--color-bg-l0));
+  --color-primary-ring: color-mix(in oklch, var(--color-primary) 32%, var(--color-bg-l0));
+  --destructive: var(--status-danger);
+  --destructive-soft: color-mix(in oklch, var(--status-danger) 10%, var(--color-bg-l0));
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
