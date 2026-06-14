@@ -38,12 +38,14 @@
   app-region: drag;
   user-select: none;
 }
+/* statusLeft/statusRight DO NOT opt out of dragging (bao 2026-06-13: the
+   no-drag here was covering the whole bar's text, leaving only a thin middle
+   strip draggable — the window felt unmovable). Drag inherits from statusbar
+   via -webkit-app-region; only the actual buttons below set no-drag. */
 .statusLeft {
   display: flex;
   align-items: center;
   gap: 10px;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
 }
 
 /* Right segment = same width as the Irisy pane below, with a hairline left
@@ -59,8 +61,6 @@
   box-sizing: border-box;
   padding: 0 14px 0 17px;
   border-left: 1px solid var(--color-border-soft);
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
 }
 
 .irisyName {
@@ -94,6 +94,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
   transition: border-color var(--duration-fast) var(--ease-out-quart);
 }
 .modelMini:hover {
@@ -147,6 +149,8 @@
   border-radius: var(--radius-sm);
   padding: 4px 8px;
   cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
   transition: background var(--duration-fast) var(--ease-out-quart),
     color var(--duration-fast) var(--ease-out-quart);
 }

@@ -560,19 +560,28 @@ export function AmbientHome({
           right segment is the SAME width as the Irisy pane below it, so the
           Irisy name sits directly above its window, a peer of CTRL. */}
       <div className={styles.statusbar} data-tauri-drag-region>
-        <div className={styles.statusLeft}>
-          <span className={styles.wordmark}>CTRL</span>
-          <span className={styles.statusVersion} title={`CTRL v${version}`}>
+        <div className={styles.statusLeft} data-tauri-drag-region>
+          <span className={styles.wordmark} data-tauri-drag-region>
+            CTRL
+          </span>
+          <span
+            className={styles.statusVersion}
+            data-tauri-drag-region
+            title={`CTRL v${version}`}
+          >
             {version}
           </span>
-          <span className={styles.statusSep} aria-hidden="true" />
-          <span className={styles.statusContext}>{contextLabel}</span>
+          <span className={styles.statusSep} data-tauri-drag-region aria-hidden="true" />
+          <span className={styles.statusContext} data-tauri-drag-region>
+            {contextLabel}
+          </span>
         </div>
         <div
           className={styles.statusRight}
+          data-tauri-drag-region
           style={isNarrow ? undefined : { width: irisyWidth }}
         >
-          <span className={styles.irisyName}>
+          <span className={styles.irisyName} data-tauri-drag-region>
             <span className={styles.irisyDot} data-on={hasProvider || undefined} />
             Irisy
           </span>
