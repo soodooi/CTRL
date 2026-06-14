@@ -236,19 +236,21 @@
   margin: 4px 0 18px;
   padding: 13px 26px;
   border: none;
-  border-radius: 12px;
-  background: var(--primary, #3b5bdb);
-  color: #fff;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 22px rgba(59, 91, 219, 0.28);
-  transition: transform 0.08s ease, box-shadow 0.15s ease;
+  box-shadow: var(--shadow-sm),
+    0 8px 22px color-mix(in oklch, var(--color-primary) 26%, transparent);
+  transition: transform 0.08s ease, box-shadow var(--duration-fast) var(--ease-out-quart);
 }
 
 .ctaPrimary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 12px 30px rgba(59, 91, 219, 0.34);
+  box-shadow: var(--shadow-md),
+    0 12px 30px color-mix(in oklch, var(--color-primary) 32%, transparent);
 }
 
 .ctaSecondary {
@@ -272,11 +274,12 @@
 
 .tryLabel {
   margin-top: 22px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-subtle, #98989d);
+  color: var(--color-text-faint);
   text-align: center;
 }
 
@@ -286,17 +289,18 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  background: var(--card, #fff);
-  border: 1px solid var(--border-strong, rgba(0, 0, 0, 0.14));
-  border-radius: 14px;
+  background: var(--color-bg-l0);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   padding: 10px 10px 10px 16px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: var(--shadow-md);
+  transition: border-color var(--duration-fast) var(--ease-out-quart),
+    box-shadow var(--duration-fast) var(--ease-out-quart);
 }
 
 .composer:focus-within {
-  border-color: var(--primary, #3b5bdb);
-  box-shadow: 0 0 0 3px var(--primary-ring, rgba(59, 91, 219, 0.18));
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md), 0 0 0 3px var(--color-primary-ring);
 }
 
 .input {
@@ -322,13 +326,14 @@
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: 9px;
-  background: var(--primary, #3b5bdb);
-  color: #fff;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   cursor: pointer;
-  transition: opacity 0.12s ease, transform 0.06s ease;
+  transition: opacity var(--duration-fast) var(--ease-out-quart),
+    transform 0.06s ease;
 }
 
 .send:disabled {
