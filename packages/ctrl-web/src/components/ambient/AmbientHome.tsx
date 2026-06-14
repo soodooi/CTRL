@@ -52,16 +52,16 @@ interface Msg {
   content: string;
 }
 
-// Quick hooks — the quicker-style high-frequency actions kept ALWAYS in view
-// above the composer (bao 2026-06-12: integrate the functions users reach for
-// daily as the traffic-driver that lifts open-frequency past the weekly-habit
-// threshold). Curated from the zero-install floor; short labels for the rail.
-const QUICK_HOOKS: { id: string; icon: string; label: string }[] = [
-  { id: 'tone-translate', icon: '🌐', label: 'Translate' },
-  { id: 'draft-polish', icon: '✍️', label: 'Polish' },
-  { id: 'summarize', icon: '⊟', label: 'Summarize' },
-  { id: 'extract-actions', icon: '✓', label: 'Actions' },
-  { id: 'plan', icon: '🗂', label: 'Plan' },
+// Action shortcuts above the composer (vault/ctrl/strategy/0009). Minimal by
+// design (bao 2026-06-13, "ui minimal"): plain-text, no icons / no chip
+// borders, <=3 shown, the long tail behind one "More". These are accelerators
+// for high-frequency intents — the user can always just type instead. The set
+// is curated for now; the ambient-ranked / material-aware version lands with
+// the 0007 work (Irisy reads the work area to surface what fits the moment).
+const QUICK_HOOKS: { id: string; label: string }[] = [
+  { id: 'tone-translate', label: 'Translate' },
+  { id: 'draft-polish', label: 'Polish' },
+  { id: 'summarize', label: 'Summarize' },
 ];
 
 type Surface = 'empty' | 'chat' | 'chat-part';
@@ -517,11 +517,18 @@ export function AmbientHome({
             onClick={() => onPickCapability(cap)}
             title={cap.hint}
           >
-            <span className={styles.quickIcon}>{h.icon}</span>
             {h.label}
           </button>
         );
       })}
+      <button
+        type="button"
+        className={styles.quickMore}
+        onClick={() => onView('discover')}
+        title="More actions — browse or add feature packs"
+      >
+        More
+      </button>
     </div>
   );
 
