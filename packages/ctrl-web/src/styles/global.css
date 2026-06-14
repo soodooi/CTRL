@@ -25,6 +25,14 @@
   --color-primary-ring: color-mix(in oklch, var(--color-primary) 32%, var(--color-bg-l0));
   --destructive: var(--status-danger);
   --destructive-soft: color-mix(in oklch, var(--status-danger) 10%, var(--color-bg-l0));
+  /* Legacy "surface" token family (CodingArtifactPane, StatusBar, McpCard,
+     TabBar, PrimaryRail, InfraBar… predate the bg/text token names and were
+     falling back to white + cool grey #6b7280/#111827). Map onto the
+     paper+ink system so the whole shell shares one warm palette. */
+  --surface-default: var(--color-bg-l0);
+  --surface-elevated: var(--color-bg-l1);
+  --surface-border: var(--color-border-soft);
+  --color-text-default: var(--color-text);
 }
 
 *, *::before, *::after {
