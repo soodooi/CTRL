@@ -415,23 +415,34 @@
   min-width: 0;
 }
 
-/* Draggable divider between the L1 rail and Irisy (resizes Irisy). */
+/* Draggable divider between the L1 rail and Irisy (resizes Irisy).
+   bao 2026-06-13: 7px hit area for an easy grab, but only a 1px centred
+   hairline shows by default — it lights teal on hover/drag so the divider
+   reads as precise furniture, not a heavy bar. The Irisy column drops its
+   own border-left so the two never stack into a double line. */
 .divider {
-  width: 5px;
+  width: 7px;
   flex: none;
   cursor: col-resize;
-  background: var(--border, rgba(0, 0, 0, 0.08));
-  transition: background 0.12s ease;
+  background: transparent;
+  position: relative;
 }
-.divider:hover {
-  background: var(--color-primary, #4f46e5);
+.divider::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: var(--color-border-soft, rgba(0, 0, 0, 0.05));
+  transition: background 0.14s ease;
+}
+.divider:hover::after,
+.divider:active::after {
+  background: var(--color-primary);
 }
 
 .irisyCol {
   flex: none;
   display: flex;
   min-height: 0;
-  border-left: 1px solid var(--border, rgba(0, 0, 0, 0.08));
 }
 .irisyCol > .chatPane {
   flex: 1;
