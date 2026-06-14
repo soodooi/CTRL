@@ -89,6 +89,22 @@
   overflow-y: auto;
 }
 
+/* Welcome panel — shown in the output bar (right) when nothing is open, so
+   the home screen is also «L1 | Irisy left column | content right»
+   (bao 2026-06-13: Irisy persists on the home screen too). */
+.welcome {
+  flex: 1;
+  min-width: 0;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 48px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  overflow-y: auto;
+}
+
 .greeting {
   margin: 0;
   font-size: 30px;
@@ -260,9 +276,82 @@
   display: flex;
 }
 
-.split {
+/* ADR-003 §7 `[Tab | L2 | L1 | Irisy]` (bao 2026-06-13). DOM order = visual
+   order (no CSS order flips): work area (flex) | L1 rail (its own width) |
+   divider | Irisy (fixed, draggable, ALWAYS far-right). */
+.fourCol {
   width: 100%;
   height: 100%;
+  display: flex;
+  min-height: 0;
+}
+
+.outbar {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.outbar > * {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Draggable divider between the L1 rail and Irisy (resizes Irisy). */
+.divider {
+  width: 5px;
+  flex: none;
+  cursor: col-resize;
+  background: var(--border, rgba(0, 0, 0, 0.08));
+  transition: background 0.12s ease;
+}
+.divider:hover {
+  background: var(--color-primary, #4f46e5);
+}
+
+.irisyCol {
+  flex: none;
+  display: flex;
+  min-height: 0;
+  border-left: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+.irisyCol > .chatPane {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Irisy label at the top-left of the Irisy pane (bao 2026-06-13: CTRL logo
+   top-left of the window, Irisy label inside the right Irisy pane). */
+.irisyTag {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 16px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #1d1d1f);
+}
+.irisyDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-jade, #1a7f5a);
+}
+
+/* Narrow screens (phones): stack Irisy above the output bar. */
+.splitVertical {
+  flex-direction: column;
+}
+.splitVertical .irisyCol {
+  width: 100%;
+  flex: none;
+  height: 46%;
+  border-right: none;
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+.splitVertical .outbar {
+  flex: 1;
 }
 
 .chatPane,
@@ -309,8 +398,124 @@
   color: var(--text, #1d1d1f);
 }
 
+/* Irisy reply — full markdown styling (bao 2026-06-13: paragraphs, fonts,
+   headings, lists, code, tables were unstyled and cramped). */
 .msg.assistant :global(p) {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
+}
+.msg.assistant :global(> :first-child) {
+  margin-top: 0;
+}
+.msg.assistant :global(> :last-child) {
+  margin-bottom: 0;
+}
+.msg.assistant :global(h1),
+.msg.assistant :global(h2),
+.msg.assistant :global(h3) {
+  margin: 18px 0 8px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.msg.assistant :global(h1) {
+  font-size: 19px;
+}
+.msg.assistant :global(h2) {
+  font-size: 16.5px;
+}
+.msg.assistant :global(h3) {
+  font-size: 15px;
+}
+.msg.assistant :global(ul),
+.msg.assistant :global(ol) {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+.msg.assistant :global(li) {
+  margin: 4px 0;
+}
+.msg.assistant :global(li > p) {
+  margin: 0;
+}
+.msg.assistant :global(a) {
+  color: var(--primary, #4f46e5);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg.assistant :global(strong) {
+  font-weight: 700;
+}
+.msg.assistant :global(blockquote) {
+  margin: 10px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border, rgba(0, 0, 0, 0.12));
+  color: var(--text-muted, #6e6e73);
+}
+.msg.assistant :global(hr) {
+  border: none;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.1));
+  margin: 14px 0;
+}
+.msg.assistant :global(code) {
+  font-family: var(--mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  font-size: 0.88em;
+  background: var(--bg-soft, rgba(0, 0, 0, 0.05));
+  padding: 1.5px 5px;
+  border-radius: 5px;
+}
+.msg.assistant :global(pre) {
+  margin: 10px 0;
+  padding: 12px 14px;
+  background: var(--bg-soft, #f5f5f7);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.msg.assistant :global(pre code) {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+.msg.assistant :global(table) {
+  border-collapse: collapse;
+  margin: 10px 0;
+  width: 100%;
+  font-size: 13px;
+}
+.msg.assistant :global(th),
+.msg.assistant :global(td) {
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  padding: 5px 9px;
+  text-align: left;
+}
+.msg.assistant :global(th) {
+  background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+  font-weight: 600;
+}
+
+/* Irisy column empty state — shown when a scene/part is open but there's no
+   conversation yet, so the column isn't a blank void (bao 2026-06-12). */
+.irisyEmpty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 18px;
+  text-align: center;
+}
+.irisyEmptyIcon {
+  font-size: 22px;
+  color: var(--color-jade, #1a7f5a);
+  opacity: 0.7;
+}
+.irisyEmptyText {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted, #6e6e73);
+  max-width: 280px;
 }
 
 /* ── Irisy AI chips (capture / recall under the latest reply) ──── */

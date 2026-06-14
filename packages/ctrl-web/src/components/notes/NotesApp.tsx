@@ -31,8 +31,8 @@ import {
   type ChangeEvent,
   type ReactElement,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { vaultRead, vaultWrite } from '@/lib/kernel';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { vaultList, vaultRead, vaultWrite } from '@/lib/kernel';
 import {
   loadDailyNotesConfig,
   renderDailyNotePath,
@@ -74,10 +74,11 @@ export const NotesApp = (): ReactElement => {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
   const [leftPane, setLeftPane] = useState<LeftPane>('files');
-  // Simplified layout (bao 2026-06-12): files tree + backlinks collapse into
-  // toolbar toggles so the editor gets the room. Tree open by default (find a
-  // note), backlinks closed.
-  const [treeOpen, setTreeOpen] = useState(true);
+  // Simplified layout (bao 2026-06-12): L2 file tree + backlinks collapse into
+  // toolbar toggles so the editor gets the room. L2 is CLOSED by default
+  // (bao 2026-06-12: anti-Trae — don't slam four zones on the user at once).
+  // The knowledge-base home covers find/new/recent; ☰ opens the tree on demand.
+  const [treeOpen, setTreeOpen] = useState(false);
   const [backlinksOpen, setBacklinksOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -87,6 +88,29 @@ export const NotesApp = (): ReactElement => {
   const refetchTree = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['vault-list'] });
   }, [queryClient]);
+
+  // Recent notes for the knowledge-base home. L2 is closed by default, so the
+  // home itself must let the user find/open a note without the tree. We reuse
+  // the same ['vault-list'] query the tree uses, drop CTRL system paths, and
+  // surface the first few as quick re-entry points (NotebookLM-style "jump
+  // back in" — never a blank canvas).
+  const { data: allPaths = [] } = useQuery({
+    queryKey: ['vault-list'],
+    queryFn: () => vaultList(),
+    staleTime: 5_000,
+  });
+  const SYSTEM_TOP = [
+    '.ctrl',
+    '.irisy-memory',
+    '.irisy-prompts',
+    '.irisy-sessions',
+    'irisy',
+    'mcps',
+    'assets',
+  ];
+  const recentNotes = allPaths
+    .filter((p) => !SYSTEM_TOP.includes(p.split('/')[0] ?? ''))
+    .slice(0, 6);
 
   const openNoteTab = useCallback((path: string) => {
     setSelectedPath(path);
@@ -273,7 +297,60 @@ export const NotesApp = (): ReactElement => {
               ↩
             </button>
           </div>
-          <NotesEditor path={selectedPath} />
+          {selectedPath ? (
+            <NotesEditor path={selectedPath} />
+          ) : (
+            <section className={styles.kbHome} aria-label="Knowledge base">
+              <div className={styles.kbHomeInner}>
+                <h2 className={styles.kbTitle}>Your knowledge base</h2>
+                <p className={styles.kbSub}>
+                  Plain markdown on your machine — yours to keep. Search it, open a
+                  note, or start a new one. Ask Irisy on the left to work with it.
+                </p>
+                <input
+                  type="search"
+                  className={styles.kbSearch}
+                  placeholder="Search your notes…"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setTreeOpen(true);
+                  }}
+                  aria-label="Search notes"
+                />
+                <div className={styles.kbActions}>
+                  <button type="button" className={styles.kbNew} onClick={handleNew}>
+                    + New note
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.kbBrowse}
+                    onClick={() => setTreeOpen(true)}
+                  >
+                    Browse all notes
+                  </button>
+                </div>
+                {recentNotes.length > 0 && (
+                  <div className={styles.kbRecent}>
+                    <div className={styles.kbRecentLabel}>Jump back in</div>
+                    <div className={styles.kbRecentList}>
+                      {recentNotes.map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          className={styles.kbRecentItem}
+                          onClick={() => openNoteTab(p)}
+                          title={p}
+                        >
+                          {p.replace(/\.md$/, '').split('/').pop()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
         </div>
         {backlinksOpen && (
           <NotesBacklinks path={selectedPath} onSelect={handleSelect} />

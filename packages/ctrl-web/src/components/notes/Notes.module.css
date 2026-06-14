@@ -110,16 +110,20 @@
    (220 → 180) so the editor body picks up 60 px of usable width on a
    1122-px workspace. Backlinks rarely needs that much because note
    stems are short; left tree stays roomy enough for typical paths. */
+/* Flex (not grid) so collapsing L2 / backlinks lets the editor reclaim the
+   width — a fixed 3-col grid kept reserving the closed columns and squeezed
+   the center to 200px when L2 defaulted closed (bao 2026-06-13). */
 .cols {
   flex: 1;
-  display: grid;
-  grid-template-columns: 200px 1fr 180px;
+  display: flex;
   min-height: 0;
   overflow: hidden;
 }
 
 /* Left column splits tree (top, scrolls) + tags panel (bottom). */
 .leftCol {
+  width: 200px;
+  flex: none;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-l1);
@@ -130,6 +134,8 @@
 
 /* Center column hosts the active view (editor / graph / health / daily). */
 .centerCol {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -2024,9 +2030,118 @@
   border-radius: 4px;
 }
 
+/* ─── Knowledge-base home (L2 closed by default; shown when no note open) ── */
+.kbHome {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-y: auto;
+  background: var(--color-bg-l0);
+  padding: 64px 32px;
+}
+.kbHomeInner {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kbTitle {
+  margin: 0;
+  font-size: 24px;
+  font-weight: var(--weight-bold, 700);
+  color: var(--color-text);
+}
+.kbSub {
+  margin: 0 0 6px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+.kbSearch {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 14px;
+  background: var(--color-bg-l1);
+  color: var(--color-text);
+}
+.kbSearch:focus {
+  outline: none;
+  border-color: var(--color-primary, #4f46e5);
+}
+.kbActions {
+  display: flex;
+  gap: 10px;
+}
+.kbNew {
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: var(--weight-medium, 600);
+  border: none;
+  background: var(--color-primary, #4f46e5);
+  color: #fff;
+  padding: 9px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.kbBrowse {
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: var(--weight-medium, 600);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-l1);
+  color: var(--color-text);
+  padding: 9px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.kbNew:hover,
+.kbBrowse:hover {
+  opacity: 0.9;
+}
+.kbRecent {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kbRecentLabel {
+  font-size: 11px;
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle, var(--color-text-muted));
+}
+.kbRecentList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kbRecentItem {
+  text-align: left;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--color-text);
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.kbRecentItem:hover {
+  background: var(--color-bg-l2);
+  color: var(--color-primary, #4f46e5);
+}
+
 /* ─── Backlinks (right) ───────────────────────────────────────── */
 
 .backlinks {
+  width: 180px;
+  flex: none;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-l1);

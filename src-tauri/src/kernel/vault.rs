@@ -287,19 +287,24 @@ pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<String
     #[cfg(not(test))]
     if let Some(idx) = try_global_index() {
         match idx.count() {
-            Ok(n) if n > 0 => {
+            Ok(indexed) => {
+                // Staleness check (bao 2026-06-13): the index is built at boot,
+                // but files written to disk afterwards (by the user's editor,
+                // another app, or a direct write) never made it in — and the
+                // old logic returned FTS5 hits whenever the index was non-empty,
+                // so new notes were invisible until a manual rebuild. Compare
+                // the indexed count against the actual .md count and rebuild
+                // when they diverge (added/removed on disk) or when empty.
+                let actual = list(vault_root, None).map(|v| v.len()).unwrap_or(indexed);
+                if indexed == 0 || actual != indexed {
+                    if let Err(e) = rebuild_index_inner(vault_root, idx) {
+                        tracing::warn!(error = %e, "vault: stale rebuild_index failed");
+                    }
+                }
                 if let Ok(hits) = idx.search(q, limit) {
                     return Ok(hits);
                 }
                 // Fall through to scan on FTS5 error.
-            }
-            Ok(_) => {
-                // Index empty (never built or was cleared). Trigger
-                // async-ish rebuild for next call, return scan results
-                // now so the user gets an answer this turn.
-                if let Err(e) = rebuild_index_inner(vault_root, idx) {
-                    tracing::warn!(error = %e, "vault: lazy rebuild_index failed");
-                }
             }
             Err(_) => {
                 // Index unhealthy — log + fall through.

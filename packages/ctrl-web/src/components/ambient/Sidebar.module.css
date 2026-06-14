@@ -18,9 +18,23 @@
   font-weight: 800;
   letter-spacing: 0.03em;
   color: var(--color-text, #1d1d1f);
+  margin-bottom: 2px;
+  cursor: default;
+  user-select: none;
+}
+
+/* Always-visible version number (bao 2026-06-13: needs to see at a glance
+   from the running window whether the build is fresh — the tooltip alone
+   wasn't visible enough after L1 went icon-only). */
+.version {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-primary, #4f46e5);
   margin-bottom: 10px;
   cursor: default;
   user-select: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .ic {

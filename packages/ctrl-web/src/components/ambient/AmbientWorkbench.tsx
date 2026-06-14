@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { invoke } from '@tauri-apps/api/core';
-import { Sidebar, type SidebarSection } from './Sidebar';
+import { type SidebarSection } from './Sidebar';
 import { ProviderHub } from './ProviderHub';
 import { AmbientHome, type ToolRequest, type PackRequest } from './AmbientHome';
 import styles from './AmbientHome.module.css';
@@ -88,12 +88,9 @@ export function AmbientWorkbench(): ReactElement {
 
   return (
     <div className={styles.workbench} data-drawer={drawerOpen || undefined} data-testid="shell">
-      <Sidebar
-        active={activeSection}
-        onSelect={onSidebarSelect}
-        modelLabel={modelLabel}
-        onModel={() => setPickerOpen(true)}
-      />
+      {/* L1 rail moved INTO AmbientHome's layout (ADR-003 §7 `[Tab|L2|L1|Irisy]`,
+          bao 2026-06-13: L1 in the middle, glued to Irisy's left — not far-left).
+          Route pages navigate back via the route topbar's back bar. */}
       {drawerOpen && <div className={styles.scrim} onClick={() => setDrawerOpen(false)} />}
 
       {/* AmbientHome stays MOUNTED across every route (collapsed when a
@@ -110,6 +107,8 @@ export function AmbientWorkbench(): ReactElement {
         openNotesNonce={openNotesNonce}
         irisyNonce={irisyNonce}
         hidden={!isHome}
+        onSidebarSelect={onSidebarSelect}
+        activeSection={activeSection}
       />
       {!isHome && (
         <div className={styles.routeHost}>

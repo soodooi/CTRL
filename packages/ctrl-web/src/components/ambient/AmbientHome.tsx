@@ -22,12 +22,11 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Group, Panel, Separator } from 'react-resizable-panels';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
 import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
-import { detectPart, renderPart, partLayout, type PartSpec } from '@/lib/ui-registry';
+import { detectPart, renderPart, type PartSpec } from '@/lib/ui-registry';
 import {
   loadConnectors,
   invokeConnectorTool,
@@ -41,6 +40,7 @@ import {
 } from '@/components/featurepack/FeaturePackScene';
 import { runInstalledPackAction } from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
+import { Sidebar, type SidebarSection } from './Sidebar';
 import { vaultRead, vaultWrite, vaultSearch } from '@/lib/kernel';
 import styles from './AmbientHome.module.css';
 
@@ -98,6 +98,11 @@ export interface AmbientHomeProps {
    *  component stays MOUNTED so chat state + nonce effects survive route
    *  visits — never unmount it, or the nonce effects replay on remount. */
   hidden: boolean;
+  /** L1 rail lives INSIDE the home layout, between the work area and Irisy
+   *  (ADR-003 §7 `[Tab | L2 | L1 | Irisy]`). The shell forwards its select
+   *  handler + active highlight so the rail drives the same navigation. */
+  onSidebarSelect: (s: SidebarSection) => void;
+  activeSection: string;
 }
 
 const SPRING = { type: 'spring', stiffness: 420, damping: 36 } as const;
@@ -113,6 +118,8 @@ export function AmbientHome({
   openNotesNonce,
   irisyNonce,
   hidden,
+  onSidebarSelect,
+  activeSection,
 }: AmbientHomeProps): ReactElement {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -122,6 +129,10 @@ export function AmbientHome({
   // the left column. Independent of `part` (Irisy's own morphed output).
   const [scene, setScene] = useState<FeaturePack | 'notes' | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
+  // Irisy column width — a fixed default the user can drag via the divider
+  // between Irisy and the output bar (bao 2026-06-13). Window resizing keeps
+  // this width (the output bar absorbs the change); only dragging changes it.
+  const [irisyWidth, setIrisyWidth] = useState(480);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -151,10 +162,34 @@ export function AmbientHome({
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, []);
 
+  // Drag the divider between Irisy and the output bar to resize Irisy.
+  // Pass the pointer's start X; we listen on document so the drag continues
+  // even if the cursor leaves the thin handle. Clamped to a sane range.
+  const startIrisyDrag = useCallback(
+    (startX: number) => {
+      const startW = irisyWidth;
+      const onMove = (ev: MouseEvent): void => {
+        // Irisy sits on the RIGHT (CSS order), so dragging the divider left
+        // (clientX decreases) widens Irisy — hence startW minus the delta.
+        const next = Math.max(300, Math.min(640, startW - (ev.clientX - startX)));
+        setIrisyWidth(next);
+      };
+      const onUp = (): void => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    },
+    [irisyWidth],
+  );
+
   const surface: Surface =
     part || scene ? 'chat-part' : messages.length > 0 ? 'chat' : 'empty';
-  // Right-column width: scene panels sit a touch wider than text parts.
-  const rightRatio = scene === 'notes' ? 0.62 : scene ? 0.52 : part ? partLayout(part.kind).preferredRatio : 0.42;
   // Gate the first-run CTA on whether any model is wired up yet.
   const hasProvider = modelLabel !== 'Model';
 
@@ -236,6 +271,12 @@ export function AmbientHome({
   // Capture = append this reply to today's Irisy log note (vault is truth).
   // Recall = answer the last question grounded in matching notes (light RAG).
   const [notice, setNotice] = useState<string | null>(null);
+  // Auto-dismiss the notice (copy/save feedback) so it doesn't linger.
+  useEffect(() => {
+    if (notice == null) return;
+    const t = setTimeout(() => setNotice(null), 2500);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   const captureToNotes = useCallback(async (content: string) => {
     const d = new Date();
@@ -294,6 +335,25 @@ export function AmbientHome({
     setInput(cap.starter ?? `${cap.label}: `);
     inputRef.current?.focus();
   }, []);
+
+  // Copy to clipboard (bao 2026-06-13: copying a reply / the whole chat is a
+  // basic must-have). Uses the webview clipboard API; notice gives feedback.
+  const copyText = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice('Copied to clipboard');
+    } catch {
+      setNotice('Copy failed — select the text and copy manually');
+    }
+  }, []);
+
+  const copyConversation = useCallback(() => {
+    if (messages.length === 0) return;
+    const text = messages
+      .map((m) => `${m.role === 'user' ? 'You' : 'Irisy'}: ${m.content}`)
+      .join('\n\n');
+    void copyText(text);
+  }, [messages, copyText]);
 
   // Run a connector tool — real HTTP call (or mock) -> morph to a
   // table/record on the surface. Invoked from the sidebar's "Your tools".
@@ -389,13 +449,29 @@ export function AmbientHome({
   const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant')?.id;
   const conversation = (
     <div className={styles.scroller} ref={scrollerRef}>
-      {messages.map((m) => (
+      {messages.length === 0 ? (
+        <div className={styles.irisyEmpty}>
+          <span className={styles.irisyEmptyIcon}>✦</span>
+          <p className={styles.irisyEmptyText}>
+            I can see what&rsquo;s open on the left — ask me to summarize it, save it
+            to a note, or search your knowledge base. You won&rsquo;t have to re-explain.
+          </p>
+        </div>
+      ) : (
+        messages.map((m) => (
         <div key={m.id} className={`${styles.msg} ${styles[m.role]}`}>
           {m.role === 'assistant' ? (
             <>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content || '…'}</ReactMarkdown>
               {m.id === lastAssistantId && m.content.trim() && !streaming && (
                 <div className={styles.aiChips}>
+                  <button
+                    type="button"
+                    className={styles.aiChip}
+                    onClick={() => void copyText(m.content)}
+                  >
+                    ⧉ Copy
+                  </button>
                   <button
                     type="button"
                     className={styles.aiChip}
@@ -417,7 +493,8 @@ export function AmbientHome({
             m.content
           )}
         </div>
-      ))}
+        ))
+      )}
       {notice != null && <div className={styles.notice}>{notice}</div>}
     </div>
   );
@@ -449,6 +526,7 @@ export function AmbientHome({
   return (
     <div className={styles.root} data-surface={surface} hidden={hidden}>
       <div className={styles.topbar} data-tauri-drag-region>
+        <span className={styles.brand}>CTRL</span>
         <button
           type="button"
           className={styles.menuBtn}
@@ -458,148 +536,164 @@ export function AmbientHome({
         >
           ☰
         </button>
-        <span className={styles.brand}>Irisy</span>
         <div className={styles.topActions}>
           {view === 'chat' && messages.length > 0 && (
-            <button type="button" className={styles.topBtn} onClick={newChat} title="New chat">
-              New
-            </button>
+            <>
+              <button
+                type="button"
+                className={styles.topBtn}
+                onClick={copyConversation}
+                title="Copy the whole conversation"
+              >
+                Copy
+              </button>
+              <button type="button" className={styles.topBtn} onClick={newChat} title="New chat">
+                New
+              </button>
+            </>
           )}
         </div>
       </div>
-      {view === 'discover' && (
-        <div className={styles.discover}>
-          <Discover onInstalled={() => onView('discover')} styles={styles} />
-        </div>
-      )}
       <AnimatePresence mode="wait">
-        {view === 'chat' && (surface === 'empty' ? (
-          <motion.div
-            key="empty"
-            className={styles.empty}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={SPRING}
-          >
-            <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
-            <p className={styles.subtitle}>
-              Your private AI workspace — it runs on your machine, your data stays yours.
-            </p>
-
-            {/* Non-blocking nudge: the chat may already answer via the
-                managed fallback route, so never hide the composer — just
-                invite connecting a BYOK model when none is set as primary. */}
-            {!hasProvider && (
-              <button type="button" className={styles.ctaPrimary} onClick={onOpenPicker}>
-                Connect your AI to start →
-              </button>
-            )}
-            {composer}
-            <div className={styles.tryLabel}>Try one of these</div>
-            <div className={styles.floor}>
-              {floorCapabilities()
-                .slice(0, 6)
-                .map((cap) => (
-                  <motion.button
-                    key={cap.id}
-                    type="button"
-                    className={styles.card}
-                    onClick={() => onPickCapability(cap)}
-                    whileHover={{ y: -2 }}
-                    transition={SPRING}
-                    title={cap.hint}
-                  >
-                    <span className={styles.cardLabel}>{cap.label}</span>
-                    <span className={styles.cardHint}>{cap.hint}</span>
-                  </motion.button>
-                ))}
-            </div>
-            <button type="button" className={styles.ctaSecondary} onClick={() => onView('discover')}>
-              Connect your tools →
-            </button>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="working"
-            className={styles.working}
-            layout
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={SPRING}
-          >
-            {part || scene ? (
-              <Group
-                key={isNarrow ? 'v' : 'h'}
-                orientation={isNarrow ? 'vertical' : 'horizontal'}
-                className={styles.split}
-              >
-                {/* L1 | Irisy chat LEFT | output bar (L2 + output) RIGHT
-                    (bao 2026-06-12: layout = L1 | Irisy | output bar). */}
-                <Panel defaultSize={(1 - rightRatio) * 100} minSize={28}>
-                  <div className={styles.chatPane}>
-                    {conversation}
-                    {quickRow}
-                    {composer}
+        <motion.div
+          key="working"
+          className={styles.working}
+          layout
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={SPRING}
+        >
+          {/* Unified layout (bao 2026-06-13): Irisy is ALWAYS the fixed left
+              column — even on the home/empty screen. The output bar on the
+              right shows Discover / Notes / pack / part, or a welcome +
+              capability floor when nothing is open. Narrow screens stack. */}
+          {/* ADR-003 §7 `[Tab | L2 | L1 | Irisy]` (bao 2026-06-13): work area
+              LEFT (L2 inside, collapsed by default) | L1 rail MIDDLE | Irisy
+              ALWAYS pinned far-right (wide + draggable). DOM = visual order. */}
+          <div className={`${styles.fourCol} ${isNarrow ? styles.splitVertical : ''}`}>
+              <div className={styles.outbar}>
+                {view === 'discover' ? (
+                  <div className={styles.scenePane}>
+                    <button
+                      type="button"
+                      className={styles.sceneClose}
+                      onClick={() => onView('chat')}
+                      aria-label="Close Discover"
+                    >
+                      ✕
+                    </button>
+                    <Discover onInstalled={() => onView('discover')} styles={styles} />
                   </div>
-                </Panel>
-                <Separator className={styles.handle} />
-                <Panel defaultSize={rightRatio * 100} minSize={24}>
-                  {scene === 'notes' ? (
-                    <div className={styles.scenePane}>
+                ) : scene === 'notes' ? (
+                  <div className={styles.scenePane}>
+                    <button
+                      type="button"
+                      className={styles.sceneClose}
+                      onClick={() => setScene(null)}
+                      aria-label="Close Notes"
+                    >
+                      ✕
+                    </button>
+                    <NotesApp />
+                  </div>
+                ) : scene ? (
+                  <div className={styles.scenePane}>
+                    <button
+                      type="button"
+                      className={styles.sceneClose}
+                      onClick={() => setScene(null)}
+                      aria-label="Close pack"
+                    >
+                      ✕
+                    </button>
+                    <FeaturePackScene
+                      pack={scene}
+                      onRunAction={(id) => runInstalledPackAction(scene.id, id)}
+                    />
+                  </div>
+                ) : part ? (
+                  <div className={styles.partPane}>
+                    <div className={styles.partHeader}>
+                      <span>{part.title ?? part.kind}</span>
                       <button
                         type="button"
-                        className={styles.sceneClose}
-                        onClick={() => setScene(null)}
-                        aria-label="Close Notes"
+                        className={styles.partClose}
+                        onClick={() => setPart(null)}
                       >
                         ✕
                       </button>
-                      <NotesApp />
                     </div>
-                  ) : scene ? (
-                    <div className={styles.scenePane}>
-                      <button
-                        type="button"
-                        className={styles.sceneClose}
-                        onClick={() => setScene(null)}
-                        aria-label="Close pack"
-                      >
-                        ✕
+                    <div className={styles.partBody}>{renderPart(part)}</div>
+                  </div>
+                ) : (
+                  <div className={styles.welcome}>
+                    <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
+                    <p className={styles.subtitle}>
+                      Your private AI workspace — it runs on your machine, your data stays yours.
+                    </p>
+                    {!hasProvider && (
+                      <button type="button" className={styles.ctaPrimary} onClick={onOpenPicker}>
+                        Connect your AI to start →
                       </button>
-                      <FeaturePackScene
-                        pack={scene}
-                        onRunAction={(id) => runInstalledPackAction(scene.id, id)}
-                      />
-                    </div>
-                  ) : (
-                    part && (
-                      <div className={styles.partPane}>
-                        <div className={styles.partHeader}>
-                          <span>{part.title ?? part.kind}</span>
-                          <button
+                    )}
+                    <div className={styles.tryLabel}>Try one of these</div>
+                    <div className={styles.floor}>
+                      {floorCapabilities()
+                        .slice(0, 6)
+                        .map((cap) => (
+                          <motion.button
+                            key={cap.id}
                             type="button"
-                            className={styles.partClose}
-                            onClick={() => setPart(null)}
+                            className={styles.card}
+                            onClick={() => onPickCapability(cap)}
+                            whileHover={{ y: -2 }}
+                            transition={SPRING}
+                            title={cap.hint}
                           >
-                            ✕
-                          </button>
-                        </div>
-                        <div className={styles.partBody}>{renderPart(part)}</div>
-                      </div>
-                    )
-                  )}
-                </Panel>
-              </Group>
-            ) : (
-              <div className={styles.chatPaneCentered}>
+                            <span className={styles.cardLabel}>{cap.label}</span>
+                            <span className={styles.cardHint}>{cap.hint}</span>
+                          </motion.button>
+                        ))}
+                    </div>
+                    <button type="button" className={styles.ctaSecondary} onClick={() => onView('discover')}>
+                      Connect your tools →
+                    </button>
+                  </div>
+                )}
+              </div>
+            <Sidebar
+              active={activeSection}
+              onSelect={onSidebarSelect}
+              modelLabel={modelLabel}
+              onModel={onOpenPicker}
+            />
+            {!isNarrow && (
+              <div
+                className={styles.divider}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  startIrisyDrag(e.clientX);
+                }}
+                role="separator"
+                aria-label="Resize Irisy column"
+              />
+            )}
+            <div
+              className={styles.irisyCol}
+              style={isNarrow ? undefined : { width: irisyWidth }}
+            >
+              <div className={styles.chatPane}>
+                <div className={styles.irisyTag}>
+                  <span className={styles.irisyDot} />
+                  Irisy
+                </div>
                 {conversation}
                 {quickRow}
                 {composer}
               </div>
-            )}
-          </motion.div>
-        ))}
+            </div>
+          </div>
+        </motion.div>
       </AnimatePresence>
     </div>
   );

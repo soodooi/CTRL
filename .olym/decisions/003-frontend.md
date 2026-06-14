@@ -2,9 +2,9 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 6
+version: 7
 status: accepted
-last_updated: 2026-06-09
+last_updated: 2026-06-13
 deciders: [bao, zeus, daedalus]
 sections:
   - { id: pwa,           source: orig-002 }
@@ -19,6 +19,7 @@ changelog:
   - v4 2026-06-01: § shell-4col §7.1 column-order amendment — bao "顺序是工作区（内有tab），L2，L1，Irisy". Column model reordered LEFT→RIGHT to `[Tab | L2 | L1 | Irisy]`. L1 is now anchored immediately left of Irisy (not far-left). Rationale: Irisy + L1 stay visually pinned at the monitor's right; Workspace grows leftward when expanded, with L2 sandwiched between Workspace and L1. Compact mode still renders only L1 (48) + Irisy (430) = 478 px because Workspace and L2 collapse to 0. Anti-pattern §7.8 entry added: do NOT render L1 at column index 1.
   - v5 2026-06-09: **§ nav-keyboard → § nav-l1 — 5-chip 3-agent aggregator L1 (H-2026-06-09-002).** bao 2026-06-09 校准: 3 agents (hermes / opencode / kairo) are external; CTRL is the aggregator壳. L1 chips reorganized as 5 first-class routes mapping directly to capability surfaces: **Irisy** (PWA persona shell, default chat) / **Mcp pool** (MCP face discovery) / **Notes** (kairo webview) / **Coding** (opencode HTTP API + xterm) / **Assistant** (hermes MCP stdio). § vault-stack RETIRED — kairo owns markdown editor + wiki-link + backlink + git; CTRL doesn't ship its own editor. § agent-routes NEW: lock per-route agent endpoint contracts (kairo webview path / opencode HTTP port discovery / hermes MCP stdio handshake). Settings + Pool stay as before. § shell-4col 4-column shell preserved — agent routes render inside `[Tab]` column. Pre-v5 components retired in PWA: `IrisyChat forceMode="coding"` wrapper, `NotesApp` 3-pane (NotesTree/NotesEditor/NotesBacklinks), `MarkdownViewer` Tiptap shell, `BacklinksPanel`. PWA picks up sycophancy filter (relocated from `packages/ctrl-pi-bridge/data/persona-patterns.md` → `packages/ctrl-web/src/lib/persona-filter/patterns.md`).
   - v6 2026-06-11: **§8 NEW — morphing-conversation rebuild.** bao 2026-06-11 校准: CTRL is not a shell, it's an advanced UX paradigm at the app layer (UX + 通讯 + agent optimization); domain breadth via MCP/CLI/Skills, not built verticals. Synthesized from a 6-track product benchmark (launcher/routing/cockpit + marketing/office/finance verticals). Locks: one ambient morphing conversation (input-first floating surface), intent routing with visible pill + ambiguity-adaptive response (Lovable 3-way), morph-to-output-type via the 12-viewer registry, agent-workspace pane + tool stream, 3-layer drill-down, point-edit + checkpoint + accept/reject gate, capability-agnostic routing to the open MCP/CLI/Skill set, ambient scheduled tasks. §7 4-col shell + § nav-l1 5-chip SUPERSEDED for the home surface (chips survive as morph-layer shortcuts). 6-slice build sequence in §8.4. Invariants preserved: Ctrl summon · floating popup · Irisy(hermes) · coding(opencode) · kairo(notes).
+  - v7 2026-06-13: **§7 shell-4col REINSTATED — bao reverts the v6 §8 morphing home surface back to the locked 4-column shell.** bao 2026-06-13: "我一直要的是这个布局… Irisy常驻", pointing back to §7 v4 `[Tab | L2 | L1 | Irisy]`. The v6 morphing-conversation home was a detour; the SHIPPED home is the §7 4-col shell. Implementation (v0.1.255→v0.1.259, PWA `AmbientHome`/`AmbientWorkbench`): L1 rail moved from the workbench far-left INTO AmbientHome's middle column, glued to Irisy's left (honours §7.8 anti-pattern: L1 never far-left); Irisy pane ALWAYS pinned far-right, widened 430→**480px**, divider-draggable 320–820; work area (Tab) leftmost, L2 collapsed by default; window total width 1280→**1480**. CTRL logo top-left of window; "Irisy" label inside the right Irisy pane. Markdown reply styling + per-reply Copy / Copy-conversation added. **Open item**: route pages (Settings/Coding) render with AmbientHome hidden → they currently lose the in-layout L1 and navigate back via the route topbar back bar; decide whether to restore a route-level L1. §8 morphing-conversation retained as a future direction, no longer the shipped home surface. **LESSON (process)**: read ADR-003 §7 BEFORE touching layout — skipping it cost a long detour of ad-hoc layout edits (Irisy left/right/centered) that merely re-derived the already-locked §7 spec.
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/002-substrate.md
@@ -111,6 +112,8 @@ Three-pane VMark-style entry into `~/Documents/CTRL/`:
 
 ## §7 Shell 4-col layout (v3 2026-06-01; v4 column order 2026-06-01) — `[Tab | L2 | L1 | Irisy]`
 
+> **STATUS (v7, 2026-06-13): ACTIVE — this is the shipped home surface.** Reinstated after the v6 §8 morphing detour; implemented in PWA `AmbientHome` (v0.1.255→v0.1.259). Irisy pane widened 430→480px (draggable), window total width 1280→1480, L1 rail relocated into AmbientHome's middle column. See changelog v7.
+
 **Why this section exists**: bao 2026-06-01 multi-message refactor (`你怎么这么蠢？无非就是最简单的tab和导航` + `L2和tab，是两个东西` + `mcp这个是pool` + 5 release iterations v0.1.127 → v0.1.132). The previous 2-col `[L1 | Irisy]` shell could not host the workspace tab paradigm; an ad-hoc Tauri child window (`WorkspaceSurface` + `toggle_workspace_window`) was filling that role and conflicting with the inline cockpit. This section locks the canonical 4-column shell.
 
 ### §7.1 Column model (v4 ordering — bao 2026-06-01 `顺序是工作区（内有tab），L2，L1，Irisy`)
@@ -198,6 +201,8 @@ vim opens as markdown table. Obsidian/VMark render as plain markdown table. CTRL
 Schema language minimal (key/label/type/options?/min?/max?). Anything more complex stays markdown/yaml viewer.
 
 ## §8 Morphing-conversation rebuild (v6 — 2026-06-11)
+
+> **STATUS (v7, 2026-06-13): NOT the shipped home surface.** bao reverted the home layout to §7's 4-col shell. The morphing-conversation ideas here are retained as a future direction, but the shipped home is §7 `[Tab | L2 | L1 | Irisy]`. Do NOT implement §8 as the home surface without a new bao decision. See changelog v7.
 
 bao 2026-06-11: CTRL is NOT a shell wrapping 3 OSS agents — that's commodity. The product is an **advanced UX interaction paradigm at the application layer**, core = UX + communication (通讯) + agent optimization. The 3 OSS engines (hermes/opencode/kairo) are swappable; domain breadth (marketing/office/finance/anything) comes from the open ecosystem of **MCP servers + CLI + Skills** (3-capability-face, ADR-002), NOT from CTRL building verticals. This section locks the rebuild, synthesized from a 6-track product benchmark (Raycast/Spotlight/Alfred/ChatGPT/Cursor/Warp/Zed; ChatGPT-Canvas/Claude-Artifacts/Perplexity/Replit/Lovable/v0; Manus/Devin/Flowith/public.com/TradingView/Bloomberg; Gamma/Jasper/Descript/HeyGen; M365-Copilot/Gemini/Coda/Rows/Granola). Invariants (fixed): Ctrl-key summon · floating popup form · Irisy 助理 (hermes) · Irisy coding (opencode) · kairo notes · everything else rebuildable.
 

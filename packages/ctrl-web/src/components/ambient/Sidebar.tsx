@@ -55,6 +55,9 @@ export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps)
       <div className={styles.brand} title={`CTRL v${version}`}>
         C
       </div>
+      <div className={styles.version} title={`CTRL v${version}`}>
+        {version}
+      </div>
 
       <button
         type="button"
