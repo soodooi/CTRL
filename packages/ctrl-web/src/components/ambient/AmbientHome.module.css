@@ -104,6 +104,18 @@
   color: var(--color-text);
 }
 
+/* Running version — the single, glanceable build marker, sized down so it
+   reads as meta next to the wordmark, not a peer of it (bao 2026-06-13). */
+.statusVersion {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.01em;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
 .statusSep {
   width: 1px;
   height: 13px;

@@ -42,6 +42,8 @@ import { runInstalledPackAction } from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
 import { Sidebar, type SidebarSection } from './Sidebar';
 import { vaultRead, vaultWrite, vaultSearch } from '@/lib/kernel';
+import { APP_VERSION } from '@/lib/app-meta';
+import { getVersion } from '@tauri-apps/api/app';
 import styles from './AmbientHome.module.css';
 
 interface Msg {
@@ -523,6 +525,16 @@ export function AmbientHome({
     </div>
   );
 
+  // Running version lives on the first line next to the CTRL wordmark — one
+  // place, visible at a glance for "is this build fresh" (bao 2026-06-13: was
+  // duplicated on the L1 rail alongside a second brand mark; pulled here so
+  // the brand appears exactly once and L1 stays a pure icon rail). Runtime
+  // version from Tauri in the app; APP_VERSION (live in dev) as the fallback.
+  const [version, setVersion] = useState(APP_VERSION);
+  useEffect(() => {
+    void getVersion().then(setVersion).catch(() => {});
+  }, []);
+
   const contextLabel =
     view === 'discover'
       ? 'Discover'
@@ -543,6 +555,9 @@ export function AmbientHome({
       <div className={styles.statusbar} data-tauri-drag-region>
         <div className={styles.statusLeft}>
           <span className={styles.wordmark}>CTRL</span>
+          <span className={styles.statusVersion} title={`CTRL v${version}`}>
+            {version}
+          </span>
           <span className={styles.statusSep} aria-hidden="true" />
           <span className={styles.statusContext}>{contextLabel}</span>
         </div>

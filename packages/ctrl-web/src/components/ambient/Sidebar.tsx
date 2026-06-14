@@ -6,9 +6,7 @@
 // drives the main area; Irisy is always the conversation column to its right.
 
 import { useEffect, useState, type ReactElement } from 'react';
-import { getVersion } from '@tauri-apps/api/app';
 import { loadConnectors } from '@/lib/connector';
-import { APP_VERSION } from '@/lib/app-meta';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
 import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
 import styles from './Sidebar.module.css';
@@ -30,13 +28,6 @@ interface SidebarProps {
 
 export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps): ReactElement {
   const connectors = loadConnectors();
-  // Show the running version in the brand tooltip so bao can confirm the app
-  // updated (the point of bump-version). Runtime version from Tauri; falls back
-  // to the build-time constant.
-  const [version, setVersion] = useState(APP_VERSION);
-  useEffect(() => {
-    void getVersion().then(setVersion).catch(() => {});
-  }, []);
   // Installed feature packs (mcps whose manifest declares actions).
   const [packs, setPacks] = useState<FeaturePack[]>([]);
   useEffect(() => {
@@ -52,12 +43,6 @@ export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps)
 
   return (
     <aside className={styles.rail} data-tauri-drag-region>
-      <div className={styles.brand} title={`CTRL v${version}`}>
-        C
-      </div>
-      <div className={styles.version} title={`CTRL v${version}`}>
-        {version}
-      </div>
 
       <button
         type="button"
