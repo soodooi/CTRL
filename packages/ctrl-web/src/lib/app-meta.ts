@@ -12,7 +12,18 @@
 
 import { useEffect, useState } from 'react';
 
-export const APP_VERSION: string = __APP_VERSION__;
+import webPkg from '../../package.json';
+
+// In dev the vite `define` for __APP_VERSION__ is frozen at server start, so
+// a `bump-version` mid-session leaves the window showing a stale number — the
+// UI hot-updates but the define does not, which reads as "the build never
+// changed" (bao 2026-06-13: this was a real source of confusion). Read the
+// version live from package.json in dev so HMR reflects each bump instantly;
+// in prod the define stays authoritative and this import is dead-code
+// eliminated (DEV is statically false), so package.json is never bundled.
+export const APP_VERSION: string = import.meta.env.DEV
+  ? (webPkg as { version: string }).version
+  : __APP_VERSION__;
 
 export interface UpdateStatus {
   available: boolean;
