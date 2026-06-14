@@ -35,13 +35,65 @@
   app-region: drag;
   user-select: none;
 }
-.statusLeft,
-.statusRight {
+.statusLeft {
   display: flex;
   align-items: center;
   gap: 10px;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+/* Right segment = same width as the Irisy pane below, with a hairline left
+   edge that lines up with the Irisy column's border — so the first line
+   visibly splits into [CTRL | … | Irisy] (bao 2026-06-13). */
+.statusRight {
+  flex: none;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-left: 17px;
+  border-left: 1px solid var(--color-border-soft);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.irisyName {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.statusActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.modelMini {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  cursor: pointer;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color var(--duration-fast) var(--ease-out-quart);
+}
+.modelMini:hover {
+  border-color: var(--color-border);
 }
 
 .wordmark {
@@ -382,26 +434,17 @@
 
 /* Irisy label at the top-left of the Irisy pane (bao 2026-06-13: CTRL logo
    top-left of the window, Irisy label inside the right Irisy pane). */
-/* Irisy = first-class name, the Irisy pane's title row (bao 2026-06-13).
-   Sits at the very top of the right pane, sized as a primary heading. */
-.irisyTag {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 14px 18px 13px;
-  font-size: 17px;
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.01em;
-  color: var(--color-text);
-  border-bottom: 1px solid var(--color-border-soft);
-}
+/* Irisy status dot (first-line name). Teal when a model is connected,
+   faint otherwise (bao 2026-06-13). */
 .irisyDot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-primary);
+  background: var(--color-text-faint);
   flex: none;
+}
+.irisyDot[data-on] {
+  background: var(--color-primary);
 }
 
 /* Narrow screens (phones): stack Irisy above the output bar. */

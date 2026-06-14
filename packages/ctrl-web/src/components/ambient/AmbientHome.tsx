@@ -536,46 +536,54 @@ export function AmbientHome({
 
   return (
     <div className={styles.root} data-surface={surface} hidden={hidden}>
-      {/* Status bar — the window's first line. Left: CTRL wordmark + current
-          location. Right: model/connection status + chat actions. Spans the
-          window; reads like an editor chrome row (bao 2026-06-13). */}
+      {/* The window's FIRST LINE (bao 2026-06-13): two first-class names —
+          CTRL on the left (the whole app), Irisy on the right (the AI). The
+          right segment is the SAME width as the Irisy pane below it, so the
+          Irisy name sits directly above its window, a peer of CTRL. */}
       <div className={styles.statusbar} data-tauri-drag-region>
         <div className={styles.statusLeft}>
           <span className={styles.wordmark}>CTRL</span>
           <span className={styles.statusSep} aria-hidden="true" />
           <span className={styles.statusContext}>{contextLabel}</span>
         </div>
-        <div className={styles.statusRight}>
-          {view === 'chat' && messages.length > 0 && (
-            <>
-              <button
-                type="button"
-                className={styles.statusBtn}
-                onClick={copyConversation}
-                title="Copy the whole conversation"
-              >
-                Copy
-              </button>
-              <button
-                type="button"
-                className={styles.statusBtn}
-                onClick={newChat}
-                title="New chat"
-              >
-                New
-              </button>
-              <span className={styles.statusSep} aria-hidden="true" />
-            </>
-          )}
-          <button
-            type="button"
-            className={styles.modelChip}
-            onClick={onOpenPicker}
-            title="Model & providers"
-          >
-            <span className={styles.modelDot} data-on={hasProvider || undefined} />
-            {hasProvider ? modelLabel : 'Connect AI'}
-          </button>
+        <div
+          className={styles.statusRight}
+          style={isNarrow ? undefined : { width: irisyWidth }}
+        >
+          <span className={styles.irisyName}>
+            <span className={styles.irisyDot} data-on={hasProvider || undefined} />
+            Irisy
+          </span>
+          <div className={styles.statusActions}>
+            {view === 'chat' && messages.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className={styles.statusBtn}
+                  onClick={copyConversation}
+                  title="Copy the whole conversation"
+                >
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  className={styles.statusBtn}
+                  onClick={newChat}
+                  title="New chat"
+                >
+                  New
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className={styles.modelMini}
+              onClick={onOpenPicker}
+              title={hasProvider ? `Model: ${modelLabel}` : 'Connect a model'}
+            >
+              {hasProvider ? modelLabel : 'Connect'}
+            </button>
+          </div>
         </div>
       </div>
       <AnimatePresence mode="wait">
@@ -707,10 +715,6 @@ export function AmbientHome({
               style={isNarrow ? undefined : { width: irisyWidth }}
             >
               <div className={styles.chatPane}>
-                <div className={styles.irisyTag}>
-                  <span className={styles.irisyDot} />
-                  Irisy
-                </div>
                 {conversation}
                 {quickRow}
                 {composer}
