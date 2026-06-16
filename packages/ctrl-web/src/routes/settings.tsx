@@ -23,15 +23,24 @@ import styles from './settings.module.css';
 // Shared tab shell
 // ─────────────────────────────────────────────────────────────
 
-type SettingsTab = 'ctrl' | 'providers' | 'logs';
+type SettingsTab = 'ctrl' | 'providers' | 'agent' | 'logs';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string; to: string }> = [
   { id: 'ctrl', label: 'General', to: '/settings/ctrl' },
   // ADR-002 substrate § provider v2 §3.6 — 2-role provider picker
   { id: 'providers', label: 'Providers', to: '/settings/providers' },
+  // Agent (hermes) config — embeds hermes's own dashboard web UI so its
+  // agent settings (toolsets / memory / personality) live in one place
+  // inside CTRL; the user never has to edit ~/.hermes by hand.
+  { id: 'agent', label: 'Irisy', to: '/settings/agent' },
   // brain tab retired with Pi (ADR-002 substrate §1 v19, 2026-06-09)
   { id: 'logs', label: 'Logs', to: '/settings/logs' },
 ];
+
+// Hermes dashboard web UI port — CTRL starts `hermes dashboard` on this
+// fixed loopback port and embeds it (Settings -> Irisy). Keep in sync with
+// the kernel-side launcher.
+const HERMES_DASHBOARD_URL = 'http://127.0.0.1:17890';
 
 interface SettingsShellProps {
   activeTab: SettingsTab;
@@ -276,6 +285,25 @@ export const SettingsProvidersPage = (): ReactElement => (
     >
       <ProviderHub inline />
     </Section>
+  </SettingsShell>
+);
+
+// Settings -> Irisy : embed hermes's own dashboard web UI (config / agent
+// settings / sessions). hermes serves the full front+back at a loopback port;
+// CTRL just frames it so the user configures the agent without leaving CTRL.
+export const SettingsAgentPage = (): ReactElement => (
+  <SettingsShell activeTab="agent">
+    <iframe
+      title="Irisy agent settings"
+      src={HERMES_DASHBOARD_URL}
+      style={{
+        width: '100%',
+        height: 'calc(100vh - 160px)',
+        border: 'none',
+        borderRadius: 12,
+        background: '#fff',
+      }}
+    />
   </SettingsShell>
 );
 

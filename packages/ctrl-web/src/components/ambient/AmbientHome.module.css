@@ -1177,3 +1177,35 @@
   color: var(--cool, #0ca678); background: rgba(12,166,120,0.08); border-radius: 9px;
   white-space: pre-wrap; word-break: break-word;
 }
+
+/* Irisy thinking indicator — animated so the user isn't staring at a static
+   dot during the agent's (multi-second) turn. bao 2026-06-16. */
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted, #6e6e73);
+  font-size: 14px;
+}
+.thinkingDots {
+  display: inline-flex;
+  gap: 4px;
+}
+.thinkingDots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary, #0d9488);
+  opacity: 0.35;
+  animation: irisyThinking 1.2s infinite ease-in-out;
+}
+.thinkingDots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.thinkingDots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes irisyThinking {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}

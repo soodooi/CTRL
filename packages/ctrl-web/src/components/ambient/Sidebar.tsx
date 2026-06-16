@@ -11,6 +11,41 @@ import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
 import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
 import styles from './Sidebar.module.css';
 
+// Unified line-icon set (bao 2026-06-16: L1 icons must all be the SAME size).
+// Raw unicode glyphs (✦ ✎ ⚙ …) render at wildly different visual sizes — ⚙ in
+// particular looked tiny. One 24-viewBox + one stroke width → identical optical
+// size, controlled by `.ic svg` in the CSS. Zero deps (matches the inline-SVG
+// precedent in PrimaryRail / the history button). ADR-003 frontend §7.6.
+type IconProps = { d: string };
+function Ico({ d }: IconProps): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} />
+    </svg>
+  );
+}
+// Sparkle (Irisy), dot-arrow (tool), pencil (Notes), code (Coding),
+// plus-circle (Discover), gear (Settings).
+const IRISY_D = 'M12 3l1.9 5.6L19.5 10l-5.6 1.4L12 17l-1.9-5.6L4.5 10l5.6-1.4z';
+const TOOL_D = 'M9 6l6 6-6 6';
+const NOTES_D = 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4';
+const DISCOVER_D = 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8v8M8 12h8';
+function GearIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 13a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.6-1.1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" />
+    </svg>
+  );
+}
+function CodeIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 9l-4 3 4 3M16 9l4 3-4 3" />
+    </svg>
+  );
+}
+
 export type SidebarSection =
   | { kind: 'irisy' }
   | { kind: 'tool'; connectorId: string; toolName: string; label: string; sub: string }
@@ -50,7 +85,7 @@ export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps)
         onClick={() => onSelect({ kind: 'irisy' })}
         title="Irisy"
       >
-        ✦
+        <Ico d={IRISY_D} />
       </button>
 
       {connectors.flatMap((c) =>
@@ -70,7 +105,7 @@ export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps)
             }
             title={t.title ?? t.name}
           >
-            ▸
+            <Ico d={TOOL_D} />
           </button>
         )),
       )}
@@ -81,7 +116,7 @@ export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps)
         onClick={() => onSelect({ kind: 'notes' })}
         title="Notes"
       >
-        ✎
+        <Ico d={NOTES_D} />
       </button>
       <button
         type="button"
@@ -89,7 +124,7 @@ export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps)
         onClick={() => onSelect({ kind: 'route', to: '/coding' })}
         title="Coding"
       >
-        {'</>'}
+        <CodeIcon />
       </button>
 
       {packs.map((p) => (
@@ -112,7 +147,7 @@ export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps)
         onClick={() => onSelect({ kind: 'discover' })}
         title="Discover"
       >
-        ⊕
+        <Ico d={DISCOVER_D} />
       </button>
       <button
         type="button"
@@ -120,7 +155,7 @@ export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps)
         onClick={() => onSelect({ kind: 'route', to: '/settings' })}
         title="Settings"
       >
-        ⚙
+        <GearIcon />
       </button>
       <button type="button" className={styles.model} onClick={onModel} title={`Model: ${modelLabel}`}>
         {modelBadge}

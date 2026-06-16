@@ -126,6 +126,48 @@ impl KernelSupervisor {
             }
         });
 
+        // ADR-002 substrate § provider + vault/ctrl/strategy/0013 (2026-06-16):
+        // start hermes's own dashboard web UI on a fixed loopback port so the
+        // PWA's Settings -> Irisy page can embed it (the agent's config / sessions
+        // live in hermes; CTRL only frames its UI). Best-effort + backgrounded; it
+        // is a plain web server (no keychain read) so it never blocks boot. If the
+        // port is already taken (a dashboard from a previous boot), the spawn just
+        // fails and is logged — the existing one keeps serving.
+        tauri::async_runtime::spawn_blocking(|| {
+            use crate::shell::agent_installer::{is_installed, read_manifest, AgentName};
+            if !is_installed(&AgentName::Hermes) {
+                return;
+            }
+            let Some(manifest) = read_manifest(&AgentName::Hermes) else {
+                return;
+            };
+            let entry = manifest.entry_cmd; // [<uvx>, --from, <spec>, hermes-acp]
+            if entry.len() < 3 {
+                return;
+            }
+            let status = std::process::Command::new(&entry[0])
+                .args(&entry[1..3]) // --from <spec>
+                .args([
+                    "hermes",
+                    "dashboard",
+                    "--port",
+                    "17890",
+                    "--host",
+                    "127.0.0.1",
+                    "--no-open",
+                    "--skip-build",
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            match status {
+                Ok(_) => tracing::info!(
+                    "hermes dashboard launched on 127.0.0.1:17890 (Settings -> Irisy embed)"
+                ),
+                Err(e) => tracing::warn!(error = %e, "hermes dashboard launch failed"),
+            }
+        });
+
         // Code Space env registry — coding remote desktop v1 (zeus Z1, ST-SS spec v0.7).
         // commands::code_space::cs_* invocations pull this State to spawn /
         // control SubprocessActor instances. Independent from KernelHandle so

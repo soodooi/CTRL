@@ -1,0 +1,105 @@
+/* SessionHistory — right-side history drawer (ADR-002 v27 + vault 0012 §8). */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.drawer {
+  width: 340px;
+  max-width: 86vw;
+  height: 100%;
+  background: var(--color-bg, #fff);
+  border-left: 1px solid var(--color-border-soft, rgba(0, 0, 0, 0.08));
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-soft, rgba(0, 0, 0, 0.06));
+}
+.title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-text, #1d1d1f);
+}
+.close {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #6e6e73);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+}
+.close:hover {
+  background: var(--color-bg-l2, rgba(0, 0, 0, 0.04));
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.row {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.row:hover {
+  background: var(--color-bg-l2, rgba(0, 0, 0, 0.04));
+}
+.row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.rowTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text, #1d1d1f);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowPreview {
+  font-size: 12px;
+  color: var(--color-text-muted, #6e6e73);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowMeta {
+  font-size: 11px;
+  color: var(--color-text-muted, #9a9aa0);
+}
+
+.muted {
+  color: var(--color-text-muted, #6e6e73);
+  font-size: 13px;
+  padding: 12px;
+}
+.error {
+  color: #c0392b;
+  font-size: 12px;
+  padding: 12px;
+  white-space: pre-wrap;
+}

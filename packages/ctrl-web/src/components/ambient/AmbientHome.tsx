@@ -25,6 +25,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
+// ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
+import { isImeComposing } from '@/lib/ime';
 import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
 import { detectPart, renderPart, type PartSpec } from '@/lib/ui-registry';
 import {
@@ -41,7 +43,8 @@ import {
 import { runInstalledPackAction } from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
 import { Sidebar, type SidebarSection } from './Sidebar';
-import { vaultRead, vaultWrite, vaultSearch } from '@/lib/kernel';
+import { vaultRead, vaultWrite, vaultSearch, type IrisySessionTurn } from '@/lib/kernel';
+import { SessionHistory } from './SessionHistory';
 import { APP_VERSION } from '@/lib/app-meta';
 import { getVersion } from '@tauri-apps/api/app';
 import styles from './AmbientHome.module.css';
@@ -126,6 +129,13 @@ export function AmbientHome({
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [streaming, setStreaming] = useState(false);
+  // Abort handle for the in-flight turn so the composer's Stop button can cancel
+  // streaming WITHOUT locking the textarea. bao (feedback, repeated): never block
+  // input while Irisy is responding — see memory feedback-irisy-never-block-input.
+  const abortRef = useRef<AbortController | null>(null);
+  // Conversation history drawer (reads hermes session store). bao: Irisy must
+  // have a history entry — restores what the AmbientHome rewrite dropped.
+  const [showHistory, setShowHistory] = useState(false);
   const [part, setPart] = useState<PartSpec | null>(null);
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
@@ -154,6 +164,21 @@ export function AmbientHome({
     setPart(null);
     setScene(null);
     setInput('');
+  }, []);
+
+  // Load a past hermes session into the conversation view (read-only). bao:
+  // Irisy must have history. New chat / sending clears the "viewing past" flag.
+  const loadPastSession = useCallback((turns: IrisySessionTurn[], _title: string) => {
+    setMessages(
+      turns.map((t, i) => ({
+        id: `h-${i}`,
+        role: t.role === 'assistant' ? 'assistant' : 'user',
+        content: t.content,
+      })),
+    );
+    setPart(null);
+    setScene(null);
+    setShowHistory(false);
   }, []);
 
   // Auto-grow the composer to its content (cheap, works in every webview).
@@ -221,6 +246,8 @@ export function AmbientHome({
     const asstId = `a-${Date.now()}`;
     setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '' }]);
     setStreaming(true);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
 
     try {
       const history: LLMMessage[] = [...messages, userMsg].map((m) => ({
@@ -228,7 +255,7 @@ export function AmbientHome({
         content: m.content,
       }));
       let acc = '';
-      for await (const chunk of irisyChatTransport().stream(history)) {
+      for await (const chunk of irisyChatTransport().stream(history, { signal: ctrl.signal })) {
         const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
         if (!delta) continue;
         acc += delta;
@@ -242,8 +269,9 @@ export function AmbientHome({
       // Morph a renderable part out of the reply if present.
       const detected = detectPart(acc);
       if (detected) setPart(detected);
-      // Empty stream usually means no provider is configured yet.
-      if (acc.trim().length === 0) {
+      // Empty stream usually means no provider is configured yet — but NOT when
+      // the user hit Stop (aborted on purpose), so guard on the abort signal.
+      if (acc.trim().length === 0 && !ctrl.signal.aborted) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === asstId
@@ -266,8 +294,16 @@ export function AmbientHome({
       );
     } finally {
       setStreaming(false);
+      abortRef.current = null;
     }
   }, [messages, streaming, hasProvider, onOpenPicker]);
+
+  // Stop the in-flight turn (composer Stop button / Esc). Aborts the transport's
+  // stream; the textarea stays editable throughout so the user never loses input.
+  const stopGeneration = useCallback(() => {
+    abortRef.current?.abort();
+    setStreaming(false);
+  }, []);
 
   // Irisy capture/recall (bao 2026-06-12: the two AI chips under a reply).
   // Capture = append this reply to today's Irisy log note (vault is truth).
@@ -435,16 +471,28 @@ export function AmbientHome({
           autoGrow();
         }}
         onKeyDown={(e) => {
+          if (isImeComposing(e)) return;
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             void send(input);
           }
         }}
-        disabled={streaming}
       />
-      <button type="submit" className={styles.send} disabled={streaming || !input.trim()}>
-        {streaming ? '···' : '↑'}
-      </button>
+      {streaming ? (
+        <button
+          type="button"
+          className={styles.send}
+          onClick={stopGeneration}
+          title="Stop generating"
+          aria-label="Stop generating"
+        >
+          ■
+        </button>
+      ) : (
+        <button type="submit" className={styles.send} disabled={!input.trim()}>
+          ↑
+        </button>
+      )}
     </form>
   );
 
@@ -464,7 +512,20 @@ export function AmbientHome({
         <div key={m.id} className={`${styles.msg} ${styles[m.role]}`}>
           {m.role === 'assistant' ? (
             <>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content || '…'}</ReactMarkdown>
+              {m.content ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+              ) : m.id === lastAssistantId && streaming ? (
+                <div className={styles.thinking} aria-label="Irisy is thinking">
+                  <span>Irisy is thinking</span>
+                  <span className={styles.thinkingDots}>
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                </div>
+              ) : (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{'…'}</ReactMarkdown>
+              )}
               {m.id === lastAssistantId && m.content.trim() && !streaming && (
                 <div className={styles.aiChips}>
                   <button
@@ -555,6 +616,11 @@ export function AmbientHome({
 
   return (
     <div className={styles.root} data-surface={surface} hidden={hidden}>
+      <SessionHistory
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        onSelect={loadPastSession}
+      />
       {/* The window's FIRST LINE (bao 2026-06-13): two first-class names —
           CTRL on the left (the whole app), Irisy on the right (the AI). The
           right segment is the SAME width as the Irisy pane below it, so the
@@ -586,6 +652,19 @@ export function AmbientHome({
             Irisy
           </span>
           <div className={styles.statusActions}>
+            <button
+              type="button"
+              className={styles.statusBtn}
+              onClick={() => setShowHistory(true)}
+              title="Conversation history"
+              aria-label="Conversation history"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                <path d="M3 3v5h5" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+            </button>
             {view === 'chat' && messages.length > 0 && (
               <>
                 <button

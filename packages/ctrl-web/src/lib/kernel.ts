@@ -134,8 +134,34 @@ export interface TestProviderResult {
 export const testProvider = (provider: string): Promise<TestProviderResult> =>
   invoke('config_test_provider', { args: { provider } });
 
+// ADR-002 § provider v24 + vault 0012 (2026-06-15): generic model discovery via
+// the OpenAI-compatible /v1/models standard — works for ANY endpoint (local
+// ollama/LM Studio/llama.cpp, cloud, relay), no hardcoded per-runtime logic.
+// Returns [] when the endpoint is down or doesn't support listing.
+export const listModels = (baseUrl: string, apiKey?: string): Promise<string[]> =>
+  invoke('provider_list_models', { args: { base_url: baseUrl, api_key: apiKey } });
+
 export const deleteProvider = (provider: string): Promise<void> =>
   invoke('config_delete_provider', { args: { provider } });
+
+// Irisy conversation history (reads hermes's session store via the kernel).
+// ADR-002 § provider v27 + vault/ctrl/strategy/0012 §8 (2026-06-16).
+export interface IrisySessionSummary {
+  id: string;
+  title: string;
+  preview: string;
+  started_at: string | null;
+  ended_at: string | null;
+  message_count: number;
+}
+export interface IrisySessionTurn {
+  role: string;
+  content: string;
+}
+export const listIrisySessions = (): Promise<IrisySessionSummary[]> =>
+  invoke('irisy_session_list');
+export const getIrisySession = (id: string): Promise<IrisySessionTurn[]> =>
+  invoke('irisy_session_get', { id });
 
 export interface RunMcpResult {
   output: unknown;

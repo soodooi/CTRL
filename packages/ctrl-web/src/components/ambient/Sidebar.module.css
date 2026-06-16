@@ -14,18 +14,25 @@
 }
 
 .ic {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 9px;
   border: none;
   background: transparent;
   color: var(--color-text-muted, #6e6e73);
-  font-size: 15px;
+  font-size: 17px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
+}
+/* Every L1 icon renders at the SAME optical size regardless of glyph
+   (bao 2026-06-16). Emoji pack icons keep font-size; line icons use this. */
+.ic svg {
+  width: 21px;
+  height: 21px;
+  display: block;
 }
 .ic:hover {
   background: var(--color-bg-l2, rgba(0, 0, 0, 0.04));
@@ -41,8 +48,8 @@
 }
 
 .model {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 9px;
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   background: transparent;

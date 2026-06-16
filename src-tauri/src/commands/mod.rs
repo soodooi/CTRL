@@ -35,6 +35,7 @@ pub mod draft_run;
 // (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
 // panel: status / init / commit_all / push / log.
 pub mod git;
+pub mod hermes_acp;
 pub mod irisy;
 pub mod irisy_chat;
 pub mod kernel;
@@ -78,6 +79,9 @@ macro_rules! pwa_invoke_handler {
             // ADR-005 v5: Irisy = persona shell, not brain. Routes to whichever
             // agent matches the active L1 chip (default hermes via /assistant).
             $crate::commands::irisy_chat::irisy_chat_stream,
+            // Irisy conversation history (reads hermes session store) — vault 0013
+            $crate::commands::hermes_acp::irisy_session_list,
+            $crate::commands::hermes_acp::irisy_session_get,
             // agents — 3-agent aggregator (ADR-002 §1 v19): install / launch /
             // stop / status. PWA owns retry; kernel does not supervise.
             $crate::commands::agents::install_agent,
