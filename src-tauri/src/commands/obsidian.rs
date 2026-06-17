@@ -261,6 +261,47 @@ pub async fn obsidian_provision() -> Result<ObsidianProvision, String> {
     })
 }
 
+/// Launch Obsidian on the CTRL Notes vault (via the obsidian:// URI, which
+/// starts the app if not running) so its plugins — including Local REST API —
+/// load and serve. A GUI window appears (Obsidian has no plugin-serving headless
+/// mode); CTRL can't fully hide it. Idempotent: re-opening an already-open vault
+/// just focuses it.
+#[tauri::command]
+pub async fn obsidian_launch() -> Result<(), String> {
+    let vault = notes_vault_dir().ok_or_else(|| "home dir".to_string())?;
+    let path = vault.to_string_lossy().replace(' ', "%20");
+    let uri = format!("obsidian://open?path={path}");
+
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg(&uri);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/c", "start", "", &uri]);
+        c
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(&uri);
+        c
+    };
+
+    cmd.status()
+        .map_err(|e| format!("launch Obsidian: {e}"))
+        .and_then(|s| {
+            if s.success() {
+                Ok(())
+            } else {
+                Err("Obsidian launch returned non-zero (is it installed?)".to_string())
+            }
+        })
+}
+
 #[derive(Debug, Serialize)]
 pub struct ObsidianConnected {
     pub server_id: String,
@@ -298,7 +339,23 @@ pub async fn obsidian_connect(
         },
     })
     .await;
-    host.connect(&server_id).await.map_err(|e| e.to_string())?;
+    // The plugin takes a moment to serve after Obsidian opens; retry a few times.
+    let mut last_err = String::new();
+    for attempt in 0..5u32 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+        match host.connect(&server_id).await {
+            Ok(()) => {
+                last_err.clear();
+                break;
+            }
+            Err(e) => last_err = e.to_string(),
+        }
+    }
+    if !last_err.is_empty() {
+        return Err(format!("connect failed (is Obsidian open with the vault?): {last_err}"));
+    }
     let tools = host
         .list_tools(&server_id)
         .await
