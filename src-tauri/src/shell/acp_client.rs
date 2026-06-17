@@ -12,9 +12,12 @@
 //   inline, so no concurrent reader is needed (mirrors the JS probe).
 // - Verified end-to-end by scripts/probes/hermes-acp-probe.mjs (2026-06-17).
 //
-// NOT YET (slice 2, §1.8.2): MCP-bus passthrough — `session/new` passes
-// `mcpServers: []` for now; wiring CTRL's :17873 bus as the agent's MCP
-// server (so the 3 faces reach hermes) is the next slice.
+// MCP-bus passthrough (§1.8.2): `session/new` passes CTRL's :17873 bus as the
+// agent's MCP server (build_mcp_servers), so hermes reaches the FULL CTRL tool
+// surface — Notes / clipboard / OCR / provider router (fal.ai image/video) /
+// Obsidian (via mcp.proxy_*) / skills — through the single ACP door. This is how
+// the functions ACP itself scopes out (messaging/cron) are supplied by CTRL's
+// own layers instead of hermes's upgrade-fragile internal protocol.
 
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
