@@ -38,7 +38,20 @@ pub struct AcpClient {
     reader: BufReader<ChildStdout>,
     session_id: String,
     next_id: i64,
+    /// Whether the CTRL capability preamble has been sent this session (§1.8.2).
+    primed: bool,
 }
+
+/// One-time capability brief prepended to the first turn so hermes KNOWS it can
+/// drive CTRL's tools (the user's notes / Obsidian vault are reachable via the
+/// `ctrl` MCP server passed in session/new) instead of answering from its own
+/// memory (ADR-002 substrate §1.8.2 v23). Concise so it doesn't fight SOUL.md.
+const CTRL_CAPABILITY_BRIEF: &str = "\
+[CTRL context — you are Irisy, the user's assistant inside CTRL. The `ctrl` MCP \
+server (already connected) gives you tools to read / write / search the user's \
+notes and Obsidian vault at ~/Documents/CTRL/Notes (vault.* tools), plus \
+clipboard, OCR and image/video generation. When the user asks about their notes, \
+Obsidian, or knowledge, USE these tools — do not answer from memory alone.]";
 
 /// Process-wide persistent client. `None` until the first turn starts it;
 /// reset to `None` on any error so the next turn restarts cleanly.
@@ -129,6 +142,7 @@ impl AcpClient {
             reader: BufReader::new(stdout),
             session_id: String::new(),
             next_id: 0,
+            primed: false,
         };
 
         let mut noop = |_: &str| {};
@@ -186,10 +200,18 @@ impl AcpClient {
         mut on_delta: impl FnMut(&str) + Send,
     ) -> Result<String> {
         let sid = self.session_id.clone();
+        // Prime the first turn with the CTRL capability brief so hermes knows it
+        // can drive the user's notes / Obsidian via the bus tools (§1.8.2).
+        let turn_text = if self.primed {
+            text.to_string()
+        } else {
+            self.primed = true;
+            format!("{CTRL_CAPABILITY_BRIEF}\n\n{text}")
+        };
         let res = self
             .request(
                 "session/prompt",
-                json!({ "sessionId": sid, "prompt": [{ "type": "text", "text": text }] }),
+                json!({ "sessionId": sid, "prompt": [{ "type": "text", "text": turn_text }] }),
                 &mut on_delta,
             )
             .await?;
