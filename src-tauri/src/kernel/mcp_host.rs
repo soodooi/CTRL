@@ -64,8 +64,14 @@ pub enum McpServerSource {
         #[serde(default)]
         args: Vec<String>,
     },
-    /// HTTP endpoint (remote MCP server). Wiring in P4.
-    Http { url: String },
+    /// HTTP endpoint (remote / local HTTP MCP server, e.g. the Obsidian
+    /// Local REST API plugin's built-in /mcp/). `auth_header` is the full
+    /// Authorization header value (e.g. "Bearer <token>") when required.
+    Http {
+        url: String,
+        #[serde(default)]
+        auth_header: Option<String>,
+    },
 }
 
 impl McpServerSource {
@@ -145,18 +151,43 @@ impl McpHost {
                 .ok_or_else(|| McpHostError::NotInstalled(server_id.into()))?
         };
 
-        let cmd = desc
-            .source
-            .to_command()
-            .ok_or_else(|| McpHostError::TransportUnsupported("http (P4)".into()))?;
-
-        let transport = TokioChildProcess::new(cmd)
-            .map_err(|e| McpHostError::SpawnFailed(e.to_string()))?;
-
-        let service = ()
-            .serve(transport)
-            .await
-            .map_err(|e| McpHostError::HandshakeFailed(e.to_string()))?;
+        // Transport per source kind: HTTP MCP servers (ADR-002 §1.9.1) use the
+        // rmcp streamable-http client; everything else spawns a stdio child.
+        let service = match &desc.source {
+            McpServerSource::Http { url, auth_header } => {
+                use rmcp::transport::streamable_http_client::{
+                    StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+                };
+                let mut cfg = StreamableHttpClientTransportConfig::with_uri(url.clone());
+                if let Some(h) = auth_header {
+                    cfg = cfg.auth_header(h.clone());
+                }
+                // Local plugin servers (Obsidian :27124) present a self-signed
+                // cert; accept it — these are loopback, user-authorised endpoints.
+                // rmcp-reqwest = reqwest 0.13 (matches rmcp's StreamableHttpClient
+                // impl type); CTRL's own reqwest 0.12 is a separate crate instance.
+                let client = rmcp_reqwest::Client::builder()
+                    .danger_accept_invalid_certs(true)
+                    .build()
+                    .map_err(|e| McpHostError::SpawnFailed(e.to_string()))?;
+                let transport = StreamableHttpClientTransport::with_client(client, cfg);
+                ()
+                    .serve(transport)
+                    .await
+                    .map_err(|e| McpHostError::HandshakeFailed(e.to_string()))?
+            }
+            _ => {
+                let cmd = desc.source.to_command().ok_or_else(|| {
+                    McpHostError::TransportUnsupported(format!("{:?}", desc.source))
+                })?;
+                let transport = TokioChildProcess::new(cmd)
+                    .map_err(|e| McpHostError::SpawnFailed(e.to_string()))?;
+                ()
+                    .serve(transport)
+                    .await
+                    .map_err(|e| McpHostError::HandshakeFailed(e.to_string()))?
+            }
+        };
 
         let conn = McpConnection {
             descriptor: desc.clone(),

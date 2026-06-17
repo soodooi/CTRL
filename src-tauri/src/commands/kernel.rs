@@ -622,7 +622,7 @@ fn derive_server_id(source: &crate::kernel::mcp_host::McpServerSource) -> String
             "local".hash(&mut h);
             command.hash(&mut h);
         }
-        McpServerSource::Http { url } => {
+        McpServerSource::Http { url, .. } => {
             "http".hash(&mut h);
             url.hash(&mut h);
         }

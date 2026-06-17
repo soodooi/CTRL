@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.277"
+version = "0.1.278"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -37,6 +37,10 @@ ureq = { version = "2", features = ["json"] }
 # H-2026-05-22 — async streaming HTTP for LLM adapters (Volc Ark / OpenAI-shape).
 # rustls-tls keeps the build OpenSSL-free for portable Tauri bundles.
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+# Aligned with rmcp 1.7's reqwest (0.13) ONLY for the HTTP MCP client transport
+# (ADR-002 §1.9.1) — its StreamableHttpClient impl is for the 0.13 Client type.
+# Kept separate so CTRL's existing 0.12 usage (provider adapters) is untouched.
+rmcp-reqwest = { package = "reqwest", version = "0.13", default-features = false, features = ["stream", "rustls"] }
 toml = "0.8"
 keyring = { version = "3", default-features = false, features = ["apple-native", "linux-native", "windows-native"] }
 directories = "5"
@@ -62,6 +66,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }  # event store
 rmcp = { version = "1.7", features = [
     "client", "transport-child-process",
     "server", "macros", "schemars", "transport-streamable-http-server",  # MCP server (ADR-013)
+    # HTTP MCP client transport (ADR-002 §1.9.1) — outbound to HTTP MCP servers
+    # like the Obsidian Local REST API plugin's built-in /mcp/ endpoint.
+    # `reqwest` brings the rustls TLS provider the client impl needs.
+    "transport-streamable-http-client-reqwest", "reqwest",
 ] }
 # axum hosts the rmcp StreamableHttpService + auth middleware (kernel-as-MCP-server).
 axum = "0.8"

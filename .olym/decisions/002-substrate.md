@@ -235,6 +235,8 @@ The Obsidian **Local REST API** plugin (coddingtonbear, HTTPS :27124, bearer tok
 
 **Precondition / honesty**: the connector requires the user to run Obsidian with the Local REST API plugin installed + token configured. It is opt-in (layer 5), not the default; CTRL onboarding surfaces it for users who already live in Obsidian.
 
+**Implementation status (2026-06-17)**: SHIPPED behind cargo+tsc green — `commands/obsidian.rs` (`obsidian_status` detection from the vault's plugin `data.json` + `obsidian_connect` registers `https://127.0.0.1:<port>/mcp/` on the bus) + NEW HTTP MCP **client** transport in `mcp_host::connect()` (the deferred P4 — `McpServerSource::Http { url, auth_header }` via rmcp `StreamableHttpClientTransport`, self-signed cert accepted for loopback). Cost: a 2nd reqwest (0.13, `rmcp-reqwest` alias) to match rmcp's `StreamableHttpClient` impl type — adds binary size (revisit by unifying CTRL on reqwest 0.13). **NOT live-verified**: no Obsidian + plugin on the build machine; the live round-trip + the streamable-HTTP-vs-older-SSE shape of the plugin's `/mcp/` must be confirmed on a real setup (DRIFT D7).
+
 ## §2 Capability surface — 10 namespaces / 28 methods (frequency ≥3 rule + category exception)
 
 Methods enter the kernel surface iff consumed by ≥3 mcps across the v1 corpus, **OR** they are `mcp.*` / `platform.notify` (infrastructure), **OR** they belong to a brain-capability category (text / image / audio / embed) — category exception so multi-modal brain ships coherently (§7 amends frequency ≥3).
