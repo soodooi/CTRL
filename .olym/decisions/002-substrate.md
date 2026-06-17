@@ -2,7 +2,7 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — 3-agent aggregator · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 25
+version: 26
 status: accepted
 last_updated: 2026-06-17
 deciders: [bao, zeus]
@@ -21,6 +21,7 @@ sections:
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
 changelog:
+  - v26 2026-06-17: **§1.9 research-corrected (bao "调研别猜" + "不要跳出 ctrl 不然产品就破裂了") + NEW §1.9.1 Obsidian connector spec.** Web research forced a reversal of the v24/v25 "Obsidian = the editor" framing: (1) Obsidian is NOT embeddable (Electron, no web/headless — can embed web INTO Obsidian but never the reverse); (2) its Local REST API is data-only (CRUD/patch/search/metadata, NO rendering/backlinks/graph); (3) embeddable Obsidian-compatible web tools (Perlite/Quartz) are read-only publishers. ∴ "stay in CTRL" FORCES CTRL to render notes itself. **Layer 3 reframed: CTRL's `NotesApp` + kernel vault index = the PRIMARY in-CTRL notes UI (single entry); Obsidian = compat target + optional connector, never the UI, never the default jump-out.** Scope decision RESOLVED: KEEP NotesApp (don't slim/rip — single entry + mobile need it); stop ADDING PKM parity. **NEW §1.9.1**: the Obsidian Local-REST-API plugin ships its own MCP server (`/mcp/`) → register on the bus :17873 (~zero adapter); endpoint→Irisy-capability table (vault CRUD/patch · `/search/` Dataview/JsonLogic · `/active/` operate-on-open-note · `/commands/` drive any plugin command · `/periodic/` · `/open/` controlled handoff); two-tier access (baseline kernel notes-MCP always + enriched Obsidian connector when running); write/command tools gated (ADR-006 §4). Implementation slice 1 (SilverBullet retirement) DONE; connector = slice 2.
   - v25 2026-06-17: **NEW §1.9 — Notes architecture consolidated + migration plan (bao "先做好计划 把架构更新一下").** Draws the v24 decision into one 5-layer picture (data / agent-access / Obsidian editor / CTRL light inline viewer / optional Obsidian REST MCP). Surfaces that CTRL reinvented Obsidian TWICE — the kairo/SilverBullet bundle AND a heavy in-house NotesApp (GraphView/Backlinks/Tags/Templates). Plan: (1) retire SilverBullet bundle [safe], (2) `/notes` "Open in Obsidian", (3) **scope decision pending bao** — slim NotesApp to a light viewer vs keep, (4) optional Obsidian REST MCP connector. Layer-2 agent access (notes-MCP :17873) is editor-independent — no change. Mobile keeps a light CTRL viewer (can't run desktop Obsidian). Code in DRIFT D7.
   - v24 2026-06-17: **Notes/KB layer — kairo (SilverBullet) RETIRED, Obsidian adopted (bao 2026-06-17 "用 obsidian 不要重复造轮子").** CTRL bundles NO notes editor — don't reinvent the wheel; Obsidian (the dominant PKM, mature ecosystem) is the user's editor over the plain-md Notes folder. Reconciliation (zeus, 2 locked-principle tensions flagged + resolved): (1) "Ctrl is the only entry" — heavy PKM editing/graph/plugins = Obsidian (a deliberate single-entry exception for the notes-editing vertical); CTRL keeps a LIGHT inline md viewer for read/preview in the morphing surface (it must render md anyway — not reinventing Obsidian). (2) "Obsidian = compatibility not dependency" — NOT a hard dep: data is always `~/Documents/CTRL/Notes/` plain-md; **agents read/write via kernel notes-MCP on bus :17873, editor-independent**; no Obsidian → CTRL's inline viewer still reads. Obsidian = preferred editor + OPTIONAL Local-REST-API MCP connector (cyanheads/obsidian-mcp-server / coddingtonbear/obsidian-local-rest-api) for backlinks/tags/graph; remove it and the data + notes-MCP remain. **What "use Obsidian" does NOT mean**: not the "Hermes Console" Obsidian-as-host model (that makes CTRL pointless); CTRL stays the host, Obsidian is a data+editor face on the bus (apps-as-MCP-source, ADR-001 §3). RETIRED: kairo=SilverBullet 2.8.1 bundling (`agent_installer::install_via_binary` SilverBullet path + `agent_launcher` webview branch + `~/.ctrl/agents/kairo/`). The 3rd aggregator slot is no longer a CTRL-bundled agent — it's the user's Obsidian via MCP. Updates §1.1 (kairo row → Obsidian connector) + §1.8.3 (KB = Obsidian + Notes-MCP). Pairs ADR-001 (kairo refs) + ADR-003 (Notes route) + CLAUDE.md stack. Code follow-up: retire SilverBullet install/launch, point /notes at "open in Obsidian" + keep inline viewer, optional Obsidian REST MCP register. All residual "kairo"/"SilverBullet" references across ADRs are SUPERSEDED by this entry pending a sweep.
   - v23 2026-06-17: **NEW §1.8 — agent integration channel locked: ACP single door + 3-face MCP passthrough + KB-not-brain + upgrade规范 (zeus drill 2026-06-16/17, bao Q&A).** Supersedes the v20 "ACP stdio; interim `hermes -z` one-shot" note — **ACP is THE channel**, one-shot retired as a routing path (`HERMES_FIRST` dead path removed; degraded path = provider router → BYOK direct, already shipped, matches v22 default). Decision chain bao pressure-tested across 8 turns and converged: (1) **端点 = ACP single door** — `uvx --from 'hermes-agent[acp]==<pin>' hermes-acp`, CTRL is the ACP client (same role as Zed / JetBrains AI Assistant / Neovim CodeCompanion). **TUI-gateway NOT adopted** (hermes-private interface = highest upgrade-breakage; its only edge — driving hermes-internal skills — is exactly what CTRL rejects since skills are CTRL-side SSOT). **OpenAI-server NOT adopted as hermes door** (ACP gives more: structured tool/permission events). (2) **3 faces reach the agent via ACP MCP passthrough** (Zed-standard: client passes its MCP servers to the agent at session start, tool calls pipe back over ACP = connectivity + gate + visibility in one) — MCP/API/Skills all consumed from CTRL's bus :17873, never the agent's own; 4 hard constraints (agent MCP client → only :17873; provider router exposed as MCP tools; skills dir = ~/.ctrl/skills; apps/OAuth = MCP source not a 4th face). (3) **KB ≠ brain channel** — user KB = kairo + Notes-MCP; ACP delivers the assistant + hermes-internal RAG, not the user KB. (4) **Upgrade规范** — single pin SSOT + version lockfile (mirrors ADR-005 §4.6) + `hermes-acp-probe` contract probe (mirrors ADR-005 §7.7) + L3 gate (ADR-006 §4), rollout tier under ADR-004 §updater. ACP provenance verified (Zed 2025-08 Apache-2.0; JetBrains partnership 2025-10; Gemini CLI reference impl; hermes#569; agentclientprotocol.com) — the one ACP client doubles as CTRL's universal agent-aggregation surface (ADR-006 §5 通用化). Pairs ADR-001 §4.1 v5 + ADR-004 §updater + DRIFT.md (hermes-online → in progress). Code: dev builds the ACP client + probe; zeus owns this doc.
@@ -190,21 +191,49 @@ Consolidates the v24 "use Obsidian, don't reinvent the wheel" decision into one 
 |---|---|---|---|---|
 | 1 | **Data (truth)** | `~/Documents/CTRL/Notes/` plain-md + frontmatter | local FS | none (local-is-truth) |
 | 2 | **Agent data access** | kernel notes-MCP `:17873` (`vault.read/write/search/backlinks/tags/...` 13+ tools) | CTRL kernel | **none — editor-independent**; hermes/opencode reach notes here regardless of editor |
-| 3 | **Heavy PKM editor** | graph · backlinks · plugins · daily notes · templates · long-form editing | **user's Obsidian** | NEW — CTRL stops building this |
-| 4 | **Inline viewer (light)** | read / preview / quick md edit in the ambient + **mobile** surface | CTRL (md viewer, 12-viewer registry) | keep LIGHT; stop growing it into a PKM |
-| 5 | **Optional connector** | Obsidian Local-REST-API MCP → backlinks/tags/graph for agents | user opt-in | NEW, optional, on the bus (apps-as-MCP-source) |
+| 3 | **In-CTRL notes UI (PRIMARY)** | render / read / edit / wikilinks / backlinks / tags / graph — the notes surface the user lives in, **inside CTRL** (single entry) | CTRL (`NotesApp` + kernel vault index: backlinks/tags/graph_data/FTS5) | **already built** — keep as the primary surface |
+| 4 | **User's Obsidian (compat + escape)** | the user's own Obsidian app over the SAME vault — full plugin ecosystem / graph / sync | user's Obsidian | compat target + rare manual escape; **NOT embedded, NOT the default UI** |
+| 5 | **Optional Obsidian connector** | Obsidian Local-REST-API plugin's built-in MCP server → /active/, plugin commands, Dataview search, periodic notes for Irisy | user opt-in (Obsidian running + plugin) | NEW — register on the bus (apps-as-MCP-source); spec §1.9.1 |
 
-**Why layer 4 stays** (not pure Obsidian): mobile is a thin client (ADR-006 §5 "compute on PC") — a phone can't run desktop Obsidian, so CTRL needs its own light read/quick-edit viewer; and the ambient surface renders notes inline anyway (that's not reinventing Obsidian, just displaying md).
+**Research-forced framing (zeus, 2026-06-17 — "调研别猜")**: three findings reverse the v24/v25 "Obsidian = the editor" framing:
+1. **Obsidian is NOT embeddable** — Electron, no web/headless build; you can embed web INTO Obsidian (Custom Frames) but never Obsidian INTO CTRL. So "stay in CTRL" (bao 2026-06-17 "不要跳出 ctrl 不然产品就破裂了") FORCES CTRL to render notes itself.
+2. **Obsidian Local REST API = data only** — CRUD / patch / search / metadata; NO rendering / backlinks / graph endpoints. Even its API can't supply CTRL a rendering or graph engine.
+3. **Embeddable Obsidian-compatible web tools = read-only publishers** (Perlite / Quartz), not editors.
 
-**Retire (the redundant wheels)**:
-- **kairo = SilverBullet bundling** — `agent_installer::install_via_binary` (SilverBullet download) + `AgentName::Kairo` + `agent_launcher` `webview` branch + `kernel_supervisor` kairo refs + `~/.ctrl/agents/kairo/`. Never shipped as default (NotesApp already is); pure dead weight.
-- **In-house PKM duplication** — the heavy slice of `packages/ctrl-web/src/components/notes/` (GraphView / NotesBacklinks / TagsPanel / TemplatesModal / VaultHealthFold) duplicates Obsidian. **Scope decision pending bao** (see §1.9 plan): demote NotesApp to a light viewer (keep tree + md view/edit, drop the PKM panels) vs keep as-is. CTRL stops ADDING PKM features either way — Obsidian owns PKM growth.
+→ **CTRL renders notes itself (layer 3 PRIMARY); Obsidian is a compat target + optional connector, never the UI.** This is NOT reinventing the wheel: the wheel removed was SilverBullet (a 2nd bundled editor); CTRL's `NotesApp` + kernel vault index already exist and are the load-bearing single-entry surface — keeping them is mandatory for "don't jump out". What CTRL does NOT do: chase Obsidian's plugin-ecosystem / sync parity — for that the user opens their own Obsidian on the same files, or Irisy drives it via the §1.9.1 connector.
+
+**Scope decision RESOLVED** (was "slim NotesApp vs keep"): **KEEP** NotesApp as the primary in-CTRL notes UI (research-forced — single entry requires it). Stop ADDING PKM features; do not rip out the existing panels. mobile (thin client, ADR-006 §5) also needs this CTRL-side UI since it can't run desktop Obsidian.
 
 **Implementation plan** (phased, verify each):
-1. **Retire SilverBullet bundle** (safe, mostly dead code): drop `AgentName::Kairo` + `install_via_binary` SilverBullet path + `agent_launcher` webview branch + kernel_supervisor kairo refs. cargo green.
-2. **`/notes` "Open in Obsidian"**: add an action that opens the Notes folder in Obsidian (`obsidian://open?path=...` URI or OS file-open). NotesApp stays as the inline viewer.
-3. **(scope decision) NotesApp → light viewer**: if bao picks "slim", remove GraphView/Backlinks/Tags/Templates panels, keep NotesTree + md view/edit. Else keep.
-4. **(optional) Obsidian REST MCP connector**: when the user runs Obsidian + Local REST API plugin, register it on the bus so agents get graph/tags beyond the filesystem.
+1. ~~Retire SilverBullet bundle~~ — **DONE** 2026-06-17 (`AgentName::Kairo` + `install_via_binary` + launcher webview + supervisor prefetch + `list_agents` removed; cargo + tsc + acp_smoke green).
+2. **Obsidian connector (§1.9.1)** — register the Obsidian Local-REST-API plugin's built-in MCP server as an MCP source on the bus when present; Irisy gains /active/, plugin commands, Dataview search, periodic notes over the user's REAL vault. Write-ops gated (ADR-006 §4).
+3. **No default jump-out** — `/open/{path}` (controlled handoff to Obsidian UI) only on explicit user action, never the default path. CTRL stays the surface.
+
+### §1.9.1 Obsidian Local-REST-API connector — endpoints → Irisy capabilities (NEW v26)
+
+The Obsidian **Local REST API** plugin (coddingtonbear, HTTPS :27124, bearer token) **ships its own MCP server** (`/mcp/`), so CTRL wires it with ~zero adapter code: register that MCP endpoint as a source on the bus :17873 (apps-as-MCP-source, ADR-001 §3); hermes/Irisy reach the tools via the §1.8.2 ACP MCP passthrough.
+
+| Endpoint | Irisy capability | Kind |
+|---|---|---|
+| `GET /vault/{path}` · `GET /vault/{dir}/` | read a note / browse the vault | read |
+| `POST /search/` (JsonLogic / Dataview) + simple full-text | query/recall over the user's REAL Obsidian vault → feeds Irisy RAG | read ★ |
+| `GET /periodic/{period}/` (daily/weekly/monthly/quarterly/yearly) | "add to today's daily note" / "what did I write this week" | read/write |
+| `PUT /vault/{path}` | create / overwrite a note | write* |
+| `POST /vault/{path}` | append to a note | write* |
+| `PATCH /vault/{path}` | surgical insert by heading / block / frontmatter key | write* |
+| `DELETE /vault/{path}` | delete a note | write* |
+| `GET/POST/PATCH/DELETE /active/` | operate on the note CURRENTLY OPEN in Obsidian (summarize / rewrite / append to what the user is viewing) | write* ★ |
+| `GET /commands/` + `POST /commands/{id}/` | list + execute ANY Obsidian command **including community-plugin commands** (Templater / Dataview / QuickAdd…) — Irisy drives the user's whole plugin ecosystem, CTRL rebuilds none of it | command ★★ |
+| `POST /open/{path}` | open a note in Obsidian's UI (controlled, explicit handoff — NOT the default) | ui |
+| `GET/POST /mcp/` | the plugin's built-in MCP server — the wire CTRL registers on the bus | wiring ★ |
+
+\* write / delete / command tools are high blast-radius → gated through the ADR-006 §4 autonomy ladder (intent → review → approve → execute); never silent.
+
+**Two-tier access** (Irisy notes reach):
+- **Baseline (always)** — kernel notes-MCP `:17873` over `~/Documents/CTRL/Notes/` plain-md (layer 2). Works with Obsidian closed / not installed.
+- **Enriched (Obsidian running + plugin)** — the §1.9.1 connector adds `/active/`, plugin commands, Dataview/JsonLogic search, periodic-note resolution. Degrades cleanly to baseline when Obsidian is absent.
+
+**Precondition / honesty**: the connector requires the user to run Obsidian with the Local REST API plugin installed + token configured. It is opt-in (layer 5), not the default; CTRL onboarding surfaces it for users who already live in Obsidian.
 
 ## §2 Capability surface — 10 namespaces / 28 methods (frequency ≥3 rule + category exception)
 
