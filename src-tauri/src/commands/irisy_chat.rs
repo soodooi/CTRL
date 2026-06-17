@@ -148,52 +148,74 @@ async fn forward_to_provider(
         });
     }
 
-    // Assistant-mode hermes-first branch (ADR-002 substrate §1.1 v20): when
-    // the hermes agent is installed, route the turn through it (its own
-    // persistent memory + skills) and emit the answer; fall back to the
-    // provider router when hermes is absent or errors so offline / fresh
-    // installs stay usable (CLAUDE.md derived rule #2). Coding mode is owned
-    // by opencode, so it skips this branch.
-    // Hermes-first routing toggle (bao 2026-06-12, decision A): ALL hermes code
-    // stays, but hermes does NOT intercept the turn while its one-shot path is
-    // slow/blocking (uvx cold start, 180 s timeout, no streaming). Irisy uses
-    // the provider router (the user's configured Claude / Volc) — fast +
-    // reliable. Flip back to true once hermes ships ACP streaming (ADR-002 §1.1
-    // "layers on next"); hermes then becomes an optional brain feature pack,
-    // not a hardcoded interceptor.
-    const HERMES_FIRST: bool = false;
+    // Assistant-mode hermes-first branch (ADR-002 substrate §1.8 v23): when
+    // the hermes agent is installed, route the turn through it over ACP (its
+    // own persistent memory + skills), STREAMING agent_message_chunk text
+    // into chat-stream-delta. On any error fall back to the provider router so
+    // offline / fresh installs / a broken hermes stay usable (CLAUDE.md
+    // derived rule #2). Coding mode is owned by opencode, so it skips this.
+    // The dead one-shot `HERMES_FIRST` path (v20-v22, no streaming) is gone:
+    // ACP gives real streaming + a warm persistent session (§1.8.1).
     let coding_mode = args.mode.as_deref() == Some("coding");
-    if HERMES_FIRST
-        && !coding_mode
+    if !coding_mode
         && crate::shell::agent_installer::is_installed(
             &crate::shell::agent_installer::AgentName::Hermes,
         )
     {
-        if let Some(last_user) = messages.iter().rev().find(|m| m.role == "user") {
-            match crate::commands::agents::run_hermes_oneshot(
-                &last_user.content,
-                registry.as_ref(),
-            )
-            .await
-            {
-                Ok(answer) => {
-                    if !answer.is_empty() {
-                        let _ = app.emit(
+        if let Some(last_user) = messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.clone())
+        {
+            let provider_env = registry.agent_env_injection();
+            let mut guard = crate::shell::acp_client::singleton().lock().await;
+            let ready = if guard.is_none() {
+                match crate::shell::acp_client::AcpClient::start(&provider_env).await {
+                    Ok(c) => {
+                        *guard = Some(c);
+                        true
+                    }
+                    Err(e) => {
+                        eprintln!("[acp] hermes start failed, using provider router: {e}");
+                        false
+                    }
+                }
+            } else {
+                true
+            };
+            if ready {
+                let client = guard.as_mut().expect("acp client present");
+                let rid = request_id.to_string();
+                let app2 = app.clone();
+                let result = client
+                    .prompt(&last_user, |d: &str| {
+                        let _ = app2.emit(
                             "chat-stream-delta",
                             StreamDelta {
-                                request_id: request_id.to_string(),
-                                delta: answer,
+                                request_id: rid.clone(),
+                                delta: d.to_string(),
                                 done: false,
                                 error: None,
                                 custom: None,
                             },
                         );
+                    })
+                    .await;
+                match result {
+                    Ok(_) => {
+                        drop(guard);
+                        emit_done(app, request_id, None);
+                        return Ok(());
                     }
-                    emit_done(app, request_id, None);
-                    return Ok(());
+                    Err(e) => {
+                        // Drop the (possibly wedged) client so the next turn
+                        // restarts it cleanly, then fall through to the router.
+                        *guard = None;
+                        drop(guard);
+                        eprintln!("[acp] hermes prompt failed, using provider router: {e}");
+                    }
                 }
-                // Degrade to the provider router on hermes failure.
-                Err(_e) => {}
             }
         }
     }

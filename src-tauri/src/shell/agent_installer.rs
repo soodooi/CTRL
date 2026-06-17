@@ -67,6 +67,9 @@ impl AgentName {
 ///   Go binary serving a web UI over a plain markdown folder.
 pub const HERMES_ACP_SPEC: &str = "hermes-agent[acp]==0.16.0";
 pub const HERMES_ONESHOT_SPEC: &str = "hermes-agent==0.16.0";
+/// hermes-agent requires Python >=3.11,<3.14; pin one so uv fetches a managed
+/// CPython instead of the system Python (3.9 on macOS). See HERMES_ACP_SPEC use.
+pub const HERMES_PYTHON: &str = "3.12";
 const SILVERBULLET_VERSION: &str = "2.8.1";
 const OPENCODE_VERSION: &str = "1.17.3";
 const UV_VERSION: &str = "0.11.20";
@@ -184,8 +187,14 @@ fn install_via_uvx(name: &AgentName) -> Result<AgentManifest> {
         version: "0.16.0".into(),
         install_at: chrono::Utc::now().to_rfc3339(),
         endpoint_type: "acp-stdio".to_string(),
+        // `--python 3.12`: hermes-agent[acp] requires Python >=3.11; without
+        // this uvx falls back to the system Python (3.9 on macOS) and fails
+        // to resolve. uv fetches a managed CPython on first run. Verified via
+        // scripts/probes/hermes-acp-probe.mjs 2026-06-17 (ADR-002 §1.8.4).
         entry_cmd: vec![
             uvx.display().to_string(),
+            "--python".into(),
+            HERMES_PYTHON.into(),
             "--from".into(),
             HERMES_ACP_SPEC.into(),
             "hermes-acp".into(),

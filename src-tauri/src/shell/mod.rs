@@ -37,6 +37,9 @@ pub mod window;
 // No supervisor — PWA owns retry.
 pub mod agent_installer;
 pub mod agent_launcher;
+// Kernel ACP client — drives hermes (assistant brain) over Agent Client
+// Protocol stdio JSON-RPC, streaming into chat-stream-delta (ADR-002 §1.8).
+pub mod acp_client;
 // Built-in tool downloader for feature-pack provision (ADR-002 §7.2 v21).
 pub mod tool_installer;
 // Provision runner — check → install (downloader/pkg-mgr) → env+secret inject.

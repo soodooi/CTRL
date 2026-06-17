@@ -90,10 +90,24 @@ pub fn launch_with_env(
     let program = iter
         .next()
         .ok_or_else(|| anyhow!("manifest.entry_cmd empty"))?;
-    let args: Vec<&String> = iter.collect();
+    let mut rest: Vec<String> = iter.cloned().collect();
+
+    // Stale manifests installed before the --python fix lack the Python pin
+    // hermes-agent[acp] needs (>=3.11); inject it so uvx fetches a managed
+    // CPython instead of failing on the system Python (3.9 on macOS). Belt
+    // for the source fix in agent_installer::install_via_uvx. ADR-002 §1.8.4.
+    if program.ends_with("uvx") && !rest.iter().any(|a| a == "--python") {
+        rest.splice(
+            0..0,
+            [
+                "--python".to_string(),
+                super::agent_installer::HERMES_PYTHON.to_string(),
+            ],
+        );
+    }
 
     let mut cmd = Command::new(program);
-    for a in args {
+    for a in &rest {
         cmd.arg(a);
     }
     for (k, v) in provider_env {
