@@ -159,7 +159,7 @@ function humanizePiError(
   }
   if (raw.startsWith('Agent process exited immediately')) {
     return {
-      summary: `Brain subprocess crashed on startup. Check Pi install or provider config.`,
+      summary: `Brain crashed on startup. Check your provider config in Settings.`,
       detail: raw,
     };
   }
@@ -902,11 +902,11 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         <div className={styles.scrollerWrap}>
           <div className={`${styles.scroller} irisy-scroll`}>
             <div className={styles.welcome}>
-              <h2>Irisy is being upgraded.</h2>
+              <h2>Irisy is connecting.</h2>
               <p>
-                Pi (the brain) isn&rsquo;t connected yet. The kernel + brain
-                supervisor are wiring up in a parallel lane. Chat returns
-                automatically once Pi is reachable.
+                The kernel is still wiring up. Chat returns automatically once
+                the brain is reachable. If this persists, check your provider in
+                Settings.
               </p>
               <p className={styles.upgradeHint}>
                 Mcps still work — drag one onto the Keyboard to install,

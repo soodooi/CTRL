@@ -75,9 +75,9 @@ pub async fn irisy_init(
     let kernel_llm = probe_kernel_llm(&kernel);
     let mcp_bridge = write_handshake_file()?;
     let pi = probe_pi().await;
-    // Mirror the same provider label kernel_status surfaces — see the
-    // comment there for why this is the IrisyPrimary provider label,
-    // not the literal "pi". ADR-002 substrate § provider v2 §3.6.
+    // Mirror the same provider label kernel_status surfaces — the IrisyPrimary
+    // provider label. Falls back to "none" when no provider is configured (Pi
+    // exited in ADR-002 substrate § brain v19; there is no Pi brain to name).
     let active_brain = kernel
         .runtime
         .provider_registry
@@ -86,7 +86,7 @@ pub async fn irisy_init(
         .as_ref()
         .and_then(|id| kernel.runtime.provider_registry.snapshot(id))
         .map(|snap| crate::commands::system::short_label(&snap.label))
-        .unwrap_or_else(|| "pi".to_string());
+        .unwrap_or_else(|| "none".to_string());
 
     tracing::info!(
         app_version = %app_version,

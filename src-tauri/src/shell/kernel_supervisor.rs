@@ -91,7 +91,7 @@ impl KernelSupervisor {
                 Ok(h) => {
                     tracing::info!(
                         listen_addr = %h.listen_addr,
-                        "kernel: MCP server listening (Pi auto-connect via mcpServers)"
+                        "kernel: MCP server listening (agents auto-connect via mcpServers)"
                     );
                     // SAFETY: set_var is unsafe in Rust 2024; we are at
                     // single-threaded kernel boot, before any other task

@@ -136,7 +136,8 @@ pub async fn kernel_status(
         .as_ref()
         .and_then(|id| runtime.provider_registry.snapshot(id))
         .map(|snap| short_label(&snap.label))
-        .unwrap_or_else(|| "pi".to_string());
+        // "none" when no provider configured — Pi exited (ADR-002 § brain v19).
+        .unwrap_or_else(|| "none".to_string());
 
     Ok(KernelStatus {
         uptime_ms,
