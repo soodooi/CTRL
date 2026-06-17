@@ -148,17 +148,17 @@ async fn forward_to_provider(
         });
     }
 
-    // ADR-002 substrate §1.8 v23 + §1 brain v22 (decision A, 2026-06-12): route
-    // to the hermes agent over ACP (its persistent memory + skills, STREAMING
-    // agent_message_chunk into chat-stream-delta) ONLY when the caller explicitly
-    // asks for the assistant agent (mode == "assistant"). Default Irisy chat goes
-    // straight to the fast provider router below — the full hermes agent loop
-    // (tool searches, multi-step) is too slow/blocking for everyday chat, and a
-    // busy agent rejects new sends with "agent not idle" (the "can't send" bug).
-    // On any hermes error we still fall back to the provider router (CLAUDE.md
-    // derived rule #2).
-    let use_hermes = args.mode.as_deref() == Some("assistant");
-    if use_hermes
+    // ADR-002 substrate §1.8 v23 + §1 brain v22 (decision A, 2026-06-12): main
+    // Irisy chat ALWAYS uses the fast provider router below. The full hermes
+    // agent loop (filesystem/tool searches, multi-step) is too slow/blocking for
+    // everyday chat, and a busy agent rejects new sends with "agent not idle"
+    // (the "can't send" bug). The default session mode IS "assistant" (IrisyChat
+    // wireMode), so mode can NOT distinguish everyday chat from an explicit agent
+    // request — routing to hermes therefore needs a dedicated opt-in signal
+    // (future `use_agent` flag), not the mode. Until that lands, hermes stays off
+    // this hot path (its ACP client is still wired + reachable via /assistant).
+    const USE_HERMES: bool = false;
+    if USE_HERMES
         && crate::shell::agent_installer::is_installed(
             &crate::shell::agent_installer::AgentName::Hermes,
         )
