@@ -2,7 +2,7 @@
 adr_id: 001
 module: spine
 title: CTRL spine — 4-layer kernel + 5 primitives + 5 mcp sources + 3-agent aggregator + 3-capability-face + 6 self-evolution loops
-version: 5
+version: 6
 status: accepted
 last_updated: 2026-06-17
 deciders: [bao, zeus]
@@ -15,6 +15,7 @@ sections:
   - { id: philosophy,     source: orig-001-§6 }
   - { id: self-evolution, source: brainstorm system-self-evolution-2026-06-04 }
 changelog:
+  - v6 2026-06-17: **Notes/KB = Obsidian, kairo/SilverBullet retired (bao 2026-06-17 "用 obsidian 不要重复造轮子"; pairs ADR-002 v24).** CTRL bundles no notes editor — Obsidian (user's own) is the PKM editor over `~/Documents/CTRL/Notes/`; data access stays editor-independent on the kernel notes-MCP bus :17873 (+ optional Obsidian Local-REST-API MCP). Updates §1 layer diagram, §4 ui-ux 5-chip + kairo bullet, §5 invariants #2 + #12. Two locked-principle tensions reconciled in ADR-002 v24 (single-entry exception for notes-editing; Obsidian is preferred-editor + optional-connector, NOT a hard dependency — pull it and the plain-md + notes-MCP remain). No primitive/face change.
   - v5 2026-06-17: **§4.1 amendment — how agents reach the 3 faces (pairs ADR-002 §1.8 v23, zeus drill + bao Q&A).** Adds the wiring clause: all 3 capability faces converge on the MCP bus :17873 (API exposed as MCP tools; Skills as MCP tools / loadable dir); a `target:brain` agent (hermes / any ACP agent) consumes them via **ACP MCP passthrough** (CTRL = ACP client, agent MCP client points only at :17873 = kernel gate + visibility preserved); "apps"/OAuth = MCP sources, not a 4th face; user KB (kairo + Notes-MCP) is a face consumer, not the brain channel. No face/primitive change — clarifies the consumption path only.
   - v4 2026-06-09: **§4 dual-brain supervisor → 3-agent aggregator amendment (H-2026-06-09-002).** bao framing校准 (2026-06-09 conversation): "Irisy 是表象", "hermes opencode kairo 都是外部的", "现在重要的是前端". Dual-brain supervisor model (v3) RETRACTED — kernel no longer spawns/supervises brains. Replaced by **3-agent aggregator**: kernel lazy-installs + launches external agents (hermes / opencode / kairo), PWA consumes their native endpoints directly. Locks: (1) **CTRL = OS-level ambient aggregator** — not a single-purpose chat/coding/PKM app; the 4 friend products (Claude Desktop, Codex, WorkBuddy, CodeBuddy) are single-vertical, CTRL横切聚合. (2) **3-capability-face SSOT** — MCP (protocol), API (provider router, e.g. fal.ai 985 endpoints), Skills (markdown SKILL.md). 三面互补不塌缩, supersedes 2026-06-05 `decision_keycap_collapses_to_mcp_meta_ux_layer` over-simplification. (3) **3 external agents** — hermes (NousResearch, assistant) / opencode (coding) / kairo (notes/PKM, MIT). All lazy-installed to `~/.ctrl/agents/`. Kernel doesn't supervise — launch-on-demand, PWA owns retry. (4) **Irisy = PWA persona**, not brain. ADR-005 amend. (5) **No "vault" word inside CTRL** — call it "Notes". kairo owns the editor; CTRL exposes `~/Documents/CTRL/Notes/` as MCP server to hermes. (6) **fal.ai as flagship API provider** — Codex 接 gpt-image-2 锁单家; CTRL 接 fal.ai 拿 985 模型. Retired: ADR-002 §1 supervisor model (v18 → v19), ADR-002 §8 vault stack lock (Tiptap+CodeMirror+FTS5 → kairo). PR target: this branch.
   - v3 2026-06-09: **§4 Pi-centric → dual-brain architecture amendment (H-2026-06-09-001, PR #84).** RETRACTED by v4 (3-agent aggregator). Kept in changelog for provenance only.
@@ -34,7 +35,7 @@ related:
 
 ```
 L3 Userland — subprocess-isolated mcps via MCP
-              + 3 external agents (hermes / opencode / kairo) lazy-installed in ~/.ctrl/agents/
+              + agents: hermes / opencode lazy-installed in ~/.ctrl/agents/ (notes = user's Obsidian, not bundled, v24)
        ↑↓
 L2 SDK — @ctrl/{kernel-sdk, stss, memory, mcp-sdk}
        ↑↓
@@ -49,7 +50,7 @@ L0 Tauri 2 Native Shell — ~500 LOC Rust
        ↑↓ embeds WebView2 / WKWebView
 PWA — single web codebase (Tauri WebView desktop + browser mobile)
        ↑↓ connects directly to each agent's native endpoint (HTTP / MCP stdio / webview)
-3 external agents — hermes (assistant) · opencode (coding) · kairo (notes)
+brain agents — hermes (assistant) · opencode (coding) · Obsidian (notes/KB, user's own — not CTRL-bundled, v24)
 ```
 
 ## §2 Primitives — 5 (`src-tauri/src/kernel/`)
@@ -83,7 +84,7 @@ USER ↔ PWA ↔ │ KERNEL (thin: install · launch · keychain · MCP) │ ↔
                                    (assistant)             (coding)              (notes/PKM)
 ```
 
-- **ui-ux** — PWA, single React 18 + Vite 5 + TanStack codebase (ADR-003). 5 L1 chips: Irisy (persona shell) / Mcp pool / Notes (kairo) / Coding (opencode) / Assistant (hermes).
+- **ui-ux** — PWA, single React 18 + Vite 5 + TanStack codebase (ADR-003). 5 L1 chips: Irisy (persona shell) / Mcp pool / Notes (inline viewer + open-in-Obsidian, v24) / Coding (opencode) / Assistant (hermes).
 - **KERNEL** — Rust microkernel, **极薄** (ADR-002 v19):
   - `agent_installer.rs` — lazy `npm install --prefix ~/.ctrl/agents/<name>/` on first launch; node probe; manifest write.
   - `agent_launcher.rs` — spawn on demand, return native endpoint (HTTP port / stdio pipe) to PWA; **no supervisor / no restart loop** — PWA owns retry.
@@ -92,7 +93,7 @@ USER ↔ PWA ↔ │ KERNEL (thin: install · launch · keychain · MCP) │ ↔
   - `keychain` — unified credential vault; agents read via env-injected token at launch (no per-agent config file proliferation).
 - **hermes** ★ external (NousResearch, MIT) — assistant brain (RAG + long-term memory). MCP stdio. `npm install -g hermes-agent` → `~/.ctrl/agents/hermes/`. PWA `/assistant` consumes.
 - **opencode** ★ external (MIT) — coding brain (LSP / formatter / symbol search / plan / subagents / Skills). HTTP API. `npm install -g opencode-ai` → `~/.ctrl/agents/opencode/`. PWA `/coding` consumes.
-- **kairo** ★ external (MIT) — notes/PKM (markdown + wiki-link + backlink + native git). Desktop binary. PWA `/notes` embeds via webview pointed at `~/Documents/CTRL/Notes/`.
+- **Notes/KB = Obsidian** (v24, ADR-002 — kairo/SilverBullet bundling retired) — the user's own Obsidian is the PKM editor over `~/Documents/CTRL/Notes/`; CTRL bundles NO editor (don't reinvent the wheel, bao 2026-06-17). Data access is editor-independent: agents read/write via kernel notes-MCP `:17873` + optional Obsidian Local-REST-API MCP. PWA `/notes` = inline md viewer + "open in Obsidian".
 - **provider** — LLM/image/video API adapters; **fal.ai is flagship** (985 endpoints, FLUX 2 / Seedream / Recraft / Nano Banana Pro / Kling 3.0 / Veo 3.1 / Hunyuan Video). Codex 锁单家 gpt-image-2, CTRL 拿 985 模型聚合.
 - **MCP** — tools agents invoke via MCP (ADR-004). CTRL kernel itself is an MCP server (in) AND host (out).
 - **Skills** — markdown `SKILL.md` (Claude Code Skills schema). `~/.ctrl/skills/<id>/`. Cross-agent: skills callable from any of the 3 agents.
@@ -121,7 +122,7 @@ CTRL has **three** capability faces,互补不塌缩:
 | Codex CLI / Desktop | OpenAI coding agent | CTRL is not single-brand coding (we聚合 opencode + 任意 BYOK) |
 | WorkBuddy (Tencent) | Workplace automation agent | CTRL is not enterprise-IM glue |
 | CodeBuddy (Tencent) | AI IDE for Yuanbao/DeepSeek | CTRL is not an IDE |
-| Obsidian | Markdown PKM | CTRL doesn't ship its own editor — kairo does |
+| Obsidian | Markdown PKM | CTRL doesn't ship its own editor — the user's Obsidian is it (v24); CTRL renders notes inline + opens Obsidian for editing |
 | OpenRouter | LLM router | CTRL is not just routing — also ambient + workspace + skill substrate |
 
 **CTRL = OS-level ambient aggregator** — 4 friend products are single-vertical; CTRL横切聚合 via `Ctrl` hotkey + ephemeral workspace.
@@ -129,7 +130,7 @@ CTRL has **three** capability faces,互补不塌缩:
 ## §5 Filesystem invariants (12 — ship-after immutable)
 
 1. One mcp = one directory `~/.ctrl/mcps/<id>/`. `rm -rf` fully uninstalls.
-2. Notes folder = `~/Documents/CTRL/Notes/` (kairo workspace; markdown + frontmatter; Obsidian / vim / VMark compatible). Was "vault" pre-v4 — renamed because bao "我没有 vault 这个概念" (2026-06-09).
+2. Notes folder = `~/Documents/CTRL/Notes/` (the user's Obsidian vault target, v24; markdown + frontmatter; Obsidian / vim / VMark compatible). Was "vault" pre-v4 — renamed because bao "我没有 vault 这个概念" (2026-06-09).
 3. `~/.ctrl/state/` is derivative (event-log / notes-index / cache). Out of backup scope.
 4. Prompts are markdown (vim-editable, git-diffable, agentskills.io standard).
 5. Secrets → macOS Keychain. `~/.ctrl/config.toml` non-sensitive only.
@@ -139,7 +140,7 @@ CTRL has **three** capability faces,互补不塌缩:
 9. Skills truth model — `~/.ctrl/skills/<id>/SKILL.md` is SSOT (Claude Code Skills schema). Skills are cross-agent (any of the 3 agents may invoke). Was "`~/.ctrl/mcps/<id>/skills/`" pre-v4 — uplifted to top-level because Skills is now a peer capability face (§4.1).
 10. v1.0 mcp runtime = `.ts` / `.js` only. Python / Rust deferred.
 11. **External agents = `~/.ctrl/agents/<name>/`** (NEW v4). `rm -rf ~/.ctrl/agents/` fully uninstalls all 3 agents. Each agent has `manifest.json` written by `agent_installer.rs` recording version + install time + endpoint type.
-12. **No CTRL-owned vault editor / index**. kairo owns notes editing + wiki-link + backlink + git. CTRL kernel only exposes `~/Documents/CTRL/Notes/` via MCP for hermes/opencode consumption. `notes_index.rs` is OPTIONAL (kept only as MCP-server convenience layer; kairo's own index is primary).
+12. **No CTRL-owned vault editor / index** (v24: don't reinvent the wheel — bao 2026-06-17). The user's **Obsidian** owns notes editing + wiki-link + backlink + graph + plugins; CTRL bundles no editor (kairo/SilverBullet retired). CTRL kernel exposes `~/Documents/CTRL/Notes/` via MCP `:17873` for agent consumption (editor-independent) + keeps a LIGHT inline md viewer for read/preview. `notes_index.rs` is OPTIONAL (MCP-server convenience; an optional Obsidian Local-REST-API MCP adds richer graph ops).
 
 ## §6 Design philosophy locks
 

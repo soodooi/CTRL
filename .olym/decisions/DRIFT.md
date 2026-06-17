@@ -20,6 +20,8 @@
 | **D3** | Irisy pane width: §7.8 says 380–430, changelog-v7 says 480/320–820, code says 480/300–640 | Folded into **D1 / ADR-003 v8 §8.5** — code (480, clamp 300–640) recorded as truth; both stale figures marked SUPERSEDED. |
 | **D4** | (WITHDRAWN 2026-06-16) "Home chat still runs Pi" | **False premise** — re-verification of `irisy_chat.rs` + ADR-002 v20 §1.5 showed Pi already exited the hot path; home chat = in-process provider router. hermes is wired (install / one-shot / dashboard / hermes-first branch) but interception is intentionally **gated off** per bao 2026-06-12 decision A pending hermes ACP streaming — an ADR-002 v20 intended interim, NOT a drift. Residual cosmetic comment → D5. |
 
+| **D7** | Notes layer = Obsidian; kairo (SilverBullet) bundling retired (bao 2026-06-17 "用 obsidian 不要重复造轮子") | ADR-002 v24 / ADR-001 v6 / ADR-003 v9 locked | Code still ships kairo=SilverBullet install/launch (`agent_installer::install_via_binary` + `agent_launcher` webview branch + `~/.ctrl/agents/kairo/`) + built-in NotesApp | **ADR locked, code retirement TODO** | dev: retire SilverBullet install/launch + kairo agent slot; `/notes` → inline md viewer + "open in Obsidian"; optional register Obsidian Local-REST-API MCP on the bus; notes data access already editor-independent on :17873 (no change) |
+
 ## Process
 
 - A new drift → add an **Open** row before any fix, with file:line evidence + the conflicting ADR §.
