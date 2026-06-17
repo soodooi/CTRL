@@ -20,6 +20,10 @@ use tauri::State;
 use crate::shell::KernelHandle;
 
 const DEFAULT_HTTPS_PORT: u16 = 27124;
+const PLUGIN_ID: &str = "obsidian-local-rest-api";
+const PLUGIN_FILES: [&str; 3] = ["manifest.json", "main.js", "styles.css"];
+const PLUGIN_RELEASE_BASE: &str =
+    "https://github.com/coddingtonbear/obsidian-local-rest-api/releases/latest/download";
 
 #[derive(Debug, Serialize)]
 pub struct ObsidianStatus {
@@ -78,6 +82,185 @@ pub async fn obsidian_status() -> Result<ObsidianStatus, String> {
     }
 }
 
+/// Is the Obsidian desktop app installed on this machine?
+fn obsidian_app_installed() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        std::path::Path::new("/Applications/Obsidian.app").exists()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(base) = directories::BaseDirs::new() {
+            // winget/installer default: %LOCALAPPDATA%\Obsidian\Obsidian.exe
+            return base
+                .data_local_dir()
+                .join("Obsidian")
+                .join("Obsidian.exe")
+                .exists();
+        }
+        false
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        std::process::Command::new("sh")
+            .args(["-c", "command -v obsidian || test -f /var/lib/flatpak/exports/bin/md.obsidian.Obsidian"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+}
+
+/// OS package-manager command to install Obsidian (orchestrates the user's own
+/// package manager — CTRL never bundles/redistributes the proprietary app).
+/// Mirrors the ADR-002 §7.2 provision pattern (brew/winget fallback).
+fn obsidian_install_command() -> Option<(&'static str, Vec<&'static str>)> {
+    #[cfg(target_os = "macos")]
+    {
+        Some(("brew", vec!["install", "--cask", "obsidian"]))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Some((
+            "winget",
+            vec!["install", "-e", "--id", "Obsidian.Obsidian", "--silent"],
+        ))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Some(("flatpak", vec!["install", "-y", "flathub", "md.obsidian.Obsidian"]))
+    }
+}
+
+fn obsidian_global_config_dir() -> Option<std::path::PathBuf> {
+    let base = directories::BaseDirs::new()?;
+    #[cfg(target_os = "macos")]
+    {
+        Some(base.home_dir().join("Library/Application Support/obsidian"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Some(base.config_dir().join("obsidian"))
+    }
+}
+
+/// Download the Local REST API plugin (MIT) into the vault's plugins dir, enable
+/// it, and register the vault with Obsidian. Idempotent + non-clobbering: skips
+/// the download when already present, merges community-plugins.json + the global
+/// obsidian.json vault list (never overwrites the user's other vaults/plugins).
+pub(crate) fn provision_plugin() -> Result<bool, String> {
+    let vault = notes_vault_dir().ok_or_else(|| "home dir".to_string())?;
+    let plugin_dir = vault.join(".obsidian").join("plugins").join(PLUGIN_ID);
+    std::fs::create_dir_all(&plugin_dir).map_err(|e| format!("create plugin dir: {e}"))?;
+
+    // 1. Plugin files (skip if already there — idempotent).
+    let mut downloaded = false;
+    if !plugin_dir.join("main.js").exists() {
+        for f in PLUGIN_FILES {
+            let url = format!("{PLUGIN_RELEASE_BASE}/{f}");
+            let out = plugin_dir.join(f);
+            let ok = std::process::Command::new("curl")
+                .args(["-fsSL", "-o"])
+                .arg(&out)
+                .arg(&url)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            // styles.css is optional; manifest.json + main.js are required.
+            if !ok && f != "styles.css" {
+                return Err(format!("download {f} failed"));
+            }
+        }
+        downloaded = true;
+    }
+
+    // 2. Enable in community-plugins.json (merge).
+    let cpj = vault.join(".obsidian").join("community-plugins.json");
+    let mut enabled: Vec<String> = std::fs::read_to_string(&cpj)
+        .ok()
+        .and_then(|b| serde_json::from_str(&b).ok())
+        .unwrap_or_default();
+    if !enabled.iter().any(|p| p == PLUGIN_ID) {
+        enabled.push(PLUGIN_ID.to_string());
+        std::fs::write(
+            &cpj,
+            serde_json::to_string(&enabled).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| format!("write community-plugins.json: {e}"))?;
+    }
+
+    // 3. Register the vault in the global obsidian.json (merge, preserve others).
+    if let Some(cfg_dir) = obsidian_global_config_dir() {
+        let path = cfg_dir.join("obsidian.json");
+        let vault_path = vault.to_string_lossy().to_string();
+        let mut root: serde_json::Value = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|b| serde_json::from_str(&b).ok())
+            .unwrap_or_else(|| serde_json::json!({ "vaults": {} }));
+        let vaults = root
+            .get_mut("vaults")
+            .and_then(|v| v.as_object_mut());
+        if let Some(vaults) = vaults {
+            let already = vaults
+                .values()
+                .any(|v| v.get("path").and_then(|p| p.as_str()) == Some(vault_path.as_str()));
+            if !already {
+                let id = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                vaults.insert(
+                    id,
+                    serde_json::json!({ "path": vault_path, "ts": ts, "open": false }),
+                );
+                std::fs::create_dir_all(&cfg_dir).ok();
+                std::fs::write(
+                    &path,
+                    serde_json::to_string(&root).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| format!("write obsidian.json: {e}"))?;
+            }
+        }
+    }
+
+    Ok(downloaded)
+}
+
+#[derive(Debug, Serialize)]
+pub struct ObsidianProvision {
+    pub app_installed: bool,
+    pub install_command: Option<String>,
+    pub plugin_provisioned: bool,
+    pub plugin_downloaded: bool,
+}
+
+/// Auto-init for the Obsidian notes connector (ADR-002 §1.9.1), run at CTRL
+/// onboarding. Detects the app (reports the OS install command if absent —
+/// orchestrating the user's package manager, never bundling Obsidian), then
+/// provisions the Local REST API plugin + enables it + registers the vault.
+/// The plugin generates its own token + cert when the user first opens Obsidian;
+/// CTRL reads it later via `obsidian_status` / `obsidian_connect`.
+#[tauri::command]
+pub async fn obsidian_provision() -> Result<ObsidianProvision, String> {
+    let app_installed = obsidian_app_installed();
+    let install_command = if app_installed {
+        None
+    } else {
+        obsidian_install_command().map(|(c, a)| format!("{c} {}", a.join(" ")))
+    };
+
+    // Provision the plugin into the vault regardless — it activates whenever
+    // Obsidian (already-installed or just-installed) next opens.
+    let plugin_downloaded = provision_plugin()?;
+
+    Ok(ObsidianProvision {
+        app_installed,
+        install_command,
+        plugin_provisioned: true,
+        plugin_downloaded,
+    })
+}
+
 #[derive(Debug, Serialize)]
 pub struct ObsidianConnected {
     pub server_id: String,
@@ -125,4 +308,29 @@ pub async fn obsidian_connect(
         .collect();
 
     Ok(ObsidianConnected { server_id, tools })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Real provisioning against the local machine (network + filesystem):
+    /// downloads the plugin into ~/Documents/CTRL/Notes/.obsidian/, enables it,
+    /// merges the vault into the global obsidian.json. Idempotent + preserves
+    /// existing vaults. Run: `cargo test obsidian_provision_real -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn obsidian_provision_real() {
+        let downloaded = provision_plugin().expect("provision");
+        let vault = notes_vault_dir().unwrap();
+        let pdir = vault.join(".obsidian").join("plugins").join(PLUGIN_ID);
+        assert!(pdir.join("manifest.json").exists(), "manifest.json missing");
+        assert!(pdir.join("main.js").exists(), "main.js missing");
+        let cpj: Vec<String> = serde_json::from_str(
+            &std::fs::read_to_string(vault.join(".obsidian").join("community-plugins.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(cpj.iter().any(|p| p == PLUGIN_ID), "plugin not enabled");
+        println!("downloaded={downloaded}; plugin dir + community-plugins.json OK");
+    }
 }

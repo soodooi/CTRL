@@ -97,6 +97,7 @@ macro_rules! pwa_invoke_handler {
             // Obsidian Local REST API connector (ADR-002 §1.9.1)
             $crate::commands::obsidian::obsidian_status,
             $crate::commands::obsidian::obsidian_connect,
+            $crate::commands::obsidian::obsidian_provision,
             // assistant_oneshot — hermes -z bridge until the ACP
             // streaming client lands (ADR-002 §1.1 v20, 2026-06-10).
             $crate::commands::agents::assistant_oneshot,
