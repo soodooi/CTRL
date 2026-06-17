@@ -5,7 +5,7 @@
 | # | Module | Title | Version | Status | Last updated |
 |---|---|---|---|---|---|
 | [001](./001-spine.md) | spine | 4-layer kernel + 5 primitives + 5 mcp sources + **aggregator (hermes/opencode + Obsidian notes, v6)** + **3-capability-face (faces via MCP bus)** + 6 self-evolution loops | v6 | accepted | 2026-06-17 |
-| [002](./002-substrate.md) | substrate | **ACP single door (§1.8) + Obsidian notes (v24, kairo retired)** · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition | v24 | accepted | 2026-06-17 |
+| [002](./002-substrate.md) | substrate | **ACP single door (§1.8) + Obsidian notes / §1.9 notes architecture (v25, kairo retired)** · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition | v24 | accepted | 2026-06-17 |
 | [003](./003-frontend.md) | frontend | Single PWA + **Ambient morphing home (§8 SHIPPED)** + Sidebar L1; Notes = inline viewer + open-in-Obsidian (v9) | v9 | accepted | 2026-06-17 |
 | [004](./004-cap.md) | cap | Mcp execution model + Tauri updater + 4-layer × 3-tier auto-update (**Layer 2 = external-agent tier, ACP probe + L3, §3 v2**) | v2 | accepted | 2026-06-17 |
 | [005](./005-irisy.md) | irisy | **PWA persona shell** + sycophancy filter + system-prompt injection + drill-down (3-agent aggregator era) | v5 | accepted | 2026-06-09 |
