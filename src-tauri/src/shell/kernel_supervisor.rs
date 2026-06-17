@@ -117,7 +117,7 @@ impl KernelSupervisor {
         // useAgent), never blocking boot or the user.
         tauri::async_runtime::spawn_blocking(|| {
             use crate::shell::agent_installer::{install, AgentName};
-            for agent in [AgentName::Kairo, AgentName::Opencode, AgentName::Hermes] {
+            for agent in [AgentName::Opencode, AgentName::Hermes] {
                 let label = agent.as_str();
                 match install(agent, false) {
                     Ok(m) => tracing::info!(agent = label, version = %m.version, "agent resource pack ready"),

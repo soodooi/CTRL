@@ -33,7 +33,7 @@ pub mod ollama_install;
 pub mod tray;
 pub mod window;
 // ADR-002 §1 v19 (3-agent aggregator): lazy install + on-demand launch of
-// the 3 external agents (hermes / opencode / kairo) under ~/.ctrl/agents/.
+// the external brain agents (hermes / opencode) under ~/.ctrl/agents/.
 // No supervisor — PWA owns retry.
 pub mod agent_installer;
 pub mod agent_launcher;

@@ -1,11 +1,10 @@
 // ADR-002 substrate §1 v19 (2026-06-09, H-2026-06-09-002) — 3-agent aggregator.
 //
-// Lazy installer for the 3 external agents (hermes / opencode / kairo).
+// Lazy installer for the external brain agents (hermes / opencode). Notes/KB
+// = the user's own Obsidian (ADR-002 §1.9 v25 — kairo/SilverBullet bundling
+// retired, don't reinvent the wheel), not a CTRL-installed agent.
 // Each agent gets its own directory under ~/.ctrl/agents/<name>/ with a
 // manifest.json recording version + install timestamp + endpoint type.
-//
-// First-launch onboarding triggers all 3 in parallel via npm; CLI binary
-// downloads (kairo) fall back to upstream releases.
 //
 // Idempotent — calling install() on an already-installed agent re-reads
 // the manifest and returns the existing record. Re-install is opt-in
@@ -21,7 +20,6 @@ use std::process::Command;
 pub enum AgentName {
     Hermes,
     Opencode,
-    Kairo,
 }
 
 impl AgentName {
@@ -29,7 +27,6 @@ impl AgentName {
         match self {
             AgentName::Hermes => "hermes",
             AgentName::Opencode => "opencode",
-            AgentName::Kairo => "kairo",
         }
     }
 
@@ -37,7 +34,6 @@ impl AgentName {
         match s {
             "hermes" => Ok(AgentName::Hermes),
             "opencode" => Ok(AgentName::Opencode),
-            "kairo" => Ok(AgentName::Kairo),
             other => Err(anyhow!("unknown agent: {}", other)),
         }
     }
@@ -54,7 +50,6 @@ impl AgentName {
             // prerequisite runtimes; kernel bootstraps what it needs).
             AgentName::Hermes => None,
             AgentName::Opencode => None,
-            AgentName::Kairo => None,
         }
     }
 }
@@ -63,14 +58,13 @@ impl AgentName {
 /// (ADR-002 substrate §1.1 v20):
 /// - hermes = NousResearch/hermes-agent (PyPI, MIT). Embedding path is the
 ///   ACP stdio server (`hermes-acp`), NOT an MCP `chat` tool.
-/// - kairo codename resolves to SilverBullet (silverbulletmd, MIT) — single
-///   Go binary serving a web UI over a plain markdown folder.
+/// Notes/KB = the user's Obsidian (ADR-002 §1.9 v25), not a bundled agent —
+/// the kairo/SilverBullet binary download was retired (don't reinvent the wheel).
 pub const HERMES_ACP_SPEC: &str = "hermes-agent[acp]==0.16.0";
 pub const HERMES_ONESHOT_SPEC: &str = "hermes-agent==0.16.0";
 /// hermes-agent requires Python >=3.11,<3.14; pin one so uv fetches a managed
 /// CPython instead of the system Python (3.9 on macOS). See HERMES_ACP_SPEC use.
 pub const HERMES_PYTHON: &str = "3.12";
-const SILVERBULLET_VERSION: &str = "2.8.1";
 const OPENCODE_VERSION: &str = "1.17.3";
 const UV_VERSION: &str = "0.11.20";
 
@@ -119,7 +113,6 @@ pub fn install(name: AgentName, force: bool) -> Result<AgentManifest> {
         (_, Some(pkg)) => install_via_npm(&name, pkg)?,
         (AgentName::Hermes, None) => install_via_uvx(&name)?,
         (AgentName::Opencode, None) => install_opencode_binary(&name)?,
-        (_, None) => install_via_binary(&name)?,
     };
 
     let manifest_path = agent_dir(&name)?.join("manifest.json");
@@ -153,7 +146,6 @@ fn install_via_npm(name: &AgentName, package: &str) -> Result<AgentManifest> {
     let endpoint_type = match name {
         AgentName::Hermes => "acp-stdio",
         AgentName::Opencode => "http-port",
-        AgentName::Kairo => "webview",
     };
 
     let entry_cmd = match name {
@@ -162,7 +154,6 @@ fn install_via_npm(name: &AgentName, package: &str) -> Result<AgentManifest> {
         // [--port N] [--hostname H]`; the launcher appends a picked free
         // port + 127.0.0.1 and parses the announce line from stdout.
         AgentName::Opencode => vec![bin.display().to_string(), "serve".into()],
-        AgentName::Kairo => vec![bin.display().to_string()],
     };
 
     Ok(AgentManifest {
@@ -299,73 +290,6 @@ fn run_ok(cmd: &mut Command, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// kairo (SilverBullet) — single-binary download from GitHub releases,
-/// unzipped into ~/.ctrl/agents/kairo/bin/. Verified 2026-06-10: release
-/// assets are silverbullet-server-<os>-<arch>.zip containing one
-/// `silverbullet` executable (~36 MB, hence lazy download not bundle).
-fn install_via_binary(name: &AgentName) -> Result<AgentManifest> {
-    let dir = agent_dir(name)?;
-    let bin_dir = dir.join("bin");
-    fs::create_dir_all(&bin_dir).context("create agent bin dir")?;
-    let bin = bin_dir.join("silverbullet");
-
-    if !bin.exists() {
-        let (os, arch) = match (std::env::consts::OS, std::env::consts::ARCH) {
-            ("macos", "aarch64") => ("darwin", "aarch64"),
-            ("macos", _) => ("darwin", "x86_64"),
-            ("windows", _) => ("windows", "x86_64"),
-            (_, "aarch64") => ("linux", "aarch64"),
-            _ => ("linux", "x86_64"),
-        };
-        let url = format!(
-            "https://github.com/silverbulletmd/silverbullet/releases/download/{v}/silverbullet-server-{os}-{arch}.zip",
-            v = SILVERBULLET_VERSION
-        );
-        let zip_path = bin_dir.join("silverbullet.zip");
-        let dl = Command::new("curl")
-            .args(["-fsSL", "-o"])
-            .arg(&zip_path)
-            .arg(&url)
-            .output()
-            .context("curl not available for binary download")?;
-        if !dl.status.success() {
-            return Err(anyhow!(
-                "silverbullet download failed: {}",
-                String::from_utf8_lossy(&dl.stderr)
-            ));
-        }
-        let unzip = Command::new("unzip")
-            .arg("-o")
-            .arg(&zip_path)
-            .arg("-d")
-            .arg(&bin_dir)
-            .output()
-            .context("unzip not available")?;
-        if !unzip.status.success() {
-            return Err(anyhow!(
-                "silverbullet unzip failed: {}",
-                String::from_utf8_lossy(&unzip.stderr)
-            ));
-        }
-        let _ = fs::remove_file(&zip_path);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perm = fs::metadata(&bin)?.permissions();
-            perm.set_mode(0o755);
-            fs::set_permissions(&bin, perm)?;
-        }
-    }
-
-    Ok(AgentManifest {
-        name: name.as_str().to_string(),
-        version: SILVERBULLET_VERSION.into(),
-        install_at: chrono::Utc::now().to_rfc3339(),
-        endpoint_type: "webview".to_string(),
-        entry_cmd: vec![bin.display().to_string()],
-    })
-}
-
 #[cfg(test)]
 mod e2e_tests {
     use super::*;
@@ -375,12 +299,12 @@ mod e2e_tests {
     #[test]
     #[ignore]
     fn e2e_user_autoinstall_and_launch() {
-        for name in [AgentName::Kairo, AgentName::Opencode, AgentName::Hermes] {
+        for name in [AgentName::Opencode, AgentName::Hermes] {
             let m = install(name.clone(), false).expect("install");
             println!("installed {} v{} ({})", m.name, m.version, m.endpoint_type);
         }
-        // Launch smoke for the two long-running servers.
-        for name in [AgentName::Kairo, AgentName::Opencode] {
+        // Launch smoke for the long-running HTTP server (opencode).
+        for name in [AgentName::Opencode] {
             let mut launched = crate::shell::agent_launcher::launch(&name).expect("launch");
             println!("launched {:?} -> {:?}", name, launched.endpoint);
             let _ = launched.child.kill();

@@ -2,7 +2,7 @@
 //
 // Tauri commands surfacing agent_installer + agent_launcher to the PWA.
 // PWA flow:
-//   onboarding → install_agent(name) for hermes / opencode / kairo in parallel
+//   onboarding → install_agent(name) for hermes / opencode in parallel
 //   route mount → launch_agent(name) returns endpoint descriptor
 //   route unmount → stop_agent(name)
 //
@@ -237,7 +237,7 @@ pub async fn assistant_oneshot(
 
 #[tauri::command]
 pub async fn list_agents() -> Result<Vec<String>, String> {
-    Ok(["hermes", "opencode", "kairo"]
+    Ok(["hermes", "opencode"]
         .iter()
         .filter(|n| {
             AgentName::from_str(n)

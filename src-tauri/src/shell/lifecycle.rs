@@ -42,8 +42,9 @@ impl ShellLifecycle {
         tracing::info!("ShellLifecycle::boot — seeding builtin mcps");
         super::builtin_mcps::ensure_builtins_installed();
 
-        // ADR-002 substrate § brain v19 (3-agent aggregator): kernel no longer
-        // supervises brains. The 3 external agents (hermes / opencode / kairo)
+        // ADR-002 substrate § brain v19 (aggregator): kernel no longer
+        // supervises brains. The external brain agents (hermes / opencode;
+        // notes = the user's Obsidian, §1.9 v25, not bundled)
         // are lazy-installed under ~/.ctrl/agents/<name>/ on first use, then
         // launched on-demand via shell::agent_launcher when the PWA invokes
         // launch_agent. There is no kernel-side supervision loop. Pi exited the
