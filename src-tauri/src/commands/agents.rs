@@ -137,7 +137,9 @@ pub async fn connect_agent_mcp(
 /// (OPENCODE_CONFIG_CONTENT is opencode-only); existing user lines are
 /// preserved (merge, not clobber). No active HTTP provider -> leave the file
 /// untouched so the user's own hermes setup survives.
-fn write_hermes_dotenv(env: &std::collections::BTreeMap<String, String>) -> Result<(), String> {
+pub(crate) fn write_hermes_dotenv(
+    env: &std::collections::BTreeMap<String, String>,
+) -> Result<(), String> {
     const MANAGED: [&str; 4] = [
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_BASE_URL",

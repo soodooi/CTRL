@@ -126,6 +126,10 @@ pub fn run() {
         tauri::RunEvent::ExitRequested { api, code, .. } => {
             if code.is_none() {
                 api.prevent_exit();
+            } else {
+                // Explicit shutdown — kill the persistent hermes-acp brain
+                // (ADR-002 §1.8.1). Other agents are PWA-session-scoped.
+                shell::acp_client::shutdown();
             }
         }
         _ => {}
@@ -171,10 +175,12 @@ pub fn run() {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
             // code = None means user-initiated (last window closed / Quit).
             // code = Some(_) means explicit shutdown (tray Quit menu) — let it
-            // through. ADR-002 §1 v19: agents are PWA-session-scoped, no
-            // kernel-side shutdown hook required.
+            // through and kill the persistent hermes-acp brain (ADR-002 §1.8.1);
+            // other agents are PWA-session-scoped.
             if code.is_none() {
                 api.prevent_exit();
+            } else {
+                shell::acp_client::shutdown();
             }
         }
     });

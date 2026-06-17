@@ -30,7 +30,7 @@ use tokio::sync::Mutex;
 const READ_TIMEOUT: Duration = Duration::from_secs(180);
 
 pub struct AcpClient {
-    _child: Child,
+    child: Child,
     stdin: ChildStdin,
     reader: BufReader<ChildStdout>,
     session_id: String,
@@ -44,11 +44,40 @@ pub fn singleton() -> &'static Mutex<Option<AcpClient>> {
     ACP.get_or_init(|| Mutex::new(None))
 }
 
+/// Best-effort kill of the persistent hermes-acp process at app shutdown
+/// (RunEvent::ExitRequested with an explicit code). try_lock so a turn in
+/// flight never blocks exit; the OS reclaims the child either way.
+pub fn shutdown() {
+    if let Ok(mut g) = singleton().try_lock() {
+        if let Some(mut c) = g.take() {
+            let _ = c.child.start_kill();
+        }
+    }
+}
+
 fn notes_dir() -> Result<PathBuf> {
     let base = directories::BaseDirs::new().ok_or_else(|| anyhow!("home dir"))?;
     let p = base.home_dir().join("Documents").join("CTRL").join("Notes");
     std::fs::create_dir_all(&p).context("create Notes dir")?;
     Ok(p)
+}
+
+/// MCP-bus passthrough (ADR-002 §1.8.2): expose CTRL's kernel MCP server
+/// (:17873, streamable-http + bearer) to hermes so the 3 faces (MCP / API /
+/// Skills) reach the agent. Gated on the kernel having published its port +
+/// token (set by kernel_supervisor); absent in unit tests -> no passthrough.
+fn build_mcp_servers() -> Vec<Value> {
+    let token = match std::env::var("CTRL_KERNEL_MCP_TOKEN") {
+        Ok(t) if !t.is_empty() => t,
+        _ => return Vec::new(),
+    };
+    let port = std::env::var("CTRL_KERNEL_MCP_PORT").unwrap_or_else(|_| "17873".to_string());
+    vec![json!({
+        "type": "http",
+        "name": "ctrl",
+        "url": format!("http://127.0.0.1:{port}/mcp"),
+        "headers": [{ "name": "Authorization", "value": format!("Bearer {token}") }]
+    })]
 }
 
 impl AcpClient {
@@ -69,6 +98,11 @@ impl AcpClient {
             argv.splice(1..1, ["--python".to_string(), HERMES_PYTHON.to_string()]);
         }
 
+        // Mirror CTRL's active provider into ~/.hermes/.env BEFORE spawn —
+        // hermes reads it at startup, not from process env (ADR-002 §1.3).
+        // Merge, never clobber; no managed key -> file untouched.
+        let _ = crate::commands::agents::write_hermes_dotenv(provider_env);
+
         let cwd = notes_dir()?;
         let mut cmd = Command::new(&argv[0]);
         cmd.args(&argv[1..]);
@@ -87,7 +121,7 @@ impl AcpClient {
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
         let mut s = AcpClient {
-            _child: child,
+            child,
             stdin,
             reader: BufReader::new(stdout),
             session_id: String::new(),
@@ -106,14 +140,33 @@ impl AcpClient {
         .await
         .context("ACP initialize")?;
 
-        let ns = s
+        // §1.8.2: try with the MCP-bus passthrough; if hermes rejects the
+        // entry (format / transport), retry WITHOUT it so the agent still runs
+        // (worst case = no CTRL tools, never a disabled hermes).
+        let mcp_servers = build_mcp_servers();
+        let had_mcp = !mcp_servers.is_empty();
+        let cwd_str = cwd.to_string_lossy().to_string();
+        let ns = match s
             .request(
                 "session/new",
-                json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
+                json!({ "cwd": cwd_str, "mcpServers": mcp_servers }),
                 &mut noop,
             )
             .await
-            .context("ACP session/new")?;
+        {
+            Ok(v) => v,
+            Err(e) if had_mcp => {
+                eprintln!("[acp] session/new with MCP passthrough failed ({e}); retrying without tools");
+                s.request(
+                    "session/new",
+                    json!({ "cwd": cwd_str, "mcpServers": [] }),
+                    &mut noop,
+                )
+                .await
+                .context("ACP session/new")?
+            }
+            Err(e) => return Err(e.context("ACP session/new")),
+        };
         s.session_id = ns
             .get("sessionId")
             .and_then(|v| v.as_str())
