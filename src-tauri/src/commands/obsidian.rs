@@ -338,13 +338,19 @@ pub async fn obsidian_connect(
 ) -> Result<ObsidianConnected, String> {
     use crate::kernel::mcp_host::{McpServerDescriptor, McpServerSource};
 
+    // CTRL opens Obsidian itself — idempotent, focuses if already open. The
+    // plugin loads + serves /mcp/ once Obsidian is up; the retry loop below
+    // waits for it. Verified live: no plugin-consent prompt because
+    // community-plugins.json is pre-provisioned.
+    let _ = obsidian_launch().await;
+
     let (key, port) = read_plugin_config().ok_or_else(|| {
-        "Obsidian Local REST API plugin not found for the CTRL Notes vault — install it \
-         in Obsidian and open ~/Documents/CTRL/Notes as a vault"
+        "Obsidian Local REST API plugin not found for the CTRL Notes vault — provisioning \
+         may not have run yet (obsidian_provision)"
             .to_string()
     })?;
     if key.is_empty() {
-        return Err("Obsidian Local REST API token is empty — set it in Obsidian → Local REST API".into());
+        return Err("Obsidian token not generated yet — give Obsidian a moment to finish opening".into());
     }
 
     let server_id = "obsidian".to_string();
