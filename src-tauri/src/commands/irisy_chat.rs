@@ -148,16 +148,17 @@ async fn forward_to_provider(
         });
     }
 
-    // Assistant-mode hermes-first branch (ADR-002 substrate §1.8 v23): when
-    // the hermes agent is installed, route the turn through it over ACP (its
-    // own persistent memory + skills), STREAMING agent_message_chunk text
-    // into chat-stream-delta. On any error fall back to the provider router so
-    // offline / fresh installs / a broken hermes stay usable (CLAUDE.md
-    // derived rule #2). Coding mode is owned by opencode, so it skips this.
-    // The dead one-shot `HERMES_FIRST` path (v20-v22, no streaming) is gone:
-    // ACP gives real streaming + a warm persistent session (§1.8.1).
-    let coding_mode = args.mode.as_deref() == Some("coding");
-    if !coding_mode
+    // ADR-002 substrate §1.8 v23 + §1 brain v22 (decision A, 2026-06-12): route
+    // to the hermes agent over ACP (its persistent memory + skills, STREAMING
+    // agent_message_chunk into chat-stream-delta) ONLY when the caller explicitly
+    // asks for the assistant agent (mode == "assistant"). Default Irisy chat goes
+    // straight to the fast provider router below — the full hermes agent loop
+    // (tool searches, multi-step) is too slow/blocking for everyday chat, and a
+    // busy agent rejects new sends with "agent not idle" (the "can't send" bug).
+    // On any hermes error we still fall back to the provider router (CLAUDE.md
+    // derived rule #2).
+    let use_hermes = args.mode.as_deref() == Some("assistant");
+    if use_hermes
         && crate::shell::agent_installer::is_installed(
             &crate::shell::agent_installer::AgentName::Hermes,
         )
