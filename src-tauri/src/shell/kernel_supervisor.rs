@@ -124,10 +124,15 @@ impl KernelSupervisor {
                     Err(e) => tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)"),
                 }
             }
-            // Obsidian notes connector auto-init (ADR-002 §1.9.1) — provision the
-            // Local REST API plugin into the Notes vault + register it, best-effort.
-            // Idempotent; activates when the user next opens Obsidian; harmless if
-            // Obsidian is absent. The plugin generates its own token on first run.
+            // Obsidian notes connector auto-init (ADR-002 §1.9.1), best-effort.
+            // Silently install the app if absent (like hermes), then provision the
+            // Local REST API plugin + register the vault. Idempotent; activates
+            // when Obsidian next opens. The plugin self-generates its token.
+            match crate::commands::obsidian::ensure_obsidian_installed() {
+                Ok(true) => tracing::info!("obsidian app installed"),
+                Ok(false) => tracing::debug!("obsidian app already present"),
+                Err(e) => tracing::info!(error = %e, "obsidian install deferred"),
+            }
             match crate::commands::obsidian::provision_plugin() {
                 Ok(d) => tracing::info!(downloaded = d, "obsidian connector provisioned"),
                 Err(e) => tracing::info!(error = %e, "obsidian provision deferred"),

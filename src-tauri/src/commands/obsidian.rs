@@ -131,6 +131,26 @@ fn obsidian_install_command() -> Option<(&'static str, Vec<&'static str>)> {
     }
 }
 
+/// Silently install Obsidian via the OS package manager if absent (bao
+/// 2026-06-17: silent auto-install, like hermes). Orchestrates the user's own
+/// brew/winget/flatpak — never bundles/redistributes the app. Ok(true)=installed
+/// now, Ok(false)=already present, Err=installer unavailable/failed (best-effort).
+pub(crate) fn ensure_obsidian_installed() -> Result<bool, String> {
+    if obsidian_app_installed() {
+        return Ok(false);
+    }
+    let (cmd, args) =
+        obsidian_install_command().ok_or_else(|| "no installer for this OS".to_string())?;
+    let status = std::process::Command::new(cmd)
+        .args(&args)
+        .status()
+        .map_err(|e| format!("{cmd} not available: {e}"))?;
+    if !status.success() {
+        return Err(format!("{cmd} {} failed", args.join(" ")));
+    }
+    Ok(true)
+}
+
 fn obsidian_global_config_dir() -> Option<std::path::PathBuf> {
     let base = directories::BaseDirs::new()?;
     #[cfg(target_os = "macos")]
@@ -229,35 +249,37 @@ pub(crate) fn provision_plugin() -> Result<bool, String> {
 #[derive(Debug, Serialize)]
 pub struct ObsidianProvision {
     pub app_installed: bool,
-    pub install_command: Option<String>,
+    pub install_ran: bool,
     pub plugin_provisioned: bool,
     pub plugin_downloaded: bool,
+    pub note: Option<String>,
 }
 
 /// Auto-init for the Obsidian notes connector (ADR-002 §1.9.1), run at CTRL
-/// onboarding. Detects the app (reports the OS install command if absent —
-/// orchestrating the user's package manager, never bundling Obsidian), then
-/// provisions the Local REST API plugin + enables it + registers the vault.
-/// The plugin generates its own token + cert when the user first opens Obsidian;
-/// CTRL reads it later via `obsidian_status` / `obsidian_connect`.
+/// onboarding. Silently installs the app if absent (bao: like hermes), then
+/// provisions the Local REST API plugin + enables it + registers the vault. The
+/// plugin generates its own token + cert when Obsidian first opens; CTRL reads
+/// it later via `obsidian_status` / `obsidian_connect`.
 #[tauri::command]
 pub async fn obsidian_provision() -> Result<ObsidianProvision, String> {
-    let app_installed = obsidian_app_installed();
-    let install_command = if app_installed {
-        None
-    } else {
-        obsidian_install_command().map(|(c, a)| format!("{c} {}", a.join(" ")))
+    // Both calls are blocking (subprocess + network + fs) — off the async pool.
+    let install_outcome = tokio::task::spawn_blocking(ensure_obsidian_installed)
+        .await
+        .map_err(|e| e.to_string())?;
+    let (install_ran, note) = match install_outcome {
+        Ok(ran) => (ran, None),
+        Err(e) => (false, Some(e)),
     };
-
-    // Provision the plugin into the vault regardless — it activates whenever
-    // Obsidian (already-installed or just-installed) next opens.
-    let plugin_downloaded = provision_plugin()?;
+    let plugin_downloaded = tokio::task::spawn_blocking(provision_plugin)
+        .await
+        .map_err(|e| e.to_string())??;
 
     Ok(ObsidianProvision {
-        app_installed,
-        install_command,
+        app_installed: obsidian_app_installed(),
+        install_ran,
         plugin_provisioned: true,
         plugin_downloaded,
+        note,
     })
 }
 
