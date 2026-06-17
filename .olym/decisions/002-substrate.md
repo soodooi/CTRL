@@ -2,12 +2,13 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — 3-agent aggregator · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 22
+version: 23
 status: accepted
-last_updated: 2026-06-12
+last_updated: 2026-06-17
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003 }
+  - { id: agent-channel,        source: new-2026-06-17, note: "§1.8 ACP single door + 3-face MCP passthrough + KB-not-brain + upgrade规范 (zeus drill, bao Q&A)" }
   - { id: capability-faces,     source: H-2026-06-09-002 conversation, note: "3-face SSOT — MCP / API / Skills 互补不塌缩" }
   - { id: capability,           source: orig-004 }
   - { id: provider,             source: new-2026-05-31, note: "VMark port + role routing + introspection" }
@@ -20,6 +21,7 @@ sections:
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
 changelog:
+  - v23 2026-06-17: **NEW §1.8 — agent integration channel locked: ACP single door + 3-face MCP passthrough + KB-not-brain + upgrade规范 (zeus drill 2026-06-16/17, bao Q&A).** Supersedes the v20 "ACP stdio; interim `hermes -z` one-shot" note — **ACP is THE channel**, one-shot retired as a routing path (`HERMES_FIRST` dead path removed; degraded path = provider router → BYOK direct, already shipped, matches v22 default). Decision chain bao pressure-tested across 8 turns and converged: (1) **端点 = ACP single door** — `uvx --from 'hermes-agent[acp]==<pin>' hermes-acp`, CTRL is the ACP client (same role as Zed / JetBrains AI Assistant / Neovim CodeCompanion). **TUI-gateway NOT adopted** (hermes-private interface = highest upgrade-breakage; its only edge — driving hermes-internal skills — is exactly what CTRL rejects since skills are CTRL-side SSOT). **OpenAI-server NOT adopted as hermes door** (ACP gives more: structured tool/permission events). (2) **3 faces reach the agent via ACP MCP passthrough** (Zed-standard: client passes its MCP servers to the agent at session start, tool calls pipe back over ACP = connectivity + gate + visibility in one) — MCP/API/Skills all consumed from CTRL's bus :17873, never the agent's own; 4 hard constraints (agent MCP client → only :17873; provider router exposed as MCP tools; skills dir = ~/.ctrl/skills; apps/OAuth = MCP source not a 4th face). (3) **KB ≠ brain channel** — user KB = kairo + Notes-MCP; ACP delivers the assistant + hermes-internal RAG, not the user KB. (4) **Upgrade规范** — single pin SSOT + version lockfile (mirrors ADR-005 §4.6) + `hermes-acp-probe` contract probe (mirrors ADR-005 §7.7) + L3 gate (ADR-006 §4), rollout tier under ADR-004 §updater. ACP provenance verified (Zed 2025-08 Apache-2.0; JetBrains partnership 2025-10; Gemini CLI reference impl; hermes#569; agentclientprotocol.com) — the one ACP client doubles as CTRL's universal agent-aggregation surface (ADR-006 §5 通用化). Pairs ADR-001 §4.1 v5 + ADR-004 §updater + DRIFT.md (hermes-online → in progress). Code: dev builds the ACP client + probe; zeus owns this doc.
   - v22 2026-06-12: **§1 brain — converged architecture (bao 2026-06-12; vault/ctrl/decisions/0006).** Irisy = a surface that replies via a brain: DEFAULT = provider router (the user's configured Claude/Volc, fast + reliable); hermes is an OPTIONAL brain feature pack, NOT a hardcoded interceptor. `irisy_chat.rs` HERMES_FIRST toggle = false (889d104) — ALL hermes code stays (installer / run_hermes_oneshot / write_hermes_dotenv / assistant_oneshot), but the slow uvx one-shot (cold start, 180 s timeout, no streaming) no longer intercepts every turn (root cause of bao's "Irisy didn't reply"); flip back to true once hermes ships ACP streaming. Notes view = built-in NotesApp by default, NO kairo embed (b547bc3) — removes the blank-iframe failure mode (kairo could report ready before SilverBullet served); kairo re-attaches as an optional notes feature pack later. DIRECTION (not yet built, capability-limited present per bao): three engines (hermes=brain / kairo=notes / opencode=coding) become feature packs (manifest `target:brain` etc.), not hardcoded agents; knowledge base = Notes (local md) + kairo viewer + Irisy recall (RAG) + supply (derive AGENTS.md). "vault" word retired (→ Notes). Ship NOW: Irisy-via-Claude + built-in Notes + installable packs; RAG / supply / engine-packaging later.
   - v21 2026-06-12: **§7 composition — feature pack model + axis 7 `provision` (bao 2026-06-12; dogfood decisions in vault/ctrl/decisions/0005).** 「功能包」(feature pack) locked as the USER-FACING name for an installable manifest — code keeps "mcp", all PWA copy → 功能包 (extends v12 keycap→mcp from a code-rename to a user-name). Feature pack = universal shell for "plug any API → orchestrate → on-demand UI": one schema fills wildly different worlds — CF Workers 开发 (cli-wrapper + CF token + deploy/logs) AND HubStudio 营销 (network HTTP allowlist + API key + manage-accounts/batch-post + AI rewrite + account-matrix UI); 想要什么出什么 UI = the pack declares `ui_surface`, the AI creator generates it from one intent sentence; CTRL stays a substrate — scenarios (营销/开发/CRM) grow as packs, not built-ins. NEW **axis 7 `provision`** (toolchain install + env), closing the gap cap_asset left (cap_asset only copies static files; provision installs external toolchains): `tools[]` (id/check/install) resolved built-in-downloader-FIRST (`~/.ctrl/tools/<id>/`, same lazy-install lineage as pi/kairo, isolated, removed on uninstall) → system pkg-mgr fallback (brew/winget/npm via `install.<os>.via`) → manual guidance; `env` resolves `{{secret:<key>}}` from keychain at inject time, never touching the LLM (decision 0004 — secrets never reach Irisy). One-time base infra: a tool registry (tool id → per-platform prebuilt binary URL + checksum) the downloader queries by id. Distribution bundle = Anthropic `.mcpb` (reused, not a custom format). Discover = the pack store — intent → Irisy 收敛 1-3 (curation, NOT a Quicker 8000 long-tail wall) + scene-grouped browse + search; create = AI generates the pack from natural language (user writes no JSON unless advanced); same format both ends → 造的=别人挑的源头 (share-and-be-shared). Research backing: vault/ctrl/research/{opensuse,quicker}.md (YaST Patterns 成组一键 + Dolphin KIO transparent-mount + Quicker 场景面板). Schema lands in `manifest-schema.ts` (provision Zod axis); Rust base (tool registry / built-in downloader / provision runner / .mcpb install) follows. ADR-001 spine pairing TBD.
   - v20 2026-06-10: §1.1 upstream verification corrections (full web research, H-2026-06-09-002): **hermes** = NousResearch/hermes-agent (PyPI via uv; npm "hermes-agent" is an unofficial third-party pip shim — banned); endpoint corrected MCP stdio → **ACP stdio** (`hermes-acp`; no MCP `chat` tool exists upstream); interim chat bridge = `assistant_oneshot` (`hermes -z`) until the kernel ACP streaming client lands. **opencode** real API: `POST /session` + `POST /session/{id}/prompt_async` + global `GET /event` SSE bus (no per-request stream); announce line `opencode server listening on <url>`; creds inject via env/`OPENCODE_CONFIG_CONTENT`; `file.edited` events feed the artifact pane. **kairo codename resolves to SilverBullet 2.8.1** (silverbulletmd, MIT, single Go binary, plain-md folder, wikilink+backlink, frame-clean) — launched with `SB_SHELL_BACKEND=off SB_RUNTIME_API=0 SB_DISABLE_SERVICE_WORKER=1` (upstream /.shell executes arbitrary commands; never expose). §1.5: Irisy chat now routes through the in-process provider router (`provider/routing.rs`, one SSOT shared with /text-chat) — the dead Pi MCP hop (127.0.0.1:17874) removed from `irisy_chat_stream`. Agent-first hermes routing layers on next.
@@ -61,7 +63,7 @@ CTRL kernel = **thin install + launch + bridge + keychain**, NOT a runtime owner
 
 | Agent | Role | Upstream | Endpoint | PWA route |
 |---|---|---|---|---|
-| **hermes** | Assistant (long-term memory, skills, dialog) | `uvx --from 'hermes-agent[acp]==0.16.0'` (NousResearch, PyPI, MIT — npm "hermes-agent" is an unofficial 3rd-party shim, banned) | **ACP stdio** (`hermes-acp`); interim `hermes -z` one-shot | `/assistant` |
+| **hermes** | Assistant (long-term memory, skills, dialog) | `uvx --from 'hermes-agent[acp]==0.16.0'` (NousResearch, PyPI, MIT — npm "hermes-agent" is an unofficial 3rd-party shim, banned) | **ACP single door** (`hermes-acp`, see §1.8) — TUI-gateway / OpenAI-server NOT adopted; `hermes -z` one-shot retired as a routing path | `/assistant` |
 | **opencode** | Coding (LSP, formatter, plan, subagents, native Skills) | `npm install opencode-ai@1.17.x` (anomalyco, MIT) | HTTP API: `serve --port <picked>`, `POST /session` + `prompt_async` + global `/event` SSE bus | `/coding` |
 | **kairo = SilverBullet 2.8.1** | Notes / PKM (markdown + wiki-link + backlink + git library) | GitHub release binary (silverbulletmd, MIT, ~36 MB lazy download) | webview `http://127.0.0.1:<picked>/` over `~/Documents/CTRL/Notes/`; `SB_SHELL_BACKEND=off SB_RUNTIME_API=0 SB_DISABLE_SERVICE_WORKER=1` | `/notes` |
 
@@ -132,6 +134,51 @@ The 8 fixes from v18 (race condition / health check / credential / event leak / 
 ### §1.7 Why this isn't "yet another pivot"
 
 v17 (Pi sole brain) → v18 (dual-brain supervisor) → v19 (3-agent aggregator) trace one consistent direction: **less CTRL ownership of the brain, more external integration**. v17 wrapped Pi tightly; v18 added 2 supervisors (worse, not better — same wrap pattern, doubled); v19 removes all wrap. This is the **right** end-state per bao memories `feedback_pi_is_core_use_upstream_surfaces` (2026-05-31), `feedback_no_redundancy_one_ssot` (2026-05-28), `feedback_build_system_not_business` (2026-05-28), and `decision_ctrl_lean_substrate_scheduler_executor_tools` (2026-05-28). Kernel does what only a kernel can do (install + launch + keychain + MCP bus); everything else is external.
+
+### §1.8 Agent integration channel — ACP single door + 3-face passthrough + KB-not-brain + upgrade规范 (NEW v23, 2026-06-17)
+
+> Converged after a zeus-led drill (2026-06-16/17, bao Q&A). Supersedes the v20 "ACP stdio; interim `hermes -z` one-shot" note: **ACP is THE channel**; the one-shot path is retired as a routing path (`irisy_chat.rs` `HERMES_FIRST` dead branch removed). Decides how a `target:brain` agent (hermes today, any ACP agent tomorrow — v22 feature-pack model) plugs into CTRL.
+
+#### §1.8.1 Single door = ACP
+
+A `target:brain` agent connects over the **Agent Client Protocol** (ACP — Apache-2.0, Zed; JSON-RPC 2.0 over stdio). hermes runs in ACP server mode: `uvx --from 'hermes-agent[acp]==<pin>' hermes-acp`. CTRL is the ACP **client** (the role Zed / JetBrains AI Assistant / Neovim CodeCompanion play). ACP carries: prompt submit · streaming agent message chunks · tool-call events · permission requests · session fork/cancel/auth.
+
+- **TUI-gateway NOT adopted** — hermes's internal JSON-RPC gateway exposes a fuller method set (`command.dispatch` / `session.steer` / `clarify`) but is a **hermes-private** interface → highest upgrade-breakage risk, and its only real edge (driving hermes's internal skills/commands) is exactly what CTRL rejects (skills are CTRL-side SSOT, §1.8.2). TUI is for hosts WITHOUT their own substrate; CTRL HAS one (bus + skills + kairo).
+- **OpenAI-compatible server NOT adopted as the hermes door** — redundant with ACP, which gives more (structured tool/permission events for the §8 transparency + §4 gate).
+- **Degraded path is NOT a second hermes door** — when hermes is absent/down, Irisy falls back to the in-process provider router → user BYOK model direct (`irisy_chat.rs` `route_text_chat`, already shipped). Irisy stays usable with zero agent installed (matches v22: provider-router = default, hermes-over-ACP = the optional assistant-brain upgrade).
+
+#### §1.8.2 The 3 capability faces reach the agent via ACP MCP passthrough — never the agent's own
+
+ACP standard behavior: at session start the client passes its MCP server endpoints + credentials to the agent; the agent invokes tools via MCP, **piped back through the ACP session** (Zed forwards its configured MCP servers to external agents exactly this way). CTRL uses this so the agent consumes CTRL's faces — keeping one SSOT, the kernel gate, AND tool-call visibility in one mechanism:
+
+| Face | Wire to agent | SSOT |
+|---|---|---|
+| **MCP** | CTRL passes bus `:17873` to the agent at ACP session start; all tool calls pipe back over ACP (visible + gatable) | `mcp_server.rs :17873` (out: `mcp_host.rs` → 10k+ external MCP) |
+| **API** (fal.ai 985 / LLM) | exposed AS MCP tools on the bus (`image.generate` / `video.generate` / `text.chat`) → same passthrough; the agent's reasoning model may also point at CTRL's provider router | `provider/router.rs` |
+| **Skills** | `~/.ctrl/skills/<id>/SKILL.md` surfaced as MCP tools on the bus OR the agent's skill loader pointed at this dir | `~/.ctrl/skills/` (cross-agent; agent-created skills land here → Discover commons) |
+
+**Hard constraints** (reviewer-enforced):
+1. The agent's MCP client points **only** at `:17873` — never directly at an external MCP server (else it bypasses the kernel capability / approval / blast-radius gate, ADR-006 §4/§5).
+2. The provider router MUST be exposed as MCP tools on the bus (else the agent can't reach the fal.ai API face).
+3. The agent's skills dir = `~/.ctrl/skills` — one SSOT, no parallel agent-private skills store.
+4. "apps" (Feishu / Notion / OAuth / OPC business connectors / ST-SS windows) are MCP **sources** (ADR-001 §3), not a 4th face — they enter through the MCP face.
+
+#### §1.8.3 Knowledge base is NOT the brain channel
+
+User KB = **kairo** (SilverBullet webview) + CTRL Notes (`~/Documents/CTRL/Notes/`). The agent reads/writes user notes via the **Notes MCP tools on the bus**, surfaced as ACP tool-call events — not over a private channel. hermes's own long-term memory / RAG stays hermes-internal and flows over ACP as part of the conversation. **ACP delivers the assistant (+ hermes-internal RAG); the user KB is kairo + Notes-MCP.**
+
+#### §1.8.4 Upgrade规范 — ride agent releases by standard contract
+
+ACP is a versioned external standard, so most agent releases don't touch the contract → bump freely. Per-release discipline:
+
+1. **Single pin SSOT** — agent version lives in one constant (`agent_installer.rs` `HERMES_*_SPEC`). Upgrade = change one value; git-diffable; revert = flip back.
+2. **Version lockfile** — record `{agent version, ACP protocol version, verified date}` (mirrors ADR-005 §4.6 `.soul-md-version`).
+3. **Contract probe** — `scripts/probes/hermes-acp-probe.mjs` (mirrors ADR-005 §7.7 `pi-bridge-probe`): ACP handshake + proto-version + streamed prompt + tool-call event + permission request + **MCP-bus passthrough** + `/model` swap + skills-dir read. All green → bump. Red → stay pinned, log the broken surface in `.olym/decisions/DRIFT.md` as an upgrade-blocker.
+4. **L3 gate** — a brain swap is high-blast-radius → default autonomy L3 suggest-only (ADR-006 §4): probe runs auto, pin bump is user-approved (patch-level + N consecutive green probes may earn L4). Rollout tier under ADR-004 §updater (external-agent tier).
+
+#### §1.8.5 Provenance — ACP is real + adopted
+
+Zed Industries (2025-08, Apache-2.0, JSON-RPC over stdio); JetBrains official partnership (2025-10, native ACP in IntelliJ/PyCharm AI Assistant); Gemini CLI = reference impl; Zed ACP Registry live. **Clients** (CTRL's role): Zed · JetBrains · Neovim (CodeCompanion / avante / agentic.nvim) · Emacs · Kiro. **Agents** (CTRL aggregates via the one client): hermes · opencode · Claude Code · Codex · Gemini CLI · Copilot CLI · Goose · Cline · Cursor · OpenHands · … — so the ACP client doubles as CTRL's universal agent-aggregation surface (ADR-006 §5 通用化). Sources: zed.dev/acp · zed.dev/docs/ai/external-agents · jetbrains.com/acp · agentclientprotocol.com · github.com/NousResearch/hermes-agent#569.
 
 ## §2 Capability surface — 10 namespaces / 28 methods (frequency ≥3 rule + category exception)
 

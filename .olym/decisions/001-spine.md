@@ -2,9 +2,9 @@
 adr_id: 001
 module: spine
 title: CTRL spine — 4-layer kernel + 5 primitives + 5 mcp sources + 3-agent aggregator + 3-capability-face + 6 self-evolution loops
-version: 4
+version: 5
 status: accepted
-last_updated: 2026-06-09
+last_updated: 2026-06-17
 deciders: [bao, zeus]
 sections:
   - { id: layers,         source: orig-001-§3 }
@@ -15,6 +15,7 @@ sections:
   - { id: philosophy,     source: orig-001-§6 }
   - { id: self-evolution, source: brainstorm system-self-evolution-2026-06-04 }
 changelog:
+  - v5 2026-06-17: **§4.1 amendment — how agents reach the 3 faces (pairs ADR-002 §1.8 v23, zeus drill + bao Q&A).** Adds the wiring clause: all 3 capability faces converge on the MCP bus :17873 (API exposed as MCP tools; Skills as MCP tools / loadable dir); a `target:brain` agent (hermes / any ACP agent) consumes them via **ACP MCP passthrough** (CTRL = ACP client, agent MCP client points only at :17873 = kernel gate + visibility preserved); "apps"/OAuth = MCP sources, not a 4th face; user KB (kairo + Notes-MCP) is a face consumer, not the brain channel. No face/primitive change — clarifies the consumption path only.
   - v4 2026-06-09: **§4 dual-brain supervisor → 3-agent aggregator amendment (H-2026-06-09-002).** bao framing校准 (2026-06-09 conversation): "Irisy 是表象", "hermes opencode kairo 都是外部的", "现在重要的是前端". Dual-brain supervisor model (v3) RETRACTED — kernel no longer spawns/supervises brains. Replaced by **3-agent aggregator**: kernel lazy-installs + launches external agents (hermes / opencode / kairo), PWA consumes their native endpoints directly. Locks: (1) **CTRL = OS-level ambient aggregator** — not a single-purpose chat/coding/PKM app; the 4 friend products (Claude Desktop, Codex, WorkBuddy, CodeBuddy) are single-vertical, CTRL横切聚合. (2) **3-capability-face SSOT** — MCP (protocol), API (provider router, e.g. fal.ai 985 endpoints), Skills (markdown SKILL.md). 三面互补不塌缩, supersedes 2026-06-05 `decision_keycap_collapses_to_mcp_meta_ux_layer` over-simplification. (3) **3 external agents** — hermes (NousResearch, assistant) / opencode (coding) / kairo (notes/PKM, MIT). All lazy-installed to `~/.ctrl/agents/`. Kernel doesn't supervise — launch-on-demand, PWA owns retry. (4) **Irisy = PWA persona**, not brain. ADR-005 amend. (5) **No "vault" word inside CTRL** — call it "Notes". kairo owns the editor; CTRL exposes `~/Documents/CTRL/Notes/` as MCP server to hermes. (6) **fal.ai as flagship API provider** — Codex 接 gpt-image-2 锁单家; CTRL 接 fal.ai 拿 985 模型. Retired: ADR-002 §1 supervisor model (v18 → v19), ADR-002 §8 vault stack lock (Tiptap+CodeMirror+FTS5 → kairo). PR target: this branch.
   - v3 2026-06-09: **§4 Pi-centric → dual-brain architecture amendment (H-2026-06-09-001, PR #84).** RETRACTED by v4 (3-agent aggregator). Kept in changelog for provenance only.
   - v2 2026-06-04: add §8 self-evolution v1 — 6 parallel loops × 6 stages (Detect/Diagnose/Plan/Execute/Verify/Learn) governing how CTRL improves itself across Irisy chat, provider routing, cap curation, notes index, system self-healing, and cross-user MCP/SKILL recommendation. Locks Typed ISA + microkernel validation + audit ledger + policy envelope + vim-test as the 5 cross-loop invariants. Per bao "整个系统都要自我升级成长" + "经常整理 ADR".
@@ -109,6 +110,8 @@ CTRL has **three** capability faces,互补不塌缩:
 | **Skills** | markdown `SKILL.md` + script | `~/.ctrl/skills/<id>/` | invoked by any agent | `$imagegen` / `$refactor` / `$summarize` |
 
 **Friend-product gap**: Claude Desktop + Codex + WorkBuddy + CodeBuddy all support MCP + Skills; API face is locked to their single brand (OpenAI / Anthropic / Tencent Yuanbao / Hunyuan). **CTRL's API face is the differentiator** — aggregator (fal.ai 985 image/video/audio models, plus任意 LLM BYOK).
+
+**How agents reach the 3 faces** (ADR-002 §1.8 v23): all three converge on the **MCP bus `:17873`** — API is exposed AS MCP tools (`image.generate` etc.); Skills are MCP tools OR a dir the agent loads. A `target:brain` agent (hermes / any ACP agent) consumes them via **ACP MCP passthrough** (CTRL = ACP client passes its MCP servers to the agent at session start; tool calls pipe back over ACP = connectivity + kernel gate + visibility). The agent's MCP client points **only** at `:17873`, never an external server directly. "apps" (Feishu / Notion / OAuth / OPC connectors / ST-SS) are MCP **sources** (§3), not a 4th face. User KB (kairo + Notes-MCP) is a face consumer, not the brain channel.
 
 ### §4.2 What CTRL is NOT vs friend products
 

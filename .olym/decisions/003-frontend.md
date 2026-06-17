@@ -2,9 +2,9 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 7
+version: 8
 status: accepted
-last_updated: 2026-06-13
+last_updated: 2026-06-16
 deciders: [bao, zeus, daedalus]
 sections:
   - { id: pwa,           source: orig-002 }
@@ -19,7 +19,8 @@ changelog:
   - v4 2026-06-01: § shell-4col §7.1 column-order amendment — bao "顺序是工作区（内有tab），L2，L1，Irisy". Column model reordered LEFT→RIGHT to `[Tab | L2 | L1 | Irisy]`. L1 is now anchored immediately left of Irisy (not far-left). Rationale: Irisy + L1 stay visually pinned at the monitor's right; Workspace grows leftward when expanded, with L2 sandwiched between Workspace and L1. Compact mode still renders only L1 (48) + Irisy (430) = 478 px because Workspace and L2 collapse to 0. Anti-pattern §7.8 entry added: do NOT render L1 at column index 1.
   - v5 2026-06-09: **§ nav-keyboard → § nav-l1 — 5-chip 3-agent aggregator L1 (H-2026-06-09-002).** bao 2026-06-09 校准: 3 agents (hermes / opencode / kairo) are external; CTRL is the aggregator壳. L1 chips reorganized as 5 first-class routes mapping directly to capability surfaces: **Irisy** (PWA persona shell, default chat) / **Mcp pool** (MCP face discovery) / **Notes** (kairo webview) / **Coding** (opencode HTTP API + xterm) / **Assistant** (hermes MCP stdio). § vault-stack RETIRED — kairo owns markdown editor + wiki-link + backlink + git; CTRL doesn't ship its own editor. § agent-routes NEW: lock per-route agent endpoint contracts (kairo webview path / opencode HTTP port discovery / hermes MCP stdio handshake). Settings + Pool stay as before. § shell-4col 4-column shell preserved — agent routes render inside `[Tab]` column. Pre-v5 components retired in PWA: `IrisyChat forceMode="coding"` wrapper, `NotesApp` 3-pane (NotesTree/NotesEditor/NotesBacklinks), `MarkdownViewer` Tiptap shell, `BacklinksPanel`. PWA picks up sycophancy filter (relocated from `packages/ctrl-pi-bridge/data/persona-patterns.md` → `packages/ctrl-web/src/lib/persona-filter/patterns.md`).
   - v6 2026-06-11: **§8 NEW — morphing-conversation rebuild.** bao 2026-06-11 校准: CTRL is not a shell, it's an advanced UX paradigm at the app layer (UX + 通讯 + agent optimization); domain breadth via MCP/CLI/Skills, not built verticals. Synthesized from a 6-track product benchmark (launcher/routing/cockpit + marketing/office/finance verticals). Locks: one ambient morphing conversation (input-first floating surface), intent routing with visible pill + ambiguity-adaptive response (Lovable 3-way), morph-to-output-type via the 12-viewer registry, agent-workspace pane + tool stream, 3-layer drill-down, point-edit + checkpoint + accept/reject gate, capability-agnostic routing to the open MCP/CLI/Skill set, ambient scheduled tasks. §7 4-col shell + § nav-l1 5-chip SUPERSEDED for the home surface (chips survive as morph-layer shortcuts). 6-slice build sequence in §8.4. Invariants preserved: Ctrl summon · floating popup · Irisy(hermes) · coding(opencode) · kairo(notes).
-  - v7 2026-06-13: **§7 shell-4col REINSTATED — bao reverts the v6 §8 morphing home surface back to the locked 4-column shell.** bao 2026-06-13: "我一直要的是这个布局… Irisy常驻", pointing back to §7 v4 `[Tab | L2 | L1 | Irisy]`. The v6 morphing-conversation home was a detour; the SHIPPED home is the §7 4-col shell. Implementation (v0.1.255→v0.1.259, PWA `AmbientHome`/`AmbientWorkbench`): L1 rail moved from the workbench far-left INTO AmbientHome's middle column, glued to Irisy's left (honours §7.8 anti-pattern: L1 never far-left); Irisy pane ALWAYS pinned far-right, widened 430→**480px**, divider-draggable 320–820; work area (Tab) leftmost, L2 collapsed by default; window total width 1280→**1480**. CTRL logo top-left of window; "Irisy" label inside the right Irisy pane. Markdown reply styling + per-reply Copy / Copy-conversation added. **Open item**: route pages (Settings/Coding) render with AmbientHome hidden → they currently lose the in-layout L1 and navigate back via the route topbar back bar; decide whether to restore a route-level L1. §8 morphing-conversation retained as a future direction, no longer the shipped home surface. **LESSON (process)**: read ADR-003 §7 BEFORE touching layout — skipping it cost a long detour of ad-hoc layout edits (Irisy left/right/centered) that merely re-derived the already-locked §7 spec.
+  - v8 2026-06-16: **§8 morphing-conversation REINSTATED as the SHIPPED home surface — code-won reconciliation (zeus drift review 2026-06-16).** The `ui/v1-editorial` branch (v0.1.260→**v0.1.276**) shipped the Ambient morphing home as the default render path, reversing v7's §7-4col lock WITHOUT amending this ADR — a 17-version ADR↔code drift caught in zeus's全局 review. bao 2026-06-16 ruling: **代码赢** — Ambient morphing IS the truth; this ADR conforms to reality. Locks the SHIPPED implementation (§8.5 NEW): home = `AmbientWorkbench` (3-zone `[Sidebar L1 | AmbientHome morphing column | routed-page Outlet]`, mounted across every route); `AmbientHome` morphing column = Irisy chat pane right-anchored, width **480px** default, divider-draggable **300–640** (`AmbientHome.tsx:147,201`); §7 4-col shell DEMOTED to legacy fallback behind `localStorage ctrl:legacy-shell='1'` (`app.tsx:50`). L1 = `Sidebar.tsx` icon rail (~52px), chips: Irisy / dynamic connector Tools / Notes / Coding / dynamic Feature Packs / [spacer] / Discover / Settings / Model badge — all unified-size inline-SVG icons (bao 2026-06-16 "L1 icons must all be the SAME size"). Routed pages (Settings/Coding/Notes/Pool) render via `<Outlet>` inside a `.routeHost` with a `← Irisy` back bar — this is now intended, not the v7 "open item". Editorial commits folded in: whole first line = window drag region, minimal action bar above composer, single vertical grid line, hermes dashboard iframe in Settings → Irisy (`:17890`). §7.8 Irisy-width anti-pattern (380–430) SUPERSEDED by the 480/300–640 range. The §nav-l1 5-chip and §7 4-col are NO LONGER the home truth; both retained as provenance.
+  - v7 2026-06-13: **§7 shell-4col REINSTATED — bao reverts the v6 §8 morphing home surface back to the locked 4-column shell. RE-REVERTED by v8 (Ambient morphing is the shipped home).** bao 2026-06-13: "我一直要的是这个布局… Irisy常驻", pointing back to §7 v4 `[Tab | L2 | L1 | Irisy]`. The v6 morphing-conversation home was a detour; the SHIPPED home is the §7 4-col shell. Implementation (v0.1.255→v0.1.259, PWA `AmbientHome`/`AmbientWorkbench`): L1 rail moved from the workbench far-left INTO AmbientHome's middle column, glued to Irisy's left (honours §7.8 anti-pattern: L1 never far-left); Irisy pane ALWAYS pinned far-right, widened 430→**480px**, divider-draggable 320–820; work area (Tab) leftmost, L2 collapsed by default; window total width 1280→**1480**. CTRL logo top-left of window; "Irisy" label inside the right Irisy pane. Markdown reply styling + per-reply Copy / Copy-conversation added. **Open item**: route pages (Settings/Coding) render with AmbientHome hidden → they currently lose the in-layout L1 and navigate back via the route topbar back bar; decide whether to restore a route-level L1. §8 morphing-conversation retained as a future direction, no longer the shipped home surface. **LESSON (process)**: read ADR-003 §7 BEFORE touching layout — skipping it cost a long detour of ad-hoc layout edits (Irisy left/right/centered) that merely re-derived the already-locked §7 spec.
 related:
   - .olym/decisions/001-spine.md
   - .olym/decisions/002-substrate.md
@@ -112,7 +113,7 @@ Three-pane VMark-style entry into `~/Documents/CTRL/`:
 
 ## §7 Shell 4-col layout (v3 2026-06-01; v4 column order 2026-06-01) — `[Tab | L2 | L1 | Irisy]`
 
-> **STATUS (v7, 2026-06-13): ACTIVE — this is the shipped home surface.** Reinstated after the v6 §8 morphing detour; implemented in PWA `AmbientHome` (v0.1.255→v0.1.259). Irisy pane widened 430→480px (draggable), window total width 1280→1480, L1 rail relocated into AmbientHome's middle column. See changelog v7.
+> **STATUS (v8, 2026-06-16): LEGACY FALLBACK — no longer the shipped home.** The shipped home is now §8.5 (Ambient morphing, `AmbientWorkbench`). This 4-col shell renders ONLY behind `localStorage ctrl:legacy-shell='1'` (`app.tsx:50`). Retained as provenance + escape hatch. Its §7.8 Irisy-width 380–430 constraint is SUPERSEDED by §8.5's 480/300–640. See changelog v8.
 
 **Why this section exists**: bao 2026-06-01 multi-message refactor (`你怎么这么蠢？无非就是最简单的tab和导航` + `L2和tab，是两个东西` + `mcp这个是pool` + 5 release iterations v0.1.127 → v0.1.132). The previous 2-col `[L1 | Irisy]` shell could not host the workspace tab paradigm; an ad-hoc Tauri child window (`WorkspaceSurface` + `toggle_workspace_window`) was filling that role and conflicting with the inline cockpit. This section locks the canonical 4-column shell.
 
@@ -202,7 +203,7 @@ Schema language minimal (key/label/type/options?/min?/max?). Anything more compl
 
 ## §8 Morphing-conversation rebuild (v6 — 2026-06-11)
 
-> **STATUS (v7, 2026-06-13): NOT the shipped home surface.** bao reverted the home layout to §7's 4-col shell. The morphing-conversation ideas here are retained as a future direction, but the shipped home is §7 `[Tab | L2 | L1 | Irisy]`. Do NOT implement §8 as the home surface without a new bao decision. See changelog v7.
+> **STATUS (v8, 2026-06-16): SHIPPED home surface.** bao 2026-06-16 ruled 代码赢 — the Ambient morphing home (`AmbientWorkbench`) is the default render path; §7 4-col is the legacy fallback. The conceptual §8.1–§8.4 locks below stand; §8.5 (NEW) records the as-shipped implementation truth. See changelog v8.
 
 bao 2026-06-11: CTRL is NOT a shell wrapping 3 OSS agents — that's commodity. The product is an **advanced UX interaction paradigm at the application layer**, core = UX + communication (通讯) + agent optimization. The 3 OSS engines (hermes/opencode/kairo) are swappable; domain breadth (marketing/office/finance/anything) comes from the open ecosystem of **MCP servers + CLI + Skills** (3-capability-face, ADR-002), NOT from CTRL building verticals. This section locks the rebuild, synthesized from a 6-track product benchmark (Raycast/Spotlight/Alfred/ChatGPT/Cursor/Warp/Zed; ChatGPT-Canvas/Claude-Artifacts/Perplexity/Replit/Lovable/v0; Manus/Devin/Flowith/public.com/TradingView/Bloomberg; Gamma/Jasper/Descript/HeyGen; M365-Copilot/Gemini/Coda/Rows/Granola). Invariants (fixed): Ctrl-key summon · floating popup form · Irisy 助理 (hermes) · Irisy coding (opencode) · kairo notes · everything else rebuildable.
 
@@ -257,6 +258,36 @@ Feature potpourri / tab-soup / disconnected point-solutions (Genspark cautionary
 6. **Ambient** — scheduled tasks, async jobs, brand-voice-as-markdown, AI-as-column.
 
 Slices 1-2 realize the core "one morphing conversation"; 3-4 the transparency+trust moat; 5-6 the open-ecosystem + ambient-OS reach. The pre-v6 4-column shell (§7) and 5-chip nav (§ nav-l1) are SUPERSEDED for the home surface by §8.1; chips survive only as capability shortcuts inside the morph layer.
+
+### §8.5 As-shipped implementation truth (NEW v8 — 2026-06-16, zeus drift reconciliation)
+
+This subsection records what the shipped PWA actually renders (v0.1.276), so the ADR stops drifting from code. Authoritative over §7 + § nav-l1 for the home surface.
+
+**Shell — `AmbientWorkbench` (3 zones, mounted across every route)** — `packages/ctrl-web/src/components/ambient/AmbientWorkbench.tsx`:
+
+| Zone | Component | Behaviour |
+|---|---|---|
+| **L1 rail** | `Sidebar.tsx` (~52px icon rail) | Always mounted; glued to the morphing column's left. Acting from a routed page navigates home first, then signals `AmbientHome` via props. |
+| **Morphing column** | `AmbientHome.tsx` | Stays MOUNTED even when a route owns the screen (`hidden={!isHome}`) so chat state + nonce effects survive a Settings/Notes visit. Holds the Irisy chat pane + output bar. |
+| **Routed-page host** | `<Outlet>` inside `.routeHost` | Settings / Coding / Notes / Pool render here with a `.routeTopbar` carrying a `← Irisy` back bar + `☰` menu. This back-bar return path is INTENDED (resolves the v7 "open item"). |
+
+**L1 chips (top→bottom)** — `Sidebar.tsx:79-163`, all unified-size inline-SVG (one 24-viewBox, stroke 1.7; bao 2026-06-16 "L1 icons must all be the SAME size"):
+
+1. **Irisy** (sparkle) — conversation column focus
+2. **Tools** (dynamic, one per loaded connector tool) — `loadConnectors()`
+3. **Notes** (pencil) — opens Notes in the morphing column
+4. **Coding** (code) — `navigate('/coding')`
+5. **Feature Packs** (dynamic, one per installed pack with actions) — `loadInstalledPacks()`
+6. *(spacer)*
+7. **Discover** (plus-circle) — switches morphing column to `view='discover'`
+8. **Settings** (gear) — `navigate('/settings')`
+9. **Model badge** — opens `ProviderHub` picker
+
+This is neither §7.1's `[▾ Irisy Mcp-pool Coding Settings]` nor § nav-l1 v5's `[Irisy Mcp-pool Notes Coding Assistant]` — it is the §8.1 capability-agnostic set (open tools/packs + Discover). Those two earlier chip specs are provenance only.
+
+**Irisy pane geometry** — `AmbientHome.tsx:147,201`: right-anchored, `irisyWidth` default **480px**, divider-draggable clamp **`Math.max(300, Math.min(640, …))`**. SUPERSEDES §7.8's 380–430 constraint and the changelog-v7 320–820 figure (both stale).
+
+**Brain note**: the home chat path routes through the in-process provider router (Pi exited the hot path, ADR-002 v20 §1.5) — NOT Pi, despite a stale "Pi default" comment in `lib/llm-transport.ts:262` (cosmetic, tracked as `.olym/decisions/DRIFT.md` D5). hermes is fully wired (install / `assistant_oneshot` / dashboard `:17890` / hermes-first branch in `irisy_chat.rs:151-195`) but its turn interception is intentionally **gated off** per bao 2026-06-12 decision A until hermes ships ACP streaming — an ADR-002 v20 intended interim, not a frontend concern.
 
 ## Dependencies
 
