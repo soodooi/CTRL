@@ -475,6 +475,11 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   }, [messages]);
 
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
+  // Per-turn abort handle — drives the Stop button + interrupt-and-redirect so
+  // the user is never blocked from sending while a turn streams
+  // (ADR-005 irisy § persona-shell v5 (2026-06-09); memory
+  // feedback-irisy-never-block-input-and-be-fast).
+  const abortRef = useRef<AbortController | null>(null);
 
   // Cmd/Ctrl+K — clear conversation. Cmd/Ctrl+Enter — send.
   useEffect(() => {
@@ -583,13 +588,21 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const sendMessage = useCallback(
     async (text: string): Promise<void> => {
       const trimmed = text.trim();
-      if (!trimmed || sending) return;
+      if (!trimmed) return;
       if (upgradeStub) {
         // Refuse silently when the backend isn't wired — the stub view
         // already explains what's happening; bouncing here keeps the
         // composer responsive without a network call.
         return;
       }
+
+      // Interrupt-and-redirect (ADR-005 irisy § persona-shell v5 (2026-06-09)):
+      // never block a send while a turn streams — abort the in-flight turn and
+      // start the new one. The finally guard (abortRef.current === ac) keeps the
+      // aborted turn from clobbering the new turn's `sending` state.
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
 
       setSending(true);
       setSendingStartedAt(Date.now());
@@ -653,7 +666,13 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         for await (const chunk of transport.stream(history, {
           mode: wireMode,
           project_dir: projectDir ?? undefined,
+          signal: ac.signal,
         })) {
+          if (chunk.error === 'aborted') {
+            // User pressed Stop or sent a new message — end quietly, no banner.
+            aborted = true;
+            break;
+          }
           if (chunk.error) {
             // Pi RPC errors (timeout / Stderr / supervisor crash) get
             // routed into the errorPanel surface so the bubble stays
@@ -763,8 +782,13 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
           ),
         );
       } finally {
-        setSending(false);
-        setSendingStartedAt(null);
+        // Only the currently-active turn clears `sending` — an interrupted
+        // (superseded) turn must not flip it off under the new turn.
+        if (abortRef.current === ac) {
+          setSending(false);
+          setSendingStartedAt(null);
+          abortRef.current = null;
+        }
       }
     },
     // ADR-002 substrate § brain v17 (2026-06-07): currentSkillId removed
@@ -777,7 +801,6 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       messages,
       mode,
       projectDir,
-      sending,
       systemBase,
       transport,
       upgradeStub,
@@ -966,6 +989,22 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
                 strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <line x1="6" y1="6" x2="18" y2="18" />
                 <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+            </button>
+          )}
+          {/* Stop — abort the in-flight turn (ADR-005 irisy § persona-shell v5
+              (2026-06-09); memory feedback-irisy-never-block-input). Only shown
+              while streaming. */}
+          {sending && (
+            <button
+              type="button"
+              className={styles.railButton}
+              onClick={() => abortRef.current?.abort()}
+              aria-label="Stop generating"
+              title="Stop"
+            >
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true">
+                <rect x="7" y="7" width="10" height="10" rx="1.5" />
               </svg>
             </button>
           )}
