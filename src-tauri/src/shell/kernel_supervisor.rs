@@ -69,16 +69,14 @@ impl KernelSupervisor {
             }
         });
 
-        // ADR-002 substrate § provider v10 §6.1 (2026-06-07): start the
-        // kernel MCP server so Pi (via ctrl-pi-plugin's mcpServers
-        // upsert in `injectActiveProviderForSpawn`) auto-connects and
-        // gets kernel capabilities (clipboard / OCR / vault_index FTS5
-        // / keychain / subprocess) as native Pi tools. The per-boot
-        // bearer token is published via process env vars
-        // CTRL_KERNEL_MCP_TOKEN + CTRL_KERNEL_MCP_PORT; Pi child
-        // inherits these naturally (no env_clear in spawn_brain), and
-        // pi-bridge writes them as `Authorization: Bearer ...` header
-        // in ~/.pi/agent/settings.json mcpServers."ctrl-kernel".
+        // Start the kernel MCP server — the single gate (ADR-002 § mcp-bus,
+        // ADR-001 §4.1) exposing kernel capabilities (clipboard / OCR /
+        // vault_index FTS5 / keychain / subprocess / provider router) as MCP
+        // tools. The per-boot bearer token + port are published via env vars
+        // CTRL_KERNEL_MCP_TOKEN + CTRL_KERNEL_MCP_PORT, consumed by the
+        // projector (materializes them into the user's CLI `.mcp.json`, below)
+        // and acp_client (passes them to a future ACP-aware driver). (v19
+        // retired Pi / ctrl-pi-bridge / ctrl-pi-plugin; v27 = BYO-CLI driver.)
         let runtime_for_mcp = runtime.clone();
         tauri::async_runtime::spawn(async move {
             match crate::kernel::mcp_server::serve(
@@ -94,8 +92,9 @@ impl KernelSupervisor {
                         "kernel: MCP server listening (agents auto-connect via mcpServers)"
                     );
                     // SAFETY: set_var is unsafe in Rust 2024; we are at
-                    // single-threaded kernel boot, before any other task
-                    // reads env vars. Pi child inherits via Command env.
+                    // single-threaded kernel boot, before any other task reads
+                    // env vars. Consumed next by projector + acp_client
+                    // (ADR-002 substrate § projection v27).
                     std::env::set_var("CTRL_KERNEL_MCP_TOKEN", h.auth_token.as_str());
                     let port = h
                         .listen_addr
