@@ -144,6 +144,23 @@ impl KernelSupervisor {
             }
         });
 
+        // Auto-connect the Obsidian Local REST API MCP connector to the kernel
+        // bus so Irisy/hermes see the user's vault tools (ADR-002 substrate
+        // §1.9.1). Best-effort, no window-launch at boot — connects only when
+        // Obsidian is already serving; retries internally, never blocks boot.
+        let mcp_host_for_obsidian = runtime.mcp_host.clone();
+        tauri::async_runtime::spawn(async move {
+            match crate::commands::obsidian::register_and_connect(mcp_host_for_obsidian, false).await
+            {
+                Ok(c) => {
+                    tracing::info!(tools = c.tools.len(), "obsidian connector connected to bus")
+                }
+                Err(e) => {
+                    tracing::info!(error = %e, "obsidian connector not connected yet (retries on demand)")
+                }
+            }
+        });
+
         // ADR-002 substrate § provider + vault/ctrl/strategy/0013 (2026-06-16):
         // start hermes's own dashboard web UI on a fixed loopback port so the
         // PWA's Settings -> Irisy page can embed it (the agent's config / sessions

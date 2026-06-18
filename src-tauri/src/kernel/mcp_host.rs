@@ -158,9 +158,18 @@ impl McpHost {
                 use rmcp::transport::streamable_http_client::{
                     StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
                 };
-                let mut cfg = StreamableHttpClientTransportConfig::with_uri(url.clone());
+                let cfg = StreamableHttpClientTransportConfig::with_uri(url.clone());
+                // Carry the bearer auth as a default header with the EXACT
+                // "Bearer <token>" value the server expects (verified live by
+                // curl → 200), rather than cfg.auth_header() — which Bearer-
+                // prefixes again and double-prefixed, 401'ing against Obsidian's
+                // /mcp/ (ADR-002 substrate §1.9.1). default_headers applies it to
+                // every request (POST initialize + GET SSE).
+                let mut headers = rmcp_reqwest::header::HeaderMap::new();
                 if let Some(h) = auth_header {
-                    cfg = cfg.auth_header(h.clone());
+                    if let Ok(val) = rmcp_reqwest::header::HeaderValue::from_str(h) {
+                        headers.insert(rmcp_reqwest::header::AUTHORIZATION, val);
+                    }
                 }
                 // Local plugin servers (Obsidian :27124) present a self-signed
                 // cert; accept it — these are loopback, user-authorised endpoints.
@@ -168,6 +177,7 @@ impl McpHost {
                 // impl type); CTRL's own reqwest 0.12 is a separate crate instance.
                 let client = rmcp_reqwest::Client::builder()
                     .danger_accept_invalid_certs(true)
+                    .default_headers(headers)
                     .build()
                     .map_err(|e| McpHostError::SpawnFailed(e.to_string()))?;
                 let transport = StreamableHttpClientTransport::with_client(client, cfg);

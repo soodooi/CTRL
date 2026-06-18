@@ -331,18 +331,23 @@ pub struct ObsidianConnected {
 }
 
 /// Register the Obsidian Local REST API MCP server on the kernel bus and
-/// connect (ADR-002 §1.9.1). Idempotent at the mcp_host layer.
-#[tauri::command]
-pub async fn obsidian_connect(
-    kernel: State<'_, KernelHandle>,
+/// connect (ADR-002 §1.9.1). `launch` opens Obsidian first (explicit user
+/// action via `obsidian_connect`); the boot auto-connect passes `false` —
+/// connect only if Obsidian is already serving, no window-launch at boot.
+/// Idempotent at the mcp_host layer. Returns the discovered tool names.
+pub(crate) async fn register_and_connect(
+    host: std::sync::Arc<crate::kernel::mcp_host::McpHost>,
+    launch: bool,
 ) -> Result<ObsidianConnected, String> {
     use crate::kernel::mcp_host::{McpServerDescriptor, McpServerSource};
 
-    // CTRL opens Obsidian itself — idempotent, focuses if already open. The
-    // plugin loads + serves /mcp/ once Obsidian is up; the retry loop below
-    // waits for it. Verified live: no plugin-consent prompt because
-    // community-plugins.json is pre-provisioned.
-    let _ = obsidian_launch().await;
+    if launch {
+        // CTRL opens Obsidian itself — idempotent, focuses if already open. The
+        // plugin loads + serves /mcp/ once Obsidian is up; the retry loop below
+        // waits for it. No plugin-consent prompt because community-plugins.json
+        // is pre-provisioned (ADR-002 §1.9.1).
+        let _ = obsidian_launch().await;
+    }
 
     let (key, port) = read_plugin_config().ok_or_else(|| {
         "Obsidian Local REST API plugin not found for the CTRL Notes vault — provisioning \
@@ -354,7 +359,6 @@ pub async fn obsidian_connect(
     }
 
     let server_id = "obsidian".to_string();
-    let host = kernel.runtime.mcp_host.clone();
     host.register(McpServerDescriptor {
         id: server_id.clone(),
         name: "Obsidian".to_string(),
@@ -393,6 +397,15 @@ pub async fn obsidian_connect(
         .collect();
 
     Ok(ObsidianConnected { server_id, tools })
+}
+
+/// Explicit user-triggered connect (Settings / Notes "Connect Obsidian"):
+/// launches Obsidian if needed, then registers + connects (ADR-002 §1.9.1).
+#[tauri::command]
+pub async fn obsidian_connect(
+    kernel: State<'_, KernelHandle>,
+) -> Result<ObsidianConnected, String> {
+    register_and_connect(kernel.runtime.mcp_host.clone(), true).await
 }
 
 #[cfg(test)]

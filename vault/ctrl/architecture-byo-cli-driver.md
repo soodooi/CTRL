@@ -3,6 +3,13 @@
 > **2026-06-17 · bao 钦定 · 新真相源 (authoritative)**
 > 本文是 CTRL 当前架构的权威基准。任何其他文档 / ADR / 代码与本文冲突时，以本文为准并立刻 amend 对应 ADR。
 
+> ⚠️ **纠正 (bao 2026-06-18，实查运行真相后 — 此块 governing，与下文冲突时以此为准)**：
+> 本文原把 brain 层写成「BYO-CLI driver 取代内置 brain、hermes 退役」——**写过头了**。运行真相 + bao 钦定：
+> - **Irisy（CTRL app 内助手）的 brain = Hermes Agent**。Hermes **不退役** —— CTRL 确实 bundle + 启动它作为 Irisy 的脑（boot 起 hermes dashboard `:17890`，Irisy 嵌入）。
+> - **BYO-CLI driver / projection 是「附加」能力，不是替代**：CTRL 把 kernel gate 投影进用户自己的 CLI（Claude Code，`~/Documents/CTRL/.mcp.json`，已落地验证）。两条路并存，都经 `:17873` gate。
+> - **Obsidian 已接上**：Local REST API MCP 连上 bus（已落地验证，**16 工具**；`commands/obsidian.rs::register_and_connect` + boot 自动连 + auth default-header 修复）。
+> - 下方「内置 brain 全摒弃 / hermes 退役」就 brain 层而言 **superseded**；projection / gate / Obsidian / plain-text 等其余部分仍有效。
+
 ---
 
 ## 一句话定位
@@ -43,10 +50,12 @@ Pi-centric                          (retired)
 - CTRL **不再 lazy-install** 任何 brain，**不再 supervise** 任何内置 agent loop。
 - driver 的升级、计费、模型选择全在用户侧 —— CTRL 搭便车（ride upgrades），不背维护成本。
 
-### 2. 内置 brain 全摒弃
-- **hermes**（NousResearch assistant）、**opencode**、**Pi** —— 全部退役。
-- **ACP 通道不删**，但降级为 **future「ACP-aware CLI 增强通道」**：当 driver CLI 支持 ACP 时可走更丰富的双向协议；不再是 hermes 的门。
-- **Notes = Obsidian 保留不变**（见定案 9）。
+### 2. brain：Hermes 是 Irisy 的脑（纠正 2026-06-18）+ BYO-CLI driver 附加
+- **Irisy 的 brain = Hermes Agent**（NousResearch）。CTRL **bundle + lazy-install + 启动** 它，Irisy 嵌入其 dashboard（`:17890`）。**hermes 不退役**（推翻原「全摒弃」表述）。
+- **opencode**：未接线（保留作未来 coding 路径）。**Pi**：已退役（v19）。
+- **BYO-CLI driver（projection）= 附加并行路径**：用户自带的 CLI（Claude Code）经投影的 `.mcp.json` 也能驱动 CTRL 工具，与 Hermes-Irisy 并存，都经 `:17873` gate。
+- **ACP** 降级为 future「ACP-aware CLI 增强通道」，代码保留。
+- **Notes = Obsidian**（定案 9）：Local REST API MCP **已连上 bus**（16 工具，已落地验证）。
 
 ### 3. 接入 = projection（物化到原生配置）
 CTRL 把资产**物化（materialize）**到目标 CLI **启动时本就会扫描**的位置，零侵入：
