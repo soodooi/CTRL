@@ -31,11 +31,16 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use rmcp::handler::server::router::tool::ToolRouter;
+use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content, Implementation, ServerCapabilities, ServerInfo};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, Content, Implementation, ListToolsResult,
+    PaginatedRequestParams, ServerCapabilities, ServerInfo,
+};
+use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
-use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler};
+use rmcp::{tool, tool_router, ErrorData as McpError, RoleServer, ServerHandler};
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -685,7 +690,25 @@ impl KernelMcpRouter {
     #[tool(description = "List external MCP servers the kernel has registered (proxy view)")]
     async fn mcp_list_servers(&self) -> Result<CallToolResult, McpError> {
         let installed = self.runtime.mcp_host.list_installed().await;
-        let body = serde_json::to_string(&installed).map_err(map_serde_err)?;
+        // Redact downstream auth headers — a connected server's credential must
+        // never be handed to an MCP client (ADR-006 cross-cutting § policy v1,
+        // secrets never leak). The gate proxies auth on the client's behalf.
+        let redacted: Vec<serde_json::Value> = installed
+            .iter()
+            .map(|d| {
+                let mut v = serde_json::to_value(d).unwrap_or(serde_json::Value::Null);
+                if let Some(src) = v.get_mut("source").and_then(|s| s.as_object_mut()) {
+                    if src.contains_key("auth_header") {
+                        src.insert(
+                            "auth_header".to_string(),
+                            serde_json::Value::String("<redacted>".to_string()),
+                        );
+                    }
+                }
+                v
+            })
+            .collect();
+        let body = serde_json::to_string(&redacted).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -1048,8 +1071,73 @@ fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, M
 }
 
 // ServerHandler impl — rmcp uses this for tools/list + tools/call dispatch.
-#[tool_handler]
+// NOTE: `#[tool_handler]` intentionally NOT used. We hand-write list_tools +
+// call_tool so the kernel's static tools (#[tool_router]) are MERGED with the
+// downstream MCP servers' tools, surfaced as first-class namespaced
+// `<server>_<tool>` entries (ADR-002 substrate §1.9.1). This is why Irisy/hermes
+// see e.g. Obsidian's tools directly instead of only behind mcp_proxy_*.
 impl ServerHandler for KernelMcpRouter {
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        // Static kernel tools first.
+        let mut tools = self.tool_router.list_all();
+        // Then aggregate each connected downstream server's tools, namespaced
+        // so names never collide and call_tool can route them back (§1.9.1).
+        for desc in self.runtime.mcp_host.list_installed().await {
+            match self.runtime.mcp_host.list_tools(&desc.id).await {
+                Ok(downstream) => {
+                    for mut t in downstream {
+                        t.name = format!("{}_{}", desc.id, t.name).into();
+                        tools.push(t);
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(server = %desc.id, error = %e, "list_tools: downstream unavailable, skip")
+                }
+            }
+        }
+        Ok(ListToolsResult {
+            tools,
+            next_cursor: None,
+            ..Default::default()
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        // Route a namespaced downstream call `<server>_<tool>` to mcp_host;
+        // otherwise fall through to the static kernel tool router (§1.9.1).
+        for desc in self.runtime.mcp_host.list_installed().await {
+            let prefix = format!("{}_", desc.id);
+            if let Some(tool) = request.name.as_ref().strip_prefix(&prefix) {
+                let tool = tool.to_string();
+                let args = request
+                    .arguments
+                    .clone()
+                    .map(serde_json::Value::Object)
+                    .unwrap_or(serde_json::Value::Null);
+                let result = self
+                    .runtime
+                    .mcp_host
+                    .invoke(&desc.id, &tool, args)
+                    .await
+                    .map_err(|e| {
+                        McpError::internal_error(format!("downstream {}: {e}", desc.id), None)
+                    })?;
+                let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+                return Ok(CallToolResult::success(vec![Content::text(body)]));
+            }
+        }
+        let tcc = ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+
     fn get_info(&self) -> ServerInfo {
         // Both `Implementation` and `InitializeResult` are #[non_exhaustive]
         // in rmcp 1.7 — use the typed constructors + field mutation rather

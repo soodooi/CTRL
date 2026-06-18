@@ -108,11 +108,6 @@ impl KernelSupervisor {
                     // launch. Uses the fresh per-boot gate token (not hardcoded);
                     // best-effort, never blocks boot.
                     crate::kernel::projector::project_kernel_gate(&port, h.auth_token.as_str());
-                    // Also project the gate into hermes's config.yaml mcp_servers
-                    // — hermes (Irisy's brain) reads MCP servers from there, NOT
-                    // from the ACP session passthrough (ADR-002 substrate §1 v28;
-                    // research 2026-06-18 vs NousResearch hermes-agent docs).
-                    crate::kernel::projector::project_hermes_gate(&port, h.auth_token.as_str());
                 }
                 Err(e) => tracing::warn!(error = %e, "kernel: MCP server spawn failed"),
             }
