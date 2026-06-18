@@ -1,14 +1,15 @@
 ---
 adr_id: 002
 module: substrate
-title: CTRL substrate — 3-agent aggregator · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 26
+title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
+version: 27
 status: accepted
 last_updated: 2026-06-17
 deciders: [bao, zeus]
 sections:
-  - { id: brain,                source: orig-003 }
-  - { id: agent-channel,        source: new-2026-06-17, note: "§1.8 ACP single door + 3-face MCP passthrough + KB-not-brain + upgrade规范 (zeus drill, bao Q&A)" }
+  - { id: brain,                source: orig-003, note: "v27 reframed: BYO-CLI driver brain — user-chosen local CLI (Claude Code etc.); CTRL never spawns/supervises a brain. Prior hermes-ACP/Pi/opencode-as-brain content retired, kept in changelog as provenance." }
+  - { id: projection,           source: new-2026-06-17, note: "v27 NEW core — CTRL projects local assets (tools→MCP / skills→SKILL.md / memory→CLAUDE.md / workflows→slash command) into the target CLI's native config; passive projection (substrate) + active spawn share one projection; CLI owns scheduling, CTRL only makes assets visible + gates call-return at :17873." }
+  - { id: agent-channel,        source: new-2026-06-17, note: "§1.8 (v27) demoted: ACP is a future enhancement channel for ACP-aware CLIs, NOT the main path — main path is § projection. ACP code retained as future work." }
   - { id: capability-faces,     source: H-2026-06-09-002 conversation, note: "3-face SSOT — MCP / API / Skills 互补不塌缩" }
   - { id: capability,           source: orig-004 }
   - { id: provider,             source: new-2026-05-31, note: "VMark port + role routing + introspection" }
@@ -21,6 +22,7 @@ sections:
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
 changelog:
+  - v27 2026-06-17: **架构换代 — CTRL = BYO-CLI driver platform (bao 钦定 2026-06-17). § brain reframed + §1.8 ACP demoted to future + NEW § projection (core).** The brain is no longer a CTRL-installed/lazy-installed/supervised process (hermes / opencode / Pi all摒弃 as the brain): the **driver = the user's own local CLI** (Claude Code today; any agentic CLI tomorrow). CTRL does NOT spawn or supervise the brain — the CLI owns its own lifecycle, its own model, its own agent loop + scheduling. **§ brain (§1)** rewritten to "BYO-CLI driver brain" — CTRL is install + projection + keychain + MCP-bus gate, not a brain runtime. **§1.8 ACP** demoted from "single door / THE channel" (v23) to a **future enhancement channel for ACP-aware CLIs** — the main integration path is NOT ACP, it is **projection** (new § projection); ACP client + probe code is NOT deleted, marked future work. **NEW § projection (core of this换代)**: CTRL接入 = materialize local assets into the target CLI's NATIVE config so the CLI discovers them with zero CTRL interposition — asset→injection-point table (tool → MCP server on bus :17873, written into the CLI's mcp config e.g. `~/.claude/.mcp.json` / 技能 → `SKILL.md` materialized into the CLI's skills dir / 记忆 → derived `CLAUDE.md` / `AGENTS.md` / 用户触发 workflow → slash command in `.claude/commands`); manifest optional `target:` override, default auto-routes by asset type; ONE projection serves two triggers — **passive projection** (substrate; user runs their own CLI → assets auto-discovered, zero侵入) + **active spawn** (CTRL launches the CLI inside an ephemeral workspace); scheduling权 stays with the CLI's model, CTRL only "makes the CLI see" + "call-return flows back to :17873 = the kernel gate" (§6 mcp-bus now also = the projection tool call-return gate); projection is **intent-scoped** (project a subset, never全量灌爆 context); **shared network (share & be shared) = v1.1 future**, architecture reserves the interface. § provider / § crypto / § subprocess / § composition / §1.9 Obsidian notes基本不动 (§ mcp-bus :17873 annotated as the projection call-return gate). Supersedes the v23 "ACP single door" / v22 "provider-router default brain" / v19 "3-agent aggregator" framings as the AGENT-INTEGRATION model — those entries kept below as provenance, superseded-by-v27.
   - v26 2026-06-17: **§1.9 research-corrected (bao "调研别猜" + "不要跳出 ctrl 不然产品就破裂了") + NEW §1.9.1 Obsidian connector spec.** Web research forced a reversal of the v24/v25 "Obsidian = the editor" framing: (1) Obsidian is NOT embeddable (Electron, no web/headless — can embed web INTO Obsidian but never the reverse); (2) its Local REST API is data-only (CRUD/patch/search/metadata, NO rendering/backlinks/graph); (3) embeddable Obsidian-compatible web tools (Perlite/Quartz) are read-only publishers. ∴ "stay in CTRL" FORCES CTRL to render notes itself. **Layer 3 reframed: CTRL's `NotesApp` + kernel vault index = the PRIMARY in-CTRL notes UI (single entry); Obsidian = compat target + optional connector, never the UI, never the default jump-out.** Scope decision RESOLVED: KEEP NotesApp (don't slim/rip — single entry + mobile need it); stop ADDING PKM parity. **NEW §1.9.1**: the Obsidian Local-REST-API plugin ships its own MCP server (`/mcp/`) → register on the bus :17873 (~zero adapter); endpoint→Irisy-capability table (vault CRUD/patch · `/search/` Dataview/JsonLogic · `/active/` operate-on-open-note · `/commands/` drive any plugin command · `/periodic/` · `/open/` controlled handoff); two-tier access (baseline kernel notes-MCP always + enriched Obsidian connector when running); write/command tools gated (ADR-006 §4). Implementation slice 1 (SilverBullet retirement) DONE; connector = slice 2.
   - v25 2026-06-17: **NEW §1.9 — Notes architecture consolidated + migration plan (bao "先做好计划 把架构更新一下").** Draws the v24 decision into one 5-layer picture (data / agent-access / Obsidian editor / CTRL light inline viewer / optional Obsidian REST MCP). Surfaces that CTRL reinvented Obsidian TWICE — the kairo/SilverBullet bundle AND a heavy in-house NotesApp (GraphView/Backlinks/Tags/Templates). Plan: (1) retire SilverBullet bundle [safe], (2) `/notes` "Open in Obsidian", (3) **scope decision pending bao** — slim NotesApp to a light viewer vs keep, (4) optional Obsidian REST MCP connector. Layer-2 agent access (notes-MCP :17873) is editor-independent — no change. Mobile keeps a light CTRL viewer (can't run desktop Obsidian). Code in DRIFT D7.
   - v24 2026-06-17: **Notes/KB layer — kairo (SilverBullet) RETIRED, Obsidian adopted (bao 2026-06-17 "用 obsidian 不要重复造轮子").** CTRL bundles NO notes editor — don't reinvent the wheel; Obsidian (the dominant PKM, mature ecosystem) is the user's editor over the plain-md Notes folder. Reconciliation (zeus, 2 locked-principle tensions flagged + resolved): (1) "Ctrl is the only entry" — heavy PKM editing/graph/plugins = Obsidian (a deliberate single-entry exception for the notes-editing vertical); CTRL keeps a LIGHT inline md viewer for read/preview in the morphing surface (it must render md anyway — not reinventing Obsidian). (2) "Obsidian = compatibility not dependency" — NOT a hard dep: data is always `~/Documents/CTRL/Notes/` plain-md; **agents read/write via kernel notes-MCP on bus :17873, editor-independent**; no Obsidian → CTRL's inline viewer still reads. Obsidian = preferred editor + OPTIONAL Local-REST-API MCP connector (cyanheads/obsidian-mcp-server / coddingtonbear/obsidian-local-rest-api) for backlinks/tags/graph; remove it and the data + notes-MCP remain. **What "use Obsidian" does NOT mean**: not the "Hermes Console" Obsidian-as-host model (that makes CTRL pointless); CTRL stays the host, Obsidian is a data+editor face on the bus (apps-as-MCP-source, ADR-001 §3). RETIRED: kairo=SilverBullet 2.8.1 bundling (`agent_installer::install_via_binary` SilverBullet path + `agent_launcher` webview branch + `~/.ctrl/agents/kairo/`). The 3rd aggregator slot is no longer a CTRL-bundled agent — it's the user's Obsidian via MCP. Updates §1.1 (kairo row → Obsidian connector) + §1.8.3 (KB = Obsidian + Notes-MCP). Pairs ADR-001 (kairo refs) + ADR-003 (Notes route) + CLAUDE.md stack. Code follow-up: retire SilverBullet install/launch, point /notes at "open in Obsidian" + keep inline viewer, optional Obsidian REST MCP register. All residual "kairo"/"SilverBullet" references across ADRs are SUPERSEDED by this entry pending a sweep.
@@ -56,9 +58,23 @@ related:
   - .olym/decisions/006-cross-cutting.md
 ---
 
-## §1 Brain — 3-agent aggregator (external integration, no supervisor)
+## §1 Brain — BYO-CLI driver (user-chosen local CLI, CTRL never spawns/supervises a brain) — v27
 
-> **v19 (2026-06-09)**: v18 dual-brain supervisor model RETRACTED in full. Kernel no longer supervises brains. **3 external agents** (hermes / opencode / kairo) are lazy-installed + launched-on-demand; PWA directly consumes their native endpoints.
+> **v27 (2026-06-17, bao 钦定 架构换代)**: the brain is NO LONGER a CTRL-installed / lazy-installed / supervised process. **hermes / opencode / Pi are all摒弃 as the brain.** The **driver = the user's own local CLI** (Claude Code today; any agentic CLI tomorrow). CTRL does NOT spawn or supervise the brain — the CLI owns its lifecycle, its model, its agent loop + scheduling. CTRL's job shrinks to: **install (provision) + projection (§ projection) + keychain + MCP-bus gate (§6)**. The §1.1-§1.9 content below (3-agent aggregator / ACP single door / hermes-as-assistant / Notes layers) is **superseded-by-v27 as the brain/integration model** and kept for provenance; the still-live parts (Notes data layer, MCP-bus, keychain) are re-homed under § projection + §6.
+
+### §1.0 The driver = the user's local CLI (NEW v27)
+
+CTRL is a **BYO-CLI driver platform**, not a brain vendor. The user brings their own agentic CLI (Claude Code is the day-1 target; Codex / Gemini CLI / opencode / any ACP-aware CLI are equally valid drivers). CTRL:
+
+- **does not lazy-install a brain** — no `~/.ctrl/agents/<brain>/` npm install of hermes/opencode, no `~/.ctrl/pi/`. (Provisioning the *user's* chosen CLI when absent is allowed via the §7.2 provision pattern — orchestrating the user's package manager, same as the Obsidian app — but the CLI is still the user's, not a CTRL-bundled brain.)
+- **does not supervise the brain** — no `*_supervisor.rs`, no health-watch, no restart. The CLI runs as the user runs any CLI; CTRL never owns its process lifecycle as a brain runtime.
+- **does not wrap the brain's agent loop / model / scheduling** — the CLI's model decides what tool to call and when. CTRL only **projects** local assets into the CLI's native config so the CLI can *see* them (§ projection), and **gates the call-return** when the CLI invokes a projected tool (it returns to the kernel MCP bus :17873, §6).
+
+This is the end-state of the consistent direction across v17→v19→v22→v23→v27: **less CTRL ownership of the brain, more the user's own tools.** v17 wrapped Pi tightly; v23 routed hermes over an ACP single door (still a CTRL-driven channel); v27 removes even that — the brain is the user's CLI, and CTRL meets it through projection into the CLI's own configuration surface (the least-interposition channel possible).
+
+---
+
+> **— BELOW: §1.1-§1.9 superseded-by-v27 as the brain/integration model (provenance). 3-agent aggregator (v19) framing. —**
 
 CTRL kernel = **thin install + launch + bridge + keychain**, NOT a runtime owner of brains. 4 friend products (Claude Desktop / Codex / WorkBuddy / CodeBuddy) bundle a single-brand brain; CTRL is the **aggregator** layer.
 
@@ -138,9 +154,11 @@ The 8 fixes from v18 (race condition / health check / credential / event leak / 
 
 v17 (Pi sole brain) → v18 (dual-brain supervisor) → v19 (3-agent aggregator) trace one consistent direction: **less CTRL ownership of the brain, more external integration**. v17 wrapped Pi tightly; v18 added 2 supervisors (worse, not better — same wrap pattern, doubled); v19 removes all wrap. This is the **right** end-state per bao memories `feedback_pi_is_core_use_upstream_surfaces` (2026-05-31), `feedback_no_redundancy_one_ssot` (2026-05-28), `feedback_build_system_not_business` (2026-05-28), and `decision_ctrl_lean_substrate_scheduler_executor_tools` (2026-05-28). Kernel does what only a kernel can do (install + launch + keychain + MCP bus); everything else is external.
 
-### §1.8 Agent integration channel — ACP single door + 3-face passthrough + KB-not-brain + upgrade规范 (NEW v23, 2026-06-17)
+### §1.8 ACP — enhancement channel for ACP-aware CLIs (DEMOTED to FUTURE in v27; was "single door" v23)
 
-> Converged after a zeus-led drill (2026-06-16/17, bao Q&A). Supersedes the v20 "ACP stdio; interim `hermes -z` one-shot" note: **ACP is THE channel**; the one-shot path is retired as a routing path (`irisy_chat.rs` `HERMES_FIRST` dead branch removed). Decides how a `target:brain` agent (hermes today, any ACP agent tomorrow — v22 feature-pack model) plugs into CTRL.
+> **v27 (2026-06-17) DEMOTION**: ACP is **no longer THE channel** — the main integration path is **§ projection** (materialize assets into the CLI's native config). ACP is reclassified as a **future enhancement channel** for drivers that happen to be ACP-aware (a structured-events upgrade *on top of* projection — streaming tool/permission events for §8 transparency + §4 gate — when the user's CLI speaks ACP). **The ACP client + `hermes-acp-probe` code is NOT deleted; it is future work, gated behind a user CLI that exposes ACP.** A plain Claude-Code-style CLI driver is reached entirely via projection, not ACP. The §1.8.1-§1.8.5 body below (hermes-over-ACP single door) is retained as the future-channel spec + provenance; "hermes" is now just one possible ACP-aware driver, not the brain.
+>
+> _Original v23 banner (provenance):_ Converged after a zeus-led drill (2026-06-16/17, bao Q&A). Supersedes the v20 "ACP stdio; interim `hermes -z` one-shot" note: ACP is THE channel; the one-shot path is retired as a routing path (`irisy_chat.rs` `HERMES_FIRST` dead branch removed). Decides how a `target:brain` agent (hermes today, any ACP agent tomorrow — v22 feature-pack model) plugs into CTRL.
 
 #### §1.8.1 Single door = ACP
 
@@ -238,6 +256,55 @@ The Obsidian **Local REST API** plugin (coddingtonbear, HTTPS :27124, bearer tok
 **Auto-init (like hermes, bao 2026-06-17 "装 CTRL 时就初始化安装")**: research corrected the earlier "Obsidian can't auto-install" claim — the app installs silently via the user's package manager (macOS `brew install --cask obsidian` / Windows `winget install Obsidian.Obsidian` / Linux flatpak — orchestrating their PM, NOT bundling/redistributing the proprietary app, license-clean; reuses the ADR-002 §7.2 provision pattern). The MIT Local-REST-API plugin is pure files → CTRL provisions it zero-touch. `obsidian_provision` (run at kernel boot, best-effort, idempotent): **silently install the app if absent** (bao 2026-06-17 "不是一直要静默安装么" — runs `brew`/`winget`/`flatpak` directly, like hermes; not just reporting the command) → download the plugin (`releases/latest/download/{manifest.json,main.js,styles.css}`) into `~/Documents/CTRL/Notes/.obsidian/plugins/` → enable in `community-plugins.json` (merge) → register the vault in the global `obsidian.json` (merge, **preserves the user's other vaults**). The plugin generates its own token + cert when the user first opens Obsidian; CTRL reads it via `obsidian_status` / `obsidian_connect`. **Caveat (the one thing ≠ hermes)**: no official plugin-serving headless mode (official "Obsidian Headless" is Sync-only) — the REST API needs the Obsidian GUI app running (can be backgrounded; Linux can xvfb-hide).
 
 **Implementation status (2026-06-17)**: SHIPPED behind cargo+tsc green — `commands/obsidian.rs` (`obsidian_status` + `obsidian_connect` + `obsidian_provision`) + NEW HTTP MCP **client** transport in `mcp_host::connect()` (the deferred P4 — `McpServerSource::Http { url, auth_header }` via rmcp `StreamableHttpClientTransport`, self-signed cert accepted for loopback) + boot auto-provision in `kernel_supervisor`. Cost: a 2nd reqwest (0.13, `rmcp-reqwest` alias) to match rmcp's `StreamableHttpClient` impl type — adds binary size (revisit by unifying CTRL on reqwest 0.13). **Verified live**: `provision_plugin` ran on a real machine — plugin files downloaded, `community-plugins.json` enabled, `obsidian.json` vault merged with the user's existing vaults preserved (`obsidian_provision_real` test). **NOT yet verified**: the MCP round-trip (`obsidian_connect`) — needs Obsidian open with the plugin loaded; the streamable-HTTP-vs-older-SSE shape of the plugin's `/mcp/` to confirm (DRIFT D7).
+
+## §1B Projection — materialize local assets into the driver CLI's native config (NEW v27, core)
+
+> **bao 钦定 2026-06-17** (架构换代). This is the **core mechanism** of the BYO-CLI driver platform. The brain is the user's own CLI (§1.0); CTRL接入 it NOT by spawning/wrapping/ACP-driving it, but by **projecting** CTRL's local assets into the configuration surfaces the CLI already reads on its own. The CLI then discovers them natively — zero CTRL interposition in the agent loop. This is the least-interposition channel: CTRL writes files the CLI was going to read anyway.
+
+### §1B.1 Asset → injection-point mapping
+
+CTRL owns local assets (tools, skills, memory, user-triggered workflows). Each asset type projects to the corresponding **native config surface** of the target CLI (Claude Code shown; other CLIs map to their equivalents):
+
+| CTRL asset | Projected as | Injection point (Claude Code) | Owner SSOT |
+|---|---|---|---|
+| **Tool** (capability / MCP / API-as-MCP) | **MCP server** on the bus `:17873` | **corrected v27.1 (verified, not guessed)**: written into a **project-scoped `.mcp.json`** in the CTRL workspace dir (`~/Documents/CTRL/.mcp.json`) — **Claude Code does NOT read `~/.claude/.mcp.json`**; user-scope passive path = `claude mcp add --scope user`. The CLI connects to :17873 and sees CTRL's tools as its own MCP tools | **LANDED**: `kernel/projector.rs` (`project_kernel_gate`, wired at boot in `kernel_supervisor.rs`, 5 unit tests) + gate `kernel/mcp_server.rs :17873` (§6) |
+| **Skill** | **`SKILL.md`** materialized into the CLI's skills dir | `~/.claude/skills/<id>/SKILL.md` (+ optional script sibling) — the CLI's native skill loader finds it | `~/.ctrl/skills/<id>/SKILL.md` (§13 Skills face) |
+| **Memory** (vault notes / decisions / context) | **derived `CLAUDE.md` / `AGENTS.md`** | the CLI's project/global memory file the agent auto-reads at session start — keeps the agent grounded in the user's accumulated context without explicit recall | derived from `~/Documents/CTRL/Notes/` + decisions (§1.9 Notes data layer) |
+| **User-triggered workflow** | **slash command** | `.claude/commands/<name>.md` (project) / `~/.claude/commands/` (global) — user types `/<name>` in the CLI to fire a CTRL-authored workflow | feature-pack workflow defs (§7 composition) |
+
+**"apps" (Feishu / Notion / OAuth / OPC connectors / ST-SS windows)** are MCP **sources** (ADR-001 §3) → they project through the Tool→MCP row (they enter the CLI as MCP tools on :17873), not as a 5th asset type.
+
+### §1B.2 `target:` override + default auto-routing
+
+- **Default**: each asset auto-routes by type per the §1B.1 table — a tool projects as MCP, a skill as SKILL.md, etc. No manifest field needed for the common case.
+- **Optional `target:` override** (manifest field): a feature-pack / asset MAY pin a different projection (e.g. force a tool to project as a slash command instead of a raw MCP tool, or scope a skill to project only into a specific CLI's dir). Absent `target:` ⇒ default auto-routing. This keeps the simple case zero-config while allowing advanced packs to control their projection shape.
+
+### §1B.3 One projection, two triggers (passive substrate + active spawn)
+
+The SAME projection (the same materialized MCP config / SKILL.md / CLAUDE.md / slash commands) serves both entry paths — CTRL never maintains two divergent copies:
+
+- **Passive projection (the substrate, zero侵入)** — CTRL materializes the projection into the CLI's native config dirs **proactively**. The user runs their own CLI however they like (their terminal, their editor, their workflow) and the CTRL assets are simply *there* — auto-discovered by the CLI on next launch. CTRL did not start the CLI, does not know it ran, takes no interposition. This is the default底座: install CTRL → your existing Claude Code instantly has CTRL's tools/skills/memory/commands.
+- **Active spawn (the enhancement)** — CTRL launches the CLI itself inside an **ephemeral workspace** (the Ctrl-key surface), reading the SAME projection. Used when the user drives a task through CTRL's UI rather than their own terminal. Same files, same discovery — active spawn is just "CTRL also presses enter for you", not a different integration.
+
+### §1B.4 Scheduling stays with the CLI; CTRL = visibility + call-return gate
+
+- **The CLI's model owns scheduling** — which projected tool to call, in what order, when to call a skill, whether to read CLAUDE.md. CTRL does NOT orchestrate the agent loop, does NOT decide tool order, does NOT wrap reasoning. (This is the §1.0 no-wrap invariant.)
+- **CTRL only does two things**: (1) **make the CLI see** the assets (the §1B.1 projection); (2) **gate the call-return** — when the CLI invokes a projected tool, the call returns to the kernel MCP bus `:17873`, which is the capability / approval / blast-radius gate (ADR-006 §4/§5). Projected MCP tools point **only** at :17873 (never directly at an external MCP server), so every projected-tool call passes the kernel gate + is visible (§8 transparency). The bus is therefore both the tool host (§6) AND the projection call-return gate.
+
+### §1B.5 Intent-scoped projection (don't全量灌爆 context)
+
+Projection is **intent-scoped, not全量**. CTRL projects a **subset** of assets relevant to the current intent rather than dumping the entire asset library into the CLI's config (which would blow the agent's context window + drown discovery). v1: scope by the active intent / workspace / feature-pack set — only the matching tools/skills/memory/commands are materialized into the CLI's native config for that session. (Mechanism reuses the intent → 1-3 module convergence already in the workbench layer.)
+
+### §1B.6 Shared network (share & be shared) — v1.1 future, interface reserved
+
+The projection format (MCP config entries / SKILL.md / derived CLAUDE.md / slash-command markdown) is the same artifact a user can **share** and another can **receive** — 造的 = 别人挑的源头 (the share-and-be-shared positioning). v1 ships single-user projection only; the **shared-network projection** (peer-discovered / community-published assets projected into a user's CLI) is **v1.1 future**. The architecture **reserves the interface**: projection is asset-source-agnostic, so a future shared/remote asset source plugs into the same §1B.1 mapping without a re-architecture (mesh substrate §4 + feature-pack discover §7.3 are the v1.1 hooks).
+
+### §1B.7 What this RETIRES as the integration model (kept as provenance)
+
+- CTRL lazy-installing/supervising a brain (hermes / opencode / Pi) — the brain is the user's CLI (§1.0).
+- ACP as **the** channel (§1.8 v23) — demoted to a future enhancement channel for ACP-aware CLIs.
+- provider-router-as-default-brain (§3.5 v22) — the provider router survives as the **API/LLM face** (§13) and as an MCP-projected tool, but it is not "the brain"; the brain is the CLI.
+- "Irisy is a brain" — Irisy stays a PWA persona/surface (§1.5); the brain is the CLI behind projection.
 
 ## §2 Capability surface — 10 namespaces / 28 methods (frequency ≥3 rule + category exception)
 
@@ -505,7 +572,9 @@ v1 ships no mesh layer (memory `feedback_reuse_existing_capability_first` 2026-0
 
 ## §6 MCP bus — kernel as MCP server :17873
 
-Kernel runs MCP **server** parallel to its `mcp_host` (client) — same `rmcp 1.7` crate, different features. Single bus for Irisy/external agents to consume kernel capabilities via MCP wire.
+> **v27**: this bus is now also **the projection tool call-return gate** (§1B.4). When the user's driver CLI invokes a tool CTRL projected into its native MCP config (§1B.1 Tool→MCP row), the call returns here at :17873 — so :17873 is both the tool host (below) AND the kernel capability / approval / blast-radius gate (ADR-006 §4/§5) for every projected-tool call. Projected MCP entries point **only** at :17873, never directly at an external MCP server.
+
+Kernel runs MCP **server** parallel to its `mcp_host` (client) — same `rmcp 1.7` crate, different features. Single bus for the driver CLI / external agents to consume kernel capabilities via MCP wire.
 
 - **Bind**: `127.0.0.1:17873` (one above ST-SS bridge 17872). Never `0.0.0.0` — cross-device goes through mesh (§4), not MCP.
 - **Transport**: streamable-http (MCP 2025-03-26 spec). rmcp 1.7 + `server` + `transport-streamable-http-server` + `macros` + `schemars`. axum 0.8 hosts.

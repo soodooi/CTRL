@@ -102,7 +102,13 @@ impl KernelSupervisor {
                         .rsplit_once(':')
                         .map(|(_, p)| p.to_string())
                         .unwrap_or_else(|| "17873".to_string());
-                    std::env::set_var("CTRL_KERNEL_MCP_PORT", port);
+                    std::env::set_var("CTRL_KERNEL_MCP_PORT", &port);
+                    // ADR-001 §4 projector / ADR-002 § projection: materialize
+                    // the kernel gate into the CTRL workspace `.mcp.json` so the
+                    // user's own CLI driver (Claude Code) auto-discovers it on
+                    // launch. Uses the fresh per-boot gate token (not hardcoded);
+                    // best-effort, never blocks boot.
+                    crate::kernel::projector::project_kernel_gate(&port, h.auth_token.as_str());
                 }
                 Err(e) => tracing::warn!(error = %e, "kernel: MCP server spawn failed"),
             }

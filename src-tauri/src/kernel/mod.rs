@@ -28,6 +28,10 @@ pub mod local_storage;
 pub mod mcp_host;
 pub mod mcp_server;
 pub mod persistence;
+// BYO-CLI driver projection (ADR-001 §4 projector / ADR-002 § projection) —
+// materialize the kernel MCP gate into the user's CLI driver native config
+// (project-scoped `.mcp.json`) so the driver auto-discovers it on launch.
+pub mod projector;
 pub mod provider;
 pub mod runtime;
 pub mod scheduler;
