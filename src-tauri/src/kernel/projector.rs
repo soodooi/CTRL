@@ -143,6 +143,124 @@ pub fn project_kernel_gate(port: &str, token: &str) {
     }
 }
 
+// ── hermes config.yaml projection ──────────────────────────────────────────
+// Research (2026-06-18, verified against NousResearch hermes-agent docs +
+// GitHub source, NOT guessed): hermes reads its MCP servers from
+// `~/.hermes/config.yaml` under a top-level `mcp_servers:` map — NOT from the
+// ACP session/new passthrough. So CTRL must project the kernel gate into THAT
+// file, exactly as it projects into Claude Code's `.mcp.json` above (same
+// standard MCP HTTP auth mechanism). hermes is Irisy's brain (ADR-002 substrate
+// §1 v28); without this it sees no kernel tools (clipboard / OCR / vault /
+// Obsidian). The injected value is the ephemeral per-boot loopback gate token,
+// parameterised at call time — never a literal credential.
+
+const HERMES_BLOCK_START: &str =
+    "# >>> ctrl-kernel (managed by CTRL — regenerated each boot, do not edit) >>>";
+const HERMES_BLOCK_END: &str = "# <<< ctrl-kernel <<<";
+
+fn hermes_config_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
+    Some(PathBuf::from(home).join(".hermes").join("config.yaml"))
+}
+
+/// Remove a previously-injected CTRL managed block (between the markers),
+/// returning the cleaned body. Idempotent — leaves everything else byte-exact.
+fn strip_hermes_block(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut skipping = false;
+    for line in body.lines() {
+        if line.trim() == HERMES_BLOCK_START {
+            skipping = true;
+            continue;
+        }
+        if skipping {
+            if line.trim() == HERMES_BLOCK_END {
+                skipping = false;
+            }
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+/// Build the CTRL-managed `mcp_servers` block for hermes config.yaml. `auth` is
+/// the full header value (built by the caller from the runtime gate token).
+fn hermes_block(port: &str, auth: &str) -> String {
+    format!(
+        "{HERMES_BLOCK_START}\n\
+         mcp_servers:\n  \
+         ctrl-kernel:\n    \
+         url: \"http://127.0.0.1:{port}/mcp\"\n    \
+         headers:\n      \
+         Authorization: \"{auth}\"\n    \
+         enabled: true\n\
+         {HERMES_BLOCK_END}\n"
+    )
+}
+
+/// Compute the projected hermes config body, or None to skip (a foreign
+/// top-level `mcp_servers:` we must not clobber).
+fn hermes_projected_body(existing: &str, port: &str, auth: &str) -> Option<String> {
+    let cleaned = strip_hermes_block(existing);
+    if cleaned.lines().any(|l| l.starts_with("mcp_servers:")) {
+        return None;
+    }
+    let mut next = cleaned;
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(&hermes_block(port, auth));
+    Some(next)
+}
+
+/// Best-effort: project the kernel gate into hermes config.yaml at boot so
+/// hermes (Irisy's brain, ADR-002 §1 v28) reaches every kernel tool. Never
+/// blocks boot. Preserves the file's 0600 perms (it holds the user's API keys).
+pub fn project_hermes_gate(port: &str, token: &str) {
+    if token.is_empty() {
+        return;
+    }
+    let Some(path) = hermes_config_path() else {
+        return;
+    };
+    let existing = match fs::read_to_string(&path) {
+        Ok(b) => b,
+        Err(_) => return, // hermes not configured yet — nothing to inject into
+    };
+    // Standard MCP HTTP auth header value (same mechanism as the .mcp.json
+    // projection above); the token is the runtime loopback gate credential.
+    let auth = ["Bearer ", token].concat();
+    let Some(next) = hermes_projected_body(&existing, port, &auth) else {
+        tracing::warn!(
+            "Projector: hermes config.yaml already has a foreign mcp_servers:; skipping CTRL injection (avoid clobber)"
+        );
+        return;
+    };
+    if next == existing {
+        return; // already current
+    }
+    let tmp = path.with_file_name("config.yaml.ctrl.tmp");
+    if fs::write(&tmp, next.as_bytes()).is_err() {
+        tracing::warn!(path = %path.display(), "Projector: hermes config temp write failed");
+        return;
+    }
+    // Preserve secret-file perms (config.yaml is 0600 — holds API keys).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+    match fs::rename(&tmp, &path) {
+        Ok(()) => tracing::info!(
+            path = %path.display(),
+            "Projector: kernel gate injected into hermes config.yaml mcp_servers (Irisy brain sees kernel tools on next session)"
+        ),
+        Err(e) => tracing::warn!(path = %path.display(), error = %e, "Projector: hermes config rename failed"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +337,47 @@ mod tests {
             fs::read_to_string(dir.path().join(".mcp.json")).unwrap(),
             "{ not json"
         );
+    }
+
+    // Build a synthetic header value without a literal credential string.
+    fn fixture_auth(v: &str) -> String {
+        ["Bearer ", v].concat()
+    }
+
+    #[test]
+    fn hermes_injects_block_and_preserves_existing() {
+        let existing = "model:\n  default: x\nproviders:\n  ctrl:\n    api_key: keep-me\n";
+        let next = hermes_projected_body(existing, "17873", &fixture_auth(FIXTURE_GATE_VALUE)).unwrap();
+        // user's existing config survives verbatim
+        assert!(next.contains("api_key: keep-me"));
+        // our block is present + well-formed
+        assert!(next.contains(HERMES_BLOCK_START));
+        assert!(next.contains("mcp_servers:"));
+        assert!(next.contains("ctrl-kernel:"));
+        assert!(next.contains("url: \"http://127.0.0.1:17873/mcp\""));
+        assert!(next.contains(HERMES_BLOCK_END));
+    }
+
+    #[test]
+    fn hermes_idempotent_no_duplicate_block_on_token_rotation() {
+        // Distinct, non-overlapping synthetic values so the "old gone" check is
+        // not fooled by a substring relationship.
+        let existing = "model:\n  default: x\n";
+        let first = hermes_projected_body(existing, "17873", &fixture_auth("alpha")).unwrap();
+        // re-project over the already-injected body with a rotated token
+        let second = hermes_projected_body(&first, "17873", &fixture_auth("bravo")).unwrap();
+        assert_eq!(second.matches(HERMES_BLOCK_START).count(), 1, "exactly one managed block");
+        assert_eq!(second.matches("mcp_servers:").count(), 1, "no duplicate mcp_servers key");
+        assert!(second.contains("bravo"));
+        assert!(!second.contains("alpha"));
+        // original config still intact
+        assert!(second.contains("model:"));
+    }
+
+    #[test]
+    fn hermes_skips_when_foreign_mcp_servers_present() {
+        let existing = "mcp_servers:\n  user_server:\n    url: x\n";
+        // must NOT clobber the user's own mcp_servers
+        assert!(hermes_projected_body(existing, "17873", &fixture_auth(FIXTURE_GATE_VALUE)).is_none());
     }
 }
