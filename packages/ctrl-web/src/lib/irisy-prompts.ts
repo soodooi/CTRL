@@ -14,6 +14,7 @@
 // left in place so the caller can see what the prompt expected.
 
 import { invoke } from './bridge';
+import { capabilityListForPrompt } from './capability-catalog';
 
 const PROMPTS_DIR = '.irisy-prompts';
 const IRISY_SYSTEM_PATH = `${PROMPTS_DIR}/irisy-system.md`;
@@ -529,6 +530,11 @@ export function composeSystemPrompt(opts: {
 }): string {
   const { base, brainState, coreMemory = '', longTermMemory = '', mcps } = opts;
   const sections: string[] = [base];
+
+  // The real user-facing capability catalog (ADR-005 irisy v5 §6.2) so Irisy
+  // can answer "what can you do" with the actual list, not internal skills /
+  // agent status / endpoint diagnostics.
+  sections.push(capabilityListForPrompt());
 
   if (brainState) {
     sections.push(formatBrainStateBlock(brainState));

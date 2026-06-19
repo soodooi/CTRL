@@ -370,3 +370,28 @@ export function floorCapabilities(): Capability[] {
 function tierRank(t: Tier): number {
   return t === 'high' ? 3 : t === 'med' ? 2 : 1;
 }
+
+/** The user-facing capability list, formatted for injection into Irisy's
+ *  system prompt. This is what Irisy answers with when a user asks "what can
+ *  you do" — the real catalog in plain user terms, NOT internal skills,
+ *  agent status, or endpoint diagnostics. Single source of truth: the catalog
+ *  above (ADR-005 irisy v5 §6.2). */
+export function capabilityListForPrompt(): string {
+  const blocks = CAPABILITY_CATALOG.map((cat) => {
+    const caps = cat.capabilities
+      .map((c) => `  - ${c.label} — ${c.hint}`)
+      .join('\n');
+    return `${cat.title}:\n${caps}`;
+  });
+  return [
+    '# Your capabilities — what you can do FOR the user',
+    '',
+    'When the user asks who you are or what you can do, answer in their',
+    'language with this list (lead with the most useful few), in plain user',
+    'terms — what they GET. Do NOT answer such questions by loading skills,',
+    'running tools/diagnostics, or describing internal agents/engines/status.',
+    'Just tell them what you can do.',
+    '',
+    blocks.join('\n\n'),
+  ].join('\n');
+}
