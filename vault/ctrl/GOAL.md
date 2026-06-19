@@ -76,6 +76,8 @@ governing ADR = **ADR-005 irisy v5**(ADR-008 已退役,仅留 §8 acceptance 措
 
 - 2026-06-19 **real-link probe 4-bug 修复(P3 通道, commit `5c4c3ba`)**。根因实测:首屏 composer `AmbientHome.tsx` 给模型的 history **完全没 system prompt**(零 persona / 零 brain_state / 零 `cleanReplyText`),与 docked `IrisyChat` diverge → P-2 答不出模型+漏术语 / P-3 内心独白 / P-1 XML 裸吐。修:抽共享纯函数 `composeSystemPrompt()`(两 surface 单一真相源)+ **恢复 `<brain_state>` 注入**(原 `void brainState` 的 Pi-first 理由随 Pi 退役失效;code-reviewer 证实旧丢弃实为 ADR-005 §5/§6.4 违规,修复=回归合规)+ AmbientHome 接 persona+SOUL+brain_state + 渲染过 `cleanReplyText`。**彻底闭 P-2**,改善 P-3;P-1 XML / P-4 检索仍需能执行 tool 的 brain(SC9/P2,未越界 band-aid)。+5 vitest(composeSystemPrompt),ctrl-web 37 绿 + typecheck 绿;独立 checker 判 **PASS**。**未闭项需真机 real-link 复测**(behavioral,我无法起 Tauri+provider)。
 
+- 2026-06-19 **真机复测 + P-5 修复(commit `26ef154`)**。bao real-link 实测:**P-2 ✅ 真修好**(composeSystemPrompt + brain_state 注入有效,定稿不动)。新发现 **P-5**:`<brain_state>` 注入后暴露出 kernel 残留 `engine.id=Pi`(`provider.rs:34 const ENGINE_ID="Pi"`,Pi 退役后没改)→ Pi codename 泄漏进回复。修:一行 `ENGINE_ID="Hermes"`(ADR-002 § brain v19 Pi 退役 / v28 Hermes=Irisy 脑)+ 清同处过时 Pi 注释;无测试断言过 "Pi",TS fixtures 早用 Hermes,59 cargo 绿。**P-1/P-3/P-4 真机三次复测三种坏法(XML / 死循环 / tool_call JSON)= 模型想调 tool 但无人执行,prompt/filter 治标不治本(死循环、空承诺治不了)→ 唯一根因 = 没有能执行 tool 的 brain = SC9/P2**。下一步需 bao 拍 SC9 门控/接法。
+
 ## Git — branch `ui/v1-editorial`
 
 (clean)
