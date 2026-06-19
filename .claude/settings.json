@@ -29,7 +29,11 @@
       "Bash(cp:*)",
       "Bash(mv:*)",
       "Bash(head:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo clippy:*)"
     ],
     "deny": [
       "Bash(rm -rf /)",
