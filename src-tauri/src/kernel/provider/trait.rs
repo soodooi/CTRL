@@ -176,3 +176,65 @@ pub struct RouteChain {
     /// `IrisyFallback` itself (fallback of the fallback would loop).
     pub fallbacks: Vec<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    // P1 — Chat -> Provider route identity. These contracts decide which
+    // brain an Irisy turn is routed to; getting them wrong means the reply
+    // comes from the wrong provider (or the call panics on an unknown slot).
+    // GOAL.md SC5 — route resolution. The route_text_chat failover/cooldown
+    // behaviour needs a fake Provider + registry harness and is a follow-up.
+    use super::*;
+
+    #[test]
+    fn consumer_id_roundtrips_for_known_roles() {
+        assert_eq!(Consumer::IrisyPrimary.id(), "irisy.primary");
+        assert_eq!(Consumer::IrisyFallback.id(), "irisy.fallback");
+        assert_eq!(Consumer::from_id("irisy.primary"), Consumer::IrisyPrimary);
+        assert_eq!(Consumer::from_id("irisy.fallback"), Consumer::IrisyFallback);
+    }
+
+    #[test]
+    fn consumer_unknown_id_falls_through_to_custom_without_panic() {
+        // ADR-002 § brain v13: a retracted slot (e.g. the removed
+        // coding.primary) must parse to Custom, never crash an old SSOT file.
+        assert_eq!(
+            Consumer::from_id("coding.primary"),
+            Consumer::Custom("coding.primary".to_string())
+        );
+        // A Custom id re-serialises to itself (round-trip stable).
+        assert_eq!(Consumer::from_id("x.y").id(), "x.y");
+    }
+
+    #[test]
+    fn capability_id_roundtrips_for_all_variants() {
+        for cap in [
+            Capability::TextChat,
+            Capability::TextEmbed,
+            Capability::ImageGenerate,
+            Capability::AudioTts,
+            Capability::AudioTranscribe,
+        ] {
+            assert_eq!(Capability::from_id(cap.id()), Some(cap.clone()));
+        }
+    }
+
+    #[test]
+    fn capability_text_chat_has_canonical_id() {
+        assert_eq!(Capability::TextChat.id(), "text.chat");
+    }
+
+    #[test]
+    fn capability_unknown_id_is_none() {
+        assert_eq!(Capability::from_id("text.summarize"), None);
+    }
+
+    #[test]
+    fn route_chain_default_is_unconfigured() {
+        // Empty primary = surface a "configure provider" prompt, NOT a
+        // silent fallback-quota spend (see RouteChain doc above).
+        let chain = RouteChain::default();
+        assert!(chain.primary.is_none());
+        assert!(chain.fallbacks.is_empty());
+    }
+}

@@ -62,7 +62,9 @@ governing ADR = **ADR-005 irisy v5**(ADR-008 已退役,仅留 §8 acceptance 措
 
 ## 进展日志 (Progress log — append-only)
 
-- 2026-06-19 目标替换。原目标(流式不阻塞 + 提速,未推进)被吸收进本目标 P1 通道 + SC12 e2e。bao 两个钦定:① 测试中心 = 回复是否正确;② 全通道闭环不跳过(P2 门控 / P6 soul write / P7 capability floor 都要接通)。探查报告:10 通道现 0% 覆盖,PWA 无 vitest,kernel 无 Irisy 专属测试,governing=ADR-005。下一步(dev-loop step 1)= SC1+SC2+SC3+SC4:给 ctrl-web 装 vitest + 写 P3 提示组装 / P10 渲染过滤 / persona voice 三组「回复正确性」测试(最高 ROI、无歧义、不碰未实装代码)。
+- 2026-06-19 目标替换。原目标(流式不阻塞 + 提速,未推进)被吸收进本目标 P1 通道 + SC12 e2e。bao 两个钦定:① 测试中心 = 回复是否正确;② 全通道闭环不跳过(P2 门控 / P6 soul write / P7 capability floor 都要接通)。探查报告:10 通道现 0% 覆盖,PWA 无 vitest,kernel 无 Irisy 专属测试,governing=ADR-005。下一步(dev-loop step 1)= SC1+SC2+SC3+SC4。
+- 2026-06-19 **step 1 完成 + commit `10adda0`**(SC1–4 ✓)。给 ctrl-web 接入 vitest@2(原 PWA 无单测框架),24 测试绿(render-filter 9 + prompts 15)+ typecheck 绿。覆盖:P10 `cleanReplyText` 各 strip pass + codename 改写;P3 `PROMPT_VERSION` pin / `formatBrainStateBlock` / `loadIrisySystemPromptWithSoul` SOUL.md 注入(mock bridge+tauri);SC4 `IRISY_SYSTEM_DEFAULT` 禁 sycophancy/planner/内部名泄漏 + 强制简短。独立 checker(code-reviewer)判 vitest 工作真实有效、断言对齐实现、全英文无 secret;其 FAIL 仅因工作树含**遗留 SC12 红色 e2e 半成品**(`bridge.ts`/`llm-transport.ts` mock seam + `e2e/irisy-streaming.spec.ts`,上个目标遗留)→ 已用精确 `git add` 只提交绿色文件解决,遗留留树待 SC12 接手。**下一步候选 = SC5**(P1 Chat→Provider `cargo test`,kernel 层,无歧义不碰未实装)。
+- 2026-06-19 **SC5 第一刀**:`trait.rs` +6 路由身份契约测试(`Consumer`/`Capability` round-trip + 未知 id→`Custom` 不 panic + `RouteChain::default` 未配置),`cargo test` 11 绿(含既有)。P1「消息路由到正确的脑」身份层已测。**SC5 续刀** = `route_text_chat` failover/cooldown 集成测试(需 fake Provider + registry 注入设施)。bao 流程纠正:别在里程碑停下做选择题,连续推进(SC5+SC12 都做),仅 P2 门控(SC9)需拍板。
 
 ## Git — branch `ui/v1-editorial`
 
