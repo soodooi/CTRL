@@ -4,7 +4,7 @@
 
 | # | Module | Title | Version | Status | Last updated |
 |---|---|---|---|---|---|
-| [001](./001-spine.md) | spine | 4-layer kernel + 5 primitives + 5 mcp sources + **aggregator (hermes/opencode + Obsidian notes, v6)** + **3-capability-face (faces via MCP bus)** + 6 self-evolution loops | v6 | accepted | 2026-06-17 |
+| [001](./001-spine.md) | spine | 4-layer kernel + 5 primitives + 5 mcp sources + **2 parallel brain paths (Irisy=Hermes bundled + BYO-CLI driver projection, v8)** + Obsidian notes (v6) + **3-capability-face (MCP/API/Skills via :17873 bus)** + 6 self-evolution loops | v8 | accepted | 2026-06-18 |
 | [002](./002-substrate.md) | substrate | **Hermes 是 Irisy 的脑 (§1, v28 纠正 — hermes 不退役) + BYO-CLI driver projection 附加 (§1B) + Obsidian connector 落地 (§1.9, 16 工具) + ACP future (§1.8)** · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus (= projection gate) · composition | v28 | accepted | 2026-06-18 |
 | [003](./003-frontend.md) | frontend | Single PWA + **Ambient morphing home (§8 SHIPPED)** + Sidebar L1; Notes = inline viewer + open-in-Obsidian (v9) | v9 | accepted | 2026-06-17 |
 | [004](./004-cap.md) | cap | Mcp execution model + Tauri updater + 4-layer × 3-tier auto-update (**Layer 2 = external-agent tier, ACP probe + L3, §3 v2**) | v2 | accepted | 2026-06-17 |

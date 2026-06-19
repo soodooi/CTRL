@@ -1,6 +1,6 @@
 # CTRL — Claude Code Project Entry
 
-> **新 session 必读**: `.olym/decisions/INDEX.md` (7 module ADRs) + `.olym/decisions/001-spine.md` (architecture lock)
+> **新 session 必读**: `vault/ctrl/architecture-byo-cli-driver.md` (架构唯一真相源, authoritative — 顶部 2026-06-18 纠正块 governing) + `.olym/decisions/INDEX.md` (7 module ADRs) + `.olym/decisions/001-spine.md` (architecture lock)
 
 ---
 
@@ -8,7 +8,7 @@
 
 CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI workbench + creator substrate** (ADR-006 cross-cutting § global-english v1; 中文是后续 i18n locale, 不是 v1 default).
 
-按 `Ctrl` 唤起 → ephemeral workspace → 1 键帽 = 1 AI 工具. 极简化 + AI native + 创作者经济.
+按 `Ctrl` 唤起 → ephemeral workspace → 1 mcp = 1 AI 工具. 极简化 + AI native + 创作者经济.
 
 **Single deliverable**: this repo (`soodooi/CTRL`, private). Self-contained; olym dev framework installed as Claude Code plugin (`.claude-plugin/`) — no npm runtime dependency.
 
@@ -84,7 +84,11 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 4. **One-shot, not flows** — 一个 mcp = 一个原子动作。无 wizard / 无 multi-step / 无 dialog tree。
 5. **AI 是 pipe, 不是 sidebar** — 发收消息 / 处理内容时 AI 默认 in-line 处理 (润色 / 摘要 / 抽 action item / 翻译), 可关默认开。
 6. **Transparency by drill-down** — 任何 AI / 抽象处理都可长按 / hover 看 raw 数据 (飞书原文 / AI 改后 / 本地草稿三层视图)。
-7. **Pi 是唯一 brain** *(ADR-002 substrate § brain v1; hermes 彻底移除 2026-05-28 PR #62)* — Irisy 跑 agent loop 永远走 **Pi** (`@mariozechner/pi-coding-agent`, MIT, lazy install via `~/.ctrl/pi/`). kernel `text.chat` 调用通过 provider router (ADR-002 substrate § provider v1) 路由到当前 active provider, Pi 通过 ctrl-bridge 扩展 HTTP-fetch kernel `/text-chat` endpoint. **hermes 已彻底移除** — 不再作 keycap, 无 kernel / PWA 接线, `packages/ctrl-hermes-plugin/` 已删. hermes 的长效记忆优点已原生落在 Irisy (`vault/irisy/SOUL.md` + `.irisy-memory/`).
+7. **CTRL 不自带通用 brain;两条并行路径,都经 `:17873` gate** *(ADR-001 spine § byo-cli-driver v8 + ADR-002 substrate § brain v28; 真相源 `vault/ctrl/architecture-byo-cli-driver.md`)*:
+   - **Irisy(app 内助手)的脑 = Hermes Agent** (NousResearch). CTRL bundle + lazy-install + 启动它 (dashboard `:17890`, Irisy 嵌入). **hermes 不退役.**
+   - **BYO-CLI driver(projection)= 附加并行路径** — CTRL 把工具/技能/记忆/工作流投影 (materialize) 进用户自选本地 CLI (Claude Code 旗舰) 的原生落点 (`.mcp.json` / `SKILL.md` / `CLAUDE.md`·`AGENTS.md` / slash command), CLI 启动自动发现; CTRL 不 lazy-install / 不 supervise 该 CLI 的 agent loop. 已落地 `kernel/projector.rs` (项目级 `~/Documents/CTRL/.mcp.json`).
+   - **Pi 已退役** (ADR-002 v19, 2026-06-09 PR — `@mariozechner/pi-coding-agent` + ctrl-pi-bridge / ctrl-pi-plugin / `~/.ctrl/pi/` 全删, 代码零接线). opencode 未接线 (保留作未来 coding 路径). ACP 降级为 future「ACP-aware CLI 增强通道」, 代码保留.
+   - **调度权在 brain 手里** — CTRL 只「让 brain 看见资产 (projection)」+「调用回流经 `:17873` gate (权限/审计/可见性)」, 不编排决策 (符合 one-shot / AI-is-pipe).
 
 ### 几个具体推论
 
@@ -95,27 +99,30 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 - **第三方 backend (飞书 / Notion / Slack) 是 sync provider** — 不是 source of truth, 本地永远赢冲突
 - **CTRL-native vault stack** *(2026-05-25)* — viewer 用 **Tiptap** (markdown WYSIWYG+source) + **CodeMirror 6** (code/JSON/YAML/TOML/HTML) + **mermaid.js** (mermaid) + iframe+CSP (HTML sandbox) + browser-native (SVG); 索引用 **SQLite FTS5** (kernel `vault_index.rs`) + 自实现 backlink/tag scanner. VMark 用的也是同样开源 stack — 不需要把 VMark 作 substrate, 直接 npm 装这些 lib 即可
 
-详见 memory `decision_ctrl_obsidian_philosophy.md` (long-form rationale) + `decision_pi_is_sole_brain_hermes_is_keycap.md` (brain 校准) + `decision_vmark_not_substrate_use_open_stack.md` (vault stack 校准)。
+详见真相源 `vault/ctrl/architecture-byo-cli-driver.md` (brain + projection 唯一真相) + memory `decision_ctrl_obsidian_philosophy.md` (long-form rationale) + `decision_vmark_not_substrate_use_open_stack.md` (vault stack 校准)。
 
 ---
 
 ## Architecture overview
 
-> Spine: `.olym/decisions/001-spine.md` § pi-centric (Pi-centric 5 块图). INDEX = `.olym/decisions/INDEX.md` (7 module ADR).
+> 真相源: `vault/ctrl/architecture-byo-cli-driver.md` (governing). Spine: `.olym/decisions/001-spine.md` § byo-cli-driver (v8). INDEX = `.olym/decisions/INDEX.md` (7 module ADR).
 
-**Pi-centric 5 块** (顶 → 底, 一切围绕 Pi):
+**CTRL = BYO-CLI driver projection 平台** (不自带通用 brain; CTRL 把本地武器库投影给 brain 看, 调用回流经 gate). 演进: Pi-centric (retired) → 3-agent aggregator (retired) → **BYO-CLI driver platform ★**.
 
-1. **ui-ux** — PWA, Irisy 表达 (user 唯一接触面)
-2. **kernel** — Rust microkernel + 公共服务 (provider / vault / storage / mcp / stss / mesh)
-3. **Pi** ★ — 核心 brain, 唯一 agent loop
-4. **provider** — Pi 用的 LLM 调用 (kernel/provider/ 子系统)
-5. **mcp** — Pi 调的 tool (subprocess via MCP) — 此前称 "keycap", 2026-06-07 改名跟 MCP 生态对齐
+**两条并行 brain 路径** (都经 `:17873` gate):
+
+1. **Irisy 路径** — app 内助手 Irisy 的脑 = **Hermes Agent** (CTRL bundle + 启动, dashboard `:17890`, Irisy 嵌入).
+2. **BYO-CLI 路径** — 用户自选本地 CLI (Claude Code 旗舰) 当 driver; kernel `projector` 把资产物化进它的原生配置, 它启动自动发现. CTRL 不 supervise.
+
+**kernel 极薄 — 只做 4 件事**: ① `projector` (tools→`.mcp.json` / skills→`SKILL.md` / memory→`CLAUDE.md`·`AGENTS.md` / workflows→slash command, 按 intent 投影子集) ② `mcp_server :17873` = the gate (权限/审计/可见性, 工具回流落点) ③ `provider/` (fal.ai 旗舰 + Anthropic/OpenAI/Hunyuan/DeepSeek/Volc BYOK) ④ keychain.
+
+**3-capability-face SSOT** (互补不塌缩): **MCP** (协议) + **API** (provider router, fal.ai 985 endpoints) + **Skills** (markdown `SKILL.md`).
 
 **5 kernel primitives** (L1 内): Actor / Capability / Event / Channel / Effect.
 
-**5 mcp sources** (Pi 工具注入路径): MCP servers / Big-platform OAuth / Local agents / ST-SS shared windows / Built-in.
+**5 mcp sources**: MCP servers / Big-platform OAuth / Local agents / ST-SS shared windows / Built-in.
 
-物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 spine § layers v1 — Pi-centric 是 logical view, 4 层是 implementation view, 两图并存.
+物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 spine § layers v8 — BYO-CLI driver 5-块是 logical view, 4 层是 implementation view, 两图并存.
 
 ---
 
@@ -127,7 +134,7 @@ CTRL/                           ← THIS REPO (deliverable)
 │   └── src/
 │       ├── shell/              ← Tauri 2 native shell (hotkey/tray/window/keychain/kernel_supervisor)
 │       ├── commands/           ← #[tauri::command] handlers (kernel/stss/memory/keychain)
-│       ├── kernel/             ← Rust microkernel (5 primitives + mcp_host + stss_bridge + persistence)
+│       ├── kernel/             ← Rust microkernel (5 primitives + projector + mcp_server :17873 gate + mcp_host + provider/ + notes + stss_bridge + persistence)
 │       └── bin/                helper binaries (stss_spike, setup_llm_key)
 ├── packages/
 │   ├── ctrl-web/               ← PWA (React + Vite + vite-plugin-pwa) — SINGLE UI codebase
@@ -174,7 +181,7 @@ screi/                          ARCHIVE (ST-SS cherry-pick complete H-2026-05-12
 | UI | Single PWA (`packages/ctrl-web`) — React 18 + Vite 5 + TanStack Router/Query + Zustand + Framer Motion + vite-plugin-pwa |
 | Vault viewers | **Tiptap** (markdown WYSIWYG+source) + **CodeMirror 6** (code/JSON/YAML/TOML/HTML) + **mermaid.js** (mermaid graphs) + iframe+CSP (HTML sandbox) — content-type viewer registry, replaces VMark MCP sidecar (S15 deprecated 2026-05-25) |
 | Vault index | SQLite FTS5 (`src-tauri/src/kernel/vault_index.rs`) + backlink scanner + tag scanner (kernel-native, no VMark dep) |
-| Brain (sole) | **Pi** (`@mariozechner/pi-coding-agent`, MIT, lazy npm install to `~/.ctrl/pi/`) — kernel routes `text.chat` via provider router (ADR-002 substrate § provider v1); Pi consumes via ctrl-bridge extension. **hermes fully removed** (2026-05-28, PR #62) — not a brain, not an mcp, package deleted. ADR-002 substrate § brain v1. |
+| Brain | **No CTRL-bundled general-purpose brain — 2 parallel paths, both gated at `:17873`** (ADR-002 substrate § brain v28). (1) **Irisy brain = Hermes Agent** (NousResearch, CTRL bundles + launches it, dashboard `:17890`). (2) **BYO-CLI driver** = user's own local CLI (Claude Code flagship); kernel `projector.rs` materializes assets into its native config (`.mcp.json` etc.), CTRL does not supervise. **Pi retired** (v19, 2026-06-09 — package + ctrl-pi-bridge/plugin deleted, zero wiring). opencode reserved (unwired); ACP demoted to future channel. |
 | Web ↔ Rust bridge | Tauri 2 `invoke()` on desktop (intra-process), WebSocket + token on mobile |
 | Stream protocol | ST-SS (CBOR Cell/Op) |
 | Package manager | npm workspaces |

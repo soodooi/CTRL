@@ -59,9 +59,17 @@ related:
   - .olym/decisions/006-cross-cutting.md
 ---
 
-## §1 Brain — BYO-CLI driver (user-chosen local CLI, CTRL never spawns/supervises a brain) — v27
+## §1 Brain — 2 parallel paths: Irisy=Hermes (bundled) + BYO-CLI driver (projection) — v28
 
-> **v27 (2026-06-17, bao 钦定 架构换代)**: the brain is NO LONGER a CTRL-installed / lazy-installed / supervised process. **hermes / opencode / Pi are all摒弃 as the brain.** The **driver = the user's own local CLI** (Claude Code today; any agentic CLI tomorrow). CTRL does NOT spawn or supervise the brain — the CLI owns its lifecycle, its model, its agent loop + scheduling. CTRL's job shrinks to: **install (provision) + projection (§ projection) + keychain + MCP-bus gate (§6)**. The §1.1-§1.9 content below (3-agent aggregator / ACP single door / hermes-as-assistant / Notes layers) is **superseded-by-v27 as the brain/integration model** and kept for provenance; the still-live parts (Notes data layer, MCP-bus, keychain) are re-homed under § projection + §6.
+> ⚠️ **v28 (2026-06-18, bao 实查运行真相后钦定 — 此块 GOVERNING, 与下方 v27 正文冲突时以此为准. 真相源 `vault/ctrl/architecture-byo-cli-driver.md` 顶部纠正块).** v27 把 brain 写成「BYO-CLI driver 取代内置 brain, hermes 摒弃」——**就 brain 层写过头了**. 运行真相 = **2 条并行 brain 路, 都经 `:17873` gate**:
+> 1. **Irisy (CTRL app 内助手) 的 brain = Hermes Agent** (NousResearch). CTRL **确实 bundle + lazy-install + 启动** hermes (dashboard `:17890`, Irisy 嵌入). **hermes 不退役.**
+> 2. **BYO-CLI driver (§ projection) = 附加并行路径** (NOT 替代): 用户自带 CLI (Claude Code) 经投影的 `.mcp.json` 也能驱动 CTRL 工具 (已落地 `kernel/projector.rs` + 真机验证).
+>
+> **Pi 仍退役** (v19, 不变). opencode 未接线 (保留). ACP 仍降级为 future channel. Obsidian Local REST API MCP 已连 bus (16 工具, §1.9). 下方 v27/§1.0「hermes 摒弃 / 内置 brain 全退役」**就 brain 层 superseded**; § projection / § mcp-bus / Obsidian / plain-text 仍有效.
+
+---
+
+> **v27 (2026-06-17, bao 钦定 架构换代) — 就 brain 层 superseded-by-v28 (projection/gate 部分仍有效)**: the brain is NO LONGER a CTRL-installed / lazy-installed / supervised process. **hermes / opencode / Pi are all摒弃 as the brain.** The **driver = the user's own local CLI** (Claude Code today; any agentic CLI tomorrow). CTRL does NOT spawn or supervise the brain — the CLI owns its lifecycle, its model, its agent loop + scheduling. CTRL's job shrinks to: **install (provision) + projection (§ projection) + keychain + MCP-bus gate (§6)**. The §1.1-§1.9 content below (3-agent aggregator / ACP single door / hermes-as-assistant / Notes layers) is **superseded-by-v27 as the brain/integration model** and kept for provenance; the still-live parts (Notes data layer, MCP-bus, keychain) are re-homed under § projection + §6.
 
 ### §1.0 The driver = the user's local CLI (NEW v27)
 
