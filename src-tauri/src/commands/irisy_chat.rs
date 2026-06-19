@@ -177,6 +177,17 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
 /// live via its tools; the direct path has no tools, so we inject read-only
 /// context here. Returns None when the vault is unavailable or nothing matches.
 fn retrieve_kb_context(messages: &[ChatMessage]) -> Option<String> {
+    let root = crate::kernel::vault::default_vault_root()?;
+    retrieve_kb_context_at(&root, messages)
+}
+
+/// Core of retrieve_kb_context with an explicit vault root (ADR-005 irisy §
+/// persona-shell v5 §6.2), so it is testable against a temp vault; the public
+/// wrapper resolves the default root.
+fn retrieve_kb_context_at(
+    root: &std::path::Path,
+    messages: &[ChatMessage],
+) -> Option<String> {
     let query = messages
         .iter()
         .rev()
@@ -185,8 +196,7 @@ fn retrieve_kb_context(messages: &[ChatMessage]) -> Option<String> {
     if query.trim().is_empty() {
         return None;
     }
-    let root = crate::kernel::vault::default_vault_root()?;
-    let paths = crate::kernel::vault::search(&root, &query, 3).ok()?;
+    let paths = crate::kernel::vault::search(root, &query, 3).ok()?;
     if paths.is_empty() {
         return None;
     }
@@ -195,7 +205,7 @@ fn retrieve_kb_context(messages: &[ChatMessage]) -> Option<String> {
          (Use only if they actually answer the question; cite the path when you do.)\n",
     );
     for p in paths.iter().take(3) {
-        let snippet: String = crate::kernel::vault::read(&root, p)
+        let snippet: String = crate::kernel::vault::read(root, p)
             .map(|e| e.content)
             .unwrap_or_default()
             .chars()
@@ -444,5 +454,34 @@ mod tests {
     fn empty_or_no_user_message_stays_direct() {
         assert!(!turn_needs_agent(&[]));
         assert!(!turn_needs_agent(&user("")));
+    }
+
+    #[test]
+    fn kb_context_injects_a_matching_note_and_skips_misses() {
+        let mut root = std::env::temp_dir();
+        root.push(format!("ctrl_kb_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        crate::kernel::vault::write(
+            &root,
+            "notes/pomodoro.md",
+            "The Pomodoro technique uses 25-minute focus intervals.",
+            &serde_json::json!({}),
+        )
+        .unwrap();
+
+        // Test mode uses the substring scan, so query a phrase that is in the
+        // note. Real runs use FTS5 term search.
+        let hit = retrieve_kb_context_at(&root, &user("pomodoro technique"))
+            .expect("should find the note");
+        assert!(hit.contains("Pomodoro technique uses"), "injects content: {hit}");
+        assert!(hit.contains("pomodoro.md"), "cites the path: {hit}");
+
+        // Unrelated query -> no injection.
+        assert!(
+            retrieve_kb_context_at(&root, &user("quantum physics homework")).is_none()
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
