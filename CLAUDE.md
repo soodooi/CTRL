@@ -10,7 +10,7 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI
 
 按 `Ctrl` 唤起 → ephemeral workspace → 1 mcp = 1 AI 工具. 极简化 + AI native + 创作者经济.
 
-**Single deliverable**: this repo (`soodooi/CTRL`, private). Self-contained; olym dev framework installed as Claude Code plugin (`.claude-plugin/`) — no npm runtime dependency.
+**Single deliverable**: this repo (`soodooi/CTRL`, private). Self-contained; no npm runtime dependency. Dev harness = **minimal single-dev mode** (`goal` + `dev-loop` skill + a few life-line hooks); the olym multi-agent framework was stripped 2026-06-19 (rationale + restore: `vault/ctrl/harness-minimal.md`).
 
 ---
 
@@ -31,13 +31,12 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI
 bao 2026-05-25 进一步校准: **只 3 件事**:
 
 1. **ADR** — 战略决策必写 ADR (module-based, 7 个, 编号 001-007 锁死). **section amendment = bump version: + 加 changelog 行, 不开新 ADR** (PROCESS.md §1 锁). **ADR 跟最新决策有冲突立刻改**, 不留拖延 (memory `decision_pi_is_sole_brain_hermes_is_keycap` 反例: 原 ADR-019 hermes-primary 等到第二天才删 — 不允许再发生)
-2. **代码** — 直接动手实施, cargo + tsc 双绿就 commit
+2. **代码** — 直接动手实施, 走 `dev-loop` skill (三层验证 + 独立 checker), 绿了就 commit
 3. **PR** — 单 branch 累积 commit, 一次性 PR → main, squash merge
 
-**不做** (灵活模式期间):
-- spec 细则 / handoff 中间态 / README 同步 — 暂搁
-- olym 主循环 / RFC 5 步 / 7-step process — 暂搁
-- doc churn / cleanup PR / governance ADR — 暂搁
+**不做** (极简单人模式, olym 多智能体层已剥离 2026-06-19, 详见 `vault/ctrl/harness-minimal.md`):
+- handoff / RFC 5 步 / 7-step process / fleet 编排 / lane 车道 — 已剥离
+- spec 细则中间态 / README 同步 / doc churn / cleanup PR / governance ADR — 不做
 
 **仍守** (这些是保命线):
 - 全英文代码 (pre-push hook)
@@ -138,12 +137,10 @@ Detail moved to path-scoped `.claude/rules/` (auto-loads when editing the matchi
 
 ---
 
-## Active handoffs
+## Active goal
 
-Read `.olym/handoffs/` for current work. New handoff template: `.olym/handoffs/_template.md` (create when needed).
-
-Current open:
-- **H-2026-05-11-001** [P0] CTRL Kernel bootstrap — P1+P2+P3 合并启动
+单人极简模式: 当前目标见 `vault/ctrl/GOAL.md` (走 `goal` skill 读写), 推进用 `dev-loop` skill。
+handoff / fleet 机制已剥离 (`vault/ctrl/harness-minimal.md`)。
 
 ---
 
@@ -175,9 +172,8 @@ Do **not** unilaterally change lock points without ADR amendment.
 
 ## Git workflow
 
-- Branch from `main`: `feat/h-001-bootstrap` style
-- Every commit message includes handoff ID: `[H-2026-05-11-001]`
-- Conventional commits: `feat / fix / chore / refactor / docs / test`
+- Branch from `main`: `feat/...` / `chore/...` style
+- Conventional commits: `feat / fix / chore / refactor / docs / test` (handoff `[H-...]` trailer no longer enforced)
 - Squash merge to main via PR
 - No force push to main, no `--no-verify`
 

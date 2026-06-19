@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
+# All-English (CJK) gate only. Handoff dispatch check removed 2026-06-19
+# with the multi-agent layer (see vault/ctrl/harness-minimal.md).
 node scripts/pre-push-check.js
-node scripts/pre-push-dispatch-check.mjs

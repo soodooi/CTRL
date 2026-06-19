@@ -8,13 +8,12 @@
 // into /Applications, git commit). Walks the session transcript backwards
 // looking for fresh verification commands. Block if absent.
 //
-// Verification evidence = any of these tool calls within the last 50
-// transcript events:
-//   - `pi --list-models`         (Pi schema + providers reachable)
-//   - `pi --provider ... --mode rpc`  (Pi spawn validation passes)
+// Verification evidence = any of these tool calls within the recent
+// transcript window:
 //   - `npm run typecheck`        (TS green)
 //   - `cargo check` / `cargo test` / `cargo build`  (Rust green)
-//   - any `curl` against 127.0.0.1:17878 (kernel endpoint smoke test)
+//   - any `curl` against 127.0.0.1:17873 (kernel gate smoke test)
+//   - any `playwright` run        (UI rendered + visually verified)
 //
 // Exit codes:
 //   0   = decision JSON written to stdout
@@ -78,14 +77,13 @@ function readStdin() {
   // calls (e.g. 200 lines = ~6 Bash). Walking by tool_use count gives a
   // reliable verify→ship window regardless of how chatty the surrounding
   // turns are. N=25 covers realistic verify→fix→verify→ship cycles.
-  // ADR-002 § provider v8 + feedback_session_startup_ritual.md.
+  // ADR-002 § provider v8 + ADR-001 spine § byo-cli-driver (gate :17873).
   const VERIFY_PATTERNS = [
-    /pi\s+--list-models/,
-    /pi\s+--provider\s+\S+\s+--mode\s+rpc/,
     /npm\s+run\s+typecheck/,
-    /cargo\s+(check|test|build)/,
-    /curl\s+.*127\.0\.0\.1:17878/,
-    /curl\s+.*localhost:17878/,
+    /npx\s+tsc\b/,
+    /cargo\s+(check|test|build|clippy)/,
+    /curl\s+.*(127\.0\.0\.1|localhost):17873/,
+    /playwright/i,
   ];
   const BASH_WINDOW = 25;
 
@@ -128,11 +126,10 @@ function readStdin() {
       '',
       'Per memory feedback_patch_quilt_vs_system_thinking.md rule #2 + skill',
       'verification-before-completion: run one of these BEFORE shipping:',
-      '  • pi --list-models                    (Pi schema + provider reachable)',
-      '  • pi --provider ctrl-bridge --mode rpc  (Pi spawn validates)',
       '  • npm run typecheck                  (TS compile clean)',
       '  • cargo check                        (Rust compile clean)',
-      '  • curl http://127.0.0.1:17878/api/active-providers  (kernel smoke)',
+      '  • curl http://127.0.0.1:17873/...    (kernel gate smoke)',
+      '  • npx playwright ...                 (UI rendered + visually checked)',
       '',
       'Then re-attempt the ship command.',
     ].join('\n'),
