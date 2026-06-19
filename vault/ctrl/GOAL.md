@@ -67,6 +67,7 @@ governing ADR = **ADR-005 irisy v5**(ADR-008 已退役,仅留 §8 acceptance 措
 - 2026-06-19 **SC5 第一刀**:`trait.rs` +6 路由身份契约测试(`Consumer`/`Capability` round-trip + 未知 id→`Custom` 不 panic + `RouteChain::default` 未配置),`cargo test` 11 绿(含既有)。P1「消息路由到正确的脑」身份层已测。**SC5 续刀** = `route_text_chat` failover/cooldown 集成测试(需 fake Provider + registry 注入设施)。bao 流程纠正:别在里程碑停下做选择题,连续推进(SC5+SC12 都做),仅 P2 门控(SC9)需拍板。
 - 2026-06-19 **状态异常**:工作树期间被并行操作清理 —— SC12 遗留半成品(`bridge.ts`/`llm-transport.ts` mock seam + `e2e/irisy-streaming.spec.ts` + test-results)全消失,且历史多了两个非我 commit(`fd979d6` 修 husky `prepare`、`20fef06` cargo 进 allow + pre-commit version-bump gate)。**SC12「救遗留 e2e」对象不存在**,要做需从头写;经 bao「继续」→ SC12 搁置,转纯增量通道。
 - 2026-06-19 **SC6 完成**:`brain_status` failover wire shape + registry failover/cooldown 状态机,3 cargo 测试绿。`FailoverEvent::from_recorded` 丢 `at_unix_ms` 保 from/to/reason(<brain_state> 不泄时间戳);`record_failover` last-wins;`mark_failure`→`is_in_cooldown`→`clear_failure`→false + 未知 id never cooling。用 test-only `empty_registry()` 字面量隔离 FS/manifest。adr-cite-gate 拦了一次(测试注释补 ADR-002 § provider v2 §3.5/§3.7 cite)。**下一步 = SC7**(reflect 触发检测 vitest)+ SC8(hermes 会话历史解析)。
+- 2026-06-19 **SC7 完成**:`irisy-reflection.test.ts` 8 vitest 绿(`detectReflectTrigger`:correction>tool-failure 优先级 + neither→null;`isCorrectionMessage`:EN 大小写不敏感 + ZH verbatim + 空→false)。ctrl-web 累计 32 测试绿。commitlint 教训:subject 必须小写开头(`subject-case`),SC6 重提两次才过(先误判 header 长度,实为 "SC6" 大写开头被拒)。**下一步 = SC8**(hermes 会话历史 JSONL 解析)。
 
 ## Git — branch `ui/v1-editorial`
 
