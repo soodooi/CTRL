@@ -2,7 +2,8 @@
 //
 // `brain_status` is the first command in the v2 surface; it closes the
 // "Irisy does not know its own stack" gap (bao 2026-05-31). Returns the
-// engine (Pi) version + healthy flag plus, per Irisy role, the active
+// engine (Hermes; Pi retired ADR-002 substrate § brain v19) version +
+// healthy flag plus, per Irisy role, the active
 // provider's manifest snapshot (id / brand label / endpoint or binary /
 // healthy / managed_by). The Irisy system prompt v5 (ADR-005 § persona)
 // injects this block as `<brain_state>` so Irisy can answer "what model
@@ -31,7 +32,10 @@ use crate::kernel::provider::registry::ProviderManagedBy;
 use crate::kernel::provider::{Consumer, ProviderListEntry, RecordedFailover};
 use crate::shell::KernelHandle;
 
-const ENGINE_ID: &str = "Pi";
+// ADR-002 substrate § brain v19 retired Pi; v28 makes Hermes the Irisy brain.
+// The engine id flows into the <brain_state> prompt block, so it must never
+// surface the dead "Pi" codename (it was leaking into replies — P-5).
+const ENGINE_ID: &str = "Hermes";
 
 /// Display label for CTRL-managed providers. ADR-002 substrate §
 /// provider v2 §3.7: brand label hides the codename (`volc`) so Irisy's
@@ -50,10 +54,11 @@ pub struct BrainStatusView {
 
 #[derive(Debug, Serialize)]
 pub struct EngineStatus {
-    /// Always "Pi" today — the sole brain (ADR-002 § brain v1).
+    /// The Irisy brain engine — "Hermes" (ADR-002 substrate § brain v28;
+    /// Pi retired v19). Never the dead "Pi" codename.
     pub id: &'static str,
     pub version: Option<String>,
-    /// Whether the brain supervisor has a live Pi child right now.
+    /// Whether the brain supervisor has a live engine child right now.
     pub healthy: bool,
     /// Reserved for the streaming metrics follow-up; `None` until the
     /// supervisor wires per-turn token latency.
