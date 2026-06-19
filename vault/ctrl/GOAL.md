@@ -11,6 +11,8 @@
 
 bao 钦定重点(2026-06-19):测试中心 = **Irisy 的回复到底对不对**(行为/语义正确,不只是函数返回值)+ **全部运行通道都接通成最小闭环再测,不跳过**。
 
+**角色锚定(bao 2026-06-19,关键校准):我承担「测试能力」,Irisy 功能由别人开发。** 「全通道闭环不跳过」= **测试覆盖**不跳过,**不是**要我实装功能。已实装通道→我建真测试守不回归;prompt-only 回复契约→我建 golden-transcript 测试;未实装通道→我建**规格化 pending/blocked 测试**(红灯,定义"正确长什么样",标 blocked-on-Hermes/待开发,别人点绿)。前提是先搞清 Irisy 要做成什么 → 已梳理为 **`vault/ctrl/irisy-test-matrix.md`**(三层时代 + 当前真相 + 回复契约 + F1–F30 验收矩阵)。我之前去实装 P6/想实装 P7 = 越界,已纠正。
+
 governing ADR = **ADR-005 irisy v5**(ADR-008 已退役,仅留 §8 acceptance 措辞作回复约束的来源)。
 现状(探查实测 2026-06-19):Irisy 端到端 ~10 条运行通道,**测试覆盖 0%**;PWA(`ctrl-web`)**无 vitest**(`ctrl-stss`/`ctrl-memory` 已有可照抄);kernel 39 个 Rust 测试无一条 Irisy 专属;仅 1 个 Playwright e2e 测网格布局不碰 chat。
 
