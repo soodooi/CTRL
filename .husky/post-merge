@@ -1,6 +1,3 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
-
 # Soft hint after merge / pull: list local branches whose PRs are already
 # merged on GitHub, so they can be cleaned up.
 #

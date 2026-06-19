@@ -1,6 +1,3 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
-
 # Conventional-commit lint only. Handoff [H-...] trailer enforcement removed
 # 2026-06-19 with the multi-agent layer (see vault/ctrl/harness-minimal.md).
 npx --no -- commitlint --edit "$1"
