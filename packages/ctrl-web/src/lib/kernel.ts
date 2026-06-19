@@ -83,6 +83,11 @@ export interface ProviderTemplate {
   baseUrl: string;
   defaultModel: string;
   keyHint: string;
+  /** Recommended model ids — <datalist> fallback before the user types
+   *  their key (decision 0007 §per-provider-models). Optional: older
+   *  catalog snapshots / user overrides without the field keep the
+   *  free-text-only behaviour. */
+  models?: string[];
 }
 
 // Browser/dev fallback: outside Tauri (PWA dev preview) `invoke` rejects,
@@ -91,7 +96,7 @@ export interface ProviderTemplate {
 const FALLBACK_PROVIDER_TEMPLATES: ProviderTemplate[] = [
   { id: 'anthropic', label: 'Anthropic Claude', defaultName: 'Claude', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com', defaultModel: 'claude-sonnet-4-6', keyHint: 'sk-ant-...; console.anthropic.com/settings/keys' },
   { id: 'volc', label: 'Volcano Ark / Doubao (ByteDance)', defaultName: 'Volc Doubao', protocol: 'openai', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-1-5-pro-32k-250115', keyHint: 'UUID; console.volcengine.com -> API Key Management' },
-  { id: 'zhipu', label: 'Zhipu GLM', defaultName: 'GLM', protocol: 'openai', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4-plus', keyHint: 'open.bigmodel.cn/usercenter/apikeys' },
+  { id: 'zhipu', label: 'Zhipu GLM', defaultName: 'GLM', protocol: 'openai', baseUrl: 'https://api.z.ai/api/paas/v4', defaultModel: 'glm-5.2', keyHint: 'create an API key at z.ai → API Keys', models: ['glm-5.2', 'glm-5.1', 'glm-5', 'glm-5-turbo', 'glm-4.7', 'glm-4.6', 'glm-4.5-air', 'glm-4-long'] },
   { id: 'openai', label: 'OpenAI', defaultName: 'OpenAI', protocol: 'openai', baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini', keyHint: 'sk-...; platform.openai.com/api-keys' },
   { id: 'deepseek', label: 'DeepSeek', defaultName: 'DeepSeek', protocol: 'openai', baseUrl: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat', keyHint: 'sk-...; platform.deepseek.com' },
   { id: 'kimi', label: 'Moonshot Kimi', defaultName: 'Kimi', protocol: 'openai', baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k', keyHint: 'sk-...; platform.moonshot.cn' },
@@ -108,6 +113,43 @@ export const listProviderTemplates = async (): Promise<ProviderTemplate[]> => {
   }
 };
 
+/**
+ * Live model list from a configured provider's own `/models` endpoint
+ * (decision 0007 §per-provider-models, 2026-06-19). Falls back to the
+ * manifest's static `models` array server-side when the provider is
+ * unreachable / doesn't expose `/models` (Anthropic) / key missing.
+ *
+ * Returns an empty array outside Tauri (browser dev) so the PWA keeps
+ * the free-text model input working.
+ */
+export const listProviderModels = async (providerId: string): Promise<string[]> => {
+  try {
+    return await invoke<string[]>('provider_list_models', { providerId });
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Ad-hoc live model query for the +Add flow — calls the provider's
+ * `/models` endpoint with raw `endpoint` + `api_key` before the
+ * provider is saved to ~/.ctrl/providers/. Lets the PWA show a real
+ * <datalist> the moment the user finishes typing their key.
+ *
+ * Returns an empty array on any failure (network / 4xx / parse) —
+ * caller keeps the free-text model input working.
+ */
+export const queryProviderModels = async (
+  endpoint: string,
+  apiKey: string,
+): Promise<string[]> => {
+  try {
+    return await invoke<string[]>('provider_query_models', { endpoint, apiKey });
+  } catch {
+    return [];
+  }
+};
+
 export interface SetProviderKeyArgs {
   /** Slug — sanitized server-side to [a-z0-9_-], used as keychain account
    *  + manifest filename `~/.ctrl/providers/<slug>.toml`. */
@@ -119,6 +161,11 @@ export interface SetProviderKeyArgs {
   display_name?: string;
   /** "openai" (default) or "anthropic". Maps to manifest `shape`. */
   api_protocol?: 'openai' | 'anthropic';
+  /** Recommended model ids carried from the catalog (decision 0007
+   *  §per-provider-models). Persisted into the manifest's `models[]` so
+   *  provider_list_models' static fallback stays populated after the
+   *  catalog drifts / cloud cache expires. */
+  models?: string[];
 }
 
 export const setProviderKey = (args: SetProviderKeyArgs): Promise<void> =>

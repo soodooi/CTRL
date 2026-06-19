@@ -46,6 +46,13 @@ pub mod memory;
 pub mod provider;
 // bao 2026-06-06: provider preset list = data file (bundled +
 // ~/.ctrl/provider-templates.json user override), not hardcoded.
+// 2026-06-19 (decision 0007): cloud-sourced refresh layer between
+// bundled and user — new model ids arrive without a CTRL release.
+pub mod cloud_catalog;
+// 2026-06-19 (decision 0007 §per-provider-models): opencode-style live
+// /models fetch — provider's own endpoint is the source of truth, not
+// the catalog's static defaultModel.
+pub mod provider_models;
 pub mod provider_templates;
 pub mod skills;
 pub mod storage;
@@ -131,6 +138,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::provider::provider_set_active,
             $crate::commands::provider::provider_detect,
             $crate::commands::provider_templates::list_provider_templates,
+            // cloud-sourced catalog refresh — fire-and-forget on boot +
+            // Settings → Providers Refresh button (decision 0007, 2026-06-19)
+            $crate::commands::provider_templates::refresh_provider_catalog,
+            // opencode-style live model list — GET {baseUrl}/models
+            // (decision 0007 §per-provider-models, 2026-06-19)
+            $crate::commands::provider_models::provider_list_models,
+            $crate::commands::provider_models::provider_query_models,
             // system — explicit window hide for the StatusBar × button
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,

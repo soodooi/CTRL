@@ -178,6 +178,129 @@ pub(crate) fn write_hermes_dotenv(
     Ok(())
 }
 
+/// Project the active CTRL provider into `~/.hermes/config.yaml` so
+/// Hermes (Irisy's brain) serves chat with the user's chosen model
+/// instead of the stale default. Decision 0007 §hermes-sync, 2026-06-19.
+///
+/// Hermes reads its model + provider config from config.yaml, NOT from
+/// the `.env` written by `write_hermes_dotenv` (that file only carries
+/// keys for hermes builds that read process env). Without this
+/// projection Irisy kept answering "I'm using doubao" even after the
+/// user switched to GLM in Settings — two sources of truth drifted.
+///
+/// What we touch (everything else preserved verbatim):
+///   model.default   = <active first model>
+///   model.provider  = "ctrl"             (hermes-internal key)
+///   providers.ctrl.base_url / api_key / model
+///
+/// `active_manifest` carries the CTRL-side provider; `api_key` is the
+/// already-resolved credential (keychain / config / env). Empty key =
+/// bail (don't clobber an existing working setup with an unauth-able
+/// one — let hermes fall through to its own config).
+pub(crate) fn write_hermes_config_yaml(
+    active_manifest: &crate::kernel::provider::manifest::ProviderManifest,
+    api_key: &str,
+) -> Result<(), String> {
+    if api_key.trim().is_empty() {
+        return Ok(());
+    }
+    let Some(endpoint) = active_manifest.endpoint.as_deref() else {
+        return Ok(());
+    };
+    let model = active_manifest
+        .models
+        .first()
+        .cloned()
+        .unwrap_or_default();
+    if model.is_empty() {
+        return Ok(());
+    }
+    let base =
+        directories::BaseDirs::new().ok_or_else(|| "could not resolve home dir".to_string())?;
+    let dir = base.home_dir().join(".hermes");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create ~/.hermes: {e}"))?;
+    let path = dir.join("config.yaml");
+
+    // Load existing config (if any) as a free-form Value so we preserve
+    // every field hermes owns (skills / plugins / agent / toolsets / etc).
+    // First boot / missing file → start from an empty map.
+    let mut doc: serde_yaml::Value = if path.exists() {
+        match std::fs::read_to_string(&path) {
+            Ok(text) => serde_yaml::from_str(&text).unwrap_or_else(|e| {
+                tracing::warn!(
+                    error = %e,
+                    "hermes config.yaml parse failed; rewriting from scratch"
+                );
+                serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+            }),
+            Err(_) => serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+        }
+    } else {
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+    };
+
+    // Walk to doc.model.{default,provider} and doc.providers.ctrl.{...},
+    // creating intermediate maps as needed. serde_yaml::Value uses
+    // string keys so we don't depend on a typed Hermes schema.
+    set_mapping_path(&mut doc, &["model", "default"], serde_yaml::Value::String(model.clone()));
+    set_mapping_path(&mut doc, &["model", "provider"], serde_yaml::Value::String("ctrl".into()));
+    set_mapping_path(
+        &mut doc,
+        &["providers", "ctrl", "base_url"],
+        serde_yaml::Value::String(endpoint.trim_end_matches('/').to_string()),
+    );
+    set_mapping_path(
+        &mut doc,
+        &["providers", "ctrl", "api_key"],
+        serde_yaml::Value::String(api_key.to_string()),
+    );
+    set_mapping_path(
+        &mut doc,
+        &["providers", "ctrl", "model"],
+        serde_yaml::Value::String(model),
+    );
+
+    let serialized = serde_yaml::to_string(&doc)
+        .map_err(|e| format!("serialize ~/.hermes/config.yaml: {e}"))?;
+    let tmp = path.with_extension("yaml.tmp");
+    std::fs::write(&tmp, serialized).map_err(|e| format!("write tmp: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))?;
+    tracing::info!(
+        endpoint = endpoint,
+        model = active_manifest.models.first().unwrap_or(&String::new()),
+        "hermes config.yaml projected from CTRL active provider"
+    );
+    Ok(())
+}
+
+/// Walk a serde_yaml::Value as nested mappings, creating intermediate
+/// maps when missing, then set `path[..last] -> last` to `value`.
+fn set_mapping_path(doc: &mut serde_yaml::Value, path: &[&str], value: serde_yaml::Value) {
+    if path.is_empty() {
+        return;
+    }
+    let mut current = doc;
+    for key in path.iter().take(path.len() - 1) {
+        let key_v = serde_yaml::Value::String((*key).to_string());
+        if current.get(&key_v).is_none() {
+            if let serde_yaml::Value::Mapping(map) = current {
+                map.insert(key_v.clone(), serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+            } else {
+                *current = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+            }
+        }
+        current = current
+            .get_mut(&key_v)
+            .expect("just-inserted mapping must exist");
+    }
+    if let serde_yaml::Value::Mapping(map) = current {
+        map.insert(
+            serde_yaml::Value::String(path[path.len() - 1].to_string()),
+            value,
+        );
+    }
+}
+
 /// Core hermes one-shot — `uvx --from hermes-agent==<pin> hermes -z "<prompt>"`
 /// prints only the final answer to stdout (verified upstream oneshot.py,
 /// 2026-06-10). Shared by the `assistant_oneshot` command and the

@@ -12,12 +12,8 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { listProviderTemplates, setProviderKey, type ProviderTemplate } from '@/lib/kernel';
 import { providerSetActive } from '@/lib/provider-config';
-import { invoke } from '@tauri-apps/api/core';
+import { useActiveProvider } from '@/hooks/useActiveProvider';
 import styles from './ProviderPicker.module.css';
-
-interface ActiveView {
-  roles: Record<string, { id: string; label: string; model_id: string | null }>;
-}
 
 interface ProviderPickerProps {
   onClose: () => void;
@@ -26,7 +22,10 @@ interface ProviderPickerProps {
 
 export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): ReactElement {
   const [templates, setTemplates] = useState<ProviderTemplate[]>([]);
-  const [active, setActive] = useState<ActiveView['roles'][string] | null>(null);
+  // Decision 0007 §display (2026-06-19): single hook instead of a
+  // mount-once invoke; refreshes in lockstep when Settings / another
+  // tab mutates the SSOT.
+  const { active } = useActiveProvider();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<ProviderTemplate | null>(null);
   const [model, setModel] = useState('');
@@ -37,9 +36,6 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
 
   useEffect(() => {
     void listProviderTemplates().then(setTemplates).catch(() => setTemplates([]));
-    void invoke<ActiveView>('get_active_providers')
-      .then((v) => setActive(v.roles['irisy.primary'] ?? null))
-      .catch(() => setActive(null));
   }, []);
 
   const filtered = useMemo(() => {

@@ -1,13 +1,20 @@
-// provider_templates — bundled defaults + user override.
+// provider_templates — bundled defaults + cloud refresh + user override.
 //
-// bao 2026-06-06: provider preset list is data, not code. CTRL ships a
-// bundled default list (include_str!) plus the user can drop a
-// `~/.ctrl/provider-templates.json` to add or override entries
-// (community-contributable, no rebuild required).
+// Layering (low → high precedence):
+//   1. bundled defaults (include_str! of provider-templates.json)
+//   2. cloud catalog cache (~/.ctrl/cache/provider-catalog.json) — written
+//      by `refresh_provider_catalog` from `CTRL_CATALOG_URL` or config.
+//      Disabled / absent cache = layer is a no-op.
+//   3. user override (~/.ctrl/provider-templates.json) — community-
+//      contributable, highest precedence, no rebuild required.
 //
-// Merge rule: user file entries with matching `id` override the
-// bundled default; new ids extend the list at the end. Empty/missing
-// user file is fine — bundled defaults stand alone.
+// Merge rule: same-`id` entries from a higher layer replace lower ones;
+// new ids extend the list at the end. Empty/missing layers are fine.
+//
+// bao 2026-06-06: provider preset list is data, not code.
+// bao 2026-06-19 (decision 0007): catalog moves to cloud-sourced so new
+// model ids (glm-5.2 / gpt-5 / claude-sonnet-5) arrive without a CTRL
+// release.
 
 use serde::{Deserialize, Serialize};
 
@@ -27,13 +34,28 @@ pub struct ProviderTemplate {
     pub default_model: String,
     #[serde(rename = "keyHint")]
     pub key_hint: String,
+    /// Recommended model ids for this provider (decision 0007
+    /// §per-provider-models, 2026-06-19). Surfaced as a <datalist>
+    /// fallback in the model <input> when the user hasn't typed a key
+    /// yet (live `/models` fetch needs auth). Empty array = old
+    /// behavior, free-text input only.
+    #[serde(default)]
+    pub models: Vec<String>,
 }
 
 #[tauri::command]
 pub fn list_provider_templates() -> Result<Vec<ProviderTemplate>, String> {
+    // Layer 1: bundled defaults.
     let mut merged: Vec<ProviderTemplate> = serde_json::from_str(BUNDLED_TEMPLATES)
         .map_err(|e| format!("parse bundled provider-templates.json: {e}"))?;
-    // User override at ~/.ctrl/provider-templates.json (optional).
+
+    // Layer 2: cloud catalog cache. Stale-but-present beats bundled —
+    // worst case the user sees yesterday's catalog, never release-stale.
+    if let Some(cloud) = super::cloud_catalog::load_cache() {
+        merge_in_place(&mut merged, cloud);
+    }
+
+    // Layer 3: user override at ~/.ctrl/provider-templates.json.
     if let Some(home) = std::env::var_os("HOME") {
         let path = std::path::PathBuf::from(home).join(".ctrl").join("provider-templates.json");
         if path.exists() {
@@ -53,12 +75,76 @@ pub fn list_provider_templates() -> Result<Vec<ProviderTemplate>, String> {
     Ok(merged)
 }
 
-fn merge_in_place(base: &mut Vec<ProviderTemplate>, user: Vec<ProviderTemplate>) {
-    for u in user {
+/// Trigger a cloud catalog refresh. Fire-and-forget on boot; the PWA
+/// may also call this from Settings → Providers (Refresh button).
+///
+/// Returns the number of templates fetched, or 0 when cloud is disabled.
+/// Errors are returned but the existing cache (if any) is preserved.
+#[tauri::command]
+pub async fn refresh_provider_catalog() -> Result<usize, String> {
+    let url = super::cloud_catalog::resolve_url(None);
+    match super::cloud_catalog::fetch(&url).await {
+        Ok(Some(templates)) => {
+            let n = templates.len();
+            if let Err(e) = super::cloud_catalog::save_cache(templates) {
+                tracing::warn!(error = %e, "provider-templates: cloud cache write failed");
+            }
+            tracing::info!(count = n, url = %url, "provider-templates: cloud catalog refreshed");
+            Ok(n)
+        }
+        Ok(None) => {
+            tracing::debug!("provider-templates: cloud catalog disabled (URL unset)");
+            Ok(0)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, url = %url, "provider-templates: cloud catalog fetch failed; keeping existing cache");
+            Err(e)
+        }
+    }
+}
+
+fn merge_in_place(base: &mut Vec<ProviderTemplate>, incoming: Vec<ProviderTemplate>) {
+    for u in incoming {
         if let Some(existing) = base.iter_mut().find(|b| b.id == u.id) {
             *existing = u;
         } else {
             base.push(u);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tpl(id: &str, model: &str) -> ProviderTemplate {
+        ProviderTemplate {
+            id: id.into(),
+            label: id.into(),
+            default_name: id.into(),
+            protocol: "openai".into(),
+            base_url: "https://example.test".into(),
+            default_model: model.into(),
+            key_hint: "".into(),
+            models: vec![],
+        }
+    }
+
+    #[test]
+    fn merge_replaces_same_id_keeps_new_ids() {
+        let mut base = vec![tpl("a", "old-a"), tpl("b", "b")];
+        let incoming = vec![tpl("a", "new-a"), tpl("c", "c")];
+        merge_in_place(&mut base, incoming);
+        assert_eq!(base.len(), 3);
+        let a = base.iter().find(|t| t.id == "a").unwrap();
+        assert_eq!(a.default_model, "new-a");
+        assert!(base.iter().any(|t| t.id == "c"));
+    }
+
+    #[test]
+    fn merge_empty_incoming_is_noop() {
+        let mut base = vec![tpl("a", "a")];
+        merge_in_place(&mut base, vec![]);
+        assert_eq!(base.len(), 1);
     }
 }

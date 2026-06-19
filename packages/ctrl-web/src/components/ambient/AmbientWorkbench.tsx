@@ -13,10 +13,10 @@
 
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
-import { invoke } from '@tauri-apps/api/core';
 import { type SidebarSection } from './Sidebar';
 import { ProviderHub } from './ProviderHub';
 import { AmbientHome, type ToolRequest, type PackRequest } from './AmbientHome';
+import { useActiveProvider, formatProviderLabel } from '@/hooks/useActiveProvider';
 import styles from './AmbientHome.module.css';
 
 export function AmbientWorkbench(): ReactElement {
@@ -24,7 +24,6 @@ export function AmbientWorkbench(): ReactElement {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isHome = pathname === '/' || pathname === '/irisy' || pathname === '';
 
-  const [modelLabel, setModelLabel] = useState<string>('Model');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
   const [view, setView] = useState<'chat' | 'discover'>('chat');
@@ -37,17 +36,14 @@ export function AmbientWorkbench(): ReactElement {
   // nothing is highlighted.
   const [navSel, setNavSel] = useState<string>('irisy');
 
-  // Show the active model in the sidebar chip (click to switch).
-  useEffect(() => {
-    void invoke<{ roles: Record<string, { label: string; model_id: string | null }> }>(
-      'get_active_providers',
-    )
-      .then((v) => {
-        const p = v.roles['irisy.primary'];
-        if (p) setModelLabel(p.model_id ? `${p.label} · ${p.model_id}` : p.label);
-      })
-      .catch(() => {});
-  }, [pickerOpen]);
+  // Active provider feeds the Sidebar model chip + AmbientHome top
+  // display. Decision 0007 §display (2026-06-19): single hook replaces
+  // the per-component invoke + listen + format-string tangle. The
+  // pickerOpen dep stays so the chip refreshes immediately after the
+  // user closes the picker (which may have set a new active provider
+  // via ProviderHub, whose own reload path also fires the event).
+  const { active: activeProvider } = useActiveProvider();
+  const modelLabel = formatProviderLabel(activeProvider);
 
   // The sidebar acts from any route: home-content actions (Irisy / tool /
   // discover) navigate home first, then signal AmbientHome via props.
@@ -100,6 +96,7 @@ export function AmbientWorkbench(): ReactElement {
         view={view}
         onView={setView}
         modelLabel={modelLabel}
+        providerId={activeProvider?.id ?? null}
         onOpenPicker={() => setPickerOpen(true)}
         onToggleDrawer={() => setDrawerOpen((v) => !v)}
         toolRequest={toolRequest}
@@ -135,7 +132,11 @@ export function AmbientWorkbench(): ReactElement {
       {pickerOpen && (
         <ProviderHub
           onClose={() => setPickerOpen(false)}
-          onActivated={(label, m) => setModelLabel(m ? `${label} · ${m}` : label)}
+          // No onActivated needed — useActiveProvider's event listener
+          // refreshes the chip when provider_set_active emits
+          // `active-providers-changed`. Old imperative setModelLabel
+          // shadowed the SSOT and raced with the event.
+          onActivated={() => setPickerOpen(false)}
         />
       )}
     </div>

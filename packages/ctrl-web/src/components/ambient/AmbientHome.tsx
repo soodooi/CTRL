@@ -88,6 +88,11 @@ export interface AmbientHomeProps {
   view: 'chat' | 'discover';
   onView: (v: 'chat' | 'discover') => void;
   modelLabel: string;
+  /** Active provider slug — feeds Sidebar's semantic 2-letter badge
+   *  (decision 0007 §display). Optional only because some test/preview
+   *  mounts skip it; production always passes it down from
+   *  AmbientWorkbench's useActiveProvider hook. */
+  providerId?: string | null;
   onOpenPicker: () => void;
   onToggleDrawer: () => void;
   /** Tool the shell sidebar asked to run (null until a click). */
@@ -116,6 +121,7 @@ export function AmbientHome({
   view,
   onView,
   modelLabel,
+  providerId,
   onOpenPicker,
   onToggleDrawer,
   toolRequest,
@@ -807,6 +813,7 @@ export function AmbientHome({
               active={activeSection}
               onSelect={onSidebarSelect}
               modelLabel={modelLabel}
+              providerId={providerId}
               onModel={onOpenPicker}
             />
             {!isNarrow && (

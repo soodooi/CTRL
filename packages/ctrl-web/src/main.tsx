@@ -13,6 +13,21 @@ import { applyTheme, getStoredTheme } from './lib/theme';
 
 applyTheme(getStoredTheme());
 
+// ⌘R / Ctrl+R reloads the PWA. Tauri 2 doesn't bind this by default
+// (unlike a normal browser), so without this the user has no way to
+// recover from a stale bundle short of quitting. Tray menu "Reload PWA"
+// is the always-available fallback; this listener is the fast path
+// when the window is focused. Skip in prod-build browser preview where
+// ⌘R is already the browser's reload.
+if (!import.meta.env.PROD || '__TAURI_INTERNALS__' in window) {
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'r' || e.key === 'R')) {
+      e.preventDefault();
+      window.location.reload();
+    }
+  });
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('PWA root element missing');
 

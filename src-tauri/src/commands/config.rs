@@ -177,6 +177,13 @@ pub struct SetProviderKeyArgs {
     /// OpenAI-compatible.
     #[serde(default)]
     pub api_protocol: Option<String>,
+    /// Recommended model ids carried from the catalog (decision 0007
+    /// §per-provider-models, 2026-06-19). Persisted into the manifest's
+    /// `models[]` so the kernel + provider_list_models fallback stay
+    /// populated after the catalog drifts / cloud cache expires. Empty
+    /// or absent → falls back to `[default_model]` (legacy behaviour).
+    #[serde(default)]
+    pub models: Option<Vec<String>>,
 }
 
 /// Set (or update) a user provider — bao 2026-06-05 e refactor.
@@ -255,10 +262,28 @@ pub async fn config_set_provider_key(
     std::fs::create_dir_all(&providers_dir)
         .map_err(|e| format!("mkdir {}: {e}", providers_dir.display()))?;
     let manifest_path = providers_dir.join(format!("{slug}.toml"));
-    let model_line = if default_model.is_empty() {
+    // Build the `models[]` array. Prefer the caller-supplied list
+    // (catalog.models carried from +Add); fall back to [default_model];
+    // fall back to empty (= no models line) when neither is set.
+    // Decision 0007 §per-provider-models: without this carry-over the
+    // manifest loses the catalog's recommended lineup the moment the
+    // user saves, and provider_list_models' static fallback collapses
+    // to a single id.
+    let mut models_vec: Vec<String> = args.models.unwrap_or_default();
+    if models_vec.is_empty() && !default_model.is_empty() {
+        models_vec = vec![default_model.clone()];
+    }
+    // Dedup + preserve order (default_model should stay first).
+    let mut seen = std::collections::HashSet::new();
+    models_vec.retain(|m| seen.insert(m.clone()));
+    let models_line = if models_vec.is_empty() {
         String::new()
     } else {
-        format!("models = [\"{default_model}\"]\n")
+        let quoted: Vec<String> = models_vec
+            .iter()
+            .map(|m| format!("\"{}\"", m.replace('"', "\\\"")))
+            .collect();
+        format!("models = [{}]\n", quoted.join(", "))
     };
     let manifest_body = format!(
         "# CTRL user provider — written by config_set_provider_key.\n\
@@ -270,7 +295,7 @@ pub async fn config_set_provider_key(
         kind = \"http_api\"\n\
         shape = \"{shape}\"\n\
         endpoint = \"{base_url}\"\n\
-        {model_line}description = \"User-added BYOK provider.\"\n\
+        {models_line}description = \"User-added BYOK provider.\"\n\
         capabilities = [\"text.chat\"]\n\
         \n\
         [auth]\n\
@@ -280,7 +305,7 @@ pub async fn config_set_provider_key(
         label = display_name.replace('"', "\\\""),
         shape = shape,
         base_url = base_url,
-        model_line = model_line,
+        models_line = models_line,
     );
     write_atomic(&manifest_path, &manifest_body)?;
 
@@ -481,11 +506,25 @@ pub async fn config_delete_provider(
     // Hot-reload: drop the manifest from the registry so subsequent
     // provider_list calls do not resurrect the deleted row, and notify
     // the PWA. bao 2026-06-06 Lock #6.
+    //
+    // Decision 0007 §lifecycle (2026-06-19): also clear the active-SSOT
+    // slots pointing at this id, otherwise the chip + /text-chat keep
+    // routing to a missing manifest until the user manually picks a
+    // replacement. The next chat turn walks the route_chain fallback
+    // or surfaces "no provider" honestly.
     kernel.runtime.provider_registry.reload_user_dir();
+    let cleared_roles = kernel.runtime.provider_registry.clear_active(&slug);
+    if !cleared_roles.is_empty() {
+        tracing::info!(
+            provider = %slug,
+            roles = ?cleared_roles,
+            "config_delete_provider: cleared active SSOT slots"
+        );
+    }
     use tauri::Emitter;
     if let Err(e) = app.emit(
         "active-providers-changed",
-        serde_json::json!({ "id": slug, "op": "delete" }),
+        serde_json::json!({ "id": slug, "op": "delete", "cleared_roles": cleared_roles }),
     ) {
         tracing::warn!(error = %e, "emit active-providers-changed (delete) failed");
     }

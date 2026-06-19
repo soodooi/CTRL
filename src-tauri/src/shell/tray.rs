@@ -35,12 +35,22 @@ impl TrayController {
     pub fn install(app: &AppHandle) -> Result<()> {
         let open_config =
             MenuItem::with_id(app, "open-config", "Open Config", true, None::<&str>)?;
+        let reload_pwa =
+            MenuItem::with_id(app, "reload-pwa", "Reload PWA  ⌘R", true, None::<&str>)?;
         let about = MenuItem::with_id(app, "about", "About CTRL", true, None::<&str>)?;
         let separator = PredefinedMenuItem::separator(app)?;
         let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
         let menu = Menu::with_items(
             app,
-            &[&open_config, &separator, &about, &separator, &quit],
+            &[
+                &open_config,
+                &separator,
+                &reload_pwa,
+                &separator,
+                &about,
+                &separator,
+                &quit,
+            ],
         )?;
 
         // Embed the 32x32 icon bytes at compile time so the tray has a real
@@ -62,6 +72,21 @@ impl TrayController {
                     }
                     if let Err(err) = app.emit(EVENT_OPEN_CONFIG, ()) {
                         tracing::error!(?err, "failed to emit tray:open-config");
+                    }
+                }
+                "reload-pwa" => {
+                    // Tauri 2 doesn't bind ⌘R by default; tray menu is
+                    // the user-facing entry point. The PWA-side keydown
+                    // listener (kernel.ts) is a focused-window shortcut
+                    // — this tray item is the always-available fallback.
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                        if let Err(err) = w.eval("window.location.reload()") {
+                            tracing::warn!(?err, "tray: reload PWA eval failed");
+                        } else {
+                            tracing::info!("tray: PWA reloaded");
+                        }
                     }
                 }
                 "about" => {

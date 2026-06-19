@@ -438,6 +438,38 @@ impl ProviderRegistry {
         }
     }
 
+    /// Remove `provider_id` from every active-role slot it occupies.
+    /// Called by `config_delete_provider` so the SSOT doesn't keep
+    /// pointing at a manifest the registry just dropped — without this
+    /// the chip keeps showing a deleted provider until the user picks a
+    /// replacement, and any /text-chat call routes into a missing-handle
+    /// error path. Decision 0007 §lifecycle, 2026-06-19.
+    ///
+    /// Returns the list of role ids that were holding this provider so
+    /// the caller can log / surface "Zhipu was primary, now unassigned".
+    /// Idempotent — no-op when the id wasn't active anywhere.
+    pub fn clear_active(&self, provider_id: &str) -> Vec<String> {
+        let mut cleared: Vec<String> = Vec::new();
+        let mut active = self.active.write().unwrap();
+        let keys: Vec<Consumer> = active.keys().cloned().collect();
+        for key in keys {
+            if active.get(&key).map(|s| s.as_str()) == Some(provider_id) {
+                active.remove(&key);
+                cleared.push(key.id());
+            }
+        }
+        drop(active);
+        if !cleared.is_empty() {
+            self.persist_active_state();
+            tracing::info!(
+                provider = %provider_id,
+                roles = ?cleared,
+                "provider: cleared from active SSOT after delete"
+            );
+        }
+        cleared
+    }
+
     /// True iff `provider_id` failed within the last
     /// `PROVIDER_COOLDOWN_SECS` window. http_endpoint uses this to
     /// short-circuit a primary candidate when at least one fallback

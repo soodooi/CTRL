@@ -247,6 +247,43 @@ pub async fn provider_set_active(
         .await
         .map_err(|e| e.to_string())?;
     let model_id = registry.first_model_for(&args.provider_id);
+    // Decision 0007 §hermes-sync (2026-06-19): project the new active
+    // provider into ~/.hermes/config.yaml so Hermes (Irisy's brain)
+    // picks it up. Without this Irisy kept answering with the previous
+    // model because Hermes reads its own config, not CTRL's SSOT. Only
+    // HTTP providers carry endpoint+key; CLI providers (claude-oauth)
+    // own their auth and skip this projection.
+    if let Some(manifest) = registry.manifest_for(&args.provider_id) {
+        if matches!(
+            manifest.kind,
+            crate::kernel::provider::manifest::ProviderKind::HttpApi
+        ) {
+            let api_key = match &manifest.auth {
+                crate::kernel::provider::manifest::AuthSource::Keychain { account } => {
+                    crate::shell::KeychainStore::get(account).ok().flatten()
+                }
+                crate::kernel::provider::manifest::AuthSource::ConfigKey { field } => {
+                    manifest.config.get(field).cloned()
+                }
+                crate::kernel::provider::manifest::AuthSource::Env { var } => {
+                    std::env::var(var).ok()
+                }
+                crate::kernel::provider::manifest::AuthSource::None => None,
+            };
+            if let Some(key) = api_key {
+                if let Err(e) =
+                    crate::commands::agents::write_hermes_config_yaml(&manifest, &key)
+                {
+                    tracing::warn!(error = %e, "hermes config.yaml projection failed");
+                }
+            } else {
+                tracing::debug!(
+                    provider = %args.provider_id,
+                    "hermes config.yaml projection skipped: no api_key resolved"
+                );
+            }
+        }
+    }
     // ADR-002 substrate § provider v8 §3.5 (2026-06-06): SSOT
     // (~/.ctrl/state/active-providers.json) mutated; emit
     // `active-providers-changed` so chip + Irisy self-report + Settings

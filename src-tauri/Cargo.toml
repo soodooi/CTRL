@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.294"
+version = "0.1.303"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -24,6 +24,11 @@ tauri-plugin-single-instance = "2"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# serde_yaml — Hermes config.yaml projection (decision 0007 §hermes-sync,
+# 2026-06-19): CTRL owns Irisy's active provider; hermes reads its own
+# ~/.hermes/config.yaml, so provider_set_active must merge the active
+# provider into the YAML or Irisy keeps answering with the old model.
+serde_yaml = "0.9"
 thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

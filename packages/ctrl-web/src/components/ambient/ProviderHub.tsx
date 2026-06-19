@@ -10,10 +10,16 @@
 // provider_set_active (1-token trial). Browser/dev falls back to bundled
 // templates + a demo "configured" list so the layout renders outside Tauri.
 
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
-import { listProviderTemplates, setProviderKey, type ProviderTemplate } from '@/lib/kernel';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  listProviderTemplates,
+  setProviderKey,
+  deleteProvider,
+  queryProviderModels,
+  type ProviderTemplate,
+} from '@/lib/kernel';
 import { providerSetActive, providerList, type ProviderListRow } from '@/lib/provider-config';
-import { invoke } from '@tauri-apps/api/core';
+import { useActiveProvider } from '@/hooks/useActiveProvider';
 import styles from './ProviderHub.module.css';
 
 interface ActiveView {
@@ -27,16 +33,13 @@ interface ProviderHubProps {
 }
 
 // In the Add list, your common providers float to the top.
-const PRIORITY = ['anthropic', 'volc', 'zhipu'];
+const PRIORITY = ['anthropic', 'zhipu', 'volc'];
 
-const ZHIPU_REGIONS: Record<'intl' | 'cn', string> = {
-  intl: 'https://api.z.ai/api/paas/v4',
-  cn: 'https://open.bigmodel.cn/api/paas/v4',
-};
-const ZHIPU_KEY_HINTS: Record<'intl' | 'cn', string> = {
-  intl: 'create an API key at z.ai → API Keys',
-  cn: 'create an API key at open.bigmodel.cn/usercenter/apikeys',
-};
+// 2026-06-19 (decision: overseas-only market) — the Zhipu region toggle
+// (intl z.ai / cn bigmodel.cn) is retired. CTRL targets the overseas
+// market where z.ai is the canonical endpoint. Zhipu now flows through
+// the same template-driven Add path as every other provider; no special
+// UI branch. If a user needs bigmodel.cn they edit Base URL in Advanced.
 
 // Browser/dev demo so the "Your providers" section isn't empty outside Tauri.
 const DEMO_CONFIGURED: ProviderListRow[] = [
@@ -47,26 +50,73 @@ const DEMO_CONFIGURED: ProviderListRow[] = [
 export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHubProps): ReactElement {
   const [templates, setTemplates] = useState<ProviderTemplate[]>([]);
   const [configured, setConfigured] = useState<ProviderListRow[]>([]);
-  const [active, setActive] = useState<ActiveView['roles'][string] | null>(null);
+  // Decision 0007 §display (2026-06-19): single hook replaces the
+  // per-component invoke + fallback. The fallback ("Claude" demo row)
+  // is gone — when no provider is bound the modal title shows the empty
+  // state honestly instead of a fake demo.
+  const { active: activeFromHook, loading: activeLoading } = useActiveProvider();
+  const active = activeFromHook && {
+    id: activeFromHook.id,
+    label: activeFromHook.label,
+    model_id: activeFromHook.model_id,
+  };
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
-  const [zhipuRegion, setZhipuRegion] = useState<'intl' | 'cn'>('intl');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [liveModels, setLiveModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Decision 0007 §per-provider-models (2026-06-19): when the user
+  // picks a template + types their key, debounce-query the provider's
+  // /models endpoint so the model <input> shows a <datalist> of real
+  // ids the provider actually exposes today. Failures fall through to
+  // an empty list (the input stays free-text).
+  const debounceRef = useRef<number | null>(null);
+  useEffect(() => {
+    const tpl = selectedId ? templates.find((t) => t.id === selectedId) : null;
+    if (!tpl) {
+      setLiveModels([]);
+      return;
+    }
+    const effectiveBase = baseUrl || tpl.baseUrl;
+    const trimmedKey = apiKey.trim();
+    if (!effectiveBase || !trimmedKey) {
+      setLiveModels([]);
+      return;
+    }
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+    }
+    const handle = window.setTimeout(() => {
+      setModelsLoading(true);
+      void queryProviderModels(effectiveBase, trimmedKey)
+        .then(setLiveModels)
+        .catch(() => setLiveModels([]))
+        .finally(() => setModelsLoading(false));
+    }, 400);
+    debounceRef.current = handle;
+    return () => {
+      if (debounceRef.current !== null) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+  }, [selectedId, templates, apiKey, baseUrl]);
 
   const reload = useCallback(() => {
     void listProviderTemplates().then(setTemplates).catch(() => setTemplates([]));
     // Outside Tauri providerList rejects — show a small demo set so the
     // "Your providers" section renders (real app uses the real list).
     void providerList().then(setConfigured).catch(() => setConfigured(DEMO_CONFIGURED));
-    void invoke<ActiveView>('get_active_providers')
-      .then((v) => setActive(v.roles['irisy.primary'] ?? null))
-      .catch(() => setActive({ id: 'anthropic', label: 'Claude', model_id: 'claude-sonnet-4-6' }));
+    // Active provider state is owned by useActiveProvider() above — no
+    // more local invoke here. reload() just refreshes the catalog +
+    // configured list (templates + configuredRows drive the picker).
   }, []);
   useEffect(() => { reload(); }, [reload]);
 
@@ -106,8 +156,10 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
     setSelectedId(t.id);
     setApiKey('');
     setModel(t.defaultModel);
-    setBaseUrl(t.id === 'zhipu' ? ZHIPU_REGIONS[zhipuRegion] : t.baseUrl);
-    setShowAdvanced(false);
+    setBaseUrl(t.baseUrl);
+    // Default-expand Advanced so the user sees the live model picker as
+    // soon as they type their key (decision 0007 §per-provider-models).
+    setShowAdvanced(true);
     setError(null);
   };
 
@@ -117,15 +169,26 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
     setBusy(true);
     setError(null);
     try {
-      const effectiveBase =
-        t.id === 'zhipu' ? baseUrl || ZHIPU_REGIONS[zhipuRegion] : baseUrl || t.baseUrl;
+      const effectiveBase = baseUrl || t.baseUrl;
+      // Carry the catalog's recommended models[] into the manifest so the
+      // provider_list_models static fallback stays populated (decision
+      // 0007 §per-provider-models). Dedup around the user-picked model
+      // so the chosen id always wins slot 0 (which is what
+      // registry.first_model_for reads for the chip display).
+      const chosen = model.trim() || t.defaultModel;
+      const carry: string[] = chosen
+        ? [chosen, ...(t.models ?? [])].filter(
+            (m, i, arr) => m && arr.indexOf(m) === i,
+          )
+        : t.models ?? [];
       await setProviderKey({
         provider: t.id,
         api_key: apiKey,
         base_url: effectiveBase.replace(/\/$/, ''),
-        default_model: model.trim() || t.defaultModel,
+        default_model: chosen,
         display_name: t.defaultName,
         api_protocol: t.protocol,
+        models: carry,
       });
       const reply = await providerSetActive({ role: 'irisy.primary', provider_id: t.id });
       finish(t.defaultName, reply.model_id ?? model);
@@ -143,6 +206,54 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
     try {
       const reply = await providerSetActive({ role: 'irisy.primary', provider_id: id });
       finish(label, reply.model_id ?? '');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Edit reuses the +Add form pre-filled with the configured provider's
+  // current values. The user re-types the key (keychain write is opaque
+  // for security — we never read it back into the input). Save overwrites
+  // the manifest via setProviderKey (upsert).
+  const editProvider = (c: ProviderListRow): void => {
+    const endpoint = c.endpoint ?? '';
+    const tpl: ProviderTemplate = templates.find((t) => t.id === c.id) ?? {
+      id: c.id,
+      label: c.label,
+      defaultName: c.label,
+      protocol: 'openai',
+      baseUrl: endpoint,
+      defaultModel: c.models[0] ?? '',
+      keyHint: '',
+      models: c.models,
+    };
+    setShowAdd(true);
+    setSelectedId(tpl.id);
+    setApiKey('');
+    setModel(c.models[0] ?? tpl.defaultModel);
+    setBaseUrl(endpoint);
+    setShowAdvanced(true);
+    setError(null);
+  };
+
+  // Remove calls config_delete_provider (clears keychain + removes
+  // ~/.ctrl/providers/<slug>.toml). The active SSOT falls back to the
+  // next configured provider on the next chip refresh.
+  const removeProvider = async (c: ProviderListRow): Promise<void> => {
+    if (
+      !window.confirm(
+        `Remove ${c.label}? Deletes the manifest + keychain entry. Irisy will fall back to the next configured provider.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteProvider(c.id);
+      reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -190,13 +301,11 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
           {configuredRows.map((c) => {
             const isActive = active?.id === c.id;
             return (
-              <button
+              <div
                 key={c.id}
-                type="button"
                 className={styles.providerRow}
                 data-active={isActive || undefined}
-                onClick={() => void switchTo(c.id, c.label)}
-                disabled={busy}
+                onClick={busy ? undefined : () => void switchTo(c.id, c.label)}
                 title={isActive ? 'Currently used by Irisy' : 'Switch Irisy to this'}
               >
                 <span className={styles.providerName}>{c.label}</span>
@@ -204,7 +313,37 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
                 <span className={styles.providerStatus} data-active={isActive || undefined}>
                   {isActive ? '★ in use' : '● switch'}
                 </span>
-              </button>
+                {/* Edit / Remove — bao 2026-06-19: prior art had no way to
+                    fix a misconfigured provider (wrong region / dead key)
+                    short of editing ~/.ctrl/providers/<slug>.toml by hand.
+                    Edit reuses the +Add form pre-filled; Remove calls
+                    config_delete_provider (clears keychain + toml). */}
+                <div className={styles.providerActions}>
+                  <button
+                    type="button"
+                    className={styles.providerActionBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      editProvider(c);
+                    }}
+                    title="Edit credentials / model / region"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.providerActionBtn}
+                    data-danger
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void removeProvider(c);
+                    }}
+                    title="Remove manifest + keychain entry"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
             );
           })}
         </div>
@@ -245,27 +384,6 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
           ) : (
             <div className={styles.config}>
               <div className={styles.configTitle}>{selectedTpl.label}</div>
-              {selectedTpl.id === 'zhipu' && (
-                <div className={styles.regionRow}>
-                  <span className={styles.regionLabel}>Region</span>
-                  <button
-                    type="button"
-                    className={styles.regionBtn}
-                    data-on={zhipuRegion === 'intl' || undefined}
-                    onClick={() => { setZhipuRegion('intl'); setBaseUrl(ZHIPU_REGIONS.intl); }}
-                  >
-                    International (z.ai)
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.regionBtn}
-                    data-on={zhipuRegion === 'cn' || undefined}
-                    onClick={() => { setZhipuRegion('cn'); setBaseUrl(ZHIPU_REGIONS.cn); }}
-                  >
-                    China (bigmodel.cn)
-                  </button>
-                </div>
-              )}
 
               <label className={styles.keyField}>
                 <span className={styles.keyLabel}>API key</span>
@@ -275,15 +393,10 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
                   value={apiKey}
                   autoFocus
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={
-                    (selectedTpl.id === 'zhipu' ? ZHIPU_KEY_HINTS[zhipuRegion] : selectedTpl.keyHint) ||
-                    'paste your key — kept in your Keychain'
-                  }
+                  placeholder={selectedTpl.keyHint || 'paste your key — kept in your Keychain'}
                 />
-                {(selectedTpl.id === 'zhipu' ? ZHIPU_KEY_HINTS[zhipuRegion] : selectedTpl.keyHint) && (
-                  <span className={styles.keyHint}>
-                    {selectedTpl.id === 'zhipu' ? ZHIPU_KEY_HINTS[zhipuRegion] : selectedTpl.keyHint}
-                  </span>
+                {selectedTpl.keyHint && (
+                  <span className={styles.keyHint}>{selectedTpl.keyHint}</span>
                 )}
               </label>
 
@@ -293,8 +406,47 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
               {showAdvanced && (
                 <div className={styles.adv}>
                   <label className={styles.advField}>
-                    <span>Model</span>
-                    <input value={model} onChange={(e) => setModel(e.target.value)} placeholder={selectedTpl.defaultModel} />
+                    <span>
+                      Model{' '}
+                      {modelsLoading
+                        ? '(loading live list…)'
+                        : liveModels.length > 0
+                          ? `(${liveModels.length} live)`
+                          : (selectedTpl.models?.length ?? 0) > 0
+                            ? `(${selectedTpl.models!.length} recommended)`
+                            : selectedTpl.defaultModel
+                              ? `(default: ${selectedTpl.defaultModel})`
+                              : ''}
+                    </span>
+                    <input
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      placeholder={selectedTpl.defaultModel}
+                      list="provider-models-datalist"
+                      autoComplete="off"
+                    />
+                    {/* Live <datalist> from /models — opencode-style. When
+                        live list isn't fetched yet (no key) or fails, fall
+                        back to the catalog's recommended `models` array so
+                        the user still sees the current lineup (glm-5.2 etc.)
+                        without typing a key. Empty list = input stays
+                        free-text. Id is stable across renders so React
+                        doesn't recreate the node and lose focus. */}
+                    <datalist id="provider-models-datalist">
+                      {(liveModels.length > 0
+                        ? liveModels
+                        : selectedTpl.models ?? []
+                      ).map((id) => (
+                        <option key={id} value={id} />
+                      ))}
+                      {selectedTpl.defaultModel &&
+                        !(liveModels.length > 0
+                          ? liveModels
+                          : selectedTpl.models ?? []
+                        ).includes(selectedTpl.defaultModel) && (
+                          <option value={selectedTpl.defaultModel} />
+                        )}
+                    </datalist>
                   </label>
                   <label className={styles.advField}>
                     <span>Base URL</span>

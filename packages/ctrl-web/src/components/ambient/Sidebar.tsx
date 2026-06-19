@@ -7,6 +7,7 @@
 
 import { useEffect, useState, type ReactElement } from 'react';
 import { loadConnectors } from '@/lib/connector';
+import { providerBadge } from '@/lib/provider-badge';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
 import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
 import styles from './Sidebar.module.css';
@@ -58,10 +59,15 @@ interface SidebarProps {
   active: 'irisy' | 'discover' | string;
   onSelect: (s: SidebarSection) => void;
   modelLabel: string;
+  /** Provider slug (keychain account / toml stem). Drives the semantic
+   *  2-letter badge via `providerBadge()` — passes null when AmbientHome
+   *  doesn't know it (legacy call sites), and the helper falls back to
+   *  the legacy first-2-letters-of-label slice. Decision 0007 §display. */
+  providerId?: string | null;
   onModel: () => void;
 }
 
-export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps): ReactElement {
+export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: SidebarProps): ReactElement {
   const connectors = loadConnectors();
   // Installed feature packs (mcps whose manifest declares actions).
   const [packs, setPacks] = useState<FeaturePack[]>([]);
@@ -74,7 +80,7 @@ export function Sidebar({ active, onSelect, modelLabel, onModel }: SidebarProps)
     return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
   }, []);
 
-  const modelBadge = modelLabel.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || '··';
+  const modelBadge = providerBadge(providerId ?? '', modelLabel);
 
   return (
     <aside className={styles.rail} data-tauri-drag-region>
