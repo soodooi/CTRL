@@ -154,6 +154,19 @@ CTRL **不 supervise、不编排** CLI 的决策。符合 **one-shot, not flows*
 
 ---
 
+## Agent loop 归属 (调研结论 2026-06-18 — 别再去全网搜「CTRL 该用什么 harness」)
+
+**CTRL 不自己跑 agent loop / 不自建也不引入 agent harness 框架。** 两条 brain 路各自带 loop:
+
+- **Irisy 路** → loop 由 **Hermes Agent** 自带 (NousResearch, CTRL bundle 启动)。
+- **BYO-CLI 路** → loop 由**用户自选 CLI** 自带 (Claude Code 等)。
+
+CTRL 的层是 **projection + gate**，不是 brain/harness。所以 Pi (`@mariozechner/pi-coding-agent`，曾经自带的 agent loop) 退役后**留下的不是「要补一个新 agent loop」的空缺** —— 那个空缺由现成 brain 填掉了，CTRL 这一层根本不需要 loop。
+
+> 全网调研 (2026-06-18, deep-research 24/25 论断 3 票核验) 印证此方向：Anthropic 官方工程指南 (building-effective-agents / managed-agents) 反复强调「**brain 与 harness 跟 hands/tools 解耦**，工具经稳定 `execute(name,input)->string` 接口 + MCP 接入」。CTRL 正落在「hands/tools + gate」这一侧 —— 经 `:17873` 把工具/技能/记忆投影给 brain，brain 自己跑 loop。**若**将来真要 CTRL-side loop (例如无 brain 的纯 kernel 自动化)，再考虑 **Rust-native + provider-agnostic** 方案 (Rig / Swiftide 当模式参考，薄自写优先)，**不**整包引入重框架、**不**锁 Anthropic SDK (provider router 已是 BYOK 多家)。
+
+---
+
 ## 不变项 (没漂移 — 别动)
 
 - **5 kernel primitives**：Actor / Capability / Event / Channel / Effect。
