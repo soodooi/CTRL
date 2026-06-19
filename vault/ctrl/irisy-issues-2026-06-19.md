@@ -58,3 +58,26 @@
 **P-1/P-3/P-4 同一个根因:Irisy 没有接线的 brain/agent**(Pi 删除、Hermes reserved-unwired,`/text-chat` 是 provider 直连)。所有"需要执行工具"的能力(写笔记/造工具/检索)都坏:要么吐工具 XML、要么自言自语、要么空承诺。**P-2 是独立根因:brain_state 没注入。** 次要:render filter 该加 `<function_calls>` 兜底剥离。
 
 **优先级建议:接线 Hermes(或任一能执行 tool call 的 brain)= 一次修复 P-1/P-3/P-4 三条** —— 这是 Irisy 从"会聊天"到"能干活"的关键缺口。纯对话能力(翻译/总结/答疑/立场守护)**已经真能用**。
+
+---
+
+## 真机复测 (2026-06-19 第二轮, kernel 重启后, 开发者修复后)
+
+开发者已修:抽共享 `composeSystemPrompt` + 恢复 `<brain_state>` 注入 + AmbientHome 接 persona/SOUL/cleanReplyText(commit `5c4c3ba`)。kernel(PID 17603, :17878)真链路复测:
+
+### P-2 已修复 ✅(注入 brain_state 后能答出模型)
+- 实际输出:「你当前用的是 GLM(智谱),由你自己的 API key 接入。备用是本地 Ollama。」
+- 不再说"没注入 Runtime 块"。说出 GLM/Ollama **不算泄漏** —— persona golden example E5 对"哪个模型在回我"的 GOOD 答案就是「You're on Volc Doubao」(直接说 provider 名);且 zhipu/ollama 是用户自己 BYOK 配的。**符合预期。**
+
+### P-5 (新发现, 隐患) brain_state 块注入退役 codename "Pi"
+- 注入的块含 `engine: id=Pi`,但 **Pi 已退役**(ADR-002 v19)。这次模型没复述,但每轮往 prompt 塞退役 codename 是定时炸弹。
+- 根因:`commands/provider.rs:34 const ENGINE_ID: &str = "Pi"` 没更新。
+- 方向:改成 Hermes / 实际 engine,或移除 engine.id。
+
+### P-1/P-3/P-4 稳定坏,根因确认 = 无 tool 执行 brain(LLM 随机性下三种坏法)
+- **P-1 写笔记**:三次复测三种坏法 —— ① `<function_calls>` XML;② **无限死循环**(几百行"我现在调用 vault_write",token 烧光);③ `<tool_call>` JSON。都是"想调 vault_write 但没执行环境"的不同外溢。**最危险**。
+- **P-3 造工具**:`list_skills({query})` 语法 / 「我先找找本地 skill」空承诺。
+- **P-4 检索**:「搜一下你的 vault/笔记」空承诺;"vault"内部词有时泄漏(persona 要求说 Notes)。
+- **统一修复点:接一个能执行 tool call 的 brain。** 在那之前,这三条在 provider 直连路径无法修(prompt/filter 兜底只能减轻 XML 外溢,治不了死循环和空承诺)。
+
+**结论:开发者修的 P-2 真机验证有效;P-1/P-3/P-4 待 brain 接线;P-5 是本轮真机新发现。**
