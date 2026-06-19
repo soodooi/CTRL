@@ -59,7 +59,7 @@ const IRISY_SYSTEM_PATH = `${PROMPTS_DIR}/irisy-system.md`;
 // have — the user couldn't tell what Irisy is FOR. v10 rewrites the
 // opening to the 3 concrete faces (chat / Notes / Coding) + a "what
 // can you do" answering rule, and bans retired words in replies.
-const PROMPT_VERSION = 10;
+export const PROMPT_VERSION = 10;
 
 interface VaultEntry {
   path: string;
