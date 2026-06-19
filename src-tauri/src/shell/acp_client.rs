@@ -96,6 +96,45 @@ fn build_mcp_servers() -> Vec<Value> {
     })]
 }
 
+/// Pick an "allow" outcome for an ACP `session/request_permission` request by
+/// scanning the offered `options` (ADR-002 substrate §1.8.2 v23 — single door):
+/// prefer `allow_once`, then `allow_always`, then any non-`reject` option;
+/// cancel only when no allow option is offered. Without this the client
+/// cancelled every tool permission, so hermes could never execute a tool call —
+/// notes were never saved, searches never ran (P-1/P-3/P-4). The :17873 gate is
+/// the real permission/audit layer; this ACP prompt is hermes-side, approved
+/// headlessly so the agent loop can actually do work.
+fn select_allow_outcome(req: &Value) -> Value {
+    let cancelled = json!({ "outcome": { "outcome": "cancelled" } });
+    let Some(options) = req
+        .get("params")
+        .and_then(|p| p.get("options"))
+        .and_then(|o| o.as_array())
+    else {
+        return cancelled;
+    };
+    let kind_of = |o: &Value| {
+        o.get("kind")
+            .and_then(|k| k.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let pick = options
+        .iter()
+        .find(|o| kind_of(o) == "allow_once")
+        .or_else(|| options.iter().find(|o| kind_of(o) == "allow_always"))
+        .or_else(|| options.iter().find(|o| !kind_of(o).starts_with("reject")));
+    match pick
+        .and_then(|o| o.get("optionId"))
+        .and_then(|i| i.as_str())
+    {
+        Some(option_id) => {
+            json!({ "outcome": { "outcome": "selected", "optionId": option_id } })
+        }
+        None => cancelled,
+    }
+}
+
 impl AcpClient {
     /// Spawn hermes-acp, handshake (initialize), and open one ACP session.
     /// `provider_env` is the active CTRL BYOK provider env (ADR-002 §1.3);
@@ -295,7 +334,7 @@ impl AcpClient {
                 v.get("method").and_then(|m| m.as_str()),
             ) {
                 let result = if req_method == "session/request_permission" {
-                    json!({ "outcome": { "outcome": "cancelled" } })
+                    select_allow_outcome(&v)
                 } else if req_method == "fs/read_text_file" {
                     json!({ "content": "" })
                 } else {
