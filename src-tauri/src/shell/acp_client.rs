@@ -351,6 +351,62 @@ impl AcpClient {
 mod tests {
     use super::*;
 
+    fn perm_req(options: Value) -> Value {
+        json!({ "params": { "options": options } })
+    }
+
+    #[test]
+    fn approves_allow_once_over_other_options() {
+        let req = perm_req(json!([
+            { "optionId": "r", "kind": "reject_once" },
+            { "optionId": "a", "kind": "allow_once" },
+            { "optionId": "aa", "kind": "allow_always" },
+        ]));
+        assert_eq!(
+            select_allow_outcome(&req),
+            json!({ "outcome": { "outcome": "selected", "optionId": "a" } })
+        );
+    }
+
+    #[test]
+    fn falls_back_to_allow_always_then_any_non_reject() {
+        let only_always = perm_req(json!([
+            { "optionId": "r", "kind": "reject_once" },
+            { "optionId": "aa", "kind": "allow_always" },
+        ]));
+        assert_eq!(
+            select_allow_outcome(&only_always),
+            json!({ "outcome": { "outcome": "selected", "optionId": "aa" } })
+        );
+
+        // Unknown kind that isn't a reject is still usable.
+        let custom = perm_req(json!([
+            { "optionId": "r", "kind": "reject_always" },
+            { "optionId": "x", "kind": "grant" },
+        ]));
+        assert_eq!(
+            select_allow_outcome(&custom),
+            json!({ "outcome": { "outcome": "selected", "optionId": "x" } })
+        );
+    }
+
+    #[test]
+    fn cancels_when_only_reject_options_or_none() {
+        let only_reject = perm_req(json!([
+            { "optionId": "r1", "kind": "reject_once" },
+            { "optionId": "r2", "kind": "reject_always" },
+        ]));
+        assert_eq!(
+            select_allow_outcome(&only_reject),
+            json!({ "outcome": { "outcome": "cancelled" } })
+        );
+        // Malformed / missing options -> cancel, never panic.
+        assert_eq!(
+            select_allow_outcome(&json!({})),
+            json!({ "outcome": { "outcome": "cancelled" } })
+        );
+    }
+
     /// Real end-to-end: spawn hermes-acp via the kernel client, run one
     /// streamed prompt turn. Network + uvx + a configured hermes provider.
     /// Run: `cargo test acp_smoke -- --ignored --nocapture`
