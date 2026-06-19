@@ -171,6 +171,44 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
     NEEDS.iter().any(|k| last.contains(k))
 }
 
+/// Retrieve top vault matches for the latest user message and format them as a
+/// context block, so the provider-direct path shares the same knowledge base as
+/// hermes (ADR-005 irisy § persona-shell v5 §6.2). hermes searches the vault
+/// live via its tools; the direct path has no tools, so we inject read-only
+/// context here. Returns None when the vault is unavailable or nothing matches.
+fn retrieve_kb_context(messages: &[ChatMessage]) -> Option<String> {
+    let query = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.clone())?;
+    if query.trim().is_empty() {
+        return None;
+    }
+    let root = crate::kernel::vault::default_vault_root()?;
+    let paths = crate::kernel::vault::search(&root, &query, 3).ok()?;
+    if paths.is_empty() {
+        return None;
+    }
+    let mut block = String::from(
+        "# Possibly-relevant notes from the user's knowledge base\n\
+         (Use only if they actually answer the question; cite the path when you do.)\n",
+    );
+    for p in paths.iter().take(3) {
+        let snippet: String = crate::kernel::vault::read(&root, p)
+            .map(|e| e.content)
+            .unwrap_or_default()
+            .chars()
+            .take(500)
+            .collect();
+        if snippet.trim().is_empty() {
+            continue;
+        }
+        block.push_str(&format!("\n## {p}\n{snippet}\n"));
+    }
+    Some(block)
+}
+
 async fn forward_to_provider(
     app: &AppHandle,
     request_id: &str,
@@ -290,6 +328,23 @@ async fn forward_to_provider(
                 }
             }
         }
+    }
+
+    // KB retrieval for the provider-direct path so it shares the same vault as
+    // hermes (ADR-005 irisy § persona-shell v5 §6.2). Injected right before the
+    // user turn; hermes doesn't need this (it searches the vault live).
+    if let Some(kb) = retrieve_kb_context(&messages) {
+        let pos = messages
+            .iter()
+            .rposition(|m| m.role == "user")
+            .unwrap_or(messages.len());
+        messages.insert(
+            pos,
+            ChatMessage {
+                role: "system".to_string(),
+                content: kb,
+            },
+        );
     }
 
     let prompt = ChatPrompt {

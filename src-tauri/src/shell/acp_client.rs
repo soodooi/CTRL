@@ -51,7 +51,10 @@ const CTRL_CAPABILITY_BRIEF: &str = "\
 server (already connected) gives you tools to read / write / search the user's \
 notes and Obsidian vault at ~/Documents/CTRL/Notes (vault.* tools), plus \
 clipboard, OCR and image/video generation. When the user asks about their notes, \
-Obsidian, or knowledge, USE these tools — do not answer from memory alone.]";
+Obsidian, or knowledge, USE these tools — do not answer from memory alone. \
+Your long-term memory is the user's SOUL.md (ADR-005 irisy v5 §6.3): read it and \
+persist durable facts THERE via the ctrl soul/memory tools, not in your own \
+private store, so the chat and agent paths share one memory and never drift.]";
 
 /// Process-wide persistent client. `None` until the first turn starts it;
 /// reset to `None` on any error so the next turn restarts cleanly.
