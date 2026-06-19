@@ -28,7 +28,9 @@ import {
   loadIrisySystemPromptWithSoul,
   IRISY_SYSTEM_DEFAULT,
   loadBrainState,
-  formatBrainStateBlock,
+  // composeSystemPrompt owns the <brain_state> inject per ADR-005 irisy v5
+  // §6.4 (assembly order); formatBrainStateBlock is no longer called here.
+  composeSystemPrompt,
   type BrainState,
 } from '@/lib/irisy-prompts';
 import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
@@ -255,6 +257,10 @@ const AssistantBubble = memo(function AssistantBubble({
   );
 });
 
+// Thin wrapper over the shared composeSystemPrompt (lib/irisy-prompts) so the
+// docked chat and the AmbientHome home composer assemble identical prompts.
+// brain_state is now injected again — the 2026-06-05 Pi-first drop is obsolete
+// (Pi retired, chat routes through CTRL's registry; see composeSystemPrompt).
 function buildSystemPrompt(
   systemBase: string,
   mcps: ReadonlyArray<McpSummary>,
@@ -262,55 +268,13 @@ function buildSystemPrompt(
   coreMemory: string,
   brainState: BrainState | null,
 ): string {
-  const sections: string[] = [systemBase];
-
-  // bao 2026-06-05 Pi-first amendment to ADR-002 § provider v2 §3.7:
-  // the brain_state inject is INTENTIONALLY dropped. After d71a65a +
-  // 795d20a, Pi connects directly to its own LLM provider (Claude Pro
-  // via pi-claude-auth, or whatever PI_PROVIDER/PI_MODEL is set to).
-  // CTRL's provider_registry no longer routes the chat call, so the
-  // brain_state snapshot here lags Pi's real-time state — when CTRL
-  // still has `irisy.primary = ollama-local` in its registry but Pi
-  // is actually calling Claude, the LLM dutifully quotes the stale
-  // brand label and the user gets a wrong-model answer.
-  //
-  // Pi knows its own provider/model and the LLM can self-describe
-  // accurately without a CTRL-side injection. brainState is still
-  // loaded for the StatusBar / Settings → Providers chip (different
-  // surface), just not pushed into the system prompt.
-  void brainState;
-
-  // bao 2026-06-05 Pi-first: the entire Frontier-native overlay
-  // discussion (ADR-002 § brain v7 §1.1 + ADR-005 irisy v4 §7.6 hotfix
-  // 2026-06-04) is now moot. Pi itself owns tool calling. There is no
-  // PWA-side XML overlay vs native function-call branching to choose
-  // between — Pi runs its agent loop natively, the PWA observes the
-  // final answer. The `isFrontierNativeProvider` import + this whole
-  // toggle were removed alongside irisy-tool-dispatch.ts.
-
-  if (coreMemory.trim().length > 0) {
-    sections.push(`# Core memory (loaded from vault/.irisy-memory/)\n${coreMemory.trim()}`);
-  }
-
-  if (longTermMemory.trim().length > 0) {
-    sections.push(
-      `# Long-term memory (vault/irisy/SOUL.md)\n${longTermMemory.trim()}`,
-    );
-  }
-
-  if (mcps.length === 0) {
-    sections.push(
-      '# Installed mcps\n(none yet — you can install one by dragging a card onto the Keyboard, or ask Irisy to make one)',
-    );
-  } else {
-    const lines = mcps.map(
-      (k) => `- ${k.id} · ${k.name} · ${k.icon} (${k.mcp_color})`,
-    );
-    sections.push(
-      `# Installed mcps (${mcps.length})\n${lines.join('\n')}`,
-    );
-  }
-  return sections.join('\n\n');
+  return composeSystemPrompt({
+    base: systemBase,
+    brainState,
+    coreMemory,
+    longTermMemory,
+    mcps,
+  });
 }
 
 /** ADR-002 substrate § brain v15 (2026-06-07) — `forceMode` lets the L1

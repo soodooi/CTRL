@@ -14,6 +14,7 @@ import {
   IRISY_SYSTEM_DEFAULT,
   renderTemplate,
   formatBrainStateBlock,
+  composeSystemPrompt,
   type BrainState,
 } from './irisy-prompts';
 
@@ -138,5 +139,56 @@ describe('loadIrisySystemPromptWithSoul (P3 — SOUL.md core-memory injection)',
     expect(out).toContain('## Core memory (vault/irisy/SOUL.md)');
     expect(out).toContain('Core: bao prefers path:line citations.');
     expect(out).toContain('x-ctrl:tone');
+  });
+});
+
+describe('composeSystemPrompt (P3 — shared assembly, brain_state re-wired)', () => {
+  const brain: BrainState = {
+    engine: { id: 'Hermes', version: '0.3', healthy: true, last_token_ms: null },
+    providers: {
+      'irisy.primary': {
+        id: 'volc',
+        label: 'CTRL Cloud',
+        endpoint: null,
+        binary: null,
+        healthy: true,
+        managed_by: 'ctrl',
+      },
+    },
+    last_failover: null,
+  };
+
+  it('always leads with the persona base', () => {
+    expect(composeSystemPrompt({ base: 'PERSONA-BASE' })).toContain('PERSONA-BASE');
+  });
+
+  it('injects the brain_state block when provided (fixes P-2 "which model")', () => {
+    const out = composeSystemPrompt({ base: 'P', brainState: brain });
+    expect(out).toContain('<brain_state>');
+    expect(out).toContain('irisy.primary: CTRL Cloud');
+  });
+
+  it('omits brain_state when null so it degrades cleanly offline', () => {
+    expect(composeSystemPrompt({ base: 'P', brainState: null })).not.toContain(
+      '<brain_state>',
+    );
+  });
+
+  it('appends core/long-term memory and the installed-mcps list when present', () => {
+    const out = composeSystemPrompt({
+      base: 'P',
+      coreMemory: 'CM-FACT',
+      longTermMemory: 'LTM-FACT',
+      mcps: [{ id: 'k1', name: 'Slides', icon: 'x', mcp_color: 'red' }],
+    });
+    expect(out).toContain('# Core memory');
+    expect(out).toContain('CM-FACT');
+    expect(out).toContain('# Long-term memory');
+    expect(out).toContain('# Installed mcps (1)');
+    expect(out).toContain('k1');
+  });
+
+  it('shows the empty-mcps hint when given an empty array', () => {
+    expect(composeSystemPrompt({ base: 'P', mcps: [] })).toContain('none yet');
   });
 });

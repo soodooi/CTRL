@@ -495,3 +495,61 @@ export async function loadBrainState(): Promise<BrainState | null> {
     return null;
   }
 }
+
+/** Minimal mcp shape composeSystemPrompt needs — structural so it accepts
+ *  kernel's McpSummary without importing the kernel module. */
+export interface SystemPromptMcp {
+  id: string;
+  name: string;
+  // kernel's McpSummary.icon is a union (string | glyph/svg/lottie object);
+  // widen to unknown + String() at use so this stays decoupled from kernel.
+  icon: unknown;
+  mcp_color: string;
+}
+
+/**
+ * Assemble the per-turn system prompt shared by every Irisy chat surface
+ * (the docked IrisyChat column + the AmbientHome home composer). Single source
+ * of truth so the two surfaces can't drift apart again — they had: AmbientHome
+ * shipped with NO system prompt at all (no persona, no brain_state), which is
+ * why it leaked internal terms, monologued, and couldn't name its own model.
+ *
+ * brain_state IS injected here. The 2026-06-05 "Pi-first" amendment that
+ * dropped it (Pi called its own provider, so a CTRL-side snapshot lagged the
+ * real model) is obsolete: Pi is retired (ADR-002 substrate § brain v19) and
+ * chat now routes through CTRL's own provider registry, so the snapshot matches
+ * the live provider. Without it the model cannot answer "which model is this?".
+ */
+export function composeSystemPrompt(opts: {
+  base: string;
+  brainState?: BrainState | null;
+  coreMemory?: string;
+  longTermMemory?: string;
+  mcps?: ReadonlyArray<SystemPromptMcp>;
+}): string {
+  const { base, brainState, coreMemory = '', longTermMemory = '', mcps } = opts;
+  const sections: string[] = [base];
+
+  if (brainState) {
+    sections.push(formatBrainStateBlock(brainState));
+  }
+  if (coreMemory.trim().length > 0) {
+    sections.push(`# Core memory (loaded from vault/.irisy-memory/)\n${coreMemory.trim()}`);
+  }
+  if (longTermMemory.trim().length > 0) {
+    sections.push(`# Long-term memory (vault/irisy/SOUL.md)\n${longTermMemory.trim()}`);
+  }
+  if (mcps) {
+    if (mcps.length === 0) {
+      sections.push(
+        '# Installed mcps\n(none yet — you can install one by dragging a card onto the Keyboard, or ask Irisy to make one)',
+      );
+    } else {
+      const lines = mcps.map(
+        (k) => `- ${k.id} · ${k.name} · ${String(k.icon)} (${k.mcp_color})`,
+      );
+      sections.push(`# Installed mcps (${mcps.length})\n${lines.join('\n')}`);
+    }
+  }
+  return sections.join('\n\n');
+}

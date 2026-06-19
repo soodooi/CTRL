@@ -25,6 +25,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
+// Reply-correctness wiring (parity with the docked IrisyChat): the home
+// composer must ship the persona + brain_state system prompt and filter the
+// reply, or it leaks internals / monologues / can't name its model.
+import {
+  composeSystemPrompt,
+  loadIrisySystemPromptWithSoul,
+  loadBrainState,
+} from '@/lib/irisy-prompts';
+import { cleanReplyText } from '@/lib/irisy-render-filter';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
 import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
@@ -256,10 +265,21 @@ export function AmbientHome({
     abortRef.current = ctrl;
 
     try {
-      const history: LLMMessage[] = [...messages, userMsg].map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+      // Assemble the per-turn system prompt (persona + SOUL + brain_state) so
+      // the model has its identity, guardrails and live provider — without it
+      // the home composer leaked internals, monologued, and couldn't name its
+      // own model. Shared with IrisyChat via composeSystemPrompt.
+      const [base, brain] = await Promise.all([
+        loadIrisySystemPromptWithSoul(),
+        loadBrainState(),
+      ]);
+      const history: LLMMessage[] = [
+        { role: 'system', content: composeSystemPrompt({ base, brainState: brain }) },
+        ...[...messages, userMsg].map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+      ];
       let acc = '';
       for await (const chunk of irisyChatTransport().stream(history, { signal: ctrl.signal })) {
         const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
@@ -519,7 +539,9 @@ export function AmbientHome({
           {m.role === 'assistant' ? (
             <>
               {m.content ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {cleanReplyText(m.content)}
+                </ReactMarkdown>
               ) : m.id === lastAssistantId && streaming ? (
                 <div className={styles.thinking} aria-label="Irisy is thinking">
                   <span>Irisy is thinking</span>
