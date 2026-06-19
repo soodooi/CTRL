@@ -52,6 +52,15 @@ pub async fn irisy_session_list() -> Result<Vec<IrisySessionSummary>, String> {
         ));
     }
     let text = String::from_utf8_lossy(&out.stdout);
+    Ok(parse_session_summaries(&text))
+}
+
+/// Project `hermes sessions export -` JSONL (one session per line) into the
+/// lightweight history list, newest first. Split out of the command so the
+/// projection (preview trim / title fallback / skip bad lines / sort) is
+/// unit-testable without spawning hermes. ADR-002 substrate § provider +
+/// vault/ctrl/strategy/0013 (2026-06-16).
+fn parse_session_summaries(text: &str) -> Vec<IrisySessionSummary> {
     let mut sessions: Vec<IrisySessionSummary> = Vec::new();
     for line in text.lines() {
         let line = line.trim();
@@ -99,7 +108,7 @@ pub async fn irisy_session_list() -> Result<Vec<IrisySessionSummary>, String> {
     }
     // Newest first — ISO-8601 timestamps sort lexicographically.
     sessions.sort_by(|a, b| b.ended_at.cmp(&a.ended_at));
-    Ok(sessions)
+    sessions
 }
 
 /// One displayable turn from a past conversation.
@@ -128,9 +137,20 @@ pub async fn irisy_session_get(id: String) -> Result<Vec<IrisySessionTurn>, Stri
         ));
     }
     let text = String::from_utf8_lossy(&out.stdout);
+    Ok(parse_session_turns(&text))
+}
+
+/// Project the first non-empty JSONL line of `hermes sessions export
+/// --session-id <id> -` into displayable user/assistant turns (tool/system
+/// filtered, empty content skipped). Split out for unit-testing without
+/// hermes; a malformed line yields no turns rather than erroring. ADR-002
+/// substrate § provider + vault/ctrl/strategy/0013 (2026-06-16).
+fn parse_session_turns(text: &str) -> Vec<IrisySessionTurn> {
     let line = text.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-    let v: serde_json::Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
     let mut turns: Vec<IrisySessionTurn> = Vec::new();
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+        return turns;
+    };
     if let Some(arr) = v.get("messages").and_then(|m| m.as_array()) {
         for m in arr {
             let role = m.get("role").and_then(|r| r.as_str()).unwrap_or("");
@@ -147,5 +167,69 @@ pub async fn irisy_session_get(id: String) -> Result<Vec<IrisySessionTurn>, Stri
             });
         }
     }
-    Ok(turns)
+    turns
+}
+
+#[cfg(test)]
+mod tests {
+    // SC8 — hermes session-history JSONL projection (read-only history
+    // drawer). ADR-002 substrate § provider + vault/ctrl/strategy/0013
+    // (2026-06-16): read via the documented export, project light + safe.
+    use super::*;
+
+    #[test]
+    fn summaries_preview_is_first_user_message_with_title_fallback() {
+        let jsonl = r#"{"id":"s1","started_at":"2026-06-01T10:00:00Z","ended_at":"2026-06-01T10:05:00Z","message_count":3,"messages":[{"role":"assistant","content":"hi"},{"role":"user","content":"draft a note\nabout cats"}]}"#;
+        let out = parse_session_summaries(jsonl);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "s1");
+        // preview = first USER message, newlines flattened to spaces
+        assert_eq!(out[0].preview, "draft a note about cats");
+        // no title field -> falls back to the preview
+        assert_eq!(out[0].title, "draft a note about cats");
+        assert_eq!(out[0].message_count, 3);
+    }
+
+    #[test]
+    fn summaries_untitled_when_no_title_and_no_user_message() {
+        let jsonl = r#"{"id":"s1","messages":[{"role":"assistant","content":"hi"}]}"#;
+        let out = parse_session_summaries(jsonl);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].preview, "");
+        assert_eq!(out[0].title, "Untitled");
+    }
+
+    #[test]
+    fn summaries_skip_blank_bad_json_and_empty_id() {
+        let jsonl = "\n  \nnot json\n{\"id\":\"\",\"messages\":[]}\n{\"id\":\"ok\",\"messages\":[]}";
+        let out = parse_session_summaries(jsonl);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "ok");
+    }
+
+    #[test]
+    fn summaries_sorted_newest_first_by_ended_at() {
+        let jsonl = concat!(
+            r#"{"id":"old","ended_at":"2026-06-01T10:00:00Z","messages":[]}"#,
+            "\n",
+            r#"{"id":"new","ended_at":"2026-06-09T10:00:00Z","messages":[]}"#
+        );
+        let out = parse_session_summaries(jsonl);
+        let ids: Vec<&str> = out.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["new", "old"]);
+    }
+
+    #[test]
+    fn turns_keep_user_assistant_drop_tool_system_and_empty() {
+        let jsonl = r#"{"messages":[{"role":"system","content":"sys"},{"role":"user","content":"hi"},{"role":"tool","content":"x"},{"role":"assistant","content":"hello"},{"role":"assistant","content":"  "}]}"#;
+        let turns = parse_session_turns(jsonl);
+        assert_eq!(turns.len(), 2);
+        assert_eq!((turns[0].role.as_str(), turns[0].content.as_str()), ("user", "hi"));
+        assert_eq!((turns[1].role.as_str(), turns[1].content.as_str()), ("assistant", "hello"));
+    }
+
+    #[test]
+    fn turns_empty_on_malformed_line() {
+        assert!(parse_session_turns("not json").is_empty());
+    }
 }
