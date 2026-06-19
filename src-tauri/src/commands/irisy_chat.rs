@@ -187,8 +187,20 @@ async fn forward_to_provider(
                 let client = guard.as_mut().expect("acp client present");
                 let rid = request_id.to_string();
                 let app2 = app.clone();
+                // Feed hermes CTRL's composed system prompt (persona +
+                // capability catalog + brain_state) the PWA already built —
+                // ADR-005 irisy § persona-shell v5 (§6.2 capabilities).
+                // Previously only `last_user` reached hermes, so it answered
+                // from its own SOUL.md/skills and didn't know CTRL's
+                // capabilities (leaked its own identity instead).
+                let system_preamble = messages
+                    .iter()
+                    .filter(|m| m.role == "system")
+                    .map(|m| m.content.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
                 let result = client
-                    .prompt(&last_user, |d: &str| {
+                    .prompt(&last_user, Some(&system_preamble), |d: &str| {
                         let _ = app2.emit(
                             "chat-stream-delta",
                             StreamDelta {

@@ -236,16 +236,31 @@ impl AcpClient {
     pub async fn prompt(
         &mut self,
         text: &str,
+        system_preamble: Option<&str>,
         mut on_delta: impl FnMut(&str) + Send,
     ) -> Result<String> {
         let sid = self.session_id.clone();
-        // Prime the first turn with the CTRL capability brief so hermes knows it
-        // can drive the user's notes / Obsidian via the bus tools (§1.8.2).
+        // Prime the first turn with CTRL's composed system prompt (persona +
+        // capability catalog + brain_state, ADR-005 irisy v5 §6.2) THEN the
+        // capability brief. Without the preamble hermes answered from its own
+        // SOUL.md + loaded skills — it didn't know CTRL's capability list and
+        // leaked its own identity ("Hermes Agent", docs URL, an Obsidian-debug
+        // skill). The brief still tells it to actually USE the ctrl bus tools
+        // (§1.8.2).
         let turn_text = if self.primed {
             text.to_string()
         } else {
             self.primed = true;
-            format!("{CTRL_CAPABILITY_BRIEF}\n\n{text}")
+            let mut head = String::new();
+            if let Some(sys) = system_preamble {
+                let sys = sys.trim();
+                if !sys.is_empty() {
+                    head.push_str(sys);
+                    head.push_str("\n\n");
+                }
+            }
+            head.push_str(CTRL_CAPABILITY_BRIEF);
+            format!("{head}\n\n{text}")
         };
         let res = self
             .request(
@@ -417,7 +432,7 @@ mod tests {
         let mut client = AcpClient::start(&env).await.expect("start hermes-acp");
         let mut answer = String::new();
         let stop = client
-            .prompt("Reply with exactly: ACP OK", |d| answer.push_str(d))
+            .prompt("Reply with exactly: ACP OK", None, |d| answer.push_str(d))
             .await
             .expect("prompt turn");
         println!("\nANSWER: {answer:?}  stopReason={stop}");

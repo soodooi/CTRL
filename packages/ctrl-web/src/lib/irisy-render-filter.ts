@@ -92,7 +92,9 @@ const NARRATION_LINE_RE = new RegExp(
  *  closest user-facing word. */
 const CODENAME_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
   // brain layer
-  [/\bPi\b/g, 'the assistant'],
+  // Not when preceded by `-` (CLI flags like `lsof -Pi` were getting mangled
+  // into `lsof -the assistant`).
+  [/(?<!-)\bPi\b/g, 'the assistant'],
   [/\bclaude-oauth\b/gi, 'Claude (OAuth)'],
   [/\banthropic-api\b/gi, 'Anthropic API'],
   [/\bopenai-api\b/gi, 'OpenAI API'],
