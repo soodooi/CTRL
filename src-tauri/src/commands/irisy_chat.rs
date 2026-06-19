@@ -118,6 +118,59 @@ fn build_mode_system_header(mode: Option<&str>, project_dir: Option<&str>) -> Op
     }
 }
 
+/// Pick the EXECUTION path for this turn (ADR-005 irisy § persona-shell v5,
+/// §6.2 capabilities). Both paths share the same persona + memory + KB
+/// substrate (composeSystemPrompt); this only decides who runs the turn:
+///   - hermes agent  -> turns that act on the user's data / files / KB, build a
+///     tool, or generate media (they need real tool execution).
+///   - provider-direct -> pure-language turns (chat / translate / summarize /
+///     explain / identity / capability) — clean + fast, no agent loop.
+/// Keyword heuristic on the latest user message, not a model classifier (GOAL
+/// non-goal). Verbs alone are ambiguous (drafting an email stays direct), so we
+/// anchor on the user's DATA / SYSTEM / MEDIA nouns + clear action phrases.
+/// Chinese phrases are Unicode-escaped to keep the source all-English; the
+/// trailing comment glosses each in English.
+fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
+    let last = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.to_lowercase())
+        .unwrap_or_default();
+    const NEEDS: &[&str] = &[
+        // English action / data / media phrases
+        "note", "save to", "save it to", "my notes", "knowledge base",
+        "build a tool", "make a tool", "generate an image", "an image of",
+        "make a video", "voiceover", "transcribe", "ocr", "web search",
+        "schedule a", "recurring", "refactor", "edit the file",
+        // Chinese phrases (escaped; gloss in comment)
+        "\u{7b14}\u{8bb0}",                 // note
+        "\u{77e5}\u{8bc6}\u{5e93}",         // knowledge base
+        "\u{9020}\u{5de5}\u{5177}",         // build a tool
+        "\u{505a}\u{4e2a}\u{5de5}\u{5177}", // make a tool
+        "\u{4e00}\u{952e}",                 // one-tap reusable tool
+        "\u{751f}\u{6210}\u{56fe}",         // generate image
+        "\u{753b}\u{4e00}\u{5f20}",         // draw a picture
+        "\u{505a}\u{5f20}\u{56fe}",         // make a picture
+        "\u{751f}\u{6210}\u{89c6}\u{9891}", // generate video
+        "\u{77ed}\u{89c6}\u{9891}",         // short video
+        "\u{914d}\u{97f3}",                 // voiceover
+        "\u{8bed}\u{97f3}\u{5408}\u{6210}", // tts
+        "\u{8f6c}\u{5199}",                 // transcribe
+        "\u{8bc6}\u{522b}\u{56fe}",         // ocr an image
+        "\u{63d0}\u{53d6}\u{8868}\u{683c}", // extract a table
+        "\u{5b9a}\u{65f6}",                 // schedule
+        "\u{6bcf}\u{5929}",                 // every day
+        "\u{6bcf}\u{5468}",                 // every week
+        "\u{91cd}\u{6784}",                 // refactor
+        "\u{6539}\u{4ee3}\u{7801}",         // edit code
+        "\u{641c}\u{7b14}\u{8bb0}",         // search notes
+        "\u{5b58}\u{5230}",                 // save into
+        "\u{8bb0}\u{5230}\u{6211}\u{7684}", // record into my ...
+    ];
+    NEEDS.iter().any(|k| last.contains(k))
+}
+
 async fn forward_to_provider(
     app: &AppHandle,
     request_id: &str,
@@ -156,11 +209,19 @@ async fn forward_to_provider(
     // error, CLAUDE.md derived rule #2). A slow agent turn stays interruptible
     // via the Stop button + never-block input (IrisyChat). Coding -> opencode.
     let coding_mode = args.mode.as_deref() == Some("coding");
-    if !coding_mode
+    // Routing (ADR-005 irisy § persona-shell v5 §6.2): tool/action turns ->
+    // hermes; pure-language turns -> provider-direct (clean + fast). Both share
+    // the same persona/memory substrate (composed system prompt). `mode` can
+    // force a path: "agent" always hermes, "direct" always provider.
+    let force_agent = args.mode.as_deref() == Some("agent");
+    let force_direct = args.mode.as_deref() == Some("direct");
+    let use_agent = !coding_mode
+        && !force_direct
         && crate::shell::agent_installer::is_installed(
             &crate::shell::agent_installer::AgentName::Hermes,
         )
-    {
+        && (force_agent || turn_needs_agent(&messages));
+    if use_agent {
         if let Some(last_user) = messages
             .iter()
             .rev()
@@ -293,4 +354,40 @@ fn emit_done(app: &AppHandle, request_id: &str, error: Option<String>) {
             custom: None,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user(s: &str) -> Vec<ChatMessage> {
+        vec![ChatMessage {
+            role: "user".to_string(),
+            content: s.to_string(),
+        }]
+    }
+
+    #[test]
+    fn pure_language_turns_stay_direct() {
+        assert!(!turn_needs_agent(&user("translate this to english: hello")));
+        assert!(!turn_needs_agent(&user("summarize this article for me")));
+        assert!(!turn_needs_agent(&user("who are you and what can you do")));
+        // Drafting text is pure-language, not a vault action.
+        assert!(!turn_needs_agent(&user("write me an email to my boss")));
+    }
+
+    #[test]
+    fn action_turns_route_to_agent() {
+        assert!(turn_needs_agent(&user("save this to my notes")));
+        assert!(turn_needs_agent(&user("generate an image of a cat")));
+        assert!(turn_needs_agent(&user("refactor this code")));
+        // Chinese "笔记" (note) — escaped to keep the source all-English.
+        assert!(turn_needs_agent(&user("\u{7b14}\u{8bb0}")));
+    }
+
+    #[test]
+    fn empty_or_no_user_message_stays_direct() {
+        assert!(!turn_needs_agent(&[]));
+        assert!(!turn_needs_agent(&user("")));
+    }
 }
