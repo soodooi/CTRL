@@ -736,6 +736,55 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    // P6 — Irisy SOUL.md core-memory write closes the loop: the persona
+    // layer reads back exactly what was saved, or the injected memory is
+    // wrong. ADR-005 irisy v2 § soul-md-compat §4.3. SOUL.md is a multi-line
+    // markdown doc with flat frontmatter (the parser's nested-mapping limit
+    // keeps x-ctrl:* extensions flat).
+    #[test]
+    fn soul_md_roundtrips_multiline_body_and_flat_frontmatter() {
+        let root = fresh_tmp("soul");
+        // soul_md_version lives in a separate irisy/.soul-md-version pin
+        // file, NOT here. Note a bare numeric-looking string ("1.0") would
+        // round-trip back as a Number — the colon in the ISO timestamp makes
+        // yaml_quote protect it so it stays a String.
+        let fm = serde_json::json!({
+            "kind": "soul",
+            "managed_by": "irisy",
+            "created_at": "2026-06-19T10:00:00Z",
+            "tags": ["irisy", "memory"]
+        });
+        let body = "# Irisy\n\nbao prefers brevity.\n\n- cite path:line\n- no sycophancy\n";
+        write(&root, "irisy/SOUL.md", body, &fm).expect("soul write");
+
+        let entry = read(&root, "irisy/SOUL.md").expect("soul read");
+        assert_eq!(entry.path, "irisy/SOUL.md");
+        // Multi-line markdown body (blank lines + list) survives intact.
+        assert_eq!(entry.content.trim_end(), body.trim_end());
+        assert_eq!(entry.frontmatter["kind"], "soul");
+        assert_eq!(entry.frontmatter["managed_by"], "irisy");
+        assert_eq!(entry.frontmatter["created_at"], "2026-06-19T10:00:00Z");
+        assert_eq!(entry.frontmatter["tags"][0], "irisy");
+        assert_eq!(entry.frontmatter["tags"][1], "memory");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn soul_md_write_overwrites_prior_content() {
+        // SOUL.md is single-file persistent memory — curator updates must
+        // replace, not append. ADR-005 irisy v2 § soul-md-compat §4.3.
+        let root = fresh_tmp("soul-ow");
+        write(&root, "irisy/SOUL.md", "v1 body", &serde_json::json!({"rev": 1})).unwrap();
+        write(&root, "irisy/SOUL.md", "v2 body", &serde_json::json!({"rev": 2})).unwrap();
+
+        let entry = read(&root, "irisy/SOUL.md").unwrap();
+        assert_eq!(entry.content.trim(), "v2 body");
+        assert_eq!(entry.frontmatter["rev"].as_i64(), Some(2));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn sanitize_rejects_traversal() {
         assert!(sanitize_relative_path("../escape.md").is_err());
