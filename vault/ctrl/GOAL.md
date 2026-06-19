@@ -74,6 +74,8 @@ governing ADR = **ADR-005 irisy v5**(ADR-008 已退役,仅留 §8 acceptance 措
 - 2026-06-19 **里程碑:SC1–8 全部完成**(纯增量、不碰并行区、不需拍板的通道测试)。累计:ctrl-web 32 vitest + kernel 15 新 cargo 测试。**剩余 SC 性质不同**:SC9(P2 门控解除,需 bao 拍)/ SC10(P6 SOUL.md write,需先实装功能)/ SC11(P7 Capability Floor,需先实装)/ SC12(e2e,遗留对象被并行清理需重建)/ SC13(全绿闸)。下一步需 bao 定方向。
 - 2026-06-19 **SC10 完成**(bao 选 (a) 实装 P6 再测)。**发现 P6 write 早已实装**(`irisy_soul_write` vault.rs:673 + MCP `irisy_soul_set` + 已注册 mod.rs:254;之前 Explore 报告「仅 read」已过时,差点重造——先 Explore 规避)。SC10 收敛为测 write 闭环:`vault.rs` +2 cargo 测试(多行 markdown body + flat frontmatter round-trip;write 覆盖更新),绿。**真实发现**:frontmatter 裸数字样字符串值(`"1.0"`)round-trip 被 `parse_yaml_to_json` 解析回 `Number`(类型不保真);SOUL.md 版本号走独立 `irisy/.soul-md-version` pin 文件规避此问题;测试用含冒号 ISO 串验证 `yaml_quote` 保护下字符串值正确 round-trip。**下一步 = SC11**(P7 Capability Floor;先 Explore 现状,若像 P6 已实装则直接测,若零实装且涉及 capability 段/关键词设计决策则需 bao 拍)。
 
+- 2026-06-19 **real-link probe 4-bug 修复(P3 通道, commit `5c4c3ba`)**。根因实测:首屏 composer `AmbientHome.tsx` 给模型的 history **完全没 system prompt**(零 persona / 零 brain_state / 零 `cleanReplyText`),与 docked `IrisyChat` diverge → P-2 答不出模型+漏术语 / P-3 内心独白 / P-1 XML 裸吐。修:抽共享纯函数 `composeSystemPrompt()`(两 surface 单一真相源)+ **恢复 `<brain_state>` 注入**(原 `void brainState` 的 Pi-first 理由随 Pi 退役失效;code-reviewer 证实旧丢弃实为 ADR-005 §5/§6.4 违规,修复=回归合规)+ AmbientHome 接 persona+SOUL+brain_state + 渲染过 `cleanReplyText`。**彻底闭 P-2**,改善 P-3;P-1 XML / P-4 检索仍需能执行 tool 的 brain(SC9/P2,未越界 band-aid)。+5 vitest(composeSystemPrompt),ctrl-web 37 绿 + typecheck 绿;独立 checker 判 **PASS**。**未闭项需真机 real-link 复测**(behavioral,我无法起 Tauri+provider)。
+
 ## Git — branch `ui/v1-editorial`
 
 (clean)
