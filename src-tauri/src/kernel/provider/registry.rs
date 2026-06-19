@@ -1239,4 +1239,53 @@ mod tests {
             assert_eq!(&m.id, id);
         }
     }
+
+    // SC6 — failover + cooldown state machine, exercised in isolation from
+    // manifest loading / FS. ADR-002 substrate § provider v2 §3.5 (M2
+    // amendment 2026-06-04): mark_failure opens a cooldown window so the
+    // router skips a known-bad primary; record_failover keeps last-wins.
+    fn empty_registry() -> ProviderRegistry {
+        ProviderRegistry {
+            providers: RwLock::new(BTreeMap::new()),
+            active: RwLock::new(BTreeMap::new()),
+            active_state_path: None,
+            last_failover: RwLock::new(None),
+            routing_override: RwLock::new(None),
+            provider_health: RwLock::new(BTreeMap::new()),
+        }
+    }
+
+    #[test]
+    fn record_failover_keeps_fields_and_last_wins() {
+        let reg = empty_registry();
+        assert!(reg.last_failover_event().is_none());
+
+        reg.record_failover("claude-oauth", "volc", "oauth expired");
+        let ev = reg.last_failover_event().expect("event recorded");
+        assert_eq!(ev.from, "claude-oauth");
+        assert_eq!(ev.to, "volc");
+        assert_eq!(ev.reason, "oauth expired");
+
+        // Latest transition wins (no history kept).
+        reg.record_failover("volc", "ollama", "rate limited");
+        let ev2 = reg.last_failover_event().unwrap();
+        assert_eq!(ev2.from, "volc");
+        assert_eq!(ev2.to, "ollama");
+    }
+
+    #[test]
+    fn cooldown_marks_then_clears_and_unknown_is_never_cooling() {
+        let reg = empty_registry();
+        assert!(!reg.is_in_cooldown("claude-oauth"));
+
+        reg.mark_failure("claude-oauth", "401 unauthorized");
+        // Just-marked failure is within the cooldown window immediately.
+        assert!(reg.is_in_cooldown("claude-oauth"));
+
+        reg.clear_failure("claude-oauth");
+        assert!(!reg.is_in_cooldown("claude-oauth"));
+
+        // A provider that never failed is never in cooldown.
+        assert!(!reg.is_in_cooldown("never-seen"));
+    }
 }

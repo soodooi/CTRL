@@ -367,3 +367,26 @@ pub fn get_active_providers(
     }
     Ok(ActiveProvidersView { roles })
 }
+
+#[cfg(test)]
+mod tests {
+    // SC6 — brain_status failover wire shape. ADR-002 substrate § provider
+    // v2 §3.7 (2026-05-31): brain_status exposes from/to/reason only; the
+    // registry's RecordedFailover timestamp (§3.5) stays kernel-side and
+    // must not leak into the <brain_state> block.
+    use super::*;
+
+    #[test]
+    fn failover_event_from_recorded_keeps_transition_fields() {
+        let rec = RecordedFailover {
+            from: "claude-oauth".to_string(),
+            to: "volc".to_string(),
+            reason: "oauth expired".to_string(),
+            at_unix_ms: 1_700_000_000_000,
+        };
+        let ev = FailoverEvent::from_recorded(rec);
+        assert_eq!(ev.from, "claude-oauth");
+        assert_eq!(ev.to, "volc");
+        assert_eq!(ev.reason, "oauth expired");
+    }
+}
