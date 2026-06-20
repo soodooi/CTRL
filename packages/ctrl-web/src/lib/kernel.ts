@@ -14,6 +14,13 @@ import type { Icon } from './icon';
 // the previous snapshot rather than blank the UI (per Zeus' guidance).
 export interface KernelStatus {
   uptime_ms: number;
+  // Fresh-install seeding state — 'copying' while the kernel copies the
+  // builtin mcps from the app bundle into ~/.ctrl/mcps/, 'ready' once done.
+  // The PWA shows "Setting up CTRL…" during 'copying' so the empty
+  // Tools/Discover lists on a brand-new install don't read as broken.
+  // Mirror of system.rs::FirstRunState (serde snake_case).
+  // ADR-006 § cold-start-loop §6.1 G3 / §6.2 #3.
+  first_run_state: 'copying' | 'ready';
   llm_adapters: string[];
   primary_adapter: string | null;
   mcp_servers_installed: number;
@@ -26,6 +33,15 @@ export interface KernelStatus {
 
 export const kernelStatus = (): Promise<KernelStatus> =>
   invoke<KernelStatus>('kernel_status');
+
+// True while the kernel is still seeding builtin mcps on a fresh install
+// (first_run_state = 'copying'). Consumers show a "Setting up CTRL…" hint so
+// empty Tools/Discover lists read as "still installing" rather than broken.
+// Returns false on a null snapshot (no poll yet) — we'd rather not flash the
+// setup hint than show it spuriously. ADR-006 § cold-start-loop §6.2 #3.
+export function isSeedingFirstRun(status: KernelStatus | null): boolean {
+  return status?.first_run_state === 'copying';
+}
 
 // `icon` is widened to `Icon | string` for forward-compat with the
 // kernel schema migration to a discriminated union (per

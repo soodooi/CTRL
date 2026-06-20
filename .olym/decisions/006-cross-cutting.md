@@ -2,16 +2,18 @@
 adr_id: 006
 module: cross-cutting
 title: CTRL cross-cutting — BYOK aggregator-first + global English first + plain-text philosophy + policy envelope
-version: 5
+version: 6
 status: accepted
-last_updated: 2026-06-09
+last_updated: 2026-06-19
 deciders: [bao, zeus]
 sections:
   - { id: byok-aggregator,   source: orig-005 + H-2026-06-09-002 校准 }
   - { id: global-english,    source: orig-014 }
   - { id: plain-text,        source: orig-015 }
   - { id: policy-envelope,   source: new-2026-06-04, note: "L3/L4/L5 autonomy ladder + blast-radius limit + typed-ISA validation — invariants reused across all 6 self-evolution loops (ADR-001 §8)." }
+  - { id: cold-start-loop,   source: new-2026-06-19, note: "End-to-end download→install→first-run→BYOK→first-value loop. Aggregates §1 onboarding + ADR-003 §8 home + ADR-004 §2 distribution into one verified line; fixes the §1 ADR-vs-impl drift (misleading 'Irisy is connecting' stub)." }
 changelog:
+  - v6 2026-06-19: **NEW §6 cold-start-loop** — bao 2026-06-19 钦定方向「建立 ADR 唯一真相,再开发」for the home / 用户能下载 / functional user-loop ask. Aggregates the cold-start path (download → install → first-run → BYOK key → first value → output lands) — decisions already existed but were散落 across §1 (BYOK onboarding) / ADR-003 §8 (morphing home, SHIPPED) / ADR-004 §2 (Tauri updater + distribution) and never connected into one verified line. **Fixes a §1 ADR-vs-impl drift**: §1 requires "no provider → clear 'no provider configured' message + onboarding link", but shipped PWA renders a misleading `upgradeStub "Irisy is connecting"` (探查 2026-06-19, `IrisyChat.tsx`). Locks the loop's acceptance (P0 honest-degrade + inline-config + first_run_state上屏; P1 notarization + landing + artifact export; P2 Win). Guards ADR-003 §8.3 anti-pattern (NO mandatory wizard / NO account-before-value). No new direction invented — each gate's decision lives in its cited ADR.
   - v5 2026-06-11: **§5 reframed — positioning locked: CTRL = the local AI OS for the one-person company (OPC).** bao 2026-06-11 (multi-round refinement). Target = OPC (solopreneur/indie/micro-business), the sweet middle between mass-consumer (no moat) and big-enterprise (unsellable by a small team). CTRL's role = local/private/AI-native ACCESS+INTEGRATION layer for OPC products (a local Feishu/Lark alternative giving mobile+PC reach), NOT a one-prompt tool generator, NOT us shipping a CRM. Economy = **share & be shared** (commons/reciprocity like GitHub/HF/npm/MCP registry), NOT buy & sell. Monetize the substrate (subscription), commons stays free as the network-effect moat. Memory `project-ctrl-positioning-opc-share-and-be-shared`. v4 business-system-integration framing folded in as the connector mechanism.
   - v1 2026-05-31: module reorg — merged orig-005 (no Claude/Anthropic SDK in production runtime) + orig-014 (global English first) + orig-015 (plain-text / "Obsidian" philosophy).
   - v2 2026-06-04: **NEW §4 policy-envelope** — single autonomy ladder (L3 suggest-only / L4 low-risk auto / L5 full auto) + blast-radius limit + typed-ISA validation, reused across the 6 self-evolution loops (ADR-001 §8). Source: UUMit L3-L5 (cap-design-v2 §14 #8) generalised cross-loop. Per bao "整个系统都要自我升级成长 ... 唯一真相, 要经常整理 ADR".
@@ -173,6 +175,52 @@ For truly irreversible self-evolution actions (e.g. permanent SOUL.md frontmatte
 - [ ] Settings → 自我升级 → break-glass panel for pending irreversibles.
 - [ ] Audit ledger `autonomy_level` column populated at write-time (not retroactively, see ADR-002 §11.5 invariant #4).
 - [ ] Three-consecutive-rollback auto-downgrade rule shipped (verify substrate exists in ADR-002 §11).
+
+## §6 Cold-start loop — download → first value (NEW v6, 2026-06-19)
+
+bao 2026-06-19 钦定:「建立 ADR, 唯一真相, 再开发」for the home + 用户能下载 + functional user-loop ask. A 3-channel probe (2026-06-19) found CTRL's **technical main path** (Ctrl summon → input → stream → artifact → save) is production-grade and端到端真接通, but the **product cold-start loop** — a brand-new user from *downloading* the app to their *first successful action* — breaks at both ends: the distribution entry and the first-run configuration. The middle (the core interaction) is the strongest link.
+
+This section is **aggregation + acceptance, not new direction** — each gate's decision already lives in a cited ADR. It also **fixes one ADR-vs-impl drift**: §1 requires no-provider → an honest "no provider configured" message + onboarding link, but the shipped PWA renders a misleading `upgradeStub "Irisy is connecting"` (探查 `IrisyChat.tsx`) that disguises "you must configure" as "still loading".
+
+### §6.1 The loop — 6 gates
+
+| Gate | Decision source | Shipped status (2026-06-19) | Lock |
+|---|---|---|---|
+| **G1 download** | ADR-004 §2 (single-mirror `soodooi/CTRL-releases`) | GH Releases yes; **no landing / 下载页** | "用户能下载" requires a public download entry — ship-blocker |
+| **G2 install** | ADR-004 §2 (Tauri dmg + `CTRL Dev Signing`) | dmg + sign yes; **no notarization** | Sequoia makes notarize effectively mandatory — un-notarized = Gatekeeper blocks = un-installable (ship-blocker) |
+| **G3 first-run ready** | `system.rs` `detect_first_run_state()` | Rust yes; **no TS mapping** → user sees empty mcps | PWA reads `first_run_state` during builtin-mcp seeding → "Setting up CTRL…", reveal capabilities only on `Ready` |
+| **G4 BYOK key** | §1 (first-launch=none, provider catalogue, BYOK) | **SHIPPED** — home shows inline non-blocking "Connect your AI to start →" CTA (`AmbientHome.tsx:958`) + send-time honest intercept that opens ProviderHub (`:262`). P-2 commit `5c4c3ba` | §1 stands — NO CTRL-paid default brain; first value = user's own key. Gate is unavoidable → painless + honest (done) |
+| **G5 first value** | ADR-003 §8 morphing home (SHIPPED) | **SHIPPED honest on home** — no-provider gives "No AI provider is set up yet → Settings → Providers" (`AmbientHome.tsx:328-344`). Residual: **legacy** `IrisyChat` upgradeStub "Irisy is connecting" (only on `USE_AMBIENT=false` fallback) | Home path locked — do not touch §8.1–§8.4. Legacy IrisyChat is fallback-only debt, not a ship-blocker |
+| **G6 output lands** | §3 plain-text vault | **SHIPPED** — part pane has ✎Edit / ⧉Copy / ↧Share (=`downloadPart` exports a real file, `:485-511`) / ↳Save-to-Notes (commit `8b62dc6`). Residual: `CodingArtifactPane` (coding route) still list-only | Plain-text vault is truth; home artifact export done. Coding-route export = P1 |
+
+### §6.2 Locked decisions (all守约 to existing ADRs)
+
+1. **NO mandatory wizard (守 ADR-003 §8.3)** — cold-start is NOT a blocking wizard and NOT account-before-value (both are §8.3 hard bans). No-provider → the home surface shows an inline, honest "pick a model" card (§8.2 "key decision missing → ask ONE tight structured question"); the user may still browse the capability floor, but any brain-requiring action honestly intercepts + links straight to ProviderHub.
+2. **Honest degrade (fixes §1 drift)** — with no provider the UI must tell the truth: "no provider configured → configure", clickable straight to ProviderHub. The `"Irisy is connecting"` framing is banned (it disguises "must configure" as "loading" = §8.3 black-box anti-pattern). **The home surface already complies since P-2 (`AmbientHome.tsx` `send()` honest-degrade branch); the only residual offender is the legacy `IrisyChat` upgradeStub, P1 below.**
+3. **first_run_state on screen** — while the kernel seeds builtin mcps, the PWA reads `first_run_state` and shows "Setting up CTRL…"; capabilities render only on `Ready`. Kills the "why are my mcps empty" confusion.
+4. **Distribution is a physical gate** — G1/G2 are preconditions, not polish: no landing ⇒ "用户能下载" is literally false; no notarization ⇒ the download is Gatekeeper-blocked on Sequoia ⇒ effectively un-installable. Both are ship-blocker acceptance, not future-work.
+5. **BYOK is the only brain source (守 §1)** — cold-start introduces NO CTRL-paid fallback brain (the volc fallback was retired in §1 v3). "Zero-key start" (a common onboarding pattern, Raycast/Jan) does **not** apply to CTRL: even hermes needs an LLM key, so BYOK is unavoidable. The differentiator we sell is BYOK透明 (no-markup, your keys, we can't see them), not free credits.
+
+### §6.3 Acceptance
+
+**Home interaction loop — ALREADY SHIPPED** (verified by code probe 2026-06-19; the cold-start UX gates were closed incrementally during the real-link probe work, this section records the truth so the ADR stops drifting from code)
+- [x] G4 — inline non-blocking "Connect your AI to start →" CTA + send-time honest intercept that opens ProviderHub. `AmbientHome.tsx` (`send()` no-provider branch + welcome `ctaPrimary` button). P-2 commit `5c4c3ba`.
+- [x] G5 — home no-provider path is honest ("No AI provider is set up yet → Settings → Providers"), not a disguised loader. `AmbientHome.tsx` (`send()` empty-stream + catch honest-degrade).
+- [x] G6 — part pane Copy / Share (=`downloadPart` real file export) / Save-to-Notes. `AmbientHome.tsx` (`downloadPart()` + part-pane action buttons). commit `8b62dc6`.
+
+**P0 — the one remaining cold-start gap (branch `feat/cold-start-loop`, 2026-06-19)**
+- [ ] G3 — `first_run_state` mapped into TS `KernelStatus`; `AmbientWorkbench` shows "Setting up CTRL…" while the kernel seeds builtin mcps (kills the "why are my mcps empty" confusion). `kernel.ts` + `AmbientWorkbench.tsx` (Rust `system.rs` already emits it).
+
+**P1 — loop runs but residual (NOT ship-blockers)**
+- [ ] G5-legacy — legacy `IrisyChat` upgradeStub still says "Irisy is connecting" + disables the textarea (violates memory `feedback-irisy-never-block-input`); only reachable on the `USE_AMBIENT=false` legacy 4-col fallback. Fix or retire when that shell is dropped.
+- [ ] G6-coding — `CodingArtifactPane` (coding route) export/download affordance (home pane already has it).
+- [ ] G2 — macOS notarization (`notarytool` + `stapler`) into `scripts/release.sh` (altool dead 2023-11; Sequoia makes it effectively mandatory). **Blocked-on-env**: needs Apple Developer ID + notary credentials on bao's machine.
+- [x] G1 — public landing / download page **BUILT** as a multi-page static site in `website/` (home / product / download / commons / manifesto + shared `styles.css`, keycap母题, brand tokens, copy locked to §5 + §1). bao 2026-06-19 "各页面展开设计". Verified via Playwright/Chrome screenshots. **Deploy to `ctrlapplab.com` is Blocked-on-creds** (needs bao's Cloudflare token + domain DNS) — `website/README.md` has the `wrangler pages deploy website` one-liner. Homebrew Cask still pending.
+- [ ] CD — `.github/workflows` build→sign→notarize→publish (replaces local-only `release.sh`).
+
+**P2 — cross-platform (already in ADR-004 future work)**
+- [ ] Windows MSI target + OV code-signing (~$200-400/yr, ADR-004 §2).
+- [ ] Three-mirror updater failover (ADR-004 future work).
 
 ## Acceptance
 

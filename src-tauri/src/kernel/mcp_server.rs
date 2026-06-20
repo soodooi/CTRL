@@ -23,7 +23,10 @@
 
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::runtime::KernelRuntime;
-use crate::kernel::{provider::LlmPrompt, vault};
+use crate::kernel::{
+    ai_column, provider::LlmPrompt, query, runtime_sources, vault, vault_notes_source,
+    vault_smart_table,
+};
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::Request;
@@ -78,6 +81,8 @@ pub struct KernelMcpRouter {
     runtime: Arc<KernelRuntime>,
     local_storage: Option<Arc<LocalStorage>>,
     tool_router: ToolRouter<Self>,
+    /// In-flight AI-column jobs (ADR-003 §6.5.4 async run_ai_column).
+    ai_jobs: ai_column::JobRegistry,
 }
 
 // ─── Tool argument structs ──────────────────────────────────────────────
@@ -88,6 +93,129 @@ pub struct KernelMcpRouter {
 pub struct VaultReadArgs {
     /// Vault-relative path, e.g. `daily/2026-05-22.md`.
     pub path: String,
+}
+
+/// smart_table.query — a structured read over a smart-table RecordSource
+/// (ADR-002 §14 / ADR-003 §6.5). Fill the parameter object; do NOT write a
+/// query string. Call `smart_table.describe` first to learn the valid fields.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableQueryArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Field filters, ANDed together. Each `field` must exist in the schema.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group rows so equal values of this field are contiguous.
+    #[serde(default)]
+    pub group_by: Option<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// smart_table.update_cell — produce/write one cell (ADR-002 §14 produce verb).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableUpdateCellArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Zero-based row index.
+    pub row_index: usize,
+    /// Schema field key to set.
+    pub field: String,
+    /// New cell value (stored as plain text).
+    pub value: String,
+}
+
+/// smart_table.append_row — produce/write a new row (ADR-002 §14 produce verb).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableAppendRowArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Cell values keyed by schema field key; missing keys become empty.
+    pub values: std::collections::BTreeMap<String, String>,
+}
+
+/// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4): run an
+/// LLM per row down a target column. Cost-gated at 100 rows.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableRunAiColumnArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Schema field key whose cells the AI fills.
+    pub target_field: String,
+    /// Prompt template; use `{field}` tokens to reference other columns.
+    pub prompt: String,
+    /// The AI operation: classify / extract / summarize / translate / generate.
+    pub op: ai_column::AiOp,
+    /// Re-run rows whose target cell is already filled (default false = resume).
+    #[serde(default)]
+    pub force: bool,
+    /// Confirm a run over the 100-row cost gate.
+    #[serde(default)]
+    pub confirm_over_gate: bool,
+}
+
+/// A smart-table view kind (ADR-003 §6.2) — a fixed enum (table-independent).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewKind {
+    Grid,
+    Kanban,
+}
+
+/// smart_table.add_view — persist a view (grid/kanban) into frontmatter `views`
+/// (ADR-003 §6.2: view state is NOT data; it lives in frontmatter, never the
+/// table body).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableAddViewArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// View kind. `kanban` requires `group_by`.
+    pub kind: ViewKind,
+    /// Field key to group/columnize by (required for kanban).
+    #[serde(default)]
+    pub group_by: Option<String>,
+}
+
+/// registry.query / providers.query — a structured read over a runtime
+/// RecordSource (ADR-002 §14: same query contract, no vault path).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RuntimeQueryArgs {
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    #[serde(default)]
+    pub group_by: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// Reference an in-flight AI-column job by id (status / cancel).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct JobIdArgs {
+    pub job_id: String,
+}
+
+/// notes.query — a structured read over the knowledge base as a RecordSource
+/// (ADR-002 §14: the SAME query contract as smart-table). Fields are
+/// path/title/tags/created/modified — call `notes.describe` for the set.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NotesQueryArgs {
+    /// Optional vault subdir to scope the scan (omit for the whole vault).
+    #[serde(default)]
+    pub subdir: Option<String>,
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    #[serde(default)]
+    pub group_by: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -309,6 +437,7 @@ impl KernelMcpRouter {
             runtime,
             local_storage,
             tool_router: Self::tool_router(),
+            ai_jobs: ai_column::new_registry(),
         }
     }
 
@@ -339,6 +468,521 @@ impl KernelMcpRouter {
         let root = vault_root()?;
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let body = serde_json::to_string(&entry).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.describe — the type layer (ADR-002 §14). Returns the table's
+    /// fields, types, and supported query operators. Irisy reads this BEFORE
+    /// querying so it only references valid fields.
+    #[tool(
+        description = "Describe a smart table: its fields, types, and supported query operators. Call this before smart_table.query."
+    )]
+    async fn smart_table_describe(
+        &self,
+        Parameters(args): Parameters<VaultReadArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        use query::QuerySource;
+        let body = serde_json::to_string(&table.describe()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.query — the read half of the Unified Operation Interface
+    /// (ADR-002 §14 / ADR-003 §6.5). Structured filter/sort/group over a
+    /// smart-table RecordSource via the shared kernel query engine.
+    #[tool(
+        description = "Query a smart table with a structured filter/sort/group request (not a query string). Call smart_table.describe first to learn valid fields."
+    )]
+    async fn smart_table_query(
+        &self,
+        Parameters(args): Parameters<SmartTableQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let req = query::QueryRequest {
+            filters: args.filters,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = table
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.update_cell — the produce/write verb (ADR-002 §14). Reads
+    /// fresh, sets one cell, re-serializes, writes back (frontmatter/schema
+    /// preserved). Review-gating of produce ops is the ADR-006 §4 future
+    /// (parity with `vault.write` today).
+    #[tool(
+        description = "Set one cell of a smart table by row index + field key, then write it back."
+    )]
+    async fn smart_table_update_cell(
+        &self,
+        Parameters(args): Parameters<SmartTableUpdateCellArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.update_cell(args.row_index, &args.field, &args.value) {
+            return Err(McpError::invalid_params(
+                format!(
+                    "update_cell rejected: row {} / field '{}' out of range",
+                    args.row_index, args.field
+                ),
+                None,
+            ));
+        }
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "updated {} row {} field {}",
+            args.path, args.row_index, args.field
+        ))]))
+    }
+
+    /// smart_table.append_row — the produce/write verb (ADR-002 §14). Reads
+    /// fresh, appends a row, re-serializes, writes back.
+    #[tool(description = "Append a row to a smart table (values keyed by field key).")]
+    async fn smart_table_append_row(
+        &self,
+        Parameters(args): Parameters<SmartTableAppendRowArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        table.append_row(args.values.into_iter().collect());
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "appended row to {}",
+            args.path
+        ))]))
+    }
+
+    /// notes.describe — the knowledge base's type layer (ADR-002 §14). Same
+    /// `describe` verb as smart-table: the KB is just another RecordSource.
+    #[tool(
+        description = "Describe the knowledge base as a queryable RecordSource: fields (path/title/tags/created/modified) and supported operators. Call before notes.query."
+    )]
+    async fn notes_describe(&self) -> Result<CallToolResult, McpError> {
+        let desc = query::Describe {
+            source_kind: query::SourceKind::Record,
+            fields: vault_notes_source::NotesSource::fields(),
+            operators: {
+                use query::Operator::*;
+                vec![Eq, Neq, Contains, Before, After, Within, HasTag]
+            },
+        };
+        let body = serde_json::to_string(&desc).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// notes.query — structured read over the KB metadata (ADR-002 §14), routed
+    /// through the shared kernel query engine — identical contract to
+    /// `smart_table.query`, different RecordSource.
+    #[tool(
+        description = "Query the knowledge base by tag/title/date with a structured filter/sort/group request (not a query string). Returns matching notes. Call notes.describe first."
+    )]
+    async fn notes_query(
+        &self,
+        Parameters(args): Parameters<NotesQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let source = vault_notes_source::NotesSource::load(&root, args.subdir.as_deref())
+            .map_err(map_vault_err)?;
+        let req = query::QueryRequest {
+            filters: args.filters,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = source
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4). Runs
+    /// an LLM per row down `target_field`, `{field}`-templated, cost-gated at
+    /// 100 rows, resume-safe (skips filled cells), partial-failure tolerant,
+    /// then merges results back. (First cut runs the bounded batch in-call; the
+    /// async job triple is the next slice — the cost gate caps the run.)
+    #[tool(
+        description = "Run an AI field shortcut down a column: per row, classify/extract/summarize/translate/generate using {field} tokens, then write results into target_field. Cost-gated at 100 rows (pass confirm_over_gate=true to exceed). Skips already-filled cells unless force=true."
+    )]
+    async fn smart_table_run_ai_column(
+        &self,
+        Parameters(args): Parameters<SmartTableRunAiColumnArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.fields.iter().any(|f| f.key == args.target_field) {
+            return Err(McpError::invalid_params(
+                format!("field_not_found: '{}'", args.target_field),
+                None,
+            ));
+        }
+        let rows_total = table.rows.len();
+        let plan = ai_column::plan_rows(&table, &args.target_field, &args.prompt, args.force);
+        if ai_column::over_cost_gate(plan.len()) && !args.confirm_over_gate {
+            return Err(McpError::invalid_params(
+                format!(
+                    "needs_confirmation: {} rows exceed the {}-row cost gate; pass confirm_over_gate=true to proceed",
+                    plan.len(),
+                    ai_column::COST_GATE_ROWS
+                ),
+                None,
+            ));
+        }
+
+        let adapter = self
+            .runtime
+            .provider_registry
+            .primary_text_chat()
+            .ok_or_else(|| McpError::internal_error("no text.chat provider available", None))?;
+        let system = args.op.system_instruction();
+
+        let mut results: Vec<(usize, query::Row, String)> = Vec::new();
+        let mut errors: Vec<ai_column::RowError> = Vec::new();
+        for item in &plan {
+            match ai_column::complete_row(adapter.as_ref(), system, &item.prompt).await {
+                Ok(value) => results.push((item.index, item.snapshot.clone(), value)),
+                Err(e) => errors.push(ai_column::RowError { row: item.index, message: e.to_string() }),
+            }
+        }
+
+        let rows_written = ai_column::apply_results(&mut table, &args.target_field, &results);
+        if rows_written > 0 {
+            let new_body = table.serialize_body();
+            vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        }
+        let summary = ai_column::RunSummary {
+            rows_total,
+            rows_planned: plan.len(),
+            rows_written,
+            errors,
+        };
+        let body = serde_json::to_string(&summary).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.run_ai_column.start — async AI column (ADR-003 §6.5.4
+    /// call-now/fetch-later). Validates + cost-gates, then spawns a background
+    /// job and returns `{job_id, rows_planned}` immediately; poll
+    /// `.status`, optionally `.cancel`. The job re-reads the file and
+    /// merge-by-row writes results back when done.
+    #[tool(
+        description = "Start an async AI field-shortcut job over a column (classify/extract/summarize/translate/generate, {field} tokens). Cost-gated at 100 rows. Returns a job_id; poll smart_table.run_ai_column_status."
+    )]
+    async fn smart_table_run_ai_column_start(
+        &self,
+        Parameters(args): Parameters<SmartTableRunAiColumnArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.fields.iter().any(|f| f.key == args.target_field) {
+            return Err(McpError::invalid_params(
+                format!("field_not_found: '{}'", args.target_field),
+                None,
+            ));
+        }
+        let plan = ai_column::plan_rows(&table, &args.target_field, &args.prompt, args.force);
+        if ai_column::over_cost_gate(plan.len()) && !args.confirm_over_gate {
+            return Err(McpError::invalid_params(
+                format!(
+                    "needs_confirmation: {} rows exceed the {}-row cost gate; pass confirm_over_gate=true to proceed",
+                    plan.len(),
+                    ai_column::COST_GATE_ROWS
+                ),
+                None,
+            ));
+        }
+
+        let planned = plan.len();
+        let job_id = Uuid::new_v4().to_string();
+        let state = ai_column::new_job(planned);
+        self.ai_jobs.write().await.insert(job_id.clone(), state.clone());
+
+        // Background job — non-blocking; the tool returns the id immediately.
+        let runtime = self.runtime.clone();
+        let system = args.op.system_instruction().to_string();
+        let target = args.target_field.clone();
+        let path = args.path.clone();
+        let root2 = root.clone();
+        tokio::spawn(async move {
+            let adapter = match runtime.provider_registry.primary_text_chat() {
+                Some(a) => a,
+                None => {
+                    state.write().await.phase = ai_column::JobPhase::Failed;
+                    return;
+                }
+            };
+            // Bounded concurrency: process the plan in chunks of MAX_CONCURRENCY
+            // (ADR-003 §6.5.4 — unbounded fan-out hits provider rate limits).
+            // Cancel + AuthFailed are checked between chunks (AuthFailed stops
+            // the whole job — the key is broken, retrying every row is waste).
+            const MAX_CONCURRENCY: usize = 6;
+            let mut results: Vec<(usize, query::Row, String)> = Vec::new();
+            'outer: for chunk in plan.chunks(MAX_CONCURRENCY) {
+                if state.read().await.cancelled {
+                    break;
+                }
+                let outcomes = futures::future::join_all(chunk.iter().map(|item| {
+                    let adapter = adapter.clone();
+                    let system = system.clone();
+                    let index = item.index;
+                    let snapshot = item.snapshot.clone();
+                    let prompt = item.prompt.clone();
+                    async move {
+                        (index, snapshot, ai_column::complete_row(adapter.as_ref(), &system, &prompt).await)
+                    }
+                }))
+                .await;
+
+                let mut auth_failed = false;
+                {
+                    let mut s = state.write().await;
+                    for (idx, snapshot, outcome) in outcomes {
+                        match outcome {
+                            Ok(value) => results.push((idx, snapshot, value)),
+                            Err(e) => {
+                                if matches!(e, crate::kernel::provider::ProviderError::AuthFailed) {
+                                    auth_failed = true;
+                                }
+                                s.errors.push(ai_column::RowError { row: idx, message: e.to_string() });
+                            }
+                        }
+                        s.rows_done += 1;
+                    }
+                }
+                if auth_failed {
+                    break 'outer;
+                }
+            }
+
+            // Merge-by-row write-back: re-read fresh so a mid-run user edit is
+            // not clobbered (ADR-003 §6.5.4).
+            if let Ok(fresh) = vault::read(&root2, &path) {
+                let mut table = vault_smart_table::SmartTable::parse(&fresh.frontmatter, &fresh.content);
+                let written = ai_column::apply_results(&mut table, &target, &results);
+                if written > 0 {
+                    let _ = vault::write(&root2, &path, &table.serialize_body(), &fresh.frontmatter);
+                }
+                state.write().await.rows_written = written;
+            }
+            let mut s = state.write().await;
+            s.phase = if s.cancelled {
+                ai_column::JobPhase::Cancelled
+            } else {
+                ai_column::JobPhase::Done
+            };
+        });
+
+        let body = serde_json::json!({ "job_id": job_id, "rows_planned": planned });
+        Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
+    }
+
+    /// smart_table.run_ai_column.status — poll an async AI-column job (the
+    /// authoritative truth; ADR-003 §6.5.4).
+    #[tool(description = "Get the status of an AI-column job: phase, rows_done/total, rows_written, errors.")]
+    async fn smart_table_run_ai_column_status(
+        &self,
+        Parameters(args): Parameters<JobIdArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let reg = self.ai_jobs.read().await;
+        let Some(handle) = reg.get(&args.job_id) else {
+            return Err(McpError::invalid_params(
+                format!("unknown job_id: {}", args.job_id),
+                None,
+            ));
+        };
+        let snapshot = handle.read().await.clone();
+        let body = serde_json::to_string(&snapshot).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.run_ai_column.cancel — cooperatively cancel a running job.
+    #[tool(description = "Cancel an in-flight AI-column job by id (already-written cells are kept).")]
+    async fn smart_table_run_ai_column_cancel(
+        &self,
+        Parameters(args): Parameters<JobIdArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let reg = self.ai_jobs.read().await;
+        let Some(handle) = reg.get(&args.job_id) else {
+            return Err(McpError::invalid_params(
+                format!("unknown job_id: {}", args.job_id),
+                None,
+            ));
+        };
+        handle.write().await.cancelled = true;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "cancelling {}",
+            args.job_id
+        ))]))
+    }
+
+    /// smart_table.add_view — persist a grid/kanban view into frontmatter
+    /// `views` (ADR-003 §6.2 view-state-is-not-data). Body is untouched.
+    #[tool(
+        description = "Add a grid or kanban view to a smart table (persisted in frontmatter, not the table body). kanban requires group_by (a field key)."
+    )]
+    async fn smart_table_add_view(
+        &self,
+        Parameters(args): Parameters<SmartTableAddViewArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let kind_str = match args.kind {
+            ViewKind::Grid => "grid",
+            ViewKind::Kanban => "kanban",
+        };
+        if let Some(g) = &args.group_by {
+            if !table.fields.iter().any(|f| &f.key == g) {
+                return Err(McpError::invalid_params(format!("field_not_found: '{g}'"), None));
+            }
+        } else if matches!(args.kind, ViewKind::Kanban) {
+            return Err(McpError::invalid_params(
+                "kanban view requires group_by".to_string(),
+                None,
+            ));
+        }
+
+        let mut fm = entry.frontmatter.clone();
+        if !fm.is_object() {
+            fm = serde_json::Value::Object(serde_json::Map::new());
+        }
+        let view = serde_json::json!({ "kind": kind_str, "group_by": args.group_by });
+        if let Some(obj) = fm.as_object_mut() {
+            let views = obj
+                .entry("views")
+                .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+            match views.as_array_mut() {
+                Some(arr) => arr.push(view),
+                None => *views = serde_json::Value::Array(vec![view]),
+            }
+        }
+        vault::write(&root, &args.path, &entry.content, &fm).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "added {kind_str} view to {}",
+            args.path
+        ))]))
+    }
+
+    /// registry.describe — the installed-MCP registry's type layer (ADR-002
+    /// §14). The registry is just another RecordSource.
+    #[tool(
+        description = "Describe the installed-MCP registry as a queryable RecordSource (fields: id/name/version/description/tools). Call before registry.query."
+    )]
+    async fn registry_describe(&self) -> Result<CallToolResult, McpError> {
+        let desc = query::Describe {
+            source_kind: query::SourceKind::Record,
+            fields: runtime_sources::mcp_fields(),
+            operators: runtime_sources::record_operators(),
+        };
+        let body = serde_json::to_string(&desc).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// registry.query — query installed MCP servers (ADR-002 §14) via the shared
+    /// engine — same contract as smart_table.query, live runtime RecordSource.
+    #[tool(
+        description = "Query installed MCP servers by id/name/tool-count with a structured filter/sort/group request. Call registry.describe first."
+    )]
+    async fn registry_query(
+        &self,
+        Parameters(args): Parameters<RuntimeQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let installed = self.runtime.mcp_host.list_installed().await;
+        let rows: Vec<query::Row> = installed
+            .iter()
+            .map(|d| {
+                let mut r = query::Row::new();
+                r.insert("id".into(), d.id.clone());
+                r.insert("name".into(), d.name.clone());
+                r.insert("version".into(), d.version.clone());
+                r.insert("description".into(), d.description.clone());
+                r.insert("tools".into(), d.tools.len().to_string());
+                r
+            })
+            .collect();
+        let req = query::QueryRequest {
+            filters: args.filters,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        let result = query::run_query(&runtime_sources::mcp_fields(), &rows, &req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// providers.describe — the provider catalogue's type layer (ADR-002 §14).
+    #[tool(
+        description = "Describe the LLM provider catalogue as a queryable RecordSource (fields: id/label/kind/models/ready/capabilities). Call before providers.query."
+    )]
+    async fn providers_describe(&self) -> Result<CallToolResult, McpError> {
+        let desc = query::Describe {
+            source_kind: query::SourceKind::Record,
+            fields: runtime_sources::provider_fields(),
+            operators: runtime_sources::record_operators(),
+        };
+        let body = serde_json::to_string(&desc).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// providers.query — query the provider catalogue (ADR-002 §14) via the
+    /// shared engine: "ready providers with embed capability", etc.
+    #[tool(
+        description = "Query configured LLM providers by id/kind/ready/capabilities with a structured filter/sort/group request. Call providers.describe first."
+    )]
+    async fn providers_query(
+        &self,
+        Parameters(args): Parameters<RuntimeQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let entries = self.runtime.provider_registry.list();
+        let rows: Vec<query::Row> = entries
+            .iter()
+            .map(|e| {
+                let mut r = query::Row::new();
+                r.insert("id".into(), e.id.clone());
+                r.insert("label".into(), e.label.clone());
+                let kind = serde_json::to_value(&e.kind)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_default();
+                r.insert("kind".into(), kind);
+                r.insert("models".into(), e.models.len().to_string());
+                r.insert("ready".into(), if e.ready { "x".into() } else { String::new() });
+                r.insert("capabilities".into(), e.capabilities.join(", "));
+                r
+            })
+            .collect();
+        let req = query::QueryRequest {
+            filters: args.filters,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        let result = query::run_query(&runtime_sources::provider_fields(), &rows, &req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 

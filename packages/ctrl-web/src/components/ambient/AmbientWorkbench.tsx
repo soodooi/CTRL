@@ -17,6 +17,8 @@ import { type SidebarSection } from './Sidebar';
 import { ProviderHub } from './ProviderHub';
 import { AmbientHome, type ToolRequest, type PackRequest } from './AmbientHome';
 import { useActiveProvider, formatProviderLabel } from '@/hooks/useActiveProvider';
+import { useKernelStatus } from '@/hooks/useKernelStatus';
+import { isSeedingFirstRun } from '@/lib/kernel';
 import styles from './AmbientHome.module.css';
 
 export function AmbientWorkbench(): ReactElement {
@@ -44,6 +46,13 @@ export function AmbientWorkbench(): ReactElement {
   // via ProviderHub, whose own reload path also fires the event).
   const { active: activeProvider } = useActiveProvider();
   const modelLabel = formatProviderLabel(activeProvider);
+
+  // Fresh-install seeding hint (ADR-006 § cold-start-loop §6.1 G3): while the
+  // kernel copies builtin mcps into ~/.ctrl/mcps/, the Tools/Discover lists are
+  // legitimately empty — surface "Setting up CTRL…" so a new user doesn't read
+  // it as broken. Once seeded (first_run_state='ready') this goes quiet.
+  const kernelSnapshot = useKernelStatus();
+  const settingUp = isSeedingFirstRun(kernelSnapshot);
 
   // The sidebar acts from any route: home-content actions (Irisy / tool /
   // discover) navigate home first, then signal AmbientHome via props.
@@ -106,6 +115,7 @@ export function AmbientWorkbench(): ReactElement {
         hidden={!isHome}
         onSidebarSelect={onSidebarSelect}
         activeSection={activeSection}
+        settingUp={settingUp}
       />
       {!isHome && (
         <div className={styles.routeHost}>

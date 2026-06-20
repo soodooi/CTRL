@@ -251,6 +251,21 @@
   text-align: left;
 }
 
+/* fresh-install seeding hint — shown while the kernel copies builtin mcps
+   so empty Tools/Discover lists read as "installing", not broken.
+   ADR-006 § cold-start-loop §6.1 G3. */
+.setupHint {
+  align-self: flex-start;
+  margin: 2px 0 22px;
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--color-primary) 9%, transparent);
+  color: var(--text-muted, #6e6e73);
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  text-align: left;
+}
+
 /* ── first-run CTAs (so a new user knows the next step) ────────── */
 .ctaPrimary {
   align-self: flex-start;
@@ -503,6 +518,29 @@
   align-self: flex-start;
   max-width: 92%;
   color: var(--text, #1d1d1f);
+}
+
+/* routing pill — Irisy's visible intent for this turn (ADR-003 §8.2B).
+   Minimal: a quiet tag above the reply, never a loud badge. Always shown so
+   routing is transparent, not hidden (§8.3 #1 anti-pattern). A 'work' turn
+   (draft/translate/…) gets the primary tint; a plain answer stays neutral. */
+.routePill {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 7px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--primary, #0d9488) 12%, transparent);
+  color: var(--text, #1d1d1f);
+  opacity: 0.75;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.7;
+}
+.routePill[data-kind='answer'] {
+  background: color-mix(in oklch, var(--text, #1d1d1f) 8%, transparent);
+  opacity: 0.55;
 }
 
 /* Irisy reply — full markdown styling (bao 2026-06-13: paragraphs, fonts,

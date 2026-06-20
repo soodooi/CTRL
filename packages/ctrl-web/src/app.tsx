@@ -264,6 +264,18 @@ const PackLabRoute = import.meta.env.DEV
       }),
     );
 
+const TableLabRoute = import.meta.env.DEV
+  ? lazy(() =>
+      import('./routes/table-lab').then((m) => ({ default: m.TableLabRoute })),
+    )
+  : lazy(() =>
+      Promise.resolve({
+        default: (): ReactElement => (
+          <div style={{ padding: 24 }}>table-lab is dev-only.</div>
+        ),
+      }),
+    );
+
 const LazyFallback = (): ReactElement => (
   <div style={{
     padding: 'var(--space-6)',
@@ -422,6 +434,16 @@ const packLabRoute = createRoute({
   ),
 });
 
+const tableLabRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/table-lab',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <TableLabRoute />
+    </Suspense>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   poolRoute,
@@ -439,6 +461,7 @@ const routeTree = rootRoute.addChildren([
   codingRoute,
   iconLabRoute,
   packLabRoute,
+  tableLabRoute,
 ]);
 
 const router = createRouter({

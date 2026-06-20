@@ -25,6 +25,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
+import { classifyIntent, type RouteHint } from '@/lib/intent-routing';
 // Reply-correctness wiring (parity with the docked IrisyChat): the home
 // composer must ship the persona + brain_state system prompt and filter the
 // reply, or it leaks internals / monologues / can't name its model.
@@ -76,6 +77,10 @@ interface Msg {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  /** Visible-intent pill shown above an assistant turn (ADR-003 §8.2B). Set
+   *  when the turn is created so routing is shown BEFORE work starts, never
+   *  hidden (§8.3 #1 anti-pattern). */
+  route?: RouteHint;
 }
 
 // Action shortcuts above the composer (vault/ctrl/strategy/0009). Minimal by
@@ -136,6 +141,11 @@ export interface AmbientHomeProps {
    *  handler + active highlight so the rail drives the same navigation. */
   onSidebarSelect: (s: SidebarSection) => void;
   activeSection: string;
+  /** True while the kernel is still seeding builtin mcps on a fresh install
+   *  (first_run_state = 'copying'). Surfaces a "Setting up CTRL…" hint so the
+   *  empty Tools/Discover lists don't read as broken. ADR-006 § cold-start-loop
+   *  §6.1 G3. */
+  settingUp?: boolean;
 }
 
 const SPRING = { type: 'spring', stiffness: 420, damping: 36 } as const;
@@ -154,6 +164,7 @@ export function AmbientHome({
   hidden,
   onSidebarSelect,
   activeSection,
+  settingUp = false,
 }: AmbientHomeProps): ReactElement {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -274,7 +285,15 @@ export function AmbientHome({
       return;
     }
     const asstId = `a-${Date.now()}`;
-    setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '' }]);
+    // Show Irisy's read of the intent before the stream starts (ADR-003 §8.2B
+    // routing pill; keyword pass, not a model call per §8.2). Transparency, not
+    // a backend fork — the turn still streams through the one provider.
+    const route = classifyIntent(trimmed);
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      { id: asstId, role: 'assistant', content: '', route },
+    ]);
     setStreaming(true);
     setEditing(false);
     const ctrl = new AbortController();
@@ -638,6 +657,11 @@ export function AmbientHome({
         <div key={m.id} className={`${styles.msg} ${styles[m.role]}`}>
           {m.role === 'assistant' ? (
             <>
+              {m.route && (
+                <span className={styles.routePill} data-kind={m.route.kind}>
+                  {m.route.label}
+                </span>
+              )}
               {m.content ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {stripDetectedPart(cleanReplyText(m.content)) ||
@@ -955,6 +979,11 @@ export function AmbientHome({
                 ) : (
                   <div className={styles.welcome}>
                     <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
+                    {settingUp && (
+                      <p className={styles.setupHint} role="status">
+                        Setting up CTRL… installing your tools.
+                      </p>
+                    )}
                     {!hasProvider && (
                       <button type="button" className={styles.ctaPrimary} onClick={onOpenPicker}>
                         Connect your AI to start →
