@@ -142,7 +142,7 @@ pub async fn complete_row(
     adapter: &dyn crate::kernel::provider::Provider,
     system: &str,
     user: &str,
-) -> Result<String, String> {
+) -> Result<String, crate::kernel::provider::ProviderError> {
     use crate::kernel::provider::{ChatOpts, LlmMessage, LlmPrompt};
     let prompt = LlmPrompt {
         system: Some(system.to_string()),
@@ -157,7 +157,7 @@ pub async fn complete_row(
         model: String::new(),
         deadline_ms: 60_000,
     };
-    let mut rx = adapter.chat_stream(&prompt, &opts).await.map_err(|e| e.to_string())?;
+    let mut rx = adapter.chat_stream(&prompt, &opts).await?;
     let mut out = String::new();
     while let Some(item) = rx.recv().await {
         match item {
@@ -167,7 +167,7 @@ pub async fn complete_row(
                     break;
                 }
             }
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(e),
         }
     }
     Ok(out.trim().to_string())
@@ -337,7 +337,7 @@ mod tests {
     #[tokio::test]
     async fn complete_row_accumulates_chunks_and_trims() {
         let p = FakeProvider { ok: true, chunks: vec![" pos", "itive "] };
-        assert_eq!(complete_row(&p, "classify", "Loved it").await, Ok("positive".to_string()));
+        assert_eq!(complete_row(&p, "classify", "Loved it").await.unwrap(), "positive");
     }
 
     #[tokio::test]

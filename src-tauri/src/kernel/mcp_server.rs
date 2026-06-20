@@ -659,7 +659,7 @@ impl KernelMcpRouter {
         for (idx, user_prompt) in &plan {
             match ai_column::complete_row(adapter.as_ref(), system, user_prompt).await {
                 Ok(value) => results.push((*idx, value)),
-                Err(message) => errors.push(ai_column::RowError { row: *idx, message }),
+                Err(e) => errors.push(ai_column::RowError { row: *idx, message: e.to_string() }),
             }
         }
 
@@ -730,18 +730,42 @@ impl KernelMcpRouter {
                     return;
                 }
             };
+            // Bounded concurrency: process the plan in chunks of MAX_CONCURRENCY
+            // (ADR-003 §6.5.4 — unbounded fan-out hits provider rate limits).
+            // Cancel + AuthFailed are checked between chunks (AuthFailed stops
+            // the whole job — the key is broken, retrying every row is waste).
+            const MAX_CONCURRENCY: usize = 6;
             let mut results: Vec<(usize, String)> = Vec::new();
-            for (idx, user_prompt) in &plan {
+            'outer: for chunk in plan.chunks(MAX_CONCURRENCY) {
                 if state.read().await.cancelled {
                     break;
                 }
-                let row_outcome = ai_column::complete_row(adapter.as_ref(), &system, user_prompt).await;
-                let mut s = state.write().await;
-                match row_outcome {
-                    Ok(value) => results.push((*idx, value)),
-                    Err(message) => s.errors.push(ai_column::RowError { row: *idx, message }),
+                let outcomes = futures::future::join_all(chunk.iter().map(|(idx, user_prompt)| {
+                    let adapter = adapter.clone();
+                    let system = system.clone();
+                    async move { (*idx, ai_column::complete_row(adapter.as_ref(), &system, user_prompt).await) }
+                }))
+                .await;
+
+                let mut auth_failed = false;
+                {
+                    let mut s = state.write().await;
+                    for (idx, outcome) in outcomes {
+                        match outcome {
+                            Ok(value) => results.push((idx, value)),
+                            Err(e) => {
+                                if matches!(e, crate::kernel::provider::ProviderError::AuthFailed) {
+                                    auth_failed = true;
+                                }
+                                s.errors.push(ai_column::RowError { row: idx, message: e.to_string() });
+                            }
+                        }
+                        s.rows_done += 1;
+                    }
                 }
-                s.rows_done += 1;
+                if auth_failed {
+                    break 'outer;
+                }
             }
 
             // Merge-by-row write-back: re-read fresh so a mid-run user edit is
