@@ -46,6 +46,14 @@ function CodeIcon(): ReactElement {
     </svg>
   );
 }
+function TableIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M3 14.5h18M9 4v16" />
+    </svg>
+  );
+}
 
 export type SidebarSection =
   | { kind: 'irisy' }
@@ -123,6 +131,14 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
         title="Notes"
       >
         <Ico d={NOTES_D} />
+      </button>
+      <button
+        type="button"
+        className={`${styles.ic} ${active === '/tables' ? styles.active : ''}`}
+        onClick={() => onSelect({ kind: 'route', to: '/tables' })}
+        title="Tables"
+      >
+        <TableIcon />
       </button>
       <button
         type="button"
