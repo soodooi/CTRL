@@ -158,6 +158,7 @@ export function AmbientHome({
   // have a history entry — restores what the AmbientHome rewrite dropped.
   const [showHistory, setShowHistory] = useState(false);
   const [part, setPart] = useState<PartSpec | null>(null);
+  const [editing, setEditing] = useState(false);
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
   const [scene, setScene] = useState<FeaturePack | 'notes' | null>(null);
@@ -267,6 +268,7 @@ export function AmbientHome({
     const asstId = `a-${Date.now()}`;
     setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '' }]);
     setStreaming(true);
+    setEditing(false);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
@@ -427,6 +429,35 @@ export function AmbientHome({
     } catch {
       setNotice('Copy failed — select the text and copy manually');
     }
+  }, []);
+
+  // Export an artifact as a file (download = the local-first "share": the user
+  // gets a real plain-text file they own and can send anywhere).
+  const downloadPart = useCallback((p: PartSpec) => {
+    const ext =
+      p.kind === 'html'
+        ? 'html'
+        : p.kind === 'markdown'
+          ? 'md'
+          : p.kind === 'json'
+            ? 'json'
+            : p.kind === 'code'
+              ? (p.language ?? 'txt')
+              : 'txt';
+    const base = (p.title ?? p.kind)
+      .replace(/\.(html|md|json)$/i, '')
+      .replace(/[^\w.-]+/g, '-')
+      .slice(0, 60) || 'artifact';
+    const blob = new Blob([p.content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${base}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setNotice(`Exported ${a.download}`);
   }, []);
 
   const copyConversation = useCallback(() => {
@@ -804,15 +835,71 @@ export function AmbientHome({
                   <div className={styles.partPane}>
                     <div className={styles.partHeader}>
                       <span>{part.title ?? part.kind}</span>
-                      <button
-                        type="button"
-                        className={styles.partClose}
-                        onClick={() => setPart(null)}
-                      >
-                        ✕
-                      </button>
+                      <div className={styles.partActions}>
+                        {(part.kind === 'markdown' ||
+                          part.kind === 'html' ||
+                          part.kind === 'code' ||
+                          part.kind === 'json') && (
+                          <button
+                            type="button"
+                            className={styles.partAction}
+                            data-active={editing}
+                            onClick={() => setEditing((v) => !v)}
+                            title={editing ? 'Done editing' : 'Edit the source'}
+                          >
+                            {editing ? 'Done' : '✎ Edit'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className={styles.partAction}
+                          onClick={() => void copyText(part.content)}
+                          title="Copy to clipboard"
+                        >
+                          ⧉ Copy
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.partAction}
+                          onClick={() => downloadPart(part)}
+                          title="Export as a file to share"
+                        >
+                          ↧ Share
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.partAction}
+                          onClick={() => void captureToNotes(part.content)}
+                          title="Save to Notes"
+                        >
+                          ↳ Save
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.partClose}
+                          onClick={() => {
+                            setPart(null);
+                            setEditing(false);
+                          }}
+                          aria-label="Close"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </div>
-                    <div className={styles.partBody}>{renderPart(part)}</div>
+                    <div className={styles.partBody}>
+                      {editing ? (
+                        <textarea
+                          className={styles.partEditor}
+                          value={part.content}
+                          onChange={(e) => setPart({ ...part, content: e.target.value })}
+                          aria-label="Edit artifact source"
+                          spellCheck={false}
+                        />
+                      ) : (
+                        renderPart(part)
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className={styles.welcome}>

@@ -836,7 +836,59 @@
 
 .partBody {
   flex: 1;
+  /* min-height:0 lets the flex child actually shrink so it (and the html
+     iframe inside) gets a real height and scrolls, instead of overflowing the
+     pane with no scrollbar. */
+  min-height: 0;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.partBody > iframe {
+  flex: 1;
+  min-height: 0;
+}
+
+.partActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.partAction {
+  border: none;
+  background: transparent;
+  color: var(--text-subtle, #98989d);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.partAction:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.05));
+  color: var(--text, #1d1d1f);
+}
+
+.partAction[data-active='true'] {
+  background: var(--accent-soft, rgba(0, 122, 255, 0.1));
+  color: var(--accent, #007aff);
+}
+
+.partEditor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 14px 16px;
+  font-family: var(--font-mono, 'SF Mono', 'JetBrains Mono', monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text, #1d1d1f);
+  background: var(--bg, #fff);
 }
 
 .partBody :global(.part-code) {
