@@ -4,6 +4,7 @@
 // new ones.
 
 import { vaultList, vaultRead, vaultWrite } from '@/lib/kernel';
+import { columnKeyFromLabel } from '@/lib/smart-table';
 
 export interface SmartTableEntry {
   path: string;
@@ -47,5 +48,71 @@ export const createSmartTable = async (rawTitle: string): Promise<string> => {
   const path = `tables/${slug}.md`;
   const content = '| Name | Status | Due |\n|---|---|---|\n|  | todo |  |\n';
   await vaultWrite({ path, content, frontmatter: { title, schema: STARTER_SCHEMA } });
+  return path;
+};
+
+/** Minimal RFC4180-ish CSV parser: handles quoted fields, escaped quotes,
+ *  and \r\n. Drops fully blank rows. */
+export const parseCsv = (text: string): string[][] => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cur = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          cur += '"';
+          i += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        cur += c;
+      }
+    } else if (c === '"') {
+      quoted = true;
+    } else if (c === ',') {
+      row.push(cur);
+      cur = '';
+    } else if (c === '\n') {
+      row.push(cur);
+      rows.push(row);
+      row = [];
+      cur = '';
+    } else if (c !== '\r') {
+      cur += c;
+    }
+  }
+  if (cur !== '' || row.length > 0) {
+    row.push(cur);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((cell) => cell.trim() !== ''));
+};
+
+/** Import a CSV string as a new smart table (header row -> text schema). */
+export const importCsv = async (rawName: string, csv: string): Promise<string> => {
+  const rows = parseCsv(csv);
+  const headers = rows[0];
+  if (!headers) throw new Error('empty CSV');
+  const keys: string[] = [];
+  const schema = headers.map((h) => {
+    const key = columnKeyFromLabel(h || 'field', keys);
+    keys.push(key);
+    return { key, label: h.trim() || key, type: 'text' as const };
+  });
+  const title = rawName.trim() || 'Imported table';
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'imported';
+  const path = `tables/${slug}.md`;
+  const lines = [
+    `| ${headers.map((h) => h.trim() || ' ').join(' | ')} |`,
+    `|${headers.map(() => '---').join('|')}|`,
+    ...rows.slice(1).map(
+      (r) => `| ${headers.map((_, i) => (r[i] ?? '').replace(/\|/g, '\\|').trim()).join(' | ')} |`,
+    ),
+  ];
+  await vaultWrite({ path, content: `${lines.join('\n')}\n`, frontmatter: { title, schema } });
   return path;
 };
