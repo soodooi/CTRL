@@ -208,27 +208,50 @@ function prettyJson(raw: string): string {
  *  prototype real today. JSON array -> table, JSON object -> record. */
 export function detectPart(reply: string): PartSpec | null {
   const fence = reply.match(/```(\w+)?\n([\s\S]*?)```/);
-  if (!fence) return null;
-  const lang = (fence[1] ?? '').toLowerCase();
-  const body = (fence[2] ?? '').trim();
-  if (lang === 'html') return { kind: 'html', content: body, title: 'preview.html' };
-  if (lang === 'mermaid') return { kind: 'mermaid', content: body, title: 'diagram' };
-  if (lang === 'json') {
-    try {
-      const parsed: unknown = JSON.parse(body);
-      if (Array.isArray(parsed) && parsed.every((r) => r && typeof r === 'object')) {
-        return { kind: 'table', content: body, title: 'data' };
+  if (fence) {
+    const lang = (fence[1] ?? '').toLowerCase();
+    const body = (fence[2] ?? '').trim();
+    if (lang === 'html') return { kind: 'html', content: body, title: 'preview.html' };
+    if (lang === 'mermaid') return { kind: 'mermaid', content: body, title: 'diagram' };
+    if (lang === 'json') {
+      try {
+        const parsed: unknown = JSON.parse(body);
+        if (Array.isArray(parsed) && parsed.every((r) => r && typeof r === 'object')) {
+          return { kind: 'table', content: body, title: 'data' };
+        }
+        if (parsed && typeof parsed === 'object') {
+          return { kind: 'record', content: body, title: 'record' };
+        }
+      } catch {
+        // fall through to code rendering for malformed json
       }
-      if (parsed && typeof parsed === 'object') {
-        return { kind: 'record', content: body, title: 'record' };
-      }
-    } catch {
-      // fall through to code rendering for malformed json
+      return { kind: 'json', content: body, title: 'data.json' };
     }
-    return { kind: 'json', content: body, title: 'data.json' };
+    if (lang && lang !== 'text' && lang !== 'markdown') {
+      return { kind: 'code', content: body, language: lang, title: `snippet.${lang}` };
+    }
+    // text/markdown fence falls through to the document/HTML checks below.
   }
-  if (lang && lang !== 'text' && lang !== 'markdown') {
-    return { kind: 'code', content: body, language: lang, title: `snippet.${lang}` };
+
+  // No code fence (or a prose fence): route long-form output to the workspace
+  // pane instead of leaving it in the chat bubble — long documents and HTML
+  // belong in the left output area; chat stays the conversation (ADR-003
+  // frontend § morphing-conversation v6; memory per-L1 workspace output
+  // routing).
+  const trimmed = reply.trim();
+
+  // Raw HTML page (model emitted markup directly, not fenced).
+  if (/^<!doctype html/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)) {
+    return { kind: 'html', content: trimmed, title: 'preview.html' };
   }
+
+  // Long-form markdown document: has heading structure and real length, so it
+  // reads as a document the user asked for, not a chat reply.
+  const hasHeading = /^#{1,6}\s+\S/m.test(trimmed);
+  if (hasHeading && trimmed.length > 800) {
+    const title = (trimmed.match(/^#{1,6}\s+(.+?)\s*$/m)?.[1] ?? 'document').slice(0, 60);
+    return { kind: 'markdown', content: trimmed, title };
+  }
+
   return null;
 }
