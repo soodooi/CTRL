@@ -155,6 +155,28 @@ pub struct SmartTableRunAiColumnArgs {
     pub confirm_over_gate: bool,
 }
 
+/// A smart-table view kind (ADR-003 §6.2) — a fixed enum (table-independent).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewKind {
+    Grid,
+    Kanban,
+}
+
+/// smart_table.add_view — persist a view (grid/kanban) into frontmatter `views`
+/// (ADR-003 §6.2: view state is NOT data; it lives in frontmatter, never the
+/// table body).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableAddViewArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// View kind. `kanban` requires `group_by`.
+    pub kind: ViewKind,
+    /// Field key to group/columnize by (required for kanban).
+    #[serde(default)]
+    pub group_by: Option<String>,
+}
+
 /// notes.query — a structured read over the knowledge base as a RecordSource
 /// (ADR-002 §14: the SAME query contract as smart-table). Fields are
 /// path/title/tags/created/modified — call `notes.describe` for the set.
@@ -664,6 +686,54 @@ impl KernelMcpRouter {
         };
         let body = serde_json::to_string(&summary).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.add_view — persist a grid/kanban view into frontmatter
+    /// `views` (ADR-003 §6.2 view-state-is-not-data). Body is untouched.
+    #[tool(
+        description = "Add a grid or kanban view to a smart table (persisted in frontmatter, not the table body). kanban requires group_by (a field key)."
+    )]
+    async fn smart_table_add_view(
+        &self,
+        Parameters(args): Parameters<SmartTableAddViewArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let kind_str = match args.kind {
+            ViewKind::Grid => "grid",
+            ViewKind::Kanban => "kanban",
+        };
+        if let Some(g) = &args.group_by {
+            if !table.fields.iter().any(|f| &f.key == g) {
+                return Err(McpError::invalid_params(format!("field_not_found: '{g}'"), None));
+            }
+        } else if matches!(args.kind, ViewKind::Kanban) {
+            return Err(McpError::invalid_params(
+                "kanban view requires group_by".to_string(),
+                None,
+            ));
+        }
+
+        let mut fm = entry.frontmatter.clone();
+        if !fm.is_object() {
+            fm = serde_json::Value::Object(serde_json::Map::new());
+        }
+        let view = serde_json::json!({ "kind": kind_str, "group_by": args.group_by });
+        if let Some(obj) = fm.as_object_mut() {
+            let views = obj
+                .entry("views")
+                .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+            match views.as_array_mut() {
+                Some(arr) => arr.push(view),
+                None => *views = serde_json::Value::Array(vec![view]),
+            }
+        }
+        vault::write(&root, &args.path, &entry.content, &fm).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "added {kind_str} view to {}",
+            args.path
+        ))]))
     }
 
     /// vault.write — write markdown + optional frontmatter to the vault.
