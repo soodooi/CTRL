@@ -14,6 +14,9 @@
 use crate::kernel::query::Row;
 use crate::kernel::vault_smart_table::SmartTable;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Per ADR-003 §6.5.4: a column run over more than this many rows must get
 /// explicit user confirmation before spending (BYOK is the user's money).
@@ -131,6 +134,55 @@ pub struct RowError {
     pub message: String,
 }
 
+// ─── Async job (ADR-003 §6.5.4 call-now/fetch-later) ─────────────────────────
+// rmcp 1.7 has no progress notifications, so `run_ai_column.start` returns a
+// job_id and the client polls `.status` ("poll for truth") and may `.cancel`.
+
+pub type JobHandle = Arc<RwLock<JobState>>;
+pub type JobRegistry = Arc<RwLock<HashMap<String, JobHandle>>>;
+
+pub fn new_registry() -> JobRegistry {
+    Arc::new(RwLock::new(HashMap::new()))
+}
+
+pub fn new_job(rows_total: usize) -> JobHandle {
+    Arc::new(RwLock::new(JobState::new(rows_total)))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JobPhase {
+    Running,
+    Done,
+    Cancelled,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct JobState {
+    pub phase: JobPhase,
+    pub rows_total: usize,
+    pub rows_done: usize,
+    pub rows_written: usize,
+    pub errors: Vec<RowError>,
+    /// Cooperative cancel flag, polled between rows (not serialized to clients).
+    #[serde(skip)]
+    pub cancelled: bool,
+}
+
+impl JobState {
+    pub fn new(rows_total: usize) -> JobState {
+        JobState {
+            phase: JobPhase::Running,
+            rows_total,
+            rows_done: 0,
+            rows_written: 0,
+            errors: Vec::new(),
+            cancelled: false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +230,24 @@ mod tests {
         let written = apply_results(&mut t, "sentiment", &[(0, "positive".into())]);
         assert_eq!(written, 1);
         assert_eq!(t.rows[0]["sentiment"], "positive");
+    }
+
+    #[tokio::test]
+    async fn job_registry_lifecycle() {
+        let reg = new_registry();
+        let job = new_job(3);
+        reg.write().await.insert("j1".to_string(), job.clone());
+        {
+            let s = job.read().await;
+            assert_eq!(s.phase, JobPhase::Running);
+            assert_eq!(s.rows_total, 3);
+            assert_eq!(s.rows_done, 0);
+            assert!(!s.cancelled);
+        }
+        // Cancel flips the cooperative flag visible through the registry handle.
+        job.write().await.cancelled = true;
+        let reg_r = reg.read().await;
+        assert!(reg_r.get("j1").unwrap().read().await.cancelled);
+        assert!(reg_r.get("missing").is_none());
     }
 }

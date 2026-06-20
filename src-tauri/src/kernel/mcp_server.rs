@@ -81,6 +81,8 @@ pub struct KernelMcpRouter {
     runtime: Arc<KernelRuntime>,
     local_storage: Option<Arc<LocalStorage>>,
     tool_router: ToolRouter<Self>,
+    /// In-flight AI-column jobs (ADR-003 §6.5.4 async run_ai_column).
+    ai_jobs: ai_column::JobRegistry,
 }
 
 // ─── Tool argument structs ──────────────────────────────────────────────
@@ -190,6 +192,12 @@ pub struct RuntimeQueryArgs {
     pub group_by: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
+}
+
+/// Reference an in-flight AI-column job by id (status / cancel).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct JobIdArgs {
+    pub job_id: String,
 }
 
 /// notes.query — a structured read over the knowledge base as a RecordSource
@@ -429,6 +437,7 @@ impl KernelMcpRouter {
             runtime,
             local_storage,
             tool_router: Self::tool_router(),
+            ai_jobs: ai_column::new_registry(),
         }
     }
 
@@ -701,6 +710,170 @@ impl KernelMcpRouter {
         };
         let body = serde_json::to_string(&summary).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.run_ai_column.start — async AI column (ADR-003 §6.5.4
+    /// call-now/fetch-later). Validates + cost-gates, then spawns a background
+    /// job and returns `{job_id, rows_planned}` immediately; poll
+    /// `.status`, optionally `.cancel`. The job re-reads the file and
+    /// merge-by-row writes results back when done.
+    #[tool(
+        description = "Start an async AI field-shortcut job over a column (classify/extract/summarize/translate/generate, {field} tokens). Cost-gated at 100 rows. Returns a job_id; poll smart_table.run_ai_column_status."
+    )]
+    async fn smart_table_run_ai_column_start(
+        &self,
+        Parameters(args): Parameters<SmartTableRunAiColumnArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.fields.iter().any(|f| f.key == args.target_field) {
+            return Err(McpError::invalid_params(
+                format!("field_not_found: '{}'", args.target_field),
+                None,
+            ));
+        }
+        let plan = ai_column::plan_rows(&table, &args.target_field, &args.prompt, args.force);
+        if ai_column::over_cost_gate(plan.len()) && !args.confirm_over_gate {
+            return Err(McpError::invalid_params(
+                format!(
+                    "needs_confirmation: {} rows exceed the {}-row cost gate; pass confirm_over_gate=true to proceed",
+                    plan.len(),
+                    ai_column::COST_GATE_ROWS
+                ),
+                None,
+            ));
+        }
+
+        let planned = plan.len();
+        let job_id = Uuid::new_v4().to_string();
+        let state = ai_column::new_job(planned);
+        self.ai_jobs.write().await.insert(job_id.clone(), state.clone());
+
+        // Background job — non-blocking; the tool returns the id immediately.
+        let runtime = self.runtime.clone();
+        let system = args.op.system_instruction().to_string();
+        let target = args.target_field.clone();
+        let path = args.path.clone();
+        let root2 = root.clone();
+        tokio::spawn(async move {
+            let adapter = match runtime.provider_registry.primary_text_chat() {
+                Some(a) => a,
+                None => {
+                    state.write().await.phase = ai_column::JobPhase::Failed;
+                    return;
+                }
+            };
+            let opts = crate::kernel::provider::ChatOpts {
+                model: String::new(),
+                deadline_ms: 60_000,
+            };
+            let mut results: Vec<(usize, String)> = Vec::new();
+            for (idx, user_prompt) in &plan {
+                if state.read().await.cancelled {
+                    break;
+                }
+                let prompt = LlmPrompt {
+                    system: Some(system.clone()),
+                    messages: vec![crate::kernel::provider::LlmMessage {
+                        role: "user".to_string(),
+                        content: user_prompt.clone(),
+                    }],
+                    temperature: None,
+                    max_tokens: None,
+                };
+                let row_outcome: Result<String, String> = match adapter.chat_stream(&prompt, &opts).await {
+                    Ok(mut rx) => {
+                        let mut out = String::new();
+                        let mut err = None;
+                        while let Some(item) = rx.recv().await {
+                            match item {
+                                Ok(chunk) => {
+                                    out.push_str(&chunk.delta);
+                                    if chunk.finish_reason.is_some() {
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    err = Some(e.to_string());
+                                    break;
+                                }
+                            }
+                        }
+                        match err {
+                            Some(e) => Err(e),
+                            None => Ok(out.trim().to_string()),
+                        }
+                    }
+                    Err(e) => Err(e.to_string()),
+                };
+                let mut s = state.write().await;
+                match row_outcome {
+                    Ok(value) => results.push((*idx, value)),
+                    Err(message) => s.errors.push(ai_column::RowError { row: *idx, message }),
+                }
+                s.rows_done += 1;
+            }
+
+            // Merge-by-row write-back: re-read fresh so a mid-run user edit is
+            // not clobbered (ADR-003 §6.5.4).
+            if let Ok(fresh) = vault::read(&root2, &path) {
+                let mut table = vault_smart_table::SmartTable::parse(&fresh.frontmatter, &fresh.content);
+                let written = ai_column::apply_results(&mut table, &target, &results);
+                if written > 0 {
+                    let _ = vault::write(&root2, &path, &table.serialize_body(), &fresh.frontmatter);
+                }
+                state.write().await.rows_written = written;
+            }
+            let mut s = state.write().await;
+            s.phase = if s.cancelled {
+                ai_column::JobPhase::Cancelled
+            } else {
+                ai_column::JobPhase::Done
+            };
+        });
+
+        let body = serde_json::json!({ "job_id": job_id, "rows_planned": planned });
+        Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
+    }
+
+    /// smart_table.run_ai_column.status — poll an async AI-column job (the
+    /// authoritative truth; ADR-003 §6.5.4).
+    #[tool(description = "Get the status of an AI-column job: phase, rows_done/total, rows_written, errors.")]
+    async fn smart_table_run_ai_column_status(
+        &self,
+        Parameters(args): Parameters<JobIdArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let reg = self.ai_jobs.read().await;
+        let Some(handle) = reg.get(&args.job_id) else {
+            return Err(McpError::invalid_params(
+                format!("unknown job_id: {}", args.job_id),
+                None,
+            ));
+        };
+        let snapshot = handle.read().await.clone();
+        let body = serde_json::to_string(&snapshot).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.run_ai_column.cancel — cooperatively cancel a running job.
+    #[tool(description = "Cancel an in-flight AI-column job by id (already-written cells are kept).")]
+    async fn smart_table_run_ai_column_cancel(
+        &self,
+        Parameters(args): Parameters<JobIdArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let reg = self.ai_jobs.read().await;
+        let Some(handle) = reg.get(&args.job_id) else {
+            return Err(McpError::invalid_params(
+                format!("unknown job_id: {}", args.job_id),
+                None,
+            ));
+        };
+        handle.write().await.cancelled = true;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "cancelling {}",
+            args.job_id
+        ))]))
     }
 
     /// smart_table.add_view — persist a grid/kanban view into frontmatter
