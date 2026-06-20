@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 28
+version: 29
 status: accepted
-last_updated: 2026-06-17
+last_updated: 2026-06-19
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003, note: "v27 reframed: BYO-CLI driver brain — user-chosen local CLI (Claude Code etc.); CTRL never spawns/supervises a brain. Prior hermes-ACP/Pi/opencode-as-brain content retired, kept in changelog as provenance." }
@@ -21,7 +21,9 @@ sections:
   - { id: smart-table-output,   source: new-2026-06-03, note: "mcp output unification — single SmartTable per mcp, schema in manifest output_capture" }
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
+  - { id: unified-operation-interface, source: new-2026-06-19, note: "§14 — describe/query/produce: one uniform interface over all content-type feature points (md/html/table/pdf/connector/…) projected on :17873 gate; type layer via describe, read(query)≠write(produce-through-gate); query = kernel service over QuerySource, feature packs + workflows are clients; smart-table = first impl. Research: GraphQL/Plan9/agentic-AI paper." }
 changelog:
+  - v29 2026-06-19: **NEW §14 Unified Operation Interface — describe / query / produce (bao 「修改架构」).** 把 query 引擎从 smart-table 专属抬成 substrate 级契约:所有 content-type **功能点**(md/html/智能表格/pdf/CRM连接器/笔记元数据/mcp注册表…)经 :17873 gate 用**一个统一接口**操作,不再每能力各造工具。三动词:**`describe`**(普适,自报字段+支持的算子=类型/语义层,防"一切皆文件"丢类型的塌陷)/ **`query`**(读,并行、不过门,kernel service over `QuerySource`,功能包+工作流是 client)/ **`produce`**(写,串行、**过 review gate**,与 query 分开——连 GraphQL 都 query≠mutation,且 CTRL 写不分开就没法门控)。源分 RecordSource(filter/sort/group)/TextSource(match/semantic)/BlobSource(get/extract),算子由 describe 自报 → 统一在接口、分化在 describe(**不是啥都 query**)。NOT 新增 spine primitive(5 锁)——kernel 服务 + gate 契约,挂 Capability primitive 下。smart-table(ADR-003 §6.5)= 首个 RecordSource 实现。研究依据:GraphQL query-vs-mutation / Unix·Plan9 everything-is-a-file / 2026 agentic-AI Unix-philosophy 论文,事实源 `vault/ctrl/research-unified-operation-interface.md`。
   - v28 2026-06-18: **纠正 v27 brain 层 (bao 实查运行真相后钦定) + Obsidian connector 落地验证.** v27 把 brain 写成「BYO-CLI driver 取代内置 brain，hermes 摒弃」——**写过头了**。运行真相：**Irisy 的 brain = Hermes Agent**，CTRL 确实 bundle + 启动 hermes（dashboard :17890，Irisy 嵌入），**hermes 不退役**。**BYO-CLI driver / projection 是「附加」并行路径**（用户自带 CLI 经投影的 `.mcp.json` 也能驱动 CTRL 工具，已落地 `kernel/projector.rs` + 真机验证），不是替代。§1 brain 的「hermes 摒弃」就 brain 层而言 superseded（§ projection / § mcp-bus / Obsidian / plain-text 仍有效）。**Obsidian Local REST API MCP 连接落地**：根因 = `obsidian_connect` 从未被调用（boot 没接线）+ rmcp `auth_header()` 双重 Bearer 前缀 401；修复 = boot best-effort `register_and_connect` + reqwest default-header 带精确 `Bearer <token>`。真机验证：connected to bus，**16 工具**。真相源 `vault/ctrl/architecture-byo-cli-driver.md` 顶部纠正块 governing。
   - v27 2026-06-17: **架构换代 — CTRL = BYO-CLI driver platform (bao 钦定 2026-06-17). § brain reframed + §1.8 ACP demoted to future + NEW § projection (core).** The brain is no longer a CTRL-installed/lazy-installed/supervised process (hermes / opencode / Pi all摒弃 as the brain): the **driver = the user's own local CLI** (Claude Code today; any agentic CLI tomorrow). CTRL does NOT spawn or supervise the brain — the CLI owns its own lifecycle, its own model, its own agent loop + scheduling. **§ brain (§1)** rewritten to "BYO-CLI driver brain" — CTRL is install + projection + keychain + MCP-bus gate, not a brain runtime. **§1.8 ACP** demoted from "single door / THE channel" (v23) to a **future enhancement channel for ACP-aware CLIs** — the main integration path is NOT ACP, it is **projection** (new § projection); ACP client + probe code is NOT deleted, marked future work. **NEW § projection (core of this换代)**: CTRL接入 = materialize local assets into the target CLI's NATIVE config so the CLI discovers them with zero CTRL interposition — asset→injection-point table (tool → MCP server on bus :17873, written into the CLI's mcp config e.g. `~/.claude/.mcp.json` / 技能 → `SKILL.md` materialized into the CLI's skills dir / 记忆 → derived `CLAUDE.md` / `AGENTS.md` / 用户触发 workflow → slash command in `.claude/commands`); manifest optional `target:` override, default auto-routes by asset type; ONE projection serves two triggers — **passive projection** (substrate; user runs their own CLI → assets auto-discovered, zero侵入) + **active spawn** (CTRL launches the CLI inside an ephemeral workspace); scheduling权 stays with the CLI's model, CTRL only "makes the CLI see" + "call-return flows back to :17873 = the kernel gate" (§6 mcp-bus now also = the projection tool call-return gate); projection is **intent-scoped** (project a subset, never全量灌爆 context); **shared network (share & be shared) = v1.1 future**, architecture reserves the interface. § provider / § crypto / § subprocess / § composition / §1.9 Obsidian notes基本不动 (§ mcp-bus :17873 annotated as the projection call-return gate). Supersedes the v23 "ACP single door" / v22 "provider-router default brain" / v19 "3-agent aggregator" framings as the AGENT-INTEGRATION model — those entries kept below as provenance, superseded-by-v27.
   - v26 2026-06-17: **§1.9 research-corrected (bao "调研别猜" + "不要跳出 ctrl 不然产品就破裂了") + NEW §1.9.1 Obsidian connector spec.** Web research forced a reversal of the v24/v25 "Obsidian = the editor" framing: (1) Obsidian is NOT embeddable (Electron, no web/headless — can embed web INTO Obsidian but never the reverse); (2) its Local REST API is data-only (CRUD/patch/search/metadata, NO rendering/backlinks/graph); (3) embeddable Obsidian-compatible web tools (Perlite/Quartz) are read-only publishers. ∴ "stay in CTRL" FORCES CTRL to render notes itself. **Layer 3 reframed: CTRL's `NotesApp` + kernel vault index = the PRIMARY in-CTRL notes UI (single entry); Obsidian = compat target + optional connector, never the UI, never the default jump-out.** Scope decision RESOLVED: KEEP NotesApp (don't slim/rip — single entry + mobile need it); stop ADDING PKM parity. **NEW §1.9.1**: the Obsidian Local-REST-API plugin ships its own MCP server (`/mcp/`) → register on the bus :17873 (~zero adapter); endpoint→Irisy-capability table (vault CRUD/patch · `/search/` Dataview/JsonLogic · `/active/` operate-on-open-note · `/commands/` drive any plugin command · `/periodic/` · `/open/` controlled handoff); two-tier access (baseline kernel notes-MCP always + enriched Obsidian connector when running); write/command tools gated (ADR-006 §4). Implementation slice 1 (SilverBullet retirement) DONE; connector = slice 2.
@@ -1249,6 +1251,76 @@ Pi's model-registry now requires explicit `$VAR` prefix for env var references. 
 - [x] `provider-templates.json` has 20 entries.
 - [x] `models.json` apiKey written with `$` prefix — verify with `grep '"apiKey":' ~/.pi/agent/models.json` returns `"$CTRL_PI_API_KEY_..."`.
 - [ ] `scripts/probes/irisy-eval.mjs` 9/9 PASS on a 0.1.179 install — pending bao update + run.
+
+## §14 Unified Operation Interface — describe / query / produce (NEW v29, 2026-06-19)
+
+> bao 2026-06-19「修改架构」. Every content-type **feature point** (md / html / smart-table /
+> pdf / CRM-connector / vault-metadata / mcp-registry …) is operated by Irisy through ONE
+> uniform interface projected on the :17873 gate (§6), instead of bespoke per-capability tools.
+> Research-grounded (GraphQL query-vs-mutation, Unix/Plan9 "everything is a file", the 2026
+> agentic-AI Unix-philosophy paper, ChatBI/MCP); fact source
+> `vault/ctrl/research-unified-operation-interface.md` + `research-ai-data-platforms.md`.
+
+### §14.1 The decision — one interface, a type layer, read ≠ write
+Three verbs, not one:
+- **`describe`** (universal) — a source self-reports its fields/types + **which operators it
+  supports**. This is the **type/semantic layer** that keeps uniformity from collapsing into a
+  typeless catch-all — the documented failure mode of "everything is a file" (/net vs /proc vs
+  disk look alike, no type system, escape-hatches like ioctl). GraphQL's schema and the
+  agentic-AI paper both retain this layer; so do we. It is also the ChatBI schema-injection that
+  lets Irisy fill only valid params (ADR-003 §6.5).
+- **`query`** (read / input) — parallel-safe, side-effect-free, **does NOT pass the write gate**.
+  Operators are source-advertised via `describe`. Implemented as a **kernel service** over a
+  uniform `QuerySource` interface; **feature packs and workflows are its clients** (they call
+  query, they do not re-implement filtering).
+- **`produce`** (write / output) — serial, side-effecting, **routes through the consequential-
+  action review gate** (ADR-006 §4 / ADR-003 §8.2-E). Kept **DISTINCT** from `query`: every
+  uniform system that matters keeps read/write separate (GraphQL query vs mutation — writes
+  serialize + signal intent; Unix read vs write; the AI paper). For CTRL the split is
+  load-bearing — **you cannot gate writes if they are disguised as reads.**
+
+### §14.2 Why uniform — but bounded
+One interface = Irisy learns one paradigm → fewer wrong tool-picks (the §6.5 "narrow surface"
+reliability win), and workflows compose `query → query` on one result shape. **Bounded** by
+§14.1's type layer: uniform **envelope**, source-specific **operators** advertised by `describe`.
+The blob/render case is a deliberately "thin" query (one-row get, no real filtering) — accepted:
+the cost is tiny, the "never switch verbs" win is real.
+
+### §14.3 Source kinds — operator profiles advertised by `describe`
+| kind | `query` operators | `produce` | examples |
+|---|---|---|---|
+| **RecordSource** | filter / sort / group | upsert / update / delete | smart-table, CRM connector, vault metadata+graph, mcp registry |
+| **TextSource** | match / semantic-near + rank | append / patch | note prose, vault content |
+| **BlobSource** | get / extract | render / write-file | html, pdf, image, svg |
+
+So **not everything is `query`** — md/html/pdf are feature points behind the *same interface*, but
+a BlobSource's `describe` advertises only get/extract; text goes match/semantic; only record-like
+sources expose filter/sort/group. Uniform at the interface, typed by `describe`.
+
+### §14.4 Relationship to existing sections (no churn — formalizes what the gate already does)
+- **§6 MCP bus :17873** = where the interface is projected (describe/query/produce are gate verbs;
+  the `vault.*` tools are already de-facto a RecordSource query over note metadata).
+- **§2 capability surface** = the namespaced syscall surface; `query` is a kernel service in it.
+- **§7.1 feature pack** = the user-facing unit; a pack implements ≥1 `QuerySource` + advertises via
+  `describe`.
+- **§9 smart-table output** = one `produce` target (mcp output → smart-table).
+- **NOT** a new ADR-001 spine primitive (5 primitives v1 locked) — this is a kernel **service** +
+  gate **contract** under the existing Capability primitive.
+
+### §14.5 First implementation
+**smart-table** (ADR-003 §6.5) is the first `QuerySource` (RecordSource): `describe` (frontmatter
+schema + supported operators), `query` (filter/sort/group), `produce` (upsert / update_cell /
+add_view + the `run_ai_column` async job). The `smart_table.*` tools are this contract
+instantiated; later sources (notes, connectors, blobs) follow the same shape so a new source
+becomes Irisy-operable with **zero bespoke tools**.
+
+### §14.6 Acceptance
+- [ ] Gate exposes describe / query / produce (or namespaced equivalents); read parallel, write
+  serial-through-gate.
+- [ ] A new source is Irisy-operable by implementing `QuerySource` + `describe` — no new bespoke
+  tools.
+- [ ] `query` never mutates; `produce` always passes the review gate.
+- [ ] smart-table validates the contract as the first RecordSource (ADR-003 §6.5).
 
 ## Provenance
 

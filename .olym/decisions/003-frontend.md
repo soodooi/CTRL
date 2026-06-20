@@ -2,9 +2,9 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 9
+version: 14
 status: accepted
-last_updated: 2026-06-17
+last_updated: 2026-06-19
 deciders: [bao, zeus, daedalus]
 sections:
   - { id: pwa,           source: orig-002 }
@@ -19,6 +19,11 @@ changelog:
   - v4 2026-06-01: § shell-4col §7.1 column-order amendment — bao "顺序是工作区（内有tab），L2，L1，Irisy". Column model reordered LEFT→RIGHT to `[Tab | L2 | L1 | Irisy]`. L1 is now anchored immediately left of Irisy (not far-left). Rationale: Irisy + L1 stay visually pinned at the monitor's right; Workspace grows leftward when expanded, with L2 sandwiched between Workspace and L1. Compact mode still renders only L1 (48) + Irisy (430) = 478 px because Workspace and L2 collapse to 0. Anti-pattern §7.8 entry added: do NOT render L1 at column index 1.
   - v5 2026-06-09: **§ nav-keyboard → § nav-l1 — 5-chip 3-agent aggregator L1 (H-2026-06-09-002).** bao 2026-06-09 校准: 3 agents (hermes / opencode / kairo) are external; CTRL is the aggregator壳. L1 chips reorganized as 5 first-class routes mapping directly to capability surfaces: **Irisy** (PWA persona shell, default chat) / **Mcp pool** (MCP face discovery) / **Notes** (kairo webview) / **Coding** (opencode HTTP API + xterm) / **Assistant** (hermes MCP stdio). § vault-stack RETIRED — kairo owns markdown editor + wiki-link + backlink + git; CTRL doesn't ship its own editor. § agent-routes NEW: lock per-route agent endpoint contracts (kairo webview path / opencode HTTP port discovery / hermes MCP stdio handshake). Settings + Pool stay as before. § shell-4col 4-column shell preserved — agent routes render inside `[Tab]` column. Pre-v5 components retired in PWA: `IrisyChat forceMode="coding"` wrapper, `NotesApp` 3-pane (NotesTree/NotesEditor/NotesBacklinks), `MarkdownViewer` Tiptap shell, `BacklinksPanel`. PWA picks up sycophancy filter (relocated from `packages/ctrl-pi-bridge/data/persona-patterns.md` → `packages/ctrl-web/src/lib/persona-filter/patterns.md`).
   - v6 2026-06-11: **§8 NEW — morphing-conversation rebuild.** bao 2026-06-11 校准: CTRL is not a shell, it's an advanced UX paradigm at the app layer (UX + 通讯 + agent optimization); domain breadth via MCP/CLI/Skills, not built verticals. Synthesized from a 6-track product benchmark (launcher/routing/cockpit + marketing/office/finance verticals). Locks: one ambient morphing conversation (input-first floating surface), intent routing with visible pill + ambiguity-adaptive response (Lovable 3-way), morph-to-output-type via the 12-viewer registry, agent-workspace pane + tool stream, 3-layer drill-down, point-edit + checkpoint + accept/reject gate, capability-agnostic routing to the open MCP/CLI/Skill set, ambient scheduled tasks. §7 4-col shell + § nav-l1 5-chip SUPERSEDED for the home surface (chips survive as morph-layer shortcuts). 6-slice build sequence in §8.4. Invariants preserved: Ctrl summon · floating popup · Irisy(hermes) · coding(opencode) · kairo(notes).
+  - v14 2026-06-19: **§6.5 reframed — smart-table = first implementation of the Unified Operation Interface (ADR-002 §14, bao「修改架构」).** The query engine generalized from a smart-table feature to a substrate-level contract: all content-type feature points (md/html/table/pdf/connector) operated via ONE interface — `describe`/`query`/`produce` — on the :17873 gate. §6.5's machinery is now the first `QuerySource` (RecordSource) instance: `get_schema`→`describe`, the filter/sort/group query → RecordSource `query` profile, write tools + `run_ai_column` job → `produce` (through review gate). Notes=TextSource, html/pdf=BlobSource follow the same 3 verbs (zero bespoke tools). Query is a kernel service, not a table feature. No content change to §6.5.1–.7 mechanics; this is the altitude/ownership reframe. Research source adds `research-unified-operation-interface.md`.
+  - v13 2026-06-19: **§6.5.4 AI column = async job + hard-problem locks (impl research: rmcp-1.7 probe + Airtable production lessons + MCP SEP-1686).** `run_ai_column` is NOT one sync write tool (would block minutes on a big table) — it's a **call-now/fetch-later job triple** `.start`(→job_id)/`.status`(poll-for-truth)/`.cancel` (§6.5.2 updated), forward-compatible with MCP SEP-1686 Tasks. Locks: bounded concurrency via `tokio::sync::Semaphore` (rate limits are Airtable's real failure mode); partial-failure ≠ abort (`errors[]` + backoff on `QuotaExhausted`, stop on `AuthFailed`); **idempotent resume via row-level state** (re-run only non-complete rows, no duplicate spend); cancellation token; **write-back = merge-by-row + re-read-at-write, NOT whole-file overwrite** (else a mid-run user edit is clobbered — `vault::write` is lock-free last-write-wins); **cost gate = 100 rows** (bao: >100 rows needs explicit user confirm before spend, `.start` returns `needs_confirmation{row_count}`). Widens the narrow surface by 3 tools — justified: no correct *synchronous* form exists. Research source: `vault/ctrl/research-ai-data-platforms.md`.
+  - v12 2026-06-19: **§6.5.2/.3 mechanism correction — ADR↔impl drift fix (rmcp static-schema probe).** Impl research (`mcp_server.rs`: rmcp `#[tool]` generates each tool's JSON schema at COMPILE time, no runtime dynamic schema) invalidated v11's "field/group_by enums dynamically generated from the live table schema". Corrected: table-INDEPENDENT fixed sets (`op`, view `kind`, ai `op`) stay genuine static enums; table-DEPENDENT params (`field`/`group_by`/`inputs`/`target_field`) become **validated strings** — Irisy reads the `smart_table.schema` **resource** first (ChatBI schema-injection) and a non-existent field is rejected at parse time with `field_not_found{valid:[…]}` for self-correction. Core principle (Irisy fills constrained params, schema=semantic layer) unchanged; enforcement moves compile-time-enum → resource-injection + runtime-validation (one notch softer, standard MCP-database pattern). Injection point = MCP resource (bao chose, option 1).
+  - v11 2026-06-19: **NEW §6.5 Irisy operation surface — benchmarked vs Dify / Coze / ChatBI / Airtable + MCP resource-vs-tool pattern (bao 2026-06-19「联网深入研究 + 给实现思路 + 落盘」).** Core principle: **Irisy fills enum-constrained tool params, never free-generates a query** (convergent lesson of all 5 benchmarks; CTRL has no SQL backstop so it's load-bearing). Locks: schema as MCP *resource* + `smart_table.*` *tools* (query/upsert_row/update_cell/add_view/run_ai_column), all params enum-validated from the live frontmatter schema (= lightweight semantic layer, ChatBI lesson); AI column = Airtable `{field}`-token per-row batch; business layer = MCP connectors via `mcp_proxy_*` not built-in verticals; structural anti-hallucination (enum fields + param-object queries + structured returns). **OPEN DECISION §6.5.6**: deterministic multi-step orchestration A(hand-off)/B(markdown `task:` spec ★)/C(pure brain) — bao to rule. Build order §6.5.7. Research source: `vault/ctrl/research-ai-data-platforms.md`.
+  - v10 2026-06-19: **§6 Smart table → intelligent table — benchmarked vs Feishu Bitable (bao 2026-06-19「实现飞书的一些功能」+「落盘到 ADR 唯一真相」).** §6.1 on-disk shape unchanged; NEW §6.2 field sub-formats (rating/progress/currency/percent) + multiselect + email/phone/attachment + grid+kanban multi-view with `view.*` in frontmatter (view-state ≠ data) + record card; NEW §6.3 **AI field shortcuts** (column-bound batch AI: classify/tag/extract/summarize/translate, routed through Irisy + `:17873` gate, honest-degrade when gated — the table-surface realization of §8.2-F AI-as-column); NEW §6.4 out-of-scope locks: automation-flow + button-trigger fields PERMANENTLY excluded (不做清单 / one-shot), relational = `[[wikilink]]` soft links only (NO FK — deliberate fork from Feishu's relational core), formula/lookup/rollup/dashboard/gallery/calendar/gantt/form/templates deferred v1.x. Research fact source: `vault/ctrl/research-feishu-bitable.md` (8 Feishu official docs + 4 woshipm deep articles, web-verified 2026-06-19).
   - v9 2026-06-17: **Notes layer = Obsidian, kairo retired (bao 2026-06-17; pairs ADR-002 v24 / ADR-001 v6).** `/notes` = inline md viewer + "open in Obsidian" (CTRL bundles no editor — don't reinvent the wheel); §8 invariant "kairo notes" → "Obsidian notes (user's own)". Data access stays editor-independent on kernel notes-MCP :17873. Historical "kairo" in earlier changelog rows (v5/v6) is provenance, superseded here.
   - v8 2026-06-16: **§8 morphing-conversation REINSTATED as the SHIPPED home surface — code-won reconciliation (zeus drift review 2026-06-16).** The `ui/v1-editorial` branch (v0.1.260→**v0.1.276**) shipped the Ambient morphing home as the default render path, reversing v7's §7-4col lock WITHOUT amending this ADR — a 17-version ADR↔code drift caught in zeus's全局 review. bao 2026-06-16 ruling: **代码赢** — Ambient morphing IS the truth; this ADR conforms to reality. Locks the SHIPPED implementation (§8.5 NEW): home = `AmbientWorkbench` (3-zone `[Sidebar L1 | AmbientHome morphing column | routed-page Outlet]`, mounted across every route); `AmbientHome` morphing column = Irisy chat pane right-anchored, width **480px** default, divider-draggable **300–640** (`AmbientHome.tsx:147,201`); §7 4-col shell DEMOTED to legacy fallback behind `localStorage ctrl:legacy-shell='1'` (`app.tsx:50`). L1 = `Sidebar.tsx` icon rail (~52px), chips: Irisy / dynamic connector Tools / Notes / Coding / dynamic Feature Packs / [spacer] / Discover / Settings / Model badge — all unified-size inline-SVG icons (bao 2026-06-16 "L1 icons must all be the SAME size"). Routed pages (Settings/Coding/Notes/Pool) render via `<Outlet>` inside a `.routeHost` with a `← Irisy` back bar — this is now intended, not the v7 "open item". Editorial commits folded in: whole first line = window drag region, minimal action bar above composer, single vertical grid line, hermes dashboard iframe in Settings → Irisy (`:17890`). §7.8 Irisy-width anti-pattern (380–430) SUPERSEDED by the 480/300–640 range. The §nav-l1 5-chip and §7 4-col are NO LONGER the home truth; both retained as provenance.
   - v7 2026-06-13: **§7 shell-4col REINSTATED — bao reverts the v6 §8 morphing home surface back to the locked 4-column shell. RE-REVERTED by v8 (Ambient morphing is the shipped home).** bao 2026-06-13: "我一直要的是这个布局… Irisy常驻", pointing back to §7 v4 `[Tab | L2 | L1 | Irisy]`. The v6 morphing-conversation home was a detour; the SHIPPED home is the §7 4-col shell. Implementation (v0.1.255→v0.1.259, PWA `AmbientHome`/`AmbientWorkbench`): L1 rail moved from the workbench far-left INTO AmbientHome's middle column, glued to Irisy's left (honours §7.8 anti-pattern: L1 never far-left); Irisy pane ALWAYS pinned far-right, widened 430→**480px**, divider-draggable 320–820; work area (Tab) leftmost, L2 collapsed by default; window total width 1280→**1480**. CTRL logo top-left of window; "Irisy" label inside the right Irisy pane. Markdown reply styling + per-reply Copy / Copy-conversation added. **Open item**: route pages (Settings/Coding) render with AmbientHome hidden → they currently lose the in-layout L1 and navigate back via the route topbar back bar; decide whether to restore a route-level L1. §8 morphing-conversation retained as a future direction, no longer the shipped home surface. **LESSON (process)**: read ADR-003 §7 BEFORE touching layout — skipping it cost a long detour of ad-hoc layout edits (Irisy left/right/centered) that merely re-derived the already-locked §7 spec.
@@ -179,7 +184,17 @@ These were surfaced during the 2026-06-01 refactor session and are NOT yet resol
 - Do NOT render L1 at column index 1 (leftmost). L1 sits at column index 3, immediately left of Irisy (v4, bao 2026-06-01 `顺序是工作区（内有tab），L2，L1，Irisy`). Workspace tab area grows leftward from L1.
 - Do NOT spawn a Tauri child window for the workspace (pre-v3 path). The workspace tab area renders inside main window's `.tab` grid cell; `toggle_workspace_window` resizes main's left edge 478 ↔ 1600 only.
 
-## §6 Smart table — markdown + frontmatter schema (vim test passes)
+## §6 Smart table → intelligent table (v10 — 2026-06-19, benchmarked vs Feishu Bitable)
+
+> **STATUS (v10):** smart-table grows from a single-view markdown grid into the
+> **intelligent-table capability**. Scope below is benchmarked against Feishu
+> Bitable (research fact source: `vault/ctrl/research-feishu-bitable.md`) and
+> deliberately trimmed to CTRL philosophy (plain-text / one-shot / local-truth /
+> AI-is-pipe). The §6.1 base (on-disk shape) is unchanged; §6.2–§6.4 are new.
+> The AI-field-shortcut decision is the table-surface realization of §8.2-F
+> "AI-as-column".
+
+### §6.1 On-disk shape (unchanged — vim test passes)
 
 On-disk file = plain markdown with YAML frontmatter `schema:` block + pipe table body:
 
@@ -201,6 +216,224 @@ schema:
 vim opens as markdown table. Obsidian/VMark render as plain markdown table. CTRL `SmartTableViewer` = editable Tanstack Table with per-column cell editors (text/number/date/checkbox/tags/select/url). Edit → re-serialize → `vault_write` preserves schema block + frontmatter.
 
 Schema language minimal (key/label/type/options?/min?/max?). Anything more complex stays markdown/yaml viewer.
+
+### §6.2 Fields + multi-view (v10)
+
+- **Field types** extend the 7 base cell editors (`text/number/date/checkbox/tags/select/url`)
+  with: number sub-formats (`rating` / `progress` / `currency` / `percent`),
+  `multiselect`, and `email` / `phone` / `attachment-path`. Storage stays the raw
+  scalar; the sub-format is a **render hint** in the schema, never a new on-disk
+  encoding (vim still sees the plain value).
+- **Multi-view, one file**: a single `.md` derives **grid + kanban** views
+  (kanban groups by a `select`/`checkbox` field; dragging a card rewrites that
+  field's cell). Calendar / gallery / gantt / form views are backlog (§6.4).
+- **View state is not data**: sort / filter / group / hidden-columns / column-width
+  persist in frontmatter `view.*` and **never mutate the markdown table body**.
+  Round-trip rule extends: parse → edit (cell *or* view state) → serialize keeps
+  the table body byte-stable except edited cells; `view.*` lives only in
+  frontmatter.
+- **Record card**: a row expands into a detail card (reuses the cell editors).
+
+### §6.3 AI field shortcuts ★ (v10 — the differentiator, realizes §8.2-F)
+
+Feishu's lesson we adopt: **AI lives *on the column* as a "field shortcut", not
+in a side chat.** An AI field is a schema column bound to an instruction that
+**batch-runs the whole column** ("auto-update" on new rows): classify / tag /
+extract / summarize / translate.
+
+- **Every AI call routes through Irisy + the `:17873` gate** — NOT a direct
+  provider call from the viewer (cross-ref ADR-005 § irisy, ADR-002 § provider
+  gate). This is the table-surface form of §8.2-F "AI-as-column" + §8.2-D
+  transparency.
+- **Honest degrade**: with the gate closed (ADR-002 v20 hermes interim) the AI
+  column renders read-only — it must not silently fall back to a raw provider
+  call (consistent with §6 ADR-006 §6 cold-start honest-degrade posture).
+- Result cells **land in the markdown body** like any other cell (drill-down to
+  the raw model output stays available per §8.2-D 3-layer), with the schema
+  marking the column AI-derived so a hand-edit is distinguishable.
+
+### §6.4 Out of scope (philosophy, not backlog gaps)
+
+- **Automation flow editor + button-trigger fields** — collide with the 不做清单
+  (workflow editor = Coze/n8n) and the one-shot rule (§8.3 ban). **Permanently
+  excluded**, not deferred.
+- **Relational = soft links only**: cross-table references use `[[wikilink]]` +
+  vault backlinks (§5 / kernel `vault_index.rs`), **not** database foreign keys.
+  This is the deliberate fork from Feishu's relational core (link / lookup /
+  rollup) — the price of staying single-file plain-text. Real FK relations
+  re-evaluated in v1.x, never at the cost of the vim test.
+- **Deferred to v1.x** (kept on the capability list, not v1): formula engine,
+  lookup/rollup, dashboard charts, gallery/calendar/gantt/form views, templates,
+  real-time co-edit/comments/cell-permissions (the last gated behind the Automerge
+  CRDT substrate, ADR-002 § crypto).
+
+### §6.5 Irisy operation surface (v14 — 2026-06-19, benchmarked vs Dify / Coze / ChatBI / Airtable)
+
+> **v14 reframe (bao「修改架构」2026-06-19):** smart-table is now the **first implementation
+> of the Unified Operation Interface — ADR-002 §14** (describe / query / produce over all
+> content-type feature points). What §6.5 specifies below is no longer table-specific
+> machinery — it is the **first `QuerySource` (RecordSource)** instance of a substrate-level
+> contract. Terminology maps onto §14: `smart_table.schema`/`get_schema` → **`describe`**;
+> `smart_table.query` → the RecordSource **`query`** profile (filter/sort/group); the write
+> tools + `run_ai_column` job → **`produce`** (through the review gate). Later sources (notes
+> = TextSource, html/pdf = BlobSource, CRM = RecordSource) implement the same three verbs, so
+> they need zero bespoke tools. The query engine is a **kernel service** (ADR-002 §14.1), not
+> a smart-table feature.
+>
+> How Irisy actually *operates* a smart table. §6.1–§6.4 said what the table is;
+> this says how the brain reads/writes/queries it. Research fact source:
+> `vault/ctrl/research-ai-data-platforms.md` + `research-unified-operation-interface.md`
+> (Dify/Coze/ChatBI/Airtable + GraphQL/Plan9/agentic-AI; MCP resource-vs-tool pattern).
+>
+> **v12 correction (impl-grounded, `mcp_server.rs` probe 2026-06-19):** rmcp's
+> `#[tool]` macro generates each tool's JSON schema **at compile time** from a static
+> struct — there is no runtime/per-call dynamic schema. So v11's "field/group_by enums
+> *dynamically generated from the live table schema*" is **not implementable**.
+> Mechanism corrected below: **table-INDEPENDENT** fixed sets (`op`, view `kind`,
+> ai `op`) stay genuine static enums; **table-DEPENDENT** params (`field`,
+> `group_by`, `inputs`) become **validated strings** — the model sees the valid set
+> via the `smart_table.schema` **resource** (ChatBI schema-injection) and a wrong
+> field is rejected at runtime with a structured error to self-correct. The Core
+> principle is unchanged; only the enforcement moves from "compile-time enum" to
+> "resource-injection + runtime validation" (one notch softer, and the standard MCP
+> database pattern).
+
+**Core principle (the convergent lesson of all 5 benchmarks):**
+> **Irisy fills *constrained tool parameters*; it never free-generates a query or
+> logic.** ChatBI's semantic layer, MCP's enum-constrained tool args, Coze's
+> description-matched dispatch, and Airtable's `{field}` tokens all converge here.
+> CTRL has no SQL engine to backstop a bad query, so this rule is load-bearing,
+> not optional.
+
+**§6.5.1 Layering (MCP resource-vs-tool pattern).** Following the official MCP
+guidance (schema as *resource* = read-only context; actions as *tools* =
+model-controlled, validated):
+
+```
+Irisy (Hermes brain) — fills validated params (sees valid fields via the schema resource), never raw queries
+  │
+:17873 gate ── smart_table.schema   (RESOURCE — field names/types/enums → the "semantic layer")
+           └─ smart_table.* tools   (TOOLS — query/write, all params validated)
+  │
+kernel smart_table ops (parse / query / mutate / ai-column) — NEW kernel surface
+  │
+vault/*.md (plain-text + frontmatter schema) = truth
+  │
+MCP connectors (CRM/ERP) → gate mcp_proxy_* → mirrored into smart-tables
+```
+
+**§6.5.2 Tool surface — deliberately narrow, param-constrained, structured returns**
+(per "minimize tool surface / use static enums where the set is fixed / avoid
+free-form query strings / return JSON"). Notation: `‹enum›` = genuine compile-time
+enum (table-independent); `‹str✓›` = static string validated at runtime against the
+table's frontmatter schema (table-dependent, so it cannot be a per-call enum — see
+v12 correction):
+
+| tool | kind | params |
+|---|---|---|
+| `smart_table.schema` | resource | field keys / types / `options` values / `{field}` ref tokens — **Irisy reads this first**; the semantic layer |
+| `smart_table.query` | tool (read) | `filters:[{field‹str✓›, op‹enum: eq/contains/gt/lt/within/…›, value}]`, `sort`, `group_by‹str✓›`, `limit` — Irisy fills a **filter object**, not logic |
+| `smart_table.upsert_row` | tool (write) | row object; field keys validated against schema |
+| `smart_table.update_cell` | tool (write) | `row_id` + `field‹str✓›` + `value` (type-checked) |
+| `smart_table.add_view` | tool (write) | `kind‹enum: grid/kanban›` + `group_by‹str✓›` → writes frontmatter `view.*` |
+| `smart_table.run_ai_column.start` | tool (write, **async job**) | `target_field‹str✓›` + `prompt` (`{field}` tokens) + `inputs:[field‹str✓›]` + `op‹enum: classify/extract/summarize/translate/generate›` → returns `job_id` (call-now/fetch-later — a single sync tool would block 17 min on a big table; see §6.5.4) |
+| `smart_table.run_ai_column.status` | tool (read) | `job_id` → `{state, rows_done, rows_total, errors:[{row, msg}]}` — **poll-for-truth** (rmcp 1.7 has no progress notifications) |
+| `smart_table.run_ai_column.cancel` | tool (write) | `job_id` → cooperative cancel |
+
+Anti-hallucination is layered (resource-injection + runtime validation, not a hard
+compile-time wall): (1) Irisy reads `smart_table.schema` (resource) first, so it
+**sees** the valid field names + `options` before composing a call — the standard
+ChatBI schema-injection move; (2) `query` is a structured **parameter object**, not a
+query string — there is no free-form query language to hallucinate; (3) a
+table-dependent `field` that doesn't exist is **rejected at parse time with a
+structured `field_not_found` error** listing valid fields, so Irisy self-corrects on
+the next turn; (4) the table-independent sets (`op`, view `kind`, ai `op`) are real
+static enums the model literally cannot stray from; (5) returns are structured JSON +
+match-count so Irisy can verify the result.
+
+**§6.5.3 frontmatter schema = the lightweight semantic layer.** CTRL ships no
+database, but the frontmatter `schema:` (keys / types / `options` values) already IS
+a semantic layer — exposed via the `smart_table.schema` **resource** that Irisy reads
+before querying. Seeing `next_followup:date` + `status:select[新线索|跟进中|…]`, "show
+this week's follow-ups" resolves to `{field:next_followup, op:within, value:this_week}`.
+A hallucinated field is **not unrepresentable** (rmcp can't pin a per-table enum) but
+is **caught**: the kernel validates `field` against the parsed schema and returns
+`field_not_found{valid:[…]}` for self-correction. This is ChatBI's "narrow
+open-generation into constrained selection" — achieved via schema-injection +
+validation rather than SQL, the standard MCP-database pattern.
+
+**§6.5.4 AI column** (`run_ai_column`) = Airtable/Feishu's proven form: prompt with
+`{field}` reference tokens, applied per-row down the column, routed gate→provider
+(BYOK key in keychain), result lands in the markdown cell with `derived:true` in
+schema (visible + hand-editable = transparency); honest read-only degrade when the
+gate is closed (no silent direct-provider fallback). Realizes §6.3 + §8.2-F.
+
+**§6.5.4-impl — it's an async *job*, not a sync tool** (v13, impl-grounded:
+`mcp_server.rs` rmcp-1.7 probe + Airtable production lessons + MCP SEP-1686). A
+column run is 50–500 provider calls; a single synchronous tool would block the MCP
+call for minutes. So it is a **call-now / fetch-later job** — the recognized MCP
+long-running pattern (`.start`→`job_id`, `.status` poll, `.cancel`), forward-compatible
+with MCP SEP-1686 Tasks once rmcp adopts it. "**Poll-for-truth**": `.status` is
+authoritative; CTRL ships no progress notifications (rmcp 1.7 lacks them) and doesn't
+fake them. Hard-problem locks:
+
+- **Bounded concurrency**: a `tokio::sync::Semaphore` caps in-flight completions
+  (≈4–8); unbounded fan-out hits provider rate limits (Airtable's real failure mode:
+  a 200-row batch drops requests). Per-row deadline via `ChatOpts.deadline_ms`.
+- **Partial failure ≠ abort**: a failed row is recorded in `errors[{row,msg}]` and the
+  run continues. `QuotaExhausted` → exponential backoff; `AuthFailed` → stop the whole
+  job (user must fix the key); others → record + skip. Reuses `provider/routing.rs`
+  cooldown/failover, `provider/types.rs` error classes.
+- **Idempotency / resume = row-level state** (Airtable lesson: a per-row Pending/Done/
+  Error status is what makes re-run safe). Re-running an AI column **only processes rows
+  not already complete** (empty target cell or an error marker); filled cells are left
+  untouched unless the user forces a full re-run. No duplicate spend on a resume.
+- **Cancellation**: a `CancellationToken`/`AtomicBool` polled in the row loop; `.cancel`
+  flips it; already-written cells stay (they're complete).
+- **Write-back = merge-by-row, re-read at write time — NOT whole-file overwrite.**
+  `vault::write` is whole-file, lock-free, last-write-wins; writing the whole table from
+  a job-start snapshot would **clobber a user edit made mid-run** (the user may edit row 5
+  while the AI processes row 200). So the job writes back by **re-reading the file and
+  merging only the target column's cells by `row_id`**, never a stale full-table
+  overwrite. (Batched flush is fine — flush every K rows — as long as each flush re-reads
+  + merges.)
+- **Cost gate = 100 rows** (bao 2026-06-19): a column run over **> 100 rows** must get an
+  explicit user confirm before starting (Irisy asks; the `.start` tool refuses an
+  unconfirmed over-threshold run and returns a `needs_confirmation{row_count}` signal).
+  BYOK is the user's own money; a 5000-row run is a real bill. ≤ 100 rows runs directly.
+
+This job model adds 3 tools (§6.5.2) — a deliberate, justified widening of the otherwise
+narrow surface, because there is no correct *synchronous* way to do it.
+
+**§6.5.5 Business layer = MCP connectors, not built-in verticals.** CRM/ERP arrive
+as MCP connector modules proxied through the gate (`mcp_proxy_*`; `notes_connector.rs`
+is the precedent). Data either stays in the source system (connector reads/writes,
+local = mirror) or is mirrored into a local plain-text smart-table (local = truth).
+Cleaner than Dify custom-API-tools / Coze plugins: MCP is an open standard and
+data/credentials stay local, not custom plugin formats with cloud-hosted data.
+
+**§6.5.6 OPEN DECISION — deterministic multi-step orchestration (bao to rule).**
+Dify and Coze both keep a *dual track* (chat + visual workflow) because reproducible
+multi-step business flows need determinism that autonomous-agent orchestration can't
+guarantee. CTRL cut the visual workflow editor (§6.4 / 不做清单). That leaves a gap
+for "every Monday: pull → tag → report → push". Three options:
+
+| opt | meaning | cost |
+|---|---|---|
+| **A** hand it off | multi-step flows live in the user's own Coze/n8n, triggered via a connector | keeps 不做; CTRL can't run "recurring" tasks itself |
+| **B** declarative one-shot spec ★ | a `task:` block written in markdown (trigger + steps, text not flowchart), scheduled by the kernel | restores determinism, honors plain-text (vim test), does NOT break "no visual editor" — but needs a new scheduler |
+| **C** pure brain | push all multi-step onto Hermes autonomous orchestration | simplest; same instability as Coze's agent mode |
+
+Recommendation **B** (markdown `task:` spec = vault-native, deterministic, no
+flowchart). **Not yet decided — this is a direction call for bao.**
+
+**§6.5.7 Build order (smallest slice first).**
+1. `smart_table.schema` resource + `query` tool (anti-hallucination floor — Irisy reads/queries correctly).
+2. Read loop through the gate end-to-end (also exercises the P2 gate / function-calling path).
+3. Write tools (`upsert_row` / `update_cell` / `add_view`).
+4. `run_ai_column` (most proven, but depends on the provider loop).
+5. One CRM connector mirror as the business-layer demo.
+6. (If B chosen) declarative `task:` scheduler.
 
 ## §8 Morphing-conversation rebuild (v6 — 2026-06-11)
 
