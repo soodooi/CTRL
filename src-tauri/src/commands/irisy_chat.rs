@@ -446,7 +446,9 @@ mod tests {
         assert!(turn_needs_agent(&user("save this to my notes")));
         assert!(turn_needs_agent(&user("generate an image of a cat")));
         assert!(turn_needs_agent(&user("refactor this code")));
-        // Chinese "笔记" (note) — escaped to keep the source all-English.
+        // ADR-005 irisy § persona v5 §3 — action turns route to the agent.
+        // The Chinese word for "notes" (U+7B14 U+8BB0) is escaped to keep the
+        // source all-English.
         assert!(turn_needs_agent(&user("\u{7b14}\u{8bb0}")));
     }
 
