@@ -29,6 +29,7 @@ pub mod chat;
 // generation surface. Currently fal.ai-only; multi-provider routing for
 // image.generate lands when the second image provider is wired.
 pub mod image;
+pub mod screenshot;
 pub mod code_space;
 pub mod config;
 pub mod draft;
@@ -111,6 +112,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::agents::assistant_oneshot,
             // image — fal.ai BYOK image generation (ADR-002 §13.4 v19)
             $crate::commands::image::image_generate,
+            $crate::commands::screenshot::capture_screen_and_ocr,
             // ADR-002 §1 v19 retirements (commands no longer registered):
             //   hermes_chat::hermes_chat_stream — PWA now talks MCP stdio directly
             //   opencode_chat::opencode_chat_stream — PWA now talks HTTP directly

@@ -671,3 +671,15 @@ export const gitCommitAll = (message: string): Promise<string> =>
 export const gitPush = (): Promise<string> => invoke('git_push');
 
 export const gitLog = (): Promise<GitLogEntry[]> => invoke('git_log');
+
+// Screenshot OCR (ADR-002 substrate § OCR = on-device Vision). The kernel runs
+// the interactive region capture + local text recognition; the PWA drops the
+// recognized text into the composer. macOS-only for now (Windows path pending).
+export interface ScreenshotOcrReply {
+  text: string;
+  char_count: number;
+  cancelled: boolean;
+}
+
+export const captureScreenAndOcr = (): Promise<ScreenshotOcrReply> =>
+  invoke('capture_screen_and_ocr');

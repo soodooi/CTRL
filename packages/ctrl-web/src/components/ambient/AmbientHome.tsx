@@ -59,7 +59,14 @@ import { runInstalledPackAction } from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
 import { Sidebar, type SidebarSection } from './Sidebar';
 import { WorkspacePanel } from './WorkspacePanel';
-import { vaultRead, vaultWrite, vaultSearch, type IrisySessionTurn } from '@/lib/kernel';
+import {
+  vaultRead,
+  vaultWrite,
+  vaultSearch,
+  captureScreenAndOcr,
+  type IrisySessionTurn,
+} from '@/lib/kernel';
+import { platform } from '@/lib/bridge';
 import { SessionHistory } from './SessionHistory';
 import { APP_VERSION } from '@/lib/app-meta';
 import { getVersion } from '@tauri-apps/api/app';
@@ -420,6 +427,49 @@ export function AmbientHome({
     setInput(cap.starter ?? `${cap.label}: `);
     inputRef.current?.focus();
   }, []);
+
+  // Run a screenshot OCR: the kernel drives the interactive region capture +
+  // on-device Vision recognition, and the recognized text lands in the composer
+  // so the user can act on it (ask, translate, save). Only the desktop app can
+  // capture the screen — in the browser, fall back to the prompt pre-fill.
+  const runScreenshotOcr = useCallback(async () => {
+    if (platform() !== 'tauri') {
+      setInput('Extract the text from this image:\n\n');
+      inputRef.current?.focus();
+      setNotice('Screenshot OCR needs the desktop app — paste an image instead.');
+      return;
+    }
+    setNotice('Select a region to capture…');
+    try {
+      const { text, cancelled } = await captureScreenAndOcr();
+      if (cancelled) {
+        setNotice(null);
+        return;
+      }
+      if (!text.trim()) {
+        setNotice('No text found in that capture.');
+        return;
+      }
+      setInput(text);
+      inputRef.current?.focus();
+      setNotice(`Captured ${text.length} characters`);
+    } catch (e) {
+      setNotice(e instanceof Error ? `Capture failed: ${e.message}` : 'Capture failed.');
+    }
+  }, []);
+
+  // What a workspace-panel card (or its number key) runs. Native utilities like
+  // screenshot OCR do real work; everything else pre-fills the composer.
+  const runWorkspaceAction = useCallback(
+    (cap: Capability) => {
+      if (cap.id === 'ocr-extract') {
+        void runScreenshotOcr();
+        return;
+      }
+      onPickCapability(cap);
+    },
+    [onPickCapability, runScreenshotOcr],
+  );
 
   // Copy to clipboard (bao 2026-06-13: copying a reply / the whole chat is a
   // basic must-have). Uses the webview clipboard API; notice gives feedback.
@@ -914,7 +964,7 @@ export function AmbientHome({
                       </button>
                     )}
                     <WorkspacePanel
-                      onRun={onPickCapability}
+                      onRun={runWorkspaceAction}
                       onConnectTools={() => onView('discover')}
                     />
                   </div>
