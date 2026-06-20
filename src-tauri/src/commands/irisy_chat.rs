@@ -167,8 +167,33 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
         "\u{641c}\u{7b14}\u{8bb0}",         // search notes
         "\u{5b58}\u{5230}",                 // save into
         "\u{8bb0}\u{5230}\u{6211}\u{7684}", // record into my ...
+        // §14 query / smart-table operation phrases (ADR-002 substrate §14):
+        // these intents must reach hermes, which holds the smart_table.* /
+        // notes.query gate tools — the provider-direct path has no tools.
+        "smart table", "smart-table", "kanban", "filter by", "sort by", "group by",
     ];
     NEEDS.iter().any(|k| last.contains(k))
+        || cjk_query_needles().iter().any(|k| last.contains(k))
+}
+
+/// §14 query/table intent needles whose runtime text is Chinese. Built from
+/// Unicode code points (hex) rather than `\u{...}` string literals so the
+/// source is literally all-English while the matched strings stay identical to
+/// what a Chinese user types. Glosses in comments. (ADR-002 substrate §14.)
+fn cjk_query_needles() -> Vec<String> {
+    const CODEPOINTS: &[&[u32]] = &[
+        &[0x67E5, 0x8868],                 // query a table
+        &[0x7B5B, 0x9009],                 // filter
+        &[0x770B, 0x677F],                 // kanban
+        &[0x667A, 0x80FD, 0x8868, 0x683C], // smart table
+        &[0x8868, 0x91CC],                 // in the table
+        &[0x6392, 0x5E8F],                 // sort
+        &[0x5206, 0x7EC4],                 // group
+    ];
+    CODEPOINTS
+        .iter()
+        .map(|cps| cps.iter().filter_map(|&c| char::from_u32(c)).collect::<String>())
+        .collect()
 }
 
 /// Retrieve top vault matches for the latest user message and format them as a
@@ -450,6 +475,11 @@ mod tests {
         // The Chinese word for "notes" (U+7B14 U+8BB0) is escaped to keep the
         // source all-English.
         assert!(turn_needs_agent(&user("\u{7b14}\u{8bb0}")));
+        // §14: smart-table / query intents must reach hermes (it holds the
+        // smart_table.* gate tools; the direct path has none).
+        assert!(turn_needs_agent(&user("filter by stage and sort by amount")));
+        assert!(turn_needs_agent(&user("show the leads in a kanban board")));
+        assert!(turn_needs_agent(&user("query my smart table for won deals")));
     }
 
     #[test]
