@@ -653,47 +653,13 @@ impl KernelMcpRouter {
             .primary_text_chat()
             .ok_or_else(|| McpError::internal_error("no text.chat provider available", None))?;
         let system = args.op.system_instruction();
-        let opts = crate::kernel::provider::ChatOpts {
-            model: String::new(),
-            deadline_ms: 60_000,
-        };
 
         let mut results: Vec<(usize, String)> = Vec::new();
         let mut errors: Vec<ai_column::RowError> = Vec::new();
         for (idx, user_prompt) in &plan {
-            let prompt = LlmPrompt {
-                system: Some(system.to_string()),
-                messages: vec![crate::kernel::provider::LlmMessage {
-                    role: "user".to_string(),
-                    content: user_prompt.clone(),
-                }],
-                temperature: None,
-                max_tokens: None,
-            };
-            match adapter.chat_stream(&prompt, &opts).await {
-                Ok(mut rx) => {
-                    let mut out = String::new();
-                    let mut failed: Option<String> = None;
-                    while let Some(item) = rx.recv().await {
-                        match item {
-                            Ok(chunk) => {
-                                out.push_str(&chunk.delta);
-                                if chunk.finish_reason.is_some() {
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                failed = Some(e.to_string());
-                                break;
-                            }
-                        }
-                    }
-                    match failed {
-                        Some(msg) => errors.push(ai_column::RowError { row: *idx, message: msg }),
-                        None => results.push((*idx, out.trim().to_string())),
-                    }
-                }
-                Err(e) => errors.push(ai_column::RowError { row: *idx, message: e.to_string() }),
+            match ai_column::complete_row(adapter.as_ref(), system, user_prompt).await {
+                Ok(value) => results.push((*idx, value)),
+                Err(message) => errors.push(ai_column::RowError { row: *idx, message }),
             }
         }
 
@@ -764,49 +730,12 @@ impl KernelMcpRouter {
                     return;
                 }
             };
-            let opts = crate::kernel::provider::ChatOpts {
-                model: String::new(),
-                deadline_ms: 60_000,
-            };
             let mut results: Vec<(usize, String)> = Vec::new();
             for (idx, user_prompt) in &plan {
                 if state.read().await.cancelled {
                     break;
                 }
-                let prompt = LlmPrompt {
-                    system: Some(system.clone()),
-                    messages: vec![crate::kernel::provider::LlmMessage {
-                        role: "user".to_string(),
-                        content: user_prompt.clone(),
-                    }],
-                    temperature: None,
-                    max_tokens: None,
-                };
-                let row_outcome: Result<String, String> = match adapter.chat_stream(&prompt, &opts).await {
-                    Ok(mut rx) => {
-                        let mut out = String::new();
-                        let mut err = None;
-                        while let Some(item) = rx.recv().await {
-                            match item {
-                                Ok(chunk) => {
-                                    out.push_str(&chunk.delta);
-                                    if chunk.finish_reason.is_some() {
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    err = Some(e.to_string());
-                                    break;
-                                }
-                            }
-                        }
-                        match err {
-                            Some(e) => Err(e),
-                            None => Ok(out.trim().to_string()),
-                        }
-                    }
-                    Err(e) => Err(e.to_string()),
-                };
+                let row_outcome = ai_column::complete_row(adapter.as_ref(), &system, user_prompt).await;
                 let mut s = state.write().await;
                 match row_outcome {
                     Ok(value) => results.push((*idx, value)),

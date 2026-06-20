@@ -134,6 +134,45 @@ pub struct RowError {
     pub message: String,
 }
 
+/// Run one row's completion against a provider: build the prompt, stream, and
+/// drain to a single trimmed string (or an error message). Extracted from the
+/// gate tools so this drain logic is testable with a fake `Provider`
+/// (ADR-003 §6.5.4) instead of only proven by compile.
+pub async fn complete_row(
+    adapter: &dyn crate::kernel::provider::Provider,
+    system: &str,
+    user: &str,
+) -> Result<String, String> {
+    use crate::kernel::provider::{ChatOpts, LlmMessage, LlmPrompt};
+    let prompt = LlmPrompt {
+        system: Some(system.to_string()),
+        messages: vec![LlmMessage {
+            role: "user".to_string(),
+            content: user.to_string(),
+        }],
+        temperature: None,
+        max_tokens: None,
+    };
+    let opts = ChatOpts {
+        model: String::new(),
+        deadline_ms: 60_000,
+    };
+    let mut rx = adapter.chat_stream(&prompt, &opts).await.map_err(|e| e.to_string())?;
+    let mut out = String::new();
+    while let Some(item) = rx.recv().await {
+        match item {
+            Ok(chunk) => {
+                out.push_str(&chunk.delta);
+                if chunk.finish_reason.is_some() {
+                    break;
+                }
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(out.trim().to_string())
+}
+
 // ─── Async job (ADR-003 §6.5.4 call-now/fetch-later) ─────────────────────────
 // rmcp 1.7 has no progress notifications, so `run_ai_column.start` returns a
 // job_id and the client polls `.status` ("poll for truth") and may `.cancel`.
@@ -249,5 +288,62 @@ mod tests {
         let reg_r = reg.read().await;
         assert!(reg_r.get("j1").unwrap().read().await.cancelled);
         assert!(reg_r.get("missing").is_none());
+    }
+
+    // A fake Provider so the real streaming-drain in `complete_row` is proven
+    // by a test, not only by compile (independent-checker Should-fix: prove the
+    // run-channel, don't skip it). ADR-002 substrate § provider v2 §3.2.
+    use crate::kernel::provider::{
+        Capability, ChatChunk, ChatOpts, ChatPrompt, Provider, ProviderError,
+    };
+    use std::collections::BTreeSet;
+    use tokio::sync::mpsc;
+
+    struct FakeProvider {
+        ok: bool,
+        chunks: Vec<&'static str>,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for FakeProvider {
+        fn id(&self) -> &str {
+            "fake"
+        }
+        fn capabilities(&self) -> BTreeSet<Capability> {
+            BTreeSet::new()
+        }
+        async fn chat_stream(
+            &self,
+            _prompt: &ChatPrompt,
+            _opts: &ChatOpts,
+        ) -> Result<mpsc::Receiver<Result<ChatChunk, ProviderError>>, ProviderError> {
+            let (tx, rx) = mpsc::channel(8);
+            if self.ok {
+                let n = self.chunks.len();
+                for (i, c) in self.chunks.iter().enumerate() {
+                    let finish_reason = (i + 1 == n).then(|| "stop".to_string());
+                    let _ = tx.send(Ok(ChatChunk { delta: c.to_string(), finish_reason })).await;
+                }
+            } else {
+                let _ = tx.send(Err(ProviderError::ProviderError("boom".to_string()))).await;
+            }
+            Ok(rx)
+        }
+        fn trial_verify(&self) -> Result<(), ProviderError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_row_accumulates_chunks_and_trims() {
+        let p = FakeProvider { ok: true, chunks: vec![" pos", "itive "] };
+        assert_eq!(complete_row(&p, "classify", "Loved it").await, Ok("positive".to_string()));
+    }
+
+    #[tokio::test]
+    async fn complete_row_surfaces_stream_error() {
+        let p = FakeProvider { ok: false, chunks: vec![] };
+        let out = complete_row(&p, "classify", "x").await;
+        assert!(out.is_err(), "a provider stream error must surface as Err, not a silent empty cell");
     }
 }

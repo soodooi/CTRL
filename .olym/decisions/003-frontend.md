@@ -2,7 +2,7 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 15
+version: 16
 status: accepted
 last_updated: 2026-06-19
 deciders: [bao, zeus, daedalus]
@@ -19,6 +19,7 @@ changelog:
   - v4 2026-06-01: § shell-4col §7.1 column-order amendment — bao "顺序是工作区（内有tab），L2，L1，Irisy". Column model reordered LEFT→RIGHT to `[Tab | L2 | L1 | Irisy]`. L1 is now anchored immediately left of Irisy (not far-left). Rationale: Irisy + L1 stay visually pinned at the monitor's right; Workspace grows leftward when expanded, with L2 sandwiched between Workspace and L1. Compact mode still renders only L1 (48) + Irisy (430) = 478 px because Workspace and L2 collapse to 0. Anti-pattern §7.8 entry added: do NOT render L1 at column index 1.
   - v5 2026-06-09: **§ nav-keyboard → § nav-l1 — 5-chip 3-agent aggregator L1 (H-2026-06-09-002).** bao 2026-06-09 校准: 3 agents (hermes / opencode / kairo) are external; CTRL is the aggregator壳. L1 chips reorganized as 5 first-class routes mapping directly to capability surfaces: **Irisy** (PWA persona shell, default chat) / **Mcp pool** (MCP face discovery) / **Notes** (kairo webview) / **Coding** (opencode HTTP API + xterm) / **Assistant** (hermes MCP stdio). § vault-stack RETIRED — kairo owns markdown editor + wiki-link + backlink + git; CTRL doesn't ship its own editor. § agent-routes NEW: lock per-route agent endpoint contracts (kairo webview path / opencode HTTP port discovery / hermes MCP stdio handshake). Settings + Pool stay as before. § shell-4col 4-column shell preserved — agent routes render inside `[Tab]` column. Pre-v5 components retired in PWA: `IrisyChat forceMode="coding"` wrapper, `NotesApp` 3-pane (NotesTree/NotesEditor/NotesBacklinks), `MarkdownViewer` Tiptap shell, `BacklinksPanel`. PWA picks up sycophancy filter (relocated from `packages/ctrl-pi-bridge/data/persona-patterns.md` → `packages/ctrl-web/src/lib/persona-filter/patterns.md`).
   - v6 2026-06-11: **§8 NEW — morphing-conversation rebuild.** bao 2026-06-11 校准: CTRL is not a shell, it's an advanced UX paradigm at the app layer (UX + 通讯 + agent optimization); domain breadth via MCP/CLI/Skills, not built verticals. Synthesized from a 6-track product benchmark (launcher/routing/cockpit + marketing/office/finance verticals). Locks: one ambient morphing conversation (input-first floating surface), intent routing with visible pill + ambiguity-adaptive response (Lovable 3-way), morph-to-output-type via the 12-viewer registry, agent-workspace pane + tool stream, 3-layer drill-down, point-edit + checkpoint + accept/reject gate, capability-agnostic routing to the open MCP/CLI/Skill set, ambient scheduled tasks. §7 4-col shell + § nav-l1 5-chip SUPERSEDED for the home surface (chips survive as morph-layer shortcuts). 6-slice build sequence in §8.4. Invariants preserved: Ctrl summon · floating popup · Irisy(hermes) · coding(opencode) · kairo(notes).
+  - v16 2026-06-19: **§6.5.4-shipped as-built reconcile (independent-checker review of full §14 branch).** Full §14 implementation shipped + reviewed PASS (`feat/unified-query`, 11 commits, 180 kernel tests): 4 RecordSources (smart-table/KB/registry/providers) on one shared `run_query` engine, smart-table full produce surface, run_ai_column sync + async job triple, `complete_row` provider-drain now unit-tested with a fake Provider (closed the checker's "real path untested" Should-fix — the schema-bug lesson). Documents what the shipped AI-column job DIVERGES from the §6.5.4 locks (do not mark satisfied): concurrency is **sequential** not Semaphore-bounded; merge-by-row uses row **index** not `row_id` (no identity primitive yet — row insert/delete mid-run mis-targets); error policy is **record+continue for all** (no QuotaExhausted backoff / AuthFailed-stop); **produce review gate not implemented** (parity with `vault::write`, §14.6 gate clause unmet, ADR-006 §4 future). Also fixed: smart-table schema survives the real `vault::read`/`write` YAML round-trip (unit tests had masked the on-disk path).
   - v15 2026-06-19: **§6.5.1 describe = TOOL not resource (impl-shipped reconcile, independent-checker flag).** First §14 vertical shipped (`feat/unified-query`: `kernel/query.rs` QuerySource + shared filter/sort/group engine, `kernel/vault_smart_table.rs` first RecordSource, gate tools `smart_table.{describe,query,update_cell,append_row}`, 14 kernel tests green, code-reviewer PASS). Reconciles the §6.5.1/.2 "schema resource" wording: as built, the type layer is the TOOL `smart_table.describe`, not an MCP resource — rmcp 1.7 resources are not enabled in the kernel (`enable_tools()` only) + a tool is guaranteed model-visible (Hermes `list_tools`). §14 "describe verb" governs; anti-hallucination unchanged (Irisy calls describe before query). produce write-path piggybacks `vault::write` (review-gating still ADR-006 §4 future). run_ai_column async-job trio + add_view remain unimplemented (next slices).
   - v14 2026-06-19: **§6.5 reframed — smart-table = first implementation of the Unified Operation Interface (ADR-002 §14, bao「修改架构」).** The query engine generalized from a smart-table feature to a substrate-level contract: all content-type feature points (md/html/table/pdf/connector) operated via ONE interface — `describe`/`query`/`produce` — on the :17873 gate. §6.5's machinery is now the first `QuerySource` (RecordSource) instance: `get_schema`→`describe`, the filter/sort/group query → RecordSource `query` profile, write tools + `run_ai_column` job → `produce` (through review gate). Notes=TextSource, html/pdf=BlobSource follow the same 3 verbs (zero bespoke tools). Query is a kernel service, not a table feature. No content change to §6.5.1–.7 mechanics; this is the altitude/ownership reframe. Research source adds `research-unified-operation-interface.md`.
   - v13 2026-06-19: **§6.5.4 AI column = async job + hard-problem locks (impl research: rmcp-1.7 probe + Airtable production lessons + MCP SEP-1686).** `run_ai_column` is NOT one sync write tool (would block minutes on a big table) — it's a **call-now/fetch-later job triple** `.start`(→job_id)/`.status`(poll-for-truth)/`.cancel` (§6.5.2 updated), forward-compatible with MCP SEP-1686 Tasks. Locks: bounded concurrency via `tokio::sync::Semaphore` (rate limits are Airtable's real failure mode); partial-failure ≠ abort (`errors[]` + backoff on `QuotaExhausted`, stop on `AuthFailed`); **idempotent resume via row-level state** (re-run only non-complete rows, no duplicate spend); cancellation token; **write-back = merge-by-row + re-read-at-write, NOT whole-file overwrite** (else a mid-run user edit is clobbered — `vault::write` is lock-free last-write-wins); **cost gate = 100 rows** (bao: >100 rows needs explicit user confirm before spend, `.start` returns `needs_confirmation{row_count}`). Widens the narrow surface by 3 tools — justified: no correct *synchronous* form exists. Research source: `vault/ctrl/research-ai-data-platforms.md`.
@@ -268,7 +269,7 @@ extract / summarize / translate.
   real-time co-edit/comments/cell-permissions (the last gated behind the Automerge
   CRDT substrate, ADR-002 § crypto).
 
-### §6.5 Irisy operation surface (v15 — 2026-06-19, benchmarked vs Dify / Coze / ChatBI / Airtable)
+### §6.5 Irisy operation surface (v16 — 2026-06-19, benchmarked vs Dify / Coze / ChatBI / Airtable)
 
 > **v14 reframe (bao「修改架构」2026-06-19):** smart-table is now the **first implementation
 > of the Unified Operation Interface — ADR-002 §14** (describe / query / produce over all
@@ -412,6 +413,28 @@ fake them. Hard-problem locks:
 
 This job model adds 3 tools (§6.5.2) — a deliberate, justified widening of the otherwise
 narrow surface, because there is no correct *synchronous* way to do it.
+
+**§6.5.4-shipped (v16, 2026-06-19 — as-built reconcile, independent-checker review).**
+The job triple shipped (`feat/unified-query`: `kernel/ai_column.rs` + `run_ai_column_start/
+status/cancel` + a sync `run_ai_column`; `complete_row` provider-drain unit-tested with a
+fake Provider). What MATCHES the locks above: call-now/fetch-later, poll-for-truth status,
+cooperative cancel (flag polled per row, written cells kept), idempotent resume (skips
+filled cells), cost gate = 100 rows, write-back re-reads fresh before applying. What
+DIVERGES (honest, like the v15 describe-as-tool reconcile — do not mark the locks
+satisfied):
+- **Concurrency: sequential, not `Semaphore`-bounded.** The background loop runs rows in
+  order. Non-blocking + cancellable is achieved; bounded-parallelism is the next slice. The
+  cost gate caps the run so it can't run away.
+- **Merge-by-row uses the row INDEX, not a `row_id`.** `Row` has no identity primitive yet,
+  so a fresh re-read + apply targets positional indices. Cell edits on untouched rows
+  survive (only the target column is written), but a row insert/delete mid-run mis-targets.
+  Tracked: needs a row-identity field before the "by `row_id`" lock is truly met.
+- **Error policy: record + continue for ALL errors.** `QuotaExhausted` backoff and
+  `AuthFailed → stop-whole-job` are NOT implemented; every per-row failure is recorded in
+  `errors[]` and the run proceeds. Acceptable as "partial-failure ≠ abort"; the typed-error
+  routing is deferred.
+- **Produce review gate: not implemented** (parity with `vault::write`; ADR-006 §4 future).
+  §14.6's "produce always passes the review gate" clause is NOT yet satisfied for any write.
 
 **§6.5.5 Business layer = MCP connectors, not built-in verticals.** CRM/ERP arrive
 as MCP connector modules proxied through the gate (`mcp_proxy_*`; `notes_connector.rs`

@@ -45,10 +45,14 @@ pub mod verify;
 // to a cloud provider.
 pub mod ollama_embed;
 
-pub use r#trait::Consumer;
+// Re-export the chat Provider trait + chunk/error/prompt types so kernel
+// callers can drive a provider directly and unit-test the drain with a fake —
+// used by `ai_column::complete_row` (ADR-003 frontend § viewer v15 §6.5.4 AI
+// field shortcut). (ADR-002 substrate § provider v2 §3.2 — adapter trait.)
+pub use r#trait::{Capability, Consumer, Provider};
 pub use registry::{
     ProviderListEntry, ProviderRegistry, RecordedFailover,
 };
 pub use types::{
-    ChatOpts, LlmMessage, LlmPrompt,
+    ChatChunk, ChatOpts, ChatPrompt, LlmMessage, LlmPrompt, ProviderError,
 };
