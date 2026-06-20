@@ -15,7 +15,7 @@ import {
   type ColumnDef,
 } from '@tanstack/react-table';
 import { useMemo, useState, type ReactElement } from 'react';
-import type { ColumnSpec, SmartTable } from '@/lib/smart-table';
+import type { ColumnSpec, SmartTable, ViewSpec } from '@/lib/smart-table';
 import {
   queryTable,
   type Filter,
@@ -111,13 +111,20 @@ export interface SmartTableViewProps {
   editable: boolean;
   onCellChange: (rowIndex: number, key: string, value: string) => void;
   onDeleteRow?: (rowIndex: number) => void;
+  /** Persist the current view (kind + groupBy) into frontmatter `views`
+   *  (ADR-003 §6.2). When set, a "Save view" button appears. */
+  onSaveView?: (view: ViewSpec) => void;
 }
 
-export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: SmartTableViewProps): ReactElement => {
+export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow, onSaveView }: SmartTableViewProps): ReactElement => {
+  // Initialize from the saved view (ADR-003 §6.2): the kernel's add_view writes
+  // frontmatter `views`, and the viewer reads it back so the two paths stay in
+  // sync (closes the §6.2 read/write loop).
+  const savedView: ViewSpec | undefined = table.views[0];
   const [filters, setFilters] = useState<Filter[]>([]);
   const [sort, setSort] = useState<SortKey | null>(null);
-  const [groupBy, setGroupBy] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'kanban'>('grid');
+  const [groupBy, setGroupBy] = useState<string | null>(savedView?.groupBy ?? null);
+  const [viewMode, setViewMode] = useState<'grid' | 'kanban'>(savedView?.kind ?? 'grid');
   // Kanban columns by a select/checkbox field; falls back to the active group.
   const kanbanField =
     groupBy ?? table.schema.find((c) => c.type === 'select' || c.type === 'checkbox')?.key ?? null;
@@ -285,6 +292,18 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: S
             </option>
           ))}
         </select>
+
+        {onSaveView && (
+          <button
+            type="button"
+            className={styles.queryAdd}
+            onClick={() => onSaveView({ kind: viewMode, groupBy })}
+            title="Save this view to the table's frontmatter"
+            data-testid="smart-table-save-view"
+          >
+            Save view
+          </button>
+        )}
 
         <span className={styles.queryCount} data-testid="smart-table-count">
           {result.matchCount} / {table.rows.length}

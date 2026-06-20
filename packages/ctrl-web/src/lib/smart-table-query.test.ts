@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSmartTable, type SmartTable } from './smart-table';
+import { parseSmartTable, serializeSmartTable, type SmartTable } from './smart-table';
 import { FieldNotFoundError, queryTable } from './smart-table-query';
 
 // Mirrors the kernel query tests (kernel/query.rs) so the client-side engine
@@ -69,5 +69,44 @@ describe('queryTable', () => {
     expect(() => queryTable(table(), { filters: [{ field: 'nope', op: 'eq', value: 'x' }] }, NOW)).toThrow(
       FieldNotFoundError,
     );
+  });
+});
+
+describe('views (frontmatter view-state, ADR-003 §6.2)', () => {
+  it('parses kernel JSON-form views and round-trips them', () => {
+    // What the kernel emitter writes (JSON Display, quoted keys).
+    const src = `---
+title: Leads
+schema:
+  - { key: stage, label: Stage, type: select, options: [new, won] }
+views:
+  - {"kind":"kanban","group_by":"stage"}
+---
+
+| Stage |
+|-------|
+| won   |
+`;
+    const t = parseSmartTable(src);
+    expect(t.views).toHaveLength(1);
+    expect(t.views[0]).toEqual({ kind: 'kanban', groupBy: 'stage' });
+    // Round-trips (re-parse the serialized output yields the same view).
+    const t2 = parseSmartTable(serializeSmartTable(t));
+    expect(t2.views[0]).toEqual({ kind: 'kanban', groupBy: 'stage' });
+  });
+
+  it('parses hand-written flow-form views', () => {
+    const src = `---
+schema:
+  - { key: name, label: Name, type: text }
+views:
+  - { kind: grid }
+---
+
+| Name |
+|------|
+| x    |
+`;
+    expect(parseSmartTable(src).views[0]).toEqual({ kind: 'grid', groupBy: null });
   });
 });

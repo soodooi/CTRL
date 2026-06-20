@@ -44,10 +44,20 @@ export interface ColumnSpec {
   max?: number;
 }
 
+/** A saved view (ADR-003 §6.2) — view state lives in frontmatter, not the
+ *  table body. `kanban` columnizes by `groupBy`. */
+export interface ViewSpec {
+  kind: 'grid' | 'kanban';
+  groupBy?: string | null;
+}
+
 export interface SmartTable {
   title?: string;
   schema: ColumnSpec[];
   rows: Array<Record<string, string>>;
+  /** Saved views from frontmatter `views:` (ADR-003 §6.2). Kernel `add_view`
+   *  writes these; the viewer reads them so the two paths stay in sync. */
+  views: ViewSpec[];
   /** Frontmatter fields outside `title` / `schema` — preserved on save. */
   extraFrontmatter: Record<string, unknown>;
 }
@@ -92,7 +102,9 @@ const parseInlineObject = (raw: string): Record<string, unknown> => {
   for (const pair of splitTopLevel(inner, ',')) {
     const colon = pair.indexOf(':');
     if (colon < 0) continue;
-    const key = pair.slice(0, colon).trim();
+    // Keys may be bare (`kind: …` flow form) or quoted (`"kind": …` from the
+    // kernel emitter's JSON Display of an object) — unquote both.
+    const key = pair.slice(0, colon).trim().replace(/^["']|["']$/g, '');
     const value = pair.slice(colon + 1);
     if (key === 'options' && /^\s*\[/.test(value)) {
       const arr = value.trim().replace(/^\[|\]$/g, '');
@@ -214,16 +226,44 @@ const splitTableRow = (line: string): string[] => {
   return trimmed.split('|').map((c) => c.trim());
 };
 
+/** Parse the `views:` block from frontmatter into ViewSpecs. Handles both the
+ *  hand-written flow form (`- { kind: kanban, group_by: stage }`) and the
+ *  kernel emitter's JSON form (`- {"kind":"kanban","group_by":"stage"}`). */
+const parseViews = (yamlText: string): ViewSpec[] => {
+  const lines = yamlText.split(/\r?\n/);
+  const out: ViewSpec[] = [];
+  let inViews = false;
+  for (const line of lines) {
+    if (/^views\s*:/.test(line)) {
+      inViews = true;
+      continue;
+    }
+    if (inViews) {
+      if (/^\S/.test(line)) {
+        inViews = false;
+        continue;
+      }
+      const item = /^\s*-\s*(.+)$/.exec(line);
+      if (!item) continue;
+      const obj = parseInlineObject(item[1]!);
+      const kind = obj.kind === 'kanban' ? 'kanban' : 'grid';
+      const groupBy = typeof obj.group_by === 'string' && obj.group_by ? (obj.group_by as string) : null;
+      out.push({ kind, groupBy });
+    }
+  }
+  return out;
+};
+
 /** Public: parse a smart-table file into structured data. */
 export const parseSmartTable = (source: string): SmartTable => {
   const { yaml, body } = splitFrontmatter(source);
   const schema = parseSchema(yaml);
   const title = parseTitle(yaml);
+  const views = parseViews(yaml);
   const rows = parseTable(body, schema);
-  // We don't try to round-trip arbitrary frontmatter today — that's a
-  // YAML library job. The viewer warns on save when extra keys are
-  // present so the user knows hand-edited frontmatter survives.
-  return { title, schema, rows, extraFrontmatter: {} };
+  // We don't round-trip arbitrary frontmatter today (that's a YAML library
+  // job); title / schema / views are the keys we own + re-emit.
+  return { title, schema, rows, views, extraFrontmatter: {} };
 };
 
 /** Serialize back to markdown. Re-emits the frontmatter (title + schema)
@@ -242,6 +282,14 @@ export const serializeSmartTable = (table: SmartTable): string => {
       if (col.options) parts.push(`options: [${col.options.join(', ')}]`);
       if (col.min !== undefined) parts.push(`min: ${col.min}`);
       if (col.max !== undefined) parts.push(`max: ${col.max}`);
+      lines.push(`  - { ${parts.join(', ')} }`);
+    }
+  }
+  if (table.views.length > 0) {
+    lines.push('views:');
+    for (const v of table.views) {
+      const parts = [`kind: ${v.kind}`];
+      if (v.groupBy) parts.push(`group_by: ${v.groupBy}`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
   }
