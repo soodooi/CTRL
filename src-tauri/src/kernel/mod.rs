@@ -33,6 +33,7 @@ pub mod persistence;
 // (project-scoped `.mcp.json`) so the driver auto-discovers it on launch.
 pub mod projector;
 pub mod provider;
+pub mod query;
 pub mod runtime;
 pub mod scheduler;
 // Vault embeddings substrate (ADR-002 v5 §10) — local Ollama
@@ -49,6 +50,7 @@ pub mod stss_bridge;
 pub mod subprocess_actor;
 pub mod subprocess_stss_adapter;
 pub mod vault;
+pub mod vault_smart_table;
 // ADR-002 substrate § vault v1 §8.3 #9-15, 2026-06-01 —
 // vault_graph: in-memory link/tag/mention/orphan/broken_links/graph_data scanner
 // (memory `decision_vault_adr_002_section_8`).

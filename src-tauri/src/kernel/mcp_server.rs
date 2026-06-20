@@ -23,7 +23,7 @@
 
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::runtime::KernelRuntime;
-use crate::kernel::{provider::LlmPrompt, vault};
+use crate::kernel::{provider::LlmPrompt, query, vault, vault_smart_table};
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::Request;
@@ -88,6 +88,27 @@ pub struct KernelMcpRouter {
 pub struct VaultReadArgs {
     /// Vault-relative path, e.g. `daily/2026-05-22.md`.
     pub path: String,
+}
+
+/// smart_table.query — a structured read over a smart-table RecordSource
+/// (ADR-002 §14 / ADR-003 §6.5). Fill the parameter object; do NOT write a
+/// query string. Call `smart_table.describe` first to learn the valid fields.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableQueryArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Field filters, ANDed together. Each `field` must exist in the schema.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group rows so equal values of this field are contiguous.
+    #[serde(default)]
+    pub group_by: Option<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -339,6 +360,52 @@ impl KernelMcpRouter {
         let root = vault_root()?;
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let body = serde_json::to_string(&entry).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.describe — the type layer (ADR-002 §14). Returns the table's
+    /// fields, types, and supported query operators. Irisy reads this BEFORE
+    /// querying so it only references valid fields.
+    #[tool(
+        description = "Describe a smart table: its fields, types, and supported query operators. Call this before smart_table.query."
+    )]
+    async fn smart_table_describe(
+        &self,
+        Parameters(args): Parameters<VaultReadArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        use query::QuerySource;
+        let body = serde_json::to_string(&table.describe()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.query — the read half of the Unified Operation Interface
+    /// (ADR-002 §14 / ADR-003 §6.5). Structured filter/sort/group over a
+    /// smart-table RecordSource via the shared kernel query engine.
+    #[tool(
+        description = "Query a smart table with a structured filter/sort/group request (not a query string). Call smart_table.describe first to learn valid fields."
+    )]
+    async fn smart_table_query(
+        &self,
+        Parameters(args): Parameters<SmartTableQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let req = query::QueryRequest {
+            filters: args.filters,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = table
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
