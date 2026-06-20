@@ -6,19 +6,31 @@
 // bar + grid/kanban). "+ New" seeds a starter table.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
 import { createSmartTable, importCsv, listSmartTables } from '@/lib/smart-tables';
 import styles from './TablesPanel.module.css';
 
-export const TablesPanel = (): ReactElement => {
+interface TablesPanelProps {
+  /** Lift the currently-open table path so the shell can feed it to Irisy as
+   *  ambient context ("the user is viewing <path>"). */
+  onActiveTable?: (path: string | null) => void;
+}
+
+export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElement => {
   const qc = useQueryClient();
   const { data: tables, isLoading } = useQuery({
     queryKey: ['smart-tables'],
     queryFn: listSmartTables,
   });
   const [selected, setSelected] = useState<string | null>(null);
+  // Report the open table up (and clear it on unmount) so Irisy knows what the
+  // user is looking at.
+  useEffect(() => {
+    onActiveTable?.(selected);
+    return () => onActiveTable?.(null);
+  }, [selected, onActiveTable]);
 
   const onNew = async (): Promise<void> => {
     const name = window.prompt('New table name', 'Untitled table');
