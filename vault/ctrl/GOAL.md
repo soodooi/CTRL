@@ -7,79 +7,37 @@
 
 ## 目标 (Goal)
 
-**为 Irisy 建立「回复正确性」的全通道闭环验证。**
+**落地 §14 统一操作接口 (Unified Operation Interface) + 智能表格,并接到 PWA 前端。**
 
-bao 钦定重点(2026-06-19):测试中心 = **Irisy 的回复到底对不对**(行为/语义正确,不只是函数返回值)+ **全部运行通道都接通成最小闭环再测,不跳过**。
+bao 连续多轮指挥,从「智能表格(对标飞书多维表格)」演进出一条架构主线(ADR-002 substrate §14):
+**所有 content-type 功能点(md / html / 智能表格 / pdf / 连接器 / 笔记 / 注册表)经 :17873 gate 用一个统一接口 `describe` / `query` / `produce` 操作**——`query`(读,并行,kernel service over `QuerySource`)/ `produce`(写,串行,过 review gate)/ `describe`(类型层=语义层,防幻觉)。读≠写(GraphQL/Plan9/agentic-AI 三方证据)。smart-table = 首个实现,KB/registry/provider 跟进,Irisy 用同一套方式操作任何源,新功能包实现 `QuerySource` 即免费可用。
 
-**角色锚定(bao 2026-06-19,关键校准):我承担「测试能力」,Irisy 功能由别人开发。** 「全通道闭环不跳过」= **测试覆盖**不跳过,**不是**要我实装功能。已实装通道→我建真测试守不回归;prompt-only 回复契约→我建 golden-transcript 测试;未实装通道→我建**规格化 pending/blocked 测试**(红灯,定义"正确长什么样",标 blocked-on-Hermes/待开发,别人点绿)。前提是先搞清 Irisy 要做成什么 → 已梳理为 **`vault/ctrl/irisy-test-matrix.md`**(三层时代 + 当前真相 + 回复契约 + F1–F30 验收矩阵)。我之前去实装 P6/想实装 P7 = 越界,已纠正。
+governing ADR = **ADR-002 substrate §14**(v29)+ **ADR-003 frontend §6.5**(v16)。事实源 = `vault/ctrl/research-ai-data-platforms.md` + `research-unified-operation-interface.md` + `research-feishu-bitable.md`。
 
-governing ADR = **ADR-005 irisy v5**(ADR-008 已退役,仅留 §8 acceptance 措辞作回复约束的来源)。
-现状(探查实测 2026-06-19):Irisy 端到端 ~10 条运行通道,**测试覆盖 0%**;PWA(`ctrl-web`)**无 vitest**(`ctrl-stss`/`ctrl-memory` 已有可照抄);kernel 39 个 Rust 测试无一条 Irisy 专属;仅 1 个 Playwright e2e 测网格布局不碰 chat。
-
-通道矩阵(每条:接通闭环 + 自动化测回复正确):
-
-| 通道 | 含义 | 实装现状 | 代码入口 |
-|---|---|---|---|
-| P1 | Chat→Provider 路由 | 已实装 ~75% | `src-tauri/src/commands/irisy_chat.rs` + `kernel/provider/routing.rs` |
-| P2 | Chat→Hermes(:17873 gate) | **门控关闭**(2026-06-12,等 ACP) | `irisy_chat.rs` mode 分支 + hermes `:17890` |
-| P3 | 系统提示组装(persona v10 + brain_state + SOUL.md) | 已实装 ~90% | `ctrl-web/src/lib/irisy-prompts.ts` |
-| P4 | brain_status 回读 | 已实装 ~80% | `src-tauri/src/commands/provider.rs` |
-| P5 | reflect 触发检测 | detect 已实装,reflect/improve deferred | `ctrl-web/src/lib/irisy-reflection.ts` |
-| P6 | SOUL.md 读写 | **仅 read,write 未实装** | `irisy-prompts.ts` loadSoul + kernel cmd |
-| P7 | Capability Floor(C1–C8 选择) | **零实装** | `irisy-prompts.ts`(常数存根) |
-| P9 | hermes 会话历史 | 已实装 ~70% | `src-tauri/src/commands/hermes_acp.rs` |
-| P10 | 渲染过滤(剥 codename/sycophancy/planner blocks) | 已实装 ~90% | `ctrl-web/src/lib/irisy-render-filter.ts` |
+(原目标「Irisy 回复正确性测试覆盖 SC1-13」已被本 §14 feature 线取代 —— 那条线的角色是「我建测试」,本线 bao 改为「按架构全量做」feature 实装;独立 checker 复审时指出 GOAL.md 旧了,故此替换。Irisy 测试矩阵 `irisy-test-matrix.md` 保留备查。)
 
 ## 成功标准 (Success criteria — 可验证)
 
-**基础设施**
-1. `ctrl-web` 有 `vitest.config.ts`,`npm run test -w @ctrl/web` 绿(目前 PWA 无单测框架)。
+**已达成(分支 `feat/unified-query`,11 commit,kernel 180 测试绿,code-reviewer PASS)**
+1. ✅ `kernel/query.rs`:`QuerySource` trait + 共享 `run_query`(类型感知 filter/sort/group + 未知字段拒绝防幻觉)。
+2. ✅ 4 个 RecordSource 全走同一契约:smart-table / KB(`notes.*`)/ mcp registry(`registry.*`)/ provider catalogue(`providers.*`)。
+3. ✅ smart-table 完整 produce 面:`describe` `query` `update_cell` `append_row` `add_view` + `run_ai_column`(同步 + 异步 job 三件套 start/status/cancel)。
+4. ✅ `complete_row` provider drain 用 fake Provider 测通(闭合 reviewer「真实路径仅 compile 证明」缺口)。
+5. ✅ smart-table schema 真实 `vault::read`/`write` YAML round-trip(修了单测掩盖的 on-disk bug)。
+6. ✅ ADR-002 §14 + ADR-003 §6.5(v16)与实装对齐(diverge 项 honestly 标注)。
 
-**回复正确性核心(bao 钦定重点 — 「回复对不对」)**
-2. (P3) 测试验证系统提示组装正确:persona v10 base + `<brain_state>` 注入 + `SOUL.md` body 注入到位,`PROMPT_VERSION === 10`。
-3. (P10) 给定含 codename(`Pi`)、sycophancy(`Sure!`/`当然`)、planner blocks(Goal/Progress/Done/Next Steps)、thinking 的原始回复,`cleanReplyText()` 后这些**全部被剥离**(ADR-008 §7 行56 + ADR-005)。
-4. (persona voice,ADR-005 §1 / ADR-008 §8 行191)对「你好」「你是谁」「你能做什么」「你用什么模型」四问,Irisy 最终回复 **≤4 行、无 preamble、无 codename 泄漏、无 planner blocks** —— 用 fixture/mock provider 跑通,断言输出约束。**这是「回复是否正确」最直接的自动化测试。**
-
-**各通道闭环 + 测(已实装)**
-5. (P1) `cargo test` 验证 `IrisyPrimary`/`IrisyFallback` 路由解析 + 首-chunk failover + cooldown(`routing.rs`)。
-6. (P4) `cargo test` 验证 `BrainStatusView` 形状 + `providers[irisy.primary/fallback]` + failover 记录。
-7. (P5) vitest 验证 `detectReflectTrigger` / `isCorrectionMessage` 对中英文纠正标记 + tool 失败的识别。
-8. (P9) 验证 `irisy_session_list` 对 hermes `sessions export` JSONL 的解析(fixture)。
-
-**全通道闭环不跳过(bao 钦定 — 未实装的先接通再测)**
-9. (P2) 把门控的 Chat→Hermes 路径接通成**最小可测闭环**(mock hermes MCP 端点经 `:17873` gate 收发回流),测路由分支选择正确。⚠ 是否解除 2026-06-12 门控待 bao 在该步确认。
-10. (P6) 实装 `irisy_soul_write` / `soul_set`(目前仅 read),闭环 read→write→read 测 + 首启种子。
-11. (P7) 实装 `pickCapabilitySegments()` 关键词选择(C1–C8),测中英文触发词命中正确 capability 段。
-
-**端到端 + 验证闸**
-12. (e2e,ADR-005 §6 / ADR-008 §P5 行184)Playwright 跑 first-5-min 7-step,真实 UI→gate→provider 回复满足 persona 约束;且 streaming 期间 textarea 不阻塞(吸收原目标)。
-13. 全套 `npm run test` + `cargo test` 绿;dev-loop 三层验证(compile + kernel smoke + visual)过;独立 `code-reviewer` checker 判 PASS。
+**进行中 / 下一步**
+7. PR 合 `feat/unified-query` → main(squash)。
+8. **PWA 前端消费 query gate 工具**:`ctrl-web` 渲染 `query` 结果(filter/sort/group UI)+ describe 驱动的字段/算子 + AI 列(`run_ai_column` start→poll status→展示)动作。这是 §14 从「内核 gate 工具」到「用户能用」的最后一段。
+9. (可选,deferred,已在 ADR 记录)Semaphore 并发 / `row_id` 行身份原语 / produce review gate(ADR-006 §4)。
 
 ## 非目标 / 范围外 (Non-goals)
 
-- 不打真实第三方 provider API —— 全部 mock / fixture(BYOK 各家不真连)。
-- 不重构 Irisy 架构,不动 ADR-005 persona-shell v5 既定的 interrupt-and-redirect 设计。
-- 不做复杂 NLP 分类器 —— Capability 选择(P7)用关键词表,不上模型。
-- 原目标「流式不阻塞输入 + trivial-chat 提速」不另立主线 —— 不阻塞行为归入 SC12 e2e 顺带验证;提速若不属回复正确性则不在本目标。
+- 不做可视化 workflow editor(撞「不做清单」;确定性多步编排是 §6.5.6 的 A/B/C 待 bao 拍)。
+- 不做关系型外键(关联/Lookup/Rollup)—— 用 `[[wikilink]]`+backlink 软关联(plain-text 取舍)。
+- 不在本目标内重构 Irisy 架构 / 不动 ADR-005 persona-shell。
+- review gate 全系统实装属 ADR-006 §4,不在本切片(produce 暂随 `vault::write`)。
 
 ## 进展日志 (Progress log — append-only)
 
-- 2026-06-19 目标替换。原目标(流式不阻塞 + 提速,未推进)被吸收进本目标 P1 通道 + SC12 e2e。bao 两个钦定:① 测试中心 = 回复是否正确;② 全通道闭环不跳过(P2 门控 / P6 soul write / P7 capability floor 都要接通)。探查报告:10 通道现 0% 覆盖,PWA 无 vitest,kernel 无 Irisy 专属测试,governing=ADR-005。下一步(dev-loop step 1)= SC1+SC2+SC3+SC4。
-- 2026-06-19 **step 1 完成 + commit `10adda0`**(SC1–4 ✓)。给 ctrl-web 接入 vitest@2(原 PWA 无单测框架),24 测试绿(render-filter 9 + prompts 15)+ typecheck 绿。覆盖:P10 `cleanReplyText` 各 strip pass + codename 改写;P3 `PROMPT_VERSION` pin / `formatBrainStateBlock` / `loadIrisySystemPromptWithSoul` SOUL.md 注入(mock bridge+tauri);SC4 `IRISY_SYSTEM_DEFAULT` 禁 sycophancy/planner/内部名泄漏 + 强制简短。独立 checker(code-reviewer)判 vitest 工作真实有效、断言对齐实现、全英文无 secret;其 FAIL 仅因工作树含**遗留 SC12 红色 e2e 半成品**(`bridge.ts`/`llm-transport.ts` mock seam + `e2e/irisy-streaming.spec.ts`,上个目标遗留)→ 已用精确 `git add` 只提交绿色文件解决,遗留留树待 SC12 接手。**下一步候选 = SC5**(P1 Chat→Provider `cargo test`,kernel 层,无歧义不碰未实装)。
-- 2026-06-19 **SC5 第一刀**:`trait.rs` +6 路由身份契约测试(`Consumer`/`Capability` round-trip + 未知 id→`Custom` 不 panic + `RouteChain::default` 未配置),`cargo test` 11 绿(含既有)。P1「消息路由到正确的脑」身份层已测。**SC5 续刀** = `route_text_chat` failover/cooldown 集成测试(需 fake Provider + registry 注入设施)。bao 流程纠正:别在里程碑停下做选择题,连续推进(SC5+SC12 都做),仅 P2 门控(SC9)需拍板。
-- 2026-06-19 **状态异常**:工作树期间被并行操作清理 —— SC12 遗留半成品(`bridge.ts`/`llm-transport.ts` mock seam + `e2e/irisy-streaming.spec.ts` + test-results)全消失,且历史多了两个非我 commit(`fd979d6` 修 husky `prepare`、`20fef06` cargo 进 allow + pre-commit version-bump gate)。**SC12「救遗留 e2e」对象不存在**,要做需从头写;经 bao「继续」→ SC12 搁置,转纯增量通道。
-- 2026-06-19 **SC6 完成**:`brain_status` failover wire shape + registry failover/cooldown 状态机,3 cargo 测试绿。`FailoverEvent::from_recorded` 丢 `at_unix_ms` 保 from/to/reason(<brain_state> 不泄时间戳);`record_failover` last-wins;`mark_failure`→`is_in_cooldown`→`clear_failure`→false + 未知 id never cooling。用 test-only `empty_registry()` 字面量隔离 FS/manifest。adr-cite-gate 拦了一次(测试注释补 ADR-002 § provider v2 §3.5/§3.7 cite)。**下一步 = SC7**(reflect 触发检测 vitest)+ SC8(hermes 会话历史解析)。
-- 2026-06-19 **SC7 完成**:`irisy-reflection.test.ts` 8 vitest 绿(`detectReflectTrigger`:correction>tool-failure 优先级 + neither→null;`isCorrectionMessage`:EN 大小写不敏感 + ZH verbatim + 空→false)。ctrl-web 累计 32 测试绿。commitlint 教训:subject 必须小写开头(`subject-case`),SC6 重提两次才过(先误判 header 长度,实为 "SC6" 大写开头被拒)。**下一步 = SC8**(hermes 会话历史 JSONL 解析)。
-- 2026-06-19 **SC8 完成**:`hermes_acp.rs` 提取纯函数 `parse_session_summaries`/`parse_session_turns`(行为等价重构;唯一行为变化:`session_get` 坏 JSON 从 `Err`→`Ok(空)`,已注释为更友好的 read-only 降级),6 cargo 测试绿(preview=首条 user msg+换行压平;title fallback→preview→`Untitled`;跳过空行/坏 JSON/空 id;newest-first 排序;turns 只留 user/assistant 滤 tool/system/空;坏行→空)。
-- 2026-06-19 **里程碑:SC1–8 全部完成**(纯增量、不碰并行区、不需拍板的通道测试)。累计:ctrl-web 32 vitest + kernel 15 新 cargo 测试。**剩余 SC 性质不同**:SC9(P2 门控解除,需 bao 拍)/ SC10(P6 SOUL.md write,需先实装功能)/ SC11(P7 Capability Floor,需先实装)/ SC12(e2e,遗留对象被并行清理需重建)/ SC13(全绿闸)。下一步需 bao 定方向。
-- 2026-06-19 **SC10 完成**(bao 选 (a) 实装 P6 再测)。**发现 P6 write 早已实装**(`irisy_soul_write` vault.rs:673 + MCP `irisy_soul_set` + 已注册 mod.rs:254;之前 Explore 报告「仅 read」已过时,差点重造——先 Explore 规避)。SC10 收敛为测 write 闭环:`vault.rs` +2 cargo 测试(多行 markdown body + flat frontmatter round-trip;write 覆盖更新),绿。**真实发现**:frontmatter 裸数字样字符串值(`"1.0"`)round-trip 被 `parse_yaml_to_json` 解析回 `Number`(类型不保真);SOUL.md 版本号走独立 `irisy/.soul-md-version` pin 文件规避此问题;测试用含冒号 ISO 串验证 `yaml_quote` 保护下字符串值正确 round-trip。**下一步 = SC11**(P7 Capability Floor;先 Explore 现状,若像 P6 已实装则直接测,若零实装且涉及 capability 段/关键词设计决策则需 bao 拍)。
-
-- 2026-06-19 **real-link probe 4-bug 修复(P3 通道, commit `5c4c3ba`)**。根因实测:首屏 composer `AmbientHome.tsx` 给模型的 history **完全没 system prompt**(零 persona / 零 brain_state / 零 `cleanReplyText`),与 docked `IrisyChat` diverge → P-2 答不出模型+漏术语 / P-3 内心独白 / P-1 XML 裸吐。修:抽共享纯函数 `composeSystemPrompt()`(两 surface 单一真相源)+ **恢复 `<brain_state>` 注入**(原 `void brainState` 的 Pi-first 理由随 Pi 退役失效;code-reviewer 证实旧丢弃实为 ADR-005 §5/§6.4 违规,修复=回归合规)+ AmbientHome 接 persona+SOUL+brain_state + 渲染过 `cleanReplyText`。**彻底闭 P-2**,改善 P-3;P-1 XML / P-4 检索仍需能执行 tool 的 brain(SC9/P2,未越界 band-aid)。+5 vitest(composeSystemPrompt),ctrl-web 37 绿 + typecheck 绿;独立 checker 判 **PASS**。**未闭项需真机 real-link 复测**(behavioral,我无法起 Tauri+provider)。
-
-- 2026-06-19 **真机复测 + P-5 修复(commit `26ef154`)**。bao real-link 实测:**P-2 ✅ 真修好**(composeSystemPrompt + brain_state 注入有效,定稿不动)。新发现 **P-5**:`<brain_state>` 注入后暴露出 kernel 残留 `engine.id=Pi`(`provider.rs:34 const ENGINE_ID="Pi"`,Pi 退役后没改)→ Pi codename 泄漏进回复。修:一行 `ENGINE_ID="Hermes"`(ADR-002 § brain v19 Pi 退役 / v28 Hermes=Irisy 脑)+ 清同处过时 Pi 注释;无测试断言过 "Pi",TS fixtures 早用 Hermes,59 cargo 绿。**P-1/P-3/P-4 真机三次复测三种坏法(XML / 死循环 / tool_call JSON)= 模型想调 tool 但无人执行,prompt/filter 治标不治本(死循环、空承诺治不了)→ 唯一根因 = 没有能执行 tool 的 brain = SC9/P2**。下一步需 bao 拍 SC9 门控/接法。
-
-- 2026-06-19 **冷启动闭环工作(bao 插入方向「建 ADR 唯一真相, 再开发」, commit `a8cb109`, 分支 `feat/cold-start-loop`)**。bao 让我做「首页可下载的用户闭环」, 走 ADR + 调研 + 产品介绍 + 一次性开发: ① 建 **ADR-006 §6 cold-start-loop**(bump v5→v6) 当唯一真相 —— 把 download→install→first-run→BYOK→first-value 的 6 gates 聚合成一条可验收的线, 全守约现有 ADR(§1 BYOK / 003 §8 home / 004 §2 分发), 未开新编号(section amendment)。② 全网架构调研(Raycast/Jan/Cherry/MCP 生态/叙事/onboarding/分发), 交叉验证: 调研建议「零 key 起步」与 §1 BYOK-first 锁**冲突**→尊重 ADR(hermes 自身也需 key), 改用 BYOK 透明叙事。③ 更新 README 产品介绍(ambient + BYOK 透明 + plain-text 延伸到 agent 资产)。④ 代码。**重大诚实校准**: 深入读码发现首页核心闭环 **G4**(配 key 内联 CTA, `AmbientHome` welcome)/**G5**(no-provider 诚实降级, `send()`)/**G6**(产物 `downloadPart` 文件导出)**早在 P-2 + commit `8b62dc6` 已实装** —— 第一轮基于子 agent 过时报告误列为待做(教训: 先读码再下手, 避免重造/虚构待办, 同 SC10)。真代码 gap 只剩 **G3**(first_run_state 上屏)→已做: `kernel.ts` 加 `first_run_state` 字段 + `isSeedingFirstRun` helper + `AmbientWorkbench` 接 `useKernelStatus` + `AmbientHome` 种 mcp 期显示 "Setting up CTRL…" + 3 vitest。剩余全在**分发层**(notarization/landing/Windows), 已在 §6.3 标 `Blocked-on-env`/`Blocked-on-another-repo`(需 Apple 证书/另一 repo)。验证: typecheck 0 + vitest 67 绿 + vite build ✓ + 零 Rust + 独立 checker **PASS**。G3 setup hint 是 fresh-install 瞬态, 视觉真机态待 bao 复测(逻辑已 vitest 全覆盖)。**下一步方向待 bao 定**: 继续 Irisy 测试主线(SC9-13 未完) / 推冷启动 P1 分发层 / 别的。
-
-## Git — branch `ui/v1-editorial`
-
-(clean)
+- 2026-06-20 **目标替换**(原 Irisy 回复正确性测试 → §14 统一操作接口 feature 实装)。理由:bao 连续多轮指挥从「智能表格对标飞书」→「§14 修改架构」→「按架构全量做」,独立 reviewer 复审指出 GOAL.md 旧了。当前状态:`feat/unified-query` 11 commit、kernel 180 测试绿、reviewer PASS、ADR 对齐。下一步 = PR + PWA 前端消费(SC8)。
