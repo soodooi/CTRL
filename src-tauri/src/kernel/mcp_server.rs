@@ -24,7 +24,8 @@
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
-    ai_column, provider::LlmPrompt, query, vault, vault_notes_source, vault_smart_table,
+    ai_column, provider::LlmPrompt, query, runtime_sources, vault, vault_notes_source,
+    vault_smart_table,
 };
 use anyhow::Result;
 use axum::body::Body;
@@ -175,6 +176,20 @@ pub struct SmartTableAddViewArgs {
     /// Field key to group/columnize by (required for kanban).
     #[serde(default)]
     pub group_by: Option<String>,
+}
+
+/// registry.query / providers.query — a structured read over a runtime
+/// RecordSource (ADR-002 §14: same query contract, no vault path).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RuntimeQueryArgs {
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    #[serde(default)]
+    pub group_by: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 /// notes.query — a structured read over the knowledge base as a RecordSource
@@ -734,6 +749,110 @@ impl KernelMcpRouter {
             "added {kind_str} view to {}",
             args.path
         ))]))
+    }
+
+    /// registry.describe — the installed-MCP registry's type layer (ADR-002
+    /// §14). The registry is just another RecordSource.
+    #[tool(
+        description = "Describe the installed-MCP registry as a queryable RecordSource (fields: id/name/version/description/tools). Call before registry.query."
+    )]
+    async fn registry_describe(&self) -> Result<CallToolResult, McpError> {
+        let desc = query::Describe {
+            source_kind: query::SourceKind::Record,
+            fields: runtime_sources::mcp_fields(),
+            operators: runtime_sources::record_operators(),
+        };
+        let body = serde_json::to_string(&desc).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// registry.query — query installed MCP servers (ADR-002 §14) via the shared
+    /// engine — same contract as smart_table.query, live runtime RecordSource.
+    #[tool(
+        description = "Query installed MCP servers by id/name/tool-count with a structured filter/sort/group request. Call registry.describe first."
+    )]
+    async fn registry_query(
+        &self,
+        Parameters(args): Parameters<RuntimeQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let installed = self.runtime.mcp_host.list_installed().await;
+        let rows: Vec<query::Row> = installed
+            .iter()
+            .map(|d| {
+                let mut r = query::Row::new();
+                r.insert("id".into(), d.id.clone());
+                r.insert("name".into(), d.name.clone());
+                r.insert("version".into(), d.version.clone());
+                r.insert("description".into(), d.description.clone());
+                r.insert("tools".into(), d.tools.len().to_string());
+                r
+            })
+            .collect();
+        let req = query::QueryRequest {
+            filters: args.filters,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        let result = query::run_query(&runtime_sources::mcp_fields(), &rows, &req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// providers.describe — the provider catalogue's type layer (ADR-002 §14).
+    #[tool(
+        description = "Describe the LLM provider catalogue as a queryable RecordSource (fields: id/label/kind/models/ready/capabilities). Call before providers.query."
+    )]
+    async fn providers_describe(&self) -> Result<CallToolResult, McpError> {
+        let desc = query::Describe {
+            source_kind: query::SourceKind::Record,
+            fields: runtime_sources::provider_fields(),
+            operators: runtime_sources::record_operators(),
+        };
+        let body = serde_json::to_string(&desc).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// providers.query — query the provider catalogue (ADR-002 §14) via the
+    /// shared engine: "ready providers with embed capability", etc.
+    #[tool(
+        description = "Query configured LLM providers by id/kind/ready/capabilities with a structured filter/sort/group request. Call providers.describe first."
+    )]
+    async fn providers_query(
+        &self,
+        Parameters(args): Parameters<RuntimeQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let entries = self.runtime.provider_registry.list();
+        let rows: Vec<query::Row> = entries
+            .iter()
+            .map(|e| {
+                let mut r = query::Row::new();
+                r.insert("id".into(), e.id.clone());
+                r.insert("label".into(), e.label.clone());
+                let kind = serde_json::to_value(&e.kind)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_default();
+                r.insert("kind".into(), kind);
+                r.insert("models".into(), e.models.len().to_string());
+                r.insert("ready".into(), if e.ready { "x".into() } else { String::new() });
+                r.insert("capabilities".into(), e.capabilities.join(", "));
+                r
+            })
+            .collect();
+        let req = query::QueryRequest {
+            filters: args.filters,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        let result = query::run_query(&runtime_sources::provider_fields(), &rows, &req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
     /// vault.write — write markdown + optional frontmatter to the vault.

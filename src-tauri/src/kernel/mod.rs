@@ -36,6 +36,7 @@ pub mod projector;
 pub mod provider;
 pub mod query;
 pub mod runtime;
+pub mod runtime_sources;
 pub mod scheduler;
 // Vault embeddings substrate (ADR-002 v5 §10) — local Ollama
 // nomic-embed-text + SQLite BLOB flat cosine search. Memory
