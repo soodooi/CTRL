@@ -215,7 +215,7 @@ This section is **aggregation + acceptance, not new direction** — each gate's 
 - [ ] G5-legacy — legacy `IrisyChat` upgradeStub still says "Irisy is connecting" + disables the textarea (violates memory `feedback-irisy-never-block-input`); only reachable on the `USE_AMBIENT=false` legacy 4-col fallback. Fix or retire when that shell is dropped.
 - [ ] G6-coding — `CodingArtifactPane` (coding route) export/download affordance (home pane already has it).
 - [ ] G2 — macOS notarization (`notarytool` + `stapler`) into `scripts/release.sh` (altool dead 2023-11; Sequoia makes it effectively mandatory). **Blocked-on-env**: needs Apple Developer ID + notary credentials on bao's machine.
-- [ ] G1 — public landing / download page (`ctrlapplab.com`) + Homebrew Cask. **Blocked-on-another-repo** (not this PWA codebase).
+- [x] G1 — public landing / download page **BUILT** as a multi-page static site in `website/` (home / product / download / commons / manifesto + shared `styles.css`, keycap母题, brand tokens, copy locked to §5 + §1). bao 2026-06-19 "各页面展开设计". Verified via Playwright/Chrome screenshots. **Deploy to `ctrlapplab.com` is Blocked-on-creds** (needs bao's Cloudflare token + domain DNS) — `website/README.md` has the `wrangler pages deploy website` one-liner. Homebrew Cask still pending.
 - [ ] CD — `.github/workflows` build→sign→notarize→publish (replaces local-only `release.sh`).
 
 **P2 — cross-platform (already in ADR-004 future work)**
