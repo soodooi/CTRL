@@ -254,6 +254,63 @@ const parseViews = (yamlText: string): ViewSpec[] => {
   return out;
 };
 
+/** Build a ColumnSpec from a parsed object (frontmatter or inline). */
+const columnFromObj = (o: Record<string, unknown>): ColumnSpec | null => {
+  if (typeof o.key !== 'string') return null;
+  return {
+    key: o.key,
+    label: typeof o.label === 'string' ? o.label : o.key,
+    type: (typeof o.type === 'string' ? o.type : 'text') as CellType,
+    options: Array.isArray(o.options) ? (o.options as string[]) : undefined,
+    min: typeof o.min === 'number' ? o.min : undefined,
+    max: typeof o.max === 'number' ? o.max : undefined,
+  };
+};
+
+/** Parse a frontmatter `schema` value (array of objects OR flow-mapping
+ *  strings — the kernel's YAML parser yields strings) into ColumnSpecs. */
+const parseSchemaValue = (v: unknown): ColumnSpec[] => {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((item) =>
+      typeof item === 'string'
+        ? columnFromObj(parseInlineObject(item))
+        : item && typeof item === 'object'
+        ? columnFromObj(item as Record<string, unknown>)
+        : null,
+    )
+    .filter((c): c is ColumnSpec => c != null);
+};
+
+/** Parse a frontmatter `views` value (array of objects OR flow strings). */
+const parseViewsValue = (v: unknown): ViewSpec[] => {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((item) => {
+      const o = typeof item === 'string' ? parseInlineObject(item) : (item as Record<string, unknown>);
+      if (!o || typeof o !== 'object') return null;
+      const kind = o.kind === 'kanban' ? 'kanban' : 'grid';
+      const groupBy = typeof o.group_by === 'string' && o.group_by ? (o.group_by as string) : null;
+      return { kind, groupBy } as ViewSpec;
+    })
+    .filter((x): x is ViewSpec => x != null);
+};
+
+/** Build a SmartTable from a vault entry's already-parsed `frontmatter`
+ *  (schema / title / views) + the markdown `body`. This is the path the viewer
+ *  must use, because `vault_read` strips the frontmatter from `content` — so
+ *  `parseSmartTable(content)` alone can never see the schema. */
+export const smartTableFromParts = (
+  frontmatter: Record<string, unknown>,
+  body: string,
+): SmartTable => {
+  const schema = parseSchemaValue(frontmatter.schema);
+  const title = typeof frontmatter.title === 'string' ? frontmatter.title : undefined;
+  const views = parseViewsValue(frontmatter.views);
+  const rows = parseTable(body, schema);
+  return { title, schema, rows, views, extraFrontmatter: {} };
+};
+
 /** Public: parse a smart-table file into structured data. */
 export const parseSmartTable = (source: string): SmartTable => {
   const { yaml, body } = splitFrontmatter(source);
@@ -307,6 +364,39 @@ export const serializeSmartTable = (table: SmartTable): string => {
     }
   }
   return lines.join('\n') + '\n';
+};
+
+/** Serialize ONLY the markdown table body (no frontmatter) — for `vault_write`,
+ *  which takes body + frontmatter separately and re-emits the YAML itself. */
+export const smartTableBody = (table: SmartTable): string => {
+  if (table.schema.length === 0) return '';
+  const lines: string[] = [];
+  lines.push(`| ${table.schema.map((c) => c.label).join(' | ')} |`);
+  lines.push(`|${table.schema.map(() => '---').join('|')}|`);
+  for (const row of table.rows) {
+    lines.push(
+      `| ${table.schema.map((c) => (row[c.key] ?? '').replace(/\|/g, '\\|')).join(' | ')} |`,
+    );
+  }
+  return lines.join('\n') + '\n';
+};
+
+/** The frontmatter object (title / schema / views) to hand to `vault_write`. */
+export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown> => {
+  const fm: Record<string, unknown> = {};
+  if (table.title) fm.title = table.title;
+  fm.schema = table.schema.map((c) => ({
+    key: c.key,
+    label: c.label,
+    type: c.type,
+    ...(c.options ? { options: c.options } : {}),
+    ...(c.min !== undefined ? { min: c.min } : {}),
+    ...(c.max !== undefined ? { max: c.max } : {}),
+  }));
+  if (table.views.length > 0) {
+    fm.views = table.views.map((v) => ({ kind: v.kind, ...(v.groupBy ? { group_by: v.groupBy } : {}) }));
+  }
+  return fm;
 };
 
 /** Insert a new empty row at the end. Returns a new table (immutable). */

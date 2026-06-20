@@ -7,7 +7,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactElement } from 'react';
-import { ViewerHost } from '@/components/viewers/ViewerHost';
+import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
 import { createSmartTable, listSmartTables } from '@/lib/smart-tables';
 import styles from './TablesPanel.module.css';
@@ -65,7 +65,7 @@ export const TablesPanel = (): ReactElement => {
       </aside>
       <section className={styles.detail}>
         {selected ? (
-          <ViewerHost resource={resourceFromVaultPath(selected)} />
+          <SmartTableViewer resource={resourceFromVaultPath(selected)} />
         ) : (
           <div className={styles.detailEmpty}>Pick a table to query it.</div>
         )}
