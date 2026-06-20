@@ -7,7 +7,7 @@
 // plain layout object, which persists locally. No new capability system; every
 // card resolves to a catalog capability (the SSOT).
 
-import { useCallback, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import type { Capability } from '@/lib/capability-catalog';
 import {
   addAction,
@@ -88,12 +88,50 @@ export function WorkspacePanel({ onRun, onConnectTools }: WorkspacePanelProps): 
     setPickerGroup(null);
   }, [commit]);
 
+  // Quicker-style number shortcuts: the first 9 actions (in display order) get
+  // ordinals 1–9; pressing that digit runs the action. The flat order follows
+  // the rendered groups so the badge a user sees matches the key they press.
+  const orderedIds = useMemo(
+    () => layout.groups.flatMap((g) => g.actionIds).filter((id) => resolveAction(id)),
+    [layout],
+  );
+  const ordinalOf = useMemo(() => {
+    const m = new Map<string, number>();
+    orderedIds.slice(0, 9).forEach((id, i) => m.set(id, i + 1));
+    return m;
+  }, [orderedIds]);
+
+  useEffect(() => {
+    if (editing) return; // arranging, not running
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // Never hijack a digit the user is typing into the composer / a field.
+      const t = e.target;
+      if (
+        t instanceof HTMLElement &&
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key < '1' || e.key > '9') return;
+      const id = orderedIds[Number(e.key) - 1];
+      const cap = id ? resolveAction(id) : undefined;
+      if (cap) {
+        e.preventDefault();
+        onRun(cap);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editing, onRun, orderedIds]);
+
   const available = availableActions(layout);
 
   return (
     <div className={styles.panel}>
       <div className={styles.head}>
         <span className={styles.headLabel}>Workspace</span>
+        {!editing && <span className={styles.headHint}>press 1–9 to run</span>}
         <div className={styles.headActions}>
           {editing && (
             <button type="button" className={styles.headBtn} onClick={resetLayout}>
@@ -137,17 +175,23 @@ export function WorkspacePanel({ onRun, onConnectTools }: WorkspacePanelProps): 
                   false;
 
                 if (!editing) {
+                  const num = ordinalOf.get(id);
                   return (
                     <button
                       key={id}
                       type="button"
                       className={styles.card}
                       onClick={() => onRun(cap)}
-                      title={cap.hint}
+                      title={num ? `${cap.hint}  ·  press ${num}` : cap.hint}
                     >
                       <span className={styles.icon} aria-hidden>
                         {glyph(id)}
                       </span>
+                      {num && (
+                        <span className={styles.num} aria-hidden>
+                          {num}
+                        </span>
+                      )}
                       <span className={styles.label}>{cap.label}</span>
                       {!isPinned && <span className={styles.hint}>{cap.hint}</span>}
                     </button>

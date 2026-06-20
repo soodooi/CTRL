@@ -43,7 +43,11 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
   return {
     version: 1,
     groups: [
-      { id: PINNED_GROUP_ID, title: 'Pinned', actionIds: ['draft-polish', 'summarize', 'plan'] },
+      {
+        id: PINNED_GROUP_ID,
+        title: 'Pinned',
+        actionIds: ['ocr-extract', 'draft-polish', 'summarize', 'plan'],
+      },
       {
         id: 'ai-actions',
         title: 'AI Actions',

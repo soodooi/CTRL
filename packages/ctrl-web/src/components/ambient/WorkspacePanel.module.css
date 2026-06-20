@@ -14,7 +14,6 @@
 .head {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: var(--space-3);
 }
 
@@ -27,9 +26,17 @@
   color: var(--color-text-soft);
 }
 
+.headHint {
+  font-family: var(--font-display);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.06em;
+  color: var(--color-text-faint);
+}
+
 .headActions {
   display: flex;
   gap: var(--space-2);
+  margin-left: auto;
 }
 
 .headBtn {
@@ -136,7 +143,7 @@
   align-items: center;
   gap: var(--space-3);
   min-height: 0;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-8) var(--space-3) var(--space-4);
 }
 
 /* Reserve room for the pin/remove tools so they never overlap the label on
@@ -161,6 +168,28 @@
   width: 26px;
   height: 26px;
   font-size: 14px;
+}
+
+/* Quicker-style number badge — the key the user presses to run this action. */
+.num {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-3);
+  font-family: var(--font-display);
+  font-size: var(--text-mono-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--color-text-faint);
+  transition: color var(--duration-fast) var(--ease-out-quart);
+}
+
+.compact .num {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.card:hover .num {
+  color: var(--color-primary);
 }
 
 .label {
