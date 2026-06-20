@@ -136,6 +136,11 @@ export interface AmbientHomeProps {
    *  handler + active highlight so the rail drives the same navigation. */
   onSidebarSelect: (s: SidebarSection) => void;
   activeSection: string;
+  /** True while the kernel is still seeding builtin mcps on a fresh install
+   *  (first_run_state = 'copying'). Surfaces a "Setting up CTRL…" hint so the
+   *  empty Tools/Discover lists don't read as broken. ADR-006 § cold-start-loop
+   *  §6.1 G3. */
+  settingUp?: boolean;
 }
 
 const SPRING = { type: 'spring', stiffness: 420, damping: 36 } as const;
@@ -154,6 +159,7 @@ export function AmbientHome({
   hidden,
   onSidebarSelect,
   activeSection,
+  settingUp = false,
 }: AmbientHomeProps): ReactElement {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -955,6 +961,11 @@ export function AmbientHome({
                 ) : (
                   <div className={styles.welcome}>
                     <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
+                    {settingUp && (
+                      <p className={styles.setupHint} role="status">
+                        Setting up CTRL… installing your tools.
+                      </p>
+                    )}
                     {!hasProvider && (
                       <button type="button" className={styles.ctaPrimary} onClick={onOpenPicker}>
                         Connect your AI to start →

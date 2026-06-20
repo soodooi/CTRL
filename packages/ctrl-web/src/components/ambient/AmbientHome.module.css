@@ -251,6 +251,21 @@
   text-align: left;
 }
 
+/* fresh-install seeding hint — shown while the kernel copies builtin mcps
+   so empty Tools/Discover lists read as "installing", not broken.
+   ADR-006 § cold-start-loop §6.1 G3. */
+.setupHint {
+  align-self: flex-start;
+  margin: 2px 0 22px;
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--color-primary) 9%, transparent);
+  color: var(--text-muted, #6e6e73);
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  text-align: left;
+}
+
 /* ── first-run CTAs (so a new user knows the next step) ────────── */
 .ctaPrimary {
   align-self: flex-start;

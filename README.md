@@ -1,6 +1,22 @@
 # CTRL
 
-> AI-native ambient OS 中枢 — press `Ctrl` to summon an ephemeral workspace; 1 keycap = 1 AI tool.
+> An ambient AI layer that runs on your machine, with your own keys, that we can't see. Press `Ctrl`, get a workspace, talk to one assistant that routes to any tool.
+
+## What is CTRL
+
+CTRL is the local AI workbench for the **one-person company** — the solopreneur, indie founder, or freelancer who runs a whole company alone, wants AI as their team, and won't hand their business data to someone else's cloud.
+
+Press `Ctrl` anywhere → an ephemeral workspace appears → you talk to **one** assistant (Irisy) that reads your intent and routes it to the right capability: an LLM, an installed MCP tool, a CLI, a skill. The surface *morphs* to the output — a doc, a table, an editable HTML page, code — which you can copy, export as a file, or save into a plain-markdown vault you fully own.
+
+Three things separate it from "yet another local AI client":
+
+- **Ambient, not an app you open.** One global hotkey, one morphing conversation, no tab-soup. Capabilities live in an open registry (MCP / CLI / Skills), so the UI stays simple while the ecosystem scales — scale lives in the registry, not the chrome.
+- **Bring your own everything — keys, models, brain.** No CTRL account, no markup, no default model spend. You wire your own provider (Claude / the fal.ai aggregator / OpenAI / local Ollama); CTRL is the stitching layer, not the model vendor. Keys live in the OS keychain — we literally can't read them.
+- **Plain-text all the way down.** Your notes are markdown + frontmatter — and so are the agent assets: tools (`.mcp.json`), skills (`SKILL.md`), memory (`CLAUDE.md` / `AGENTS.md`). Open them in vim in 100 years. There's no "export" because nothing was ever imported.
+
+The economy is **share & be shared**: package a tool as a plain-text definition, publish it to the Discover commons, one-click install what others share — only definitions travel; data and keys never leave any machine. CTRL sells the substrate; the commons stays free and is the moat.
+
+> Full positioning + architecture: [`.olym/decisions/006-cross-cutting.md`](./.olym/decisions/006-cross-cutting.md) §5 (positioning) + §6 (cold-start loop) · [`.olym/decisions/INDEX.md`](./.olym/decisions/INDEX.md) (7 module ADRs).
 
 Private repository. Single deliverable: this repo (`soodooi/CTRL`). All Rights Reserved (see [LICENSE](./LICENSE)).
 
