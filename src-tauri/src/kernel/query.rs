@@ -45,8 +45,12 @@ pub enum CellType {
 
 impl CellType {
     pub fn parse(s: &str) -> CellType {
+        // Render-level types collapse to a small set of SEMANTIC base types:
+        // currency / rating / progress filter + sort as numbers; multiline /
+        // email / phone as text. Kept in sync with the front end's
+        // baseCellType (lib/smart-table.ts).
         match s {
-            "number" => CellType::Number,
+            "number" | "currency" | "rating" | "progress" | "percent" => CellType::Number,
             "date" => CellType::Date,
             "checkbox" => CellType::Checkbox,
             "tags" => CellType::Tags,

@@ -24,14 +24,53 @@
 // Any frontmatter the file carries beyond `schema` + `title` is kept
 // verbatim (we touch only what we own).
 
+// Render-level cell types. The viewer renders each distinctly ("render is the
+// type" — Feishu/Teable), but query/sort/filter collapse to a small set of
+// SEMANTIC base types (see baseCellType). This mirrors the kernel, whose
+// CellType::parse aliases the number-/text-like variants onto its 5 core types.
 export type CellType =
   | 'text'
+  | 'multiline'
   | 'number'
+  | 'currency'
+  | 'rating'
+  | 'progress'
   | 'date'
   | 'checkbox'
   | 'tags'
   | 'select'
-  | 'url';
+  | 'url'
+  | 'email'
+  | 'phone';
+
+/** The 7 semantic base types query/sort/filter actually reason about. */
+export type BaseCellType = 'text' | 'number' | 'date' | 'checkbox' | 'tags' | 'select' | 'url';
+
+/** Collapse a render-level type to its semantic base. rating / progress /
+ *  currency behave as numbers; multiline / email / phone as text. Kept in
+ *  sync with the kernel's CellType::parse aliasing (query.rs). */
+export const baseCellType = (t: CellType): BaseCellType => {
+  switch (t) {
+    case 'currency':
+    case 'rating':
+    case 'progress':
+      return 'number';
+    case 'multiline':
+    case 'email':
+    case 'phone':
+      return 'text';
+    case 'number':
+    case 'date':
+    case 'checkbox':
+    case 'tags':
+    case 'select':
+    case 'url':
+    case 'text':
+      return t;
+    default:
+      return 'text';
+  }
+};
 
 export interface ColumnSpec {
   key: string;
@@ -39,9 +78,12 @@ export interface ColumnSpec {
   type: CellType;
   /** For `select`: list of allowed options. */
   options?: ReadonlyArray<string>;
-  /** For `number`: validation hints. */
+  /** For `number` / `rating` / `progress`: validation + scale hints
+   *  (rating max = star count, progress max = 100% denominator). */
   min?: number;
   max?: number;
+  /** For `currency`: a prefix symbol (default "$"). */
+  symbol?: string;
 }
 
 /** A saved view (ADR-003 §6.2) — view state lives in frontmatter, not the
@@ -264,6 +306,7 @@ const columnFromObj = (o: Record<string, unknown>): ColumnSpec | null => {
     options: Array.isArray(o.options) ? (o.options as string[]) : undefined,
     min: typeof o.min === 'number' ? o.min : undefined,
     max: typeof o.max === 'number' ? o.max : undefined,
+    symbol: typeof o.symbol === 'string' ? o.symbol : undefined,
   };
 };
 
@@ -392,6 +435,7 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
     ...(c.options ? { options: c.options } : {}),
     ...(c.min !== undefined ? { min: c.min } : {}),
     ...(c.max !== undefined ? { max: c.max } : {}),
+    ...(c.symbol !== undefined ? { symbol: c.symbol } : {}),
   }));
   if (table.views.length > 0) {
     fm.views = table.views.map((v) => ({ kind: v.kind, ...(v.groupBy ? { group_by: v.groupBy } : {}) }));

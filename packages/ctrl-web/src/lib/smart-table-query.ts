@@ -6,7 +6,7 @@
 // returns `field_not_found` — here we throw the same shape) so the UI never
 // silently drops a bad filter.
 
-import type { CellType, ColumnSpec, SmartTable } from './smart-table';
+import { baseCellType, type CellType, type ColumnSpec, type SmartTable } from './smart-table';
 
 export type Operator =
   | 'eq'
@@ -79,13 +79,13 @@ export const queryTable = (
   // Filter — AND across all filters.
   let out = table.rows.filter((row) =>
     (req.filters ?? []).every((f) =>
-      applyFilter(row[f.field] ?? '', typeOf(f.field) ?? 'text', f.op, f.value, now),
+      applyFilter(row[f.field] ?? '', baseCellType(typeOf(f.field) ?? 'text'), f.op, f.value, now),
     ),
   );
 
   // Sort — stable, multi-key; apply in reverse so the first key wins.
   for (const key of [...(req.sort ?? [])].reverse()) {
-    const ct = typeOf(key.field) ?? 'text';
+    const ct = baseCellType(typeOf(key.field) ?? 'text');
     out = stableSort(out, (a, b) => {
       const ord = compareCells(a[key.field] ?? '', b[key.field] ?? '', ct);
       return key.desc ? -ord : ord;

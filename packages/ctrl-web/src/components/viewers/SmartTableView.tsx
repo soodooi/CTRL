@@ -16,7 +16,7 @@ import {
 } from '@tanstack/react-table';
 import { useMemo, useState, type ReactElement } from 'react';
 import type { AiColumnOp, AiColumnSummary } from '@/lib/kernel';
-import type { ColumnSpec, SmartTable, ViewSpec } from '@/lib/smart-table';
+import { baseCellType, type BaseCellType, type ColumnSpec, type SmartTable, type ViewSpec } from '@/lib/smart-table';
 import {
   queryTable,
   type Filter,
@@ -25,7 +25,7 @@ import {
 } from '@/lib/smart-table-query';
 import styles from './Viewer.module.css';
 
-const OPERATORS_BY_TYPE: Record<string, Operator[]> = {
+const OPERATORS_BY_TYPE: Record<BaseCellType, Operator[]> = {
   text: ['contains', 'eq', 'neq'],
   url: ['contains', 'eq', 'neq'],
   select: ['eq', 'neq'],
@@ -33,6 +33,28 @@ const OPERATORS_BY_TYPE: Record<string, Operator[]> = {
   date: ['within', 'before', 'after', 'eq'],
   checkbox: ['is'],
   tags: ['has_tag', 'neq'],
+};
+
+/** Deterministic pill colour for a select/tag token — stable across renders,
+ *  zero config (no per-option colour stored in schema). */
+const tokenHue = (token: string): number => {
+  let h = 0;
+  for (let i = 0; i < token.length; i += 1) h = (h * 31 + token.charCodeAt(i)) % 360;
+  return h;
+};
+const pillStyle = (token: string): { background: string; color: string; borderColor: string } => {
+  const h = tokenHue(token);
+  return {
+    background: `hsl(${h} 70% 92%)`,
+    color: `hsl(${h} 60% 30%)`,
+    borderColor: `hsl(${h} 60% 80%)`,
+  };
+};
+
+const formatCurrency = (raw: string, symbol: string): string => {
+  const n = Number(raw);
+  if (raw.trim() === '' || Number.isNaN(n)) return raw;
+  return `${symbol}${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 };
 
 const VALUE_HINT: Partial<Record<Operator, string>> = {
@@ -64,26 +86,73 @@ interface CellProps {
   onChange: (next: string) => void;
 }
 
+// "Render is the type" (Feishu/Teable): checkbox / rating / select / progress /
+// currency / link render distinctly; click a plain cell to edit it. The editor
+// is chosen by the SEMANTIC base type (baseCellType), the display by the
+// render-level type.
 const Cell = ({ col, value, editable, onChange }: CellProps): ReactElement => {
-  const common = { className: styles.tableCell, disabled: !editable };
-  switch (col.type) {
-    case 'checkbox':
+  const [editing, setEditing] = useState(false);
+  const base = baseCellType(col.type);
+
+  // Always-interactive displays (no separate edit mode needed).
+  if (col.type === 'checkbox') {
+    return (
+      <input
+        type="checkbox"
+        checked={value === 'x' || value === 'true'}
+        onChange={(e) => onChange(e.target.checked ? 'x' : '')}
+        disabled={!editable}
+        aria-label={col.label}
+      />
+    );
+  }
+  if (col.type === 'rating') {
+    const max = col.max ?? 5;
+    const filled = Math.max(0, Math.min(max, Math.round(Number(value) || 0)));
+    return (
+      <span className={styles.rating} role="img" aria-label={`${filled} of ${max}`}>
+        {Array.from({ length: max }, (_, i) => (
+          <button
+            key={i}
+            type="button"
+            className={styles.star}
+            data-on={i < filled}
+            disabled={!editable}
+            onClick={() => onChange(String(i + 1 === filled ? i : i + 1))}
+            tabIndex={-1}
+          >
+            {i < filled ? '★' : '☆'}
+          </button>
+        ))}
+      </span>
+    );
+  }
+
+  // Edit mode: a type-appropriate editor, committed on blur / Enter.
+  if (editing && editable) {
+    const commit = (v: string): void => {
+      onChange(v);
+      setEditing(false);
+    };
+    if (col.type === 'multiline') {
       return (
-        <input
-          type="checkbox"
-          checked={value === 'x' || value === 'true'}
-          onChange={(e) => onChange(e.target.checked ? 'x' : '')}
-          disabled={!editable}
-          aria-label={col.label}
+        <textarea
+          autoFocus
+          className={styles.cellEditorArea}
+          defaultValue={value}
+          onBlur={(e) => commit(e.target.value)}
         />
       );
-    case 'number':
-      return <input {...common} type="number" value={value} min={col.min} max={col.max} onChange={(e) => onChange(e.target.value)} />;
-    case 'date':
-      return <input {...common} type="date" value={value} onChange={(e) => onChange(e.target.value)} />;
-    case 'select':
+    }
+    if (col.type === 'select') {
       return (
-        <select {...common} value={value} onChange={(e) => onChange(e.target.value)}>
+        <select
+          autoFocus
+          className={styles.tableCell}
+          value={value}
+          onChange={(e) => commit(e.target.value)}
+          onBlur={() => setEditing(false)}
+        >
           <option value=""></option>
           {col.options?.map((opt) => (
             <option key={opt} value={opt}>
@@ -92,19 +161,100 @@ const Cell = ({ col, value, editable, onChange }: CellProps): ReactElement => {
           ))}
         </select>
       );
-    case 'tags':
-      return <input {...common} type="text" value={value} placeholder="tag, tag, tag" onChange={(e) => onChange(e.target.value)} />;
-    case 'url':
-      return editable ? (
-        <input {...common} type="url" value={value} onChange={(e) => onChange(e.target.value)} />
-      ) : (
-        <a href={value} target="_blank" rel="noreferrer" className={styles.tableLink}>
-          {value}
-        </a>
-      );
-    default:
-      return <input {...common} type="text" value={value} onChange={(e) => onChange(e.target.value)} />;
+    }
+    const inputType =
+      base === 'number' ? 'number' : base === 'date' ? 'date' : col.type === 'email' ? 'email' : col.type === 'phone' ? 'tel' : col.type === 'url' ? 'url' : 'text';
+    return (
+      <input
+        autoFocus
+        className={styles.tableCell}
+        type={inputType}
+        defaultValue={value}
+        min={base === 'number' ? col.min : undefined}
+        max={base === 'number' ? col.max : undefined}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && base !== 'text') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        onBlur={(e) => commit(e.target.value)}
+      />
+    );
   }
+
+  // Display mode (rich render per type).
+  const activate = editable ? () => setEditing(true) : undefined;
+  if (col.type === 'select') {
+    return value ? (
+      <button type="button" className={styles.pill} style={pillStyle(value)} onClick={activate}>
+        {value}
+      </button>
+    ) : (
+      <span className={styles.cellEmpty} onClick={activate}>
+        —
+      </span>
+    );
+  }
+  if (col.type === 'tags') {
+    const tags = value.split(',').map((t) => t.trim()).filter(Boolean);
+    return (
+      <span className={styles.tags} onClick={activate}>
+        {tags.length === 0 ? <span className={styles.cellEmpty}>—</span> : tags.map((t) => (
+          <span key={t} className={styles.pill} style={pillStyle(t)}>
+            {t}
+          </span>
+        ))}
+      </span>
+    );
+  }
+  if (col.type === 'progress') {
+    const max = col.max ?? 100;
+    const pct = Math.max(0, Math.min(100, (Number(value) || 0) * (100 / max)));
+    return (
+      <span className={styles.progressWrap} onClick={activate}>
+        <span className={styles.progressBar}>
+          <span className={styles.progressFill} style={{ width: `${pct}%` }} />
+        </span>
+        <span className={styles.progressText}>{value === '' ? '—' : `${Math.round(pct)}%`}</span>
+      </span>
+    );
+  }
+  if (col.type === 'currency') {
+    return (
+      <span className={styles.cellNumber} onClick={activate}>
+        {value === '' ? <span className={styles.cellEmpty}>—</span> : formatCurrency(value, col.symbol ?? '$')}
+      </span>
+    );
+  }
+  if (col.type === 'url' && value) {
+    return (
+      <a href={value} target="_blank" rel="noreferrer" className={styles.tableLink}>
+        {value}
+      </a>
+    );
+  }
+  if (col.type === 'email' && value) {
+    return (
+      <a href={`mailto:${value}`} className={styles.tableLink}>
+        {value}
+      </a>
+    );
+  }
+  if (col.type === 'phone' && value) {
+    return (
+      <a href={`tel:${value}`} className={styles.tableLink}>
+        {value}
+      </a>
+    );
+  }
+  return (
+    <span
+      className={base === 'number' ? styles.cellNumber : styles.cellText}
+      data-multiline={col.type === 'multiline'}
+      onClick={activate}
+    >
+      {value === '' ? <span className={styles.cellEmpty}>—</span> : value}
+    </span>
+  );
 };
 
 export interface SmartTableViewProps {
@@ -167,7 +317,8 @@ export const SmartTableView = ({
     }
   };
 
-  const typeOf = (key: string) => table.schema.find((c) => c.key === key)?.type ?? 'text';
+  const typeOf = (key: string): BaseCellType =>
+    baseCellType(table.schema.find((c) => c.key === key)?.type ?? 'text');
   const draftOps = OPERATORS_BY_TYPE[typeOf(draft.field)] ?? ['contains', 'eq'];
 
   // Run the §14 query, preserving each row's canonical index in `__idx` so
