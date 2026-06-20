@@ -32,6 +32,7 @@ export function AmbientWorkbench(): ReactElement {
   const [toolRequest, setToolRequest] = useState<ToolRequest | null>(null);
   const [packRequest, setPackRequest] = useState<PackRequest | null>(null);
   const [openNotesNonce, setOpenNotesNonce] = useState(0);
+  const [openTablesNonce, setOpenTablesNonce] = useState(0);
   const [irisyNonce, setIrisyNonce] = useState(0);
   // Which sidebar entry is highlighted on home ('irisy' | 'discover' |
   // `${connectorId}.${toolName}`). Routes own their own nav, so off-home
@@ -83,6 +84,10 @@ export function AmbientWorkbench(): ReactElement {
         setView('chat');
         setNavSel('notes');
         setOpenNotesNonce((n) => n + 1);
+      } else if (s.kind === 'tables') {
+        setView('chat');
+        setNavSel('tables');
+        setOpenTablesNonce((n) => n + 1);
       }
     },
     [navigate, isHome],
@@ -111,6 +116,7 @@ export function AmbientWorkbench(): ReactElement {
         toolRequest={toolRequest}
         packRequest={packRequest}
         openNotesNonce={openNotesNonce}
+        openTablesNonce={openTablesNonce}
         irisyNonce={irisyNonce}
         hidden={!isHome}
         onSidebarSelect={onSidebarSelect}

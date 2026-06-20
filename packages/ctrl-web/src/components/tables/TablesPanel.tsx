@@ -1,17 +1,18 @@
-// Tables — the smart-table browse page (ADR-003 §6 / ADR-002 §14). Left: the
-// vault's smart tables (files with a `schema:` frontmatter). Right: the selected
-// table rendered through the viewer registry, which (since the content-based
-// detection fix) resolves a schema'd .md to the SmartTableViewer — the §14 query
-// bar + grid/kanban. "+ New" seeds a starter table.
+// TablesPanel — the smart-table browse scene (ADR-003 §6 / §8). Renders in
+// AmbientHome's scenePane BESIDE Irisy (Irisy stays pinned), not as a full-
+// screen route — the generic morphing-surface architecture (like NotesApp).
+// Left: the vault's smart tables (any .md with a schema: frontmatter). Right:
+// the selected one through the viewer registry → SmartTableViewer (§14 query
+// bar + grid/kanban). "+ New" seeds a starter table.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactElement } from 'react';
 import { ViewerHost } from '@/components/viewers/ViewerHost';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
 import { createSmartTable, listSmartTables } from '@/lib/smart-tables';
-import styles from './tables.module.css';
+import styles from './TablesPanel.module.css';
 
-export const TablesRoute = (): ReactElement => {
+export const TablesPanel = (): ReactElement => {
   const qc = useQueryClient();
   const { data: tables, isLoading } = useQuery({
     queryKey: ['smart-tables'],
@@ -66,7 +67,7 @@ export const TablesRoute = (): ReactElement => {
         {selected ? (
           <ViewerHost resource={resourceFromVaultPath(selected)} />
         ) : (
-          <div className={styles.detailEmpty}>Pick a table on the left to query it.</div>
+          <div className={styles.detailEmpty}>Pick a table to query it.</div>
         )}
       </section>
     </div>

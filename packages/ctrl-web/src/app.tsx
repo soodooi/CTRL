@@ -219,9 +219,6 @@ const CodeSpaceRoute = lazy(() =>
 const CodingRoute = lazy(() =>
   import('./routes/coding').then((m) => ({ default: m.CodingRoute })),
 );
-const TablesRoute = lazy(() =>
-  import('./routes/tables').then((m) => ({ default: m.TablesRoute })),
-);
 const CodeSpaceDetailRoute = lazy(() =>
   import('./routes/code-space').then((m) => ({ default: m.CodeSpaceDetailRoute })),
 );
@@ -408,15 +405,6 @@ const codingRoute = createRoute({
     </Suspense>
   ),
 });
-const tablesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/tables',
-  component: () => (
-    <Suspense fallback={<LazyFallback />}>
-      <TablesRoute />
-    </Suspense>
-  ),
-});
 const codeSpaceDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/code-space/$envId',
@@ -471,7 +459,6 @@ const routeTree = rootRoute.addChildren([
   codeSpaceRoute,
   codeSpaceDetailRoute,
   codingRoute,
-  tablesRoute,
   iconLabRoute,
   packLabRoute,
   tableLabRoute,
