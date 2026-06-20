@@ -23,7 +23,7 @@
 
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::runtime::KernelRuntime;
-use crate::kernel::{provider::LlmPrompt, query, vault, vault_smart_table};
+use crate::kernel::{provider::LlmPrompt, query, vault, vault_notes_source, vault_smart_table};
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::Request;
@@ -131,6 +131,24 @@ pub struct SmartTableAppendRowArgs {
     pub path: String,
     /// Cell values keyed by schema field key; missing keys become empty.
     pub values: std::collections::BTreeMap<String, String>,
+}
+
+/// notes.query — a structured read over the knowledge base as a RecordSource
+/// (ADR-002 §14: the SAME query contract as smart-table). Fields are
+/// path/title/tags/created/modified — call `notes.describe` for the set.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NotesQueryArgs {
+    /// Optional vault subdir to scope the scan (omit for the whole vault).
+    #[serde(default)]
+    pub subdir: Option<String>,
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    #[serde(default)]
+    pub group_by: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -479,6 +497,52 @@ impl KernelMcpRouter {
             "appended row to {}",
             args.path
         ))]))
+    }
+
+    /// notes.describe — the knowledge base's type layer (ADR-002 §14). Same
+    /// `describe` verb as smart-table: the KB is just another RecordSource.
+    #[tool(
+        description = "Describe the knowledge base as a queryable RecordSource: fields (path/title/tags/created/modified) and supported operators. Call before notes.query."
+    )]
+    async fn notes_describe(&self) -> Result<CallToolResult, McpError> {
+        let desc = query::Describe {
+            source_kind: query::SourceKind::Record,
+            fields: vault_notes_source::NotesSource::fields(),
+            operators: {
+                use query::Operator::*;
+                vec![Eq, Neq, Contains, Before, After, Within, HasTag]
+            },
+        };
+        let body = serde_json::to_string(&desc).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// notes.query — structured read over the KB metadata (ADR-002 §14), routed
+    /// through the shared kernel query engine — identical contract to
+    /// `smart_table.query`, different RecordSource.
+    #[tool(
+        description = "Query the knowledge base by tag/title/date with a structured filter/sort/group request (not a query string). Returns matching notes. Call notes.describe first."
+    )]
+    async fn notes_query(
+        &self,
+        Parameters(args): Parameters<NotesQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let source = vault_notes_source::NotesSource::load(&root, args.subdir.as_deref())
+            .map_err(map_vault_err)?;
+        let req = query::QueryRequest {
+            filters: args.filters,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = source
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
     /// vault.write — write markdown + optional frontmatter to the vault.
