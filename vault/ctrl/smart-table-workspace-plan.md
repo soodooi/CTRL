@@ -175,6 +175,22 @@ views:
 
 ---
 
+## 实装进度 (2026-06-20 — 分支 feat/smart-table-full,一次性全量)
+
+按本规划全量推进,7 批全部落地(每批 tsc + cargo + vitest + Playwright 验证后 commit):
+
+1. ✅ AI 列前端(E3/E4)+ 本规划 + 开源源码参考(Teable/undb,AGPL 只参考设计)
+2. ✅ 渲染即类型 + 6 新字段类型(B2/B3):select/tags 彩签、rating 星、progress 条、currency 货币、email/phone/url 链接、multiline
+3. ✅ 字段增删改 UI(A3)+ Kanban 拖拽改值(C2)
+4. ✅ 多视图 tabs + Gallery + Calendar 视图 + sort 持久化(C3/C4/C5/C6)
+5. ✅ 记录详情卡(D6)
+6. ✅ AI 自动更新(E5):aiConfig 存字段 + 新行自动跑
+7. ✅ CSV 导入(G2)
+
+**剩余(诚实标注,均 P2,需内核 cross-file query 等更大工作)**:wikilink 软关联 + Lookup + Rollup(F1-F3)、前端 query 改走 :17873 gate(D9)、AI 异步 job 前端(E8)、仪表盘(H)、Form/Gantt 视图(C7/C8)、多级/OR 查询(D5)。
+
+---
+
 ## 5. 现状一句话总结
 
 - 「表格」部分(A/C/D 的 P0)≈ 完成。
