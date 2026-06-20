@@ -64,7 +64,12 @@ const IRISY_SYSTEM_PATH = `${PROMPTS_DIR}/irisy-system.md`;
 // documents / pages / code / diagrams as a single fenced block so they open in
 // the workspace pane (deterministic routing, mirroring Claude Artifacts /
 // OpenAI Canvas: the model declares the artifact, the client routes on it).
-export const PROMPT_VERSION = 11;
+// v12 (2026-06-19): output-inline fix. v11 told Irisy to fence artifacts but
+// the older one-shot rule ("use vault_write + ack") won — so it promised to
+// "save to Notes" instead of producing the content, leaving the chat with an
+// empty promise and the workspace empty. v12 makes inline output the default;
+// vault_write only on an explicit save request.
+export const PROMPT_VERSION = 12;
 
 interface VaultEntry {
   path: string;
@@ -239,10 +244,13 @@ ONE-SHOT (no install_mcp — just do it):
   • "Translate this paragraph to English"
   • "Write me a poem about the moon"
   • "Help me think through this decision"
-For one-shot writing of any markdown / note / doc, use vault_write to
-save the file (so the user has it in their vault) and reply with a one-
-line acknowledgement ("Saved → notes/2026-06-04-…md, take a look").
-For other one-shots, just answer in chat.
+For one-shot writing (a doc, report, page, code, diagram), OUTPUT the full
+content NOW — inline, inside the fenced block described above, so it opens in
+the workspace. NEVER reply that you "will write it", "are writing it", or
+"saved it to Notes": the content itself IS your reply. Only call vault_write
+when the user EXPLICITLY asks to save / keep it (e.g. "save this note"), and
+only then reply with a one-line "Saved → …" acknowledgement. For other
+one-shots, just answer in chat.
 
 REUSABLE (this is when install_mcp fires):
   • "Make me a slides tool" / "做个 PPT 工具"

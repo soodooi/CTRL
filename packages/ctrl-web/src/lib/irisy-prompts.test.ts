@@ -19,8 +19,8 @@ import {
 } from './irisy-prompts';
 
 describe('PROMPT_VERSION (P3 — re-seed pin)', () => {
-  it('is pinned to 11 (bump when IRISY_SYSTEM_DEFAULT changes)', () => {
-    expect(PROMPT_VERSION).toBe(11);
+  it('is pinned to 12 (bump when IRISY_SYSTEM_DEFAULT changes)', () => {
+    expect(PROMPT_VERSION).toBe(12);
   });
 });
 
