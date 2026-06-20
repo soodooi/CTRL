@@ -37,7 +37,7 @@ import { cleanReplyText } from '@/lib/irisy-render-filter';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
 import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
-import { detectPart, renderPart, type PartSpec } from '@/lib/ui-registry';
+import { detectPart, renderPart, stripDetectedPart, type PartSpec } from '@/lib/ui-registry';
 import {
   loadConnectors,
   invokeConnectorTool,
@@ -540,7 +540,8 @@ export function AmbientHome({
             <>
               {m.content ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {cleanReplyText(m.content)}
+                  {stripDetectedPart(cleanReplyText(m.content)) ||
+                    'Opened in the workspace on the left →'}
                 </ReactMarkdown>
               ) : m.id === lastAssistantId && streaming ? (
                 <div className={styles.thinking} aria-label="Irisy is thinking">

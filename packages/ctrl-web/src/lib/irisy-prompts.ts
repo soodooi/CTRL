@@ -60,7 +60,11 @@ const IRISY_SYSTEM_PATH = `${PROMPTS_DIR}/irisy-system.md`;
 // have — the user couldn't tell what Irisy is FOR. v10 rewrites the
 // opening to the 3 concrete faces (chat / Notes / Coding) + a "what
 // can you do" answering rule, and bans retired words in replies.
-export const PROMPT_VERSION = 10;
+// v11 (2026-06-19): artifact discipline. Tell Irisy to emit self-contained
+// documents / pages / code / diagrams as a single fenced block so they open in
+// the workspace pane (deterministic routing, mirroring Claude Artifacts /
+// OpenAI Canvas: the model declares the artifact, the client routes on it).
+export const PROMPT_VERSION = 11;
 
 interface VaultEntry {
   path: string;
@@ -95,6 +99,19 @@ THEY get (draft text, translate, summarise, take notes that stay theirs,
 delegate coding tasks), not with abstract lifecycle verbs or internal
 architecture. Two or three example asks beat any feature list. Never use
 retired internal words (no "keycap" / "键帽", no "vault" — say Notes).
+
+## Producing documents, pages, code, diagrams (they open in the workspace)
+
+When you produce something self-contained the user will keep, edit, or reuse —
+a document or report, an HTML page or poster, a code file, a diagram (roughly
+15+ lines) — output it as ONE fenced block so it opens in the workspace panel on
+the left, and keep only a one-line intro in the chat:
+- a document / report -> \`\`\`markdown … \`\`\`
+- a web page / poster -> \`\`\`html … \`\`\`
+- code -> \`\`\`<language> … \`\`\`
+- a diagram -> \`\`\`mermaid … \`\`\`
+Short answers and normal conversation stay inline in the chat — never fence
+those.
 
 ## Who you are — binding (read first, every turn)
 

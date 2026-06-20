@@ -1,46 +1,64 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // ui-registry.tsx imports mermaid (browser-only) at module load; stub it so the
-// pure detectPart logic can be tested in the node environment.
+// pure detectPart / stripDetectedPart logic can be tested in node.
 vi.mock('mermaid', () => ({
   default: { initialize: () => {}, render: async () => ({ svg: '' }) },
 }));
 
-const { detectPart } = await import('./ui-registry');
+const { detectPart, stripDetectedPart } = await import('./ui-registry');
 
-describe('detectPart — output routing to the workspace pane', () => {
+describe('detectPart — deterministic artifact routing (model-declared)', () => {
   it('routes a fenced HTML block to an html part', () => {
-    const p = detectPart('Here you go:\n\n```html\n<h1>Hi</h1>\n```');
-    expect(p).toMatchObject({ kind: 'html' });
+    expect(detectPart('Here:\n\n```html\n<h1>Hi</h1>\n```')).toMatchObject({
+      kind: 'html',
+    });
   });
 
   it('routes a raw (unfenced) HTML page to an html part', () => {
-    const p = detectPart('<!DOCTYPE html>\n<html><body><h1>Poster</h1></body></html>');
-    expect(p).toMatchObject({ kind: 'html' });
+    expect(
+      detectPart('<!DOCTYPE html>\n<html><body><h1>Poster</h1></body></html>'),
+    ).toMatchObject({ kind: 'html' });
   });
 
-  it('routes a long markdown document to a markdown part with a title', () => {
-    const doc =
-      '# Quarterly Plan\n\n' +
-      'Intro paragraph.\n\n## Goals\n' +
-      'Lorem ipsum dolor sit amet, '.repeat(40) +
-      '\n\n## Risks\nmore text here.';
-    const p = detectPart(doc);
+  it('routes a fenced markdown document to a markdown part with a title', () => {
+    const p = detectPart(
+      "Drafted it:\n\n```markdown\n# Quarterly Plan\n\n## Goals\nship it\n```",
+    );
     expect(p?.kind).toBe('markdown');
     expect(p?.title).toBe('Quarterly Plan');
-    expect(p?.content).toContain('## Goals');
   });
 
   it('routes a JSON array to a table part', () => {
-    const p = detectPart('```json\n[{"a":1},{"a":2}]\n```');
-    expect(p).toMatchObject({ kind: 'table' });
+    expect(detectPart('```json\n[{"a":1},{"a":2}]\n```')).toMatchObject({
+      kind: 'table',
+    });
   });
 
-  it('leaves a short chat reply in the bubble (no part)', () => {
-    expect(detectPart('Sure, the capital of France is Paris.')).toBeNull();
+  it('does NOT guess from length — unfenced long prose stays in chat', () => {
+    const longProse =
+      '# Heading\n\n' + 'Lorem ipsum dolor sit amet. '.repeat(80);
+    expect(detectPart(longProse)).toBeNull();
   });
 
-  it('does not promote a short heading-only reply', () => {
-    expect(detectPart('# Hi\nshort answer')).toBeNull();
+  it('leaves a short chat reply in the bubble', () => {
+    expect(detectPart('The capital of France is Paris.')).toBeNull();
+  });
+});
+
+describe('stripDetectedPart — de-duplicate the promoted block from chat', () => {
+  it('removes a promoted fence, keeping the intro prose', () => {
+    const reply = 'Drafted your report:\n\n```markdown\n# Report\nbody\n```';
+    const shown = stripDetectedPart(reply);
+    expect(shown).toBe('Drafted your report:');
+    expect(shown).not.toContain('# Report');
+  });
+
+  it('returns empty when the whole reply was a raw HTML page', () => {
+    expect(stripDetectedPart('<!DOCTYPE html>\n<html></html>')).toBe('');
+  });
+
+  it('leaves a non-artifact reply untouched', () => {
+    expect(stripDetectedPart('Just a chat answer.')).toBe('Just a chat answer.');
   });
 });

@@ -206,12 +206,23 @@ function prettyJson(raw: string): string {
  *  fenced blocks. The agent declares this explicitly via tool/MCP calls
  *  later (incl. business-system data from CRM/ERP MCPs); this keeps the
  *  prototype real today. JSON array -> table, JSON object -> record. */
+// Detect whether a reply carries a self-contained artifact that belongs in the
+// workspace pane rather than the chat bubble. DETERMINISTIC by design (ADR-003
+// frontend § morphing-conversation v6): routing keys off an explicit signal the
+// MODEL emits — a fenced block or a raw HTML page — never a client-side guess
+// from text length. This mirrors how Claude Artifacts / OpenAI Canvas work: the
+// model decides (it is told to fence documents/pages/code in the persona) and
+// the client routes on that signal.
 export function detectPart(reply: string): PartSpec | null {
   const fence = reply.match(/```(\w+)?\n([\s\S]*?)```/);
   if (fence) {
     const lang = (fence[1] ?? '').toLowerCase();
     const body = (fence[2] ?? '').trim();
     if (lang === 'html') return { kind: 'html', content: body, title: 'preview.html' };
+    if (lang === 'markdown') {
+      const title = (body.match(/^#{1,6}\s+(.+?)\s*$/m)?.[1] ?? 'document').slice(0, 60);
+      return { kind: 'markdown', content: body, title };
+    }
     if (lang === 'mermaid') return { kind: 'mermaid', content: body, title: 'diagram' };
     if (lang === 'json') {
       try {
@@ -227,31 +238,32 @@ export function detectPart(reply: string): PartSpec | null {
       }
       return { kind: 'json', content: body, title: 'data.json' };
     }
-    if (lang && lang !== 'text' && lang !== 'markdown') {
+    if (lang && lang !== 'text') {
       return { kind: 'code', content: body, language: lang, title: `snippet.${lang}` };
     }
-    // text/markdown fence falls through to the document/HTML checks below.
+    return null;
   }
 
-  // No code fence (or a prose fence): route long-form output to the workspace
-  // pane instead of leaving it in the chat bubble — long documents and HTML
-  // belong in the left output area; chat stays the conversation (ADR-003
-  // frontend § morphing-conversation v6; memory per-L1 workspace output
-  // routing).
+  // Raw HTML page the model emitted directly (a deterministic signal too).
   const trimmed = reply.trim();
-
-  // Raw HTML page (model emitted markup directly, not fenced).
   if (/^<!doctype html/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)) {
     return { kind: 'html', content: trimmed, title: 'preview.html' };
   }
 
-  // Long-form markdown document: has heading structure and real length, so it
-  // reads as a document the user asked for, not a chat reply.
-  const hasHeading = /^#{1,6}\s+\S/m.test(trimmed);
-  if (hasHeading && trimmed.length > 800) {
-    const title = (trimmed.match(/^#{1,6}\s+(.+?)\s*$/m)?.[1] ?? 'document').slice(0, 60);
-    return { kind: 'markdown', content: trimmed, title };
-  }
-
   return null;
+}
+
+/** Remove the artifact block detectPart promotes to the workspace pane, so the
+ *  chat bubble shows only the surrounding prose (the model's one-line intro) —
+ *  no duplicated wall of text. Zero persistence: re-derived from the stored
+ *  reply at render time, so it survives reload. Returns '' when the whole reply
+ *  was the artifact. */
+export function stripDetectedPart(reply: string): string {
+  if (!detectPart(reply)) return reply;
+  const fence = reply.match(/```(\w+)?\n([\s\S]*?)```/);
+  if (fence) {
+    return reply.replace(fence[0], '').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  // Raw HTML page: the entire reply is the artifact.
+  return '';
 }
