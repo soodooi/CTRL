@@ -18,6 +18,7 @@
 #![allow(dead_code)]
 
 pub mod actor;
+pub mod ai_column;
 pub mod cache;
 pub mod capability;
 pub mod capability_resolver;

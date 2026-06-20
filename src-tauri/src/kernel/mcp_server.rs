@@ -23,7 +23,9 @@
 
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::runtime::KernelRuntime;
-use crate::kernel::{provider::LlmPrompt, query, vault, vault_notes_source, vault_smart_table};
+use crate::kernel::{
+    ai_column, provider::LlmPrompt, query, vault, vault_notes_source, vault_smart_table,
+};
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::Request;
@@ -131,6 +133,26 @@ pub struct SmartTableAppendRowArgs {
     pub path: String,
     /// Cell values keyed by schema field key; missing keys become empty.
     pub values: std::collections::BTreeMap<String, String>,
+}
+
+/// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4): run an
+/// LLM per row down a target column. Cost-gated at 100 rows.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableRunAiColumnArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Schema field key whose cells the AI fills.
+    pub target_field: String,
+    /// Prompt template; use `{field}` tokens to reference other columns.
+    pub prompt: String,
+    /// The AI operation: classify / extract / summarize / translate / generate.
+    pub op: ai_column::AiOp,
+    /// Re-run rows whose target cell is already filled (default false = resume).
+    #[serde(default)]
+    pub force: bool,
+    /// Confirm a run over the 100-row cost gate.
+    #[serde(default)]
+    pub confirm_over_gate: bool,
 }
 
 /// notes.query — a structured read over the knowledge base as a RecordSource
@@ -542,6 +564,105 @@ impl KernelMcpRouter {
             .query(&req, now)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4). Runs
+    /// an LLM per row down `target_field`, `{field}`-templated, cost-gated at
+    /// 100 rows, resume-safe (skips filled cells), partial-failure tolerant,
+    /// then merges results back. (First cut runs the bounded batch in-call; the
+    /// async job triple is the next slice — the cost gate caps the run.)
+    #[tool(
+        description = "Run an AI field shortcut down a column: per row, classify/extract/summarize/translate/generate using {field} tokens, then write results into target_field. Cost-gated at 100 rows (pass confirm_over_gate=true to exceed). Skips already-filled cells unless force=true."
+    )]
+    async fn smart_table_run_ai_column(
+        &self,
+        Parameters(args): Parameters<SmartTableRunAiColumnArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.fields.iter().any(|f| f.key == args.target_field) {
+            return Err(McpError::invalid_params(
+                format!("field_not_found: '{}'", args.target_field),
+                None,
+            ));
+        }
+        let rows_total = table.rows.len();
+        let plan = ai_column::plan_rows(&table, &args.target_field, &args.prompt, args.force);
+        if ai_column::over_cost_gate(plan.len()) && !args.confirm_over_gate {
+            return Err(McpError::invalid_params(
+                format!(
+                    "needs_confirmation: {} rows exceed the {}-row cost gate; pass confirm_over_gate=true to proceed",
+                    plan.len(),
+                    ai_column::COST_GATE_ROWS
+                ),
+                None,
+            ));
+        }
+
+        let adapter = self
+            .runtime
+            .provider_registry
+            .primary_text_chat()
+            .ok_or_else(|| McpError::internal_error("no text.chat provider available", None))?;
+        let system = args.op.system_instruction();
+        let opts = crate::kernel::provider::ChatOpts {
+            model: String::new(),
+            deadline_ms: 60_000,
+        };
+
+        let mut results: Vec<(usize, String)> = Vec::new();
+        let mut errors: Vec<ai_column::RowError> = Vec::new();
+        for (idx, user_prompt) in &plan {
+            let prompt = LlmPrompt {
+                system: Some(system.to_string()),
+                messages: vec![crate::kernel::provider::LlmMessage {
+                    role: "user".to_string(),
+                    content: user_prompt.clone(),
+                }],
+                temperature: None,
+                max_tokens: None,
+            };
+            match adapter.chat_stream(&prompt, &opts).await {
+                Ok(mut rx) => {
+                    let mut out = String::new();
+                    let mut failed: Option<String> = None;
+                    while let Some(item) = rx.recv().await {
+                        match item {
+                            Ok(chunk) => {
+                                out.push_str(&chunk.delta);
+                                if chunk.finish_reason.is_some() {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                failed = Some(e.to_string());
+                                break;
+                            }
+                        }
+                    }
+                    match failed {
+                        Some(msg) => errors.push(ai_column::RowError { row: *idx, message: msg }),
+                        None => results.push((*idx, out.trim().to_string())),
+                    }
+                }
+                Err(e) => errors.push(ai_column::RowError { row: *idx, message: e.to_string() }),
+            }
+        }
+
+        let rows_written = ai_column::apply_results(&mut table, &args.target_field, &results);
+        if rows_written > 0 {
+            let new_body = table.serialize_body();
+            vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        }
+        let summary = ai_column::RunSummary {
+            rows_total,
+            rows_planned: plan.len(),
+            rows_written,
+            errors,
+        };
+        let body = serde_json::to_string(&summary).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
