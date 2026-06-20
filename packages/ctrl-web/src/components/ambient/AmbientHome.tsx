@@ -185,6 +185,11 @@ export function AmbientHome({
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
   const [scene, setScene] = useState<FeaturePack | 'notes' | 'tables' | null>(null);
+  // The smart table the user currently has open (lifted from TablesPanel) so
+  // Irisy gets it as ambient context — "operate on THIS table" works without
+  // the user naming the file. Stable callback so TablesPanel's effect is calm.
+  const [activeTablePath, setActiveTablePath] = useState<string | null>(null);
+  const onActiveTable = useCallback((p: string | null) => setActiveTablePath(p), []);
   const [isNarrow, setIsNarrow] = useState(false);
   // Irisy column width — a fixed default the user can drag via the divider
   // between Irisy and the output bar (bao 2026-06-13). Window resizing keeps
@@ -312,8 +317,24 @@ export function AmbientHome({
         loadIrisySystemPromptWithSoul(),
         loadBrainState(),
       ]);
+      // Ambient context: if a smart table is open, tell Irisy which file it is
+      // so "filter / sort / AI-fill / add a row to THIS table" resolves to a
+      // path without the user naming it (the smart_table.* gate tools need it).
+      const ambient: LLMMessage[] =
+        scene === 'tables' && activeTablePath
+          ? [
+              {
+                role: 'system',
+                content:
+                  `Ambient context: the user is viewing the smart table at "${activeTablePath}". ` +
+                  `When they ask to filter / sort / group / AI-fill a column / add a row / edit "this table" ` +
+                  `(or refer to it without naming a file), call the smart_table.* gate tools with path="${activeTablePath}".`,
+              },
+            ]
+          : [];
       const history: LLMMessage[] = [
         { role: 'system', content: composeSystemPrompt({ base, brainState: brain }) },
+        ...ambient,
         ...[...messages, userMsg].map((m) => ({
           role: m.role,
           content: m.content,
@@ -373,7 +394,7 @@ export function AmbientHome({
       setStreaming(false);
       abortRef.current = null;
     }
-  }, [messages, streaming, hasProvider, onOpenPicker]);
+  }, [messages, streaming, hasProvider, onOpenPicker, scene, activeTablePath]);
 
   // Stop the in-flight turn (composer Stop button / Esc). Aborts the transport's
   // stream; the textarea stays editable throughout so the user never loses input.
@@ -910,7 +931,7 @@ export function AmbientHome({
                     >
                       ✕
                     </button>
-                    <TablesPanel />
+                    <TablesPanel onActiveTable={onActiveTable} />
                   </div>
                 ) : scene ? (
                   <div className={styles.scenePane}>
