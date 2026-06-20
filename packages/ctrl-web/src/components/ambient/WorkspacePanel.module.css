@@ -1,0 +1,339 @@
+/* WorkspacePanel — configurable default-workspace action panel.
+   Editorial paper/ink language (tokens.css): mono small-caps group labels,
+   paper cards with a hairline border, teal on hover. Theme-aware via tokens. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  text-align: left;
+}
+
+/* ── panel header ─────────────────────────────────────────────── */
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.headLabel {
+  font-family: var(--font-display);
+  font-size: var(--text-mono-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+}
+
+.headActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.headBtn {
+  font-family: var(--font-display);
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.06em;
+  color: var(--color-text-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    background var(--duration-fast) var(--ease-out-quart);
+}
+
+.headBtn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-border);
+}
+
+.headBtn[data-active='true'] {
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* ── group ────────────────────────────────────────────────────── */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.groupTitle {
+  font-family: var(--font-display);
+  font-size: var(--text-mono-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.groupRule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--color-border) 0%, transparent 100%);
+}
+
+.groupMeta {
+  font-family: var(--font-display);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.06em;
+  color: var(--color-text-faint);
+  white-space: nowrap;
+}
+
+/* ── grid + cards ─────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: var(--space-3);
+}
+
+.compact {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-height: 96px;
+  padding: var(--space-4);
+  text-align: left;
+  background: var(--color-bg-l0);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    box-shadow var(--duration-fast) var(--ease-out-quart);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.compact .card {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Reserve room for the pin/remove tools so they never overlap the label on
+   the compact pinned row in edit mode. */
+.compact .editing {
+  padding-right: 54px;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  font-size: 16px;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--color-primary) 12%, var(--color-bg-l0));
+  color: var(--color-primary);
+}
+
+.compact .icon {
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
+  color: var(--color-text);
+}
+
+.hint {
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  color: var(--color-text-faint);
+}
+
+/* ── edit mode ────────────────────────────────────────────────── */
+.editing {
+  cursor: grab;
+}
+
+.editing:active {
+  cursor: grabbing;
+}
+
+.editing:hover {
+  transform: none;
+}
+
+.dragging {
+  opacity: 0.4;
+}
+
+.cardTools {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: 2px;
+}
+
+.cardTool {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--color-bg-l3) 70%, transparent);
+  color: var(--color-text-soft);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart);
+}
+
+.cardTool:hover {
+  background: var(--color-bg-l3);
+  color: var(--color-text);
+}
+
+.cardTool[data-on='true'] {
+  color: var(--color-warning);
+}
+
+/* ── add tile ─────────────────────────────────────────────────── */
+.add {
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--space-1);
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--color-border);
+  box-shadow: none;
+  color: var(--color-text-faint);
+}
+
+.add:hover {
+  transform: none;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: none;
+}
+
+.add[data-open='true'] {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.addPlus {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.addLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+/* ── add picker ───────────────────────────────────────────────── */
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.pickerEmpty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-faint);
+}
+
+.pickerCat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.pickerCatTitle {
+  font-family: var(--font-display);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+}
+
+.pickerItems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.pickerItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 12px;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  background: var(--color-bg-l0);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart);
+}
+
+.pickerItem:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ── footer ───────────────────────────────────────────────────── */
+.connect {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  padding: 8px 14px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-soft);
+  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart);
+}
+
+.connect:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}

@@ -58,6 +58,7 @@ import {
 import { runInstalledPackAction } from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
 import { Sidebar, type SidebarSection } from './Sidebar';
+import { WorkspacePanel } from './WorkspacePanel';
 import { vaultRead, vaultWrite, vaultSearch, type IrisySessionTurn } from '@/lib/kernel';
 import { SessionHistory } from './SessionHistory';
 import { APP_VERSION } from '@/lib/app-meta';
@@ -912,28 +913,10 @@ export function AmbientHome({
                         Connect your AI to start →
                       </button>
                     )}
-                    <div className={styles.tryLabel}>Try one of these</div>
-                    <div className={styles.floor}>
-                      {floorCapabilities()
-                        .slice(0, 6)
-                        .map((cap) => (
-                          <motion.button
-                            key={cap.id}
-                            type="button"
-                            className={styles.card}
-                            onClick={() => onPickCapability(cap)}
-                            whileHover={{ y: -2 }}
-                            transition={SPRING}
-                            title={cap.hint}
-                          >
-                            <span className={styles.cardLabel}>{cap.label}</span>
-                            <span className={styles.cardHint}>{cap.hint}</span>
-                          </motion.button>
-                        ))}
-                    </div>
-                    <button type="button" className={styles.ctaSecondary} onClick={() => onView('discover')}>
-                      Connect your tools →
-                    </button>
+                    <WorkspacePanel
+                      onRun={onPickCapability}
+                      onConnectTools={() => onView('discover')}
+                    />
                   </div>
                 )}
               </div>
