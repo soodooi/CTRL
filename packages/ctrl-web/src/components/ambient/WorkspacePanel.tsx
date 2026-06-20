@@ -54,6 +54,7 @@ const GLYPHS: Record<string, string> = {
   plan: '☰',
   'scheduled-task': '↻',
   'analyze-table': '▥',
+  'screenshot-ocr': '⛶',
   'ocr-extract': '⎙',
 };
 

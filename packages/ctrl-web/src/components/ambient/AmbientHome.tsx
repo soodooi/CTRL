@@ -462,7 +462,7 @@ export function AmbientHome({
   // screenshot OCR do real work; everything else pre-fills the composer.
   const runWorkspaceAction = useCallback(
     (cap: Capability) => {
-      if (cap.id === 'ocr-extract') {
+      if (cap.id === 'screenshot-ocr') {
         void runScreenshotOcr();
         return;
       }

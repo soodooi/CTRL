@@ -46,7 +46,7 @@ export function defaultWorkspaceLayout(): WorkspaceLayout {
       {
         id: PINNED_GROUP_ID,
         title: 'Pinned',
-        actionIds: ['ocr-extract', 'draft-polish', 'summarize', 'plan'],
+        actionIds: ['screenshot-ocr', 'draft-polish', 'summarize', 'plan'],
       },
       {
         id: 'ai-actions',

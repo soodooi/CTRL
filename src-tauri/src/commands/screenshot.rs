@@ -20,15 +20,27 @@ pub struct ScreenshotOcrReply {
 }
 
 #[tauri::command]
-pub async fn capture_screen_and_ocr() -> Result<ScreenshotOcrReply, String> {
+pub async fn capture_screen_and_ocr(app: tauri::AppHandle) -> Result<ScreenshotOcrReply, String> {
     #[cfg(target_os = "macos")]
     {
-        tokio::task::spawn_blocking(macos::capture_and_ocr)
+        // Hide CTRL first so it isn't sitting over — or captured inside — the
+        // region the user is about to select (bao 2026-06-19). The crosshair
+        // overlay is screencapture's own UI, independent of our window.
+        let _ = crate::shell::WindowController::hide(&app);
+        // Let the compositor actually remove the window before the overlay opens.
+        tokio::time::sleep(std::time::Duration::from_millis(220)).await;
+
+        let result = tokio::task::spawn_blocking(macos::capture_and_ocr)
             .await
-            .map_err(|e| format!("ocr task join: {e}"))?
+            .map_err(|e| format!("ocr task join: {e}"));
+
+        // Bring CTRL back regardless of how the capture went.
+        let _ = crate::shell::WindowController::reveal(&app);
+        result?
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = &app;
         Err("Screenshot OCR is macOS-only for now (Windows Vision path pending).".to_string())
     }
 }

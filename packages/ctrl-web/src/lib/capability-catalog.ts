@@ -344,6 +344,18 @@ export const CAPABILITY_CATALOG: CapabilityCategory[] = [
         starter: 'Analyze this data and chart it:\n\n',
       },
       {
+        id: 'screenshot-ocr',
+        label: 'Screenshot to text',
+        hint: 'Grab a screen region and pull its text out',
+        usage: 'high',
+        pay: 'med',
+        channel: 'mcp',
+        // Built into the desktop app: macOS screencapture + on-device Vision.
+        delivers: 'on-device Vision (screen capture + VNRecognizeText)',
+        io: 'screen region -> text',
+        zeroInstall: true,
+      },
+      {
         id: 'ocr-extract',
         label: 'Extract from image / PDF',
         hint: 'Pull structured text or a table out of a scan or photo',
