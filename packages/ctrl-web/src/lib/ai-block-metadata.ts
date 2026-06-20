@@ -68,7 +68,7 @@ export async function stampAiBlock(args: StampArgs): Promise<void> {
     const updated = [...existing, nextEntry];
     await vaultWrite({
       path: args.path,
-      content: entry.body,
+      content: entry.content,
       frontmatter: { ...fm, ai_blocks: updated },
     });
   } catch (err) {

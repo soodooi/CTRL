@@ -143,7 +143,7 @@ export const renderReviewQueuePath = (
 const readConfigText = async (path: string): Promise<string | null> => {
   try {
     const entry = await vaultRead(path);
-    return typeof entry.body === 'string' ? entry.body : null;
+    return typeof entry.content === 'string' ? entry.content : null;
   } catch {
     // Either the file doesn't exist (seed didn't run yet) or
     // permissions reject — callers fall back to defaults silently

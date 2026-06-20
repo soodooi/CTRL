@@ -11,8 +11,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactElement } from 'react';
 import type { ViewerProps } from '@/lib/viewer-registry';
-import { vaultRead, vaultWrite } from '@/lib/kernel';
-import { vaultRelativePath } from '@/lib/viewer-uri';
+import { readVault, writeVault, vaultRelativePath } from '@/lib/viewer-uri';
 import {
   appendRow,
   deleteRow,
@@ -34,13 +33,13 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
 
   const { data: entry, isLoading } = useQuery({
     queryKey: ['smart-table-file', path],
-    queryFn: () => vaultRead(path),
+    queryFn: () => readVault(path),
   });
 
   const table: SmartTable = useMemo(
     () =>
       entry
-        ? smartTableFromParts(entry.frontmatter, entry.body)
+        ? smartTableFromParts((entry.frontmatter ?? {}) as Record<string, unknown>, entry.content)
         : { schema: [], rows: [], views: [], extraFrontmatter: {} },
     [entry],
   );
@@ -49,7 +48,7 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
     setSaving(true);
     setError(undefined);
     try {
-      await vaultWrite({ path, content: smartTableBody(next), frontmatter: smartTableFrontmatter(next) });
+      await writeVault(path, smartTableBody(next), smartTableFrontmatter(next));
       await qc.invalidateQueries({ queryKey: ['smart-table-file', path] });
     } catch (e) {
       setError(String(e));

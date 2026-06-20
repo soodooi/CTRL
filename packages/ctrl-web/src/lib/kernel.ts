@@ -357,14 +357,13 @@ export const csKill = (stream_id: string): Promise<void> =>
 export interface VaultEntry {
   /** Relative path under vault root. */
   path: string;
-  /** Body excluding the YAML frontmatter block. */
-  body: string;
   /** Parsed frontmatter as plain JSON. */
   frontmatter: Record<string, unknown>;
-  /** Last modified, ms since epoch. */
-  modified_ms: number;
-  /** Byte size of the on-disk file. */
-  size_bytes: number;
+  /** Body excluding the YAML frontmatter block. Matches the Rust
+   *  `kernel::vault::VaultEntry.content` field name exactly — the kernel
+   *  serializes this struct verbatim, so the wire field is `content`, not
+   *  `body` (the previous name silently resolved to `undefined`). */
+  content: string;
 }
 
 export interface VaultWriteArgs {

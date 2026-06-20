@@ -103,7 +103,7 @@ export const TemplatesModal = ({
       if (templateKey !== BLANK_KEY) {
         try {
           const tpl = await vaultRead(templateKey);
-          const tplBody = typeof tpl.body === 'string' ? tpl.body : '';
+          const tplBody = typeof tpl.content === 'string' ? tpl.content : '';
           const title = stem(baseName(safePath));
           body = substitute(tplBody, title);
         } catch {

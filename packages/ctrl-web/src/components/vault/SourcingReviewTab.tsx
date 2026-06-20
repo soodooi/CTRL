@@ -63,7 +63,7 @@ export const SourcingReviewTab = ({
     queryKey: ['vault-review-queue', reviewPath],
     queryFn: async () => {
       const entry = await vaultRead(reviewPath);
-      return typeof entry.body === 'string' ? entry.body : '';
+      return typeof entry.content === 'string' ? entry.content : '';
     },
     staleTime: 5_000,
     retry: false,
@@ -87,7 +87,7 @@ export const SourcingReviewTab = ({
         // classify, the user's job is to edit prose.
         const original = await vaultRead(p.sourcingPath);
         const body =
-          typeof original.body === 'string' ? original.body : '';
+          typeof original.content === 'string' ? original.content : '';
         await vaultWrite({
           path: p.suggestPath,
           content: body,
