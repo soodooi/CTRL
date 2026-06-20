@@ -1,11 +1,10 @@
-// WorkspacePanel — the configurable default-workspace action panel.
+// WorkspacePanel — the number-row action panel (the home's Quicker surface).
 //
-// The home screen's "what do you want to do" surface (Quicker-style). It reads
-// a user-owned layout (workspace-layout.ts) and renders grouped action cards.
-// View mode = clean, clickable cards that pre-fill the composer. "Customize"
-// flips to edit mode: pin / remove / drag-reorder / add — each edit mutates the
-// plain layout object, which persists locally. No new capability system; every
-// card resolves to a catalog capability (the SSOT).
+// One row of keycap tiles laid out to mirror the keyboard's number row: tile 1
+// sits under key "1" … tile 10 under key "0". Pressing the digit runs the tile.
+// Minimal text by design — a keycap shows its number, an icon, and a one-word
+// label, nothing more. "Customize" flips to edit mode: remove / add / drag.
+// Every tile resolves to a catalog capability (the SSOT).
 
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import type { Capability } from '@/lib/capability-catalog';
@@ -13,19 +12,20 @@ import {
   addAction,
   availableActions,
   defaultWorkspaceLayout,
+  indexForKey,
   loadWorkspaceLayout,
+  MAX_SLOTS,
   moveAction,
-  PINNED_GROUP_ID,
   removeAction,
   resolveAction,
   saveWorkspaceLayout,
-  togglePinned,
+  slotKey,
   type WorkspaceLayout,
 } from '@/lib/workspace-layout';
 import styles from './WorkspacePanel.module.css';
 
 interface WorkspacePanelProps {
-  /** Run an action — pre-fills the composer with the capability's starter. */
+  /** Run an action — pre-fills the composer, or fires a native utility. */
   onRun: (cap: Capability) => void;
   /** Open Discover to connect more tools (MCP). */
   onConnectTools: () => void;
@@ -58,55 +58,59 @@ const GLYPHS: Record<string, string> = {
   'ocr-extract': '⎙',
 };
 
-function glyph(id: string): string {
-  return GLYPHS[id] ?? '◆';
-}
+// One-word labels for the keycaps — minimal text (bao 2026-06-19). Falls back
+// to the first word of the catalog label.
+const SHORT: Record<string, string> = {
+  'screenshot-ocr': 'Capture',
+  'draft-polish': 'Write',
+  'tone-translate': 'Translate',
+  summarize: 'Summary',
+  'extract-actions': 'Tasks',
+  'how-to': 'Advise',
+  tutor: 'Tutor',
+  'html-artifact': 'Build',
+  slides: 'Slides',
+  'analyze-table': 'Data',
+  'ocr-extract': 'Extract',
+  'research-web': 'Research',
+  plan: 'Plan',
+  'image-generate': 'Image',
+  'photo-edit': 'Retouch',
+  'video-generate': 'Video',
+  'voice-tts': 'Voice',
+  resume: 'Resume',
+  'marketing-copy': 'Copy',
+  'transcribe-meeting': 'Recap',
+  coding: 'Code',
+  'scheduled-task': 'Routine',
+};
+
+const glyph = (id: string): string => GLYPHS[id] ?? '◆';
+const short = (cap: Capability): string =>
+  SHORT[cap.id] ?? cap.label.split(/[\s/]/)[0] ?? cap.label;
 
 export function WorkspacePanel({ onRun, onConnectTools }: WorkspacePanelProps): ReactElement {
   const [layout, setLayout] = useState<WorkspaceLayout>(() => loadWorkspaceLayout());
   const [editing, setEditing] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
-  const [pickerGroup, setPickerGroup] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Commit a layout change: update state + persist. One funnel so every edit
-  // is saved (local-is-truth) without scattering saveWorkspaceLayout calls.
   const commit = useCallback((next: WorkspaceLayout) => {
     setLayout(next);
     saveWorkspaceLayout(next);
   }, []);
 
-  const onDrop = useCallback(
-    (groupId: string, index: number) => {
-      if (!dragId) return;
-      commit(moveAction(layout, dragId, groupId, index));
-      setDragId(null);
-    },
-    [dragId, layout, commit],
-  );
-
-  const resetLayout = useCallback(() => {
-    commit(defaultWorkspaceLayout());
-    setPickerGroup(null);
-  }, [commit]);
-
-  // Quicker-style number shortcuts: the first 9 actions (in display order) get
-  // ordinals 1–9; pressing that digit runs the action. The flat order follows
-  // the rendered groups so the badge a user sees matches the key they press.
-  const orderedIds = useMemo(
-    () => layout.groups.flatMap((g) => g.actionIds).filter((id) => resolveAction(id)),
+  const slots = useMemo(
+    () => layout.slots.filter((id) => resolveAction(id)),
     [layout],
   );
-  const ordinalOf = useMemo(() => {
-    const m = new Map<string, number>();
-    orderedIds.slice(0, 9).forEach((id, i) => m.set(id, i + 1));
-    return m;
-  }, [orderedIds]);
 
+  // Number-key shortcuts: the digit under a tile runs it. View mode only, and
+  // never while a digit is typed into a field (the composer).
   useEffect(() => {
-    if (editing) return; // arranging, not running
+    if (editing) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      // Never hijack a digit the user is typing into the composer / a field.
       const t = e.target;
       if (
         t instanceof HTMLElement &&
@@ -114,8 +118,9 @@ export function WorkspacePanel({ onRun, onConnectTools }: WorkspacePanelProps): 
       ) {
         return;
       }
-      if (e.key < '1' || e.key > '9') return;
-      const id = orderedIds[Number(e.key) - 1];
+      const idx = indexForKey(e.key);
+      if (idx === null) return;
+      const id = slots[idx];
       const cap = id ? resolveAction(id) : undefined;
       if (cap) {
         e.preventDefault();
@@ -124,18 +129,34 @@ export function WorkspacePanel({ onRun, onConnectTools }: WorkspacePanelProps): 
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editing, onRun, orderedIds]);
+  }, [editing, onRun, slots]);
+
+  const onDrop = useCallback(
+    (index: number) => {
+      if (!dragId) return;
+      commit(moveAction(layout, dragId, index));
+      setDragId(null);
+    },
+    [dragId, layout, commit],
+  );
 
   const available = availableActions(layout);
+  const full = layout.slots.length >= MAX_SLOTS;
 
   return (
     <div className={styles.panel}>
       <div className={styles.head}>
-        <span className={styles.headLabel}>Workspace</span>
-        {!editing && <span className={styles.headHint}>press 1–9 to run</span>}
+        {!editing && <span className={styles.headHint}>press 1–0</span>}
         <div className={styles.headActions}>
           {editing && (
-            <button type="button" className={styles.headBtn} onClick={resetLayout}>
+            <button
+              type="button"
+              className={styles.headBtn}
+              onClick={() => {
+                commit(defaultWorkspaceLayout());
+                setPickerOpen(false);
+              }}
+            >
               Reset
             </button>
           )}
@@ -145,7 +166,7 @@ export function WorkspacePanel({ onRun, onConnectTools }: WorkspacePanelProps): 
             data-active={editing}
             onClick={() => {
               setEditing((v) => !v);
-              setPickerGroup(null);
+              setPickerOpen(false);
             }}
           >
             {editing ? 'Done' : 'Customize'}
@@ -153,141 +174,108 @@ export function WorkspacePanel({ onRun, onConnectTools }: WorkspacePanelProps): 
         </div>
       </div>
 
-      {layout.groups.map((group) => {
-        const isPinned = group.id === PINNED_GROUP_ID;
-        return (
-          <section key={group.id} className={styles.group}>
-            <div className={styles.groupHead}>
-              <span className={styles.groupTitle}>{group.title}</span>
-              <span className={styles.groupRule} />
-              {editing && <span className={styles.groupMeta}>drag to arrange</span>}
-            </div>
+      <div
+        className={styles.row}
+        onDragOver={(e) => editing && e.preventDefault()}
+        onDrop={() => editing && onDrop(slots.length)}
+      >
+        {slots.map((id, index) => {
+          const cap = resolveAction(id);
+          if (!cap) return null;
+          const key = slotKey(index);
 
+          if (!editing) {
+            return (
+              <button
+                key={id}
+                type="button"
+                className={styles.cap}
+                onClick={() => onRun(cap)}
+                title={cap.hint}
+              >
+                {key && <span className={styles.key}>{key}</span>}
+                <span className={styles.icon} aria-hidden>
+                  {glyph(id)}
+                </span>
+                <span className={styles.label}>{short(cap)}</span>
+              </button>
+            );
+          }
+
+          return (
             <div
-              className={`${styles.grid} ${isPinned ? styles.compact : ''}`}
-              onDragOver={(e) => editing && e.preventDefault()}
-              onDrop={() => editing && onDrop(group.id, group.actionIds.length)}
+              key={id}
+              className={`${styles.cap} ${styles.editing} ${
+                dragId === id ? styles.dragging : ''
+              }`}
+              draggable
+              onDragStart={() => setDragId(id)}
+              onDragEnd={() => setDragId(null)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.stopPropagation();
+                onDrop(index);
+              }}
             >
-              {group.actionIds.map((id, index) => {
-                const cap = resolveAction(id);
-                if (!cap) return null;
-                const pinned =
-                  layout.groups.find((g) => g.id === PINNED_GROUP_ID)?.actionIds.includes(id) ??
-                  false;
-
-                if (!editing) {
-                  const num = ordinalOf.get(id);
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      className={styles.card}
-                      onClick={() => onRun(cap)}
-                      title={num ? `${cap.hint}  ·  press ${num}` : cap.hint}
-                    >
-                      <span className={styles.icon} aria-hidden>
-                        {glyph(id)}
-                      </span>
-                      {num && (
-                        <span className={styles.num} aria-hidden>
-                          {num}
-                        </span>
-                      )}
-                      <span className={styles.label}>{cap.label}</span>
-                      {!isPinned && <span className={styles.hint}>{cap.hint}</span>}
-                    </button>
-                  );
-                }
-
-                return (
-                  <div
-                    key={id}
-                    className={`${styles.card} ${styles.editing} ${
-                      dragId === id ? styles.dragging : ''
-                    }`}
-                    draggable
-                    onDragStart={() => setDragId(id)}
-                    onDragEnd={() => setDragId(null)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.stopPropagation();
-                      onDrop(group.id, index);
-                    }}
-                  >
-                    <span className={styles.icon} aria-hidden>
-                      {glyph(id)}
-                    </span>
-                    <span className={styles.label}>{cap.label}</span>
-                    {!isPinned && <span className={styles.hint}>{cap.hint}</span>}
-                    <div className={styles.cardTools}>
-                      <button
-                        type="button"
-                        className={styles.cardTool}
-                        data-on={pinned}
-                        title={pinned ? 'Unpin' : 'Pin to top'}
-                        onClick={() => commit(togglePinned(layout, id))}
-                      >
-                        {pinned ? '★' : '☆'}
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.cardTool}
-                        title="Remove"
-                        onClick={() => commit(removeAction(layout, group.id, id))}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {editing && (
-                <button
-                  type="button"
-                  className={`${styles.card} ${styles.add}`}
-                  onClick={() => setPickerGroup((g) => (g === group.id ? null : group.id))}
-                  data-open={pickerGroup === group.id}
-                >
-                  <span className={styles.addPlus}>+</span>
-                  <span className={styles.addLabel}>Add action</span>
-                </button>
-              )}
+              {key && <span className={styles.key}>{key}</span>}
+              <button
+                type="button"
+                className={styles.remove}
+                title="Remove"
+                onClick={() => commit(removeAction(layout, id))}
+              >
+                ✕
+              </button>
+              <span className={styles.icon} aria-hidden>
+                {glyph(id)}
+              </span>
+              <span className={styles.label}>{short(cap)}</span>
             </div>
+          );
+        })}
 
-            {editing && pickerGroup === group.id && (
-              <div className={styles.picker}>
-                {available.length === 0 ? (
-                  <p className={styles.pickerEmpty}>Every action is already placed.</p>
-                ) : (
-                  available.map((cat) => (
-                    <div key={cat.title} className={styles.pickerCat}>
-                      <span className={styles.pickerCatTitle}>{cat.title}</span>
-                      <div className={styles.pickerItems}>
-                        {cat.capabilities.map((cap) => (
-                          <button
-                            key={cap.id}
-                            type="button"
-                            className={styles.pickerItem}
-                            title={cap.hint}
-                            onClick={() => {
-                              commit(addAction(layout, group.id, cap.id));
-                              setPickerGroup(null);
-                            }}
-                          >
-                            <span aria-hidden>{glyph(cap.id)}</span>
-                            {cap.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                )}
+        {editing && !full && (
+          <button
+            type="button"
+            className={`${styles.cap} ${styles.add}`}
+            data-open={pickerOpen}
+            onClick={() => setPickerOpen((v) => !v)}
+          >
+            <span className={styles.addPlus}>+</span>
+          </button>
+        )}
+      </div>
+
+      {editing && pickerOpen && (
+        <div className={styles.picker}>
+          {available.length === 0 ? (
+            <p className={styles.pickerEmpty}>Every action is already on the row.</p>
+          ) : (
+            available.map((cat) => (
+              <div key={cat.title} className={styles.pickerCat}>
+                <span className={styles.pickerCatTitle}>{cat.title}</span>
+                <div className={styles.pickerItems}>
+                  {cat.capabilities.map((cap) => (
+                    <button
+                      key={cap.id}
+                      type="button"
+                      className={styles.pickerItem}
+                      title={cap.hint}
+                      onClick={() => {
+                        commit(addAction(layout, cap.id));
+                        setPickerOpen(false);
+                      }}
+                    >
+                      <span aria-hidden>{glyph(cap.id)}</span>
+                      {short(cap)}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
-          </section>
-        );
-      })}
+            ))
+          )}
+        </div>
+      )}
 
       <button type="button" className={styles.connect} onClick={onConnectTools}>
         Connect your tools →

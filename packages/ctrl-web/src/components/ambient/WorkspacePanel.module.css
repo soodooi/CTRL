@@ -1,35 +1,29 @@
-/* WorkspacePanel — configurable default-workspace action panel.
-   Editorial paper/ink language (tokens.css): mono small-caps group labels,
-   paper cards with a hairline border, teal on hover. Theme-aware via tokens. */
+/* WorkspacePanel — the number-row action panel.
+   Keycap tiles laid out to mirror the keyboard's number row. Editorial
+   paper/ink (tokens.css): a restrained letterpress keycap (top highlight +
+   hairline bottom edge), mono key legend, teal on hover. Theme-aware. */
 
 .panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-4);
   width: 100%;
   text-align: left;
 }
 
-/* ── panel header ─────────────────────────────────────────────── */
+/* ── header (minimal) ─────────────────────────────────────────── */
 .head {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-}
-
-.headLabel {
-  font-family: var(--font-display);
-  font-size: var(--text-mono-sm);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--color-text-soft);
+  min-height: 20px;
 }
 
 .headHint {
   font-family: var(--font-display);
   font-size: var(--text-mono-xs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--color-text-faint);
 }
 
@@ -65,116 +59,60 @@
   border-color: var(--color-primary);
 }
 
-/* ── group ────────────────────────────────────────────────────── */
-.group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.groupHead {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.groupTitle {
-  font-family: var(--font-display);
-  font-size: var(--text-mono-sm);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-}
-
-.groupRule {
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, var(--color-border) 0%, transparent 100%);
-}
-
-.groupMeta {
-  font-family: var(--font-display);
-  font-size: var(--text-mono-xs);
-  letter-spacing: 0.06em;
-  color: var(--color-text-faint);
-  white-space: nowrap;
-}
-
-/* ── grid + cards ─────────────────────────────────────────────── */
-.grid {
+/* ── the number row ───────────────────────────────────────────── */
+.row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: var(--space-3);
+  /* Fit the whole number row (up to 10 keys) on one line; keycaps shrink to
+     match. Wraps only when the surface gets genuinely narrow. */
+  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+  gap: var(--space-2);
 }
 
-.compact {
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-}
-
-.card {
+/* keycap */
+.cap {
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  min-height: 96px;
-  padding: var(--space-4);
-  text-align: left;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 78px;
+  padding: var(--space-3) 4px var(--space-2);
   background: var(--color-bg-l0);
-  border: 1px solid var(--color-border-soft);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
   cursor: pointer;
+  /* letterpress keycap depth — a light lip up top, a firmer edge below */
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.7),
+    0 1px 0 var(--color-border),
+    0 2px 3px oklch(0 0 0 / 0.05);
   transition: transform var(--duration-fast) var(--ease-out-quart),
     border-color var(--duration-fast) var(--ease-out-quart),
     box-shadow var(--duration-fast) var(--ease-out-quart);
 }
 
-.card:hover {
+.cap:hover {
   transform: translateY(-2px);
   border-color: var(--color-primary);
-  box-shadow: var(--shadow-md);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.7),
+    0 2px 0 var(--color-primary),
+    0 6px 14px oklch(0 0 0 / 0.08);
 }
 
-.compact .card {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 0;
-  padding: var(--space-3) var(--space-8) var(--space-3) var(--space-4);
+.cap:active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.7),
+    0 1px 0 var(--color-border);
 }
 
-/* Reserve room for the pin/remove tools so they never overlap the label on
-   the compact pinned row in edit mode. */
-.compact .editing {
-  padding-right: 54px;
-}
-
-.icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  font-size: 16px;
-  border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--color-primary) 12%, var(--color-bg-l0));
-  color: var(--color-primary);
-}
-
-.compact .icon {
-  width: 26px;
-  height: 26px;
-  font-size: 14px;
-}
-
-/* Quicker-style number badge — the key the user presses to run this action. */
-.num {
+/* key legend — the digit, set like a printed keycap marking */
+.key {
   position: absolute;
-  top: var(--space-2);
-  right: var(--space-3);
+  top: 6px;
+  left: 8px;
   font-family: var(--font-display);
   font-size: var(--text-mono-sm);
   font-weight: var(--weight-semibold);
@@ -183,59 +121,57 @@
   transition: color var(--duration-fast) var(--ease-out-quart);
 }
 
-.compact .num {
-  top: 50%;
-  transform: translateY(-50%);
+.cap:hover .key {
+  color: var(--color-primary);
 }
 
-.card:hover .num {
+.icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  font-size: 17px;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--color-primary) 12%, var(--color-bg-l0));
   color: var(--color-primary);
 }
 
 .label {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  line-height: 1.2;
-  color: var(--color-text);
-}
-
-.hint {
-  font-size: var(--text-xs);
-  line-height: 1.35;
-  color: var(--color-text-faint);
+  font-size: var(--text-mono-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.01em;
+  line-height: 1;
+  color: var(--color-text-soft);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── edit mode ────────────────────────────────────────────────── */
 .editing {
   cursor: grab;
 }
-
 .editing:active {
   cursor: grabbing;
+  transform: none;
 }
-
 .editing:hover {
   transform: none;
 }
-
 .dragging {
   opacity: 0.4;
 }
 
-.cardTools {
+.remove {
   position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  display: flex;
-  gap: 2px;
-}
-
-.cardTool {
+  top: 4px;
+  right: 4px;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  font-size: 12px;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
   border: none;
   border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--color-bg-l3) 70%, transparent);
@@ -244,49 +180,31 @@
   transition: background var(--duration-fast) var(--ease-out-quart),
     color var(--duration-fast) var(--ease-out-quart);
 }
-
-.cardTool:hover {
+.remove:hover {
   background: var(--color-bg-l3);
   color: var(--color-text);
 }
 
-.cardTool[data-on='true'] {
-  color: var(--color-warning);
-}
-
-/* ── add tile ─────────────────────────────────────────────────── */
+/* add keycap */
 .add {
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: var(--space-1);
-  background: transparent;
   border-style: dashed;
-  border-color: var(--color-border);
+  background: transparent;
   box-shadow: none;
   color: var(--color-text-faint);
 }
-
 .add:hover {
   transform: none;
   border-color: var(--color-primary);
   color: var(--color-primary);
   box-shadow: none;
 }
-
 .add[data-open='true'] {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
-
 .addPlus {
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1;
-}
-
-.addLabel {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
 }
 
 /* ── add picker ───────────────────────────────────────────────── */
@@ -299,19 +217,16 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
 }
-
 .pickerEmpty {
   margin: 0;
   font-size: var(--text-sm);
   color: var(--color-text-faint);
 }
-
 .pickerCat {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
-
 .pickerCatTitle {
   font-family: var(--font-display);
   font-size: var(--text-mono-xs);
@@ -319,13 +234,11 @@
   text-transform: uppercase;
   color: var(--color-text-faint);
 }
-
 .pickerItems {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-
 .pickerItem {
   display: inline-flex;
   align-items: center;
@@ -340,7 +253,6 @@
   transition: border-color var(--duration-fast) var(--ease-out-quart),
     color var(--duration-fast) var(--ease-out-quart);
 }
-
 .pickerItem:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
@@ -361,7 +273,6 @@
   transition: border-color var(--duration-fast) var(--ease-out-quart),
     color var(--duration-fast) var(--ease-out-quart);
 }
-
 .connect:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);

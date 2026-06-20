@@ -955,9 +955,6 @@ export function AmbientHome({
                 ) : (
                   <div className={styles.welcome}>
                     <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
-                    <p className={styles.subtitle}>
-                      Your private AI workspace — it runs on your machine, your data stays yours.
-                    </p>
                     {!hasProvider && (
                       <button type="button" className={styles.ctaPrimary} onClick={onOpenPicker}>
                         Connect your AI to start →
