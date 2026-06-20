@@ -94,7 +94,7 @@ export const FrontmatterPanel = ({ path }: FrontmatterPanelProps): ReactElement 
   const load = useCallback(async () => {
     try {
       const entry = await vaultRead(path);
-      setBody(typeof entry.body === 'string' ? entry.body : '');
+      setBody(typeof entry.content === 'string' ? entry.content : '');
       const fm = (entry.frontmatter ?? {}) as Record<string, unknown>;
       setRows(rowsFromFrontmatter(fm));
       setDirty(false);

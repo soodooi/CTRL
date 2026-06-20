@@ -403,7 +403,7 @@ export function AmbientHome({
     let body = '';
     try {
       const entry = await vaultRead(path);
-      body = entry.body;
+      body = entry.content;
     } catch {
       // New log file for today.
     }
@@ -431,7 +431,7 @@ export function AmbientHome({
       for (const p of hits.slice(0, 3)) {
         try {
           const entry = await vaultRead(p);
-          parts.push(`# ${p}\n${entry.body.slice(0, 700)}`);
+          parts.push(`# ${p}\n${entry.content.slice(0, 700)}`);
         } catch {
           // Skip unreadable hit.
         }

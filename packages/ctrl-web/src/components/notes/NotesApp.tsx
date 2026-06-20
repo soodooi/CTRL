@@ -175,7 +175,7 @@ export const NotesApp = (): ReactElement => {
         let body = '';
         try {
           const t = await vaultRead(cfg.template);
-          body = renderDailyTemplate(typeof t.body === 'string' ? t.body : '');
+          body = renderDailyTemplate(typeof t.content === 'string' ? t.content : '');
         } catch {
           body = '';
         }

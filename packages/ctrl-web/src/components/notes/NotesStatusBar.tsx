@@ -52,7 +52,7 @@ export const NotesStatusBar = ({ path }: NotesStatusBarProps): ReactElement => {
     );
   }
 
-  const body = typeof data?.body === 'string' ? data.body : '';
+  const body = typeof data?.content === 'string' ? data.content : '';
   const words = countWords(body);
   const chars = body.length;
 
