@@ -1,0 +1,73 @@
+import { describe, expect, it } from 'vitest';
+import { parseSmartTable, type SmartTable } from './smart-table';
+import { FieldNotFoundError, queryTable } from './smart-table-query';
+
+// Mirrors the kernel query tests (kernel/query.rs) so the client-side engine
+// stays semantically identical to what Irisy gets through the :17873 gate.
+const SOURCE = `---
+title: Leads
+schema:
+  - { key: name, label: Name, type: text }
+  - { key: amount, label: Amount, type: number }
+  - { key: due, label: Due, type: date }
+  - { key: done, label: Done, type: checkbox }
+  - { key: tags, label: Tags, type: tags }
+---
+
+| Name   | Amount | Due        | Done | Tags      |
+|--------|--------|------------|------|-----------|
+| Acme   | 100    | 2026-06-20 | x    | crm, vip  |
+| Beta   | 50     | 2026-07-01 |      | crm       |
+| Cobalt | 250    | 2026-06-18 |      | lead      |
+`;
+
+const NOW = new Date('2026-06-19T12:00:00');
+
+const table = (): SmartTable => parseSmartTable(SOURCE);
+
+describe('queryTable', () => {
+  it('parses the schema + rows from the real markdown path', () => {
+    const t = table();
+    expect(t.schema).toHaveLength(5);
+    expect(t.rows).toHaveLength(3);
+    expect(t.rows[0]?.name).toBe('Acme');
+  });
+
+  it('filters numbers with gt', () => {
+    const out = queryTable(table(), { filters: [{ field: 'amount', op: 'gt', value: '80' }] }, NOW);
+    expect(out.matchCount).toBe(2);
+    expect(out.rows.map((r) => r.name).sort()).toEqual(['Acme', 'Cobalt']);
+  });
+
+  it('filters text contains (case-insensitive)', () => {
+    const out = queryTable(table(), { filters: [{ field: 'name', op: 'contains', value: 'co' }] }, NOW);
+    expect(out.rows.map((r) => r.name)).toEqual(['Cobalt']);
+  });
+
+  it('filters checkbox is', () => {
+    const out = queryTable(table(), { filters: [{ field: 'done', op: 'is', value: 'true' }] }, NOW);
+    expect(out.rows.map((r) => r.name)).toEqual(['Acme']);
+  });
+
+  it('filters tags has_tag', () => {
+    const out = queryTable(table(), { filters: [{ field: 'tags', op: 'has_tag', value: 'crm' }] }, NOW);
+    expect(out.matchCount).toBe(2);
+  });
+
+  it('filters date within this_week (Mon 06-15..Sun 06-21)', () => {
+    const out = queryTable(table(), { filters: [{ field: 'due', op: 'within', value: 'this_week' }] }, NOW);
+    expect(out.matchCount).toBe(2); // 06-20 + 06-18, not 07-01
+  });
+
+  it('sorts number desc then limits (matchCount is pre-limit)', () => {
+    const out = queryTable(table(), { sort: [{ field: 'amount', desc: true }], limit: 2 }, NOW);
+    expect(out.matchCount).toBe(3);
+    expect(out.rows.map((r) => r.name)).toEqual(['Cobalt', 'Acme']);
+  });
+
+  it('rejects an unknown field with the valid set', () => {
+    expect(() => queryTable(table(), { filters: [{ field: 'nope', op: 'eq', value: 'x' }] }, NOW)).toThrow(
+      FieldNotFoundError,
+    );
+  });
+});
