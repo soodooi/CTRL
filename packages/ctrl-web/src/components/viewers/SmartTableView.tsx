@@ -8,12 +8,6 @@
 // component state and never mutates the rows. Edits still target the canonical
 // row via a preserved original index, so editing a filtered view is correct.
 
-import {
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-  type ColumnDef,
-} from '@tanstack/react-table';
 import { useMemo, useState, type ReactElement } from 'react';
 import type { AiColumnOp, AiColumnSummary } from '@/lib/kernel';
 import {
@@ -25,6 +19,7 @@ import {
   type SmartTable,
   type ViewSpec,
 } from '@/lib/smart-table';
+import { SmartTableGrid } from './SmartTableGrid';
 
 const FIELD_TYPES: CellType[] = [
   'text',
@@ -368,19 +363,19 @@ export const SmartTableView = ({
   });
 
   // AI column (ADR-003 §6.5.4): which field's AI-fill panel is open + its draft.
-  const [aiField, setAiField] = useState<string | null>(null);
-  const [aiOp, setAiOp] = useState<AiColumnOp>('generate');
-  const [aiPrompt, setAiPrompt] = useState('');
   const [aiRunning, setAiRunning] = useState(false);
   const [aiResult, setAiResult] = useState<AiColumnSummary | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
-  const runAi = async (): Promise<void> => {
-    if (!aiField || !onRunAiColumn || !aiPrompt.trim()) return;
+  // Immediate AI run for a column (invoked from the field editor's "Run AI now"
+  // — the glide canvas header has no room for a per-column ✦ button, so the AI
+  // op/prompt live in the field editor reached via the column-header menu).
+  const runAiNow = async (field: string, op: AiColumnOp, prompt: string): Promise<void> => {
+    if (!onRunAiColumn || !prompt.trim()) return;
     setAiRunning(true);
     setAiError(null);
     setAiResult(null);
     try {
-      setAiResult(await onRunAiColumn(aiField, aiOp, aiPrompt));
+      setAiResult(await onRunAiColumn(field, op, prompt));
     } catch (e) {
       setAiError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -455,85 +450,6 @@ export const SmartTableView = ({
     [indexed, filters, sort, groupBy],
   );
   const groupLabel = (key: string) => table.schema.find((c) => c.key === key)?.label ?? key;
-
-  const columns = useMemo<ColumnDef<Record<string, string>>[]>(() => {
-    return [
-      ...table.schema.map<ColumnDef<Record<string, string>>>((col) => ({
-        accessorKey: col.key,
-        header: () => (
-          <span className={styles.headerCell}>
-            {col.label}
-            {editable && onRunAiColumn && (
-              <button
-                type="button"
-                className={styles.aiColBtn}
-                title={`AI fill ${col.label}`}
-                data-testid={`ai-col-${col.key}`}
-                onClick={() => {
-                  setAiField(col.key);
-                  setAiResult(null);
-                  setAiError(null);
-                  setAiOp((col.aiOp as AiColumnOp) || 'generate');
-                  setAiPrompt(col.aiPrompt ?? '');
-                }}
-              >
-                ✦
-              </button>
-            )}
-            {editable && editsSchema && (
-              <button
-                type="button"
-                className={styles.aiColBtn}
-                title={`Edit ${col.label}`}
-                data-testid={`edit-col-${col.key}`}
-                onClick={() => openFieldEditor(col)}
-              >
-                ▾
-              </button>
-            )}
-          </span>
-        ),
-        cell: ({ row }) => (
-          <Cell
-            col={col}
-            value={row.original[col.key] ?? ''}
-            editable={editable}
-            onChange={(value) => onCellChange(Number(row.original.__idx), col.key, value)}
-          />
-        ),
-      })),
-      {
-        id: '__actions',
-        header: '',
-        cell: ({ row }) => (
-          <span className={styles.rowActions}>
-            <button
-              type="button"
-              className={styles.tableRowAction}
-              onClick={() => setExpandedRow(Number(row.original.__idx))}
-              aria-label="Expand record"
-              title="Expand record"
-            >
-              ⤢
-            </button>
-            {editable && onDeleteRow && (
-              <button
-                type="button"
-                className={styles.tableRowAction}
-                onClick={() => onDeleteRow(Number(row.original.__idx))}
-                aria-label="Delete row"
-                title="Delete row"
-              >
-                ×
-              </button>
-            )}
-          </span>
-        ),
-      },
-    ];
-  }, [table.schema, editable, onCellChange, onDeleteRow, onRunAiColumn, editsSchema]);
-
-  const reactTable = useReactTable({ data: result.rows, columns, getCoreRowModel: getCoreRowModel() });
 
   const addFilter = (): void => {
     if (!draft.field) return;
@@ -704,54 +620,6 @@ export const SmartTableView = ({
         </div>
       )}
 
-      {aiField && onRunAiColumn && (
-        <div className={styles.aiPanel} data-testid="ai-col-panel">
-          <span className={styles.aiPanelTitle}>
-            ✦ AI fill: {table.schema.find((c) => c.key === aiField)?.label ?? aiField}
-          </span>
-          <select
-            className={styles.querySelect}
-            value={aiOp}
-            onChange={(e) => setAiOp(e.target.value as AiColumnOp)}
-            aria-label="AI operation"
-          >
-            <option value="generate">generate</option>
-            <option value="classify">classify</option>
-            <option value="extract">extract</option>
-            <option value="summarize">summarize</option>
-            <option value="translate">translate</option>
-          </select>
-          <input
-            className={styles.aiPanelPrompt}
-            value={aiPrompt}
-            placeholder="Instruction — reference columns with {field}, e.g. Summarize {notes} in one line"
-            onChange={(e) => setAiPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !aiRunning && aiPrompt.trim()) void runAi();
-            }}
-          />
-          <button
-            type="button"
-            className={styles.queryAdd}
-            disabled={aiRunning || !aiPrompt.trim()}
-            onClick={() => void runAi()}
-            data-testid="ai-col-run"
-          >
-            {aiRunning ? 'Running…' : 'Run'}
-          </button>
-          <button type="button" className={styles.queryChip} onClick={() => setAiField(null)}>
-            Close
-          </button>
-          {aiResult && (
-            <span className={styles.aiPanelMsg}>
-              wrote {aiResult.rows_written}/{aiResult.rows_planned}
-              {aiResult.errors.length > 0 ? ` · ${aiResult.errors.length} failed` : ''}
-            </span>
-          )}
-          {aiError && <span className={styles.aiPanelErr}>{aiError}</span>}
-        </div>
-      )}
-
       {fieldEdit && editsSchema && (
         <div className={styles.aiPanel} data-testid="field-edit-panel">
           <span className={styles.aiPanelTitle}>{fieldEdit.key ? 'Edit field' : 'New field'}</span>
@@ -813,6 +681,24 @@ export const SmartTableView = ({
                   rows
                 </label>
               )}
+              {feAiOp && fieldEdit.key && feAiPrompt.trim() && (
+                <button
+                  type="button"
+                  className={styles.queryAdd}
+                  disabled={aiRunning}
+                  onClick={() => void runAiNow(fieldEdit.key as string, feAiOp as AiColumnOp, feAiPrompt)}
+                  data-testid="ai-col-run"
+                >
+                  {aiRunning ? 'Running…' : '✦ Run AI now'}
+                </button>
+              )}
+              {aiResult && (
+                <span className={styles.aiPanelMsg}>
+                  wrote {aiResult.rows_written}/{aiResult.rows_planned}
+                  {aiResult.errors.length > 0 ? ` · ${aiResult.errors.length} failed` : ''}
+                </span>
+              )}
+              {aiError && <span className={styles.aiPanelErr}>{aiError}</span>}
             </>
           )}
           <button type="button" className={styles.queryAdd} onClick={saveField} disabled={!feLabel.trim()} data-testid="field-save">
@@ -838,54 +724,14 @@ export const SmartTableView = ({
       )}
 
       {viewMode === 'grid' && (
-      <div className={styles.scroll}>
-        <table className={styles.tableEl}>
-          <thead>
-            {reactTable.getHeaderGroups().map((hg) => (
-              <tr key={hg.id}>
-                {hg.headers.map((header) => (
-                  <th key={header.id} className={styles.tableHeader}>
-                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {(() => {
-              const rows = reactTable.getRowModel().rows;
-              const colspan = table.schema.length + 1;
-              const out: ReactElement[] = [];
-              let prev: string | null = null;
-              for (const row of rows) {
-                if (groupBy) {
-                  const g = row.original[groupBy] ?? '';
-                  if (g !== prev) {
-                    prev = g;
-                    out.push(
-                      <tr key={`group-${g}`} className={styles.groupHeader}>
-                        <td colSpan={colspan} className={styles.groupHeaderCell}>
-                          {groupLabel(groupBy)}: {g || '—'}
-                        </td>
-                      </tr>,
-                    );
-                  }
-                }
-                out.push(
-                  <tr key={row.id} className={styles.tableRow}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={styles.tableCellWrap}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>,
-                );
-              }
-              return out;
-            })()}
-          </tbody>
-        </table>
-      </div>
+        <SmartTableGrid
+          schema={table.schema}
+          rows={result.rows}
+          editable={editable}
+          onCellChange={onCellChange}
+          onExpandRow={(idx) => setExpandedRow(idx)}
+          onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
+        />
       )}
 
       {viewMode === 'kanban' && (
