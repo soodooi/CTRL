@@ -25,6 +25,11 @@
   letter-spacing: 0.05em;
   color: var(--color-text, #1a1a1a);
 }
+.listActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .newBtn {
   background: var(--color-accent, #6aa3ff);
   color: #fff;

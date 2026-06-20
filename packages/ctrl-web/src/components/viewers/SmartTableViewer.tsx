@@ -11,14 +11,19 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactElement } from 'react';
 import type { ViewerProps } from '@/lib/viewer-registry';
+import { smartTableRunAiColumn, type AiColumnOp, type AiColumnSummary } from '@/lib/kernel';
 import { readVault, writeVault, vaultRelativePath } from '@/lib/viewer-uri';
 import {
+  addColumn,
   appendRow,
+  deleteColumn,
   deleteRow,
   smartTableBody,
   smartTableFrontmatter,
   smartTableFromParts,
   updateCell,
+  updateColumn,
+  type ColumnSpec,
   type SmartTable,
 } from '@/lib/smart-table';
 import { SmartTableView } from './SmartTableView';
@@ -57,8 +62,45 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
     }
   };
 
+  // AI column (ADR-003 §6.5.4): run the kernel field shortcut, retry past the
+  // cost gate on explicit confirmation, then refresh the file so the filled
+  // cells render. Reuses the same kernel core the :17873 gate tool does.
+  const runAiColumn = async (field: string, op: AiColumnOp, prompt: string): Promise<AiColumnSummary> => {
+    const base = { path, target_field: field, op, prompt };
+    let summary: AiColumnSummary;
+    try {
+      summary = await smartTableRunAiColumn(base);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes('needs_confirmation') && window.confirm(`${msg}\n\nRun it anyway?`)) {
+        summary = await smartTableRunAiColumn({ ...base, confirm_over_gate: true });
+      } else {
+        throw e;
+      }
+    }
+    await qc.invalidateQueries({ queryKey: ['smart-table-file', path] });
+    return summary;
+  };
+
+  // Add a row, then auto-fill any column whose schema requests it (ADR-003
+  // §6.5.4 auto-update). run_ai_column resumes over empty cells, so the new
+  // row gets filled; best-effort, the ✦ panel covers manual reruns.
+  const addRow = async (): Promise<void> => {
+    const next = appendRow(table);
+    await commit(next);
+    for (const f of next.schema) {
+      if (f.aiAutoFill && f.aiOp && f.aiPrompt) {
+        try {
+          await runAiColumn(f.key, f.aiOp as AiColumnOp, f.aiPrompt);
+        } catch {
+          // best-effort; user can run the column manually via the ✦ panel.
+        }
+      }
+    }
+  };
+
   const rightActions = resource.editable ? (
-    <button type="button" className={styles.modeButton} onClick={() => void commit(appendRow(table))} title="Add row">
+    <button type="button" className={styles.modeButton} onClick={() => void addRow()} title="Add row">
       + Row
     </button>
   ) : null;
@@ -99,6 +141,13 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
         onCellChange={(rowIndex, key, value) => void commit(updateCell(table, rowIndex, key, value))}
         onDeleteRow={(rowIndex) => void commit(deleteRow(table, rowIndex))}
         onSaveView={resource.editable ? (view) => void commit({ ...table, views: [view] }) : undefined}
+        onRunAiColumn={resource.editable ? runAiColumn : undefined}
+        onAddColumn={resource.editable ? (col: ColumnSpec) => void commit(addColumn(table, col)) : undefined}
+        onUpdateColumn={
+          resource.editable ? (key, patch) => void commit(updateColumn(table, key, patch)) : undefined
+        }
+        onDeleteColumn={resource.editable ? (key) => void commit(deleteColumn(table, key)) : undefined}
+        onReplaceViews={resource.editable ? (views) => void commit({ ...table, views }) : undefined}
       />
     </div>
   );

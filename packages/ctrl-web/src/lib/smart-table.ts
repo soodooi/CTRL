@@ -24,14 +24,53 @@
 // Any frontmatter the file carries beyond `schema` + `title` is kept
 // verbatim (we touch only what we own).
 
+// Render-level cell types. The viewer renders each distinctly ("render is the
+// type" — Feishu/Teable), but query/sort/filter collapse to a small set of
+// SEMANTIC base types (see baseCellType). This mirrors the kernel, whose
+// CellType::parse aliases the number-/text-like variants onto its 5 core types.
 export type CellType =
   | 'text'
+  | 'multiline'
   | 'number'
+  | 'currency'
+  | 'rating'
+  | 'progress'
   | 'date'
   | 'checkbox'
   | 'tags'
   | 'select'
-  | 'url';
+  | 'url'
+  | 'email'
+  | 'phone';
+
+/** The 7 semantic base types query/sort/filter actually reason about. */
+export type BaseCellType = 'text' | 'number' | 'date' | 'checkbox' | 'tags' | 'select' | 'url';
+
+/** Collapse a render-level type to its semantic base. rating / progress /
+ *  currency behave as numbers; multiline / email / phone as text. Kept in
+ *  sync with the kernel's CellType::parse aliasing (query.rs). */
+export const baseCellType = (t: CellType): BaseCellType => {
+  switch (t) {
+    case 'currency':
+    case 'rating':
+    case 'progress':
+      return 'number';
+    case 'multiline':
+    case 'email':
+    case 'phone':
+      return 'text';
+    case 'number':
+    case 'date':
+    case 'checkbox':
+    case 'tags':
+    case 'select':
+    case 'url':
+    case 'text':
+      return t;
+    default:
+      return 'text';
+  }
+};
 
 export interface ColumnSpec {
   key: string;
@@ -39,16 +78,29 @@ export interface ColumnSpec {
   type: CellType;
   /** For `select`: list of allowed options. */
   options?: ReadonlyArray<string>;
-  /** For `number`: validation hints. */
+  /** For `number` / `rating` / `progress`: validation + scale hints
+   *  (rating max = star count, progress max = 100% denominator). */
   min?: number;
   max?: number;
+  /** For `currency`: a prefix symbol (default "$"). */
+  symbol?: string;
+  /** AI field shortcut (ADR-003 §6.5.4). When set, the column remembers its AI
+   *  op + prompt; `aiAutoFill` re-runs it for newly added rows. Stored as flat
+   *  scalars (ai_op / ai_prompt / ai_autofill) so the YAML round-trips. */
+  aiOp?: string;
+  aiPrompt?: string;
+  aiAutoFill?: boolean;
 }
 
 /** A saved view (ADR-003 §6.2) — view state lives in frontmatter, not the
- *  table body. `kanban` columnizes by `groupBy`. */
+ *  table body. `kanban`/`gallery`/`calendar` columnize/lay-out by `groupBy`.
+ *  Sort is persisted as flat scalars (sort_field / sort_desc) on disk so the
+ *  YAML round-trips without nested structures. */
 export interface ViewSpec {
-  kind: 'grid' | 'kanban';
+  kind: 'grid' | 'kanban' | 'gallery' | 'calendar';
   groupBy?: string | null;
+  sort?: { field: string; desc: boolean } | null;
+  name?: string;
 }
 
 export interface SmartTable {
@@ -264,6 +316,10 @@ const columnFromObj = (o: Record<string, unknown>): ColumnSpec | null => {
     options: Array.isArray(o.options) ? (o.options as string[]) : undefined,
     min: typeof o.min === 'number' ? o.min : undefined,
     max: typeof o.max === 'number' ? o.max : undefined,
+    symbol: typeof o.symbol === 'string' ? o.symbol : undefined,
+    aiOp: typeof o.ai_op === 'string' && o.ai_op ? o.ai_op : undefined,
+    aiPrompt: typeof o.ai_prompt === 'string' && o.ai_prompt ? o.ai_prompt : undefined,
+    aiAutoFill: o.ai_autofill === true || o.ai_autofill === 'true' ? true : undefined,
   };
 };
 
@@ -289,9 +345,13 @@ const parseViewsValue = (v: unknown): ViewSpec[] => {
     .map((item) => {
       const o = typeof item === 'string' ? parseInlineObject(item) : (item as Record<string, unknown>);
       if (!o || typeof o !== 'object') return null;
-      const kind = o.kind === 'kanban' ? 'kanban' : 'grid';
+      const kind =
+        o.kind === 'kanban' || o.kind === 'gallery' || o.kind === 'calendar' ? o.kind : 'grid';
       const groupBy = typeof o.group_by === 'string' && o.group_by ? (o.group_by as string) : null;
-      return { kind, groupBy } as ViewSpec;
+      const sortField = typeof o.sort_field === 'string' && o.sort_field ? o.sort_field : null;
+      const sort = sortField ? { field: sortField, desc: o.sort_desc === true || o.sort_desc === 'true' } : null;
+      const name = typeof o.name === 'string' && o.name ? o.name : undefined;
+      return { kind, groupBy, sort, name } as ViewSpec;
     })
     .filter((x): x is ViewSpec => x != null);
 };
@@ -339,6 +399,10 @@ export const serializeSmartTable = (table: SmartTable): string => {
       if (col.options) parts.push(`options: [${col.options.join(', ')}]`);
       if (col.min !== undefined) parts.push(`min: ${col.min}`);
       if (col.max !== undefined) parts.push(`max: ${col.max}`);
+      if (col.symbol !== undefined) parts.push(`symbol: ${col.symbol}`);
+      if (col.aiOp) parts.push(`ai_op: ${col.aiOp}`);
+      if (col.aiPrompt) parts.push(`ai_prompt: ${col.aiPrompt}`);
+      if (col.aiAutoFill) parts.push(`ai_autofill: true`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
   }
@@ -346,7 +410,9 @@ export const serializeSmartTable = (table: SmartTable): string => {
     lines.push('views:');
     for (const v of table.views) {
       const parts = [`kind: ${v.kind}`];
+      if (v.name) parts.push(`name: ${v.name}`);
       if (v.groupBy) parts.push(`group_by: ${v.groupBy}`);
+      if (v.sort) parts.push(`sort_field: ${v.sort.field}`, `sort_desc: ${v.sort.desc}`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
   }
@@ -392,9 +458,18 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
     ...(c.options ? { options: c.options } : {}),
     ...(c.min !== undefined ? { min: c.min } : {}),
     ...(c.max !== undefined ? { max: c.max } : {}),
+    ...(c.symbol !== undefined ? { symbol: c.symbol } : {}),
+    ...(c.aiOp ? { ai_op: c.aiOp } : {}),
+    ...(c.aiPrompt ? { ai_prompt: c.aiPrompt } : {}),
+    ...(c.aiAutoFill ? { ai_autofill: true } : {}),
   }));
   if (table.views.length > 0) {
-    fm.views = table.views.map((v) => ({ kind: v.kind, ...(v.groupBy ? { group_by: v.groupBy } : {}) }));
+    fm.views = table.views.map((v) => ({
+      kind: v.kind,
+      ...(v.name ? { name: v.name } : {}),
+      ...(v.groupBy ? { group_by: v.groupBy } : {}),
+      ...(v.sort ? { sort_field: v.sort.field, sort_desc: v.sort.desc } : {}),
+    }));
   }
   return fm;
 };
@@ -422,4 +497,44 @@ export const updateCell = (
 export const deleteRow = (table: SmartTable, rowIndex: number): SmartTable => ({
   ...table,
   rows: table.rows.filter((_, i) => i !== rowIndex),
+});
+
+// --- Schema (field) operations (ADR-003 §6.5 A3) — immutable, keep rows in
+// sync so the markdown body round-trips. ---
+
+/** Turn a label into a unique, table-safe column key. */
+export const columnKeyFromLabel = (label: string, taken: ReadonlyArray<string>): string => {
+  const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'field';
+  if (!taken.includes(base)) return base;
+  let n = 2;
+  while (taken.includes(`${base}_${n}`)) n += 1;
+  return `${base}_${n}`;
+};
+
+/** Append a new column; back-fills an empty cell for every row. */
+export const addColumn = (table: SmartTable, col: ColumnSpec): SmartTable => ({
+  ...table,
+  schema: [...table.schema, col],
+  rows: table.rows.map((r) => ({ ...r, [col.key]: r[col.key] ?? '' })),
+});
+
+/** Patch a column's spec in place (label / type / options / symbol / min / max).
+ *  The key is immutable here (renaming a key would orphan row data). */
+export const updateColumn = (
+  table: SmartTable,
+  key: string,
+  patch: Partial<Omit<ColumnSpec, 'key'>>,
+): SmartTable => ({
+  ...table,
+  schema: table.schema.map((c) => (c.key === key ? { ...c, ...patch } : c)),
+});
+
+/** Remove a column and drop its cell from every row. */
+export const deleteColumn = (table: SmartTable, key: string): SmartTable => ({
+  ...table,
+  schema: table.schema.filter((c) => c.key !== key),
+  rows: table.rows.map((r) => {
+    const { [key]: _drop, ...rest } = r;
+    return rest;
+  }),
 });

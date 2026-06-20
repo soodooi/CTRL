@@ -241,6 +241,33 @@ export const mcpCall = (
 ): Promise<unknown> =>
   invoke('mcp_call', { args: { server_url, tool_name, args } });
 
+// Smart-table AI column (ADR-003 §6.5.4) — the "AI-as-column" differentiator.
+// Runs an LLM down a column, {field}-templated, resume-safe, cost-gated. The
+// PWA-facing twin of the :17873 gate tool; both reuse the same kernel core.
+export type AiColumnOp = 'classify' | 'extract' | 'summarize' | 'translate' | 'generate';
+
+export interface AiColumnArgs {
+  path: string;
+  target_field: string;
+  /** Prompt template; `{field}` tokens reference other columns in the row. */
+  prompt: string;
+  op: AiColumnOp;
+  /** Re-run rows whose target cell is already filled (default false). */
+  force?: boolean;
+  /** Confirm a run over the cost gate (kernel rejects with needs_confirmation otherwise). */
+  confirm_over_gate?: boolean;
+}
+
+export interface AiColumnSummary {
+  rows_total: number;
+  rows_planned: number;
+  rows_written: number;
+  errors: Array<{ row: number; message: string }>;
+}
+
+export const smartTableRunAiColumn = (args: AiColumnArgs): Promise<AiColumnSummary> =>
+  invoke('smart_table_run_ai_column', { args });
+
 export const listMcpServers = (): Promise<string[]> => invoke('list_mcp_servers');
 
 /**

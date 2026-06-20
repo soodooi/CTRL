@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactElement } from 'react';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
-import { createSmartTable, listSmartTables } from '@/lib/smart-tables';
+import { createSmartTable, importCsv, listSmartTables } from '@/lib/smart-tables';
 import styles from './TablesPanel.module.css';
 
 export const TablesPanel = (): ReactElement => {
@@ -28,14 +28,37 @@ export const TablesPanel = (): ReactElement => {
     setSelected(path);
   };
 
+  const onImport = async (file: File | undefined): Promise<void> => {
+    if (!file) return;
+    const text = await file.text();
+    const path = await importCsv(file.name.replace(/\.csv$/i, ''), text);
+    await qc.invalidateQueries({ queryKey: ['smart-tables'] });
+    setSelected(path);
+  };
+
   return (
     <div className={styles.page}>
       <aside className={styles.list}>
         <header className={styles.listHead}>
           <span className={styles.listTitle}>Smart Tables</span>
-          <button type="button" className={styles.newBtn} onClick={onNew}>
-            + New
-          </button>
+          <span className={styles.listActions}>
+            <label className={styles.newBtn} title="Import a CSV file" data-testid="import-csv">
+              Import
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  void onImport(file);
+                }}
+              />
+            </label>
+            <button type="button" className={styles.newBtn} onClick={onNew}>
+              + New
+            </button>
+          </span>
         </header>
         {isLoading ? (
           <div className={styles.empty}>loading…</div>
