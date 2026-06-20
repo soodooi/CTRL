@@ -654,12 +654,12 @@ impl KernelMcpRouter {
             .ok_or_else(|| McpError::internal_error("no text.chat provider available", None))?;
         let system = args.op.system_instruction();
 
-        let mut results: Vec<(usize, String)> = Vec::new();
+        let mut results: Vec<(usize, query::Row, String)> = Vec::new();
         let mut errors: Vec<ai_column::RowError> = Vec::new();
-        for (idx, user_prompt) in &plan {
-            match ai_column::complete_row(adapter.as_ref(), system, user_prompt).await {
-                Ok(value) => results.push((*idx, value)),
-                Err(e) => errors.push(ai_column::RowError { row: *idx, message: e.to_string() }),
+        for item in &plan {
+            match ai_column::complete_row(adapter.as_ref(), system, &item.prompt).await {
+                Ok(value) => results.push((item.index, item.snapshot.clone(), value)),
+                Err(e) => errors.push(ai_column::RowError { row: item.index, message: e.to_string() }),
             }
         }
 
@@ -735,24 +735,29 @@ impl KernelMcpRouter {
             // Cancel + AuthFailed are checked between chunks (AuthFailed stops
             // the whole job — the key is broken, retrying every row is waste).
             const MAX_CONCURRENCY: usize = 6;
-            let mut results: Vec<(usize, String)> = Vec::new();
+            let mut results: Vec<(usize, query::Row, String)> = Vec::new();
             'outer: for chunk in plan.chunks(MAX_CONCURRENCY) {
                 if state.read().await.cancelled {
                     break;
                 }
-                let outcomes = futures::future::join_all(chunk.iter().map(|(idx, user_prompt)| {
+                let outcomes = futures::future::join_all(chunk.iter().map(|item| {
                     let adapter = adapter.clone();
                     let system = system.clone();
-                    async move { (*idx, ai_column::complete_row(adapter.as_ref(), &system, user_prompt).await) }
+                    let index = item.index;
+                    let snapshot = item.snapshot.clone();
+                    let prompt = item.prompt.clone();
+                    async move {
+                        (index, snapshot, ai_column::complete_row(adapter.as_ref(), &system, &prompt).await)
+                    }
                 }))
                 .await;
 
                 let mut auth_failed = false;
                 {
                     let mut s = state.write().await;
-                    for (idx, outcome) in outcomes {
+                    for (idx, snapshot, outcome) in outcomes {
                         match outcome {
-                            Ok(value) => results.push((idx, value)),
+                            Ok(value) => results.push((idx, snapshot, value)),
                             Err(e) => {
                                 if matches!(e, crate::kernel::provider::ProviderError::AuthFailed) {
                                     auth_failed = true;

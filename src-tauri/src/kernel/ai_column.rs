@@ -84,15 +84,25 @@ pub fn render_prompt(template: &str, row: &Row) -> String {
     out
 }
 
-/// The per-row prompts a run will issue: (row_index, prompt_text). Rows whose
-/// target cell is already filled are skipped (idempotent resume, ADR-003
-/// §6.5.4) unless `force` re-runs the whole column.
+/// One planned row: its index, the rendered prompt, and a SNAPSHOT of the row
+/// at plan time. The snapshot lets write-back target the row by identity (does
+/// it still look the same?) rather than blindly by index, so a row edited or
+/// shifted (insert/delete) mid-run is skipped instead of mis-targeted.
+#[derive(Debug, Clone)]
+pub struct PlanItem {
+    pub index: usize,
+    pub prompt: String,
+    pub snapshot: Row,
+}
+
+/// Rows whose target cell is already filled are skipped (idempotent resume,
+/// ADR-003 §6.5.4) unless `force` re-runs the whole column.
 pub fn plan_rows(
     table: &SmartTable,
     target_field: &str,
     template: &str,
     force: bool,
-) -> Vec<(usize, String)> {
+) -> Vec<PlanItem> {
     table
         .rows
         .iter()
@@ -104,20 +114,45 @@ pub fn plan_rows(
                     .map(|v| v.trim().is_empty())
                     .unwrap_or(true)
         })
-        .map(|(i, row)| (i, render_prompt(template, row)))
+        .map(|(i, row)| PlanItem {
+            index: i,
+            prompt: render_prompt(template, row),
+            snapshot: row.clone(),
+        })
         .collect()
 }
 
-/// Apply completed results back into the table's target column (merge by row
-/// index). Returns the number of cells written.
-pub fn apply_results(table: &mut SmartTable, target_field: &str, results: &[(usize, String)]) -> usize {
+/// Apply results back into the target column, but ONLY where the row at `index`
+/// still matches its plan-time snapshot (ignoring the target field). A row that
+/// was edited / shifted mid-run is skipped — the safe "merge by row identity"
+/// without an explicit id column (ADR-003 §6.5.4). Results are
+/// `(index, snapshot, value)`. Returns the number of cells written.
+pub fn apply_results(
+    table: &mut SmartTable,
+    target_field: &str,
+    results: &[(usize, Row, String)],
+) -> usize {
     let mut written = 0;
-    for (idx, value) in results {
-        if table.update_cell(*idx, target_field, value) {
+    for (idx, snapshot, value) in results {
+        let still_matches = table
+            .rows
+            .get(*idx)
+            .map(|r| rows_match(r, snapshot, target_field))
+            .unwrap_or(false);
+        if still_matches && table.update_cell(*idx, target_field, value) {
             written += 1;
         }
     }
     written
+}
+
+/// True when `row` equals `snapshot` on every field except `except` (the AI
+/// target, which was empty at plan time).
+fn rows_match(row: &Row, snapshot: &Row, except: &str) -> bool {
+    let keys: std::collections::BTreeSet<&String> = row.keys().chain(snapshot.keys()).collect();
+    keys.into_iter()
+        .filter(|k| k.as_str() != except)
+        .all(|k| row.get(k) == snapshot.get(k))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -257,18 +292,31 @@ mod tests {
         // row 0 sentiment empty, row 1 sentiment "bad" → only row 0 planned.
         let plan = plan_rows(&t, "sentiment", "Classify: {review}", false);
         assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].0, 0);
-        assert_eq!(plan[0].1, "Classify: Loved it");
+        assert_eq!(plan[0].index, 0);
+        assert_eq!(plan[0].prompt, "Classify: Loved it");
         // forced → both rows.
         assert_eq!(plan_rows(&t, "sentiment", "{review}", true).len(), 2);
     }
 
     #[test]
-    fn apply_writes_results_by_index() {
+    fn apply_writes_when_snapshot_still_matches() {
         let mut t = table();
-        let written = apply_results(&mut t, "sentiment", &[(0, "positive".into())]);
+        let snap = t.rows[0].clone();
+        let written = apply_results(&mut t, "sentiment", &[(0, snap, "positive".to_string())]);
         assert_eq!(written, 1);
         assert_eq!(t.rows[0]["sentiment"], "positive");
+    }
+
+    #[test]
+    fn apply_skips_when_row_changed_under_it() {
+        let mut t = table();
+        // Snapshot of row 0 (review "Loved it"), then the user edits row 0's
+        // review before the result lands → the result must NOT be written.
+        let snap = t.rows[0].clone();
+        t.update_cell(0, "review", "Hated it");
+        let written = apply_results(&mut t, "sentiment", &[(0, snap, "positive".to_string())]);
+        assert_eq!(written, 0);
+        assert_eq!(t.rows[0]["sentiment"], "");
     }
 
     #[tokio::test]
