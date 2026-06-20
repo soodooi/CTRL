@@ -214,15 +214,24 @@ function prettyJson(raw: string): string {
 // model decides (it is told to fence documents/pages/code in the persona) and
 // the client routes on that signal.
 export function detectPart(reply: string): PartSpec | null {
+  // Markdown documents legitimately contain nested ``` code blocks, so a
+  // ```markdown / ```md fence is matched GREEDILY to the LAST closing fence —
+  // a non-greedy match would truncate the doc at its first inner code block.
+  // (renderPart's existing markdown case renders it; no new renderer.)
+  const md = reply.match(/```(?:markdown|md)[^\n]*\n([\s\S]*)\n```/);
+  if (md) {
+    const mdBody = (md[1] ?? '').trim();
+    if (mdBody) {
+      const title = (mdBody.match(/^#{1,6}\s+(.+?)\s*$/m)?.[1] ?? 'document').slice(0, 60);
+      return { kind: 'markdown', content: mdBody, title };
+    }
+  }
+
   const fence = reply.match(/```(\w+)?\n([\s\S]*?)```/);
   if (fence) {
     const lang = (fence[1] ?? '').toLowerCase();
     const body = (fence[2] ?? '').trim();
     if (lang === 'html') return { kind: 'html', content: body, title: 'preview.html' };
-    if (lang === 'markdown') {
-      const title = (body.match(/^#{1,6}\s+(.+?)\s*$/m)?.[1] ?? 'document').slice(0, 60);
-      return { kind: 'markdown', content: body, title };
-    }
     if (lang === 'mermaid') return { kind: 'mermaid', content: body, title: 'diagram' };
     if (lang === 'json') {
       try {
@@ -259,8 +268,15 @@ export function detectPart(reply: string): PartSpec | null {
  *  reply at render time, so it survives reload. Returns '' when the whole reply
  *  was the artifact. */
 export function stripDetectedPart(reply: string): string {
-  if (!detectPart(reply)) return reply;
-  const fence = reply.match(/```(\w+)?\n([\s\S]*?)```/);
+  const part = detectPart(reply);
+  if (!part) return reply;
+  // Markdown docs use the greedy block (nested fences); mirror detectPart so the
+  // WHOLE doc is removed from the chat, not just its first fragment.
+  if (part.kind === 'markdown') {
+    const md = reply.match(/```(?:markdown|md)[^\n]*\n[\s\S]*\n```/);
+    if (md) return reply.replace(md[0], '').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  const fence = reply.match(/```(\w+)?\n[\s\S]*?```/);
   if (fence) {
     return reply.replace(fence[0], '').replace(/\n{3,}/g, '\n\n').trim();
   }

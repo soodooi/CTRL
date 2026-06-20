@@ -29,6 +29,23 @@ describe('detectPart — deterministic artifact routing (model-declared)', () =>
     expect(p?.title).toBe('Quarterly Plan');
   });
 
+  it('captures a FULL markdown doc that contains nested ``` code blocks', () => {
+    const reply =
+      'Drafted it:\n\n```markdown\n# Guide\n\n## Example\n' +
+      '```python\nprint("hi")\n```\n\n## Wrap up\nthe end.\n```';
+    const p = detectPart(reply);
+    expect(p?.kind).toBe('markdown');
+    // must reach past the nested code block to the real closing fence
+    expect(p?.content).toContain('Wrap up');
+    expect(p?.content).toContain('print("hi")');
+  });
+
+  it('accepts the ```md alias', () => {
+    expect(detectPart('```md\n# Title\nbody\n```')).toMatchObject({
+      kind: 'markdown',
+    });
+  });
+
   it('routes a JSON array to a table part', () => {
     expect(detectPart('```json\n[{"a":1},{"a":2}]\n```')).toMatchObject({
       kind: 'table',
