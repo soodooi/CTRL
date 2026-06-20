@@ -875,6 +875,26 @@
   padding: 4px 8px;
   font-size: 12px;
 }
+.fieldName {
+  flex: 0 1 160px;
+  min-width: 110px;
+  background: var(--color-surface, #1a1a1a);
+  color: var(--color-text, #e8e8e8);
+  border: 1px solid var(--color-border, #2a2a2a);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.fieldSymbol {
+  width: 48px;
+  text-align: center;
+  background: var(--color-surface, #1a1a1a);
+  color: var(--color-text, #e8e8e8);
+  border: 1px solid var(--color-border, #2a2a2a);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
 .aiPanelMsg {
   font-size: 11px;
   color: var(--color-text-muted, #9a9a9a);
@@ -970,6 +990,12 @@
   min-width: 30px;
   font-size: 11px;
   color: var(--color-text-muted, #888);
+}
+.kanbanCard[data-draggable='true'] {
+  cursor: grab;
+}
+.kanbanCard[data-draggable='true']:active {
+  cursor: grabbing;
 }
 
 /* §14 group-by header rows (SmartTableView) — ADR-003 §6.2 */

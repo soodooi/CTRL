@@ -16,7 +16,31 @@ import {
 } from '@tanstack/react-table';
 import { useMemo, useState, type ReactElement } from 'react';
 import type { AiColumnOp, AiColumnSummary } from '@/lib/kernel';
-import { baseCellType, type BaseCellType, type ColumnSpec, type SmartTable, type ViewSpec } from '@/lib/smart-table';
+import {
+  baseCellType,
+  columnKeyFromLabel,
+  type BaseCellType,
+  type CellType,
+  type ColumnSpec,
+  type SmartTable,
+  type ViewSpec,
+} from '@/lib/smart-table';
+
+const FIELD_TYPES: CellType[] = [
+  'text',
+  'multiline',
+  'number',
+  'currency',
+  'rating',
+  'progress',
+  'date',
+  'checkbox',
+  'tags',
+  'select',
+  'url',
+  'email',
+  'phone',
+];
 import {
   queryTable,
   type Filter,
@@ -269,6 +293,11 @@ export interface SmartTableViewProps {
    *  column header shows an AI-fill action. The caller runs it through the
    *  kernel, persists, and refreshes; this view just collects op + prompt. */
   onRunAiColumn?: (field: string, op: AiColumnOp, prompt: string) => Promise<AiColumnSummary>;
+  /** Schema editing (ADR-003 §6.5 A3). When set, column headers gain an edit
+   *  menu and the bar gains "+ Field". */
+  onAddColumn?: (col: ColumnSpec) => void;
+  onUpdateColumn?: (key: string, patch: Partial<Omit<ColumnSpec, 'key'>>) => void;
+  onDeleteColumn?: (key: string) => void;
 }
 
 export const SmartTableView = ({
@@ -278,6 +307,9 @@ export const SmartTableView = ({
   onDeleteRow,
   onSaveView,
   onRunAiColumn,
+  onAddColumn,
+  onUpdateColumn,
+  onDeleteColumn,
 }: SmartTableViewProps): ReactElement => {
   // Initialize from the saved view (ADR-003 §6.2): the kernel's add_view writes
   // frontmatter `views`, and the viewer reads it back so the two paths stay in
@@ -315,6 +347,46 @@ export const SmartTableView = ({
     } finally {
       setAiRunning(false);
     }
+  };
+
+  // Field (schema) editor: null = closed; {key:string} = editing; {key:null} = new.
+  const editsSchema = Boolean(onAddColumn && onUpdateColumn && onDeleteColumn);
+  const [fieldEdit, setFieldEdit] = useState<{ key: string | null } | null>(null);
+  const [feLabel, setFeLabel] = useState('');
+  const [feType, setFeType] = useState<CellType>('text');
+  const [feOptions, setFeOptions] = useState('');
+  const [feSymbol, setFeSymbol] = useState('$');
+  const openFieldEditor = (col?: ColumnSpec): void => {
+    if (col) {
+      setFieldEdit({ key: col.key });
+      setFeLabel(col.label);
+      setFeType(col.type);
+      setFeOptions((col.options ?? []).join(', '));
+      setFeSymbol(col.symbol ?? '$');
+    } else {
+      setFieldEdit({ key: null });
+      setFeLabel('');
+      setFeType('text');
+      setFeOptions('');
+      setFeSymbol('$');
+    }
+  };
+  const saveField = (): void => {
+    const opts = feOptions.split(',').map((s) => s.trim()).filter(Boolean);
+    const label = feLabel.trim() || 'Field';
+    const patch: Partial<Omit<ColumnSpec, 'key'>> = {
+      label,
+      type: feType,
+      options: feType === 'select' || feType === 'tags' ? (opts.length ? opts : undefined) : undefined,
+      symbol: feType === 'currency' ? feSymbol : undefined,
+    };
+    if (fieldEdit?.key) {
+      onUpdateColumn?.(fieldEdit.key, patch);
+    } else {
+      const key = columnKeyFromLabel(label, table.schema.map((c) => c.key));
+      onAddColumn?.({ key, label, type: feType, ...patch } as ColumnSpec);
+    }
+    setFieldEdit(null);
   };
 
   const typeOf = (key: string): BaseCellType =>
@@ -356,6 +428,17 @@ export const SmartTableView = ({
                 ✦
               </button>
             )}
+            {editable && editsSchema && (
+              <button
+                type="button"
+                className={styles.aiColBtn}
+                title={`Edit ${col.label}`}
+                data-testid={`edit-col-${col.key}`}
+                onClick={() => openFieldEditor(col)}
+              >
+                ▾
+              </button>
+            )}
           </span>
         ),
         cell: ({ row }) => (
@@ -384,7 +467,7 @@ export const SmartTableView = ({
           ) : null,
       },
     ];
-  }, [table.schema, editable, onCellChange, onDeleteRow, onRunAiColumn]);
+  }, [table.schema, editable, onCellChange, onDeleteRow, onRunAiColumn, editsSchema]);
 
   const reactTable = useReactTable({ data: result.rows, columns, getCoreRowModel: getCoreRowModel() });
 
@@ -509,6 +592,18 @@ export const SmartTableView = ({
           </button>
         )}
 
+        {editsSchema && (
+          <button
+            type="button"
+            className={styles.queryAdd}
+            onClick={() => openFieldEditor()}
+            title="Add a field"
+            data-testid="add-field"
+          >
+            + Field
+          </button>
+        )}
+
         <span className={styles.queryCount} data-testid="smart-table-count">
           {result.matchCount} / {table.rows.length}
         </span>
@@ -578,6 +673,59 @@ export const SmartTableView = ({
         </div>
       )}
 
+      {fieldEdit && editsSchema && (
+        <div className={styles.aiPanel} data-testid="field-edit-panel">
+          <span className={styles.aiPanelTitle}>{fieldEdit.key ? 'Edit field' : 'New field'}</span>
+          <input
+            className={styles.fieldName}
+            value={feLabel}
+            placeholder="Field name"
+            autoFocus
+            onChange={(e) => setFeLabel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && feLabel.trim()) saveField();
+            }}
+          />
+          <select className={styles.querySelect} value={feType} onChange={(e) => setFeType(e.target.value as CellType)} aria-label="Field type">
+            {FIELD_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          {(feType === 'select' || feType === 'tags') && (
+            <input
+              className={styles.aiPanelPrompt}
+              value={feOptions}
+              placeholder="options: lead, won, lost"
+              onChange={(e) => setFeOptions(e.target.value)}
+            />
+          )}
+          {feType === 'currency' && (
+            <input className={styles.fieldSymbol} value={feSymbol} aria-label="Currency symbol" onChange={(e) => setFeSymbol(e.target.value)} />
+          )}
+          <button type="button" className={styles.queryAdd} onClick={saveField} disabled={!feLabel.trim()} data-testid="field-save">
+            Save
+          </button>
+          {fieldEdit.key && (
+            <button
+              type="button"
+              className={styles.queryChip}
+              onClick={() => {
+                onDeleteColumn?.(fieldEdit.key as string);
+                setFieldEdit(null);
+              }}
+              data-testid="field-delete"
+            >
+              Delete
+            </button>
+          )}
+          <button type="button" className={styles.queryChip} onClick={() => setFieldEdit(null)}>
+            Cancel
+          </button>
+        </div>
+      )}
+
       {viewMode === 'grid' ? (
       <div className={styles.scroll}>
         <table className={styles.tableEl}>
@@ -633,13 +781,32 @@ export const SmartTableView = ({
             <div className={styles.kanbanEmpty}>Pick a select or checkbox field to columnize.</div>
           ) : (
             kanbanColumns(result.rows, kanbanField).map(([value, rows]) => (
-              <div key={value || '—'} className={styles.kanbanCol}>
+              <div
+                key={value || '—'}
+                className={styles.kanbanCol}
+                onDragOver={editable ? (e) => e.preventDefault() : undefined}
+                onDrop={
+                  editable
+                    ? (e) => {
+                        e.preventDefault();
+                        const idx = e.dataTransfer.getData('text/idx');
+                        if (idx !== '') onCellChange(Number(idx), kanbanField, value);
+                      }
+                    : undefined
+                }
+              >
                 <div className={styles.kanbanColHead}>
                   <span>{value || '—'}</span>
                   <span className={styles.kanbanColCount}>{rows.length}</span>
                 </div>
                 {rows.map((row, i) => (
-                  <div key={i} className={styles.kanbanCard}>
+                  <div
+                    key={i}
+                    className={styles.kanbanCard}
+                    draggable={editable}
+                    data-draggable={editable}
+                    onDragStart={editable ? (e) => e.dataTransfer.setData('text/idx', row.__idx ?? '') : undefined}
+                  >
                     {table.schema
                       .filter((c) => c.key !== kanbanField)
                       .map((c) => (

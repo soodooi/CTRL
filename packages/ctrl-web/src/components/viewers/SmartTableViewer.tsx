@@ -14,12 +14,16 @@ import type { ViewerProps } from '@/lib/viewer-registry';
 import { smartTableRunAiColumn, type AiColumnOp, type AiColumnSummary } from '@/lib/kernel';
 import { readVault, writeVault, vaultRelativePath } from '@/lib/viewer-uri';
 import {
+  addColumn,
   appendRow,
+  deleteColumn,
   deleteRow,
   smartTableBody,
   smartTableFrontmatter,
   smartTableFromParts,
   updateCell,
+  updateColumn,
+  type ColumnSpec,
   type SmartTable,
 } from '@/lib/smart-table';
 import { SmartTableView } from './SmartTableView';
@@ -121,6 +125,11 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
         onDeleteRow={(rowIndex) => void commit(deleteRow(table, rowIndex))}
         onSaveView={resource.editable ? (view) => void commit({ ...table, views: [view] }) : undefined}
         onRunAiColumn={resource.editable ? runAiColumn : undefined}
+        onAddColumn={resource.editable ? (col: ColumnSpec) => void commit(addColumn(table, col)) : undefined}
+        onUpdateColumn={
+          resource.editable ? (key, patch) => void commit(updateColumn(table, key, patch)) : undefined
+        }
+        onDeleteColumn={resource.editable ? (key) => void commit(deleteColumn(table, key)) : undefined}
       />
     </div>
   );

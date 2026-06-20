@@ -467,3 +467,43 @@ export const deleteRow = (table: SmartTable, rowIndex: number): SmartTable => ({
   ...table,
   rows: table.rows.filter((_, i) => i !== rowIndex),
 });
+
+// --- Schema (field) operations (ADR-003 §6.5 A3) — immutable, keep rows in
+// sync so the markdown body round-trips. ---
+
+/** Turn a label into a unique, table-safe column key. */
+export const columnKeyFromLabel = (label: string, taken: ReadonlyArray<string>): string => {
+  const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'field';
+  if (!taken.includes(base)) return base;
+  let n = 2;
+  while (taken.includes(`${base}_${n}`)) n += 1;
+  return `${base}_${n}`;
+};
+
+/** Append a new column; back-fills an empty cell for every row. */
+export const addColumn = (table: SmartTable, col: ColumnSpec): SmartTable => ({
+  ...table,
+  schema: [...table.schema, col],
+  rows: table.rows.map((r) => ({ ...r, [col.key]: r[col.key] ?? '' })),
+});
+
+/** Patch a column's spec in place (label / type / options / symbol / min / max).
+ *  The key is immutable here (renaming a key would orphan row data). */
+export const updateColumn = (
+  table: SmartTable,
+  key: string,
+  patch: Partial<Omit<ColumnSpec, 'key'>>,
+): SmartTable => ({
+  ...table,
+  schema: table.schema.map((c) => (c.key === key ? { ...c, ...patch } : c)),
+});
+
+/** Remove a column and drop its cell from every row. */
+export const deleteColumn = (table: SmartTable, key: string): SmartTable => ({
+  ...table,
+  schema: table.schema.filter((c) => c.key !== key),
+  rows: table.rows.map((r) => {
+    const { [key]: _drop, ...rest } = r;
+    return rest;
+  }),
+});
