@@ -26,7 +26,7 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } = useViewerResource(resource);
 
   const table: SmartTable = useMemo(
-    () => (content ? parseSmartTable(content) : { schema: [], rows: [], extraFrontmatter: {} }),
+    () => (content ? parseSmartTable(content) : { schema: [], rows: [], views: [], extraFrontmatter: {} }),
     [content],
   );
 
@@ -73,6 +73,7 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
         editable={resource.editable}
         onCellChange={(rowIndex, key, value) => commit(updateCell(table, rowIndex, key, value))}
         onDeleteRow={(rowIndex) => commit(deleteRow(table, rowIndex))}
+        onSaveView={resource.editable ? (view) => commit({ ...table, views: [view] }) : undefined}
       />
     </div>
   );

@@ -6,10 +6,13 @@
 //! templating with `{field}` tokens, the 100-row cost gate, and applying
 //! results back. The provider call + batching is wired in the gate tool.
 //!
-//! NOTE (honest scope): this first cut runs the batch in one bounded call.
-//! The async job triple (`start`/`status`/`cancel`) + the Semaphore-bounded
-//! background job of §6.5.4 is the next slice; the cost gate caps the bounded
-//! run so it cannot run away.
+//! Two run shapes ship (ADR-003 §6.5.4): a synchronous `run_ai_column` for
+//! small batches (capped by the 100-row cost gate) and the async job triple
+//! (`start`/`status`/`cancel`) — a background job with chunked bounded
+//! concurrency (`MAX_CONCURRENCY`), AuthFailed-stop, and plan-time row
+//! snapshots for safe merge-back (see the gate tools in `mcp_server.rs`). The
+//! deterministic core (templating / cost gate / plan / apply / row identity)
+//! lives here; the provider call + batching are wired in the gate tools.
 
 use crate::kernel::query::Row;
 use crate::kernel::vault_smart_table::SmartTable;
