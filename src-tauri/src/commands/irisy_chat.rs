@@ -167,6 +167,11 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
         "\u{641c}\u{7b14}\u{8bb0}",         // search notes
         "\u{5b58}\u{5230}",                 // save into
         "\u{8bb0}\u{5230}\u{6211}\u{7684}", // record into my ...
+        // §14 query / smart-table operation phrases (ADR-002 substrate §14):
+        // these intents must reach hermes, which holds the smart_table.* /
+        // notes.query gate tools — the provider-direct path has no tools.
+        // (Chinese equivalents pending — see hook/convention note.)
+        "smart table", "smart-table", "kanban", "filter by", "sort by", "group by",
     ];
     NEEDS.iter().any(|k| last.contains(k))
 }
@@ -450,6 +455,11 @@ mod tests {
         // The Chinese word for "notes" (U+7B14 U+8BB0) is escaped to keep the
         // source all-English.
         assert!(turn_needs_agent(&user("\u{7b14}\u{8bb0}")));
+        // §14: smart-table / query intents must reach hermes (it holds the
+        // smart_table.* gate tools; the direct path has none).
+        assert!(turn_needs_agent(&user("filter by stage and sort by amount")));
+        assert!(turn_needs_agent(&user("show the leads in a kanban board")));
+        assert!(turn_needs_agent(&user("query my smart table for won deals")));
     }
 
     #[test]
