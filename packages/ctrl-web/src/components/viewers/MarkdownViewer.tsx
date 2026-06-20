@@ -24,6 +24,8 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import CodeMirror from '@uiw/react-codemirror';
 import type { ViewerProps } from '@/lib/viewer-registry';
+import { parseSmartTable } from '@/lib/smart-table';
+import { SmartTableViewer } from './SmartTableViewer';
 import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
 // ADR-002 substrate § vault v1 §8.5 + §8.8 (2026-06-01, memory
@@ -218,6 +220,16 @@ const serializeNode = (node: Node): string => {
 export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
   const { content, setContent, save, dirty, saving, error } =
     useViewerResource(resource);
+
+  // Content-based upgrade: a `.md` whose frontmatter declares a `schema:` block
+  // is a smart table (ADR-003 §6). Content-type inference is path-only, so any
+  // smart-table `.md` arrives here as text/markdown; detect the schema and hand
+  // off to the SmartTableViewer (query bar + grid/kanban) instead of rendering
+  // it as plain prose.
+  const isSmartTable = useMemo(
+    () => content != null && parseSmartTable(content).schema.length > 0,
+    [content],
+  );
   const [mode, setMode] = useState<'wysiwyg' | 'source'>('wysiwyg');
   const openTab = useWorkspaceStore((s) => s.openTab);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -358,6 +370,10 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
     ),
     [mode],
   );
+
+  if (isSmartTable) {
+    return <SmartTableViewer resource={resource} />;
+  }
 
   return (
     <div className={styles.frame}>
