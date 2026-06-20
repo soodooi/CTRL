@@ -102,31 +102,123 @@ fn record_operators() -> Vec<Operator> {
     vec![Eq, Neq, Contains, Gt, Lt, Gte, Lte, Before, After, Within, Is, HasTag]
 }
 
-/// Extract the `schema:` block (a list of `{key,label,type,options}` objects)
-/// from the parsed frontmatter into typed `FieldSpec`s.
+/// Extract the `schema:` block into typed `FieldSpec`s. Each item may arrive
+/// EITHER as a JSON object (structured frontmatter) OR as a string of YAML flow
+/// form `{ key: x, label: y, type: z, options: [..] }` — which is what
+/// `vault::read`'s lightweight YAML parser actually yields for a block sequence
+/// of inline mappings (it parses each `- {...}` item as a scalar string). Both
+/// are handled so the gate tools work on real on-disk tables, not just
+/// hand-built JSON.
 fn parse_schema(frontmatter: &Value) -> Vec<FieldSpec> {
     let Some(arr) = frontmatter.get("schema").and_then(Value::as_array) else {
         return Vec::new();
     };
     arr.iter()
-        .filter_map(|item| {
-            let key = item.get("key").and_then(Value::as_str)?.to_string();
-            let label = item
-                .get("label")
-                .and_then(Value::as_str)
-                .unwrap_or(&key)
-                .to_string();
-            let cell_type = CellType::parse(
-                item.get("type").and_then(Value::as_str).unwrap_or("text"),
-            );
-            let options = item.get("options").and_then(Value::as_array).map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(str::to_string))
-                    .collect()
-            });
-            Some(FieldSpec { key, label, cell_type, options })
+        .filter_map(|item| match item {
+            Value::Object(_) => parse_object_field(item),
+            Value::String(s) => parse_inline_field(s),
+            _ => None,
         })
         .collect()
+}
+
+/// Field from a structured JSON object.
+fn parse_object_field(item: &Value) -> Option<FieldSpec> {
+    let key = item.get("key").and_then(Value::as_str)?.to_string();
+    let label = item.get("label").and_then(Value::as_str).unwrap_or(&key).to_string();
+    let cell_type = CellType::parse(item.get("type").and_then(Value::as_str).unwrap_or("text"));
+    let options = item.get("options").and_then(Value::as_array).map(|a| {
+        a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()
+    });
+    Some(FieldSpec { key, label, cell_type, options })
+}
+
+/// Field from a YAML flow-mapping string `{ key: x, label: y, type: z, options: [a, b] }`.
+fn parse_inline_field(s: &str) -> Option<FieldSpec> {
+    let inner = s.trim().strip_prefix('{')?.strip_suffix('}')?;
+    let mut key: Option<String> = None;
+    let mut label: Option<String> = None;
+    let mut cell_type = CellType::Text;
+    let mut options: Option<Vec<String>> = None;
+    for pair in split_top_level(inner, ',') {
+        let Some(colon) = pair.find(':') else { continue };
+        // Keys may be bare (`key:` from hand-written YAML flow) or quoted
+        // (`"key":` from the emitter's JSON Display of an object) — unquote both.
+        let k = unquote(pair[..colon].trim());
+        let v = pair[colon + 1..].trim();
+        match k {
+            "key" => key = Some(unquote(v).to_string()),
+            "label" => label = Some(unquote(v).to_string()),
+            "type" => cell_type = CellType::parse(unquote(v)),
+            "options" => {
+                if let Some(list) = v.trim().strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+                    options = Some(
+                        split_top_level(list, ',')
+                            .iter()
+                            .map(|o| unquote(o.trim()).to_string())
+                            .filter(|o| !o.is_empty())
+                            .collect(),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    let key = key?;
+    let label = label.unwrap_or_else(|| key.clone());
+    Some(FieldSpec { key, label, cell_type, options })
+}
+
+fn unquote(s: &str) -> &str {
+    let s = s.trim();
+    s.strip_prefix('"')
+        .and_then(|r| r.strip_suffix('"'))
+        .or_else(|| s.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')))
+        .unwrap_or(s)
+}
+
+/// Split at top-level separators only — ignores separators inside `[]`, `{}`,
+/// or quotes (so `options: [a, b]` is not split on its inner comma).
+fn split_top_level(s: &str, sep: char) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut in_quote: Option<char> = None;
+    let mut buf = String::new();
+    for ch in s.chars() {
+        match in_quote {
+            Some(q) => {
+                buf.push(ch);
+                if ch == q {
+                    in_quote = None;
+                }
+            }
+            None => match ch {
+                '"' | '\'' => {
+                    in_quote = Some(ch);
+                    buf.push(ch);
+                }
+                '[' | '{' => {
+                    depth += 1;
+                    buf.push(ch);
+                }
+                ']' | '}' => {
+                    depth -= 1;
+                    buf.push(ch);
+                }
+                c if c == sep && depth == 0 => {
+                    if !buf.trim().is_empty() {
+                        out.push(buf.trim().to_string());
+                    }
+                    buf.clear();
+                }
+                c => buf.push(c),
+            },
+        }
+    }
+    if !buf.trim().is_empty() {
+        out.push(buf.trim().to_string());
+    }
+    out
 }
 
 /// Parse the first markdown pipe table in `body` into rows keyed by schema key.
@@ -265,5 +357,51 @@ mod tests {
         assert_eq!(t.rows[0]["amount"], "111");
         assert!(!t.update_cell(99, "amount", "1")); // bad index
         assert!(!t.update_cell(0, "nope", "1")); // bad field
+    }
+
+    #[test]
+    fn parses_schema_from_inline_flow_strings() {
+        // This is what vault::read's YAML parser actually yields: each schema
+        // item is a flow-mapping STRING, not a JSON object. Was silently
+        // dropped before the dual-form fix → empty schema → broken tools.
+        let fm = serde_json::json!({
+            "schema": [
+                "{ key: name, label: Name, type: text }",
+                "{ key: amount, label: Amount, type: number }",
+                "{ key: stage, label: Stage, type: select, options: [new, won, lost] }"
+            ]
+        });
+        let t = SmartTable::parse(&fm, BODY);
+        assert_eq!(t.fields.len(), 3);
+        assert_eq!(t.fields[0].key, "name");
+        assert_eq!(t.fields[1].cell_type, CellType::Number);
+        assert_eq!(
+            t.fields[2].options.as_deref(),
+            Some(["new".to_string(), "won".to_string(), "lost".to_string()].as_slice())
+        );
+    }
+
+    #[test]
+    fn full_vault_write_read_round_trip_preserves_schema_and_edits() {
+        use crate::kernel::vault;
+        let dir = std::env::temp_dir().join(format!("ctrl-st-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let rel = "leads.md";
+
+        // Seed a real on-disk smart-table via vault::write (object frontmatter).
+        vault::write(&dir, rel, BODY, &frontmatter()).unwrap();
+
+        // Read it back the way the gate tools do, edit a cell, write, re-read.
+        let entry = vault::read(&dir, rel).unwrap();
+        let mut t = SmartTable::parse(&entry.frontmatter, &entry.content);
+        assert_eq!(t.fields.len(), 3, "schema survives the YAML round-trip");
+        assert!(t.update_cell(0, "amount", "777"));
+        vault::write(&dir, rel, &t.serialize_body(), &entry.frontmatter).unwrap();
+
+        let entry2 = vault::read(&dir, rel).unwrap();
+        let t2 = SmartTable::parse(&entry2.frontmatter, &entry2.content);
+        assert_eq!(t2.fields.len(), 3, "schema still intact after a produce write");
+        assert_eq!(t2.rows[0]["amount"], "777");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
