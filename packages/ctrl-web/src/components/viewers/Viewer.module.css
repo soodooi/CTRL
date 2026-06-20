@@ -843,3 +843,84 @@
   color: var(--color-text-muted, #888);
   border-top: 1px solid var(--color-border, #d8d4cc);
 }
+
+/* §14 view toggle + kanban board (SmartTableView) — ADR-003 §6.2 */
+.viewToggle {
+  display: inline-flex;
+  gap: 1px;
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-right: var(--space-2);
+}
+.viewToggleBtn {
+  background: var(--color-surface, #fff);
+  color: var(--color-text-muted, #888);
+  border: none;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.viewToggleBtn[data-active='true'] {
+  background: var(--color-accent, #6aa3ff);
+  color: #fff;
+}
+.kanban {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  overflow-x: auto;
+  align-items: flex-start;
+}
+.kanbanEmpty {
+  padding: var(--space-4);
+  color: var(--color-text-muted, #888);
+  font-size: 12px;
+}
+.kanbanCol {
+  flex: 0 0 220px;
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 8px;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kanbanColHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text, #1a1a1a);
+  padding: 2px 4px;
+}
+.kanbanColCount {
+  color: var(--color-text-muted, #888);
+  font-variant-numeric: tabular-nums;
+}
+.kanbanCard {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.kanbanCardRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.kanbanCardLabel {
+  color: var(--color-text-muted, #888);
+}
+.kanbanCardValue {
+  color: var(--color-text, #1a1a1a);
+  text-align: right;
+}

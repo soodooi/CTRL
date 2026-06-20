@@ -40,6 +40,22 @@ const VALUE_HINT: Partial<Record<Operator, string>> = {
   has_tag: 'tag',
 };
 
+/** Group rows into kanban columns by a field's value, preserving first-seen
+ *  column order. */
+const kanbanColumns = (
+  rows: Array<Record<string, string>>,
+  field: string,
+): Array<[string, Array<Record<string, string>>]> => {
+  const map = new Map<string, Array<Record<string, string>>>();
+  for (const row of rows) {
+    const key = row[field] ?? '';
+    const bucket = map.get(key);
+    if (bucket) bucket.push(row);
+    else map.set(key, [row]);
+  }
+  return [...map.entries()];
+};
+
 interface CellProps {
   col: ColumnSpec;
   value: string;
@@ -101,6 +117,10 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: S
   const [filters, setFilters] = useState<Filter[]>([]);
   const [sort, setSort] = useState<SortKey | null>(null);
   const [groupBy, setGroupBy] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'kanban'>('grid');
+  // Kanban columns by a select/checkbox field; falls back to the active group.
+  const kanbanField =
+    groupBy ?? table.schema.find((c) => c.type === 'select' || c.type === 'checkbox')?.key ?? null;
   const [draft, setDraft] = useState<Filter>({
     field: table.schema[0]?.key ?? '',
     op: 'contains',
@@ -166,6 +186,25 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: S
   return (
     <div>
       <div className={styles.queryBar} data-testid="smart-table-query-bar">
+        <div className={styles.viewToggle}>
+          <button
+            type="button"
+            className={styles.viewToggleBtn}
+            data-active={viewMode === 'grid'}
+            onClick={() => setViewMode('grid')}
+          >
+            Grid
+          </button>
+          <button
+            type="button"
+            className={styles.viewToggleBtn}
+            data-active={viewMode === 'kanban'}
+            onClick={() => setViewMode('kanban')}
+            data-testid="smart-table-kanban-toggle"
+          >
+            Kanban
+          </button>
+        </div>
         <span className={styles.queryLabel}>Filter</span>
         <select
           className={styles.querySelect}
@@ -268,6 +307,7 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: S
         </div>
       )}
 
+      {viewMode === 'grid' ? (
       <div className={styles.scroll}>
         <table className={styles.tableEl}>
           <thead>
@@ -316,6 +356,34 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: S
           </tbody>
         </table>
       </div>
+      ) : (
+        <div className={styles.kanban} data-testid="smart-table-kanban">
+          {kanbanField == null ? (
+            <div className={styles.kanbanEmpty}>Pick a select or checkbox field to columnize.</div>
+          ) : (
+            kanbanColumns(result.rows, kanbanField).map(([value, rows]) => (
+              <div key={value || '—'} className={styles.kanbanCol}>
+                <div className={styles.kanbanColHead}>
+                  <span>{value || '—'}</span>
+                  <span className={styles.kanbanColCount}>{rows.length}</span>
+                </div>
+                {rows.map((row, i) => (
+                  <div key={i} className={styles.kanbanCard}>
+                    {table.schema
+                      .filter((c) => c.key !== kanbanField)
+                      .map((c) => (
+                        <div key={c.key} className={styles.kanbanCardRow}>
+                          <span className={styles.kanbanCardLabel}>{c.label}</span>
+                          <span className={styles.kanbanCardValue}>{row[c.key] || '—'}</span>
+                        </div>
+                      ))}
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 };
