@@ -1054,6 +1054,56 @@
   padding: 2px 0 2px 8px;
 }
 
+/* Record detail card (ADR-003 §6 D6) */
+.rowActions {
+  display: inline-flex;
+  gap: 2px;
+}
+.recordOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.32);
+}
+.recordCard {
+  width: min(480px, 92vw);
+  max-height: 82vh;
+  overflow: auto;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--color-surface, #fff);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.recordHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.recordTitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+.recordField {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--color-border, #eee);
+}
+.recordLabel {
+  flex: 0 0 110px;
+  font-size: 12px;
+  color: var(--color-text-muted, #888);
+}
+.recordValue {
+  flex: 1;
+  min-width: 0;
+}
+
 /* §14 group-by header rows (SmartTableView) — ADR-003 §6.2 */
 .groupHeader {
   background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));

@@ -82,8 +82,25 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
     return summary;
   };
 
+  // Add a row, then auto-fill any column whose schema requests it (ADR-003
+  // §6.5.4 auto-update). run_ai_column resumes over empty cells, so the new
+  // row gets filled; best-effort, the ✦ panel covers manual reruns.
+  const addRow = async (): Promise<void> => {
+    const next = appendRow(table);
+    await commit(next);
+    for (const f of next.schema) {
+      if (f.aiAutoFill && f.aiOp && f.aiPrompt) {
+        try {
+          await runAiColumn(f.key, f.aiOp as AiColumnOp, f.aiPrompt);
+        } catch {
+          // best-effort; user can run the column manually via the ✦ panel.
+        }
+      }
+    }
+  };
+
   const rightActions = resource.editable ? (
-    <button type="button" className={styles.modeButton} onClick={() => void commit(appendRow(table))} title="Add row">
+    <button type="button" className={styles.modeButton} onClick={() => void addRow()} title="Add row">
       + Row
     </button>
   ) : null;

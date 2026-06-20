@@ -84,6 +84,12 @@ export interface ColumnSpec {
   max?: number;
   /** For `currency`: a prefix symbol (default "$"). */
   symbol?: string;
+  /** AI field shortcut (ADR-003 §6.5.4). When set, the column remembers its AI
+   *  op + prompt; `aiAutoFill` re-runs it for newly added rows. Stored as flat
+   *  scalars (ai_op / ai_prompt / ai_autofill) so the YAML round-trips. */
+  aiOp?: string;
+  aiPrompt?: string;
+  aiAutoFill?: boolean;
 }
 
 /** A saved view (ADR-003 §6.2) — view state lives in frontmatter, not the
@@ -311,6 +317,9 @@ const columnFromObj = (o: Record<string, unknown>): ColumnSpec | null => {
     min: typeof o.min === 'number' ? o.min : undefined,
     max: typeof o.max === 'number' ? o.max : undefined,
     symbol: typeof o.symbol === 'string' ? o.symbol : undefined,
+    aiOp: typeof o.ai_op === 'string' && o.ai_op ? o.ai_op : undefined,
+    aiPrompt: typeof o.ai_prompt === 'string' && o.ai_prompt ? o.ai_prompt : undefined,
+    aiAutoFill: o.ai_autofill === true || o.ai_autofill === 'true' ? true : undefined,
   };
 };
 
@@ -390,6 +399,10 @@ export const serializeSmartTable = (table: SmartTable): string => {
       if (col.options) parts.push(`options: [${col.options.join(', ')}]`);
       if (col.min !== undefined) parts.push(`min: ${col.min}`);
       if (col.max !== undefined) parts.push(`max: ${col.max}`);
+      if (col.symbol !== undefined) parts.push(`symbol: ${col.symbol}`);
+      if (col.aiOp) parts.push(`ai_op: ${col.aiOp}`);
+      if (col.aiPrompt) parts.push(`ai_prompt: ${col.aiPrompt}`);
+      if (col.aiAutoFill) parts.push(`ai_autofill: true`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
   }
@@ -446,6 +459,9 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
     ...(c.min !== undefined ? { min: c.min } : {}),
     ...(c.max !== undefined ? { max: c.max } : {}),
     ...(c.symbol !== undefined ? { symbol: c.symbol } : {}),
+    ...(c.aiOp ? { ai_op: c.aiOp } : {}),
+    ...(c.aiPrompt ? { ai_prompt: c.aiPrompt } : {}),
+    ...(c.aiAutoFill ? { ai_autofill: true } : {}),
   }));
   if (table.views.length > 0) {
     fm.views = table.views.map((v) => ({

@@ -325,6 +325,8 @@ export const SmartTableView = ({
   const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'gallery' | 'calendar'>(savedView?.kind ?? 'grid');
   const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
   const editsViews = Boolean(onReplaceViews);
+  // Record detail card (ADR-003 §6 D6): canonical row index, or null = closed.
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const applyView = (v: ViewSpec, i: number): void => {
     setViewMode(v.kind);
     setGroupBy(v.groupBy ?? null);
@@ -393,6 +395,9 @@ export const SmartTableView = ({
   const [feType, setFeType] = useState<CellType>('text');
   const [feOptions, setFeOptions] = useState('');
   const [feSymbol, setFeSymbol] = useState('$');
+  const [feAiOp, setFeAiOp] = useState('');
+  const [feAiPrompt, setFeAiPrompt] = useState('');
+  const [feAiAutoFill, setFeAiAutoFill] = useState(false);
   const openFieldEditor = (col?: ColumnSpec): void => {
     if (col) {
       setFieldEdit({ key: col.key });
@@ -400,12 +405,18 @@ export const SmartTableView = ({
       setFeType(col.type);
       setFeOptions((col.options ?? []).join(', '));
       setFeSymbol(col.symbol ?? '$');
+      setFeAiOp(col.aiOp ?? '');
+      setFeAiPrompt(col.aiPrompt ?? '');
+      setFeAiAutoFill(Boolean(col.aiAutoFill));
     } else {
       setFieldEdit({ key: null });
       setFeLabel('');
       setFeType('text');
       setFeOptions('');
       setFeSymbol('$');
+      setFeAiOp('');
+      setFeAiPrompt('');
+      setFeAiAutoFill(false);
     }
   };
   const saveField = (): void => {
@@ -416,6 +427,9 @@ export const SmartTableView = ({
       type: feType,
       options: feType === 'select' || feType === 'tags' ? (opts.length ? opts : undefined) : undefined,
       symbol: feType === 'currency' ? feSymbol : undefined,
+      aiOp: feAiOp || undefined,
+      aiPrompt: feAiOp && feAiPrompt.trim() ? feAiPrompt : undefined,
+      aiAutoFill: feAiOp && feAiAutoFill ? true : undefined,
     };
     if (fieldEdit?.key) {
       onUpdateColumn?.(fieldEdit.key, patch);
@@ -459,7 +473,8 @@ export const SmartTableView = ({
                   setAiField(col.key);
                   setAiResult(null);
                   setAiError(null);
-                  setAiPrompt('');
+                  setAiOp((col.aiOp as AiColumnOp) || 'generate');
+                  setAiPrompt(col.aiPrompt ?? '');
                 }}
               >
                 ✦
@@ -490,18 +505,30 @@ export const SmartTableView = ({
       {
         id: '__actions',
         header: '',
-        cell: ({ row }) =>
-          editable && onDeleteRow ? (
+        cell: ({ row }) => (
+          <span className={styles.rowActions}>
             <button
               type="button"
               className={styles.tableRowAction}
-              onClick={() => onDeleteRow(Number(row.original.__idx))}
-              aria-label="Delete row"
-              title="Delete row"
+              onClick={() => setExpandedRow(Number(row.original.__idx))}
+              aria-label="Expand record"
+              title="Expand record"
             >
-              ×
+              ⤢
             </button>
-          ) : null,
+            {editable && onDeleteRow && (
+              <button
+                type="button"
+                className={styles.tableRowAction}
+                onClick={() => onDeleteRow(Number(row.original.__idx))}
+                aria-label="Delete row"
+                title="Delete row"
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ),
       },
     ];
   }, [table.schema, editable, onCellChange, onDeleteRow, onRunAiColumn, editsSchema]);
@@ -756,6 +783,38 @@ export const SmartTableView = ({
           {feType === 'currency' && (
             <input className={styles.fieldSymbol} value={feSymbol} aria-label="Currency symbol" onChange={(e) => setFeSymbol(e.target.value)} />
           )}
+          {onRunAiColumn && (
+            <>
+              <select
+                className={styles.querySelect}
+                value={feAiOp}
+                onChange={(e) => setFeAiOp(e.target.value)}
+                aria-label="AI op"
+                data-testid="field-ai-op"
+              >
+                <option value="">no AI</option>
+                <option value="generate">AI: generate</option>
+                <option value="classify">AI: classify</option>
+                <option value="extract">AI: extract</option>
+                <option value="summarize">AI: summarize</option>
+                <option value="translate">AI: translate</option>
+              </select>
+              {feAiOp && (
+                <input
+                  className={styles.aiPanelPrompt}
+                  value={feAiPrompt}
+                  placeholder="AI prompt — reference columns with {field}"
+                  onChange={(e) => setFeAiPrompt(e.target.value)}
+                />
+              )}
+              {feAiOp && (
+                <label className={styles.aiPanelMsg}>
+                  <input type="checkbox" checked={feAiAutoFill} onChange={(e) => setFeAiAutoFill(e.target.checked)} /> auto-fill new
+                  rows
+                </label>
+              )}
+            </>
+          )}
           <button type="button" className={styles.queryAdd} onClick={saveField} disabled={!feLabel.trim()} data-testid="field-save">
             Save
           </button>
@@ -923,6 +982,32 @@ export const SmartTableView = ({
             </div>
           );
         })()}
+
+      {expandedRow != null && table.rows[expandedRow] && (
+        <div className={styles.recordOverlay} onClick={() => setExpandedRow(null)} data-testid="record-card">
+          <div className={styles.recordCard} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.recordHead}>
+              <span className={styles.recordTitle}>Record</span>
+              <button type="button" className={styles.tableRowAction} onClick={() => setExpandedRow(null)} aria-label="Close">
+                ×
+              </button>
+            </div>
+            {table.schema.map((c) => (
+              <div key={c.key} className={styles.recordField}>
+                <span className={styles.recordLabel}>{c.label}</span>
+                <span className={styles.recordValue}>
+                  <Cell
+                    col={c}
+                    value={table.rows[expandedRow]?.[c.key] ?? ''}
+                    editable={editable}
+                    onChange={(v) => onCellChange(expandedRow, c.key, v)}
+                  />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
