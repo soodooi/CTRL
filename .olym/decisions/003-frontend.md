@@ -2,7 +2,7 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 14
+version: 15
 status: accepted
 last_updated: 2026-06-19
 deciders: [bao, zeus, daedalus]
@@ -19,6 +19,7 @@ changelog:
   - v4 2026-06-01: § shell-4col §7.1 column-order amendment — bao "顺序是工作区（内有tab），L2，L1，Irisy". Column model reordered LEFT→RIGHT to `[Tab | L2 | L1 | Irisy]`. L1 is now anchored immediately left of Irisy (not far-left). Rationale: Irisy + L1 stay visually pinned at the monitor's right; Workspace grows leftward when expanded, with L2 sandwiched between Workspace and L1. Compact mode still renders only L1 (48) + Irisy (430) = 478 px because Workspace and L2 collapse to 0. Anti-pattern §7.8 entry added: do NOT render L1 at column index 1.
   - v5 2026-06-09: **§ nav-keyboard → § nav-l1 — 5-chip 3-agent aggregator L1 (H-2026-06-09-002).** bao 2026-06-09 校准: 3 agents (hermes / opencode / kairo) are external; CTRL is the aggregator壳. L1 chips reorganized as 5 first-class routes mapping directly to capability surfaces: **Irisy** (PWA persona shell, default chat) / **Mcp pool** (MCP face discovery) / **Notes** (kairo webview) / **Coding** (opencode HTTP API + xterm) / **Assistant** (hermes MCP stdio). § vault-stack RETIRED — kairo owns markdown editor + wiki-link + backlink + git; CTRL doesn't ship its own editor. § agent-routes NEW: lock per-route agent endpoint contracts (kairo webview path / opencode HTTP port discovery / hermes MCP stdio handshake). Settings + Pool stay as before. § shell-4col 4-column shell preserved — agent routes render inside `[Tab]` column. Pre-v5 components retired in PWA: `IrisyChat forceMode="coding"` wrapper, `NotesApp` 3-pane (NotesTree/NotesEditor/NotesBacklinks), `MarkdownViewer` Tiptap shell, `BacklinksPanel`. PWA picks up sycophancy filter (relocated from `packages/ctrl-pi-bridge/data/persona-patterns.md` → `packages/ctrl-web/src/lib/persona-filter/patterns.md`).
   - v6 2026-06-11: **§8 NEW — morphing-conversation rebuild.** bao 2026-06-11 校准: CTRL is not a shell, it's an advanced UX paradigm at the app layer (UX + 通讯 + agent optimization); domain breadth via MCP/CLI/Skills, not built verticals. Synthesized from a 6-track product benchmark (launcher/routing/cockpit + marketing/office/finance verticals). Locks: one ambient morphing conversation (input-first floating surface), intent routing with visible pill + ambiguity-adaptive response (Lovable 3-way), morph-to-output-type via the 12-viewer registry, agent-workspace pane + tool stream, 3-layer drill-down, point-edit + checkpoint + accept/reject gate, capability-agnostic routing to the open MCP/CLI/Skill set, ambient scheduled tasks. §7 4-col shell + § nav-l1 5-chip SUPERSEDED for the home surface (chips survive as morph-layer shortcuts). 6-slice build sequence in §8.4. Invariants preserved: Ctrl summon · floating popup · Irisy(hermes) · coding(opencode) · kairo(notes).
+  - v15 2026-06-19: **§6.5.1 describe = TOOL not resource (impl-shipped reconcile, independent-checker flag).** First §14 vertical shipped (`feat/unified-query`: `kernel/query.rs` QuerySource + shared filter/sort/group engine, `kernel/vault_smart_table.rs` first RecordSource, gate tools `smart_table.{describe,query,update_cell,append_row}`, 14 kernel tests green, code-reviewer PASS). Reconciles the §6.5.1/.2 "schema resource" wording: as built, the type layer is the TOOL `smart_table.describe`, not an MCP resource — rmcp 1.7 resources are not enabled in the kernel (`enable_tools()` only) + a tool is guaranteed model-visible (Hermes `list_tools`). §14 "describe verb" governs; anti-hallucination unchanged (Irisy calls describe before query). produce write-path piggybacks `vault::write` (review-gating still ADR-006 §4 future). run_ai_column async-job trio + add_view remain unimplemented (next slices).
   - v14 2026-06-19: **§6.5 reframed — smart-table = first implementation of the Unified Operation Interface (ADR-002 §14, bao「修改架构」).** The query engine generalized from a smart-table feature to a substrate-level contract: all content-type feature points (md/html/table/pdf/connector) operated via ONE interface — `describe`/`query`/`produce` — on the :17873 gate. §6.5's machinery is now the first `QuerySource` (RecordSource) instance: `get_schema`→`describe`, the filter/sort/group query → RecordSource `query` profile, write tools + `run_ai_column` job → `produce` (through review gate). Notes=TextSource, html/pdf=BlobSource follow the same 3 verbs (zero bespoke tools). Query is a kernel service, not a table feature. No content change to §6.5.1–.7 mechanics; this is the altitude/ownership reframe. Research source adds `research-unified-operation-interface.md`.
   - v13 2026-06-19: **§6.5.4 AI column = async job + hard-problem locks (impl research: rmcp-1.7 probe + Airtable production lessons + MCP SEP-1686).** `run_ai_column` is NOT one sync write tool (would block minutes on a big table) — it's a **call-now/fetch-later job triple** `.start`(→job_id)/`.status`(poll-for-truth)/`.cancel` (§6.5.2 updated), forward-compatible with MCP SEP-1686 Tasks. Locks: bounded concurrency via `tokio::sync::Semaphore` (rate limits are Airtable's real failure mode); partial-failure ≠ abort (`errors[]` + backoff on `QuotaExhausted`, stop on `AuthFailed`); **idempotent resume via row-level state** (re-run only non-complete rows, no duplicate spend); cancellation token; **write-back = merge-by-row + re-read-at-write, NOT whole-file overwrite** (else a mid-run user edit is clobbered — `vault::write` is lock-free last-write-wins); **cost gate = 100 rows** (bao: >100 rows needs explicit user confirm before spend, `.start` returns `needs_confirmation{row_count}`). Widens the narrow surface by 3 tools — justified: no correct *synchronous* form exists. Research source: `vault/ctrl/research-ai-data-platforms.md`.
   - v12 2026-06-19: **§6.5.2/.3 mechanism correction — ADR↔impl drift fix (rmcp static-schema probe).** Impl research (`mcp_server.rs`: rmcp `#[tool]` generates each tool's JSON schema at COMPILE time, no runtime dynamic schema) invalidated v11's "field/group_by enums dynamically generated from the live table schema". Corrected: table-INDEPENDENT fixed sets (`op`, view `kind`, ai `op`) stay genuine static enums; table-DEPENDENT params (`field`/`group_by`/`inputs`/`target_field`) become **validated strings** — Irisy reads the `smart_table.schema` **resource** first (ChatBI schema-injection) and a non-existent field is rejected at parse time with `field_not_found{valid:[…]}` for self-correction. Core principle (Irisy fills constrained params, schema=semantic layer) unchanged; enforcement moves compile-time-enum → resource-injection + runtime-validation (one notch softer, standard MCP-database pattern). Injection point = MCP resource (bao chose, option 1).
@@ -267,7 +268,7 @@ extract / summarize / translate.
   real-time co-edit/comments/cell-permissions (the last gated behind the Automerge
   CRDT substrate, ADR-002 § crypto).
 
-### §6.5 Irisy operation surface (v14 — 2026-06-19, benchmarked vs Dify / Coze / ChatBI / Airtable)
+### §6.5 Irisy operation surface (v15 — 2026-06-19, benchmarked vs Dify / Coze / ChatBI / Airtable)
 
 > **v14 reframe (bao「修改架构」2026-06-19):** smart-table is now the **first implementation
 > of the Unified Operation Interface — ADR-002 §14** (describe / query / produce over all
@@ -305,15 +306,22 @@ extract / summarize / translate.
 > CTRL has no SQL engine to backstop a bad query, so this rule is load-bearing,
 > not optional.
 
-**§6.5.1 Layering (MCP resource-vs-tool pattern).** Following the official MCP
-guidance (schema as *resource* = read-only context; actions as *tools* =
-model-controlled, validated):
+**§6.5.1 Layering.** The type layer (describe) and the actions (query/produce)
+are projected on the :17873 gate. MCP's canonical pattern is schema-as-*resource*
++ actions-as-*tools*; **as SHIPPED (v15, 2026-06-19), describe is a TOOL**
+(`smart_table.describe`), NOT an MCP resource — because (a) rmcp 1.7 resources are
+not enabled in the kernel (`mcp_server.rs` declares `enable_tools()` only) and
+(b) a tool is guaranteed model-visible (Hermes discovers tools via `list_tools`;
+it may not auto-read resources). The §14 "describe verb" framing governs; the
+earlier "schema resource" wording is superseded. Anti-hallucination is unaffected:
+Irisy calls `smart_table.describe` before querying, exactly the ChatBI
+schema-injection move.
 
 ```
-Irisy (Hermes brain) — fills validated params (sees valid fields via the schema resource), never raw queries
+Irisy (Hermes brain) — calls describe first, then fills validated params, never raw queries
   │
-:17873 gate ── smart_table.schema   (RESOURCE — field names/types/enums → the "semantic layer")
-           └─ smart_table.* tools   (TOOLS — query/write, all params validated)
+:17873 gate ── smart_table.describe (TOOL — fields/types/operators → the "semantic layer")
+           └─ smart_table.{query,update_cell,append_row,…} (TOOLS — all params validated)
   │
 kernel smart_table ops (parse / query / mutate / ai-column) — NEW kernel surface
   │
