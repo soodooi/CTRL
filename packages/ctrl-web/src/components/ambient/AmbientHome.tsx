@@ -58,6 +58,7 @@ import {
 } from '@/components/featurepack/FeaturePackScene';
 import { runInstalledPackAction } from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
+import { TablesPanel } from '@/components/tables/TablesPanel';
 import { Sidebar, type SidebarSection } from './Sidebar';
 import { WorkspacePanel } from './WorkspacePanel';
 import {
@@ -130,6 +131,8 @@ export interface AmbientHomeProps {
   packRequest: PackRequest | null;
   /** Bumped to open Notes alongside Irisy (output left, Irisy right). */
   openNotesNonce: number;
+  /** Bumped to open the smart-table browser alongside Irisy (same scenePane). */
+  openTablesNonce: number;
   /** Bumped by the shell when "Irisy" is selected, to reset the chat. */
   irisyNonce: number;
   /** Collapsed (display:none) while a route owns the main column. The
@@ -160,6 +163,7 @@ export function AmbientHome({
   toolRequest,
   packRequest,
   openNotesNonce,
+  openTablesNonce,
   irisyNonce,
   hidden,
   onSidebarSelect,
@@ -180,7 +184,7 @@ export function AmbientHome({
   const [editing, setEditing] = useState(false);
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
-  const [scene, setScene] = useState<FeaturePack | 'notes' | null>(null);
+  const [scene, setScene] = useState<FeaturePack | 'notes' | 'tables' | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
   // Irisy column width — a fixed default the user can drag via the divider
   // between Irisy and the output bar (bao 2026-06-13). Window resizing keeps
@@ -589,6 +593,9 @@ export function AmbientHome({
   useEffect(() => {
     if (openNotesNonce > 0) setScene('notes');
   }, [openNotesNonce]);
+  useEffect(() => {
+    if (openTablesNonce > 0) setScene('tables');
+  }, [openTablesNonce]);
 
   // Reset the chat when the shell selects "Irisy" (nonce bump). Since this
   // component stays mounted across routes (hidden, not unmounted), the
@@ -761,6 +768,8 @@ export function AmbientHome({
       ? 'Discover'
       : scene === 'notes'
       ? 'Notes'
+      : scene === 'tables'
+      ? 'Smart Tables'
       : scene
       ? scene.name
       : part
@@ -890,6 +899,18 @@ export function AmbientHome({
                       ✕
                     </button>
                     <NotesApp />
+                  </div>
+                ) : scene === 'tables' ? (
+                  <div className={styles.scenePane}>
+                    <button
+                      type="button"
+                      className={styles.sceneClose}
+                      onClick={() => setScene(null)}
+                      aria-label="Close Tables"
+                    >
+                      ✕
+                    </button>
+                    <TablesPanel />
                   </div>
                 ) : scene ? (
                   <div className={styles.scenePane}>
