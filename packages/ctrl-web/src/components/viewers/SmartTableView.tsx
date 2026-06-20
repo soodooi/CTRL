@@ -100,6 +100,7 @@ export interface SmartTableViewProps {
 export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: SmartTableViewProps): ReactElement => {
   const [filters, setFilters] = useState<Filter[]>([]);
   const [sort, setSort] = useState<SortKey | null>(null);
+  const [groupBy, setGroupBy] = useState<string | null>(null);
   const [draft, setDraft] = useState<Filter>({
     field: table.schema[0]?.key ?? '',
     op: 'contains',
@@ -116,9 +117,10 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: S
     [table],
   );
   const result = useMemo(
-    () => queryTable(indexed, { filters, sort: sort ? [sort] : [] }),
-    [indexed, filters, sort],
+    () => queryTable(indexed, { filters, sort: sort ? [sort] : [], groupBy }),
+    [indexed, filters, sort, groupBy],
   );
+  const groupLabel = (key: string) => table.schema.find((c) => c.key === key)?.label ?? key;
 
   const columns = useMemo<ColumnDef<Record<string, string>>[]>(() => {
     return [
@@ -230,6 +232,21 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: S
           </button>
         )}
 
+        <span className={styles.queryLabel}>Group</span>
+        <select
+          className={styles.querySelect}
+          value={groupBy ?? ''}
+          onChange={(e) => setGroupBy(e.target.value || null)}
+          data-testid="smart-table-group"
+        >
+          <option value="">none</option>
+          {table.schema.map((c) => (
+            <option key={c.key} value={c.key}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+
         <span className={styles.queryCount} data-testid="smart-table-count">
           {result.matchCount} / {table.rows.length}
         </span>
@@ -265,15 +282,37 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow }: S
             ))}
           </thead>
           <tbody>
-            {reactTable.getRowModel().rows.map((row) => (
-              <tr key={row.id} className={styles.tableRow}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className={styles.tableCellWrap}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {(() => {
+              const rows = reactTable.getRowModel().rows;
+              const colspan = table.schema.length + 1;
+              const out: ReactElement[] = [];
+              let prev: string | null = null;
+              for (const row of rows) {
+                if (groupBy) {
+                  const g = row.original[groupBy] ?? '';
+                  if (g !== prev) {
+                    prev = g;
+                    out.push(
+                      <tr key={`group-${g}`} className={styles.groupHeader}>
+                        <td colSpan={colspan} className={styles.groupHeaderCell}>
+                          {groupLabel(groupBy)}: {g || '—'}
+                        </td>
+                      </tr>,
+                    );
+                  }
+                }
+                out.push(
+                  <tr key={row.id} className={styles.tableRow}>
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className={styles.tableCellWrap}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>,
+                );
+              }
+              return out;
+            })()}
           </tbody>
         </table>
       </div>
