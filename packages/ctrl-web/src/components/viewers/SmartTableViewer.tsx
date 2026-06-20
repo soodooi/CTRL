@@ -1,44 +1,70 @@
-// SmartTableViewer — Notion-style structured table rendered from a markdown
-// file with a frontmatter schema. Per decision_ctrl_obsidian_philosophy: vim
-// test passes because the file is ordinary markdown — the table view is a
-// *projection* over the canonical plain-text source.
+// SmartTableViewer — Notion-style structured table over a markdown file whose
+// frontmatter declares a `schema:` block (vim test: the file is ordinary
+// markdown; this view is a projection).
 //
-// This wrapper owns the vault resource (load / parse / serialize / save); the
-// presentation + §14 query bar live in SmartTableView so they also render in
-// the table-lab dev route and stay unit-testable.
+// IMPORTANT: it loads via `vault_read` directly (frontmatter + body) and builds
+// the table from BOTH parts. The generic viewer pipeline (`useViewerResource`
+// → `vault://`) returns the BODY ONLY — the frontmatter is stripped — so it can
+// never see the schema. Saves go back through `vault_write` (body + frontmatter
+// separately; the kernel re-emits the YAML).
 
-import { useMemo, type ReactElement } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState, type ReactElement } from 'react';
 import type { ViewerProps } from '@/lib/viewer-registry';
+import { vaultRead, vaultWrite } from '@/lib/kernel';
+import { vaultRelativePath } from '@/lib/viewer-uri';
 import {
   appendRow,
   deleteRow,
-  parseSmartTable,
-  serializeSmartTable,
+  smartTableBody,
+  smartTableFrontmatter,
+  smartTableFromParts,
   updateCell,
   type SmartTable,
 } from '@/lib/smart-table';
 import { SmartTableView } from './SmartTableView';
-import { useViewerResource } from './useViewerResource';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
 
 export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
-  const { content, setContent, save, dirty, saving, error } = useViewerResource(resource);
+  const qc = useQueryClient();
+  const path = vaultRelativePath(resource.uri);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const { data: entry, isLoading } = useQuery({
+    queryKey: ['smart-table-file', path],
+    queryFn: () => vaultRead(path),
+  });
 
   const table: SmartTable = useMemo(
-    () => (content ? parseSmartTable(content) : { schema: [], rows: [], views: [], extraFrontmatter: {} }),
-    [content],
+    () =>
+      entry
+        ? smartTableFromParts(entry.frontmatter, entry.body)
+        : { schema: [], rows: [], views: [], extraFrontmatter: {} },
+    [entry],
   );
 
-  const commit = (next: SmartTable): void => setContent(serializeSmartTable(next));
+  const commit = async (next: SmartTable): Promise<void> => {
+    setSaving(true);
+    setError(undefined);
+    try {
+      await vaultWrite({ path, content: smartTableBody(next), frontmatter: smartTableFrontmatter(next) });
+      await qc.invalidateQueries({ queryKey: ['smart-table-file', path] });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const rightActions = resource.editable ? (
-    <button type="button" className={styles.modeButton} onClick={() => commit(appendRow(table))} title="Add row">
+    <button type="button" className={styles.modeButton} onClick={() => void commit(appendRow(table))} title="Add row">
       + Row
     </button>
   ) : null;
 
-  if (content == null && !error) {
+  if (isLoading && !entry) {
     return (
       <div className={styles.frame}>
         <ViewerChrome resource={resource} />
@@ -66,14 +92,14 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
 
   return (
     <div className={styles.frame}>
-      <ViewerChrome resource={resource} dirty={dirty} saving={saving} error={error} onSave={save} rightActions={rightActions} />
+      <ViewerChrome resource={resource} saving={saving} error={error} rightActions={rightActions} />
       {table.title && <h2 className={styles.tableTitle}>{table.title}</h2>}
       <SmartTableView
         table={table}
         editable={resource.editable}
-        onCellChange={(rowIndex, key, value) => commit(updateCell(table, rowIndex, key, value))}
-        onDeleteRow={(rowIndex) => commit(deleteRow(table, rowIndex))}
-        onSaveView={resource.editable ? (view) => commit({ ...table, views: [view] }) : undefined}
+        onCellChange={(rowIndex, key, value) => void commit(updateCell(table, rowIndex, key, value))}
+        onDeleteRow={(rowIndex) => void commit(deleteRow(table, rowIndex))}
+        onSaveView={resource.editable ? (view) => void commit({ ...table, views: [view] }) : undefined}
       />
     </div>
   );
