@@ -298,6 +298,9 @@ export interface SmartTableViewProps {
   onAddColumn?: (col: ColumnSpec) => void;
   onUpdateColumn?: (key: string, patch: Partial<Omit<ColumnSpec, 'key'>>) => void;
   onDeleteColumn?: (key: string) => void;
+  /** Replace the whole saved-views list (ADR-003 §6.2 multi-view). When set,
+   *  a saved-views tab bar + add/update/delete appear. */
+  onReplaceViews?: (views: ViewSpec[]) => void;
 }
 
 export const SmartTableView = ({
@@ -310,15 +313,49 @@ export const SmartTableView = ({
   onAddColumn,
   onUpdateColumn,
   onDeleteColumn,
+  onReplaceViews,
 }: SmartTableViewProps): ReactElement => {
   // Initialize from the saved view (ADR-003 §6.2): the kernel's add_view writes
   // frontmatter `views`, and the viewer reads it back so the two paths stay in
   // sync (closes the §6.2 read/write loop).
   const savedView: ViewSpec | undefined = table.views[0];
   const [filters, setFilters] = useState<Filter[]>([]);
-  const [sort, setSort] = useState<SortKey | null>(null);
+  const [sort, setSort] = useState<SortKey | null>(savedView?.sort ?? null);
   const [groupBy, setGroupBy] = useState<string | null>(savedView?.groupBy ?? null);
-  const [viewMode, setViewMode] = useState<'grid' | 'kanban'>(savedView?.kind ?? 'grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'gallery' | 'calendar'>(savedView?.kind ?? 'grid');
+  const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
+  const editsViews = Boolean(onReplaceViews);
+  const applyView = (v: ViewSpec, i: number): void => {
+    setViewMode(v.kind);
+    setGroupBy(v.groupBy ?? null);
+    setSort(v.sort ?? null);
+    setActiveView(i);
+  };
+  const currentViewSpec = (): ViewSpec => ({
+    kind: viewMode,
+    groupBy,
+    sort: sort ? { field: sort.field, desc: sort.desc ?? false } : null,
+  });
+  const saveCurrentView = (): void => {
+    if (!onReplaceViews) {
+      onSaveView?.(currentViewSpec());
+      return;
+    }
+    if (activeView != null && table.views[activeView]) {
+      const next = table.views.slice();
+      next[activeView] = { ...currentViewSpec(), name: table.views[activeView].name };
+      onReplaceViews(next);
+    } else {
+      const name = `View ${table.views.length + 1}`;
+      onReplaceViews([...table.views, { ...currentViewSpec(), name }]);
+      setActiveView(table.views.length);
+    }
+  };
+  const deleteCurrentView = (): void => {
+    if (!onReplaceViews || activeView == null) return;
+    onReplaceViews(table.views.filter((_, i) => i !== activeView));
+    setActiveView(null);
+  };
   // Kanban columns by a select/checkbox field; falls back to the active group.
   const kanbanField =
     groupBy ?? table.schema.find((c) => c.type === 'select' || c.type === 'checkbox')?.key ?? null;
@@ -479,25 +516,40 @@ export const SmartTableView = ({
 
   return (
     <div>
+      {editsViews && table.views.length > 0 && (
+        <div className={styles.viewTabs} data-testid="view-tabs">
+          {table.views.map((v, i) => (
+            <button
+              key={i}
+              type="button"
+              className={styles.viewTab}
+              data-active={activeView === i}
+              onClick={() => applyView(v, i)}
+            >
+              {v.name || v.kind}
+            </button>
+          ))}
+          {activeView != null && (
+            <button type="button" className={styles.viewTabDel} title="Delete this view" onClick={deleteCurrentView}>
+              ×
+            </button>
+          )}
+        </div>
+      )}
       <div className={styles.queryBar} data-testid="smart-table-query-bar">
         <div className={styles.viewToggle}>
-          <button
-            type="button"
-            className={styles.viewToggleBtn}
-            data-active={viewMode === 'grid'}
-            onClick={() => setViewMode('grid')}
-          >
-            Grid
-          </button>
-          <button
-            type="button"
-            className={styles.viewToggleBtn}
-            data-active={viewMode === 'kanban'}
-            onClick={() => setViewMode('kanban')}
-            data-testid="smart-table-kanban-toggle"
-          >
-            Kanban
-          </button>
+          {(['grid', 'kanban', 'gallery', 'calendar'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={styles.viewToggleBtn}
+              data-active={viewMode === m}
+              onClick={() => setViewMode(m)}
+              data-testid={m === 'kanban' ? 'smart-table-kanban-toggle' : `view-${m}`}
+            >
+              {m.charAt(0).toUpperCase() + m.slice(1)}
+            </button>
+          ))}
         </div>
         <span className={styles.queryLabel}>Filter</span>
         <select
@@ -580,15 +632,15 @@ export const SmartTableView = ({
           ))}
         </select>
 
-        {onSaveView && (
+        {(onSaveView || onReplaceViews) && (
           <button
             type="button"
             className={styles.queryAdd}
-            onClick={() => onSaveView({ kind: viewMode, groupBy })}
-            title="Save this view to the table's frontmatter"
+            onClick={saveCurrentView}
+            title="Save the current view (kind / group / sort) to the table's frontmatter"
             data-testid="smart-table-save-view"
           >
-            Save view
+            {activeView != null ? 'Update view' : 'Save view'}
           </button>
         )}
 
@@ -726,7 +778,7 @@ export const SmartTableView = ({
         </div>
       )}
 
-      {viewMode === 'grid' ? (
+      {viewMode === 'grid' && (
       <div className={styles.scroll}>
         <table className={styles.tableEl}>
           <thead>
@@ -775,7 +827,9 @@ export const SmartTableView = ({
           </tbody>
         </table>
       </div>
-      ) : (
+      )}
+
+      {viewMode === 'kanban' && (
         <div className={styles.kanban} data-testid="smart-table-kanban">
           {kanbanField == null ? (
             <div className={styles.kanbanEmpty}>Pick a select or checkbox field to columnize.</div>
@@ -822,6 +876,53 @@ export const SmartTableView = ({
           )}
         </div>
       )}
+
+      {viewMode === 'gallery' && (
+        <div className={styles.gallery} data-testid="smart-table-gallery">
+          {result.rows.map((row, i) => (
+            <div key={i} className={styles.kanbanCard}>
+              {table.schema.map((c) => (
+                <div key={c.key} className={styles.kanbanCardRow}>
+                  <span className={styles.kanbanCardLabel}>{c.label}</span>
+                  <span className={styles.kanbanCardValue}>{row[c.key] || '—'}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {viewMode === 'calendar' &&
+        (() => {
+          const dateField = table.schema.find((c) => baseCellType(c.type) === 'date')?.key;
+          if (!dateField) {
+            return <div className={styles.kanbanEmpty}>Add a date field to use the calendar.</div>;
+          }
+          const titleKey = table.schema.find((c) => c.key !== dateField)?.key;
+          const groups = new Map<string, Array<Record<string, string>>>();
+          for (const row of [...result.rows].sort((a, b) =>
+            (a[dateField] ?? '').localeCompare(b[dateField] ?? ''),
+          )) {
+            const d = row[dateField] || '(no date)';
+            const bucket = groups.get(d);
+            if (bucket) bucket.push(row);
+            else groups.set(d, [row]);
+          }
+          return (
+            <div className={styles.scroll} data-testid="smart-table-calendar">
+              {[...groups.entries()].map(([d, rows]) => (
+                <div key={d} className={styles.calGroup}>
+                  <div className={styles.calDate}>{d}</div>
+                  {rows.map((row, i) => (
+                    <div key={i} className={styles.calItem}>
+                      {titleKey ? row[titleKey] || '—' : '—'}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
     </div>
   );
 };

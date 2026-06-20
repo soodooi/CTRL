@@ -130,6 +130,7 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
           resource.editable ? (key, patch) => void commit(updateColumn(table, key, patch)) : undefined
         }
         onDeleteColumn={resource.editable ? (key) => void commit(deleteColumn(table, key)) : undefined}
+        onReplaceViews={resource.editable ? (views) => void commit({ ...table, views }) : undefined}
       />
     </div>
   );

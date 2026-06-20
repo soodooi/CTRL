@@ -87,10 +87,14 @@ export interface ColumnSpec {
 }
 
 /** A saved view (ADR-003 §6.2) — view state lives in frontmatter, not the
- *  table body. `kanban` columnizes by `groupBy`. */
+ *  table body. `kanban`/`gallery`/`calendar` columnize/lay-out by `groupBy`.
+ *  Sort is persisted as flat scalars (sort_field / sort_desc) on disk so the
+ *  YAML round-trips without nested structures. */
 export interface ViewSpec {
-  kind: 'grid' | 'kanban';
+  kind: 'grid' | 'kanban' | 'gallery' | 'calendar';
   groupBy?: string | null;
+  sort?: { field: string; desc: boolean } | null;
+  name?: string;
 }
 
 export interface SmartTable {
@@ -332,9 +336,13 @@ const parseViewsValue = (v: unknown): ViewSpec[] => {
     .map((item) => {
       const o = typeof item === 'string' ? parseInlineObject(item) : (item as Record<string, unknown>);
       if (!o || typeof o !== 'object') return null;
-      const kind = o.kind === 'kanban' ? 'kanban' : 'grid';
+      const kind =
+        o.kind === 'kanban' || o.kind === 'gallery' || o.kind === 'calendar' ? o.kind : 'grid';
       const groupBy = typeof o.group_by === 'string' && o.group_by ? (o.group_by as string) : null;
-      return { kind, groupBy } as ViewSpec;
+      const sortField = typeof o.sort_field === 'string' && o.sort_field ? o.sort_field : null;
+      const sort = sortField ? { field: sortField, desc: o.sort_desc === true || o.sort_desc === 'true' } : null;
+      const name = typeof o.name === 'string' && o.name ? o.name : undefined;
+      return { kind, groupBy, sort, name } as ViewSpec;
     })
     .filter((x): x is ViewSpec => x != null);
 };
@@ -389,7 +397,9 @@ export const serializeSmartTable = (table: SmartTable): string => {
     lines.push('views:');
     for (const v of table.views) {
       const parts = [`kind: ${v.kind}`];
+      if (v.name) parts.push(`name: ${v.name}`);
       if (v.groupBy) parts.push(`group_by: ${v.groupBy}`);
+      if (v.sort) parts.push(`sort_field: ${v.sort.field}`, `sort_desc: ${v.sort.desc}`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
   }
@@ -438,7 +448,12 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
     ...(c.symbol !== undefined ? { symbol: c.symbol } : {}),
   }));
   if (table.views.length > 0) {
-    fm.views = table.views.map((v) => ({ kind: v.kind, ...(v.groupBy ? { group_by: v.groupBy } : {}) }));
+    fm.views = table.views.map((v) => ({
+      kind: v.kind,
+      ...(v.name ? { name: v.name } : {}),
+      ...(v.groupBy ? { group_by: v.groupBy } : {}),
+      ...(v.sort ? { sort_field: v.sort.field, sort_desc: v.sort.desc } : {}),
+    }));
   }
   return fm;
 };
