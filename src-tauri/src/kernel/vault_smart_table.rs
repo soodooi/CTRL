@@ -26,6 +26,60 @@ impl SmartTable {
         let rows = parse_table(body, &fields);
         SmartTable { title, fields, rows }
     }
+
+    /// Serialize back to a markdown pipe-table body (header + separator + rows,
+    /// columns in schema order). Frontmatter is written separately by
+    /// `vault::write`, which preserves the schema block. Round-trips the table
+    /// structure (ADR-003 §6.1). `|` in cells is escaped.
+    pub fn serialize_body(&self) -> String {
+        if self.fields.is_empty() {
+            return String::new();
+        }
+        let mut out = String::new();
+        let header = self
+            .fields
+            .iter()
+            .map(|f| f.label.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        out.push_str(&format!("| {header} |\n"));
+        let sep = self.fields.iter().map(|_| "---").collect::<Vec<_>>().join("|");
+        out.push_str(&format!("|{sep}|\n"));
+        for row in &self.rows {
+            let cells = self
+                .fields
+                .iter()
+                .map(|f| row.get(&f.key).cloned().unwrap_or_default().replace('|', "\\|"))
+                .collect::<Vec<_>>()
+                .join(" | ");
+            out.push_str(&format!("| {cells} |\n"));
+        }
+        out
+    }
+
+    /// Append a row (cells keyed by schema key; missing keys become empty).
+    pub fn append_row(&mut self, values: Row) {
+        let mut row = Row::new();
+        for f in &self.fields {
+            row.insert(f.key.clone(), values.get(&f.key).cloned().unwrap_or_default());
+        }
+        self.rows.push(row);
+    }
+
+    /// Set a single cell by row index + field key. Returns false if the index
+    /// or field is out of range (the caller surfaces a structured error).
+    pub fn update_cell(&mut self, row_index: usize, field: &str, value: &str) -> bool {
+        if !self.fields.iter().any(|f| f.key == field) {
+            return false;
+        }
+        match self.rows.get_mut(row_index) {
+            Some(row) => {
+                row.insert(field.to_string(), value.to_string());
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 impl QuerySource for SmartTable {
@@ -179,5 +233,37 @@ mod tests {
         let t = SmartTable::parse(&serde_json::json!({}), BODY);
         assert!(t.fields.is_empty());
         assert!(t.rows.is_empty());
+    }
+
+    #[test]
+    fn serialize_round_trips_through_parse() {
+        let t = SmartTable::parse(&frontmatter(), BODY);
+        let body = t.serialize_body();
+        let t2 = SmartTable::parse(&frontmatter(), &body);
+        assert_eq!(t2.rows.len(), 2);
+        assert_eq!(t2.rows[0]["name"], "Acme");
+        assert_eq!(t2.rows[1]["amount"], "50");
+    }
+
+    #[test]
+    fn append_row_then_serialize() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        let mut new = Row::new();
+        new.insert("name".into(), "Delta".into());
+        new.insert("amount".into(), "999".into());
+        t.append_row(new);
+        assert_eq!(t.rows.len(), 3);
+        let reparsed = SmartTable::parse(&frontmatter(), &t.serialize_body());
+        assert_eq!(reparsed.rows[2]["name"], "Delta");
+        assert_eq!(reparsed.rows[2]["amount"], "999");
+    }
+
+    #[test]
+    fn update_cell_in_range_and_out_of_range() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        assert!(t.update_cell(0, "amount", "111"));
+        assert_eq!(t.rows[0]["amount"], "111");
+        assert!(!t.update_cell(99, "amount", "1")); // bad index
+        assert!(!t.update_cell(0, "nope", "1")); // bad field
     }
 }

@@ -111,6 +111,28 @@ pub struct SmartTableQueryArgs {
     pub limit: Option<usize>,
 }
 
+/// smart_table.update_cell — produce/write one cell (ADR-002 §14 produce verb).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableUpdateCellArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Zero-based row index.
+    pub row_index: usize,
+    /// Schema field key to set.
+    pub field: String,
+    /// New cell value (stored as plain text).
+    pub value: String,
+}
+
+/// smart_table.append_row — produce/write a new row (ADR-002 §14 produce verb).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableAppendRowArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Cell values keyed by schema field key; missing keys become empty.
+    pub values: std::collections::BTreeMap<String, String>,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct VaultWriteArgs {
     /// Vault-relative path. Parent dirs are created.
@@ -407,6 +429,56 @@ impl KernelMcpRouter {
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// smart_table.update_cell — the produce/write verb (ADR-002 §14). Reads
+    /// fresh, sets one cell, re-serializes, writes back (frontmatter/schema
+    /// preserved). Review-gating of produce ops is the ADR-006 §4 future
+    /// (parity with `vault.write` today).
+    #[tool(
+        description = "Set one cell of a smart table by row index + field key, then write it back."
+    )]
+    async fn smart_table_update_cell(
+        &self,
+        Parameters(args): Parameters<SmartTableUpdateCellArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.update_cell(args.row_index, &args.field, &args.value) {
+            return Err(McpError::invalid_params(
+                format!(
+                    "update_cell rejected: row {} / field '{}' out of range",
+                    args.row_index, args.field
+                ),
+                None,
+            ));
+        }
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "updated {} row {} field {}",
+            args.path, args.row_index, args.field
+        ))]))
+    }
+
+    /// smart_table.append_row — the produce/write verb (ADR-002 §14). Reads
+    /// fresh, appends a row, re-serializes, writes back.
+    #[tool(description = "Append a row to a smart table (values keyed by field key).")]
+    async fn smart_table_append_row(
+        &self,
+        Parameters(args): Parameters<SmartTableAppendRowArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        table.append_row(args.values.into_iter().collect());
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "appended row to {}",
+            args.path
+        ))]))
     }
 
     /// vault.write — write markdown + optional frontmatter to the vault.
