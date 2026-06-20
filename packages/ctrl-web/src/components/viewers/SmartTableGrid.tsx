@@ -13,6 +13,8 @@
 import {
   DataEditor,
   GridCellKind,
+  type CustomCell,
+  type CustomRenderer,
   type EditableGridCell,
   type GridCell,
   type GridColumn,
@@ -22,6 +24,58 @@ import '@glideapps/glide-data-grid/dist/index.css';
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import { baseCellType, type ColumnSpec } from '@/lib/smart-table';
 import styles from './Viewer.module.css';
+
+// Deterministic pill colour (matches the HTML cells' pillStyle).
+const tokenHue = (token: string): number => {
+  let h = 0;
+  for (let i = 0; i < token.length; i += 1) h = (h * 31 + token.charCodeAt(i)) % 360;
+  return h;
+};
+
+// Custom canvas cell: coloured pills for select / tags — the Feishu-style chip
+// the built-in glide cells don't give (Bubble has no per-tag colour). Display
+// only; editing happens in the field editor / record card.
+interface PillData {
+  readonly kind: 'pill-cell';
+  readonly tags: readonly string[];
+}
+type PillCell = CustomCell<PillData>;
+
+const pillRenderer: CustomRenderer<PillCell> = {
+  kind: GridCellKind.Custom,
+  isMatch: (c): c is PillCell => (c.data as Partial<PillData>)?.kind === 'pill-cell',
+  draw: (args, cell) => {
+    const { ctx, rect, theme } = args;
+    const padX = theme.cellHorizontalPadding;
+    const chipH = 20;
+    const chipY = rect.y + (rect.height - chipH) / 2;
+    let x = rect.x + padX;
+    ctx.save();
+    ctx.font = `12px ${theme.fontFamily}`;
+    ctx.textBaseline = 'middle';
+    for (const tag of cell.data.tags) {
+      if (!tag) continue;
+      const w = ctx.measureText(tag).width + 14;
+      if (x + w > rect.x + rect.width - padX) break;
+      const hue = tokenHue(tag);
+      const r = chipH / 2;
+      ctx.beginPath();
+      ctx.moveTo(x + r, chipY);
+      ctx.arcTo(x + w, chipY, x + w, chipY + chipH, r);
+      ctx.arcTo(x + w, chipY + chipH, x, chipY + chipH, r);
+      ctx.arcTo(x, chipY + chipH, x, chipY, r);
+      ctx.arcTo(x, chipY, x + w, chipY, r);
+      ctx.closePath();
+      ctx.fillStyle = `hsl(${hue} 70% 90%)`;
+      ctx.fill();
+      ctx.fillStyle = `hsl(${hue} 55% 32%)`;
+      ctx.fillText(tag, x + 7, chipY + chipH / 2 + 1);
+      x += w + 4;
+    }
+    ctx.restore();
+    return true;
+  },
+};
 
 interface SmartTableGridProps {
   schema: ColumnSpec[];
@@ -85,12 +139,17 @@ export const SmartTableGrid = ({
           readonly: ro,
         };
       }
-      if (spec.type === 'tags') {
-        // Bubble has no built-in overlay editor; show chips here, edit via the
-        // record detail card.
+      if (spec.type === 'tags' || spec.type === 'select') {
+        const tags =
+          spec.type === 'tags'
+            ? value.split(',').map((t) => t.trim()).filter(Boolean)
+            : value
+              ? [value]
+              : [];
         return {
-          kind: GridCellKind.Bubble,
-          data: value.split(',').map((t) => t.trim()).filter(Boolean),
+          kind: GridCellKind.Custom,
+          data: { kind: 'pill-cell', tags },
+          copyData: value,
           allowOverlay: false,
         };
       }
@@ -145,6 +204,7 @@ export const SmartTableGrid = ({
         rows={rows.length}
         getCellContent={getCellContent}
         onCellEdited={editable ? onCellEdited : undefined}
+        customRenderers={[pillRenderer]}
         onColumnResize={(c, w) => setWidths((p) => ({ ...p, [String(c.id)]: w }))}
         onHeaderMenuClick={onHeaderMenu ? (col) => onHeaderMenu(String(columns[col]?.id)) : undefined}
         getCellsForSelection
