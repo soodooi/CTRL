@@ -283,3 +283,54 @@ export function stripDetectedPart(reply: string): string {
   // Raw HTML page: the entire reply is the artifact.
   return '';
 }
+
+const STREAM_KIND: Record<string, PartKind> = {
+  html: 'html',
+  markdown: 'markdown',
+  md: 'markdown',
+  mermaid: 'mermaid',
+  json: 'json',
+};
+
+/** Streaming-aware split: as soon as the reply OPENS an artifact fence (or is a
+ *  raw HTML page), separate the chat intro from the artifact body — even before
+ *  the closing fence arrives. Lets the workspace pane fill in REAL TIME instead
+ *  of the doc piling up in the chat bubble first (ADR-003 frontend §
+ *  morphing-conversation v6). Returns null for normal prose / not-yet-an-
+ *  artifact, so the caller keeps streaming into the chat. */
+export function splitStreamingArtifact(
+  acc: string,
+): { intro: string; part: PartSpec } | null {
+  const t = acc.trimStart();
+  if (/^<!doctype html/i.test(t) || /^<html[\s>]/i.test(t)) {
+    return { intro: '', part: { kind: 'html', content: acc.trim(), title: 'preview.html' } };
+  }
+  const open = acc.match(/```([a-zA-Z][\w-]*)?[^\n]*\n/);
+  if (!open || open.index === undefined) return null;
+  const lang = (open[1] ?? '').toLowerCase();
+  // An empty/`text` fence is not an artifact; a lang we don't special-case is
+  // treated as a code artifact.
+  if (lang === '' || lang === 'text') return null;
+  const kind: PartKind = STREAM_KIND[lang] ?? 'code';
+
+  const intro = acc.slice(0, open.index).trim();
+  let body = acc.slice(open.index + open[0].length);
+  const closeIdx = body.lastIndexOf('\n```');
+  if (closeIdx >= 0) body = body.slice(0, closeIdx);
+  body = body.trim();
+
+  const title =
+    kind === 'markdown'
+      ? (body.match(/^#{1,6}\s+(.+?)\s*$/m)?.[1] ?? 'document').slice(0, 60)
+      : kind === 'html'
+        ? 'preview.html'
+        : kind === 'mermaid'
+          ? 'diagram'
+          : kind === 'json'
+            ? 'data.json'
+            : `snippet.${lang}`;
+
+  const part: PartSpec = { kind, content: body, title };
+  if (kind === 'code') part.language = lang;
+  return { intro, part };
+}

@@ -37,7 +37,13 @@ import { cleanReplyText } from '@/lib/irisy-render-filter';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
 import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
-import { detectPart, renderPart, stripDetectedPart, type PartSpec } from '@/lib/ui-registry';
+import {
+  detectPart,
+  renderPart,
+  stripDetectedPart,
+  splitStreamingArtifact,
+  type PartSpec,
+} from '@/lib/ui-registry';
 import {
   loadConnectors,
   invokeConnectorTool,
@@ -285,14 +291,26 @@ export function AmbientHome({
         const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
         if (!delta) continue;
         acc += delta;
-        setMessages((prev) =>
-          prev.map((m) => (m.id === asstId ? { ...m, content: acc } : m)),
-        );
+        // Stream artifacts (docs / pages / code) straight into the workspace
+        // pane in REAL TIME — the chat bubble only keeps the one-line intro, so
+        // the document never piles up in the conversation first.
+        const split = splitStreamingArtifact(acc);
+        if (split) {
+          setPart(split.part);
+          const intro = split.intro || 'Writing it in the workspace on the left…';
+          setMessages((prev) =>
+            prev.map((m) => (m.id === asstId ? { ...m, content: intro } : m)),
+          );
+        } else {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === asstId ? { ...m, content: acc } : m)),
+          );
+        }
         requestAnimationFrame(() => {
           scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
         });
       }
-      // Morph a renderable part out of the reply if present.
+      // Finalize: refine the part from the complete reply (e.g. json -> table).
       const detected = detectPart(acc);
       if (detected) setPart(detected);
       // Empty stream usually means no provider is configured yet — but NOT when

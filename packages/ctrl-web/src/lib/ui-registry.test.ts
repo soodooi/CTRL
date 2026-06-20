@@ -6,7 +6,9 @@ vi.mock('mermaid', () => ({
   default: { initialize: () => {}, render: async () => ({ svg: '' }) },
 }));
 
-const { detectPart, stripDetectedPart } = await import('./ui-registry');
+const { detectPart, stripDetectedPart, splitStreamingArtifact } = await import(
+  './ui-registry'
+);
 
 describe('detectPart — deterministic artifact routing (model-declared)', () => {
   it('routes a fenced HTML block to an html part', () => {
@@ -60,6 +62,37 @@ describe('detectPart — deterministic artifact routing (model-declared)', () =>
 
   it('leaves a short chat reply in the bubble', () => {
     expect(detectPart('The capital of France is Paris.')).toBeNull();
+  });
+});
+
+describe('splitStreamingArtifact — real-time routing to the workspace', () => {
+  it('separates intro from an OPEN (not yet closed) markdown fence mid-stream', () => {
+    const partial = 'Drafting it:\n\n```markdown\n# Plan\n\n## Goals\nstill writing';
+    const s = splitStreamingArtifact(partial);
+    expect(s?.part.kind).toBe('markdown');
+    expect(s?.intro).toBe('Drafting it:');
+    expect(s?.part.content).toContain('## Goals');
+    expect(s?.part.content).not.toContain('```'); // body only, no fence markers
+  });
+
+  it('routes an open HTML fence mid-stream', () => {
+    const s = splitStreamingArtifact('Here:\n```html\n<h1>partial');
+    expect(s?.part.kind).toBe('html');
+    expect(s?.part.content).toContain('<h1>partial');
+  });
+
+  it('routes a raw HTML page with no intro', () => {
+    const s = splitStreamingArtifact('<!DOCTYPE html>\n<html><body>');
+    expect(s?.part.kind).toBe('html');
+    expect(s?.intro).toBe('');
+  });
+
+  it('returns null for plain prose (keeps streaming into chat)', () => {
+    expect(splitStreamingArtifact('Sure, here is a quick answer about')).toBeNull();
+  });
+
+  it('returns null for a plain ``` / ```text fence (not an artifact)', () => {
+    expect(splitStreamingArtifact('see:\n```\nplain\n```')).toBeNull();
   });
 });
 
