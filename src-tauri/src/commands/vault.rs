@@ -21,8 +21,11 @@ use crate::kernel::vault_graph::{
 };
 use crate::kernel::vault_sourcing::{self, SourcingRunReport};
 use crate::kernel::vault_watch::{self, EventEntry as VaultWatchEvent};
+use crate::kernel::{ai_column, vault_smart_table};
+use crate::shell::KernelHandle;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tauri::State;
 
 fn vault_root() -> Result<PathBuf, String> {
     vault::default_vault_root().ok_or_else(|| "HOME env var not set".to_string())
@@ -265,6 +268,94 @@ pub async fn vault_rebuild_index() -> Result<usize, String> {
 
 fn stringify_vault_error(e: VaultError) -> String {
     e.to_string()
+}
+
+// ---------------------------------------------------------------------
+// Smart-table AI column (ADR-003 frontend §6.5.4 / ADR-002 substrate §14)
+// ---------------------------------------------------------------------
+// The "AI-as-column" differentiator from the front end: run an LLM down a
+// column, {field}-templated, resume-safe (skips filled cells), cost-gated.
+// This is the PWA-facing twin of the mcp_server gate tool of the same name —
+// it reuses the identical ai_column core (plan_rows / complete_row /
+// apply_results) so the gate path (Irisy / external CLI) and the direct path
+// (the user clicking the column header) stay behaviourally identical.
+// Produce still writes straight through vault::write; the system-wide review
+// gate is ADR-006 §4 (out of this slice, per GOAL non-goals).
+
+#[derive(Debug, Deserialize)]
+pub struct SmartTableAiColumnArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Schema field key whose cells the AI fills.
+    pub target_field: String,
+    /// Prompt template; `{field}` tokens reference other columns in the row.
+    pub prompt: String,
+    /// classify / extract / summarize / translate / generate.
+    pub op: ai_column::AiOp,
+    /// Re-run rows whose target cell is already filled (default false = resume).
+    #[serde(default)]
+    pub force: bool,
+    /// Confirm a run over the cost gate.
+    #[serde(default)]
+    pub confirm_over_gate: bool,
+}
+
+#[tauri::command]
+pub async fn smart_table_run_ai_column(
+    args: SmartTableAiColumnArgs,
+    kernel: State<'_, KernelHandle>,
+) -> Result<ai_column::RunSummary, String> {
+    let root = vault_root()?;
+    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
+    let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+    if !table.fields.iter().any(|f| f.key == args.target_field) {
+        return Err(format!("field_not_found: '{}'", args.target_field));
+    }
+
+    let plan = ai_column::plan_rows(&table, &args.target_field, &args.prompt, args.force);
+    if ai_column::over_cost_gate(plan.len()) && !args.confirm_over_gate {
+        return Err(format!(
+            "needs_confirmation: {} rows exceed the {}-row cost gate; set confirm_over_gate to proceed",
+            plan.len(),
+            ai_column::COST_GATE_ROWS
+        ));
+    }
+
+    let adapter = kernel
+        .runtime
+        .provider_registry
+        .primary_text_chat()
+        .ok_or_else(|| {
+            "no_provider: open Settings to pick a text provider before running an AI column"
+                .to_string()
+        })?;
+    let system = args.op.system_instruction();
+
+    let rows_total = table.rows.len();
+    let mut results: Vec<(usize, crate::kernel::query::Row, String)> = Vec::new();
+    let mut errors: Vec<ai_column::RowError> = Vec::new();
+    for item in &plan {
+        match ai_column::complete_row(adapter.as_ref(), system, &item.prompt).await {
+            Ok(value) => results.push((item.index, item.snapshot.clone(), value)),
+            Err(e) => errors.push(ai_column::RowError {
+                row: item.index,
+                message: e.to_string(),
+            }),
+        }
+    }
+
+    let rows_written = ai_column::apply_results(&mut table, &args.target_field, &results);
+    if rows_written > 0 {
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(stringify_vault_error)?;
+    }
+
+    Ok(ai_column::RunSummary {
+        rows_total,
+        rows_planned: plan.len(),
+        rows_written,
+        errors,
+    })
 }
 
 // ---------------------------------------------------------------------

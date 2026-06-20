@@ -15,6 +15,7 @@ import {
   type ColumnDef,
 } from '@tanstack/react-table';
 import { useMemo, useState, type ReactElement } from 'react';
+import type { AiColumnOp, AiColumnSummary } from '@/lib/kernel';
 import type { ColumnSpec, SmartTable, ViewSpec } from '@/lib/smart-table';
 import {
   queryTable,
@@ -114,9 +115,20 @@ export interface SmartTableViewProps {
   /** Persist the current view (kind + groupBy) into frontmatter `views`
    *  (ADR-003 §6.2). When set, a "Save view" button appears. */
   onSaveView?: (view: ViewSpec) => void;
+  /** Run an AI field shortcut down `field` (ADR-003 §6.5.4). When set, each
+   *  column header shows an AI-fill action. The caller runs it through the
+   *  kernel, persists, and refreshes; this view just collects op + prompt. */
+  onRunAiColumn?: (field: string, op: AiColumnOp, prompt: string) => Promise<AiColumnSummary>;
 }
 
-export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow, onSaveView }: SmartTableViewProps): ReactElement => {
+export const SmartTableView = ({
+  table,
+  editable,
+  onCellChange,
+  onDeleteRow,
+  onSaveView,
+  onRunAiColumn,
+}: SmartTableViewProps): ReactElement => {
   // Initialize from the saved view (ADR-003 §6.2): the kernel's add_view writes
   // frontmatter `views`, and the viewer reads it back so the two paths stay in
   // sync (closes the §6.2 read/write loop).
@@ -133,6 +145,27 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow, onS
     op: 'contains',
     value: '',
   });
+
+  // AI column (ADR-003 §6.5.4): which field's AI-fill panel is open + its draft.
+  const [aiField, setAiField] = useState<string | null>(null);
+  const [aiOp, setAiOp] = useState<AiColumnOp>('generate');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiResult, setAiResult] = useState<AiColumnSummary | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const runAi = async (): Promise<void> => {
+    if (!aiField || !onRunAiColumn || !aiPrompt.trim()) return;
+    setAiRunning(true);
+    setAiError(null);
+    setAiResult(null);
+    try {
+      setAiResult(await onRunAiColumn(aiField, aiOp, aiPrompt));
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiRunning(false);
+    }
+  };
 
   const typeOf = (key: string) => table.schema.find((c) => c.key === key)?.type ?? 'text';
   const draftOps = OPERATORS_BY_TYPE[typeOf(draft.field)] ?? ['contains', 'eq'];
@@ -153,7 +186,27 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow, onS
     return [
       ...table.schema.map<ColumnDef<Record<string, string>>>((col) => ({
         accessorKey: col.key,
-        header: col.label,
+        header: () => (
+          <span className={styles.headerCell}>
+            {col.label}
+            {editable && onRunAiColumn && (
+              <button
+                type="button"
+                className={styles.aiColBtn}
+                title={`AI fill ${col.label}`}
+                data-testid={`ai-col-${col.key}`}
+                onClick={() => {
+                  setAiField(col.key);
+                  setAiResult(null);
+                  setAiError(null);
+                  setAiPrompt('');
+                }}
+              >
+                ✦
+              </button>
+            )}
+          </span>
+        ),
         cell: ({ row }) => (
           <Cell
             col={col}
@@ -180,7 +233,7 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow, onS
           ) : null,
       },
     ];
-  }, [table.schema, editable, onCellChange, onDeleteRow]);
+  }, [table.schema, editable, onCellChange, onDeleteRow, onRunAiColumn]);
 
   const reactTable = useReactTable({ data: result.rows, columns, getCoreRowModel: getCoreRowModel() });
 
@@ -323,6 +376,54 @@ export const SmartTableView = ({ table, editable, onCellChange, onDeleteRow, onS
               {f.field} {f.op} {f.value || '—'} ×
             </button>
           ))}
+        </div>
+      )}
+
+      {aiField && onRunAiColumn && (
+        <div className={styles.aiPanel} data-testid="ai-col-panel">
+          <span className={styles.aiPanelTitle}>
+            ✦ AI fill: {table.schema.find((c) => c.key === aiField)?.label ?? aiField}
+          </span>
+          <select
+            className={styles.querySelect}
+            value={aiOp}
+            onChange={(e) => setAiOp(e.target.value as AiColumnOp)}
+            aria-label="AI operation"
+          >
+            <option value="generate">generate</option>
+            <option value="classify">classify</option>
+            <option value="extract">extract</option>
+            <option value="summarize">summarize</option>
+            <option value="translate">translate</option>
+          </select>
+          <input
+            className={styles.aiPanelPrompt}
+            value={aiPrompt}
+            placeholder="Instruction — reference columns with {field}, e.g. Summarize {notes} in one line"
+            onChange={(e) => setAiPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !aiRunning && aiPrompt.trim()) void runAi();
+            }}
+          />
+          <button
+            type="button"
+            className={styles.queryAdd}
+            disabled={aiRunning || !aiPrompt.trim()}
+            onClick={() => void runAi()}
+            data-testid="ai-col-run"
+          >
+            {aiRunning ? 'Running…' : 'Run'}
+          </button>
+          <button type="button" className={styles.queryChip} onClick={() => setAiField(null)}>
+            Close
+          </button>
+          {aiResult && (
+            <span className={styles.aiPanelMsg}>
+              wrote {aiResult.rows_written}/{aiResult.rows_planned}
+              {aiResult.errors.length > 0 ? ` · ${aiResult.errors.length} failed` : ''}
+            </span>
+          )}
+          {aiError && <span className={styles.aiPanelErr}>{aiError}</span>}
         </div>
       )}
 
