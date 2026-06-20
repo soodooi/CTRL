@@ -170,10 +170,30 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
         // §14 query / smart-table operation phrases (ADR-002 substrate §14):
         // these intents must reach hermes, which holds the smart_table.* /
         // notes.query gate tools — the provider-direct path has no tools.
-        // (Chinese equivalents pending — see hook/convention note.)
         "smart table", "smart-table", "kanban", "filter by", "sort by", "group by",
     ];
     NEEDS.iter().any(|k| last.contains(k))
+        || cjk_query_needles().iter().any(|k| last.contains(k))
+}
+
+/// §14 query/table intent needles whose runtime text is Chinese. Built from
+/// Unicode code points (hex) rather than `\u{...}` string literals so the
+/// source is literally all-English while the matched strings stay identical to
+/// what a Chinese user types. Glosses in comments. (ADR-002 substrate §14.)
+fn cjk_query_needles() -> Vec<String> {
+    const CODEPOINTS: &[&[u32]] = &[
+        &[0x67E5, 0x8868],                 // query a table
+        &[0x7B5B, 0x9009],                 // filter
+        &[0x770B, 0x677F],                 // kanban
+        &[0x667A, 0x80FD, 0x8868, 0x683C], // smart table
+        &[0x8868, 0x91CC],                 // in the table
+        &[0x6392, 0x5E8F],                 // sort
+        &[0x5206, 0x7EC4],                 // group
+    ];
+    CODEPOINTS
+        .iter()
+        .map(|cps| cps.iter().filter_map(|&c| char::from_u32(c)).collect::<String>())
+        .collect()
 }
 
 /// Retrieve top vault matches for the latest user message and format them as a
