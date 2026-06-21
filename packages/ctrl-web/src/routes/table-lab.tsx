@@ -5,7 +5,7 @@
 
 import { useState, type ReactElement } from 'react';
 import { SmartTableView } from '@/components/viewers/SmartTableView';
-import { deleteRow, moveRow, parseSmartTable, updateCell, type SmartTable } from '@/lib/smart-table';
+import { deleteRow, duplicateRow, moveRow, parseSmartTable, updateCell, type SmartTable } from '@/lib/smart-table';
 
 const SAMPLE = `---
 title: Leads (table-lab)
@@ -42,6 +42,7 @@ export const TableLabRoute = (): ReactElement => {
           onCellChange={(i, k, v) => setTable((t) => updateCell(t, i, k, v))}
           onDeleteRow={(i) => setTable((t) => deleteRow(t, i))}
           onMoveRow={(from, to) => setTable((t) => moveRow(t, from, to))}
+          onDuplicateRow={(i) => setTable((t) => duplicateRow(t, i))}
         />
       </div>
     </div>

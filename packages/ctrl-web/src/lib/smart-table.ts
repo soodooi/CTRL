@@ -687,6 +687,22 @@ export const deleteRows = (table: SmartTable, rowIndexes: number[]): SmartTable 
   return { ...table, rows: table.rows.filter((_, i) => !drop.has(i)) };
 };
 
+/** Duplicate a row, inserting the copy right after the original with a fresh
+ *  record id (and refreshed created/modified stamps). Out-of-range → unchanged. */
+export const duplicateRow = (table: SmartTable, rowIndex: number): SmartTable => {
+  const src = table.rows[rowIndex];
+  if (!src) return table;
+  const now = todayISO();
+  const copy: Record<string, string> = { ...src };
+  for (const c of table.schema) {
+    if (c.key === ROW_ID_KEY) copy[c.key] = newRowId();
+    else if (c.type === 'created_at' || c.type === 'modified_at') copy[c.key] = now;
+  }
+  const rows = [...table.rows];
+  rows.splice(rowIndex + 1, 0, copy);
+  return { ...table, rows };
+};
+
 /** Move a row from one index to another (manual drag-reorder). Row order is the
  *  data order in plain-text markdown, so this just permutes the rows array.
  *  Out-of-range / no-op moves return the table unchanged. */

@@ -1540,6 +1540,12 @@
   padding: 7px 0;
   border-bottom: 1px solid var(--color-border, #eee);
 }
+.recordActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
 .recordLabel {
   flex: 0 0 110px;
   font-size: 12px;

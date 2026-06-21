@@ -106,6 +106,8 @@ export interface SmartTableViewProps {
   /** Manual drag-reorder (canonical from → to). Only offered when rows show in
    *  their natural order (no sort / group / filter / search). */
   onMoveRow?: (from: number, to: number) => void;
+  /** Duplicate a record (canonical index) — copy inserted right after it. */
+  onDuplicateRow?: (rowIndex: number) => void;
   /** Persist the current view (kind + groupBy) into frontmatter `views`
    *  (ADR-003 §6.2). When set, a "Save view" button appears. */
   onSaveView?: (view: ViewSpec) => void;
@@ -136,6 +138,7 @@ export const SmartTableView = ({
   onDeleteRow,
   onDeleteRows,
   onMoveRow,
+  onDuplicateRow,
   onSaveView,
   onRunAiColumn,
   onAddColumn,
@@ -862,7 +865,17 @@ export const SmartTableView = ({
             onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
             rowHeight={rowHeight}
             freezeColumns={freezePrimary ? 1 : 0}
-            onRowMove={editable && onMoveRow && naturalOrder ? onMoveRow : undefined}
+            onRowMove={
+              editable && onMoveRow && naturalOrder
+                ? (from, to) => {
+                    // Canonical indices shift on reorder — drop stale selection /
+                    // open card so they can't point at the wrong row.
+                    setSelectedRows([]);
+                    setExpandedRow(null);
+                    onMoveRow(from, to);
+                  }
+                : undefined
+            }
           />
           <div className={styles.statBar} data-testid="smart-table-stats">
             <span className={styles.statCount}>{result.rows.length} records</span>
@@ -1072,6 +1085,36 @@ export const SmartTableView = ({
                 </span>
               </div>
             ))}
+            {editable && (onDuplicateRow || onDeleteRow) && (
+              <div className={styles.recordActions}>
+                {onDuplicateRow && (
+                  <button
+                    type="button"
+                    className={styles.queryToggle}
+                    data-testid="record-duplicate"
+                    onClick={() => {
+                      onDuplicateRow(expandedRow);
+                      setExpandedRow(null);
+                    }}
+                  >
+                    ⧉ Duplicate
+                  </button>
+                )}
+                {onDeleteRow && (
+                  <button
+                    type="button"
+                    className={styles.batchDelete}
+                    data-testid="record-delete"
+                    onClick={() => {
+                      onDeleteRow(expandedRow);
+                      setExpandedRow(null);
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
