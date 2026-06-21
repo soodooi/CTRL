@@ -26,6 +26,7 @@ import { Cell, LinkPicker } from './SmartTableCells';
 import { SmartTableGrid } from './SmartTableGrid';
 import { CalendarView, GalleryView, SummaryView } from './SmartTableViews';
 import { ChartView } from './SmartTableChart';
+import { TimelineView } from './SmartTableTimeline';
 
 const FIELD_TYPES: CellType[] = [
   'text',
@@ -155,7 +156,7 @@ export const SmartTableView = ({
   const [colStat, setColStat] = useState<Record<string, 'sum' | 'avg' | 'count' | 'min' | 'max'>>({});
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [viewMode, setViewMode] = useState<
-    'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary' | 'chart'
+    'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary' | 'chart' | 'timeline'
   >(savedView?.kind ?? 'grid');
   const [formDraft, setFormDraft] = useState<Record<string, string>>({});
   const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
@@ -167,6 +168,8 @@ export const SmartTableView = ({
   const [search, setSearch] = useState('');
   const [density, setDensity] = useState<'compact' | 'cozy' | 'comfortable'>('cozy');
   const [freezePrimary, setFreezePrimary] = useState(false);
+  const [hiddenFields, setHiddenFields] = useState<Set<string>>(new Set());
+  const [fieldsMenu, setFieldsMenu] = useState(false);
   const applyView = (v: ViewSpec, i: number): void => {
     setViewMode(v.kind);
     setGroupBy(v.groupBy ?? null);
@@ -347,7 +350,7 @@ export const SmartTableView = ({
   const groupLabel = (key: string) => table.schema.find((c) => c.key === key)?.label ?? key;
   // Fields shown to the user (system fields like the record id stay in the data
   // but never appear in pickers / cards / non-grid views).
-  const visibleSchema = table.schema.filter((c) => !c.system);
+  const visibleSchema = table.schema.filter((c) => !c.system && !hiddenFields.has(c.key));
 
   const addFilter = (): void => {
     if (!draft.field) return;
@@ -379,7 +382,7 @@ export const SmartTableView = ({
       )}
       <div className={styles.queryBar} data-testid="smart-table-query-bar">
         <div className={styles.viewToggle}>
-          {(['grid', 'kanban', 'gallery', 'calendar', 'form', 'summary', 'chart'] as const).map((m) => (
+          {(['grid', 'kanban', 'gallery', 'calendar', 'form', 'summary', 'chart', 'timeline'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -425,6 +428,41 @@ export const SmartTableView = ({
             </button>
           </>
         )}
+        <div className={styles.fieldsWrap}>
+          <button
+            type="button"
+            className={styles.queryToggle}
+            data-active={hiddenFields.size > 0}
+            onClick={() => setFieldsMenu((m) => !m)}
+            title="Show / hide fields"
+            data-testid="smart-table-fields"
+          >
+            ⊟ Fields{hiddenFields.size > 0 ? ` (${hiddenFields.size})` : ''}
+          </button>
+          {fieldsMenu && (
+            <div className={styles.fieldsMenu} data-testid="fields-menu">
+              {table.schema
+                .filter((c) => !c.system)
+                .map((c) => (
+                  <label key={c.key} className={styles.fieldsItem}>
+                    <input
+                      type="checkbox"
+                      checked={!hiddenFields.has(c.key)}
+                      onChange={(e) =>
+                        setHiddenFields((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.delete(c.key);
+                          else next.add(c.key);
+                          return next;
+                        })
+                      }
+                    />
+                    {c.label}
+                  </label>
+                ))}
+            </div>
+          )}
+        </div>
         <span className={styles.queryLabel}>Filter</span>
         <select
           className={styles.querySelect}
@@ -805,7 +843,7 @@ export const SmartTableView = ({
             </div>
           )}
           <SmartTableGrid
-            schema={table.schema}
+            schema={table.schema.filter((c) => !hiddenFields.has(c.key))}
             rows={result.rows}
             editable={editable}
             relations={relations}
@@ -974,6 +1012,14 @@ export const SmartTableView = ({
       )}
 
       {viewMode === 'chart' && <ChartView rows={result.rows} schema={visibleSchema} />}
+
+      {viewMode === 'timeline' && (
+        <TimelineView
+          rows={result.rows}
+          schema={visibleSchema}
+          onExpandRow={(i) => setExpandedRow(Number(result.rows[i]?.__idx ?? i))}
+        />
+      )}
 
       {expandedRow != null && table.rows[expandedRow] && (
         <div className={styles.recordOverlay} onClick={() => setExpandedRow(null)} data-testid="record-card">

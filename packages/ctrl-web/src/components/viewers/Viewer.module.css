@@ -837,6 +837,103 @@
   vertical-align: middle;
   margin-left: 4px;
 }
+.fieldsWrap {
+  position: relative;
+  display: inline-block;
+}
+.fieldsMenu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 160px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.fieldsItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text, #1a1a1a);
+}
+.fieldsItem:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+}
+
+/* Timeline / Gantt view — bars on a shared date axis (read-only, derived) */
+.timelineView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  padding: var(--space-3, 12px);
+  overflow: auto;
+  min-height: 0;
+}
+.timelineWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.timelineAxis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-text-muted, #999);
+  font-variant-numeric: tabular-nums;
+  padding-left: 140px;
+  border-bottom: 1px dashed var(--color-border, #e5e5e5);
+  padding-bottom: 4px;
+}
+.timelineRow {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.timelineLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text, #1a1a1a);
+}
+.timelineTrack {
+  position: relative;
+  height: 22px;
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.035));
+  border-radius: 4px;
+}
+.timelineBar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  overflow: hidden;
+  min-width: 6px;
+}
+.timelineBarText {
+  font-size: 10px;
+  color: #fff;
+  white-space: nowrap;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
 .querySpacer {
   flex: 1;
 }

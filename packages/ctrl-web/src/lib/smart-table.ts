@@ -194,7 +194,15 @@ export const ensureRowIds = (table: SmartTable): SmartTable => {
 };
 
 /** The view kinds a smart table can render (ADR-003 §6.2). */
-export type ViewKind = 'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary' | 'chart';
+export type ViewKind =
+  | 'grid'
+  | 'kanban'
+  | 'gallery'
+  | 'calendar'
+  | 'form'
+  | 'summary'
+  | 'chart'
+  | 'timeline';
 
 const VIEW_KINDS: ReadonlyArray<ViewKind> = [
   'grid',
@@ -204,6 +212,7 @@ const VIEW_KINDS: ReadonlyArray<ViewKind> = [
   'form',
   'summary',
   'chart',
+  'timeline',
 ];
 
 /** Coerce an unknown frontmatter `kind` into a valid ViewKind (default grid).

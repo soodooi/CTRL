@@ -13,18 +13,19 @@ schema:
   - { key: name, label: Name, type: text }
   - { key: amount, label: Amount, type: number, color_op: gt, color_value: 10000, color_bg: 140 }
   - { key: stage, label: Stage, type: select, options: [new, qualified, won, lost], color_op: eq, color_value: lost, color_bg: 8 }
+  - { key: start, label: Start, type: date }
   - { key: due, label: Next follow-up, type: date }
   - { key: done, label: Done, type: checkbox }
   - { key: tags, label: Tags, type: tags }
 ---
 
-| Name       | Amount | Stage     | Next follow-up | Done | Tags      |
-|------------|--------|-----------|----------------|------|-----------|
-| Acme Corp  | 12000  | qualified | 2026-06-20     | x    | crm, vip  |
-| Beta LLC   | 4500   | new       | 2026-07-01     |      | crm       |
-| Cobalt Inc | 28000  | won       | 2026-06-18     |      | lead, vip |
-| Delta Co   | 800    | lost      | 2026-05-15     | x    | crm       |
-| Echo Ltd   | 15500  | qualified | 2026-06-21     |      | lead      |
+| Name       | Amount | Stage     | Start      | Next follow-up | Done | Tags      |
+|------------|--------|-----------|------------|----------------|------|-----------|
+| Acme Corp  | 12000  | qualified | 2026-06-01 | 2026-06-20     | x    | crm, vip  |
+| Beta LLC   | 4500   | new       | 2026-06-10 | 2026-07-01     |      | crm       |
+| Cobalt Inc | 28000  | won       | 2026-06-05 | 2026-06-18     |      | lead, vip |
+| Delta Co   | 800    | lost      | 2026-05-01 | 2026-05-15     | x    | crm       |
+| Echo Ltd   | 15500  | qualified | 2026-06-12 | 2026-06-21     |      | lead      |
 `;
 
 export const TableLabRoute = (): ReactElement => {
