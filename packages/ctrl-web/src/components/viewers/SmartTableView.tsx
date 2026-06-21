@@ -8,8 +8,14 @@
 // component state and never mutates the rows. Edits still target the canonical
 // row via a preserved original index, so editing a filtered view is correct.
 
-import { useMemo, useState, type ReactElement } from 'react';
-import type { AiColumnOp, AiColumnSummary } from '@/lib/kernel';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import type {
+  AiColumnOp,
+  AiColumnSummary,
+  SmartTableQueryRequest,
+  SmartTableQueryResult,
+} from '@/lib/kernel';
+import { attachCanonicalIdx, buildGateRequest } from '@/lib/smart-table-gate-bridge';
 import {
   baseCellType,
   columnKeyFromLabel,
@@ -125,6 +131,11 @@ export interface SmartTableViewProps {
   onReplaceViews?: (views: ViewSpec[]) => void;
   /** Form view submit — append a row pre-filled with the entered values. */
   onSubmitForm?: (values: Record<string, string>) => void;
+  /** Route the structured query through the §14 kernel gate (smart_table.query)
+   *  instead of the in-process client engine — one engine shared with Irisy +
+   *  external brains (ADR-002 §14). When absent (or on error) the view falls
+   *  back to the client engine, so local-first / dev contexts still work. */
+  runQuery?: (request: SmartTableQueryRequest) => Promise<SmartTableQueryResult>;
   /** Loaded target tables (path → SmartTable) for link / Lookup / Rollup. */
   relations?: Record<string, SmartTable>;
   /** Other smart tables in the vault (link-target picker in the field editor). */
@@ -146,6 +157,7 @@ export const SmartTableView = ({
   onDeleteColumn,
   onReplaceViews,
   onSubmitForm,
+  runQuery,
   relations = {},
   linkTargets = [],
 }: SmartTableViewProps): ReactElement => {
@@ -332,7 +344,7 @@ export const SmartTableView = ({
     () => ({ ...table, rows: table.rows.map((r, i) => ({ ...r, __idx: String(i) })) }),
     [table],
   );
-  const queried = useMemo(
+  const clientQueried = useMemo(
     () =>
       queryTable(indexed, {
         filters,
@@ -342,6 +354,44 @@ export const SmartTableView = ({
       }),
     [indexed, filters, conjunction, sort, groupBy, groupBy2],
   );
+  // §14: route the same structured query through the kernel gate when the host
+  // provides `runQuery`. The kernel keys on the stable record id, so we re-attach
+  // each row's canonical __idx. We stamp the result with the `table` it was
+  // computed from and only trust it while that ref is current — so an in-flight
+  // response can never render against a since-edited table (the client result,
+  // always in sync, covers the gap). Any error → client fallback (local-first).
+  const [kernelResult, setKernelResult] = useState<{
+    rows: Array<Record<string, string>>;
+    matchCount: number;
+    forTable: SmartTable;
+  } | null>(null);
+  useEffect(() => {
+    if (!runQuery) {
+      setKernelResult(null);
+      return;
+    }
+    let live = true;
+    const request = buildGateRequest(filters, conjunction, sort, [groupBy, groupBy2]);
+    runQuery(request)
+      .then((res) => {
+        if (!live) return;
+        setKernelResult({
+          rows: attachCanonicalIdx(res.rows, table),
+          matchCount: res.match_count,
+          forTable: table,
+        });
+      })
+      .catch(() => {
+        if (live) setKernelResult(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [runQuery, filters, conjunction, sort, groupBy, groupBy2, table]);
+  const queried =
+    runQuery && kernelResult && kernelResult.forTable === table
+      ? { rows: kernelResult.rows, matchCount: kernelResult.matchCount }
+      : clientQueried;
   // Quick search narrows the queried rows by a case-insensitive substring match
   // across every cell (composes on top of the structured filters). Downstream
   // views consume `result`, so search applies everywhere uniformly.

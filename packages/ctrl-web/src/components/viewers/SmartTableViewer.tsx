@@ -9,9 +9,15 @@
 // separately; the kernel re-emits the YAML).
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, type ReactElement } from 'react';
+import { useCallback, useMemo, useState, type ReactElement } from 'react';
 import type { ViewerProps } from '@/lib/viewer-registry';
-import { smartTableRunAiColumn, type AiColumnOp, type AiColumnSummary } from '@/lib/kernel';
+import {
+  querySmartTable,
+  smartTableRunAiColumn,
+  type AiColumnOp,
+  type AiColumnSummary,
+  type SmartTableQueryRequest,
+} from '@/lib/kernel';
 import { readVault, writeVault, vaultRelativePath } from '@/lib/viewer-uri';
 import {
   addColumn,
@@ -41,6 +47,12 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
   const path = vaultRelativePath(resource.uri);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  // §14: run the viewer's structured query through the kernel gate over this
+  // file. Stable per path so SmartTableView's query effect doesn't re-fire.
+  const runQuery = useCallback(
+    (request: SmartTableQueryRequest) => querySmartTable(path, request),
+    [path],
+  );
 
   const { data: entry, isLoading } = useQuery({
     queryKey: ['smart-table-file', path],
@@ -165,6 +177,7 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
       <ViewerChrome resource={resource} saving={saving} error={error} rightActions={rightActions} />
       {table.title && <h2 className={styles.tableTitle}>{table.title}</h2>}
       <SmartTableView
+        runQuery={runQuery}
         table={table}
         editable={resource.editable}
         relations={relations ?? {}}
