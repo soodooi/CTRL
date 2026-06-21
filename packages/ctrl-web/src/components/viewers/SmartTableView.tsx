@@ -47,6 +47,9 @@ const FIELD_TYPES: CellType[] = [
   'user',
   'percent',
   'duration',
+  'auto_number',
+  'created_at',
+  'modified_at',
 ];
 import {
   queryTable,

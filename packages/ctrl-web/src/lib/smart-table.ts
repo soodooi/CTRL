@@ -49,7 +49,10 @@ export type CellType =
   | 'attachment'
   | 'user'
   | 'percent'
-  | 'duration';
+  | 'duration'
+  | 'auto_number'
+  | 'created_at'
+  | 'modified_at';
 
 /** The 7 semantic base types query/sort/filter actually reason about. */
 export type BaseCellType = 'text' | 'number' | 'date' | 'checkbox' | 'tags' | 'select' | 'url';
@@ -64,7 +67,11 @@ export const baseCellType = (t: CellType): BaseCellType => {
     case 'progress':
     case 'percent':
     case 'duration':
+    case 'auto_number':
       return 'number';
+    case 'created_at':
+    case 'modified_at':
+      return 'date';
     case 'user':
       return 'tags';
     case 'multiline':
@@ -555,27 +562,45 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
   return fm;
 };
 
-/** Insert a new empty row at the end (with a fresh record id). Immutable. */
+/** Today as YYYY-MM-DD, for created_at / modified_at auto fields. */
+const todayISO = (): string => new Date().toISOString().slice(0, 10);
+
+/** Auto-filled value for a system/auto field on a new row (record id, created/
+ *  modified timestamps); undefined for normal fields. */
+const autoValue = (c: ColumnSpec, now: string): string | undefined => {
+  if (c.key === ROW_ID_KEY) return newRowId();
+  if (c.type === 'created_at' || c.type === 'modified_at') return now;
+  return undefined;
+};
+
+/** A fresh row map with auto fields filled. */
+const freshRow = (table: SmartTable, now: string): Record<string, string> =>
+  Object.fromEntries(table.schema.map((c) => [c.key, autoValue(c, now) ?? '']));
+
+/** Insert a new empty row at the end (record id + created/modified set). */
 export const appendRow = (table: SmartTable): SmartTable => ({
   ...table,
-  rows: [
-    ...table.rows,
-    Object.fromEntries(table.schema.map((c) => [c.key, c.key === ROW_ID_KEY ? newRowId() : ''])),
-  ],
+  rows: [...table.rows, freshRow(table, todayISO())],
 });
 
-/** Update a single cell. Returns a new table. */
+/** Update a single cell; also bumps any modified_at field. Returns a new table. */
 export const updateCell = (
   table: SmartTable,
   rowIndex: number,
   key: string,
   value: string,
-): SmartTable => ({
-  ...table,
-  rows: table.rows.map((row, i) =>
-    i === rowIndex ? { ...row, [key]: value } : row,
-  ),
-});
+): SmartTable => {
+  const now = todayISO();
+  return {
+    ...table,
+    rows: table.rows.map((row, i) => {
+      if (i !== rowIndex) return row;
+      const next = { ...row, [key]: value };
+      for (const c of table.schema) if (c.type === 'modified_at') next[c.key] = now;
+      return next;
+    }),
+  };
+};
 
 /** Delete a row. Returns a new table. */
 export const deleteRow = (table: SmartTable, rowIndex: number): SmartTable => ({
@@ -589,13 +614,7 @@ export const appendRowWithValues = (
   values: Record<string, string>,
 ): SmartTable => ({
   ...table,
-  rows: [
-    ...table.rows,
-    {
-      ...Object.fromEntries(table.schema.map((c) => [c.key, c.key === ROW_ID_KEY ? newRowId() : ''])),
-      ...values,
-    },
-  ],
+  rows: [...table.rows, { ...freshRow(table, todayISO()), ...values }],
 });
 
 /** Delete several rows by canonical index (batch). Returns a new table. */

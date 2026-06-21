@@ -50,8 +50,9 @@ impl CellType {
         // email / phone as text. Kept in sync with the front end's
         // baseCellType (lib/smart-table.ts).
         match s {
-            "number" | "currency" | "rating" | "progress" | "percent" => CellType::Number,
-            "date" => CellType::Date,
+            "number" | "currency" | "rating" | "progress" | "percent" | "duration"
+            | "auto_number" => CellType::Number,
+            "date" | "created_at" | "modified_at" => CellType::Date,
             "checkbox" => CellType::Checkbox,
             "tags" => CellType::Tags,
             "select" => CellType::Select,

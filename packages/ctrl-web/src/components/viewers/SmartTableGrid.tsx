@@ -43,7 +43,11 @@ const iconFor = (t: CellType): GridColumnIcon => {
     case 'rating':
       return GridColumnIcon.HeaderEmoji;
     case 'date':
+    case 'created_at':
+    case 'modified_at':
       return GridColumnIcon.HeaderDate;
+    case 'auto_number':
+      return GridColumnIcon.HeaderRowID;
     case 'checkbox':
       return GridColumnIcon.HeaderBoolean;
     case 'select':
@@ -298,6 +302,13 @@ export const SmartTableGrid = ({
       if (spec.type === 'formula') {
         const disp = evalFormula(spec.expression ?? '', rows[row] ?? {});
         return { kind: GridCellKind.Text, data: disp, displayData: disp, allowOverlay: false };
+      }
+      if (spec.type === 'auto_number') {
+        const n = Number(rows[row]?.__idx ?? row) + 1;
+        return { kind: GridCellKind.Number, data: n, displayData: String(n), allowOverlay: false };
+      }
+      if (spec.type === 'created_at' || spec.type === 'modified_at') {
+        return { kind: GridCellKind.Text, data: value, displayData: value, allowOverlay: false };
       }
       if (spec.type === 'checkbox') {
         return {
