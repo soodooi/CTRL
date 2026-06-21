@@ -111,6 +111,73 @@ interface CellProps {
   onChange: (next: string) => void;
 }
 
+// LinkPicker — token + autocomplete relation editor (borrowed from Grist
+// ReferenceListEditor.ts, Apache 2.0): shows selected rows as removable tokens,
+// type to search the target table's primary field, click to add (multi-select).
+interface LinkPickerProps {
+  value: string;
+  target: SmartTable | undefined;
+  editable: boolean;
+  onChange: (ids: string) => void;
+}
+const LinkPicker = ({ value, target, editable, onChange }: LinkPickerProps): ReactElement => {
+  const [search, setSearch] = useState('');
+  const [open, setOpen] = useState(false);
+  const pf = target ? primaryField(target) : 'id';
+  const rows = target?.rows ?? [];
+  const selectedIds = value.split(',').map((s) => s.trim()).filter(Boolean);
+  const label = (id: string): string => rows.find((r) => r.id === id)?.[pf] ?? id;
+  const matches = rows
+    .filter((r) => !selectedIds.includes(r.id ?? '') && (r[pf] ?? '').toLowerCase().includes(search.toLowerCase()))
+    .slice(0, 8);
+  return (
+    <div className={styles.linkPicker}>
+      <div className={styles.linkTokens}>
+        {selectedIds.map((id) => (
+          <span key={id} className={styles.linkToken}>
+            {label(id)}
+            {editable && (
+              <button type="button" onClick={() => onChange(selectedIds.filter((x) => x !== id).join(', '))}>
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+        {editable && (
+          <input
+            className={styles.linkInput}
+            value={search}
+            placeholder={selectedIds.length ? '' : 'link a record…'}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 150)}
+          />
+        )}
+      </div>
+      {editable && open && matches.length > 0 && (
+        <div className={styles.linkSuggest} data-testid="link-suggest">
+          {matches.map((r) => (
+            <button
+              key={r.id ?? ''}
+              type="button"
+              className={styles.linkSuggestItem}
+              onMouseDown={() => {
+                onChange([...selectedIds, r.id ?? ''].join(', '));
+                setSearch('');
+              }}
+            >
+              {r[pf] || r.id}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // "Render is the type" (Feishu/Teable): checkbox / rating / select / progress /
 // currency / link render distinctly; click a plain cell to edit it. The editor
 // is chosen by the SEMANTIC base type (baseCellType), the display by the
@@ -1025,24 +1092,14 @@ export const SmartTableView = ({
                 <span className={styles.recordLabel}>{c.label}</span>
                 <span className={styles.recordValue}>
                   {c.type === 'link' ? (
-                    <select
-                      className={styles.querySelect}
-                      disabled={!editable}
-                      value={table.rows[expandedRow]?.[c.key] ?? ''}
-                      onChange={(e) => onCellChange(expandedRow, c.key, e.target.value)}
-                      data-testid={`link-picker-${c.key}`}
-                    >
-                      <option value="">— none —</option>
-                      {(() => {
-                        const tgt = c.foreignTable ? relations[c.foreignTable] : undefined;
-                        const pf = tgt ? primaryField(tgt) : 'id';
-                        return (tgt?.rows ?? []).map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r[pf] ?? r.id}
-                          </option>
-                        ));
-                      })()}
-                    </select>
+                    <span data-testid={`link-picker-${c.key}`}>
+                      <LinkPicker
+                        value={table.rows[expandedRow]?.[c.key] ?? ''}
+                        target={c.foreignTable ? relations[c.foreignTable] : undefined}
+                        editable={editable}
+                        onChange={(ids) => onCellChange(expandedRow, c.key, ids)}
+                      />
+                    </span>
                   ) : c.type === 'lookup' || c.type === 'rollup' ? (
                     <span className={styles.cellText}>
                       {relationalDisplay(table.rows[expandedRow] ?? {}, c, table.schema, relations) || '—'}
