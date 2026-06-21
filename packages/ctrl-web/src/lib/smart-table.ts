@@ -41,7 +41,10 @@ export type CellType =
   | 'select'
   | 'url'
   | 'email'
-  | 'phone';
+  | 'phone'
+  | 'link'
+  | 'lookup'
+  | 'rollup';
 
 /** The 7 semantic base types query/sort/filter actually reason about. */
 export type BaseCellType = 'text' | 'number' | 'date' | 'checkbox' | 'tags' | 'select' | 'url';
@@ -58,6 +61,9 @@ export const baseCellType = (t: CellType): BaseCellType => {
     case 'multiline':
     case 'email':
     case 'phone':
+    case 'link':
+    case 'lookup':
+    case 'rollup':
       return 'text';
     case 'number':
     case 'date':
@@ -90,6 +96,15 @@ export interface ColumnSpec {
   aiOp?: string;
   aiPrompt?: string;
   aiAutoFill?: boolean;
+  /** Relational config (Teable / NocoDB model). `link`: foreignTable = target
+   *  table vault path; the cell stores target row id(s). `lookup` / `rollup`:
+   *  linkField = which link column to follow, lookupField = the foreign field;
+   *  `rollup` adds rollupFn (sum/count/avg/min/max). The relational soul of
+   *  Bitable — route-C SQLite index lands later for scale; reads work now. */
+  foreignTable?: string;
+  linkField?: string;
+  lookupField?: string;
+  rollupFn?: string;
   /** System field (record id, link back-refs, …) — present in the data + on
    *  disk but hidden from the grid / pickers. The relational foundation. */
   system?: boolean;
@@ -348,6 +363,10 @@ const columnFromObj = (o: Record<string, unknown>): ColumnSpec | null => {
     aiOp: typeof o.ai_op === 'string' && o.ai_op ? o.ai_op : undefined,
     aiPrompt: typeof o.ai_prompt === 'string' && o.ai_prompt ? o.ai_prompt : undefined,
     aiAutoFill: o.ai_autofill === true || o.ai_autofill === 'true' ? true : undefined,
+    foreignTable: typeof o.foreign_table === 'string' && o.foreign_table ? o.foreign_table : undefined,
+    linkField: typeof o.link_field === 'string' && o.link_field ? o.link_field : undefined,
+    lookupField: typeof o.lookup_field === 'string' && o.lookup_field ? o.lookup_field : undefined,
+    rollupFn: typeof o.rollup_fn === 'string' && o.rollup_fn ? o.rollup_fn : undefined,
     system: o.system === true || o.system === 'true' || o.key === ROW_ID_KEY ? true : undefined,
   };
 };
@@ -432,6 +451,10 @@ export const serializeSmartTable = (table: SmartTable): string => {
       if (col.aiOp) parts.push(`ai_op: ${col.aiOp}`);
       if (col.aiPrompt) parts.push(`ai_prompt: ${col.aiPrompt}`);
       if (col.aiAutoFill) parts.push(`ai_autofill: true`);
+      if (col.foreignTable) parts.push(`foreign_table: ${col.foreignTable}`);
+      if (col.linkField) parts.push(`link_field: ${col.linkField}`);
+      if (col.lookupField) parts.push(`lookup_field: ${col.lookupField}`);
+      if (col.rollupFn) parts.push(`rollup_fn: ${col.rollupFn}`);
       if (col.system) parts.push(`system: true`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
@@ -492,6 +515,10 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
     ...(c.aiOp ? { ai_op: c.aiOp } : {}),
     ...(c.aiPrompt ? { ai_prompt: c.aiPrompt } : {}),
     ...(c.aiAutoFill ? { ai_autofill: true } : {}),
+    ...(c.foreignTable ? { foreign_table: c.foreignTable } : {}),
+    ...(c.linkField ? { link_field: c.linkField } : {}),
+    ...(c.lookupField ? { lookup_field: c.lookupField } : {}),
+    ...(c.rollupFn ? { rollup_fn: c.rollupFn } : {}),
     ...(c.system ? { system: true } : {}),
   }));
   if (table.views.length > 0) {

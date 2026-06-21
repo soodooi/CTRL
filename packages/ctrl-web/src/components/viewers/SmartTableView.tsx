@@ -19,6 +19,7 @@ import {
   type SmartTable,
   type ViewSpec,
 } from '@/lib/smart-table';
+import { primaryField, relationalDisplay } from '@/lib/smart-table-relations';
 import { SmartTableGrid } from './SmartTableGrid';
 
 const FIELD_TYPES: CellType[] = [
@@ -35,6 +36,9 @@ const FIELD_TYPES: CellType[] = [
   'url',
   'email',
   'phone',
+  'link',
+  'lookup',
+  'rollup',
 ];
 import {
   queryTable,
@@ -296,6 +300,10 @@ export interface SmartTableViewProps {
   /** Replace the whole saved-views list (ADR-003 §6.2 multi-view). When set,
    *  a saved-views tab bar + add/update/delete appear. */
   onReplaceViews?: (views: ViewSpec[]) => void;
+  /** Loaded target tables (path → SmartTable) for link / Lookup / Rollup. */
+  relations?: Record<string, SmartTable>;
+  /** Other smart tables in the vault (link-target picker in the field editor). */
+  linkTargets?: Array<{ path: string; title: string }>;
 }
 
 export const SmartTableView = ({
@@ -309,6 +317,8 @@ export const SmartTableView = ({
   onUpdateColumn,
   onDeleteColumn,
   onReplaceViews,
+  relations = {},
+  linkTargets = [],
 }: SmartTableViewProps): ReactElement => {
   // Initialize from the saved view (ADR-003 §6.2): the kernel's add_view writes
   // frontmatter `views`, and the viewer reads it back so the two paths stay in
@@ -393,6 +403,10 @@ export const SmartTableView = ({
   const [feAiOp, setFeAiOp] = useState('');
   const [feAiPrompt, setFeAiPrompt] = useState('');
   const [feAiAutoFill, setFeAiAutoFill] = useState(false);
+  const [feForeignTable, setFeForeignTable] = useState('');
+  const [feLinkField, setFeLinkField] = useState('');
+  const [feLookupField, setFeLookupField] = useState('');
+  const [feRollupFn, setFeRollupFn] = useState('count');
   const openFieldEditor = (col?: ColumnSpec): void => {
     if (col) {
       setFieldEdit({ key: col.key });
@@ -403,6 +417,10 @@ export const SmartTableView = ({
       setFeAiOp(col.aiOp ?? '');
       setFeAiPrompt(col.aiPrompt ?? '');
       setFeAiAutoFill(Boolean(col.aiAutoFill));
+      setFeForeignTable(col.foreignTable ?? '');
+      setFeLinkField(col.linkField ?? '');
+      setFeLookupField(col.lookupField ?? '');
+      setFeRollupFn(col.rollupFn ?? 'count');
     } else {
       setFieldEdit({ key: null });
       setFeLabel('');
@@ -412,6 +430,10 @@ export const SmartTableView = ({
       setFeAiOp('');
       setFeAiPrompt('');
       setFeAiAutoFill(false);
+      setFeForeignTable('');
+      setFeLinkField('');
+      setFeLookupField('');
+      setFeRollupFn('count');
     }
   };
   const saveField = (): void => {
@@ -425,6 +447,10 @@ export const SmartTableView = ({
       aiOp: feAiOp || undefined,
       aiPrompt: feAiOp && feAiPrompt.trim() ? feAiPrompt : undefined,
       aiAutoFill: feAiOp && feAiAutoFill ? true : undefined,
+      foreignTable: feType === 'link' ? feForeignTable || undefined : undefined,
+      linkField: feType === 'lookup' || feType === 'rollup' ? feLinkField || undefined : undefined,
+      lookupField: feType === 'lookup' || feType === 'rollup' ? feLookupField || undefined : undefined,
+      rollupFn: feType === 'rollup' ? feRollupFn : undefined,
     };
     if (fieldEdit?.key) {
       onUpdateColumn?.(fieldEdit.key, patch);
@@ -654,6 +680,55 @@ export const SmartTableView = ({
           {feType === 'currency' && (
             <input className={styles.fieldSymbol} value={feSymbol} aria-label="Currency symbol" onChange={(e) => setFeSymbol(e.target.value)} />
           )}
+          {feType === 'link' && (
+            <select
+              className={styles.querySelect}
+              value={feForeignTable}
+              onChange={(e) => setFeForeignTable(e.target.value)}
+              aria-label="Link target table"
+              data-testid="fe-foreign-table"
+            >
+              <option value="">— target table —</option>
+              {linkTargets.map((t) => (
+                <option key={t.path} value={t.path}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          )}
+          {(feType === 'lookup' || feType === 'rollup') && (
+            <>
+              <select className={styles.querySelect} value={feLinkField} onChange={(e) => setFeLinkField(e.target.value)} aria-label="Via link field">
+                <option value="">— via link —</option>
+                {visibleSchema.filter((c) => c.type === 'link').map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <select className={styles.querySelect} value={feLookupField} onChange={(e) => setFeLookupField(e.target.value)} aria-label="Foreign field">
+                <option value="">— foreign field —</option>
+                {(() => {
+                  const lc = table.schema.find((c) => c.key === feLinkField);
+                  const tgt = lc?.foreignTable ? relations[lc.foreignTable] : undefined;
+                  return (tgt?.schema ?? []).filter((c) => !c.system).map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ));
+                })()}
+              </select>
+              {feType === 'rollup' && (
+                <select className={styles.querySelect} value={feRollupFn} onChange={(e) => setFeRollupFn(e.target.value)} aria-label="Rollup function">
+                  {['count', 'sum', 'avg', 'min', 'max'].map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
+          )}
           {onRunAiColumn && (
             <>
               <select
@@ -731,6 +806,7 @@ export const SmartTableView = ({
           schema={table.schema}
           rows={result.rows}
           editable={editable}
+          relations={relations}
           onCellChange={onCellChange}
           onExpandRow={(idx) => setExpandedRow(idx)}
           onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
@@ -845,12 +921,37 @@ export const SmartTableView = ({
               <div key={c.key} className={styles.recordField}>
                 <span className={styles.recordLabel}>{c.label}</span>
                 <span className={styles.recordValue}>
-                  <Cell
-                    col={c}
-                    value={table.rows[expandedRow]?.[c.key] ?? ''}
-                    editable={editable}
-                    onChange={(v) => onCellChange(expandedRow, c.key, v)}
-                  />
+                  {c.type === 'link' ? (
+                    <select
+                      className={styles.querySelect}
+                      disabled={!editable}
+                      value={table.rows[expandedRow]?.[c.key] ?? ''}
+                      onChange={(e) => onCellChange(expandedRow, c.key, e.target.value)}
+                      data-testid={`link-picker-${c.key}`}
+                    >
+                      <option value="">— none —</option>
+                      {(() => {
+                        const tgt = c.foreignTable ? relations[c.foreignTable] : undefined;
+                        const pf = tgt ? primaryField(tgt) : 'id';
+                        return (tgt?.rows ?? []).map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r[pf] ?? r.id}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                  ) : c.type === 'lookup' || c.type === 'rollup' ? (
+                    <span className={styles.cellText}>
+                      {relationalDisplay(table.rows[expandedRow] ?? {}, c, table.schema, relations) || '—'}
+                    </span>
+                  ) : (
+                    <Cell
+                      col={c}
+                      value={table.rows[expandedRow]?.[c.key] ?? ''}
+                      editable={editable}
+                      onChange={(v) => onCellChange(expandedRow, c.key, v)}
+                    />
+                  )}
                 </span>
               </div>
             ))}

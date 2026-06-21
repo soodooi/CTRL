@@ -26,6 +26,8 @@ import {
   type ColumnSpec,
   type SmartTable,
 } from '@/lib/smart-table';
+import { linkTargets } from '@/lib/smart-table-relations';
+import { listSmartTables } from '@/lib/smart-tables';
 import { SmartTableView } from './SmartTableView';
 import { ViewerChrome } from './ViewerChrome';
 import styles from './Viewer.module.css';
@@ -48,6 +50,29 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
         : { schema: [], rows: [], views: [], extraFrontmatter: {} },
     [entry],
   );
+
+  // Relational: preload the target tables this table's link columns reference,
+  // so link display / Lookup / Rollup can resolve foreign rows by id.
+  const linkPaths = useMemo(() => linkTargets(table.schema), [table.schema]);
+  const { data: relations } = useQuery({
+    queryKey: ['smart-table-links', path, linkPaths.join('|')],
+    queryFn: async (): Promise<Record<string, SmartTable>> => {
+      const out: Record<string, SmartTable> = {};
+      for (const lp of linkPaths) {
+        try {
+          const e = await readVault(lp);
+          out[lp] = smartTableFromParts((e.frontmatter ?? {}) as Record<string, unknown>, e.content);
+        } catch {
+          // target table missing — link cells render as "(missing)".
+        }
+      }
+      return out;
+    },
+    enabled: linkPaths.length > 0,
+  });
+
+  // All smart tables in the vault — for the field editor's link-target picker.
+  const { data: allTables } = useQuery({ queryKey: ['smart-tables'], queryFn: listSmartTables });
 
   const commit = async (next: SmartTable): Promise<void> => {
     setSaving(true);
@@ -138,6 +163,8 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
       <SmartTableView
         table={table}
         editable={resource.editable}
+        relations={relations ?? {}}
+        linkTargets={(allTables ?? []).filter((t) => t.path !== path).map((t) => ({ path: t.path, title: t.title }))}
         onCellChange={(rowIndex, key, value) => void commit(updateCell(table, rowIndex, key, value))}
         onDeleteRow={(rowIndex) => void commit(deleteRow(table, rowIndex))}
         onSaveView={resource.editable ? (view) => void commit({ ...table, views: [view] }) : undefined}
