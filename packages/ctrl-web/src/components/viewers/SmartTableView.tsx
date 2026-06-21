@@ -327,8 +327,10 @@ export const SmartTableView = ({
   // sync (closes the §6.2 read/write loop).
   const savedView: ViewSpec | undefined = table.views[0];
   const [filters, setFilters] = useState<Filter[]>([]);
+  const [conjunction, setConjunction] = useState<'and' | 'or'>('and');
   const [sort, setSort] = useState<SortKey | null>(savedView?.sort ?? null);
   const [groupBy, setGroupBy] = useState<string | null>(savedView?.groupBy ?? null);
+  const [groupBy2, setGroupBy2] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'gallery' | 'calendar'>(savedView?.kind ?? 'grid');
   const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
   const editsViews = Boolean(onReplaceViews);
@@ -478,8 +480,14 @@ export const SmartTableView = ({
     [table],
   );
   const result = useMemo(
-    () => queryTable(indexed, { filters, sort: sort ? [sort] : [], groupBy }),
-    [indexed, filters, sort, groupBy],
+    () =>
+      queryTable(indexed, {
+        filters,
+        conjunction,
+        sort: sort ? [sort] : [],
+        groupBy: [groupBy, groupBy2].filter((g): g is string => Boolean(g)),
+      }),
+    [indexed, filters, conjunction, sort, groupBy, groupBy2],
   );
   const groupLabel = (key: string) => table.schema.find((c) => c.key === key)?.label ?? key;
   // Fields shown to the user (system fields like the record id stay in the data
@@ -599,7 +607,10 @@ export const SmartTableView = ({
         <select
           className={styles.querySelect}
           value={groupBy ?? ''}
-          onChange={(e) => setGroupBy(e.target.value || null)}
+          onChange={(e) => {
+            setGroupBy(e.target.value || null);
+            if (!e.target.value) setGroupBy2(null);
+          }}
           data-testid="smart-table-group"
         >
           <option value="">none</option>
@@ -609,6 +620,24 @@ export const SmartTableView = ({
             </option>
           ))}
         </select>
+        {groupBy && (
+          <select
+            className={styles.querySelect}
+            value={groupBy2 ?? ''}
+            onChange={(e) => setGroupBy2(e.target.value || null)}
+            aria-label="Second group level"
+            data-testid="smart-table-group2"
+          >
+            <option value="">then…</option>
+            {visibleSchema
+              .filter((c) => c.key !== groupBy)
+              .map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              ))}
+          </select>
+        )}
 
         {(onSaveView || onReplaceViews) && (
           <button
@@ -641,6 +670,17 @@ export const SmartTableView = ({
 
       {filters.length > 0 && (
         <div className={styles.queryChips}>
+          {filters.length > 1 && (
+            <button
+              type="button"
+              className={styles.queryChip}
+              onClick={() => setConjunction((c) => (c === 'and' ? 'or' : 'and'))}
+              title="Toggle AND / OR across filters"
+              data-testid="smart-table-conjunction"
+            >
+              {conjunction === 'and' ? 'ALL (and)' : 'ANY (or)'}
+            </button>
+          )}
           {filters.map((f, i) => (
             <button
               key={`${f.field}-${f.op}-${i}`}
