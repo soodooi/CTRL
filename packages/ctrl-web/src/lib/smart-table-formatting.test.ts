@@ -64,4 +64,23 @@ schema:
     expect(round?.colorValue).toBe('won');
     expect(round?.colorBg).toBe(140);
   });
+
+  it('the chart view kind round-trips (emit/parse symmetry)', () => {
+    const src = `---
+title: T
+schema:
+  - { key: a, label: A, type: text }
+views:
+  - { kind: chart }
+---
+
+| A |
+|---|
+|   |
+`;
+    const parsed = parseSmartTable(src);
+    expect(parsed.views[0]?.kind).toBe('chart');
+    const round = parseSmartTable(serializeSmartTable(parsed));
+    expect(round.views[0]?.kind).toBe('chart');
+  });
 });

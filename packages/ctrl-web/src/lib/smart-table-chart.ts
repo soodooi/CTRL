@@ -1,7 +1,7 @@
 // smart-table-chart — the read-only aggregation behind the Chart view (Feishu
-// Bitable 仪表盘). Pure + derived: group rows by a field, reduce a metric per
-// group, hand the series to the SVG renderer. No charting dependency, no stored
-// state (plain-text stays truth; a chart is just a view over the rows).
+// Bitable dashboard parity). Pure + derived: group rows by a field, reduce a
+// metric per group, hand the series to the SVG renderer. No charting dependency,
+// no stored state (plain-text stays truth; a chart is just a view over the rows).
 
 export type ChartKind = 'bar' | 'pie' | 'line';
 

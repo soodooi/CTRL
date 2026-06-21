@@ -193,12 +193,30 @@ export const ensureRowIds = (table: SmartTable): SmartTable => {
   return { ...table, schema, rows };
 };
 
+/** The view kinds a smart table can render (ADR-003 §6.2). */
+export type ViewKind = 'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary' | 'chart';
+
+const VIEW_KINDS: ReadonlyArray<ViewKind> = [
+  'grid',
+  'kanban',
+  'gallery',
+  'calendar',
+  'form',
+  'summary',
+  'chart',
+];
+
+/** Coerce an unknown frontmatter `kind` into a valid ViewKind (default grid).
+ *  Shared by both view parsers so the on-disk emit/parse pair stays symmetric. */
+const viewKind = (k: unknown): ViewKind =>
+  typeof k === 'string' && (VIEW_KINDS as ReadonlyArray<string>).includes(k) ? (k as ViewKind) : 'grid';
+
 /** A saved view (ADR-003 §6.2) — view state lives in frontmatter, not the
  *  table body. `kanban`/`gallery`/`calendar` columnize/lay-out by `groupBy`.
  *  Sort is persisted as flat scalars (sort_field / sort_desc) on disk so the
  *  YAML round-trips without nested structures. */
 export interface ViewSpec {
-  kind: 'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary' | 'chart';
+  kind: ViewKind;
   groupBy?: string | null;
   sort?: { field: string; desc: boolean } | null;
   name?: string;
@@ -393,9 +411,8 @@ const parseViews = (yamlText: string): ViewSpec[] => {
       const item = /^\s*-\s*(.+)$/.exec(line);
       if (!item) continue;
       const obj = parseInlineObject(item[1]!);
-      const kind = obj.kind === 'kanban' ? 'kanban' : 'grid';
       const groupBy = typeof obj.group_by === 'string' && obj.group_by ? (obj.group_by as string) : null;
-      out.push({ kind, groupBy });
+      out.push({ kind: viewKind(obj.kind), groupBy });
     }
   }
   return out;
@@ -454,14 +471,7 @@ const parseViewsValue = (v: unknown): ViewSpec[] => {
     .map((item) => {
       const o = typeof item === 'string' ? parseInlineObject(item) : (item as Record<string, unknown>);
       if (!o || typeof o !== 'object') return null;
-      const kind =
-        o.kind === 'kanban' ||
-        o.kind === 'gallery' ||
-        o.kind === 'calendar' ||
-        o.kind === 'form' ||
-        o.kind === 'summary'
-          ? o.kind
-          : 'grid';
+      const kind = viewKind(o.kind);
       const groupBy = typeof o.group_by === 'string' && o.group_by ? (o.group_by as string) : null;
       const sortField = typeof o.sort_field === 'string' && o.sort_field ? o.sort_field : null;
       const sort = sortField ? { field: sortField, desc: o.sort_desc === true || o.sort_desc === 'true' } : null;
