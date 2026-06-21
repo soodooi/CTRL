@@ -233,6 +233,9 @@ interface SmartTableGridProps {
   rowHeight?: number;
   /** Freeze the first N data columns (horizontal scroll keeps them pinned). */
   freezeColumns?: number;
+  /** Drag-reorder a row (from → to, both visible-row indices = canonical here,
+   *  since reorder is only offered in unsorted / unfiltered order). */
+  onRowMove?: (from: number, to: number) => void;
 }
 
 const canonicalIdx = (row: Record<string, string> | undefined, fallback: number): number =>
@@ -249,6 +252,7 @@ export const SmartTableGrid = ({
   onSelectedRowsChange,
   rowHeight = 34,
   freezeColumns = 0,
+  onRowMove,
 }: SmartTableGridProps): ReactElement => {
   const [widths, setWidths] = useState<Record<string, number>>({});
   const [gridSelection, setGridSelection] = useState<GridSelection>({
@@ -466,7 +470,7 @@ export const SmartTableGrid = ({
             onSelectedRowsChange(sel.rows.toArray().map((i) => canonicalIdx(rows[i], i)));
           }
         }}
-        onRowMoved={undefined}
+        onRowMoved={onRowMove ? (from, to) => onRowMove(from, to) : undefined}
         smoothScrollX
         smoothScrollY
         fillHandle={editable}

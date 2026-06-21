@@ -687,6 +687,19 @@ export const deleteRows = (table: SmartTable, rowIndexes: number[]): SmartTable 
   return { ...table, rows: table.rows.filter((_, i) => !drop.has(i)) };
 };
 
+/** Move a row from one index to another (manual drag-reorder). Row order is the
+ *  data order in plain-text markdown, so this just permutes the rows array.
+ *  Out-of-range / no-op moves return the table unchanged. */
+export const moveRow = (table: SmartTable, from: number, to: number): SmartTable => {
+  const n = table.rows.length;
+  if (from === to || from < 0 || to < 0 || from >= n || to >= n) return table;
+  const rows = [...table.rows];
+  const [moved] = rows.splice(from, 1);
+  if (moved === undefined) return table;
+  rows.splice(to, 0, moved);
+  return { ...table, rows };
+};
+
 // --- Schema (field) operations (ADR-003 §6.5 A3) — immutable, keep rows in
 // sync so the markdown body round-trips. ---
 

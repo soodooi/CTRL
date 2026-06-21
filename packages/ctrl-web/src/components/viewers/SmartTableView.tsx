@@ -103,6 +103,9 @@ export interface SmartTableViewProps {
   onDeleteRow?: (rowIndex: number) => void;
   /** Batch-delete the given canonical row indices (checkbox selection). */
   onDeleteRows?: (rowIndexes: number[]) => void;
+  /** Manual drag-reorder (canonical from → to). Only offered when rows show in
+   *  their natural order (no sort / group / filter / search). */
+  onMoveRow?: (from: number, to: number) => void;
   /** Persist the current view (kind + groupBy) into frontmatter `views`
    *  (ADR-003 §6.2). When set, a "Save view" button appears. */
   onSaveView?: (view: ViewSpec) => void;
@@ -132,6 +135,7 @@ export const SmartTableView = ({
   onCellChange,
   onDeleteRow,
   onDeleteRows,
+  onMoveRow,
   onSaveView,
   onRunAiColumn,
   onAddColumn,
@@ -347,6 +351,11 @@ export const SmartTableView = ({
     };
   }, [queried, search]);
   const rowHeight = density === 'compact' ? 28 : density === 'comfortable' ? 46 : 34;
+  // Drag-reorder is only meaningful when the visible rows are in their natural
+  // markdown order — once sorted / grouped / filtered / searched, a visible
+  // index no longer maps to a canonical row, so disable it.
+  const naturalOrder =
+    filters.length === 0 && !sort && !groupBy && !groupBy2 && search.trim() === '';
   const groupLabel = (key: string) => table.schema.find((c) => c.key === key)?.label ?? key;
   // Fields shown to the user (system fields like the record id stay in the data
   // but never appear in pickers / cards / non-grid views).
@@ -853,6 +862,7 @@ export const SmartTableView = ({
             onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
             rowHeight={rowHeight}
             freezeColumns={freezePrimary ? 1 : 0}
+            onRowMove={editable && onMoveRow && naturalOrder ? onMoveRow : undefined}
           />
           <div className={styles.statBar} data-testid="smart-table-stats">
             <span className={styles.statCount}>{result.rows.length} records</span>
