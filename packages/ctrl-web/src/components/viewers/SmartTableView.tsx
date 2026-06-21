@@ -357,7 +357,7 @@ export const SmartTableView = ({
   const kanbanField =
     groupBy ?? table.schema.find((c) => c.type === 'select' || c.type === 'checkbox')?.key ?? null;
   const [draft, setDraft] = useState<Filter>({
-    field: table.schema[0]?.key ?? '',
+    field: (table.schema.find((c) => !c.system)?.key ?? ''),
     op: 'contains',
     value: '',
   });
@@ -450,6 +450,9 @@ export const SmartTableView = ({
     [indexed, filters, sort, groupBy],
   );
   const groupLabel = (key: string) => table.schema.find((c) => c.key === key)?.label ?? key;
+  // Fields shown to the user (system fields like the record id stay in the data
+  // but never appear in pickers / cards / non-grid views).
+  const visibleSchema = table.schema.filter((c) => !c.system);
 
   const addFilter = (): void => {
     if (!draft.field) return;
@@ -504,7 +507,7 @@ export const SmartTableView = ({
             setDraft({ field, op: ops[0] ?? 'contains', value: '' });
           }}
         >
-          {table.schema.map((c) => (
+          {visibleSchema.map((c) => (
             <option key={c.key} value={c.key}>
               {c.label}
             </option>
@@ -543,7 +546,7 @@ export const SmartTableView = ({
           }
         >
           <option value="">none</option>
-          {table.schema.map((c) => (
+          {visibleSchema.map((c) => (
             <option key={c.key} value={c.key}>
               {c.label}
             </option>
@@ -568,7 +571,7 @@ export const SmartTableView = ({
           data-testid="smart-table-group"
         >
           <option value="">none</option>
-          {table.schema.map((c) => (
+          {visibleSchema.map((c) => (
             <option key={c.key} value={c.key}>
               {c.label}
             </option>
@@ -786,7 +789,7 @@ export const SmartTableView = ({
         <div className={styles.gallery} data-testid="smart-table-gallery">
           {result.rows.map((row, i) => (
             <div key={i} className={styles.kanbanCard}>
-              {table.schema.map((c) => (
+              {visibleSchema.map((c) => (
                 <div key={c.key} className={styles.kanbanCardRow}>
                   <span className={styles.kanbanCardLabel}>{c.label}</span>
                   <span className={styles.kanbanCardValue}>{row[c.key] || '—'}</span>
@@ -803,7 +806,7 @@ export const SmartTableView = ({
           if (!dateField) {
             return <div className={styles.kanbanEmpty}>Add a date field to use the calendar.</div>;
           }
-          const titleKey = table.schema.find((c) => c.key !== dateField)?.key;
+          const titleKey = visibleSchema.find((c) => c.key !== dateField)?.key;
           const groups = new Map<string, Array<Record<string, string>>>();
           for (const row of [...result.rows].sort((a, b) =>
             (a[dateField] ?? '').localeCompare(b[dateField] ?? ''),
@@ -838,7 +841,7 @@ export const SmartTableView = ({
                 ×
               </button>
             </div>
-            {table.schema.map((c) => (
+            {visibleSchema.map((c) => (
               <div key={c.key} className={styles.recordField}>
                 <span className={styles.recordLabel}>{c.label}</span>
                 <span className={styles.recordValue}>

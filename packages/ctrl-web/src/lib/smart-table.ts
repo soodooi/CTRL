@@ -90,7 +90,35 @@ export interface ColumnSpec {
   aiOp?: string;
   aiPrompt?: string;
   aiAutoFill?: boolean;
+  /** System field (record id, link back-refs, …) — present in the data + on
+   *  disk but hidden from the grid / pickers. The relational foundation. */
+  system?: boolean;
 }
+
+/** The stable per-row record id field (Airtable/Teable/undb best practice:
+ *  every row has an id, used by link / Lookup / Rollup to point at a row). It
+ *  lives as a hidden system column so relations are stable across edits, and
+ *  it round-trips in the markdown (vim-visible, plain-text). */
+export const ROW_ID_KEY = 'id';
+
+/** A short, stable, URL-safe row id. */
+export const newRowId = (): string => {
+  const uuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '';
+  return `r${uuid.replace(/-/g, '').slice(0, 10) || Date.now().toString(36)}`;
+};
+
+/** Ensure the table carries the system id column + every row has an id. Idempotent;
+ *  back-fills legacy tables (no id column) on first load. */
+export const ensureRowIds = (table: SmartTable): SmartTable => {
+  const hasId = table.schema.some((c) => c.key === ROW_ID_KEY);
+  const schema = hasId
+    ? table.schema.map((c) => (c.key === ROW_ID_KEY ? { ...c, system: true } : c))
+    : [{ key: ROW_ID_KEY, label: 'ID', type: 'text' as CellType, system: true }, ...table.schema];
+  const rows = table.rows.map((r) =>
+    r[ROW_ID_KEY] ? r : { ...r, [ROW_ID_KEY]: newRowId() },
+  );
+  return { ...table, schema, rows };
+};
 
 /** A saved view (ADR-003 §6.2) — view state lives in frontmatter, not the
  *  table body. `kanban`/`gallery`/`calendar` columnize/lay-out by `groupBy`.
@@ -320,6 +348,7 @@ const columnFromObj = (o: Record<string, unknown>): ColumnSpec | null => {
     aiOp: typeof o.ai_op === 'string' && o.ai_op ? o.ai_op : undefined,
     aiPrompt: typeof o.ai_prompt === 'string' && o.ai_prompt ? o.ai_prompt : undefined,
     aiAutoFill: o.ai_autofill === true || o.ai_autofill === 'true' ? true : undefined,
+    system: o.system === true || o.system === 'true' || o.key === ROW_ID_KEY ? true : undefined,
   };
 };
 
@@ -368,7 +397,7 @@ export const smartTableFromParts = (
   const title = typeof frontmatter.title === 'string' ? frontmatter.title : undefined;
   const views = parseViewsValue(frontmatter.views);
   const rows = parseTable(body, schema);
-  return { title, schema, rows, views, extraFrontmatter: {} };
+  return ensureRowIds({ title, schema, rows, views, extraFrontmatter: {} });
 };
 
 /** Public: parse a smart-table file into structured data. */
@@ -380,7 +409,7 @@ export const parseSmartTable = (source: string): SmartTable => {
   const rows = parseTable(body, schema);
   // We don't round-trip arbitrary frontmatter today (that's a YAML library
   // job); title / schema / views are the keys we own + re-emit.
-  return { title, schema, rows, views, extraFrontmatter: {} };
+  return ensureRowIds({ title, schema, rows, views, extraFrontmatter: {} });
 };
 
 /** Serialize back to markdown. Re-emits the frontmatter (title + schema)
@@ -403,6 +432,7 @@ export const serializeSmartTable = (table: SmartTable): string => {
       if (col.aiOp) parts.push(`ai_op: ${col.aiOp}`);
       if (col.aiPrompt) parts.push(`ai_prompt: ${col.aiPrompt}`);
       if (col.aiAutoFill) parts.push(`ai_autofill: true`);
+      if (col.system) parts.push(`system: true`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
   }
@@ -462,6 +492,7 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
     ...(c.aiOp ? { ai_op: c.aiOp } : {}),
     ...(c.aiPrompt ? { ai_prompt: c.aiPrompt } : {}),
     ...(c.aiAutoFill ? { ai_autofill: true } : {}),
+    ...(c.system ? { system: true } : {}),
   }));
   if (table.views.length > 0) {
     fm.views = table.views.map((v) => ({
@@ -474,10 +505,13 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
   return fm;
 };
 
-/** Insert a new empty row at the end. Returns a new table (immutable). */
+/** Insert a new empty row at the end (with a fresh record id). Immutable. */
 export const appendRow = (table: SmartTable): SmartTable => ({
   ...table,
-  rows: [...table.rows, Object.fromEntries(table.schema.map((c) => [c.key, '']))],
+  rows: [
+    ...table.rows,
+    Object.fromEntries(table.schema.map((c) => [c.key, c.key === ROW_ID_KEY ? newRowId() : ''])),
+  ],
 });
 
 /** Update a single cell. Returns a new table. */
