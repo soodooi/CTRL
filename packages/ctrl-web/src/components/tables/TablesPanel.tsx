@@ -216,9 +216,11 @@ function renderDetail(selected: Selection): ReactElement {
     return <div className={styles.detailEmpty}>Pick a table or doc.</div>;
   }
   const resource = resourceFromVaultPath(selected.path);
+  // Key on the path so switching items forces a clean remount (no viewer state
+  // bleeds across a selection change).
   return selected.kind === 'table' ? (
-    <SmartTableViewer resource={resource} />
+    <SmartTableViewer key={selected.path} resource={resource} />
   ) : (
-    <ViewerHost resource={resource} />
+    <ViewerHost key={selected.path} resource={resource} />
   );
 }
