@@ -21,6 +21,7 @@
 // markdown + the same lib semantics.
 
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import { SMART_TABLE_CONTENT_TYPE } from '@/modules/smart-table';
 
 export type ViewerLocation = 'vault' | 'mcp' | 'system';
 
@@ -122,9 +123,10 @@ const VIEWERS: Record<string, LazyViewer> = {
   'text/html': HtmlViewer,
   'image/svg+xml': SvgViewer,
   'text/mermaid': MermaidViewer,
-  // Smart-table — a markdown table with a frontmatter schema, rendered
-  // via Tanstack Table. File on disk is still markdown (vim test).
-  'text/x-ctrl-smart-table': SmartTableViewer,
+  // Smart-table — a markdown table with a frontmatter schema (content type +
+  // identity declared by the module, src/modules/smart-table.ts). File on disk
+  // is still markdown (vim test).
+  [SMART_TABLE_CONTENT_TYPE]: SmartTableViewer,
   // Binary
   'application/pdf': PdfViewer,
   // Code (generic — registers individual lang aliases below)
