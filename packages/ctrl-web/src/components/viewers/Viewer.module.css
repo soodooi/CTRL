@@ -761,12 +761,15 @@
 }
 
 /* §14 query bar (SmartTableView filter/sort) — ADR-003 frontend §6.2 */
+/* Grist-minimal toolbar: flat controls, no resting border/fill, a subtle
+   hover wash only; hairline separators + generous padding. (ADR-003 frontend
+   §6 v20, 2026-06-21 — smart-table minimal UI, reference getgrist.) */
 .queryBar {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border, #2a2a2a);
+  gap: var(--space-1, 4px);
+  padding: var(--space-2) var(--space-4, 16px);
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
   flex-wrap: wrap;
   font-size: var(--text-mono-xs, 12px);
 }
@@ -775,58 +778,79 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-size: 10px;
+  margin-left: var(--space-1, 4px);
 }
 .querySelect,
 .queryInput {
-  background: var(--color-surface, #fff);
+  background: transparent;
   color: var(--color-text, #1a1a1a);
-  border: 1px solid var(--color-border, #d8d4cc);
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
   padding: 3px 6px;
   font-size: 12px;
+  cursor: pointer;
+}
+.querySelect:hover,
+.queryInput:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+}
+.querySelect:focus,
+.queryInput:focus {
+  outline: none;
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+  border-color: var(--color-border, #d8d4cc);
 }
 .queryInput {
   min-width: 140px;
+  cursor: text;
 }
 .queryAdd,
 .querySort {
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #1a1a1a);
-  border: 1px solid var(--color-border, #d8d4cc);
-  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted, #888);
+  border: 1px solid transparent;
+  border-radius: 5px;
   padding: 3px 8px;
   cursor: pointer;
 }
 .queryAdd:hover,
 .querySort:hover {
-  border-color: var(--color-accent, #6aa3ff);
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+  color: var(--color-text, #1a1a1a);
 }
 .querySearch {
-  background: var(--color-surface, #fff);
+  background: transparent;
   color: var(--color-text, #1a1a1a);
-  border: 1px solid var(--color-border, #d8d4cc);
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
   padding: 3px 8px;
   font-size: 12px;
   min-width: 120px;
 }
+.querySearch:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+}
 .querySearch:focus {
   outline: none;
-  border-color: var(--color-accent, #6aa3ff);
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
 }
 .queryToggle {
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #1a1a1a);
-  border: 1px solid var(--color-border, #d8d4cc);
-  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted, #888);
+  border: 1px solid transparent;
+  border-radius: 5px;
   padding: 3px 8px;
   font-size: 12px;
   cursor: pointer;
 }
+.queryToggle:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+  color: var(--color-text, #1a1a1a);
+}
 .queryToggle[data-active='true'] {
-  background: var(--color-accent, #6aa3ff);
-  border-color: var(--color-accent, #6aa3ff);
-  color: #fff;
+  background: var(--color-accent-soft, rgba(106, 163, 255, 0.12));
+  border-color: transparent;
+  color: var(--color-accent, #6aa3ff);
 }
 .colorSwatch {
   display: inline-block;
@@ -870,6 +894,19 @@
 }
 .fieldsItem:hover {
   background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+}
+/* A horizontal row inside a toolbar popover (filter/sort/group controls).
+   (ADR-003 frontend §6 v20, 2026-06-21 — smart-table minimal UI.) */
+.menuRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  flex-wrap: wrap;
+}
+.menuRow .querySelect,
+.menuRow .queryInput {
+  border-color: var(--color-border, #d8d4cc);
 }
 
 /* Timeline / Gantt view — bars on a shared date axis (read-only, derived) */
@@ -1450,11 +1487,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border, #2a2a2a);
+  padding: var(--space-2) var(--space-4, 16px);
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
 }
 .viewTab {
-  border: 1px solid var(--color-border, #ddd);
+  border: 1px solid transparent;
   background: transparent;
   color: var(--color-text-muted, #888);
   border-radius: 6px;
@@ -1462,10 +1499,13 @@
   font-size: 12px;
   cursor: pointer;
 }
+.viewTab:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+}
 .viewTab[data-active='true'] {
   background: var(--color-accent-soft, rgba(106, 163, 255, 0.12));
   color: var(--color-accent, #6aa3ff);
-  border-color: var(--color-accent, #6aa3ff);
+  border-color: transparent;
 }
 .viewTabDel {
   border: none;
@@ -1571,25 +1611,31 @@
 }
 
 /* §14 view toggle + kanban board (SmartTableView) — ADR-003 §6.2 */
+/* Grist-style view switch: flat text tabs with an accent underline on the
+   active one — no boxed segmented control. (ADR-003 §6 v20, 2026-06-21.) */
 .viewToggle {
   display: inline-flex;
-  gap: 1px;
-  border: 1px solid var(--color-border, #d8d4cc);
-  border-radius: 5px;
-  overflow: hidden;
+  gap: var(--space-1, 4px);
   margin-right: var(--space-2);
 }
 .viewToggleBtn {
-  background: var(--color-surface, #fff);
+  background: transparent;
   color: var(--color-text-muted, #888);
   border: none;
-  padding: 3px 10px;
-  font-size: 11px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 4px 8px;
+  font-size: 12px;
   cursor: pointer;
 }
+.viewToggleBtn:hover {
+  color: var(--color-text, #1a1a1a);
+}
 .viewToggleBtn[data-active='true'] {
-  background: var(--color-accent, #6aa3ff);
-  color: #fff;
+  background: transparent;
+  color: var(--color-text, #1a1a1a);
+  border-bottom-color: var(--color-accent, #6aa3ff);
+  font-weight: 600;
 }
 .kanban {
   display: flex;
