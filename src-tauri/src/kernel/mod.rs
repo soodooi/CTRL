@@ -68,5 +68,12 @@ pub mod vault_watch;
 // LLM-backed version on top of the same review-queue file.
 pub mod vault_sourcing;
 
+// Real end-to-end pipeline tests for the smart-table module (ADR-002 §14):
+// disk file -> read -> parse -> describe/query/produce -> write, asserting the
+// actual outputs (no mocks). Report:
+//   cargo test --lib kernel::pipeline_e2e -- --nocapture --test-threads=1
+#[cfg(test)]
+mod pipeline_e2e;
+
 pub use mcp_server::DEFAULT_LISTEN_ADDR as MCP_SERVER_LISTEN_ADDR;
 pub use stss_bridge::{StssBridge, DEFAULT_LISTEN_ADDR as STSS_LISTEN_ADDR};
