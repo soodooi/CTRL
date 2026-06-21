@@ -18,6 +18,7 @@ import {
   appendRow,
   deleteColumn,
   deleteRow,
+  deleteRows,
   smartTableBody,
   smartTableFrontmatter,
   smartTableFromParts,
@@ -167,6 +168,7 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
         linkTargets={(allTables ?? []).filter((t) => t.path !== path).map((t) => ({ path: t.path, title: t.title }))}
         onCellChange={(rowIndex, key, value) => void commit(updateCell(table, rowIndex, key, value))}
         onDeleteRow={(rowIndex) => void commit(deleteRow(table, rowIndex))}
+        onDeleteRows={resource.editable ? (idxs) => void commit(deleteRows(table, idxs)) : undefined}
         onSaveView={resource.editable ? (view) => void commit({ ...table, views: [view] }) : undefined}
         onRunAiColumn={resource.editable ? runAiColumn : undefined}
         onAddColumn={resource.editable ? (col: ColumnSpec) => void commit(addColumn(table, col)) : undefined}

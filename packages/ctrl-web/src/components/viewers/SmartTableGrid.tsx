@@ -11,6 +11,7 @@
 // / vault round-trip is unchanged ("local is truth").
 
 import {
+  CompactSelection,
   DataEditor,
   GridCellKind,
   GridColumnIcon,
@@ -19,6 +20,7 @@ import {
   type EditableGridCell,
   type GridCell,
   type GridColumn,
+  type GridSelection,
   type Item,
 } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
@@ -131,6 +133,8 @@ interface SmartTableGridProps {
   /** Column-header menu (Airtable/Feishu style — the glide canvas header can't
    *  hold React buttons): open the field editor for this field key. */
   onHeaderMenu?: (fieldKey: string) => void;
+  /** Checkbox row selection → canonical row indices (for batch actions). */
+  onSelectedRowsChange?: (canonicalIdxs: number[]) => void;
 }
 
 const canonicalIdx = (row: Record<string, string> | undefined, fallback: number): number =>
@@ -144,8 +148,13 @@ export const SmartTableGrid = ({
   onCellChange,
   onExpandRow,
   onHeaderMenu,
+  onSelectedRowsChange,
 }: SmartTableGridProps): ReactElement => {
   const [widths, setWidths] = useState<Record<string, number>>({});
+  const [gridSelection, setGridSelection] = useState<GridSelection>({
+    columns: CompactSelection.empty(),
+    rows: CompactSelection.empty(),
+  });
   // Hide system columns (record id, …) from the grid — col indices below are
   // into this visible list, so getCellContent/onCellEdited use it too.
   const cols = useMemo(() => schema.filter((c) => !c.system), [schema]);
@@ -277,7 +286,14 @@ export const SmartTableGrid = ({
         onColumnResize={(c, w) => setWidths((p) => ({ ...p, [String(c.id)]: w }))}
         onHeaderMenuClick={onHeaderMenu ? (col) => onHeaderMenu(String(columns[col]?.id)) : undefined}
         getCellsForSelection
-        rowMarkers={onExpandRow ? 'both' : 'number'}
+        rowMarkers={onSelectedRowsChange ? 'both' : onExpandRow ? 'both' : 'number'}
+        gridSelection={gridSelection}
+        onGridSelectionChange={(sel) => {
+          setGridSelection(sel);
+          if (onSelectedRowsChange) {
+            onSelectedRowsChange(sel.rows.toArray().map((i) => canonicalIdx(rows[i], i)));
+          }
+        }}
         onRowMoved={undefined}
         smoothScrollX
         smoothScrollY
