@@ -331,6 +331,9 @@ export const SmartTableView = ({
   const [sort, setSort] = useState<SortKey | null>(savedView?.sort ?? null);
   const [groupBy, setGroupBy] = useState<string | null>(savedView?.groupBy ?? null);
   const [groupBy2, setGroupBy2] = useState<string | null>(null);
+  // Bottom statistic bar (borrowed from Grist's SelectionSummary aggregation):
+  // per number column, click to cycle sum / avg / count / min / max.
+  const [colStat, setColStat] = useState<Record<string, 'sum' | 'avg' | 'count' | 'min' | 'max'>>({});
   const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'gallery' | 'calendar'>(savedView?.kind ?? 'grid');
   const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
   const editsViews = Boolean(onReplaceViews);
@@ -857,15 +860,60 @@ export const SmartTableView = ({
       )}
 
       {viewMode === 'grid' && (
-        <SmartTableGrid
-          schema={table.schema}
-          rows={result.rows}
-          editable={editable}
-          relations={relations}
-          onCellChange={onCellChange}
-          onExpandRow={(idx) => setExpandedRow(idx)}
-          onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
-        />
+        <>
+          <SmartTableGrid
+            schema={table.schema}
+            rows={result.rows}
+            editable={editable}
+            relations={relations}
+            onCellChange={onCellChange}
+            onExpandRow={(idx) => setExpandedRow(idx)}
+            onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
+          />
+          <div className={styles.statBar} data-testid="smart-table-stats">
+            <span className={styles.statCount}>{result.rows.length} records</span>
+            {visibleSchema
+              .filter((c) => baseCellType(c.type) === 'number')
+              .map((c) => {
+                const fn = colStat[c.key] ?? 'sum';
+                const nums = result.rows
+                  .map((r) => Number(r[c.key]))
+                  .filter((n) => !Number.isNaN(n));
+                const sum = nums.reduce((a, n) => a + n, 0);
+                const value =
+                  fn === 'sum'
+                    ? sum.toLocaleString()
+                    : fn === 'avg'
+                      ? nums.length
+                        ? (Math.round((sum / nums.length) * 100) / 100).toLocaleString()
+                        : '0'
+                      : fn === 'count'
+                        ? String(result.rows.filter((r) => (r[c.key] ?? '') !== '').length)
+                        : fn === 'min'
+                          ? nums.length
+                            ? Math.min(...nums).toLocaleString()
+                            : '—'
+                          : nums.length
+                            ? Math.max(...nums).toLocaleString()
+                            : '—';
+                return (
+                  <button
+                    key={c.key}
+                    type="button"
+                    className={styles.statChip}
+                    title="Click to change the aggregate"
+                    onClick={() => {
+                      const order = ['sum', 'avg', 'count', 'min', 'max'] as const;
+                      const next = order[(order.indexOf(fn) + 1) % order.length] as typeof fn;
+                      setColStat((s) => ({ ...s, [c.key]: next }));
+                    }}
+                  >
+                    {c.label} <strong>{fn}</strong> {value}
+                  </button>
+                );
+              })}
+          </div>
+        </>
       )}
 
       {viewMode === 'kanban' && (
