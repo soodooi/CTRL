@@ -28,9 +28,13 @@ const table = (): SmartTable => parseSmartTable(SOURCE);
 describe('queryTable', () => {
   it('parses the schema + rows from the real markdown path', () => {
     const t = table();
-    expect(t.schema).toHaveLength(5);
+    // 5 user fields + the injected system record-id field (ensureRowIds).
+    expect(t.schema.filter((c) => !c.system)).toHaveLength(5);
+    expect(t.schema[0]?.key).toBe('id');
+    expect(t.schema[0]?.system).toBe(true);
     expect(t.rows).toHaveLength(3);
     expect(t.rows[0]?.name).toBe('Acme');
+    expect(t.rows[0]?.id).toMatch(/^r/);
   });
 
   it('filters numbers with gt', () => {

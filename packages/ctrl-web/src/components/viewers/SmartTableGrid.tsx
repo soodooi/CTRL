@@ -102,6 +102,9 @@ export const SmartTableGrid = ({
   onHeaderMenu,
 }: SmartTableGridProps): ReactElement => {
   const [widths, setWidths] = useState<Record<string, number>>({});
+  // Hide system columns (record id, …) from the grid — col indices below are
+  // into this visible list, so getCellContent/onCellEdited use it too.
+  const cols = useMemo(() => schema.filter((c) => !c.system), [schema]);
 
   // glide renders its edit overlay into a #portal element; create it once.
   useEffect(() => {
@@ -115,19 +118,19 @@ export const SmartTableGrid = ({
 
   const columns = useMemo<GridColumn[]>(
     () =>
-      schema.map((c) => ({
+      cols.map((c) => ({
         title: c.label,
         id: c.key,
         width: widths[c.key] ?? 160,
         hasMenu: Boolean(onHeaderMenu),
       })),
-    [schema, widths, onHeaderMenu],
+    [cols, widths, onHeaderMenu],
   );
 
   const getCellContent = useCallback(
     (cell: Item): GridCell => {
       const [col, row] = cell;
-      const spec = schema[col];
+      const spec = cols[col];
       if (!spec) return { kind: GridCellKind.Text, data: '', displayData: '', allowOverlay: false };
       const value = rows[row]?.[spec.key] ?? '';
       const ro = !editable;
@@ -177,13 +180,13 @@ export const SmartTableGrid = ({
       }
       return { kind: GridCellKind.Text, data: value, displayData: value, allowOverlay: editable, readonly: ro };
     },
-    [schema, rows, editable],
+    [cols, rows, editable],
   );
 
   const onCellEdited = useCallback(
     (cell: Item, newVal: EditableGridCell): void => {
       const [col, row] = cell;
-      const spec = schema[col];
+      const spec = cols[col];
       if (!spec) return;
       const idx = canonicalIdx(rows[row], row);
       let v = '';
@@ -194,7 +197,7 @@ export const SmartTableGrid = ({
         v = newVal.data ?? '';
       onCellChange(idx, spec.key, v);
     },
-    [schema, rows, onCellChange],
+    [cols, rows, onCellChange],
   );
 
   return (
