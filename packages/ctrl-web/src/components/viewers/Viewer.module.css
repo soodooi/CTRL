@@ -998,6 +998,34 @@
   cursor: grabbing;
 }
 
+/* Form view — one field per row, submit appends a record */
+.formView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 520px;
+  padding: var(--space-4, 16px) var(--space-3);
+  overflow: auto;
+}
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.formLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted, #888);
+}
+.formInput {
+  background: var(--color-surface, #1a1a1a);
+  color: var(--color-text, #e8e8e8);
+  border: 1px solid var(--color-border, #2a2a2a);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
 /* Batch action bar (checkbox row selection) */
 .batchBar {
   display: flex;

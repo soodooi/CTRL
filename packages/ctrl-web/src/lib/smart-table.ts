@@ -145,7 +145,7 @@ export const ensureRowIds = (table: SmartTable): SmartTable => {
  *  Sort is persisted as flat scalars (sort_field / sort_desc) on disk so the
  *  YAML round-trips without nested structures. */
 export interface ViewSpec {
-  kind: 'grid' | 'kanban' | 'gallery' | 'calendar';
+  kind: 'grid' | 'kanban' | 'gallery' | 'calendar' | 'form';
   groupBy?: string | null;
   sort?: { field: string; desc: boolean } | null;
   name?: string;
@@ -400,7 +400,9 @@ const parseViewsValue = (v: unknown): ViewSpec[] => {
       const o = typeof item === 'string' ? parseInlineObject(item) : (item as Record<string, unknown>);
       if (!o || typeof o !== 'object') return null;
       const kind =
-        o.kind === 'kanban' || o.kind === 'gallery' || o.kind === 'calendar' ? o.kind : 'grid';
+        o.kind === 'kanban' || o.kind === 'gallery' || o.kind === 'calendar' || o.kind === 'form'
+          ? o.kind
+          : 'grid';
       const groupBy = typeof o.group_by === 'string' && o.group_by ? (o.group_by as string) : null;
       const sortField = typeof o.sort_field === 'string' && o.sort_field ? o.sort_field : null;
       const sort = sortField ? { field: sortField, desc: o.sort_desc === true || o.sort_desc === 'true' } : null;
@@ -566,6 +568,21 @@ export const updateCell = (
 export const deleteRow = (table: SmartTable, rowIndex: number): SmartTable => ({
   ...table,
   rows: table.rows.filter((_, i) => i !== rowIndex),
+});
+
+/** Append a row pre-filled with `values` (Form view submit). New record id. */
+export const appendRowWithValues = (
+  table: SmartTable,
+  values: Record<string, string>,
+): SmartTable => ({
+  ...table,
+  rows: [
+    ...table.rows,
+    {
+      ...Object.fromEntries(table.schema.map((c) => [c.key, c.key === ROW_ID_KEY ? newRowId() : ''])),
+      ...values,
+    },
+  ],
 });
 
 /** Delete several rows by canonical index (batch). Returns a new table. */
