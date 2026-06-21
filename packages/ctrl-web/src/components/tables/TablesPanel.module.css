@@ -30,6 +30,39 @@
   align-items: center;
   gap: 6px;
 }
+.templateMenu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px var(--space-2, 8px);
+  border-bottom: 1px solid var(--color-border, #eee);
+}
+.templateItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text, #1a1a1a);
+  text-align: left;
+}
+.templateItem:hover {
+  background: var(--color-accent-soft, rgba(106, 163, 255, 0.12));
+}
+.templateIcon {
+  font-size: 14px;
+  color: var(--color-accent, #6aa3ff);
+}
+.templateFields {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-muted, #999);
+}
 .newBtn {
   background: var(--color-accent, #6aa3ff);
   color: #fff;

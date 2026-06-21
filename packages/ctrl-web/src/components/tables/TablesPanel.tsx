@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactElement } from 'react';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
-import { createSmartTable, importCsv, listSmartTables } from '@/lib/smart-tables';
+import { createSmartTable, importCsv, listSmartTables, TEMPLATES } from '@/lib/smart-tables';
 import styles from './TablesPanel.module.css';
 
 interface TablesPanelProps {
@@ -25,6 +25,7 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
     queryFn: listSmartTables,
   });
   const [selected, setSelected] = useState<string | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
   // Report the open table up (and clear it on unmount) so Irisy knows what the
   // user is looking at.
   useEffect(() => {
@@ -32,10 +33,11 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
     return () => onActiveTable?.(null);
   }, [selected, onActiveTable]);
 
-  const onNew = async (): Promise<void> => {
-    const name = window.prompt('New table name', 'Untitled table');
+  const onPickTemplate = async (key: string): Promise<void> => {
+    setShowTemplates(false);
+    const name = window.prompt('New table name', TEMPLATES[key]?.name ?? 'Untitled');
     if (name == null) return;
-    const path = await createSmartTable(name);
+    const path = await createSmartTable(name, key);
     await qc.invalidateQueries({ queryKey: ['smart-tables'] });
     setSelected(path);
   };
@@ -67,11 +69,32 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
                 }}
               />
             </label>
-            <button type="button" className={styles.newBtn} onClick={onNew}>
+            <button
+              type="button"
+              className={styles.newBtn}
+              onClick={() => setShowTemplates((s) => !s)}
+              data-testid="new-table"
+            >
               + New
             </button>
           </span>
         </header>
+        {showTemplates && (
+          <div className={styles.templateMenu} data-testid="template-menu">
+            {Object.entries(TEMPLATES).map(([key, t]) => (
+              <button
+                key={key}
+                type="button"
+                className={styles.templateItem}
+                onClick={() => void onPickTemplate(key)}
+              >
+                <span className={styles.templateIcon}>{t.icon}</span>
+                <span>{t.name}</span>
+                <span className={styles.templateFields}>{t.schema.length} fields</span>
+              </button>
+            ))}
+          </div>
+        )}
         {isLoading ? (
           <div className={styles.empty}>loading…</div>
         ) : tables && tables.length > 0 ? (
