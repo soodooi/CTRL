@@ -34,20 +34,84 @@ export const listSmartTables = async (): Promise<SmartTableEntry[]> => {
   return entries.sort((a, b) => a.title.localeCompare(b.title));
 };
 
-const STARTER_SCHEMA = [
-  { key: 'name', label: 'Name', type: 'text' },
-  { key: 'status', label: 'Status', type: 'select', options: ['todo', 'doing', 'done'] },
-  { key: 'due', label: 'Due', type: 'date' },
-];
+type TplField = { key: string; label: string; type: string; options?: string[]; symbol?: string };
+export interface TableTemplate {
+  name: string;
+  icon: string;
+  schema: TplField[];
+}
 
-/** Create a new smart table (frontmatter schema + an empty starter row) and
- *  return its vault path. */
-export const createSmartTable = async (rawTitle: string): Promise<string> => {
-  const title = rawTitle.trim() || 'New table';
+// Built-in templates — pick a scenario, get a ready-made table (the smart table
+// adapts to any need: CRM / tasks / inventory / project / blank).
+export const TEMPLATES: Record<string, TableTemplate> = {
+  blank: {
+    name: 'Blank',
+    icon: '▦',
+    schema: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'status', label: 'Status', type: 'select', options: ['todo', 'doing', 'done'] },
+      { key: 'due', label: 'Due', type: 'date' },
+    ],
+  },
+  crm: {
+    name: 'CRM',
+    icon: '◑',
+    schema: [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'company', label: 'Company', type: 'text' },
+      { key: 'stage', label: 'Stage', type: 'select', options: ['lead', 'proposal', 'won', 'lost'] },
+      { key: 'amount', label: 'Amount', type: 'currency', symbol: '$' },
+      { key: 'owner', label: 'Owner', type: 'user' },
+      { key: 'due', label: 'Due', type: 'date' },
+    ],
+  },
+  tasks: {
+    name: 'Tasks',
+    icon: '✓',
+    schema: [
+      { key: 'task', label: 'Task', type: 'text' },
+      { key: 'status', label: 'Status', type: 'select', options: ['todo', 'doing', 'done'] },
+      { key: 'priority', label: 'Priority', type: 'select', options: ['low', 'med', 'high'] },
+      { key: 'assignee', label: 'Assignee', type: 'user' },
+      { key: 'due', label: 'Due', type: 'date' },
+      { key: 'progress', label: 'Progress', type: 'percent' },
+    ],
+  },
+  inventory: {
+    name: 'Inventory',
+    icon: '▤',
+    schema: [
+      { key: 'item', label: 'Item', type: 'text' },
+      { key: 'sku', label: 'SKU', type: 'text' },
+      { key: 'qty', label: 'Qty', type: 'number' },
+      { key: 'price', label: 'Price', type: 'currency', symbol: '$' },
+      { key: 'category', label: 'Category', type: 'select', options: ['A', 'B', 'C'] },
+      { key: 'rating', label: 'Rating', type: 'rating' },
+    ],
+  },
+  project: {
+    name: 'Project',
+    icon: '◇',
+    schema: [
+      { key: 'milestone', label: 'Milestone', type: 'text' },
+      { key: 'owner', label: 'Owner', type: 'user' },
+      { key: 'status', label: 'Status', type: 'select', options: ['planned', 'active', 'done'] },
+      { key: 'start', label: 'Start', type: 'date' },
+      { key: 'end', label: 'End', type: 'date' },
+      { key: 'progress', label: 'Progress', type: 'percent' },
+    ],
+  },
+};
+
+/** Create a new smart table from a template (default blank) and return its path. */
+export const createSmartTable = async (rawTitle: string, templateKey = 'blank'): Promise<string> => {
+  const tpl = (TEMPLATES[templateKey] ?? TEMPLATES.blank) as TableTemplate;
+  const title = rawTitle.trim() || tpl.name;
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'table';
   const path = `tables/${slug}.md`;
-  const content = '| Name | Status | Due |\n|---|---|---|\n|  | todo |  |\n';
-  await vaultWrite({ path, content, frontmatter: { title, schema: STARTER_SCHEMA } });
+  const headers = tpl.schema.map((c) => c.label);
+  const content = `| ${headers.join(' | ')} |\n|${tpl.schema.map(() => '---').join('|')}|\n| ${tpl.schema.map(() => ' ').join(' | ')} |\n`;
+  await vaultWrite({ path, content, frontmatter: { title, schema: tpl.schema } });
   return path;
 };
 
