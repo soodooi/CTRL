@@ -375,11 +375,15 @@ export const SmartTableView = ({
     runQuery(request)
       .then((res) => {
         if (!live) return;
-        setKernelResult({
-          rows: attachCanonicalIdx(res.rows, table),
-          matchCount: res.match_count,
-          forTable: table,
-        });
+        const rows = attachCanonicalIdx(res.rows, table);
+        // If any kernel row can't resolve to a canonical index (e.g. a legacy
+        // table whose ids aren't persisted on disk yet), fall back to the client
+        // engine — otherwise index-based edits would silently no-op (__idx -1).
+        if (rows.some((r) => r.__idx === '-1')) {
+          setKernelResult(null);
+          return;
+        }
+        setKernelResult({ rows, matchCount: res.match_count, forTable: table });
       })
       .catch(() => {
         if (live) setKernelResult(null);
