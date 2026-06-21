@@ -45,7 +45,11 @@ export type CellType =
   | 'link'
   | 'lookup'
   | 'rollup'
-  | 'formula';
+  | 'formula'
+  | 'attachment'
+  | 'user'
+  | 'percent'
+  | 'duration';
 
 /** The 7 semantic base types query/sort/filter actually reason about. */
 export type BaseCellType = 'text' | 'number' | 'date' | 'checkbox' | 'tags' | 'select' | 'url';
@@ -58,7 +62,11 @@ export const baseCellType = (t: CellType): BaseCellType => {
     case 'currency':
     case 'rating':
     case 'progress':
+    case 'percent':
+    case 'duration':
       return 'number';
+    case 'user':
+      return 'tags';
     case 'multiline':
     case 'email':
     case 'phone':
@@ -66,6 +74,7 @@ export const baseCellType = (t: CellType): BaseCellType => {
     case 'lookup':
     case 'rollup':
     case 'formula':
+    case 'attachment':
       return 'text';
     case 'number':
     case 'date':

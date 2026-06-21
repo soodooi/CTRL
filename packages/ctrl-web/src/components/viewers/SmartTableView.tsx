@@ -41,6 +41,10 @@ const FIELD_TYPES: CellType[] = [
   'lookup',
   'rollup',
   'formula',
+  'attachment',
+  'user',
+  'percent',
+  'duration',
 ];
 import {
   queryTable,
