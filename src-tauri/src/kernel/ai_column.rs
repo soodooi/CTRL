@@ -344,9 +344,9 @@ mod tests {
     // A fake Provider so the real streaming-drain in `complete_row` is proven
     // by a test, not only by compile (independent-checker Should-fix: prove the
     // run-channel, don't skip it). ADR-002 substrate § provider v2 §3.2.
-    use crate::kernel::provider::{
-        Capability, ChatChunk, ChatOpts, ChatPrompt, Provider, ProviderError,
-    };
+    use crate::kernel::provider::r#trait::Capability;
+    use crate::kernel::provider::types::{ChatChunk, ChatPrompt};
+    use crate::kernel::provider::{ChatOpts, Provider, ProviderError};
     use std::collections::BTreeSet;
     use tokio::sync::mpsc;
 

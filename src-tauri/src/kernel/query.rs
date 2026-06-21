@@ -284,8 +284,8 @@ fn apply_filter(cell: &str, ct: CellType, op: Operator, value: &str, now: NaiveD
                 return false;
             };
             match op {
-                Operator::Eq => (c - v).abs() < f64::EPSILON,
-                Operator::Neq => (c - v).abs() >= f64::EPSILON,
+                Operator::Eq => nums_eq(c, v),
+                Operator::Neq => !nums_eq(c, v),
                 Operator::Gt => c > v,
                 Operator::Lt => c < v,
                 Operator::Gte => c >= v,
@@ -352,7 +352,17 @@ fn compare_cells(a: &str, b: &str, ct: CellType) -> Ordering {
 }
 
 fn parse_num(s: &str) -> Option<f64> {
-    s.trim().parse::<f64>().ok()
+    // Reject inf / NaN / 1e400 so they cannot poison sort order or compare as
+    // a bogus value (full-review P2).
+    s.trim().parse::<f64>().ok().filter(|n| n.is_finite())
+}
+
+/// Relative-epsilon equality. `f64::EPSILON` is machine precision near 1.0 —
+/// far too tight for large integers (currency / counts), where two equal
+/// parsed values can differ by more than it. Scale the tolerance to magnitude
+/// (full-review P2).
+fn nums_eq(a: f64, b: f64) -> bool {
+    (a - b).abs() <= f64::EPSILON * a.abs().max(b.abs()).max(1.0)
 }
 
 fn parse_date(s: &str) -> Option<NaiveDate> {
