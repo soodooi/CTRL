@@ -21,7 +21,7 @@ use crate::kernel::vault_graph::{
 };
 use crate::kernel::vault_sourcing::{self, SourcingRunReport};
 use crate::kernel::vault_watch::{self, EventEntry as VaultWatchEvent};
-use crate::kernel::{ai_column, vault_smart_table};
+use crate::kernel::{ai_column, query, vault_smart_table};
 use crate::shell::KernelHandle;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -356,6 +356,68 @@ pub async fn smart_table_run_ai_column(
         rows_written,
         errors,
     })
+}
+
+// ---------------------------------------------------------------------
+// §14 Unified Operation Interface — read half (describe / query) over the
+// PWA bridge. Mirrors the `smart_table.describe` / `.query` MCP gate tools
+// (mcp_server.rs) so the in-app viewer runs the SAME kernel query engine
+// (kernel::query::run_query) as Irisy + external brains — one engine, no
+// second client-side implementation drifting from it (ADR-002 §14).
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct SmartTableDescribeArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+}
+
+/// smart_table.describe over the PWA bridge — the type layer (fields, types,
+/// supported operators) the viewer reads before composing a query.
+#[tauri::command]
+pub fn smart_table_describe(args: SmartTableDescribeArgs) -> Result<query::Describe, String> {
+    let root = vault_root()?;
+    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
+    let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+    use query::QuerySource;
+    Ok(table.describe())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SmartTableQueryArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Field filters, ANDed together. Each `field` must exist in the schema.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group rows so equal values of this field are contiguous.
+    #[serde(default)]
+    pub group_by: Option<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// smart_table.query over the PWA bridge — a structured filter/sort/group read
+/// through the shared kernel engine. Returns the matched rows + pre-limit count;
+/// an unknown field reference is rejected with the valid set (anti-hallucination).
+#[tauri::command]
+pub fn smart_table_query(args: SmartTableQueryArgs) -> Result<query::QueryResult, String> {
+    let root = vault_root()?;
+    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
+    let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+    let req = query::QueryRequest {
+        filters: args.filters,
+        sort: args.sort,
+        group_by: args.group_by,
+        limit: args.limit,
+    };
+    let now = chrono::Local::now().date_naive();
+    use query::QuerySource;
+    table.query(&req, now).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------
