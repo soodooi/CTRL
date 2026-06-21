@@ -24,6 +24,7 @@ import '@glideapps/glide-data-grid/dist/index.css';
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import { baseCellType, type ColumnSpec, type SmartTable } from '@/lib/smart-table';
 import { relationalDisplay } from '@/lib/smart-table-relations';
+import { evalFormula } from '@/lib/smart-table-formula';
 import styles from './Viewer.module.css';
 
 // Deterministic pill colour (matches the HTML cells' pillStyle).
@@ -142,6 +143,10 @@ export const SmartTableGrid = ({
         // Relational display is derived from the linked table(s), not the raw
         // cell (which holds target ids). Read-only here; edit links in the card.
         const disp = relationalDisplay(rows[row] ?? {}, spec, schema, relations) ?? value;
+        return { kind: GridCellKind.Text, data: disp, displayData: disp, allowOverlay: false };
+      }
+      if (spec.type === 'formula') {
+        const disp = evalFormula(spec.expression ?? '', rows[row] ?? {});
         return { kind: GridCellKind.Text, data: disp, displayData: disp, allowOverlay: false };
       }
       if (spec.type === 'checkbox') {

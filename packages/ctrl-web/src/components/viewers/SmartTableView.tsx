@@ -20,6 +20,7 @@ import {
   type ViewSpec,
 } from '@/lib/smart-table';
 import { primaryField, relationalDisplay } from '@/lib/smart-table-relations';
+import { evalFormula } from '@/lib/smart-table-formula';
 import { SmartTableGrid } from './SmartTableGrid';
 
 const FIELD_TYPES: CellType[] = [
@@ -39,6 +40,7 @@ const FIELD_TYPES: CellType[] = [
   'link',
   'lookup',
   'rollup',
+  'formula',
 ];
 import {
   queryTable,
@@ -407,6 +409,7 @@ export const SmartTableView = ({
   const [feLinkField, setFeLinkField] = useState('');
   const [feLookupField, setFeLookupField] = useState('');
   const [feRollupFn, setFeRollupFn] = useState('count');
+  const [feExpression, setFeExpression] = useState('');
   const openFieldEditor = (col?: ColumnSpec): void => {
     if (col) {
       setFieldEdit({ key: col.key });
@@ -421,6 +424,7 @@ export const SmartTableView = ({
       setFeLinkField(col.linkField ?? '');
       setFeLookupField(col.lookupField ?? '');
       setFeRollupFn(col.rollupFn ?? 'count');
+      setFeExpression(col.expression ?? '');
     } else {
       setFieldEdit({ key: null });
       setFeLabel('');
@@ -434,6 +438,7 @@ export const SmartTableView = ({
       setFeLinkField('');
       setFeLookupField('');
       setFeRollupFn('count');
+      setFeExpression('');
     }
   };
   const saveField = (): void => {
@@ -451,6 +456,7 @@ export const SmartTableView = ({
       linkField: feType === 'lookup' || feType === 'rollup' ? feLinkField || undefined : undefined,
       lookupField: feType === 'lookup' || feType === 'rollup' ? feLookupField || undefined : undefined,
       rollupFn: feType === 'rollup' ? feRollupFn : undefined,
+      expression: feType === 'formula' ? feExpression || undefined : undefined,
     };
     if (fieldEdit?.key) {
       onUpdateColumn?.(fieldEdit.key, patch);
@@ -729,6 +735,15 @@ export const SmartTableView = ({
               )}
             </>
           )}
+          {feType === 'formula' && (
+            <input
+              className={styles.aiPanelPrompt}
+              value={feExpression}
+              placeholder="Formula — e.g. {price} * {qty}  or  ROUND({score}, 1)"
+              onChange={(e) => setFeExpression(e.target.value)}
+              data-testid="fe-expression"
+            />
+          )}
           {onRunAiColumn && (
             <>
               <select
@@ -943,6 +958,10 @@ export const SmartTableView = ({
                   ) : c.type === 'lookup' || c.type === 'rollup' ? (
                     <span className={styles.cellText}>
                       {relationalDisplay(table.rows[expandedRow] ?? {}, c, table.schema, relations) || '—'}
+                    </span>
+                  ) : c.type === 'formula' ? (
+                    <span className={styles.cellText}>
+                      {evalFormula(c.expression ?? '', table.rows[expandedRow] ?? {}) || '—'}
                     </span>
                   ) : (
                     <Cell
