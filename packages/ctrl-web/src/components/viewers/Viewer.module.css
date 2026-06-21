@@ -1020,6 +1020,136 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Chart view — bar / pie / line over grouped aggregates (read-only, derived) */
+.chartView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  padding: var(--space-3, 12px);
+  overflow: auto;
+  min-height: 0;
+}
+.chartBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.chartKinds {
+  display: flex;
+  gap: 2px;
+}
+.chartKindBtn {
+  border: 1px solid var(--color-border, #d8d4cc);
+  background: var(--color-surface, #fff);
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-text, #1a1a1a);
+}
+.chartKindBtn[data-on='true'] {
+  background: var(--color-accent, #6aa3ff);
+  border-color: var(--color-accent, #6aa3ff);
+  color: #fff;
+}
+.chartCtl {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-text-muted, #888);
+}
+.chartCtl select {
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 12px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1a1a1a);
+}
+.chartBars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 640px;
+}
+.chartRow {
+  display: grid;
+  grid-template-columns: 120px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.chartLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text, #1a1a1a);
+}
+.chartTrack {
+  height: 16px;
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+  border-radius: 4px;
+  overflow: hidden;
+}
+.chartFill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  min-width: 2px;
+  transition: width 0.2s ease;
+}
+.chartValue {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted, #777);
+}
+.chartPieWrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5, 24px);
+  flex-wrap: wrap;
+}
+.chartPie {
+  width: 200px;
+  height: 200px;
+  flex: 0 0 auto;
+}
+.chartLegend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.chartLegend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chartLegend .chartValue {
+  margin-left: auto;
+  padding-left: 16px;
+}
+.chartSwatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+.chartLine {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+}
+.chartTick {
+  font-size: 9px;
+  fill: var(--color-text-muted, #999);
+}
+
 /* Form view — one field per row, submit appends a record */
 .formView {
   display: flex;

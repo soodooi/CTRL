@@ -161,7 +161,7 @@ export const ensureRowIds = (table: SmartTable): SmartTable => {
  *  Sort is persisted as flat scalars (sort_field / sort_desc) on disk so the
  *  YAML round-trips without nested structures. */
 export interface ViewSpec {
-  kind: 'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary';
+  kind: 'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary' | 'chart';
   groupBy?: string | null;
   sort?: { field: string; desc: boolean } | null;
   name?: string;

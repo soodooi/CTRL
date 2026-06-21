@@ -24,6 +24,7 @@ import { evalFormula } from '@/lib/smart-table-formula';
 import { Cell, LinkPicker } from './SmartTableCells';
 import { SmartTableGrid } from './SmartTableGrid';
 import { CalendarView, GalleryView, SummaryView } from './SmartTableViews';
+import { ChartView } from './SmartTableChart';
 
 const FIELD_TYPES: CellType[] = [
   'text',
@@ -153,7 +154,7 @@ export const SmartTableView = ({
   const [colStat, setColStat] = useState<Record<string, 'sum' | 'avg' | 'count' | 'min' | 'max'>>({});
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [viewMode, setViewMode] = useState<
-    'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary'
+    'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary' | 'chart'
   >(savedView?.kind ?? 'grid');
   const [formDraft, setFormDraft] = useState<Record<string, string>>({});
   const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
@@ -348,7 +349,7 @@ export const SmartTableView = ({
       )}
       <div className={styles.queryBar} data-testid="smart-table-query-bar">
         <div className={styles.viewToggle}>
-          {(['grid', 'kanban', 'gallery', 'calendar', 'form', 'summary'] as const).map((m) => (
+          {(['grid', 'kanban', 'gallery', 'calendar', 'form', 'summary', 'chart'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -864,6 +865,8 @@ export const SmartTableView = ({
       {viewMode === 'summary' && (
         <SummaryView rows={result.rows} schema={visibleSchema} allSchema={table.schema} groupBy={groupBy} />
       )}
+
+      {viewMode === 'chart' && <ChartView rows={result.rows} schema={visibleSchema} />}
 
       {expandedRow != null && table.rows[expandedRow] && (
         <div className={styles.recordOverlay} onClick={() => setExpandedRow(null)} data-testid="record-card">
