@@ -408,9 +408,9 @@ export const SmartTableView = ({
   // per number column, click to cycle sum / avg / count / min / max.
   const [colStat, setColStat] = useState<Record<string, 'sum' | 'avg' | 'count' | 'min' | 'max'>>({});
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
-  const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'gallery' | 'calendar' | 'form'>(
-    savedView?.kind ?? 'grid',
-  );
+  const [viewMode, setViewMode] = useState<
+    'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary'
+  >(savedView?.kind ?? 'grid');
   const [formDraft, setFormDraft] = useState<Record<string, string>>({});
   const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
   const editsViews = Boolean(onReplaceViews);
@@ -604,7 +604,7 @@ export const SmartTableView = ({
       )}
       <div className={styles.queryBar} data-testid="smart-table-query-bar">
         <div className={styles.viewToggle}>
-          {(['grid', 'kanban', 'gallery', 'calendar', 'form'] as const).map((m) => (
+          {(['grid', 'kanban', 'gallery', 'calendar', 'form', 'summary'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -1157,6 +1157,50 @@ export const SmartTableView = ({
           </button>
         </div>
       )}
+
+      {viewMode === 'summary' &&
+        (() => {
+          const groupField = groupBy ?? visibleSchema.find((c) => c.type === 'select' || c.type === 'checkbox')?.key;
+          if (!groupField) {
+            return <div className={styles.kanbanEmpty}>Group by a field (or add a select column) to summarize.</div>;
+          }
+          const numCols = visibleSchema.filter((c) => baseCellType(c.type) === 'number');
+          const groups = new Map<string, Array<Record<string, string>>>();
+          for (const row of result.rows) {
+            const g = row[groupField] ?? '';
+            const bucket = groups.get(g);
+            if (bucket) bucket.push(row);
+            else groups.set(g, [row]);
+          }
+          const sumCol = (rs: Array<Record<string, string>>, key: string): number =>
+            rs.reduce((a, r) => a + (Number(r[key]) || 0), 0);
+          return (
+            <div className={styles.scroll} data-testid="smart-table-summary">
+              <table className={styles.summaryTable}>
+                <thead>
+                  <tr>
+                    <th>{groupLabel(groupField)}</th>
+                    <th>Count</th>
+                    {numCols.map((c) => (
+                      <th key={c.key}>{c.label} Σ</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...groups.entries()].map(([g, rs]) => (
+                    <tr key={g}>
+                      <td>{g || '—'}</td>
+                      <td>{rs.length}</td>
+                      {numCols.map((c) => (
+                        <td key={c.key}>{sumCol(rs, c.key).toLocaleString()}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
 
       {expandedRow != null && table.rows[expandedRow] && (
         <div className={styles.recordOverlay} onClick={() => setExpandedRow(null)} data-testid="record-card">
