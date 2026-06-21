@@ -13,10 +13,11 @@ afterEach(() => invoke.mockReset());
 
 describe('describeSmartTable', () => {
   it('calls smart_table_describe with the path', async () => {
-    invoke.mockResolvedValue({ source_kind: 'smart_table', fields: [], operators: [] });
+    // The kernel serializes SourceKind::Record as "record" (vault_smart_table.rs).
+    invoke.mockResolvedValue({ source_kind: 'record', fields: [], operators: [] });
     const out = await describeSmartTable('tables/leads.md');
     expect(invoke).toHaveBeenCalledWith('smart_table_describe', { args: { path: 'tables/leads.md' } });
-    expect(out.source_kind).toBe('smart_table');
+    expect(out.source_kind).toBe('record');
   });
 });
 
