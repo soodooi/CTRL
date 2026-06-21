@@ -23,6 +23,7 @@ import { relationalDisplay } from '@/lib/smart-table-relations';
 import { evalFormula } from '@/lib/smart-table-formula';
 import { Cell, LinkPicker } from './SmartTableCells';
 import { SmartTableGrid } from './SmartTableGrid';
+import { CalendarView, GalleryView, SummaryView } from './SmartTableViews';
 
 const FIELD_TYPES: CellType[] = [
   'text',
@@ -798,52 +799,11 @@ export const SmartTableView = ({
         </div>
       )}
 
-      {viewMode === 'gallery' && (
-        <div className={styles.gallery} data-testid="smart-table-gallery">
-          {result.rows.map((row, i) => (
-            <div key={i} className={styles.kanbanCard}>
-              {visibleSchema.map((c) => (
-                <div key={c.key} className={styles.kanbanCardRow}>
-                  <span className={styles.kanbanCardLabel}>{c.label}</span>
-                  <span className={styles.kanbanCardValue}>{row[c.key] || '—'}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+      {viewMode === 'gallery' && <GalleryView rows={result.rows} schema={visibleSchema} />}
 
-      {viewMode === 'calendar' &&
-        (() => {
-          const dateField = table.schema.find((c) => baseCellType(c.type) === 'date')?.key;
-          if (!dateField) {
-            return <div className={styles.kanbanEmpty}>Add a date field to use the calendar.</div>;
-          }
-          const titleKey = visibleSchema.find((c) => c.key !== dateField)?.key;
-          const groups = new Map<string, Array<Record<string, string>>>();
-          for (const row of [...result.rows].sort((a, b) =>
-            (a[dateField] ?? '').localeCompare(b[dateField] ?? ''),
-          )) {
-            const d = row[dateField] || '(no date)';
-            const bucket = groups.get(d);
-            if (bucket) bucket.push(row);
-            else groups.set(d, [row]);
-          }
-          return (
-            <div className={styles.scroll} data-testid="smart-table-calendar">
-              {[...groups.entries()].map(([d, rows]) => (
-                <div key={d} className={styles.calGroup}>
-                  <div className={styles.calDate}>{d}</div>
-                  {rows.map((row, i) => (
-                    <div key={i} className={styles.calItem}>
-                      {titleKey ? row[titleKey] || '—' : '—'}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          );
-        })()}
+      {viewMode === 'calendar' && (
+        <CalendarView rows={result.rows} schema={visibleSchema} allSchema={table.schema} />
+      )}
 
       {viewMode === 'form' && (
         <div className={styles.formView} data-testid="smart-table-form">
@@ -898,49 +858,9 @@ export const SmartTableView = ({
         </div>
       )}
 
-      {viewMode === 'summary' &&
-        (() => {
-          const groupField = groupBy ?? visibleSchema.find((c) => c.type === 'select' || c.type === 'checkbox')?.key;
-          if (!groupField) {
-            return <div className={styles.kanbanEmpty}>Group by a field (or add a select column) to summarize.</div>;
-          }
-          const numCols = visibleSchema.filter((c) => baseCellType(c.type) === 'number');
-          const groups = new Map<string, Array<Record<string, string>>>();
-          for (const row of result.rows) {
-            const g = row[groupField] ?? '';
-            const bucket = groups.get(g);
-            if (bucket) bucket.push(row);
-            else groups.set(g, [row]);
-          }
-          const sumCol = (rs: Array<Record<string, string>>, key: string): number =>
-            rs.reduce((a, r) => a + (Number(r[key]) || 0), 0);
-          return (
-            <div className={styles.scroll} data-testid="smart-table-summary">
-              <table className={styles.summaryTable}>
-                <thead>
-                  <tr>
-                    <th>{groupLabel(groupField)}</th>
-                    <th>Count</th>
-                    {numCols.map((c) => (
-                      <th key={c.key}>{c.label} Σ</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...groups.entries()].map(([g, rs]) => (
-                    <tr key={g}>
-                      <td>{g || '—'}</td>
-                      <td>{rs.length}</td>
-                      {numCols.map((c) => (
-                        <td key={c.key}>{sumCol(rs, c.key).toLocaleString()}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
-        })()}
+      {viewMode === 'summary' && (
+        <SummaryView rows={result.rows} schema={visibleSchema} allSchema={table.schema} groupBy={groupBy} />
+      )}
 
       {expandedRow != null && table.rows[expandedRow] && (
         <div className={styles.recordOverlay} onClick={() => setExpandedRow(null)} data-testid="record-card">
