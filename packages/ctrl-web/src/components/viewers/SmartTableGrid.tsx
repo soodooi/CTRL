@@ -33,7 +33,13 @@ const iconFor = (t: CellType): GridColumnIcon => {
     case 'number':
     case 'currency':
     case 'progress':
+    case 'percent':
+    case 'duration':
       return GridColumnIcon.HeaderNumber;
+    case 'attachment':
+      return GridColumnIcon.HeaderImage;
+    case 'user':
+      return GridColumnIcon.HeaderSingleValue;
     case 'rating':
       return GridColumnIcon.HeaderEmoji;
     case 'date':
@@ -301,13 +307,28 @@ export const SmartTableGrid = ({
           readonly: ro,
         };
       }
-      if (spec.type === 'tags' || spec.type === 'select') {
+      if (spec.type === 'attachment') {
+        const names = value
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((s) => s.split('/').pop() ?? s)
+          .join(', ');
+        return {
+          kind: GridCellKind.Text,
+          data: value,
+          displayData: value ? `📎 ${names}` : '',
+          allowOverlay: editable,
+          readonly: ro,
+        };
+      }
+      if (spec.type === 'tags' || spec.type === 'select' || spec.type === 'user') {
         const tags =
-          spec.type === 'tags'
-            ? value.split(',').map((t) => t.trim()).filter(Boolean)
-            : value
+          spec.type === 'select'
+            ? value
               ? [value]
-              : [];
+              : []
+            : value.split(',').map((t) => t.trim()).filter(Boolean);
         return {
           kind: GridCellKind.Custom,
           data: { kind: 'pill-cell', tags },
@@ -340,8 +361,11 @@ export const SmartTableGrid = ({
         const num = typeof n === 'number' && !Number.isNaN(n) ? n : undefined;
         // Lightweight "render is the type" via displayData: currency $-formatted.
         let display = value;
-        if (num !== undefined && spec.type === 'currency') {
-          display = `${spec.symbol ?? '$'}${num.toLocaleString()}`;
+        if (num !== undefined) {
+          if (spec.type === 'currency') display = `${spec.symbol ?? '$'}${num.toLocaleString()}`;
+          else if (spec.type === 'percent') display = `${num}%`;
+          else if (spec.type === 'duration')
+            display = num >= 60 ? `${Math.floor(num / 60)}h ${num % 60}m` : `${num}m`;
         }
         return {
           kind: GridCellKind.Number,
