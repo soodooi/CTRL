@@ -35,6 +35,33 @@ export const listSmartTables = async (): Promise<SmartTableEntry[]> => {
   return entries.sort((a, b) => a.title.localeCompare(b.title));
 };
 
+export interface VaultDocEntry {
+  path: string;
+  title: string;
+}
+
+/** Scan the vault for plain markdown docs — `.md` files that are NOT smart
+ *  tables (no `schema:` block) and not in a CTRL system dir. The DOCS half of
+ *  the unified workspace sidebar. */
+export const listVaultDocs = async (): Promise<VaultDocEntry[]> => {
+  const paths = await vaultList();
+  const entries: VaultDocEntry[] = [];
+  for (const path of paths) {
+    if (!path.toLowerCase().endsWith('.md')) continue;
+    if (path.split('/').some((seg) => seg.startsWith('.'))) continue;
+    try {
+      const entry = await vaultRead(path);
+      if (isSmartTableFrontmatter(entry.frontmatter)) continue; // that's a table
+      const fm = entry.frontmatter as { title?: unknown };
+      const title = typeof fm.title === 'string' && fm.title.trim() ? fm.title : path.replace(/\.md$/i, '');
+      entries.push({ path, title });
+    } catch {
+      // Unreadable — skip.
+    }
+  }
+  return entries.sort((a, b) => a.title.localeCompare(b.title));
+};
+
 type TplField = { key: string; label: string; type: string; options?: string[]; symbol?: string };
 export interface TableTemplate {
   name: string;
