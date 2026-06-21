@@ -26,24 +26,26 @@ describe('querySmartTable', () => {
     invoke.mockResolvedValue({ rows: [], match_count: 0 });
     await querySmartTable('tables/leads.md');
     expect(invoke).toHaveBeenCalledWith('smart_table_query', {
-      args: { path: 'tables/leads.md', filters: [], sort: [], group_by: null, limit: null },
+      args: { path: 'tables/leads.md', filters: [], conjunction: 'and', sort: [], group_by: [], limit: null },
     });
   });
 
-  it('passes a structured filter/sort/group request through verbatim', async () => {
+  it('passes a structured OR / multi-group request through verbatim', async () => {
     invoke.mockResolvedValue({ rows: [{ name: 'Acme' }], match_count: 1 });
     const res = await querySmartTable('tables/leads.md', {
       filters: [{ field: 'stage', op: 'eq', value: 'won' }],
+      conjunction: 'or',
       sort: [{ field: 'amount', desc: true }],
-      group_by: 'stage',
+      group_by: ['stage', 'owner'],
       limit: 50,
     });
     expect(invoke).toHaveBeenCalledWith('smart_table_query', {
       args: {
         path: 'tables/leads.md',
         filters: [{ field: 'stage', op: 'eq', value: 'won' }],
+        conjunction: 'or',
         sort: [{ field: 'amount', desc: true }],
-        group_by: 'stage',
+        group_by: ['stage', 'owner'],
         limit: 50,
       },
     });

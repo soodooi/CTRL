@@ -315,8 +315,11 @@ export interface QuerySortKey {
 
 export interface SmartTableQueryRequest {
   filters?: QueryFilter[];
+  /** How filters combine (default 'and'). 'or' passes a row matching any. */
+  conjunction?: 'and' | 'or';
   sort?: QuerySortKey[];
-  group_by?: string | null;
+  /** Group keys applied in order (multi-level); equal values made contiguous. */
+  group_by?: string[];
   limit?: number | null;
 }
 
@@ -340,8 +343,9 @@ export const querySmartTable = (
     args: {
       path,
       filters: request.filters ?? [],
+      conjunction: request.conjunction ?? 'and',
       sort: request.sort ?? [],
-      group_by: request.group_by ?? null,
+      group_by: request.group_by ?? [],
       limit: request.limit ?? null,
     },
   });

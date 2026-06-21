@@ -387,15 +387,18 @@ pub fn smart_table_describe(args: SmartTableDescribeArgs) -> Result<query::Descr
 pub struct SmartTableQueryArgs {
     /// Vault-relative path to the smart-table `.md` file.
     pub path: String,
-    /// Field filters, ANDed together. Each `field` must exist in the schema.
+    /// Field filters. Each `field` must exist in the schema.
     #[serde(default)]
     pub filters: Vec<query::Filter>,
+    /// How `filters` combine (and / or; default and).
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
     /// Multi-key sort (first key wins).
     #[serde(default)]
     pub sort: Vec<query::SortKey>,
-    /// Group rows so equal values of this field are contiguous.
+    /// Group keys applied in order (multi-level); equal values made contiguous.
     #[serde(default)]
-    pub group_by: Option<String>,
+    pub group_by: Vec<String>,
     /// Cap the number of returned rows (match_count is reported pre-limit).
     #[serde(default)]
     pub limit: Option<usize>,
@@ -411,6 +414,7 @@ pub fn smart_table_query(args: SmartTableQueryArgs) -> Result<query::QueryResult
     let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
     let req = query::QueryRequest {
         filters: args.filters,
+        conjunction: args.conjunction,
         sort: args.sort,
         group_by: args.group_by,
         limit: args.limit,
