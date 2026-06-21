@@ -44,7 +44,8 @@ export type CellType =
   | 'phone'
   | 'link'
   | 'lookup'
-  | 'rollup';
+  | 'rollup'
+  | 'formula';
 
 /** The 7 semantic base types query/sort/filter actually reason about. */
 export type BaseCellType = 'text' | 'number' | 'date' | 'checkbox' | 'tags' | 'select' | 'url';
@@ -64,6 +65,7 @@ export const baseCellType = (t: CellType): BaseCellType => {
     case 'link':
     case 'lookup':
     case 'rollup':
+    case 'formula':
       return 'text';
     case 'number':
     case 'date':
@@ -105,6 +107,9 @@ export interface ColumnSpec {
   linkField?: string;
   lookupField?: string;
   rollupFn?: string;
+  /** For `formula`: the expression, e.g. `{price} * {qty}` or `ROUND({x}, 1)`.
+   *  Evaluated client-side (lib/smart-table-formula); derived, not stored. */
+  expression?: string;
   /** System field (record id, link back-refs, …) — present in the data + on
    *  disk but hidden from the grid / pickers. The relational foundation. */
   system?: boolean;
@@ -230,8 +235,8 @@ const splitTopLevel = (s: string, sep: string): string[] => {
       buf += ch;
       continue;
     }
-    if (ch === '[' || ch === '{') depth += 1;
-    else if (ch === ']' || ch === '}') depth -= 1;
+    if (ch === '[' || ch === '{' || ch === '(') depth += 1;
+    else if (ch === ']' || ch === '}' || ch === ')') depth -= 1;
     if (ch === sep && depth === 0) {
       if (buf.trim()) out.push(buf);
       buf = '';
@@ -367,6 +372,7 @@ const columnFromObj = (o: Record<string, unknown>): ColumnSpec | null => {
     linkField: typeof o.link_field === 'string' && o.link_field ? o.link_field : undefined,
     lookupField: typeof o.lookup_field === 'string' && o.lookup_field ? o.lookup_field : undefined,
     rollupFn: typeof o.rollup_fn === 'string' && o.rollup_fn ? o.rollup_fn : undefined,
+    expression: typeof o.expression === 'string' && o.expression ? o.expression : undefined,
     system: o.system === true || o.system === 'true' || o.key === ROW_ID_KEY ? true : undefined,
   };
 };
@@ -455,6 +461,7 @@ export const serializeSmartTable = (table: SmartTable): string => {
       if (col.linkField) parts.push(`link_field: ${col.linkField}`);
       if (col.lookupField) parts.push(`lookup_field: ${col.lookupField}`);
       if (col.rollupFn) parts.push(`rollup_fn: ${col.rollupFn}`);
+      if (col.expression) parts.push(`expression: ${col.expression}`);
       if (col.system) parts.push(`system: true`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
@@ -519,6 +526,7 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
     ...(c.linkField ? { link_field: c.linkField } : {}),
     ...(c.lookupField ? { lookup_field: c.lookupField } : {}),
     ...(c.rollupFn ? { rollup_fn: c.rollupFn } : {}),
+    ...(c.expression ? { expression: c.expression } : {}),
     ...(c.system ? { system: true } : {}),
   }));
   if (table.views.length > 0) {
