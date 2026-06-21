@@ -371,6 +371,8 @@ export interface SmartTableViewProps {
   /** Replace the whole saved-views list (ADR-003 §6.2 multi-view). When set,
    *  a saved-views tab bar + add/update/delete appear. */
   onReplaceViews?: (views: ViewSpec[]) => void;
+  /** Form view submit — append a row pre-filled with the entered values. */
+  onSubmitForm?: (values: Record<string, string>) => void;
   /** Loaded target tables (path → SmartTable) for link / Lookup / Rollup. */
   relations?: Record<string, SmartTable>;
   /** Other smart tables in the vault (link-target picker in the field editor). */
@@ -389,6 +391,7 @@ export const SmartTableView = ({
   onUpdateColumn,
   onDeleteColumn,
   onReplaceViews,
+  onSubmitForm,
   relations = {},
   linkTargets = [],
 }: SmartTableViewProps): ReactElement => {
@@ -405,7 +408,10 @@ export const SmartTableView = ({
   // per number column, click to cycle sum / avg / count / min / max.
   const [colStat, setColStat] = useState<Record<string, 'sum' | 'avg' | 'count' | 'min' | 'max'>>({});
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
-  const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'gallery' | 'calendar'>(savedView?.kind ?? 'grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'gallery' | 'calendar' | 'form'>(
+    savedView?.kind ?? 'grid',
+  );
+  const [formDraft, setFormDraft] = useState<Record<string, string>>({});
   const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
   const editsViews = Boolean(onReplaceViews);
   // Record detail card (ADR-003 §6 D6): canonical row index, or null = closed.
@@ -598,7 +604,7 @@ export const SmartTableView = ({
       )}
       <div className={styles.queryBar} data-testid="smart-table-query-bar">
         <div className={styles.viewToggle}>
-          {(['grid', 'kanban', 'gallery', 'calendar'] as const).map((m) => (
+          {(['grid', 'kanban', 'gallery', 'calendar', 'form'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -1098,6 +1104,59 @@ export const SmartTableView = ({
             </div>
           );
         })()}
+
+      {viewMode === 'form' && (
+        <div className={styles.formView} data-testid="smart-table-form">
+          {visibleSchema
+            .filter((c) => c.type !== 'lookup' && c.type !== 'rollup' && c.type !== 'formula' && c.type !== 'link')
+            .map((c) => (
+              <div key={c.key} className={styles.formField}>
+                <label className={styles.formLabel}>{c.label}</label>
+                {c.type === 'checkbox' ? (
+                  <input
+                    type="checkbox"
+                    checked={formDraft[c.key] === 'x'}
+                    onChange={(e) => setFormDraft((d) => ({ ...d, [c.key]: e.target.checked ? 'x' : '' }))}
+                  />
+                ) : c.type === 'select' ? (
+                  <select
+                    className={styles.querySelect}
+                    value={formDraft[c.key] ?? ''}
+                    onChange={(e) => setFormDraft((d) => ({ ...d, [c.key]: e.target.value }))}
+                  >
+                    <option value="">—</option>
+                    {c.options?.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className={styles.formInput}
+                    type={baseCellType(c.type) === 'number' ? 'number' : baseCellType(c.type) === 'date' ? 'date' : 'text'}
+                    value={formDraft[c.key] ?? ''}
+                    onChange={(e) => setFormDraft((d) => ({ ...d, [c.key]: e.target.value }))}
+                  />
+                )}
+              </div>
+            ))}
+          <button
+            type="button"
+            className={styles.queryAdd}
+            disabled={!onSubmitForm}
+            data-testid="form-submit"
+            onClick={() => {
+              if (onSubmitForm) {
+                onSubmitForm(formDraft);
+                setFormDraft({});
+              }
+            }}
+          >
+            Add record
+          </button>
+        </div>
+      )}
 
       {expandedRow != null && table.rows[expandedRow] && (
         <div className={styles.recordOverlay} onClick={() => setExpandedRow(null)} data-testid="record-card">

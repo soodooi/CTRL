@@ -16,6 +16,7 @@ import { readVault, writeVault, vaultRelativePath } from '@/lib/viewer-uri';
 import {
   addColumn,
   appendRow,
+  appendRowWithValues,
   deleteColumn,
   deleteRow,
   deleteRows,
@@ -177,6 +178,7 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
         }
         onDeleteColumn={resource.editable ? (key) => void commit(deleteColumn(table, key)) : undefined}
         onReplaceViews={resource.editable ? (views) => void commit({ ...table, views }) : undefined}
+        onSubmitForm={resource.editable ? (values) => void commit(appendRowWithValues(table, values)) : undefined}
       />
     </div>
   );
