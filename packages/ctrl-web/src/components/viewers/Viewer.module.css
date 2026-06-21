@@ -998,6 +998,36 @@
   cursor: grabbing;
 }
 
+/* Bottom statistic bar (borrowed from Grist SelectionSummary, Apache 2.0) */
+.statBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  border-top: 1px solid var(--color-border, #2a2a2a);
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.02));
+  font-size: 11px;
+}
+.statCount {
+  color: var(--color-text-muted, #888);
+  font-weight: 600;
+}
+.statChip {
+  border: 1px solid var(--color-border, #ddd);
+  background: transparent;
+  color: var(--color-text, #333);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.statChip strong {
+  color: var(--color-accent, #6aa3ff);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
 /* glide-data-grid host (ADR-002 §14 v30) — canvas needs an explicit box */
 .glideWrap {
   width: 100%;
