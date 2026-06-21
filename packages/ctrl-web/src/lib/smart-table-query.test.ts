@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseSmartTable, serializeSmartTable, type SmartTable } from './smart-table';
-import { FieldNotFoundError, queryTable } from './smart-table-query';
+import { FieldNotFoundError, queryTable, type Filter } from './smart-table-query';
 
 // Mirrors the kernel query tests (kernel/query.rs) so the client-side engine
 // stays semantically identical to what Irisy gets through the :17873 gate.
@@ -51,6 +51,20 @@ describe('queryTable', () => {
   it('filters checkbox is', () => {
     const out = queryTable(table(), { filters: [{ field: 'done', op: 'is', value: 'true' }] }, NOW);
     expect(out.rows.map((r) => r.name)).toEqual(['Acme']);
+  });
+
+  it('OR (any) vs AND (all) across filters', () => {
+    const f: Filter[] = [
+      { field: 'amount', op: 'gt', value: '80' },
+      { field: 'name', op: 'contains', value: 'beta' },
+    ];
+    expect(queryTable(table(), { filters: f, conjunction: 'and' }, NOW).matchCount).toBe(0);
+    expect(queryTable(table(), { filters: f, conjunction: 'or' }, NOW).matchCount).toBe(3);
+  });
+
+  it('multi-level group keeps every row', () => {
+    const out = queryTable(table(), { groupBy: ['done', 'name'] }, NOW);
+    expect(out.matchCount).toBe(3);
   });
 
   it('filters tags has_tag', () => {

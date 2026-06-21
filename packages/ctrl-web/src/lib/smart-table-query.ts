@@ -35,8 +35,11 @@ export interface SortKey {
 
 export interface QueryRequest {
   filters?: Filter[];
+  /** How to combine filters: 'and' (all) or 'or' (any). Default 'and'. */
+  conjunction?: 'and' | 'or';
   sort?: SortKey[];
-  groupBy?: string | null;
+  /** One field (single-level) or several (multi-level group). */
+  groupBy?: string | string[] | null;
   limit?: number | null;
 }
 
@@ -74,14 +77,17 @@ export const queryTable = (
 
   (req.filters ?? []).forEach((f) => requireField(f.field));
   (req.sort ?? []).forEach((s) => requireField(s.field));
-  if (req.groupBy) requireField(req.groupBy);
+  (Array.isArray(req.groupBy) ? req.groupBy : req.groupBy ? [req.groupBy] : []).forEach(requireField);
 
-  // Filter — AND across all filters.
-  let out = table.rows.filter((row) =>
-    (req.filters ?? []).every((f) =>
-      applyFilter(row[f.field] ?? '', baseCellType(typeOf(f.field) ?? 'text'), f.op, f.value, now),
-    ),
-  );
+  // Filter — AND (all) or OR (any) across all filters.
+  const conj = req.conjunction ?? 'and';
+  let out = table.rows.filter((row) => {
+    const fs = req.filters ?? [];
+    if (fs.length === 0) return true;
+    const test = (f: Filter): boolean =>
+      applyFilter(row[f.field] ?? '', baseCellType(typeOf(f.field) ?? 'text'), f.op, f.value, now);
+    return conj === 'or' ? fs.some(test) : fs.every(test);
+  });
 
   // Sort — stable, multi-key; apply in reverse so the first key wins.
   for (const key of [...(req.sort ?? [])].reverse()) {
@@ -92,9 +98,9 @@ export const queryTable = (
     });
   }
 
-  // Group — stable partition so equal group values are contiguous.
-  if (req.groupBy) {
-    const g = req.groupBy;
+  // Group — stable multi-level partition (reverse so the first level is primary).
+  const groups = Array.isArray(req.groupBy) ? req.groupBy : req.groupBy ? [req.groupBy] : [];
+  for (const g of [...groups].reverse()) {
     out = stableSort(out, (a, b) => (a[g] ?? '').localeCompare(b[g] ?? ''));
   }
 
