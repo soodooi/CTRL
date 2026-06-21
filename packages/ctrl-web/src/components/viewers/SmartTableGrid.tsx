@@ -13,6 +13,7 @@
 import {
   DataEditor,
   GridCellKind,
+  GridColumnIcon,
   type CustomCell,
   type CustomRenderer,
   type EditableGridCell,
@@ -22,7 +23,45 @@ import {
 } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
-import { baseCellType, type ColumnSpec, type SmartTable } from '@/lib/smart-table';
+import { baseCellType, type CellType, type ColumnSpec, type SmartTable } from '@/lib/smart-table';
+
+// Field-type header icon (Feishu/Airtable style — glide ships the sprites).
+const iconFor = (t: CellType): GridColumnIcon => {
+  switch (t) {
+    case 'number':
+    case 'currency':
+    case 'progress':
+      return GridColumnIcon.HeaderNumber;
+    case 'rating':
+      return GridColumnIcon.HeaderEmoji;
+    case 'date':
+      return GridColumnIcon.HeaderDate;
+    case 'checkbox':
+      return GridColumnIcon.HeaderBoolean;
+    case 'select':
+      return GridColumnIcon.HeaderSingleValue;
+    case 'tags':
+      return GridColumnIcon.HeaderArray;
+    case 'url':
+      return GridColumnIcon.HeaderUri;
+    case 'email':
+      return GridColumnIcon.HeaderEmail;
+    case 'phone':
+      return GridColumnIcon.HeaderPhone;
+    case 'link':
+      return GridColumnIcon.HeaderReference;
+    case 'lookup':
+      return GridColumnIcon.HeaderLookup;
+    case 'rollup':
+      return GridColumnIcon.HeaderRollup;
+    case 'formula':
+      return GridColumnIcon.HeaderMath;
+    case 'multiline':
+      return GridColumnIcon.HeaderMarkdown;
+    default:
+      return GridColumnIcon.HeaderString;
+  }
+};
 import { relationalDisplay } from '@/lib/smart-table-relations';
 import { evalFormula } from '@/lib/smart-table-formula';
 import styles from './Viewer.module.css';
@@ -127,6 +166,7 @@ export const SmartTableGrid = ({
         title: c.label,
         id: c.key,
         width: widths[c.key] ?? 160,
+        icon: iconFor(c.type),
         hasMenu: Boolean(onHeaderMenu),
       })),
     [cols, widths, onHeaderMenu],
