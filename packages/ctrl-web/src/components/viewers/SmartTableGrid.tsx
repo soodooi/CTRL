@@ -160,22 +160,33 @@ export const SmartTableGrid = ({
     }
   }, []);
 
+  // Column 0 is a narrow expand-record affordance (Airtable-style ⤢ at the row
+  // head) — glide's canvas header can't host a React button, and onCellActivated
+  // collides with editing, so a dedicated read-only column is the clean way back.
+  const expandable = Boolean(onExpandRow);
   const columns = useMemo<GridColumn[]>(
-    () =>
-      cols.map((c) => ({
+    () => [
+      ...(expandable ? [{ title: '', id: '__expand', width: 36 } as GridColumn] : []),
+      ...cols.map((c) => ({
         title: c.label,
         id: c.key,
         width: widths[c.key] ?? 160,
         icon: iconFor(c.type),
         hasMenu: Boolean(onHeaderMenu),
       })),
-    [cols, widths, onHeaderMenu],
+    ],
+    [cols, widths, onHeaderMenu, expandable],
   );
+  // Map a grid column index to the data column (offset by the expand column).
+  const dataCol = (col: number): ColumnSpec | undefined => cols[expandable ? col - 1 : col];
 
   const getCellContent = useCallback(
     (cell: Item): GridCell => {
       const [col, row] = cell;
-      const spec = cols[col];
+      if (expandable && col === 0) {
+        return { kind: GridCellKind.Text, data: '⤢', displayData: '⤢', allowOverlay: false };
+      }
+      const spec = dataCol(col);
       if (!spec) return { kind: GridCellKind.Text, data: '', displayData: '', allowOverlay: false };
       const value = rows[row]?.[spec.key] ?? '';
       const ro = !editable;
@@ -235,13 +246,13 @@ export const SmartTableGrid = ({
       }
       return { kind: GridCellKind.Text, data: value, displayData: value, allowOverlay: editable, readonly: ro };
     },
-    [cols, schema, rows, editable, relations],
+    [cols, schema, rows, editable, relations, expandable],
   );
 
   const onCellEdited = useCallback(
     (cell: Item, newVal: EditableGridCell): void => {
       const [col, row] = cell;
-      const spec = cols[col];
+      const spec = dataCol(col);
       if (!spec) return;
       const idx = canonicalIdx(rows[row], row);
       let v = '';
@@ -252,7 +263,7 @@ export const SmartTableGrid = ({
         v = newVal.data ?? '';
       onCellChange(idx, spec.key, v);
     },
-    [cols, rows, onCellChange],
+    [cols, rows, onCellChange, expandable],
   );
 
   return (
@@ -274,10 +285,9 @@ export const SmartTableGrid = ({
         keybindings={{ search: true }}
         width="100%"
         height="100%"
-        onCellActivated={(cell) => {
-          // Activating the leftmost marker area is handled by rowMarkers; expose
-          // a row-open affordance via double-activation on the first column.
-          if (onExpandRow && cell[0] === 0) onExpandRow(canonicalIdx(rows[cell[1]], cell[1]));
+        onCellClicked={(cell) => {
+          // Single click on the leftmost ⤢ column opens the record card.
+          if (expandable && onExpandRow && cell[0] === 0) onExpandRow(canonicalIdx(rows[cell[1]], cell[1]));
         }}
       />
     </div>
