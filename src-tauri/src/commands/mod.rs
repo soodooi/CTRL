@@ -247,6 +247,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_aliases,
             $crate::commands::vault::vault_watch_recent,
             $crate::commands::vault::smart_table_run_ai_column,
+            $crate::commands::vault::smart_table_describe,
+            $crate::commands::vault::smart_table_query,
             // ADR-002 § vault v1 §8.4 sourcing-workflow (2026-06-01) —
             // kernel-seeded review-queue producer (Irisy attaches the
             // richer LLM pass on top of the same file).

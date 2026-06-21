@@ -268,6 +268,88 @@ export interface AiColumnSummary {
 export const smartTableRunAiColumn = (args: AiColumnArgs): Promise<AiColumnSummary> =>
   invoke('smart_table_run_ai_column', { args });
 
+// §14 Unified Operation Interface — read half (describe / query) over the PWA
+// bridge. The in-app twin of the :17873 gate's `smart_table.describe` /
+// `.query`; both run the SAME kernel engine (kernel::query::run_query) so the
+// viewer never drifts from a second client-side implementation (ADR-002 §14).
+export type QueryOperator =
+  | 'eq'
+  | 'neq'
+  | 'contains'
+  | 'gt'
+  | 'lt'
+  | 'gte'
+  | 'lte'
+  | 'before'
+  | 'after'
+  | 'within'
+  | 'is'
+  | 'has_tag';
+
+export interface QueryFieldSpec {
+  key: string;
+  label: string;
+  /** Semantic base type the kernel filters/sorts by. */
+  type: string;
+  options?: string[];
+}
+
+/** What `smart_table.describe` returns: the type layer the UI reads before
+ *  composing a query (drives the valid field + operator menus). */
+export interface SmartTableDescribe {
+  source_kind: string;
+  fields: QueryFieldSpec[];
+  operators: QueryOperator[];
+}
+
+export interface QueryFilter {
+  field: string;
+  op: QueryOperator;
+  value: string;
+}
+
+export interface QuerySortKey {
+  field: string;
+  desc?: boolean;
+}
+
+export interface SmartTableQueryRequest {
+  filters?: QueryFilter[];
+  /** How filters combine (default 'and'). 'or' passes a row matching any. */
+  conjunction?: 'and' | 'or';
+  sort?: QuerySortKey[];
+  /** Group keys applied in order (multi-level); equal values made contiguous. */
+  group_by?: string[];
+  limit?: number | null;
+}
+
+export interface SmartTableQueryResult {
+  rows: Array<Record<string, string>>;
+  /** Pre-limit match count (rows may be capped by `limit`). */
+  match_count: number;
+}
+
+/** Describe a smart table via the kernel gate — fields, types, operators. */
+export const describeSmartTable = (path: string): Promise<SmartTableDescribe> =>
+  invoke('smart_table_describe', { args: { path } });
+
+/** Run a structured filter/sort/group query through the shared kernel engine.
+ *  Rejects unknown field references with the valid set (anti-hallucination). */
+export const querySmartTable = (
+  path: string,
+  request: SmartTableQueryRequest = {},
+): Promise<SmartTableQueryResult> =>
+  invoke('smart_table_query', {
+    args: {
+      path,
+      filters: request.filters ?? [],
+      conjunction: request.conjunction ?? 'and',
+      sort: request.sort ?? [],
+      group_by: request.group_by ?? [],
+      limit: request.limit ?? null,
+    },
+  });
+
 export const listMcpServers = (): Promise<string[]> => invoke('list_mcp_servers');
 
 /**

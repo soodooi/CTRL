@@ -106,16 +106,34 @@ pub struct SortKey {
     pub desc: bool,
 }
 
+/// How a request's filters combine — table-independent, a genuine enum (never a
+/// caller string). `And` (default) keeps the original semantics; `Or` passes a
+/// row that satisfies any filter (an empty filter set always passes, both ways).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Conjunction {
+    #[default]
+    And,
+    Or,
+}
+
 /// A structured read request — the parameter object Irisy fills (never a query
 /// string). All field references are validated against the source's schema.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct QueryRequest {
     #[serde(default)]
     pub filters: Vec<Filter>,
+    /// How `filters` combine (default And). Lets the caller express OR queries.
+    #[serde(default)]
+    pub conjunction: Conjunction,
     #[serde(default)]
     pub sort: Vec<SortKey>,
+    /// Group keys applied in order (first is the primary level); equal-valued
+    /// rows are made contiguous. Empty = no grouping. Multi-level grouping.
     #[serde(default)]
-    pub group_by: Option<String>,
+    pub group_by: Vec<String>,
     #[serde(default)]
     pub limit: Option<usize>,
 }
@@ -192,21 +210,29 @@ pub fn run_query(
             return Err(unknown(&s.field));
         }
     }
-    if let Some(g) = &req.group_by {
+    for g in &req.group_by {
         if type_of(g).is_none() {
             return Err(unknown(g));
         }
     }
 
-    // Filter (a row passes when it satisfies every filter — AND semantics).
+    // Filter — a row passes per the request's conjunction (And = every filter,
+    // Or = any). An empty filter set always passes, regardless of conjunction.
     let mut out: Vec<Row> = rows
         .iter()
         .filter(|row| {
-            req.filters.iter().all(|f| {
+            if req.filters.is_empty() {
+                return true;
+            }
+            let eval = |f: &Filter| {
                 let ct = type_of(&f.field).unwrap_or(CellType::Text);
                 let cell = row.get(&f.field).map(String::as_str).unwrap_or("");
                 apply_filter(cell, ct, f.op, &f.value, now)
-            })
+            };
+            match req.conjunction {
+                Conjunction::And => req.filters.iter().all(eval),
+                Conjunction::Or => req.filters.iter().any(eval),
+            }
         })
         .cloned()
         .collect();
@@ -226,12 +252,20 @@ pub fn run_query(
         });
     }
 
-    // Group — stable partition so rows sharing a group_by value are contiguous.
-    if let Some(g) = &req.group_by {
+    // Group — stable partition so rows sharing the group keys are contiguous.
+    // Multi-level: compare keys in order; the sort is stable, so the prior sort
+    // is preserved within the deepest group.
+    if !req.group_by.is_empty() {
         out.sort_by(|a, b| {
-            let av = a.get(g).map(String::as_str).unwrap_or("");
-            let bv = b.get(g).map(String::as_str).unwrap_or("");
-            av.cmp(bv)
+            for g in &req.group_by {
+                let av = a.get(g).map(String::as_str).unwrap_or("");
+                let bv = b.get(g).map(String::as_str).unwrap_or("");
+                match av.cmp(bv) {
+                    std::cmp::Ordering::Equal => continue,
+                    ord => return ord,
+                }
+            }
+            std::cmp::Ordering::Equal
         });
     }
 
@@ -440,5 +474,57 @@ mod tests {
                 assert!(valid.contains(&"amount".to_string()));
             }
         }
+    }
+
+    #[test]
+    fn filter_or_passes_either() {
+        // amount < 80 (Beta) OR tags has 'lead' (Cobalt) → two distinct rows.
+        let r = QueryRequest {
+            filters: vec![
+                Filter { field: "amount".into(), op: Operator::Lt, value: "80".into() },
+                Filter { field: "tags".into(), op: Operator::HasTag, value: "lead".into() },
+            ],
+            conjunction: Conjunction::Or,
+            ..req()
+        };
+        let out = run_query(&fields(), &sample(), &r, now()).unwrap();
+        assert_eq!(out.match_count, 2);
+        assert!(out.rows.iter().any(|row| row["name"] == "Beta"));
+        assert!(out.rows.iter().any(|row| row["name"] == "Cobalt"));
+    }
+
+    #[test]
+    fn filter_and_is_the_default() {
+        // Same two filters AND'd match nothing (no row is both <80 and 'lead').
+        let r = QueryRequest {
+            filters: vec![
+                Filter { field: "amount".into(), op: Operator::Lt, value: "80".into() },
+                Filter { field: "tags".into(), op: Operator::HasTag, value: "lead".into() },
+            ],
+            ..req()
+        };
+        assert_eq!(req().conjunction, Conjunction::And);
+        let out = run_query(&fields(), &sample(), &r, now()).unwrap();
+        assert_eq!(out.match_count, 0);
+    }
+
+    #[test]
+    fn empty_filters_pass_under_or() {
+        let r = QueryRequest { conjunction: Conjunction::Or, ..req() };
+        let out = run_query(&fields(), &sample(), &r, now()).unwrap();
+        assert_eq!(out.match_count, 3);
+    }
+
+    #[test]
+    fn multi_level_group_is_contiguous() {
+        // Group by done, then name — rows sharing `done` cluster, ordered by name
+        // within. done="" → (Beta, Cobalt) contiguous; done="x" → (Acme).
+        let r = QueryRequest {
+            group_by: vec!["done".into(), "name".into()],
+            ..req()
+        };
+        let out = run_query(&fields(), &sample(), &r, now()).unwrap();
+        let order: Vec<&str> = out.rows.iter().map(|row| row["name"].as_str()).collect();
+        assert_eq!(order, vec!["Beta", "Cobalt", "Acme"]);
     }
 }

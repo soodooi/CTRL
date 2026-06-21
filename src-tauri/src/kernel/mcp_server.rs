@@ -504,8 +504,9 @@ impl KernelMcpRouter {
         let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         let req = query::QueryRequest {
             filters: args.filters,
+            conjunction: query::Conjunction::default(),
             sort: args.sort,
-            group_by: args.group_by,
+            group_by: args.group_by.into_iter().collect(),
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
@@ -600,8 +601,9 @@ impl KernelMcpRouter {
             .map_err(map_vault_err)?;
         let req = query::QueryRequest {
             filters: args.filters,
+            conjunction: query::Conjunction::default(),
             sort: args.sort,
-            group_by: args.group_by,
+            group_by: args.group_by.into_iter().collect(),
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
@@ -921,8 +923,9 @@ impl KernelMcpRouter {
             .collect();
         let req = query::QueryRequest {
             filters: args.filters,
+            conjunction: query::Conjunction::default(),
             sort: args.sort,
-            group_by: args.group_by,
+            group_by: args.group_by.into_iter().collect(),
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
@@ -975,8 +978,9 @@ impl KernelMcpRouter {
             .collect();
         let req = query::QueryRequest {
             filters: args.filters,
+            conjunction: query::Conjunction::default(),
             sort: args.sort,
-            group_by: args.group_by,
+            group_by: args.group_by.into_iter().collect(),
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();

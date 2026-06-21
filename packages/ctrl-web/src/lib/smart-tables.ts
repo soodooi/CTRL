@@ -5,6 +5,7 @@
 
 import { vaultList, vaultRead, vaultWrite } from '@/lib/kernel';
 import { columnKeyFromLabel } from '@/lib/smart-table';
+import { isSmartTableFrontmatter } from '@/modules/smart-table';
 
 export interface SmartTableEntry {
   path: string;
@@ -22,10 +23,10 @@ export const listSmartTables = async (): Promise<SmartTableEntry[]> => {
     if (path.split('/').some((seg) => seg.startsWith('.'))) continue;
     try {
       const entry = await vaultRead(path);
-      const fm = entry.frontmatter as { schema?: unknown; title?: unknown };
-      if (Array.isArray(fm.schema) && fm.schema.length > 0) {
+      const fm = entry.frontmatter as { schema?: unknown[]; title?: unknown };
+      if (isSmartTableFrontmatter(fm)) {
         const title = typeof fm.title === 'string' && fm.title.trim() ? fm.title : path.replace(/\.md$/i, '');
-        entries.push({ path, title, fields: fm.schema.length });
+        entries.push({ path, title, fields: fm.schema?.length ?? 0 });
       }
     } catch {
       // Unreadable file — skip, not fatal for a read-only scan.

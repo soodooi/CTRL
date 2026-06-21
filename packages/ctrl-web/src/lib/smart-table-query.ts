@@ -99,9 +99,15 @@ export const queryTable = (
   }
 
   // Group — stable multi-level partition (reverse so the first level is primary).
+  // Ordinal compare (not localeCompare) to match the kernel's str::cmp grouping
+  // exactly, so a client-fallback and a kernel result order groups identically.
   const groups = Array.isArray(req.groupBy) ? req.groupBy : req.groupBy ? [req.groupBy] : [];
   for (const g of [...groups].reverse()) {
-    out = stableSort(out, (a, b) => (a[g] ?? '').localeCompare(b[g] ?? ''));
+    out = stableSort(out, (a, b) => {
+      const av = a[g] ?? '';
+      const bv = b[g] ?? '';
+      return av < bv ? -1 : av > bv ? 1 : 0;
+    });
   }
 
   const matchCount = out.length;
