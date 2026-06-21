@@ -801,6 +801,139 @@
 .querySort:hover {
   border-color: var(--color-accent, #6aa3ff);
 }
+.querySearch {
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1a1a1a);
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  min-width: 120px;
+}
+.querySearch:focus {
+  outline: none;
+  border-color: var(--color-accent, #6aa3ff);
+}
+.queryToggle {
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1a1a1a);
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.queryToggle[data-active='true'] {
+  background: var(--color-accent, #6aa3ff);
+  border-color: var(--color-accent, #6aa3ff);
+  color: #fff;
+}
+.colorSwatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border, #d8d4cc);
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.fieldsWrap {
+  position: relative;
+  display: inline-block;
+}
+.fieldsMenu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 160px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.fieldsItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text, #1a1a1a);
+}
+.fieldsItem:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+}
+
+/* Timeline / Gantt view — bars on a shared date axis (read-only, derived) */
+.timelineView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  padding: var(--space-3, 12px);
+  overflow: auto;
+  min-height: 0;
+}
+.timelineWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.timelineAxis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-text-muted, #999);
+  font-variant-numeric: tabular-nums;
+  padding-left: 140px;
+  border-bottom: 1px dashed var(--color-border, #e5e5e5);
+  padding-bottom: 4px;
+}
+.timelineRow {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.timelineLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text, #1a1a1a);
+}
+.timelineTrack {
+  position: relative;
+  height: 22px;
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.035));
+  border-radius: 4px;
+}
+.timelineBar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  overflow: hidden;
+  min-width: 6px;
+}
+.timelineBarText {
+  font-size: 10px;
+  color: #fff;
+  white-space: nowrap;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
 .querySpacer {
   flex: 1;
 }
@@ -1018,6 +1151,136 @@
 .summaryTable td:not(:first-child) {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* Chart view — bar / pie / line over grouped aggregates (read-only, derived) */
+.chartView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  padding: var(--space-3, 12px);
+  overflow: auto;
+  min-height: 0;
+}
+.chartBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.chartKinds {
+  display: flex;
+  gap: 2px;
+}
+.chartKindBtn {
+  border: 1px solid var(--color-border, #d8d4cc);
+  background: var(--color-surface, #fff);
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-text, #1a1a1a);
+}
+.chartKindBtn[data-on='true'] {
+  background: var(--color-accent, #6aa3ff);
+  border-color: var(--color-accent, #6aa3ff);
+  color: #fff;
+}
+.chartCtl {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-text-muted, #888);
+}
+.chartCtl select {
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 12px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1a1a1a);
+}
+.chartBars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 640px;
+}
+.chartRow {
+  display: grid;
+  grid-template-columns: 120px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.chartLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text, #1a1a1a);
+}
+.chartTrack {
+  height: 16px;
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+  border-radius: 4px;
+  overflow: hidden;
+}
+.chartFill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  min-width: 2px;
+  transition: width 0.2s ease;
+}
+.chartValue {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted, #777);
+}
+.chartPieWrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5, 24px);
+  flex-wrap: wrap;
+}
+.chartPie {
+  width: 200px;
+  height: 200px;
+  flex: 0 0 auto;
+}
+.chartLegend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.chartLegend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chartLegend .chartValue {
+  margin-left: auto;
+  padding-left: 16px;
+}
+.chartSwatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+.chartLine {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+}
+.chartTick {
+  font-size: 9px;
+  fill: var(--color-text-muted, #999);
 }
 
 /* Form view — one field per row, submit appends a record */
@@ -1276,6 +1539,12 @@
   gap: 10px;
   padding: 7px 0;
   border-bottom: 1px solid var(--color-border, #eee);
+}
+.recordActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 12px;
 }
 .recordLabel {
   flex: 0 0 110px;

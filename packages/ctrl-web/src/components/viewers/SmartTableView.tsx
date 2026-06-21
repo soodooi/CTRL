@@ -15,6 +15,7 @@ import {
   columnKeyFromLabel,
   type BaseCellType,
   type CellType,
+  type ColorOp,
   type ColumnSpec,
   type SmartTable,
   type ViewSpec,
@@ -24,6 +25,8 @@ import { evalFormula } from '@/lib/smart-table-formula';
 import { Cell, LinkPicker } from './SmartTableCells';
 import { SmartTableGrid } from './SmartTableGrid';
 import { CalendarView, GalleryView, SummaryView } from './SmartTableViews';
+import { ChartView } from './SmartTableChart';
+import { TimelineView } from './SmartTableTimeline';
 
 const FIELD_TYPES: CellType[] = [
   'text',
@@ -47,6 +50,9 @@ const FIELD_TYPES: CellType[] = [
   'user',
   'percent',
   'duration',
+  'auto_number',
+  'created_at',
+  'modified_at',
 ];
 import {
   queryTable,
@@ -97,6 +103,11 @@ export interface SmartTableViewProps {
   onDeleteRow?: (rowIndex: number) => void;
   /** Batch-delete the given canonical row indices (checkbox selection). */
   onDeleteRows?: (rowIndexes: number[]) => void;
+  /** Manual drag-reorder (canonical from → to). Only offered when rows show in
+   *  their natural order (no sort / group / filter / search). */
+  onMoveRow?: (from: number, to: number) => void;
+  /** Duplicate a record (canonical index) — copy inserted right after it. */
+  onDuplicateRow?: (rowIndex: number) => void;
   /** Persist the current view (kind + groupBy) into frontmatter `views`
    *  (ADR-003 §6.2). When set, a "Save view" button appears. */
   onSaveView?: (view: ViewSpec) => void;
@@ -126,6 +137,8 @@ export const SmartTableView = ({
   onCellChange,
   onDeleteRow,
   onDeleteRows,
+  onMoveRow,
+  onDuplicateRow,
   onSaveView,
   onRunAiColumn,
   onAddColumn,
@@ -150,13 +163,20 @@ export const SmartTableView = ({
   const [colStat, setColStat] = useState<Record<string, 'sum' | 'avg' | 'count' | 'min' | 'max'>>({});
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [viewMode, setViewMode] = useState<
-    'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary'
+    'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary' | 'chart' | 'timeline'
   >(savedView?.kind ?? 'grid');
   const [formDraft, setFormDraft] = useState<Record<string, string>>({});
   const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
   const editsViews = Boolean(onReplaceViews);
   // Record detail card (ADR-003 §6 D6): canonical row index, or null = closed.
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  // Grid UX (view-local, not persisted): quick text search across all cells,
+  // row density, and whether the primary column is frozen on horizontal scroll.
+  const [search, setSearch] = useState('');
+  const [density, setDensity] = useState<'compact' | 'cozy' | 'comfortable'>('cozy');
+  const [freezePrimary, setFreezePrimary] = useState(false);
+  const [hiddenFields, setHiddenFields] = useState<Set<string>>(new Set());
+  const [fieldsMenu, setFieldsMenu] = useState(false);
   const applyView = (v: ViewSpec, i: number): void => {
     setViewMode(v.kind);
     setGroupBy(v.groupBy ?? null);
@@ -233,6 +253,9 @@ export const SmartTableView = ({
   const [feLookupField, setFeLookupField] = useState('');
   const [feRollupFn, setFeRollupFn] = useState('count');
   const [feExpression, setFeExpression] = useState('');
+  const [feColorOp, setFeColorOp] = useState('');
+  const [feColorValue, setFeColorValue] = useState('');
+  const [feColorBg, setFeColorBg] = useState(48);
   const openFieldEditor = (col?: ColumnSpec): void => {
     if (col) {
       setFieldEdit({ key: col.key });
@@ -248,6 +271,9 @@ export const SmartTableView = ({
       setFeLookupField(col.lookupField ?? '');
       setFeRollupFn(col.rollupFn ?? 'count');
       setFeExpression(col.expression ?? '');
+      setFeColorOp(col.colorOp ?? '');
+      setFeColorValue(col.colorValue ?? '');
+      setFeColorBg(col.colorBg ?? 48);
     } else {
       setFieldEdit({ key: null });
       setFeLabel('');
@@ -262,6 +288,9 @@ export const SmartTableView = ({
       setFeLookupField('');
       setFeRollupFn('count');
       setFeExpression('');
+      setFeColorOp('');
+      setFeColorValue('');
+      setFeColorBg(48);
     }
   };
   const saveField = (): void => {
@@ -280,6 +309,9 @@ export const SmartTableView = ({
       lookupField: feType === 'lookup' || feType === 'rollup' ? feLookupField || undefined : undefined,
       rollupFn: feType === 'rollup' ? feRollupFn : undefined,
       expression: feType === 'formula' ? feExpression || undefined : undefined,
+      colorOp: feColorOp ? (feColorOp as ColorOp) : undefined,
+      colorValue: feColorOp && feColorValue.trim() ? feColorValue : undefined,
+      colorBg: feColorOp ? feColorBg : undefined,
     };
     if (fieldEdit?.key) {
       onUpdateColumn?.(fieldEdit.key, patch);
@@ -300,7 +332,7 @@ export const SmartTableView = ({
     () => ({ ...table, rows: table.rows.map((r, i) => ({ ...r, __idx: String(i) })) }),
     [table],
   );
-  const result = useMemo(
+  const queried = useMemo(
     () =>
       queryTable(indexed, {
         filters,
@@ -310,10 +342,27 @@ export const SmartTableView = ({
       }),
     [indexed, filters, conjunction, sort, groupBy, groupBy2],
   );
+  // Quick search narrows the queried rows by a case-insensitive substring match
+  // across every cell (composes on top of the structured filters). Downstream
+  // views consume `result`, so search applies everywhere uniformly.
+  const result = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return queried;
+    return {
+      ...queried,
+      rows: queried.rows.filter((r) => Object.values(r).some((v) => String(v).toLowerCase().includes(q))),
+    };
+  }, [queried, search]);
+  const rowHeight = density === 'compact' ? 28 : density === 'comfortable' ? 46 : 34;
+  // Drag-reorder is only meaningful when the visible rows are in their natural
+  // markdown order — once sorted / grouped / filtered / searched, a visible
+  // index no longer maps to a canonical row, so disable it.
+  const naturalOrder =
+    filters.length === 0 && !sort && !groupBy && !groupBy2 && search.trim() === '';
   const groupLabel = (key: string) => table.schema.find((c) => c.key === key)?.label ?? key;
   // Fields shown to the user (system fields like the record id stay in the data
   // but never appear in pickers / cards / non-grid views).
-  const visibleSchema = table.schema.filter((c) => !c.system);
+  const visibleSchema = table.schema.filter((c) => !c.system && !hiddenFields.has(c.key));
 
   const addFilter = (): void => {
     if (!draft.field) return;
@@ -345,7 +394,7 @@ export const SmartTableView = ({
       )}
       <div className={styles.queryBar} data-testid="smart-table-query-bar">
         <div className={styles.viewToggle}>
-          {(['grid', 'kanban', 'gallery', 'calendar', 'form', 'summary'] as const).map((m) => (
+          {(['grid', 'kanban', 'gallery', 'calendar', 'form', 'summary', 'chart', 'timeline'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -357,6 +406,74 @@ export const SmartTableView = ({
               {m.charAt(0).toUpperCase() + m.slice(1)}
             </button>
           ))}
+        </div>
+        <input
+          className={styles.querySearch}
+          type="search"
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          data-testid="smart-table-search"
+        />
+        {viewMode === 'grid' && (
+          <>
+            <select
+              className={styles.querySelect}
+              value={density}
+              onChange={(e) => setDensity(e.target.value as typeof density)}
+              title="Row density"
+              data-testid="smart-table-density"
+            >
+              <option value="compact">Compact</option>
+              <option value="cozy">Cozy</option>
+              <option value="comfortable">Comfortable</option>
+            </select>
+            <button
+              type="button"
+              className={styles.queryToggle}
+              data-active={freezePrimary}
+              onClick={() => setFreezePrimary((f) => !f)}
+              title="Freeze the first column"
+              data-testid="smart-table-freeze"
+            >
+              ⇥ Freeze
+            </button>
+          </>
+        )}
+        <div className={styles.fieldsWrap}>
+          <button
+            type="button"
+            className={styles.queryToggle}
+            data-active={hiddenFields.size > 0}
+            onClick={() => setFieldsMenu((m) => !m)}
+            title="Show / hide fields"
+            data-testid="smart-table-fields"
+          >
+            ⊟ Fields{hiddenFields.size > 0 ? ` (${hiddenFields.size})` : ''}
+          </button>
+          {fieldsMenu && (
+            <div className={styles.fieldsMenu} data-testid="fields-menu">
+              {table.schema
+                .filter((c) => !c.system)
+                .map((c) => (
+                  <label key={c.key} className={styles.fieldsItem}>
+                    <input
+                      type="checkbox"
+                      checked={!hiddenFields.has(c.key)}
+                      onChange={(e) =>
+                        setHiddenFields((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.delete(c.key);
+                          else next.add(c.key);
+                          return next;
+                        })
+                      }
+                    />
+                    {c.label}
+                  </label>
+                ))}
+            </div>
+          )}
         </div>
         <span className={styles.queryLabel}>Filter</span>
         <select
@@ -655,6 +772,48 @@ export const SmartTableView = ({
               {aiError && <span className={styles.aiPanelErr}>{aiError}</span>}
             </>
           )}
+          <span className={styles.aiPanelTitle}>Conditional format</span>
+          <select
+            className={styles.querySelect}
+            value={feColorOp}
+            onChange={(e) => setFeColorOp(e.target.value)}
+            data-testid="field-color-op"
+          >
+            <option value="">no colour rule</option>
+            <option value="eq">equals</option>
+            <option value="ne">not equals</option>
+            <option value="contains">contains</option>
+            <option value="gt">greater than</option>
+            <option value="lt">less than</option>
+            <option value="empty">is empty</option>
+            <option value="not_empty">is not empty</option>
+          </select>
+          {feColorOp && feColorOp !== 'empty' && feColorOp !== 'not_empty' && (
+            <input
+              className={styles.aiPanelPrompt}
+              value={feColorValue}
+              placeholder="value to compare"
+              onChange={(e) => setFeColorValue(e.target.value)}
+              data-testid="field-color-value"
+            />
+          )}
+          {feColorOp && (
+            <label className={styles.aiPanelMsg}>
+              colour
+              <input
+                type="range"
+                min={0}
+                max={359}
+                value={feColorBg}
+                onChange={(e) => setFeColorBg(Number(e.target.value))}
+                data-testid="field-color-bg"
+              />
+              <span
+                className={styles.colorSwatch}
+                style={{ background: `hsl(${feColorBg} 80% 86%)` }}
+              />
+            </label>
+          )}
           <button type="button" className={styles.queryAdd} onClick={saveField} disabled={!feLabel.trim()} data-testid="field-save">
             Save
           </button>
@@ -696,7 +855,7 @@ export const SmartTableView = ({
             </div>
           )}
           <SmartTableGrid
-            schema={table.schema}
+            schema={table.schema.filter((c) => !hiddenFields.has(c.key))}
             rows={result.rows}
             editable={editable}
             relations={relations}
@@ -704,6 +863,19 @@ export const SmartTableView = ({
             onExpandRow={(idx) => setExpandedRow(idx)}
             onSelectedRowsChange={editable && onDeleteRows ? setSelectedRows : undefined}
             onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
+            rowHeight={rowHeight}
+            freezeColumns={freezePrimary ? 1 : 0}
+            onRowMove={
+              editable && onMoveRow && naturalOrder
+                ? (from, to) => {
+                    // Canonical indices shift on reorder — drop stale selection /
+                    // open card so they can't point at the wrong row.
+                    setSelectedRows([]);
+                    setExpandedRow(null);
+                    onMoveRow(from, to);
+                  }
+                : undefined
+            }
           />
           <div className={styles.statBar} data-testid="smart-table-stats">
             <span className={styles.statCount}>{result.rows.length} records</span>
@@ -862,6 +1034,16 @@ export const SmartTableView = ({
         <SummaryView rows={result.rows} schema={visibleSchema} allSchema={table.schema} groupBy={groupBy} />
       )}
 
+      {viewMode === 'chart' && <ChartView rows={result.rows} schema={visibleSchema} />}
+
+      {viewMode === 'timeline' && (
+        <TimelineView
+          rows={result.rows}
+          schema={visibleSchema}
+          onExpandRow={(i) => setExpandedRow(Number(result.rows[i]?.__idx ?? i))}
+        />
+      )}
+
       {expandedRow != null && table.rows[expandedRow] && (
         <div className={styles.recordOverlay} onClick={() => setExpandedRow(null)} data-testid="record-card">
           <div className={styles.recordCard} onClick={(e) => e.stopPropagation()}>
@@ -903,6 +1085,36 @@ export const SmartTableView = ({
                 </span>
               </div>
             ))}
+            {editable && (onDuplicateRow || onDeleteRow) && (
+              <div className={styles.recordActions}>
+                {onDuplicateRow && (
+                  <button
+                    type="button"
+                    className={styles.queryToggle}
+                    data-testid="record-duplicate"
+                    onClick={() => {
+                      onDuplicateRow(expandedRow);
+                      setExpandedRow(null);
+                    }}
+                  >
+                    ⧉ Duplicate
+                  </button>
+                )}
+                {onDeleteRow && (
+                  <button
+                    type="button"
+                    className={styles.batchDelete}
+                    data-testid="record-delete"
+                    onClick={() => {
+                      onDeleteRow(expandedRow);
+                      setExpandedRow(null);
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

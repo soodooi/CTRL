@@ -49,7 +49,10 @@ export type CellType =
   | 'attachment'
   | 'user'
   | 'percent'
-  | 'duration';
+  | 'duration'
+  | 'auto_number'
+  | 'created_at'
+  | 'modified_at';
 
 /** The 7 semantic base types query/sort/filter actually reason about. */
 export type BaseCellType = 'text' | 'number' | 'date' | 'checkbox' | 'tags' | 'select' | 'url';
@@ -64,7 +67,11 @@ export const baseCellType = (t: CellType): BaseCellType => {
     case 'progress':
     case 'percent':
     case 'duration':
+    case 'auto_number':
       return 'number';
+    case 'created_at':
+    case 'modified_at':
+      return 'date';
     case 'user':
       return 'tags';
     case 'multiline':
@@ -122,7 +129,44 @@ export interface ColumnSpec {
   /** System field (record id, link back-refs, …) — present in the data + on
    *  disk but hidden from the grid / pickers. The relational foundation. */
   system?: boolean;
+  /** Conditional formatting (Feishu Bitable parity): one rule per field, stored
+   *  as flat scalars (color_op / color_value / color_bg) so the YAML round-trips
+   *  like the AI fields. When the cell satisfies `colorOp colorValue`, the grid
+   *  tints it `colorBg` (a hue 0..359). */
+  colorOp?: ColorOp;
+  colorValue?: string;
+  colorBg?: number;
 }
+
+/** Conditional-format comparison operators (a subset that works typeless on the
+ *  raw cell string + numbers). */
+export type ColorOp = 'eq' | 'ne' | 'gt' | 'lt' | 'contains' | 'empty' | 'not_empty';
+
+/** Does `value` satisfy the column's conditional-format rule? False when the
+ *  column has no rule. Number ops coerce; text ops compare case-insensitively. */
+export const matchesColorRule = (col: ColumnSpec, value: string): boolean => {
+  if (!col.colorOp) return false;
+  const v = value.trim();
+  const target = (col.colorValue ?? '').trim();
+  switch (col.colorOp) {
+    case 'empty':
+      return v === '';
+    case 'not_empty':
+      return v !== '';
+    case 'eq':
+      return v.toLowerCase() === target.toLowerCase();
+    case 'ne':
+      return v.toLowerCase() !== target.toLowerCase();
+    case 'contains':
+      return v.toLowerCase().includes(target.toLowerCase());
+    case 'gt':
+      return Number(v) > Number(target);
+    case 'lt':
+      return Number(v) < Number(target);
+    default:
+      return false;
+  }
+};
 
 /** The stable per-row record id field (Airtable/Teable/undb best practice:
  *  every row has an id, used by link / Lookup / Rollup to point at a row). It
@@ -149,12 +193,39 @@ export const ensureRowIds = (table: SmartTable): SmartTable => {
   return { ...table, schema, rows };
 };
 
+/** The view kinds a smart table can render (ADR-003 §6.2). */
+export type ViewKind =
+  | 'grid'
+  | 'kanban'
+  | 'gallery'
+  | 'calendar'
+  | 'form'
+  | 'summary'
+  | 'chart'
+  | 'timeline';
+
+const VIEW_KINDS: ReadonlyArray<ViewKind> = [
+  'grid',
+  'kanban',
+  'gallery',
+  'calendar',
+  'form',
+  'summary',
+  'chart',
+  'timeline',
+];
+
+/** Coerce an unknown frontmatter `kind` into a valid ViewKind (default grid).
+ *  Shared by both view parsers so the on-disk emit/parse pair stays symmetric. */
+const viewKind = (k: unknown): ViewKind =>
+  typeof k === 'string' && (VIEW_KINDS as ReadonlyArray<string>).includes(k) ? (k as ViewKind) : 'grid';
+
 /** A saved view (ADR-003 §6.2) — view state lives in frontmatter, not the
  *  table body. `kanban`/`gallery`/`calendar` columnize/lay-out by `groupBy`.
  *  Sort is persisted as flat scalars (sort_field / sort_desc) on disk so the
  *  YAML round-trips without nested structures. */
 export interface ViewSpec {
-  kind: 'grid' | 'kanban' | 'gallery' | 'calendar' | 'form' | 'summary';
+  kind: ViewKind;
   groupBy?: string | null;
   sort?: { field: string; desc: boolean } | null;
   name?: string;
@@ -275,17 +346,11 @@ const parseSchema = (yamlText: string): ColumnSpec[] => {
       }
       const item = /^\s*-\s*(.+)$/.exec(line);
       if (!item) continue;
-      const obj = parseInlineObject(item[1]!);
-      if (typeof obj.key === 'string' && typeof obj.label === 'string') {
-        out.push({
-          key: obj.key,
-          label: obj.label,
-          type: ((obj.type as string) ?? 'text') as CellType,
-          options: Array.isArray(obj.options) ? (obj.options as string[]) : undefined,
-          min: typeof obj.min === 'number' ? obj.min : undefined,
-          max: typeof obj.max === 'number' ? obj.max : undefined,
-        });
-      }
+      // Delegate to columnFromObj so the text path parses every extended field
+      // (AI / relational / formula / conditional-format), same as the kernel
+      // frontmatter path — otherwise those props silently drop on this route.
+      const col = columnFromObj(parseInlineObject(item[1]!));
+      if (col) out.push(col);
     }
   }
   return out;
@@ -355,9 +420,8 @@ const parseViews = (yamlText: string): ViewSpec[] => {
       const item = /^\s*-\s*(.+)$/.exec(line);
       if (!item) continue;
       const obj = parseInlineObject(item[1]!);
-      const kind = obj.kind === 'kanban' ? 'kanban' : 'grid';
       const groupBy = typeof obj.group_by === 'string' && obj.group_by ? (obj.group_by as string) : null;
-      out.push({ kind, groupBy });
+      out.push({ kind: viewKind(obj.kind), groupBy });
     }
   }
   return out;
@@ -383,6 +447,14 @@ const columnFromObj = (o: Record<string, unknown>): ColumnSpec | null => {
     rollupFn: typeof o.rollup_fn === 'string' && o.rollup_fn ? o.rollup_fn : undefined,
     expression: typeof o.expression === 'string' && o.expression ? o.expression : undefined,
     system: o.system === true || o.system === 'true' || o.key === ROW_ID_KEY ? true : undefined,
+    colorOp: typeof o.color_op === 'string' && o.color_op ? (o.color_op as ColorOp) : undefined,
+    colorValue: typeof o.color_value === 'string' && o.color_value ? o.color_value : undefined,
+    colorBg:
+      typeof o.color_bg === 'number'
+        ? o.color_bg
+        : typeof o.color_bg === 'string' && o.color_bg.trim() !== ''
+        ? Number(o.color_bg)
+        : undefined,
   };
 };
 
@@ -408,14 +480,7 @@ const parseViewsValue = (v: unknown): ViewSpec[] => {
     .map((item) => {
       const o = typeof item === 'string' ? parseInlineObject(item) : (item as Record<string, unknown>);
       if (!o || typeof o !== 'object') return null;
-      const kind =
-        o.kind === 'kanban' ||
-        o.kind === 'gallery' ||
-        o.kind === 'calendar' ||
-        o.kind === 'form' ||
-        o.kind === 'summary'
-          ? o.kind
-          : 'grid';
+      const kind = viewKind(o.kind);
       const groupBy = typeof o.group_by === 'string' && o.group_by ? (o.group_by as string) : null;
       const sortField = typeof o.sort_field === 'string' && o.sort_field ? o.sort_field : null;
       const sort = sortField ? { field: sortField, desc: o.sort_desc === true || o.sort_desc === 'true' } : null;
@@ -478,6 +543,9 @@ export const serializeSmartTable = (table: SmartTable): string => {
       if (col.rollupFn) parts.push(`rollup_fn: ${col.rollupFn}`);
       if (col.expression) parts.push(`expression: ${col.expression}`);
       if (col.system) parts.push(`system: true`);
+      if (col.colorOp) parts.push(`color_op: ${col.colorOp}`);
+      if (col.colorValue !== undefined) parts.push(`color_value: ${col.colorValue}`);
+      if (col.colorBg !== undefined) parts.push(`color_bg: ${col.colorBg}`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
   }
@@ -543,6 +611,9 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
     ...(c.rollupFn ? { rollup_fn: c.rollupFn } : {}),
     ...(c.expression ? { expression: c.expression } : {}),
     ...(c.system ? { system: true } : {}),
+    ...(c.colorOp ? { color_op: c.colorOp } : {}),
+    ...(c.colorValue !== undefined ? { color_value: c.colorValue } : {}),
+    ...(c.colorBg !== undefined ? { color_bg: c.colorBg } : {}),
   }));
   if (table.views.length > 0) {
     fm.views = table.views.map((v) => ({
@@ -555,27 +626,45 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
   return fm;
 };
 
-/** Insert a new empty row at the end (with a fresh record id). Immutable. */
+/** Today as YYYY-MM-DD, for created_at / modified_at auto fields. */
+const todayISO = (): string => new Date().toISOString().slice(0, 10);
+
+/** Auto-filled value for a system/auto field on a new row (record id, created/
+ *  modified timestamps); undefined for normal fields. */
+const autoValue = (c: ColumnSpec, now: string): string | undefined => {
+  if (c.key === ROW_ID_KEY) return newRowId();
+  if (c.type === 'created_at' || c.type === 'modified_at') return now;
+  return undefined;
+};
+
+/** A fresh row map with auto fields filled. */
+const freshRow = (table: SmartTable, now: string): Record<string, string> =>
+  Object.fromEntries(table.schema.map((c) => [c.key, autoValue(c, now) ?? '']));
+
+/** Insert a new empty row at the end (record id + created/modified set). */
 export const appendRow = (table: SmartTable): SmartTable => ({
   ...table,
-  rows: [
-    ...table.rows,
-    Object.fromEntries(table.schema.map((c) => [c.key, c.key === ROW_ID_KEY ? newRowId() : ''])),
-  ],
+  rows: [...table.rows, freshRow(table, todayISO())],
 });
 
-/** Update a single cell. Returns a new table. */
+/** Update a single cell; also bumps any modified_at field. Returns a new table. */
 export const updateCell = (
   table: SmartTable,
   rowIndex: number,
   key: string,
   value: string,
-): SmartTable => ({
-  ...table,
-  rows: table.rows.map((row, i) =>
-    i === rowIndex ? { ...row, [key]: value } : row,
-  ),
-});
+): SmartTable => {
+  const now = todayISO();
+  return {
+    ...table,
+    rows: table.rows.map((row, i) => {
+      if (i !== rowIndex) return row;
+      const next = { ...row, [key]: value };
+      for (const c of table.schema) if (c.type === 'modified_at') next[c.key] = now;
+      return next;
+    }),
+  };
+};
 
 /** Delete a row. Returns a new table. */
 export const deleteRow = (table: SmartTable, rowIndex: number): SmartTable => ({
@@ -589,19 +678,42 @@ export const appendRowWithValues = (
   values: Record<string, string>,
 ): SmartTable => ({
   ...table,
-  rows: [
-    ...table.rows,
-    {
-      ...Object.fromEntries(table.schema.map((c) => [c.key, c.key === ROW_ID_KEY ? newRowId() : ''])),
-      ...values,
-    },
-  ],
+  rows: [...table.rows, { ...freshRow(table, todayISO()), ...values }],
 });
 
 /** Delete several rows by canonical index (batch). Returns a new table. */
 export const deleteRows = (table: SmartTable, rowIndexes: number[]): SmartTable => {
   const drop = new Set(rowIndexes);
   return { ...table, rows: table.rows.filter((_, i) => !drop.has(i)) };
+};
+
+/** Duplicate a row, inserting the copy right after the original with a fresh
+ *  record id (and refreshed created/modified stamps). Out-of-range → unchanged. */
+export const duplicateRow = (table: SmartTable, rowIndex: number): SmartTable => {
+  const src = table.rows[rowIndex];
+  if (!src) return table;
+  const now = todayISO();
+  const copy: Record<string, string> = { ...src };
+  for (const c of table.schema) {
+    if (c.key === ROW_ID_KEY) copy[c.key] = newRowId();
+    else if (c.type === 'created_at' || c.type === 'modified_at') copy[c.key] = now;
+  }
+  const rows = [...table.rows];
+  rows.splice(rowIndex + 1, 0, copy);
+  return { ...table, rows };
+};
+
+/** Move a row from one index to another (manual drag-reorder). Row order is the
+ *  data order in plain-text markdown, so this just permutes the rows array.
+ *  Out-of-range / no-op moves return the table unchanged. */
+export const moveRow = (table: SmartTable, from: number, to: number): SmartTable => {
+  const n = table.rows.length;
+  if (from === to || from < 0 || to < 0 || from >= n || to >= n) return table;
+  const rows = [...table.rows];
+  const [moved] = rows.splice(from, 1);
+  if (moved === undefined) return table;
+  rows.splice(to, 0, moved);
+  return { ...table, rows };
 };
 
 // --- Schema (field) operations (ADR-003 §6.5 A3) — immutable, keep rows in
