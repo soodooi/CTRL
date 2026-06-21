@@ -469,76 +469,18 @@ pub fn sanitize_relative_path(p: &str) -> Result<PathBuf, VaultError> {
     Ok(pb)
 }
 
-/// Render a JSON value as a YAML frontmatter block. We avoid an extra
-/// crate (serde_yaml) by hand-formatting the cases we actually use
-/// (top-level object of scalar / array / nested object values).
+/// Render a JSON value as a YAML frontmatter block via serde_yaml (already a
+/// dependency). This round-trips nested objects/arrays as real YAML — so a
+/// smart-table `schema:` block reads as clean YAML, not an escaped JSON string
+/// (vim test). The read side (`parse_yaml_to_json`) is the symmetric deserialize.
 fn frontmatter_to_yaml(value: &serde_json::Value) -> Result<String, VaultError> {
     let obj = value.as_object().ok_or_else(|| {
         VaultError::InvalidFrontmatter("frontmatter must be a JSON object".to_string())
     })?;
-    let mut out = String::new();
-    for (key, val) in obj {
-        emit_yaml_pair(&mut out, key, val, 0);
+    if obj.is_empty() {
+        return Ok(String::new());
     }
-    Ok(out)
-}
-
-fn emit_yaml_pair(out: &mut String, key: &str, value: &serde_json::Value, indent: usize) {
-    let pad = "  ".repeat(indent);
-    match value {
-        serde_json::Value::Null => {
-            out.push_str(&format!("{pad}{key}: null\n"));
-        }
-        serde_json::Value::Bool(b) => {
-            out.push_str(&format!("{pad}{key}: {b}\n"));
-        }
-        serde_json::Value::Number(n) => {
-            out.push_str(&format!("{pad}{key}: {n}\n"));
-        }
-        serde_json::Value::String(s) => {
-            out.push_str(&format!("{pad}{key}: {}\n", yaml_quote(s)));
-        }
-        serde_json::Value::Array(items) => {
-            out.push_str(&format!("{pad}{key}:\n"));
-            for item in items {
-                match item {
-                    serde_json::Value::String(s) => {
-                        out.push_str(&format!("{pad}  - {}\n", yaml_quote(s)));
-                    }
-                    other => {
-                        out.push_str(&format!("{pad}  - {other}\n"));
-                    }
-                }
-            }
-        }
-        serde_json::Value::Object(nested) => {
-            out.push_str(&format!("{pad}{key}:\n"));
-            for (k, v) in nested {
-                emit_yaml_pair(out, k, v, indent + 1);
-            }
-        }
-    }
-}
-
-/// Quote YAML strings only when they contain characters that would
-/// otherwise confuse the parser (colons / hashes / leading dashes /
-/// newlines). Bare strings stay bare so the file reads naturally in
-/// vim / Obsidian.
-fn yaml_quote(s: &str) -> String {
-    let needs_quote = s.is_empty()
-        || s.contains(':')
-        || s.contains('#')
-        || s.contains('"')
-        || s.contains('\n')
-        || s.starts_with('-')
-        || s.starts_with(' ')
-        || s.ends_with(' ');
-    if needs_quote {
-        let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-        format!("\"{escaped}\"")
-    } else {
-        s.to_string()
-    }
+    serde_yaml::to_string(value).map_err(|e| VaultError::InvalidFrontmatter(e.to_string()))
 }
 
 /// Split a markdown file into its frontmatter (JSON value) and body.
@@ -564,128 +506,14 @@ fn split_frontmatter(raw: &str) -> (serde_json::Value, String) {
     (fm_json, body)
 }
 
-/// Tiny YAML → JSON parser covering the shapes we emit + the shapes
-/// users hand-write in frontmatter (block-style + flow-style scalar
-/// sequences). Anchors / multi-doc / nested mappings remain out of
-/// scope. Round-trips `tags: [a, b]` (inline) and:
-///
-/// ```yaml
-/// tags:
-///   - a
-///   - b
-/// ```
-///
-/// (block) symmetrically.
+/// Parse a YAML frontmatter block into a JSON value via serde_yaml (symmetric
+/// with `frontmatter_to_yaml`). Handles nested objects/arrays/scalars; an empty
+/// or unparseable block yields null (frontmatter is best-effort, never fatal).
 fn parse_yaml_to_json(yaml: &str) -> serde_json::Value {
-    let mut obj = serde_json::Map::new();
-    let mut list_key: Option<String> = None;
-    let mut list_buf: Vec<serde_json::Value> = Vec::new();
-
-    for line in yaml.lines() {
-        let raw = line.trim_end();
-        if raw.is_empty() || raw.trim_start().starts_with('#') {
-            continue;
-        }
-        // Block-sequence continuation under a previously-opened key.
-        let trimmed = raw.trim_start();
-        if list_key.is_some() && (raw.starts_with(' ') || raw.starts_with('\t')) {
-            if let Some(item) = trimmed.strip_prefix("- ") {
-                list_buf.push(parse_yaml_scalar(item.trim()));
-                continue;
-            }
-        }
-        // Hit a top-level key — flush any accumulating block list.
-        if let Some(k) = list_key.take() {
-            obj.insert(k, serde_json::Value::Array(std::mem::take(&mut list_buf)));
-        }
-        if raw.starts_with(' ') || raw.starts_with('\t') {
-            // Nested mapping (unsupported) — skip line.
-            continue;
-        }
-        let Some(colon) = raw.find(':') else { continue };
-        let key = raw[..colon].trim().to_string();
-        let value_str = raw[colon + 1..].trim();
-        if value_str.is_empty() {
-            list_key = Some(key);
-            list_buf = Vec::new();
-            continue;
-        }
-        if let Some(items) = parse_inline_sequence(value_str) {
-            obj.insert(key, serde_json::Value::Array(items));
-            continue;
-        }
-        obj.insert(key, parse_yaml_scalar(value_str));
-    }
-    if let Some(k) = list_key.take() {
-        obj.insert(k, serde_json::Value::Array(list_buf));
-    }
-    serde_json::Value::Object(obj)
-}
-
-/// `[a, "b c", 3]` → Vec of parsed scalars. Returns None when the value
-/// isn't an inline flow sequence so the caller can fall back to scalar
-/// parsing.
-///
-/// We distinguish between an empty token (skip — handles trailing
-/// comma `[a, b,]`) and a token that parses to JSON null (keep —
-/// `[a, ~, b]` must round-trip preserving the explicit null). The
-/// earlier draft folded both cases together via `!v.is_null()` and
-/// silently dropped legitimate `~` entries.
-fn parse_inline_sequence(s: &str) -> Option<Vec<serde_json::Value>> {
-    let inner = s.strip_prefix('[')?.strip_suffix(']')?;
-    let mut out: Vec<serde_json::Value> = Vec::new();
-    let mut buf = String::new();
-    let mut in_quote: Option<char> = None;
-    let push_token = |buf: &mut String, out: &mut Vec<serde_json::Value>| {
-        let trimmed = buf.trim();
-        if !trimmed.is_empty() {
-            out.push(parse_yaml_scalar(trimmed));
-        }
-        buf.clear();
-    };
-    for ch in inner.chars() {
-        match (in_quote, ch) {
-            (Some(q), c) if c == q => {
-                in_quote = None;
-                buf.push(c);
-            }
-            (None, c @ ('"' | '\'')) => {
-                in_quote = Some(c);
-                buf.push(c);
-            }
-            (None, ',') => push_token(&mut buf, &mut out),
-            _ => buf.push(ch),
-        }
-    }
-    push_token(&mut buf, &mut out);
-    Some(out)
-}
-
-fn parse_yaml_scalar(s: &str) -> serde_json::Value {
-    if s.is_empty() {
+    if yaml.trim().is_empty() {
         return serde_json::Value::Null;
     }
-    if let Some(stripped) = s.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
-        return serde_json::Value::String(stripped.replace("\\\"", "\""));
-    }
-    if let Some(stripped) = s.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')) {
-        return serde_json::Value::String(stripped.to_string());
-    }
-    match s {
-        "true" => return serde_json::Value::Bool(true),
-        "false" => return serde_json::Value::Bool(false),
-        "null" | "~" => return serde_json::Value::Null,
-        _ => {}
-    }
-    if let Ok(n) = s.parse::<i64>() {
-        return serde_json::Value::Number(n.into());
-    }
-    if let Ok(n) = s.parse::<f64>() {
-        if let Some(num) = serde_json::Number::from_f64(n) {
-            return serde_json::Value::Number(num);
-        }
-    }
-    serde_json::Value::String(s.to_string())
+    serde_yaml::from_str::<serde_json::Value>(yaml).unwrap_or(serde_json::Value::Null)
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -739,15 +567,13 @@ mod tests {
     // P6 — Irisy SOUL.md core-memory write closes the loop: the persona
     // layer reads back exactly what was saved, or the injected memory is
     // wrong. ADR-005 irisy v2 § soul-md-compat §4.3. SOUL.md is a multi-line
-    // markdown doc with flat frontmatter (the parser's nested-mapping limit
-    // keeps x-ctrl:* extensions flat).
+    // markdown doc with frontmatter.
     #[test]
     fn soul_md_roundtrips_multiline_body_and_flat_frontmatter() {
         let root = fresh_tmp("soul");
-        // soul_md_version lives in a separate irisy/.soul-md-version pin
-        // file, NOT here. Note a bare numeric-looking string ("1.0") would
-        // round-trip back as a Number — the colon in the ISO timestamp makes
-        // yaml_quote protect it so it stays a String.
+        // soul_md_version lives in a separate irisy/.soul-md-version pin file,
+        // NOT here. The ISO timestamp round-trips as a string (serde_yaml maps
+        // it to a JSON string, not a number/date).
         let fm = serde_json::json!({
             "kind": "soul",
             "managed_by": "irisy",
@@ -818,15 +644,6 @@ mod tests {
         let hits = search(&root, "world", 10).expect("search");
         assert_eq!(hits, vec!["one.md".to_string()]);
         let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn yaml_quote_only_when_needed() {
-        assert_eq!(yaml_quote("plain"), "plain");
-        assert_eq!(yaml_quote("has: colon"), "\"has: colon\"");
-        assert_eq!(yaml_quote(""), "\"\"");
-        assert_eq!(yaml_quote("#hash"), "\"#hash\"");
-        assert_eq!(yaml_quote("with \"quote\""), "\"with \\\"quote\\\"\"");
     }
 
     #[test]
