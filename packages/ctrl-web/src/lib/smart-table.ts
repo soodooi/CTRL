@@ -568,6 +568,12 @@ export const deleteRow = (table: SmartTable, rowIndex: number): SmartTable => ({
   rows: table.rows.filter((_, i) => i !== rowIndex),
 });
 
+/** Delete several rows by canonical index (batch). Returns a new table. */
+export const deleteRows = (table: SmartTable, rowIndexes: number[]): SmartTable => {
+  const drop = new Set(rowIndexes);
+  return { ...table, rows: table.rows.filter((_, i) => !drop.has(i)) };
+};
+
 // --- Schema (field) operations (ADR-003 §6.5 A3) — immutable, keep rows in
 // sync so the markdown body round-trips. ---
 

@@ -354,6 +354,8 @@ export interface SmartTableViewProps {
   editable: boolean;
   onCellChange: (rowIndex: number, key: string, value: string) => void;
   onDeleteRow?: (rowIndex: number) => void;
+  /** Batch-delete the given canonical row indices (checkbox selection). */
+  onDeleteRows?: (rowIndexes: number[]) => void;
   /** Persist the current view (kind + groupBy) into frontmatter `views`
    *  (ADR-003 §6.2). When set, a "Save view" button appears. */
   onSaveView?: (view: ViewSpec) => void;
@@ -380,6 +382,7 @@ export const SmartTableView = ({
   editable,
   onCellChange,
   onDeleteRow,
+  onDeleteRows,
   onSaveView,
   onRunAiColumn,
   onAddColumn,
@@ -401,6 +404,7 @@ export const SmartTableView = ({
   // Bottom statistic bar (borrowed from Grist's SelectionSummary aggregation):
   // per number column, click to cycle sum / avg / count / min / max.
   const [colStat, setColStat] = useState<Record<string, 'sum' | 'avg' | 'count' | 'min' | 'max'>>({});
+  const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'kanban' | 'gallery' | 'calendar'>(savedView?.kind ?? 'grid');
   const [activeView, setActiveView] = useState<number | null>(savedView ? 0 : null);
   const editsViews = Boolean(onReplaceViews);
@@ -928,6 +932,22 @@ export const SmartTableView = ({
 
       {viewMode === 'grid' && (
         <>
+          {editable && onDeleteRows && selectedRows.length > 0 && (
+            <div className={styles.batchBar} data-testid="batch-bar">
+              <span>{selectedRows.length} selected</span>
+              <button
+                type="button"
+                className={styles.batchDelete}
+                data-testid="batch-delete"
+                onClick={() => {
+                  onDeleteRows(selectedRows);
+                  setSelectedRows([]);
+                }}
+              >
+                Delete {selectedRows.length}
+              </button>
+            </div>
+          )}
           <SmartTableGrid
             schema={table.schema}
             rows={result.rows}
@@ -935,6 +955,7 @@ export const SmartTableView = ({
             relations={relations}
             onCellChange={onCellChange}
             onExpandRow={(idx) => setExpandedRow(idx)}
+            onSelectedRowsChange={editable && onDeleteRows ? setSelectedRows : undefined}
             onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
           />
           <div className={styles.statBar} data-testid="smart-table-stats">
