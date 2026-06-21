@@ -120,6 +120,90 @@ const pillRenderer: CustomRenderer<PillCell> = {
   },
 };
 
+const roundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void => {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+};
+
+// Interactive star rating cell (click a star to set the value).
+interface StarData {
+  readonly kind: 'star-cell';
+  readonly rating: number;
+  readonly max: number;
+}
+type StarCell = CustomCell<StarData>;
+const STAR_SIZE = 17;
+const starRenderer: CustomRenderer<StarCell> = {
+  kind: GridCellKind.Custom,
+  isMatch: (c): c is StarCell => (c.data as Partial<StarData>)?.kind === 'star-cell',
+  draw: (args, cell) => {
+    const { ctx, rect, theme } = args;
+    const { rating, max } = cell.data;
+    ctx.save();
+    ctx.font = `16px ${theme.fontFamily}`;
+    ctx.textBaseline = 'middle';
+    let x = rect.x + theme.cellHorizontalPadding;
+    const y = rect.y + rect.height / 2;
+    for (let i = 0; i < max; i += 1) {
+      ctx.fillStyle = i < rating ? '#f5a623' : '#d8d8d8';
+      ctx.fillText('★', x, y);
+      x += STAR_SIZE;
+    }
+    ctx.restore();
+    return true;
+  },
+  onClick: (args) => {
+    const i = Math.floor((args.posX - 8) / STAR_SIZE);
+    const rating = Math.max(0, Math.min(args.cell.data.max, i + 1));
+    return { ...args.cell, data: { ...args.cell.data, rating } };
+  },
+};
+
+// Interactive progress bar cell (click along the bar to set the value).
+interface RangeData {
+  readonly kind: 'range-cell';
+  readonly value: number;
+  readonly max: number;
+}
+type RangeCell = CustomCell<RangeData>;
+const rangeRenderer: CustomRenderer<RangeCell> = {
+  kind: GridCellKind.Custom,
+  isMatch: (c): c is RangeCell => (c.data as Partial<RangeData>)?.kind === 'range-cell',
+  draw: (args, cell) => {
+    const { ctx, rect, theme } = args;
+    const pct = Math.max(0, Math.min(1, cell.data.value / (cell.data.max || 100)));
+    const pad = theme.cellHorizontalPadding;
+    const barH = 6;
+    const barW = Math.max(20, rect.width - pad * 2 - 40);
+    const barX = rect.x + pad;
+    const barY = rect.y + rect.height / 2 - barH / 2;
+    ctx.save();
+    ctx.fillStyle = '#e5e5e5';
+    roundRect(ctx, barX, barY, barW, barH, 3);
+    ctx.fill();
+    ctx.fillStyle = '#6aa3ff';
+    roundRect(ctx, barX, barY, barW * pct, barH, 3);
+    ctx.fill();
+    ctx.fillStyle = theme.textDark;
+    ctx.font = `11px ${theme.fontFamily}`;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${Math.round(pct * 100)}%`, barX + barW + 6, rect.y + rect.height / 2);
+    ctx.restore();
+    return true;
+  },
+  onClick: (args) => {
+    const pad = 8;
+    const barW = Math.max(20, args.bounds.width - pad * 2 - 40);
+    const pct = Math.max(0, Math.min(1, (args.posX - pad) / barW));
+    return { ...args.cell, data: { ...args.cell.data, value: Math.round(pct * (args.cell.data.max || 100)) } };
+  },
+};
+
 interface SmartTableGridProps {
   schema: ColumnSpec[];
   /** Already-queried rows; each carries `__idx` = canonical row index. */
@@ -234,16 +318,30 @@ export const SmartTableGrid = ({
       if (spec.type === 'url' || spec.type === 'email' || spec.type === 'phone') {
         return { kind: GridCellKind.Uri, data: value, allowOverlay: editable, readonly: ro };
       }
+      if (spec.type === 'rating') {
+        const r = Math.max(0, Math.min(spec.max ?? 5, Math.round(Number(value) || 0)));
+        return {
+          kind: GridCellKind.Custom,
+          data: { kind: 'star-cell', rating: r, max: spec.max ?? 5 },
+          copyData: value,
+          allowOverlay: false,
+        };
+      }
+      if (spec.type === 'progress') {
+        return {
+          kind: GridCellKind.Custom,
+          data: { kind: 'range-cell', value: Number(value) || 0, max: spec.max ?? 100 },
+          copyData: value,
+          allowOverlay: false,
+        };
+      }
       if (baseCellType(spec.type) === 'number') {
         const n = value === '' ? undefined : Number(value);
         const num = typeof n === 'number' && !Number.isNaN(n) ? n : undefined;
-        // Lightweight "render is the type" via displayData (no custom canvas
-        // cell yet): currency $-formatted, rating as stars, progress as %.
+        // Lightweight "render is the type" via displayData: currency $-formatted.
         let display = value;
-        if (num !== undefined) {
-          if (spec.type === 'currency') display = `${spec.symbol ?? '$'}${num.toLocaleString()}`;
-          else if (spec.type === 'rating') display = '★'.repeat(Math.max(0, Math.min(spec.max ?? 5, Math.round(num))));
-          else if (spec.type === 'progress') display = `${Math.round(num * (100 / (spec.max ?? 100)))}%`;
+        if (num !== undefined && spec.type === 'currency') {
+          display = `${spec.symbol ?? '$'}${num.toLocaleString()}`;
         }
         return {
           kind: GridCellKind.Number,
@@ -270,6 +368,12 @@ export const SmartTableGrid = ({
         v = newVal.data === undefined || newVal.data === null ? '' : String(newVal.data);
       else if (newVal.kind === GridCellKind.Uri || newVal.kind === GridCellKind.Text)
         v = newVal.data ?? '';
+      else if (newVal.kind === GridCellKind.Custom) {
+        const d = newVal.data as { kind?: string; rating?: number; value?: number };
+        if (d.kind === 'star-cell') v = String(d.rating ?? 0);
+        else if (d.kind === 'range-cell') v = String(d.value ?? 0);
+        else return; // pill cell etc. — display only
+      }
       onCellChange(idx, spec.key, v);
     },
     [cols, rows, onCellChange, expandable],
@@ -282,7 +386,7 @@ export const SmartTableGrid = ({
         rows={rows.length}
         getCellContent={getCellContent}
         onCellEdited={editable ? onCellEdited : undefined}
-        customRenderers={[pillRenderer]}
+        customRenderers={[pillRenderer, starRenderer, rangeRenderer]}
         onColumnResize={(c, w) => setWidths((p) => ({ ...p, [String(c.id)]: w }))}
         onHeaderMenuClick={onHeaderMenu ? (col) => onHeaderMenu(String(columns[col]?.id)) : undefined}
         getCellsForSelection
