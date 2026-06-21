@@ -129,7 +129,44 @@ export interface ColumnSpec {
   /** System field (record id, link back-refs, …) — present in the data + on
    *  disk but hidden from the grid / pickers. The relational foundation. */
   system?: boolean;
+  /** Conditional formatting (Feishu Bitable parity): one rule per field, stored
+   *  as flat scalars (color_op / color_value / color_bg) so the YAML round-trips
+   *  like the AI fields. When the cell satisfies `colorOp colorValue`, the grid
+   *  tints it `colorBg` (a hue 0..359). */
+  colorOp?: ColorOp;
+  colorValue?: string;
+  colorBg?: number;
 }
+
+/** Conditional-format comparison operators (a subset that works typeless on the
+ *  raw cell string + numbers). */
+export type ColorOp = 'eq' | 'ne' | 'gt' | 'lt' | 'contains' | 'empty' | 'not_empty';
+
+/** Does `value` satisfy the column's conditional-format rule? False when the
+ *  column has no rule. Number ops coerce; text ops compare case-insensitively. */
+export const matchesColorRule = (col: ColumnSpec, value: string): boolean => {
+  if (!col.colorOp) return false;
+  const v = value.trim();
+  const target = (col.colorValue ?? '').trim();
+  switch (col.colorOp) {
+    case 'empty':
+      return v === '';
+    case 'not_empty':
+      return v !== '';
+    case 'eq':
+      return v.toLowerCase() === target.toLowerCase();
+    case 'ne':
+      return v.toLowerCase() !== target.toLowerCase();
+    case 'contains':
+      return v.toLowerCase().includes(target.toLowerCase());
+    case 'gt':
+      return Number(v) > Number(target);
+    case 'lt':
+      return Number(v) < Number(target);
+    default:
+      return false;
+  }
+};
 
 /** The stable per-row record id field (Airtable/Teable/undb best practice:
  *  every row has an id, used by link / Lookup / Rollup to point at a row). It
@@ -282,17 +319,11 @@ const parseSchema = (yamlText: string): ColumnSpec[] => {
       }
       const item = /^\s*-\s*(.+)$/.exec(line);
       if (!item) continue;
-      const obj = parseInlineObject(item[1]!);
-      if (typeof obj.key === 'string' && typeof obj.label === 'string') {
-        out.push({
-          key: obj.key,
-          label: obj.label,
-          type: ((obj.type as string) ?? 'text') as CellType,
-          options: Array.isArray(obj.options) ? (obj.options as string[]) : undefined,
-          min: typeof obj.min === 'number' ? obj.min : undefined,
-          max: typeof obj.max === 'number' ? obj.max : undefined,
-        });
-      }
+      // Delegate to columnFromObj so the text path parses every extended field
+      // (AI / relational / formula / conditional-format), same as the kernel
+      // frontmatter path — otherwise those props silently drop on this route.
+      const col = columnFromObj(parseInlineObject(item[1]!));
+      if (col) out.push(col);
     }
   }
   return out;
@@ -390,6 +421,14 @@ const columnFromObj = (o: Record<string, unknown>): ColumnSpec | null => {
     rollupFn: typeof o.rollup_fn === 'string' && o.rollup_fn ? o.rollup_fn : undefined,
     expression: typeof o.expression === 'string' && o.expression ? o.expression : undefined,
     system: o.system === true || o.system === 'true' || o.key === ROW_ID_KEY ? true : undefined,
+    colorOp: typeof o.color_op === 'string' && o.color_op ? (o.color_op as ColorOp) : undefined,
+    colorValue: typeof o.color_value === 'string' && o.color_value ? o.color_value : undefined,
+    colorBg:
+      typeof o.color_bg === 'number'
+        ? o.color_bg
+        : typeof o.color_bg === 'string' && o.color_bg.trim() !== ''
+        ? Number(o.color_bg)
+        : undefined,
   };
 };
 
@@ -485,6 +524,9 @@ export const serializeSmartTable = (table: SmartTable): string => {
       if (col.rollupFn) parts.push(`rollup_fn: ${col.rollupFn}`);
       if (col.expression) parts.push(`expression: ${col.expression}`);
       if (col.system) parts.push(`system: true`);
+      if (col.colorOp) parts.push(`color_op: ${col.colorOp}`);
+      if (col.colorValue !== undefined) parts.push(`color_value: ${col.colorValue}`);
+      if (col.colorBg !== undefined) parts.push(`color_bg: ${col.colorBg}`);
       lines.push(`  - { ${parts.join(', ')} }`);
     }
   }
@@ -550,6 +592,9 @@ export const smartTableFrontmatter = (table: SmartTable): Record<string, unknown
     ...(c.rollupFn ? { rollup_fn: c.rollupFn } : {}),
     ...(c.expression ? { expression: c.expression } : {}),
     ...(c.system ? { system: true } : {}),
+    ...(c.colorOp ? { color_op: c.colorOp } : {}),
+    ...(c.colorValue !== undefined ? { color_value: c.colorValue } : {}),
+    ...(c.colorBg !== undefined ? { color_bg: c.colorBg } : {}),
   }));
   if (table.views.length > 0) {
     fm.views = table.views.map((v) => ({

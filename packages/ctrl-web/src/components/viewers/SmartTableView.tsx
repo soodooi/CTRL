@@ -15,6 +15,7 @@ import {
   columnKeyFromLabel,
   type BaseCellType,
   type CellType,
+  type ColorOp,
   type ColumnSpec,
   type SmartTable,
   type ViewSpec,
@@ -161,6 +162,11 @@ export const SmartTableView = ({
   const editsViews = Boolean(onReplaceViews);
   // Record detail card (ADR-003 §6 D6): canonical row index, or null = closed.
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  // Grid UX (view-local, not persisted): quick text search across all cells,
+  // row density, and whether the primary column is frozen on horizontal scroll.
+  const [search, setSearch] = useState('');
+  const [density, setDensity] = useState<'compact' | 'cozy' | 'comfortable'>('cozy');
+  const [freezePrimary, setFreezePrimary] = useState(false);
   const applyView = (v: ViewSpec, i: number): void => {
     setViewMode(v.kind);
     setGroupBy(v.groupBy ?? null);
@@ -237,6 +243,9 @@ export const SmartTableView = ({
   const [feLookupField, setFeLookupField] = useState('');
   const [feRollupFn, setFeRollupFn] = useState('count');
   const [feExpression, setFeExpression] = useState('');
+  const [feColorOp, setFeColorOp] = useState('');
+  const [feColorValue, setFeColorValue] = useState('');
+  const [feColorBg, setFeColorBg] = useState(48);
   const openFieldEditor = (col?: ColumnSpec): void => {
     if (col) {
       setFieldEdit({ key: col.key });
@@ -252,6 +261,9 @@ export const SmartTableView = ({
       setFeLookupField(col.lookupField ?? '');
       setFeRollupFn(col.rollupFn ?? 'count');
       setFeExpression(col.expression ?? '');
+      setFeColorOp(col.colorOp ?? '');
+      setFeColorValue(col.colorValue ?? '');
+      setFeColorBg(col.colorBg ?? 48);
     } else {
       setFieldEdit({ key: null });
       setFeLabel('');
@@ -266,6 +278,9 @@ export const SmartTableView = ({
       setFeLookupField('');
       setFeRollupFn('count');
       setFeExpression('');
+      setFeColorOp('');
+      setFeColorValue('');
+      setFeColorBg(48);
     }
   };
   const saveField = (): void => {
@@ -284,6 +299,9 @@ export const SmartTableView = ({
       lookupField: feType === 'lookup' || feType === 'rollup' ? feLookupField || undefined : undefined,
       rollupFn: feType === 'rollup' ? feRollupFn : undefined,
       expression: feType === 'formula' ? feExpression || undefined : undefined,
+      colorOp: feColorOp ? (feColorOp as ColorOp) : undefined,
+      colorValue: feColorOp && feColorValue.trim() ? feColorValue : undefined,
+      colorBg: feColorOp ? feColorBg : undefined,
     };
     if (fieldEdit?.key) {
       onUpdateColumn?.(fieldEdit.key, patch);
@@ -304,7 +322,7 @@ export const SmartTableView = ({
     () => ({ ...table, rows: table.rows.map((r, i) => ({ ...r, __idx: String(i) })) }),
     [table],
   );
-  const result = useMemo(
+  const queried = useMemo(
     () =>
       queryTable(indexed, {
         filters,
@@ -314,6 +332,18 @@ export const SmartTableView = ({
       }),
     [indexed, filters, conjunction, sort, groupBy, groupBy2],
   );
+  // Quick search narrows the queried rows by a case-insensitive substring match
+  // across every cell (composes on top of the structured filters). Downstream
+  // views consume `result`, so search applies everywhere uniformly.
+  const result = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return queried;
+    return {
+      ...queried,
+      rows: queried.rows.filter((r) => Object.values(r).some((v) => String(v).toLowerCase().includes(q))),
+    };
+  }, [queried, search]);
+  const rowHeight = density === 'compact' ? 28 : density === 'comfortable' ? 46 : 34;
   const groupLabel = (key: string) => table.schema.find((c) => c.key === key)?.label ?? key;
   // Fields shown to the user (system fields like the record id stay in the data
   // but never appear in pickers / cards / non-grid views).
@@ -362,6 +392,39 @@ export const SmartTableView = ({
             </button>
           ))}
         </div>
+        <input
+          className={styles.querySearch}
+          type="search"
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          data-testid="smart-table-search"
+        />
+        {viewMode === 'grid' && (
+          <>
+            <select
+              className={styles.querySelect}
+              value={density}
+              onChange={(e) => setDensity(e.target.value as typeof density)}
+              title="Row density"
+              data-testid="smart-table-density"
+            >
+              <option value="compact">Compact</option>
+              <option value="cozy">Cozy</option>
+              <option value="comfortable">Comfortable</option>
+            </select>
+            <button
+              type="button"
+              className={styles.queryToggle}
+              data-active={freezePrimary}
+              onClick={() => setFreezePrimary((f) => !f)}
+              title="Freeze the first column"
+              data-testid="smart-table-freeze"
+            >
+              ⇥ Freeze
+            </button>
+          </>
+        )}
         <span className={styles.queryLabel}>Filter</span>
         <select
           className={styles.querySelect}
@@ -659,6 +722,48 @@ export const SmartTableView = ({
               {aiError && <span className={styles.aiPanelErr}>{aiError}</span>}
             </>
           )}
+          <span className={styles.aiPanelTitle}>Conditional format</span>
+          <select
+            className={styles.querySelect}
+            value={feColorOp}
+            onChange={(e) => setFeColorOp(e.target.value)}
+            data-testid="field-color-op"
+          >
+            <option value="">no colour rule</option>
+            <option value="eq">equals</option>
+            <option value="ne">not equals</option>
+            <option value="contains">contains</option>
+            <option value="gt">greater than</option>
+            <option value="lt">less than</option>
+            <option value="empty">is empty</option>
+            <option value="not_empty">is not empty</option>
+          </select>
+          {feColorOp && feColorOp !== 'empty' && feColorOp !== 'not_empty' && (
+            <input
+              className={styles.aiPanelPrompt}
+              value={feColorValue}
+              placeholder="value to compare"
+              onChange={(e) => setFeColorValue(e.target.value)}
+              data-testid="field-color-value"
+            />
+          )}
+          {feColorOp && (
+            <label className={styles.aiPanelMsg}>
+              colour
+              <input
+                type="range"
+                min={0}
+                max={359}
+                value={feColorBg}
+                onChange={(e) => setFeColorBg(Number(e.target.value))}
+                data-testid="field-color-bg"
+              />
+              <span
+                className={styles.colorSwatch}
+                style={{ background: `hsl(${feColorBg} 80% 86%)` }}
+              />
+            </label>
+          )}
           <button type="button" className={styles.queryAdd} onClick={saveField} disabled={!feLabel.trim()} data-testid="field-save">
             Save
           </button>
@@ -708,6 +813,8 @@ export const SmartTableView = ({
             onExpandRow={(idx) => setExpandedRow(idx)}
             onSelectedRowsChange={editable && onDeleteRows ? setSelectedRows : undefined}
             onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
+            rowHeight={rowHeight}
+            freezeColumns={freezePrimary ? 1 : 0}
           />
           <div className={styles.statBar} data-testid="smart-table-stats">
             <span className={styles.statCount}>{result.rows.length} records</span>

@@ -11,8 +11,8 @@ const SAMPLE = `---
 title: Leads (table-lab)
 schema:
   - { key: name, label: Name, type: text }
-  - { key: amount, label: Amount, type: number }
-  - { key: stage, label: Stage, type: select, options: [new, qualified, won, lost] }
+  - { key: amount, label: Amount, type: number, color_op: gt, color_value: 10000, color_bg: 140 }
+  - { key: stage, label: Stage, type: select, options: [new, qualified, won, lost], color_op: eq, color_value: lost, color_bg: 8 }
   - { key: due, label: Next follow-up, type: date }
   - { key: done, label: Done, type: checkbox }
   - { key: tags, label: Tags, type: tags }

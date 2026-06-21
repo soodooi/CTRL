@@ -25,7 +25,7 @@ import {
 } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
-import { baseCellType, type CellType, type ColumnSpec, type SmartTable } from '@/lib/smart-table';
+import { baseCellType, matchesColorRule, type CellType, type ColumnSpec, type SmartTable } from '@/lib/smart-table';
 
 // Field-type header icon (Feishu/Airtable style — glide ships the sprites).
 const iconFor = (t: CellType): GridColumnIcon => {
@@ -229,6 +229,10 @@ interface SmartTableGridProps {
   onHeaderMenu?: (fieldKey: string) => void;
   /** Checkbox row selection → canonical row indices (for batch actions). */
   onSelectedRowsChange?: (canonicalIdxs: number[]) => void;
+  /** Row height in px (row-density control). Default 34. */
+  rowHeight?: number;
+  /** Freeze the first N data columns (horizontal scroll keeps them pinned). */
+  freezeColumns?: number;
 }
 
 const canonicalIdx = (row: Record<string, string> | undefined, fallback: number): number =>
@@ -243,6 +247,8 @@ export const SmartTableGrid = ({
   onExpandRow,
   onHeaderMenu,
   onSelectedRowsChange,
+  rowHeight = 34,
+  freezeColumns = 0,
 }: SmartTableGridProps): ReactElement => {
   const [widths, setWidths] = useState<Record<string, number>>({});
   const [gridSelection, setGridSelection] = useState<GridSelection>({
@@ -283,7 +289,7 @@ export const SmartTableGrid = ({
   // Map a grid column index to the data column (offset by the expand column).
   const dataCol = (col: number): ColumnSpec | undefined => cols[expandable ? col - 1 : col];
 
-  const getCellContent = useCallback(
+  const baseCellContent = useCallback(
     (cell: Item): GridCell => {
       const [col, row] = cell;
       if (expandable && col === 0) {
@@ -391,6 +397,31 @@ export const SmartTableGrid = ({
     [cols, schema, rows, editable, relations, expandable],
   );
 
+  // Conditional formatting (Feishu parity): tint a cell whose value satisfies
+  // its column's color rule. Layered over the base content so every cell kind
+  // (pill / number / text / …) gets the same treatment.
+  const getCellContent = useCallback(
+    (cell: Item): GridCell => {
+      const base = baseCellContent(cell);
+      const spec = cols[expandable ? cell[0] - 1 : cell[0]];
+      if (spec?.colorOp) {
+        const value = rows[cell[1]]?.[spec.key] ?? '';
+        if (matchesColorRule(spec, value)) {
+          const hue = spec.colorBg ?? 48;
+          return {
+            ...base,
+            themeOverride: {
+              bgCell: `hsl(${hue} 80% 91%)`,
+              bgCellMedium: `hsl(${hue} 80% 86%)`,
+            },
+          } as GridCell;
+        }
+      }
+      return base;
+    },
+    [baseCellContent, cols, expandable, rows],
+  );
+
   const onCellEdited = useCallback(
     (cell: Item, newVal: EditableGridCell): void => {
       const [col, row] = cell;
@@ -422,6 +453,8 @@ export const SmartTableGrid = ({
         getCellContent={getCellContent}
         onCellEdited={editable ? onCellEdited : undefined}
         customRenderers={[pillRenderer, starRenderer, rangeRenderer]}
+        rowHeight={rowHeight}
+        freezeColumns={freezeColumns > 0 ? freezeColumns + (expandable ? 1 : 0) : 0}
         onColumnResize={(c, w) => setWidths((p) => ({ ...p, [String(c.id)]: w }))}
         onHeaderMenuClick={onHeaderMenu ? (col) => onHeaderMenu(String(columns[col]?.id)) : undefined}
         getCellsForSelection

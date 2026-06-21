@@ -801,6 +801,42 @@
 .querySort:hover {
   border-color: var(--color-accent, #6aa3ff);
 }
+.querySearch {
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1a1a1a);
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  min-width: 120px;
+}
+.querySearch:focus {
+  outline: none;
+  border-color: var(--color-accent, #6aa3ff);
+}
+.queryToggle {
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1a1a1a);
+  border: 1px solid var(--color-border, #d8d4cc);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.queryToggle[data-active='true'] {
+  background: var(--color-accent, #6aa3ff);
+  border-color: var(--color-accent, #6aa3ff);
+  color: #fff;
+}
+.colorSwatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border, #d8d4cc);
+  vertical-align: middle;
+  margin-left: 4px;
+}
 .querySpacer {
   flex: 1;
 }
