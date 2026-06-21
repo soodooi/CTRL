@@ -8,64 +8,28 @@
 // component state and never mutates the rows. Edits still target the canonical
 // row via a preserved original index, so editing a filtered view is correct.
 
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import type {
   AiColumnOp,
   AiColumnSummary,
   SmartTableQueryRequest,
   SmartTableQueryResult,
 } from '@/lib/kernel';
-import { attachCanonicalIdx, buildGateRequest } from '@/lib/smart-table-gate-bridge';
+import { useTableQuery } from './useTableQuery';
+import { SmartTableRecordCard } from './SmartTableRecordCard';
+import { SmartTableFieldEditor, type FieldEdit } from './SmartTableFieldEditor';
 import {
   baseCellType,
-  columnKeyFromLabel,
   type BaseCellType,
-  type CellType,
-  type ColorOp,
   type ColumnSpec,
   type SmartTable,
   type ViewSpec,
 } from '@/lib/smart-table';
-import { relationalDisplay } from '@/lib/smart-table-relations';
-import { evalFormula } from '@/lib/smart-table-formula';
-import { Cell, LinkPicker } from './SmartTableCells';
 import { SmartTableGrid } from './SmartTableGrid';
 import { CalendarView, GalleryView, SummaryView } from './SmartTableViews';
 import { ChartView } from './SmartTableChart';
 import { TimelineView } from './SmartTableTimeline';
-
-const FIELD_TYPES: CellType[] = [
-  'text',
-  'multiline',
-  'number',
-  'currency',
-  'rating',
-  'progress',
-  'date',
-  'checkbox',
-  'tags',
-  'select',
-  'url',
-  'email',
-  'phone',
-  'link',
-  'lookup',
-  'rollup',
-  'formula',
-  'attachment',
-  'user',
-  'percent',
-  'duration',
-  'auto_number',
-  'created_at',
-  'modified_at',
-];
-import {
-  queryTable,
-  type Filter,
-  type Operator,
-  type SortKey,
-} from '@/lib/smart-table-query';
+import { type Filter, type Operator, type SortKey } from '@/lib/smart-table-query';
 import styles from './Viewer.module.css';
 
 const OPERATORS_BY_TYPE: Record<BaseCellType, Operator[]> = {
@@ -229,184 +193,18 @@ export const SmartTableView = ({
     value: '',
   });
 
-  // AI column (ADR-003 §6.5.4): which field's AI-fill panel is open + its draft.
-  const [aiRunning, setAiRunning] = useState(false);
-  const [aiResult, setAiResult] = useState<AiColumnSummary | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
-  // Immediate AI run for a column (invoked from the field editor's "Run AI now"
-  // — the glide canvas header has no room for a per-column ✦ button, so the AI
-  // op/prompt live in the field editor reached via the column-header menu).
-  const runAiNow = async (field: string, op: AiColumnOp, prompt: string): Promise<void> => {
-    if (!onRunAiColumn || !prompt.trim()) return;
-    setAiRunning(true);
-    setAiError(null);
-    setAiResult(null);
-    try {
-      setAiResult(await onRunAiColumn(field, op, prompt));
-    } catch (e) {
-      setAiError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setAiRunning(false);
-    }
-  };
-
-  // Field (schema) editor: null = closed; {key:string} = editing; {key:null} = new.
+  // Field (schema) editor: null = closed; { col } = editing; {} = new field. The
+  // editor component owns its own form state; the parent only tracks which field.
   const editsSchema = Boolean(onAddColumn && onUpdateColumn && onDeleteColumn);
-  const [fieldEdit, setFieldEdit] = useState<{ key: string | null } | null>(null);
-  const [feLabel, setFeLabel] = useState('');
-  const [feType, setFeType] = useState<CellType>('text');
-  const [feOptions, setFeOptions] = useState('');
-  const [feSymbol, setFeSymbol] = useState('$');
-  const [feAiOp, setFeAiOp] = useState('');
-  const [feAiPrompt, setFeAiPrompt] = useState('');
-  const [feAiAutoFill, setFeAiAutoFill] = useState(false);
-  const [feForeignTable, setFeForeignTable] = useState('');
-  const [feLinkField, setFeLinkField] = useState('');
-  const [feLookupField, setFeLookupField] = useState('');
-  const [feRollupFn, setFeRollupFn] = useState('count');
-  const [feExpression, setFeExpression] = useState('');
-  const [feColorOp, setFeColorOp] = useState('');
-  const [feColorValue, setFeColorValue] = useState('');
-  const [feColorBg, setFeColorBg] = useState(48);
-  const openFieldEditor = (col?: ColumnSpec): void => {
-    if (col) {
-      setFieldEdit({ key: col.key });
-      setFeLabel(col.label);
-      setFeType(col.type);
-      setFeOptions((col.options ?? []).join(', '));
-      setFeSymbol(col.symbol ?? '$');
-      setFeAiOp(col.aiOp ?? '');
-      setFeAiPrompt(col.aiPrompt ?? '');
-      setFeAiAutoFill(Boolean(col.aiAutoFill));
-      setFeForeignTable(col.foreignTable ?? '');
-      setFeLinkField(col.linkField ?? '');
-      setFeLookupField(col.lookupField ?? '');
-      setFeRollupFn(col.rollupFn ?? 'count');
-      setFeExpression(col.expression ?? '');
-      setFeColorOp(col.colorOp ?? '');
-      setFeColorValue(col.colorValue ?? '');
-      setFeColorBg(col.colorBg ?? 48);
-    } else {
-      setFieldEdit({ key: null });
-      setFeLabel('');
-      setFeType('text');
-      setFeOptions('');
-      setFeSymbol('$');
-      setFeAiOp('');
-      setFeAiPrompt('');
-      setFeAiAutoFill(false);
-      setFeForeignTable('');
-      setFeLinkField('');
-      setFeLookupField('');
-      setFeRollupFn('count');
-      setFeExpression('');
-      setFeColorOp('');
-      setFeColorValue('');
-      setFeColorBg(48);
-    }
-  };
-  const saveField = (): void => {
-    const opts = feOptions.split(',').map((s) => s.trim()).filter(Boolean);
-    const label = feLabel.trim() || 'Field';
-    const patch: Partial<Omit<ColumnSpec, 'key'>> = {
-      label,
-      type: feType,
-      options: feType === 'select' || feType === 'tags' ? (opts.length ? opts : undefined) : undefined,
-      symbol: feType === 'currency' ? feSymbol : undefined,
-      aiOp: feAiOp || undefined,
-      aiPrompt: feAiOp && feAiPrompt.trim() ? feAiPrompt : undefined,
-      aiAutoFill: feAiOp && feAiAutoFill ? true : undefined,
-      foreignTable: feType === 'link' ? feForeignTable || undefined : undefined,
-      linkField: feType === 'lookup' || feType === 'rollup' ? feLinkField || undefined : undefined,
-      lookupField: feType === 'lookup' || feType === 'rollup' ? feLookupField || undefined : undefined,
-      rollupFn: feType === 'rollup' ? feRollupFn : undefined,
-      expression: feType === 'formula' ? feExpression || undefined : undefined,
-      colorOp: feColorOp ? (feColorOp as ColorOp) : undefined,
-      colorValue: feColorOp && feColorValue.trim() ? feColorValue : undefined,
-      colorBg: feColorOp ? feColorBg : undefined,
-    };
-    if (fieldEdit?.key) {
-      onUpdateColumn?.(fieldEdit.key, patch);
-    } else {
-      const key = columnKeyFromLabel(label, table.schema.map((c) => c.key));
-      onAddColumn?.({ key, label, type: feType, ...patch } as ColumnSpec);
-    }
-    setFieldEdit(null);
-  };
+  const [fieldEdit, setFieldEdit] = useState<FieldEdit>(null);
 
   const typeOf = (key: string): BaseCellType =>
     baseCellType(table.schema.find((c) => c.key === key)?.type ?? 'text');
   const draftOps = OPERATORS_BY_TYPE[typeOf(draft.field)] ?? ['contains', 'eq'];
 
-  // Run the §14 query, preserving each row's canonical index in `__idx` so
-  // edits on a filtered/sorted view still target the right underlying row.
-  const indexed = useMemo(
-    () => ({ ...table, rows: table.rows.map((r, i) => ({ ...r, __idx: String(i) })) }),
-    [table],
-  );
-  const clientQueried = useMemo(
-    () =>
-      queryTable(indexed, {
-        filters,
-        conjunction,
-        sort: sort ? [sort] : [],
-        groupBy: [groupBy, groupBy2].filter((g): g is string => Boolean(g)),
-      }),
-    [indexed, filters, conjunction, sort, groupBy, groupBy2],
-  );
-  // §14: route the same structured query through the kernel gate when the host
-  // provides `runQuery`. The kernel keys on the stable record id, so we re-attach
-  // each row's canonical __idx. We stamp the result with the `table` it was
-  // computed from and only trust it while that ref is current — so an in-flight
-  // response can never render against a since-edited table (the client result,
-  // always in sync, covers the gap). Any error → client fallback (local-first).
-  const [kernelResult, setKernelResult] = useState<{
-    rows: Array<Record<string, string>>;
-    matchCount: number;
-    forTable: SmartTable;
-  } | null>(null);
-  useEffect(() => {
-    if (!runQuery) {
-      setKernelResult(null);
-      return;
-    }
-    let live = true;
-    const request = buildGateRequest(filters, conjunction, sort, [groupBy, groupBy2]);
-    runQuery(request)
-      .then((res) => {
-        if (!live) return;
-        const rows = attachCanonicalIdx(res.rows, table);
-        // If any kernel row can't resolve to a canonical index (e.g. a legacy
-        // table whose ids aren't persisted on disk yet), fall back to the client
-        // engine — otherwise index-based edits would silently no-op (__idx -1).
-        if (rows.some((r) => r.__idx === '-1')) {
-          setKernelResult(null);
-          return;
-        }
-        setKernelResult({ rows, matchCount: res.match_count, forTable: table });
-      })
-      .catch(() => {
-        if (live) setKernelResult(null);
-      });
-    return () => {
-      live = false;
-    };
-  }, [runQuery, filters, conjunction, sort, groupBy, groupBy2, table]);
-  const queried =
-    runQuery && kernelResult && kernelResult.forTable === table
-      ? { rows: kernelResult.rows, matchCount: kernelResult.matchCount }
-      : clientQueried;
-  // Quick search narrows the queried rows by a case-insensitive substring match
-  // across every cell (composes on top of the structured filters). Downstream
-  // views consume `result`, so search applies everywhere uniformly.
-  const result = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return queried;
-    return {
-      ...queried,
-      rows: queried.rows.filter((r) => Object.values(r).some((v) => String(v).toLowerCase().includes(q))),
-    };
-  }, [queried, search]);
+  // §14 query orchestration (client engine + kernel gate with consistency
+  // fallback + quick search) lives in a hook so this component stays presentational.
+  const result = useTableQuery(table, { filters, conjunction, sort, groupBy, groupBy2, search }, runQuery);
   const rowHeight = density === 'compact' ? 28 : density === 'comfortable' ? 46 : 34;
   // Drag-reorder is only meaningful when the visible rows are in their natural
   // markdown order — once sorted / grouped / filtered / searched, a visible
@@ -647,7 +445,7 @@ export const SmartTableView = ({
           <button
             type="button"
             className={styles.queryAdd}
-            onClick={() => openFieldEditor()}
+            onClick={() => setFieldEdit({})}
             title="Add a field"
             data-testid="add-field"
           >
@@ -687,207 +485,19 @@ export const SmartTableView = ({
         </div>
       )}
 
-      {fieldEdit && editsSchema && (
-        <div className={styles.aiPanel} data-testid="field-edit-panel">
-          <span className={styles.aiPanelTitle}>{fieldEdit.key ? 'Edit field' : 'New field'}</span>
-          <input
-            className={styles.fieldName}
-            value={feLabel}
-            placeholder="Field name"
-            autoFocus
-            onChange={(e) => setFeLabel(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && feLabel.trim()) saveField();
-            }}
-          />
-          <select className={styles.querySelect} value={feType} onChange={(e) => setFeType(e.target.value as CellType)} aria-label="Field type">
-            {FIELD_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          {(feType === 'select' || feType === 'tags') && (
-            <input
-              className={styles.aiPanelPrompt}
-              value={feOptions}
-              placeholder="options: lead, won, lost"
-              onChange={(e) => setFeOptions(e.target.value)}
-            />
-          )}
-          {feType === 'currency' && (
-            <input className={styles.fieldSymbol} value={feSymbol} aria-label="Currency symbol" onChange={(e) => setFeSymbol(e.target.value)} />
-          )}
-          {feType === 'link' && (
-            <select
-              className={styles.querySelect}
-              value={feForeignTable}
-              onChange={(e) => setFeForeignTable(e.target.value)}
-              aria-label="Link target table"
-              data-testid="fe-foreign-table"
-            >
-              <option value="">— target table —</option>
-              {linkTargets.map((t) => (
-                <option key={t.path} value={t.path}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
-          )}
-          {(feType === 'lookup' || feType === 'rollup') && (
-            <>
-              <select className={styles.querySelect} value={feLinkField} onChange={(e) => setFeLinkField(e.target.value)} aria-label="Via link field">
-                <option value="">— via link —</option>
-                {visibleSchema.filter((c) => c.type === 'link').map((c) => (
-                  <option key={c.key} value={c.key}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-              <select className={styles.querySelect} value={feLookupField} onChange={(e) => setFeLookupField(e.target.value)} aria-label="Foreign field">
-                <option value="">— foreign field —</option>
-                {(() => {
-                  const lc = table.schema.find((c) => c.key === feLinkField);
-                  const tgt = lc?.foreignTable ? relations[lc.foreignTable] : undefined;
-                  return (tgt?.schema ?? []).filter((c) => !c.system).map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ));
-                })()}
-              </select>
-              {feType === 'rollup' && (
-                <select className={styles.querySelect} value={feRollupFn} onChange={(e) => setFeRollupFn(e.target.value)} aria-label="Rollup function">
-                  {['count', 'sum', 'avg', 'min', 'max'].map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </>
-          )}
-          {feType === 'formula' && (
-            <input
-              className={styles.aiPanelPrompt}
-              value={feExpression}
-              placeholder="Formula — e.g. {price} * {qty}  or  ROUND({score}, 1)"
-              onChange={(e) => setFeExpression(e.target.value)}
-              data-testid="fe-expression"
-            />
-          )}
-          {onRunAiColumn && (
-            <>
-              <select
-                className={styles.querySelect}
-                value={feAiOp}
-                onChange={(e) => setFeAiOp(e.target.value)}
-                aria-label="AI op"
-                data-testid="field-ai-op"
-              >
-                <option value="">no AI</option>
-                <option value="generate">AI: generate</option>
-                <option value="classify">AI: classify</option>
-                <option value="extract">AI: extract</option>
-                <option value="summarize">AI: summarize</option>
-                <option value="translate">AI: translate</option>
-              </select>
-              {feAiOp && (
-                <input
-                  className={styles.aiPanelPrompt}
-                  value={feAiPrompt}
-                  placeholder="AI prompt — reference columns with {field}"
-                  onChange={(e) => setFeAiPrompt(e.target.value)}
-                />
-              )}
-              {feAiOp && (
-                <label className={styles.aiPanelMsg}>
-                  <input type="checkbox" checked={feAiAutoFill} onChange={(e) => setFeAiAutoFill(e.target.checked)} /> auto-fill new
-                  rows
-                </label>
-              )}
-              {feAiOp && fieldEdit.key && feAiPrompt.trim() && (
-                <button
-                  type="button"
-                  className={styles.queryAdd}
-                  disabled={aiRunning}
-                  onClick={() => void runAiNow(fieldEdit.key as string, feAiOp as AiColumnOp, feAiPrompt)}
-                  data-testid="ai-col-run"
-                >
-                  {aiRunning ? 'Running…' : '✦ Run AI now'}
-                </button>
-              )}
-              {aiResult && (
-                <span className={styles.aiPanelMsg}>
-                  wrote {aiResult.rows_written}/{aiResult.rows_planned}
-                  {aiResult.errors.length > 0 ? ` · ${aiResult.errors.length} failed` : ''}
-                </span>
-              )}
-              {aiError && <span className={styles.aiPanelErr}>{aiError}</span>}
-            </>
-          )}
-          <span className={styles.aiPanelTitle}>Conditional format</span>
-          <select
-            className={styles.querySelect}
-            value={feColorOp}
-            onChange={(e) => setFeColorOp(e.target.value)}
-            data-testid="field-color-op"
-          >
-            <option value="">no colour rule</option>
-            <option value="eq">equals</option>
-            <option value="ne">not equals</option>
-            <option value="contains">contains</option>
-            <option value="gt">greater than</option>
-            <option value="lt">less than</option>
-            <option value="empty">is empty</option>
-            <option value="not_empty">is not empty</option>
-          </select>
-          {feColorOp && feColorOp !== 'empty' && feColorOp !== 'not_empty' && (
-            <input
-              className={styles.aiPanelPrompt}
-              value={feColorValue}
-              placeholder="value to compare"
-              onChange={(e) => setFeColorValue(e.target.value)}
-              data-testid="field-color-value"
-            />
-          )}
-          {feColorOp && (
-            <label className={styles.aiPanelMsg}>
-              colour
-              <input
-                type="range"
-                min={0}
-                max={359}
-                value={feColorBg}
-                onChange={(e) => setFeColorBg(Number(e.target.value))}
-                data-testid="field-color-bg"
-              />
-              <span
-                className={styles.colorSwatch}
-                style={{ background: `hsl(${feColorBg} 80% 86%)` }}
-              />
-            </label>
-          )}
-          <button type="button" className={styles.queryAdd} onClick={saveField} disabled={!feLabel.trim()} data-testid="field-save">
-            Save
-          </button>
-          {fieldEdit.key && (
-            <button
-              type="button"
-              className={styles.queryChip}
-              onClick={() => {
-                onDeleteColumn?.(fieldEdit.key as string);
-                setFieldEdit(null);
-              }}
-              data-testid="field-delete"
-            >
-              Delete
-            </button>
-          )}
-          <button type="button" className={styles.queryChip} onClick={() => setFieldEdit(null)}>
-            Cancel
-          </button>
-        </div>
+      {editsSchema && (
+        <SmartTableFieldEditor
+          editing={fieldEdit}
+          table={table}
+          visibleSchema={visibleSchema}
+          relations={relations}
+          linkTargets={linkTargets}
+          onAddColumn={onAddColumn}
+          onUpdateColumn={onUpdateColumn}
+          onDeleteColumn={onDeleteColumn}
+          onRunAiColumn={onRunAiColumn}
+          onClose={() => setFieldEdit(null)}
+        />
       )}
 
       {viewMode === 'grid' && (
@@ -916,7 +526,7 @@ export const SmartTableView = ({
             onCellChange={onCellChange}
             onExpandRow={(idx) => setExpandedRow(idx)}
             onSelectedRowsChange={editable && onDeleteRows ? setSelectedRows : undefined}
-            onHeaderMenu={editsSchema ? (key) => openFieldEditor(table.schema.find((c) => c.key === key)) : undefined}
+            onHeaderMenu={editsSchema ? (key) => setFieldEdit({ col: table.schema.find((c) => c.key === key) }) : undefined}
             rowHeight={rowHeight}
             freezeColumns={freezePrimary ? 1 : 0}
             onRowMove={
@@ -1099,78 +709,17 @@ export const SmartTableView = ({
       )}
 
       {expandedRow != null && table.rows[expandedRow] && (
-        <div className={styles.recordOverlay} onClick={() => setExpandedRow(null)} data-testid="record-card">
-          <div className={styles.recordCard} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.recordHead}>
-              <span className={styles.recordTitle}>Record</span>
-              <button type="button" className={styles.tableRowAction} onClick={() => setExpandedRow(null)} aria-label="Close">
-                ×
-              </button>
-            </div>
-            {visibleSchema.map((c) => (
-              <div key={c.key} className={styles.recordField}>
-                <span className={styles.recordLabel}>{c.label}</span>
-                <span className={styles.recordValue}>
-                  {c.type === 'link' ? (
-                    <span data-testid={`link-picker-${c.key}`}>
-                      <LinkPicker
-                        value={table.rows[expandedRow]?.[c.key] ?? ''}
-                        target={c.foreignTable ? relations[c.foreignTable] : undefined}
-                        editable={editable}
-                        onChange={(ids) => onCellChange(expandedRow, c.key, ids)}
-                      />
-                    </span>
-                  ) : c.type === 'lookup' || c.type === 'rollup' ? (
-                    <span className={styles.cellText}>
-                      {relationalDisplay(table.rows[expandedRow] ?? {}, c, table.schema, relations) || '—'}
-                    </span>
-                  ) : c.type === 'formula' ? (
-                    <span className={styles.cellText}>
-                      {evalFormula(c.expression ?? '', table.rows[expandedRow] ?? {}) || '—'}
-                    </span>
-                  ) : (
-                    <Cell
-                      col={c}
-                      value={table.rows[expandedRow]?.[c.key] ?? ''}
-                      editable={editable}
-                      onChange={(v) => onCellChange(expandedRow, c.key, v)}
-                    />
-                  )}
-                </span>
-              </div>
-            ))}
-            {editable && (onDuplicateRow || onDeleteRow) && (
-              <div className={styles.recordActions}>
-                {onDuplicateRow && (
-                  <button
-                    type="button"
-                    className={styles.queryToggle}
-                    data-testid="record-duplicate"
-                    onClick={() => {
-                      onDuplicateRow(expandedRow);
-                      setExpandedRow(null);
-                    }}
-                  >
-                    ⧉ Duplicate
-                  </button>
-                )}
-                {onDeleteRow && (
-                  <button
-                    type="button"
-                    className={styles.batchDelete}
-                    data-testid="record-delete"
-                    onClick={() => {
-                      onDeleteRow(expandedRow);
-                      setExpandedRow(null);
-                    }}
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <SmartTableRecordCard
+          table={table}
+          rowIndex={expandedRow}
+          visibleSchema={visibleSchema}
+          editable={editable}
+          relations={relations}
+          onCellChange={onCellChange}
+          onClose={() => setExpandedRow(null)}
+          onDuplicateRow={onDuplicateRow}
+          onDeleteRow={onDeleteRow}
+        />
       )}
     </div>
   );
