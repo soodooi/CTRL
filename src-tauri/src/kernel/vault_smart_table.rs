@@ -265,7 +265,27 @@ fn split_row(line: &str) -> Vec<String> {
     let t = line.trim();
     let t = t.strip_prefix('|').unwrap_or(t);
     let t = t.strip_suffix('|').unwrap_or(t);
-    t.split('|').map(|c| c.trim().to_string()).collect()
+    // Split on UNescaped `|` only, then unescape `\|` back to `|`.
+    // Mirrors `serialize_body`, which escapes `|` -> `\|` (a naive
+    // `split('|')` here corrupts any cell containing a pipe).
+    let mut cells = Vec::new();
+    let mut cur = String::new();
+    let mut chars = t.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if chars.peek() == Some(&'|') => {
+                cur.push('|');
+                chars.next();
+            }
+            '|' => {
+                cells.push(cur.trim().to_string());
+                cur.clear();
+            }
+            other => cur.push(other),
+        }
+    }
+    cells.push(cur.trim().to_string());
+    cells
 }
 
 #[cfg(test)]
@@ -335,6 +355,21 @@ mod tests {
         assert_eq!(t2.rows.len(), 2);
         assert_eq!(t2.rows[0]["name"], "Acme");
         assert_eq!(t2.rows[1]["amount"], "50");
+    }
+
+    #[test]
+    fn cell_with_pipe_round_trips_without_corruption() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        // A cell containing `|` (URL / formula / markdown) must survive a
+        // serialize -> parse cycle intact (regression: split_row used to
+        // naively split on `|`, corrupting the row).
+        assert!(t.update_cell(0, "name", "a|b|c"));
+        assert!(t.update_cell(0, "tags", "x | y"));
+        let reparsed = SmartTable::parse(&frontmatter(), &t.serialize_body());
+        assert_eq!(reparsed.rows.len(), 2);
+        assert_eq!(reparsed.rows[0]["name"], "a|b|c");
+        assert_eq!(reparsed.rows[0]["tags"], "x | y");
+        assert_eq!(reparsed.rows[0]["amount"], "100");
     }
 
     #[test]

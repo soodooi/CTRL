@@ -83,7 +83,17 @@ pub struct KernelMcpRouter {
     tool_router: ToolRouter<Self>,
     /// In-flight AI-column jobs (ADR-003 §6.5.4 async run_ai_column).
     ai_jobs: ai_column::JobRegistry,
+    /// Per-vault-path async write locks. Produce verbs hold the matching path
+    /// lock across their whole read-modify-write so concurrent writers
+    /// serialize instead of clobbering each other (full-review P0 lost-update
+    /// fix, 2026-06-21).
+    vault_write_locks: VaultWriteLocks,
 }
+
+/// Registry of per-path write locks (lazily created). The outer mutex guards
+/// the map; each inner mutex serializes produce on one vault path.
+type VaultWriteLocks =
+    Arc<tokio::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>>;
 
 // ─── Tool argument structs ──────────────────────────────────────────────
 // Each tool's args are a struct deriving Deserialize + JsonSchema so rmcp
@@ -102,15 +112,19 @@ pub struct VaultReadArgs {
 pub struct SmartTableQueryArgs {
     /// Vault-relative path to the smart-table `.md` file.
     pub path: String,
-    /// Field filters, ANDed together. Each `field` must exist in the schema.
+    /// Field filters, combined per `conjunction`. Each `field` must exist.
     #[serde(default)]
     pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
     /// Multi-key sort (first key wins).
     #[serde(default)]
     pub sort: Vec<query::SortKey>,
-    /// Group rows so equal values of this field are contiguous.
+    /// Group keys applied in order (first is the primary level); equal-valued
+    /// rows are made contiguous. Empty = no grouping.
     #[serde(default)]
-    pub group_by: Option<String>,
+    pub group_by: Vec<String>,
     /// Cap the number of returned rows (match_count is reported pre-limit).
     #[serde(default)]
     pub limit: Option<usize>,
@@ -186,10 +200,14 @@ pub struct SmartTableAddViewArgs {
 pub struct RuntimeQueryArgs {
     #[serde(default)]
     pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
     #[serde(default)]
     pub sort: Vec<query::SortKey>,
+    /// Group keys applied in order; empty = no grouping.
     #[serde(default)]
-    pub group_by: Option<String>,
+    pub group_by: Vec<String>,
     #[serde(default)]
     pub limit: Option<usize>,
 }
@@ -210,10 +228,14 @@ pub struct NotesQueryArgs {
     pub subdir: Option<String>,
     #[serde(default)]
     pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
     #[serde(default)]
     pub sort: Vec<query::SortKey>,
+    /// Group keys applied in order; empty = no grouping.
     #[serde(default)]
-    pub group_by: Option<String>,
+    pub group_by: Vec<String>,
     #[serde(default)]
     pub limit: Option<usize>,
 }
@@ -438,7 +460,20 @@ impl KernelMcpRouter {
             local_storage,
             tool_router: Self::tool_router(),
             ai_jobs: ai_column::new_registry(),
+            vault_write_locks: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         }
+    }
+
+    /// Acquire (creating on first use) the per-path write lock. Hold the
+    /// returned guard across the entire read-modify-write of a produce verb so
+    /// two concurrent writers on the same vault file cannot clobber each other.
+    async fn vault_write_lock(&self, path: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut map = self.vault_write_locks.lock().await;
+        map.entry(path.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
     }
 
     /// kernel.status — uptime + adapter chain. Sanity ping for clients.
@@ -504,9 +539,9 @@ impl KernelMcpRouter {
         let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         let req = query::QueryRequest {
             filters: args.filters,
-            conjunction: query::Conjunction::default(),
+            conjunction: args.conjunction,
             sort: args.sort,
-            group_by: args.group_by.into_iter().collect(),
+            group_by: args.group_by,
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
@@ -530,6 +565,8 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<SmartTableUpdateCellArgs>,
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         if !table.update_cell(args.row_index, &args.field, &args.value) {
@@ -557,6 +594,8 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<SmartTableAppendRowArgs>,
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         table.append_row(args.values.into_iter().collect());
@@ -601,9 +640,9 @@ impl KernelMcpRouter {
             .map_err(map_vault_err)?;
         let req = query::QueryRequest {
             filters: args.filters,
-            conjunction: query::Conjunction::default(),
+            conjunction: args.conjunction,
             sort: args.sort,
-            group_by: args.group_by.into_iter().collect(),
+            group_by: args.group_by,
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
@@ -628,6 +667,8 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<SmartTableRunAiColumnArgs>,
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         if !table.fields.iter().any(|f| f.key == args.target_field) {
@@ -724,6 +765,9 @@ impl KernelMcpRouter {
         let target = args.target_field.clone();
         let path = args.path.clone();
         let root2 = root.clone();
+        let write_lock = self.vault_write_lock(&args.path).await;
+        let jobs_for_cleanup = self.ai_jobs.clone();
+        let job_id_for_cleanup = job_id.clone();
         tokio::spawn(async move {
             let adapter = match runtime.provider_registry.primary_text_chat() {
                 Some(a) => a,
@@ -775,15 +819,22 @@ impl KernelMcpRouter {
                 }
             }
 
-            // Merge-by-row write-back: re-read fresh so a mid-run user edit is
-            // not clobbered (ADR-003 §6.5.4).
-            if let Ok(fresh) = vault::read(&root2, &path) {
-                let mut table = vault_smart_table::SmartTable::parse(&fresh.frontmatter, &fresh.content);
-                let written = ai_column::apply_results(&mut table, &target, &results);
-                if written > 0 {
-                    let _ = vault::write(&root2, &path, &table.serialize_body(), &fresh.frontmatter);
+            // Merge-by-row write-back under the per-path write lock: re-read
+            // fresh + apply + write atomically so neither a mid-run user edit
+            // nor a concurrent produce verb clobbers the result (ADR-003
+            // §6.5.4 + full-review P0 lost-update fix).
+            {
+                let _write_guard = write_lock.lock().await;
+                if let Ok(fresh) = vault::read(&root2, &path) {
+                    let mut table =
+                        vault_smart_table::SmartTable::parse(&fresh.frontmatter, &fresh.content);
+                    let written = ai_column::apply_results(&mut table, &target, &results);
+                    if written > 0 {
+                        let _ =
+                            vault::write(&root2, &path, &table.serialize_body(), &fresh.frontmatter);
+                    }
+                    state.write().await.rows_written = written;
                 }
-                state.write().await.rows_written = written;
             }
             let mut s = state.write().await;
             s.phase = if s.cancelled {
@@ -791,6 +842,14 @@ impl KernelMcpRouter {
             } else {
                 ai_column::JobPhase::Done
             };
+            drop(s);
+            // Terminal cleanup: evict the job after a grace window so a late
+            // status poll still sees the result, then reclaim memory — the
+            // registry used to grow unboundedly per start (full-review P1).
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(180)).await;
+                jobs_for_cleanup.write().await.remove(&job_id_for_cleanup);
+            });
         });
 
         let body = serde_json::json!({ "job_id": job_id, "rows_planned": planned });
@@ -846,6 +905,8 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<SmartTableAddViewArgs>,
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         let kind_str = match args.kind {
@@ -923,9 +984,9 @@ impl KernelMcpRouter {
             .collect();
         let req = query::QueryRequest {
             filters: args.filters,
-            conjunction: query::Conjunction::default(),
+            conjunction: args.conjunction,
             sort: args.sort,
-            group_by: args.group_by.into_iter().collect(),
+            group_by: args.group_by,
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
@@ -978,9 +1039,9 @@ impl KernelMcpRouter {
             .collect();
         let req = query::QueryRequest {
             filters: args.filters,
-            conjunction: query::Conjunction::default(),
+            conjunction: args.conjunction,
             sort: args.sort,
-            group_by: args.group_by.into_iter().collect(),
+            group_by: args.group_by,
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
