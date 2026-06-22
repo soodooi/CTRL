@@ -41,3 +41,7 @@ governing ADR = **ADR-002 substrate §14**(v29)+ **ADR-003 frontend §6.5**(v16)
 ## 进展日志 (Progress log — append-only)
 
 - 2026-06-20 **目标替换**(原 Irisy 回复正确性测试 → §14 统一操作接口 feature 实装)。理由:bao 连续多轮指挥从「智能表格对标飞书」→「§14 修改架构」→「按架构全量做」,独立 reviewer 复审指出 GOAL.md 旧了。当前状态:`feat/unified-query` 11 commit、kernel 180 测试绿、reviewer PASS、ADR 对齐。下一步 = PR + PWA 前端消费(SC8)。
+- 2026-06-21 **对标基线校准 (bao 钦定): 智能表格前端先对标 Grist (getgrist.com) 做功能一致, 再叠加飞书 Bitable 的 AI 智能表格能力。** 现状盘点 (真实代码 + `/table-lab` 视觉验证): 字段类型 25 种、8 视图 (Grid 已用 glide-data-grid)、filter/sort/group/隐藏/冻结/密度、AI 列、link/lookup/rollup/formula、条件格式、CSV 导入 —— route A 基本做完, `feishu-bitable-parity-assessment.md` 已过时。
+  - **Grist 对标差距** (按 Grist 灵魂排序): ① Creator Panel 右侧三栏配置面板 ② Linked widgets / "Select By" 一页多 widget 联动 ③ Summary tables 作数据源 ④ Reference display-column + `$Ref.Field` 解引用 ⑤ trigger formula ⑥ 列宽/行高/换行 ⑦ DateTime/Integer 类型。Access rules / Raw data 多为 non-goal (单人)。
+  - **增量 1 已落地** (working tree, 未提交): **Creator Panel 三栏布局** —— `SmartTableView` return 重构成 `tableShell > [tableMain, creatorPanel]`, 点列头/+Field 在常驻右面板配置该列 (复用 `SmartTableFieldEditor`, 不重造), 面板可折叠。tsc 绿 + vitest 136 绿 + `/table-lab` 视觉验证 + code-reviewer PASS。验证工具发现: `/table-lab` 路由能 headless 渲染智能表格 (不依赖 kernel), 是后续视觉验证入口 (浏览器 dev 模式连不上 :17872 WS bridge — 需 token, 只 Tauri invoke 可得)。
+  - **下一步**: 增量 2 = Creator Panel 加 "Table" tab (把 filter/sort/group/fields 弹出菜单收进面板) + 面板内字段编辑器竖向排版打磨; 之后按差距清单推进 (DateTime 类型 / 列宽行高 / Reference 显示列)。

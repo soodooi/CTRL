@@ -202,6 +202,15 @@ export const SmartTableView = ({
   // editor component owns its own form state; the parent only tracks which field.
   const editsSchema = Boolean(onAddColumn && onUpdateColumn && onDeleteColumn);
   const [fieldEdit, setFieldEdit] = useState<FieldEdit>(null);
+  // Grist-style Creator Panel: a persistent right rail that hosts the selected
+  // column's config (clicking a column header selects it). Grist's signature
+  // 3-pane layout — grid on the left, configuration on the right — instead of
+  // a transient modal. Collapsible; reopened from the query-bar "Panel" button.
+  const [panelOpen, setPanelOpen] = useState(true);
+  const openFieldInPanel = (edit: FieldEdit): void => {
+    setFieldEdit(edit);
+    setPanelOpen(true);
+  };
 
   const typeOf = (key: string): BaseCellType =>
     baseCellType(table.schema.find((c) => c.key === key)?.type ?? 'text');
@@ -228,7 +237,8 @@ export const SmartTableView = ({
   };
 
   return (
-    <div>
+    <div className={styles.tableShell}>
+      <div className={styles.tableMain}>
       {editsViews && table.views.length > 0 && (
         <div className={styles.viewTabs} data-testid="view-tabs">
           {table.views.map((v, i) => (
@@ -510,11 +520,23 @@ export const SmartTableView = ({
           <button
             type="button"
             className={styles.queryAdd}
-            onClick={() => setFieldEdit({})}
+            onClick={() => openFieldInPanel({})}
             title="Add a field"
             data-testid="add-field"
           >
             + Field
+          </button>
+        )}
+
+        {editsSchema && !panelOpen && (
+          <button
+            type="button"
+            className={styles.queryToggle}
+            onClick={() => setPanelOpen(true)}
+            title="Show the configuration panel"
+            data-testid="smart-table-panel-open"
+          >
+            ⚏ Panel
           </button>
         )}
 
@@ -550,21 +572,6 @@ export const SmartTableView = ({
         </div>
       )}
 
-      {editsSchema && (
-        <SmartTableFieldEditor
-          editing={fieldEdit}
-          table={table}
-          visibleSchema={visibleSchema}
-          relations={relations}
-          linkTargets={linkTargets}
-          onAddColumn={onAddColumn}
-          onUpdateColumn={onUpdateColumn}
-          onDeleteColumn={onDeleteColumn}
-          onRunAiColumn={onRunAiColumn}
-          onClose={() => setFieldEdit(null)}
-        />
-      )}
-
       {viewMode === 'grid' && (
         <>
           {editable && onDeleteRows && selectedRows.length > 0 && (
@@ -591,7 +598,7 @@ export const SmartTableView = ({
             onCellChange={onCellChange}
             onExpandRow={(idx) => setExpandedRow(idx)}
             onSelectedRowsChange={editable && onDeleteRows ? setSelectedRows : undefined}
-            onHeaderMenu={editsSchema ? (key) => setFieldEdit({ col: table.schema.find((c) => c.key === key) }) : undefined}
+            onHeaderMenu={editsSchema ? (key) => openFieldInPanel({ col: table.schema.find((c) => c.key === key) }) : undefined}
             rowHeight={rowHeight}
             freezeColumns={freezePrimary ? 1 : 0}
             onRowMove={
@@ -785,6 +792,50 @@ export const SmartTableView = ({
           onDuplicateRow={onDuplicateRow}
           onDeleteRow={onDeleteRow}
         />
+      )}
+      </div>
+
+      {editsSchema && panelOpen && (
+        <aside className={styles.creatorPanel} data-testid="creator-panel">
+          <div className={styles.creatorHead}>
+            <span>Creator Panel</span>
+            <button
+              type="button"
+              className={styles.creatorClose}
+              onClick={() => setPanelOpen(false)}
+              title="Hide panel"
+              aria-label="Hide panel"
+              data-testid="smart-table-panel-close"
+            >
+              ⇥
+            </button>
+          </div>
+          {fieldEdit ? (
+            <SmartTableFieldEditor
+              editing={fieldEdit}
+              table={table}
+              visibleSchema={visibleSchema}
+              relations={relations}
+              linkTargets={linkTargets}
+              onAddColumn={onAddColumn}
+              onUpdateColumn={onUpdateColumn}
+              onDeleteColumn={onDeleteColumn}
+              onRunAiColumn={onRunAiColumn}
+              onClose={() => setFieldEdit(null)}
+            />
+          ) : (
+            <div className={styles.creatorEmpty} data-testid="creator-empty">
+              <span>Click a column header to configure it.</span>
+              <button
+                type="button"
+                className={styles.queryAdd}
+                onClick={() => openFieldInPanel({})}
+              >
+                + New field
+              </button>
+            </div>
+          )}
+        </aside>
       )}
     </div>
   );
