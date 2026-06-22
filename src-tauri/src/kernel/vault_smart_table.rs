@@ -34,6 +34,10 @@ pub enum RelationKind {
     Reference { target_table: String, display: String },
     Lookup { via: String, target: String },
     Rollup { via: String, target: String, func: String },
+    /// A cross-field arithmetic formula (slice 5). `expr` references other
+    /// columns by `{field}` or bare name and combines them with + - * / ( ).
+    /// Computed per row at query time; read-only, never written to markdown.
+    Formula { expr: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
@@ -48,7 +52,10 @@ impl RelationField {
     /// verb — only the underlying Reference cell is editable. The gate rejects a
     /// write to one of these (ADR-002 §14: query never mutates, produce gated).
     pub fn is_read_only(&self) -> bool {
-        matches!(self.kind, RelationKind::Lookup { .. } | RelationKind::Rollup { .. })
+        matches!(
+            self.kind,
+            RelationKind::Lookup { .. } | RelationKind::Rollup { .. } | RelationKind::Formula { .. }
+        )
     }
 }
 
@@ -199,6 +206,139 @@ fn record_operators() -> Vec<Operator> {
     vec![Eq, Neq, Contains, Gt, Lt, Gte, Lte, Before, After, Within, Is, HasTag]
 }
 
+/// A formula token: a resolved numeric value, an operator, or a paren. Field
+/// references are resolved to `Num` during tokenization.
+enum FTok {
+    Num(f64),
+    Op(char),
+    LParen,
+    RParen,
+}
+
+/// Evaluate a Formula column over a row (slice 5). Supports `{field}` / bare
+/// field references (→ the cell's numeric value), numeric literals, and
+/// `+ - * / ( )`. Returns None if it can't parse or a referenced cell isn't
+/// numeric — a bad formula renders blank, never a wrong number. Deliberately
+/// arithmetic-only (no arbitrary eval): mirrors the fixed-operator,
+/// anti-hallucination stance of the query engine.
+pub fn eval_formula(expr: &str, row: &Row) -> Option<f64> {
+    let tokens = tokenize_formula(expr, row)?;
+    let mut p = FormulaParser { tokens: &tokens, pos: 0 };
+    let v = p.parse_expr()?;
+    if p.pos == p.tokens.len() {
+        Some(v)
+    } else {
+        None
+    }
+}
+
+fn tokenize_formula(expr: &str, row: &Row) -> Option<Vec<FTok>> {
+    let chars: Vec<char> = expr.chars().collect();
+    let mut i = 0;
+    let mut out = Vec::new();
+    let resolve = |name: &str| -> Option<f64> {
+        row.get(name.trim())
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|n| n.is_finite())
+    };
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_whitespace() {
+            i += 1;
+        } else if c == '(' {
+            out.push(FTok::LParen);
+            i += 1;
+        } else if c == ')' {
+            out.push(FTok::RParen);
+            i += 1;
+        } else if matches!(c, '+' | '-' | '*' | '/') {
+            out.push(FTok::Op(c));
+            i += 1;
+        } else if c == '{' {
+            let end = chars[i..].iter().position(|&x| x == '}')? + i;
+            let name: String = chars[i + 1..end].iter().collect();
+            out.push(FTok::Num(resolve(&name)?));
+            i = end + 1;
+        } else if c.is_ascii_digit() || c == '.' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                i += 1;
+            }
+            let lit: String = chars[start..i].iter().collect();
+            out.push(FTok::Num(lit.parse::<f64>().ok()?));
+        } else if c.is_alphabetic() || c == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let name: String = chars[start..i].iter().collect();
+            out.push(FTok::Num(resolve(&name)?));
+        } else {
+            return None; // unknown char → reject (blank, not wrong)
+        }
+    }
+    Some(out)
+}
+
+struct FormulaParser<'a> {
+    tokens: &'a [FTok],
+    pos: usize,
+}
+
+impl FormulaParser<'_> {
+    // expr = term (('+' | '-') term)*
+    fn parse_expr(&mut self) -> Option<f64> {
+        let mut v = self.parse_term()?;
+        while let Some(FTok::Op(op @ ('+' | '-'))) = self.tokens.get(self.pos) {
+            let op = *op;
+            self.pos += 1;
+            let rhs = self.parse_term()?;
+            v = if op == '+' { v + rhs } else { v - rhs };
+        }
+        Some(v)
+    }
+    // term = factor (('*' | '/') factor)*
+    fn parse_term(&mut self) -> Option<f64> {
+        let mut v = self.parse_factor()?;
+        while let Some(FTok::Op(op @ ('*' | '/'))) = self.tokens.get(self.pos) {
+            let op = *op;
+            self.pos += 1;
+            let rhs = self.parse_factor()?;
+            if op == '*' {
+                v *= rhs;
+            } else {
+                if rhs == 0.0 {
+                    return None; // division by zero → blank
+                }
+                v /= rhs;
+            }
+        }
+        Some(v)
+    }
+    // factor = Num | '(' expr ')' | '-' factor
+    fn parse_factor(&mut self) -> Option<f64> {
+        match self.tokens.get(self.pos) {
+            Some(FTok::Num(n)) => {
+                self.pos += 1;
+                Some(*n)
+            }
+            Some(FTok::LParen) => {
+                self.pos += 1;
+                let v = self.parse_expr()?;
+                matches!(self.tokens.get(self.pos), Some(FTok::RParen)).then(|| {
+                    self.pos += 1;
+                    v
+                })
+            }
+            Some(FTok::Op('-')) => {
+                self.pos += 1;
+                Some(-self.parse_factor()?)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Extract the `schema:` block into typed `FieldSpec`s. Each item may arrive
 /// EITHER as a JSON object (structured frontmatter) OR as a string of YAML flow
 /// form `{ key: x, label: y, type: z, options: [..] }` — which is what
@@ -251,6 +391,7 @@ fn parse_relations(frontmatter: &Value) -> Vec<RelationField> {
                         if f.is_empty() { "count".to_string() } else { f }
                     },
                 },
+                Some("formula") => RelationKind::Formula { expr: get("expr") },
                 _ => return None,
             };
             Some(RelationField { field_key: key, kind })
@@ -538,6 +679,26 @@ mod tests {
             }
             other => panic!("expected reference, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn eval_formula_arithmetic_and_field_refs() {
+        let r = row(&[("amount", "100"), ("cost", "30"), ("qty", "4")]);
+        // bare refs + braces + precedence + parens.
+        assert_eq!(eval_formula("amount - cost", &r), Some(70.0));
+        assert_eq!(eval_formula("{amount} - {cost}", &r), Some(70.0));
+        assert_eq!(eval_formula("amount - cost * 2", &r), Some(40.0)); // precedence
+        assert_eq!(eval_formula("(amount - cost) * 2", &r), Some(140.0));
+        assert_eq!(eval_formula("amount / qty", &r), Some(25.0));
+        assert_eq!(eval_formula("-cost + amount", &r), Some(70.0)); // unary minus
+        // bad inputs render blank (None), never a wrong number.
+        assert_eq!(eval_formula("amount / 0", &r), None); // div by zero
+        assert_eq!(eval_formula("amount + missing", &r), None); // unknown field
+        assert_eq!(eval_formula("amount +", &r), None); // trailing op
+    }
+
+    fn row(pairs: &[(&str, &str)]) -> Row {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
     }
 
     #[test]

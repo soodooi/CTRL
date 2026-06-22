@@ -587,6 +587,59 @@ impl SmartTableIndex {
         Ok(out)
     }
 
+    /// row_id → the source row's value for `field` — used to re-key the per-row
+    /// Lookup / Rollup maps by the (via) reference cell value, so the query path
+    /// can inject computed columns by matching `row[via]` without needing a
+    /// row-identity primitive (the ADR §6.5.4 gap). Rows sharing a via value
+    /// have identical edges, so any representative's computed value is correct.
+    fn src_field_values(
+        &self,
+        table_id: &str,
+        field: &str,
+    ) -> Result<HashMap<String, String>, StIndexError> {
+        let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
+        let mut stmt = conn
+            .prepare("SELECT row_id, value_text FROM st_cells WHERE table_id = ?1 AND field_key = ?2")
+            .map_err(|e| StIndexError::Db(format!("prepare src vals: {e}")))?;
+        let it = stmt
+            .query_map(params![table_id, field], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(|e| StIndexError::Db(format!("src vals: {e}")))?;
+        let mut out = HashMap::new();
+        for r in it {
+            let (id, v) = r.map_err(|e| StIndexError::Db(format!("src val row: {e}")))?;
+            out.insert(id, v);
+        }
+        Ok(out)
+    }
+
+    /// Lookup keyed by the via reference cell value (for query-time injection).
+    /// Computes per-row (correct), then re-keys by the row's via cell value.
+    pub fn lookup_by_via(
+        &self,
+        src_table_id: &str,
+        via_field: &str,
+        target_field: &str,
+    ) -> Result<HashMap<String, String>, StIndexError> {
+        let per_row = self.compute_lookup(src_table_id, via_field, target_field)?;
+        let via = self.src_field_values(src_table_id, via_field)?;
+        Ok(rekey_by_via(per_row, &via))
+    }
+
+    /// Rollup keyed by the via reference cell value (for query-time injection).
+    pub fn rollup_by_via(
+        &self,
+        src_table_id: &str,
+        via_field: &str,
+        target_field: &str,
+        func: &str,
+    ) -> Result<HashMap<String, String>, StIndexError> {
+        let per_row = self.compute_rollup(src_table_id, via_field, target_field, func)?;
+        let via = self.src_field_values(src_table_id, via_field)?;
+        Ok(rekey_by_via(per_row, &via))
+    }
+
     fn scalar_count(&self, sql: &str, arg: Option<&str>) -> Result<usize, StIndexError> {
         let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
         let n: i64 = match arg {
@@ -623,6 +676,22 @@ fn parse_ref_tokens(cell: &str) -> Vec<String> {
         })
         .filter(|t| !t.is_empty())
         .collect()
+}
+
+/// Re-key a per-row_id computed map by the row's via cell value. Rows sharing a
+/// via value resolve to the same edges, hence the same computed value, so any
+/// representative is correct (last-write-wins is safe).
+fn rekey_by_via(
+    per_row: HashMap<String, String>,
+    via: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for (row_id, value) in per_row {
+        if let Some(via_val) = via.get(&row_id) {
+            out.insert(via_val.clone(), value);
+        }
+    }
+    out
 }
 
 /// Format a rollup aggregate: integers without a trailing `.0`, else trimmed.
@@ -993,6 +1062,22 @@ mod tests {
         assert!(sums.contains(&&"300".to_string()), "sums={sum:?}");
         // D1 counts 2 linked rows.
         assert!(count.values().any(|v| v == "2"), "counts={count:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn by_via_keys_lookup_and_rollup_for_injection() {
+        let (path, idx, dtid, _ctid) = relational_fixture();
+        // Keyed by the via cell value (what the query path matches row["contact"] on).
+        let lookup = idx.lookup_by_via(&dtid, "contact", "email").unwrap();
+        // D2's via value "Acme" → Acme's email.
+        assert_eq!(lookup.get("Acme").map(String::as_str), Some("a@acme.co"));
+        // D1's via value "[[Acme]], Beta" → both emails.
+        let d1 = lookup.get("[[Acme]], Beta").unwrap();
+        assert!(d1.contains("a@acme.co") && d1.contains("b@beta.co"));
+        let rollup = idx.rollup_by_via(&dtid, "contact", "spend", "sum").unwrap();
+        assert_eq!(rollup.get("Acme").map(String::as_str), Some("300"));
+        assert_eq!(rollup.get("[[Acme]], Beta").map(String::as_str), Some("420"));
         let _ = std::fs::remove_file(&path);
     }
 
