@@ -458,6 +458,13 @@ export const SmartTableGrid = ({
         onCellEdited={editable ? onCellEdited : undefined}
         customRenderers={[pillRenderer, starRenderer, rangeRenderer]}
         rowHeight={rowHeight}
+        theme={{
+          // Grist-minimal: hairline grid lines (ADR-003 frontend §6 v20,
+          // 2026-06-21 — smart-table minimal UI, reference getgrist). Canvas
+          // theme takes literal colors (no CSS vars).
+          borderColor: 'rgba(0, 0, 0, 0.055)',
+          horizontalBorderColor: 'rgba(0, 0, 0, 0.045)',
+        }}
         freezeColumns={freezeColumns > 0 ? freezeColumns + (expandable ? 1 : 0) : 0}
         onColumnResize={(c, w) => setWidths((p) => ({ ...p, [String(c.id)]: w }))}
         onHeaderMenuClick={onHeaderMenu ? (col) => onHeaderMenu(String(columns[col]?.id)) : undefined}

@@ -1,31 +1,26 @@
-// TablesPanel — the unified workspace scene (ADR-003 §6 / §8). A minimal Grist /
-// Teable-style layout: a collapsible left tree (DOCS / TABLES / TEMPLATES) beside
-// the viewer. Pick a table -> SmartTableViewer (its own top view bar: grid /
-// kanban / chart / timeline …); pick a doc -> the markdown viewer. "+ New" seeds
-// a table from a template; Import loads a CSV. Renders in AmbientHome beside
-// Irisy (Irisy stays pinned), like NotesApp.
+// TablesPanel — the smart-table workspace scene (ADR-003 §6 / §8). A minimal
+// Grist / Teable-style layout: a collapsible left tree of TABLES (+ TEMPLATES)
+// beside the viewer. Smart tables live in their OWN `tables/` folder, separate
+// from the user's Obsidian notes — the sidebar never mixes in vault docs, so
+// the two never collide (bao 2026-06-21; ADR-003 §6 v20). Pick a table ->
+// SmartTableViewer (its own top view bar: grid / kanban / chart / timeline …);
+// "+ New" or a template seeds a table; Import loads a CSV. Renders in
+// AmbientHome beside Irisy (Irisy stays pinned).
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactElement } from 'react';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
-import { ViewerHost } from '@/components/viewers/ViewerHost';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
-import {
-  createSmartTable,
-  importCsv,
-  listSmartTables,
-  listVaultDocs,
-  TEMPLATES,
-} from '@/lib/smart-tables';
+import { createSmartTable, importCsv, listSmartTables, TEMPLATES } from '@/lib/smart-tables';
 import styles from './TablesPanel.module.css';
 
 interface TablesPanelProps {
   /** Lift the currently-open table path so the shell can feed it to Irisy as
-   *  ambient context ("the user is viewing <path>"). Docs report null. */
+   *  ambient context ("the user is viewing <path>"). */
   onActiveTable?: (path: string | null) => void;
 }
 
-type Selection = { path: string; kind: 'table' | 'doc' } | null;
+type Selection = string | null;
 
 export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElement => {
   const qc = useQueryClient();
@@ -33,18 +28,13 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
     queryKey: ['smart-tables'],
     queryFn: listSmartTables,
   });
-  const { data: docs, isLoading: docsLoading } = useQuery({
-    queryKey: ['vault-docs'],
-    queryFn: listVaultDocs,
-  });
   const [selected, setSelected] = useState<Selection>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
-  // Report the open TABLE up (docs aren't query context) so Irisy knows what
-  // the user is looking at.
+  // Report the open table up so Irisy knows what the user is looking at.
   useEffect(() => {
-    onActiveTable?.(selected?.kind === 'table' ? selected.path : null);
+    onActiveTable?.(selected);
     return () => onActiveTable?.(null);
   }, [selected, onActiveTable]);
 
@@ -54,7 +44,7 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
     if (name == null) return;
     const path = await createSmartTable(name, key);
     await qc.invalidateQueries({ queryKey: ['smart-tables'] });
-    setSelected({ path, kind: 'table' });
+    setSelected(path);
   };
 
   const onImport = async (file: File | undefined): Promise<void> => {
@@ -62,7 +52,7 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
     const text = await file.text();
     const path = await importCsv(file.name.replace(/\.csv$/i, ''), text);
     await qc.invalidateQueries({ queryKey: ['smart-tables'] });
-    setSelected({ path, kind: 'table' });
+    setSelected(path);
   };
 
   if (collapsed) {
@@ -148,8 +138,8 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
                   <button
                     type="button"
                     className={styles.item}
-                    data-active={selected?.path === t.path}
-                    onClick={() => setSelected({ path: t.path, kind: 'table' })}
+                    data-active={selected === t.path}
+                    onClick={() => setSelected(t.path)}
                   >
                     <span className={styles.itemIcon}>▤</span>
                     <span className={styles.itemTitle}>{t.title}</span>
@@ -162,29 +152,6 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
             <div className={styles.empty}>
               No tables yet — <strong>+ New</strong>.
             </div>
-          )}
-
-          <div className={styles.sectionLabel}>Docs</div>
-          {docsLoading ? (
-            <div className={styles.empty}>loading…</div>
-          ) : docs && docs.length > 0 ? (
-            <ul className={styles.items}>
-              {docs.map((d) => (
-                <li key={d.path}>
-                  <button
-                    type="button"
-                    className={styles.item}
-                    data-active={selected?.path === d.path}
-                    onClick={() => setSelected({ path: d.path, kind: 'doc' })}
-                  >
-                    <span className={styles.itemIcon}>◧</span>
-                    <span className={styles.itemTitle}>{d.title}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className={styles.empty}>No docs yet.</div>
           )}
 
           <div className={styles.sectionLabel}>Templates</div>
@@ -213,14 +180,10 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
 
 function renderDetail(selected: Selection): ReactElement {
   if (!selected) {
-    return <div className={styles.detailEmpty}>Pick a table or doc.</div>;
+    return <div className={styles.detailEmpty}>Pick a table.</div>;
   }
-  const resource = resourceFromVaultPath(selected.path);
-  // Key on the path so switching items forces a clean remount (no viewer state
-  // bleeds across a selection change).
-  return selected.kind === 'table' ? (
-    <SmartTableViewer key={selected.path} resource={resource} />
-  ) : (
-    <ViewerHost key={selected.path} resource={resource} />
-  );
+  const resource = resourceFromVaultPath(selected);
+  // Key on the path so switching tables forces a clean remount (no viewer
+  // state bleeds across a selection change).
+  return <SmartTableViewer key={selected} resource={resource} />;
 }

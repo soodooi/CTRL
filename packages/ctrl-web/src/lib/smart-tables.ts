@@ -19,8 +19,10 @@ export const listSmartTables = async (): Promise<SmartTableEntry[]> => {
   const entries: SmartTableEntry[] = [];
   for (const path of paths) {
     if (!path.toLowerCase().endsWith('.md')) continue;
-    // Skip CTRL system dirs (.irisy-memory, .irisy-reflect, etc.).
-    if (path.split('/').some((seg) => seg.startsWith('.'))) continue;
+    // Smart tables live in their OWN folder (`tables/`), separate from the
+    // user's Obsidian notes elsewhere in the vault, so the two never collide
+    // (bao 2026-06-21). The table workspace only ever lists `tables/`.
+    if (!path.startsWith('tables/')) continue;
     try {
       const entry = await vaultRead(path);
       const fm = entry.frontmatter as { schema?: unknown[]; title?: unknown };
@@ -30,33 +32,6 @@ export const listSmartTables = async (): Promise<SmartTableEntry[]> => {
       }
     } catch {
       // Unreadable file — skip, not fatal for a read-only scan.
-    }
-  }
-  return entries.sort((a, b) => a.title.localeCompare(b.title));
-};
-
-export interface VaultDocEntry {
-  path: string;
-  title: string;
-}
-
-/** Scan the vault for plain markdown docs — `.md` files that are NOT smart
- *  tables (no `schema:` block) and not in a CTRL system dir. The DOCS half of
- *  the unified workspace sidebar. */
-export const listVaultDocs = async (): Promise<VaultDocEntry[]> => {
-  const paths = await vaultList();
-  const entries: VaultDocEntry[] = [];
-  for (const path of paths) {
-    if (!path.toLowerCase().endsWith('.md')) continue;
-    if (path.split('/').some((seg) => seg.startsWith('.'))) continue;
-    try {
-      const entry = await vaultRead(path);
-      if (isSmartTableFrontmatter(entry.frontmatter)) continue; // that's a table
-      const fm = entry.frontmatter as { title?: unknown };
-      const title = typeof fm.title === 'string' && fm.title.trim() ? fm.title : path.replace(/\.md$/i, '');
-      entries.push({ path, title });
-    } catch {
-      // Unreadable — skip.
     }
   }
   return entries.sort((a, b) => a.title.localeCompare(b.title));
