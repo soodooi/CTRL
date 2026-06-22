@@ -152,12 +152,6 @@ export const SmartTableView = ({
   const [density, setDensity] = useState<'compact' | 'cozy' | 'comfortable'>('cozy');
   const [freezePrimary, setFreezePrimary] = useState(false);
   const [hiddenFields, setHiddenFields] = useState<Set<string>>(new Set());
-  // Which toolbar popover is open (Grist-minimal: Filter/Sort/Group/Fields live
-  // in popovers; the bar shows only flat trigger buttons, never inline selects).
-  // (ADR-003 frontend §6 v20, 2026-06-21 — smart-table minimal UI.)
-  const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | 'group' | 'fields' | null>(null);
-  const toggleMenu = (m: 'filter' | 'sort' | 'group' | 'fields') =>
-    setOpenMenu((cur) => (cur === m ? null : m));
   const applyView = (v: ViewSpec, i: number): void => {
     setViewMode(v.kind);
     setGroupBy(v.groupBy ?? null);
@@ -207,8 +201,12 @@ export const SmartTableView = ({
   // 3-pane layout — grid on the left, configuration on the right — instead of
   // a transient modal. Collapsible; reopened from the query-bar "Panel" button.
   const [panelOpen, setPanelOpen] = useState(true);
+  // The panel has two tabs (Grist's Widget + Column): "table" = view config
+  // (filter / sort / group / fields), "column" = the selected column's schema.
+  const [panelTab, setPanelTab] = useState<'table' | 'column'>('table');
   const openFieldInPanel = (edit: FieldEdit): void => {
     setFieldEdit(edit);
+    setPanelTab('column');
     setPanelOpen(true);
   };
 
@@ -283,226 +281,6 @@ export const SmartTableView = ({
           onChange={(e) => setSearch(e.target.value)}
           data-testid="smart-table-search"
         />
-
-        {/* Filter — popover (Grist-minimal: no inline selects in the bar). */}
-        <div className={styles.fieldsWrap}>
-          <button
-            type="button"
-            className={styles.queryToggle}
-            data-active={filters.length > 0}
-            onClick={() => toggleMenu('filter')}
-            title="Filter rows"
-            data-testid="smart-table-filter"
-          >
-            ⚲ Filter{filters.length > 0 ? ` (${filters.length})` : ''}
-          </button>
-          {openMenu === 'filter' && (
-            <div className={styles.fieldsMenu} data-testid="filter-menu">
-              <div className={styles.menuRow}>
-                <select
-                  className={styles.querySelect}
-                  value={draft.field}
-                  onChange={(e) => {
-                    const field = e.target.value;
-                    const ops = OPERATORS_BY_TYPE[typeOf(field)] ?? ['contains'];
-                    setDraft({ field, op: ops[0] ?? 'contains', value: '' });
-                  }}
-                >
-                  {visibleSchema.map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className={styles.querySelect}
-                  value={draft.op}
-                  onChange={(e) => setDraft((d) => ({ ...d, op: e.target.value as Operator }))}
-                >
-                  {draftOps.map((op) => (
-                    <option key={op} value={op}>
-                      {op}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.menuRow}>
-                <input
-                  className={styles.queryInput}
-                  value={draft.value}
-                  placeholder={VALUE_HINT[draft.op] ?? 'value'}
-                  onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))}
-                  onKeyDown={(e) => e.key === 'Enter' && addFilter()}
-                />
-                <button type="button" className={styles.queryAdd} onClick={addFilter} title="Add filter">
-                  + Add
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Sort — popover */}
-        <div className={styles.fieldsWrap}>
-          <button
-            type="button"
-            className={styles.queryToggle}
-            data-active={Boolean(sort)}
-            onClick={() => toggleMenu('sort')}
-            title="Sort rows"
-            data-testid="smart-table-sort"
-          >
-            ⤓ Sort
-          </button>
-          {openMenu === 'sort' && (
-            <div className={styles.fieldsMenu}>
-              <div className={styles.menuRow}>
-                <select
-                  className={styles.querySelect}
-                  value={sort?.field ?? ''}
-                  onChange={(e) =>
-                    setSort(e.target.value ? { field: e.target.value, desc: sort?.desc ?? false } : null)
-                  }
-                >
-                  <option value="">none</option>
-                  {visibleSchema.map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                {sort && (
-                  <button
-                    type="button"
-                    className={styles.querySort}
-                    onClick={() => setSort({ field: sort.field, desc: !sort.desc })}
-                    title="Toggle direction"
-                  >
-                    {sort.desc ? '↓' : '↑'}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Group — popover */}
-        <div className={styles.fieldsWrap}>
-          <button
-            type="button"
-            className={styles.queryToggle}
-            data-active={Boolean(groupBy)}
-            onClick={() => toggleMenu('group')}
-            title="Group rows"
-            data-testid="smart-table-group-btn"
-          >
-            ⊞ Group
-          </button>
-          {openMenu === 'group' && (
-            <div className={styles.fieldsMenu}>
-              <div className={styles.menuRow}>
-                <select
-                  className={styles.querySelect}
-                  value={groupBy ?? ''}
-                  onChange={(e) => {
-                    setGroupBy(e.target.value || null);
-                    if (!e.target.value) setGroupBy2(null);
-                  }}
-                  data-testid="smart-table-group"
-                >
-                  <option value="">none</option>
-                  {visibleSchema.map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {groupBy && (
-                <div className={styles.menuRow}>
-                  <select
-                    className={styles.querySelect}
-                    value={groupBy2 ?? ''}
-                    onChange={(e) => setGroupBy2(e.target.value || null)}
-                    aria-label="Second group level"
-                    data-testid="smart-table-group2"
-                  >
-                    <option value="">then…</option>
-                    {visibleSchema
-                      .filter((c) => c.key !== groupBy)
-                      .map((c) => (
-                        <option key={c.key} value={c.key}>
-                          {c.label}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Fields & layout — popover (visibility always; density/freeze grid-only) */}
-        <div className={styles.fieldsWrap}>
-          <button
-            type="button"
-            className={styles.queryToggle}
-            data-active={hiddenFields.size > 0 || freezePrimary}
-            onClick={() => toggleMenu('fields')}
-            title="Show / hide fields, density, freeze"
-            data-testid="smart-table-fields"
-          >
-            ⚙ Fields{hiddenFields.size > 0 ? ` (${hiddenFields.size})` : ''}
-          </button>
-          {openMenu === 'fields' && (
-            <div className={styles.fieldsMenu} data-testid="fields-menu">
-              {viewMode === 'grid' && (
-                <div className={styles.menuRow}>
-                  <select
-                    className={styles.querySelect}
-                    value={density}
-                    onChange={(e) => setDensity(e.target.value as typeof density)}
-                    title="Row density"
-                    data-testid="smart-table-density"
-                  >
-                    <option value="compact">Compact</option>
-                    <option value="cozy">Cozy</option>
-                    <option value="comfortable">Comfortable</option>
-                  </select>
-                  <button
-                    type="button"
-                    className={styles.queryToggle}
-                    data-active={freezePrimary}
-                    onClick={() => setFreezePrimary((f) => !f)}
-                    title="Freeze the first column"
-                    data-testid="smart-table-freeze"
-                  >
-                    ⇥ Freeze
-                  </button>
-                </div>
-              )}
-              {table.schema
-                .filter((c) => !c.system)
-                .map((c) => (
-                  <label key={c.key} className={styles.fieldsItem}>
-                    <input
-                      type="checkbox"
-                      checked={!hiddenFields.has(c.key)}
-                      onChange={(e) =>
-                        setHiddenFields((prev) => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.delete(c.key);
-                          else next.add(c.key);
-                          return next;
-                        })
-                      }
-                    />
-                    {c.label}
-                  </label>
-                ))}
-            </div>
-          )}
-        </div>
 
         {(onSaveView || onReplaceViews) && (
           <button
@@ -810,7 +588,204 @@ export const SmartTableView = ({
               ⇥
             </button>
           </div>
-          {fieldEdit ? (
+          <div className={styles.creatorTabs} role="tablist">
+            <button
+              type="button"
+              role="tab"
+              className={styles.creatorTab}
+              data-active={panelTab === 'table'}
+              onClick={() => setPanelTab('table')}
+              data-testid="creator-tab-table"
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={styles.creatorTab}
+              data-active={panelTab === 'column'}
+              onClick={() => setPanelTab('column')}
+              data-testid="creator-tab-column"
+            >
+              Column
+            </button>
+          </div>
+
+          {panelTab === 'table' ? (
+            <div className={styles.creatorBody} data-testid="creator-table-tab">
+              {/* Sort & Filter (Grist's Widget tab) */}
+              <section className={styles.creatorSection}>
+                <div className={styles.creatorSectionTitle}>Filter</div>
+                <div className={styles.creatorRow}>
+                  <select
+                    className={styles.querySelect}
+                    value={draft.field}
+                    onChange={(e) => {
+                      const field = e.target.value;
+                      const ops = OPERATORS_BY_TYPE[typeOf(field)] ?? ['contains'];
+                      setDraft({ field, op: ops[0] ?? 'contains', value: '' });
+                    }}
+                    aria-label="Filter field"
+                  >
+                    {visibleSchema.map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className={styles.querySelect}
+                    value={draft.op}
+                    onChange={(e) => setDraft((d) => ({ ...d, op: e.target.value as Operator }))}
+                    aria-label="Filter operator"
+                  >
+                    {draftOps.map((op) => (
+                      <option key={op} value={op}>
+                        {op}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.creatorRow}>
+                  <input
+                    className={styles.queryInput}
+                    value={draft.value}
+                    placeholder={VALUE_HINT[draft.op] ?? 'value'}
+                    onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))}
+                    onKeyDown={(e) => e.key === 'Enter' && addFilter()}
+                    data-testid="filter-value"
+                  />
+                  <button type="button" className={styles.queryAdd} onClick={addFilter} title="Add filter">
+                    + Add
+                  </button>
+                </div>
+              </section>
+
+              <section className={styles.creatorSection}>
+                <div className={styles.creatorSectionTitle}>Sort</div>
+                <div className={styles.creatorRow}>
+                  <select
+                    className={styles.querySelect}
+                    value={sort?.field ?? ''}
+                    onChange={(e) =>
+                      setSort(e.target.value ? { field: e.target.value, desc: sort?.desc ?? false } : null)
+                    }
+                    aria-label="Sort field"
+                    data-testid="smart-table-sort"
+                  >
+                    <option value="">none</option>
+                    {visibleSchema.map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  {sort && (
+                    <button
+                      type="button"
+                      className={styles.querySort}
+                      onClick={() => setSort({ field: sort.field, desc: !sort.desc })}
+                      title="Toggle direction"
+                    >
+                      {sort.desc ? '↓' : '↑'}
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              <section className={styles.creatorSection}>
+                <div className={styles.creatorSectionTitle}>Group</div>
+                <div className={styles.creatorRow}>
+                  <select
+                    className={styles.querySelect}
+                    value={groupBy ?? ''}
+                    onChange={(e) => {
+                      setGroupBy(e.target.value || null);
+                      if (!e.target.value) setGroupBy2(null);
+                    }}
+                    aria-label="Group field"
+                    data-testid="smart-table-group"
+                  >
+                    <option value="">none</option>
+                    {visibleSchema.map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {groupBy && (
+                  <div className={styles.creatorRow}>
+                    <select
+                      className={styles.querySelect}
+                      value={groupBy2 ?? ''}
+                      onChange={(e) => setGroupBy2(e.target.value || null)}
+                      aria-label="Second group level"
+                      data-testid="smart-table-group2"
+                    >
+                      <option value="">then…</option>
+                      {visibleSchema
+                        .filter((c) => c.key !== groupBy)
+                        .map((c) => (
+                          <option key={c.key} value={c.key}>
+                            {c.label}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+              </section>
+
+              {/* Fields & layout */}
+              <section className={styles.creatorSection}>
+                <div className={styles.creatorSectionTitle}>Fields</div>
+                {viewMode === 'grid' && (
+                  <div className={styles.creatorRow}>
+                    <select
+                      className={styles.querySelect}
+                      value={density}
+                      onChange={(e) => setDensity(e.target.value as typeof density)}
+                      title="Row density"
+                      data-testid="smart-table-density"
+                    >
+                      <option value="compact">Compact</option>
+                      <option value="cozy">Cozy</option>
+                      <option value="comfortable">Comfortable</option>
+                    </select>
+                    <button
+                      type="button"
+                      className={styles.queryToggle}
+                      data-active={freezePrimary}
+                      onClick={() => setFreezePrimary((f) => !f)}
+                      title="Freeze the first column"
+                      data-testid="smart-table-freeze"
+                    >
+                      ⇥ Freeze
+                    </button>
+                  </div>
+                )}
+                {table.schema
+                  .filter((c) => !c.system)
+                  .map((c) => (
+                    <label key={c.key} className={styles.fieldsItem}>
+                      <input
+                        type="checkbox"
+                        checked={!hiddenFields.has(c.key)}
+                        onChange={(e) =>
+                          setHiddenFields((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.delete(c.key);
+                            else next.add(c.key);
+                            return next;
+                          })
+                        }
+                      />
+                      {c.label}
+                    </label>
+                  ))}
+              </section>
+            </div>
+          ) : fieldEdit ? (
             <SmartTableFieldEditor
               editing={fieldEdit}
               table={table}
