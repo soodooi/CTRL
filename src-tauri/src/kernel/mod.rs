@@ -51,6 +51,7 @@ pub mod sourcing_scheduler;
 pub mod stss_bridge;
 pub mod subprocess_actor;
 pub mod subprocess_stss_adapter;
+pub mod smart_table_index;
 pub mod vault;
 pub mod vault_notes_source;
 pub mod vault_smart_table;
