@@ -83,6 +83,71 @@ describe('queryTable', () => {
     expect(out.rows.map((r) => r.name)).toEqual(['Cobalt', 'Acme']);
   });
 
+  it('sorts a datetime column by date AND time (datetime base = date)', () => {
+    const src = `---
+schema:
+  - { key: name, label: Name, type: text }
+  - { key: at, label: At, type: datetime }
+---
+
+| Name | At               |
+|------|------------------|
+| A    | 2026-06-20T16:00 |
+| B    | 2026-06-20T09:00 |
+| C    | 2026-06-19T23:30 |
+`;
+    const out = queryTable(parseSmartTable(src), { sort: [{ field: 'at', desc: false }] }, NOW);
+    expect(out.rows.map((r) => r.name)).toEqual(['C', 'B', 'A']);
+  });
+
+  it('filters a datetime column with before (time-aware)', () => {
+    const src = `---
+schema:
+  - { key: name, label: Name, type: text }
+  - { key: at, label: At, type: datetime }
+---
+
+| Name | At               |
+|------|------------------|
+| A    | 2026-06-20T16:00 |
+| B    | 2026-06-20T09:00 |
+`;
+    const out = queryTable(
+      parseSmartTable(src),
+      { filters: [{ field: 'at', op: 'before', value: '2026-06-20T12:00' }] },
+      NOW,
+    );
+    expect(out.rows.map((r) => r.name)).toEqual(['B']);
+  });
+
+  it('multi-column sort: primary key then tie-break (Grist)', () => {
+    const src = `---
+schema:
+  - { key: stage, label: Stage, type: text }
+  - { key: amount, label: Amount, type: number }
+---
+
+| Stage | Amount |
+|-------|--------|
+| won   | 50     |
+| new   | 90     |
+| won   | 200    |
+| new   | 10     |
+`;
+    const out = queryTable(
+      parseSmartTable(src),
+      { sort: [{ field: 'stage', desc: false }, { field: 'amount', desc: true }] },
+      NOW,
+    );
+    // Stage asc groups new before won; within each, amount desc.
+    expect(out.rows.map((r) => `${r.stage}:${r.amount}`)).toEqual([
+      'new:90',
+      'new:10',
+      'won:200',
+      'won:50',
+    ]);
+  });
+
   it('rejects an unknown field with the valid set', () => {
     expect(() => queryTable(table(), { filters: [{ field: 'nope', op: 'eq', value: 'x' }] }, NOW)).toThrow(
       FieldNotFoundError,

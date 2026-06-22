@@ -180,15 +180,29 @@ export const Cell = ({ col, value, editable, onChange }: CellProps): ReactElemen
       );
     }
     const inputType =
-      base === 'number' ? 'number' : base === 'date' ? 'date' : col.type === 'email' ? 'email' : col.type === 'phone' ? 'tel' : col.type === 'url' ? 'url' : 'text';
+      col.type === 'datetime'
+        ? 'datetime-local'
+        : base === 'number'
+          ? 'number'
+          : base === 'date'
+            ? 'date'
+            : col.type === 'email'
+              ? 'email'
+              : col.type === 'phone'
+                ? 'tel'
+                : col.type === 'url'
+                  ? 'url'
+                  : 'text';
     return (
       <input
         autoFocus
         className={styles.tableCell}
         type={inputType}
-        defaultValue={value}
+        // datetime-local wants `YYYY-MM-DDTHH:mm`; tolerate a space separator.
+        defaultValue={col.type === 'datetime' ? value.replace(' ', 'T').slice(0, 16) : value}
         min={base === 'number' ? col.min : undefined}
         max={base === 'number' ? col.max : undefined}
+        step={col.type === 'integer' ? 1 : undefined}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && base !== 'text') (e.target as HTMLInputElement).blur();
           if (e.key === 'Escape') setEditing(false);

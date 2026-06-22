@@ -17,7 +17,8 @@ import { queryTable, type Filter, type QueryResult, type SortKey } from '@/lib/s
 export interface TableQueryState {
   filters: Filter[];
   conjunction: 'and' | 'or';
-  sort: SortKey | null;
+  /** Ordered sort keys (first wins, the rest break ties — Grist multi-sort). */
+  sort: SortKey[];
   groupBy: string | null;
   groupBy2: string | null;
   search: string;
@@ -41,7 +42,7 @@ export const useTableQuery = (
       queryTable(indexed, {
         filters,
         conjunction,
-        sort: sort ? [sort] : [],
+        sort,
         groupBy: [groupBy, groupBy2].filter((g): g is string => Boolean(g)),
       }),
     [indexed, filters, conjunction, sort, groupBy, groupBy2],

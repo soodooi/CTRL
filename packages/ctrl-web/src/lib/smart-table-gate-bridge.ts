@@ -14,12 +14,12 @@ import type { Filter, SortKey } from './smart-table-query';
 export const buildGateRequest = (
   filters: Filter[],
   conjunction: 'and' | 'or',
-  sort: SortKey | null,
+  sort: SortKey[],
   groupLevels: Array<string | null>,
 ): SmartTableQueryRequest => ({
   filters,
   conjunction,
-  sort: sort ? [sort] : [],
+  sort,
   group_by: groupLevels.filter((g): g is string => Boolean(g)),
 });
 

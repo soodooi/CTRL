@@ -131,7 +131,10 @@ export const SmartTableView = ({
   const savedView: ViewSpec | undefined = table.views[0];
   const [filters, setFilters] = useState<Filter[]>([]);
   const [conjunction, setConjunction] = useState<'and' | 'or'>('and');
-  const [sort, setSort] = useState<SortKey | null>(savedView?.sort ?? null);
+  // Ordered sort keys (Grist multi-column sort): the first key wins, the rest
+  // break ties. Persisted views still carry a single primary key, so we seed the
+  // list from it and write the first key back.
+  const [sort, setSort] = useState<SortKey[]>(savedView?.sort ? [savedView.sort] : []);
   const [groupBy, setGroupBy] = useState<string | null>(savedView?.groupBy ?? null);
   const [groupBy2, setGroupBy2] = useState<string | null>(null);
   // Bottom statistic bar (borrowed from Grist's SelectionSummary aggregation):
@@ -151,17 +154,21 @@ export const SmartTableView = ({
   const [search, setSearch] = useState('');
   const [density, setDensity] = useState<'compact' | 'cozy' | 'comfortable'>('cozy');
   const [freezePrimary, setFreezePrimary] = useState(false);
+  // Free row height + text wrapping (Grist parity): when on, multi-line cell text
+  // wraps inside a taller row instead of being clipped to one line.
+  const [wrapText, setWrapText] = useState(false);
   const [hiddenFields, setHiddenFields] = useState<Set<string>>(new Set());
   const applyView = (v: ViewSpec, i: number): void => {
     setViewMode(v.kind);
     setGroupBy(v.groupBy ?? null);
-    setSort(v.sort ?? null);
+    setSort(v.sort ? [v.sort] : []);
     setActiveView(i);
   };
   const currentViewSpec = (): ViewSpec => ({
     kind: viewMode,
     groupBy,
-    sort: sort ? { field: sort.field, desc: sort.desc ?? false } : null,
+    // Persist the primary sort key (frontmatter view-state carries one level).
+    sort: sort[0] ? { field: sort[0].field, desc: sort[0].desc ?? false } : null,
   });
   const saveCurrentView = (): void => {
     if (!onReplaceViews) {
@@ -217,12 +224,15 @@ export const SmartTableView = ({
   // §14 query orchestration (client engine + kernel gate with consistency
   // fallback + quick search) lives in a hook so this component stays presentational.
   const result = useTableQuery(table, { filters, conjunction, sort, groupBy, groupBy2, search }, runQuery);
-  const rowHeight = density === 'compact' ? 28 : density === 'comfortable' ? 46 : 34;
+  const baseRowHeight = density === 'compact' ? 28 : density === 'comfortable' ? 46 : 34;
+  // Wrapping needs vertical room — give wrapped rows extra height on top of the
+  // chosen density so two-ish lines fit without clipping.
+  const rowHeight = wrapText ? baseRowHeight + 30 : baseRowHeight;
   // Drag-reorder is only meaningful when the visible rows are in their natural
   // markdown order — once sorted / grouped / filtered / searched, a visible
   // index no longer maps to a canonical row, so disable it.
   const naturalOrder =
-    filters.length === 0 && !sort && !groupBy && !groupBy2 && search.trim() === '';
+    filters.length === 0 && sort.length === 0 && !groupBy && !groupBy2 && search.trim() === '';
   const groupLabel = (key: string) => table.schema.find((c) => c.key === key)?.label ?? key;
   // Fields shown to the user (system fields like the record id stay in the data
   // but never appear in pickers / cards / non-grid views).
@@ -378,6 +388,7 @@ export const SmartTableView = ({
             onSelectedRowsChange={editable && onDeleteRows ? setSelectedRows : undefined}
             onHeaderMenu={editsSchema ? (key) => openFieldInPanel({ col: table.schema.find((c) => c.key === key) }) : undefined}
             rowHeight={rowHeight}
+            wrapText={wrapText}
             freezeColumns={freezePrimary ? 1 : 0}
             onRowMove={
               editable && onMoveRow && naturalOrder
@@ -520,7 +531,16 @@ export const SmartTableView = ({
                 ) : (
                   <input
                     className={styles.formInput}
-                    type={baseCellType(c.type) === 'number' ? 'number' : baseCellType(c.type) === 'date' ? 'date' : 'text'}
+                    type={
+                      c.type === 'datetime'
+                        ? 'datetime-local'
+                        : baseCellType(c.type) === 'number'
+                          ? 'number'
+                          : baseCellType(c.type) === 'date'
+                            ? 'date'
+                            : 'text'
+                    }
+                    step={c.type === 'integer' ? 1 : undefined}
                     value={formDraft[c.key] ?? ''}
                     onChange={(e) => setFormDraft((d) => ({ ...d, [c.key]: e.target.value }))}
                   />
@@ -663,34 +683,71 @@ export const SmartTableView = ({
 
               <section className={styles.creatorSection}>
                 <div className={styles.creatorSectionTitle}>Sort</div>
-                <div className={styles.creatorRow}>
-                  <select
-                    className={styles.querySelect}
-                    value={sort?.field ?? ''}
-                    onChange={(e) =>
-                      setSort(e.target.value ? { field: e.target.value, desc: sort?.desc ?? false } : null)
-                    }
-                    aria-label="Sort field"
-                    data-testid="smart-table-sort"
-                  >
-                    <option value="">none</option>
-                    {visibleSchema.map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                  {sort && (
+                {/* Grist-style multi-column sort: ordered keys, the first wins
+                    and the rest break ties. Each row picks a field, toggles its
+                    direction, or removes itself. */}
+                {sort.map((s, i) => (
+                  <div key={`${s.field}-${i}`} className={styles.creatorRow} data-testid="smart-table-sort-key">
+                    <select
+                      className={styles.querySelect}
+                      value={s.field}
+                      onChange={(e) =>
+                        setSort((prev) =>
+                          prev.map((k, j) => (j === i ? { field: e.target.value, desc: k.desc ?? false } : k)),
+                        )
+                      }
+                      aria-label={`Sort field ${i + 1}`}
+                      data-testid={i === 0 ? 'smart-table-sort' : `smart-table-sort-${i}`}
+                    >
+                      {visibleSchema
+                        // Avoid duplicating a field already used by another key.
+                        .filter((c) => c.key === s.field || !sort.some((k) => k.field === c.key))
+                        .map((c) => (
+                          <option key={c.key} value={c.key}>
+                            {c.label}
+                          </option>
+                        ))}
+                    </select>
                     <button
                       type="button"
                       className={styles.querySort}
-                      onClick={() => setSort({ field: sort.field, desc: !sort.desc })}
+                      onClick={() =>
+                        setSort((prev) => prev.map((k, j) => (j === i ? { ...k, desc: !k.desc } : k)))
+                      }
                       title="Toggle direction"
+                      data-testid={`smart-table-sort-dir-${i}`}
                     >
-                      {sort.desc ? '↓' : '↑'}
+                      {s.desc ? '↓' : '↑'}
                     </button>
-                  )}
-                </div>
+                    <button
+                      type="button"
+                      className={styles.queryChip}
+                      onClick={() => setSort((prev) => prev.filter((_, j) => j !== i))}
+                      title="Remove this sort key"
+                      data-testid={`smart-table-sort-remove-${i}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {(() => {
+                  const used = new Set(sort.map((s) => s.field));
+                  const next = visibleSchema.find((c) => !used.has(c.key));
+                  if (!next) return null;
+                  return (
+                    <div className={styles.creatorRow}>
+                      <button
+                        type="button"
+                        className={styles.queryAdd}
+                        onClick={() => setSort((prev) => [...prev, { field: next.key, desc: false }])}
+                        title="Add a sort key"
+                        data-testid="smart-table-sort-add"
+                      >
+                        + Sort
+                      </button>
+                    </div>
+                  );
+                })()}
               </section>
 
               <section className={styles.creatorSection}>
@@ -761,6 +818,16 @@ export const SmartTableView = ({
                       data-testid="smart-table-freeze"
                     >
                       ⇥ Freeze
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.queryToggle}
+                      data-active={wrapText}
+                      onClick={() => setWrapText((w) => !w)}
+                      title="Wrap cell text onto multiple lines (taller rows)"
+                      data-testid="smart-table-wrap"
+                    >
+                      ⏎ Wrap text
                     </button>
                   </div>
                 )}

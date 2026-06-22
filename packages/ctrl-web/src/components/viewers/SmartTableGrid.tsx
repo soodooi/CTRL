@@ -31,6 +31,7 @@ import { baseCellType, matchesColorRule, type CellType, type ColumnSpec, type Sm
 const iconFor = (t: CellType): GridColumnIcon => {
   switch (t) {
     case 'number':
+    case 'integer':
     case 'currency':
     case 'progress':
     case 'percent':
@@ -43,6 +44,7 @@ const iconFor = (t: CellType): GridColumnIcon => {
     case 'rating':
       return GridColumnIcon.HeaderEmoji;
     case 'date':
+    case 'datetime':
     case 'created_at':
     case 'modified_at':
       return GridColumnIcon.HeaderDate;
@@ -231,6 +233,9 @@ interface SmartTableGridProps {
   onSelectedRowsChange?: (canonicalIdxs: number[]) => void;
   /** Row height in px (row-density control). Default 34. */
   rowHeight?: number;
+  /** Wrap long text onto multiple lines inside the (taller) row instead of
+   *  clipping to one line — pairs with a raised rowHeight. */
+  wrapText?: boolean;
   /** Freeze the first N data columns (horizontal scroll keeps them pinned). */
   freezeColumns?: number;
   /** Drag-reorder a row (from → to, both visible-row indices = canonical here,
@@ -251,6 +256,7 @@ export const SmartTableGrid = ({
   onHeaderMenu,
   onSelectedRowsChange,
   rowHeight = 34,
+  wrapText = false,
   freezeColumns = 0,
   onRowMove,
 }: SmartTableGridProps): ReactElement => {
@@ -387,6 +393,7 @@ export const SmartTableGrid = ({
           else if (spec.type === 'percent') display = `${num}%`;
           else if (spec.type === 'duration')
             display = num >= 60 ? `${Math.floor(num / 60)}h ${num % 60}m` : `${num}m`;
+          else if (spec.type === 'integer') display = Math.trunc(num).toLocaleString();
         }
         return {
           kind: GridCellKind.Number,
@@ -406,7 +413,12 @@ export const SmartTableGrid = ({
   // (pill / number / text / …) gets the same treatment.
   const getCellContent = useCallback(
     (cell: Item): GridCell => {
-      const base = baseCellContent(cell);
+      let base = baseCellContent(cell);
+      // Text wrapping (Grist free row height): let multi-line text reflow inside
+      // the taller row. Only the plain Text cell kind supports allowWrapping.
+      if (wrapText && base.kind === GridCellKind.Text) {
+        base = { ...base, allowWrapping: true };
+      }
       const spec = cols[expandable ? cell[0] - 1 : cell[0]];
       if (spec?.colorOp) {
         const value = rows[cell[1]]?.[spec.key] ?? '';
@@ -423,7 +435,7 @@ export const SmartTableGrid = ({
       }
       return base;
     },
-    [baseCellContent, cols, expandable, rows],
+    [baseCellContent, cols, expandable, rows, wrapText],
   );
 
   const onCellEdited = useCallback(
@@ -435,7 +447,10 @@ export const SmartTableGrid = ({
       let v = '';
       if (newVal.kind === GridCellKind.Boolean) v = newVal.data ? 'x' : '';
       else if (newVal.kind === GridCellKind.Number)
-        v = newVal.data === undefined || newVal.data === null ? '' : String(newVal.data);
+        v =
+          newVal.data === undefined || newVal.data === null
+            ? ''
+            : String(spec.type === 'integer' ? Math.trunc(newVal.data) : newVal.data);
       else if (newVal.kind === GridCellKind.Uri || newVal.kind === GridCellKind.Text)
         v = newVal.data ?? '';
       else if (newVal.kind === GridCellKind.Custom) {

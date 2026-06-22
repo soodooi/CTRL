@@ -222,10 +222,14 @@ const parseNum = (s: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+// Accepts a plain date (YYYY-MM-DD) or a datetime (YYYY-MM-DDTHH:mm[:ss]) — the
+// `datetime` cell type collapses onto the `date` base, so the same parser drives
+// its filter / sort, while the time portion is preserved for ordering.
 const parseDate = (s: string): Date | null => {
   const t = s.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
-  const d = new Date(`${t}T00:00:00`);
+  const m = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2})?))?$/.exec(t);
+  if (!m) return null;
+  const d = new Date(`${m[1]}T${m[2] ?? '00:00:00'}`);
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
