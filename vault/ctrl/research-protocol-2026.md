@@ -78,6 +78,14 @@ related:
 | ④ 驱动外部 coding agent | **ACP** | 已成熟标准,Registry 28+,一个 client 驱动所有 BYO-CLI **(从 future 升为有据采用)** | 阶段 5 |
 | ⑤ 跨设备同步 | WebRTC+Olm+Automerge+CBOR **→ 跟踪 Beelay/Keyhive** | Beelay/Keyhive = Automerge 官方下一代 E2EE+capability sync,胜过手搓 Olm **(潜在校准)** | 现用现栈;Beelay/Keyhive = 演进跟踪 |
 
+## 补充:2026-07 MCP spec 增量 + 官方 extension 机制(第二轮 deep-research 的 confirmed claims)
+
+> 后续两轮研究(§14 独特性谱系、商业护城河)因 session 用量上限(2026-06-22,reset 4:10am PT)未跑成,待重跑。以下为协议选型/开源战略两轮**已对抗验证(多为 3-0)**的关键新增量:
+
+- **MCP Apps(2026-07-28 RC,3-0)**:MCP server 可 ship 交互式 HTML UI,host 在 **sandboxed iframe** 渲染,UI 模板提前声明(prefetch/cache/security-review)。→ MCP 正在吃「能力自带 UI」层(与 AG-UI/MCP-UI 部分重叠)。对 CTRL:能力插件可经 MCP Apps 自带 UI,影响 viewer registry / seam ③ 设计。
+- **Streamable HTTP 加 `Mcp-Method` / `Mcp-Name` headers(3-0)**:gateway/load-balancer/rate-limiter 不看 body 即可路由 + 施策。→ 直接利好 CTRL `:17873` gate 的策略路由/审计/限流。
+- **MCP 官方 extension 机制**:`{vendor-prefix}/{extension-name}` 反域名命名 + initialization 握手 `extensions` capability 协商 + 强制 graceful degradation(来源 modelcontextprotocol.io/extensions/overview;session limit 中断未完成 3 票验证,但来源为官方文档)。→ **§14 走「MCP 之上的开放 extension/profile」有官方、正式、可与原生 MCP 互操作的路径**,不用 fork、不破普通 MCP client。**这是 §14 开源路径迄今最强的利好证据。**
+
 ## 来源清单(deep-research 抓取,官方/一手优先)
 
 - chatforest.com/guides/mcp-ecosystem-2026-state-of-the-standard/
