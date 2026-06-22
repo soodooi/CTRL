@@ -531,8 +531,16 @@ impl KernelMcpRouter {
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         use query::QuerySource;
-        let body = serde_json::to_string(&table.describe()).map_err(map_serde_err)?;
-        Ok(CallToolResult::success(vec![Content::text(body)]))
+        // Advertise the computed relational columns (Reference / Lookup / Rollup)
+        // alongside the generic describe so Irisy understands them (design §D).
+        let describe = table.describe();
+        let body = serde_json::json!({
+            "source_kind": describe.source_kind,
+            "fields": describe.fields,
+            "operators": describe.operators,
+            "relations": table.relations,
+        });
+        Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
     }
 
     /// smart_table.query — the read half of the Unified Operation Interface
@@ -581,6 +589,14 @@ impl KernelMcpRouter {
         let _write_guard = lock.lock().await;
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        // Computed columns (Lookup / Rollup) are read-only derivatives — reject a
+        // write (ADR-002 §14: produce gated; only the underlying data is writable).
+        if table.is_read_only_field(&args.field) {
+            return Err(McpError::invalid_params(
+                format!("field '{}' is a computed column (read-only)", args.field),
+                None,
+            ));
+        }
         if !table.update_cell(args.row_index, &args.field, &args.value) {
             return Err(McpError::invalid_params(
                 format!(

@@ -34,7 +34,7 @@ governing ADR = **ADR-002 substrate §14**(v29)+ **ADR-003 frontend §6.5**(v16)
 ## 非目标 / 范围外 (Non-goals)
 
 - 不做可视化 workflow editor(撞「不做清单」;确定性多步编排是 §6.5.6 的 A/B/C 待 bao 拍)。
-- 不做关系型外键(关联/Lookup/Rollup)—— 用 `[[wikilink]]`+backlink 软关联(plain-text 取舍)。
+- ~~不做关系型外键(关联/Lookup/Rollup)~~ **(SUPERSEDED 2026-06-21: 走路线 C / ADR-002 §14 v30 做真关系型 —— SQLite 派生索引算 Reference/Lookup/Rollup, 计算列 query-time 派生、绝不写回 markdown, vim test 守住, plain-text 取舍化解。已落地 Slice 4a 引擎 + 4b 类型层。)**
 - 不在本目标内重构 Irisy 架构 / 不动 ADR-005 persona-shell。
 - review gate 全系统实装属 ADR-006 §4,不在本切片(produce 暂随 `vault::write`)。
 
@@ -51,4 +51,8 @@ governing ADR = **ADR-002 substrate §14**(v29)+ **ADR-003 frontend §6.5**(v16)
   - `d8a7c50` **轨2 Slice 1**: kernel `smart_table_index.rs` SQLite 派生索引 store (st_tables/st_rows/st_cells EAV + value_num/value_date 派生列 + reindex_table/remove_table/is_fresh), 仿 vault_index.rs 教条, markdown 永远 truth, 纯附加零行为改动。cargo test 5/5 + 全量 kernel 绿 + checker PASS。
   - 全部三块均 tsc/cargo + 测试 + 视觉(前端)/单测(kernel) + 独立 code-reviewer PASS。
   - `4307045` **轨2 Slice 2**: `query_indexed` index-backed query —— number(gt/lt/gte/lte)/date(比较) 在 AND 下推 SQL 剪枝 + 同一个 run_query 权威过滤, **parity 不变式** (13-case 矩阵测 index 路径 ≡ 内存 run_query 字节级一致, 含未知字段拒绝)。number eq/date within/OR 故意不下推。参数绑定无注入。cargo 7/7 + checker PASS。
-  - **下一步**: 轨2 Slice 3 (写穿透同步: produce 后 reindex + vault_watch 标陈旧懒重建 + gate 在 THRESHOLD 之上选 index 路径) ‖ 轨1 (DateTime/Integer 列类型 + 多列 sort + 行高换行)。Slice 4 = Reference/Lookup/Rollup, Slice 5 = 跨表 formula。
+  - `cd59b4e` **轨2 Slice 3**: 索引接进 :17873 gate —— `SmartTable::query_via_index` (大表>500行走 index, 小表/无索引/任何索引错误降级 run_query) + `reindex_into` 写穿透 (produce 写 markdown 后刷新) + router st_index best-effort 打开。**markdown 永远赢**: 读时 content-hash freshness 检查 + 陈旧懒重建 + 故障降级; 异步 AI job/外部 vim 编辑靠读时 hash 漂移自愈。cargo 13/13 (vault_smart_table) + 全量 kernel 绿 + checker PASS。(注: 真实 :17873 curl smoke 待重建 app; handler 是已测 query_via_index 的薄接线。)
+  - **轨2 索引地基完成 (Slice 1-3/5)**: store + index-backed query (parity) + gate 接线。
+  - `0f4423d` **轨2 Slice 4a**: 关系引擎核心 (跨表 JOIN) —— st_refs 边表 + `index_references` (解析 link token, 按目标 display 字段解析 dst_row_id, 匹配不到=dangling NULL) + `compute_lookup` (沿边取目标字段, 多目标拼接, 跳 dangling) + `compute_rollup` (count/sum/avg/min/max over 关联 value_num)。**纯派生只读, 不写 markdown** (守 vim test)。dangling 目标重现可重解析 un-dangle。reindex 删 outgoing 边 + remove 级联 + incoming 置 NULL。SQL 全参数绑定。cargo 10/10 确定性绿 (顺手修了 fresh_index 并行 temp-path 碰撞) + checker 核验生产逻辑 PASS。
+  - **轨2 Slice 4b** (committed next): 关系字段类型层 + 写保护 —— frontmatter 解析 reference(table/display)/lookup(via/target)/rollup(via/target/fn) 进 `SmartTable.relations` (对象 + inline flow 两形态), 计算列同时进 fields (可 filter/sort) 和 relations; `smart_table.describe` 广告 relations (Irisy 理解计算列); `is_read_only_field` + update_cell 拒绝写只读计算列 (reference 可写)。cargo 15/15 + checker PASS。
+  - **下一步 Slice 4c** = 查询时 surface 计算列**值** (跨表索引编排: 目标表也索引 + index_references + 按 via 单元格值注入 lookup/rollup 进 query 结果)。Slice 5 = 跨表 formula。‖ 轨1 (DateTime/Integer 列类型 + 多列 sort + 行高换行)。

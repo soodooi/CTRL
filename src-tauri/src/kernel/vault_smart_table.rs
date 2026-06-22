@@ -18,6 +18,38 @@ pub struct SmartTable {
     pub title: Option<String>,
     pub fields: Vec<FieldSpec>,
     pub rows: Vec<Row>,
+    /// Computed relational columns (slice 4): Reference / Lookup / Rollup
+    /// metadata parsed from the same `schema:` block. The columns also appear in
+    /// `fields` (base type) so they filter/sort; `relations` is the extra info
+    /// the index needs to compute them and `describe` advertises to Irisy.
+    pub relations: Vec<RelationField>,
+}
+
+/// A computed relational column's kind + parameters (ADR-002 §14 v30 / design
+/// §D). Reference is a stored, writable cell (link tokens); Lookup / Rollup are
+/// pure derivatives (read-only, computed over the index, never written back).
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RelationKind {
+    Reference { target_table: String, display: String },
+    Lookup { via: String, target: String },
+    Rollup { via: String, target: String, func: String },
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct RelationField {
+    pub field_key: String,
+    #[serde(flatten)]
+    pub kind: RelationKind,
+}
+
+impl RelationField {
+    /// Read-only derivatives (Lookup / Rollup) can't be written by a produce
+    /// verb — only the underlying Reference cell is editable. The gate rejects a
+    /// write to one of these (ADR-002 §14: query never mutates, produce gated).
+    pub fn is_read_only(&self) -> bool {
+        matches!(self.kind, RelationKind::Lookup { .. } | RelationKind::Rollup { .. })
+    }
 }
 
 impl SmartTable {
@@ -25,12 +57,21 @@ impl SmartTable {
     /// returns frontmatter as JSON) plus the markdown body.
     pub fn parse(frontmatter: &Value, body: &str) -> SmartTable {
         let fields = parse_schema(frontmatter);
+        let relations = parse_relations(frontmatter);
         let title = frontmatter
             .get("title")
             .and_then(Value::as_str)
             .map(str::to_string);
         let rows = parse_table(body, &fields);
-        SmartTable { title, fields, rows }
+        SmartTable { title, fields, rows, relations }
+    }
+
+    /// Is `field` a read-only computed column (Lookup / Rollup)? The gate uses
+    /// this to reject a produce write to a derived field (design §D).
+    pub fn is_read_only_field(&self, field: &str) -> bool {
+        self.relations
+            .iter()
+            .any(|r| r.field_key == field && r.is_read_only())
     }
 
     /// Serialize back to a markdown pipe-table body (header + separator + rows,
@@ -176,6 +217,74 @@ fn parse_schema(frontmatter: &Value) -> Vec<FieldSpec> {
             _ => None,
         })
         .collect()
+}
+
+/// Extract computed relational columns (Reference / Lookup / Rollup) from the
+/// same `schema:` block. Reads both structured-object and inline-flow-string
+/// items. The canonical frontmatter shape (design §D):
+///   - { key: contact,  type: reference, table: contacts.md, display: name }
+///   - { key: c_email,  type: lookup,    via: contact, target: email }
+///   - { key: c_total,  type: rollup,    via: contact, target: spend, fn: sum }
+fn parse_relations(frontmatter: &Value) -> Vec<RelationField> {
+    let Some(arr) = frontmatter.get("schema").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|item| {
+            let m = item_fields(item)?;
+            let key = m.get("key")?.clone();
+            let get = |k: &str| m.get(k).cloned().unwrap_or_default();
+            let kind = match m.get("type").map(String::as_str) {
+                Some("reference") => RelationKind::Reference {
+                    target_table: get("table"),
+                    display: {
+                        let d = get("display");
+                        if d.is_empty() { "name".to_string() } else { d }
+                    },
+                },
+                Some("lookup") => RelationKind::Lookup { via: get("via"), target: get("target") },
+                Some("rollup") => RelationKind::Rollup {
+                    via: get("via"),
+                    target: get("target"),
+                    func: {
+                        let f = get("fn");
+                        if f.is_empty() { "count".to_string() } else { f }
+                    },
+                },
+                _ => return None,
+            };
+            Some(RelationField { field_key: key, kind })
+        })
+        .collect()
+}
+
+/// Read a schema item's string-valued keys into a map, handling both the
+/// structured-object and inline-flow-string forms (mirrors `parse_schema`'s
+/// dual-form handling). Array values (e.g. `options`) are skipped.
+fn item_fields(item: &Value) -> Option<std::collections::HashMap<String, String>> {
+    match item {
+        Value::Object(o) => Some(
+            o.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect(),
+        ),
+        Value::String(s) => {
+            let inner = s.trim().strip_prefix('{')?.strip_suffix('}')?;
+            let mut m = std::collections::HashMap::new();
+            for pair in split_top_level(inner, ',') {
+                let Some(colon) = pair.find(':') else { continue };
+                let k = unquote(pair[..colon].trim()).to_string();
+                let v = pair[colon + 1..].trim();
+                // Skip list values; relations only use scalar params.
+                if v.starts_with('[') {
+                    continue;
+                }
+                m.insert(k, unquote(v).to_string());
+            }
+            Some(m)
+        }
+        _ => None,
+    }
 }
 
 /// Field from a structured JSON object.
@@ -384,6 +493,54 @@ mod tests {
     }
 
     #[test]
+    fn parses_relations_and_marks_computed_read_only() {
+        let fm = serde_json::json!({
+            "schema": [
+                { "key": "title", "label": "Title", "type": "text" },
+                { "key": "contact", "label": "Contact", "type": "reference", "table": "contacts.md", "display": "name" },
+                { "key": "c_email", "label": "Email", "type": "lookup", "via": "contact", "target": "email" },
+                { "key": "c_total", "label": "Total", "type": "rollup", "via": "contact", "target": "spend", "fn": "sum" }
+            ]
+        });
+        let t = SmartTable::parse(&fm, "");
+        assert_eq!(t.relations.len(), 3);
+        // Reference is a stored, writable cell; Lookup / Rollup are read-only.
+        assert!(!t.is_read_only_field("contact"));
+        assert!(t.is_read_only_field("c_email"));
+        assert!(t.is_read_only_field("c_total"));
+        assert!(!t.is_read_only_field("title"));
+        // The rollup carries its aggregate fn.
+        let rollup = t.relations.iter().find(|r| r.field_key == "c_total").unwrap();
+        assert_eq!(
+            rollup.kind,
+            RelationKind::Rollup { via: "contact".into(), target: "spend".into(), func: "sum".into() }
+        );
+        // Computed columns still appear as fields (so they filter/sort) — 4 cols.
+        assert_eq!(t.fields.len(), 4);
+    }
+
+    #[test]
+    fn parses_relations_from_inline_flow_strings() {
+        // vault::read's lightweight YAML yields inline-mapping strings.
+        let fm = serde_json::json!({
+            "schema": [
+                "{ key: contact, label: Contact, type: reference, table: contacts.md, display: name }",
+                "{ key: c_email, label: Email, type: lookup, via: contact, target: email }"
+            ]
+        });
+        let t = SmartTable::parse(&fm, "");
+        assert_eq!(t.relations.len(), 2);
+        assert!(t.is_read_only_field("c_email"));
+        match &t.relations[0].kind {
+            RelationKind::Reference { target_table, display } => {
+                assert_eq!(target_table, "contacts.md");
+                assert_eq!(display, "name");
+            }
+            other => panic!("expected reference, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn query_through_the_shared_engine() {
         let t = SmartTable::parse(&frontmatter(), BODY);
         let req = QueryRequest {
@@ -424,7 +581,7 @@ mod tests {
                     .collect::<Row>()
             })
             .collect();
-        SmartTable { title: Some("Big".into()), fields, rows }
+        SmartTable { title: Some("Big".into()), fields, rows, relations: Vec::new() }
     }
 
     #[test]
