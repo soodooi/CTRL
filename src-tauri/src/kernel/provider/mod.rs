@@ -11,7 +11,6 @@
 //                        persistence (v2 schema with migration) +
 //                        legacy ~/.ctrl/config.toml bridge
 //   - verify.rs          1-token "hi" trial chat
-//   - http_endpoint.rs   POST /text-chat for Pi bridge
 //   - adapter/
 //       cli/one_shot.rs           codex / gemini generic spawner
 //       cli/claude_persistent.rs  goose-style persistent claude CLI
@@ -28,13 +27,12 @@
 
 pub mod adapter;
 pub mod detect;
-pub mod http_endpoint;
 pub mod legacy_config;
 pub mod manifest;
 pub mod path_resolver;
 pub mod registry;
 // Shared text.chat candidate walking (ADR-002 § provider v9 §3.5) —
-// one SSOT consumed by http_endpoint + commands/irisy_chat.
+// one SSOT consumed by commands/irisy_chat + kernel/mcp_server.
 pub mod routing;
 #[path = "trait.rs"]
 pub mod r#trait;
@@ -49,10 +47,12 @@ pub mod ollama_embed;
 // callers can drive a provider directly and unit-test the drain with a fake —
 // used by `ai_column::complete_row` (ADR-003 frontend § viewer v15 §6.5.4 AI
 // field shortcut). (ADR-002 substrate § provider v2 §3.2 — adapter trait.)
-pub use r#trait::{Capability, Consumer, Provider};
+// ADR-002 substrate § provider v2 (2026-06-21, full-review): drop the
+// Capability re-export — unused after removing the retired-Pi http_endpoint.
+pub use r#trait::{Consumer, Provider};
 pub use registry::{
     ProviderListEntry, ProviderRegistry, RecordedFailover,
 };
-pub use types::{
-    ChatChunk, ChatOpts, ChatPrompt, LlmMessage, LlmPrompt, ProviderError,
-};
+// ADR-002 substrate § provider v2 (2026-06-21, full-review): ChatChunk /
+// ChatPrompt re-exports dropped — consumers import provider::types::* directly.
+pub use types::{ChatOpts, LlmMessage, LlmPrompt, ProviderError};

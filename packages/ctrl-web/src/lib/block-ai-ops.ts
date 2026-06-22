@@ -53,7 +53,7 @@ export const BLOCK_ACTIONS: ReadonlyArray<BlockAction> = [
     label: 'Translate',
     description: 'Translate into the target language.',
     requiresInput: true,
-    inputPlaceholder: 'Target language (e.g. English, 中文)',
+    inputPlaceholder: 'Target language (e.g. English, Chinese, Japanese)',
   },
   {
     id: 'continue',

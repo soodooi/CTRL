@@ -52,22 +52,13 @@ impl KernelSupervisor {
         };
         app.manage(handle.clone());
 
-        // ADR-002 substrate § brain v7 §1.1 + ADR-005 irisy v4 §7.5 (2026-06-04):
-        // Pi-facing HTTP endpoint serves both /text-chat (provider router)
-        // and /tool/<name> (kernel-tool dispatch for BYOK frontier-native
-        // function-calling). Spawned here — not from KernelRuntime::boot —
-        // so the /tool dispatcher reuses the same KernelHandle Tauri
-        // commands hold (single SSOT, no shadow `bridge` copy).
-        // Bound at boot so any provider-router consumer finds the endpoint
-        // on first /text-chat fetch (BrainSupervisor + Pi retired by
-        // ADR-002 substrate §1 v19 — 3-agent aggregator).
-        let handle_for_endpoint = handle.clone();
-        tauri::async_runtime::spawn(async move {
-            match crate::kernel::provider::http_endpoint::spawn(handle_for_endpoint).await {
-                Ok(port) => tracing::info!(port, "provider: HTTP endpoint listening (/text-chat + /tool/<name>)"),
-                Err(e) => tracing::warn!(error = %e, "provider: HTTP endpoint spawn failed"),
-            }
-        });
+        // NOTE (2026-06-21, full-review P0): the unauthenticated `:17878`
+        // provider HTTP endpoint (`/text-chat` + `/tool/<name>`) was removed.
+        // It existed only for the now-retired Pi bridge (ADR-002 §1 v19) and
+        // shipped with NO auth middleware, exposing vault_write / install_mcp /
+        // mcp_run and leaking provider API keys (get_active_provider_details)
+        // to any local process on loopback. The PWA reaches the provider
+        // router through the authenticated `:17873` gate instead.
 
         // Start the kernel MCP server — the single gate (ADR-002 § mcp-bus,
         // ADR-001 §4.1) exposing kernel capabilities (clipboard / OCR /
