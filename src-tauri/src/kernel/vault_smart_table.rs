@@ -5,7 +5,13 @@
 //! contract so Irisy can `describe` + `query` it via the :17873 gate, reusing
 //! the shared kernel query engine in `query.rs`.
 
-use crate::kernel::query::{CellType, Describe, FieldSpec, Operator, QuerySource, Row, SourceKind};
+use crate::kernel::query::{
+    run_query, CellType, Describe, FieldSpec, Operator, QueryError, QueryRequest, QueryResult,
+    QuerySource, Row, SourceKind,
+};
+use crate::kernel::smart_table_index::{table_id_for, SmartTableIndex, StIndexError};
+use crate::kernel::vault_embeddings::content_hash;
+use chrono::NaiveDate;
 use serde_json::Value;
 
 pub struct SmartTable {
@@ -93,6 +99,56 @@ impl QuerySource for SmartTable {
 
     fn rows(&self) -> &[Row] {
         &self.rows
+    }
+}
+
+/// Rows above this size read through the SQLite index; smaller tables stay on
+/// the zero-dependency in-memory engine where the index setup cost dominates.
+/// Correctness is identical either way (the index path has run_query parity),
+/// so this is purely a performance knob (design §C).
+pub const INDEX_QUERY_THRESHOLD: usize = 500;
+
+impl SmartTable {
+    /// Write-through: rebuild this table's derived SQLite index after a produce
+    /// verb wrote markdown. Best-effort — an index error is swallowed because
+    /// markdown is the source of truth and reads degrade to `run_query` when the
+    /// index is stale or absent. Keyed by content hash (mtime stays 0 on the gate
+    /// path; the hash fully captures content, mtime is for the future watch path).
+    pub fn reindex_into(&self, index: &SmartTableIndex, path: &str) {
+        let hash = content_hash(&self.serialize_body());
+        let _ = index.reindex_table(path, self.title.as_deref(), &self.fields, &self.rows, 0, &hash);
+    }
+
+    /// Read through the SQLite index when the table is large enough, else the
+    /// in-memory engine. The index is a pure accelerator: it is (re)built from
+    /// THIS just-parsed table when stale (markdown always wins) and ANY index db
+    /// error falls back to `run_query`. The result is identical to `self.query()`
+    /// (the parity invariant proven in smart_table_index tests); an unknown-field
+    /// rejection surfaces the same `QueryError` either way.
+    pub fn query_via_index(
+        &self,
+        index: Option<&SmartTableIndex>,
+        path: &str,
+        req: &QueryRequest,
+        now: NaiveDate,
+    ) -> Result<QueryResult, QueryError> {
+        let idx = match index {
+            Some(i) if self.rows.len() > INDEX_QUERY_THRESHOLD => i,
+            _ => return run_query(&self.fields, &self.rows, req, now),
+        };
+        let hash = content_hash(&self.serialize_body());
+        if !idx.is_fresh(path, 0, &hash).unwrap_or(false)
+            && idx
+                .reindex_table(path, self.title.as_deref(), &self.fields, &self.rows, 0, &hash)
+                .is_err()
+        {
+            return run_query(&self.fields, &self.rows, req, now);
+        }
+        match idx.query_indexed(&table_id_for(path), &self.fields, req, now) {
+            Ok(r) => Ok(r),
+            Err(StIndexError::Query(qe)) => Err(qe),
+            Err(_) => run_query(&self.fields, &self.rows, req, now),
+        }
     }
 }
 
@@ -338,6 +394,91 @@ mod tests {
         let out = t.query(&req, now).unwrap();
         assert_eq!(out.match_count, 1);
         assert_eq!(out.rows[0]["name"], "Acme");
+    }
+
+    // --- Slice 3: index-or-memory selection (write-through + read path) ---
+
+    use crate::kernel::smart_table_index::SmartTableIndex;
+
+    fn temp_index(label: &str) -> (std::path::PathBuf, SmartTableIndex) {
+        let mut p = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        p.push(format!("ctrl-st-vt-{label}-{}-{nanos}.db", std::process::id()));
+        let idx = SmartTableIndex::open(&p).expect("open index");
+        (p, idx)
+    }
+
+    /// A table with `n` rows so it crosses INDEX_QUERY_THRESHOLD.
+    fn big_table(n: usize) -> SmartTable {
+        let fields = vec![
+            FieldSpec { key: "name".into(), label: "Name".into(), cell_type: CellType::Text, options: None },
+            FieldSpec { key: "amount".into(), label: "Amount".into(), cell_type: CellType::Number, options: None },
+        ];
+        let rows = (0..n)
+            .map(|i| {
+                [("name".to_string(), format!("r{i}")), ("amount".to_string(), (i % 200).to_string())]
+                    .into_iter()
+                    .collect::<Row>()
+            })
+            .collect();
+        SmartTable { title: Some("Big".into()), fields, rows }
+    }
+
+    #[test]
+    fn query_via_index_matches_memory_above_threshold() {
+        let (path, idx) = temp_index("parity");
+        let t = big_table(INDEX_QUERY_THRESHOLD + 50); // crosses the threshold
+        let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
+        let req = QueryRequest {
+            filters: vec![Filter { field: "amount".into(), op: Operator::Gte, value: "150".into() }],
+            sort: vec![crate::kernel::query::SortKey { field: "amount".into(), desc: true }],
+            limit: Some(10),
+            ..Default::default()
+        };
+        let mem = t.query(&req, now).unwrap();
+        let via = t.query_via_index(Some(&idx), "tables/big.md", &req, now).unwrap();
+        assert_eq!(via.match_count, mem.match_count);
+        assert_eq!(via.rows, mem.rows);
+        // The index was built by the read (stale → reindex), so it now exists.
+        assert_eq!(idx.table_count().unwrap(), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn small_table_and_no_index_use_memory() {
+        let (path, idx) = temp_index("small");
+        let t = SmartTable::parse(&frontmatter(), BODY); // 2 rows, below threshold
+        let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
+        let req = QueryRequest {
+            filters: vec![Filter { field: "amount".into(), op: Operator::Gt, value: "60".into() }],
+            ..Default::default()
+        };
+        // Below threshold: index untouched, memory result correct.
+        let via = t.query_via_index(Some(&idx), "tables/leads.md", &req, now).unwrap();
+        assert_eq!(via.rows[0]["name"], "Acme");
+        assert_eq!(idx.table_count().unwrap(), 0);
+        // No index at all → memory.
+        let none = t.query_via_index(None, "tables/leads.md", &req, now).unwrap();
+        assert_eq!(none.rows[0]["name"], "Acme");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reindex_into_then_fresh_skips_rebuild() {
+        let (path, idx) = temp_index("write-through");
+        let t = big_table(INDEX_QUERY_THRESHOLD + 1);
+        // Write-through after a produce verb.
+        t.reindex_into(&idx, "tables/big.md");
+        assert_eq!(idx.table_count().unwrap(), 1);
+        // A subsequent read finds it fresh (same content hash) and still matches.
+        let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
+        let req = QueryRequest::default();
+        let via = t.query_via_index(Some(&idx), "tables/big.md", &req, now).unwrap();
+        assert_eq!(via.match_count, t.rows.len());
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

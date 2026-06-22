@@ -50,4 +50,5 @@ governing ADR = **ADR-002 substrate §14**(v29)+ **ADR-003 frontend §6.5**(v16)
   - `728c469` 轨1增量2: filter/sort/group/fields 收进 Creator Panel 双 tab (Table/Column), 查询栏清爽。
   - `d8a7c50` **轨2 Slice 1**: kernel `smart_table_index.rs` SQLite 派生索引 store (st_tables/st_rows/st_cells EAV + value_num/value_date 派生列 + reindex_table/remove_table/is_fresh), 仿 vault_index.rs 教条, markdown 永远 truth, 纯附加零行为改动。cargo test 5/5 + 全量 kernel 绿 + checker PASS。
   - 全部三块均 tsc/cargo + 测试 + 视觉(前端)/单测(kernel) + 独立 code-reviewer PASS。
-  - **下一步**: 轨2 Slice 2 (IndexedRecordSource: index-backed filter/sort/group + parity 测 vs run_query, gate 在 THRESHOLD 之上优先) ‖ 轨1 (DateTime/Integer 列类型 + 多列 sort + 行高换行)。
+  - `4307045` **轨2 Slice 2**: `query_indexed` index-backed query —— number(gt/lt/gte/lte)/date(比较) 在 AND 下推 SQL 剪枝 + 同一个 run_query 权威过滤, **parity 不变式** (13-case 矩阵测 index 路径 ≡ 内存 run_query 字节级一致, 含未知字段拒绝)。number eq/date within/OR 故意不下推。参数绑定无注入。cargo 7/7 + checker PASS。
+  - **下一步**: 轨2 Slice 3 (写穿透同步: produce 后 reindex + vault_watch 标陈旧懒重建 + gate 在 THRESHOLD 之上选 index 路径) ‖ 轨1 (DateTime/Integer 列类型 + 多列 sort + 行高换行)。Slice 4 = Reference/Lookup/Rollup, Slice 5 = 跨表 formula。

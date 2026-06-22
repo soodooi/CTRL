@@ -24,8 +24,8 @@
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
-    ai_column, provider::LlmPrompt, query, runtime_sources, vault, vault_notes_source,
-    vault_smart_table,
+    ai_column, provider::LlmPrompt, query, runtime_sources, smart_table_index, vault,
+    vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
 use axum::body::Body;
@@ -88,6 +88,11 @@ pub struct KernelMcpRouter {
     /// serialize instead of clobbering each other (full-review P0 lost-update
     /// fix, 2026-06-21).
     vault_write_locks: VaultWriteLocks,
+    /// Smart-table SQLite derived index (ADR-002 §14 v30 route C). A pure
+    /// accelerator: large-table reads route through it, produce writes refresh
+    /// it. None when the db can't open — every read falls back to the in-memory
+    /// engine, so the gate works with or without it (markdown is the truth).
+    st_index: Option<Arc<smart_table_index::SmartTableIndex>>,
 }
 
 /// Registry of per-path write locks (lazily created). The outer mutex guards
@@ -455,6 +460,11 @@ pub struct McpProxyCallArgs {
 #[tool_router]
 impl KernelMcpRouter {
     pub fn new(runtime: Arc<KernelRuntime>, local_storage: Option<Arc<LocalStorage>>) -> Self {
+        // Open the smart-table derived index (best-effort). A failure (or no
+        // HOME) leaves it None and every read uses the in-memory engine.
+        let st_index = smart_table_index::default_st_index_path()
+            .and_then(|p| smart_table_index::SmartTableIndex::open(&p).ok())
+            .map(Arc::new);
         Self {
             runtime,
             local_storage,
@@ -463,6 +473,7 @@ impl KernelMcpRouter {
             vault_write_locks: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
+            st_index,
         }
     }
 
@@ -545,9 +556,10 @@ impl KernelMcpRouter {
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
-        use query::QuerySource;
+        // Route through the SQLite index for large tables (pure accelerator with
+        // run_query parity + fallback); small tables stay in-memory.
         let result = table
-            .query(&req, now)
+            .query_via_index(self.st_index.as_deref(), &args.path, &req, now)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
@@ -580,6 +592,10 @@ impl KernelMcpRouter {
         }
         let new_body = table.serialize_body();
         vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        // Write-through: refresh the derived index from the just-written table.
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "updated {} row {} field {}",
             args.path, args.row_index, args.field
@@ -601,6 +617,10 @@ impl KernelMcpRouter {
         table.append_row(args.values.into_iter().collect());
         let new_body = table.serialize_body();
         vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        // Write-through: refresh the derived index from the just-written table.
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "appended row to {}",
             args.path
@@ -710,6 +730,10 @@ impl KernelMcpRouter {
         if rows_written > 0 {
             let new_body = table.serialize_body();
             vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+            // Write-through: refresh the derived index from the just-written table.
+            if let Some(idx) = self.st_index.as_deref() {
+                table.reindex_into(idx, &args.path);
+            }
         }
         let summary = ai_column::RunSummary {
             rows_total,
