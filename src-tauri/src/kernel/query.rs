@@ -155,7 +155,7 @@ pub struct QueryResult {
 
 /// Rejected query — currently only an unknown field reference (anti-hallucination
 /// feedback: returns the valid set so the caller fixes its next call).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum QueryError {
     UnknownField { field: String, valid: Vec<String> },
 }

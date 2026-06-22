@@ -3,23 +3,29 @@ import { attachCanonicalIdx, buildGateRequest } from './smart-table-gate-bridge'
 import type { SmartTable } from './smart-table';
 
 describe('buildGateRequest', () => {
-  it('passes filters + conjunction through and wraps a single sort', () => {
+  it('passes filters + conjunction + ordered sort keys through', () => {
     const req = buildGateRequest(
       [{ field: 'stage', op: 'eq', value: 'won' }],
       'or',
-      { field: 'amount', desc: true },
+      [
+        { field: 'amount', desc: true },
+        { field: 'name', desc: false },
+      ],
       ['stage', null, 'owner'],
     );
     expect(req).toEqual({
       filters: [{ field: 'stage', op: 'eq', value: 'won' }],
       conjunction: 'or',
-      sort: [{ field: 'amount', desc: true }],
+      sort: [
+        { field: 'amount', desc: true },
+        { field: 'name', desc: false },
+      ],
       group_by: ['stage', 'owner'],
     });
   });
 
   it('emits empty sort + group when none set', () => {
-    const req = buildGateRequest([], 'and', null, [null, null]);
+    const req = buildGateRequest([], 'and', [], [null, null]);
     expect(req.sort).toEqual([]);
     expect(req.group_by).toEqual([]);
   });

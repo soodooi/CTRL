@@ -32,10 +32,12 @@ export type CellType =
   | 'text'
   | 'multiline'
   | 'number'
+  | 'integer'
   | 'currency'
   | 'rating'
   | 'progress'
   | 'date'
+  | 'datetime'
   | 'checkbox'
   | 'tags'
   | 'select'
@@ -62,6 +64,7 @@ export type BaseCellType = 'text' | 'number' | 'date' | 'checkbox' | 'tags' | 's
  *  sync with the kernel's CellType::parse aliasing (query.rs). */
 export const baseCellType = (t: CellType): BaseCellType => {
   switch (t) {
+    case 'integer':
     case 'currency':
     case 'rating':
     case 'progress':
@@ -69,6 +72,7 @@ export const baseCellType = (t: CellType): BaseCellType => {
     case 'duration':
     case 'auto_number':
       return 'number';
+    case 'datetime':
     case 'created_at':
     case 'modified_at':
       return 'date';

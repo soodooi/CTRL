@@ -5,13 +5,58 @@
 //! contract so Irisy can `describe` + `query` it via the :17873 gate, reusing
 //! the shared kernel query engine in `query.rs`.
 
-use crate::kernel::query::{CellType, Describe, FieldSpec, Operator, QuerySource, Row, SourceKind};
+use crate::kernel::query::{
+    run_query, CellType, Describe, FieldSpec, Operator, QueryError, QueryRequest, QueryResult,
+    QuerySource, Row, SourceKind,
+};
+use crate::kernel::smart_table_index::{table_id_for, SmartTableIndex, StIndexError};
+use crate::kernel::vault_embeddings::content_hash;
+use chrono::NaiveDate;
 use serde_json::Value;
 
 pub struct SmartTable {
     pub title: Option<String>,
     pub fields: Vec<FieldSpec>,
     pub rows: Vec<Row>,
+    /// Computed relational columns (slice 4): Reference / Lookup / Rollup
+    /// metadata parsed from the same `schema:` block. The columns also appear in
+    /// `fields` (base type) so they filter/sort; `relations` is the extra info
+    /// the index needs to compute them and `describe` advertises to Irisy.
+    pub relations: Vec<RelationField>,
+}
+
+/// A computed relational column's kind + parameters (ADR-002 §14 v30 / design
+/// §D). Reference is a stored, writable cell (link tokens); Lookup / Rollup are
+/// pure derivatives (read-only, computed over the index, never written back).
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RelationKind {
+    Reference { target_table: String, display: String },
+    Lookup { via: String, target: String },
+    Rollup { via: String, target: String, func: String },
+    /// A cross-field arithmetic formula (slice 5). `expr` references other
+    /// columns by `{field}` or bare name and combines them with + - * / ( ).
+    /// Computed per row at query time; read-only, never written to markdown.
+    Formula { expr: String },
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct RelationField {
+    pub field_key: String,
+    #[serde(flatten)]
+    pub kind: RelationKind,
+}
+
+impl RelationField {
+    /// Read-only derivatives (Lookup / Rollup) can't be written by a produce
+    /// verb — only the underlying Reference cell is editable. The gate rejects a
+    /// write to one of these (ADR-002 §14: query never mutates, produce gated).
+    pub fn is_read_only(&self) -> bool {
+        matches!(
+            self.kind,
+            RelationKind::Lookup { .. } | RelationKind::Rollup { .. } | RelationKind::Formula { .. }
+        )
+    }
 }
 
 impl SmartTable {
@@ -19,12 +64,21 @@ impl SmartTable {
     /// returns frontmatter as JSON) plus the markdown body.
     pub fn parse(frontmatter: &Value, body: &str) -> SmartTable {
         let fields = parse_schema(frontmatter);
+        let relations = parse_relations(frontmatter);
         let title = frontmatter
             .get("title")
             .and_then(Value::as_str)
             .map(str::to_string);
         let rows = parse_table(body, &fields);
-        SmartTable { title, fields, rows }
+        SmartTable { title, fields, rows, relations }
+    }
+
+    /// Is `field` a read-only computed column (Lookup / Rollup)? The gate uses
+    /// this to reject a produce write to a derived field (design §D).
+    pub fn is_read_only_field(&self, field: &str) -> bool {
+        self.relations
+            .iter()
+            .any(|r| r.field_key == field && r.is_read_only())
     }
 
     /// Serialize back to a markdown pipe-table body (header + separator + rows,
@@ -96,10 +150,193 @@ impl QuerySource for SmartTable {
     }
 }
 
+/// Rows above this size read through the SQLite index; smaller tables stay on
+/// the zero-dependency in-memory engine where the index setup cost dominates.
+/// Correctness is identical either way (the index path has run_query parity),
+/// so this is purely a performance knob (design §C).
+pub const INDEX_QUERY_THRESHOLD: usize = 500;
+
+impl SmartTable {
+    /// Write-through: rebuild this table's derived SQLite index after a produce
+    /// verb wrote markdown. Best-effort — an index error is swallowed because
+    /// markdown is the source of truth and reads degrade to `run_query` when the
+    /// index is stale or absent. Keyed by content hash (mtime stays 0 on the gate
+    /// path; the hash fully captures content, mtime is for the future watch path).
+    pub fn reindex_into(&self, index: &SmartTableIndex, path: &str) {
+        let hash = content_hash(&self.serialize_body());
+        let _ = index.reindex_table(path, self.title.as_deref(), &self.fields, &self.rows, 0, &hash);
+    }
+
+    /// Read through the SQLite index when the table is large enough, else the
+    /// in-memory engine. The index is a pure accelerator: it is (re)built from
+    /// THIS just-parsed table when stale (markdown always wins) and ANY index db
+    /// error falls back to `run_query`. The result is identical to `self.query()`
+    /// (the parity invariant proven in smart_table_index tests); an unknown-field
+    /// rejection surfaces the same `QueryError` either way.
+    pub fn query_via_index(
+        &self,
+        index: Option<&SmartTableIndex>,
+        path: &str,
+        req: &QueryRequest,
+        now: NaiveDate,
+    ) -> Result<QueryResult, QueryError> {
+        let idx = match index {
+            Some(i) if self.rows.len() > INDEX_QUERY_THRESHOLD => i,
+            _ => return run_query(&self.fields, &self.rows, req, now),
+        };
+        let hash = content_hash(&self.serialize_body());
+        if !idx.is_fresh(path, 0, &hash).unwrap_or(false)
+            && idx
+                .reindex_table(path, self.title.as_deref(), &self.fields, &self.rows, 0, &hash)
+                .is_err()
+        {
+            return run_query(&self.fields, &self.rows, req, now);
+        }
+        match idx.query_indexed(&table_id_for(path), &self.fields, req, now) {
+            Ok(r) => Ok(r),
+            Err(StIndexError::Query(qe)) => Err(qe),
+            Err(_) => run_query(&self.fields, &self.rows, req, now),
+        }
+    }
+}
+
 /// Operators a RecordSource advertises (ADR-002 §14.3 — the record profile).
 fn record_operators() -> Vec<Operator> {
     use Operator::*;
     vec![Eq, Neq, Contains, Gt, Lt, Gte, Lte, Before, After, Within, Is, HasTag]
+}
+
+/// A formula token: a resolved numeric value, an operator, or a paren. Field
+/// references are resolved to `Num` during tokenization.
+enum FTok {
+    Num(f64),
+    Op(char),
+    LParen,
+    RParen,
+}
+
+/// Evaluate a Formula column over a row (slice 5). Supports `{field}` / bare
+/// field references (→ the cell's numeric value), numeric literals, and
+/// `+ - * / ( )`. Returns None if it can't parse or a referenced cell isn't
+/// numeric — a bad formula renders blank, never a wrong number. Deliberately
+/// arithmetic-only (no arbitrary eval): mirrors the fixed-operator,
+/// anti-hallucination stance of the query engine.
+pub fn eval_formula(expr: &str, row: &Row) -> Option<f64> {
+    let tokens = tokenize_formula(expr, row)?;
+    let mut p = FormulaParser { tokens: &tokens, pos: 0 };
+    let v = p.parse_expr()?;
+    if p.pos == p.tokens.len() {
+        Some(v)
+    } else {
+        None
+    }
+}
+
+fn tokenize_formula(expr: &str, row: &Row) -> Option<Vec<FTok>> {
+    let chars: Vec<char> = expr.chars().collect();
+    let mut i = 0;
+    let mut out = Vec::new();
+    let resolve = |name: &str| -> Option<f64> {
+        row.get(name.trim())
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|n| n.is_finite())
+    };
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_whitespace() {
+            i += 1;
+        } else if c == '(' {
+            out.push(FTok::LParen);
+            i += 1;
+        } else if c == ')' {
+            out.push(FTok::RParen);
+            i += 1;
+        } else if matches!(c, '+' | '-' | '*' | '/') {
+            out.push(FTok::Op(c));
+            i += 1;
+        } else if c == '{' {
+            let end = chars[i..].iter().position(|&x| x == '}')? + i;
+            let name: String = chars[i + 1..end].iter().collect();
+            out.push(FTok::Num(resolve(&name)?));
+            i = end + 1;
+        } else if c.is_ascii_digit() || c == '.' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                i += 1;
+            }
+            let lit: String = chars[start..i].iter().collect();
+            out.push(FTok::Num(lit.parse::<f64>().ok()?));
+        } else if c.is_alphabetic() || c == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let name: String = chars[start..i].iter().collect();
+            out.push(FTok::Num(resolve(&name)?));
+        } else {
+            return None; // unknown char → reject (blank, not wrong)
+        }
+    }
+    Some(out)
+}
+
+struct FormulaParser<'a> {
+    tokens: &'a [FTok],
+    pos: usize,
+}
+
+impl FormulaParser<'_> {
+    // expr = term (('+' | '-') term)*
+    fn parse_expr(&mut self) -> Option<f64> {
+        let mut v = self.parse_term()?;
+        while let Some(FTok::Op(op @ ('+' | '-'))) = self.tokens.get(self.pos) {
+            let op = *op;
+            self.pos += 1;
+            let rhs = self.parse_term()?;
+            v = if op == '+' { v + rhs } else { v - rhs };
+        }
+        Some(v)
+    }
+    // term = factor (('*' | '/') factor)*
+    fn parse_term(&mut self) -> Option<f64> {
+        let mut v = self.parse_factor()?;
+        while let Some(FTok::Op(op @ ('*' | '/'))) = self.tokens.get(self.pos) {
+            let op = *op;
+            self.pos += 1;
+            let rhs = self.parse_factor()?;
+            if op == '*' {
+                v *= rhs;
+            } else {
+                if rhs == 0.0 {
+                    return None; // division by zero → blank
+                }
+                v /= rhs;
+            }
+        }
+        Some(v)
+    }
+    // factor = Num | '(' expr ')' | '-' factor
+    fn parse_factor(&mut self) -> Option<f64> {
+        match self.tokens.get(self.pos) {
+            Some(FTok::Num(n)) => {
+                self.pos += 1;
+                Some(*n)
+            }
+            Some(FTok::LParen) => {
+                self.pos += 1;
+                let v = self.parse_expr()?;
+                matches!(self.tokens.get(self.pos), Some(FTok::RParen)).then(|| {
+                    self.pos += 1;
+                    v
+                })
+            }
+            Some(FTok::Op('-')) => {
+                self.pos += 1;
+                Some(-self.parse_factor()?)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Extract the `schema:` block into typed `FieldSpec`s. Each item may arrive
@@ -120,6 +357,75 @@ fn parse_schema(frontmatter: &Value) -> Vec<FieldSpec> {
             _ => None,
         })
         .collect()
+}
+
+/// Extract computed relational columns (Reference / Lookup / Rollup) from the
+/// same `schema:` block. Reads both structured-object and inline-flow-string
+/// items. The canonical frontmatter shape (design §D):
+///   - { key: contact,  type: reference, table: contacts.md, display: name }
+///   - { key: c_email,  type: lookup,    via: contact, target: email }
+///   - { key: c_total,  type: rollup,    via: contact, target: spend, fn: sum }
+fn parse_relations(frontmatter: &Value) -> Vec<RelationField> {
+    let Some(arr) = frontmatter.get("schema").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|item| {
+            let m = item_fields(item)?;
+            let key = m.get("key")?.clone();
+            let get = |k: &str| m.get(k).cloned().unwrap_or_default();
+            let kind = match m.get("type").map(String::as_str) {
+                Some("reference") => RelationKind::Reference {
+                    target_table: get("table"),
+                    display: {
+                        let d = get("display");
+                        if d.is_empty() { "name".to_string() } else { d }
+                    },
+                },
+                Some("lookup") => RelationKind::Lookup { via: get("via"), target: get("target") },
+                Some("rollup") => RelationKind::Rollup {
+                    via: get("via"),
+                    target: get("target"),
+                    func: {
+                        let f = get("fn");
+                        if f.is_empty() { "count".to_string() } else { f }
+                    },
+                },
+                Some("formula") => RelationKind::Formula { expr: get("expr") },
+                _ => return None,
+            };
+            Some(RelationField { field_key: key, kind })
+        })
+        .collect()
+}
+
+/// Read a schema item's string-valued keys into a map, handling both the
+/// structured-object and inline-flow-string forms (mirrors `parse_schema`'s
+/// dual-form handling). Array values (e.g. `options`) are skipped.
+fn item_fields(item: &Value) -> Option<std::collections::HashMap<String, String>> {
+    match item {
+        Value::Object(o) => Some(
+            o.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect(),
+        ),
+        Value::String(s) => {
+            let inner = s.trim().strip_prefix('{')?.strip_suffix('}')?;
+            let mut m = std::collections::HashMap::new();
+            for pair in split_top_level(inner, ',') {
+                let Some(colon) = pair.find(':') else { continue };
+                let k = unquote(pair[..colon].trim()).to_string();
+                let v = pair[colon + 1..].trim();
+                // Skip list values; relations only use scalar params.
+                if v.starts_with('[') {
+                    continue;
+                }
+                m.insert(k, unquote(v).to_string());
+            }
+            Some(m)
+        }
+        _ => None,
+    }
 }
 
 /// Field from a structured JSON object.
@@ -328,6 +634,74 @@ mod tests {
     }
 
     #[test]
+    fn parses_relations_and_marks_computed_read_only() {
+        let fm = serde_json::json!({
+            "schema": [
+                { "key": "title", "label": "Title", "type": "text" },
+                { "key": "contact", "label": "Contact", "type": "reference", "table": "contacts.md", "display": "name" },
+                { "key": "c_email", "label": "Email", "type": "lookup", "via": "contact", "target": "email" },
+                { "key": "c_total", "label": "Total", "type": "rollup", "via": "contact", "target": "spend", "fn": "sum" }
+            ]
+        });
+        let t = SmartTable::parse(&fm, "");
+        assert_eq!(t.relations.len(), 3);
+        // Reference is a stored, writable cell; Lookup / Rollup are read-only.
+        assert!(!t.is_read_only_field("contact"));
+        assert!(t.is_read_only_field("c_email"));
+        assert!(t.is_read_only_field("c_total"));
+        assert!(!t.is_read_only_field("title"));
+        // The rollup carries its aggregate fn.
+        let rollup = t.relations.iter().find(|r| r.field_key == "c_total").unwrap();
+        assert_eq!(
+            rollup.kind,
+            RelationKind::Rollup { via: "contact".into(), target: "spend".into(), func: "sum".into() }
+        );
+        // Computed columns still appear as fields (so they filter/sort) — 4 cols.
+        assert_eq!(t.fields.len(), 4);
+    }
+
+    #[test]
+    fn parses_relations_from_inline_flow_strings() {
+        // vault::read's lightweight YAML yields inline-mapping strings.
+        let fm = serde_json::json!({
+            "schema": [
+                "{ key: contact, label: Contact, type: reference, table: contacts.md, display: name }",
+                "{ key: c_email, label: Email, type: lookup, via: contact, target: email }"
+            ]
+        });
+        let t = SmartTable::parse(&fm, "");
+        assert_eq!(t.relations.len(), 2);
+        assert!(t.is_read_only_field("c_email"));
+        match &t.relations[0].kind {
+            RelationKind::Reference { target_table, display } => {
+                assert_eq!(target_table, "contacts.md");
+                assert_eq!(display, "name");
+            }
+            other => panic!("expected reference, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn eval_formula_arithmetic_and_field_refs() {
+        let r = row(&[("amount", "100"), ("cost", "30"), ("qty", "4")]);
+        // bare refs + braces + precedence + parens.
+        assert_eq!(eval_formula("amount - cost", &r), Some(70.0));
+        assert_eq!(eval_formula("{amount} - {cost}", &r), Some(70.0));
+        assert_eq!(eval_formula("amount - cost * 2", &r), Some(40.0)); // precedence
+        assert_eq!(eval_formula("(amount - cost) * 2", &r), Some(140.0));
+        assert_eq!(eval_formula("amount / qty", &r), Some(25.0));
+        assert_eq!(eval_formula("-cost + amount", &r), Some(70.0)); // unary minus
+        // bad inputs render blank (None), never a wrong number.
+        assert_eq!(eval_formula("amount / 0", &r), None); // div by zero
+        assert_eq!(eval_formula("amount + missing", &r), None); // unknown field
+        assert_eq!(eval_formula("amount +", &r), None); // trailing op
+    }
+
+    fn row(pairs: &[(&str, &str)]) -> Row {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    #[test]
     fn query_through_the_shared_engine() {
         let t = SmartTable::parse(&frontmatter(), BODY);
         let req = QueryRequest {
@@ -338,6 +712,91 @@ mod tests {
         let out = t.query(&req, now).unwrap();
         assert_eq!(out.match_count, 1);
         assert_eq!(out.rows[0]["name"], "Acme");
+    }
+
+    // --- Slice 3: index-or-memory selection (write-through + read path) ---
+
+    use crate::kernel::smart_table_index::SmartTableIndex;
+
+    fn temp_index(label: &str) -> (std::path::PathBuf, SmartTableIndex) {
+        let mut p = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        p.push(format!("ctrl-st-vt-{label}-{}-{nanos}.db", std::process::id()));
+        let idx = SmartTableIndex::open(&p).expect("open index");
+        (p, idx)
+    }
+
+    /// A table with `n` rows so it crosses INDEX_QUERY_THRESHOLD.
+    fn big_table(n: usize) -> SmartTable {
+        let fields = vec![
+            FieldSpec { key: "name".into(), label: "Name".into(), cell_type: CellType::Text, options: None },
+            FieldSpec { key: "amount".into(), label: "Amount".into(), cell_type: CellType::Number, options: None },
+        ];
+        let rows = (0..n)
+            .map(|i| {
+                [("name".to_string(), format!("r{i}")), ("amount".to_string(), (i % 200).to_string())]
+                    .into_iter()
+                    .collect::<Row>()
+            })
+            .collect();
+        SmartTable { title: Some("Big".into()), fields, rows, relations: Vec::new() }
+    }
+
+    #[test]
+    fn query_via_index_matches_memory_above_threshold() {
+        let (path, idx) = temp_index("parity");
+        let t = big_table(INDEX_QUERY_THRESHOLD + 50); // crosses the threshold
+        let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
+        let req = QueryRequest {
+            filters: vec![Filter { field: "amount".into(), op: Operator::Gte, value: "150".into() }],
+            sort: vec![crate::kernel::query::SortKey { field: "amount".into(), desc: true }],
+            limit: Some(10),
+            ..Default::default()
+        };
+        let mem = t.query(&req, now).unwrap();
+        let via = t.query_via_index(Some(&idx), "tables/big.md", &req, now).unwrap();
+        assert_eq!(via.match_count, mem.match_count);
+        assert_eq!(via.rows, mem.rows);
+        // The index was built by the read (stale → reindex), so it now exists.
+        assert_eq!(idx.table_count().unwrap(), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn small_table_and_no_index_use_memory() {
+        let (path, idx) = temp_index("small");
+        let t = SmartTable::parse(&frontmatter(), BODY); // 2 rows, below threshold
+        let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
+        let req = QueryRequest {
+            filters: vec![Filter { field: "amount".into(), op: Operator::Gt, value: "60".into() }],
+            ..Default::default()
+        };
+        // Below threshold: index untouched, memory result correct.
+        let via = t.query_via_index(Some(&idx), "tables/leads.md", &req, now).unwrap();
+        assert_eq!(via.rows[0]["name"], "Acme");
+        assert_eq!(idx.table_count().unwrap(), 0);
+        // No index at all → memory.
+        let none = t.query_via_index(None, "tables/leads.md", &req, now).unwrap();
+        assert_eq!(none.rows[0]["name"], "Acme");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reindex_into_then_fresh_skips_rebuild() {
+        let (path, idx) = temp_index("write-through");
+        let t = big_table(INDEX_QUERY_THRESHOLD + 1);
+        // Write-through after a produce verb.
+        t.reindex_into(&idx, "tables/big.md");
+        assert_eq!(idx.table_count().unwrap(), 1);
+        // A subsequent read finds it fresh (same content hash) and still matches.
+        let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
+        let req = QueryRequest::default();
+        let via = t.query_via_index(Some(&idx), "tables/big.md", &req, now).unwrap();
+        assert_eq!(via.match_count, t.rows.len());
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

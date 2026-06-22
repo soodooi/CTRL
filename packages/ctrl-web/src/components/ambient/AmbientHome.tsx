@@ -622,8 +622,16 @@ export function AmbientHome({
   // component stays mounted across routes (hidden, not unmounted), the
   // effect fires only on a real bump — never replays on a route return.
   useEffect(() => {
-    if (irisyNonce > 0) newChat();
-  }, [irisyNonce, newChat]);
+    // Selecting Irisy in L1 returns to the conversation view (close any open
+    // scene / part panel) but must NOT wipe history — Irisy is the persistent
+    // pipe and "Irisy must have history" (ADR-003 §8 / ADR-005 irisy). Clearing
+    // is the dedicated New-chat button's job. (bao 2026-06-21: switching L1 back
+    // to Irisy was clearing the chat — over-eager newChat.)
+    if (irisyNonce > 0) {
+      setScene(null);
+      setPart(null);
+    }
+  }, [irisyNonce]);
 
   const composer = (
     <form

@@ -1696,3 +1696,110 @@
   color: var(--color-text, #1a1a1a);
   text-align: right;
 }
+
+/* Grist-style 3-pane: grid (tableMain) on the left, a persistent Creator Panel
+   on the right hosting the selected column's configuration. (ADR-003 §6 — smart
+   table parity with Grist's creator-panel layout.) */
+.tableShell {
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+}
+.tableMain {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.creatorPanel {
+  flex: 0 0 300px;
+  width: 300px;
+  align-self: stretch;
+  border-left: 1px solid var(--color-border, #2a2a2a);
+  background: var(--color-surface, rgba(0, 0, 0, 0.02));
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.creatorHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border, #2a2a2a);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+}
+.creatorClose {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-soft);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.creatorClose:hover {
+  color: var(--color-text);
+}
+.creatorEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  color: var(--color-text-soft);
+  font-size: 12px;
+}
+
+/* Creator Panel two-tab (Grist Widget + Column) + vertical config sections */
+.creatorTabs {
+  display: flex;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border, #2a2a2a);
+}
+.creatorTab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  font-size: 12px;
+  color: var(--color-text-soft);
+  cursor: pointer;
+}
+.creatorTab:hover { color: var(--color-text); }
+.creatorTab[data-active='true'] {
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent, #6aa3ff);
+  font-weight: 600;
+}
+.creatorBody {
+  display: flex;
+  flex-direction: column;
+}
+.creatorSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle, var(--color-border, #2a2a2a));
+}
+.creatorSectionTitle {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-faint, var(--color-text-soft));
+}
+.creatorRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.creatorRow > .querySelect,
+.creatorRow > .queryInput {
+  flex: 1 1 auto;
+  min-width: 0;
+}

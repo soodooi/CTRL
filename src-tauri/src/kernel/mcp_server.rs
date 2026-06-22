@@ -24,8 +24,8 @@
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
-    ai_column, provider::LlmPrompt, query, runtime_sources, vault, vault_notes_source,
-    vault_smart_table,
+    ai_column, provider::LlmPrompt, query, runtime_sources, smart_table_index, vault,
+    vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
 use axum::body::Body;
@@ -88,6 +88,11 @@ pub struct KernelMcpRouter {
     /// serialize instead of clobbering each other (full-review P0 lost-update
     /// fix, 2026-06-21).
     vault_write_locks: VaultWriteLocks,
+    /// Smart-table SQLite derived index (ADR-002 §14 v30 route C). A pure
+    /// accelerator: large-table reads route through it, produce writes refresh
+    /// it. None when the db can't open — every read falls back to the in-memory
+    /// engine, so the gate works with or without it (markdown is the truth).
+    st_index: Option<Arc<smart_table_index::SmartTableIndex>>,
 }
 
 /// Registry of per-path write locks (lazily created). The outer mutex guards
@@ -455,6 +460,11 @@ pub struct McpProxyCallArgs {
 #[tool_router]
 impl KernelMcpRouter {
     pub fn new(runtime: Arc<KernelRuntime>, local_storage: Option<Arc<LocalStorage>>) -> Self {
+        // Open the smart-table derived index (best-effort). A failure (or no
+        // HOME) leaves it None and every read uses the in-memory engine.
+        let st_index = smart_table_index::default_st_index_path()
+            .and_then(|p| smart_table_index::SmartTableIndex::open(&p).ok())
+            .map(Arc::new);
         Self {
             runtime,
             local_storage,
@@ -463,6 +473,7 @@ impl KernelMcpRouter {
             vault_write_locks: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
+            st_index,
         }
     }
 
@@ -520,8 +531,16 @@ impl KernelMcpRouter {
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         use query::QuerySource;
-        let body = serde_json::to_string(&table.describe()).map_err(map_serde_err)?;
-        Ok(CallToolResult::success(vec![Content::text(body)]))
+        // Advertise the computed relational columns (Reference / Lookup / Rollup)
+        // alongside the generic describe so Irisy understands them (design §D).
+        let describe = table.describe();
+        let body = serde_json::json!({
+            "source_kind": describe.source_kind,
+            "fields": describe.fields,
+            "operators": describe.operators,
+            "relations": table.relations,
+        });
+        Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
     }
 
     /// smart_table.query — the read half of the Unified Operation Interface
@@ -545,10 +564,16 @@ impl KernelMcpRouter {
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
-        use query::QuerySource;
-        let result = table
-            .query(&req, now)
+        // Route through the SQLite index for large tables (pure accelerator with
+        // run_query parity + fallback); small tables stay in-memory.
+        let mut result = table
+            .query_via_index(self.st_index.as_deref(), &args.path, &req, now)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        // Surface computed relational columns (Lookup / Rollup) into the result
+        // rows — query-time derivatives, never written to markdown (slice 4c).
+        if let Some(idx) = self.st_index.as_deref() {
+            augment_relations(idx, &root, &args.path, &table, &mut result.rows);
+        }
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
@@ -569,6 +594,14 @@ impl KernelMcpRouter {
         let _write_guard = lock.lock().await;
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        // Computed columns (Lookup / Rollup) are read-only derivatives — reject a
+        // write (ADR-002 §14: produce gated; only the underlying data is writable).
+        if table.is_read_only_field(&args.field) {
+            return Err(McpError::invalid_params(
+                format!("field '{}' is a computed column (read-only)", args.field),
+                None,
+            ));
+        }
         if !table.update_cell(args.row_index, &args.field, &args.value) {
             return Err(McpError::invalid_params(
                 format!(
@@ -580,6 +613,10 @@ impl KernelMcpRouter {
         }
         let new_body = table.serialize_body();
         vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        // Write-through: refresh the derived index from the just-written table.
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "updated {} row {} field {}",
             args.path, args.row_index, args.field
@@ -601,6 +638,10 @@ impl KernelMcpRouter {
         table.append_row(args.values.into_iter().collect());
         let new_body = table.serialize_body();
         vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        // Write-through: refresh the derived index from the just-written table.
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "appended row to {}",
             args.path
@@ -710,6 +751,10 @@ impl KernelMcpRouter {
         if rows_written > 0 {
             let new_body = table.serialize_body();
             vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+            // Write-through: refresh the derived index from the just-written table.
+            if let Some(idx) = self.st_index.as_deref() {
+                table.reindex_into(idx, &args.path);
+            }
         }
         let summary = ai_column::RunSummary {
             rows_total,
@@ -1933,6 +1978,90 @@ fn vault_root() -> Result<std::path::PathBuf, McpError> {
         .ok_or_else(|| McpError::internal_error("vault root unresolved (HOME unset)", None))
 }
 
+/// Inject computed relational columns (Lookup / Rollup) into a query's result
+/// rows (slice 4c). Cross-table orchestration: index the source + each Reference
+/// target table, materialize the edges, then fill each computed column by
+/// matching the row's via cell value. Best-effort and pure-derivative — any
+/// failure simply leaves that column blank (markdown stays the source of truth;
+/// the values are never written back).
+fn augment_relations(
+    idx: &smart_table_index::SmartTableIndex,
+    root: &std::path::Path,
+    src_path: &str,
+    table: &vault_smart_table::SmartTable,
+    rows: &mut [query::Row],
+) {
+    use vault_smart_table::RelationKind;
+    if table.relations.is_empty() {
+        return;
+    }
+    let src_tid = smart_table_index::table_id_for(src_path);
+    // Ensure the source rows are indexed (small tables skip the index on read).
+    table.reindex_into(idx, src_path);
+
+    // Index each Reference target table + materialize its edges. Map the
+    // reference field key → whether its edges are ready to compute against.
+    let mut ready_via: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for rel in &table.relations {
+        if let RelationKind::Reference { target_table, display } = &rel.kind {
+            if let Ok(entry) = vault::read(root, target_table) {
+                let tgt = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+                tgt.reindex_into(idx, target_table);
+                let tgt_tid = smart_table_index::table_id_for(target_table);
+                if idx
+                    .index_references(&src_tid, &rel.field_key, &tgt_tid, display)
+                    .is_ok()
+                {
+                    ready_via.insert(rel.field_key.clone());
+                }
+            }
+        }
+    }
+
+    // Fill each computed column by matching the row's via cell value.
+    for rel in &table.relations {
+        let (via, computed) = match &rel.kind {
+            RelationKind::Lookup { via, target } if ready_via.contains(via) => {
+                (via, idx.lookup_by_via(&src_tid, via, target))
+            }
+            RelationKind::Rollup { via, target, func } if ready_via.contains(via) => {
+                (via, idx.rollup_by_via(&src_tid, via, target, func))
+            }
+            _ => continue,
+        };
+        let Ok(map) = computed else { continue };
+        for row in rows.iter_mut() {
+            let key = row.get(via).cloned().unwrap_or_default();
+            let value = map.get(&key).cloned().unwrap_or_default();
+            row.insert(rel.field_key.clone(), value);
+        }
+    }
+
+    // Formula columns last, so they can reference the just-injected Lookup /
+    // Rollup values. Pure per-row arithmetic — no index / vault needed. A
+    // formula that can't evaluate leaves the cell blank (never a wrong number).
+    for rel in &table.relations {
+        if let RelationKind::Formula { expr } = &rel.kind {
+            for row in rows.iter_mut() {
+                let value = vault_smart_table::eval_formula(expr, row)
+                    .map(format_formula_num)
+                    .unwrap_or_default();
+                row.insert(rel.field_key.clone(), value);
+            }
+        }
+    }
+}
+
+/// Format a formula result: integers without a trailing `.0`, else trimmed.
+fn format_formula_num(n: f64) -> String {
+    if n.fract() == 0.0 && n.abs() < 1e15 {
+        format!("{}", n as i64)
+    } else {
+        let s = format!("{n:.4}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
 fn map_vault_err(e: vault::VaultError) -> McpError {
     McpError::internal_error(format!("vault: {e}"), None)
 }
@@ -2007,6 +2136,52 @@ async fn http_request(
 mod tests {
     use super::*;
     use crate::kernel::runtime::KernelRuntime;
+
+    /// Slice 4c end-to-end (vault-backed): a `deals` table references `contacts`
+    /// by name; `augment_relations` indexes both tables, materializes the edges,
+    /// and injects the Lookup (email) + Rollup (sum spend) computed columns into
+    /// the query result rows — without writing them to markdown.
+    #[test]
+    fn augment_relations_injects_lookup_and_rollup_from_vault() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+
+        let cfm = serde_json::json!({ "schema": [
+            { "key": "name", "label": "Name", "type": "text" },
+            { "key": "email", "label": "Email", "type": "text" },
+            { "key": "spend", "label": "Spend", "type": "number" }
+        ]});
+        let cbody = "\n| Name | Email | Spend |\n|---|---|---|\n| Acme | a@acme.co | 300 |\n| Beta | b@beta.co | 120 |\n";
+        vault::write(root, "contacts.md", cbody, &cfm).unwrap();
+
+        let dfm = serde_json::json!({ "schema": [
+            { "key": "title", "label": "Title", "type": "text" },
+            { "key": "contact", "label": "Contact", "type": "reference", "table": "contacts.md", "display": "name" },
+            { "key": "c_email", "label": "Email", "type": "lookup", "via": "contact", "target": "email" },
+            { "key": "c_total", "label": "Total", "type": "rollup", "via": "contact", "target": "spend", "fn": "sum" },
+            { "key": "half", "label": "Half", "type": "formula", "expr": "{c_total} / 2" }
+        ]});
+        let dbody = "\n| Title | Contact | Email | Total | Half |\n|---|---|---|---|---|\n| D1 | Acme |  |  |  |\n| D2 | Beta |  |  |  |\n";
+        vault::write(root, "deals.md", dbody, &dfm).unwrap();
+
+        let entry = vault::read(root, "deals.md").unwrap();
+        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let mut rows = table.rows.clone();
+
+        let idxdir = tempfile::TempDir::new().unwrap();
+        let idx = smart_table_index::SmartTableIndex::open(&idxdir.path().join("st.db")).unwrap();
+        augment_relations(&idx, root, "deals.md", &table, &mut rows);
+
+        let d1 = rows.iter().find(|r| r.get("title").map(String::as_str) == Some("D1")).unwrap();
+        assert_eq!(d1.get("c_email").map(String::as_str), Some("a@acme.co"));
+        assert_eq!(d1.get("c_total").map(String::as_str), Some("300"));
+        // Formula references the just-injected rollup: 300 / 2 = 150.
+        assert_eq!(d1.get("half").map(String::as_str), Some("150"));
+        let d2 = rows.iter().find(|r| r.get("title").map(String::as_str) == Some("D2")).unwrap();
+        assert_eq!(d2.get("c_email").map(String::as_str), Some("b@beta.co"));
+        assert_eq!(d2.get("c_total").map(String::as_str), Some("120"));
+        assert_eq!(d2.get("half").map(String::as_str), Some("60"));
+    }
 
     /// Bind to an ephemeral port + assert the auth middleware rejects
     /// unauthenticated requests with 401. Catches port-binding + axum
