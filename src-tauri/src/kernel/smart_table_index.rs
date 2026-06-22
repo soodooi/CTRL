@@ -107,6 +107,17 @@ impl SmartTableIndex {
             CREATE INDEX IF NOT EXISTS st_cells_field ON st_cells(table_id, field_key);
             CREATE INDEX IF NOT EXISTS st_cells_num   ON st_cells(table_id, field_key, value_num);
             CREATE INDEX IF NOT EXISTS st_cells_date  ON st_cells(table_id, field_key, value_date);
+            CREATE TABLE IF NOT EXISTS st_refs (
+                src_table_id TEXT NOT NULL,
+                src_row_id   TEXT NOT NULL,
+                src_field    TEXT NOT NULL,
+                dst_table_id TEXT NOT NULL,
+                dst_row_id   TEXT,
+                dst_raw      TEXT NOT NULL,
+                PRIMARY KEY (src_table_id, src_row_id, src_field, dst_raw)
+            );
+            CREATE INDEX IF NOT EXISTS st_refs_dst ON st_refs(dst_table_id, dst_row_id);
+            CREATE INDEX IF NOT EXISTS st_refs_src ON st_refs(src_table_id, src_row_id, src_field);
             "#,
         )
         .map_err(|e| StIndexError::Db(format!("schema init: {e}")))?;
@@ -142,6 +153,10 @@ impl SmartTableIndex {
             .map_err(|e| StIndexError::Db(format!("del rows: {e}")))?;
         tx.execute("DELETE FROM st_cells WHERE table_id = ?1", params![table_id])
             .map_err(|e| StIndexError::Db(format!("del cells: {e}")))?;
+        // Outgoing reference edges are derived from this table's cells, so the
+        // row change invalidates them — drop and let `index_references` rebuild.
+        tx.execute("DELETE FROM st_refs WHERE src_table_id = ?1", params![table_id])
+            .map_err(|e| StIndexError::Db(format!("del refs: {e}")))?;
         tx.execute(
             "INSERT OR REPLACE INTO st_tables
                 (table_id, path, title, schema_json, mtime_ms, content_hash, indexed_at_ms)
@@ -208,10 +223,17 @@ impl SmartTableIndex {
             "DELETE FROM st_cells WHERE table_id = ?1",
             "DELETE FROM st_rows WHERE table_id = ?1",
             "DELETE FROM st_tables WHERE table_id = ?1",
+            "DELETE FROM st_refs WHERE src_table_id = ?1",
         ] {
             conn.execute(sql, params![table_id])
                 .map_err(|e| StIndexError::Db(format!("remove: {e}")))?;
         }
+        // Incoming edges from other tables now point at deleted rows → dangling.
+        conn.execute(
+            "UPDATE st_refs SET dst_row_id = NULL WHERE dst_table_id = ?1",
+            params![table_id],
+        )
+        .map_err(|e| StIndexError::Db(format!("dangle refs: {e}")))?;
         Ok(())
     }
 
@@ -416,6 +438,155 @@ impl SmartTableIndex {
         Ok(rows)
     }
 
+    /// Materialize a Reference field's edges into st_refs (slice 4 — the
+    /// relational soul). Each source cell holds link tokens (comma-separated,
+    /// optional `[[ ]]`) naming target rows by their display field value; we
+    /// resolve each to the target's row_id (NULL = dangling when the target row
+    /// isn't indexed yet). Idempotent: clears this (src_table, src_field) first.
+    /// Run AFTER both tables are reindexed so the target cells exist to match.
+    pub fn index_references(
+        &self,
+        src_table_id: &str,
+        src_field: &str,
+        dst_table_id: &str,
+        display_field: &str,
+    ) -> Result<usize, StIndexError> {
+        let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
+        conn.execute(
+            "DELETE FROM st_refs WHERE src_table_id = ?1 AND src_field = ?2",
+            params![src_table_id, src_field],
+        )
+        .map_err(|e| StIndexError::Db(format!("clear refs: {e}")))?;
+
+        // Source cells for the reference field.
+        let src: Vec<(String, String)> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT row_id, value_text FROM st_cells WHERE table_id = ?1 AND field_key = ?2",
+                )
+                .map_err(|e| StIndexError::Db(format!("prepare src refs: {e}")))?;
+            let it = stmt
+                .query_map(params![src_table_id, src_field], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                })
+                .map_err(|e| StIndexError::Db(format!("src refs: {e}")))?;
+            let mut v = Vec::new();
+            for r in it {
+                v.push(r.map_err(|e| StIndexError::Db(format!("src ref row: {e}")))?);
+            }
+            v
+        };
+
+        let mut edges = 0usize;
+        for (src_row_id, cell) in &src {
+            for token in parse_ref_tokens(cell) {
+                // Resolve the token to a target row by its display field value.
+                let dst_row_id: Option<String> = conn
+                    .query_row(
+                        "SELECT row_id FROM st_cells \
+                         WHERE table_id = ?1 AND field_key = ?2 AND value_text = ?3 LIMIT 1",
+                        params![dst_table_id, display_field, token],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .ok();
+                conn.execute(
+                    "INSERT OR REPLACE INTO st_refs \
+                       (src_table_id, src_row_id, src_field, dst_table_id, dst_row_id, dst_raw) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![src_table_id, src_row_id, src_field, dst_table_id, dst_row_id, token],
+                )
+                .map_err(|e| StIndexError::Db(format!("ins ref: {e}")))?;
+                edges += 1;
+            }
+        }
+        Ok(edges)
+    }
+
+    /// Lookup (slice 4): pull a field's value from the rows a Reference field
+    /// links to. Returns src_row_id → joined target values (", "-separated for
+    /// multi-target). Dangling edges contribute nothing. Pure derivative — the
+    /// caller surfaces it at query time, never writes it to markdown.
+    pub fn compute_lookup(
+        &self,
+        src_table_id: &str,
+        src_field: &str,
+        target_field: &str,
+    ) -> Result<HashMap<String, String>, StIndexError> {
+        let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.src_row_id, c.value_text \
+                 FROM st_refs s \
+                 JOIN st_cells c ON c.table_id = s.dst_table_id AND c.row_id = s.dst_row_id \
+                   AND c.field_key = ?3 \
+                 WHERE s.src_table_id = ?1 AND s.src_field = ?2 AND s.dst_row_id IS NOT NULL \
+                 ORDER BY s.src_row_id, s.dst_raw",
+            )
+            .map_err(|e| StIndexError::Db(format!("prepare lookup: {e}")))?;
+        let it = stmt
+            .query_map(params![src_table_id, src_field, target_field], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(|e| StIndexError::Db(format!("lookup: {e}")))?;
+        let mut out: HashMap<String, Vec<String>> = HashMap::new();
+        for r in it {
+            let (row, val) = r.map_err(|e| StIndexError::Db(format!("lookup row: {e}")))?;
+            out.entry(row).or_default().push(val);
+        }
+        Ok(out.into_iter().map(|(k, v)| (k, v.join(", "))).collect())
+    }
+
+    /// Rollup (slice 4): aggregate a numeric target field over the rows a
+    /// Reference field links to. `func` ∈ count/sum/avg/min/max. Returns
+    /// src_row_id → formatted value. Pure derivative (not persisted).
+    pub fn compute_rollup(
+        &self,
+        src_table_id: &str,
+        src_field: &str,
+        target_field: &str,
+        func: &str,
+    ) -> Result<HashMap<String, String>, StIndexError> {
+        let agg = match func {
+            "count" => "COUNT(c.value_num)",
+            "sum" => "TOTAL(c.value_num)", // TOTAL returns 0.0 (not NULL) for empty
+            "avg" => "AVG(c.value_num)",
+            "min" => "MIN(c.value_num)",
+            "max" => "MAX(c.value_num)",
+            other => return Err(StIndexError::Db(format!("unknown rollup fn: {other}"))),
+        };
+        let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
+        let sql = format!(
+            "SELECT s.src_row_id, {agg} \
+             FROM st_refs s \
+             JOIN st_cells c ON c.table_id = s.dst_table_id AND c.row_id = s.dst_row_id \
+               AND c.field_key = ?3 \
+             WHERE s.src_table_id = ?1 AND s.src_field = ?2 AND s.dst_row_id IS NOT NULL \
+             GROUP BY s.src_row_id"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| StIndexError::Db(format!("prepare rollup: {e}")))?;
+        let it = stmt
+            .query_map(params![src_table_id, src_field, target_field], |r| {
+                let row: String = r.get(0)?;
+                // count → integer; others → real (NULL when no numeric targets).
+                let val: Option<f64> = r.get(1).ok();
+                Ok((row, val))
+            })
+            .map_err(|e| StIndexError::Db(format!("rollup: {e}")))?;
+        let mut out = HashMap::new();
+        for r in it {
+            let (row, val) = r.map_err(|e| StIndexError::Db(format!("rollup row: {e}")))?;
+            let formatted = match val {
+                Some(n) if func == "count" => format!("{}", n as i64),
+                Some(n) => fmt_num(n),
+                None => String::new(),
+            };
+            out.insert(row, formatted);
+        }
+        Ok(out)
+    }
+
     fn scalar_count(&self, sql: &str, arg: Option<&str>) -> Result<usize, StIndexError> {
         let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
         let n: i64 = match arg {
@@ -435,6 +606,33 @@ fn canonical_row(fields: &[FieldSpec], row: &Row) -> String {
         .map(|f| row.get(&f.key).map(String::as_str).unwrap_or(""))
         .collect::<Vec<_>>()
         .join("\t")
+}
+
+/// Parse a Reference cell into its link tokens: comma-separated, each optionally
+/// wrapped in `[[ ]]` (Obsidian-style) and optionally carrying a `#anchor` we
+/// drop. Empty tokens are skipped. The raw token (sans brackets) is what we
+/// match against the target's display field.
+fn parse_ref_tokens(cell: &str) -> Vec<String> {
+    cell.split(',')
+        .map(|t| {
+            let t = t.trim();
+            let t = t.strip_prefix("[[").unwrap_or(t);
+            let t = t.strip_suffix("]]").unwrap_or(t);
+            let t = t.split('#').next().unwrap_or(t);
+            t.trim().to_string()
+        })
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// Format a rollup aggregate: integers without a trailing `.0`, else trimmed.
+fn fmt_num(n: f64) -> String {
+    if n.fract() == 0.0 && n.abs() < 1e15 {
+        format!("{}", n as i64)
+    } else {
+        let s = format!("{n:.4}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
 }
 
 /// First 16 hex chars of sha256 — short, stable, collision-safe enough for ids.
@@ -529,13 +727,16 @@ mod tests {
     use crate::kernel::query::CellType;
 
     fn fresh_index(label: &str) -> (PathBuf, SmartTableIndex) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // A process-global counter, NOT a timestamp — `subsec_nanos` collides
+        // under cargo's parallel runner when two same-label tests start in the
+        // same nanosecond, yielding an identical db path + a readonly-write
+        // error. The counter makes every db path unique regardless of label.
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let mut p = std::env::temp_dir();
         let pid = std::process::id();
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
-            .unwrap_or(0);
-        p.push(format!("ctrl-st-idx-{label}-{pid}-{nanos}.db"));
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        p.push(format!("ctrl-st-idx-{label}-{pid}-{n}.db"));
         let idx = SmartTableIndex::open(&p).expect("open st index");
         (p, idx)
     }
@@ -731,6 +932,91 @@ mod tests {
             assert_eq!(via.match_count, mem.match_count, "case {i}: match_count");
             assert_eq!(via.rows, mem.rows, "case {i}: rows");
         }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // --- Slice 4: relational edges + Lookup / Rollup over the index ---
+
+    /// Two tables: `deals.contact` references `contacts` by the display field
+    /// `name`. Index both, then materialize the edges.
+    fn relational_fixture() -> (PathBuf, SmartTableIndex, String, String) {
+        let (path, idx) = fresh_index("relational");
+        let contact_fields = vec![
+            field("name", CellType::Text),
+            field("email", CellType::Text),
+            field("spend", CellType::Number),
+        ];
+        let contact_rows = vec![
+            row(&[("name", "Acme"), ("email", "a@acme.co"), ("spend", "300")]),
+            row(&[("name", "Beta"), ("email", "b@beta.co"), ("spend", "120")]),
+        ];
+        let ctid = idx
+            .reindex_table("tables/contacts.md", None, &contact_fields, &contact_rows, 1, "hc")
+            .unwrap();
+
+        let deal_fields = vec![field("title", CellType::Text), field("contact", CellType::Text)];
+        let deal_rows = vec![
+            // multi-target reference (Obsidian-style + bare), and a dangling one.
+            row(&[("title", "D1"), ("contact", "[[Acme]], Beta")]),
+            row(&[("title", "D2"), ("contact", "Acme")]),
+            row(&[("title", "D3"), ("contact", "Ghost")]), // no such contact → dangling
+        ];
+        let dtid = idx
+            .reindex_table("tables/deals.md", None, &deal_fields, &deal_rows, 1, "hd")
+            .unwrap();
+
+        idx.index_references(&dtid, "contact", &ctid, "name").unwrap();
+        (path, idx, dtid, ctid)
+    }
+
+    #[test]
+    fn references_resolve_and_dangle() {
+        let (path, idx, dtid, _ctid) = relational_fixture();
+        // D1 → Acme + Beta (resolved); D2 → Acme (resolved); D3 → Ghost (dangling).
+        let lookup = idx.compute_lookup(&dtid, "contact", "email").unwrap();
+        // D1 pulls both emails (order by dst_raw: Acme then Beta).
+        let d1 = lookup.values().find(|v| v.contains("a@acme.co") && v.contains("b@beta.co"));
+        assert!(d1.is_some(), "D1 should lookup both linked emails, got {lookup:?}");
+        // Exactly two source rows have resolved lookups (D1, D2); D3 dangles → absent.
+        assert_eq!(lookup.len(), 2);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn rollup_sum_and_count_over_links() {
+        let (path, idx, dtid, _ctid) = relational_fixture();
+        let sum = idx.compute_rollup(&dtid, "contact", "spend", "sum").unwrap();
+        let count = idx.compute_rollup(&dtid, "contact", "spend", "count").unwrap();
+        // D1 links Acme(300)+Beta(120) = 420; D2 links Acme = 300.
+        let sums: Vec<&String> = sum.values().collect();
+        assert!(sums.contains(&&"420".to_string()), "sums={sum:?}");
+        assert!(sums.contains(&&"300".to_string()), "sums={sum:?}");
+        // D1 counts 2 linked rows.
+        assert!(count.values().any(|v| v == "2"), "counts={count:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reindex_target_then_reresolve_undangles() {
+        let (path, idx, dtid, ctid) = relational_fixture();
+        // Add the missing "Ghost" contact, reindex contacts, re-run resolution.
+        let contact_fields = vec![
+            field("name", CellType::Text),
+            field("email", CellType::Text),
+            field("spend", CellType::Number),
+        ];
+        let contact_rows = vec![
+            row(&[("name", "Acme"), ("email", "a@acme.co"), ("spend", "300")]),
+            row(&[("name", "Beta"), ("email", "b@beta.co"), ("spend", "120")]),
+            row(&[("name", "Ghost"), ("email", "g@ghost.co"), ("spend", "9")]),
+        ];
+        idx.reindex_table("tables/contacts.md", None, &contact_fields, &contact_rows, 2, "hc2")
+            .unwrap();
+        idx.index_references(&dtid, "contact", &ctid, "name").unwrap();
+        let lookup = idx.compute_lookup(&dtid, "contact", "email").unwrap();
+        // Now D3 → Ghost resolves: three source rows have lookups.
+        assert_eq!(lookup.len(), 3, "lookup={lookup:?}");
+        assert!(lookup.values().any(|v| v.contains("g@ghost.co")));
         let _ = std::fs::remove_file(&path);
     }
 
