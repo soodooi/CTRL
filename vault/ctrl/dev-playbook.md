@@ -35,6 +35,7 @@ related:
 5. **独立验证**(code-reviewer subagent):每个实施切片后,独立 CHECK subagent 验证(catch builder misses)——dev-loop 第 6 步。
 6. **dev-loop 节奏**:三层验证(compile + kernel smoke + 视觉/单测)+ 独立 checker + commit,小步累积。
 7. **防漂移纪律**:研究边际递减就停;连续「继续」时主动报「这是研究还是实施」;Workflow/deep-research 设 token 预算,别耗尽 session。
+8. **commit 卫生**(本次教训:`78a3577 feat(coding)` 裹挟了 ADR-010 + 研究文档,message 名不副实):**一个逻辑单元一个 commit,message 必须反映真实内容**;commit 前 `git status` 看清楚 staged 了什么,别让中途打包 commit 把不相关改动混进一条;message 遵守 commitlint(subject 小写开头、header 简短)。
 
 ## 三、资源地图(用好我们最好的工具/subagents)
 
