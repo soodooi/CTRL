@@ -45,3 +45,9 @@ governing ADR = **ADR-002 substrate §14**(v29)+ **ADR-003 frontend §6.5**(v16)
   - **Grist 对标差距** (按 Grist 灵魂排序): ① Creator Panel 右侧三栏配置面板 ② Linked widgets / "Select By" 一页多 widget 联动 ③ Summary tables 作数据源 ④ Reference display-column + `$Ref.Field` 解引用 ⑤ trigger formula ⑥ 列宽/行高/换行 ⑦ DateTime/Integer 类型。Access rules / Raw data 多为 non-goal (单人)。
   - **增量 1 已落地** (working tree, 未提交): **Creator Panel 三栏布局** —— `SmartTableView` return 重构成 `tableShell > [tableMain, creatorPanel]`, 点列头/+Field 在常驻右面板配置该列 (复用 `SmartTableFieldEditor`, 不重造), 面板可折叠。tsc 绿 + vitest 136 绿 + `/table-lab` 视觉验证 + code-reviewer PASS。验证工具发现: `/table-lab` 路由能 headless 渲染智能表格 (不依赖 kernel), 是后续视觉验证入口 (浏览器 dev 模式连不上 :17872 WS bridge — 需 token, 只 Tauri invoke 可得)。
   - **下一步**: 增量 2 = Creator Panel 加 "Table" tab (把 filter/sort/group/fields 弹出菜单收进面板) + 面板内字段编辑器竖向排版打磨; 之后按差距清单推进 (DateTime 类型 / 列宽行高 / Reference 显示列)。
+- 2026-06-21 **整体规划 + 路线确认 + 两轨并行推进** (bao「不要一个一个, 整体架构想清楚」+「两轨并行」)。整体规划图落 `smart-table-grist-parity-plan.md` (对标 Grist 主 + 飞书 AI 叠加, 三轨, 逐项进度)。**数据层路线确认 = 第三条 SQLite 派生索引** (bao 2026-06-21 reconfirm; 早在 ADR-002 §14 v30 已锁, 零 churn)。Track 2 完整实现设计落 `smart-table-relational-index-design.md` (5 切片 + DDL + index-backed RecordSource + 关系字段计算 + vim test 守护)。分支 `feat/smart-table-grist-parity` 已累积:
+  - `66ca041` 轨1增量1: Creator Panel 三栏布局。
+  - `728c469` 轨1增量2: filter/sort/group/fields 收进 Creator Panel 双 tab (Table/Column), 查询栏清爽。
+  - `d8a7c50` **轨2 Slice 1**: kernel `smart_table_index.rs` SQLite 派生索引 store (st_tables/st_rows/st_cells EAV + value_num/value_date 派生列 + reindex_table/remove_table/is_fresh), 仿 vault_index.rs 教条, markdown 永远 truth, 纯附加零行为改动。cargo test 5/5 + 全量 kernel 绿 + checker PASS。
+  - 全部三块均 tsc/cargo + 测试 + 视觉(前端)/单测(kernel) + 独立 code-reviewer PASS。
+  - **下一步**: 轨2 Slice 2 (IndexedRecordSource: index-backed filter/sort/group + parity 测 vs run_query, gate 在 THRESHOLD 之上优先) ‖ 轨1 (DateTime/Integer 列类型 + 多列 sort + 行高换行)。

@@ -20,9 +20,12 @@
 // every read still degrades to the in-memory `run_query` in query.rs until the
 // index is wired in.
 
-use crate::kernel::query::{CellType, FieldSpec, Row};
+use crate::kernel::query::{
+    run_query, CellType, Conjunction, FieldSpec, Filter, Operator, QueryError, QueryRequest,
+    QueryResult, Row, SortKey,
+};
 use chrono::NaiveDate;
-use rusqlite::{params, Connection, OpenFlags};
+use rusqlite::{params, params_from_iter, Connection, OpenFlags};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -253,6 +256,166 @@ impl SmartTableIndex {
         Ok(n as usize)
     }
 
+    /// Index-backed read (slice 2). Pushes the exactly-reproducible number /
+    /// date comparison filters (under AND) into SQL to prune candidate rows at
+    /// scale, then runs the SHARED `run_query` engine over the reconstructed
+    /// candidate set for the authoritative filter / sort / group / limit. Because
+    /// `run_query` re-applies every filter, the SQL prune only ever needs to be a
+    /// SUPERSET of the true matches — so the result is byte-identical to running
+    /// `run_query` over the whole table (the parity invariant, proven in tests).
+    /// One semantic definition; SQL is only an accelerator (design §C).
+    ///
+    /// Returns the same `QueryError::UnknownField` as the in-memory path (raised
+    /// by `run_query`'s up-front validation), so Irisy self-correction is unchanged.
+    pub fn query_indexed(
+        &self,
+        table_id: &str,
+        fields: &[FieldSpec],
+        req: &QueryRequest,
+        now: NaiveDate,
+    ) -> Result<QueryResult, StIndexError> {
+        let type_of = |key: &str| fields.iter().find(|f| f.key == key).map(|f| f.cell_type);
+
+        // Collect the pushable predicates. Only AND conjunction is safe to prune
+        // with (an OR row passes on ANY filter, so pruning on a subset would drop
+        // true matches). Eq/Neq on numbers use a magnitude-scaled epsilon in
+        // `run_query`, not exact `=`, so they are NOT pushed; `within` is relative
+        // and left to the full scan. Everything not pushed is handled by run_query.
+        let mut conds: Vec<PushCond> = Vec::new();
+        if req.conjunction == Conjunction::And {
+            for f in &req.filters {
+                if let Some(ct) = type_of(&f.field) {
+                    if let Some(c) = pushable(f, ct) {
+                        conds.push(c);
+                    }
+                }
+            }
+        }
+
+        let rows = if conds.is_empty() {
+            self.reconstruct_rows(table_id, None)?
+        } else {
+            let ids = self.candidate_ids(table_id, &conds)?;
+            self.reconstruct_rows(table_id, Some(&ids))?
+        };
+
+        // run_query is authoritative: validates fields (→ UnknownField), re-applies
+        // ALL filters (incl. the pushed ones), sorts, groups, limits.
+        run_query(fields, &rows, req, now).map_err(StIndexError::Query)
+    }
+
+    /// Row-ids matching ALL pushable predicates (AND intersection), via the
+    /// typed-projection indexes. Each predicate is an `IN (subquery)` over
+    /// st_cells so the composite indexes (st_cells_num / st_cells_date) serve it.
+    fn candidate_ids(&self, table_id: &str, conds: &[PushCond]) -> Result<Vec<String>, StIndexError> {
+        let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
+        let mut sql = String::from(
+            "SELECT r.row_id FROM st_rows r WHERE r.table_id = ?1",
+        );
+        for (i, c) in conds.iter().enumerate() {
+            // params: ?1 = table_id; then per cond field_key + value, indexed from ?2.
+            let p_field = i * 2 + 2;
+            let p_val = i * 2 + 3;
+            let col = match c {
+                PushCond::Num(..) => "value_num",
+                PushCond::Date(..) => "value_date",
+            };
+            sql.push_str(&format!(
+                " AND r.row_id IN (SELECT row_id FROM st_cells \
+                  WHERE table_id = ?1 AND field_key = ?{p_field} AND {col} {} ?{p_val})",
+                c.sql_op(),
+            ));
+        }
+        sql.push_str(" ORDER BY r.row_ord");
+
+        // Bind params: table_id, then (field_key, value) per cond.
+        let mut binds: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(table_id.to_string())];
+        for c in conds {
+            binds.push(Box::new(c.field().to_string()));
+            match c {
+                PushCond::Num(_, _, v) => binds.push(Box::new(*v)),
+                PushCond::Date(_, _, v) => binds.push(Box::new(v.clone())),
+            }
+        }
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| StIndexError::Db(format!("prepare candidates: {e}")))?;
+        let it = stmt
+            .query_map(params_from_iter(binds.iter().map(|b| b.as_ref())), |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|e| StIndexError::Db(format!("candidates: {e}")))?;
+        let mut out = Vec::new();
+        for r in it {
+            out.push(r.map_err(|e| StIndexError::Db(format!("cand row: {e}")))?);
+        }
+        Ok(out)
+    }
+
+    /// Rebuild `Row`s from st_cells in markdown (row_ord) order. `only` restricts
+    /// to a candidate set; None = the whole table. Each row carries every field
+    /// key (empty string when blank). CTRL-authored tables always serialize a full
+    /// cell row, so this matches the markdown-parsed shape exactly; for downstream
+    /// consumers (run_query reads `row.get(f).unwrap_or("")`) a present-blank key
+    /// and a missing key are value-equivalent, so the blank-fill is not a divergence.
+    fn reconstruct_rows(&self, table_id: &str, only: Option<&[String]>) -> Result<Vec<Row>, StIndexError> {
+        let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
+        let base = "SELECT c.row_id, c.field_key, c.value_text \
+             FROM st_cells c JOIN st_rows r ON r.table_id = c.table_id AND r.row_id = c.row_id \
+             WHERE c.table_id = ?1";
+        let (sql, ids): (String, Vec<String>) = match only {
+            None => (format!("{base} ORDER BY r.row_ord, c.field_key"), Vec::new()),
+            Some(ids) => {
+                if ids.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let ph = (0..ids.len())
+                    .map(|i| format!("?{}", i + 2))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (
+                    format!("{base} AND c.row_id IN ({ph}) ORDER BY r.row_ord, c.field_key"),
+                    ids.to_vec(),
+                )
+            }
+        };
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| StIndexError::Db(format!("prepare rows: {e}")))?;
+        // Group consecutive cells (ordered by row_ord) into rows.
+        let mut rows: Vec<Row> = Vec::new();
+        let mut cur_id: Option<String> = None;
+        let mut cur: Row = Row::new();
+        let mut bind: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(table_id.to_string())];
+        for id in &ids {
+            bind.push(Box::new(id.clone()));
+        }
+        let it = stmt
+            .query_map(params_from_iter(bind.iter().map(|b| b.as_ref())), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|e| StIndexError::Db(format!("rows: {e}")))?;
+        for r in it {
+            let (row_id, field_key, value_text) =
+                r.map_err(|e| StIndexError::Db(format!("row cell: {e}")))?;
+            if cur_id.as_deref() != Some(row_id.as_str()) {
+                if cur_id.is_some() {
+                    rows.push(std::mem::take(&mut cur));
+                }
+                cur_id = Some(row_id);
+            }
+            cur.insert(field_key, value_text);
+        }
+        if cur_id.is_some() {
+            rows.push(cur);
+        }
+        Ok(rows)
+    }
+
     fn scalar_count(&self, sql: &str, arg: Option<&str>) -> Result<usize, StIndexError> {
         let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
         let n: i64 = match arg {
@@ -288,6 +451,66 @@ fn now_ms_signed() -> i64 {
         .unwrap_or(0)
 }
 
+/// A pushable predicate — a number / date comparison reproducible exactly in
+/// SQL over the typed-projection columns (design §C). Anything else stays in
+/// `run_query`.
+enum PushCond {
+    Num(String, Operator, f64),
+    Date(String, Operator, String),
+}
+
+impl PushCond {
+    fn field(&self) -> &str {
+        match self {
+            PushCond::Num(f, ..) | PushCond::Date(f, ..) => f,
+        }
+    }
+    fn sql_op(&self) -> &'static str {
+        let op = match self {
+            PushCond::Num(_, op, _) | PushCond::Date(_, op, _) => op,
+        };
+        match op {
+            Operator::Gt | Operator::After => ">",
+            Operator::Lt | Operator::Before => "<",
+            Operator::Gte => ">=",
+            Operator::Lte => "<=",
+            Operator::Eq => "=",
+            // Only the operators selected by `pushable` reach here.
+            _ => "=",
+        }
+    }
+}
+
+/// Decide whether a filter can be pushed to SQL with EXACT `run_query` parity.
+/// Number Eq/Neq use a magnitude-scaled epsilon in `run_query` (not exact `=`),
+/// so they are excluded; `within` is relative and excluded. A non-parsing value
+/// yields None → the filter is left entirely to `run_query`.
+fn pushable(f: &Filter, ct: CellType) -> Option<PushCond> {
+    match ct {
+        CellType::Number => match f.op {
+            Operator::Gt | Operator::Lt | Operator::Gte | Operator::Lte => {
+                let v = f.value.trim().parse::<f64>().ok().filter(|n| n.is_finite())?;
+                Some(PushCond::Num(f.field.clone(), f.op, v))
+            }
+            _ => None,
+        },
+        CellType::Date => match f.op {
+            Operator::Eq
+            | Operator::Before
+            | Operator::After
+            | Operator::Lt
+            | Operator::Gt
+            | Operator::Lte
+            | Operator::Gte => {
+                let d = NaiveDate::parse_from_str(f.value.trim(), "%Y-%m-%d").ok()?;
+                Some(PushCond::Date(f.field.clone(), f.op, d.format("%Y-%m-%d").to_string()))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum StIndexError {
     #[error("st-index io error: {0}")]
@@ -296,6 +519,8 @@ pub enum StIndexError {
     Db(String),
     #[error("st-index mutex poisoned")]
     Poisoned,
+    #[error("query rejected: {0}")]
+    Query(QueryError),
 }
 
 #[cfg(test)]
@@ -414,6 +639,121 @@ mod tests {
         // Both rows survive — the occurrence counter keeps row_ids distinct
         // despite identical content (no PRIMARY KEY collision dropping a row).
         assert_eq!(idx.row_count(&tid).unwrap(), 2);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // --- Slice 2: index-backed query parity with the in-memory run_query ---
+
+    fn parity_fields() -> Vec<FieldSpec> {
+        vec![
+            field("name", CellType::Text),
+            field("amount", CellType::Number),
+            field("due", CellType::Date),
+            field("done", CellType::Checkbox),
+            field("tags", CellType::Tags),
+        ]
+    }
+
+    /// Complete rows (every field key present) — matches the markdown-parsed
+    /// shape, so the reconstructed rows equal the in-memory rows exactly.
+    fn parity_rows() -> Vec<Row> {
+        vec![
+            row(&[("name", "Acme"), ("amount", "100"), ("due", "2026-06-20"), ("done", "x"), ("tags", "crm, vip")]),
+            row(&[("name", "Beta"), ("amount", "50"), ("due", "2026-07-01"), ("done", ""), ("tags", "crm")]),
+            row(&[("name", "Cobalt"), ("amount", "250"), ("due", "2026-06-18"), ("done", ""), ("tags", "lead")]),
+            row(&[("name", "Delta"), ("amount", "n/a"), ("due", ""), ("done", "x"), ("tags", "")]),
+        ]
+    }
+
+    fn now() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 6, 19).unwrap()
+    }
+
+    /// The core safety net: for each request the index path must return the
+    /// EXACT same rows + match_count as the shared in-memory engine.
+    #[test]
+    fn index_query_matches_run_query_across_operators() {
+        let (path, idx) = fresh_index("parity");
+        let fields = parity_fields();
+        let rows = parity_rows();
+        let tid = idx
+            .reindex_table("tables/p.md", None, &fields, &rows, 1, "h")
+            .unwrap();
+
+        let f = |field: &str, op: Operator, value: &str| Filter {
+            field: field.into(),
+            op,
+            value: value.into(),
+        };
+        let cases: Vec<QueryRequest> = vec![
+            // empty
+            QueryRequest::default(),
+            // number gt (pushed)
+            QueryRequest { filters: vec![f("amount", Operator::Gt, "80")], ..Default::default() },
+            // number lte (pushed)
+            QueryRequest { filters: vec![f("amount", Operator::Lte, "100")], ..Default::default() },
+            // number eq (NOT pushed — epsilon path)
+            QueryRequest { filters: vec![f("amount", Operator::Eq, "250")], ..Default::default() },
+            // date before (pushed)
+            QueryRequest { filters: vec![f("due", Operator::Before, "2026-06-25")], ..Default::default() },
+            // date within (NOT pushed — relative)
+            QueryRequest { filters: vec![f("due", Operator::Within, "this_week")], ..Default::default() },
+            // text contains (NOT pushed)
+            QueryRequest { filters: vec![f("name", Operator::Contains, " co")], ..Default::default() },
+            // checkbox is (NOT pushed)
+            QueryRequest { filters: vec![f("done", Operator::Is, "true")], ..Default::default() },
+            // tags has_tag (NOT pushed)
+            QueryRequest { filters: vec![f("tags", Operator::HasTag, "crm")], ..Default::default() },
+            // AND of pushed + non-pushed
+            QueryRequest {
+                filters: vec![f("amount", Operator::Gt, "40"), f("tags", Operator::HasTag, "crm")],
+                ..Default::default()
+            },
+            // OR (not pruned — full scan)
+            QueryRequest {
+                filters: vec![f("amount", Operator::Lt, "80"), f("tags", Operator::HasTag, "lead")],
+                conjunction: Conjunction::Or,
+                ..Default::default()
+            },
+            // sort desc + limit
+            QueryRequest {
+                sort: vec![SortKey { field: "amount".into(), desc: true }],
+                limit: Some(2),
+                ..Default::default()
+            },
+            // group
+            QueryRequest { group_by: vec!["done".into()], ..Default::default() },
+        ];
+
+        for (i, req) in cases.iter().enumerate() {
+            let mem = run_query(&fields, &rows, req, now()).unwrap();
+            let via = idx.query_indexed(&tid, &fields, req, now()).unwrap();
+            assert_eq!(via.match_count, mem.match_count, "case {i}: match_count");
+            assert_eq!(via.rows, mem.rows, "case {i}: rows");
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn index_query_rejects_unknown_field_like_run_query() {
+        let (path, idx) = fresh_index("parity-unknown");
+        let fields = parity_fields();
+        let rows = parity_rows();
+        let tid = idx
+            .reindex_table("tables/p.md", None, &fields, &rows, 1, "h")
+            .unwrap();
+        let req = QueryRequest {
+            filters: vec![Filter { field: "nope".into(), op: Operator::Eq, value: "x".into() }],
+            ..Default::default()
+        };
+        // Same structured error as the in-memory path (anti-hallucination).
+        assert!(run_query(&fields, &rows, &req, now()).is_err());
+        match idx.query_indexed(&tid, &fields, &req, now()) {
+            Err(StIndexError::Query(QueryError::UnknownField { field, .. })) => {
+                assert_eq!(field, "nope");
+            }
+            other => panic!("expected UnknownField, got {other:?}"),
+        }
         let _ = std::fs::remove_file(&path);
     }
 }
