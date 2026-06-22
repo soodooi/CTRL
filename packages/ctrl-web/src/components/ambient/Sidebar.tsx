@@ -62,6 +62,7 @@ export type SidebarSection =
   | { kind: 'feature-pack'; pack: FeaturePack }
   | { kind: 'notes' }
   | { kind: 'tables' }
+  | { kind: 'coding' }
   | { kind: 'discover' };
 
 interface SidebarProps {
@@ -143,8 +144,8 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
       </button>
       <button
         type="button"
-        className={styles.ic}
-        onClick={() => onSelect({ kind: 'route', to: '/coding' })}
+        className={`${styles.ic} ${active === 'coding' ? styles.active : ''}`}
+        onClick={() => onSelect({ kind: 'coding' })}
         title="Coding"
       >
         <CodeIcon />

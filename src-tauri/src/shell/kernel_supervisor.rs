@@ -28,6 +28,7 @@ use crate::kernel::STSS_LISTEN_ADDR;
 pub struct KernelHandle {
     pub runtime: Arc<KernelRuntime>,
     pub bridge: StssBridge,
+    #[allow(dead_code)]
     pub app: AppHandle,
 }
 
@@ -224,6 +225,7 @@ impl KernelSupervisor {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn shutdown() -> Result<()> {
         tracing::info!("KernelSupervisor::shutdown");
         Ok(())

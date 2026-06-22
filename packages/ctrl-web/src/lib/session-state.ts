@@ -3,7 +3,7 @@
 // ADR-002 substrate § brain v17 (2026-06-07): the cap mode (Pi "wears the
 // hat" of a SKILL.md) is RETIRED along with the keycap concept it was
 // derived from (memory `decision_keycap_collapses_to_mcp_meta_ux_layer`,
-// bao 2026-06-07 "去掉 keycap 概念 你会更加清晰"). Skills survive as
+// bao 2026-06-07 "drop the keycap concept, you'll be clearer"). Skills survive as
 // invocable references that Irisy reads on demand via the `list_skills` /
 // `read_skill` tools — they are not a session mode and they do not get
 // pinned to the next turn via UI state. To use a skill, the user names

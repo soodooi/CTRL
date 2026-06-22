@@ -154,8 +154,6 @@ pub async fn provider_query_models(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn dedup_and_sort_handles_repeats() {
         // Mirror the post-fetch normalization to keep the contract

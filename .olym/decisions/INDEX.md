@@ -1,6 +1,6 @@
-<!-- ADR Index — 7 module ADRs. Single source of truth. Code MUST reference `(ADR-NNN <module> § <section> v<N>)` in comments. Amendments bump `version:` in ADR frontmatter; new ADRs only created if a new **module** appears. -->
+<!-- ADR Index — 8 module ADRs. Single source of truth. Code MUST reference `(ADR-NNN <module> § <section> v<N>)` in comments. Amendments bump `version:` in ADR frontmatter; new ADRs only created if a new **module** appears. -->
 
-# CTRL ADRs — module-organized, 7 active + 2 retired
+# CTRL ADRs — module-organized, 8 active + 2 retired
 
 | # | Module | Title | Version | Status | Last updated |
 |---|---|---|---|---|---|
@@ -13,6 +13,7 @@
 | [007](./007-workbench.md) | workbench | Mcp-composition canvas (React Flow + dnd-kit) + Irisy-led skill discovery | v1 | accepted | 2026-05-31 |
 | [008](./008-irisy-assistant.md) | irisy-assistant | Irisy reply specs / user intents / Irisy capabilities / Irisy pipeline | — | **retired** by 001 v4 + 002 v19 | 2026-06-09 |
 | [009](./009-pi-surface-integration.md) | pi-surface-integration | ctrl-pi-bridge full Pi extension wiring (12 hooks + 6 communication APIs) | — | **retired** by 001 v4 + 002 v19 | 2026-06-09 |
+| [010](./010-communication.md) | communication | **统一窄腰 (§14 契约 + :17873 治理 + MCP 插件协议) over 多元传输** — 质疑「一个框架统吃」(narrow-waist / CORBA·SOAP·ESB 教训);8 条缝传输选型;subscribe 第四动词 (ST-SS 归位);内外协议哲学分离;coding 降为第⑦外部缝 (ACP)。**v2 调研校准**:MCP=2026 收敛标准(LF 中立)/ ③向 AG-UI 对齐 / ④ACP 有据采用 (Registry 28+) / ⑧跟踪 Beelay·Keyhive。通讯总纲,实现真相引 001/002/003 | v2 | accepted | 2026-06-22 |
 
 ## Module map → code locations
 
@@ -25,6 +26,7 @@
 | irisy | 8-stage UX, remote co-view primitives, persona prompts | `packages/ctrl-web/src/routes/irisy.tsx` + `packages/ctrl-web/src/lib/irisy-prompts.ts` |
 | cross-cutting | BYOK, global English, plain-text philosophy (vim-test gate) | reviewer-policy, no single owner |
 | workbench | composition canvas, skill discovery | `packages/ctrl-web/src/routes/workbench.tsx` (Phase 1) + `src-tauri/src/commands/skills.rs` (Phase 1) + future `soodooi/ctrl-cloud` Worker (Phase 2) |
+| communication | 通讯总纲:窄腰(契约/治理/插件)+ 8 缝传输选型 + 内外哲学(cross-cutting,实现真相引用 001 §primitives / 002 §14·§mcp-bus·§crypto / 003 §6.5) | cross-cutting (no single owner; spans `src-tauri/src/kernel/{channel,event,mcp_server}.rs` + `kernel/query*.rs` + `packages/ctrl-web/src/lib/kernel.ts` + ST-SS) |
 
 ## Provenance — original 22 numbered ADRs (collapsed 2026-05-31)
 

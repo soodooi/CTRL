@@ -27,6 +27,7 @@ const SERVICE: &str = "app.ctrl.spike";
 /// Updates the entry in place if it already exists (-U flag). Returns the
 /// underlying error from the security tool on failure (e.g. user denied
 /// keychain access, locked keychain).
+#[allow(dead_code)]
 pub fn set(account: &str, value: &str) -> Result<(), String> {
     if account.is_empty() {
         return Err("keychain set: account is empty".into());
@@ -62,6 +63,7 @@ pub fn set(account: &str, value: &str) -> Result<(), String> {
 /// kernel registry which historically searched both "app.ctrl" (primary)
 /// and "app.ctrl.spike" (current) services for backward compat.
 /// bao 2026-06-06 e fix.
+#[allow(dead_code)]
 pub fn get_for_service(service: &str, account: &str) -> Result<Option<String>, String> {
     if account.is_empty() {
         return Err("keychain get: account is empty".into());
@@ -134,6 +136,7 @@ pub fn get(account: &str) -> Result<Option<String>, String> {
 }
 
 /// Remove a generic password. Idempotent — succeeds when entry missing.
+#[allow(dead_code)]
 pub fn delete(account: &str) -> Result<(), String> {
     if account.is_empty() {
         return Err("keychain delete: account is empty".into());

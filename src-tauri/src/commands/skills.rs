@@ -1,7 +1,7 @@
 // Skill discovery — kernel-local (Phase 1, ADR-007 workbench § discovery v1).
 //
 // Searches GitHub for `filename:SKILL.md` matches, using a PAT read from the
-// macOS Keychain (service `app.ctrl`, account `github`). This is the 走通
+// macOS Keychain (service `app.ctrl`, account `github`). This is the working
 // path; production moves SEARCH behind the shared `ctrl-skills` Worker because
 // most users have no GitHub token (ADR-007 workbench § discovery v1 Phase 2). INSTALL of a public skill
 // needs no token, so it stays kernel-local regardless.

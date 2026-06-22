@@ -30,6 +30,7 @@ pub enum AgentEndpoint {
 #[derive(Debug)]
 pub struct LaunchedAgent {
     pub endpoint: AgentEndpoint,
+    #[allow(dead_code)]
     pub child: Child,
 }
 
@@ -68,6 +69,7 @@ fn wait_for_stdout_line(
         .map_err(|_| anyhow!("agent did not announce its endpoint within {deadline:?}"))
 }
 
+#[allow(dead_code)]
 pub fn launch(name: &AgentName) -> Result<LaunchedAgent> {
     launch_with_env(name, &std::collections::BTreeMap::new())
 }

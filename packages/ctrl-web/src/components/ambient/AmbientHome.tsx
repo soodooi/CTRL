@@ -59,6 +59,7 @@ import {
 import { runInstalledPackAction } from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
 import { TablesPanel } from '@/components/tables/TablesPanel';
+import { CodingTerminal } from '@/components/coding/CodingTerminal';
 import { Sidebar, type SidebarSection } from './Sidebar';
 import { WorkspacePanel } from './WorkspacePanel';
 import {
@@ -66,9 +67,12 @@ import {
   vaultWrite,
   vaultSearch,
   captureScreenAndOcr,
+  csStdin,
   type IrisySessionTurn,
 } from '@/lib/kernel';
 import { platform } from '@/lib/bridge';
+import { useCodingSession } from '@/lib/coding-session';
+import { extractRunnableBlocks } from '@/lib/runnable-blocks';
 import { SessionHistory } from './SessionHistory';
 import { APP_VERSION } from '@/lib/app-meta';
 import { getVersion } from '@tauri-apps/api/app';
@@ -133,6 +137,8 @@ export interface AmbientHomeProps {
   openNotesNonce: number;
   /** Bumped to open the smart-table browser alongside Irisy (same scenePane). */
   openTablesNonce: number;
+  /** Bumped to open the coding terminal alongside Irisy (same scenePane). */
+  openCodingNonce: number;
   /** Bumped by the shell when "Irisy" is selected, to reset the chat. */
   irisyNonce: number;
   /** Collapsed (display:none) while a route owns the main column. The
@@ -164,6 +170,7 @@ export function AmbientHome({
   packRequest,
   openNotesNonce,
   openTablesNonce,
+  openCodingNonce,
   irisyNonce,
   hidden,
   onSidebarSelect,
@@ -184,12 +191,27 @@ export function AmbientHome({
   const [editing, setEditing] = useState(false);
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
-  const [scene, setScene] = useState<FeaturePack | 'notes' | 'tables' | null>(null);
+  const [scene, setScene] = useState<FeaturePack | 'notes' | 'tables' | 'coding' | null>(null);
   // The smart table the user currently has open (lifted from TablesPanel) so
   // Irisy gets it as ambient context — "operate on THIS table" works without
   // the user naming the file. Stable callback so TablesPanel's effect is calm.
   const [activeTablePath, setActiveTablePath] = useState<string | null>(null);
   const onActiveTable = useCallback((p: string | null) => setActiveTablePath(p), []);
+  // Coding companion (P0): the resident Irisy reads the live Coding terminal
+  // — getRecentStdout is its eyes (ambient context), runInTerminal is its hand
+  // (writes an approved command to the PTY via cs_stdin, connection ①).
+  const codingStreamId = useCodingSession((s) => s.streamId);
+  const getRecentStdout = useCodingSession((s) => s.getRecentStdout);
+  const runInTerminal = useCallback((code: string): void => {
+    const sid = useCodingSession.getState().streamId;
+    if (!sid) return;
+    const bytes = new TextEncoder().encode(`${code}\n`);
+    let bin = '';
+    bytes.forEach((b) => {
+      bin += String.fromCharCode(b);
+    });
+    void csStdin(sid, btoa(bin)).catch(() => undefined);
+  }, []);
   const [isNarrow, setIsNarrow] = useState(false);
   // Irisy column width — a fixed default the user can drag via the divider
   // between Irisy and the output bar (bao 2026-06-13). Window resizing keeps
@@ -320,18 +342,34 @@ export function AmbientHome({
       // Ambient context: if a smart table is open, tell Irisy which file it is
       // so "filter / sort / AI-fill / add a row to THIS table" resolves to a
       // path without the user naming it (the smart_table.* gate tools need it).
-      const ambient: LLMMessage[] =
-        scene === 'tables' && activeTablePath
-          ? [
-              {
-                role: 'system',
-                content:
-                  `Ambient context: the user is viewing the smart table at "${activeTablePath}". ` +
-                  `When they ask to filter / sort / group / AI-fill a column / add a row / edit "this table" ` +
-                  `(or refer to it without naming a file), call the smart_table.* gate tools with path="${activeTablePath}".`,
-              },
-            ]
-          : [];
+      const ambient: LLMMessage[] = [];
+      if (scene === 'tables' && activeTablePath) {
+        ambient.push({
+          role: 'system',
+          content:
+            `Ambient context: the user is viewing the smart table at "${activeTablePath}". ` +
+            `When they ask to filter / sort / group / AI-fill a column / add a row / edit "this table" ` +
+            `(or refer to it without naming a file), call the smart_table.* gate tools with path="${activeTablePath}".`,
+        });
+      }
+      // Coding companion (A1/A2 eyes + B0/C1/C2): when the Coding terminal is
+      // open, Irisy can SEE its recent output and should propose shell commands
+      // as fenced bash blocks — each gets a one-click "Run in terminal" button
+      // the user approves (B0: propose → approve → run; never auto-run).
+      if (scene === 'coding' && codingStreamId) {
+        const recent = (getRecentStdout?.() ?? '').slice(-2000);
+        ambient.push({
+          role: 'system',
+          content:
+            `The user is in the Coding terminal and you are their coding companion. ` +
+            `You can SEE its recent output below. Help debug errors, explain output, and ` +
+            `PROPOSE shell commands as fenced \`\`\`bash blocks — each gets a one-click ` +
+            `"Run in terminal" button the user approves; you never auto-run. To install ` +
+            `Claude Code, prefer the China mirror: ` +
+            `npm i -g @anthropic-ai/claude-code --registry=https://registry.npmmirror.com\n\n` +
+            `Recent terminal output:\n\`\`\`\n${recent}\n\`\`\``,
+        });
+      }
       const history: LLMMessage[] = [
         { role: 'system', content: composeSystemPrompt({ base, brainState: brain }) },
         ...ambient,
@@ -394,7 +432,7 @@ export function AmbientHome({
       setStreaming(false);
       abortRef.current = null;
     }
-  }, [messages, streaming, hasProvider, onOpenPicker, scene, activeTablePath]);
+  }, [messages, streaming, hasProvider, onOpenPicker, scene, activeTablePath, codingStreamId, getRecentStdout]);
 
   // Stop the in-flight turn (composer Stop button / Esc). Aborts the transport's
   // stream; the textarea stays editable throughout so the user never loses input.
@@ -617,6 +655,9 @@ export function AmbientHome({
   useEffect(() => {
     if (openTablesNonce > 0) setScene('tables');
   }, [openTablesNonce]);
+  useEffect(() => {
+    if (openCodingNonce > 0) setScene('coding');
+  }, [openCodingNonce]);
 
   // Reset the chat when the shell selects "Irisy" (nonce bump). Since this
   // component stays mounted across routes (hidden, not unmounted), the
@@ -740,6 +781,64 @@ export function AmbientHome({
                   </button>
                 </div>
               )}
+              {codingStreamId && m.content
+                ? (() => {
+                    const blocks = extractRunnableBlocks(m.content);
+                    if (blocks.length === 0) return null;
+                    return (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6,
+                          marginTop: 8,
+                        }}
+                      >
+                        {blocks.map((b, bi) => (
+                          <div
+                            key={bi}
+                            style={{
+                              border: '1px solid var(--color-border, #2a2a2a)',
+                              borderRadius: 8,
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <pre
+                              style={{
+                                margin: 0,
+                                padding: '8px 10px',
+                                fontSize: 12,
+                                overflowX: 'auto',
+                                whiteSpace: 'pre',
+                                background: 'rgba(0,0,0,0.25)',
+                              }}
+                            >
+                              {b.code}
+                            </pre>
+                            <button
+                              type="button"
+                              onClick={() => runInTerminal(b.code)}
+                              style={{
+                                display: 'block',
+                                width: '100%',
+                                padding: '6px 10px',
+                                border: 'none',
+                                borderTop: '1px solid var(--color-border, #2a2a2a)',
+                                background: 'transparent',
+                                color: 'var(--color-primary, #7aa2ff)',
+                                cursor: 'pointer',
+                                fontSize: 12,
+                                textAlign: 'left',
+                              }}
+                            >
+                              ▶ Run in terminal
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()
+                : null}
             </>
           ) : (
             m.content
@@ -799,6 +898,8 @@ export function AmbientHome({
       ? 'Notes'
       : scene === 'tables'
       ? 'Smart Tables'
+      : scene === 'coding'
+      ? 'Coding'
       : scene
       ? scene.name
       : part
@@ -940,6 +1041,18 @@ export function AmbientHome({
                       ✕
                     </button>
                     <TablesPanel onActiveTable={onActiveTable} />
+                  </div>
+                ) : scene === 'coding' ? (
+                  <div className={styles.scenePane}>
+                    <button
+                      type="button"
+                      className={styles.sceneClose}
+                      onClick={() => setScene(null)}
+                      aria-label="Close Coding"
+                    >
+                      ✕
+                    </button>
+                    <CodingTerminal />
                   </div>
                 ) : scene ? (
                   <div className={styles.scenePane}>

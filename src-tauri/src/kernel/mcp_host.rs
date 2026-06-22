@@ -14,7 +14,7 @@
 // checked against the actor's Capability before reaching this host. See
 // kernel::capability::CapabilityBroker.
 
-use rmcp::model::{CallToolRequestParam, Tool};
+use rmcp::model::{CallToolRequestParams, Tool};
 use rmcp::service::RunningService;
 use rmcp::transport::TokioChildProcess;
 use rmcp::{RoleClient, ServiceExt};
@@ -247,7 +247,7 @@ impl McpHost {
             }
         };
 
-        let mut param = CallToolRequestParam::default();
+        let mut param = CallToolRequestParams::default();
         param.name = tool_name.to_string().into();
         param.arguments = arguments;
 

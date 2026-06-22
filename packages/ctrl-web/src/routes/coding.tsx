@@ -1,46 +1,8 @@
-// Coding — H-2026-06-09-001 (opencode brain).
-//
-// L1 Coding tab — 2-column split:
-//   left  ~40% = `<CodingArtifactPane />` (files opencode edited,
-//                 fetched via opencode API)
-//   right ~60% = `<OpencodeChat />` (opencode HTTP API)
+// Coding route — kept as a full-screen fallback. The primary path renders
+// CodingTerminal as a scene inside AmbientHome's left work area (so Irisy
+// stays resident in the right column). See components/coding/CodingTerminal.
 
 import type { ReactElement } from 'react';
-import { OpencodeChat } from '@/components/opencode/OpencodeChat';
-import { CodingArtifactPane } from '@/components/coding/CodingArtifactPane';
+import { CodingTerminal } from '@/components/coding/CodingTerminal';
 
-export const CodingRoute = (): ReactElement => {
-  return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'row',
-        minHeight: 0,
-        minWidth: 0,
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          flex: '0 0 40%',
-          display: 'flex',
-          flexDirection: 'column',
-          minWidth: 0,
-        }}
-      >
-        <CodingArtifactPane />
-      </div>
-      <div
-        style={{
-          flex: '1 1 auto',
-          display: 'flex',
-          flexDirection: 'column',
-          minWidth: 0,
-        }}
-      >
-        <OpencodeChat />
-      </div>
-    </div>
-  );
-};
+export const CodingRoute = (): ReactElement => <CodingTerminal />;

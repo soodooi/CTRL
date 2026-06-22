@@ -22,7 +22,6 @@
 
 mod asset_scheme;
 mod commands;
-mod error;
 mod kernel;
 mod shell;
 

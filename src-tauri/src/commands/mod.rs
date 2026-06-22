@@ -151,7 +151,7 @@ macro_rules! pwa_invoke_handler {
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,
             // system — dynamic window growth for COMPANION mode
-            // (bao 2026-05-30: "整个窗口往下流")
+            // (bao 2026-05-30: "the whole window flows downward")
             $crate::commands::system::set_window_height,
             $crate::commands::system::position_window_top_right,
             // system — input-companion-window retired (bao 2026-05-31:
@@ -159,8 +159,8 @@ macro_rules! pwa_invoke_handler {
             // closes any persisted instance from a previous launch.
             $crate::commands::system::destroy_input_window,
             // system — workspace expansion via main window self-resize
-            // (bao 2026-05-30 final clarification: "左侧打开的意思，
-            // 不是浮窗"). Main slides left edge 430 ↔ 1600. CSS @media
+            // (bao 2026-05-30 final clarification: "open on the left side,
+            // not a floating pane"). Main slides left edge 430 ↔ 1600. CSS @media
             // drives the expanded grid. No independent NSWindow.
             $crate::commands::system::toggle_workspace_window,
             // system — idempotent expand for L1 chip clicks. Unlike toggle,

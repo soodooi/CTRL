@@ -2,7 +2,7 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 30
+version: 31
 status: accepted
 last_updated: 2026-06-20
 deciders: [bao, zeus]

@@ -8,7 +8,7 @@
 
 /* Clear-history is a floating icon top-right of the scroller — no
    dedicated row. Engine / MCP status lives in the global StatusBar.
-   bao 2026-05-30: "一个 clear 按钮占了一行,浪费". */
+   bao 2026-05-30: "a clear button taking a whole row is a waste". */
 /* bao 2026-06-05 right-rail control stack — vertical 22x22 stack of
    chat-level controls (History, Refresh brain, Stop, Clear). Each
    button inherits clearFloating chrome so the visual is one family. */
@@ -616,9 +616,10 @@
 /* Editorial conversation: small-caps mono sender label on the LEFT,
    flowing paragraph on the RIGHT (same row). 2-col grid lets the label
    align as a gutter without owning a vertical line of its own — bao
-   2026-06-01: "YOU 占一行，Irisy 占一行，这个不对，用左右的". Tighter
-   font + line-height + paragraph spacing to raise information density
-   per bao's same turn ("字体应该再小一些，紧凑一些"). */
+   2026-06-01: "YOU on one row, Irisy on another — that's wrong, use
+   left/right". Tighter font + line-height + paragraph spacing to raise
+   information density per bao's same turn ("font should be smaller,
+   tighter"). */
 /* No sender label — plain editorial flow. User vs assistant signaled
    by: user lines render in muted color with a 2px accent rail on the
    left; assistant lines render in primary text color with full

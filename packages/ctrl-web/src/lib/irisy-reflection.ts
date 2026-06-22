@@ -84,6 +84,12 @@ const CORRECTION_MARKERS_EN = [
   'i said',
   'not what i',
 ];
+// Chinese correction markers. NOTE: these CJK tokens are intentional —
+// `isCorrectionMessage` matches them verbatim against real Chinese user
+// input to detect corrections. This is language-detection data (like a
+// dictionary), not developer prose, so the all-English-code rule does not
+// apply here. Removing them would break correction detection for Chinese
+// users (covered by irisy-reflection.test.ts fixtures).
 const CORRECTION_MARKERS_ZH = [
   '不对',
   '错了',

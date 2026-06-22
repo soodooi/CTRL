@@ -4,12 +4,12 @@
 
 ## 1. Module-based ADR (2026-05-31 重整后)
 
-7 个 module ADR (INDEX.md). **新 ADR 仅当出现新 module 时新建**, 否则:
+8 个 module ADR (INDEX.md; 原 7 + **communication** 2026-06-22 扩编 — 通讯协议是横跨 spine/substrate/frontend 的 cross-cutting module, bao 钦定独立成 ADR-010). **新 ADR 仅当出现新 module 时新建**, 否则:
 - **改既有 section** → 改正文 + bump `version:` + 追加 `changelog:` 行 + 改 `last_updated:`
 - **加新 section** → 在 ADR § 加一段 + bump `version:` + 追加 `changelog:` 行 + 在 `sections:` 列表加新 entry
 - **撤销 section** → 删正文 + 在 `changelog:` 行写明撤销 + 不动 `sections:` 历史项 (只在 source 字段加 `retired-vN` 标注)
 
-号码 001-007 保留, slug (`spine` / `substrate` / `frontend` / `cap` / `irisy` / `cross-cutting` / `workbench`) 跟模块边界绑死.
+号码 001-007 + **010** (communication; 008/009 已 retired 占号, 故顺延 010) 保留, slug (`spine` / `substrate` / `frontend` / `cap` / `irisy` / `cross-cutting` / `workbench` / `communication`) 跟模块边界绑死.
 
 ## 2. Frontmatter 必填
 
@@ -97,5 +97,5 @@ INDEX.md `## Provenance — 原 22 numbered ADR` 表保留, 不补不动. 用于
 
 ---
 
-**Process version**: 0.2 (2026-05-31, bao 重整: module-based + version 控制)
-**Last process change**: 2026-05-31 — 替换 0.1 (22-numbered-ADR + immutable accepted + superseded chains) 为 7-module + in-place version bump
+**Process version**: 0.3 (2026-06-22, communication module 扩编 7→8)
+**Last process change**: 2026-06-22 — 新增 ADR-010 communication (cross-cutting 通讯总纲; 7→8 module; 号码 008/009 retired 占用, 顺延 010). 前: 0.2 (2026-05-31) 替换 0.1 (22-numbered-ADR + immutable accepted + superseded chains) 为 7-module + in-place version bump

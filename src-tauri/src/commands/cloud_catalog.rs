@@ -153,9 +153,20 @@ fn now_stamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    // Serialize tests that mutate the shared CTRL_CATALOG_URL env var.
+    // Without this, parallel test threads race on set_var/remove_var and
+    // produce flaky failures (env-beats-config would see the var removed
+    // mid-assertion by a sibling test).
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn resolve_url_empty_when_nothing_set() {
+        let _guard = env_lock().lock().unwrap();
         std::env::remove_var(ENV_CATALOG_URL);
         assert_eq!(resolve_url(None), "");
         assert_eq!(resolve_url(Some("")), "");
@@ -164,6 +175,7 @@ mod tests {
 
     #[test]
     fn resolve_url_env_beats_config_and_default() {
+        let _guard = env_lock().lock().unwrap();
         std::env::set_var(ENV_CATALOG_URL, "https://env.example/catalog");
         assert_eq!(
             resolve_url(Some("https://cfg.example/catalog")),
@@ -174,6 +186,7 @@ mod tests {
 
     #[test]
     fn resolve_url_config_beats_default() {
+        let _guard = env_lock().lock().unwrap();
         std::env::remove_var(ENV_CATALOG_URL);
         assert_eq!(
             resolve_url(Some("https://cfg.example/catalog")),

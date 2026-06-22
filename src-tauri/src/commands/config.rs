@@ -539,6 +539,7 @@ pub async fn config_delete_provider(
 /// bao 2026-06-06 e: used by config_test_provider so the smoke-test
 /// works for any user-saved provider (free-form), not just the legacy
 /// hardcoded ids.
+#[allow(dead_code)]
 fn read_user_manifest_endpoint(slug: &str) -> Option<String> {
     let dir = crate::kernel::provider::manifest::default_user_providers_dir()?;
     let path = dir.join(format!("{slug}.toml"));
@@ -605,6 +606,7 @@ fn keyring_has_password(account: &str) -> bool {
 /// takes precedence; falls back to keychain. Matches kernel boot-time
 /// precedence in llm_adapters/mod.rs so "test passes" ⇒ "next boot loads
 /// the adapter".
+#[allow(dead_code)]
 fn resolve_credentials(
     provider: &str,
     known: &KnownProvider,

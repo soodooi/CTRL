@@ -165,7 +165,7 @@ pub async fn hide_window(app: tauri::AppHandle) -> Result<(), String> {
 /// Set the main window's height in logical pixels. Width and top-left
 /// position are preserved — the bottom edge moves to accommodate the new
 /// height. Companion mode uses this to grow downward as chat content
-/// arrives (bao 2026-05-30: "整个窗口往下流").
+/// arrives (bao 2026-05-30: "the whole window flows downward").
 ///
 /// The window is clamped to the primary monitor's available height so it
 /// can never grow past the bottom of the screen.
@@ -190,7 +190,7 @@ pub fn set_window_height(app: tauri::AppHandle, height: f64) -> Result<(), Strin
 
 /// Position the main window anchored against the monitor's right edge.
 /// bao 2026-05-31: must match the right-edge anchor toggle_workspace_window
-/// uses (ADR-003 frontend §7 "L1 和 Irisy 位置不变"). Putting the boot position at
+/// uses (ADR-003 frontend §7 "L1 and Irisy positions are fixed"). Putting the boot position at
 /// 75 % center created a visual jump when toggle later relocated to the
 /// true right edge; aligning both paths to monitor_right means expansion
 /// slides leftward smoothly without re-positioning.
@@ -414,6 +414,7 @@ pub fn collapse_workspace_window(app: tauri::AppHandle) -> Result<bool, String> 
 // button to `pi_upgrade_now`.
 
 #[derive(Debug, serde::Serialize)]
+#[allow(dead_code)]
 pub struct PiStatusView {
     pub installed_version: Option<String>,
     pub latest_version: Option<String>,

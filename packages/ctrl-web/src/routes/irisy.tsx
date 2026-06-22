@@ -2,7 +2,7 @@
 //
 // 2026-05-30 ADR-003 frontend amendment (Irisy-as-sole-entry): The dedicated
 // `?intent=create-mcp` CreatorShell is gone. Mcp creation is now
-// an internal Irisy skill dispatched from the regular chat ("帮我做个 …"),
+// an internal Irisy skill dispatched from the regular chat ("make me a …"),
 // so the route no longer hosts a chat or a manifest editor of its own.
 // Irisy chat itself is SHELL-LEVEL (lives in app.tsx's Irisy column);
 // this route only renders the workspace-pane output for an in-flight
