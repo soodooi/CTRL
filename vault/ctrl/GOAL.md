@@ -7,36 +7,37 @@
 
 ## 目标 (Goal)
 
-**落地 §14 统一操作接口 (Unified Operation Interface) + 智能表格,并接到 PWA 前端。**
+**通讯协议重构:把现有通讯收敛成清晰的两信任域 —— 内部通讯(内核域 trusted)+ 外部通讯(跨域 untrusted,经 `:17873` gate)。**
 
-bao 连续多轮指挥,从「智能表格(对标飞书多维表格)」演进出一条架构主线(ADR-002 substrate §14):
-**所有 content-type 功能点(md / html / 智能表格 / pdf / 连接器 / 笔记 / 注册表)经 :17873 gate 用一个统一接口 `describe` / `query` / `produce` 操作**——`query`(读,并行,kernel service over `QuerySource`)/ `produce`(写,串行,过 review gate)/ `describe`(类型层=语义层,防幻觉)。读≠写(GraphQL/Plan9/agentic-AI 三方证据)。smart-table = 首个实现,KB/registry/provider 跟进,Irisy 用同一套方式操作任何源,新功能包实现 `QuerySource` 即免费可用。
+bao 2026-06-23 多轮校准(通讯模块重构讨论 → ST-SS 弃用 → 远程桌面对标 ToDesk → master-plan 业务框架落地 → 「先实现内部通讯和外部通讯,把通讯协议重构一下」)。重构脊 = **两信任域类型边界**(`InternalMsg` ⊥ `GateRequest`,编译器挡「内核自调误经 gate」)。含:**ST-SS 全量弃用**(Spatio-Temporal Semantic Stream 是单向语义广播,设计上 no input plane / no remote viewing,架构上做不了多端远程控制);**gate 治理面补齐**(审计 ledger + 可见性裁剪,OPC 数据主权护城河);本机 `kernel→PWA` 流改最简 WS。
 
-governing ADR = **ADR-002 substrate §14**(v29)+ **ADR-003 frontend §6.5**(v16)。事实源 = `vault/ctrl/research-ai-data-platforms.md` + `research-unified-operation-interface.md` + `research-feishu-bitable.md`。
-
-(原目标「Irisy 回复正确性测试覆盖 SC1-13」已被本 §14 feature 线取代 —— 那条线的角色是「我建测试」,本线 bao 改为「按架构全量做」feature 实装;独立 checker 复审时指出 GOAL.md 旧了,故此替换。Irisy 测试矩阵 `irisy-test-matrix.md` 保留备查。)
+governing = **ADR-010 communication**(两信任域 + 窄腰 §14 契约 + gate 治理 + MCP 插件)。业务框架真相源 = `master-plan.md` §二·五(模块×对标)+ §二·六(业务框架全景)。远程桌面(对标 ToDesk / RustDesk,WebRTC 栈)= **独立能力模块**,本目标只把通讯协议两信任域重构好,远程桌面后续单立目标。
 
 ## 成功标准 (Success criteria — 可验证)
 
-**已达成(分支 `feat/unified-query`,11 commit,kernel 180 测试绿,code-reviewer PASS)**
-1. ✅ `kernel/query.rs`:`QuerySource` trait + 共享 `run_query`(类型感知 filter/sort/group + 未知字段拒绝防幻觉)。
-2. ✅ 4 个 RecordSource 全走同一契约:smart-table / KB(`notes.*`)/ mcp registry(`registry.*`)/ provider catalogue(`providers.*`)。
-3. ✅ smart-table 完整 produce 面:`describe` `query` `update_cell` `append_row` `add_view` + `run_ai_column`(同步 + 异步 job 三件套 start/status/cancel)。
-4. ✅ `complete_row` provider drain 用 fake Provider 测通(闭合 reviewer「真实路径仅 compile 证明」缺口)。
-5. ✅ smart-table schema 真实 `vault::read`/`write` YAML round-trip(修了单测掩盖的 on-disk bug)。
-6. ✅ ADR-002 §14 + ADR-003 §6.5(v16)与实装对齐(diverge 项 honestly 标注)。
+**外部通讯(跨域,经 `:17873` gate)**
+1. 跨域调用类型化(`GateRequest` 带 caller identity);编译器挡「内核自调误经 gate」。
+2. gate 审计 ledger:每个外部调用记一条(caller / tool / args-hash / outcome / ts);内核自调不记。kernel smoke 验证。
+3. gate 可见性裁剪:按 (caller, intent) 投影可见工具子集(替换现状「全工具对所有 caller 可见」TODO)。
 
-**进行中 / 下一步**
-7. PR 合 `feat/unified-query` → main(squash)。
-8. **PWA 前端消费 query gate 工具**:`ctrl-web` 渲染 `query` 结果(filter/sort/group UI)+ describe 驱动的字段/算子 + AI 列(`run_ai_column` start→poll status→展示)动作。这是 §14 从「内核 gate 工具」到「用户能用」的最后一段。
-9. (可选,deferred,已在 ADR 记录)Semaphore 并发 / `row_id` 行身份原语 / produce review gate(ADR-006 §4)。
+**内部通讯(内核域 trusted)**
+4. 内核域 actor↔actor 唯一走 channel/event,类型上不经 gate(`InternalMsg`)。
+5. PWA↔kernel 本机 RPC 边界清晰;136 Tauri command 收敛策略立(范式 + 棘轮 lint,随用随退,不推倒)。
+
+**ST-SS 弃用**
+6. ST-SS 全量停用:`stss_bridge` / `commands/stss` / `ctrl-stss` 移除或停用;本机 `kernel→PWA` 流用最简 WS 顶上;前端流不回归(视觉验证)。
+
+**ADR 对齐**
+7. ADR-010 amendment:两信任域类型边界 + ST-SS 弃用 + 远程桌面入列,与实装对齐。
+
+> **第一步(最小可验证)= SC1 + SC2**:内/外类型边界 + gate 审计 ledger(外部通讯治理第一块,护城河)。
 
 ## 非目标 / 范围外 (Non-goals)
 
-- 不做可视化 workflow editor(撞「不做清单」;确定性多步编排是 §6.5.6 的 A/B/C 待 bao 拍)。
-- ~~不做关系型外键(关联/Lookup/Rollup)~~ **(SUPERSEDED 2026-06-21: 走路线 C / ADR-002 §14 v30 做真关系型 —— SQLite 派生索引算 Reference/Lookup/Rollup, 计算列 query-time 派生、绝不写回 markdown, vim test 守住, plain-text 取舍化解。已落地 Slice 4a 引擎 + 4b 类型层。)**
-- 不在本目标内重构 Irisy 架构 / 不动 ADR-005 persona-shell。
-- review gate 全系统实装属 ADR-006 §4,不在本切片(produce 暂随 `vault::write`)。
+- **远程桌面完整实装**(WebRTC 屏幕流 / 输入注入)不在本目标 —— 它是独立能力模块,本目标先把通讯协议两信任域重构好,远程桌面后续单立目标。
+- **不收敛全部 136 Tauri command** —— 只立收敛策略 + 范式 + 棘轮 lint,旧命令随用随退,不推倒(守「收敛不推倒」)。
+- 不动 spine 5 primitive 定义(actor / capability / event / channel / effect)/ keychain / plain-text / vim-test。
+- **SC8(§14 前端)让位为后续** —— 已基本达成(前端视觉铁证 + kernel 测试绿,差真机 e2e),不在本目标内继续。
 
 ## 进展日志 (Progress log — append-only)
 
@@ -73,3 +74,7 @@ governing ADR = **ADR-002 substrate §14**(v29)+ **ADR-003 frontend §6.5**(v16)
   - **阶段 B (智能表格 beachhead 完整化)**: 轨1 Grist parity 剩余 (Linked widgets / Summary tables / Reference 显示列) + 飞书 Bitable AI 智能表格叠加。
   - **阶段 C (从能力到平台)**: 中期能力市场 + gate 治理 (先拍 mcp-capability-marketplace 的 4 个 gate 决策 → 7 切片)。
   - 执行用 dev-playbook: 每阶段切 spec → 并行 subagent 实施 → code-reviewer 验证 → dev-loop commit。**开工前先 git/grep 核实真实状态 (本次教训: GOAL 进度会过时)。**
+- 2026-06-22 **可视化验证 (bao「帮我可视化验证一下是不是真的完成了」)。结论: 前端真的完成了 (像素铁证), 真机端到端还差最后一截。** 方法: 现有 dev server :5173 + Playwright headless chromium 截图 `/table-lab` (`/tmp/table-lab.png`)。**眼见为实**: 完整智能表格渲染 —— 8 视图 (Grid/Kanban/Gallery/Calendar/Form/Summary/Chart/Timeline) + §14 query bar (FILTER Name/contains + SORT + GROUP, describe 驱动) + Creator Panel 三栏 (Table/Column tab + 密度 Cozy + Freeze + Wrap text + 9 字段可见性勾选) + 多字段类型 (文本/数字/单选彩色 pill) + 条件格式 (Amount 绿底 / lost 红底) + 5 行数据 + 聚合 (Amount SUM 60,800 / Seats SUM 196)。→ **SC8 前端 + 轨1 Grist parity 视觉确认达成。**
+  - **诚实缺口 (可视化验证暴露)**: 截图时 page error `transformCallback` = 浏览器 dev 模式 Tauri invoke 失败 → `/table-lab` 是 **headless mock 数据渲染, 没连真 :17873 gate**。即「前端 UI」眼见为实完成, 但「前端 ↔ 真实 gate ↔ 真实 vault」**端到端仍需 Tauri 真机验证** (浏览器 dev 连不上 kernel, GOAL 早已记此入口限制)。
+  - **进度小结**: 近期目标 = §14 内核 (✅测试) + 前端 SC8/轨1 (✅视觉) + 真机 gate e2e (⏳ 待 Tauri app)。「当前活跃」收窄为: **重建 Tauri app 跑真机 :17873 smoke + 真实 vault 数据的 /table-lab e2e**, 闭合这最后一截即坐实近期目标 100% 达成, 然后进阶段 B。
+- 2026-06-23 **目标替换(SC8 §14 前端 → 通讯协议重构,两信任域)。** 理由:bao 连续多轮从「继续通讯模块重构讨论」→ 诊断出 ST-SS 是张力源 → bao 钦定 **ST-SS 全量弃用**(单向语义广播,做不了他要的多端远程控制)→ 真实业务 = **远程桌面(对标 ToDesk)**,WebRTC 栈,另立独立能力模块 → bao 要求先「梳理 ctrl 业务框架」(已落 `master-plan.md` §二·五 模块×对标 + §二·六 业务框架全景)→ bao 指令「先实现内部通讯和外部通讯,把通讯协议重构一下」。SC8 已基本达成(前端视觉铁证 + kernel 测试绿,差真机 e2e),让位为后续。**第一步 = SC1+SC2(内/外类型边界 + gate 审计 ledger)。** 走 dev-loop。

@@ -29,13 +29,64 @@ related:
 
 | 赛道 | 代表 | 形态 | 服务谁 |
 |---|---|---|---|
-| coding agent + MCP | Claude Code / Cursor / Cline | marketplace + one-click MCP | **开发者** |
+| coding agent + MCP | **Codex** / Claude Code / Cursor / Cline | terminal agent + one-click MCP | **开发者** |
 | PKM / local-first | Obsidian(+MCP 插件)/ Tana / AnyType | 笔记 + AI | 单点(知识管理)|
 | 语义层 / 数据 | Cube / OSI / Apollo(GraphQL+MCP)| 企业数据 + agent | **企业/开发者** |
 | launcher | Raycast | 快捷启动 + AI | 偏开发者 |
 | agent 协议 | MCP(标准)/ ACP / AG-UI / A2A | 互操作协议(互补分层)| 平台/开发者 |
 
 **CTRL 的真空位**:以上要么开发者向(Cursor/Cline/Apollo),要么单点(Obsidian PKM)——**没有一个把 MCP 生态(工具/能力)整合成「普通用户」的 local-first 通用平台 + one-click 能力市场 + gate 安全治理**。这就是 CTRL 占的位,**在产品层,不在协议层**。
+
+## 二·五、模块 × 对标版图(2026-06-23 bao 校准)
+
+> 纪律:**每个能力模块对标一个成熟单点** = 既抄功能点(像远程桌面抄 ToDesk)、又分赛道获客滩头(Coding 吸开发者、Smart-table 吸飞书用户)。两类模块:平台底座(shell/治理)+ 能力模块(可安装)。
+
+### A. 平台底座(shell + 治理,非可安装能力)
+
+| 模块 | 代码落点 | 对标 | 性质 |
+|---|---|---|---|
+| **CTRL shell**(Ctrl→intent→1-3 能力) | app 整体 | **Raycast** | launcher / intent |
+| **Irisy**(内置助手) | `/` chip | **Codex**(OpenAI agent 助手) | 助手体验对标 |
+| **Irisy 个人知识库**(记忆+RAG) | Irisy 内(kairo) | **hermes**(实现脑)+ Codex | AI 读 vault 的视图 |
+| **Mcp pool + 能力市场 + gate** | `/pool` chip | Raycast Store / Coze 插件 / MCP Registry | 平台层 |
+
+### B. 能力模块(可安装,各对标成熟单点)
+
+| 模块 | 代码落点 | 对标 | 状态 |
+|---|---|---|---|
+| **Notes**(人编辑的文件 vault) | `/notes` chip | **Obsidian** | 人界面;与个人知识库同一份 vault |
+| **Coding** | `/coding` chip | **Codex 的 terminal** | terminal coding agent(非 IDE 内嵌) |
+| **Smart-table**(智能表格) | workspace 能力 | **飞书多维表格** / Grist / Airtable | 当前 beachhead(SC8) |
+| **远程桌面** | 待建 | **ToDesk** / RustDesk | 2026-06-23 新锚;WebRTC 栈,**非 ST-SS** |
+
+**两个关键判断**:
+1. **同一份 plain-text vault 两个面**:Notes = 人编辑视图(对标 Obsidian);个人知识库 = AI 检索视图(对标 hermes)。一份数据两个对标,正是 plain-text 哲学(本地 vault 是 truth,人用 Obsidian 视角、AI 用 hermes 视角读同一批文件)。
+2. **Irisy + Coding 对标 Codex 一体两面**:Codex = OpenAI 把「terminal coding agent + 通用 agent 助手」捏成一个品牌。CTRL 差异化 = 同样体验,但**脑可换(hermes / BYO-CLI)、数据本地、过 gate**。
+
+### C. ST-SS 全量弃用 + 远程桌面接管(2026-06-23 bao 钦定)
+
+**ST-SS(Spatio-Temporal Semantic Stream)全量弃用。** 它是单向语义广播(设计上 no input plane / no remote viewing),架构上做不了多端远程控制 —— 多次尝试失败是选型错,不是实现问题。远程控制改由**「远程桌面」能力模块**承担:对标 ToDesk,WebRTC 标准栈(screen capture + video track 下行 + data channel 输入上行),P2P + E2EE 守数据主权(穿不透 NAT 才用 content-blind relay,区别于 ToDesk 过中心服务器)。ST-SS 现兼的 `kernel→PWA` 本机流另用最简 WS 顶上。**正式 amendment 落 ADR-010(通讯规划步骤一并做)。**
+
+## 二·六、CTRL 业务框架(全景清单)
+
+> 通讯模块规划的前提:业务全景盘清,通讯才能从业务长出来(不套协议模板)。
+
+1. **定位**:普通用户的 local-first 通用 AI 平台。按 Ctrl → 意图 → 1-3 能力模块。目标用户 = 一人公司(OPC)。
+2. **商业**:卖 substrate + 平台 + 能力市场(订阅),不卖模型;share-and-be-shared(共享+互惠,非买卖)。
+3. **模块版图**:见 §二·五(平台底座 4 + 能力模块 4 + 能力市场生态)。
+4. **核心业务流**:按 Ctrl → ephemeral workspace → intent 浮现 1-3 能力 → 两条 brain 路(Irisy=hermes / BYO-CLI=projection)→ 工具调用回流经 `:17873` gate → 能力执行(query 读 / produce 写)→ 产出落本地 vault(plain-text)→ 异步推云 mirror。
+5. **业务硬约束**(决定通讯形态):
+   - 本地是 truth、拔网可用 → 通讯能降级本地,关键路径不被云阻塞
+   - 端侧优先 → OAuth / LLM / sync / RAG / OCR 端侧,云是 augmentation
+   - 数据主权(OPC)→ gate 单一收口鉴权审计、E2EE mesh、无账号
+   - 能力市场 share → 能力定义 plain-text 可打包共享;第三方插件不可信 → gate 安全(扫描/hash-pin/验签/沙箱)
+   - one-shot + AI-is-pipe → CTRL 不编排,只 projection + gate
+6. **业务 → 通讯映射**(通讯模块要服务的缝):
+   - 用户↔PWA、PWA↔kernel:本机 RPC(Tauri / WS)
+   - 能力插件↔kernel:MCP over gate `:17873`
+   - Irisy↔脑(hermes)、外部 agent↔CTRL:经 gate
+   - 跨设备(远程桌面 / sync):mesh WebRTC + E2EE
+   - 内核域 actor↔actor:channel / event,**不过 gate**
 
 ## 三、战略结论(本 session 研究的净提炼,锁定)
 
