@@ -21,6 +21,7 @@
 //     kernel modules (vault, local_storage, llm_port, mcp_host) so tests
 //     stay against those modules, not the MCP envelope.
 
+use crate::kernel::audit;
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
@@ -1830,6 +1831,44 @@ fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, M
 // downstream MCP servers' tools, surfaced as first-class namespaced
 // `<server>_<tool>` entries (ADR-002 substrate §1.9.1). This is why Irisy/hermes
 // see e.g. Obsidian's tools directly instead of only behind mcp_proxy_*.
+impl KernelMcpRouter {
+    /// Dispatch a tool call to either a downstream namespaced server or the
+    /// static kernel tool router. Kept separate from the `ServerHandler`
+    /// `call_tool` override so the latter can wrap it with audit recording
+    /// without duplicating the routing logic (ADR-010 § trust-domains).
+    async fn dispatch_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        // Route a namespaced downstream call `<server>_<tool>` to mcp_host;
+        // otherwise fall through to the static kernel tool router (§1.9.1).
+        for desc in self.runtime.mcp_host.list_installed().await {
+            let prefix = format!("{}_", desc.id);
+            if let Some(tool) = request.name.as_ref().strip_prefix(&prefix) {
+                let tool = tool.to_string();
+                let args = request
+                    .arguments
+                    .clone()
+                    .map(serde_json::Value::Object)
+                    .unwrap_or(serde_json::Value::Null);
+                let result = self
+                    .runtime
+                    .mcp_host
+                    .invoke(&desc.id, &tool, args)
+                    .await
+                    .map_err(|e| {
+                        McpError::internal_error(format!("downstream {}: {e}", desc.id), None)
+                    })?;
+                let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+                return Ok(CallToolResult::success(vec![Content::text(body)]));
+            }
+        }
+        let tcc = ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+}
+
 impl ServerHandler for KernelMcpRouter {
     async fn list_tools(
         &self,
@@ -1865,31 +1904,31 @@ impl ServerHandler for KernelMcpRouter {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        // Route a namespaced downstream call `<server>_<tool>` to mcp_host;
-        // otherwise fall through to the static kernel tool router (§1.9.1).
-        for desc in self.runtime.mcp_host.list_installed().await {
-            let prefix = format!("{}_", desc.id);
-            if let Some(tool) = request.name.as_ref().strip_prefix(&prefix) {
-                let tool = tool.to_string();
-                let args = request
-                    .arguments
-                    .clone()
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::Value::Null);
-                let result = self
-                    .runtime
-                    .mcp_host
-                    .invoke(&desc.id, &tool, args)
-                    .await
-                    .map_err(|e| {
-                        McpError::internal_error(format!("downstream {}: {e}", desc.id), None)
-                    })?;
-                let body = serde_json::to_string(&result).map_err(map_serde_err)?;
-                return Ok(CallToolResult::success(vec![Content::text(body)]));
-            }
+        // The :17873 gate is the single boundary every External call crosses,
+        // so audit happens here once (ADR-010 § trust-domains). Record the tool
+        // name + a hash of the args (not the args themselves — data sovereignty)
+        // + the outcome. Best-effort: a ledger failure must never block a call.
+        let tool_name = request.name.to_string();
+        let args_hash = audit::hash_args(request.arguments.as_ref());
+
+        let result = self.dispatch_tool(request, context).await;
+
+        let (outcome, detail) = match &result {
+            Ok(_) => ("ok", None),
+            Err(e) => ("error", Some(e.to_string())),
+        };
+        if let Err(e) = self.runtime.event_store.record_call(
+            audit::TrustDomain::External,
+            "external",
+            &tool_name,
+            &args_hash,
+            outcome,
+            detail.as_deref(),
+        ) {
+            tracing::warn!(tool = %tool_name, error = %e, "audit ledger write failed");
         }
-        let tcc = ToolCallContext::new(self, request, context);
-        self.tool_router.call(tcc).await
+
+        result
     }
 
     fn get_info(&self) -> ServerInfo {

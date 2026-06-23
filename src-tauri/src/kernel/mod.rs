@@ -19,6 +19,7 @@
 
 pub mod actor;
 pub mod ai_column;
+pub mod audit;
 pub mod cache;
 pub mod capability;
 pub mod capability_resolver;
