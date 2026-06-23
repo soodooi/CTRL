@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 31
+version: 32
 status: accepted
-last_updated: 2026-06-20
+last_updated: 2026-06-22
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003, note: "v27 reframed: BYO-CLI driver brain — user-chosen local CLI (Claude Code etc.); CTRL never spawns/supervises a brain. Prior hermes-ACP/Pi/opencode-as-brain content retired, kept in changelog as provenance." }
@@ -1322,6 +1322,28 @@ becomes Irisy-operable with **zero bespoke tools**.
   tools.
 - [ ] `query` never mutates; `produce` always passes the review gate.
 - [ ] smart-table validates the contract as the first RecordSource (ADR-003 §6.5).
+
+### §14.7 subscribe — streaming read = the `watch` projection of `query` (NOT a fourth verb)
+
+Live data (Irisy / PWA observing a result set that changes under them) is **not** a new verb. It is
+`query` with a `watch:true` modifier: the source resolves the snapshot, then the gate pushes the
+incremental delta (ST-SS Cell/Op) as the underlying rows change. This keeps the verb set frozen at
+three (`describe` / `query` / `produce`) — transport liveness is orthogonal to data semantics.
+
+- **Why a modifier, not a verb**: a verb is a data-semantics dimension; streaming is a
+  transport/lifecycle dimension. Folding them into one enum (a literal `subscribe` verb) forces
+  every source to implement it — but sources with no stream semantics (registry / providers) would
+  return an empty impl or panic. As a `watch` modifier, a source that cannot stream simply ignores
+  it (or `describe` advertises `watchable:false`); the no-stream sources stay clean (ISP).
+- **Trust split**: the **authorization + audit** of a watch subscription flow through the
+  `:17873` gate (same governance as a one-shot `query`); only the **bytes** of the delta stream ride
+  `:17872` (ST-SS). This closes the prior audit blind spot where ST-SS streams bypassed the gate
+  entirely — the gate now sees (and can revoke / redact) every live subscription, even though it
+  does not sit on the hot byte path.
+- **Degradation**: a watch that loses its source (connector offline) degrades to its last snapshot +
+  a `degraded` marker rather than hard-failing — consistent with the local-first contract
+  (`describe` self-reports degradation behaviour). Permanent design rationale + four-dimension
+  framework: `vault/ctrl/comms-architecture-permanent.md`.
 
 ## Provenance
 

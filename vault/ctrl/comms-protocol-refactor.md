@@ -1,7 +1,8 @@
 ---
 title: 全项目通讯协议重构 — 分析与方案
 kind: design
-status: draft
+status: superseded
+superseded_by: "[[comms-architecture-permanent]]"
 created_at: 2026-06-22
 owner: bao
 related:
