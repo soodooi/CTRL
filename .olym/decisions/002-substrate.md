@@ -2,7 +2,7 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 32
+version: 33
 status: accepted
 last_updated: 2026-06-22
 deciders: [bao, zeus]
@@ -23,6 +23,9 @@ sections:
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
   - { id: unified-operation-interface, source: new-2026-06-19, note: "§14 — describe/query/produce: one uniform interface over all content-type feature points (md/html/table/pdf/connector/…) projected on :17873 gate; type layer via describe, read(query)≠write(produce-through-gate); query = kernel service over QuerySource, feature packs + workflows are clients; smart-table = first impl. Research: GraphQL/Plan9/agentic-AI paper." }
 changelog:
+  - v33 2026-06-22: **§14 深化 — 批判性自审后补 §14.8-§14.11 (事实源 `vault/ctrl/comms-architecture-permanent.md` §10).** 补四项: (1) **§14.8 query 结果随 source_kind 多态** —— 动词仍三个,返回类型随 describe().source_kind 分化 (Records/Text/Blob),修 v29「QueryResult 是 record-shaped {rows}」的类型坍缩,让 pdf/图片 (Blob) + 长文 (Text) 不用 hack 进 record。(2) **§14.9 produce 分 Write vs Effect** —— effectful 长耗时动作返回 OperationHandle{operation_id, idempotency_key},坐到 ADR-001 第五 primitive **Effect** 上;进度复用 §14.7 query{watch}、取消复用 produce、幂等键防重放,run_ai_column 手搓 job 收编成标准 Effect (模型: Google AIP-151 LRO / Temporal / gRPC operations)。(3) **§14.10 协议版本协商** —— describe 自报 protocol_version (SemVer),gate 按版本路由/降级,protobuf 式只增不改,破坏性变更走 major + N/N-1 迁移窗口 (CORBA/SOAP 死于版本脆性)。(4) **§14.11 AI-facing 错误契约** —— 结构化 Feedback{kind, retriable, correction, human},QueryError::UnknownField 收编为特例,闭合 Irisy 自纠回路 (RFC 7807 / gRPC rich error)。NOT 改动词集 (仍三);NOT 改 spine 5 primitive (反而启用 Effect)。配套总纲 D/E/G/H 进 ADR-010 v4。
+  - v32 2026-06-22: **§14.7 subscribe — streaming read = query{watch} 投影 (NOT 第四动词).** (此条补记: §14.7 正文在 commit aa990ab 已写入 + frontmatter 已 bump 32,但当时漏记 changelog 行,现补。) Irisy/PWA 订阅 query 结果集,源变 → gate 推增量 (ST-SS Cell/Op);subscribe 不是新动词,是 `query{watch:true}` 传输投影,无流语义的源 (registry/providers) 天然不实现 (ISP);授权+审计经 :17873,字节走 :17872。事实源 `vault/ctrl/comms-architecture-permanent.md`。
+  - v31 (provenance, no content change): frontmatter version 在 commit 78a3577 从 30 bump 到 31,但未改动 §14 任何内容、亦无 changelog 行 (无意的版本号 bump)。此条仅为补全版本号连续性,无实质决策。
   - v30 2026-06-20: **§14 amendment — smart-table 对标飞书 Bitable:数据层路线 C(SQLite 派生索引,markdown 仍 truth)+ 网格层 glide-data-grid(bao 拍板).** 调研(`vault/ctrl/feishu-bitable-parity-assessment.md`,飞书 27 ui_type / 6 视图 / 关系型 + Teable·undb 源码 + glide-data-grid 能力)铁证:飞书 Bitable 灵魂=关系型(关联/Lookup/Rollup/跨表公式),**纯 markdown 做不到**(O(n²) 文件 I/O、无事务双向同步、无外键悬空、数万行不可用)。bao 选**路线 C**:markdown 存 schema/数据/关联(仍是 truth,vim 可读,守 plain-text 哲学),**SQLite 作派生索引**(从 markdown 重建,类比现有 `vault_index.rs` FTS5 + `embeddings` SQLite),关系型/Lookup/Rollup/大规模 `query` 走索引算,写回 markdown。**§14 query 引擎获得 SQLite 索引后端**(RecordSource 可选 index-backed),markdown round-trip 不变。网格层::17873 gate/数据契约不变,PWA 用 **glide-data-grid(MIT, canvas, 百万行, 键盘/复制粘贴/填充/列宽/冻结)** 重做 grid 视图,`getCellContent` 回调直连数据源(契合"本地是 truth")。开源:glide-data-grid 直接用(MIT 可商用),Teable/undb(AGPL)只参考关系型/Lookup/公式/Visitor 设计不搬码。关系型字段(关联/Lookup/Rollup/公式)落地待后续切片;本次先 glide 网格(不碰数据层)。NOT 改 spine 5 primitive。
   - v29 2026-06-19: **NEW §14 Unified Operation Interface — describe / query / produce (bao 「修改架构」).** 把 query 引擎从 smart-table 专属抬成 substrate 级契约:所有 content-type **功能点**(md/html/智能表格/pdf/CRM连接器/笔记元数据/mcp注册表…)经 :17873 gate 用**一个统一接口**操作,不再每能力各造工具。三动词:**`describe`**(普适,自报字段+支持的算子=类型/语义层,防"一切皆文件"丢类型的塌陷)/ **`query`**(读,并行、不过门,kernel service over `QuerySource`,功能包+工作流是 client)/ **`produce`**(写,串行、**过 review gate**,与 query 分开——连 GraphQL 都 query≠mutation,且 CTRL 写不分开就没法门控)。源分 RecordSource(filter/sort/group)/TextSource(match/semantic)/BlobSource(get/extract),算子由 describe 自报 → 统一在接口、分化在 describe(**不是啥都 query**)。NOT 新增 spine primitive(5 锁)——kernel 服务 + gate 契约,挂 Capability primitive 下。smart-table(ADR-003 §6.5)= 首个 RecordSource 实现。研究依据:GraphQL query-vs-mutation / Unix·Plan9 everything-is-a-file / 2026 agentic-AI Unix-philosophy 论文,事实源 `vault/ctrl/research-unified-operation-interface.md`。
   - v28 2026-06-18: **纠正 v27 brain 层 (bao 实查运行真相后钦定) + Obsidian connector 落地验证.** v27 把 brain 写成「BYO-CLI driver 取代内置 brain，hermes 摒弃」——**写过头了**。运行真相：**Irisy 的 brain = Hermes Agent**，CTRL 确实 bundle + 启动 hermes（dashboard :17890，Irisy 嵌入），**hermes 不退役**。**BYO-CLI driver / projection 是「附加」并行路径**（用户自带 CLI 经投影的 `.mcp.json` 也能驱动 CTRL 工具，已落地 `kernel/projector.rs` + 真机验证），不是替代。§1 brain 的「hermes 摒弃」就 brain 层而言 superseded（§ projection / § mcp-bus / Obsidian / plain-text 仍有效）。**Obsidian Local REST API MCP 连接落地**：根因 = `obsidian_connect` 从未被调用（boot 没接线）+ rmcp `auth_header()` 双重 Bearer 前缀 401；修复 = boot best-effort `register_and_connect` + reqwest default-header 带精确 `Bearer <token>`。真机验证：connected to bus，**16 工具**。真相源 `vault/ctrl/architecture-byo-cli-driver.md` 顶部纠正块 governing。
@@ -1344,6 +1347,58 @@ three (`describe` / `query` / `produce`) — transport liveness is orthogonal to
   a `degraded` marker rather than hard-failing — consistent with the local-first contract
   (`describe` self-reports degradation behaviour). Permanent design rationale + four-dimension
   framework: `vault/ctrl/comms-architecture-permanent.md`.
+
+### §14.8 `query` result is polymorphic by `source_kind` (records / text / blob)
+
+The verb set stays three, but the **result type varies by `describe().source_kind`** — uniform verb,
+typed result. v29 named RecordSource/TextSource/BlobSource but `QueryResult` was record-shaped
+(`{rows}` only); that collapses type the way Plan9 "everything is a file" was criticised for. Fix:
+
+- `Records { rows, match_count }` (RecordSource — filter/sort/group)
+- `Text { spans, match_count }` (TextSource — match/semantic → passages)
+- `Blob { handle, chunks }` (BlobSource — get/extract/page; bytes by handle, not inlined)
+
+Operators likewise specialise per kind and are advertised by `describe`. **Unified at the three
+verbs; specialised at the result type + operator set.** Lets pdf/image (Blob) and long-form
+notes (Text) join without hacking a record shape. Rationale: `comms-architecture-permanent.md` §10.A.
+
+### §14.9 `produce` splits into Write vs Effect — effectful actions sit on the Effect primitive
+
+`produce` covers both a synchronous **write** (`update_cell`/`append_row`/`upsert` — returns an
+`Outcome` immediately) and a long-running **effectful action** (send-message / deploy / `run_ai_column`
+— returns an `OperationHandle { operation_id, idempotency_key }`). Evidence the contract was missing
+this: `run_ai_column` had to grow a bespoke job triple (start/status/cancel). The action half is the
+ADR-001 **Effect** primitive (previously unused by §14):
+
+- **Progress/status** reuses §14.7 `query{watch}` on the `operation_id` — no new mechanism.
+- **Cancel** is just another `produce` action.
+- **`idempotency_key`** makes network retries safe (no double-execution).
+
+So feature packs stop reinventing job machinery; `run_ai_column` collapses into the standard Effect.
+Models: Google AIP-151 long-running operations / Temporal durable execution / gRPC operations.
+Rationale: `comms-architecture-permanent.md` §10.B.
+
+### §14.10 Protocol-version negotiation — the contract evolves without breaking installed packs
+
+"Permanent" is not "verbs never change" — it is "a third-party capability pack written against
+contract vN keeps working after CTRL ships vN+1." So: `describe` self-reports `protocol_version`
+(SemVer); the gate negotiates (a pack declares the contract version it implements, the gate routes /
+degrades by version); evolution follows **protobuf-style add-only** discipline — new fields
+`#[serde(default)]`-optional, deprecated fields marked not removed, a breaking change = new major with
+the gate supporting N and N-1 across a migration window. Version brittleness is a documented cause of
+death for CORBA/SOAP; MCP and gRPC both negotiate versions. Models: protobuf back-compat / MCP
+protocol version / semver. Rationale: `comms-architecture-permanent.md` §10.C.
+
+### §14.11 AI-facing error contract — a structured `Feedback`, not a human string
+
+Every rejection / degradation / failure returns a structured, machine-actionable `Feedback`
+(`kind` ∈ UnknownField | ReviewRejected | Degraded | RateLimited | Conflict; `retriable: bool`;
+`correction` = valid-field set / fixed params / wait duration; plus a `human` string). The existing
+`QueryError::UnknownField{valid}` (anti-hallucination feedback) is the first special case, now
+generalised. This closes the agentic self-correction loop — Irisy retries/self-corrects from
+`retriable + correction` instead of dumping a raw error on a non-technical user. Models: HTTP
+problem+json (RFC 7807) / gRPC rich error model (google.rpc.Status details). Rationale:
+`comms-architecture-permanent.md` §10.F.
 
 ## Provenance
 

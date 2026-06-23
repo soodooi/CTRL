@@ -2,7 +2,7 @@
 adr_id: 010
 module: communication
 title: CTRL communication architecture — 统一窄腰 (§14 契约 + :17873 治理 + MCP 插件协议) over 多元传输
-version: 3
+version: 4
 status: accepted
 last_updated: 2026-06-22
 deciders: [bao, zeus]
@@ -18,6 +18,7 @@ sections:
   - { id: internal-external, source: new-2026-06-22, note: "内部自研轻量(Tauri/actor/CBOR)/ 外部拥抱标准(MCP/ACP/A2A/AG-UI)。" }
   - { id: future,            source: new-2026-06-22, note: "WASM 插件 / A2A peer / AG-UI 对齐 / Beelay·Keyhive 均叠加在窄腰上,不替代。" }
 changelog:
+  - v4 2026-06-22: **§ deepening — 批判性自审补四点 D/E/G/H (事实源 `vault/ctrl/comms-architecture-permanent.md` §10).** 窄腰骨架不动,补四个总纲级洞:(D) **跨源组合归上层** —— 关联/Lookup/Rollup 在上层 (Irisy/feature pack) 用 DataLoader 模式 (N 次单源 query + 内存 join),守「禁跨 D1 JOIN」+ Source 单一职责,与 ADR-002 v30 关系型字段切片对齐。(E) **gate 自身降级 + 背压** —— gate 故障时只读本地 query 降到内核域待遇直通 (本地是 truth),write/effect 必须等 gate;bounded queue + circuit breaker 防堆积。(G) **可见性裁剪 × intent-scoped projection** —— gate 按 (caller, intent) 投影可见子集 = 「按 Ctrl → 意图 → 1-3 能力模块」的实现,补 TODO 的治理半成品 (capability-based 最小暴露面)。(H) **mesh 跨设备三动词成立性** —— mesh = 传输+一致性层非腰外世界,三动词投影到 CRDT:跨设备 query=最终一致快照、produce=Automerge change 本地立即生效+异步合并 peer、degradation=LocalWins,Beelay/Keyhive capability sync 对接 gate capability-token。配套契约层 A/B/C/F 进 ADR-002 §14 v33 (§14.8-§14.11)。NOT 改动词集;NOT 改 spine 5 primitive (启用 Effect)。
   - v3 2026-06-22: **与 ADR-002 §14.7 v32 对齐 + 新增 § trust-domains (永久架构定稿,事实源 `vault/ctrl/comms-architecture-permanent.md`).** 三处:(1) **subscribe 从「第四动词」改为「`query{watch}` 投影」** —— v2 把 subscribe 写成第四动词,与 ADR-002 §14.7 v32 的定稿冲突(§14.7: subscribe 不是新动词,是 query 的 watch 修饰,无流语义的源 registry/providers 天然不实现 = ISP)。动词集冻结在**三个** describe/query/produce;GraphQL Subscription 本质也是「按事件重跑的 query」,payload 走同一套 field-selection,故收编为 watch 修饰而非平级动词。(2) **NEW § trust-domains** —— 两个信任域:内核域(actor↔actor 走 channel/event,**不经 gate**,Erlang/OTP 零治理)vs 跨域(外部 agent/Irisy→工具/connector→第三方/PWA→写,**必经 :17873**);「内核自调也经 gate」是反模式,砍;用类型编码信任域让编译器挡误用。(3) **ST-SS 授权回笼补审计盲区** —— 流字节走 :17872 旁路 gate(性能),但 watch 订阅的**授权+审计元数据登记回 :17873**,gate 看得见/可撤销/脱敏每个 live 订阅。降级(connector 掉线→末次快照+degraded 标记)为契约一等公民,describe 自报。NOT 改 spine 5 primitive;NOT 推倒(收敛式)。
   - v2 2026-06-22: **调研校准 (deep-research workflow, 事实源 `vault/ctrl/research-protocol-2026.md`).** 多源(官方为主)印证 + 3 处与时俱进校准:(1) **MCP 已是 2026 行业收敛标准 + Linux Foundation Agentic AI Foundation 治理中立 (2025-12-09) + 2026 spec 长出 registry/auth/streaming** → 强化 § plugin / § governance(押在中立标准上,gate/市场发现/流可搭 MCP 演进)。(2) **seam ③ Irisy↔前端流**:AG-UI 是 agent↔UI 事实标准(17 typed events,LangGraph/CrewAI/CopilotKit 生态)→ ST-SS 从「自研够用」升为「**向 AG-UI event 词汇对齐**(token/tool-call/state-snapshot-delta)」,未来第三方 agent 框架流进 CTRL 前端时免费兼容。(3) **seam ④ 驱动 coding agent**:ACP 已成熟标准(Apache,JSON-RPC/stdio,ACP Registry 28+ agents 含 `claude --acp`/`codex acp`/`gemini-cli --acp`,跨编辑器采用)→ 从「future 假设」升为「**有据采用,一个 ACP client 驱动所有 BYO-CLI**」。(4) **seam ⑧ mesh**:Ink&Switch **Beelay + Keyhive**(Automerge 官方下一代 E2EE + capability sync,可跑任何机密传输)= 手搓 Olm 的 2026 继任者 → 列为演进跟踪项(现栈能跑,Automerge 已锁则迁移成本低)。
   - v1 2026-06-22: **NEW module ADR — 通讯协议架构 (bao 钦定「写新 ADR 重新整理思路」+ 方向校准「CTRL 是通用平台不是 Claude Code 壳」).** 把散落在 002 §14/§mcp-bus/§projection、001 §primitives、003 §6.5 的通讯决策抬成一个 cross-cutting module。核心:**统一窄腰(§14 四动词契约 + :17873 gate 治理 + MCP 插件协议)+ 多元传输**;质疑「一个框架统吃」为反模式(narrow-waist / CORBA·SOAP·ESB 教训 / MCP·A2A·ACP·AG-UI 官方「互补不竞争」)。新增 `subscribe` 第四动词(ST-SS 归位为其传输),实现细则待 002 §14 v32。「驱动外部 coding agent」从中心降为第⑦条外部缝(ACP,阶段 5)。号码:008/009 已 retired 占用,顺延 010。NOT 改 spine 5 primitive。
@@ -106,6 +107,15 @@ gate 只守**跨域**,不守全部 —— 这是 v2 没切清的边界(把「所
 
 ### § future — 叠加档(不替代窄腰)
 WASM Component Model/Extism(高频·强沙箱不可信插件)· A2A Agent Card(CTRL 当自治 peer agent,对应 share-and-be-shared)· AG-UI 完整采用(若开放第三方 agent 入前端)· **Beelay/Keyhive**(Automerge 原生 E2EE+capability sync,取代手搓 Olm)。均叠加在 MCP/§14 窄腰上。
+
+### § deepening — 批判性自审补四点(v4;事实源 `vault/ctrl/comms-architecture-permanent.md` §10 D/E/G/H)
+
+窄腰骨架不动,补四个 v1-v3 没想透的总纲级洞:
+
+- **§D 跨源组合归上层** — 智能表格对标飞书多维表格要关联/Lookup/Rollup(跨表),但 (1) 禁跨 D1 JOIN (2) Source 契约是单源(自报字段、查自己)。**决策:组合在上层**(Irisy / feature pack)用 **DataLoader 模式**(query 源 A 拿外键 → batch query 源 B → 内存 join),Source 保持单一职责;Lookup/Rollup = feature-pack 层 derived field,不是 Source 原生字段。与 ADR-002 v30「关系型字段落地待后续切片」对齐 —— 此处明确归属,不留洞。对标 GraphQL federation / DataLoader / CQRS read model。
+- **§E gate 自身降级 + 背压** — 跨域全压一道 gate = 单点;但「本地是 truth」要求 gate 挂了仍可读。**gate 降级**:故障时只读本地 `query` 临时降到内核域待遇(直通,读不改状态、本地是 truth),**write/effect 必须等 gate**(治理不可旁路)。**背压**:bounded queue + circuit breaker,某源持续失败则熔断,快速返回 `degraded` 而非堆积。与 § trust-domains 一致(gate 降级 = 跨域读在故障期临时获内核域待遇)。对标 API gateway rate-limit / circuit breaker / bulkhead。
+- **§G 可见性裁剪 × intent-scoped projection** — gate 可见性勘查发现是 TODO(全工具对所有 caller 可见)= 治理半成品。**可见性绑 intent-scoped projection**(ADR-002 § projection):gate 按 `(caller, intent)` 投影可见子集 = 「按 Ctrl → 意图 → 1-3 能力模块」的实现,既是 UX(不灌爆 context)又是安全(最小暴露面 / capability-based)。对标 capability-based security / RBAC scoping。
+- **§H mesh 跨设备三动词成立性** — 跨设备 query/produce 涉及 CRDT 合并 / E2EE / 最终一致。**判断:mesh 是「传输 + 一致性层」,不是腰外的另一个世界,三动词仍成立、语义投影到 CRDT**:跨设备 `query` = query 远程 Source(经 mesh,最终一致快照);跨设备 `produce` = 投影成 CRDT op(Automerge change),本地立即生效 + 异步合并 peer(=「本地 truth、异步推 peer」);`describe.degradation` 在 mesh 语境 = `LocalWins`;Beelay/Keyhive 的 capability sync 正好对接 gate 的 capability-token 授权。对标 Automerge / local-first(Ink&Switch)。
 
 ## Acceptance
 
