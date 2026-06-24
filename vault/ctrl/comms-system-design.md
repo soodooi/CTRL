@@ -58,7 +58,8 @@ related:
 | **app-shell**(窗口/托盘/生命周期/agent 启停/keychain/config) | **Tauri command,合法 only**(非 §14,非双表面) | Tauri IPC | ❌(内核域/本地) | `invoke`(直接) |
 | **跨设备/远程桌面** | ctrl-wire | **protobuf** over WebRTC | 授权回 gate | 独立模块 |
 
-**关键终态机制 = `gate_invoke`**:前端调能力**不再各写一个 Tauri command**,而是经**一个**通用桥 `gate_invoke(tool, args)` → gate 的 governed `call_tool`(in-process)。这符合两信任域(**PWA 写 = 跨域,必经 gate**),且让 31 个 per-capability Tauri command **退面**。app-shell command 不走这条(它们是内核域/本地控制,合法保留)。
+**关键终态机制 = `gate_invoke`**:前端调能力**不再各写一个 Tauri command**,而是经**一个**通用桥 `gate_invoke(tool, args)` → gate(**loopback HTTP**,非 in-process —— rmcp dispatch 需真 RequestContext/Peer,构造不干净;loopback 走真 gate = 治理一致非旁路)。这符合两信任域(**PWA 写 = 跨域,必经 gate**),且让 31 个 per-capability Tauri command **退面**。app-shell command 不走这条(它们是内核域/本地控制,合法保留)。
+> **已落地(2026-06-24,`gate_invoke` 桥)**:`commands/gate.rs`,真 gate loopback,caller=`pwa`,审计已验证(e2e 测 audit_count↑)。**诚实缺口**:① pwa 路径只发 caller 不发 `X-Ctrl-Intent` → SC3 可见性裁剪对它**暂不生效**(得 SC1/2 审计+鉴权,未受 intent 裁剪;受信前端姿态,需最小权限时再 thread intent)② 每次调用一个 initialize+call 握手(2 loopback 往返),量大再做 session 复用 ③ **前端尚未迁到它、未退任何 command**(ratchet 仍 31)—— 退面 + 视觉验证 = 真机 app 闸的后续 flip。
 
 ## 2. 全量端点分类(188 = 54 MCP 工具 + 134 command,不漏)
 

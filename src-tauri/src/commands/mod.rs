@@ -34,6 +34,7 @@ pub mod code_space;
 pub mod config;
 pub mod draft;
 pub mod draft_run;
+pub mod gate;
 // ADR-002 substrate § vault v1 §8.6 v5 (2026-06-01) — vault-side git via git CLI
 // (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
 // panel: status / init / commit_all / push / log.
@@ -73,6 +74,10 @@ pub mod workshop;
 macro_rules! pwa_invoke_handler {
     () => {
         tauri::generate_handler![
+            // gate_invoke — PWA cross-domain capability bridge (comms-system-design
+            // Phase B): one governed path through :17873, replaces bespoke
+            // per-capability Tauri commands as they retire.
+            $crate::commands::gate::gate_invoke,
             // kernel
             $crate::commands::kernel::list_mcps,
             $crate::commands::kernel::install_mcp,
