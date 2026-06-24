@@ -1,3 +1,6 @@
 # All-English (CJK) gate only. Handoff dispatch check removed 2026-06-19
 # with the multi-agent layer (see vault/ctrl/harness-minimal.md).
 node scripts/pre-push-check.js
+# SC5 dual-surface ratchet (ADR-010 § diagnosis P1): blocks NEW capabilities
+# added as both an MCP tool and a Tauri command. Lower the baseline as you migrate.
+node scripts/ratchet-dual-surface.mjs
