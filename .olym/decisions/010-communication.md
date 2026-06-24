@@ -2,9 +2,9 @@
 adr_id: 010
 module: communication
 title: CTRL communication architecture — 统一窄腰 (§14 契约 + :17873 治理 + MCP 插件协议) over 多元传输
-version: 5
+version: 6
 status: accepted
-last_updated: 2026-06-23
+last_updated: 2026-06-24
 deciders: [bao, zeus]
 sections:
   - { id: positioning,       source: new-2026-06-22, note: "定位:CTRL = 普通用户的通用平台,不是 Claude Code 壳。协议服务平台/能力市场,coding 只是一类能力。" }
@@ -17,7 +17,9 @@ sections:
   - { id: transports,        source: new-2026-06-22, amended: v5-2026-06-23, note: "8 条缝多元传输选型表。v5:③⑥ ST-SS 弃用→Tauri Channels+WS(SC6 实施);⑧ 远程桌面转独立能力模块(对标 ToDesk/RustDesk)。" }
   - { id: internal-external, source: new-2026-06-22, amended: v5-2026-06-23, note: "内部自研轻量(Tauri/actor/CBOR)/ 外部拥抱标准(MCP/ACP/A2A/AG-UI)。v5 调研修正:二进制流帧走 Channels 原生,protobuf 仅 scope 跨设备腿;单一 wire 横跨本机+跨设备=未验证赌注。" }
   - { id: future,            source: new-2026-06-22, note: "WASM 插件 / A2A peer / AG-UI 对齐 / Beelay·Keyhive 均叠加在窄腰上,不替代。" }
+  - { id: endpoint-spec,     source: new-2026-06-24-v6, note: "端点 spec = 形式化机器可读契约,不自造 IDL:wire 标准点名(工具=MCP JSON-RPC+JSON Schema / 流=AsyncAPI / 跨设备=protobuf);权威端点 spec = MCP tools/list schema 导出 artifact + §14 describe schema;catalog 从 schema 生成不爬源。补「协议无物化端点 spec」欠账。" }
 changelog:
+  - v6 2026-06-24: **NEW § endpoint-spec — 端点 spec 形式化 + wire 标准点名(补「协议无物化端点 spec」欠账).** bao 质疑「完整通讯协议难道不含端点?有没有规范?是没按规范走还是不会建?」—— 调研核实(OpenAPI/AsyncAPI/gRPC-protobuf/GraphQL-SDL/MCP 均形式化定义端点;MCP 2026 spec 的 tool inputSchema/outputSchema = JSON Schema 2020-12)后诚实定性:**CTRL wire 层按 MCP 走了(54 工具经 rmcp 宏自带 JSON Schema),但从没把端点 spec 物化成版本化 artifact;§14 停在散文;流/command 面零形式化;端点清单靠爬 Rust 源(= 症状:spec 不是 artifact)**。三处 amend:(1) **NEW § endpoint-spec** —— 协议 = 语义契约 SSOT + 每缝标准 wire + 治理门;**wire 标准点名**:工具调用=MCP(JSON-RPC + JSON Schema,`tools/list` = 端点 spec)/ 流=AsyncAPI describe over WS·Channels / 跨设备=protobuf over WebRTC;**绝不自造 wire/IDL**(CORBA/SOAP/ESB 死因);**权威端点 spec = MCP `tools/list` JSON Schema 导出 artifact + §14 `describe` schema**,catalog 从 schema 生成不爬源;§14.10 版本协商→gate 按 protocol_version 路由(spec 有,实装待)。(2) **§ internal-external 补**:三 wire 标准映射 8 缝 + 「标准 ~90% / 自创 ~10%(只 §14 SSOT + gate 治理,无标准覆盖故正当)」配比。(3) **§ transports 表加 wire 标准列**。事实源:本轮 WebSearch(OpenAPI/AsyncAPI/MCP spec)+ `vault/ctrl/endpoint-catalog.md`(auto-gen 清单暴露 39 bespoke + 31 双表面)。NOT 改三动词集;NOT 自造协议;收敛不推倒。
   - v5 2026-06-23: **实装对齐 + ST-SS 弃用决策入册(通讯重构 SC1-3 已落地 + 调研修正).** 五处 amend,与运行真相对齐(CLAUDE.md「ADR 跟实装不允许漂移」):(1) **§ trust-domains 实装锚点** — 两信任域类型脊 + gate 治理面已落地:`kernel/audit.rs`(`TrustDomain{Internal,External}` + sha256 args-hash 守数据主权只存 hash + `record_call` 审计 ledger,SC1/SC2)· `kernel/visibility.rs`(intent-scoped 工具投影,SC3)· `kernel/projector.rs`(BYO-CLI `.mcp.json` stamp `X-Ctrl-Caller`+`X-Ctrl-Intent`,SC3 闭环)· gate `mcp_server.rs`(`request_header` 读 caller/intent、`list_tools` 裁剪、`call_tool` 记真实 caller + 拒越域 outcome=denied)。诚实缺口:`InternalMsg ⊥ GateRequest` 编译期隔离仍是运行时 tag(SC1 完整体待)。(2) **§G 可见性裁剪 = 已落地**(原 v4 标「治理半成品 TODO」→ 现实装 caller 细分 + intent 投影 + projector 默认 stamp,默认 scope 排除 `net`/`mcp` 守数据主权护城河,env `CTRL_BYO_INTENT` 逃生舱)。(3) **§ transports ③⑥ ST-SS 弃用**(bao 钦定)— ST-SS 是单向语义广播(设计上 no input plane / no remote viewing,做不了多端远程控制);本机 kernel→PWA 流底座改 **Tauri Channels(原生二进制)+ 最简 WS**,非 ctrl-wire;AG-UI 从「词汇对齐」升「producer 兼容机会」。实施 = SC6(Roadmap),决策已定故入册。(4) **§ transports ⑧ + § internal-external 调研修正** — 二进制流帧走 Tauri Channels 原生路径,**protobuf 仅 scope 跨设备腿**;「单一 wire 横跨本机 IPC + 跨设备 P2P」= 零先例未验证赌注 → 正解 = **三动词语义契约 = SSOT + wire framing 按传输适配**。(5) **远程桌面转正为独立能力模块** — 对标 ToDesk/RustDesk(ctrl-wire protobuf over WebRTC + content-blind relay),⑧ 缝留口,远控腿待专项调研(独立目标,不阻塞本重构)。事实源 `vault/ctrl/comms-interface-spec.md` §4。NOT 改 spine 5 primitive;NOT 改三动词集;收敛不推倒。
   - v4 2026-06-22: **§ deepening — 批判性自审补四点 D/E/G/H (事实源 `vault/ctrl/comms-architecture-permanent.md` §10).** 窄腰骨架不动,补四个总纲级洞:(D) **跨源组合归上层** —— 关联/Lookup/Rollup 在上层 (Irisy/feature pack) 用 DataLoader 模式 (N 次单源 query + 内存 join),守「禁跨 D1 JOIN」+ Source 单一职责,与 ADR-002 v30 关系型字段切片对齐。(E) **gate 自身降级 + 背压** —— gate 故障时只读本地 query 降到内核域待遇直通 (本地是 truth),write/effect 必须等 gate;bounded queue + circuit breaker 防堆积。(G) **可见性裁剪 × intent-scoped projection** —— gate 按 (caller, intent) 投影可见子集 = 「按 Ctrl → 意图 → 1-3 能力模块」的实现,补 TODO 的治理半成品 (capability-based 最小暴露面)。(H) **mesh 跨设备三动词成立性** —— mesh = 传输+一致性层非腰外世界,三动词投影到 CRDT:跨设备 query=最终一致快照、produce=Automerge change 本地立即生效+异步合并 peer、degradation=LocalWins,Beelay/Keyhive capability sync 对接 gate capability-token。配套契约层 A/B/C/F 进 ADR-002 §14 v33 (§14.8-§14.11)。NOT 改动词集;NOT 改 spine 5 primitive (启用 Effect)。
   - v3 2026-06-22: **与 ADR-002 §14.7 v32 对齐 + 新增 § trust-domains (永久架构定稿,事实源 `vault/ctrl/comms-architecture-permanent.md`).** 三处:(1) **subscribe 从「第四动词」改为「`query{watch}` 投影」** —— v2 把 subscribe 写成第四动词,与 ADR-002 §14.7 v32 的定稿冲突(§14.7: subscribe 不是新动词,是 query 的 watch 修饰,无流语义的源 registry/providers 天然不实现 = ISP)。动词集冻结在**三个** describe/query/produce;GraphQL Subscription 本质也是「按事件重跑的 query」,payload 走同一套 field-selection,故收编为 watch 修饰而非平级动词。(2) **NEW § trust-domains** —— 两个信任域:内核域(actor↔actor 走 channel/event,**不经 gate**,Erlang/OTP 零治理)vs 跨域(外部 agent/Irisy→工具/connector→第三方/PWA→写,**必经 :17873**);「内核自调也经 gate」是反模式,砍;用类型编码信任域让编译器挡误用。(3) **ST-SS 授权回笼补审计盲区** —— 流字节走 :17872 旁路 gate(性能),但 watch 订阅的**授权+审计元数据登记回 :17873**,gate 看得见/可撤销/脱敏每个 live 订阅。降级(connector 掉线→末次快照+degraded 标记)为契约一等公民,describe 自报。NOT 改 spine 5 primitive;NOT 推倒(收敛式)。
@@ -115,6 +117,8 @@ gate 只守**跨域**,不守全部 —— 这是 v2 没切清的边界(把「所
 
 > **v5 修正(调研)**:二进制流帧走 Tauri Channels 原生路径(非 ctrl-wire),**protobuf 仅 scope 跨设备腿(⑧)**;「单一 wire 横跨本机 IPC + 跨设备 P2P」**零先例 = 未验证赌注** → 正解 = **三动词语义契约 = SSOT(有先例),wire framing 按传输适配**。事实源 `vault/ctrl/comms-interface-spec.md` §1·§4。
 
+> **v6 wire 标准(点名,见 § endpoint-spec)**:工具缝③④⑤⑦ = **MCP**(JSON-RPC + JSON Schema,`tools/list` = 端点 spec)· 流缝①⑥ = **AsyncAPI** describe over WS/Channels · 跨设备⑧ = **protobuf**。端点 spec = MCP schema 导出 artifact,不自造 IDL,catalog 从 schema 生成不爬源。
+
 ### § internal-external — 内外协议哲学不同,别混
 - **内部**(①②⑥)= 自研轻量(两端自控、local-first、vim-test);类型安全交给「Rust 当权威源自动导出」,不交给跨语言 IDL;**不引入重 codegen(Protobuf/gRPC/Cap'n Proto)做内部流**。二进制流帧走 **Tauri Channels 原生路径**(v5 调研:无一手背书 protobuf 作内部流 SSOT;Channels 已原生二进制)。
 - **外部**(③④⑤⑦)= 拥抱标准(要跟别人家 agent/SaaS 互通)。
@@ -122,6 +126,32 @@ gate 只守**跨域**,不守全部 —— 这是 v2 没切清的边界(把「所
 - 混了就是债:给内部套 MCP = 过度工程;给外部继续自研 = 闭门造车。
 - 注:③ 横跨内外 —— 内部用 **Channels + WS**(v5 起,原 ST-SS 弃用),词汇向 **AG-UI 标准对齐**,兼得轻量与未来互通。
 - **反赌注(v5)**:「单一 wire 横跨本机 IPC + 跨设备 P2P」= 零先例,不赌 —— **统一的是三动词语义契约(SSOT,有先例),wire framing 按传输各自适配**。
+
+### § endpoint-spec — 端点 spec 形式化 + wire 标准点名(v6 新增)
+
+> bao 质疑(2026-06-24):「完整通讯协议难道不含端点?有没有规范?是没按规范走还是不会建?」—— 戳中真欠账。调研核实(OpenAPI/AsyncAPI/gRPC-protobuf/GraphQL-SDL/MCP 都**形式化定义端点**;MCP 2026 spec 的 tool inputSchema/outputSchema = **JSON Schema 2020-12**)。
+
+**诚实定性**:CTRL **wire 层按 MCP 走了**(54 gate 工具经 rmcp `#[tool]` 宏自带 JSON Schema,`tools/list` 返回 name+description+inputSchema),**但**:① 端点 spec 从没**物化**成版本化 artifact(埋在 Rust 宏);② §14 停在**散文**(ADR 里架构思路,非形式化 IDL);③ 流缝 / 134 Tauri command 面**零形式化**;④ 端点清单靠**爬 Rust 源**拼(`endpoint-catalog.md`)= 症状:spec 不是 artifact。
+
+**协议模型(三层,收紧 v1-v5):**
+
+```
+① 语义契约 (SSOT,唯一) = §14 describe/query/produce   ← 形式化成 schema,非散文
+        │ 实现一次
+        ├─ 工具调用  → MCP (JSON-RPC + JSON Schema;tools/list = 端点 spec)   缝③④⑤⑦
+        ├─ 实时流    → AsyncAPI describe over WS/Tauri Channels (Cell/Op)     缝①⑥
+        └─ 跨设备    → protobuf over WebRTC + E2EE                           缝⑧
+        每个跨域调用 ↓
+② 治理门 (唯一收口) = :17873 gate:鉴权/审计/可见性裁剪/写审批   ← 护城河,标准里没有
+```
+
+**定案:**
+1. **wire 标准点名,绝不自造 wire/IDL**(CORBA/SOAP/ESB 死因):工具=**MCP**(JSON-RPC + JSON Schema)/ 流=**AsyncAPI**(event-driven,OpenAPI 描述不了)/ 跨设备=**protobuf**(唯一需稳定跨机 schema 的腿)/ 端点类型=**JSON Schema**。
+2. **权威端点 spec = 导出物,不是另写的东西** = MCP **`tools/list` 的 JSON Schema dump**(版本化 artifact)+ **§14 `describe` 的 schema**。**catalog 从此 schema 生成,不再爬源码。**
+3. **§14.10 版本协商**(spec 已写)→ gate 按 `protocol_version` 路由/降级(实装待)。
+4. **标准 ~90% / 自创 ~10%**:标准 = MCP + AsyncAPI + protobuf + JSON Schema(别自造);自创 = **§14 语义 SSOT + :17873 治理门**——这两块**无现成标准覆盖**(没有标准做「content-type 无关统一操作接口 + 治理门」),自创正当;**红线 = 不自造 wire/IDL**。
+
+> 完整协议 = 语义契约 SSOT(形式化)+ 三标准 wire 分缝 + 治理门 + **物化端点 spec**。**接口达产品标准 = 端点 spec 物化 + §14 盖全(迁 39 bespoke)+ SC5 消双表面(31 重叠)。** 事实源:WebSearch(OpenAPI/AsyncAPI/MCP spec)+ `vault/ctrl/endpoint-catalog.md` + `vault/ctrl/comms-interface-spec.md`。
 
 ### § future — 叠加档(不替代窄腰)
 WASM Component Model/Extism(高频·强沙箱不可信插件)· A2A Agent Card(CTRL 当自治 peer agent,对应 share-and-be-shared)· AG-UI 完整采用(若开放第三方 agent 入前端)· **Beelay/Keyhive**(Automerge 原生 E2EE+capability sync,取代手搓 Olm)。均叠加在 MCP/§14 窄腰上。
