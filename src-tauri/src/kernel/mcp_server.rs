@@ -586,8 +586,6 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<SmartTableQueryArgs>,
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
-        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
-        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         let req = query::QueryRequest {
             filters: args.filters,
             conjunction: args.conjunction,
@@ -596,13 +594,14 @@ impl KernelMcpRouter {
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
-        // Route through the SQLite index for large tables (pure accelerator with
-        // run_query parity + fallback); small tables stay in-memory.
-        let mut result = table
-            .query_via_index(self.st_index.as_deref(), &args.path, &req, now)
-            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        // ONE authoritative §14 query path, shared with the Tauri command surface
+        // (SC5 dual-surface collapse — they had drifted: index vs in-memory).
+        let (table, mut result) =
+            vault_smart_table::query_smart_table(self.st_index.as_deref(), &root, &args.path, &req, now)
+                .map_err(|e| McpError::invalid_params(e, None))?;
         // Surface computed relational columns (Lookup / Rollup) into the result
         // rows — query-time derivatives, never written to markdown (slice 4c).
+        // Caller-side post-step (the PWA computes relations client-side).
         if let Some(idx) = self.st_index.as_deref() {
             augment_relations(idx, &root, &args.path, &table, &mut result.rows);
         }

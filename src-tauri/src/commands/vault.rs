@@ -21,7 +21,7 @@ use crate::kernel::vault_graph::{
 };
 use crate::kernel::vault_sourcing::{self, SourcingRunReport};
 use crate::kernel::vault_watch::{self, EventEntry as VaultWatchEvent};
-use crate::kernel::{ai_column, query, vault_smart_table};
+use crate::kernel::{ai_column, query, smart_table_index, vault_smart_table};
 use crate::shell::KernelHandle;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -410,8 +410,6 @@ pub struct SmartTableQueryArgs {
 #[tauri::command]
 pub fn smart_table_query(args: SmartTableQueryArgs) -> Result<query::QueryResult, String> {
     let root = vault_root()?;
-    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
-    let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
     let req = query::QueryRequest {
         filters: args.filters,
         conjunction: args.conjunction,
@@ -420,8 +418,17 @@ pub fn smart_table_query(args: SmartTableQueryArgs) -> Result<query::QueryResult
         limit: args.limit,
     };
     let now = chrono::Local::now().date_naive();
-    use query::QuerySource;
-    table.query(&req, now).map_err(|e| e.to_string())
+    // ONE authoritative §14 query path, shared with the MCP tool surface (SC5
+    // dual-surface collapse — the two had drifted: the MCP path ran the SQLite
+    // index, this PWA path ran the plain in-memory engine). Opening the index
+    // best-effort gives the PWA the same acceleration; a None index or a small
+    // table falls back to the in-memory engine with byte parity, so behavior is
+    // unchanged — only the drift is removed.
+    let index = smart_table_index::default_st_index_path()
+        .and_then(|p| smart_table_index::SmartTableIndex::open(&p).ok());
+    let (_table, result) =
+        vault_smart_table::query_smart_table(index.as_ref(), &root, &args.path, &req, now)?;
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------

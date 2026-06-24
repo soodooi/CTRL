@@ -594,6 +594,34 @@ fn split_row(line: &str) -> Vec<String> {
     cells
 }
 
+/// The ONE authoritative §14 smart-table query path: read the markdown, parse
+/// the table, run the index-backed query (which guarantees byte-parity with the
+/// in-memory engine and falls back for small tables / no index). Both the MCP
+/// tool and the Tauri command call this, so the two transport surfaces can no
+/// longer drift — they HAD diverged (the MCP path used `query_via_index`, the
+/// Tauri/PWA path used the plain in-memory `query`, so the frontend silently
+/// missed the SQLite index acceleration). SC5 dual-surface collapse onto one
+/// impl (ADR-010 § endpoint-spec v6).
+///
+/// Returns the parsed table alongside the result so a caller that also wants
+/// query-time relational columns (Lookup/Rollup) can augment afterwards — that
+/// augmentation is deliberately a caller-side post-step, not part of this core,
+/// because the PWA computes relations client-side today.
+pub fn query_smart_table(
+    index: Option<&SmartTableIndex>,
+    root: &std::path::Path,
+    path: &str,
+    req: &QueryRequest,
+    now: NaiveDate,
+) -> Result<(SmartTable, QueryResult), String> {
+    let entry = crate::kernel::vault::read(root, path).map_err(|e| e.to_string())?;
+    let table = SmartTable::parse(&entry.frontmatter, &entry.content);
+    let result = table
+        .query_via_index(index, path, req, now)
+        .map_err(|e| e.to_string())?;
+    Ok((table, result))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -782,6 +810,27 @@ mod tests {
         let none = t.query_via_index(None, "tables/leads.md", &req, now).unwrap();
         assert_eq!(none.rows[0]["name"], "Acme");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn query_smart_table_core_matches_in_memory() {
+        // The shared §14 core (called by BOTH the MCP tool and the Tauri
+        // command after the SC5 dual-surface collapse) must return exactly what
+        // the in-memory engine returns — proving the collapse removed the drift
+        // without changing behavior.
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        crate::kernel::vault::write(root, "leads.md", BODY, &frontmatter()).unwrap();
+        let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
+        let req = QueryRequest {
+            filters: vec![Filter { field: "amount".into(), op: Operator::Gt, value: "60".into() }],
+            ..Default::default()
+        };
+        let (table, via_core) = query_smart_table(None, root, "leads.md", &req, now).unwrap();
+        let mem = table.query(&req, now).unwrap();
+        assert_eq!(via_core.rows, mem.rows);
+        assert_eq!(via_core.match_count, mem.match_count);
+        assert_eq!(via_core.rows[0]["name"], "Acme");
     }
 
     #[test]
