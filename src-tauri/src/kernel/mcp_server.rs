@@ -23,6 +23,7 @@
 
 use crate::kernel::audit;
 use crate::kernel::local_storage::LocalStorage;
+use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
     ai_column, provider::LlmPrompt, query, runtime_sources, smart_table_index, vault,
@@ -1831,6 +1832,20 @@ fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, M
 // downstream MCP servers' tools, surfaced as first-class namespaced
 // `<server>_<tool>` entries (ADR-002 substrate §1.9.1). This is why Irisy/hermes
 // see e.g. Obsidian's tools directly instead of only behind mcp_proxy_*.
+/// Read a request header from the HTTP parts that rmcp's StreamableHttp
+/// transport stashes in the `RequestContext` extensions. Returns `None` when
+/// the transport is not HTTP (e.g. an in-process test) or the header is absent.
+fn request_header<'a>(
+    context: &'a RequestContext<RoleServer>,
+    name: &str,
+) -> Option<&'a str> {
+    context
+        .extensions
+        .get::<axum::http::request::Parts>()
+        .and_then(|parts| parts.headers.get(name))
+        .and_then(|v| v.to_str().ok())
+}
+
 impl KernelMcpRouter {
     /// Dispatch a tool call to either a downstream namespaced server or the
     /// static kernel tool router. Kept separate from the `ServerHandler`
@@ -1873,7 +1888,7 @@ impl ServerHandler for KernelMcpRouter {
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
         // Static kernel tools first.
         let mut tools = self.tool_router.list_all();
@@ -1892,6 +1907,13 @@ impl ServerHandler for KernelMcpRouter {
                 }
             }
         }
+        // Intent-scoped projection (SC3): if the caller declared an intent via
+        // `X-Ctrl-Intent`, project the listing to that intent's capability
+        // domains. No header => unscoped, so existing callers see the full set.
+        let intent = Intent::parse(request_header(&context, visibility::INTENT_HEADER));
+        if intent.is_scoped() {
+            tools.retain(|t| intent.allows_tool(t.name.as_ref()));
+        }
         Ok(ListToolsResult {
             tools,
             next_cursor: None,
@@ -1907,19 +1929,36 @@ impl ServerHandler for KernelMcpRouter {
         // The :17873 gate is the single boundary every External call crosses,
         // so audit happens here once (ADR-010 § trust-domains). Record the tool
         // name + a hash of the args (not the args themselves — data sovereignty)
-        // + the outcome. Best-effort: a ledger failure must never block a call.
+        // + the caller + the outcome. Best-effort: a ledger failure must never
+        // block a call.
         let tool_name = request.name.to_string();
         let args_hash = audit::hash_args(request.arguments.as_ref());
 
-        let result = self.dispatch_tool(request, context).await;
+        // SC3: attribute the call to a concrete caller (not blanket "external")
+        // and enforce intent-scoped visibility — a tool outside the caller's
+        // declared intent is rejected, not just hidden (defense in depth: a
+        // hidden tool must also be uncallable).
+        let caller = audit::normalize_caller(request_header(&context, audit::CALLER_HEADER));
+        let intent = Intent::parse(request_header(&context, visibility::INTENT_HEADER));
+        let denied = intent.is_scoped() && !intent.allows_tool(&tool_name);
+
+        let result = if denied {
+            Err(McpError::invalid_request(
+                format!("tool '{tool_name}' is out of scope for the declared intent"),
+                None,
+            ))
+        } else {
+            self.dispatch_tool(request, context).await
+        };
 
         let (outcome, detail) = match &result {
             Ok(_) => ("ok", None),
+            Err(e) if denied => ("denied", Some(e.to_string())),
             Err(e) => ("error", Some(e.to_string())),
         };
         if let Err(e) = self.runtime.event_store.record_call(
             audit::TrustDomain::External,
-            "external",
+            &caller,
             &tool_name,
             &args_hash,
             outcome,
@@ -2272,6 +2311,87 @@ mod tests {
             401,
             "valid bearer should not be rejected (got {})",
             resp.status()
+        );
+    }
+
+    /// Pull the JSON-RPC result out of a Streamable-HTTP response body that may
+    /// be either a bare JSON object or an SSE stream of `data:` lines.
+    fn extract_jsonrpc(body: &str) -> serde_json::Value {
+        for line in body.lines() {
+            if let Some(data) = line.strip_prefix("data:") {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(data.trim()) {
+                    return v;
+                }
+            }
+        }
+        serde_json::from_str(body).unwrap_or(serde_json::Value::Null)
+    }
+
+    /// End-to-end proof that `X-Ctrl-Intent` is read off the HTTP request and
+    /// projects `tools/list` to the declared capability domains (SC3). Drives a
+    /// real MCP initialize -> tools/list over the wire, so it also guards the
+    /// `http::request::Parts` -> RequestContext extension threading.
+    #[tokio::test]
+    async fn intent_header_scopes_tools_list() {
+        let data_dir = std::env::temp_dir().join("ctrl-test-mcp-intent");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
+        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let url = handle.url();
+        let token = handle.auth_token.as_ref().clone();
+        let client = reqwest::Client::new();
+
+        // initialize -> capture the session id the server assigns.
+        let init = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .body(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}"#,
+            )
+            .send()
+            .await
+            .expect("initialize");
+        let session_id = init
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .expect("server returns a session id");
+
+        // tools/list with an intent scoped to `vault` only.
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id)
+            .header(visibility::INTENT_HEADER, "vault")
+            .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
+            .send()
+            .await
+            .expect("tools/list");
+        let body = resp.text().await.expect("body");
+        let json = extract_jsonrpc(&body);
+        let tools = json["result"]["tools"]
+            .as_array()
+            .expect("tools array present");
+
+        assert!(!tools.is_empty(), "expected a non-empty projected toolset");
+        for t in tools {
+            let name = t["name"].as_str().unwrap_or("");
+            let domain = visibility::tool_domain(name);
+            assert!(
+                domain == "vault" || domain == "system",
+                "tool '{name}' (domain '{domain}') leaked past the vault intent scope"
+            );
+        }
+        // The projection must actually hide something — a write/net tool that
+        // exists in the full set but is out of the vault scope.
+        assert!(
+            !tools.iter().any(|t| t["name"] == "http_post"),
+            "http_post must be hidden under the vault intent"
         );
     }
 }

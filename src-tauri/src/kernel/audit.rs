@@ -31,6 +31,37 @@ impl TrustDomain {
     }
 }
 
+/// Header an external caller sets to identify itself to the gate (e.g.
+/// `irisy`, `hermes`, `claude-code`). The value is recorded in the audit
+/// ledger so the trail attributes each call to a concrete caller rather than a
+/// blanket `"external"` (SC3 caller refinement).
+pub const CALLER_HEADER: &str = "x-ctrl-caller";
+
+/// Default caller id when the `X-Ctrl-Caller` header is absent.
+const CALLER_DEFAULT: &str = "external";
+
+/// Normalize a caller-identity header value into a ledger-safe id: trimmed,
+/// lowercased, and restricted to `[a-z0-9._-]` so a hostile header can't inject
+/// control characters or unbounded payloads into the audit trail. Absent or
+/// empty => the generic `"external"` (preserves the pre-SC3 attribution).
+pub fn normalize_caller(raw: Option<&str>) -> String {
+    let Some(raw) = raw else {
+        return CALLER_DEFAULT.to_string();
+    };
+    let cleaned: String = raw
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .take(64)
+        .collect();
+    if cleaned.is_empty() {
+        CALLER_DEFAULT.to_string()
+    } else {
+        cleaned
+    }
+}
+
 /// Hash tool arguments so the ledger records *what shape* was invoked without
 /// persisting potentially sensitive full argument payloads (data sovereignty:
 /// the audit trail proves a call happened, it does not leak its contents).
@@ -52,6 +83,20 @@ mod tests {
     fn domain_str_is_stable() {
         assert_eq!(TrustDomain::Internal.as_str(), "internal");
         assert_eq!(TrustDomain::External.as_str(), "external");
+    }
+
+    #[test]
+    fn normalize_caller_defaults_and_sanitizes() {
+        // Absent / empty -> generic external attribution.
+        assert_eq!(normalize_caller(None), "external");
+        assert_eq!(normalize_caller(Some("   ")), "external");
+        // Known callers pass through, lowercased + trimmed.
+        assert_eq!(normalize_caller(Some("  Irisy ")), "irisy");
+        assert_eq!(normalize_caller(Some("claude-code")), "claude-code");
+        // Hostile input is stripped to the safe charset (no injection / blowup).
+        assert_eq!(normalize_caller(Some("ev!l\n<script>")), "evlscript");
+        let long = "a".repeat(200);
+        assert_eq!(normalize_caller(Some(&long)).len(), 64);
     }
 
     #[test]

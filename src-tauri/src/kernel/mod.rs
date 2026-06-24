@@ -54,6 +54,7 @@ pub mod subprocess_actor;
 pub mod subprocess_stss_adapter;
 pub mod smart_table_index;
 pub mod vault;
+pub mod visibility;
 pub mod vault_notes_source;
 pub mod vault_smart_table;
 // ADR-002 substrate § vault v1 §8.3 #9-15, 2026-06-01 —
