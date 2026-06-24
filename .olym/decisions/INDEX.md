@@ -13,7 +13,7 @@
 | [007](./007-workbench.md) | workbench | Mcp-composition canvas (React Flow + dnd-kit) + Irisy-led skill discovery | v1 | accepted | 2026-05-31 |
 | [008](./008-irisy-assistant.md) | irisy-assistant | Irisy reply specs / user intents / Irisy capabilities / Irisy pipeline | — | **retired** by 001 v4 + 002 v19 | 2026-06-09 |
 | [009](./009-pi-surface-integration.md) | pi-surface-integration | ctrl-pi-bridge full Pi extension wiring (12 hooks + 6 communication APIs) | — | **retired** by 001 v4 + 002 v19 | 2026-06-09 |
-| [010](./010-communication.md) | communication | **统一窄腰 (§14 契约 + :17873 治理 + MCP 插件协议) over 多元传输** — 质疑「一个框架统吃」(narrow-waist / CORBA·SOAP·ESB 教训);8 条缝传输选型;subscribe 第四动词 (ST-SS 归位);内外协议哲学分离;coding 降为第⑦外部缝 (ACP)。**v2 调研校准**:MCP=2026 收敛标准(LF 中立)/ ③向 AG-UI 对齐 / ④ACP 有据采用 (Registry 28+) / ⑧跟踪 Beelay·Keyhive。通讯总纲,实现真相引 001/002/003 | v2 | accepted | 2026-06-22 |
+| [010](./010-communication.md) | communication | **统一窄腰 (§14 契约 + :17873 治理 + MCP 插件协议) over 多元传输** — 质疑「一个框架统吃」(narrow-waist / CORBA·SOAP·ESB 教训);8 条缝传输选型;subscribe = query{watch};内外协议哲学分离;coding 降为第⑦外部缝 (ACP)。**v3 两信任域** (内核域 vs 跨域,gate 仅守跨域)。**v4 批判四点 D/E/G/H**。**v5 实装对齐 + ST-SS 弃用**:两信任域重构 SC1-3 已落地 (audit ledger + caller 细分 + intent 可见性裁剪 + projector stamp);ST-SS 弃用→Tauri Channels+WS (SC6);远程桌面转独立能力模块 (对标 ToDesk/RustDesk);protobuf 仅 scope 跨设备腿。通讯总纲,实现真相引 001/002/003 | v5 | accepted | 2026-06-23 |
 
 ## Module map → code locations
 
