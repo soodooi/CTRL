@@ -25,6 +25,14 @@ mod commands;
 mod kernel;
 mod shell;
 
+/// Export the kernel MCP endpoint spec (the authoritative `tools/list` JSON
+/// Schema) as a JSON value. Thin re-export so the `dump_mcp_schema` bin can
+/// produce the artifact without making the whole `kernel` module public
+/// (ADR-010 § endpoint-spec v6).
+pub fn export_mcp_endpoint_spec() -> serde_json::Value {
+    kernel::mcp_server::KernelMcpRouter::export_tool_schemas()
+}
+
 /// Initialize tracing to stderr AND `~/.ctrl/ctrl.log`. A Finder-launched
 /// .app has its stderr discarded by LaunchServices, so the file mirror is the
 /// only way to diagnose boot / hotkey / Accessibility behavior in the shipped

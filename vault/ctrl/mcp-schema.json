@@ -1,0 +1,1530 @@
+{
+  "kind": "ctrl-kernel-mcp-endpoint-spec",
+  "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
+  "toolCount": 54,
+  "tools": [
+    {
+      "description": "HTTP GET request — fetch a URL and return status + body + headers",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "Optional request headers.",
+            "type": "object"
+          },
+          "timeout_ms": {
+            "default": null,
+            "description": "Per-call timeout in milliseconds. Defaults to 30000.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "Full HTTPS URL to fetch.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "HttpGetArgs",
+        "type": "object"
+      },
+      "name": "http_get"
+    },
+    {
+      "description": "HTTP POST request — send JSON or text body and return status + body + headers",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "description": "Request body. Strings sent as-is; JSON values serialized to JSON\nwith `application/json` Content-Type unless overridden in headers."
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "Optional request headers.",
+            "type": "object"
+          },
+          "timeout_ms": {
+            "default": null,
+            "description": "Per-call timeout in milliseconds. Defaults to 30000.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "Full HTTPS URL to POST to.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "body"
+        ],
+        "title": "HttpPostArgs",
+        "type": "object"
+      },
+      "name": "http_post"
+    },
+    {
+      "description": "Read the Irisy SOUL.md persistent memory (vault/irisy/SOUL.md)",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "irisy_soul_get"
+    },
+    {
+      "description": "Write the Irisy SOUL.md persistent memory",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "description": "Markdown body after the frontmatter fence.",
+            "type": "string"
+          },
+          "frontmatter": {
+            "description": "Frontmatter as a JSON object (gets serialised to YAML on disk)."
+          }
+        },
+        "required": [
+          "frontmatter",
+          "body"
+        ],
+        "title": "IrisySoulSetArgs",
+        "type": "object"
+      },
+      "name": "irisy_soul_set"
+    },
+    {
+      "description": "Report kernel health: uptime, registered LLM adapters, MCP server count",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "kernel_status"
+    },
+    {
+      "description": "Read a persistent key from per-mcp local storage",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "namespace": {
+            "description": "Namespace (typically the mcp id).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "namespace",
+          "key"
+        ],
+        "title": "KvGetArgs",
+        "type": "object"
+      },
+      "name": "kv_get"
+    },
+    {
+      "description": "Write a persistent key into per-mcp local storage",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "value": {
+            "description": "Arbitrary JSON value."
+          }
+        },
+        "required": [
+          "namespace",
+          "key",
+          "value"
+        ],
+        "title": "KvSetArgs",
+        "type": "object"
+      },
+      "name": "kv_set"
+    },
+    {
+      "description": "Run a non-streaming LLM chat completion via the kernel's LLM port",
+      "inputSchema": {
+        "$defs": {
+          "LlmChatMessage": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "content"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "max_tokens": {
+            "default": null,
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "messages": {
+            "description": "Chat messages, OpenAI-shape. Roles: user | assistant | system.",
+            "items": {
+              "$ref": "#/$defs/LlmChatMessage"
+            },
+            "type": "array"
+          },
+          "model": {
+            "default": null,
+            "description": "Optional model override. Absent = primary adapter's default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "temperature": {
+            "default": null,
+            "format": "float",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "LlmChatArgs",
+        "type": "object"
+      },
+      "name": "llm_chat"
+    },
+    {
+      "description": "List external MCP servers the kernel has registered (proxy view)",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "mcp_list_servers"
+    },
+    {
+      "description": "Invoke a tool on a downstream MCP server (kernel proxies the call)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "arguments": {
+            "default": null,
+            "description": "Arguments object (JSON). Absent = empty."
+          },
+          "server": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "server",
+          "tool"
+        ],
+        "title": "McpProxyCallArgs",
+        "type": "object"
+      },
+      "name": "mcp_proxy_call_tool"
+    },
+    {
+      "description": "List tools advertised by a downstream MCP server (kernel proxies the call)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "server": {
+            "description": "Server id (as registered in `~/.ctrl/mcp-servers.json`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "McpProxyListArgs",
+        "type": "object"
+      },
+      "name": "mcp_proxy_list_tools"
+    },
+    {
+      "description": "Describe the knowledge base as a queryable RecordSource: fields (path/title/tags/created/modified) and supported operators. Call before notes.query.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "notes_describe"
+    },
+    {
+      "description": "Query the knowledge base by tag/title/date with a structured filter/sort/group request (not a query string). Returns matching notes. Call notes.describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "notes.query — a structured read over the knowledge base as a RecordSource\n(ADR-002 §14: the SAME query contract as smart-table). Fields are\npath/title/tags/created/modified — call `notes.describe` for the set.",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order; empty = no grouping.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sort": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          },
+          "subdir": {
+            "default": null,
+            "description": "Optional vault subdir to scope the scan (omit for the whole vault).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "NotesQueryArgs",
+        "type": "object"
+      },
+      "name": "notes_query"
+    },
+    {
+      "description": "Describe the LLM provider catalogue as a queryable RecordSource (fields: id/label/kind/models/ready/capabilities). Call before providers.query.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "providers_describe"
+    },
+    {
+      "description": "Query configured LLM providers by id/kind/ready/capabilities with a structured filter/sort/group request. Call providers.describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "registry.query / providers.query — a structured read over a runtime\nRecordSource (ADR-002 §14: same query contract, no vault path).",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order; empty = no grouping.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sort": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          }
+        },
+        "title": "RuntimeQueryArgs",
+        "type": "object"
+      },
+      "name": "providers_query"
+    },
+    {
+      "description": "Describe the installed-MCP registry as a queryable RecordSource (fields: id/name/version/description/tools). Call before registry.query.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "registry_describe"
+    },
+    {
+      "description": "Query installed MCP servers by id/name/tool-count with a structured filter/sort/group request. Call registry.describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "registry.query / providers.query — a structured read over a runtime\nRecordSource (ADR-002 §14: same query contract, no vault path).",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order; empty = no grouping.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sort": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          }
+        },
+        "title": "RuntimeQueryArgs",
+        "type": "object"
+      },
+      "name": "registry_query"
+    },
+    {
+      "description": "Add a grid or kanban view to a smart table (persisted in frontmatter, not the table body). kanban requires group_by (a field key).",
+      "inputSchema": {
+        "$defs": {
+          "ViewKind": {
+            "description": "A smart-table view kind (ADR-003 §6.2) — a fixed enum (table-independent).",
+            "enum": [
+              "grid",
+              "kanban"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.add_view — persist a view (grid/kanban) into frontmatter `views`\n(ADR-003 §6.2: view state is NOT data; it lives in frontmatter, never the\ntable body).",
+        "properties": {
+          "group_by": {
+            "default": null,
+            "description": "Field key to group/columnize by (required for kanban).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/$defs/ViewKind",
+            "description": "View kind. `kanban` requires `group_by`."
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "kind"
+        ],
+        "title": "SmartTableAddViewArgs",
+        "type": "object"
+      },
+      "name": "smart_table_add_view"
+    },
+    {
+      "description": "Append a row to a smart table (values keyed by field key).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.append_row — produce/write a new row (ADR-002 §14 produce verb).",
+        "properties": {
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Cell values keyed by schema field key; missing keys become empty.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "path",
+          "values"
+        ],
+        "title": "SmartTableAppendRowArgs",
+        "type": "object"
+      },
+      "name": "smart_table_append_row"
+    },
+    {
+      "description": "Describe a smart table: its fields, types, and supported query operators. Call this before smart_table.query.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "description": "Vault-relative path, e.g. `daily/2026-05-22.md`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultReadArgs",
+        "type": "object"
+      },
+      "name": "smart_table_describe"
+    },
+    {
+      "description": "Query a smart table with a structured filter/sort/group request (not a query string). Call smart_table.describe first to learn valid fields.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.query — a structured read over a smart-table RecordSource\n(ADR-002 §14 / ADR-003 §6.5). Fill the parameter object; do NOT write a\nquery string. Call `smart_table.describe` first to learn the valid fields.",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "description": "Field filters, combined per `conjunction`. Each `field` must exist.",
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order (first is the primary level); equal-valued\nrows are made contiguous. Empty = no grouping.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "description": "Cap the number of returned rows (match_count is reported pre-limit).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "sort": {
+            "default": [],
+            "description": "Multi-key sort (first key wins).",
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SmartTableQueryArgs",
+        "type": "object"
+      },
+      "name": "smart_table_query"
+    },
+    {
+      "description": "Run an AI field shortcut down a column: per row, classify/extract/summarize/translate/generate using {field} tokens, then write results into target_field. Cost-gated at 100 rows (pass confirm_over_gate=true to exceed). Skips already-filled cells unless force=true.",
+      "inputSchema": {
+        "$defs": {
+          "AiOp": {
+            "description": "The AI operation kind — a fixed, table-independent enum (ADR-002 §14.1).",
+            "enum": [
+              "classify",
+              "extract",
+              "summarize",
+              "translate",
+              "generate"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4): run an\nLLM per row down a target column. Cost-gated at 100 rows.",
+        "properties": {
+          "confirm_over_gate": {
+            "default": false,
+            "description": "Confirm a run over the 100-row cost gate.",
+            "type": "boolean"
+          },
+          "force": {
+            "default": false,
+            "description": "Re-run rows whose target cell is already filled (default false = resume).",
+            "type": "boolean"
+          },
+          "op": {
+            "$ref": "#/$defs/AiOp",
+            "description": "The AI operation: classify / extract / summarize / translate / generate."
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "Prompt template; use `{field}` tokens to reference other columns.",
+            "type": "string"
+          },
+          "target_field": {
+            "description": "Schema field key whose cells the AI fills.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "target_field",
+          "prompt",
+          "op"
+        ],
+        "title": "SmartTableRunAiColumnArgs",
+        "type": "object"
+      },
+      "name": "smart_table_run_ai_column"
+    },
+    {
+      "description": "Cancel an in-flight AI-column job by id (already-written cells are kept).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Reference an in-flight AI-column job by id (status / cancel).",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "JobIdArgs",
+        "type": "object"
+      },
+      "name": "smart_table_run_ai_column_cancel"
+    },
+    {
+      "description": "Start an async AI field-shortcut job over a column (classify/extract/summarize/translate/generate, {field} tokens). Cost-gated at 100 rows. Returns a job_id; poll smart_table.run_ai_column_status.",
+      "inputSchema": {
+        "$defs": {
+          "AiOp": {
+            "description": "The AI operation kind — a fixed, table-independent enum (ADR-002 §14.1).",
+            "enum": [
+              "classify",
+              "extract",
+              "summarize",
+              "translate",
+              "generate"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4): run an\nLLM per row down a target column. Cost-gated at 100 rows.",
+        "properties": {
+          "confirm_over_gate": {
+            "default": false,
+            "description": "Confirm a run over the 100-row cost gate.",
+            "type": "boolean"
+          },
+          "force": {
+            "default": false,
+            "description": "Re-run rows whose target cell is already filled (default false = resume).",
+            "type": "boolean"
+          },
+          "op": {
+            "$ref": "#/$defs/AiOp",
+            "description": "The AI operation: classify / extract / summarize / translate / generate."
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "Prompt template; use `{field}` tokens to reference other columns.",
+            "type": "string"
+          },
+          "target_field": {
+            "description": "Schema field key whose cells the AI fills.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "target_field",
+          "prompt",
+          "op"
+        ],
+        "title": "SmartTableRunAiColumnArgs",
+        "type": "object"
+      },
+      "name": "smart_table_run_ai_column_start"
+    },
+    {
+      "description": "Get the status of an AI-column job: phase, rows_done/total, rows_written, errors.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Reference an in-flight AI-column job by id (status / cancel).",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "JobIdArgs",
+        "type": "object"
+      },
+      "name": "smart_table_run_ai_column_status"
+    },
+    {
+      "description": "Set one cell of a smart table by row index + field key, then write it back.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.update_cell — produce/write one cell (ADR-002 §14 produce verb).",
+        "properties": {
+          "field": {
+            "description": "Schema field key to set.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "row_index": {
+            "description": "Zero-based row index.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "value": {
+            "description": "New cell value (stored as plain text).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "row_index",
+          "field",
+          "value"
+        ],
+        "title": "SmartTableUpdateCellArgs",
+        "type": "object"
+      },
+      "name": "smart_table_update_cell"
+    },
+    {
+      "description": "Read the frontmatter aliases list for a vault note",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultPathArgs",
+        "type": "object"
+      },
+      "name": "vault_aliases"
+    },
+    {
+      "description": "Backlinks for a vault note (paths + snippets)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultPathArgs",
+        "type": "object"
+      },
+      "name": "vault_backlinks"
+    },
+    {
+      "description": "List vault outgoing links that point at no existing note (broken links)",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "vault_broken_links"
+    },
+    {
+      "description": "Create a vault subdirectory (mkdir -p semantics)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultPathArgs",
+        "type": "object"
+      },
+      "name": "vault_create_folder"
+    },
+    {
+      "description": "Delete a vault note (the file is removed; no soft-delete)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultPathArgs",
+        "type": "object"
+      },
+      "name": "vault_delete"
+    },
+    {
+      "description": "Embed a single vault note into the local embeddings index",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultEmbedNoteArgs",
+        "type": "object"
+      },
+      "name": "vault_embed_note"
+    },
+    {
+      "description": "Snapshot of the vault embedding index (available / total / embedded / stale)",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "vault_embedding_status"
+    },
+    {
+      "description": "Return the entire vault link graph (nodes + edges)",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "vault_graph_data"
+    },
+    {
+      "description": "List markdown files under a vault subdirectory (or vault root)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "subdir": {
+            "default": null,
+            "description": "Optional subdirectory relative to vault root. Absent = list root.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "VaultListArgs",
+        "type": "object"
+      },
+      "name": "vault_list"
+    },
+    {
+      "description": "Find unlinked mentions of text across the vault (excludes [[wikilinked]] hits)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "VaultMentionArgs",
+        "type": "object"
+      },
+      "name": "vault_mentions"
+    },
+    {
+      "description": "Move a vault note to a new path (alias of vault.rename)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "VaultMoveArgs",
+        "type": "object"
+      },
+      "name": "vault_move"
+    },
+    {
+      "description": "List notes tagged with a specific tag",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag"
+        ],
+        "title": "VaultTagArgs",
+        "type": "object"
+      },
+      "name": "vault_notes_by_tag"
+    },
+    {
+      "description": "List vault notes that no other note links to",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "vault_orphans"
+    },
+    {
+      "description": "Read a markdown file from the user's vault",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "description": "Vault-relative path, e.g. `daily/2026-05-22.md`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultReadArgs",
+        "type": "object"
+      },
+      "name": "vault_read"
+    },
+    {
+      "description": "Rebuild the FTS5 vault search index from disk (returns indexed file count)",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "vault_rebuild_index"
+    },
+    {
+      "description": "Re-embed all vault notes (bulk; respects content_hash unless force=true)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "force": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "title": "VaultReembedAllArgs",
+        "type": "object"
+      },
+      "name": "vault_reembed_all"
+    },
+    {
+      "description": "Rename a vault note to a new path (no inbound-link rewrite)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "VaultMoveArgs",
+        "type": "object"
+      },
+      "name": "vault_rename"
+    },
+    {
+      "description": "Return the absolute vault root path on disk",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "vault_root_path"
+    },
+    {
+      "description": "Full-text search the vault (FTS5 when available, substring fallback)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Max results. Defaults to 20 if absent.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "query": {
+            "description": "FTS5 query string. Falls back to substring scan when FTS unavailable.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "VaultSearchArgs",
+        "type": "object"
+      },
+      "name": "vault_search"
+    },
+    {
+      "description": "Semantic-similarity vault search (cosine over local embeddings)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": null,
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "query": {
+            "type": "string"
+          },
+          "threshold": {
+            "default": null,
+            "format": "float",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "VaultSemanticSearchArgs",
+        "type": "object"
+      },
+      "name": "vault_semantic_search"
+    },
+    {
+      "description": "Toggle the starred flag on a vault note's frontmatter",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "starred": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "starred"
+        ],
+        "title": "VaultStarredArgs",
+        "type": "object"
+      },
+      "name": "vault_set_starred"
+    },
+    {
+      "description": "Count un-integrated items in the sourcing inbox",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "vault_sourcing_pending"
+    },
+    {
+      "description": "Run the kernel sourcing routine for the given YYYY-MM-DD date and write the review-queue file",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "date": {
+            "description": "Date in `YYYY-MM-DD` form (caller's local timezone).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "title": "VaultSourcingRunMcpArgs",
+        "type": "object"
+      },
+      "name": "vault_sourcing_run"
+    },
+    {
+      "description": "Suggest related notes for a given path (embeddings-based autolink)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "for_path": {
+            "type": "string"
+          },
+          "limit": {
+            "default": null,
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "for_path"
+        ],
+        "title": "VaultSuggestLinksArgs",
+        "type": "object"
+      },
+      "name": "vault_suggest_links"
+    },
+    {
+      "description": "List every tag in the vault with usage count (descending)",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "vault_tags"
+    },
+    {
+      "description": "Drain recent vault filesystem events since a millis cursor (lazy-starts watcher)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "prefix": {
+            "default": null,
+            "description": "Vault-relative prefix filter, e.g. `sourcing/`. Empty = all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since_ms": {
+            "description": "Unix epoch milliseconds cursor. Caller persists the last\n`ts_ms` it saw and passes it back on the next poll.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "since_ms"
+        ],
+        "title": "VaultWatchArgs",
+        "type": "object"
+      },
+      "name": "vault_watch"
+    },
+    {
+      "description": "Write a markdown file to the user's vault (creates parents)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "description": "Markdown body (without frontmatter; pass frontmatter via `frontmatter`).",
+            "type": "string"
+          },
+          "frontmatter": {
+            "default": null,
+            "description": "Optional YAML frontmatter as a JSON object. Empty / absent = no frontmatter."
+          },
+          "path": {
+            "description": "Vault-relative path. Parent dirs are created.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "body"
+        ],
+        "title": "VaultWriteArgs",
+        "type": "object"
+      },
+      "name": "vault_write"
+    },
+    {
+      "description": "Write a binary image asset to the vault (optionally with sidecar .md frontmatter)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "data_base64": {
+            "description": "Base64-encoded image bytes.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Vault-relative path for the binary asset (e.g.\n`assets/images/2026-06-03/screenshot.png`).",
+            "type": "string"
+          },
+          "sidecar_frontmatter": {
+            "default": null
+          },
+          "sidecar_markdown": {
+            "default": null,
+            "description": "Optional companion sidecar markdown (e.g. prompt / source URL).\nWhen present, written alongside as `<path>.md` with frontmatter\n(matching the kernel's `write_binary` + sidecar contract).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "data_base64"
+        ],
+        "title": "VaultWriteImageArgs",
+        "type": "object"
+      },
+      "name": "vault_write_image"
+    }
+  ],
+  "transport": "streamable-http on 127.0.0.1:17873/mcp (Bearer auth)"
+}

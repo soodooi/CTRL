@@ -3,9 +3,14 @@
 // kernel source so the catalog never goes stale (vault-is-truth philosophy).
 //
 // Reads:
-//   - src-tauri/src/kernel/mcp_server.rs   -> the :17873 gate MCP tools (what AI sees)
+//   - vault/ctrl/mcp-schema.json           -> the authoritative endpoint spec
+//       (the MCP tools/list JSON Schema, exported by `cargo run --bin
+//        dump_mcp_schema`; ADR-010 section endpoint-spec v6). The catalog is
+//        derived FROM the spec, NOT by scraping Rust source.
 //   - src-tauri/src/commands/mod.rs        -> the Tauri command surface (dual-surface)
-// Emits: vault/ctrl/endpoint-catalog.md  (regenerate: node scripts/gen-endpoint-catalog.mjs)
+// Emits: vault/ctrl/endpoint-catalog.md
+//   Regenerate: cargo run --manifest-path src-tauri/Cargo.toml --bin dump_mcp_schema
+//               && node scripts/gen-endpoint-catalog.mjs
 //
 // Classification is heuristic + a curated set for the section-14 contract face.
 // It is NOT a substitute for ADR-002 section 14 (the spec) — it is the inventory.
@@ -15,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const MCP = join(ROOT, 'src-tauri/src/kernel/mcp_server.rs');
+const SCHEMA = join(ROOT, 'vault/ctrl/mcp-schema.json');
 const CMDS = join(ROOT, 'src-tauri/src/commands/mod.rs');
 const OUT = join(ROOT, 'vault/ctrl/endpoint-catalog.md');
 
@@ -57,26 +62,17 @@ const SC14 = new Set([
   'registry_describe', 'registry_query',
 ]);
 
-// Extract gate tools: each `async fn NAME(` carrying a #[tool] attr + its description.
-function extractTools(src) {
-  const lines = src.split('\n');
-  const tools = [];
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^\s*async fn (\w+)\s*\(/);
-    if (!m) continue;
-    const name = m[1];
-    let desc = '';
-    let isTool = false;
-    for (let j = i - 1; j >= Math.max(0, i - 12); j--) {
-      if (/#\[tool\b/.test(lines[j])) isTool = true;
-      const d = lines[j].match(/description = "([^"]*)"/);
-      if (d && !desc) desc = d[1];
-      if (/async fn /.test(lines[j])) break;
-    }
-    if (!isTool) continue;
-    tools.push({ name, desc, module: moduleOf(name), rw: rw(name), sc14: SC14.has(name) });
-  }
-  return tools;
+// Load gate tools from the authoritative endpoint spec (mcp-schema.json).
+// The spec is the rmcp-macro-generated tools/list shape; each entry already
+// carries its JSON Schema, so the catalog reflects the protocol's own
+// self-description rather than a scraped approximation.
+function loadTools() {
+  const spec = JSON.parse(readFileSync(SCHEMA, 'utf8'));
+  return (spec.tools || []).map((t) => {
+    const props = t.inputSchema && t.inputSchema.properties ? Object.keys(t.inputSchema.properties).length : 0;
+    const desc = (t.description || '').replace(/\s+/g, ' ').trim();
+    return { name: t.name, desc, params: props, module: moduleOf(t.name), rw: rw(t.name), sc14: SC14.has(t.name) };
+  });
 }
 
 // Count Tauri commands per source module (crate::commands::<mod>::<cmd>).
@@ -94,7 +90,7 @@ function extractCommandGroups(src) {
   return { groups, cmdNames: new Set(cmds) };
 }
 
-const tools = extractTools(readFileSync(MCP, 'utf8'));
+const tools = loadTools();
 const { groups: cmdGroups, cmdNames } = extractCommandGroups(readFileSync(CMDS, 'utf8'));
 const totalCmds = cmdNames.size;
 const overlap = tools.filter((t) => cmdNames.has(t.name)).map((t) => t.name);
@@ -123,9 +119,11 @@ related:
 
 # CTRL endpoint catalog (auto-generated)
 
-Spec = **ADR-002 section 14** (three verbs describe/query/produce). This file is the
-**inventory**, derived from source so it never goes stale. The runtime truth is the
-section-14 \`describe\` self-report; this table is the human-readable index.
+Derived **from the authoritative endpoint spec** \`vault/ctrl/mcp-schema.json\` (the
+MCP \`tools/list\` JSON Schema, exported by \`cargo run --bin dump_mcp_schema\`) — NOT
+by scraping source (ADR-010 section endpoint-spec v6). Contract spec = **ADR-002
+section 14** (describe/query/produce). This file is the human-readable **inventory**;
+the machine-readable spec is \`mcp-schema.json\`.
 
 ## Overview
 
@@ -147,10 +145,10 @@ for (const mod of modules) {
   const ts = byModule[mod].sort((a, b) => a.name.localeCompare(b.name));
   const sc14n = ts.filter((t) => t.sc14).length;
   md += `\n### ${mod} (${ts.length} endpoints${sc14n ? `, ${sc14n} s14` : ', all bespoke'})\n\n`;
-  md += `| endpoint | r/w | face | description | dual? |\n|---|---|---|---|---|\n`;
+  md += `| endpoint | params | r/w | face | description | dual? |\n|---|---|---|---|---|---|\n`;
   for (const t of ts) {
     const dual = cmdNames.has(t.name) ? 'cmd too' : '';
-    md += `| \`${t.name}\` | ${t.rw === 'WRITE' ? '**WRITE**' : 'read'} | ${t.sc14 ? 's14' : 'bespoke'} | ${t.desc || '—'} | ${dual} |\n`;
+    md += `| \`${t.name}\` | ${t.params} | ${t.rw === 'WRITE' ? '**WRITE**' : 'read'} | ${t.sc14 ? 's14' : 'bespoke'} | ${t.desc || '—'} | ${dual} |\n`;
   }
 }
 

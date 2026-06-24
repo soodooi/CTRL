@@ -479,6 +479,36 @@ impl KernelMcpRouter {
         }
     }
 
+    /// Export every static kernel tool's MCP definition (name + description +
+    /// JSON Schema input) as a machine-readable artifact — the authoritative
+    /// endpoint spec (ADR-010 § endpoint-spec v6). The schema is the
+    /// rmcp-macro-generated `tools/list` shape, so the spec IS the protocol's
+    /// own self-description, never a hand-maintained or source-scraped copy.
+    /// Downstream MCP servers' tools are excluded — they own their own schemas.
+    /// Pure + static (no runtime/app needed): the tool router is built from the
+    /// `#[tool]` registrations, so this runs offline as a build/CI artifact.
+    pub fn export_tool_schemas() -> serde_json::Value {
+        let mut tools: Vec<serde_json::Value> = Self::tool_router()
+            .list_all()
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "inputSchema": serde_json::Value::Object((*t.input_schema).clone()),
+                })
+            })
+            .collect();
+        tools.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        serde_json::json!({
+            "kind": "ctrl-kernel-mcp-endpoint-spec",
+            "transport": "streamable-http on 127.0.0.1:17873/mcp (Bearer auth)",
+            "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
+            "toolCount": tools.len(),
+            "tools": tools,
+        })
+    }
+
     /// Acquire (creating on first use) the per-path write lock. Hold the
     /// returned guard across the entire read-modify-write of a produce verb so
     /// two concurrent writers on the same vault file cannot clobber each other.
