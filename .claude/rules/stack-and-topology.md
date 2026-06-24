@@ -20,7 +20,7 @@ paths:
 | Vault index | SQLite FTS5 (`src-tauri/src/kernel/vault_index.rs`) + backlink scanner + tag scanner (kernel-native, no VMark dep) |
 | Brain | **No CTRL-bundled general-purpose brain — 2 parallel paths, both gated at `:17873`** (ADR-002 substrate § brain v28). (1) **Irisy brain = Hermes Agent** (NousResearch, CTRL bundles + launches it, dashboard `:17890`). (2) **BYO-CLI driver** = user's own local CLI (Claude Code flagship); kernel `projector.rs` materializes assets into its native config (`.mcp.json` etc.), CTRL does not supervise. **Pi retired** (v19, 2026-06-09). opencode reserved (unwired); ACP demoted to future channel. |
 | Web ↔ Rust bridge | Tauri 2 `invoke()` on desktop (intra-process), WebSocket + token on mobile |
-| Stream protocol | ST-SS (CBOR Cell/Op) |
+| Stream protocol | kernel→PWA event WS @ :17872 (CBOR Cell/Op, token-auth). **ST-SS protocol abstraction deprecating** (ADR-010 § transports v5, SC6): TS packages removed (Phase 1); live wire demotes to plain WS keeping payloads (Phase 2) |
 | Package manager | npm workspaces |
 | State persistence | SQLite (event-sourced) + Automerge CRDT (cross-device, ADR-002 substrate § crypto v1, v1.1+ scope) |
 | **Mesh comm** (ADR-002 substrate § crypto v1, v1.1+ scope) | **vodozemac (Olm 1:1) + webrtc-rs v0.17.x + Automerge v0.7.x + mdns-sd v1.71+ + ctrl-relay CF Worker** |
@@ -52,11 +52,11 @@ CTRL/                           ← THIS REPO (deliverable)
 │   ├── ctrl-web/               ← PWA (React + Vite + vite-plugin-pwa) — SINGLE UI codebase
 │   ├── olym-core/              copy from hello-olym (SSOT)
 │   ├── olym-desktop/           桌面 olym 派生
-│   ├── ctrl-stss/              ST-SS protocol TS (69 tests; 99 workspace-wide)
-│   ├── ctrl-memory/            client-side event log TS
 │   └── ctrl-kernel-sdk/        L2 syscall surface (mirrors Rust kernel)
+│   # ctrl-stss + ctrl-memory removed 2026-06-23 (ADR-010 § transports v5, SC6 Phase 1 — dead ST-SS protocol abstraction, unused by PWA which decodes CBOR via cbor-x directly)
 ├── share/
-│   └── stss-spike/             standalone WS server + browser viewer (reference)
+│   ├── modules/                shareable capability modules
+│   └── skills/                 shareable SKILL.md assets
 ├── doc/
 │   ├── design/                 HTML prototypes + tokens.json
 │   ├── reference/              brand assets
