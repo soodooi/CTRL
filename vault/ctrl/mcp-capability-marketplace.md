@@ -62,6 +62,10 @@ related:
 3. **plain-text manifest + 本地是 truth** —— 能力定义本地可读可迁,无 lock-in。
 4. **做 MCP 生态公民** —— 对接官方 Registry(发现)+ 暴露 well-known(被发现),非封闭花园(呼应「§14 不开源、做生态公民」结论)。
 
+## 三点五、首个 connector 参照样本 — 飞书官方 MCP(2026-06-23,先作参照,后续迭代)
+
+核实结论见 `[[feishu-mcp-research]]`。要点:飞书有**官方 MCP**(`@larksuiteoapi/lark-mcp`,Beta,Bitable 全读写,OAuth loopback + keychain,local-first 友好)→ 是「现成第三方 connector 经 gate 挂载」的标准样本。它正好需要本市场要补的 4 块安全(扫描/hash-pin/凭证/写审批)+ SC3 caller/intent 可见性裁剪才能让普通用户安全用。**用途**:① marketplace 切片设计的真实测试用例(拿飞书 MCP 跑 切片 0-4)② 智能表格 ↔ Bitable 双向 sync 的现成写通道。诚实留口:docx 写/审批/传文件 MCP 不支持,需 oapi-sdk fallback。
+
 ## 四、可执行落地路径(切片,排在 SC8 之后,慢慢实现)
 
 | 切片 | 内容 | 复用 CTRL 现状 |
