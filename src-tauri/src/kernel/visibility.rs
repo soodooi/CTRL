@@ -32,6 +32,30 @@ pub const INTENT_HEADER: &str = "x-ctrl-intent";
 /// introspection a caller needs to orient itself (kernel health, vault root).
 const ALWAYS_ON: &str = "system";
 
+/// First-party domains an in-app caller (the PWA / embedded Irisy) is granted
+/// when it does not declare an explicit intent. Broad on purpose — the app is
+/// first-party, in-process, behind the loopback Bearer — but it deliberately
+/// EXCLUDES `net` (raw http_get/http_post), the prime exfiltration surface the
+/// module header calls out. External callers get no such default (see
+/// `default_for_caller`): least privilege, declare-or-minimal.
+const FIRST_PARTY_DOMAINS: &[&str] = &[
+    "vault",
+    "smart_table",
+    "notes",
+    "providers",
+    "registry",
+    "kv",
+    "llm",
+    "memory",
+    "mcp",
+];
+
+/// Callers treated as first-party (in-process app surfaces). The PWA bridge
+/// stamps `pwa`; the embedded assistant may stamp `irisy`/`hermes`.
+fn is_first_party(caller: &str) -> bool {
+    matches!(caller, "pwa" | "irisy" | "hermes")
+}
+
 /// Classify a tool name into its capability domain. Tool names are the kernel
 /// method names (`vault_read`, `smart_table_query`, ...) plus downstream
 /// namespaced `<server>_<tool>` entries. The classifier is prefix-based with a
@@ -102,10 +126,39 @@ impl Intent {
         }
     }
 
-    /// An explicitly unscoped intent (full toolset). Used when there is no
-    /// request context to read a header from.
+    /// An explicitly unscoped intent (full toolset). Used for IN-PROCESS calls
+    /// with no request context (no external caller to least-privilege). NOT used
+    /// on the HTTP gate path — there, an absent header resolves through
+    /// `default_for_caller`, never to unscoped-full.
     pub fn unscoped() -> Self {
         Self { domains: None }
+    }
+
+    /// Scope to exactly these capability domains (plus always-on system).
+    pub fn scoped_to<I: IntoIterator<Item = String>>(domains: I) -> Self {
+        Self {
+            domains: Some(domains.into_iter().collect()),
+        }
+    }
+
+    /// The minimal scope: only always-on system tools. An external caller that
+    /// declares no intent gets this — it must opt in to anything more.
+    pub fn minimal() -> Self {
+        Self {
+            domains: Some(HashSet::new()),
+        }
+    }
+
+    /// The effective scope when a caller sends NO (or blank) intent header.
+    /// First-party in-app callers get the broad first-party set; everyone else
+    /// gets `minimal` — closing the former "no header => full toolset" hole
+    /// (ADR-010 communication § trust-domains v3, SC3: project by (caller, intent)).
+    pub fn default_for_caller(caller: &str) -> Self {
+        if is_first_party(caller) {
+            Self::scoped_to(FIRST_PARTY_DOMAINS.iter().map(|s| s.to_string()))
+        } else {
+            Self::minimal()
+        }
     }
 
     /// Whether this intent is scoped to a subset (vs. unscoped/full).
@@ -190,6 +243,43 @@ mod tests {
         // Always-on system tools remain visible even when scoped.
         assert!(intent.allows_tool("kernel_status"));
         assert!(intent.allows_tool("vault_root_path"));
+    }
+
+    #[test]
+    fn unknown_caller_without_intent_is_minimal_not_full() {
+        // The SC3 hole: an external caller that declares no intent used to see
+        // every tool. Now it sees only always-on system tools.
+        let intent = Intent::default_for_caller("some-random-agent");
+        assert!(intent.is_scoped());
+        assert!(intent.allows_tool("kernel_status"));
+        assert!(intent.allows_tool("vault_root_path"));
+        assert!(!intent.allows_tool("vault_read"));
+        assert!(!intent.allows_tool("http_post"));
+        assert!(!intent.allows_tool("llm_chat"));
+    }
+
+    #[test]
+    fn first_party_caller_without_intent_gets_broad_but_not_net() {
+        // The in-app PWA (caller `pwa`) needs its toolset without declaring an
+        // intent, but raw network stays off even for first-party.
+        let intent = Intent::default_for_caller("pwa");
+        assert!(intent.allows_tool("vault_read"));
+        assert!(intent.allows_tool("vault_write"));
+        assert!(intent.allows_tool("smart_table_query"));
+        assert!(intent.allows_tool("llm_chat"));
+        assert!(intent.allows_tool("kernel_status"));
+        // net (raw http) is excluded from the first-party default.
+        assert!(!intent.allows_tool("http_post"));
+        // Irisy/hermes are first-party too.
+        assert!(Intent::default_for_caller("irisy").allows_tool("vault_read"));
+    }
+
+    #[test]
+    fn minimal_allows_only_system() {
+        let intent = Intent::minimal();
+        assert!(intent.is_scoped());
+        assert!(intent.allows_tool("kernel_status"));
+        assert!(!intent.allows_tool("vault_read"));
     }
 
     #[test]

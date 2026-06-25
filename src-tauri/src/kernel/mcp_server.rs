@@ -1983,13 +1983,20 @@ impl ServerHandler for KernelMcpRouter {
                 }
             }
         }
-        // Intent-scoped projection (SC3): if the caller declared an intent via
-        // `X-Ctrl-Intent`, project the listing to that intent's capability
-        // domains. No header => unscoped, so existing callers see the full set.
-        let intent = Intent::parse(request_header(&context, visibility::INTENT_HEADER));
-        if intent.is_scoped() {
-            tools.retain(|t| intent.allows_tool(t.name.as_ref()));
-        }
+        // Intent-scoped projection (SC3): project the listing to the caller's
+        // scope. A declared `X-Ctrl-Intent` wins; otherwise the caller's default
+        // scope applies (first-party => broad, unknown => minimal system-only) —
+        // no header no longer means "full toolset" (least privilege).
+        let caller = audit::normalize_caller(request_header(&context, audit::CALLER_HEADER));
+        let intent = {
+            let declared = Intent::parse(request_header(&context, visibility::INTENT_HEADER));
+            if declared.is_scoped() {
+                declared
+            } else {
+                Intent::default_for_caller(&caller)
+            }
+        };
+        tools.retain(|t| intent.allows_tool(t.name.as_ref()));
         Ok(ListToolsResult {
             tools,
             next_cursor: None,
@@ -2014,8 +2021,18 @@ impl ServerHandler for KernelMcpRouter {
         // declared intent is rejected, not just hidden (defense in depth: a
         // hidden tool must also be uncallable).
         let caller = audit::normalize_caller(request_header(&context, audit::CALLER_HEADER));
-        let intent = Intent::parse(request_header(&context, visibility::INTENT_HEADER));
-        let denied = intent.is_scoped() && !intent.allows_tool(&tool_name);
+        // No (or blank) intent header no longer means "full toolset": resolve the
+        // caller's default scope (first-party => broad, unknown => minimal), so an
+        // un-declared external caller can't reach out-of-scope tools (SC3).
+        let intent = {
+            let declared = Intent::parse(request_header(&context, visibility::INTENT_HEADER));
+            if declared.is_scoped() {
+                declared
+            } else {
+                Intent::default_for_caller(&caller)
+            }
+        };
+        let denied = !intent.allows_tool(&tool_name);
 
         // SC1 compile-time trust boundary: capture the cross-domain call as a
         // `GateRequest` here at the gate, before `request` is consumed. Only the
