@@ -23,7 +23,7 @@ CTRL 的「功能包」是三种不同的东西,实现主体不同:
 
 | 层 | 是什么 | 清单 | 谁实现 | 真相源 |
 |---|---|---|---|---|
-| **① 原生能力模块** | 按 Ctrl→intent 浮现的主能力,各对标一个成熟单点 | **固定 4 个**:Notes(Obsidian)· Coding(Codex terminal)· Smart-table(飞书 Bitable)· 远程桌面(ToDesk) | **CTRL 自建** | master-plan §二·五 B |
+| **① 原生能力模块** | 按 Ctrl→intent 浮现的主能力,各对标一个成熟单点 | **固定 4 个**:**Notes/PKM**(Obsidian,base 必含)· Coding(Codex terminal)· Smart-table(飞书 Bitable)· 远程桌面(ToDesk) | **CTRL 自建** | master-plan §二·五 B |
 | **② 内置工具 mcps** | 端侧原子工具(Top 15) | **固定 ~15 个**:Clipboard/OCR/Translate/Text/Chat(P0)· 窗口/PDF/LaTeX/智识/屏幕录(P1)· Snippet/Code/Email/会议/同步 | **CTRL 自建** | CLAUDE.md mcp-llm-reference |
 | **③ 外部系统 connector** | 把外部业务系统(飞书/CRM/ERP/…)包成 MCP 接进来 | **故意无固定清单(长尾开放)** | **Irisy 创作流造 + 第三方造**(非 dev 手写) | 本文 + marketplace plan |
 
@@ -32,6 +32,28 @@ CTRL 的「功能包」是三种不同的东西,实现主体不同:
 **关键(bao 钦定 2026-06-23):③ 的 connector 不是 dev 手写 MCP wrapper —— 是 Irisy 来做。** CTRL 的命题就是「AI 创作助手从自然语言/API 生成能力,用户不写 JSON」。这个流**已存在**:`personas/irisy/mcp-creator.ts`(Irisy 访谈 → 填 manifest slot → emit 完整 manifest + `server.ts`,auto-infer「提到具体平台→oauth、提到 MCP server→mcp」)+ `feature-pack-create.ts`。**种子 connector = 用 Irisy 创作流造**,dev 的活是**确保/打磨这条流能造出能用的真实 connector**,不是亲手写 connector。**种子本身 = 这条创作流的活体测试 + 护城河示范**(「Irisy 把一个业务系统接进来」正是要证明的产品能力)。
 
 → 所以「CTRL 要实现哪些外部功能包」的正确答案是:**① ② 全自建(清单已定);③ 长尾开放,只官方种子 2-3 个(由 Irisy 创作流造)把市场点着。** 本文只对「③ 种子」拍优先级。
+
+---
+
+## bao 集成清单(2026-06-24)+ 架构适配
+
+> bao 钦定要集成的功能包。**关键发现:几乎全是「自托管业务系统 connector」= §14+MCP+gate 的甜区 + 数据主权护城河。** 这反过来验证了架构对 bao 真实需求适配极好。
+
+| 功能包 | 层 | 架构路径 | 适配 | MCP 现成度(接前待核) |
+|---|---|---|---|---|
+| **PKM**(个人知识管理) | ① 原生 · **base 必含** | vault **§14 TextSource**(query{match/semantic}/produce)+ AI 检索(智识/hermes) | ✅ **一等公民**(数据型甜区) | Notes 模块在;§14 化待迁(Phase C) |
+| **Ghostfolio**(财务/投资组合) | ③ connector | 自托管 REST → MCP(Irisy 生成)→ **§14 source**(query 持仓/交易,produce 加交易)+ gate | ✅ 干净 + **数据主权**(自托管) | 待核(大概率 Irisy 生成 wrapper) |
+| **CRM**(Twenty) | ③ connector | 自托管 GraphQL → MCP → §14 | ✅ 干净 + 主权 | **Tier 1**(已定),待核 |
+| **ERP**(ERPNext/Odoo) | ③ connector | 自托管 REST → MCP → §14 | ✅ 干净 + 主权 | Tier 2,待核 |
+| **邮件**(IMAP/SMTP) | ②内置 + ③ connector | IMAP → MCP → **§14 source**(query 邮件)+ **Effect**(发信) | ✅ 干净 + 主权(IMAP 本地) | 通用 IMAP MCP 多,待核 |
+| **HubStudio**(营销/多账号) | ③ connector · **strain** | 本地 API + **浏览器自动化** → local_agent mcp + Effect → gate | ⚠️ **strain**:无开放发帖 API,靠浏览器自动化;ToS 灰区 | 自建 local_agent,风险高 |
+
+**架构适配结论**:
+- **PKM + Ghostfolio + CRM + ERP + 邮件 = §14+MCP+gate 一等公民**(数据型 / connector 甜区,数据主权命题的活证)。架构对得很。
+- **HubStudio = 唯一 strain**(灰区 + 浏览器自动化,无 §14 数据形状)→ 走 local_agent mcp + Effect,**风险高,建议第三方在市场自担风险造,不作官方种子**。
+- **OPC 全栈成形**:PKM(知识)+ Ghostfolio(财务)+ CRM(客户)+ ERP(运营)+ 邮件(通讯)= 一人公司完整业务栈,全自托管/本地 = **CTRL 当 AI 前端、数据留本地 = 护城河**。这正是定位的活体清单。
+
+> **PKM 是 base(必含),不是可选**:它 = vault(Notes 人编辑视图 + 智识 AI 检索视图,同一份 plain-text)。已是原生模块,但 **§14 化(read=query / write=produce)待 Phase C** —— PKM 要成「一等数据型功能包」,得跟 vault §14 盖全一起做。
 
 ---
 
