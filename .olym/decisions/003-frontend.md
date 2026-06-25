@@ -2,9 +2,9 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 20
+version: 21
 status: accepted
-last_updated: 2026-06-21
+last_updated: 2026-06-25
 deciders: [bao, zeus, daedalus]
 sections:
   - { id: pwa,           source: orig-002 }
@@ -13,6 +13,7 @@ sections:
   - { id: shell-4col,    source: new-2026-06-01 }
   - { id: agent-routes,  source: H-2026-06-09-002 校准 }
 changelog:
+  - v21 2026-06-25: **Notes 模块收敛为薄 KB 层 + vault 根可配置 + 同步=组合(bao 多轮校准,事实源 `vault/ctrl/notes-module-plan.md`).** 重申 v9/v33「Notes = Obsidian 兼容、CTRL 不自带编辑器」并据业界调研(AI×Obsidian:无一工具重造编辑器,皆用 Obsidian 或操作 vault 文件)落地三块:(1) **Notes = 薄查看/导航层,不是 Obsidian 克隆** —— 废掉未提交 WIP 的 GraphView(中心图谱)+ CommandPalette(交给 Obsidian);保留树/搜索/标签/反链(只读导航)+ 轻量内联 markdown 编辑;**auto-save**(停手 700ms 自存,无手动 save);**文件夹管理**(新建/重命名/删除,右键文件夹头);树**可折叠**(120 文件平铺 → 折叠树);frontmatter 面板默认折叠。**修关键 bug**:`MarkdownViewer.isSmartTable` 因 `ensureRowIds` 注入系统 ID 列而恒真 → 每个笔记(含 README/空笔记)都开成智能表格 → 改判「有非系统列」。(2) **vault 根 = 用户配置**(非写死)—— `default_vault_root()` 改读 `~/.ctrl/config.json`,首次运行**原生文件夹选择器**(Tauri dialog 插件)引导用户指向自己的 Obsidian vault,`~/Documents/CTRL/` 退为 fallback;Settings→General→Vault 可切换。这样「CTRL 与 Obsidian 同 vault」靠配置成立 = 数据主权护城河。(3) **vault 同步 = 组合不自建** —— CTRL 不造同步;用户的 Obsidian Sync/Syncthing/iCloud/git 搬运文件即顺带同步 CTRL 读写(CTRL 不在数据路径);唯一助手 = 薄 `vault_git_sync`(init→add→commit→push,无 origin 降本地)+ Auto-sync 开关(定时+切走触发);**完整 mesh(ADR-002 §4 Automerge CRDT)留 v1.1+ 且仅给 CTRL 自有跨设备态,不碰 vault 文件**(两个 merge owner 损坏文件)。落点:`kernel/vault.rs`(configured/set vault_root + auto_sync)、`commands/{vault,git}.rs`、`components/{VaultSetup,notes/*}.tsx`、`hooks/useAutoSync.ts`、`viewers/{MarkdownViewer,useViewerResource}`。NOT 改 spine;NOT 自造编辑器/同步协议;收敛不推倒(废的是未入册 WIP)。
   - v1 2026-05-31: module reorg — merged orig-002 (PWA pivot + Irisy-as-sole-entry + Keyboard drag-install) + orig-020 (VMark stack adoption: Tiptap + CodeMirror 6 + mermaid + smart table + vault browser).
   - v2 2026-05-31: § nav-keyboard — Settings enters L1 (bao "L1 上的 setting 页面, 点击打开就是 setting 页面, 其中一个页面就是 providers"). Replaces v1 "Settings via StatusBar cog". L1 buttons under `▾`: [Chat] [New] [Vault] [Coding] [Settings]. Each opens its route in workspace EXPANDED area; no floating cog.
   - v3 2026-06-01: NEW § shell-4col — 4-column shell `[L1 | L2 | Tab | Irisy]` lock-in. bao multi-message校准 in workspace tab refactor (2026-06-01 session, ~$720 cost). Mcp surface (separate Tauri child window) retired in concept; ship still has bugs (see § shell-4col known-bugs list). v0.1.127 → v0.1.132 released during this session.
