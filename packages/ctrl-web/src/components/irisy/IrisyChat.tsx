@@ -97,17 +97,10 @@ interface McpBridgeStatus {
   handshake_path: string;
 }
 
-interface PiStatus {
-  mcp_url: string;
-  reachable: boolean;
-  version: string | null;
-}
-
 interface IrisyStatus {
   app_version: string;
   kernel_llm: KernelLlmStatus;
   mcp_bridge: McpBridgeStatus;
-  pi?: PiStatus;
   active_brain?: string;
 }
 

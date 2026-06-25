@@ -406,43 +406,11 @@ pub fn collapse_workspace_window(app: tauri::AppHandle) -> Result<bool, String> 
     Ok(true)
 }
 
-// ── Pi (sole brain) status + upgrade — ADR-002 substrate §4 ───────────────────────
-//
-// Replaces the retired `brain_list / brain_detect / brain_set_active`
-// triple. There is one brain (Pi); the Settings → Brain pane reads
-// `pi_status` for version + upgrade state, and binds the "Upgrade now"
-// button to `pi_upgrade_now`.
-
-#[derive(Debug, serde::Serialize)]
-#[allow(dead_code)]
-pub struct PiStatusView {
-    pub installed_version: Option<String>,
-    pub latest_version: Option<String>,
-    pub upgrade_available: bool,
-    pub major_update_blocked: bool,
-    pub last_upgrade_error: Option<String>,
-    pub last_probe_ms: u64,
-    pub pi_bin: Option<String>,
-    pub install_root: Option<String>,
-    /// True when the supervisor has a live Pi child (set by spawn_pi,
-    /// cleared on exit). False = Pi crashed / not yet spawned / install
-    /// failed.
-    pub running: bool,
-    /// Most recent supervisor error (install failure / spawn failure /
-    /// exit status). None = healthy.
-    pub last_error: Option<String>,
-    /// Kernel provider port the bridge POSTs to. Surfaced so the
-    /// Settings UI can show the wire endpoint when debugging.
-    pub provider_port: u16,
-}
-
-// ADR-002 substrate §1 v19 (2026-06-09, H-2026-06-09-002):
-//   pi_status + pi_upgrade_now retired. Pi exited CTRL hot path. Per-agent
-//   install/status now goes through `commands::agents::{install_agent,
-//   launch_agent, agent_status, stop_agent, list_agents}`. The PiStatusView
-//   struct above is kept declared so its Serialize derive doesn't fail when
-//   downstream callers in `commands/mod.rs` invoke_handler! macro reference
-//   absent symbols — those commands are already unregistered.
+// Pi status/upgrade commands (pi_status / pi_upgrade_now) + the
+// PiStatusView struct retired 2026-06-25: Pi left the CTRL hot path
+// (ADR-002 substrate § brain v19, 2026-06-09). Per-agent install/status
+// now goes through `commands::agents::{install_agent, launch_agent,
+// agent_status, stop_agent, list_agents}`.
 
 // ── Ollama install / model pull (Pi-first refactor, bao 2026-06-05) ────────
 

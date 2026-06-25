@@ -3,7 +3,7 @@
 //
 // Exposes the kernel's capability surface as MCP tools so that:
 //   • Irisy (in-process via Tauri WebView)
-//   • Brain mcps (e.g. @ctrl/pi-plugin, separate MCP server process)
+//   • Brain mcps (e.g. the hermes agent gateway, separate MCP server process)
 //   • External AI agents on the user's machine (Cursor, etc.)
 // all consume the same backend through a single MCP wire — tools/list +
 // tools/call instead of N bespoke RPC surfaces.
@@ -1183,6 +1183,20 @@ impl KernelMcpRouter {
         let root = vault_root()?;
         let fm = args.frontmatter.unwrap_or(serde_json::Value::Null);
         vault::write(&root, &args.path, &args.body, &fm).map_err(map_vault_err)?;
+        // Write-through for smart tables: a generic vault.write that touches a
+        // `tables/*.md` file (the dedicated smart_table.* tools are not the only
+        // path that edits them) must refresh the derived SQLite index, exactly
+        // like the dedicated produce verbs do (see smart_table_update_cell /
+        // smart_table_append_row). Best-effort — the markdown on disk is the
+        // source of truth and reads degrade to run_query when the index drifts.
+        if let Some(idx) = self.st_index.as_deref() {
+            if is_smart_table_path(&args.path) {
+                let table = vault_smart_table::SmartTable::parse(&fm, &args.body);
+                if !table.fields.is_empty() {
+                    table.reindex_into(idx, &args.path);
+                }
+            }
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "wrote {}",
             args.path
@@ -1638,6 +1652,16 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
         vault::delete(&root, &args.path).map_err(map_vault_err)?;
+        // Clear the derived smart-table index when a `tables/*.md` file is
+        // removed, otherwise its rows leak and st_refs dangle (remove_table
+        // also NULLs incoming refs). Best-effort — markdown is the truth.
+        if let Some(idx) = self.st_index.as_deref() {
+            if is_smart_table_path(&args.path) {
+                if let Err(e) = idx.remove_table(&args.path) {
+                    tracing::warn!(path = %args.path, error = %e, "vault.delete: smart-table index remove failed");
+                }
+            }
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "deleted {}",
             args.path
@@ -1891,6 +1915,15 @@ impl KernelMcpRouter {
         let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
+}
+
+// Helper — a vault path is a smart-table candidate when it lives under the
+// `tables/` directory (the convention the dedicated smart_table.* tools and the
+// pipeline tests use). The caller still parses the file and checks for a real
+// non-empty schema before touching the derived index, so a plain markdown note
+// dropped into `tables/` never indexes as a table.
+fn is_smart_table_path(path: &str) -> bool {
+    path.starts_with("tables/") && path.ends_with(".md")
 }
 
 // Helper — open the embeddings DB at the standard path.

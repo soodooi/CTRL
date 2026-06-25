@@ -22,8 +22,8 @@ use crate::kernel::STSS_LISTEN_ADDR;
 /// can `Emitter::emit` Tauri events without a `tauri::AppHandle` argument
 /// in their signature. ADR-002 substrate § provider v8 §3.5 (2026-06-06):
 /// failover emits `provider:routing-override` / `provider:routing-restored`
-/// so the chip + ctrl-pi-bridge `runtimeTruthBlock` can overlay the
-/// transient fallback label without polling.
+/// so the PWA's ENGINE chip can overlay the transient fallback label
+/// without polling (ADR-002 substrate § provider v8 §3.5, 2026-06-06).
 #[derive(Clone)]
 pub struct KernelHandle {
     pub runtime: Arc<KernelRuntime>,
@@ -114,12 +114,13 @@ impl KernelSupervisor {
         // useAgent), never blocking boot or the user.
         tauri::async_runtime::spawn_blocking(|| {
             use crate::shell::agent_installer::{install, AgentName};
-            for agent in [AgentName::Opencode, AgentName::Hermes] {
-                let label = agent.as_str();
-                match install(agent, false) {
-                    Ok(m) => tracing::info!(agent = label, version = %m.version, "agent resource pack ready"),
-                    Err(e) => tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)"),
-                }
+            // Hermes is the only wired agent — opencode retired
+            // 2026-06-25 (DRIFT D8). Best-effort + idempotent.
+            let agent = AgentName::Hermes;
+            let label = agent.as_str();
+            match install(agent, false) {
+                Ok(m) => tracing::info!(agent = label, version = %m.version, "agent resource pack ready"),
+                Err(e) => tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)"),
             }
             // Obsidian notes connector auto-init (ADR-002 §1.9.1), best-effort.
             // Silently install the app if absent (like hermes), then provision the

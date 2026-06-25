@@ -265,7 +265,7 @@ pub async fn provider_set_active(
         ) {
             let api_key = match &manifest.auth {
                 crate::kernel::provider::manifest::AuthSource::Keychain { account } => {
-                    crate::shell::KeychainStore::get(account).ok().flatten()
+                    crate::kernel::provider::registry::read_credential(account)
                 }
                 crate::kernel::provider::manifest::AuthSource::ConfigKey { field } => {
                     manifest.config.get(field).cloned()

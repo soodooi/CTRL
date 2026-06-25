@@ -13,10 +13,13 @@
 // Design (Apollo MCP Server gateway model — persisted-operation allowlist,
 // flexible reads / controlled writes): intent is a *set of capability domains*,
 // not a fixed business taxonomy CTRL has to invent. The caller names the
-// domains; the gate enforces them. When no intent header is present the gate is
-// unscoped (full toolset) — this preserves today's behavior for in-app Irisy
-// and BYO-CLI drivers during migration (the Bearer token on loopback remains
-// the primary gate; intent-scoping is defense-in-depth layered on top).
+// domains; the gate enforces them. When no intent header is present the gate
+// resolves through `default_for_caller`: first-party in-app callers (pwa /
+// irisy / hermes) get the broad first-party domain set, every other caller
+// gets `minimal` (always-on system tools only) — least privilege, never the
+// full toolset (ADR-010 communication § trust-domains v3, SC3). The Bearer
+// token on loopback remains the primary gate; intent-scoping is
+// defense-in-depth layered on top.
 //
 // `tool_domain` is a pure name classifier so it is exhaustively unit-testable
 // without a running kernel — the same discipline as the smart-table parity
@@ -215,7 +218,15 @@ mod tests {
     }
 
     #[test]
-    fn no_header_is_unscoped_full_toolset() {
+    fn parse_none_is_unscoped_in_process_only() {
+        // `Intent::parse(None)` yields the unscoped/full-toolset value. This
+        // semantics is reachable ONLY on IN-PROCESS calls with no request
+        // context (no external caller to least-privilege). The HTTP gate path
+        // NEVER reaches it: an absent header there resolves through
+        // `default_for_caller` (first-party => broad set, unknown => minimal),
+        // so an external caller can never see the full toolset by omitting the
+        // header (ADR-010 communication § trust-domains v3, SC3). See
+        // `unknown_caller_without_intent_is_minimal_not_full` for the gate path.
         let intent = Intent::parse(None);
         assert!(!intent.is_scoped());
         assert!(intent.allows_tool("vault_write"));

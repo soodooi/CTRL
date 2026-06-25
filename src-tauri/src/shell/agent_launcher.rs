@@ -82,6 +82,10 @@ pub fn launch_with_env(
     name: &AgentName,
     provider_env: &std::collections::BTreeMap<String, String>,
 ) -> Result<LaunchedAgent> {
+    // opencode retired (bao 2026-06-25) — unwired; never launch it.
+    if matches!(name, AgentName::Opencode) {
+        return Err(anyhow!("opencode retired — unwired"));
+    }
     let manifest = read_manifest(name)
         .ok_or_else(|| anyhow!("agent not installed — call install_agent first"))?;
 

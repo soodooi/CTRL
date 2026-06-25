@@ -10,21 +10,20 @@
 // only partially hold on 7B models; bao confirmed it still leaks.
 //
 // The filter is also a defence-in-depth against:
-//   • Pi / Claude `<thinking>` blocks that occasionally escape RPC
-//     serialization
-//   • internal codename leaks (Pi / Claude / Ollama / Volc / vault_*
-//     / install_* / brain_status) — bao 2026-05-22
-//     `decision_pi_is_sole_brain_hermes_is_mcp` + ADR-002 §3.7
-//     brand-label rule
+//   • `<thinking>` blocks (Claude-style reasoning) that occasionally
+//     escape RPC serialization
+//   • internal codename leaks (Claude / Ollama / Volc / vault_*
+//     / install_* / brain_status) — bao 2026-05-22 + ADR-002 § provider
+//     v9 §3.7 brand-label rule
 //   • bare narration lines like "Calling list_local_skills..."
 //     ("show what the tool is doing in natural language" — Cursor 2.0
 //     verbatim, brainstorm §0.1)
 //
 // ADR-002 substrate § provider v9 §3.6 (2026-06-06). PWA-side XML
 // parser (`<call>` / `<call-result>` segment split) has been RETIRED —
-// Pi uses each provider's native function-calling protocol and emits
-// tool dispatches as separate `tool_use` / `tool_result` messages, not
-// inline in the assistant's text. This filter now runs on the full
+// the brain uses each provider's native function-calling protocol and
+// emits tool dispatches as separate `tool_use` / `tool_result` messages,
+// not inline in the assistant's text. This filter now runs on the full
 // assistant content string; the remaining hygiene (scaffolds /
 // thinking / narration / codenames) still applies.
 
@@ -59,8 +58,8 @@ const SCAFFOLD_HEADER_RE = new RegExp(
   'i',
 );
 
-/** `<thinking>...</thinking>` blocks Pi sometimes emits when the
- *  model picks up a Claude-style reasoning habit. Greedy across
+/** `<thinking>...</thinking>` blocks a model sometimes emits when it
+ *  picks up a Claude-style reasoning habit. Greedy across
  *  lines; matched non-greedily across tags so multiple separate
  *  blocks aren't merged. */
 const THINKING_BLOCK_RE = /<thinking>[\s\S]*?<\/thinking>/gi;
@@ -87,13 +86,15 @@ const NARRATION_LINE_RE = new RegExp(
 /** Replace internal codenames with the brand-label equivalent (or
  *  delete when no good label exists). Case-insensitive whole-word.
  *
- *  Pi / claude-oauth / volc / ollama / vault_write etc. should never
+ *  claude-oauth / volc / ollama / vault_write etc. should never
  *  leak — they're implementation detail. Replacements pick the
  *  closest user-facing word. */
 const CODENAME_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
   // brain layer
-  // Not when preceded by `-` (CLI flags like `lsof -Pi` were getting mangled
-  // into `lsof -the assistant`).
+  // `Pi` rewrite kept as defence-in-depth: although Pi was retired from the
+  // hot path (ADR-002 substrate § brain v19), the bare word must still never
+  // surface in a chat bubble. Not when preceded by `-` (CLI flags like
+  // `lsof -Pi` were getting mangled into `lsof -the assistant`).
   [/(?<!-)\bPi\b/g, 'the assistant'],
   [/\bclaude-oauth\b/gi, 'Claude (OAuth)'],
   [/\banthropic-api\b/gi, 'Anthropic API'],
@@ -113,8 +114,8 @@ const CODENAME_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bmcp_run\b/g, 'run that key'],
   [/\bbrain_status\b/g, 'check status'],
   // process plumbing
-  [/\bctrl-pi-bridge\b/gi, ''],
-  [/\bctrl-pi-mcp\b/gi, ''],
+  // ctrl-pi-bridge / ctrl-pi-mcp entries removed: Pi retired (ADR-002
+  // substrate § brain v19, 2026-06-09) — those names can no longer surface.
   [/\bRpcClient\b/g, ''],
   [/\bMCP server\b/gi, ''],
 ];

@@ -286,7 +286,68 @@ pub fn write(
         }
     }
 
+    // Best-effort embedding staleness flag. Semantic search / irisy_question_vault
+    // read the local embeddings index (kernel::vault_embeddings); without this,
+    // a freshly-written note stays invisible to them until a manual reembed_all.
+    //
+    // The embed itself is async (Ollama HTTP) and Ollama may be unreachable, so
+    // we deliberately do NOT block the sync write path on a network call. Instead
+    // we mark the note stale by dropping any now-outdated embedding row: a missing
+    // row is exactly what vault.embed_note / vault.reembed_all treat as "needs
+    // embedding" (no cached meta → re-embed), and embedding_status counts it as
+    // stale. Like the FTS upsert above, failures only warn and never block the
+    // write — the markdown on disk stays the source of truth.
+    #[cfg(not(test))]
+    flag_embedding_stale(&safe, content);
+
     Ok(full)
+}
+
+/// Mark a note's embedding stale so the next embed pass re-embeds it. See the
+/// call site in `write`. Best-effort and side-effect-free on failure: only
+/// markdown notes are tracked (skip `tables/` smart tables and non-`.md` files),
+/// and we drop the cached row only when the content hash actually changed so a
+/// no-op rewrite doesn't churn the index. Never panics, never blocks on network.
+#[cfg(not(test))]
+fn flag_embedding_stale(safe: &Path, content: &str) {
+    let rel = safe.to_string_lossy();
+    // Only embed markdown notes; smart tables live under `tables/` and are
+    // covered by the dedicated smart-table index, not the note embeddings.
+    if rel.starts_with("tables/") || safe.extension().and_then(|e| e.to_str()) != Some("md") {
+        return;
+    }
+    let Ok(home) = std::env::var("HOME") else {
+        return;
+    };
+    let db_path = PathBuf::from(home).join(".ctrl").join("embeddings.db");
+    // Don't create the embeddings db just to flag staleness — if it doesn't
+    // exist yet, the first reembed_all builds everything from disk anyway.
+    if !db_path.exists() {
+        return;
+    }
+    let emb = match crate::kernel::vault_embeddings::VaultEmbeddings::open(
+        &db_path,
+        "nomic-embed-text",
+    ) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(error = %e, "vault: embedding staleness flag — open failed");
+            return;
+        }
+    };
+    let new_hash = crate::kernel::vault_embeddings::content_hash(content);
+    match emb.cached_meta(&rel) {
+        Ok(Some((_mtime, cached_hash))) if cached_hash != new_hash => {
+            // Content changed since the last embed → drop the stale vector so the
+            // next embed pass re-embeds it (and embedding_status reports it stale).
+            if let Err(e) = emb.delete(&rel) {
+                tracing::warn!(path = %rel, error = %e, "vault: embedding staleness flag — delete failed");
+            }
+        }
+        // Unchanged content → embedding still valid; nothing to do.
+        // Never embedded → already counts as stale (no row); nothing to do.
+        _ => {}
+    }
 }
 
 /// Write raw bytes (typically a generated or captured image) to a path

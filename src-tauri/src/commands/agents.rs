@@ -133,10 +133,10 @@ pub async fn connect_agent_mcp(
 /// (`~/.hermes/.env`). hermes does NOT read injected process env (verified
 /// 2026-06-11 — it reports "No inference provider configured" and points to
 /// ~/.hermes/.env), so CTRL's unified provider injection (ADR-002 §1.3) is
-/// written there instead. Only the key + base_url vars are mirrored
-/// (OPENCODE_CONFIG_CONTENT is opencode-only); existing user lines are
-/// preserved (merge, not clobber). No active HTTP provider -> leave the file
-/// untouched so the user's own hermes setup survives.
+/// written there instead. Only the key + base_url vars are mirrored;
+/// existing user lines are preserved (merge, not clobber). No active HTTP
+/// provider -> leave the file untouched so the user's own hermes setup
+/// survives.
 pub(crate) fn write_hermes_dotenv(
     env: &std::collections::BTreeMap<String, String>,
 ) -> Result<(), String> {
@@ -360,7 +360,8 @@ pub async fn assistant_oneshot(
 
 #[tauri::command]
 pub async fn list_agents() -> Result<Vec<String>, String> {
-    Ok(["hermes", "opencode"]
+    // opencode retired (bao 2026-06-25) — unwired; only hermes is installable.
+    Ok(["hermes"]
         .iter()
         .filter(|n| {
             AgentName::from_str(n)
