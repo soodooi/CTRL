@@ -6,6 +6,23 @@
 import { invoke } from './bridge';
 import type { Icon } from './icon';
 
+// === Platform API client (comms-system-design Phase B) ===
+//
+// `gateInvoke` calls a kernel capability THROUGH the :17873 gate — the SAME
+// governed surface (audit + visibility) that external agents / BYO-CLI use —
+// instead of a private per-capability Tauri command. This is what makes CTRL a
+// platform rather than an app: the PWA is a first-class client of CTRL's own
+// platform API, not a backdoor consumer. Capability wrappers migrate onto this;
+// app-shell commands (window / lifecycle / keychain) stay on direct `invoke`.
+//
+// `args` is the tool's MCP arguments object directly (NOT wrapped in `{ args }`
+// the way Tauri commands take it) — the bridge forwards it as the tools/call
+// `arguments`.
+export const gateInvoke = <T = unknown>(
+  tool: string,
+  args: Record<string, unknown> = {},
+): Promise<T> => invoke('gate_invoke', { tool, args }) as Promise<T>;
+
 // === Kernel status (system instruments) ===
 //
 // Mirror of `src-tauri/src/commands/system.rs::KernelStatus`. The StatusBar
@@ -329,9 +346,13 @@ export interface SmartTableQueryResult {
   match_count: number;
 }
 
-/** Describe a smart table via the kernel gate — fields, types, operators. */
+/** Describe a smart table — fields, types, operators. Routed through the
+ *  platform API (`gateInvoke`): the PWA calls the same governed gate tool an
+ *  external agent would (comms-system-design Phase B, first migration). Shape is
+ *  identical to the old `smart_table_describe` Tauri command (same kernel
+ *  `describe`, no relational augmentation), so this is behavior-preserving. */
 export const describeSmartTable = (path: string): Promise<SmartTableDescribe> =>
-  invoke('smart_table_describe', { args: { path } });
+  gateInvoke('smart_table_describe', { path });
 
 /** Run a structured filter/sort/group query through the shared kernel engine.
  *  Rejects unknown field references with the valid set (anti-hallucination). */
