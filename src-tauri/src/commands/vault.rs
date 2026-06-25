@@ -189,6 +189,8 @@ pub struct VaultConfig {
     pub configured: bool,
     /// The resolved vault root currently in effect.
     pub root: String,
+    /// Whether the vault is auto-committed to git on a schedule.
+    pub auto_sync: bool,
 }
 
 #[tauri::command]
@@ -198,7 +200,18 @@ pub async fn vault_get_config() -> Result<VaultConfig, String> {
         root: vault::default_vault_root()
             .map(|p| p.display().to_string())
             .unwrap_or_default(),
+        auto_sync: vault::auto_sync_enabled(),
     })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AutoSyncArgs {
+    pub enabled: bool,
+}
+
+#[tauri::command]
+pub async fn vault_set_auto_sync(args: AutoSyncArgs) -> Result<(), String> {
+    vault::set_auto_sync(args.enabled).map_err(|e| format!("save auto-sync: {e}"))
 }
 
 #[tauri::command]
@@ -215,5 +228,6 @@ pub async fn vault_set_root(path: String) -> Result<VaultConfig, String> {
     Ok(VaultConfig {
         configured: true,
         root: p.display().to_string(),
+        auto_sync: vault::auto_sync_enabled(),
     })
 }

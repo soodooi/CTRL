@@ -632,6 +632,8 @@ export interface VaultConfig {
   configured: boolean;
   /** The resolved vault root currently in effect. */
   root: string;
+  /** Whether the vault is auto-committed to git on a schedule. */
+  auto_sync: boolean;
 }
 
 export const vaultGetConfig = (): Promise<VaultConfig> =>
@@ -639,6 +641,9 @@ export const vaultGetConfig = (): Promise<VaultConfig> =>
 
 export const vaultSetRoot = (path: string): Promise<VaultConfig> =>
   invoke('vault_set_root', { path });
+
+export const vaultSetAutoSync = (enabled: boolean): Promise<void> =>
+  invoke('vault_set_auto_sync', { args: { enabled } });
 
 /** Open the OS folder picker (native, via the Tauri dialog plugin) and return
  *  the chosen absolute path, or null if the user cancelled. */

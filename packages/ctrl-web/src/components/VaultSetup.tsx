@@ -5,9 +5,15 @@
 // surfaces a first-run prompt (banner) until a vault is chosen, and a settings
 // row to change it later. Uses the native OS folder picker (Tauri dialog plugin).
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactElement } from 'react';
-import { vaultGetConfig, vaultSetRoot, pickVaultFolder, vaultGitSync } from '@/lib/kernel';
+import {
+  vaultGetConfig,
+  vaultSetRoot,
+  pickVaultFolder,
+  vaultGitSync,
+  vaultSetAutoSync,
+} from '@/lib/kernel';
 
 interface VaultSetupProps {
   /** `banner` = compact first-run prompt (hidden once configured);
@@ -16,11 +22,16 @@ interface VaultSetupProps {
 }
 
 export const VaultSetup = ({ variant = 'banner' }: VaultSetupProps): ReactElement | null => {
+  const qc = useQueryClient();
   const { data: config } = useQuery({
     queryKey: ['vault-config'],
     queryFn: vaultGetConfig,
     staleTime: Infinity,
   });
+  const toggleAutoSync = async (enabled: boolean): Promise<void> => {
+    await vaultSetAutoSync(enabled);
+    await qc.invalidateQueries({ queryKey: ['vault-config'] });
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -81,6 +92,14 @@ export const VaultSetup = ({ variant = 'banner' }: VaultSetupProps): ReactElemen
             {syncing ? 'Syncing…' : 'Sync to git'}
           </button>
         </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={config.auto_sync}
+            onChange={(e) => void toggleAutoSync(e.target.checked)}
+          />
+          <span>Auto-sync — commit the vault to git every few minutes + when you switch away</span>
+        </label>
         <div style={{ fontSize: 12, opacity: 0.55 }}>
           Sync = git. CTRL doesn&apos;t build its own sync — your vault rides your own git remote
           (or Obsidian Sync / Syncthing / iCloud), so CTRL never sits in your data path.

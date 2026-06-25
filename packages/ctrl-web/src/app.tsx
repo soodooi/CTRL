@@ -53,6 +53,7 @@ import { IrisyChat } from './components/irisy/IrisyChat';
 import { WorkspaceShell } from './components/workspace/WorkspaceShell';
 import { DefaultWorkspace } from './routes/default';
 import { useCompanionWindow } from './hooks/useCompanionWindow';
+import { useAutoSync } from './hooks/useAutoSync';
 import { useWorkspaceStore } from './lib/workspace-store';
 import styles from './app.module.css';
 
@@ -93,6 +94,7 @@ function RootShellInner(): ReactElement {
   const workspaceOpen = useWorkspaceStore((s) => s.instances.length > 0);
   const [dragOver, setDragOver] = useState(false);
   useCompanionWindow();
+  useAutoSync();
 
   // Drag-over only flips when our custom MIME is present — text drags
   // from outside the cockpit don't paint the drop affordance.

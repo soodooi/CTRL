@@ -84,8 +84,8 @@ pub fn is_vault_configured() -> bool {
     configured_vault_root().is_some()
 }
 
-/// Persist the user's chosen vault root, merging so other config keys survive.
-pub fn set_vault_root(path: &Path) -> std::io::Result<()> {
+/// Set one config key in `~/.ctrl/config.json`, merging so other keys survive.
+fn update_config(key: &str, value: serde_json::Value) -> std::io::Result<()> {
     let cfg = config_path()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
     if let Some(parent) = cfg.parent() {
@@ -96,12 +96,31 @@ pub fn set_vault_root(path: &Path) -> std::io::Result<()> {
         .and_then(|b| serde_json::from_str::<serde_json::Value>(&b).ok())
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default();
-    obj.insert(
-        "vault_root".into(),
-        serde_json::Value::String(path.display().to_string()),
-    );
+    obj.insert(key.to_string(), value);
     let body = serde_json::to_string_pretty(&serde_json::Value::Object(obj)).unwrap_or_default();
     fs::write(&cfg, body)
+}
+
+/// Persist the user's chosen vault root.
+pub fn set_vault_root(path: &Path) -> std::io::Result<()> {
+    update_config(
+        "vault_root",
+        serde_json::Value::String(path.display().to_string()),
+    )
+}
+
+/// Whether auto-commit (git) of the vault is enabled (default off).
+pub fn auto_sync_enabled() -> bool {
+    config_path()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|b| serde_json::from_str::<serde_json::Value>(&b).ok())
+        .and_then(|v| v.get("auto_sync").and_then(|a| a.as_bool()))
+        .unwrap_or(false)
+}
+
+/// Persist the auto-sync toggle.
+pub fn set_auto_sync(enabled: bool) -> std::io::Result<()> {
+    update_config("auto_sync", serde_json::Value::Bool(enabled))
 }
 
 /// The resolved vault root: the user's configured vault if set, otherwise the
