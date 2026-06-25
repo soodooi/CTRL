@@ -683,13 +683,17 @@ export interface IrisySoulView {
   body: string;
   soul_md_version: string;
 }
+// SOUL.md rides the gate's memory-domain tools (irisy_soul_get/set), same as
+// external CLI drivers — the bespoke irisy_soul_read/write Tauri commands
+// retired onto this one governed path (SC5 convergence). The gate get returns
+// the identical { path, frontmatter, body, soul_md_version } shape.
 export const irisySoulRead = (): Promise<IrisySoulView> =>
-  invoke('irisy_soul_read');
+  gateInvoke('irisy_soul_get');
 export const irisySoulWrite = (
   frontmatter: Record<string, unknown>,
   body: string,
 ): Promise<void> =>
-  invoke('irisy_soul_write', { args: { frontmatter, body } });
+  gateInvoke('irisy_soul_set', { frontmatter, body });
 
 // ADR-002 v5 §10 — vault embeddings TS surface.
 export interface EmbeddingHit {

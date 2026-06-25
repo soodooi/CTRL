@@ -14,6 +14,7 @@
 // left in place so the caller can see what the prompt expected.
 
 import { invoke } from './bridge';
+import { vaultRead, vaultWrite } from './kernel';
 import { capabilityListForPrompt } from './capability-catalog';
 
 const PROMPTS_DIR = '.irisy-prompts';
@@ -74,17 +75,6 @@ const IRISY_SYSTEM_PATH = `${PROMPTS_DIR}/irisy-system.md`;
 // (incl. the China npm mirror npmmirror) and points key/endpoint config at
 // Settings → Env (keychain-backed, injected into the terminal).
 export const PROMPT_VERSION = 13;
-
-interface VaultEntry {
-  path: string;
-  frontmatter: Record<string, unknown>;
-  content: string;
-}
-
-interface VaultWriteReply {
-  absolute_path: string;
-  path: string;
-}
 
 // Canonical Irisy persona (single source of truth; IrisyChat imports this for
 // its initial state). Keep mcp text English even when the chat is in another
@@ -338,11 +328,10 @@ the JSON back at the user; just tell them what happened.`;
  */
 export async function ensurePromptsBootstrap(): Promise<void> {
   try {
-    const entry = await invoke<VaultEntry>('vault_read', {
-      args: { path: IRISY_SYSTEM_PATH },
-    });
-    const storedVersion = Number(entry.frontmatter?.version ?? 0);
-    const managedByIrisy = entry.frontmatter?.managed_by === 'irisy';
+    const entry = await vaultRead(IRISY_SYSTEM_PATH);
+    const fm = entry.frontmatter as Record<string, unknown> | null;
+    const storedVersion = Number((fm?.version as number) ?? 0);
+    const managedByIrisy = fm?.managed_by === 'irisy';
     // Up-to-date managed copy → leave it. A stale managed copy (older
     // version) gets re-seeded so prompt fixes reach users who already booted.
     // A user-owned copy (managed_by !== irisy) is never overwritten.
@@ -350,17 +339,15 @@ export async function ensurePromptsBootstrap(): Promise<void> {
   } catch {
     /* missing — fall through and write default */
   }
-  await invoke<VaultWriteReply>('vault_write', {
-    args: {
-      path: IRISY_SYSTEM_PATH,
-      content: IRISY_SYSTEM_DEFAULT,
-      frontmatter: {
-        kind: 'system-prompt',
-        managed_by: 'irisy',
-        name: 'irisy-system',
-        description: 'Base persona + tool-calling protocol for Irisy chat.',
-        version: PROMPT_VERSION,
-      },
+  await vaultWrite({
+    path: IRISY_SYSTEM_PATH,
+    content: IRISY_SYSTEM_DEFAULT,
+    frontmatter: {
+      kind: 'system-prompt',
+      managed_by: 'irisy',
+      name: 'irisy-system',
+      description: 'Base persona + tool-calling protocol for Irisy chat.',
+      version: PROMPT_VERSION,
     },
   });
 }
@@ -371,9 +358,7 @@ export async function ensurePromptsBootstrap(): Promise<void> {
  */
 export async function loadPrompt(name: string): Promise<string | null> {
   try {
-    const entry = await invoke<VaultEntry>('vault_read', {
-      args: { path: `${PROMPTS_DIR}/${name}.md` },
-    });
+    const entry = await vaultRead(`${PROMPTS_DIR}/${name}.md`);
     return entry.content;
   } catch {
     return null;
@@ -424,8 +409,10 @@ async function loadSoul(): Promise<IrisySoulView | null> {
     return cachedSoul.value;
   }
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const view = await invoke<IrisySoulView>('irisy_soul_read');
+    // SOUL.md now loads through the gate (memory domain), same path as the
+    // rest of the capability surface (SC5 convergence) — no bespoke command.
+    const { irisySoulRead } = await import('@/lib/kernel');
+    const view = await irisySoulRead();
     cachedSoul = { value: view, loadedAt: now };
     return view;
   } catch {

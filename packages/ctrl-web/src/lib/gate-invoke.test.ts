@@ -55,7 +55,7 @@ describe('gateInvoke', () => {
       tool: 'vault_write',
       args: { path: 'tables/x.md', body: '# hi', frontmatter: { schema: [] } },
     });
-    const [, payload] = invokeMock.mock.calls[0];
+    const payload = invokeMock.mock.calls[0]![1] as { args: Record<string, unknown> };
     expect(payload.args).not.toHaveProperty('content');
   });
 });
