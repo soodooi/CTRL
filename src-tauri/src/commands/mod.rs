@@ -238,6 +238,8 @@ macro_rules! pwa_invoke_handler {
             // (vault_write_image / vault_watch_recent / irisy_soul_*).
             $crate::commands::vault::vault_write_image,
             $crate::commands::vault::vault_watch_recent,
+            $crate::commands::vault::vault_get_config,
+            $crate::commands::vault::vault_set_root,
             // SOUL.md (Irisy persistent memory) retired to the gate's memory-domain
             // tools irisy_soul_get/set (SC5 convergence); PWA reaches them via gate_invoke.
             // Irisy synthesize — Layer 4 (question vault / cross-note / daily)

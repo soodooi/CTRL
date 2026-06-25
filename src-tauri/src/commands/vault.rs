@@ -176,3 +176,44 @@ pub async fn vault_watch_recent(
 // memory-domain tools irisy_soul_get/set (SC5 convergence) — the PWA reaches
 // them via gate_invoke, the same governed path external CLI drivers use, so
 // vanilla SOUL.md readers (Cursor / Claude Code) stay consistent with CTRL.
+
+// ── Vault root configuration (point CTRL at the user's own Obsidian vault) ──
+// The data belongs to the user, so CTRL operates on the vault the user picks
+// rather than imposing `~/Documents/CTRL/`. The default is only a fallback until
+// the first-run flow points CTRL at the user's existing vault.
+
+#[derive(Debug, Serialize)]
+pub struct VaultConfig {
+    /// True once the user has explicitly chosen a vault (UI hides the first-run
+    /// picker). False = still on the `~/Documents/CTRL/` fallback.
+    pub configured: bool,
+    /// The resolved vault root currently in effect.
+    pub root: String,
+}
+
+#[tauri::command]
+pub async fn vault_get_config() -> Result<VaultConfig, String> {
+    Ok(VaultConfig {
+        configured: vault::is_vault_configured(),
+        root: vault::default_vault_root()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
+    })
+}
+
+#[tauri::command]
+pub async fn vault_set_root(path: String) -> Result<VaultConfig, String> {
+    let p = PathBuf::from(path.trim());
+    if !p.is_dir() {
+        return Err(format!("not a folder: {}", p.display()));
+    }
+    vault::set_vault_root(&p).map_err(|e| format!("save vault root: {e}"))?;
+    // Reindex against the newly-pointed vault so search/backlinks reflect it.
+    if let Err(e) = vault::rebuild_index(&p) {
+        tracing::warn!(error = %e, "vault_set_root: reindex failed");
+    }
+    Ok(VaultConfig {
+        configured: true,
+        root: p.display().to_string(),
+    })
+}

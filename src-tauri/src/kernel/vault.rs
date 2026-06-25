@@ -57,7 +57,60 @@ fn try_global_index() -> Option<&'static vault_index::VaultIndex> {
 /// not, call `migrate_legacy_vault()` to move it. ensure_vault_layout() also
 /// creates the canonical sibling structure (`notes/`, `assets/{images,audio,
 /// pdf,attachments}/`) on first boot.
+/// CTRL config file — a single JSON object, currently `{ "vault_root": "..." }`.
+/// Lives OUTSIDE any vault (it points AT the vault), at `~/.ctrl/config.json`.
+fn config_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".ctrl").join("config.json"))
+}
+
+/// The vault root the user pointed CTRL at (e.g. their EXISTING Obsidian vault).
+/// `None` until they pick one — the data belongs to the user, so CTRL operates on
+/// the user's own vault instead of imposing a folder (CLAUDE.md: vault layout is
+/// user-decided, not hardcoded). The first-run flow prompts for it.
+pub fn configured_vault_root() -> Option<PathBuf> {
+    let body = fs::read_to_string(config_path()?).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let p = v.get("vault_root")?.as_str()?.trim();
+    if p.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(p))
+    }
+}
+
+/// True once the user has chosen a vault, so the UI can skip the first-run picker.
+pub fn is_vault_configured() -> bool {
+    configured_vault_root().is_some()
+}
+
+/// Persist the user's chosen vault root, merging so other config keys survive.
+pub fn set_vault_root(path: &Path) -> std::io::Result<()> {
+    let cfg = config_path()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
+    if let Some(parent) = cfg.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut obj = fs::read_to_string(&cfg)
+        .ok()
+        .and_then(|b| serde_json::from_str::<serde_json::Value>(&b).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    obj.insert(
+        "vault_root".into(),
+        serde_json::Value::String(path.display().to_string()),
+    );
+    let body = serde_json::to_string_pretty(&serde_json::Value::Object(obj)).unwrap_or_default();
+    fs::write(&cfg, body)
+}
+
+/// The resolved vault root: the user's configured vault if set, otherwise the
+/// `~/Documents/CTRL/` fallback (used only until the user points CTRL at their
+/// own vault). Named "default" for historical callers; it is now config-aware.
 pub fn default_vault_root() -> Option<PathBuf> {
+    if let Some(root) = configured_vault_root() {
+        return Some(root);
+    }
     let home = std::env::var("HOME").ok()?;
     Some(PathBuf::from(home).join("Documents").join("CTRL"))
 }
