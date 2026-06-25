@@ -8,7 +8,7 @@
 // Optional CRDT layer (P11+) syncs cross-device via Yjs/Automerge.
 // P2.1 skeleton — bootstrap + schema only. Query/replay API in P2.5.
 
-use crate::kernel::audit::TrustDomain;
+use crate::kernel::audit::GateRequest;
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
@@ -43,12 +43,13 @@ impl EventStore {
     /// kernel-internal actor<->actor traffic is `Internal` and not recorded.
     /// Best-effort by contract: a ledger write failure must never block the
     /// underlying call, so callers log-and-continue rather than propagate.
+    /// Record one cross-domain call. Takes a `GateRequest` (not loose params), so
+    /// the type system guarantees only gate-crossing (External) calls reach the
+    /// ledger — internal traffic cannot construct one (ADR-010 § trust-domains,
+    /// SC1 compile-time isolation).
     pub fn record_call(
         &self,
-        domain: TrustDomain,
-        caller: &str,
-        tool: &str,
-        args_hash: &str,
+        req: &GateRequest,
         outcome: &str,
         detail: Option<&str>,
     ) -> rusqlite::Result<()> {
@@ -57,7 +58,15 @@ impl EventStore {
         conn.execute(
             "INSERT INTO audit_calls (ts_ms, domain, caller, tool, args_hash, outcome, detail) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![ts_ms, domain.as_str(), caller, tool, args_hash, outcome, detail],
+            rusqlite::params![
+                ts_ms,
+                req.domain().as_str(),
+                req.caller(),
+                req.tool(),
+                req.args_hash(),
+                outcome,
+                detail
+            ],
         )?;
         Ok(())
     }
@@ -126,15 +135,18 @@ mod tests {
         let store = EventStore::open_memory().unwrap();
         assert_eq!(store.audit_count().unwrap(), 0);
 
+        // A GateRequest can only be built at the gate boundary; the ledger
+        // records exactly what crossed (External by construction).
         store
-            .record_call(TrustDomain::External, "external", "vault_read", "abc", "ok", None)
+            .record_call(
+                &GateRequest::at_gate("external".into(), "vault_read", None),
+                "ok",
+                None,
+            )
             .unwrap();
         store
             .record_call(
-                TrustDomain::External,
-                "external",
-                "vault_write",
-                "def",
+                &GateRequest::at_gate("external".into(), "vault_write", None),
                 "error",
                 Some("boom"),
             )

@@ -1961,7 +1961,6 @@ impl ServerHandler for KernelMcpRouter {
         // + the caller + the outcome. Best-effort: a ledger failure must never
         // block a call.
         let tool_name = request.name.to_string();
-        let args_hash = audit::hash_args(request.arguments.as_ref());
 
         // SC3: attribute the call to a concrete caller (not blanket "external")
         // and enforce intent-scoped visibility — a tool outside the caller's
@@ -1970,6 +1969,13 @@ impl ServerHandler for KernelMcpRouter {
         let caller = audit::normalize_caller(request_header(&context, audit::CALLER_HEADER));
         let intent = Intent::parse(request_header(&context, visibility::INTENT_HEADER));
         let denied = intent.is_scoped() && !intent.allows_tool(&tool_name);
+
+        // SC1 compile-time trust boundary: capture the cross-domain call as a
+        // `GateRequest` here at the gate, before `request` is consumed. Only the
+        // gate can build one — internal traffic has no constructor, so the type
+        // system (not convention) keeps kernel self-calls off the ledger.
+        let gate_req =
+            audit::GateRequest::at_gate(caller, &tool_name, request.arguments.as_ref());
 
         let result = if denied {
             Err(McpError::invalid_request(
@@ -1985,14 +1991,11 @@ impl ServerHandler for KernelMcpRouter {
             Err(e) if denied => ("denied", Some(e.to_string())),
             Err(e) => ("error", Some(e.to_string())),
         };
-        if let Err(e) = self.runtime.event_store.record_call(
-            audit::TrustDomain::External,
-            &caller,
-            &tool_name,
-            &args_hash,
-            outcome,
-            detail.as_deref(),
-        ) {
+        if let Err(e) = self
+            .runtime
+            .event_store
+            .record_call(&gate_req, outcome, detail.as_deref())
+        {
             tracing::warn!(tool = %tool_name, error = %e, "audit ledger write failed");
         }
 

@@ -31,6 +31,61 @@ impl TrustDomain {
     }
 }
 
+/// A cross-domain (External) call that crossed the `:17873` gate, captured as a
+/// type — the `GateRequest` half of the trust-domain boundary (ADR-010 communication
+/// § trust-domains v3, SC1). Constructed ONLY at the gate (`at_gate`), so the
+/// type system now enforces, at the AUDIT/LEDGER boundary, what was previously
+/// only convention:
+///   - internal actor-to-actor traffic (the `channel`/`event` side) has no way
+///     to construct a `GateRequest`, so a kernel self-call cannot reach the audit
+///     ledger (self-calls stay unrecorded by construction, not best-effort);
+///   - an external call cannot be recorded without going through `at_gate`, so it
+///     cannot silently bypass the gate's ledger.
+///
+/// Scope (honest): this types the LEDGER half. "Internal" is the *absence* of a
+/// `GateRequest`, not yet a positive `InternalMsg` sibling type, and the dispatch
+/// path itself still takes loose rmcp params. There is deliberately no
+/// `Default`/`From`/`Into` and no internal constructor; the domain is `External`
+/// by construction. The symmetric `InternalMsg` type + dispatch-path typing are
+/// the remaining SC1 work.
+#[derive(Debug, Clone)]
+pub struct GateRequest {
+    caller: String,
+    tool: String,
+    args_hash: String,
+}
+
+impl GateRequest {
+    /// The ONLY constructor — at the gate boundary, from the caller header + the
+    /// tool call. Hashes the args (data sovereignty: the ledger keeps the shape,
+    /// not the payload). There is intentionally no internal constructor.
+    pub fn at_gate(
+        caller: String,
+        tool: &str,
+        args: Option<&serde_json::Map<String, serde_json::Value>>,
+    ) -> Self {
+        Self {
+            caller,
+            tool: tool.to_string(),
+            args_hash: hash_args(args),
+        }
+    }
+
+    /// Trust domain is `External` by construction.
+    pub fn domain(&self) -> TrustDomain {
+        TrustDomain::External
+    }
+    pub fn caller(&self) -> &str {
+        &self.caller
+    }
+    pub fn tool(&self) -> &str {
+        &self.tool
+    }
+    pub fn args_hash(&self) -> &str {
+        &self.args_hash
+    }
+}
+
 /// Header an external caller sets to identify itself to the gate (e.g.
 /// `irisy`, `hermes`, `claude-code`). The value is recorded in the audit
 /// ledger so the trail attributes each call to a concrete caller rather than a
@@ -83,6 +138,18 @@ mod tests {
     fn domain_str_is_stable() {
         assert_eq!(TrustDomain::Internal.as_str(), "internal");
         assert_eq!(TrustDomain::External.as_str(), "external");
+    }
+
+    #[test]
+    fn gate_request_is_external_by_construction() {
+        // The compile-time guarantee (no internal constructor, no From/Into) is
+        // enforced by the type system; this locks the runtime contract: a
+        // GateRequest is always External and carries the gate-captured fields.
+        let r = GateRequest::at_gate("pwa".into(), "vault_read", None);
+        assert_eq!(r.domain(), TrustDomain::External);
+        assert_eq!(r.caller(), "pwa");
+        assert_eq!(r.tool(), "vault_read");
+        assert_eq!(r.args_hash(), hash_args(None));
     }
 
     #[test]
