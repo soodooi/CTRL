@@ -57,6 +57,35 @@ CTRL 的「功能包」是三种不同的东西,实现主体不同:
 
 ---
 
+## 集成模型:组合,不打补丁(bao 钦定 2026-06-24)
+
+> connector 集成开源项目(Ghostfolio/Twenty/ERPNext/…)**绝不 fork、绝不改源码**。原样连,旁边加,持续跟升级。
+
+**黄金线 —— 唯一判据:你有没有动上游的源文件?**
+
+| | 碰上游源码吗 | 跟得上升级吗 | 判定 |
+|---|---|---|---|
+| **组合**:项目**外面/旁边**加(connector / sidecar / 官方插件机制) | ❌ 不碰 | ✅ 上游变,你的层不动 | ✅ **正路** |
+| **打补丁**:改项目源文件(哪怕「增量」) | ✅ 碰了 | ❌ 每次升级 merge 冲突 = fork = 维护地狱 | ❌ 禁 |
+
+**「增量改成 CTRL 版」精确成两件、都不碰上游源码:**
+1. **加 API ✅ = connector(项目外)** —— 缺 API/端点 → 伴生层调它现有 API/官方插件机制(ERPNext app / Odoo module),Irisy 生成。上游一行不改 → 跟升级。
+2. **加 UI ⚠️ = CTRL 自己的 workspace 渲染** —— 架构铁律「Ctrl 唯一入口 + viewer registry 渲染数据,不嵌第三方 UI」。CTRL 版的「皮」= **CTRL 侧的 workspace 视图**(本就 CTRL-native),**不是塞进项目**。往项目塞 UI = 违铁律 + 成 fork = 双输。
+
+**命名警告**:别叫「**CTRL 版 Ghostfolio**」(暗示用户装的**分叉发行物** → 触发 copyleft + 维护一辈子)。正确 = **「vanilla Ghostfolio + CTRL 伴生层(connector)」**,用户装的还是官方版。
+
+**为什么「不改」是对的(也是唯一干净的路)**:
+- **搭便车** —— vanilla = 上游更新/安全补丁白拿(同「CTRL 不 fork Claude Code、只 BYO-drive」)。
+- **数据主权 + 无 lock-in** —— 用户跑官方版,离开 CTRL 照跑(vim-test)。
+- **License 干净** —— Ghostfolio/Twenty=**AGPL**,ERPNext/EspoCRM=**GPL**:**fork+分发「CTRL 版」= 触发 copyleft**;而**连接自托管 vanilla 实例的 API = 不算修改/分发 = 完全干净**。
+- **跟升级的关键** —— 走**官方扩展点(API/插件)**,**别碰源码或 DB 内部**(内部一变就崩)。
+
+**上游缺东西怎么办**:**PR 给上游**(改 vanilla,所有人受益),**不 fork CTRL 版**。PR 永远朝上游走。
+
+> 例外:**没 API 的纯 UI 项目**(如 HubStudio)才需要浏览器自动化/上游加 API —— 那是 strain 特例,不适用有 API 的业务系统。
+
+---
+
 ## 种子 connector — 为什么需要 + 判据
 
 能力市场是双边网络,冷启动要**官方先种几个高价值 connector**:既证明「本地 AI 前端管业务系统」(OPC 护城河),又给市场切片(`mcp-capability-marketplace` 0-6)真实测试用例,还给第三方一个参照模板。
