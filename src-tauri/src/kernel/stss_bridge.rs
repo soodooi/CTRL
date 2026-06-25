@@ -1,7 +1,13 @@
-// kernel::stss_bridge — promoted from share/stss-spike/.
+// kernel::stss_bridge — the local kernel->PWA event WS.
 //
-// WS server exposing the kernel's event bus over CBOR-framed ST-SS Cell/Op.
-// Promoted in sub-PR d after the spike validated:
+// ST-SS as a protocol abstraction is deprecated (ADR-010 communication
+// § transports v5, SC6): this is a PLAIN WebSocket that ships CBOR-framed
+// `Event` (Cell/Op) payloads to in-app viewers — Cell/Op are just the payload
+// shape the PWA decodes (cbor-x), not a semantic-stream protocol. It stays
+// because it is load-bearing (useCellStream / useSubprocessChannel / code_space
+// terminal output); only the protocol framing + its inbound command surface
+// (publish / list_streams / get_bridge_token) retired. The promoting spike
+// validated:
 //   • CBOR round-trip Rust ↔ JS without schema drift
 //   • Sub-100ms LAN round-trip latency
 //   • Capability-shape check at every received Op

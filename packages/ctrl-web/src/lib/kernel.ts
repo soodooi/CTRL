@@ -387,17 +387,12 @@ export interface StreamHandle {
   bridge_url: string;
 }
 
+// The event stream is a plain CBOR-over-WS (ST-SS protocol deprecated, ADR-010
+// § transports v5, SC6). `subscribe` is the one remaining call — it returns the
+// authed WS URL the cell-stream hooks connect to. The publish / listStreams
+// wrappers retired with their dead Tauri commands.
 export const subscribe = (stream_id: string): Promise<StreamHandle> =>
   invoke('subscribe', { args: { stream_id } });
-
-export const publish = (
-  stream_id: string,
-  kind: string,
-  payload: unknown,
-): Promise<void> =>
-  invoke('publish', { args: { stream_id, kind, payload } });
-
-export const listStreams = (): Promise<string[]> => invoke('list_streams');
 
 export interface LogEntry {
   id: string;

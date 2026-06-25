@@ -185,10 +185,11 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::skills::search_skills,
             $crate::commands::skills::list_local_skills,
             // stss
+            // ST-SS protocol surface retired to one load-bearing call (SC6,
+            // ADR-010 § transports v5): the stream is a plain CBOR-over-WS, so
+            // only `subscribe` (hand the PWA the authed WS URL) remains; the
+            // publish / list_streams / get_bridge_token commands were dead.
             $crate::commands::stss::subscribe,
-            $crate::commands::stss::publish,
-            $crate::commands::stss::list_streams,
-            $crate::commands::stss::get_bridge_token,
             // memory
             $crate::commands::memory::read_log,
             $crate::commands::memory::append_event,
