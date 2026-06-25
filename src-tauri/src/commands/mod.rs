@@ -62,8 +62,8 @@ pub mod stss;
 pub mod system;
 pub mod updater;
 pub mod vault;
-// Vault embeddings — 5 new commands (ADR-002 v5 §10)
-pub mod vault_embeddings;
+// (commands/vault_embeddings.rs retired 2026-06-24 — moved to the :17873 gate,
+//  PWA calls via gate_invoke; kernel logic stays in kernel/vault_embeddings.rs.)
 // Irisy synthesize — Layer 4 product surface (brainstorm §5.3/§5.5/§5.10)
 pub mod irisy_synth;
 pub mod workshop;
@@ -230,44 +230,16 @@ macro_rules! pwa_invoke_handler {
             // (rename/move/create_folder/set_starred), and the notify-backed
             // watcher poll (vault_watch). Daily Note + Sourcing are NOT here —
             // those run at the feature layer per §8.4.
-            $crate::commands::vault::vault_write,
+            // Retired 2026-06-24 (comms-system-design Phase B): the vault /
+            // smart-table / embeddings / sourcing capability commands moved to
+            // the :17873 gate; the PWA now calls them via gate_invoke. Only the
+            // commands without an exact MCP twin stay as Tauri commands
+            // (vault_write_image / vault_watch_recent / irisy_soul_*).
             $crate::commands::vault::vault_write_image,
-            $crate::commands::vault::vault_read,
-            $crate::commands::vault::vault_list,
-            $crate::commands::vault::vault_search,
-            $crate::commands::vault::vault_delete,
-            $crate::commands::vault::vault_root_path,
-            $crate::commands::vault::vault_rebuild_index,
-            $crate::commands::vault::vault_backlinks,
-            $crate::commands::vault::vault_tags,
-            $crate::commands::vault::vault_notes_by_tag,
-            $crate::commands::vault::vault_mentions,
-            $crate::commands::vault::vault_orphans,
-            $crate::commands::vault::vault_broken_links,
-            $crate::commands::vault::vault_graph_data,
-            $crate::commands::vault::vault_rename,
-            $crate::commands::vault::vault_move,
-            $crate::commands::vault::vault_create_folder,
-            $crate::commands::vault::vault_set_starred,
-            $crate::commands::vault::vault_aliases,
             $crate::commands::vault::vault_watch_recent,
-            $crate::commands::vault::smart_table_run_ai_column,
-            $crate::commands::vault::smart_table_describe,
-            $crate::commands::vault::smart_table_query,
-            // ADR-002 § vault v1 §8.4 sourcing-workflow (2026-06-01) —
-            // kernel-seeded review-queue producer (Irisy attaches the
-            // richer LLM pass on top of the same file).
-            $crate::commands::vault::vault_sourcing_run,
-            $crate::commands::vault::vault_sourcing_pending,
             // SOUL.md — Irisy persistent memory file (ADR-005 v2 § soul-md-compat §4.3)
             $crate::commands::vault::irisy_soul_read,
             $crate::commands::vault::irisy_soul_write,
-            // Vault embeddings (ADR-002 v5 §10) — local Ollama + SQLite flat cosine
-            $crate::commands::vault_embeddings::vault_embed_note,
-            $crate::commands::vault_embeddings::vault_reembed_all,
-            $crate::commands::vault_embeddings::vault_embedding_status,
-            $crate::commands::vault_embeddings::vault_semantic_search,
-            $crate::commands::vault_embeddings::vault_suggest_links,
             // Irisy synthesize — Layer 4 (question vault / cross-note / daily)
             $crate::commands::irisy_synth::irisy_question_vault,
             $crate::commands::irisy_synth::irisy_synthesize_notes,

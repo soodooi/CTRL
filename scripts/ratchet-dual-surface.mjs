@@ -19,9 +19,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-// Ratchet baseline. 2026-06-24 = 31. LOWER THIS (never raise) as capabilities
-// migrate to §14 and shed one of their two surfaces.
-const BASELINE = 31;
+// Ratchet baseline. 2026-06-24: 31 → 2 after the full frontend→gate migration
+// retired the 29 vault/smart-table/embeddings capability commands (PWA now calls
+// them via gate_invoke). The 2 remaining (kernel_status, vault_write_image) have
+// no migrated frontend caller yet. LOWER THIS (never raise) as more retire.
+const BASELINE = 2;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MCP = join(ROOT, 'src-tauri/src/kernel/mcp_server.rs');
