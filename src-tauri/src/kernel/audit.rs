@@ -10,6 +10,8 @@
 // convention, so every audited call carries which side it came from. The
 // ledger rows live in `persistence::EventStore` (table `audit_calls`).
 
+use crate::kernel::actor::ActorId;
+use crate::kernel::event::Event;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -42,12 +44,12 @@ impl TrustDomain {
 ///   - an external call cannot be recorded without going through `at_gate`, so it
 ///     cannot silently bypass the gate's ledger.
 ///
-/// Scope (honest): this types the LEDGER half. "Internal" is the *absence* of a
-/// `GateRequest`, not yet a positive `InternalMsg` sibling type, and the dispatch
-/// path itself still takes loose rmcp params. There is deliberately no
-/// `Default`/`From`/`Into` and no internal constructor; the domain is `External`
-/// by construction. The symmetric `InternalMsg` type + dispatch-path typing are
-/// the remaining SC1 work.
+/// `GateRequest` has its positive sibling in `InternalMsg` (below): the two are
+/// disjoint by construction with NO conversion either way, so the compiler keeps
+/// the domains apart. There is deliberately no `Default`/`From`/`Into` and no
+/// internal constructor here; the domain is `External` by construction. Residual
+/// SC1 work is narrower now: retyping each actor *handler* signature to carry the
+/// domain (the dispatch entry points — gate + bus — are typed).
 #[derive(Debug, Clone)]
 pub struct GateRequest {
     caller: String,
@@ -83,6 +85,48 @@ impl GateRequest {
     }
     pub fn args_hash(&self) -> &str {
         &self.args_hash
+    }
+}
+
+/// The `Internal` half of the trust-domain boundary (ADR-010 communication
+/// § trust-domains v3, SC1) — the positive sibling of `GateRequest`. Kernel
+/// actor<->actor traffic over channel/event is `Internal` by construction: an
+/// `InternalMsg` wraps an `Event` (the kernel's single inter-actor message
+/// format) plus the originating `ActorId`, and is built ONLY by in-kernel
+/// constructors. There is deliberately NO conversion to or from `GateRequest`
+/// in either direction, so:
+///   - internal traffic cannot be turned into a gate request — it has no path to
+///     the gate's audit/visibility surface (internal stays unaudited *by type*);
+///   - a gate request cannot masquerade as internal to skip governance, because
+///     only an `InternalMsg` can be published on the internal `EventBus`.
+/// "Internal" is now a positive type, not the mere absence of a `GateRequest`.
+#[derive(Debug, Clone)]
+pub struct InternalMsg {
+    origin: ActorId,
+    event: Event,
+}
+
+impl InternalMsg {
+    /// Construct internal actor->actor traffic. In-kernel only — the ABSENCE of
+    /// any gate/external constructor (no `at_gate`, no `From<GateRequest>`) is
+    /// the compile-time guarantee that external calls can't enter the bus.
+    pub fn from_actor(origin: ActorId, event: Event) -> Self {
+        Self { origin, event }
+    }
+
+    /// Trust domain is `Internal` by construction (mirror of `GateRequest`).
+    pub fn domain(&self) -> TrustDomain {
+        TrustDomain::Internal
+    }
+    pub fn origin(&self) -> &ActorId {
+        &self.origin
+    }
+    pub fn event(&self) -> &Event {
+        &self.event
+    }
+    /// Consume the message, yielding the carried `Event` for delivery on the bus.
+    pub fn into_event(self) -> Event {
+        self.event
     }
 }
 
@@ -150,6 +194,26 @@ mod tests {
         assert_eq!(r.caller(), "pwa");
         assert_eq!(r.tool(), "vault_read");
         assert_eq!(r.args_hash(), hash_args(None));
+    }
+
+    #[test]
+    fn internal_msg_is_internal_by_construction_and_disjoint_from_gate() {
+        use crate::kernel::event::{Event, Op, OpKind};
+        let ev = Event::Op(Op {
+            kind: OpKind::ActorSpawned,
+            ts_ms: 0,
+            stream_id: None,
+            payload: serde_json::json!({}),
+        });
+        let msg = InternalMsg::from_actor(ActorId::from_str("actor-1"), ev);
+        // Positive Internal type — not the mere absence of a GateRequest.
+        assert_eq!(msg.domain(), TrustDomain::Internal);
+        assert_eq!(msg.origin().as_str(), "actor-1");
+        // The sibling GateRequest is External; the two domains never coincide,
+        // and the type system offers no conversion between InternalMsg and
+        // GateRequest in either direction (enforced at compile time).
+        let gate = GateRequest::at_gate("pwa".into(), "vault_read", None);
+        assert_ne!(msg.domain(), gate.domain());
     }
 
     #[test]
