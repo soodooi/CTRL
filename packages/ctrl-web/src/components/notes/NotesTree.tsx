@@ -9,16 +9,31 @@
 // component itself stays presentational and emits selections through
 // `onSelect`.
 
-import { useMemo, useState, type ReactElement } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import {
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactElement,
+} from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  vaultDelete,
   vaultList,
+  vaultMove,
   vaultNotesByTag,
+  vaultRename,
   vaultRootPath,
   vaultSearch,
   vaultSemanticSearch,
 } from '@/lib/kernel';
 import styles from './Notes.module.css';
+
+/** Structural change emitted after a file operation so the parent can
+ *  keep its open tabs / selection in sync with disk. */
+export type PathMutation =
+  | { kind: 'delete'; path: string }
+  | { kind: 'rename' | 'move'; from: string; to: string };
 
 interface NotesTreeProps {
   query: string;
@@ -27,7 +42,17 @@ interface NotesTreeProps {
   /** When set, the tree restricts to notes tagged with this value
    *  via `vault_notes_by_tag`. */
   tagFilter?: string | null;
+  /** Called after a rename / move / delete so the parent can update its
+   *  open tabs and selection (the tree owns the file-op UI, the parent
+   *  owns the workspace tabs). */
+  onPathMutated?: (change: PathMutation) => void;
 }
+
+/** Parent directory of a vault-relative path (`''` for root files). */
+const parentDir = (p: string): string => {
+  const i = p.lastIndexOf('/');
+  return i >= 0 ? p.slice(0, i) : '';
+};
 
 interface FolderGroup {
   folder: string;
@@ -121,7 +146,82 @@ export const NotesTree = ({
   selectedPath,
   onSelect,
   tagFilter,
+  onPathMutated,
 }: NotesTreeProps): ReactElement => {
+  const queryClient = useQueryClient();
+
+  // File-operation UI state. The tree is the natural home for rename /
+  // move / delete because it owns the right-click target and the path
+  // list; mutations bubble up via `onPathMutated` so the workspace tabs
+  // stay in sync. (Wires vault_rename / vault_move / vault_delete —
+  // backend was ready, no UI surfaced them before.)
+  const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [opError, setOpError] = useState<string | null>(null);
+
+  // Dismiss the context menu on any outside click or Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu(null);
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
+  // Surface op errors instead of failing silently (was a real
+  // breakpoint — frontmatter / editor errors only hit console.warn).
+  useEffect(() => {
+    if (!opError) return;
+    const t = window.setTimeout(() => setOpError(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [opError]);
+
+  const openMenu = (e: ReactMouseEvent, path: string): void => {
+    e.preventDefault();
+    setConfirmDelete(null);
+    setMenu({ path, x: e.clientX, y: e.clientY });
+  };
+
+  const submitRename = async (from: string, raw: string): Promise<void> => {
+    const to = raw.trim();
+    setRenaming(null);
+    if (!to || to === from) return;
+    try {
+      // Same folder → rename; different folder → move. The kernel
+      // accepts a full vault-relative path for both, so editing the
+      // path string covers Obsidian-style "rename = move".
+      if (parentDir(to) === parentDir(from)) await vaultRename(from, to);
+      else await vaultMove(from, to);
+      await queryClient.invalidateQueries({ queryKey: ['vault-list'] });
+      onPathMutated?.({
+        kind: parentDir(to) === parentDir(from) ? 'rename' : 'move',
+        from,
+        to,
+      });
+    } catch (e) {
+      setOpError(`Rename failed: ${String(e)}`);
+    }
+  };
+
+  const doDelete = async (path: string): Promise<void> => {
+    setConfirmDelete(null);
+    setMenu(null);
+    try {
+      await vaultDelete(path);
+      await queryClient.invalidateQueries({ queryKey: ['vault-list'] });
+      onPathMutated?.({ kind: 'delete', path });
+    } catch (e) {
+      setOpError(`Delete failed: ${String(e)}`);
+    }
+  };
+
   const { data: rootPath } = useQuery({
     queryKey: ['vault-root'],
     queryFn: vaultRootPath,
@@ -205,11 +305,18 @@ export const NotesTree = ({
         </label>
       </header>
       <div className={styles.treeBody}>
+        {trimmed.length === 1 && !tagFilter ? (
+          <p className={styles.muted}>
+            Keep typing to search — semantic match adds in at 4 characters.
+          </p>
+        ) : null}
         {isLoading ? (
           <p className={styles.muted}>Loading…</p>
         ) : grouped.length === 0 ? (
           <p className={styles.muted}>
-            {trimmed.length > 1 ? 'No matches' : 'No notes yet'}
+            {trimmed.length > 1
+              ? 'No matches — try fewer or different words.'
+              : 'No notes yet — press ⌘P or “+ New Note” to start.'}
           </p>
         ) : (
           grouped.map(({ folder, items }) => (
@@ -221,15 +328,43 @@ export const NotesTree = ({
                 <ul className={styles.fileList}>
                   {items.map((path) => (
                     <li key={path}>
-                      <button
-                        type="button"
-                        className={styles.fileItem}
-                        data-active={selectedPath === path || undefined}
-                        onClick={() => onSelect(path)}
-                        title={path}
-                      >
-                        <span className={styles.fileName}>{stem(baseName(path))}</span>
-                      </button>
+                      {renaming === path ? (
+                        <input
+                          className={styles.renameInput}
+                          autoFocus
+                          defaultValue={path}
+                          aria-label="Rename or move note"
+                          onFocus={(e) => {
+                            // Pre-select the basename stem so a quick
+                            // rename overwrites just the name, while the
+                            // folder path stays editable for a move.
+                            const v = e.target.value;
+                            const start = v.lastIndexOf('/') + 1;
+                            const dot = v.lastIndexOf('.');
+                            e.target.setSelectionRange(
+                              start,
+                              dot > start ? dot : v.length,
+                            );
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter')
+                              void submitRename(path, e.currentTarget.value);
+                            else if (e.key === 'Escape') setRenaming(null);
+                          }}
+                          onBlur={(e) => void submitRename(path, e.target.value)}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.fileItem}
+                          data-active={selectedPath === path || undefined}
+                          onClick={() => onSelect(path)}
+                          onContextMenu={(e) => openMenu(e, path)}
+                          title={`${path} — right-click for actions`}
+                        >
+                          <span className={styles.fileName}>{stem(baseName(path))}</span>
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -238,6 +373,61 @@ export const NotesTree = ({
           ))
         )}
       </div>
+      {opError ? (
+        <p className={styles.treeError} role="alert">
+          {opError}
+        </p>
+      ) : null}
+      {menu ? (
+        <div
+          className={styles.contextMenu}
+          style={{ top: menu.y, left: menu.x }}
+          role="menu"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {confirmDelete === menu.path ? (
+            <>
+              <div className={styles.contextMenuLabel}>
+                Delete “{stem(baseName(menu.path))}”?
+              </div>
+              <button
+                type="button"
+                className={styles.contextMenuItem}
+                onClick={() => setConfirmDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.contextMenuDanger}
+                onClick={() => void doDelete(menu.path)}
+              >
+                Delete
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={styles.contextMenuItem}
+                onClick={() => {
+                  setRenaming(menu.path);
+                  setMenu(null);
+                }}
+              >
+                Rename / move…
+              </button>
+              <button
+                type="button"
+                className={styles.contextMenuDanger}
+                onClick={() => setConfirmDelete(menu.path)}
+              >
+                Delete…
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
     </aside>
   );
 };

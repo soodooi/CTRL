@@ -15,13 +15,20 @@
 
 import { type ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { vaultBacklinks, vaultSuggestLinks } from '@/lib/kernel';
+import { vaultBacklinks, vaultMentions, vaultSuggestLinks } from '@/lib/kernel';
 import styles from './Notes.module.css';
 
 interface NotesBacklinksProps {
   path: string | null;
   onSelect: (path: string) => void;
 }
+
+/** Title stem of a note path, used as the unlinked-mention search term. */
+const noteStem = (p: string): string => {
+  const base = p.slice(p.lastIndexOf('/') + 1);
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(0, dot) : base;
+};
 
 export const NotesBacklinks = ({
   path,
@@ -44,6 +51,21 @@ export const NotesBacklinks = ({
     enabled: !!path,
     staleTime: 30_000,
   });
+
+  // Unlinked mentions — notes that name this one in prose but never
+  // [[linked]] it. Search term = the note's title stem; only run when
+  // it is distinctive enough (>= 3 chars) to avoid noise, and drop the
+  // note's own self-mentions. Wires vault_mentions (backend was ready,
+  // no UI surfaced it — an "AI is a pipe" prompt to link your thinking).
+  const term = path ? noteStem(path) : '';
+  const { data: mentions = [] } = useQuery({
+    queryKey: ['vault-mentions', term],
+    queryFn: () =>
+      term.length >= 3 ? vaultMentions(term).catch(() => []) : Promise.resolve([]),
+    enabled: !!path && term.length >= 3,
+    staleTime: 30_000,
+  });
+  const unlinkedMentions = mentions.filter((m) => m.path !== path);
 
   return (
     <aside className={styles.backlinks} aria-label="Backlinks">
@@ -96,6 +118,32 @@ export const NotesBacklinks = ({
                     <span className={styles.backlinksFrom}>{hit.path}</span>
                     {hit.snippet ? (
                       <span className={styles.backlinksSnippet}>{hit.snippet}</span>
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+
+        {path && unlinkedMentions.length > 0 ? (
+          <>
+            <header className={`${styles.backlinksHeader} ${styles.backlinksSuggestedHeader}`}>
+              <h2 className={styles.backlinksTitle}>Unlinked mentions</h2>
+              <span className={styles.backlinksCount}>{unlinkedMentions.length}</span>
+            </header>
+            <ul className={styles.backlinksList}>
+              {unlinkedMentions.map((hit) => (
+                <li key={`mention:${hit.path}`}>
+                  <button
+                    type="button"
+                    className={styles.backlinksItem}
+                    onClick={() => onSelect(hit.path)}
+                    title={hit.path}
+                  >
+                    <span className={styles.backlinksFrom}>{hit.path}</span>
+                    {hit.snippet ? (
+                      <span className={styles.backlinksSnippet}>…{hit.snippet}…</span>
                     ) : null}
                   </button>
                 </li>
