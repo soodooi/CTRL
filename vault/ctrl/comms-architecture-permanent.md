@@ -1,6 +1,8 @@
 # CTRL 通讯架构 — 永久内核设计
 
-> Status: ACCEPTED v2 (2026-06-22, bao 钦定「永久使用的那种」; v2 加 §10 深化)
+> ⚠️ **SUPERSEDED(2026-06-24 真相源对账)** — 本文 §10 D/E/G/H 等设计**已收编进 `010-communication.md`(ADR-010 v4 §deepening + v3 §trust-domains;ADR = 决策 SSOT)**;执行视图见 `[[comms-system-design]]`。本文**保留作 ADR-010 v3/v4 的 provenance(推导来源)**,不再作 live 真相。读通讯架构 → **ADR-010 v6 + comms-system-design**,不读本文。
+>
+> ~~Status: ACCEPTED v2 (2026-06-22, bao 钦定「永久使用的那种」; v2 加 §10 深化)~~
 > 取代: `vault/ctrl/comms-protocol-refactor.md` (那是诊断 draft;本文是其结论的收敛成品)
 > Governing ADR: ADR-002 substrate §14 (v32, describe/query/produce + §14.7 subscribe) + ADR-010 communication
 > 一句话: **一个窄腰、两个信任域、三个动词、N 个传输、降级即契约。**

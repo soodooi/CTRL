@@ -53,6 +53,11 @@ CTRL 的「功能包」是三种不同的东西,实现主体不同:
 - **HubStudio = 唯一 strain**(灰区 + 浏览器自动化,无 §14 数据形状)→ 走 local_agent mcp + Effect,**风险高,建议第三方在市场自担风险造,不作官方种子**。
 - **OPC 全栈成形**:PKM(知识)+ Ghostfolio(财务)+ CRM(客户)+ ERP(运营)+ 邮件(通讯)= 一人公司完整业务栈,全自托管/本地 = **CTRL 当 AI 前端、数据留本地 = 护城河**。这正是定位的活体清单。
 
+**功能包边界 + 股票双形态(并入 `stock-and-installable-module-plan.md`,bao 2026-06-24):**
+- **每个领域 = 独立 L1 功能包,各有自己的 workspace**(股票 / CRM / 记账平级);**知识库(PKM)= 通用兜底功能包**(没专门到独立成包的想法/笔记/资料待这里)。股票**不是** KB 的用例。
+- **股票功能包国内外双形态**:**国外 = Ghostfolio**(AGPL 自托管,REST:order CRUD / portfolio·performance·positions / symbol lookup / import,CTRL 当其 AI 前端);**国内 A股 = AkShare(MIT 数据源,行情/财务)+ CTRL Smart Table(记持仓/复盘)** —— 因国内**无「开源+自托管+API」一体股票软件**(雪球/且慢皆封闭 SaaS,违数据主权),开源只剩数据层,**CTRL 自己即那个「软件」**。
+- 形态差异 = connector 集成的真实光谱:**有自托管开源软件(Ghostfolio)→ connector 连它**;**无(国内 A股)→ CTRL Smart Table 当记录主体 + 开源数据源(AkShare)喂数据**。
+
 > **PKM 是 base(必含),不是可选**:它 = vault(Notes 人编辑视图 + 智识 AI 检索视图,同一份 plain-text)。已是原生模块,但 **§14 化(read=query / write=produce)待 Phase C** —— PKM 要成「一等数据型功能包」,得跟 vault §14 盖全一起做。
 
 ---

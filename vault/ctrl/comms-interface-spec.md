@@ -1,7 +1,9 @@
 ---
 title: CTRL 通讯协议接口规范 — 从业务架构逐缝长出
 kind: spec
-status: reviewed
+status: superseded
+superseded_by: "010-communication.md (ADR-010 v6 §transports/§endpoint-spec) + [[comms-system-design]] (执行图 §2 全量端点分类)"
+supersede_note: "2026-06-24 真相源对账:8 缝契约 + wire 选型已收编进 ADR-010 v6;保留作 per-seam 2026 对标背书的 provenance。"
 created_at: 2026-06-23
 research_backed: deep-research 2026-06-23(108 agent / 26 一手源 / 23 断言过 3 票对抗验证)
 owner: bao
@@ -18,6 +20,8 @@ related:
 ---
 
 # CTRL 通讯协议接口规范
+
+> ⚠️ **SUPERSEDED(2026-06-24 真相源对账)** — 8 缝契约 + wire 选型已收编进 **`010-communication.md`(ADR-010 v6 §transports + §endpoint-spec)**;全量端点分类 + 迁移图见 **`[[comms-system-design]]`**。本文保留作 **per-seam 2026 行业对标背书的 provenance**。读通讯 → ADR-010 v6 + comms-system-design,不读本文。
 
 > **本文角色**:ADR-010 是「总纲」(为什么这样),`comms-architecture-permanent.md` 是「骨架」(四维/窄腰),**本文是「接口规范」** —— 每条通讯缝的可实施契约(怎么调)。
 > **方法**:不套协议模板。从 master-plan §二·六 业务全景 → 业务流要走的缝 → 每缝一个接口契约。业务长出通讯,不是反过来。

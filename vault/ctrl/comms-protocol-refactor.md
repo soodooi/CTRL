@@ -2,7 +2,8 @@
 title: 全项目通讯协议重构 — 分析与方案
 kind: design
 status: superseded
-superseded_by: "[[comms-architecture-permanent]]"
+superseded_by: "010-communication.md (ADR-010 v6 = 决策 SSOT) + [[comms-system-design]] (执行图)"
+note: "2026-06-24 真相源对账:原指向 [[comms-architecture-permanent]],该文亦已 superseded。通讯真相 = ADR-010 v6 + comms-system-design。"
 created_at: 2026-06-22
 owner: bao
 related:
