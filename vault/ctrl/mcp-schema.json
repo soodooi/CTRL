@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 54,
+  "toolCount": 56,
   "tools": [
     {
       "description": "HTTP GET request — fetch a URL and return status + body + headers",
@@ -1436,6 +1436,81 @@
         "type": "object"
       },
       "name": "vault_tags"
+    },
+    {
+      "description": "Describe the vault full-text source: source_kind=text; query content with a Contains filter whose value is the search needle. Call before vault_text_query.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "vault_text_describe"
+    },
+    {
+      "description": "Full-text query the vault as a §14 source: pass a Contains filter (field 'content', value = search text); returns matching note paths. Call vault_text_describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "vault_text.query args — the §14 Text profile of the vault (ADR-002 §14\nTextSource). Only a `Contains` filter (the full-text needle) + `limit` are\nmeaningful; `describe` advertises exactly that.",
+        "properties": {
+          "filters": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "VaultTextQueryArgs",
+        "type": "object"
+      },
+      "name": "vault_text_query"
     },
     {
       "description": "Drain recent vault filesystem events since a millis cursor (lazy-starts watcher)",

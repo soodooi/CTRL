@@ -20,10 +20,10 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **54** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **15** are on the section-14 three-verb contract; the other **39** are bespoke tools (not section-14 shaped)
-- **19** writes (produce, through the review gate) / **35** reads
-- **134** Tauri commands (the frontend RPC surface); **31** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
+- **56** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **39** are bespoke tools (not section-14 shaped)
+- **19** writes (produce, through the review gate) / **37** reads
+- **135** Tauri commands (the frontend RPC surface); **31** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
 vault/notes is mostly the old bespoke `vault_*` tools; html/pdf and other envisioned
@@ -68,7 +68,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `registry_describe` | 0 | read | s14 | Describe the installed-MCP registry as a queryable RecordSource (fields: id/name/version/description/tools). Call before registry.query. |  |
 | `registry_query` | 5 | read | s14 | Query installed MCP servers by id/name/tool-count with a structured filter/sort/group request. Call registry.describe first. |  |
 
-### vault/notes (27 endpoints, all bespoke)
+### vault/notes (29 endpoints, 2 s14)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
@@ -96,6 +96,8 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `vault_sourcing_run` | 1 | **WRITE** | bespoke | Run the kernel sourcing routine for the given YYYY-MM-DD date and write the review-queue file | cmd too |
 | `vault_suggest_links` | 2 | read | bespoke | Suggest related notes for a given path (embeddings-based autolink) | cmd too |
 | `vault_tags` | 0 | read | bespoke | List every tag in the vault with usage count (descending) | cmd too |
+| `vault_text_describe` | 0 | read | s14 | Describe the vault full-text source: source_kind=text; query content with a Contains filter whose value is the search needle. Call before vault_text_query. |  |
+| `vault_text_query` | 2 | read | s14 | Full-text query the vault as a §14 source: pass a Contains filter (field 'content', value = search text); returns matching note paths. Call vault_text_describe first. |  |
 | `vault_watch` | 2 | read | bespoke | Drain recent vault filesystem events since a millis cursor (lazy-starts watcher) |  |
 | `vault_write` | 3 | **WRITE** | bespoke | Write a markdown file to the user's vault (creates parents) | cmd too |
 | `vault_write_image` | 4 | **WRITE** | bespoke | Write a binary image asset to the vault (optionally with sidecar .md frontmatter) | cmd too |
@@ -142,7 +144,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `kernel_status` | 0 | read | bespoke | Report kernel health: uptime, registered LLM adapters, MCP server count | cmd too |
 | `vault_root_path` | 0 | read | bespoke | Return the absolute vault root path on disk | cmd too |
 
-## Dual-surface evidence — Tauri commands per module (134 total)
+## Dual-surface evidence — Tauri commands per module (135 total)
 
 Many capabilities are BOTH an MCP tool and a Tauri command = the P1 drift risk ADR-010 diagnosed. SC5 (collapse the dual surface) is not done.
 
@@ -169,6 +171,7 @@ Many capabilities are BOTH an MCP tool and a Tauri command = the P1 drift risk A
 | `commands/provider_templates.rs` | 2 |
 | `commands/provider_models.rs` | 2 |
 | `commands/skills.rs` | 2 |
+| `commands/gate.rs` | 1 |
 | `commands/chat.rs` | 1 |
 | `commands/irisy_chat.rs` | 1 |
 | `commands/image.rs` | 1 |

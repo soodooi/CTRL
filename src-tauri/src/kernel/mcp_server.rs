@@ -225,6 +225,17 @@ pub struct JobIdArgs {
     pub job_id: String,
 }
 
+/// vault_text.query args — the §14 Text profile of the vault (ADR-002 §14
+/// TextSource). Only a `Contains` filter (the full-text needle) + `limit` are
+/// meaningful; `describe` advertises exactly that.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultTextQueryArgs {
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
 /// notes.query — a structured read over the knowledge base as a RecordSource
 /// (ADR-002 §14: the SAME query contract as smart-table). Fields are
 /// path/title/tags/created/modified — call `notes.describe` for the set.
@@ -722,6 +733,42 @@ impl KernelMcpRouter {
         let result = source
             .query(&req, now)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault_text.describe — the §14 Text profile of the vault (ADR-002 §14
+    /// TextSource): full-text content search as a queryable source, complementing
+    /// notes.describe (the Record/metadata profile). Together they make the vault
+    /// a complete §14 read source.
+    #[tool(
+        description = "Describe the vault full-text source: source_kind=text; query content with a Contains filter whose value is the search needle. Call before vault_text_query."
+    )]
+    async fn vault_text_describe(&self) -> Result<CallToolResult, McpError> {
+        let body =
+            serde_json::to_string(&vault_notes_source::text::describe()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault_text.query — §14 full-text query over vault content. The `Contains`
+    /// filter's value is the needle (FTS5 when indexed, substring fallback — the
+    /// same engine the legacy `vault_search` uses); returns `{path}` rows in the
+    /// uniform QueryResult shape. This is the §14 target surface; bespoke
+    /// `vault_search` retires onto it once the frontend moves off it.
+    #[tool(
+        description = "Full-text query the vault as a §14 source: pass a Contains filter (field 'content', value = search text); returns matching note paths. Call vault_text_describe first."
+    )]
+    async fn vault_text_query(
+        &self,
+        Parameters(args): Parameters<VaultTextQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let req = query::QueryRequest {
+            filters: args.filters,
+            limit: args.limit,
+            ..Default::default()
+        };
+        let result = vault_notes_source::text::query(&root, &req).map_err(map_vault_err)?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }

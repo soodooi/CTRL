@@ -58,6 +58,7 @@ const SC14 = new Set([
   'smart_table_run_ai_column', 'smart_table_run_ai_column_start',
   'smart_table_run_ai_column_status', 'smart_table_run_ai_column_cancel',
   'notes_describe', 'notes_query',
+  'vault_text_describe', 'vault_text_query',
   'providers_describe', 'providers_query',
   'registry_describe', 'registry_query',
 ]);
