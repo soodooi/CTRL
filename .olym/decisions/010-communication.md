@@ -2,16 +2,16 @@
 adr_id: 010
 module: communication
 title: CTRL communication architecture — 统一窄腰 (§14 契约 + :17873 治理 + MCP 插件协议) over 多元传输
-version: 6
+version: 7
 status: accepted
-last_updated: 2026-06-24
+last_updated: 2026-06-25
 deciders: [bao, zeus]
 sections:
   - { id: positioning,       source: new-2026-06-22, note: "定位:CTRL = 普通用户的通用平台,不是 Claude Code 壳。协议服务平台/能力市场,coding 只是一类能力。" }
   - { id: diagnosis,         source: new-2026-06-22, note: "混乱真因 = P1 双表面 + P3 §14 没盖全,不是协议太多。" }
   - { id: waist,             source: new-2026-06-22, note: "北极星:统一窄腰(契约+治理+插件协议)+ 多元传输。质疑「一个框架统吃」= CORBA/SOAP/ESB 反模式。" }
   - { id: contract,          source: ref-002-§14, note: "契约面 = §14 三动词 describe/query/produce over Source;subscribe = query{watch} 投影(ADR-002 §14.7 v32),非第四动词。实现细则真相仍在 ADR-002 §14;本 ADR 统领。" }
-  - { id: trust-domains,     source: new-2026-06-22-v3, amended: v5-2026-06-23, note: "两信任域:内核域(channel/event 不经 gate)vs 跨域(必经 :17873)。v5 实装锚点:SC1/2/3 已落地(audit.rs TrustDomain+ledger / visibility.rs intent 投影 / projector.rs stamp / mcp_server.rs gate 强制)。事实源 comms-architecture-permanent.md + comms-interface-spec.md。" }
+  - { id: trust-domains,     source: new-2026-06-22-v3, amended: "v5-2026-06-23, v7-2026-06-25", note: "两信任域:内核域(channel/event 不经 gate)vs 跨域(必经 :17873)。v7 实装:SC1 完整体落地 —— `InternalMsg` 正类型(audit.rs,Internal-by-construction,包 Event+origin,与 GateRequest 无互转)+ EventBus.publish 只收 InternalMsg(内部总线类型化,GateRequest 无路进);v5 诚实缺口(编译期隔离)substantially 关闭,残留=actor handler 签名 retyping。事实源 comms-architecture-permanent.md + comms-interface-spec.md。" }
   - { id: governance,        source: ref-002-§mcp-bus, note: "治理面 = :17873 gate 单一收口(权限/审计/可见性)。真相在 ADR-002 § mcp-bus;本 ADR 定其在通讯架构中的枢纽地位。" }
   - { id: plugin,            source: new-2026-06-22, note: "插件协议 = MCP。能力插件 = MCP server,与 gate 同构;平台/市场底座。" }
   - { id: transports,        source: new-2026-06-22, amended: v5-2026-06-23, note: "8 条缝多元传输选型表。v5:③⑥ ST-SS 弃用→Tauri Channels+WS(SC6 实施);⑧ 远程桌面转独立能力模块(对标 ToDesk/RustDesk)。" }
@@ -19,6 +19,7 @@ sections:
   - { id: future,            source: new-2026-06-22, note: "WASM 插件 / A2A peer / AG-UI 对齐 / Beelay·Keyhive 均叠加在窄腰上,不替代。" }
   - { id: endpoint-spec,     source: new-2026-06-24-v6, note: "端点 spec = 形式化机器可读契约,不自造 IDL:wire 标准点名(工具=MCP JSON-RPC+JSON Schema / 流=AsyncAPI / 跨设备=protobuf);权威端点 spec = MCP tools/list schema 导出 artifact + §14 describe schema;catalog 从 schema 生成不爬源。补「协议无物化端点 spec」欠账。" }
 changelog:
+  - v7 2026-06-25: **实装对齐 — 两信任域重构 SC1/3/5/6 全量落地(bao「全量重构」).** 本轮把 v5 标的「诚实缺口 + 待办」收口,与运行真相对齐(harness 真机验证后再退 fallback,不裸退):(1) **SC1 完整体** —— 新增 `InternalMsg` 正类型(`kernel/audit.rs`):Internal-by-construction、包 `Event`+origin `ActorId`、与 `GateRequest` **双向无 From/Into**;`EventBus.publish` 改为只收 `InternalMsg`(`kernel/event.rs`,内部总线类型化,broadcast 落地),`GateRequest`(External)无路进内部总线 —— 编译器在两端(gate=GateRequest / bus=InternalMsg)挡跨域混用。v5「编译期隔离尚未做」缺口 substantially 关闭;残留 = 各 actor handler 签名 retyping(窄)。(2) **SC3 关默认敞口** —— 无/空 intent header 不再 = 全工具:gate 按 caller 默认 scope 解析(第一方 pwa/irisy/hermes→宽集减 net,未知→minimal 仅 system);`visibility.rs` 加 `default_for_caller`/`minimal`/`scoped_to`,`mcp_server.rs` list+call 两处接。真机验证:未知 caller 被拒 vault_read 且 tools/list 只剩 system,pwa 见 54 工具。(3) **SC5 收敛 + 修 bug** —— `irisy_soul_read/write` Tauri 命令退到 gate `irisy_soul_get/set`(同构 shape 验证);修 3 处孤儿 `invoke('vault_read'/'vault_write')`(打退役命令,SOUL 提示词 bootstrap/load 本来是坏的)→ 走 gate 包装器;**修关键 bug:前端 vault_write 送 `content` 但 gate 要 `body`,切断所有写(新建智能表格/存 note)** → 映射 content→body + 回归契约测试。命令面 106→101。(4) **SC6 Phase 2** —— ST-SS 作协议抽象 de-brand 为 plain CBOR-over-WS(wire 本就是,header 对齐);退死的 publish/list_streams/get_bridge_token 命令(0 caller),保留载重 subscribe + 流 wire(useCellStream/useSubprocessChannel/code_space 不回归)。NOT 改三动词集;NOT 改 spine 5 primitive;收敛不推倒。残留(诚实):SC4 handler 签名 retyping、SC6 符号改名(churn,待视觉验证)、§14 produce review gate。
   - v6 2026-06-24: **NEW § endpoint-spec — 端点 spec 形式化 + wire 标准点名(补「协议无物化端点 spec」欠账).** bao 质疑「完整通讯协议难道不含端点?有没有规范?是没按规范走还是不会建?」—— 调研核实(OpenAPI/AsyncAPI/gRPC-protobuf/GraphQL-SDL/MCP 均形式化定义端点;MCP 2026 spec 的 tool inputSchema/outputSchema = JSON Schema 2020-12)后诚实定性:**CTRL wire 层按 MCP 走了(54 工具经 rmcp 宏自带 JSON Schema),但从没把端点 spec 物化成版本化 artifact;§14 停在散文;流/command 面零形式化;端点清单靠爬 Rust 源(= 症状:spec 不是 artifact)**。三处 amend:(1) **NEW § endpoint-spec** —— 协议 = 语义契约 SSOT + 每缝标准 wire + 治理门;**wire 标准点名**:工具调用=MCP(JSON-RPC + JSON Schema,`tools/list` = 端点 spec)/ 流=AsyncAPI describe over WS·Channels / 跨设备=protobuf over WebRTC;**绝不自造 wire/IDL**(CORBA/SOAP/ESB 死因);**权威端点 spec = MCP `tools/list` JSON Schema 导出 artifact + §14 `describe` schema**,catalog 从 schema 生成不爬源;§14.10 版本协商→gate 按 protocol_version 路由(spec 有,实装待)。(2) **§ internal-external 补**:三 wire 标准映射 8 缝 + 「标准 ~90% / 自创 ~10%(只 §14 SSOT + gate 治理,无标准覆盖故正当)」配比。(3) **§ transports 表加 wire 标准列**。事实源:本轮 WebSearch(OpenAPI/AsyncAPI/MCP spec)+ `vault/ctrl/endpoint-catalog.md`(auto-gen 清单暴露 39 bespoke + 31 双表面)。NOT 改三动词集;NOT 自造协议;收敛不推倒。
   - v5 2026-06-23: **实装对齐 + ST-SS 弃用决策入册(通讯重构 SC1-3 已落地 + 调研修正).** 五处 amend,与运行真相对齐(CLAUDE.md「ADR 跟实装不允许漂移」):(1) **§ trust-domains 实装锚点** — 两信任域类型脊 + gate 治理面已落地:`kernel/audit.rs`(`TrustDomain{Internal,External}` + sha256 args-hash 守数据主权只存 hash + `record_call` 审计 ledger,SC1/SC2)· `kernel/visibility.rs`(intent-scoped 工具投影,SC3)· `kernel/projector.rs`(BYO-CLI `.mcp.json` stamp `X-Ctrl-Caller`+`X-Ctrl-Intent`,SC3 闭环)· gate `mcp_server.rs`(`request_header` 读 caller/intent、`list_tools` 裁剪、`call_tool` 记真实 caller + 拒越域 outcome=denied)。诚实缺口:`InternalMsg ⊥ GateRequest` 编译期隔离仍是运行时 tag(SC1 完整体待)。(2) **§G 可见性裁剪 = 已落地**(原 v4 标「治理半成品 TODO」→ 现实装 caller 细分 + intent 投影 + projector 默认 stamp,默认 scope 排除 `net`/`mcp` 守数据主权护城河,env `CTRL_BYO_INTENT` 逃生舱)。(3) **§ transports ③⑥ ST-SS 弃用**(bao 钦定)— ST-SS 是单向语义广播(设计上 no input plane / no remote viewing,做不了多端远程控制);本机 kernel→PWA 流底座改 **Tauri Channels(原生二进制)+ 最简 WS**,非 ctrl-wire;AG-UI 从「词汇对齐」升「producer 兼容机会」。实施 = SC6(Roadmap),决策已定故入册。(4) **§ transports ⑧ + § internal-external 调研修正** — 二进制流帧走 Tauri Channels 原生路径,**protobuf 仅 scope 跨设备腿**;「单一 wire 横跨本机 IPC + 跨设备 P2P」= 零先例未验证赌注 → 正解 = **三动词语义契约 = SSOT + wire framing 按传输适配**。(5) **远程桌面转正为独立能力模块** — 对标 ToDesk/RustDesk(ctrl-wire protobuf over WebRTC + content-blind relay),⑧ 缝留口,远控腿待专项调研(独立目标,不阻塞本重构)。事实源 `vault/ctrl/comms-interface-spec.md` §4。NOT 改 spine 5 primitive;NOT 改三动词集;收敛不推倒。
   - v4 2026-06-22: **§ deepening — 批判性自审补四点 D/E/G/H (事实源 `vault/ctrl/comms-architecture-permanent.md` §10).** 窄腰骨架不动,补四个总纲级洞:(D) **跨源组合归上层** —— 关联/Lookup/Rollup 在上层 (Irisy/feature pack) 用 DataLoader 模式 (N 次单源 query + 内存 join),守「禁跨 D1 JOIN」+ Source 单一职责,与 ADR-002 v30 关系型字段切片对齐。(E) **gate 自身降级 + 背压** —— gate 故障时只读本地 query 降到内核域待遇直通 (本地是 truth),write/effect 必须等 gate;bounded queue + circuit breaker 防堆积。(G) **可见性裁剪 × intent-scoped projection** —— gate 按 (caller, intent) 投影可见子集 = 「按 Ctrl → 意图 → 1-3 能力模块」的实现,补 TODO 的治理半成品 (capability-based 最小暴露面)。(H) **mesh 跨设备三动词成立性** —— mesh = 传输+一致性层非腰外世界,三动词投影到 CRDT:跨设备 query=最终一致快照、produce=Automerge change 本地立即生效+异步合并 peer、degradation=LocalWins,Beelay/Keyhive capability sync 对接 gate capability-token。配套契约层 A/B/C/F 进 ADR-002 §14 v33 (§14.8-§14.11)。NOT 改动词集;NOT 改 spine 5 primitive (启用 Effect)。
@@ -85,7 +86,7 @@ gate 只守**跨域**,不守全部 —— 这是 v2 没切清的边界(把「所
 - **跨域流授权回笼**(补 v2 审计盲区):watch 订阅的流字节走旁路不阻塞,但 **session 授权 + 审计元数据登记回 :17873** —— gate 看得见/可撤销/脱敏每个 live 订阅,即便不在热字节路径上。(注:v5 起流底座从 ST-SS 改 Tauri Channels + WS,见 § transports;授权回笼原则不变,只换传输。)
 - **降级是契约一等公民**:watch 丢源(connector 掉线)→ 降级到末次快照 + `degraded` 标记,不 hard-fail;`describe` 自报降级行为(local-first:本地 truth / 云 mirror / 拔网可用)。
 
-#### 实装锚点(v5,通讯重构 SC1-3 已落地)
+#### 实装锚点(v5-7,通讯重构 SC1/2/3/5/6 已落地)
 
 本节原则已落地为代码,ADR↔实装对齐(CLAUDE.md「ADR 跟实装不允许漂移」):
 
@@ -93,10 +94,12 @@ gate 只守**跨域**,不守全部 —— 这是 v2 没切清的边界(把「所
 |---|---|---|
 | 两信任域类型 + 数据主权 hash | `kernel/audit.rs` — `TrustDomain {Internal,External}` + `hash_args`(sha256,只存 hash 不存全量 args)+ `normalize_caller`(`X-Ctrl-Caller` 净化 `[a-z0-9._-]`≤64) | SC1 |
 | gate 审计 ledger | `persistence.rs` `audit_calls` 表 + `record_call`;gate `call_tool` best-effort 记每个跨域调用(caller/tool/args-hash/outcome/ts,内核自调不记;ledger 写失败只 warn 不阻断) | SC2 |
-| intent 可见性裁剪 | `kernel/visibility.rs` — `tool_domain` 域分类器 + `Intent`(按 `X-Ctrl-Intent` 逗号域投影,缺省 unscoped,`system` 常驻);gate `list_tools` scoped 时过滤 + `call_tool` 拒越域(outcome `denied`,隐藏的也不可调) | SC3 |
-| 外部 CLI 默认受裁 | `kernel/projector.rs` — BYO-CLI `.mcp.json` 的 `headers` stamp `X-Ctrl-Caller: byo-cli` + `X-Ctrl-Intent: <默认 scope>`(排除 `net` 外泄面 / `mcp` 透传;env `CTRL_BYO_INTENT` 逃生舱) | SC3 |
+| intent 可见性裁剪 + **关默认敞口** | `kernel/visibility.rs` — `tool_domain` 域分类器 + `Intent`;**v7(SC3 完整)**:`default_for_caller`(无/空 intent → 第一方宽集减 net / 未知 minimal 仅 system)+ `minimal`/`scoped_to`;gate `list_tools`+`call_tool` 两处接,**无 header 不再 = 全工具** | SC3 |
+| 内部总线类型化 | **v7(SC1 完整)**:`kernel/audit.rs` `InternalMsg`(Internal-by-construction,包 `Event`+origin,与 `GateRequest` 双向无 From/Into)+ `kernel/event.rs` `EventBus.publish` 只收 `InternalMsg`(broadcast 落地);`GateRequest`(External)无路进内部总线 | SC1 |
+| SOUL.md/提示词收敛 + 写 bug 修复 | **v7(SC5)**:`irisy_soul_read/write` Tauri 退到 gate `irisy_soul_get/set`;前端 `vault_write` 字段 `content`→`body`(gate 要 `body`,原切断所有写)+ 回归契约测试 | SC5 |
+| ST-SS 降为 plain WS | **v7(SC6 P2)**:`stss_bridge` de-brand 为 plain CBOR-over-WS;退死命令 publish/list_streams/get_bridge_token,留载重 subscribe + 流 wire | SC6 |
 
-**诚实缺口**:`InternalMsg ⊥ GateRequest` 的**编译期**隔离尚未做 —— 现为运行时 `TrustDomain` tag(gate 记录 + caller 细分),编译器强制「内核自调误经 gate」是 SC1 完整体,待后续。真机 `:17873` curl smoke 待 app build(in-process reqwest→真 axum listener 的 `intent_header_scopes_tools_list` e2e 已覆盖 header→Parts→context 穿线)。
+**v7 收口**:`InternalMsg` 正类型落地后,编译器在 gate（`GateRequest`，External-by-construction）与内部总线（`EventBus.publish` 只收 `InternalMsg`，Internal-by-construction）两端强制两信任域,v5 的「编译期隔离尚未做」缺口 substantially 关闭。**残留(诚实)**:各 actor handler 签名仍收 loose `Event`(把「内部」做成每个 handler 的正类型 = SC4 窄残留);SC6 符号改名(`stss_bridge`→event_ws)= behaviour-neutral churn,待视觉验证再做。真机验证本轮走 Playwright harness(mock Tauri IPC→真 :17873 gate):写路径 content→body 修复、SC3 caller 裁剪、SC5 soul/prompts 收敛均已 PASS。
 
 > 完整四维正交框架(What/How/Who/When-broken)+ 窄腰沙漏图 + 读写物理分离(QuerySource 读 / produce 写)的代码校准:`vault/ctrl/comms-architecture-permanent.md`。每缝接口契约 + 对标背书:`vault/ctrl/comms-interface-spec.md`。
 
