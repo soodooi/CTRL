@@ -510,8 +510,14 @@ export interface VaultWriteReply {
 // not private Tauri commands (comms-system-design Phase B). The gate tool takes
 // the MCP arguments directly (no `{ args }` envelope, no `mcp_id` — governance
 // is the gate's, not check_cap's). Shapes mirror the bespoke commands.
+// NB: the gate's vault_write field is `body`, not `content` (the retired Tauri
+// command used `content`); map it here so writes (new table / note save) land.
 export const vaultWrite = (args: VaultWriteArgs): Promise<VaultWriteReply> =>
-  gateInvoke('vault_write', { ...args });
+  gateInvoke('vault_write', {
+    path: args.path,
+    body: args.content,
+    frontmatter: args.frontmatter,
+  });
 
 export const vaultRead = (path: string, _mcp_id?: string): Promise<VaultEntry> =>
   gateInvoke('vault_read', { path });

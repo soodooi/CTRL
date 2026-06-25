@@ -81,7 +81,9 @@ export const writeVault = async (
   content: string,
   frontmatter: Record<string, unknown> = {},
 ): Promise<void> => {
-  await gateInvoke('vault_write', { path: relativePath, content, frontmatter });
+  // The gate's vault_write field is `body` (not `content`); map it so the
+  // write lands instead of being rejected for a missing required field.
+  await gateInvoke('vault_write', { path: relativePath, body: content, frontmatter });
 };
 
 /**

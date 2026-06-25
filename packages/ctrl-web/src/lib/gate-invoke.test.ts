@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const invokeMock = vi.fn();
 vi.mock('./bridge', () => ({ invoke: (...a: unknown[]) => invokeMock(...a) }));
 
-import { gateInvoke, describeSmartTable } from './kernel';
+import { gateInvoke, describeSmartTable, vaultWrite } from './kernel';
 
 describe('gateInvoke', () => {
   beforeEach(() => invokeMock.mockReset());
@@ -43,5 +43,19 @@ describe('gateInvoke', () => {
       tool: 'smart_table_describe',
       args: { path: 'tables/leads.md' },
     });
+  });
+
+  it('vaultWrite maps frontend `content` onto the gate field `body`', async () => {
+    // Regression: the gate's vault_write tool requires `body`; sending the
+    // frontend's `content` field dropped a required arg and the gate rejected
+    // every write (new smart-table / note save) silently. Lock the mapping.
+    invokeMock.mockResolvedValue('wrote tables/x.md');
+    await vaultWrite({ path: 'tables/x.md', content: '# hi', frontmatter: { schema: [] } });
+    expect(invokeMock).toHaveBeenCalledWith('gate_invoke', {
+      tool: 'vault_write',
+      args: { path: 'tables/x.md', body: '# hi', frontmatter: { schema: [] } },
+    });
+    const [, payload] = invokeMock.mock.calls[0];
+    expect(payload.args).not.toHaveProperty('content');
   });
 });
