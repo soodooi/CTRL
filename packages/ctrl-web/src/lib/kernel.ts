@@ -624,6 +624,34 @@ export const vaultCreateFolder = (
   _mcp_id?: string,
 ): Promise<void> => gateInvoke('vault_create_folder', { path });
 
+// Vault root configuration — point CTRL at the user's own (Obsidian) vault.
+// These stay on bespoke Tauri commands (not the gate): choosing where the vault
+// IS can't go through a gate scoped to a vault.
+export interface VaultConfig {
+  /** True once the user picked a vault (else still on the fallback default). */
+  configured: boolean;
+  /** The resolved vault root currently in effect. */
+  root: string;
+}
+
+export const vaultGetConfig = (): Promise<VaultConfig> =>
+  invoke('vault_get_config');
+
+export const vaultSetRoot = (path: string): Promise<VaultConfig> =>
+  invoke('vault_set_root', { path });
+
+/** Open the OS folder picker (native, via the Tauri dialog plugin) and return
+ *  the chosen absolute path, or null if the user cancelled. */
+export const pickVaultFolder = async (): Promise<string | null> => {
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const res = await open({
+    directory: true,
+    multiple: false,
+    title: 'Choose your vault folder (e.g. your Obsidian vault)',
+  });
+  return typeof res === 'string' ? res : null;
+};
+
 export const vaultSetStarred = (
   path: string,
   starred: boolean,

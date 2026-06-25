@@ -48,6 +48,7 @@ import { NotesTabBar } from './NotesTabBar';
 import { TemplatesModal } from './TemplatesModal';
 import { TagsPanel } from './TagsPanel';
 import { VaultHealthFold } from './VaultHealthFold';
+import { VaultSetup } from '@/components/VaultSetup';
 import styles from './Notes.module.css';
 
 // Notes is a THIN KB layer (vault/ctrl/notes-module-plan.md + ADR-003 v9): a
@@ -288,6 +289,7 @@ export const NotesApp = (): ReactElement => {
           </aside>
         )}
         <div className={styles.centerCol}>
+          <VaultSetup variant="banner" />
           <div className={styles.notesToolbar}>
             <button
               type="button"

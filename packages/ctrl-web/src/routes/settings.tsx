@@ -24,6 +24,7 @@ import type { ThemePreference } from '@/lib/theme';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { useWorkspaceStore } from '@/lib/workspace-store';
 import { ProviderHub } from '@/components/ambient/ProviderHub';
+import { VaultSetup } from '@/components/VaultSetup';
 import {
   listEnvEntries,
   setEnvVar,
@@ -229,6 +230,12 @@ const HotkeyBlock = (): ReactElement => (
 // surface only: appearance + hotkey.
 export const SettingsCtrlPage = (): ReactElement => (
   <SettingsShell activeTab="ctrl">
+    <Section
+      title="Vault"
+      description="The folder CTRL treats as your knowledge base. Point it at your own (Obsidian) vault — local markdown is the truth; CTRL is a layer over it, not a separate store."
+    >
+      <VaultSetup variant="settings" />
+    </Section>
     <Section
       title="Appearance"
       description="Polar paper or cool slate. System follows your OS dark / light setting."

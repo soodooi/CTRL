@@ -103,6 +103,7 @@ pub fn run() {
         // ADR-004 cap § updater v1 / 018 — Layer 1 of 4 of the auto-update strategy.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
@@ -164,6 +165,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
