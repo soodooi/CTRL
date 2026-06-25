@@ -1,6 +1,7 @@
 // ADR-002 substrate §1 v19 (2026-06-09, H-2026-06-09-002) — 3-agent aggregator.
 //
-// Lazy installer for the external brain agents (hermes / opencode). Notes/KB
+// Lazy installer for the external brain agents (hermes only — opencode
+// retired/unwired 2026-06-25, its AgentName variant kept as a no-op). Notes/KB
 // = the user's own Obsidian (ADR-002 §1.9 v25 — kairo/SilverBullet bundling
 // retired, don't reinvent the wheel), not a CTRL-installed agent.
 // Each agent gets its own directory under ~/.ctrl/agents/<name>/ with a
@@ -19,6 +20,11 @@ use std::process::Command;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentName {
     Hermes,
+    // Retired (bao 2026-06-25): opencode is unwired — the truth source says
+    // "reserved as a future coding path, not wired". The variant is kept so
+    // the kernel boot prefetch loop (kernel_supervisor) still type-checks;
+    // install()/launch_with_env() return an explicit "opencode retired" error
+    // for it, so the prefetch logs "deferred" and nothing installs/launches.
     Opencode,
 }
 
@@ -49,6 +55,7 @@ impl AgentName {
             // from self-contained binaries (ADR-002 §1.2 v20: zero
             // prerequisite runtimes; kernel bootstraps what it needs).
             AgentName::Hermes => None,
+            // opencode retired — never installed (install() bails first).
             AgentName::Opencode => None,
         }
     }
@@ -65,7 +72,6 @@ pub const HERMES_ONESHOT_SPEC: &str = "hermes-agent==0.16.0";
 /// hermes-agent requires Python >=3.11,<3.14; pin one so uv fetches a managed
 /// CPython instead of the system Python (3.9 on macOS). See HERMES_ACP_SPEC use.
 pub const HERMES_PYTHON: &str = "3.12";
-const OPENCODE_VERSION: &str = "1.17.3";
 const UV_VERSION: &str = "0.11.20";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,6 +109,12 @@ pub fn is_installed(name: &AgentName) -> bool {
 /// Install or re-read the agent record. If already installed and force=false,
 /// returns the cached manifest without network access.
 pub fn install(name: AgentName, force: bool) -> Result<AgentManifest> {
+    // opencode retired (bao 2026-06-25) — unwired. Check FIRST, before the
+    // cached-manifest early return, so a leftover ~/.ctrl/agents/opencode
+    // manifest from a prior install is never re-read as a success.
+    if matches!(name, AgentName::Opencode) {
+        return Err(anyhow!("opencode retired — unwired"));
+    }
     if !force {
         if let Some(existing) = read_manifest(&name) {
             return Ok(existing);
@@ -110,9 +122,11 @@ pub fn install(name: AgentName, force: bool) -> Result<AgentManifest> {
     }
 
     let manifest = match (&name, name.npm_package()) {
+        // opencode retired (bao 2026-06-25) — unwired; kept for match
+        // exhaustiveness, unreachable via the early return above.
+        (AgentName::Opencode, _) => return Err(anyhow!("opencode retired — unwired")),
         (_, Some(pkg)) => install_via_npm(&name, pkg)?,
         (AgentName::Hermes, None) => install_via_uvx(&name)?,
-        (AgentName::Opencode, None) => install_opencode_binary(&name)?,
     };
 
     let manifest_path = agent_dir(&name)?.join("manifest.json");
@@ -145,15 +159,13 @@ fn install_via_npm(name: &AgentName, package: &str) -> Result<AgentManifest> {
 
     let endpoint_type = match name {
         AgentName::Hermes => "acp-stdio",
-        AgentName::Opencode => "http-port",
+        // opencode retired — install() bails before reaching here.
+        AgentName::Opencode => return Err(anyhow!("opencode retired — unwired")),
     };
 
     let entry_cmd = match name {
         AgentName::Hermes => vec![bin.display().to_string(), "acp".into()],
-        // Real flags verified against opencode 1.17 docs: `opencode serve
-        // [--port N] [--hostname H]`; the launcher appends a picked free
-        // port + 127.0.0.1 and parses the announce line from stdout.
-        AgentName::Opencode => vec![bin.display().to_string(), "serve".into()],
+        AgentName::Opencode => return Err(anyhow!("opencode retired — unwired")),
     };
 
     Ok(AgentManifest {
@@ -236,52 +248,6 @@ pub fn ensure_uvx() -> Result<PathBuf> {
     Ok(uvx)
 }
 
-/// opencode — official standalone release binary (no Node prerequisite).
-/// Asset names verified against anomalyco/opencode v1.17.3 releases.
-fn install_opencode_binary(name: &AgentName) -> Result<AgentManifest> {
-    let dir = agent_dir(name)?;
-    let bin_dir = dir.join("bin");
-    fs::create_dir_all(&bin_dir).context("create agent bin dir")?;
-    let bin = bin_dir.join(if cfg!(windows) { "opencode.exe" } else { "opencode" });
-
-    if !bin.exists() {
-        let asset = match (std::env::consts::OS, std::env::consts::ARCH) {
-            ("macos", "aarch64") => "opencode-darwin-arm64.zip",
-            ("macos", _) => "opencode-darwin-x64.zip",
-            ("windows", _) => "opencode-windows-x64.zip",
-            (_, "aarch64") => "opencode-linux-arm64.zip",
-            _ => "opencode-linux-x64.zip",
-        };
-        let url = format!(
-            "https://github.com/anomalyco/opencode/releases/download/v{OPENCODE_VERSION}/{asset}"
-        );
-        let zip_path = bin_dir.join(asset);
-        run_ok(Command::new("curl").args(["-fsSL", "-o"]).arg(&zip_path).arg(&url), "opencode download")?;
-        run_ok(Command::new("unzip").arg("-o").arg(&zip_path).arg("-d").arg(&bin_dir), "opencode unzip")?;
-        let _ = fs::remove_file(&zip_path);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if bin.exists() {
-                let mut perm = fs::metadata(&bin)?.permissions();
-                perm.set_mode(0o755);
-                fs::set_permissions(&bin, perm)?;
-            }
-        }
-        if !bin.exists() {
-            return Err(anyhow!("opencode binary missing after unzip"));
-        }
-    }
-
-    Ok(AgentManifest {
-        name: name.as_str().to_string(),
-        version: OPENCODE_VERSION.into(),
-        install_at: chrono::Utc::now().to_rfc3339(),
-        endpoint_type: "http-port".to_string(),
-        entry_cmd: vec![bin.display().to_string(), "serve".into()],
-    })
-}
-
 fn run_ok(cmd: &mut Command, what: &str) -> Result<()> {
     let out = cmd.output().with_context(|| format!("{what}: spawn failed"))?;
     if !out.status.success() {
@@ -299,15 +265,16 @@ mod e2e_tests {
     #[test]
     #[ignore]
     fn e2e_user_autoinstall_and_launch() {
-        for name in [AgentName::Opencode, AgentName::Hermes] {
+        for name in [AgentName::Hermes] {
             let m = install(name.clone(), false).expect("install");
             println!("installed {} v{} ({})", m.name, m.version, m.endpoint_type);
         }
-        // Launch smoke for the long-running HTTP server (opencode).
-        for name in [AgentName::Opencode] {
-            let mut launched = crate::shell::agent_launcher::launch(&name).expect("launch");
-            println!("launched {:?} -> {:?}", name, launched.endpoint);
-            let _ = launched.child.kill();
-        }
+    }
+
+    /// opencode is retired (bao 2026-06-25) — install must refuse it.
+    #[test]
+    fn opencode_install_is_retired() {
+        let err = install(AgentName::Opencode, false).unwrap_err();
+        assert!(err.to_string().contains("retired"));
     }
 }

@@ -13,19 +13,16 @@
 // mcp can write where in a follow-up commit. Today every mcp shares the
 // vault root; isolation lands when manifest-declared capability scopes do.
 
+// Trimmed 2026-06-24: the vault/smart-table/embeddings/sourcing capability
+// commands retired to the :17873 gate (comms-system-design Phase B). Only
+// vault_write_image / vault_watch_recent / irisy_soul_* remain as Tauri
+// commands, so this surface keeps just the imports those few need.
 use crate::kernel::capability::{CapToken, CapabilityBroker};
 use crate::kernel::capability_resolver;
-use crate::kernel::vault::{self, VaultEntry, VaultError};
-use crate::kernel::vault_graph::{
-    self, BacklinkHit, BrokenLink, GraphData, MentionHit, TagCount,
-};
-use crate::kernel::vault_sourcing::{self, SourcingRunReport};
+use crate::kernel::vault::{self, VaultError};
 use crate::kernel::vault_watch::{self, EventEntry as VaultWatchEvent};
-use crate::kernel::{ai_column, query, vault_smart_table};
-use crate::shell::KernelHandle;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::State;
 
 fn vault_root() -> Result<PathBuf, String> {
     vault::default_vault_root().ok_or_else(|| "HOME env var not set".to_string())
@@ -41,50 +38,6 @@ fn check_cap(mcp_id: Option<&str>, required: &CapToken) -> Result<(), String> {
     broker.check(&cap, required).map_err(|e| {
         tracing::warn!(mcp_id = %id, token = ?required, error = %e, "vault: capability check rejected");
         format!("capability denied for mcp {id:?}: {e}")
-    })
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultWriteArgs {
-    /// Relative path under the vault root (e.g. "notes/2026-05-22/hello.md").
-    pub path: String,
-    /// Markdown body (frontmatter block is added automatically — don't
-    /// include `---` framing yourself).
-    pub content: String,
-    /// JSON object that becomes the YAML frontmatter block. Must be an
-    /// object; nested objects + scalar arrays are supported.
-    pub frontmatter: serde_json::Value,
-    /// Calling mcp's id. When present, the broker checks that this
-    /// mcp holds a `VaultWrite { path_glob }` token whose prefix
-    /// matches `path`. Absent = "ctrl-system" full-access (Settings /
-    /// first-run / debug).
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct VaultWriteReply {
-    /// Absolute on-disk path of the written file (for logging / debug).
-    pub absolute_path: String,
-    /// Relative path under the vault root (the canonical reference).
-    pub path: String,
-}
-
-#[tauri::command]
-pub async fn vault_write(args: VaultWriteArgs) -> Result<VaultWriteReply, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultWrite {
-            path_glob: args.path.clone(),
-        },
-    )?;
-    let root = vault_root()?;
-    let written = vault::write(&root, &args.path, &args.content, &args.frontmatter)
-        .map_err(stringify_vault_error)?;
-    tracing::info!(path = %args.path, "vault_write ok");
-    Ok(VaultWriteReply {
-        absolute_path: written.display().to_string(),
-        path: args.path,
     })
 }
 
@@ -163,109 +116,6 @@ pub async fn vault_write_image(
     })
 }
 
-#[derive(Debug, Deserialize)]
-pub struct VaultReadArgs {
-    pub path: String,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-#[tauri::command]
-pub async fn vault_read(args: VaultReadArgs) -> Result<VaultEntry, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: args.path.clone(),
-        },
-    )?;
-    let root = vault_root()?;
-    vault::read(&root, &args.path).map_err(stringify_vault_error)
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultListArgs {
-    /// Optional subdirectory under the vault root; absent = whole vault.
-    pub subdir: Option<String>,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-#[tauri::command]
-pub async fn vault_list(args: VaultListArgs) -> Result<Vec<String>, String> {
-    // List requires read on the subdir (or whole vault root if absent).
-    let probe_path = args.subdir.clone().unwrap_or_default();
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: probe_path,
-        },
-    )?;
-    let root = vault_root()?;
-    vault::list(&root, args.subdir.as_deref()).map_err(stringify_vault_error)
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultSearchArgs {
-    pub query: String,
-    #[serde(default = "default_search_limit")]
-    pub limit: usize,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-fn default_search_limit() -> usize {
-    50
-}
-
-#[tauri::command]
-pub async fn vault_search(args: VaultSearchArgs) -> Result<Vec<String>, String> {
-    // Search reads the whole vault; require VaultRead "*".
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: String::new(),
-        },
-    )?;
-    let root = vault_root()?;
-    vault::search(&root, &args.query, args.limit).map_err(stringify_vault_error)
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultDeleteArgs {
-    pub path: String,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-#[tauri::command]
-pub async fn vault_delete(args: VaultDeleteArgs) -> Result<(), String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultWrite {
-            path_glob: args.path.clone(),
-        },
-    )?;
-    let root = vault_root()?;
-    vault::delete(&root, &args.path).map_err(stringify_vault_error)
-}
-
-/// Resolved vault root path — Settings UI shows this so the user knows
-/// where their files live (and can `cd` to it in a terminal).
-#[tauri::command]
-pub async fn vault_root_path() -> Result<String, String> {
-    Ok(vault_root()?.display().to_string())
-}
-
-/// Wipe the FTS5 index and rebuild from every `.md` file in the vault.
-/// Useful after the user edited files in vim / Obsidian (bypassing
-/// CTRL's write path) — the index would be out of sync until next
-/// rebuild. Returns the number of files indexed.
-#[tauri::command]
-pub async fn vault_rebuild_index() -> Result<usize, String> {
-    let root = vault_root()?;
-    vault::rebuild_index(&root).map_err(stringify_vault_error)
-}
-
 fn stringify_vault_error(e: VaultError) -> String {
     e.to_string()
 }
@@ -281,420 +131,6 @@ fn stringify_vault_error(e: VaultError) -> String {
 // (the user clicking the column header) stay behaviourally identical.
 // Produce still writes straight through vault::write; the system-wide review
 // gate is ADR-006 §4 (out of this slice, per GOAL non-goals).
-
-#[derive(Debug, Deserialize)]
-pub struct SmartTableAiColumnArgs {
-    /// Vault-relative path to the smart-table `.md` file.
-    pub path: String,
-    /// Schema field key whose cells the AI fills.
-    pub target_field: String,
-    /// Prompt template; `{field}` tokens reference other columns in the row.
-    pub prompt: String,
-    /// classify / extract / summarize / translate / generate.
-    pub op: ai_column::AiOp,
-    /// Re-run rows whose target cell is already filled (default false = resume).
-    #[serde(default)]
-    pub force: bool,
-    /// Confirm a run over the cost gate.
-    #[serde(default)]
-    pub confirm_over_gate: bool,
-}
-
-#[tauri::command]
-pub async fn smart_table_run_ai_column(
-    args: SmartTableAiColumnArgs,
-    kernel: State<'_, KernelHandle>,
-) -> Result<ai_column::RunSummary, String> {
-    let root = vault_root()?;
-    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
-    let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
-    if !table.fields.iter().any(|f| f.key == args.target_field) {
-        return Err(format!("field_not_found: '{}'", args.target_field));
-    }
-
-    let plan = ai_column::plan_rows(&table, &args.target_field, &args.prompt, args.force);
-    if ai_column::over_cost_gate(plan.len()) && !args.confirm_over_gate {
-        return Err(format!(
-            "needs_confirmation: {} rows exceed the {}-row cost gate; set confirm_over_gate to proceed",
-            plan.len(),
-            ai_column::COST_GATE_ROWS
-        ));
-    }
-
-    let adapter = kernel
-        .runtime
-        .provider_registry
-        .primary_text_chat()
-        .ok_or_else(|| {
-            "no_provider: open Settings to pick a text provider before running an AI column"
-                .to_string()
-        })?;
-    let system = args.op.system_instruction();
-
-    let rows_total = table.rows.len();
-    let mut results: Vec<(usize, crate::kernel::query::Row, String)> = Vec::new();
-    let mut errors: Vec<ai_column::RowError> = Vec::new();
-    for item in &plan {
-        match ai_column::complete_row(adapter.as_ref(), system, &item.prompt).await {
-            Ok(value) => results.push((item.index, item.snapshot.clone(), value)),
-            Err(e) => errors.push(ai_column::RowError {
-                row: item.index,
-                message: e.to_string(),
-            }),
-        }
-    }
-
-    let rows_written = ai_column::apply_results(&mut table, &args.target_field, &results);
-    if rows_written > 0 {
-        let new_body = table.serialize_body();
-        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(stringify_vault_error)?;
-    }
-
-    Ok(ai_column::RunSummary {
-        rows_total,
-        rows_planned: plan.len(),
-        rows_written,
-        errors,
-    })
-}
-
-// ---------------------------------------------------------------------
-// §14 Unified Operation Interface — read half (describe / query) over the
-// PWA bridge. Mirrors the `smart_table.describe` / `.query` MCP gate tools
-// (mcp_server.rs) so the in-app viewer runs the SAME kernel query engine
-// (kernel::query::run_query) as Irisy + external brains — one engine, no
-// second client-side implementation drifting from it (ADR-002 §14).
-// ---------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-pub struct SmartTableDescribeArgs {
-    /// Vault-relative path to the smart-table `.md` file.
-    pub path: String,
-}
-
-/// smart_table.describe over the PWA bridge — the type layer (fields, types,
-/// supported operators) the viewer reads before composing a query.
-#[tauri::command]
-pub fn smart_table_describe(args: SmartTableDescribeArgs) -> Result<query::Describe, String> {
-    let root = vault_root()?;
-    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
-    let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
-    use query::QuerySource;
-    Ok(table.describe())
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SmartTableQueryArgs {
-    /// Vault-relative path to the smart-table `.md` file.
-    pub path: String,
-    /// Field filters. Each `field` must exist in the schema.
-    #[serde(default)]
-    pub filters: Vec<query::Filter>,
-    /// How `filters` combine (and / or; default and).
-    #[serde(default)]
-    pub conjunction: query::Conjunction,
-    /// Multi-key sort (first key wins).
-    #[serde(default)]
-    pub sort: Vec<query::SortKey>,
-    /// Group keys applied in order (multi-level); equal values made contiguous.
-    #[serde(default)]
-    pub group_by: Vec<String>,
-    /// Cap the number of returned rows (match_count is reported pre-limit).
-    #[serde(default)]
-    pub limit: Option<usize>,
-}
-
-/// smart_table.query over the PWA bridge — a structured filter/sort/group read
-/// through the shared kernel engine. Returns the matched rows + pre-limit count;
-/// an unknown field reference is rejected with the valid set (anti-hallucination).
-#[tauri::command]
-pub fn smart_table_query(args: SmartTableQueryArgs) -> Result<query::QueryResult, String> {
-    let root = vault_root()?;
-    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
-    let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
-    let req = query::QueryRequest {
-        filters: args.filters,
-        conjunction: args.conjunction,
-        sort: args.sort,
-        group_by: args.group_by,
-        limit: args.limit,
-    };
-    let now = chrono::Local::now().date_naive();
-    use query::QuerySource;
-    table.query(&req, now).map_err(|e| e.to_string())
-}
-
-// ---------------------------------------------------------------------
-// Graph endpoints (§8.3 #9-15)
-// ---------------------------------------------------------------------
-// All graph queries require VaultRead "" (whole vault) because the
-// scanner walks every `.md` file. Per memory
-// `decision_vault_adr_002_section_8`, the graph is a derivative — the
-// scanner runs on demand and the result lives only in the caller's
-// reply payload (no static cache yet — see vault_graph.rs § scan).
-
-#[derive(Debug, Deserialize)]
-pub struct VaultGraphQueryArgs {
-    pub path: String,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-#[tauri::command]
-pub async fn vault_backlinks(args: VaultGraphQueryArgs) -> Result<Vec<BacklinkHit>, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: String::new(),
-        },
-    )?;
-    let root = vault_root()?;
-    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
-    Ok(graph.backlinks_of(&args.path))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultEmptyArgs {
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-#[tauri::command]
-pub async fn vault_tags(args: VaultEmptyArgs) -> Result<Vec<TagCount>, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: String::new(),
-        },
-    )?;
-    let root = vault_root()?;
-    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
-    Ok(graph.tags())
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultNotesByTagArgs {
-    pub tag: String,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-#[tauri::command]
-pub async fn vault_notes_by_tag(
-    args: VaultNotesByTagArgs,
-) -> Result<Vec<String>, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: String::new(),
-        },
-    )?;
-    let root = vault_root()?;
-    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
-    Ok(graph.notes_by_tag(&args.tag))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultMentionsArgs {
-    pub text: String,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-#[tauri::command]
-pub async fn vault_mentions(args: VaultMentionsArgs) -> Result<Vec<MentionHit>, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: String::new(),
-        },
-    )?;
-    let root = vault_root()?;
-    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
-    Ok(graph.mentions_of(&args.text))
-}
-
-#[tauri::command]
-pub async fn vault_orphans(args: VaultEmptyArgs) -> Result<Vec<String>, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: String::new(),
-        },
-    )?;
-    let root = vault_root()?;
-    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
-    Ok(graph.orphans())
-}
-
-#[tauri::command]
-pub async fn vault_broken_links(args: VaultEmptyArgs) -> Result<Vec<BrokenLink>, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: String::new(),
-        },
-    )?;
-    let root = vault_root()?;
-    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
-    Ok(graph.broken_links())
-}
-
-#[tauri::command]
-pub async fn vault_graph_data(args: VaultEmptyArgs) -> Result<GraphData, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: String::new(),
-        },
-    )?;
-    let root = vault_root()?;
-    let graph = vault_graph::scan(&root).map_err(|e| e.to_string())?;
-    Ok(graph.graph_data())
-}
-
-// ---------------------------------------------------------------------
-// Mutation endpoints (§8.3 #16-20)
-// ---------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-pub struct VaultRenameArgs {
-    pub from: String,
-    pub to: String,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-/// Move (or rename) a markdown file inside the vault. The kernel does
-/// NOT rewrite inbound wikilinks — that's a UX concern (kairo prompts
-/// the user; Irisy can offer batch-fix later). Frontend/Irisy can
-/// follow up with `vault_backlinks(from)` and chained writes if desired.
-#[tauri::command]
-pub async fn vault_rename(args: VaultRenameArgs) -> Result<(), String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultWrite {
-            path_glob: args.to.clone(),
-        },
-    )?;
-    rename_inner(&args.from, &args.to)
-}
-
-/// `vault_move` is an explicit alias of `vault_rename` — same semantics,
-/// distinct command surfaced for clarity in MCP tool listings (Irisy
-/// "move sourcing item to notes/" reads better than "rename").
-#[tauri::command]
-pub async fn vault_move(args: VaultRenameArgs) -> Result<(), String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultWrite {
-            path_glob: args.to.clone(),
-        },
-    )?;
-    rename_inner(&args.from, &args.to)
-}
-
-fn rename_inner(from: &str, to: &str) -> Result<(), String> {
-    let root = vault_root()?;
-    let entry = vault::read(&root, from).map_err(stringify_vault_error)?;
-    vault::write(&root, to, &entry.content, &entry.frontmatter)
-        .map_err(stringify_vault_error)?;
-    vault::delete(&root, from).map_err(stringify_vault_error)?;
-    tracing::info!(from = %from, to = %to, "vault_rename ok");
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultCreateFolderArgs {
-    pub path: String,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-/// Create an empty subdirectory under the vault root. Idempotent —
-/// existing directories are not an error (matches `mkdir -p`).
-#[tauri::command]
-pub async fn vault_create_folder(args: VaultCreateFolderArgs) -> Result<(), String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultWrite {
-            path_glob: args.path.clone(),
-        },
-    )?;
-    let root = vault_root()?;
-    let safe = vault::sanitize_relative_path(&args.path).map_err(stringify_vault_error)?;
-    std::fs::create_dir_all(root.join(&safe))
-        .map_err(|e| format!("create_folder: {e}"))?;
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultSetStarredArgs {
-    pub path: String,
-    pub starred: bool,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-/// Toggle the `starred:` frontmatter scalar. Implemented as
-/// read-modify-write at the kernel level so the FTS5 index and
-/// graph stay coherent (the rewritten file naturally re-upserts
-/// on the `vault::write` path).
-#[tauri::command]
-pub async fn vault_set_starred(args: VaultSetStarredArgs) -> Result<(), String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultWrite {
-            path_glob: args.path.clone(),
-        },
-    )?;
-    let root = vault_root()?;
-    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
-    let mut fm = entry.frontmatter;
-    match fm {
-        serde_json::Value::Object(ref mut map) => {
-            map.insert("starred".to_string(), serde_json::Value::Bool(args.starred));
-        }
-        _ => {
-            fm = serde_json::json!({ "starred": args.starred });
-        }
-    }
-    vault::write(&root, &args.path, &entry.content, &fm).map_err(stringify_vault_error)?;
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VaultAliasesArgs {
-    pub path: String,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
-
-/// Read frontmatter `aliases:` for a note. Empty list when none set or
-/// when the value isn't an array of strings. Surfaces wikilink
-/// alternates without forcing the caller to re-parse frontmatter.
-#[tauri::command]
-pub async fn vault_aliases(args: VaultAliasesArgs) -> Result<Vec<String>, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: args.path.clone(),
-        },
-    )?;
-    let root = vault_root()?;
-    let entry = vault::read(&root, &args.path).map_err(stringify_vault_error)?;
-    let list = entry
-        .frontmatter
-        .get("aliases")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
-    Ok(list)
-}
 
 // ---------------------------------------------------------------------
 // Watcher endpoint (§8.3 #21)
@@ -735,101 +171,63 @@ pub async fn vault_watch_recent(
     Ok(vault_watch::recent(args.prefix.as_deref(), args.since_ms))
 }
 
-// ---------------------------------------------------------------------
-// Sourcing routine (§8.4 — feature-layer kernel seed)
-// ---------------------------------------------------------------------
-// The richer Irisy LLM-backed routine writes to the same review-queue
-// file; this command guarantees the loop works before Irisy attaches.
 
-#[derive(Debug, Deserialize)]
-pub struct VaultSourcingRunArgs {
-    /// `YYYY-MM-DD` date for the review-queue file. Frontend passes the
-    /// local-tz "today" — kernel-side cron passes the UTC date.
-    pub date: String,
-    #[serde(default)]
-    pub mcp_id: Option<String>,
-}
+// SOUL.md (Irisy persistent memory, vault/irisy/SOUL.md) retired to the gate's
+// memory-domain tools irisy_soul_get/set (SC5 convergence) — the PWA reaches
+// them via gate_invoke, the same governed path external CLI drivers use, so
+// vanilla SOUL.md readers (Cursor / Claude Code) stay consistent with CTRL.
 
-#[tauri::command]
-pub async fn vault_sourcing_run(
-    args: VaultSourcingRunArgs,
-) -> Result<SourcingRunReport, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultWrite {
-            path_glob: ".ctrl/review-queue/".to_string(),
-        },
-    )?;
-    let root = vault_root()?;
-    vault_sourcing::run(&root, &args.date).map_err(|e| e.to_string())
-}
+// ── Vault root configuration (point CTRL at the user's own Obsidian vault) ──
+// The data belongs to the user, so CTRL operates on the vault the user picks
+// rather than imposing `~/Documents/CTRL/`. The default is only a fallback until
+// the first-run flow points CTRL at the user's existing vault.
 
 #[derive(Debug, Serialize)]
-pub struct VaultSourcingPendingReply {
-    pub count: usize,
+pub struct VaultConfig {
+    /// True once the user has explicitly chosen a vault (UI hides the first-run
+    /// picker). False = still on the `~/Documents/CTRL/` fallback.
+    pub configured: bool,
+    /// The resolved vault root currently in effect.
+    pub root: String,
+    /// Whether the vault is auto-committed to git on a schedule.
+    pub auto_sync: bool,
 }
 
 #[tauri::command]
-pub async fn vault_sourcing_pending(
-    args: VaultEmptyArgs,
-) -> Result<VaultSourcingPendingReply, String> {
-    check_cap(
-        args.mcp_id.as_deref(),
-        &CapToken::VaultRead {
-            path_glob: "sourcing/".to_string(),
-        },
-    )?;
-    let root = vault_root()?;
-    Ok(VaultSourcingPendingReply {
-        count: vault_sourcing::count_pending(&root),
-    })
-}
-
-// ── SOUL.md surface (ADR-005 irisy v2 § soul-md-compat §4.3) ──────────
-//
-// Single-file persistent memory for Irisy lives at `vault/irisy/SOUL.md`,
-// shape per github.com/aaronjmars/soul.md. PWA + external MCP agents both
-// read/write through this surface so vanilla SOUL.md readers (Cursor /
-// Claude Code / OpenClaw companions) stay consistent with CTRL.
-
-const SOUL_REL_PATH: &str = "irisy/SOUL.md";
-
-#[derive(Debug, Serialize)]
-pub struct IrisySoulView {
-    pub path: String,
-    pub frontmatter: serde_json::Value,
-    pub body: String,
-    pub soul_md_version: String,
-}
-
-#[tauri::command]
-pub async fn irisy_soul_read() -> Result<IrisySoulView, String> {
-    let root = vault_root()?;
-    let entry = vault::read(&root, SOUL_REL_PATH)
-        .map_err(|e| format!("irisy_soul_read: {e}"))?;
-    let pin_path = root.join("irisy/.soul-md-version");
-    let pin = std::fs::read_to_string(&pin_path)
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    Ok(IrisySoulView {
-        path: entry.path,
-        frontmatter: entry.frontmatter,
-        body: entry.content,
-        soul_md_version: pin,
+pub async fn vault_get_config() -> Result<VaultConfig, String> {
+    Ok(VaultConfig {
+        configured: vault::is_vault_configured(),
+        root: vault::default_vault_root()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
+        auto_sync: vault::auto_sync_enabled(),
     })
 }
 
 #[derive(Debug, Deserialize)]
-pub struct IrisySoulWriteArgs {
-    pub frontmatter: serde_json::Value,
-    pub body: String,
+pub struct AutoSyncArgs {
+    pub enabled: bool,
 }
 
 #[tauri::command]
-pub async fn irisy_soul_write(args: IrisySoulWriteArgs) -> Result<(), String> {
-    let root = vault_root()?;
-    vault::write(&root, SOUL_REL_PATH, &args.body, &args.frontmatter)
-        .map_err(|e| format!("irisy_soul_write: {e}"))?;
-    Ok(())
+pub async fn vault_set_auto_sync(args: AutoSyncArgs) -> Result<(), String> {
+    vault::set_auto_sync(args.enabled).map_err(|e| format!("save auto-sync: {e}"))
+}
+
+#[tauri::command]
+pub async fn vault_set_root(path: String) -> Result<VaultConfig, String> {
+    let p = PathBuf::from(path.trim());
+    if !p.is_dir() {
+        return Err(format!("not a folder: {}", p.display()));
+    }
+    vault::set_vault_root(&p).map_err(|e| format!("save vault root: {e}"))?;
+    // Reindex against the newly-pointed vault so search/backlinks reflect it.
+    if let Err(e) = vault::rebuild_index(&p) {
+        tracing::warn!(error = %e, "vault_set_root: reindex failed");
+    }
+    Ok(VaultConfig {
+        configured: true,
+        root: p.display().to_string(),
+        auto_sync: vault::auto_sync_enabled(),
+    })
 }

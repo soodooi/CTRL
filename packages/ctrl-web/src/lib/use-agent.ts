@@ -1,36 +1,27 @@
-// useAgent — PWA-side agent lifecycle per ADR-002 substrate §1 v19
-// (2026-06-09, 3-agent aggregator).
+// useAgent — PWA-side agent lifecycle per ADR-002 substrate §1.
 //
 // The kernel installs and launches; it never supervises. This hook owns
 // the retry loop ("PWA owns retry" — §1.3): ensure installed → resolve an
 // endpoint → expose status + retry() for the reconnect button.
 //
-// Endpoint resolution per agent (upstreams verified 2026-06-10,
-// ADR-002 substrate §1.1 v20):
-//   opencode → invoke('launch_agent') → { kind: 'http_port', port }
-//   hermes   → install-only; chat goes through invoke('assistant_oneshot')
-//              until the kernel ACP streaming client lands
-//   kairo    → invoke('launch_agent') → { kind: 'webview', url, workspace_path }
+// Only hermes (Irisy's brain) remains here. opencode was retired/unwired
+// (bao 2026-06-25) and its frontend chat surface deleted; kairo/KB is the
+// user's own Obsidian, not a launched agent. hermes is install-only — chat
+// goes through invoke('assistant_oneshot') until the ACP streaming client
+// lands, so resolveEndpoint returns a oneshot marker (no launch_agent call).
 
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export type AgentName = 'hermes' | 'opencode' | 'kairo';
+export type AgentName = 'hermes';
 
-export type AgentEndpoint =
-  | { kind: 'http_port'; port: number }
-  | { kind: 'acp_stdio'; pid: number }
-  | { kind: 'webview'; url: string; workspace_path: string }
-  | { kind: 'oneshot' };
+export type AgentEndpoint = { kind: 'oneshot' };
 
 export type AgentStatus = 'idle' | 'installing' | 'launching' | 'ready' | 'error';
 
-async function resolveEndpoint(name: AgentName): Promise<AgentEndpoint> {
-  if (name === 'hermes') {
-    // hermes is launched per call (uvx one-shot) — nothing to hold open.
-    return { kind: 'oneshot' };
-  }
-  return invoke<AgentEndpoint>('launch_agent', { name });
+async function resolveEndpoint(_name: AgentName): Promise<AgentEndpoint> {
+  // hermes is launched per call (uvx one-shot) — nothing to hold open.
+  return { kind: 'oneshot' };
 }
 
 export function useAgent(name: AgentName) {

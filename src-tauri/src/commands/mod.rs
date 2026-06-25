@@ -7,7 +7,7 @@
 //
 // Commands grouped by domain:
 //   • kernel   — mcp install / list / run; MCP introspection + invoke
-//   • stss     — subscribe / publish / list streams
+//   • event_stream — subscribe to the kernel->PWA event WS
 //   • memory   — read_log / append / query AI memory event store
 //   • keychain — BYOK API key store / get / delete
 //
@@ -34,6 +34,7 @@ pub mod code_space;
 pub mod config;
 pub mod draft;
 pub mod draft_run;
+pub mod gate;
 // ADR-002 substrate § vault v1 §8.6 v5 (2026-06-01) — vault-side git via git CLI
 // (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
 // panel: status / init / commit_all / push / log.
@@ -57,12 +58,12 @@ pub mod provider_models;
 pub mod provider_templates;
 pub mod skills;
 pub mod storage;
-pub mod stss;
+pub mod event_stream;
 pub mod system;
 pub mod updater;
 pub mod vault;
-// Vault embeddings — 5 new commands (ADR-002 v5 §10)
-pub mod vault_embeddings;
+// (commands/vault_embeddings.rs retired 2026-06-24 — moved to the :17873 gate,
+//  PWA calls via gate_invoke; kernel logic stays in kernel/vault_embeddings.rs.)
 // Irisy synthesize — Layer 4 product surface (brainstorm §5.3/§5.5/§5.10)
 pub mod irisy_synth;
 pub mod workshop;
@@ -73,6 +74,10 @@ pub mod workshop;
 macro_rules! pwa_invoke_handler {
     () => {
         tauri::generate_handler![
+            // gate_invoke — PWA cross-domain capability bridge (comms-system-design
+            // Phase B): one governed path through :17873, replaces bespoke
+            // per-capability Tauri commands as they retire.
+            $crate::commands::gate::gate_invoke,
             // kernel
             $crate::commands::kernel::list_mcps,
             $crate::commands::kernel::install_mcp,
@@ -151,7 +156,7 @@ macro_rules! pwa_invoke_handler {
             // (click fallback when Ctrl hotkey state desyncs)
             $crate::commands::system::hide_window,
             // system — dynamic window growth for COMPANION mode
-            // (bao 2026-05-30: "整个窗口往下流")
+            // (bao 2026-05-30: "the whole window flows downward")
             $crate::commands::system::set_window_height,
             $crate::commands::system::position_window_top_right,
             // system — input-companion-window retired (bao 2026-05-31:
@@ -159,8 +164,8 @@ macro_rules! pwa_invoke_handler {
             // closes any persisted instance from a previous launch.
             $crate::commands::system::destroy_input_window,
             // system — workspace expansion via main window self-resize
-            // (bao 2026-05-30 final clarification: "左侧打开的意思，
-            // 不是浮窗"). Main slides left edge 430 ↔ 1600. CSS @media
+            // (bao 2026-05-30 final clarification: "open on the left side,
+            // not a floating pane"). Main slides left edge 430 ↔ 1600. CSS @media
             // drives the expanded grid. No independent NSWindow.
             $crate::commands::system::toggle_workspace_window,
             // system — idempotent expand for L1 chip clicks. Unlike toggle,
@@ -179,11 +184,12 @@ macro_rules! pwa_invoke_handler {
             // skills — kernel-local skill discovery (ADR-007 workbench § discovery v1 Phase 1)
             $crate::commands::skills::search_skills,
             $crate::commands::skills::list_local_skills,
-            // stss
-            $crate::commands::stss::subscribe,
-            $crate::commands::stss::publish,
-            $crate::commands::stss::list_streams,
-            $crate::commands::stss::get_bridge_token,
+            // event_stream
+            // The kernel->PWA event stream is a plain CBOR-over-WS (the event-stream
+            // protocol abstraction is retired, ADR-010 § transports v5/v8 SC6).
+            // Only `subscribe` (hand the PWA the authed WS URL) remains; the
+            // old publish / list_streams / get_bridge_token were dead.
+            $crate::commands::event_stream::subscribe,
             // memory
             $crate::commands::memory::read_log,
             $crate::commands::memory::append_event,
@@ -211,7 +217,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::workshop::workshop_update_step,
             $crate::commands::workshop::workshop_remove_step,
             $crate::commands::workshop::workshop_move_step,
-            // code_space — coding remote desktop (ST-SS spec v0.7 wire)
+            // code_space — coding remote desktop (event-stream spec v0.7 wire)
             $crate::commands::code_space::cs_spawn,
             $crate::commands::code_space::cs_stdin,
             $crate::commands::code_space::cs_signal,
@@ -225,44 +231,18 @@ macro_rules! pwa_invoke_handler {
             // (rename/move/create_folder/set_starred), and the notify-backed
             // watcher poll (vault_watch). Daily Note + Sourcing are NOT here —
             // those run at the feature layer per §8.4.
-            $crate::commands::vault::vault_write,
+            // Retired 2026-06-24 (comms-system-design Phase B): the vault /
+            // smart-table / embeddings / sourcing capability commands moved to
+            // the :17873 gate; the PWA now calls them via gate_invoke. Only the
+            // commands without an exact MCP twin stay as Tauri commands
+            // (vault_write_image / vault_watch_recent / irisy_soul_*).
             $crate::commands::vault::vault_write_image,
-            $crate::commands::vault::vault_read,
-            $crate::commands::vault::vault_list,
-            $crate::commands::vault::vault_search,
-            $crate::commands::vault::vault_delete,
-            $crate::commands::vault::vault_root_path,
-            $crate::commands::vault::vault_rebuild_index,
-            $crate::commands::vault::vault_backlinks,
-            $crate::commands::vault::vault_tags,
-            $crate::commands::vault::vault_notes_by_tag,
-            $crate::commands::vault::vault_mentions,
-            $crate::commands::vault::vault_orphans,
-            $crate::commands::vault::vault_broken_links,
-            $crate::commands::vault::vault_graph_data,
-            $crate::commands::vault::vault_rename,
-            $crate::commands::vault::vault_move,
-            $crate::commands::vault::vault_create_folder,
-            $crate::commands::vault::vault_set_starred,
-            $crate::commands::vault::vault_aliases,
             $crate::commands::vault::vault_watch_recent,
-            $crate::commands::vault::smart_table_run_ai_column,
-            $crate::commands::vault::smart_table_describe,
-            $crate::commands::vault::smart_table_query,
-            // ADR-002 § vault v1 §8.4 sourcing-workflow (2026-06-01) —
-            // kernel-seeded review-queue producer (Irisy attaches the
-            // richer LLM pass on top of the same file).
-            $crate::commands::vault::vault_sourcing_run,
-            $crate::commands::vault::vault_sourcing_pending,
-            // SOUL.md — Irisy persistent memory file (ADR-005 v2 § soul-md-compat §4.3)
-            $crate::commands::vault::irisy_soul_read,
-            $crate::commands::vault::irisy_soul_write,
-            // Vault embeddings (ADR-002 v5 §10) — local Ollama + SQLite flat cosine
-            $crate::commands::vault_embeddings::vault_embed_note,
-            $crate::commands::vault_embeddings::vault_reembed_all,
-            $crate::commands::vault_embeddings::vault_embedding_status,
-            $crate::commands::vault_embeddings::vault_semantic_search,
-            $crate::commands::vault_embeddings::vault_suggest_links,
+            $crate::commands::vault::vault_get_config,
+            $crate::commands::vault::vault_set_root,
+            $crate::commands::vault::vault_set_auto_sync,
+            // SOUL.md (Irisy persistent memory) retired to the gate's memory-domain
+            // tools irisy_soul_get/set (SC5 convergence); PWA reaches them via gate_invoke.
             // Irisy synthesize — Layer 4 (question vault / cross-note / daily)
             $crate::commands::irisy_synth::irisy_question_vault,
             $crate::commands::irisy_synth::irisy_synthesize_notes,
@@ -273,6 +253,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::git::git_commit_all,
             $crate::commands::git::git_push,
             $crate::commands::git::git_log,
+            $crate::commands::git::vault_git_sync,
             // localstorage — small persistent JSON KV per mcp
             $crate::commands::storage::localstorage_get,
             $crate::commands::storage::localstorage_set,

@@ -1,7 +1,7 @@
 // Skill discovery — kernel-local (Phase 1, ADR-007 workbench § discovery v1).
 //
 // Searches GitHub for `filename:SKILL.md` matches, using a PAT read from the
-// macOS Keychain (service `app.ctrl`, account `github`). This is the 走通
+// macOS Keychain (service `app.ctrl`, account `github`). This is the working
 // path; production moves SEARCH behind the shared `ctrl-skills` Worker because
 // most users have no GitHub token (ADR-007 workbench § discovery v1 Phase 2). INSTALL of a public skill
 // needs no token, so it stays kernel-local regardless.
@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::kernel::event::{Cell, CellKind};
-use crate::kernel::StssBridge;
+use crate::kernel::EventWsBridge;
 
 /// Keychain account holding the GitHub PAT (service is `app.ctrl`). See
 /// doc/setup-github-token.md for how to store it.
@@ -151,7 +151,7 @@ const SKILL_RUN_MAX_TURNS: &str = "24";
 /// active brain CLI, running inside the mcp's vault working folder, and
 /// return the vault-relative paths of whatever artifact(s) it wrote.
 pub async fn run_skill(
-    bridge: &StssBridge,
+    bridge: &EventWsBridge,
     stream_id: &str,
     mcp_id: &str,
     skill: &str,
@@ -245,7 +245,7 @@ async fn run_brain_agentic(
     binary: &str,
     workdir: &Path,
     prompt: &str,
-    bridge: &StssBridge,
+    bridge: &EventWsBridge,
     stream_id: &str,
 ) -> Result<(), String> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -331,7 +331,7 @@ async fn run_brain_agentic(
 
 /// Publish one assistant chunk on the mcp's output stream. The PWA's
 /// `useCellStream(mcp-<id>)` decodes these and renders them live.
-fn publish_delta(bridge: &StssBridge, stream_id: &str, delta: &str) {
+fn publish_delta(bridge: &EventWsBridge, stream_id: &str, delta: &str) {
     let ts_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

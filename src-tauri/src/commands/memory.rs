@@ -18,6 +18,7 @@ pub struct LogEntry {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ReadLogArgs {
     pub since_ms: Option<u64>,
     pub limit: Option<u32>,
@@ -33,6 +34,7 @@ pub async fn read_log(
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct AppendEventArgs {
     pub kind: String,
     pub payload: serde_json::Value,
@@ -48,6 +50,7 @@ pub async fn append_event(
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct QueryArgs {
     pub text: String,
     pub k: Option<u32>,

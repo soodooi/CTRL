@@ -8,7 +8,7 @@
 // Concrete examples the PWA uses:
 //   ctrl-asset://mcps/translate/assets/icon.svg
 //   ctrl-asset://mcps/translate/assets/prompt.md
-//   ctrl-asset://mcps/pi/mcp.md
+//   ctrl-asset://mcps/builtin-irisy/mcp.md
 //
 // Security:
 //   * Only files under `~/.ctrl/mcps/` are reachable. Path traversal

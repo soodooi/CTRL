@@ -1,10 +1,10 @@
 ---
 adr_id: 001
 module: spine
-title: CTRL spine — 4-layer kernel + 5 primitives + 5 mcp sources + BYO-CLI driver platform + 3-capability-face + 6 self-evolution loops
-version: 8
+title: CTRL spine — 4-layer kernel + 5 primitives + 4 mcp sources + BYO-CLI driver platform + 3-capability-face + 6 self-evolution loops
+version: 9
 status: accepted
-last_updated: 2026-06-18
+last_updated: 2026-06-25
 deciders: [bao, zeus]
 sections:
   - { id: layers,         source: orig-001-§3 }
@@ -15,6 +15,7 @@ sections:
   - { id: philosophy,     source: orig-001-§6 }
   - { id: self-evolution, source: brainstorm system-self-evolution-2026-06-04 }
 changelog:
+  - v9 2026-06-25: **§3 mcp sources 5 → 4 — ST-SS retired as a source (bao "彻底了结 ST-SS").** Spatio-Temporal Semantic Stream was a one-way semantic broadcast; it cannot carry multi-end remote control, so it is dropped as a capability source (GOAL: remote desktop goes the WebRTC route instead, separate module). What survives is ONLY the local kernel→PWA event stream it once named — now a plain CBOR-over-WS, renamed `stss_bridge.rs` → `event_ws.rs` (load-bearing: smart-table cell updates + terminal output flow over it). Removed: the `stss` mcp source type + its manifest schema (`irisy-mcp-zod.ts`) + capability tokens (`StssEmit`/`StssSubscribe`) + UI source category (pool.tsx) + viewer kind (`stss-stream`). Renamed: `subprocess_stss_adapter.rs` → `subprocess_channel_adapter.rs`, `commands/stss.rs` → `commands/event_stream.rs`, `STSS_LISTEN_ADDR` → `EVENT_WS_LISTEN_ADDR`. Code is now stss-free (grep-clean). Also fixes §1 L2-SDK diagram drift (the `@ctrl/stss` + `@ctrl/memory` packages were already deleted 2026-06-23). No primitive / face / self-evolution / plain-text change. Pairs ADR-010 § transports v5/v8.
   - v8 2026-06-18: **§1 + §4 + §5 brain 层纠正 — Hermes 是 Irisy 的脑 (不退役); BYO-CLI driver 是「附加」并行路径, 不是替代 (bao 实查运行真相后钦定, pairs ADR-002 v28).** v7 把 brain 写成「hermes / opencode / Pi all retired, BYO-CLI driver only」——**就 hermes 而言写过头了**. 运行真相: **Irisy (CTRL app 内助手) 的 brain = Hermes Agent** (NousResearch) — CTRL 确实 **bundle + lazy-install + 启动** hermes (dashboard `:17890`, Irisy 嵌入), **hermes 不退役**. **BYO-CLI driver / projection (v7 §4 + ADR-002 § projection) 仍然成立, 但定位为「附加并行路径」**: 用户自带 CLI (Claude Code) 经投影的 `.mcp.json` 也能驱动 CTRL 工具 (已落地 `kernel/projector.rs` + 真机验证), 与 Hermes-Irisy 并存, 两条路都经 `:17873` gate. **Pi 仍退役** (v4/ADR-002 v19, 不变). opencode 未接线 (保留). ACP 仍降级为 future channel (不绑 hermes, v7 不变). Notes = Obsidian (v6, Local REST API MCP 已连 16 工具, 不变). Updates §1 layer diagram brain 行, §4 CLI driver block + §4.2, §5 invariant #11. 真相源 `vault/ctrl/architecture-byo-cli-driver.md` 顶部 2026-06-18 纠正块 governing. No primitive / face / self-evolution / plain-text change.
   - v7 2026-06-17: **§4 3-agent aggregator → BYO-CLI driver platform amendment (bao 2026-06-17 钦定换代).** RETRACTS the v4–v6 内置-brain aggregator: kernel no longer lazy-installs / launches / supervises any bundled brain — **hermes / opencode / Pi all retired** (Pi-centric was already retired pre-v4). New定位: **CTRL = BYO-CLI driver platform** — the user picks their own local strong CLI (Claude Code 等) as the resident general-purpose driver/engine; CTRL = a **projection** platform that materializes local tools / skills / memory / workflows into the CLI's native形态 (`.mcp.json` / skills dir / `CLAUDE.md` (AGENTS.md) / slash commands) + an **MCP gate** (kernel `:17873` = permission / audit / visibility) + (v1.1) a **share & be shared** network. Locks: (1) driver = user-chosen CLI; CTRL ships/supervises no brain. (2) Access = **projection** (materialize to native config), NOT supervise — manifest optional `target:` override, else auto-route by type. (3) Two triggers share one projection: passive (user runs `claude` → CLI auto-discovers, zero-intrusion, satisfies vim-test) + active (Ctrl-summoned ephemeral workspace launches the CLI). (4) Scheduling权 stays in the CLI model; CTRL only "makes the CLI see" + "routes calls back to `:17873` = kernel gate" (satisfies one-shot / AI-is-pipe). (5) Intent-scoped projection (don't blast full context), v1. (6) Multi-driver允许; v1 single resident + switchable (low priority). (7) Share network = killer / commercial core, v1.1; v1 = single-machine local arsenal + reserved share interface. **ACP NOT deleted — demoted to future "ACP-aware CLI enhancement channel".** Notes = Obsidian (§1.9, v6, unchanged). Updates §1 layer diagram, §4 5-block + bullets, §4.1 wiring clause, §4.2 friend-product table, §5 invariants #9/#11. No primitive / face / self-evolution / plain-text change.
   - v6 2026-06-17: **Notes/KB = Obsidian, kairo/SilverBullet retired (bao 2026-06-17 "用 obsidian 不要重复造轮子"; pairs ADR-002 v24).** CTRL bundles no notes editor — Obsidian (user's own) is the PKM editor over `~/Documents/CTRL/Notes/`; data access stays editor-independent on the kernel notes-MCP bus :17873 (+ optional Obsidian Local-REST-API MCP). Updates §1 layer diagram, §4 ui-ux 5-chip + kairo bullet, §5 invariants #2 + #12. Two locked-principle tensions reconciled in ADR-002 v24 (single-entry exception for notes-editing; Obsidian is preferred-editor + optional-connector, NOT a hard dependency — pull it and the plain-md + notes-MCP remain). No primitive/face change.
@@ -40,7 +41,7 @@ L3 Userland — subprocess-isolated mcps via MCP
               + user's own CLI driver (Claude Code 等) — CTRL projects assets to it,
                 does NOT bundle / lazy-install / supervise any brain (v7; notes = user's Obsidian, v24)
        ↑↓
-L2 SDK — @ctrl/{kernel-sdk, stss, memory, mcp-sdk}
+L2 SDK — @ctrl/{kernel-sdk, mcp-sdk}
        ↑↓
 L1 CTRL Kernel — Rust microkernel (thin: project + gate, NOT supervise the driver)
                  5 primitives + mcp_host (out) + mcp_server :17873 (in = the gate)
@@ -67,13 +68,20 @@ brain — 2 parallel paths (v8): (1) Irisy brain = Hermes Agent (CTRL bundles + 
 | Event | `event.rs` | pub/sub bus |
 | Effect | `effect.rs` | controlled side-effect proxy |
 
-## §3 Mcp sources — 5
+## §3 Mcp sources — 4
 
 1. **MCP servers** (10k+ Day-1, via `mcp_host.rs`)
 2. **Big-platform OAuth** (Feishu / Notion / Linear / Slack / …)
 3. **Local agents** (subprocess + portable-pty, ADR-002 § subprocess)
-4. **ST-SS shared windows** (long-tail desktop + hardware, `stss_bridge.rs`)
-5. **Builtin** (`packages/ctrl-mcps/` ships with app)
+4. **Builtin** (`packages/ctrl-mcps/` ships with app)
+
+> **ST-SS shared windows retired as a source** 2026-06-25 (v9). The
+> Spatio-Temporal Semantic Stream was a one-way semantic broadcast — it
+> can't carry multi-end remote control (that goes the WebRTC remote-desktop
+> route, separate module). The kernel→PWA event stream it once named
+> survives as a plain CBOR-over-WS (`event_ws.rs`, renamed from
+> `stss_bridge.rs`); only the source-type concept + its schema / capability
+> tokens are gone. 5 → 4 sources.
 
 ## §4 BYO-CLI driver 5-block view (logical, co-exists with §1)
 
@@ -237,7 +245,7 @@ Loop 5 audit ledger schema  ← substrate, ships first
 ## Acceptance
 
 - [x] 5 primitive Rust modules in `src-tauri/src/kernel/{actor,capability,channel,event,effect}.rs`. Verified.
-- [x] 5 mcp source types documented. Verified.
+- [x] 4 mcp source types documented (ST-SS retired as a source v9 2026-06-25). Verified.
 - [x] Repo topology — single deliverable repo + ctrl-cloud separate. Verified.
 - [~] **Dual-brain supervisor (v3) — RETIRED in v4.** `opencode_supervisor.rs` / `hermes_supervisor.rs` / `brain_supervisor.rs` deletion in flight (this branch). Replaced by `agent_installer.rs` + `agent_launcher.rs` (no supervise).
 - [~] **Vault stack lock (Tiptap + CodeMirror 6 + mermaid.js + FTS5) — RETIRED in v4.** Replaced by kairo external dependency. `notes_index.rs` (FTS5) kept as optional MCP convenience.

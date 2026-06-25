@@ -290,7 +290,7 @@ export const CAPABILITY_CATALOG: CapabilityCategory[] = [
         usage: 'low', // low among general users; high for devs
         pay: 'high',
         channel: 'mcp',
-        delivers: 'opencode (Coding face)',
+        delivers: 'Coding terminal (CLI driver)',
         io: 'intent -> code changes',
         zeroInstall: false,
       },

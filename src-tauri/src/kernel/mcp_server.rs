@@ -3,7 +3,7 @@
 //
 // Exposes the kernel's capability surface as MCP tools so that:
 //   • Irisy (in-process via Tauri WebView)
-//   • Brain mcps (e.g. @ctrl/pi-plugin, separate MCP server process)
+//   • Brain mcps (e.g. the hermes agent gateway, separate MCP server process)
 //   • External AI agents on the user's machine (Cursor, etc.)
 // all consume the same backend through a single MCP wire — tools/list +
 // tools/call instead of N bespoke RPC surfaces.
@@ -11,7 +11,7 @@
 // Transport: streamable-http (replaces the deprecated SSE transport in the
 // MCP 2025-03-26 spec). Bound to 127.0.0.1:17873, never exposed beyond
 // loopback. Auth = Bearer <ephemeral token>, generated fresh per kernel
-// boot — same model as `stss_bridge` (never persisted to disk).
+// boot — same model as `event_ws` (never persisted to disk).
 //
 // What this module does NOT do:
 //   • Bind 0.0.0.0 / accept LAN clients (mesh covered by ADR-002 substrate)
@@ -21,7 +21,9 @@
 //     kernel modules (vault, local_storage, llm_port, mcp_host) so tests
 //     stay against those modules, not the MCP envelope.
 
+use crate::kernel::audit;
 use crate::kernel::local_storage::LocalStorage;
+use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
     ai_column, provider::LlmPrompt, query, runtime_sources, smart_table_index, vault,
@@ -50,7 +52,7 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-/// HTTP listen address. Deliberately one port above the ST-SS bridge
+/// HTTP listen address. Deliberately one port above the event-stream bridge
 /// (17872) so log-readers can eyeball both streams. Loopback only.
 pub const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:17873";
 
@@ -221,6 +223,17 @@ pub struct RuntimeQueryArgs {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobIdArgs {
     pub job_id: String,
+}
+
+/// vault_text.query args — the §14 Text profile of the vault (ADR-002 §14
+/// TextSource). Only a `Contains` filter (the full-text needle) + `limit` are
+/// meaningful; `describe` advertises exactly that.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultTextQueryArgs {
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 /// notes.query — a structured read over the knowledge base as a RecordSource
@@ -477,6 +490,36 @@ impl KernelMcpRouter {
         }
     }
 
+    /// Export every static kernel tool's MCP definition (name + description +
+    /// JSON Schema input) as a machine-readable artifact — the authoritative
+    /// endpoint spec (ADR-010 § endpoint-spec v6). The schema is the
+    /// rmcp-macro-generated `tools/list` shape, so the spec IS the protocol's
+    /// own self-description, never a hand-maintained or source-scraped copy.
+    /// Downstream MCP servers' tools are excluded — they own their own schemas.
+    /// Pure + static (no runtime/app needed): the tool router is built from the
+    /// `#[tool]` registrations, so this runs offline as a build/CI artifact.
+    pub fn export_tool_schemas() -> serde_json::Value {
+        let mut tools: Vec<serde_json::Value> = Self::tool_router()
+            .list_all()
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "inputSchema": serde_json::Value::Object((*t.input_schema).clone()),
+                })
+            })
+            .collect();
+        tools.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        serde_json::json!({
+            "kind": "ctrl-kernel-mcp-endpoint-spec",
+            "transport": "streamable-http on 127.0.0.1:17873/mcp (Bearer auth)",
+            "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
+            "toolCount": tools.len(),
+            "tools": tools,
+        })
+    }
+
     /// Acquire (creating on first use) the per-path write lock. Hold the
     /// returned guard across the entire read-modify-write of a produce verb so
     /// two concurrent writers on the same vault file cannot clobber each other.
@@ -554,8 +597,6 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<SmartTableQueryArgs>,
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
-        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
-        let table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
         let req = query::QueryRequest {
             filters: args.filters,
             conjunction: args.conjunction,
@@ -564,13 +605,14 @@ impl KernelMcpRouter {
             limit: args.limit,
         };
         let now = chrono::Local::now().date_naive();
-        // Route through the SQLite index for large tables (pure accelerator with
-        // run_query parity + fallback); small tables stay in-memory.
-        let mut result = table
-            .query_via_index(self.st_index.as_deref(), &args.path, &req, now)
-            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        // ONE authoritative §14 query path, shared with the Tauri command surface
+        // (SC5 dual-surface collapse — they had drifted: index vs in-memory).
+        let (table, mut result) =
+            vault_smart_table::query_smart_table(self.st_index.as_deref(), &root, &args.path, &req, now)
+                .map_err(|e| McpError::invalid_params(e, None))?;
         // Surface computed relational columns (Lookup / Rollup) into the result
         // rows — query-time derivatives, never written to markdown (slice 4c).
+        // Caller-side post-step (the PWA computes relations client-side).
         if let Some(idx) = self.st_index.as_deref() {
             augment_relations(idx, &root, &args.path, &table, &mut result.rows);
         }
@@ -691,6 +733,42 @@ impl KernelMcpRouter {
         let result = source
             .query(&req, now)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault_text.describe — the §14 Text profile of the vault (ADR-002 §14
+    /// TextSource): full-text content search as a queryable source, complementing
+    /// notes.describe (the Record/metadata profile). Together they make the vault
+    /// a complete §14 read source.
+    #[tool(
+        description = "Describe the vault full-text source: source_kind=text; query content with a Contains filter whose value is the search needle. Call before vault_text_query."
+    )]
+    async fn vault_text_describe(&self) -> Result<CallToolResult, McpError> {
+        let body =
+            serde_json::to_string(&vault_notes_source::text::describe()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// vault_text.query — §14 full-text query over vault content. The `Contains`
+    /// filter's value is the needle (FTS5 when indexed, substring fallback — the
+    /// same engine the legacy `vault_search` uses); returns `{path}` rows in the
+    /// uniform QueryResult shape. This is the §14 target surface; bespoke
+    /// `vault_search` retires onto it once the frontend moves off it.
+    #[tool(
+        description = "Full-text query the vault as a §14 source: pass a Contains filter (field 'content', value = search text); returns matching note paths. Call vault_text_describe first."
+    )]
+    async fn vault_text_query(
+        &self,
+        Parameters(args): Parameters<VaultTextQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let req = query::QueryRequest {
+            filters: args.filters,
+            limit: args.limit,
+            ..Default::default()
+        };
+        let result = vault_notes_source::text::query(&root, &req).map_err(map_vault_err)?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
@@ -1105,6 +1183,20 @@ impl KernelMcpRouter {
         let root = vault_root()?;
         let fm = args.frontmatter.unwrap_or(serde_json::Value::Null);
         vault::write(&root, &args.path, &args.body, &fm).map_err(map_vault_err)?;
+        // Write-through for smart tables: a generic vault.write that touches a
+        // `tables/*.md` file (the dedicated smart_table.* tools are not the only
+        // path that edits them) must refresh the derived SQLite index, exactly
+        // like the dedicated produce verbs do (see smart_table_update_cell /
+        // smart_table_append_row). Best-effort — the markdown on disk is the
+        // source of truth and reads degrade to run_query when the index drifts.
+        if let Some(idx) = self.st_index.as_deref() {
+            if is_smart_table_path(&args.path) {
+                let table = vault_smart_table::SmartTable::parse(&fm, &args.body);
+                if !table.fields.is_empty() {
+                    table.reindex_into(idx, &args.path);
+                }
+            }
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "wrote {}",
             args.path
@@ -1560,6 +1652,16 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
         vault::delete(&root, &args.path).map_err(map_vault_err)?;
+        // Clear the derived smart-table index when a `tables/*.md` file is
+        // removed, otherwise its rows leak and st_refs dangle (remove_table
+        // also NULLs incoming refs). Best-effort — markdown is the truth.
+        if let Some(idx) = self.st_index.as_deref() {
+            if is_smart_table_path(&args.path) {
+                if let Err(e) = idx.remove_table(&args.path) {
+                    tracing::warn!(path = %args.path, error = %e, "vault.delete: smart-table index remove failed");
+                }
+            }
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "deleted {}",
             args.path
@@ -1815,6 +1917,15 @@ impl KernelMcpRouter {
     }
 }
 
+// Helper — a vault path is a smart-table candidate when it lives under the
+// `tables/` directory (the convention the dedicated smart_table.* tools and the
+// pipeline tests use). The caller still parses the file and checks for a real
+// non-empty schema before touching the derived index, so a plain markdown note
+// dropped into `tables/` never indexes as a table.
+fn is_smart_table_path(path: &str) -> bool {
+    path.starts_with("tables/") && path.ends_with(".md")
+}
+
 // Helper — open the embeddings DB at the standard path.
 fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, McpError> {
     let home = std::env::var("HOME")
@@ -1830,37 +1941,26 @@ fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, M
 // downstream MCP servers' tools, surfaced as first-class namespaced
 // `<server>_<tool>` entries (ADR-002 substrate §1.9.1). This is why Irisy/hermes
 // see e.g. Obsidian's tools directly instead of only behind mcp_proxy_*.
-impl ServerHandler for KernelMcpRouter {
-    async fn list_tools(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ListToolsResult, McpError> {
-        // Static kernel tools first.
-        let mut tools = self.tool_router.list_all();
-        // Then aggregate each connected downstream server's tools, namespaced
-        // so names never collide and call_tool can route them back (§1.9.1).
-        for desc in self.runtime.mcp_host.list_installed().await {
-            match self.runtime.mcp_host.list_tools(&desc.id).await {
-                Ok(downstream) => {
-                    for mut t in downstream {
-                        t.name = format!("{}_{}", desc.id, t.name).into();
-                        tools.push(t);
-                    }
-                }
-                Err(e) => {
-                    tracing::debug!(server = %desc.id, error = %e, "list_tools: downstream unavailable, skip")
-                }
-            }
-        }
-        Ok(ListToolsResult {
-            tools,
-            next_cursor: None,
-            ..Default::default()
-        })
-    }
+/// Read a request header from the HTTP parts that rmcp's StreamableHttp
+/// transport stashes in the `RequestContext` extensions. Returns `None` when
+/// the transport is not HTTP (e.g. an in-process test) or the header is absent.
+fn request_header<'a>(
+    context: &'a RequestContext<RoleServer>,
+    name: &str,
+) -> Option<&'a str> {
+    context
+        .extensions
+        .get::<axum::http::request::Parts>()
+        .and_then(|parts| parts.headers.get(name))
+        .and_then(|v| v.to_str().ok())
+}
 
-    async fn call_tool(
+impl KernelMcpRouter {
+    /// Dispatch a tool call to either a downstream namespaced server or the
+    /// static kernel tool router. Kept separate from the `ServerHandler`
+    /// `call_tool` override so the latter can wrap it with audit recording
+    /// without duplicating the routing logic (ADR-010 § trust-domains).
+    async fn dispatch_tool(
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
@@ -1890,6 +1990,113 @@ impl ServerHandler for KernelMcpRouter {
         }
         let tcc = ToolCallContext::new(self, request, context);
         self.tool_router.call(tcc).await
+    }
+}
+
+impl ServerHandler for KernelMcpRouter {
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        // Static kernel tools first.
+        let mut tools = self.tool_router.list_all();
+        // Then aggregate each connected downstream server's tools, namespaced
+        // so names never collide and call_tool can route them back (§1.9.1).
+        for desc in self.runtime.mcp_host.list_installed().await {
+            match self.runtime.mcp_host.list_tools(&desc.id).await {
+                Ok(downstream) => {
+                    for mut t in downstream {
+                        t.name = format!("{}_{}", desc.id, t.name).into();
+                        tools.push(t);
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(server = %desc.id, error = %e, "list_tools: downstream unavailable, skip")
+                }
+            }
+        }
+        // Intent-scoped projection (SC3): project the listing to the caller's
+        // scope. A declared `X-Ctrl-Intent` wins; otherwise the caller's default
+        // scope applies (first-party => broad, unknown => minimal system-only) —
+        // no header no longer means "full toolset" (least privilege).
+        let caller = audit::normalize_caller(request_header(&context, audit::CALLER_HEADER));
+        let intent = {
+            let declared = Intent::parse(request_header(&context, visibility::INTENT_HEADER));
+            if declared.is_scoped() {
+                declared
+            } else {
+                Intent::default_for_caller(&caller)
+            }
+        };
+        tools.retain(|t| intent.allows_tool(t.name.as_ref()));
+        Ok(ListToolsResult {
+            tools,
+            next_cursor: None,
+            ..Default::default()
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        // The :17873 gate is the single boundary every External call crosses,
+        // so audit happens here once (ADR-010 § trust-domains). Record the tool
+        // name + a hash of the args (not the args themselves — data sovereignty)
+        // + the caller + the outcome. Best-effort: a ledger failure must never
+        // block a call.
+        let tool_name = request.name.to_string();
+
+        // SC3: attribute the call to a concrete caller (not blanket "external")
+        // and enforce intent-scoped visibility — a tool outside the caller's
+        // declared intent is rejected, not just hidden (defense in depth: a
+        // hidden tool must also be uncallable).
+        let caller = audit::normalize_caller(request_header(&context, audit::CALLER_HEADER));
+        // No (or blank) intent header no longer means "full toolset": resolve the
+        // caller's default scope (first-party => broad, unknown => minimal), so an
+        // un-declared external caller can't reach out-of-scope tools (SC3).
+        let intent = {
+            let declared = Intent::parse(request_header(&context, visibility::INTENT_HEADER));
+            if declared.is_scoped() {
+                declared
+            } else {
+                Intent::default_for_caller(&caller)
+            }
+        };
+        let denied = !intent.allows_tool(&tool_name);
+
+        // SC1 compile-time trust boundary: capture the cross-domain call as a
+        // `GateRequest` here at the gate, before `request` is consumed. Only the
+        // gate can build one — internal traffic has no constructor, so the type
+        // system (not convention) keeps kernel self-calls off the ledger.
+        let gate_req =
+            audit::GateRequest::at_gate(caller, &tool_name, request.arguments.as_ref());
+
+        let result = if denied {
+            Err(McpError::invalid_request(
+                format!("tool '{tool_name}' is out of scope for the declared intent"),
+                None,
+            ))
+        } else {
+            self.dispatch_tool(request, context).await
+        };
+
+        let (outcome, detail) = match &result {
+            Ok(_) => ("ok", None),
+            Err(e) if denied => ("denied", Some(e.to_string())),
+            Err(e) => ("error", Some(e.to_string())),
+        };
+        if let Err(e) = self
+            .runtime
+            .event_store
+            .record_call(&gate_req, outcome, detail.as_deref())
+        {
+            tracing::warn!(tool = %tool_name, error = %e, "audit ledger write failed");
+        }
+
+        result
     }
 
     fn get_info(&self) -> ServerInfo {
@@ -2233,6 +2440,87 @@ mod tests {
             401,
             "valid bearer should not be rejected (got {})",
             resp.status()
+        );
+    }
+
+    /// Pull the JSON-RPC result out of a Streamable-HTTP response body that may
+    /// be either a bare JSON object or an SSE stream of `data:` lines.
+    fn extract_jsonrpc(body: &str) -> serde_json::Value {
+        for line in body.lines() {
+            if let Some(data) = line.strip_prefix("data:") {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(data.trim()) {
+                    return v;
+                }
+            }
+        }
+        serde_json::from_str(body).unwrap_or(serde_json::Value::Null)
+    }
+
+    /// End-to-end proof that `X-Ctrl-Intent` is read off the HTTP request and
+    /// projects `tools/list` to the declared capability domains (SC3). Drives a
+    /// real MCP initialize -> tools/list over the wire, so it also guards the
+    /// `http::request::Parts` -> RequestContext extension threading.
+    #[tokio::test]
+    async fn intent_header_scopes_tools_list() {
+        let data_dir = std::env::temp_dir().join("ctrl-test-mcp-intent");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
+        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let url = handle.url();
+        let token = handle.auth_token.as_ref().clone();
+        let client = reqwest::Client::new();
+
+        // initialize -> capture the session id the server assigns.
+        let init = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .body(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}"#,
+            )
+            .send()
+            .await
+            .expect("initialize");
+        let session_id = init
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .expect("server returns a session id");
+
+        // tools/list with an intent scoped to `vault` only.
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id)
+            .header(visibility::INTENT_HEADER, "vault")
+            .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
+            .send()
+            .await
+            .expect("tools/list");
+        let body = resp.text().await.expect("body");
+        let json = extract_jsonrpc(&body);
+        let tools = json["result"]["tools"]
+            .as_array()
+            .expect("tools array present");
+
+        assert!(!tools.is_empty(), "expected a non-empty projected toolset");
+        for t in tools {
+            let name = t["name"].as_str().unwrap_or("");
+            let domain = visibility::tool_domain(name);
+            assert!(
+                domain == "vault" || domain == "system",
+                "tool '{name}' (domain '{domain}') leaked past the vault intent scope"
+            );
+        }
+        // The projection must actually hide something — a write/net tool that
+        // exists in the full set but is out of the vault scope.
+        assert!(
+            !tools.iter().any(|t| t["name"] == "http_post"),
+            "http_post must be hidden under the vault intent"
         );
     }
 }

@@ -6,6 +6,23 @@
 import { invoke } from './bridge';
 import type { Icon } from './icon';
 
+// === Platform API client (comms-system-design Phase B) ===
+//
+// `gateInvoke` calls a kernel capability THROUGH the :17873 gate — the SAME
+// governed surface (audit + visibility) that external agents / BYO-CLI use —
+// instead of a private per-capability Tauri command. This is what makes CTRL a
+// platform rather than an app: the PWA is a first-class client of CTRL's own
+// platform API, not a backdoor consumer. Capability wrappers migrate onto this;
+// app-shell commands (window / lifecycle / keychain) stay on direct `invoke`.
+//
+// `args` is the tool's MCP arguments object directly (NOT wrapped in `{ args }`
+// the way Tauri commands take it) — the bridge forwards it as the tools/call
+// `arguments`.
+export const gateInvoke = <T = unknown>(
+  tool: string,
+  args: Record<string, unknown> = {},
+): Promise<T> => invoke('gate_invoke', { tool, args }) as Promise<T>;
+
 // === Kernel status (system instruments) ===
 //
 // Mirror of `src-tauri/src/commands/system.rs::KernelStatus`. The StatusBar
@@ -25,7 +42,7 @@ export interface KernelStatus {
   primary_adapter: string | null;
   mcp_servers_installed: number;
   vault_files: number;
-  stss_bridge_addr: string;
+  event_ws_addr: string;
   overall: 'ok' | 'degraded';
   warnings: string[];
   active_brain: string;
@@ -266,7 +283,7 @@ export interface AiColumnSummary {
 }
 
 export const smartTableRunAiColumn = (args: AiColumnArgs): Promise<AiColumnSummary> =>
-  invoke('smart_table_run_ai_column', { args });
+  gateInvoke('smart_table_run_ai_column', { ...args });
 
 // §14 Unified Operation Interface — read half (describe / query) over the PWA
 // bridge. The in-app twin of the :17873 gate's `smart_table.describe` /
@@ -329,9 +346,13 @@ export interface SmartTableQueryResult {
   match_count: number;
 }
 
-/** Describe a smart table via the kernel gate — fields, types, operators. */
+/** Describe a smart table — fields, types, operators. Routed through the
+ *  platform API (`gateInvoke`): the PWA calls the same governed gate tool an
+ *  external agent would (comms-system-design Phase B, first migration). Shape is
+ *  identical to the old `smart_table_describe` Tauri command (same kernel
+ *  `describe`, no relational augmentation), so this is behavior-preserving. */
 export const describeSmartTable = (path: string): Promise<SmartTableDescribe> =>
-  invoke('smart_table_describe', { args: { path } });
+  gateInvoke('smart_table_describe', { path });
 
 /** Run a structured filter/sort/group query through the shared kernel engine.
  *  Rejects unknown field references with the valid set (anti-hallucination). */
@@ -339,15 +360,13 @@ export const querySmartTable = (
   path: string,
   request: SmartTableQueryRequest = {},
 ): Promise<SmartTableQueryResult> =>
-  invoke('smart_table_query', {
-    args: {
-      path,
-      filters: request.filters ?? [],
-      conjunction: request.conjunction ?? 'and',
-      sort: request.sort ?? [],
-      group_by: request.group_by ?? [],
-      limit: request.limit ?? null,
-    },
+  gateInvoke('smart_table_query', {
+    path,
+    filters: request.filters ?? [],
+    conjunction: request.conjunction ?? 'and',
+    sort: request.sort ?? [],
+    group_by: request.group_by ?? [],
+    limit: request.limit ?? null,
   });
 
 export const listMcpServers = (): Promise<string[]> => invoke('list_mcp_servers');
@@ -368,17 +387,12 @@ export interface StreamHandle {
   bridge_url: string;
 }
 
+// The event stream is a plain CBOR-over-WS (event-stream protocol deprecated, ADR-010
+// § transports v5, SC6). `subscribe` is the one remaining call — it returns the
+// authed WS URL the cell-stream hooks connect to. The publish / listStreams
+// wrappers retired with their dead Tauri commands.
 export const subscribe = (stream_id: string): Promise<StreamHandle> =>
   invoke('subscribe', { args: { stream_id } });
-
-export const publish = (
-  stream_id: string,
-  kind: string,
-  payload: unknown,
-): Promise<void> =>
-  invoke('publish', { args: { stream_id, kind, payload } });
-
-export const listStreams = (): Promise<string[]> => invoke('list_streams');
 
 export interface LogEntry {
   id: string;
@@ -487,36 +501,40 @@ export interface VaultWriteReply {
   path: string;
 }
 
+// Capability calls route through the platform API (gateInvoke → :17873 gate),
+// not private Tauri commands (comms-system-design Phase B). The gate tool takes
+// the MCP arguments directly (no `{ args }` envelope, no `mcp_id` — governance
+// is the gate's, not check_cap's). Shapes mirror the bespoke commands.
+// NB: the gate's vault_write field is `body`, not `content` (the retired Tauri
+// command used `content`); map it here so writes (new table / note save) land.
 export const vaultWrite = (args: VaultWriteArgs): Promise<VaultWriteReply> =>
-  invoke('vault_write', { args });
+  gateInvoke('vault_write', {
+    path: args.path,
+    body: args.content,
+    frontmatter: args.frontmatter,
+  });
 
-export const vaultRead = (path: string, mcp_id?: string): Promise<VaultEntry> =>
-  invoke('vault_read', { args: { path, mcp_id: mcp_id ?? null } });
+export const vaultRead = (path: string, _mcp_id?: string): Promise<VaultEntry> =>
+  gateInvoke('vault_read', { path });
 
 export const vaultList = (
   subdir?: string,
-  mcp_id?: string,
-): Promise<string[]> =>
-  invoke('vault_list', {
-    args: { subdir: subdir ?? null, mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<string[]> => gateInvoke('vault_list', { subdir: subdir ?? null });
 
 export const vaultSearch = (
   query: string,
   limit = 50,
-  mcp_id?: string,
-): Promise<string[]> =>
-  invoke('vault_search', {
-    args: { query, limit, mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<string[]> => gateInvoke('vault_search', { query, limit });
 
-export const vaultDelete = (path: string, mcp_id?: string): Promise<void> =>
-  invoke('vault_delete', { args: { path, mcp_id: mcp_id ?? null } });
+export const vaultDelete = (path: string, _mcp_id?: string): Promise<void> =>
+  gateInvoke('vault_delete', { path });
 
-export const vaultRootPath = (): Promise<string> => invoke('vault_root_path');
+export const vaultRootPath = (): Promise<string> => gateInvoke('vault_root_path');
 
 export const vaultRebuildIndex = (): Promise<number> =>
-  invoke('vault_rebuild_index');
+  gateInvoke('vault_rebuild_index');
 
 // ADR-002 substrate § vault v1 §8.3 #9-21 (2026-06-01) — graph + mutation
 // + watcher primitives (memory `decision_vault_adr_002_section_8`).
@@ -563,70 +581,92 @@ export interface VaultWatchEvent {
 
 export const vaultBacklinks = (
   path: string,
-  mcp_id?: string,
+  _mcp_id?: string,
 ): Promise<BacklinkHit[]> =>
-  invoke('vault_backlinks', { args: { path, mcp_id: mcp_id ?? null } });
+  gateInvoke('vault_backlinks', { path });
 
-export const vaultTags = (mcp_id?: string): Promise<TagCount[]> =>
-  invoke('vault_tags', { args: { mcp_id: mcp_id ?? null } });
+export const vaultTags = (_mcp_id?: string): Promise<TagCount[]> =>
+  gateInvoke('vault_tags', {});
 
 export const vaultNotesByTag = (
   tag: string,
-  mcp_id?: string,
-): Promise<string[]> =>
-  invoke('vault_notes_by_tag', { args: { tag, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<string[]> => gateInvoke('vault_notes_by_tag', { tag });
 
 export const vaultMentions = (
   text: string,
-  mcp_id?: string,
-): Promise<MentionHit[]> =>
-  invoke('vault_mentions', { args: { text, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<MentionHit[]> => gateInvoke('vault_mentions', { text });
 
-export const vaultOrphans = (mcp_id?: string): Promise<string[]> =>
-  invoke('vault_orphans', { args: { mcp_id: mcp_id ?? null } });
+export const vaultOrphans = (_mcp_id?: string): Promise<string[]> =>
+  gateInvoke('vault_orphans', {});
 
-export const vaultBrokenLinks = (mcp_id?: string): Promise<BrokenLink[]> =>
-  invoke('vault_broken_links', { args: { mcp_id: mcp_id ?? null } });
+export const vaultBrokenLinks = (_mcp_id?: string): Promise<BrokenLink[]> =>
+  gateInvoke('vault_broken_links', {});
 
-export const vaultGraphData = (mcp_id?: string): Promise<GraphData> =>
-  invoke('vault_graph_data', { args: { mcp_id: mcp_id ?? null } });
+export const vaultGraphData = (_mcp_id?: string): Promise<GraphData> =>
+  gateInvoke('vault_graph_data', {});
 
 export const vaultRename = (
   from: string,
   to: string,
-  mcp_id?: string,
-): Promise<void> =>
-  invoke('vault_rename', { args: { from, to, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<void> => gateInvoke('vault_rename', { from, to });
 
 export const vaultMove = (
   from: string,
   to: string,
-  mcp_id?: string,
-): Promise<void> =>
-  invoke('vault_move', { args: { from, to, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<void> => gateInvoke('vault_move', { from, to });
 
 export const vaultCreateFolder = (
   path: string,
-  mcp_id?: string,
-): Promise<void> =>
-  invoke('vault_create_folder', {
-    args: { path, mcp_id: mcp_id ?? null },
+  _mcp_id?: string,
+): Promise<void> => gateInvoke('vault_create_folder', { path });
+
+// Vault root configuration — point CTRL at the user's own (Obsidian) vault.
+// These stay on bespoke Tauri commands (not the gate): choosing where the vault
+// IS can't go through a gate scoped to a vault.
+export interface VaultConfig {
+  /** True once the user picked a vault (else still on the fallback default). */
+  configured: boolean;
+  /** The resolved vault root currently in effect. */
+  root: string;
+  /** Whether the vault is auto-committed to git on a schedule. */
+  auto_sync: boolean;
+}
+
+export const vaultGetConfig = (): Promise<VaultConfig> =>
+  invoke('vault_get_config');
+
+export const vaultSetRoot = (path: string): Promise<VaultConfig> =>
+  invoke('vault_set_root', { path });
+
+export const vaultSetAutoSync = (enabled: boolean): Promise<void> =>
+  invoke('vault_set_auto_sync', { args: { enabled } });
+
+/** Open the OS folder picker (native, via the Tauri dialog plugin) and return
+ *  the chosen absolute path, or null if the user cancelled. */
+export const pickVaultFolder = async (): Promise<string | null> => {
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const res = await open({
+    directory: true,
+    multiple: false,
+    title: 'Choose your vault folder (e.g. your Obsidian vault)',
   });
+  return typeof res === 'string' ? res : null;
+};
 
 export const vaultSetStarred = (
   path: string,
   starred: boolean,
-  mcp_id?: string,
-): Promise<void> =>
-  invoke('vault_set_starred', {
-    args: { path, starred, mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<void> => gateInvoke('vault_set_starred', { path, starred });
 
 export const vaultAliases = (
   path: string,
-  mcp_id?: string,
-): Promise<string[]> =>
-  invoke('vault_aliases', { args: { path, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<string[]> => gateInvoke('vault_aliases', { path });
 
 export const vaultWatchRecent = (
   since_ms: number,
@@ -657,18 +697,12 @@ export interface SourcingPendingReply {
 
 export const vaultSourcingRun = (
   date: string,
-  mcp_id?: string,
-): Promise<SourcingRunReport> =>
-  invoke('vault_sourcing_run', {
-    args: { date, mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<SourcingRunReport> => gateInvoke('vault_sourcing_run', { date });
 
 export const vaultSourcingPending = (
-  mcp_id?: string,
-): Promise<SourcingPendingReply> =>
-  invoke('vault_sourcing_pending', {
-    args: { mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<SourcingPendingReply> => gateInvoke('vault_sourcing_pending', {});
 
 // ADR-005 v2 § soul-md-compat §4.3 — SOUL.md Tauri surface.
 export interface IrisySoulView {
@@ -677,13 +711,17 @@ export interface IrisySoulView {
   body: string;
   soul_md_version: string;
 }
+// SOUL.md rides the gate's memory-domain tools (irisy_soul_get/set), same as
+// external CLI drivers — the bespoke irisy_soul_read/write Tauri commands
+// retired onto this one governed path (SC5 convergence). The gate get returns
+// the identical { path, frontmatter, body, soul_md_version } shape.
 export const irisySoulRead = (): Promise<IrisySoulView> =>
-  invoke('irisy_soul_read');
+  gateInvoke('irisy_soul_get');
 export const irisySoulWrite = (
   frontmatter: Record<string, unknown>,
   body: string,
 ): Promise<void> =>
-  invoke('irisy_soul_write', { args: { frontmatter, body } });
+  gateInvoke('irisy_soul_set', { frontmatter, body });
 
 // ADR-002 v5 §10 — vault embeddings TS surface.
 export interface EmbeddingHit {
@@ -703,30 +741,28 @@ export interface EmbeddingStatus {
 export const vaultEmbedNote = (
   path: string,
 ): Promise<{ path: string; vector_dims: number; cached: boolean }> =>
-  invoke('vault_embed_note', { args: { path } });
+  gateInvoke('vault_embed_note', { path });
 
 export const vaultReembedAll = (
   force = false,
 ): Promise<{ embedded: number; skipped: number; failed: number }> =>
-  invoke('vault_reembed_all', { args: { force } });
+  gateInvoke('vault_reembed_all', { force });
 
 export const vaultEmbeddingStatus = (): Promise<EmbeddingStatus> =>
-  invoke('vault_embedding_status');
+  gateInvoke('vault_embedding_status');
 
 export const vaultSemanticSearch = (
   query: string,
   limit = 10,
   threshold?: number,
 ): Promise<EmbeddingHit[]> =>
-  invoke('vault_semantic_search', {
-    args: { query, limit, threshold: threshold ?? null },
-  });
+  gateInvoke('vault_semantic_search', { query, limit, threshold: threshold ?? null });
 
 export const vaultSuggestLinks = (
   for_path: string,
   limit = 5,
 ): Promise<EmbeddingHit[]> =>
-  invoke('vault_suggest_links', { args: { for_path, limit } });
+  gateInvoke('vault_suggest_links', { for_path, limit });
 
 // Irisy synthesize — Layer 4 surface
 // (brainstorm §5.3 / §5.5 / §5.10)
@@ -793,6 +829,10 @@ export const gitCommitAll = (message: string): Promise<string> =>
   invoke('git_commit_all', { args: { message } });
 
 export const gitPush = (): Promise<string> => invoke('git_push');
+
+/** One-click vault sync: init + stage + commit + push (composes git; the user's
+ *  remote carries the vault, CTRL stays out of the data path). */
+export const vaultGitSync = (): Promise<string> => invoke('vault_git_sync');
 
 export const gitLog = (): Promise<GitLogEntry[]> => invoke('git_log');
 

@@ -81,7 +81,9 @@ const frontmatterFromRows = (rows: Row[]): Record<string, unknown> => {
 };
 
 export const FrontmatterPanel = ({ path }: FrontmatterPanelProps): ReactElement => {
-  const [open, setOpen] = useState(true);
+  // Collapsed by default — frontmatter is metadata, not the note; it shouldn't
+  // eat editor space. The "▸ Frontmatter" header stays a one-click expand.
+  const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);

@@ -9,7 +9,14 @@
 // Bare /settings redirects to /settings/ctrl so legacy tray / keyboard
 // links keep landing somewhere sensible.
 
-import { useEffect, type ReactElement, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTheme } from '@/hooks/useTheme';
 import { useKernelStatus } from '@/hooks/useKernelStatus';
@@ -17,13 +24,26 @@ import type { ThemePreference } from '@/lib/theme';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { useWorkspaceStore } from '@/lib/workspace-store';
 import { ProviderHub } from '@/components/ambient/ProviderHub';
+import { VaultSetup } from '@/components/VaultSetup';
+import {
+  listEnvEntries,
+  setEnvVar,
+  removeEnvVar,
+  isValidEnvName,
+  ENV_PRESETS,
+  loadMcpCredentials,
+  setMcpCredential,
+  clearMcpCredential,
+  type EnvEntryView,
+  type McpCredField,
+} from '@/lib/dev-env';
 import styles from './settings.module.css';
 
 // ─────────────────────────────────────────────────────────────
 // Shared tab shell
 // ─────────────────────────────────────────────────────────────
 
-type SettingsTab = 'ctrl' | 'providers' | 'agent' | 'logs';
+type SettingsTab = 'ctrl' | 'providers' | 'agent' | 'env' | 'logs';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string; to: string }> = [
   { id: 'ctrl', label: 'General', to: '/settings/ctrl' },
@@ -33,6 +53,9 @@ const TABS: ReadonlyArray<{ id: SettingsTab; label: string; to: string }> = [
   // agent settings (toolsets / memory / personality) live in one place
   // inside CTRL; the user never has to edit ~/.hermes by hand.
   { id: 'agent', label: 'Irisy', to: '/settings/agent' },
+  // Env — local dev-environment vars (API keys / tokens / endpoints) stored
+  // in the keychain and injected into the Coding terminal (bao 2026-06-22).
+  { id: 'env', label: 'Env', to: '/settings/env' },
   // brain tab retired with Pi (ADR-002 substrate §1 v19, 2026-06-09)
   { id: 'logs', label: 'Logs', to: '/settings/logs' },
 ];
@@ -208,6 +231,12 @@ const HotkeyBlock = (): ReactElement => (
 export const SettingsCtrlPage = (): ReactElement => (
   <SettingsShell activeTab="ctrl">
     <Section
+      title="Vault"
+      description="The folder CTRL treats as your knowledge base. Point it at your own (Obsidian) vault — local markdown is the truth; CTRL is a layer over it, not a separate store."
+    >
+      <VaultSetup variant="settings" />
+    </Section>
+    <Section
       title="Appearance"
       description="Polar paper or cool slate. System follows your OS dark / light setting."
     >
@@ -304,6 +333,364 @@ export const SettingsAgentPage = (): ReactElement => (
         background: '#fff',
       }}
     />
+  </SettingsShell>
+);
+
+// ─────────────────────────────────────────────────────────────
+// /settings/env — local dev-environment variables (keychain-backed)
+// ─────────────────────────────────────────────────────────────
+
+// Secret values are never read back for display: the page shows whether a var
+// is set and lets the user overwrite or delete it, but does not echo the
+// stored secret. Inputs are masked (type=password).
+const EnvManager = (): ReactElement => {
+  const [entries, setEntries] = useState<EnvEntryView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    try {
+      setEntries(await listEnvEntries());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const add = useCallback(async (): Promise<void> => {
+    const name = newName.trim();
+    if (!isValidEnvName(name)) {
+      setError(`Invalid name "${name}" — use letters, digits, _ (must not start with a digit)`);
+      return;
+    }
+    if (!newValue) {
+      setError('Value is empty');
+      return;
+    }
+    setError(null);
+    setBusy(name);
+    try {
+      await setEnvVar(name, newValue);
+      setNewName('');
+      setNewValue('');
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }, [newName, newValue, reload]);
+
+  const save = useCallback(
+    async (name: string): Promise<void> => {
+      const v = drafts[name];
+      if (!v) return;
+      setBusy(name);
+      try {
+        await setEnvVar(name, v);
+        setDrafts((d) => {
+          const next = { ...d };
+          delete next[name];
+          return next;
+        });
+        await reload();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [drafts, reload],
+  );
+
+  const remove = useCallback(
+    async (name: string): Promise<void> => {
+      setBusy(name);
+      try {
+        await removeEnvVar(name);
+        await reload();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [reload],
+  );
+
+  const inputStyle: CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    padding: '6px 10px',
+    borderRadius: 8,
+    border: '1px solid var(--color-border, #d6d3cc)',
+    background: 'var(--color-surface, #fff)',
+    color: 'inherit',
+    fontFamily: 'inherit',
+    fontSize: 13,
+  };
+  const btnStyle: CSSProperties = {
+    padding: '6px 12px',
+    borderRadius: 8,
+    border: '1px solid var(--color-border, #d6d3cc)',
+    background: 'transparent',
+    color: 'inherit',
+    cursor: 'pointer',
+    fontSize: 13,
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {error && (
+        <div role="alert" style={{ color: 'var(--color-danger, #c0392b)', fontSize: 13 }}>
+          {error}
+        </div>
+      )}
+
+      {/* Existing vars */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {loading ? (
+          <span style={{ fontSize: 13, opacity: 0.6 }}>Loading…</span>
+        ) : entries.length === 0 ? (
+          <span style={{ fontSize: 13, opacity: 0.6 }}>
+            No variables yet. Add one below — e.g. ANTHROPIC_API_KEY.
+          </span>
+        ) : (
+          entries.map((e) => (
+            <div key={e.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <code style={{ flex: '0 0 220px', fontSize: 13 }}>{e.name}</code>
+              <input
+                type="password"
+                style={inputStyle}
+                placeholder={e.hasValue ? '•••••• set — type to replace' : 'value'}
+                value={drafts[e.name] ?? ''}
+                onChange={(ev) =>
+                  setDrafts((d) => ({ ...d, [e.name]: ev.target.value }))
+                }
+                aria-label={`Value for ${e.name}`}
+              />
+              <button
+                type="button"
+                style={btnStyle}
+                disabled={busy === e.name || !drafts[e.name]}
+                onClick={() => void save(e.name)}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                style={{ ...btnStyle, color: 'var(--color-danger, #c0392b)' }}
+                disabled={busy === e.name}
+                onClick={() => void remove(e.name)}
+                aria-label={`Delete ${e.name}`}
+              >
+                Delete
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Add new */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          style={{ ...inputStyle, flex: '0 0 220px', fontFamily: 'monospace' }}
+          placeholder="NAME"
+          value={newName}
+          onChange={(ev) => setNewName(ev.target.value)}
+          aria-label="New variable name"
+        />
+        <input
+          type="password"
+          style={inputStyle}
+          placeholder="value"
+          value={newValue}
+          onChange={(ev) => setNewValue(ev.target.value)}
+          aria-label="New variable value"
+        />
+        <button type="button" style={btnStyle} disabled={busy != null} onClick={() => void add()}>
+          Add
+        </button>
+      </div>
+
+      {/* Presets */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+        <span style={{ fontSize: 12, opacity: 0.6 }}>Common:</span>
+        {ENV_PRESETS.map((p) => (
+          <button
+            key={p.name}
+            type="button"
+            style={{ ...btnStyle, padding: '4px 8px', fontSize: 12 }}
+            title={p.hint}
+            onClick={() => setNewName(p.name)}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// MCP credentials — the keys each installed mcp declares it needs. Read
+// dynamically from the installed mcps' manifests (no per-mcp hardcoding), so
+// this scales to any number of mcps; only installed mcps that declare secret
+// fields show up.
+const McpCredentialsManager = (): ReactElement => {
+  const [creds, setCreds] = useState<McpCredField[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    try {
+      setCreds(await loadMcpCredentials());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const save = useCallback(
+    async (account: string): Promise<void> => {
+      const v = drafts[account];
+      if (!v) return;
+      setBusy(account);
+      try {
+        await setMcpCredential(account, v);
+        setDrafts((d) => {
+          const next = { ...d };
+          delete next[account];
+          return next;
+        });
+        await reload();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [drafts, reload],
+  );
+
+  const clear = useCallback(
+    async (account: string): Promise<void> => {
+      setBusy(account);
+      try {
+        await clearMcpCredential(account);
+        await reload();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [reload],
+  );
+
+  const inputStyle: CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    padding: '6px 10px',
+    borderRadius: 8,
+    border: '1px solid var(--color-border, #d6d3cc)',
+    background: 'var(--color-surface, #fff)',
+    color: 'inherit',
+    fontFamily: 'inherit',
+    fontSize: 13,
+  };
+  const btnStyle: CSSProperties = {
+    padding: '6px 12px',
+    borderRadius: 8,
+    border: '1px solid var(--color-border, #d6d3cc)',
+    background: 'transparent',
+    color: 'inherit',
+    cursor: 'pointer',
+    fontSize: 13,
+  };
+
+  if (loading) return <span style={{ fontSize: 13, opacity: 0.6 }}>Loading…</span>;
+  if (creds.length === 0)
+    return (
+      <span style={{ fontSize: 13, opacity: 0.6 }}>
+        No mcp needs a key yet. Install an mcp that declares one (e.g. a Cloudflare
+        deploy pack) and its key fields show up here.
+      </span>
+    );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {error && (
+        <div role="alert" style={{ color: 'var(--color-danger, #c0392b)', fontSize: 13 }}>
+          {error}
+        </div>
+      )}
+      {creds.map((c) => (
+        <div key={c.account} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ flex: '0 0 220px', fontSize: 13 }} title={c.description ?? ''}>
+            <code>{c.mcpName}</code> · {c.label}
+          </span>
+          <input
+            type="password"
+            style={inputStyle}
+            placeholder={c.hasValue ? '•••••• set — type to replace' : 'value'}
+            value={drafts[c.account] ?? ''}
+            onChange={(ev) => setDrafts((d) => ({ ...d, [c.account]: ev.target.value }))}
+            aria-label={`Value for ${c.mcpName} ${c.label}`}
+          />
+          <button
+            type="button"
+            style={btnStyle}
+            disabled={busy === c.account || !drafts[c.account]}
+            onClick={() => void save(c.account)}
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            style={{ ...btnStyle, color: 'var(--color-danger, #c0392b)' }}
+            disabled={busy === c.account || !c.hasValue}
+            onClick={() => void clear(c.account)}
+          >
+            Clear
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export const SettingsEnvPage = (): ReactElement => (
+  <SettingsShell activeTab="env">
+    <Section
+      title="Environment variables"
+      description="Local development config — API keys, tokens, endpoints. Stored in your OS keychain (never plain text) and injected into the Coding terminal, so a CLI like Claude Code picks up ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL without you pasting secrets into the shell."
+    >
+      <EnvManager />
+    </Section>
+    <Section
+      title="MCP credentials"
+      description="The keys each installed mcp says it needs — read from the mcps you actually have, so the list grows with them, never a fixed catalog. Stored in the keychain too."
+    >
+      <McpCredentialsManager />
+    </Section>
   </SettingsShell>
 );
 

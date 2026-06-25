@@ -34,7 +34,10 @@ import {
   type BrainState,
 } from '@/lib/irisy-prompts';
 import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
-import { listMcps, type McpSummary } from '@/lib/kernel';
+// gateInvoke routes capability calls through the :17873 gate, not a private
+// Tauri command (ADR-002 substrate §14 v29 (2026-06-24) — platform API; gate is
+// the single governed surface).
+import { gateInvoke, listMcps, type McpSummary } from '@/lib/kernel';
 import { useSessionStateStore, sessionLabel } from '@/lib/session-state';
 // bao 2026-06-05 Pi-first cleanup: PWA-side XML tool dispatch
 // (`dispatchAllCalls` / `formatResultsAsUserTurn` /
@@ -94,17 +97,10 @@ interface McpBridgeStatus {
   handshake_path: string;
 }
 
-interface PiStatus {
-  mcp_url: string;
-  reachable: boolean;
-  version: string | null;
-}
-
 interface IrisyStatus {
   app_version: string;
   kernel_llm: KernelLlmStatus;
   mcp_bridge: McpBridgeStatus;
-  pi?: PiStatus;
   active_brain?: string;
 }
 
@@ -835,15 +831,13 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       ).padStart(2, '0')}-${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}`;
       const path = `irisy/replies/${stamp}-${assistantId.slice(-6)}.md`;
       try {
-        await invoke('vault_write', {
-          args: {
-            path,
-            content: body,
-            frontmatter: {
-              kind: 'irisy-reply',
-              saved_at: ts.toISOString(),
-              assistant_id: assistantId,
-            },
+        await gateInvoke('vault_write', {
+          path,
+          content: body,
+          frontmatter: {
+            kind: 'irisy-reply',
+            saved_at: ts.toISOString(),
+            assistant_id: assistantId,
           },
         });
         setStatusMessage(`Saved → vault/${path}`);

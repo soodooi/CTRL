@@ -1,7 +1,7 @@
 // useCompanionWindow — runs once at app root mount in the MAIN window.
 // Anchors the main window top-right of the primary monitor.
 //
-// 2026-05-31 (bao "输入框和对话框可以合二为一"): the separate Tauri
+// 2026-05-31 (bao "the input box and the conversation can merge into one"): the separate Tauri
 // "input" window is RETIRED. The composer now lives at the bottom of
 // the Irisy chat column inside the main window (see IrisyChat.tsx).
 // We still call `destroy_input_window` here so any persisted input

@@ -7,7 +7,8 @@
 // process alive, intercepts the new launch, forwards it back to the old
 // (dying) instance, and the new instance never actually starts. Result:
 // window vanishes, bundle is sometimes left half-written, app does not
-// come back. (bao 2026-05-30: "install 时窗口已经关闭 无法升级".)
+// come back. (bao 2026-05-30: "window is already closed at install time,
+// can't upgrade".)
 //
 // Fix (the Chrome / Cursor / Linear pattern):
 //   1. Verify the new bundle is intact (Info.plist exists, CFBundleVersion

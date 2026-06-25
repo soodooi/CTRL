@@ -1,7 +1,7 @@
 // [H-2026-05-20] useSubprocessChannel — bidirectional channel for one
-// SubprocessActor (ADR-002 substrate § subprocess v1) using the v0.7 ST-SS wire vocabulary.
+// SubprocessActor (ADR-002 substrate § subprocess v1) using the v0.7 event-stream wire vocabulary.
 //
-// Inbound: WebSocket to the kernel ST-SS bridge. The Z1 wire adapter
+// Inbound: WebSocket to the kernel event-stream bridge. The Z1 wire adapter
 // translates kernel-internal Op kinds into v0.7 Cell kinds before broadcast,
 // so the PWA listens for cells `terminal_output` / `terminal_exit` /
 // `env_status` / `lsp_state` / `agent_thinking` / `agent_action` — not the

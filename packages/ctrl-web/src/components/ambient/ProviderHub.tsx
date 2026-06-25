@@ -20,6 +20,7 @@ import {
 } from '@/lib/kernel';
 import { providerSetActive, providerList, type ProviderListRow } from '@/lib/provider-config';
 import { useActiveProvider } from '@/hooks/useActiveProvider';
+import { ConfirmDialog } from '@/components/primitives/ConfirmDialog';
 import styles from './ProviderHub.module.css';
 
 interface ActiveView {
@@ -71,6 +72,7 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
   const [modelsLoading, setModelsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<ProviderListRow | null>(null);
 
   // Decision 0007 §per-provider-models (2026-06-19): when the user
   // picks a template + types their key, debounce-query the provider's
@@ -241,18 +243,20 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
   // Remove calls config_delete_provider (clears keychain + removes
   // ~/.ctrl/providers/<slug>.toml). The active SSOT falls back to the
   // next configured provider on the next chip refresh.
-  const removeProvider = async (c: ProviderListRow): Promise<void> => {
-    if (
-      !window.confirm(
-        `Remove ${c.label}? Deletes the manifest + keychain entry. Irisy will fall back to the next configured provider.`,
-      )
-    ) {
-      return;
-    }
+  // Open the in-app confirm (window.confirm returns false in Tauri's WKWebView,
+  // so a native browser confirm would make delete impossible).
+  const removeProvider = (c: ProviderListRow): void => {
+    setPendingRemove(c);
+  };
+
+  const confirmRemove = async (): Promise<void> => {
+    const c = pendingRemove;
+    if (!c) return;
     setBusy(true);
     setError(null);
     try {
       await deleteProvider(c.id);
+      setPendingRemove(null);
       reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -479,6 +483,20 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={pendingRemove != null}
+        title="Remove provider?"
+        body={
+          pendingRemove
+            ? `Remove ${pendingRemove.label}? Deletes the manifest + keychain entry. Irisy falls back to the next configured provider.`
+            : ''
+        }
+        confirmLabel="Remove"
+        destructive
+        pending={busy}
+        onCancel={() => setPendingRemove(null)}
+        onConfirm={() => void confirmRemove()}
+      />
     </div>
   );
 

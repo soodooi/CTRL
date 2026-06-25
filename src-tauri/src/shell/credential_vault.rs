@@ -163,6 +163,7 @@ pub fn delete(account: &str) -> Result<(), String> {
 /// vault. Reads each candidate slug; anything present is moved into
 /// the vault (and intentionally NOT deleted from the keychain — a
 /// belt-and-suspenders fallback in case the user reverts a build).
+#[allow(dead_code)]
 pub fn migrate_from_keychain(slugs: &[&str]) {
     let mut map = match load() {
         Ok(m) => m,

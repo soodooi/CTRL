@@ -23,7 +23,7 @@ use serde::Deserialize;
 use tauri::State;
 
 use crate::kernel::provider::manifest::AuthSource;
-use crate::shell::{KernelHandle, KeychainStore};
+use crate::shell::KernelHandle;
 
 #[derive(Debug, Deserialize)]
 struct OpenAiModelsResponse {
@@ -105,7 +105,9 @@ pub async fn provider_list_models(
     // Resolve auth per AuthSource. Empty / missing = proceed without
     // Bearer; most providers will 401, we then fall back to static.
     let api_key: Option<String> = match &manifest.auth {
-        AuthSource::Keychain { account } => KeychainStore::get(account).ok().flatten(),
+        AuthSource::Keychain { account } => {
+            crate::kernel::provider::registry::read_credential(account)
+        }
         AuthSource::ConfigKey { field } => manifest.config.get(field).cloned(),
         AuthSource::Env { var } => std::env::var(var).ok(),
         AuthSource::None => None,
@@ -154,8 +156,6 @@ pub async fn provider_query_models(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn dedup_and_sort_handles_repeats() {
         // Mirror the post-fetch normalization to keep the contract

@@ -10,7 +10,7 @@
 // commit fixed the URI **generation** (vaultUri instead of vaultAssetUri)
 // but this consumer was still calling raw `fetch()`.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { isCtrlAssetUri } from '@/lib/asset-uri';
 import { fetchUriAsText } from '@/lib/viewer-uri';
 import type { ViewerResource } from '@/lib/viewer-registry';
@@ -56,7 +56,7 @@ export const useViewerResource = (
     };
   }, [resource.uri]);
 
-  const save = async (): Promise<void> => {
+  const save = useCallback(async (): Promise<void> => {
     if (!resource.editable || !resource.onSave || content == null) return;
     setSaving(true);
     try {
@@ -69,7 +69,19 @@ export const useViewerResource = (
     } finally {
       setSaving(false);
     }
-  };
+  }, [resource, content]);
+
+  // Auto-save: a note persists itself after a short idle — no manual Save
+  // ("local is truth"; Obsidian/Notion never make you press save). Each edit
+  // resets the debounce; setOriginal on success clears `dirty` so it won't loop.
+  useEffect(() => {
+    if (content == null || content === original) return;
+    if (!resource.editable || !resource.onSave) return;
+    const t = setTimeout(() => {
+      void save();
+    }, 700);
+    return () => clearTimeout(t);
+  }, [content, original, resource.editable, resource.onSave, save]);
 
   return {
     content,

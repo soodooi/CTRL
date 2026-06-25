@@ -240,8 +240,8 @@ impl CliProcess {
         // (npm -g) exists. brain_supervisor + pi_install hit the same
         // trap and fix it by prepending common bin dirs to PATH; this
         // adapter is the third spawn site and was missed.
-        // bao 2026-05-31 (124-trail diagnose): "你不就在用 claude 订阅么?
-        // vmark 为什么可以识别到?" — claude IS installed locally
+        // bao 2026-05-31 (124-trail diagnose): "aren't you on a claude
+        // subscription? how come vmark could detect it?" — claude IS installed locally
         // (/opt/homebrew/Caskroom/claude-code/...), the adapter just
         // couldn't see it.
         let resolved_binary = resolve_binary_path(binary);
@@ -526,7 +526,7 @@ fn candidate_bin_dirs() -> Vec<String> {
         dirs.push(format!("{home}/.npm-global/bin")); // npm -g without sudo
         dirs.push(format!("{home}/.volta/bin"));      // Volta-managed node
         dirs.push(format!("{home}/.nvm/versions/node/current/bin"));
-        dirs.push(format!("{home}/.ctrl/pi/node_modules/.bin"));
+        // Dropped a dead `~/.ctrl/pi/node_modules/.bin` PATH entry per ADR-002 substrate § brain v19 (Pi retired; dir no longer exists).
     }
     dirs
 }

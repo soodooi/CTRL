@@ -85,18 +85,30 @@ use super::verify::trial_chat;
 const KEYCHAIN_SERVICE_PRIMARY: &str = "app.ctrl";
 const KEYCHAIN_SERVICE_LEGACY: &str = "app.ctrl.spike";
 
-/// Manifest id used for the CTRL-managed fallback slot. ADR-002
-/// substrate § provider v2 lock #3: irisy.fallback always seeds to this
-/// at boot when no persisted state overrides it. Today the credential
-/// path still reads the user keychain (account="volc"); a follow-up
-/// will swap to a ctrl-cloud secrets pipeline.
-const CTRL_FALLBACK_PROVIDER_ID: &str = "volc";
+/// Manifest id seeded into the `IrisyFallback` slot at boot when no
+/// persisted state overrides it. ADR-002 substrate § provider v2 lock
+/// #3 + ADR-006 cross-cutting § byok-no-claude v2 (2026-06-25, bao
+/// directive: "you're designing a system — not every user has a Volc
+/// key"): the default fallback must run out of the box for every user,
+/// with zero BYOK and zero cloud dependency. `volc` was wrong here — it
+/// needs a user-supplied key and was already dropped from
+/// BUILTIN_MANIFESTS, so the slot pointed at a manifest that is never
+/// seeded (the default path was simply broken). Point it instead at the
+/// one builtin that runs key-free on the user's own machine: `ollama`
+/// (CTRL bootstrap ships hermes3:8b). This honors the device-first rule
+/// (CLAUDE.md derived rule #2: works offline, ctrl-cloud is
+/// augmentation not dependency). The CF Workers AI cloud default
+/// (ADR-006 Pattern D) takes this slot once the ctrl-cloud secrets
+/// pipeline ships and a CTRL-brand cloud provider is seeded.
+const CTRL_FALLBACK_PROVIDER_ID: &str = "ollama";
 
 /// Manifest ids whose credential pipeline is owned by CTRL (CTRL pays
 /// the bill). Used by `snapshot()` to set `managed_by`. ADR-002
-/// substrate § provider v2 lock #3 + v2 §3.7: the `volc` builtin is the
-/// occupier today; future ctrl-brand provider ids land here too.
-const CTRL_MANAGED_PROVIDER_IDS: &[&str] = &["volc"];
+/// substrate § provider v2 lock #3 + v2 §3.7. Empty today: the only
+/// builtin is local `ollama` (runs on the user's own machine, CTRL pays
+/// nothing). A CF Workers AI / CTRL-brand cloud provider lands here once
+/// the ctrl-cloud secrets pipeline ships (ADR-006 § byok-no-claude v2).
+const CTRL_MANAGED_PROVIDER_IDS: &[&str] = &[];
 
 /// Embedded builtin manifests — single source of truth for the 9
 /// presets ADR-002 substrate § provider v2 §3.2 + lock #6 mandate.
@@ -297,7 +309,7 @@ impl ProviderRegistry {
     /// explicit unset by user delete), if a known user CLI is detected
     /// on PATH we silently bind it as the primary so the user does not
     /// have to open Settings just to get their own Claude OAuth wired
-    /// up. The CTRL-managed fallback (`volc`) seeded above already
+    /// up. The device-first fallback (`ollama`) seeded above already
     /// handles the no-CLI case.
     ///
     /// Only fires when the chosen manifest is actually `ready` — if
@@ -620,43 +632,25 @@ impl ProviderRegistry {
             Ok(k) if !k.is_empty() => k,
             _ => return env,
         };
-        // ADR-002 substrate §1.3 v19 (2026-06-11): opencode reads its
-        // provider config from OPENCODE_CONFIG_CONTENT (the generic keys
-        // below cover hermes, which reads ANTHROPIC_API_KEY/OPENAI_API_KEY
-        // directly). Build the explicit provider+model so opencode works
-        // with the user's actual CTRL provider, including openai-compatible
-        // ones (doubao / deepseek / kimi / qwen).
-        let model = m.models.first().cloned().unwrap_or_default();
+        // ADR-002 substrate §1.3: hermes (Irisy's brain) reads
+        // ANTHROPIC_API_KEY / OPENAI_API_KEY (+ BASE_URL) directly, so we
+        // inject only those. The opencode-specific
+        // OPENCODE_CONFIG_CONTENT block retired 2026-06-25 alongside
+        // opencode itself (DRIFT D8).
         match m.shape {
             HttpShape::AnthropicMessages => {
                 env.insert("ANTHROPIC_API_KEY".into(), key.clone());
                 if let Some(ep) = &m.endpoint {
                     env.insert("ANTHROPIC_BASE_URL".into(), ep.clone());
                 }
-                let cfg = serde_json::json!({
-                    "provider": { "anthropic": { "options": { "apiKey": key } } },
-                    "model": format!("anthropic/{model}"),
-                });
-                env.insert("OPENCODE_CONFIG_CONTENT".into(), cfg.to_string());
             }
             HttpShape::OpenaiChatCompletions => {
                 env.insert("OPENAI_API_KEY".into(), key.clone());
-                let base = m.endpoint.clone().unwrap_or_default();
-                if !base.is_empty() {
-                    env.insert("OPENAI_BASE_URL".into(), base.clone());
+                if let Some(ep) = &m.endpoint {
+                    if !ep.is_empty() {
+                        env.insert("OPENAI_BASE_URL".into(), ep.clone());
+                    }
                 }
-                let cfg = serde_json::json!({
-                    "provider": {
-                        "ctrl": {
-                            "npm": "@ai-sdk/openai-compatible",
-                            "name": m.label,
-                            "options": { "baseURL": base, "apiKey": key },
-                            "models": { model.clone(): {} },
-                        }
-                    },
-                    "model": format!("ctrl/{model}"),
-                });
-                env.insert("OPENCODE_CONFIG_CONTENT".into(), cfg.to_string());
             }
         }
         env
@@ -686,8 +680,8 @@ impl ProviderRegistry {
             .unwrap_or_else(|| CTRL_FALLBACK_PROVIDER_ID.to_string());
         drop(active);
         // ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11):
-        // coding.primary slot removed. Pi owns its own provider via
-        // ~/.pi/agent/models.json; no separate CTRL routing slot.
+        // coding.primary slot removed — no separate CTRL routing slot for
+        // a coding agent (Pi retired v19; opencode retired 2026-06-25).
         let fallbacks = match consumer {
             Consumer::IrisyFallback => Vec::new(),
             _ => {
@@ -708,9 +702,10 @@ impl ProviderRegistry {
                         chain.push(id);
                     }
                 }
-                // 2) CTRL-managed fallback (volc today, future
-                //    ctrl-cloud proxy). Dedupe in case a CLI fallback
-                //    above shared the id (defensive forward-compat).
+                // 2) Device-first default fallback (ollama today; CF
+                //    Workers AI via ctrl-cloud proxy once the secrets
+                //    pipeline ships). Dedupe in case a CLI fallback above
+                //    shared the id (defensive forward-compat).
                 if primary.as_deref() != Some(fallback_id.as_str())
                     && !chain.contains(&fallback_id)
                 {
@@ -1037,6 +1032,19 @@ fn keychain_read_with_aliases(primary: &str, aliases: &[&str]) -> Option<String>
         }
     }
     None
+}
+
+/// Single entry point for reading a provider credential by account slug.
+/// ADR-002 substrate § provider v2 (2026-06-25 store-unification fix):
+/// every credential read MUST go through the encrypted file vault
+/// (`credential_vault`), never the OS keyring directly — the keyring
+/// apple-native path returns no entry from the signed CTRL.app even when
+/// the secret physically exists (bao 2026-06-06). Three call sites
+/// (provider_models catalog / provider hermes-sync / detect first-boot)
+/// read the keyring directly and silently saw no key; they now route
+/// here so a user who stored a key actually gets it back.
+pub(crate) fn read_credential(account: &str) -> Option<String> {
+    keychain_read_with_aliases(account, &legacy_account_aliases(account))
 }
 
 /// Scan `~/.ctrl/providers/*.toml`. One bad file is logged + skipped;

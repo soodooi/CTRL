@@ -86,7 +86,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 7. **CTRL 不自带通用 brain;两条并行路径,都经 `:17873` gate** *(ADR-001 spine § byo-cli-driver v8 + ADR-002 substrate § brain v28; 真相源 `vault/ctrl/architecture-byo-cli-driver.md`)*:
    - **Irisy(app 内助手)的脑 = Hermes Agent** (NousResearch). CTRL bundle + lazy-install + 启动它 (dashboard `:17890`, Irisy 嵌入). **hermes 不退役.**
    - **BYO-CLI driver(projection)= 附加并行路径** — CTRL 把工具/技能/记忆/工作流投影 (materialize) 进用户自选本地 CLI (Claude Code 旗舰) 的原生落点 (`.mcp.json` / `SKILL.md` / `CLAUDE.md`·`AGENTS.md` / slash command), CLI 启动自动发现; CTRL 不 lazy-install / 不 supervise 该 CLI 的 agent loop. 已落地 `kernel/projector.rs` (项目级 `~/Documents/CTRL/.mcp.json`).
-   - **Pi 已退役** (ADR-002 v19, 2026-06-09 PR — `@mariozechner/pi-coding-agent` + ctrl-pi-bridge / ctrl-pi-plugin / `~/.ctrl/pi/` 全删, 代码零接线). opencode 未接线 (保留作未来 coding 路径). ACP 降级为 future「ACP-aware CLI 增强通道」, 代码保留.
+   - **Pi 已退役** (ADR-002 v19, 2026-06-09 PR — `@mariozechner/pi-coding-agent` + ctrl-pi-bridge / ctrl-pi-plugin / `~/.ctrl/pi/` 全删, 代码零接线). opencode 已下线 (2026-06-25, bao 裁决; 曾误接线, 已移除). ACP 降级为 future「ACP-aware CLI 增强通道」, 代码保留.
    - **调度权在 brain 手里** — CTRL 只「让 brain 看见资产 (projection)」+「调用回流经 `:17873` gate (权限/审计/可见性)」, 不编排决策 (符合 one-shot / AI-is-pipe).
 
 ### 几个具体推论
@@ -119,7 +119,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 
 **5 kernel primitives** (L1 内): Actor / Capability / Event / Channel / Effect.
 
-**5 mcp sources**: MCP servers / Big-platform OAuth / Local agents / ST-SS shared windows / Built-in.
+**4 mcp sources**: MCP servers / Big-platform OAuth / Local agents / Built-in. (ST-SS shared windows retired as a source 2026-06-25, ADR-001 spine v9 — one-way broadcast, can't do remote control; the kernel→PWA stream it named lives on as plain WS `event_ws.rs`.)
 
 物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 spine § layers v8 — BYO-CLI driver 5-块是 logical view, 4 层是 implementation view, 两图并存.
 

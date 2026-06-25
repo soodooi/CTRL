@@ -1,4 +1,4 @@
-// useCellStream — subscribes to the kernel ST-SS bridge for a given stream.
+// useCellStream — subscribes to the kernel event-stream bridge for a given stream.
 //
 // Pulls a fresh bridge URL via the `subscribe` invoke command (which embeds
 // the per-process auth token), opens a WebSocket to that URL, and decodes

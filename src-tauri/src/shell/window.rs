@@ -149,7 +149,7 @@ impl WindowController {
                 let _ = w.hide();
                 // Sync hide for the input companion window so users don't
                 // see a stranded textarea floating on screen after Ctrl-hide
-                // (bao 2026-05-30: 'Ctrl 一键 toggle 两个窗口同时显隐').
+                // (bao 2026-05-30: 'Ctrl toggles both windows visible/hidden together').
                 if let Some(input) = app.get_webview_window("input") {
                     let _ = input.hide();
                 }

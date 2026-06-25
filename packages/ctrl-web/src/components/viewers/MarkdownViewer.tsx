@@ -226,8 +226,12 @@ export const MarkdownViewer = ({ resource }: ViewerProps): ReactElement => {
   // smart-table `.md` arrives here as text/markdown; detect the schema and hand
   // off to the SmartTableViewer (query bar + grid/kanban) instead of rendering
   // it as plain prose.
+  // A real smart table has at least one USER-declared column. `parseSmartTable`
+  // always injects a system `ID` column (ensureRowIds), so `.length > 0` is true
+  // for EVERY note (incl. plain prose / empty) — that false positive made every
+  // note open as a smart table. Require a non-system column instead.
   const isSmartTable = useMemo(
-    () => content != null && parseSmartTable(content).schema.length > 0,
+    () => content != null && parseSmartTable(content).schema.some((c) => !c.system),
     [content],
   );
   const [mode, setMode] = useState<'wysiwyg' | 'source'>('wysiwyg');

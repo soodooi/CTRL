@@ -30,9 +30,43 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
+use crate::kernel::audit;
+use crate::kernel::visibility;
+
 /// Server name we own inside the driver's `mcpServers` map. Stable across
 /// boots so re-projection upserts (never duplicates) the entry.
 const KERNEL_SERVER_KEY: &str = "ctrl-kernel";
+
+/// Caller identity stamped on the BYO-CLI projection. Driver-agnostic on
+/// purpose — any HTTP-MCP CLI launched in the workspace reads this `.mcp.json`,
+/// so we attribute it to the BYO-CLI path, not a specific product. Recorded in
+/// the gate audit ledger so BYO-CLI traffic is attributable rather than blanket
+/// "external" (ADR-010 trust-domains, SC3 caller refinement).
+const BYO_CLI_CALLER: &str = "byo-cli";
+
+/// Default intent the base workspace projection grants a BYO-CLI driver: CTRL's
+/// own data-augmentation domains (notes vault, smart tables, memory, kv,
+/// provider router, capability registry). DELIBERATELY excludes `net` (the
+/// `http_get` / `http_post` exfiltration surface — a BYO CLI has its own network
+/// access; routing it through CTRL's gate adds an unaudited exfil path labeled
+/// as CTRL) and `mcp` (raw downstream passthrough — a BYO CLI mounts its own MCP
+/// servers). `system` tools (kernel_status, vault_root_path) are always visible
+/// regardless of intent. Override with `CTRL_BYO_INTENT` — a comma-separated
+/// domain list, or `unscoped` for the full toolset (ADR-010 trust-domains,
+/// SC3 intent-scoped projection; ADR-001 section 4 projector subset rule).
+const BYO_CLI_DEFAULT_INTENT: &str = "vault,smart_table,notes,providers,registry,kv,llm,memory";
+
+/// Resolve the intent header value for the base projection. `None` => omit the
+/// header entirely (unscoped / full toolset). Honors the `CTRL_BYO_INTENT`
+/// escape hatch so a power user (or CTRL's active-launch path) can widen,
+/// narrow, or disable the default scope without a rebuild.
+fn resolve_byo_intent() -> Option<String> {
+    match std::env::var("CTRL_BYO_INTENT") {
+        Ok(v) if v.trim().eq_ignore_ascii_case("unscoped") => None,
+        Ok(v) if !v.trim().is_empty() => Some(v.trim().to_string()),
+        _ => Some(BYO_CLI_DEFAULT_INTENT.to_string()),
+    }
+}
 
 /// Resolve the CTRL workspace root the driver is launched in —
 /// `~/Documents/CTRL/`. A project-scoped `.mcp.json` here is auto-discovered
@@ -46,11 +80,24 @@ fn workspace_root() -> Option<PathBuf> {
 /// in Claude Code's `.mcp.json` shape (`headers` is an object, not an array).
 /// `token` is the kernel's per-boot ephemeral gate credential (caller-supplied,
 /// read from the kernel MCP server — never embedded here).
-fn kernel_entry(port: &str, token: &str) -> Value {
+///
+/// Beyond `Authorization`, we stamp the gate's identity headers so the BYO-CLI
+/// path lands at the gate already attributed (`X-Ctrl-Caller`) and scoped to a
+/// least-privilege tool subset (`X-Ctrl-Intent`). `intent: None` omits the
+/// scope header entirely (full toolset). The driver's MCP client forwards these
+/// headers verbatim on every `tools/list` + `tools/call` (ADR-010 § trust-domains,
+/// SC3).
+fn kernel_entry(port: &str, token: &str, caller: &str, intent: Option<&str>) -> Value {
+    let mut headers = Map::new();
+    headers.insert("Authorization".to_string(), json!(format!("Bearer {token}")));
+    headers.insert(audit::CALLER_HEADER.to_string(), json!(caller));
+    if let Some(intent) = intent {
+        headers.insert(visibility::INTENT_HEADER.to_string(), json!(intent));
+    }
     json!({
         "type": "http",
         "url": format!("http://127.0.0.1:{port}/mcp"),
-        "headers": { "Authorization": format!("Bearer {token}") }
+        "headers": Value::Object(headers)
     })
 }
 
@@ -97,7 +144,8 @@ pub fn project_into_dir(dir: &Path, port: &str, token: &str) -> std::io::Result<
         return Ok(false);
     };
 
-    let next = kernel_entry(port, token);
+    let intent = resolve_byo_intent();
+    let next = kernel_entry(port, token, BYO_CLI_CALLER, intent.as_deref());
     if servers.get(KERNEL_SERVER_KEY) == Some(&next) {
         // Same token + port — idempotent no-op (avoids needless rewrites on
         // boots where the gate token happens to be unchanged).
@@ -273,6 +321,73 @@ mod tests {
             entry["headers"]["Authorization"],
             format!("Bearer {FIXTURE_GATE_VALUE}")
         );
+    }
+
+    #[test]
+    fn kernel_entry_stamps_caller_and_intent_headers() {
+        // Pure (no env): the BYO-CLI driver lands at the gate already
+        // attributed + scoped, so SC3 caller refinement + intent projection
+        // apply to external CLIs by default.
+        let entry = kernel_entry("17873", FIXTURE_GATE_VALUE, "byo-cli", Some("vault,kv"));
+        let h = &entry["headers"];
+        // Authorization shape is covered by creates_mcp_json_with_kernel_entry;
+        // here we assert the SC3 identity headers ride alongside it.
+        assert!(h.get("Authorization").is_some());
+        assert_eq!(h[audit::CALLER_HEADER], "byo-cli");
+        assert_eq!(h[visibility::INTENT_HEADER], "vault,kv");
+    }
+
+    #[test]
+    fn kernel_entry_omits_intent_when_unscoped() {
+        // intent: None => no scope header at all (full toolset), but the caller
+        // is still attributed.
+        let entry = kernel_entry("17873", FIXTURE_GATE_VALUE, "byo-cli", None);
+        let h = &entry["headers"];
+        assert_eq!(h[audit::CALLER_HEADER], "byo-cli");
+        assert!(
+            h.get(visibility::INTENT_HEADER).is_none(),
+            "unscoped projection must not stamp an intent header"
+        );
+    }
+
+    #[test]
+    fn default_intent_excludes_exfil_and_passthrough_domains() {
+        // Lock the policy: the base BYO-CLI scope grants CTRL's data domains but
+        // never `net` (http exfiltration) or `mcp` (raw downstream passthrough).
+        let domains: Vec<&str> = BYO_CLI_DEFAULT_INTENT.split(',').collect();
+        for must in ["vault", "smart_table", "notes", "memory", "kv"] {
+            assert!(domains.contains(&must), "default intent must grant '{must}'");
+        }
+        for forbidden in ["net", "mcp", "http"] {
+            assert!(
+                !domains.contains(&forbidden),
+                "default intent must NOT grant '{forbidden}' (exfiltration / passthrough surface)"
+            );
+        }
+        // The stamped subset must be parseable + actually scope a tool out: a
+        // net tool is hidden, a vault tool is visible.
+        let intent = visibility::Intent::parse(Some(BYO_CLI_DEFAULT_INTENT));
+        assert!(intent.is_scoped());
+        assert!(intent.allows_tool("vault_read"));
+        assert!(intent.allows_tool("smart_table_query"));
+        assert!(!intent.allows_tool("http_post"));
+        // System introspection stays visible even under the scoped default.
+        assert!(intent.allows_tool("kernel_status"));
+    }
+
+    #[test]
+    fn projection_stamps_byo_caller_and_a_scope_by_default() {
+        // End-to-end through project_into_dir with the ambient (unset) env: the
+        // written entry carries the byo-cli caller + a non-empty intent scope.
+        let dir = TempDir::new().unwrap();
+        project_into_dir(dir.path(), "17873", FIXTURE_GATE_VALUE).unwrap();
+        let v = read_json(dir.path());
+        let h = &v["mcpServers"]["ctrl-kernel"]["headers"];
+        assert_eq!(h[audit::CALLER_HEADER], "byo-cli");
+        let intent = h[visibility::INTENT_HEADER]
+            .as_str()
+            .expect("default projection stamps an intent header");
+        assert!(intent.contains("vault"));
     }
 
     #[test]

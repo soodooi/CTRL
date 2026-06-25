@@ -106,12 +106,31 @@ export const TEMPLATES: Record<string, TableTemplate> = {
   },
 };
 
+/** Slugify a title into a filename stem (shared by create + import). */
+const slugify = (s: string): string =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'table';
+
+/** Pick a `tables/<slug>.md` path that doesn't collide with an existing file
+ *  (so two tables from the same template don't silently overwrite). */
+const uniqueTablePath = async (baseSlug: string): Promise<string> => {
+  let existing: Set<string>;
+  try {
+    existing = new Set(await vaultList());
+  } catch {
+    existing = new Set();
+  }
+  if (!existing.has(`tables/${baseSlug}.md`)) return `tables/${baseSlug}.md`;
+  for (let n = 2; ; n += 1) {
+    const candidate = `tables/${baseSlug}-${n}.md`;
+    if (!existing.has(candidate)) return candidate;
+  }
+};
+
 /** Create a new smart table from a template (default blank) and return its path. */
 export const createSmartTable = async (rawTitle: string, templateKey = 'blank'): Promise<string> => {
   const tpl = (TEMPLATES[templateKey] ?? TEMPLATES.blank) as TableTemplate;
   const title = rawTitle.trim() || tpl.name;
-  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'table';
-  const path = `tables/${slug}.md`;
+  const path = await uniqueTablePath(slugify(title));
   const headers = tpl.schema.map((c) => c.label);
   const content = `| ${headers.join(' | ')} |\n|${tpl.schema.map(() => '---').join('|')}|\n| ${tpl.schema.map(() => ' ').join(' | ')} |\n`;
   await vaultWrite({ path, content, frontmatter: { title, schema: tpl.schema } });

@@ -22,8 +22,8 @@
 // vault:// → vault_write, ctrl-asset:// → (not writable yet — error so
 // callers expose the read-only badge), others → console.warn + reject.
 
-import { invoke } from '@tauri-apps/api/core';
 import { isCtrlAssetUri } from './asset-uri';
+import { gateInvoke } from './kernel';
 
 export type UriKind = 'vault' | 'ctrl-asset' | 'data' | 'http' | 'file' | 'blob' | 'unknown';
 
@@ -67,7 +67,7 @@ export interface VaultEntry {
  * found" (offer to create).
  */
 export const readVault = async (relativePath: string): Promise<VaultEntry> =>
-  invoke<VaultEntry>('vault_read', { args: { path: relativePath } });
+  gateInvoke<VaultEntry>('vault_read', { path: relativePath });
 
 /**
  * Write a vault markdown file. The Rust side always emits a YAML
@@ -81,9 +81,9 @@ export const writeVault = async (
   content: string,
   frontmatter: Record<string, unknown> = {},
 ): Promise<void> => {
-  await invoke('vault_write', {
-    args: { path: relativePath, content, frontmatter },
-  });
+  // The gate's vault_write field is `body` (not `content`); map it so the
+  // write lands instead of being rejected for a missing required field.
+  await gateInvoke('vault_write', { path: relativePath, body: content, frontmatter });
 };
 
 /**

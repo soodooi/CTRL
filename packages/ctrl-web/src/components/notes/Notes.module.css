@@ -1452,6 +1452,87 @@
   vertical-align: bottom;
 }
 
+/* Inline rename / move input — replaces the file row in place
+   (Obsidian-style: editing the path also moves the file). */
+.renameInput {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 1px 8px;
+  box-sizing: border-box;
+  appearance: none;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  font-family: var(--font-mono, var(--font-sans));
+  font-size: 12.5px;
+  padding: 2px 6px;
+  outline: none;
+}
+
+/* Right-click context menu for file operations. Fixed to the cursor. */
+.contextMenu {
+  position: fixed;
+  z-index: 40;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px -8px color-mix(in oklch, black 60%, transparent);
+}
+
+.contextMenuLabel {
+  padding: 6px 10px 4px;
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextMenuItem,
+.contextMenuDanger {
+  display: block;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart);
+}
+
+.contextMenuItem:hover {
+  background: var(--color-bg-l2);
+}
+
+.contextMenuDanger {
+  color: var(--color-danger, #e5484d);
+}
+
+.contextMenuDanger:hover {
+  background: color-mix(in oklch, var(--color-danger, #e5484d) 14%, transparent);
+}
+
+/* Non-silent op failure (rename / delete) — was a real breakpoint. */
+.treeError {
+  margin: 8px 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--color-danger, #e5484d);
+  background: color-mix(in oklch, var(--color-danger, #e5484d) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-danger, #e5484d) 30%, transparent);
+  border-radius: 6px;
+}
+
 .muted {
   color: var(--color-text-muted);
   font-size: 12px;
@@ -2398,4 +2479,88 @@
   color: var(--color-text-muted);
   font-style: italic;
   font-size: 11px;
+}
+
+/* ─── Command palette (Cmd/Ctrl+P) ─────────────────────────────── */
+.paletteOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 14vh;
+  background: color-mix(in oklch, black 40%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.palette {
+  width: min(560px, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px -12px color-mix(in oklch, black 65%, transparent);
+}
+
+.paletteInput {
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  padding: 14px 16px;
+  outline: none;
+}
+
+.paletteList {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.paletteItem {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.paletteItem[data-active] {
+  background: color-mix(in oklch, var(--color-accent) 16%, transparent);
+}
+
+.paletteLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paletteHint {
+  flex: none;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.paletteEmpty {
+  padding: 14px 16px;
+  color: var(--color-text-muted);
+  font-size: 13px;
 }

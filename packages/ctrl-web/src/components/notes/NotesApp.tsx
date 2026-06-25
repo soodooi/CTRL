@@ -32,27 +32,29 @@ import {
   type ReactElement,
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { vaultList, vaultRead, vaultWrite } from '@/lib/kernel';
+import {
+  vaultList,
+  vaultRead,
+  vaultWrite,
+} from '@/lib/kernel';
 import {
   loadDailyNotesConfig,
   renderDailyNotePath,
 } from '@/lib/vault-conventions';
-import { NotesTree } from './NotesTree';
+import { NotesTree, type PathMutation } from './NotesTree';
 import { NotesEditor } from './NotesEditor';
 import { NotesBacklinks } from './NotesBacklinks';
 import { NotesTabBar } from './NotesTabBar';
 import { TemplatesModal } from './TemplatesModal';
 import { TagsPanel } from './TagsPanel';
 import { VaultHealthFold } from './VaultHealthFold';
+import { VaultSetup } from '@/components/VaultSetup';
 import styles from './Notes.module.css';
 
-// GraphView intentionally not mounted here — bao 2026-06-05: kairo
-// shows Notes/Graph as in-sidebar nav, but CTRL already has L1
-// PrimaryRail + an L2 slot reserved in app.tsx ([Tab | L2 | L1 |
-// Irisy]). Surfacing Graph as a second sidebar button duplicates
-// navigation and steals 32 px from the workspace. Graph rendering
-// lives at `./GraphView` and Irisy / a future L2 sub-nav (ADR-003
-// frontend §7.5) can mount it without the in-sidebar toggle.
+// Notes is a THIN KB layer (vault/ctrl/notes-module-plan.md + ADR-003 v9): a
+// viewer + navigation over the plain-markdown vault, not an Obsidian clone.
+// Graph view + a command palette belong to Obsidian (open-in-Obsidian), so they
+// are deliberately not reimplemented here.
 
 const renderDailyTemplate = (raw: string): string => {
   const d = new Date();
@@ -77,8 +79,11 @@ export const NotesApp = (): ReactElement => {
   // Simplified layout (bao 2026-06-12): L2 file tree + backlinks collapse into
   // toolbar toggles so the editor gets the room. L2 is CLOSED by default
   // (bao 2026-06-12: anti-Trae — don't slam four zones on the user at once).
-  // The knowledge-base home covers find/new/recent; ☰ opens the tree on demand.
-  const [treeOpen, setTreeOpen] = useState(false);
+  // Notes is a knowledge-base MANAGEMENT surface (ADR-003 §5 three-pane:
+  // Tree + content + Backlinks), not the minimal morphing home — so the file
+  // tree is persistent by default (☰ can still hide it). A KB manager needs the
+  // folder hierarchy always in view; the find/new/recent home is the empty state.
+  const [treeOpen, setTreeOpen] = useState(true);
   const [backlinksOpen, setBacklinksOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -142,6 +147,22 @@ export const NotesApp = (): ReactElement => {
     },
     [openNoteTab],
   );
+
+  // Keep the workspace tabs + selection in sync when the tree renames,
+  // moves, or deletes a file on disk (the tree owns the file-op UI).
+  const handlePathMutated = useCallback((change: PathMutation) => {
+    if (change.kind === 'delete') {
+      setOpenTabs((prev) => prev.filter((t) => t.path !== change.path));
+      setSelectedPath((cur) => (cur === change.path ? null : cur));
+    } else {
+      setOpenTabs((prev) =>
+        prev.map((t) =>
+          t.path === change.from ? { ...t, path: change.to } : t,
+        ),
+      );
+      setSelectedPath((cur) => (cur === change.from ? change.to : cur));
+    }
+  }, []);
 
   const handleNew = useCallback(() => {
     setTemplatesOpen(true);
@@ -260,6 +281,7 @@ export const NotesApp = (): ReactElement => {
                 selectedPath={selectedPath}
                 onSelect={handleSelect}
                 tagFilter={tagFilter}
+                onPathMutated={handlePathMutated}
               />
             ) : (
               <TagsPanel selected={tagFilter} onSelect={setTagFilter} />
@@ -267,6 +289,7 @@ export const NotesApp = (): ReactElement => {
           </aside>
         )}
         <div className={styles.centerCol}>
+          <VaultSetup variant="banner" />
           <div className={styles.notesToolbar}>
             <button
               type="button"

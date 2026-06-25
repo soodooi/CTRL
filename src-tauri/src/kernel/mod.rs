@@ -3,7 +3,7 @@
 // 5 primitives (mirrors @ctrl/kernel-sdk in TypeScript):
 //   - Actor     : independent execution unit with mailbox
 //   - Capability: static token bundle declaring what an actor may do
-//   - Event     : ST-SS cell+op unified message format
+//   - Event     : event-stream cell+op unified message format
 //   - Channel   : typed pipe between actors (back-pressure)
 //   - Effect    : first-class side effect (returned from actor handlers)
 //
@@ -19,6 +19,7 @@
 
 pub mod actor;
 pub mod ai_column;
+pub mod audit;
 pub mod cache;
 pub mod capability;
 pub mod capability_resolver;
@@ -48,11 +49,12 @@ pub mod mcp_capture;
 // ADR-002 substrate § vault v1 §8.4 + memory
 // `decision_vault_adr_002_section_8`.
 pub mod sourcing_scheduler;
-pub mod stss_bridge;
+pub mod event_ws;
 pub mod subprocess_actor;
-pub mod subprocess_stss_adapter;
+pub mod subprocess_channel_adapter;
 pub mod smart_table_index;
 pub mod vault;
+pub mod visibility;
 pub mod vault_notes_source;
 pub mod vault_smart_table;
 // ADR-002 substrate § vault v1 §8.3 #9-15, 2026-06-01 —
@@ -77,4 +79,4 @@ pub mod vault_sourcing;
 mod pipeline_e2e;
 
 pub use mcp_server::DEFAULT_LISTEN_ADDR as MCP_SERVER_LISTEN_ADDR;
-pub use stss_bridge::{StssBridge, DEFAULT_LISTEN_ADDR as STSS_LISTEN_ADDR};
+pub use event_ws::{EventWsBridge, DEFAULT_LISTEN_ADDR as EVENT_WS_LISTEN_ADDR};

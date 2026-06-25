@@ -1,7 +1,8 @@
 // StatusBar — top status zone.
 //
-// Layout (bao 2026-05-30 校正: 顶部只 CTRL logo + KRN; ENGINE/MCP/VAULT
-// chips 挪到对话框底部的 InfraBar — 见 components/InfraBar.tsx):
+// Layout (bao 2026-05-30 correction: top bar keeps only CTRL logo + KRN;
+// ENGINE/MCP/VAULT chips moved to the InfraBar at the bottom of the chat —
+// see components/InfraBar.tsx):
 //   [LOGO] [KRN ●]                                       [v0.1.x ●] [×]
 //
 // The previous "everything goes top" layout cluttered the status bar and

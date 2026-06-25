@@ -14,6 +14,7 @@
 // left in place so the caller can see what the prompt expected.
 
 import { invoke } from './bridge';
+import { vaultRead, vaultWrite } from './kernel';
 import { capabilityListForPrompt } from './capability-catalog';
 
 const PROMPTS_DIR = '.irisy-prompts';
@@ -69,18 +70,11 @@ const IRISY_SYSTEM_PATH = `${PROMPTS_DIR}/irisy-system.md`;
 // "save to Notes" instead of producing the content, leaving the chat with an
 // empty promise and the workspace empty. v12 makes inline output the default;
 // vault_write only on an explicit save request.
-export const PROMPT_VERSION = 12;
-
-interface VaultEntry {
-  path: string;
-  frontmatter: Record<string, unknown>;
-  content: string;
-}
-
-interface VaultWriteReply {
-  absolute_path: string;
-  path: string;
-}
+// v13 (bao 2026-06-22): Coding is now a real terminal (was opencode). Adds a
+// "Claude Code install & configure" block so Irisy can guide / install it
+// (incl. the China npm mirror npmmirror) and points key/endpoint config at
+// Settings → Env (keychain-backed, injected into the terminal).
+export const PROMPT_VERSION = 13;
 
 // Canonical Irisy persona (single source of truth; IrisyChat imports this for
 // its initial state). Keep mcp text English even when the chat is in another
@@ -93,8 +87,9 @@ summoned with the Ctrl key. What CTRL gives the user, concretely:
 - **Notes**: a plain markdown folder (~/Documents/CTRL/Notes/) with a
   full editor, wiki-links and backlinks — their files, readable in vim,
   never locked in.
-- **Coding**: a real coding agent (opencode) in the Coding tab — reads,
-  writes and refactors code in their project directory.
+- **Coding**: a real terminal (opens at their home directory) where they run
+  their own coding CLI — Claude Code is the flagship. You know how to install
+  and configure it (incl. the China npm mirror) and can walk them through it.
 - **Mcps**: single-action AI tools they can install and compose.
 
 ## When the user asks "what can you do?"
@@ -103,7 +98,7 @@ Answer with the concrete list above in their language — lead with what
 THEY get (draft text, translate, summarise, take notes that stay theirs,
 delegate coding tasks), not with abstract lifecycle verbs or internal
 architecture. Two or three example asks beat any feature list. Never use
-retired internal words (no "keycap" / "键帽", no "vault" — say Notes).
+retired internal words (no "keycap", no "vault" — say Notes).
 
 ## Producing documents, pages, code, diagrams (they open in the workspace)
 
@@ -222,6 +217,28 @@ User: Explain the vault.
 BAD: The vault is CTRL's core data store... [several paragraphs] ...let me know if you need more help.
 GOOD: Your vault is a local markdown folder (default \`~/Documents/CTRL/\`). Notes, caches, indexes all land there. Quit CTRL and the files stay.
 
+## Claude Code in the Coding terminal — install & configure
+
+The Coding tab is a real terminal at the user's home directory. When the user
+asks how to set up Claude Code, or asks you to install it, give the exact
+commands as a fenced \`\`\`bash block they can run there.
+
+Install (global npm). In mainland China the official registry is slow or
+blocked — default to the domestic mirror:
+\`\`\`bash
+npm i -g @anthropic-ai/claude-code --registry=https://registry.npmmirror.com
+\`\`\`
+Outside China, plain \`npm i -g @anthropic-ai/claude-code\` is fine. Needs
+Node 18+ (\`brew install node\` on macOS, or nodejs.org). Verify with
+\`claude --version\`, then run \`claude\`.
+
+Configure the key / endpoint — first run prompts a login, or set env vars:
+- \`ANTHROPIC_API_KEY\` — the API key.
+- \`ANTHROPIC_BASE_URL\` — a custom / proxy endpoint (common in China).
+The user sets these in **Settings → Env**; CTRL keeps them in the OS keychain
+and injects them into the Coding terminal, so secrets never get pasted into
+the shell each time.
+
 ## Runtime facts
 The persona layer injects a "## Runtime" block elsewhere in this prompt
 with the current provider + model values. Those are facts you can share
@@ -239,8 +256,8 @@ turn. Only install a mcp when the user explicitly framed the request
 as a reusable shortcut.
 
 ONE-SHOT (no install_mcp — just do it):
-  • "写一份关于 X 的笔记" / "Draft a markdown note about X"
-  • "Summarise this article" / "总结一下这段"
+  • "Draft a markdown note about X"
+  • "Summarise this article"
   • "Translate this paragraph to English"
   • "Write me a poem about the moon"
   • "Help me think through this decision"
@@ -253,15 +270,15 @@ only then reply with a one-line "Saved → …" acknowledgement. For other
 one-shots, just answer in chat.
 
 REUSABLE (this is when install_mcp fires):
-  • "Make me a slides tool" / "做个 PPT 工具"
+  • "Make me a slides tool"
   • "I want a button that turns any screenshot into clean alt text"
   • "Give me a one-click translator for Chinese → English"
-  • "我经常要写读书笔记,给我做个工具" (user explicitly said 经常 / 工具 / a tool)
-The trigger words are 工具 / 按钮 / 键 / shortcut / key / "make a button" /
+  • "I often write reading notes — make me a tool for it" (user explicitly said often / tool)
+The trigger words are tool / button / shortcut / key / "make a button" /
 "a tool I can reuse". Without one of those signals, assume one-shot.
 
-If you can't tell, ask ONE short question: "做完这一次就行,还是想以
-后一键再来?" — never guess and install.
+If you can't tell, ask ONE short question: "just this once, or a one-click
+shortcut for next time too?" — never guess and install.
 
 # How to install a mcp (only when the rule above says to)
 1. Pull keywords from what they said (in their own language) and call
@@ -311,11 +328,10 @@ the JSON back at the user; just tell them what happened.`;
  */
 export async function ensurePromptsBootstrap(): Promise<void> {
   try {
-    const entry = await invoke<VaultEntry>('vault_read', {
-      args: { path: IRISY_SYSTEM_PATH },
-    });
-    const storedVersion = Number(entry.frontmatter?.version ?? 0);
-    const managedByIrisy = entry.frontmatter?.managed_by === 'irisy';
+    const entry = await vaultRead(IRISY_SYSTEM_PATH);
+    const fm = entry.frontmatter as Record<string, unknown> | null;
+    const storedVersion = Number((fm?.version as number) ?? 0);
+    const managedByIrisy = fm?.managed_by === 'irisy';
     // Up-to-date managed copy → leave it. A stale managed copy (older
     // version) gets re-seeded so prompt fixes reach users who already booted.
     // A user-owned copy (managed_by !== irisy) is never overwritten.
@@ -323,17 +339,15 @@ export async function ensurePromptsBootstrap(): Promise<void> {
   } catch {
     /* missing — fall through and write default */
   }
-  await invoke<VaultWriteReply>('vault_write', {
-    args: {
-      path: IRISY_SYSTEM_PATH,
-      content: IRISY_SYSTEM_DEFAULT,
-      frontmatter: {
-        kind: 'system-prompt',
-        managed_by: 'irisy',
-        name: 'irisy-system',
-        description: 'Base persona + tool-calling protocol for Irisy chat.',
-        version: PROMPT_VERSION,
-      },
+  await vaultWrite({
+    path: IRISY_SYSTEM_PATH,
+    content: IRISY_SYSTEM_DEFAULT,
+    frontmatter: {
+      kind: 'system-prompt',
+      managed_by: 'irisy',
+      name: 'irisy-system',
+      description: 'Base persona + tool-calling protocol for Irisy chat.',
+      version: PROMPT_VERSION,
     },
   });
 }
@@ -344,9 +358,7 @@ export async function ensurePromptsBootstrap(): Promise<void> {
  */
 export async function loadPrompt(name: string): Promise<string | null> {
   try {
-    const entry = await invoke<VaultEntry>('vault_read', {
-      args: { path: `${PROMPTS_DIR}/${name}.md` },
-    });
+    const entry = await vaultRead(`${PROMPTS_DIR}/${name}.md`);
     return entry.content;
   } catch {
     return null;
@@ -397,8 +409,10 @@ async function loadSoul(): Promise<IrisySoulView | null> {
     return cachedSoul.value;
   }
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const view = await invoke<IrisySoulView>('irisy_soul_read');
+    // SOUL.md now loads through the gate (memory domain), same path as the
+    // rest of the capability surface (SC5 convergence) — no bespoke command.
+    const { irisySoulRead } = await import('@/lib/kernel');
+    const view = await irisySoulRead();
     cachedSoul = { value: view, loadedAt: now };
     return view;
   } catch {

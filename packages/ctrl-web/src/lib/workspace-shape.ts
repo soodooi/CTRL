@@ -16,7 +16,6 @@ export type McpKind =
   | 'brain' // text.chat producer (pi)
   | 'oauth-platform' // feishu / notion / linear OAuth-backed
   | 'local-cli' // wrapped command-line tool
-  | 'stss-stream' // long-tail desktop / hardware adapter
   | 'builtin'; // simplest default
 
 export type WorkspaceLayout = 'single' | 'tabs' | 'split-h' | 'split-v';
@@ -67,10 +66,6 @@ export const SHAPE_BY_KIND: Readonly<Record<McpKind, ShapeSpec>> = {
     layout: 'tabs',
     tabs: [{ kind: 'session-stream', title: 'Terminal' }],
   },
-  'stss-stream': {
-    layout: 'single',
-    tabs: [{ kind: 'session-stream', title: 'Stream' }],
-  },
   builtin: {
     layout: 'single',
     tabs: [{ kind: 'mcp-output', title: 'Output' }],
@@ -87,7 +82,6 @@ export const inferKindFromId = (id: string): McpKind => {
   if (id.startsWith('mcp:')) return 'mcp-tool';
   if (id.startsWith('oauth:')) return 'oauth-platform';
   if (id.startsWith('local:')) return 'local-cli';
-  if (id.startsWith('stss:')) return 'stss-stream';
   return 'mcp-tool'; // safest builtin default — most builtins are MCP tools
 };
 

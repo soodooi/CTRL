@@ -47,7 +47,7 @@ export const ViewerChrome = ({
           disabled={!canSave}
           onClick={onSave}
         >
-          {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+          {saving ? 'Saving…' : dirty ? 'Auto-saving…' : 'Saved'}
         </button>
       )}
     </div>

@@ -22,7 +22,7 @@
 
 use crate::kernel::query::{
     run_query, CellType, Conjunction, FieldSpec, Filter, Operator, QueryError, QueryRequest,
-    QueryResult, Row, SortKey,
+    QueryResult, Row,
 };
 use chrono::NaiveDate;
 use rusqlite::{params, params_from_iter, Connection, OpenFlags};
@@ -793,7 +793,7 @@ pub enum StIndexError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::query::CellType;
+    use crate::kernel::query::{CellType, SortKey};
 
     fn fresh_index(label: &str) -> (PathBuf, SmartTableIndex) {
         use std::sync::atomic::{AtomicU64, Ordering};

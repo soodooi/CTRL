@@ -22,6 +22,7 @@ import {
   type GridColumn,
   type GridSelection,
   type Item,
+  type ProvideEditorComponent,
 } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
@@ -88,17 +89,110 @@ const tokenHue = (token: string): number => {
 };
 
 // Custom canvas cell: coloured pills for select / tags — the Feishu-style chip
-// the built-in glide cells don't give (Bubble has no per-tag colour). Display
-// only; editing happens in the field editor / record card.
+// the built-in glide cells don't give (Bubble has no per-tag colour). Editable
+// via provideEditor: a dropdown of the column's `options` for select, a comma
+// text field for tags / option-less select.
 interface PillData {
   readonly kind: 'pill-cell';
   readonly tags: readonly string[];
+  /** Allowed options (select with a declared option list) — drives the dropdown. */
+  readonly options?: readonly string[];
+  /** True for `select` (single value); false/absent for `tags` (multi). */
+  readonly single?: boolean;
 }
 type PillCell = CustomCell<PillData>;
+
+// Overlay editor opened when a select/tags cell is activated (allowOverlay).
+const PillEditor = ({
+  value,
+  onChange,
+  onFinishedEditing,
+}: Parameters<ProvideEditorComponent<PillCell>>[0]): ReactElement => {
+  const data = value.data;
+  const opts = data.options ?? [];
+  const commit = (tags: string[]): void =>
+    onFinishedEditing({ ...value, data: { ...data, tags }, copyData: tags.join(', ') });
+  if (data.single && opts.length > 0) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          padding: 4,
+          minWidth: 160,
+          maxHeight: 260,
+          overflowY: 'auto',
+        }}
+      >
+        {opts.map((o) => (
+          <button
+            key={o}
+            type="button"
+            onClick={() => commit([o])}
+            style={{
+              textAlign: 'left',
+              padding: '6px 8px',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              font: 'inherit',
+              background: data.tags.includes(o) ? 'rgba(0,0,0,0.07)' : 'transparent',
+            }}
+          >
+            {o}
+          </button>
+        ))}
+        {data.tags.length > 0 && (
+          <button
+            type="button"
+            onClick={() => commit([])}
+            style={{
+              textAlign: 'left',
+              padding: '6px 8px',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              font: 'inherit',
+              color: '#888',
+              background: 'transparent',
+            }}
+          >
+            ✕ Clear
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      defaultValue={data.tags.join(', ')}
+      onChange={(e) => {
+        const t = data.single
+          ? [e.target.value]
+          : e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+        onChange({ ...value, data: { ...data, tags: t }, copyData: t.join(', ') });
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onFinishedEditing(value);
+      }}
+      style={{
+        width: '100%',
+        minWidth: 160,
+        border: 'none',
+        outline: 'none',
+        padding: 8,
+        font: 'inherit',
+        background: 'transparent',
+      }}
+    />
+  );
+};
 
 const pillRenderer: CustomRenderer<PillCell> = {
   kind: GridCellKind.Custom,
   isMatch: (c): c is PillCell => (c.data as Partial<PillData>)?.kind === 'pill-cell',
+  provideEditor: () => PillEditor,
   draw: (args, cell) => {
     const { ctx, rect, theme } = args;
     const padX = theme.cellHorizontalPadding;
@@ -358,9 +452,15 @@ export const SmartTableGrid = ({
             : value.split(',').map((t) => t.trim()).filter(Boolean);
         return {
           kind: GridCellKind.Custom,
-          data: { kind: 'pill-cell', tags },
+          data: {
+            kind: 'pill-cell',
+            tags,
+            options: spec.type === 'select' ? spec.options : undefined,
+            single: spec.type === 'select',
+          },
           copyData: value,
-          allowOverlay: false,
+          allowOverlay: editable,
+          readonly: ro,
         };
       }
       if (spec.type === 'url' || spec.type === 'email' || spec.type === 'phone') {
@@ -454,10 +554,18 @@ export const SmartTableGrid = ({
       else if (newVal.kind === GridCellKind.Uri || newVal.kind === GridCellKind.Text)
         v = newVal.data ?? '';
       else if (newVal.kind === GridCellKind.Custom) {
-        const d = newVal.data as { kind?: string; rating?: number; value?: number };
+        const d = newVal.data as {
+          kind?: string;
+          rating?: number;
+          value?: number;
+          tags?: readonly string[];
+        };
         if (d.kind === 'star-cell') v = String(d.rating ?? 0);
         else if (d.kind === 'range-cell') v = String(d.value ?? 0);
-        else return; // pill cell etc. — display only
+        // Select writes its single value; tags write a comma-joined list — the
+        // read side splits tags on ',' and reads select as the whole string.
+        else if (d.kind === 'pill-cell') v = (d.tags ?? []).join(', ');
+        else return;
       }
       onCellChange(idx, spec.key, v);
     },

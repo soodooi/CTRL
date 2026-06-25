@@ -57,7 +57,79 @@ fn try_global_index() -> Option<&'static vault_index::VaultIndex> {
 /// not, call `migrate_legacy_vault()` to move it. ensure_vault_layout() also
 /// creates the canonical sibling structure (`notes/`, `assets/{images,audio,
 /// pdf,attachments}/`) on first boot.
+/// CTRL config file — a single JSON object, currently `{ "vault_root": "..." }`.
+/// Lives OUTSIDE any vault (it points AT the vault), at `~/.ctrl/config.json`.
+fn config_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".ctrl").join("config.json"))
+}
+
+/// The vault root the user pointed CTRL at (e.g. their EXISTING Obsidian vault).
+/// `None` until they pick one — the data belongs to the user, so CTRL operates on
+/// the user's own vault instead of imposing a folder (CLAUDE.md: vault layout is
+/// user-decided, not hardcoded). The first-run flow prompts for it.
+pub fn configured_vault_root() -> Option<PathBuf> {
+    let body = fs::read_to_string(config_path()?).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let p = v.get("vault_root")?.as_str()?.trim();
+    if p.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(p))
+    }
+}
+
+/// True once the user has chosen a vault, so the UI can skip the first-run picker.
+pub fn is_vault_configured() -> bool {
+    configured_vault_root().is_some()
+}
+
+/// Set one config key in `~/.ctrl/config.json`, merging so other keys survive.
+fn update_config(key: &str, value: serde_json::Value) -> std::io::Result<()> {
+    let cfg = config_path()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
+    if let Some(parent) = cfg.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut obj = fs::read_to_string(&cfg)
+        .ok()
+        .and_then(|b| serde_json::from_str::<serde_json::Value>(&b).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    obj.insert(key.to_string(), value);
+    let body = serde_json::to_string_pretty(&serde_json::Value::Object(obj)).unwrap_or_default();
+    fs::write(&cfg, body)
+}
+
+/// Persist the user's chosen vault root.
+pub fn set_vault_root(path: &Path) -> std::io::Result<()> {
+    update_config(
+        "vault_root",
+        serde_json::Value::String(path.display().to_string()),
+    )
+}
+
+/// Whether auto-commit (git) of the vault is enabled (default off).
+pub fn auto_sync_enabled() -> bool {
+    config_path()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|b| serde_json::from_str::<serde_json::Value>(&b).ok())
+        .and_then(|v| v.get("auto_sync").and_then(|a| a.as_bool()))
+        .unwrap_or(false)
+}
+
+/// Persist the auto-sync toggle.
+pub fn set_auto_sync(enabled: bool) -> std::io::Result<()> {
+    update_config("auto_sync", serde_json::Value::Bool(enabled))
+}
+
+/// The resolved vault root: the user's configured vault if set, otherwise the
+/// `~/Documents/CTRL/` fallback (used only until the user points CTRL at their
+/// own vault). Named "default" for historical callers; it is now config-aware.
 pub fn default_vault_root() -> Option<PathBuf> {
+    if let Some(root) = configured_vault_root() {
+        return Some(root);
+    }
     let home = std::env::var("HOME").ok()?;
     Some(PathBuf::from(home).join("Documents").join("CTRL"))
 }
@@ -214,7 +286,68 @@ pub fn write(
         }
     }
 
+    // Best-effort embedding staleness flag. Semantic search / irisy_question_vault
+    // read the local embeddings index (kernel::vault_embeddings); without this,
+    // a freshly-written note stays invisible to them until a manual reembed_all.
+    //
+    // The embed itself is async (Ollama HTTP) and Ollama may be unreachable, so
+    // we deliberately do NOT block the sync write path on a network call. Instead
+    // we mark the note stale by dropping any now-outdated embedding row: a missing
+    // row is exactly what vault.embed_note / vault.reembed_all treat as "needs
+    // embedding" (no cached meta → re-embed), and embedding_status counts it as
+    // stale. Like the FTS upsert above, failures only warn and never block the
+    // write — the markdown on disk stays the source of truth.
+    #[cfg(not(test))]
+    flag_embedding_stale(&safe, content);
+
     Ok(full)
+}
+
+/// Mark a note's embedding stale so the next embed pass re-embeds it. See the
+/// call site in `write`. Best-effort and side-effect-free on failure: only
+/// markdown notes are tracked (skip `tables/` smart tables and non-`.md` files),
+/// and we drop the cached row only when the content hash actually changed so a
+/// no-op rewrite doesn't churn the index. Never panics, never blocks on network.
+#[cfg(not(test))]
+fn flag_embedding_stale(safe: &Path, content: &str) {
+    let rel = safe.to_string_lossy();
+    // Only embed markdown notes; smart tables live under `tables/` and are
+    // covered by the dedicated smart-table index, not the note embeddings.
+    if rel.starts_with("tables/") || safe.extension().and_then(|e| e.to_str()) != Some("md") {
+        return;
+    }
+    let Ok(home) = std::env::var("HOME") else {
+        return;
+    };
+    let db_path = PathBuf::from(home).join(".ctrl").join("embeddings.db");
+    // Don't create the embeddings db just to flag staleness — if it doesn't
+    // exist yet, the first reembed_all builds everything from disk anyway.
+    if !db_path.exists() {
+        return;
+    }
+    let emb = match crate::kernel::vault_embeddings::VaultEmbeddings::open(
+        &db_path,
+        "nomic-embed-text",
+    ) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(error = %e, "vault: embedding staleness flag — open failed");
+            return;
+        }
+    };
+    let new_hash = crate::kernel::vault_embeddings::content_hash(content);
+    match emb.cached_meta(&rel) {
+        Ok(Some((_mtime, cached_hash))) if cached_hash != new_hash => {
+            // Content changed since the last embed → drop the stale vector so the
+            // next embed pass re-embeds it (and embedding_status reports it stale).
+            if let Err(e) = emb.delete(&rel) {
+                tracing::warn!(path = %rel, error = %e, "vault: embedding staleness flag — delete failed");
+            }
+        }
+        // Unchanged content → embedding still valid; nothing to do.
+        // Never embedded → already counts as stale (no row); nothing to do.
+        _ => {}
+    }
 }
 
 /// Write raw bytes (typically a generated or captured image) to a path

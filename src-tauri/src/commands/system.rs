@@ -6,7 +6,7 @@
 //
 // Returns a single KernelStatus struct serialized once per poll. PWA
 // polls every few seconds; if real-time updates ever matter we move
-// these onto the ST-SS bridge as Cell events.
+// these onto the event-stream bridge as Cell events.
 
 use crate::kernel::vault::default_vault_root;
 use crate::shell::KernelHandle;
@@ -47,8 +47,8 @@ pub struct KernelStatus {
     /// Approximate vault file count (markdown files under vault root).
     /// `0` when HOME is unset / vault dir doesn't exist yet.
     pub vault_files: usize,
-    /// ST-SS bridge listen address (loopback only, token-auth).
-    pub stss_bridge_addr: String,
+    /// event-stream bridge listen address (loopback only, token-auth).
+    pub event_ws_addr: String,
     /// "ok" when everything boot-time-required is registered; warnings
     /// list each missing component (e.g. "no llm adapter").
     pub overall: &'static str,
@@ -115,7 +115,7 @@ pub async fn kernel_status(
         None => 0,
     };
 
-    let stss_bridge_addr = crate::kernel::STSS_LISTEN_ADDR.to_string();
+    let event_ws_addr = crate::kernel::EVENT_WS_LISTEN_ADDR.to_string();
 
     let mut warnings: Vec<String> = Vec::new();
     if primary_adapter.is_none() {
@@ -146,7 +146,7 @@ pub async fn kernel_status(
         primary_adapter,
         mcp_servers_installed,
         vault_files,
-        stss_bridge_addr,
+        event_ws_addr,
         overall,
         warnings,
         active_brain,
@@ -165,7 +165,7 @@ pub async fn hide_window(app: tauri::AppHandle) -> Result<(), String> {
 /// Set the main window's height in logical pixels. Width and top-left
 /// position are preserved — the bottom edge moves to accommodate the new
 /// height. Companion mode uses this to grow downward as chat content
-/// arrives (bao 2026-05-30: "整个窗口往下流").
+/// arrives (bao 2026-05-30: "the whole window flows downward").
 ///
 /// The window is clamped to the primary monitor's available height so it
 /// can never grow past the bottom of the screen.
@@ -190,7 +190,7 @@ pub fn set_window_height(app: tauri::AppHandle, height: f64) -> Result<(), Strin
 
 /// Position the main window anchored against the monitor's right edge.
 /// bao 2026-05-31: must match the right-edge anchor toggle_workspace_window
-/// uses (ADR-003 frontend §7 "L1 和 Irisy 位置不变"). Putting the boot position at
+/// uses (ADR-003 frontend §7 "L1 and Irisy positions are fixed"). Putting the boot position at
 /// 75 % center created a visual jump when toggle later relocated to the
 /// true right edge; aligning both paths to monitor_right means expansion
 /// slides leftward smoothly without re-positioning.
@@ -406,42 +406,11 @@ pub fn collapse_workspace_window(app: tauri::AppHandle) -> Result<bool, String> 
     Ok(true)
 }
 
-// ── Pi (sole brain) status + upgrade — ADR-002 substrate §4 ───────────────────────
-//
-// Replaces the retired `brain_list / brain_detect / brain_set_active`
-// triple. There is one brain (Pi); the Settings → Brain pane reads
-// `pi_status` for version + upgrade state, and binds the "Upgrade now"
-// button to `pi_upgrade_now`.
-
-#[derive(Debug, serde::Serialize)]
-pub struct PiStatusView {
-    pub installed_version: Option<String>,
-    pub latest_version: Option<String>,
-    pub upgrade_available: bool,
-    pub major_update_blocked: bool,
-    pub last_upgrade_error: Option<String>,
-    pub last_probe_ms: u64,
-    pub pi_bin: Option<String>,
-    pub install_root: Option<String>,
-    /// True when the supervisor has a live Pi child (set by spawn_pi,
-    /// cleared on exit). False = Pi crashed / not yet spawned / install
-    /// failed.
-    pub running: bool,
-    /// Most recent supervisor error (install failure / spawn failure /
-    /// exit status). None = healthy.
-    pub last_error: Option<String>,
-    /// Kernel provider port the bridge POSTs to. Surfaced so the
-    /// Settings UI can show the wire endpoint when debugging.
-    pub provider_port: u16,
-}
-
-// ADR-002 substrate §1 v19 (2026-06-09, H-2026-06-09-002):
-//   pi_status + pi_upgrade_now retired. Pi exited CTRL hot path. Per-agent
-//   install/status now goes through `commands::agents::{install_agent,
-//   launch_agent, agent_status, stop_agent, list_agents}`. The PiStatusView
-//   struct above is kept declared so its Serialize derive doesn't fail when
-//   downstream callers in `commands/mod.rs` invoke_handler! macro reference
-//   absent symbols — those commands are already unregistered.
+// Pi status/upgrade commands (pi_status / pi_upgrade_now) + the
+// PiStatusView struct retired 2026-06-25: Pi left the CTRL hot path
+// (ADR-002 substrate § brain v19, 2026-06-09). Per-agent install/status
+// now goes through `commands::agents::{install_agent, launch_agent,
+// agent_status, stop_agent, list_agents}`.
 
 // ── Ollama install / model pull (Pi-first refactor, bao 2026-06-05) ────────
 

@@ -1,14 +1,14 @@
 //! Irisy init surface — the status the PWA needs to render the chat header.
 //!
 //! On the first PWA → Tauri `irisy_init` call:
-//!   1. probe the kernel's LLM port — is a brain adapter (Volc/BYOK) wired?
-//!   2. probe the Pi brain plugin (`@ctrl/pi-plugin` MCP server `/healthz`)
-//!   3. write `~/.ctrl/state/kernel-handshake.json` so a brain mcp's
+//!   1. probe the provider router — is a brain adapter (Volc/BYOK) wired?
+//!   2. write `~/.ctrl/state/kernel-handshake.json` so a brain mcp's
 //!      MCP client can reach the kernel MCP server (ADR-002 substrate § mcp-bus v1) with a token
 //!
-//! Pi is the sole brain (ADR-001 spine amendment 2026-05-25). When Pi isn't
-//! running, the PWA falls back to the kernel `chat_stream` command
-//! (llm_port → Volc) for a direct, fast reply.
+//! Irisy's brain = the Hermes Agent (ADR-002 substrate § brain v28; CTRL
+//! bundles + launches it, dashboard `:17890`). The provider router
+//! (`route_chain(IrisyPrimary)`) supplies the active model for direct,
+//! fast replies and synth.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -25,16 +25,11 @@ pub struct IrisyStatus {
     pub app_version: String,
     pub kernel_llm: KernelLlmStatus,
     pub mcp_bridge: McpBridgeStatus,
-    /// Pi default-brain probe (ADR-001 spine amendment 2026-05-25, H-2026-05-25-001).
-    /// `reachable` = the @ctrl/pi-plugin MCP server is responding on its
-    /// `/healthz` endpoint. PWA reads this to decide whether `irisy_chat_stream`
-    /// will succeed; degraded UI prompts the user to start the subprocess
-    /// (until the kernel supervisor for pi-plugin lands).
-    pub pi: PiStatus,
     /// Active IrisyPrimary provider's display label (matches the value
     /// shown in the InfraBar ENGINE chip — e.g. "Claude" when
-    /// claude-oauth is active). Falls back to "pi" when no provider is
-    /// configured.
+    /// claude-oauth is active). Falls back to "none" when no provider is
+    /// configured (ADR-002 substrate § brain v28: Irisy brain = Hermes;
+    /// the provider router supplies the model label).
     pub active_brain: String,
 }
 
@@ -50,21 +45,9 @@ pub struct McpBridgeStatus {
     pub handshake_path: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PiStatus {
-    /// MCP endpoint the brain router dispatches to. v1.0 hardcoded
-    /// `http://127.0.0.1:17874/mcp` for brain id "pi"; future supervisor
-    /// reports the actual ephemeral port through this field.
-    pub mcp_url: String,
-    /// `true` when /healthz returned 200 within the probe timeout. `false`
-    /// covers both "Pi plugin not running" and "Pi binary missing" — PWA
-    /// surfaces a single "start pi-plugin" hint either way.
-    pub reachable: bool,
-    /// Pi binary version reported by the plugin's /healthz (`pi.version`
-    /// field). `None` when the plugin is running but Pi itself is missing,
-    /// or when the probe didn't complete in time.
-    pub version: Option<String>,
-}
+// PiStatus + probe_pi removed: Pi exited the CTRL hot path (ADR-002 substrate § brain v19, 2026-06-09).
+// Irisy's brain is the Hermes Agent (ADR-002 substrate § brain v28); the provider router supplies the
+// model. The PWA's IrisyStatus shape already treats `pi` as optional, so dropping the field is safe.
 
 #[tauri::command]
 pub async fn irisy_init(
@@ -74,10 +57,9 @@ pub async fn irisy_init(
     let app_version = app.package_info().version.to_string();
     let kernel_llm = probe_kernel_llm(&kernel);
     let mcp_bridge = write_handshake_file()?;
-    let pi = probe_pi().await;
     // Mirror the same provider label kernel_status surfaces — the IrisyPrimary
-    // provider label. Falls back to "none" when no provider is configured (Pi
-    // exited in ADR-002 substrate § brain v19; there is no Pi brain to name).
+    // provider label. Falls back to "none" when no provider is configured
+    // (ADR-002 substrate § brain v28: Irisy brain = Hermes Agent).
     let active_brain = kernel
         .runtime
         .provider_registry
@@ -88,11 +70,12 @@ pub async fn irisy_init(
         .map(|snap| crate::commands::system::short_label(&snap.label))
         .unwrap_or_else(|| "none".to_string());
 
+    // ADR-002 substrate § brain v28: no Pi probe; the active provider label
+    // is the only brain signal the header needs.
     tracing::info!(
         app_version = %app_version,
         adapter = ?kernel_llm.adapter,
-        pi_reachable = pi.reachable,
-        pi_version = ?pi.version,
+        active_brain = %active_brain,
         "irisy_init ok"
     );
 
@@ -100,22 +83,8 @@ pub async fn irisy_init(
         app_version,
         kernel_llm,
         mcp_bridge,
-        pi,
         active_brain,
     })
-}
-
-async fn probe_pi() -> PiStatus {
-    // ADR-002 substrate §1 v19 (2026-06-09): Pi exited the CTRL hot path.
-    // The PiStatus shape is kept for one release so the PWA's existing
-    // status header doesn't crash; reachable is hard-false and version
-    // is None. The next PWA release replaces this probe with the 3-agent
-    // status surface (commands::agents::agent_status x3).
-    PiStatus {
-        mcp_url: String::new(),
-        reachable: false,
-        version: None,
-    }
 }
 
 fn probe_kernel_llm(kernel: &State<'_, KernelHandle>) -> KernelLlmStatus {

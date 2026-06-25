@@ -1,8 +1,8 @@
 // Kernel daemon supervisor.
 //
-// Sub-PR d: real wire. Boots KernelRuntime + spawns StssBridge listening on
+// Sub-PR d: real wire. Boots KernelRuntime + spawns EventWsBridge listening on
 // 127.0.0.1:17872. Exposes both via Tauri's `manage()` so commands can pull
-// them as `tauri::State<Arc<KernelRuntime>>` / `State<StssBridge>`.
+// them as `tauri::State<Arc<KernelRuntime>>` / `State<EventWsBridge>`.
 //
 // Future out-of-process mode (when binary-size budget needs the split) keeps
 // the same public API; only the start() body swaps to a child process spawn.
@@ -12,8 +12,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 use crate::kernel::runtime::KernelRuntime;
-use crate::kernel::stss_bridge::StssBridge;
-use crate::kernel::STSS_LISTEN_ADDR;
+use crate::kernel::event_ws::EventWsBridge;
+use crate::kernel::EVENT_WS_LISTEN_ADDR;
 
 /// Shared kernel handle managed by Tauri. Commands pull this via `State`.
 ///
@@ -22,19 +22,20 @@ use crate::kernel::STSS_LISTEN_ADDR;
 /// can `Emitter::emit` Tauri events without a `tauri::AppHandle` argument
 /// in their signature. ADR-002 substrate § provider v8 §3.5 (2026-06-06):
 /// failover emits `provider:routing-override` / `provider:routing-restored`
-/// so the chip + ctrl-pi-bridge `runtimeTruthBlock` can overlay the
-/// transient fallback label without polling.
+/// so the PWA's ENGINE chip can overlay the transient fallback label
+/// without polling (ADR-002 substrate § provider v8 §3.5, 2026-06-06).
 #[derive(Clone)]
 pub struct KernelHandle {
     pub runtime: Arc<KernelRuntime>,
-    pub bridge: StssBridge,
+    pub bridge: EventWsBridge,
+    #[allow(dead_code)]
     pub app: AppHandle,
 }
 
 pub struct KernelSupervisor;
 
 impl KernelSupervisor {
-    /// Boot the kernel + start the ST-SS WS bridge. Registers both with
+    /// Boot the kernel + start the event-stream WS bridge. Registers both with
     /// `app.manage()` so commands can resolve them as Tauri State.
     pub fn start(app: &AppHandle) -> Result<()> {
         tracing::info!("KernelSupervisor::start — booting L1 kernel");
@@ -42,7 +43,7 @@ impl KernelSupervisor {
             .map_err(|e| anyhow!("kernel boot failed: {e:?}"))?;
         let runtime = Arc::new(runtime);
 
-        let bridge = StssBridge::new();
+        let bridge = EventWsBridge::new();
         let bridge_for_handle = bridge.clone();
 
         let handle = KernelHandle {
@@ -113,12 +114,13 @@ impl KernelSupervisor {
         // useAgent), never blocking boot or the user.
         tauri::async_runtime::spawn_blocking(|| {
             use crate::shell::agent_installer::{install, AgentName};
-            for agent in [AgentName::Opencode, AgentName::Hermes] {
-                let label = agent.as_str();
-                match install(agent, false) {
-                    Ok(m) => tracing::info!(agent = label, version = %m.version, "agent resource pack ready"),
-                    Err(e) => tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)"),
-                }
+            // Hermes is the only wired agent — opencode retired
+            // 2026-06-25 (DRIFT D8). Best-effort + idempotent.
+            let agent = AgentName::Hermes;
+            let label = agent.as_str();
+            match install(agent, false) {
+                Ok(m) => tracing::info!(agent = label, version = %m.version, "agent resource pack ready"),
+                Err(e) => tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)"),
             }
             // Obsidian notes connector auto-init (ADR-002 §1.9.1), best-effort.
             // Silently install the app if absent (like hermes), then provision the
@@ -194,7 +196,7 @@ impl KernelSupervisor {
             }
         });
 
-        // Code Space env registry — coding remote desktop v1 (zeus Z1, ST-SS spec v0.7).
+        // Code Space env registry — coding remote desktop v1 (zeus Z1, event-stream spec v0.7).
         // commands::code_space::cs_* invocations pull this State to spawn /
         // control SubprocessActor instances. Independent from KernelHandle so
         // the registry lifetime is tied to the app, not to a specific kernel
@@ -206,16 +208,16 @@ impl KernelSupervisor {
         let bridge_for_serve = bridge.clone();
         tauri::async_runtime::spawn(async move {
             if let Err(e) = bridge_for_serve
-                .serve(STSS_LISTEN_ADDR, |op| {
+                .serve(EVENT_WS_LISTEN_ADDR, |op| {
                     tracing::info!("kernel received op kind={:?} (dispatch TBD sub-PR d/2)", op.kind);
                 })
                 .await
             {
-                tracing::error!("StssBridge::serve failed: {e}");
+                tracing::error!("EventWsBridge::serve failed: {e}");
             }
         });
 
-        tracing::info!("KernelSupervisor::start — ready (kernel + WS bridge on {STSS_LISTEN_ADDR})");
+        tracing::info!("KernelSupervisor::start — ready (kernel + WS bridge on {EVENT_WS_LISTEN_ADDR})");
         Ok(())
     }
 
@@ -224,6 +226,7 @@ impl KernelSupervisor {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn shutdown() -> Result<()> {
         tracing::info!("KernelSupervisor::shutdown");
         Ok(())

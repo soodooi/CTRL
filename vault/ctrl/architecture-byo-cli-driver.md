@@ -53,7 +53,7 @@ Pi-centric                          (retired)
 
 ### 2. brain：Hermes 是 Irisy 的脑（纠正 2026-06-18）+ BYO-CLI driver 附加
 - **Irisy 的 brain = Hermes Agent**（NousResearch）。CTRL **bundle + lazy-install + 启动** 它，Irisy 嵌入其 dashboard（`:17890`）。**hermes 不退役**（推翻原「全摒弃」表述）。
-- **opencode**：未接线（保留作未来 coding 路径）。**Pi**：已退役（v19）。
+- **opencode**：已下线（2026-06-25，bao 裁决；曾误全栈接线 installer/launcher/coding 路由/UI，已移除，回归未接线）。**Pi**：已退役（v19）。
 - **BYO-CLI driver（projection）= 附加并行路径**：用户自带的 CLI（Claude Code）经投影的 `.mcp.json` 也能驱动 CTRL 工具，与 Hermes-Irisy 并存，都经 `:17873` gate。
 - **ACP** 降级为 future「ACP-aware CLI 增强通道」，代码保留。
 - **Notes = Obsidian**（定案 9）：Local REST API MCP **已连上 bus**（16 工具，已落地验证）。

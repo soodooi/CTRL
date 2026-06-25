@@ -30,6 +30,7 @@ pub enum AgentEndpoint {
 #[derive(Debug)]
 pub struct LaunchedAgent {
     pub endpoint: AgentEndpoint,
+    #[allow(dead_code)]
     pub child: Child,
 }
 
@@ -68,6 +69,7 @@ fn wait_for_stdout_line(
         .map_err(|_| anyhow!("agent did not announce its endpoint within {deadline:?}"))
 }
 
+#[allow(dead_code)]
 pub fn launch(name: &AgentName) -> Result<LaunchedAgent> {
     launch_with_env(name, &std::collections::BTreeMap::new())
 }
@@ -80,6 +82,10 @@ pub fn launch_with_env(
     name: &AgentName,
     provider_env: &std::collections::BTreeMap<String, String>,
 ) -> Result<LaunchedAgent> {
+    // opencode retired (bao 2026-06-25) — unwired; never launch it.
+    if matches!(name, AgentName::Opencode) {
+        return Err(anyhow!("opencode retired — unwired"));
+    }
     let manifest = read_manifest(name)
         .ok_or_else(|| anyhow!("agent not installed — call install_agent first"))?;
 

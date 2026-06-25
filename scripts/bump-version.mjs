@@ -21,12 +21,15 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // [path, kind] — json edits the "version" field, toml edits the first
-// top-level `version = "..."` line.
+// top-level `version = "..."` line, lock edits the `ctrl` package version
+// in Cargo.lock (keeps the lockfile in sync with Cargo.toml so the working
+// tree stays clean after every bump).
 const TARGETS = [
   ['package.json', 'json'],
   ['packages/ctrl-web/package.json', 'json'],
   ['src-tauri/tauri.conf.json', 'json'],
   ['src-tauri/Cargo.toml', 'toml'],
+  ['src-tauri/Cargo.lock', 'lock'],
 ];
 
 function readVersion() {
@@ -59,6 +62,20 @@ function applyToml(file, version) {
   writeFileSync(path, next);
 }
 
+function applyLock(file, version) {
+  const path = join(ROOT, file);
+  const text = readFileSync(path, 'utf8');
+  // Update the version of the `ctrl` workspace package. Cargo.lock has a
+  // `[[package]]` block whose `name = "ctrl"` is immediately followed by
+  // its `version = "..."`. The name+version adjacency is unique in the
+  // lockfile, so this won't touch dependency versions.
+  const next = text.replace(
+    /(name = "ctrl"\nversion = )"[^"]+"/,
+    `$1"${version}"`
+  );
+  writeFileSync(path, next);
+}
+
 const arg = process.argv[2];
 const current = readVersion();
 
@@ -70,6 +87,7 @@ if (arg === '--print') {
 const version = nextVersion(current, arg);
 for (const [file, kind] of TARGETS) {
   if (kind === 'json') applyJson(file, version);
-  else applyToml(file, version);
+  else if (kind === 'toml') applyToml(file, version);
+  else if (kind === 'lock') applyLock(file, version);
 }
 console.log(`version: ${current} -> ${version}`);

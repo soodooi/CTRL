@@ -7,7 +7,7 @@
 // actions per row.
 //
 // Skills (cap = the hat Pi wears, bao 2026-06-04 mapping) are first-
-// class rows alongside builtin / mcp / oauth / local / stss. Selecting
+// class rows alongside builtin / mcp / oauth / local. Selecting
 // a skill row calls `wearCap(name)` on the session-state store and
 // navigates back to Irisy -- the chat picks up the new system prompt
 // on the next turn. Other sources keep the existing `openWorkspace`
@@ -35,7 +35,7 @@ import { useSessionStateStore } from '@/lib/session-state';
 import { StatusPill, type LedTone } from '@/components/primitives';
 import styles from './pool.module.css';
 
-type CapSource = 'builtin' | 'mcp' | 'oauth' | 'local' | 'stss' | 'skill';
+type CapSource = 'builtin' | 'mcp' | 'oauth' | 'local' | 'skill';
 
 interface CapRow {
   rowKey: string;
@@ -56,7 +56,6 @@ const SOURCE_LABEL: Record<CapSource, string> = {
   mcp: 'MCP',
   oauth: 'OAuth',
   local: 'Local',
-  stss: 'ST-SS',
   skill: 'Skill',
 };
 
@@ -65,7 +64,6 @@ const SOURCE_TONE: Record<CapSource, LedTone> = {
   mcp: 'nominal',
   oauth: 'caution',
   local: 'warning',
-  stss: 'info',
   skill: 'nominal',
 };
 
@@ -74,7 +72,6 @@ const inferMcpSource = (k: McpSummary): CapSource => {
   if (k.id.startsWith('mcp:')) return 'mcp';
   if (k.id.startsWith('oauth:')) return 'oauth';
   if (k.id.startsWith('local:')) return 'local';
-  if (k.id.startsWith('stss:')) return 'stss';
   return 'builtin';
 };
 
@@ -120,7 +117,6 @@ const SOURCES_FOR_FILTER: ReadonlyArray<{ id: CapSource | 'all'; label: string }
   { id: 'mcp', label: 'MCP' },
   { id: 'oauth', label: 'OAuth' },
   { id: 'local', label: 'Local' },
-  { id: 'stss', label: 'ST-SS' },
 ];
 
 export const PoolRoute = (): ReactElement => {
@@ -160,7 +156,6 @@ export const PoolRoute = (): ReactElement => {
       mcp: 0,
       oauth: 0,
       local: 0,
-      stss: 0,
       skill: 0,
     };
     for (const r of rows) tally[r.source] += 1;

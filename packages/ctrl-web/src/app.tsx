@@ -53,6 +53,7 @@ import { IrisyChat } from './components/irisy/IrisyChat';
 import { WorkspaceShell } from './components/workspace/WorkspaceShell';
 import { DefaultWorkspace } from './routes/default';
 import { useCompanionWindow } from './hooks/useCompanionWindow';
+import { useAutoSync } from './hooks/useAutoSync';
 import { useWorkspaceStore } from './lib/workspace-store';
 import styles from './app.module.css';
 
@@ -93,6 +94,7 @@ function RootShellInner(): ReactElement {
   const workspaceOpen = useWorkspaceStore((s) => s.instances.length > 0);
   const [dragOver, setDragOver] = useState(false);
   useCompanionWindow();
+  useAutoSync();
 
   // Drag-over only flips when our custom MIME is present — text drags
   // from outside the cockpit don't paint the drop affordance.
@@ -206,6 +208,9 @@ const SettingsProvidersPage = lazy(() =>
 );
 const SettingsAgentPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsAgentPage })),
+);
+const SettingsEnvPage = lazy(() =>
+  import('./routes/settings').then((m) => ({ default: m.SettingsEnvPage })),
 );
 const SettingsLogsPage = lazy(() =>
   import('./routes/settings').then((m) => ({ default: m.SettingsLogsPage })),
@@ -366,6 +371,15 @@ const settingsAgentRoute = createRoute({
     </Suspense>
   ),
 });
+const settingsEnvRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/env',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <SettingsEnvPage />
+    </Suspense>
+  ),
+});
 const settingsLogsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/logs',
@@ -454,6 +468,7 @@ const routeTree = rootRoute.addChildren([
   settingsCtrlRoute,
   settingsProvidersRoute,
   settingsAgentRoute,
+  settingsEnvRoute,
   settingsLogsRoute,
   irisyRoute,
   codeSpaceRoute,

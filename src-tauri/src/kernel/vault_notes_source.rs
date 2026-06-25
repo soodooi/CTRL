@@ -6,11 +6,64 @@
 //! the TextSource profile (`vault.search` / `vault.semantic_search`).
 
 use crate::kernel::query::{
-    CellType, Describe, FieldSpec, Operator, QuerySource, Row, SourceKind,
+    CellType, Describe, FieldSpec, Operator, QueryRequest, QueryResult, QuerySource, Row,
+    SourceKind,
 };
 use crate::kernel::vault;
 use serde_json::Value;
 use std::path::Path;
+
+/// The §14 **Text** profile of the vault (ADR-002 substrate §14, TextSource) —
+/// full-text content search as a queryable source. Complements `NotesSource`
+/// (the Record/metadata profile): together they make the vault a complete §14
+/// read source. This is the §14 *target* surface for content search; the legacy
+/// bespoke `vault_search` tool retires onto it once the frontend moves off it.
+pub mod text {
+    use super::*;
+
+    /// What the vault Text source advertises via `describe`. A `Contains` filter
+    /// on `content` is the full-text match; results carry `path`.
+    pub fn describe() -> Describe {
+        Describe {
+            source_kind: SourceKind::Text,
+            fields: vec![
+                field("content", "Content", CellType::Text),
+                field("path", "Path", CellType::Text),
+            ],
+            operators: vec![Operator::Contains],
+        }
+    }
+
+    /// Run a §14 text query: the `Contains` filter's value is the full-text
+    /// needle (FTS5 when indexed, substring fallback — same engine the bespoke
+    /// `vault_search` uses). Returns one row `{path}` per hit, in the uniform
+    /// `QueryResult` shape, so AI/clients query vault content the same way they
+    /// query smart-tables and the KB.
+    pub fn query(vault_root: &Path, req: &QueryRequest) -> Result<QueryResult, vault::VaultError> {
+        let needle = req
+            .filters
+            .iter()
+            .find(|f| f.op == Operator::Contains)
+            .map(|f| f.value.clone())
+            .unwrap_or_default();
+        let limit = req.limit.unwrap_or(20);
+        let paths = if needle.trim().is_empty() {
+            Vec::new()
+        } else {
+            vault::search(vault_root, &needle, limit)?
+        };
+        let match_count = paths.len();
+        let rows = paths
+            .into_iter()
+            .map(|p| {
+                let mut row = Row::new();
+                row.insert("path".into(), p);
+                row
+            })
+            .collect();
+        Ok(QueryResult { rows, match_count })
+    }
+}
 
 pub struct NotesSource {
     rows: Vec<Row>,
@@ -119,6 +172,38 @@ mod tests {
     use super::*;
     use crate::kernel::query::{run_query, Filter, Operator, QueryRequest};
     use chrono::NaiveDate;
+
+    #[test]
+    fn text_profile_describes_as_text_with_contains() {
+        let d = text::describe();
+        assert_eq!(d.source_kind, SourceKind::Text);
+        assert!(d.operators.contains(&Operator::Contains));
+        assert!(d.fields.iter().any(|f| f.key == "content"));
+    }
+
+    #[test]
+    fn text_query_returns_matching_note_paths() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        // substring_search_scan (test mode) matches file CONTENT, case-insensitive.
+        vault::write(root, "acme.md", "Acme Corporation deal", &serde_json::json!({})).unwrap();
+        vault::write(root, "beta.md", "unrelated note", &serde_json::json!({})).unwrap();
+        let req = QueryRequest {
+            filters: vec![Filter {
+                field: "content".into(),
+                op: Operator::Contains,
+                value: "Acme".into(),
+            }],
+            ..Default::default()
+        };
+        let res = text::query(root, &req).unwrap();
+        assert_eq!(res.match_count, res.rows.len());
+        assert!(res.rows.iter().any(|r| r.get("path").is_some_and(|p| p.contains("acme"))));
+        assert!(!res.rows.iter().any(|r| r.get("path").is_some_and(|p| p.contains("beta"))));
+        // No Contains filter / empty needle → empty result (deterministic).
+        let empty = text::query(root, &QueryRequest::default()).unwrap();
+        assert_eq!(empty.match_count, 0);
+    }
 
     fn rows() -> Vec<Row> {
         vec![

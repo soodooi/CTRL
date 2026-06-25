@@ -22,9 +22,16 @@
 
 mod asset_scheme;
 mod commands;
-mod error;
 mod kernel;
 mod shell;
+
+/// Export the kernel MCP endpoint spec (the authoritative `tools/list` JSON
+/// Schema) as a JSON value. Thin re-export so the `dump_mcp_schema` bin can
+/// produce the artifact without making the whole `kernel` module public
+/// (ADR-010 § endpoint-spec v6).
+pub fn export_mcp_endpoint_spec() -> serde_json::Value {
+    kernel::mcp_server::KernelMcpRouter::export_tool_schemas()
+}
 
 /// Initialize tracing to stderr AND `~/.ctrl/ctrl.log`. A Finder-launched
 /// .app has its stderr discarded by LaunchServices, so the file mirror is the
@@ -96,6 +103,7 @@ pub fn run() {
         // ADR-004 cap § updater v1 / 018 — Layer 1 of 4 of the auto-update strategy.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
@@ -157,6 +165,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())

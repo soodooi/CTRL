@@ -146,16 +146,13 @@ pub fn first_boot_primary_choice() -> Option<&'static str> {
 /// `keychain_read_with_aliases` shape but only checks existence (no
 /// secret materialization) so the first-boot scan stays cheap.
 fn has_keychain_secret(account: &str) -> bool {
-    for service in ["app.ctrl", "app.ctrl.spike"] {
-        if let Ok(entry) = keyring::Entry::new(service, account) {
-            if let Ok(s) = entry.get_password() {
-                if !s.is_empty() {
-                    return true;
-                }
-            }
-        }
-    }
-    false
+    // ADR-002 substrate § provider v2 (2026-06-25 store-unification fix):
+    // read through the encrypted file vault, not the OS keyring — the
+    // keyring apple-native path returns nothing from the signed CTRL.app
+    // even when the secret exists, so first-boot auto-adopt of a BYOK
+    // REST provider never fired. Routes through the single credential
+    // entry point so aliases (ark / doubao / gpt / claude) resolve too.
+    super::registry::read_credential(account).is_some_and(|s| !s.is_empty())
 }
 
 /// Map a CLI manifest id back to its `provider_type` string used in
