@@ -526,7 +526,7 @@ fn candidate_bin_dirs() -> Vec<String> {
         dirs.push(format!("{home}/.npm-global/bin")); // npm -g without sudo
         dirs.push(format!("{home}/.volta/bin"));      // Volta-managed node
         dirs.push(format!("{home}/.nvm/versions/node/current/bin"));
-        dirs.push(format!("{home}/.ctrl/pi/node_modules/.bin"));
+        // Dropped a dead `~/.ctrl/pi/node_modules/.bin` PATH entry per ADR-002 substrate § brain v19 (Pi retired; dir no longer exists).
     }
     dirs
 }
