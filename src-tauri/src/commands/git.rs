@@ -181,6 +181,68 @@ pub async fn git_push() -> Result<String, String> {
     Ok(out.trim().to_string())
 }
 
+/// One-click vault sync: init the repo if needed, stage everything, commit, and
+/// push when an `origin` remote exists. Composes git (don't reinvent sync) — the
+/// vault is plain files, so the user's own git remote (or any file-sync tool)
+/// carries it across devices; CTRL never sits in the data path (data sovereignty).
+/// Falls back to a local commit when there is no remote, and reports each step.
+#[tauri::command]
+pub async fn vault_git_sync() -> Result<String, String> {
+    let root = vault_root()?;
+    let mut steps: Vec<String> = Vec::new();
+
+    if !root.join(".git").exists() {
+        let (_o, err, code) = run_git(&["init"]).await?;
+        if code != 0 {
+            return Err(format!("git init: {err}"));
+        }
+        steps.push("initialised repo".to_string());
+    }
+
+    let (_o, err, code) = run_git(&["add", "-A"]).await?;
+    if code != 0 {
+        return Err(format!("git add: {err}"));
+    }
+
+    // Inline identity so a fresh repo without global git config can still commit.
+    let (out, err, code) = run_git(&[
+        "-c",
+        "user.name=CTRL",
+        "-c",
+        "user.email=ctrl@localhost",
+        "commit",
+        "-m",
+        "CTRL vault sync",
+    ])
+    .await?;
+    if code == 0 {
+        steps.push("committed changes".to_string());
+    } else if format!("{out}{err}").contains("nothing to commit") {
+        steps.push("nothing to commit".to_string());
+    } else {
+        return Err(format!("git commit: {}", if err.is_empty() { out } else { err }));
+    }
+
+    let (remotes, _e, _c) = run_git(&["remote"]).await?;
+    if remotes.split_whitespace().any(|r| r == "origin") {
+        let (_o, perr, pcode) = run_git(&["push"]).await?;
+        if pcode == 0 {
+            steps.push("pushed to origin".to_string());
+        } else {
+            steps.push(format!(
+                "push failed: {}",
+                perr.lines().next().unwrap_or("").trim()
+            ));
+        }
+    } else {
+        steps.push(
+            "committed locally — add an 'origin' remote to sync across devices".to_string(),
+        );
+    }
+
+    Ok(steps.join("; "))
+}
+
 #[derive(Debug, Serialize)]
 pub struct GitLogEntry {
     pub sha: String,

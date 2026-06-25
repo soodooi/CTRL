@@ -825,6 +825,10 @@ export const gitCommitAll = (message: string): Promise<string> =>
 
 export const gitPush = (): Promise<string> => invoke('git_push');
 
+/** One-click vault sync: init + stage + commit + push (composes git; the user's
+ *  remote carries the vault, CTRL stays out of the data path). */
+export const vaultGitSync = (): Promise<string> => invoke('vault_git_sync');
+
 export const gitLog = (): Promise<GitLogEntry[]> => invoke('git_log');
 
 // Screenshot OCR (ADR-002 substrate § OCR = on-device Vision). The kernel runs

@@ -7,7 +7,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactElement } from 'react';
-import { vaultGetConfig, vaultSetRoot, pickVaultFolder } from '@/lib/kernel';
+import { vaultGetConfig, vaultSetRoot, pickVaultFolder, vaultGitSync } from '@/lib/kernel';
 
 interface VaultSetupProps {
   /** `banner` = compact first-run prompt (hidden once configured);
@@ -23,6 +23,20 @@ export const VaultSetup = ({ variant = 'banner' }: VaultSetupProps): ReactElemen
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const sync = async (): Promise<void> => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      setSyncMsg(await vaultGitSync());
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const choose = async (): Promise<void> => {
     setError(null);
@@ -59,11 +73,19 @@ export const VaultSetup = ({ variant = 'banner' }: VaultSetupProps): ReactElemen
             ? 'CTRL operates on this folder. Point it at your Obsidian vault to keep one source of truth.'
             : 'Default fallback — choose your own (Obsidian) vault so CTRL works on your real notes.'}
         </div>
-        <div>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" onClick={() => void choose()} disabled={busy}>
             {busy ? 'Switching…' : 'Choose vault folder…'}
           </button>
+          <button type="button" onClick={() => void sync()} disabled={syncing} title="git init + commit + push (your remote carries the vault across devices)">
+            {syncing ? 'Syncing…' : 'Sync to git'}
+          </button>
         </div>
+        <div style={{ fontSize: 12, opacity: 0.55 }}>
+          Sync = git. CTRL doesn&apos;t build its own sync — your vault rides your own git remote
+          (or Obsidian Sync / Syncthing / iCloud), so CTRL never sits in your data path.
+        </div>
+        {syncMsg ? <div style={{ fontSize: 12, opacity: 0.8 }}>{syncMsg}</div> : null}
         {error ? <div style={{ color: '#c0392b', fontSize: 12 }}>{error}</div> : null}
       </div>
     );

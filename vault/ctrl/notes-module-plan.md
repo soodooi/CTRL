@@ -72,3 +72,17 @@ vault (~/Documents/CTRL/, plain markdown, 用户拥有, = TRUTH)
 - 方向对吗:**Notes = 薄层 + Obsidian 编辑 + Irisy 操作,不自造编辑器**(= 重申 ADR-003 v9)?
 - WIP 的 GraphView / CommandPalette:**废掉**(交给 Obsidian),还是你想留(则需补完 + 入 ADR)?
 - 确认后:落 ADR-003 amendment + 据第五节收敛代码。
+
+## 七、vault 根 + 同步(bao 2026-06-25 拍板)
+
+**vault 根 = 用户配置,不是写死。**(原 `default_vault_root()` 硬编码 `~/Documents/CTRL/` 违背「vault 由用户决定 / 本地是 truth」。)
+- 内核读 `~/.ctrl/config.json` 的 `vault_root` → 有就用用户选的(指向他自己的 Obsidian vault),没有才 fallback `~/Documents/CTRL/`。
+- 首次运行引导用户用**原生文件夹选择器**(Tauri dialog 插件)指向自己的 vault;Settings→General→Vault 可切换。
+- 这样「CTRL 和 Obsidian 是同一个 vault」靠配置成立,数据主权护城河成立(CTRL 不在数据路径里)。
+- 落点:`kernel/vault.rs`(`configured_vault_root`/`set_vault_root`)+ `commands/vault.rs`(`vault_get_config`/`vault_set_root`)+ `components/VaultSetup.tsx`。
+
+**vault 同步 = 组合,不自建 mesh。**
+- 调研裁决(2026-06-25):vault 是纯 markdown,用户多半已有同步(Obsidian Sync / Syncthing / iCloud / git)。CTRL **不自造同步** —— 谁同步文件谁就顺带同步 CTRL 的读写,CTRL 零参与 = 数据主权。
+- **完整 mesh(ADR-002 §4:vodozemac + webrtc + Automerge CRDT)留作 v1.1+**,且仅给 **CTRL 自己的跨设备非文件态**(在线/实时/CTRL 专有记录)用,**不**拿来重新同步 vault(两个 merge owner 会损坏文件)。
+- **唯一 CTRL 提供的同步助手 = 薄 git 一键同步**:`vault_git_sync`(init→add→commit→push,无 origin 优雅降到本地 commit,内联 git identity)。组合 git,不自造协议。落点 `commands/git.rs::vault_git_sync` + Settings Vault 行的「Sync to git」按钮。
+- **「vault 同步是不是通讯模块业务?」答**:vault 文件同步**不是**(= 组合用户的同步工具);跨设备 mesh 传输**是**通讯模块(ADR-010 缝⑧),但那是 v1.1+ 给 CTRL 自有态,与 vault 文件同步两回事。

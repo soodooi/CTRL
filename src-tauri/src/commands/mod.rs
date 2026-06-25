@@ -252,6 +252,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::git::git_commit_all,
             $crate::commands::git::git_push,
             $crate::commands::git::git_log,
+            $crate::commands::git::vault_git_sync,
             // localstorage — small persistent JSON KV per mcp
             $crate::commands::storage::localstorage_get,
             $crate::commands::storage::localstorage_set,
