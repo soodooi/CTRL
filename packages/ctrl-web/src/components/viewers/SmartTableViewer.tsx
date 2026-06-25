@@ -11,6 +11,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState, type ReactElement } from 'react';
 import type { ViewerProps } from '@/lib/viewer-registry';
+import { ConfirmDialog } from '@/components/primitives/ConfirmDialog';
 import {
   querySmartTable,
   smartTableRunAiColumn,
@@ -47,6 +48,14 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
   const path = vaultRelativePath(resource.uri);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  // In-app confirm (promise-based) — keeps the inline `await` flow while using
+  // ConfirmDialog instead of window.confirm (which is a no-op in Tauri).
+  const [confirmState, setConfirmState] = useState<{
+    message: string;
+    resolve: (ok: boolean) => void;
+  } | null>(null);
+  const askConfirm = (message: string): Promise<boolean> =>
+    new Promise((resolve) => setConfirmState({ message, resolve }));
   // §14: run the viewer's structured query through the kernel gate over this
   // file. Stable per path so SmartTableView's query effect doesn't re-fire.
   const runQuery = useCallback(
@@ -113,7 +122,9 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
       summary = await smartTableRunAiColumn(base);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes('needs_confirmation') && window.confirm(`${msg}\n\nRun it anyway?`)) {
+      // In-app confirm (window.confirm returns false in Tauri's WKWebView, so the
+      // cost gate could never be passed). askConfirm resolves from ConfirmDialog.
+      if (msg.includes('needs_confirmation') && (await askConfirm(`${msg}\n\nRun it anyway?`))) {
         summary = await smartTableRunAiColumn({ ...base, confirm_over_gate: true });
       } else {
         throw e;
@@ -196,6 +207,20 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
         onDeleteColumn={resource.editable ? (key) => void commit(deleteColumn(table, key)) : undefined}
         onReplaceViews={resource.editable ? (views) => void commit({ ...table, views }) : undefined}
         onSubmitForm={resource.editable ? (values) => void commit(appendRowWithValues(table, values)) : undefined}
+      />
+      <ConfirmDialog
+        open={confirmState != null}
+        title="Run AI column?"
+        body={confirmState?.message}
+        confirmLabel="Run anyway"
+        onConfirm={() => {
+          confirmState?.resolve(true);
+          setConfirmState(null);
+        }}
+        onCancel={() => {
+          confirmState?.resolve(false);
+          setConfirmState(null);
+        }}
       />
     </div>
   );
