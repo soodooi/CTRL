@@ -40,8 +40,11 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
 
   const onPickTemplate = async (key: string): Promise<void> => {
     setShowTemplates(false);
-    const name = window.prompt('New table name', TEMPLATES[key]?.name ?? 'Untitled');
-    if (name == null) return;
+    // No window.prompt: Tauri's WKWebView returns null for it (and a blocking
+    // name dialog isn't one-shot anyway). Create immediately with the template's
+    // default name — createSmartTable de-dupes the slug — and let the user rename
+    // in the table title afterwards.
+    const name = TEMPLATES[key]?.name ?? 'Untitled';
     const path = await createSmartTable(name, key);
     await qc.invalidateQueries({ queryKey: ['smart-tables'] });
     setSelected(path);
