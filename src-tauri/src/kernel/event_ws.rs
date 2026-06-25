@@ -1,6 +1,6 @@
-// kernel::stss_bridge — the local kernel->PWA event WS.
+// kernel::event_ws — the local kernel->PWA event WS.
 //
-// ST-SS as a protocol abstraction is deprecated (ADR-010 communication
+// event-stream as a protocol abstraction is deprecated (ADR-010 communication
 // § transports v5, SC6): this is a PLAIN WebSocket that ships CBOR-framed
 // `Event` (Cell/Op) payloads to in-app viewers — Cell/Op are just the payload
 // shape the PWA decodes (cbor-x), not a semantic-stream protocol. It stays
@@ -51,7 +51,7 @@ pub type CapabilityCheck = Arc<dyn Fn(&Op) -> Result<(), String> + Send + Sync>;
 /// Public handle the rest of the kernel uses to push events out + receive
 /// Ops from the world. Clone freely; broadcast::Sender supports many writers.
 #[derive(Clone)]
-pub struct StssBridge {
+pub struct EventWsBridge {
     events: broadcast::Sender<Event>,
     /// Per-process auth token. Required as `?token=<value>` on the WS upgrade
     /// URL. Generated fresh on every kernel boot, never persisted. PWA inside
@@ -60,7 +60,7 @@ pub struct StssBridge {
     auth_token: Arc<String>,
 }
 
-impl StssBridge {
+impl EventWsBridge {
     /// Create the bridge handle (does not bind yet — call `serve()` to start
     /// accepting connections). Generates a fresh auth token per process.
     pub fn new() -> Self {
@@ -109,7 +109,7 @@ impl StssBridge {
         let allow_all: CapabilityCheck = Arc::new(|_op: &Op| Ok(()));
 
         let listener = TcpListener::bind(addr).await?;
-        info!("kernel::stss_bridge listening on {addr}");
+        info!("kernel::event_ws listening on {addr}");
 
         let bridge = self.clone();
         tokio::spawn(async move {
@@ -146,14 +146,14 @@ impl StssBridge {
     }
 }
 
-impl Default for StssBridge {
+impl Default for EventWsBridge {
     fn default() -> Self {
         Self::new()
     }
 }
 
 async fn handle_connection(
-    bridge: StssBridge,
+    bridge: EventWsBridge,
     stream: TcpStream,
     peer: SocketAddr,
     on_op: Arc<dyn Fn(Op) + Send + Sync>,

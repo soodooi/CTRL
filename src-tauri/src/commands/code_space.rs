@@ -2,7 +2,7 @@
 //
 // PWA invokes these to spawn / control SubprocessActor instances running
 // inside isolated coding envs. Outbound events flow back to the PWA via
-// the existing ST-SS WS bridge (kernel/stss_bridge.rs); inbound user
+// the existing event-stream WS bridge (kernel/event_ws.rs); inbound user
 // actions (prompt / signal / resize) come through here.
 //
 // Wire shape (PWA invoke API):
@@ -14,11 +14,11 @@
 //   cs_list()                     -> EnvSummary[]               // Z2 envelope (stream_id+status+started_at_iso+command)
 //
 // The bridge between SubprocessActor's internal OpKind names and the
-// ST-SS wire vocabulary (spec v0.7) lives in
-// `kernel::subprocess_stss_adapter::forward_subprocess_outbox`.
+// event-stream wire vocabulary (spec v0.7) lives in
+// `kernel::subprocess_channel_adapter::forward_subprocess_outbox`.
 
 use crate::kernel::event::{Event, Op, OpKind};
-use crate::kernel::subprocess_stss_adapter::{forward_subprocess_outbox, EnvLifeStatus};
+use crate::kernel::subprocess_channel_adapter::{forward_subprocess_outbox, EnvLifeStatus};
 use crate::shell::kernel_supervisor::KernelHandle;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -167,12 +167,12 @@ pub async fn cs_spawn(
     let spawned_at_ms = now_ms();
     let status = Arc::new(Mutex::new(EnvLifeStatus::Running));
 
-    // Forwarder task: drains the actor's outbox into the ST-SS bridge with
+    // Forwarder task: drains the actor's outbox into the event-stream bridge with
     // spec-v0.7 wire translation + marks env Stopped/Crashed on exit.
     // Exits cleanly when the actor's outbox closes (i.e. when on_shutdown
     // finishes).
     //
-    // StssBridge is Clone + internally Arc-backed; no need to re-wrap.
+    // EventWsBridge is Clone + internally Arc-backed; no need to re-wrap.
     let stream_id_for_task = stream_id.clone();
     let bridge_for_task = kernel.bridge.clone();
     let status_for_task = Arc::clone(&status);

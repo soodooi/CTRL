@@ -76,13 +76,6 @@ pub enum CapToken {
         #[serde(default)]
         scopes: Vec<String>,
     },
-    // ST-SS
-    StssEmit {
-        stream_id: String,
-    },
-    StssSubscribe {
-        stream_id: String,
-    },
     // Inter-actor
     Spawn {
         prototype: String,

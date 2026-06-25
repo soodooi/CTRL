@@ -42,7 +42,7 @@ export interface KernelStatus {
   primary_adapter: string | null;
   mcp_servers_installed: number;
   vault_files: number;
-  stss_bridge_addr: string;
+  event_ws_addr: string;
   overall: 'ok' | 'degraded';
   warnings: string[];
   active_brain: string;
@@ -387,7 +387,7 @@ export interface StreamHandle {
   bridge_url: string;
 }
 
-// The event stream is a plain CBOR-over-WS (ST-SS protocol deprecated, ADR-010
+// The event stream is a plain CBOR-over-WS (event-stream protocol deprecated, ADR-010
 // § transports v5, SC6). `subscribe` is the one remaining call — it returns the
 // authed WS URL the cell-stream hooks connect to. The publish / listStreams
 // wrappers retired with their dead Tauri commands.

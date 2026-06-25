@@ -15,7 +15,7 @@ function status(firstRun: 'copying' | 'ready'): KernelStatus {
     primary_adapter: null,
     mcp_servers_installed: 0,
     vault_files: 0,
-    stss_bridge_addr: '',
+    event_ws_addr: '',
     overall: 'ok',
     warnings: [],
     active_brain: '',

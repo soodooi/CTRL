@@ -1,6 +1,6 @@
 // Kernel event stream — the PWA's subscribe handle for the local event WS.
 //
-// ST-SS as a protocol abstraction is deprecated (ADR-010 communication
+// event-stream as a protocol abstraction is deprecated (ADR-010 communication
 // § transports v5, SC6): the local kernel->PWA stream is just a plain WS that
 // ships CBOR Event payloads (Cell/Op), not a semantic-stream protocol. The
 // inbound `publish` / `list_streams` / `get_bridge_token` command surface
@@ -36,7 +36,7 @@ pub async fn subscribe(
         stream_id: args.stream_id,
         bridge_url: format!(
             "ws://{}?token={}",
-            crate::kernel::STSS_LISTEN_ADDR,
+            crate::kernel::EVENT_WS_LISTEN_ADDR,
             kernel.bridge.auth_token()
         ),
     })

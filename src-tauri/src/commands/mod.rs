@@ -7,7 +7,7 @@
 //
 // Commands grouped by domain:
 //   • kernel   — mcp install / list / run; MCP introspection + invoke
-//   • stss     — subscribe / publish / list streams
+//   • event_stream — subscribe to the kernel->PWA event WS
 //   • memory   — read_log / append / query AI memory event store
 //   • keychain — BYOK API key store / get / delete
 //
@@ -58,7 +58,7 @@ pub mod provider_models;
 pub mod provider_templates;
 pub mod skills;
 pub mod storage;
-pub mod stss;
+pub mod event_stream;
 pub mod system;
 pub mod updater;
 pub mod vault;
@@ -184,12 +184,12 @@ macro_rules! pwa_invoke_handler {
             // skills — kernel-local skill discovery (ADR-007 workbench § discovery v1 Phase 1)
             $crate::commands::skills::search_skills,
             $crate::commands::skills::list_local_skills,
-            // stss
-            // ST-SS protocol surface retired to one load-bearing call (SC6,
-            // ADR-010 § transports v5): the stream is a plain CBOR-over-WS, so
-            // only `subscribe` (hand the PWA the authed WS URL) remains; the
-            // publish / list_streams / get_bridge_token commands were dead.
-            $crate::commands::stss::subscribe,
+            // event_stream
+            // The kernel->PWA event stream is a plain CBOR-over-WS (the event-stream
+            // protocol abstraction is retired, ADR-010 § transports v5/v8 SC6).
+            // Only `subscribe` (hand the PWA the authed WS URL) remains; the
+            // old publish / list_streams / get_bridge_token were dead.
+            $crate::commands::event_stream::subscribe,
             // memory
             $crate::commands::memory::read_log,
             $crate::commands::memory::append_event,
@@ -217,7 +217,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::workshop::workshop_update_step,
             $crate::commands::workshop::workshop_remove_step,
             $crate::commands::workshop::workshop_move_step,
-            // code_space — coding remote desktop (ST-SS spec v0.7 wire)
+            // code_space — coding remote desktop (event-stream spec v0.7 wire)
             $crate::commands::code_space::cs_spawn,
             $crate::commands::code_space::cs_stdin,
             $crate::commands::code_space::cs_signal,

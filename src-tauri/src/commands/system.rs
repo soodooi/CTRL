@@ -6,7 +6,7 @@
 //
 // Returns a single KernelStatus struct serialized once per poll. PWA
 // polls every few seconds; if real-time updates ever matter we move
-// these onto the ST-SS bridge as Cell events.
+// these onto the event-stream bridge as Cell events.
 
 use crate::kernel::vault::default_vault_root;
 use crate::shell::KernelHandle;
@@ -47,8 +47,8 @@ pub struct KernelStatus {
     /// Approximate vault file count (markdown files under vault root).
     /// `0` when HOME is unset / vault dir doesn't exist yet.
     pub vault_files: usize,
-    /// ST-SS bridge listen address (loopback only, token-auth).
-    pub stss_bridge_addr: String,
+    /// event-stream bridge listen address (loopback only, token-auth).
+    pub event_ws_addr: String,
     /// "ok" when everything boot-time-required is registered; warnings
     /// list each missing component (e.g. "no llm adapter").
     pub overall: &'static str,
@@ -115,7 +115,7 @@ pub async fn kernel_status(
         None => 0,
     };
 
-    let stss_bridge_addr = crate::kernel::STSS_LISTEN_ADDR.to_string();
+    let event_ws_addr = crate::kernel::EVENT_WS_LISTEN_ADDR.to_string();
 
     let mut warnings: Vec<String> = Vec::new();
     if primary_adapter.is_none() {
@@ -146,7 +146,7 @@ pub async fn kernel_status(
         primary_adapter,
         mcp_servers_installed,
         vault_files,
-        stss_bridge_addr,
+        event_ws_addr,
         overall,
         warnings,
         active_brain,

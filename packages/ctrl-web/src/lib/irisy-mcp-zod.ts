@@ -58,23 +58,11 @@ const localAgentSource = z.object({
   lifecycle: z.enum(['singleton', 'per_invoke', 'pool']).default('singleton'),
 });
 
-const stssSource = z.object({
-  type: z.literal('stss'),
-  stream: z.object({
-    publisher: z.string().min(1),
-    transport: z.enum(['local_ws', 'remote_tunnel', 'inproc']),
-    endpoint: z.string().optional(),
-  }),
-  subscribed_kinds: z.array(z.string().min(1)),
-  emit_kinds: z.array(z.string().min(1)).optional(),
-});
-
 const source = z.discriminatedUnion('type', [
   builtinSource,
   mcpSource,
   oauthSource,
   localAgentSource,
-  stssSource,
 ]);
 
 // Capability token — permissive: string (bare token like "ClipboardRead")
@@ -95,10 +83,6 @@ const trigger = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('context_menu'),
     targets: z.array(z.enum(['text_selection', 'file', 'url'])),
-  }),
-  z.object({
-    kind: z.literal('on_stss'),
-    filter: z.unknown(),
   }),
   z.object({
     kind: z.literal('schedule'),

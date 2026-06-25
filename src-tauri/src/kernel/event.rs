@@ -1,6 +1,6 @@
-// Event — ST-SS cell+op unified message format.
+// Event — event-stream cell+op unified message format.
 //
-// All inter-actor communication uses Event. Wire format = ST-SS protocol
+// All inter-actor communication uses Event. Wire format = event-stream protocol
 // when crossing process/device boundary. Same shape as @ctrl/kernel-sdk
 // TypeScript Event (mirrors event.ts).
 
@@ -48,9 +48,9 @@ pub enum CellKind {
     McpToolResult,
     ApiResponse,
     ContextSnapshot,
-    // v0.7 coding-env — mirrors packages/ctrl-stss/src/protocol/kind.ts
-    // (lane-C C1 H-2026-05-20-001 spec v0.7). Payload schemas in
-    // .olym/specs/stss-protocol/spec.md §2.1.1.
+    // v0.7 coding-env CellKinds. These ship as plain CBOR-framed event
+    // payloads over the kernel->PWA WS (the event-stream protocol abstraction is
+    // retired, ADR-010 § transports v5/v8 SC6).
     TerminalOutput,  // payload = { actor, pid, data_b64, len }
     TerminalExit,    // payload = { actor, pid, code: Option<i32>, signal?: i32 }
     LspState,        // payload = { file, function?, cursor_line?, selection? }
@@ -86,18 +86,18 @@ pub enum OpKind {
     MeshMcpUsedAt,
     MeshPreferenceUpdated,
     // ADR-002 substrate § subprocess v1 §3 — SubprocessActor 6 lifecycle events (kernel-internal,
-    // NOT for ST-SS wire emission; the subprocess_stss_adapter translates
+    // NOT for direct WS emission; the subprocess_channel_adapter translates
     // these into v0.7 CellKind / OpKind values before broadcast).
     // Inbound (PWA → kernel → actor):
     SubprocessStdin,    // payload = { data_b64: String }
     SubprocessResize,   // payload = { cols: u16, rows: u16 }
     SubprocessSignal,   // payload = { signal: "SIGINT"|"SIGTERM"|"SIGKILL" }
-    // Outbound (actor → kernel → adapter → ST-SS bridge):
+    // Outbound (actor → kernel → adapter → event-stream bridge):
     SubprocessStdout,   // payload = { actor, pid, data_b64, len }
     SubprocessExit,     // payload = { actor, pid, code: Option<i32>, signal?: i32 }
     SubprocessSpawned,  // payload = { actor, pid, command, mem_cap_bytes }
     // v0.7 coding-env ops — mirrors lane-C kind.ts. Inbound from PWA via
-    // ST-SS wire; the adapter translates these to SubprocessStdin / etc.
+    // event-stream wire; the adapter translates these to SubprocessStdin / etc.
     AgentPrompt,        // payload = { text, agent_id?, request_id? }
     AgentInterrupt,     // payload = { agent_id?, reason? }
     EnvSignal,          // payload = { signal: "SIGINT"|"SIGTERM"|"SIGKILL" }

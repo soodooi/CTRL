@@ -11,7 +11,7 @@
 // Transport: streamable-http (replaces the deprecated SSE transport in the
 // MCP 2025-03-26 spec). Bound to 127.0.0.1:17873, never exposed beyond
 // loopback. Auth = Bearer <ephemeral token>, generated fresh per kernel
-// boot — same model as `stss_bridge` (never persisted to disk).
+// boot — same model as `event_ws` (never persisted to disk).
 //
 // What this module does NOT do:
 //   • Bind 0.0.0.0 / accept LAN clients (mesh covered by ADR-002 substrate)
@@ -52,7 +52,7 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-/// HTTP listen address. Deliberately one port above the ST-SS bridge
+/// HTTP listen address. Deliberately one port above the event-stream bridge
 /// (17872) so log-readers can eyeball both streams. Loopback only.
 pub const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:17873";
 

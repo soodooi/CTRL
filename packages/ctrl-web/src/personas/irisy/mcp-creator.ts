@@ -35,7 +35,6 @@ id, version, name, description, author.handle, icon, mcp_color, source, capabili
   - specific platform (Feishu / Coze / Notion / Linear / Slack / GitHub) → source.type = "oauth"
   - mentions an MCP server URL or named MCP server → source.type = "mcp"
   - mentions a local process / Python / shell script to wrap → source.type = "local_agent"
-  - mentions a stream / live data from another app → source.type = "stss"
 - Output protocol externally is ALWAYS MCP (per ADR-004 cap § execution v1). Regardless of internal source.type, the generated server.ts wraps the mcp as an MCP server using @modelcontextprotocol/sdk.
 - mcp_color:
   - amber → writing / text / chat / language

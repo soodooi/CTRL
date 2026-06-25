@@ -119,7 +119,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 
 **5 kernel primitives** (L1 内): Actor / Capability / Event / Channel / Effect.
 
-**5 mcp sources**: MCP servers / Big-platform OAuth / Local agents / ST-SS shared windows / Built-in.
+**4 mcp sources**: MCP servers / Big-platform OAuth / Local agents / Built-in. (ST-SS shared windows retired as a source 2026-06-25, ADR-001 spine v9 — one-way broadcast, can't do remote control; the kernel→PWA stream it named lives on as plain WS `event_ws.rs`.)
 
 物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 spine § layers v8 — BYO-CLI driver 5-块是 logical view, 4 层是 implementation view, 两图并存.
 

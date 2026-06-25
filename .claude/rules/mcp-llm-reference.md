@@ -13,7 +13,7 @@ paths:
 
 ## MCP manifest model
 
-Every mcp = declarative manifest (Zod schema). 5 source types: builtin / mcp-server / oauth / local_agent / stss.
+Every mcp = declarative manifest (Zod schema). 4 source types: builtin / mcp-server / oauth / local_agent. (ST-SS retired as a source 2026-06-25, ADR-001 spine v9.)
 
 > 2026-06-07: "keycap" 退役为 UX 装饰概念, 技术端统一称 "mcp" 跟 MCP 生态对齐. memory `decision_keycap_collapses_to_mcp_meta_ux_layer` (2026-06-05) 已升级 — 都叫 mcp, skills 也是 mcp.
 

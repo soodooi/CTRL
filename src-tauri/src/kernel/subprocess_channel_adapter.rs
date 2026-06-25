@@ -1,15 +1,15 @@
-// SubprocessActor ↔ ST-SS bridge translator + forwarder.
+// SubprocessActor ↔ event-stream bridge translator + forwarder.
 //
 // PR #6 ADR-002 substrate § subprocess v1 left SubprocessActor with an outbox mpsc::Sender<Event> using
 // kernel-internal OpKind names (SubprocessStdout / SubprocessExit /
-// SubprocessSpawned). lane-C C1 (spec v0.7) standardised the ST-SS wire
+// SubprocessSpawned). lane-C C1 (spec v0.7) standardised the event-stream wire
 // vocabulary with publisher-neutral CellKind / OpKind values
 // (terminal_output / terminal_exit / env_status / agent_prompt / env_signal).
 //
 // This module bridges the two:
 //   • Receives Events from a SubprocessActor outbox channel
-//   • Translates kernel-internal naming → ST-SS wire naming per spec v0.7
-//   • Re-emits via StssBridge.publish_cell / publish_op (broadcast to
+//   • Translates kernel-internal naming → event-stream wire naming per spec v0.7
+//   • Re-emits via EventWsBridge.publish_cell / publish_op (broadcast to
 //     subscribed PWA clients)
 //
 // Inverse direction (Op inbound from PWA → SubprocessActor) lives in the
@@ -18,7 +18,7 @@
 // (SubprocessStdin / SubprocessSignal) into the actor's mailbox.
 
 use crate::kernel::event::{Cell, CellKind, Event, Op, OpKind};
-use crate::kernel::stss_bridge::StssBridge;
+use crate::kernel::event_ws::EventWsBridge;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -49,7 +49,7 @@ impl Default for EnvLifeStatus {
     }
 }
 
-/// Forwarder task — drains a SubprocessActor outbox into the ST-SS bridge.
+/// Forwarder task — drains a SubprocessActor outbox into the event-stream bridge.
 ///
 /// Spawn one per actor (the actor's lifetime owns the channel; when the
 /// child exits and the outbox closes, this task exits cleanly).
@@ -57,7 +57,7 @@ impl Default for EnvLifeStatus {
 /// `stream_id` is what PWA subscribers filter on (typically the actor's
 /// name, mirrored from the manifest).
 ///
-/// `StssBridge` is `Clone` and internally `Arc`-backed (broadcast::Sender),
+/// `EventWsBridge` is `Clone` and internally `Arc`-backed (broadcast::Sender),
 /// so we take ownership of a clone rather than re-wrapping in `Arc<...>`.
 ///
 /// Z2: forwarder also updates `status` when it sees SubprocessExit so the
@@ -65,16 +65,16 @@ impl Default for EnvLifeStatus {
 /// callback channel.
 pub async fn forward_subprocess_outbox(
     mut outbox: mpsc::Receiver<Event>,
-    bridge: StssBridge,
+    bridge: EventWsBridge,
     stream_id: String,
     status: Arc<Mutex<EnvLifeStatus>>,
 ) {
-    debug!(stream_id = %stream_id, "subprocess_stss_adapter: forwarder started");
+    debug!(stream_id = %stream_id, "subprocess_channel_adapter: forwarder started");
     while let Some(event) = outbox.recv().await {
         update_status_from_exit(&event, &status).await;
         translate_and_publish(event, &bridge, &stream_id);
     }
-    debug!(stream_id = %stream_id, "subprocess_stss_adapter: forwarder ended (outbox closed)");
+    debug!(stream_id = %stream_id, "subprocess_channel_adapter: forwarder ended (outbox closed)");
 
     // themis CRITICAL: if the loop exits with status still Running, the
     // forwarder task died unexpectedly (panic in translate_and_publish, or
@@ -87,7 +87,7 @@ pub async fn forward_subprocess_outbox(
         if matches!(*guard, EnvLifeStatus::Running) {
             warn!(
                 stream_id = %stream_id,
-                "subprocess_stss_adapter: forwarder ended while status was still Running — \
+                "subprocess_channel_adapter: forwarder ended while status was still Running — \
                  promoting to Crashed (outbox closed without SubprocessExit event)"
             );
             *guard = EnvLifeStatus::Crashed {
@@ -145,7 +145,7 @@ async fn update_status_from_exit(event: &Event, status: &Arc<Mutex<EnvLifeStatus
 /// Translate one kernel-internal Event into the spec-v0.7 wire shape and
 /// publish via the bridge. Unknown / non-translatable Ops are dropped with
 /// a debug log (forward-compat: receivers tolerate unknown kinds).
-fn translate_and_publish(event: Event, bridge: &StssBridge, stream_id: &str) {
+fn translate_and_publish(event: Event, bridge: &EventWsBridge, stream_id: &str) {
     match event {
         Event::Op(op) => translate_op(op, bridge, stream_id),
         Event::Cell(cell) => {
@@ -161,7 +161,7 @@ fn translate_and_publish(event: Event, bridge: &StssBridge, stream_id: &str) {
     }
 }
 
-fn translate_op(op: Op, bridge: &StssBridge, stream_id: &str) {
+fn translate_op(op: Op, bridge: &EventWsBridge, stream_id: &str) {
     match op.kind {
         OpKind::SubprocessStdout => {
             // Internal Op → spec v0.7 Cell { kind: terminal_output }.
@@ -223,7 +223,7 @@ fn translate_op(op: Op, bridge: &StssBridge, stream_id: &str) {
             warn!(
                 stream_id = %stream_id,
                 kind = ?op.kind,
-                "subprocess_stss_adapter: outbox emitted an inbound-only OpKind — dropping"
+                "subprocess_channel_adapter: outbox emitted an inbound-only OpKind — dropping"
             );
         }
         // Other kernel OpKinds (kernel-wide events not belonging to this
@@ -245,8 +245,8 @@ mod tests {
 
     /// Helper: instantiate a bridge and capture the next published Event
     /// from its broadcast channel.
-    async fn bridge_with_receiver() -> (StssBridge, broadcast::Receiver<Event>) {
-        let bridge = StssBridge::new();
+    async fn bridge_with_receiver() -> (EventWsBridge, broadcast::Receiver<Event>) {
+        let bridge = EventWsBridge::new();
         // Subscribe BEFORE any publish (broadcast has zero-buffer for new
         // subscribers).
         let rx = bridge.subscribe_events();
