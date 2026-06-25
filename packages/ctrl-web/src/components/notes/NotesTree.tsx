@@ -18,6 +18,7 @@ import {
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  vaultCreateFolder,
   vaultDelete,
   vaultList,
   vaultMove,
@@ -26,6 +27,7 @@ import {
   vaultRootPath,
   vaultSearch,
   vaultSemanticSearch,
+  vaultWrite,
 } from '@/lib/kernel';
 import styles from './Notes.module.css';
 
@@ -170,13 +172,21 @@ export const NotesTree = ({
       else next.add(folder);
       return next;
     });
+  // Folder management UI state.
+  const [folderMenu, setFolderMenu] = useState<{ folder: string; x: number; y: number } | null>(null);
+  const [folderRenaming, setFolderRenaming] = useState<string | null>(null);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [confirmDeleteFolder, setConfirmDeleteFolder] = useState<string | null>(null);
 
-  // Dismiss the context menu on any outside click or Escape.
+  // Dismiss the file/folder context menu on any outside click or Escape.
   useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null);
+    if (!menu && !folderMenu) return;
+    const close = (): void => {
+      setMenu(null);
+      setFolderMenu(null);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close();
     };
     window.addEventListener('click', close);
     window.addEventListener('keydown', onKey);
@@ -184,7 +194,7 @@ export const NotesTree = ({
       window.removeEventListener('click', close);
       window.removeEventListener('keydown', onKey);
     };
-  }, [menu]);
+  }, [menu, folderMenu]);
 
   // Surface op errors instead of failing silently (was a real
   // breakpoint — frontmatter / editor errors only hit console.warn).
@@ -230,6 +240,58 @@ export const NotesTree = ({
       onPathMutated?.({ kind: 'delete', path });
     } catch (e) {
       setOpError(`Delete failed: ${String(e)}`);
+    }
+  };
+
+  // ── Folder management. The vault is plain files, so the kernel is file-level
+  // (mkdir-p for create; rename/delete operate per file) — fold over the group's
+  // files for folder rename/delete. `items` come from the rendered group.
+  const createFolder = async (raw: string): Promise<void> => {
+    setNewFolderOpen(false);
+    const folder = raw.trim().replace(/^\/+|\/+$/g, '');
+    if (!folder) return;
+    try {
+      await vaultCreateFolder(folder);
+      // The tree lists `.md` files, so an empty folder would be invisible — seed
+      // a starter note so the new folder shows up and is immediately usable.
+      await vaultWrite({
+        path: `${folder}/Untitled.md`,
+        content: '',
+        frontmatter: { created: new Date().toISOString() },
+      });
+      await queryClient.invalidateQueries({ queryKey: ['vault-list'] });
+    } catch (e) {
+      setOpError(`New folder failed: ${String(e)}`);
+    }
+  };
+
+  const renameFolder = async (
+    from: string,
+    raw: string,
+    items: readonly string[],
+  ): Promise<void> => {
+    setFolderRenaming(null);
+    const to = raw.trim().replace(/^\/+|\/+$/g, '');
+    if (!to || to === from) return;
+    try {
+      for (const f of items) await vaultMove(f, to + f.slice(from.length));
+      await queryClient.invalidateQueries({ queryKey: ['vault-list'] });
+    } catch (e) {
+      setOpError(`Rename folder failed: ${String(e)}`);
+    }
+  };
+
+  const deleteFolder = async (
+    folder: string,
+    items: readonly string[],
+  ): Promise<void> => {
+    setConfirmDeleteFolder(null);
+    setFolderMenu(null);
+    try {
+      for (const f of items) await vaultDelete(f);
+      await queryClient.invalidateQueries({ queryKey: ['vault-list'] });
+    } catch (e) {
+      setOpError(`Delete folder failed: ${String(e)}`);
     }
   };
 
@@ -314,6 +376,29 @@ export const NotesTree = ({
           />
           <span>Show system folders</span>
         </label>
+        {newFolderOpen ? (
+          <input
+            className={styles.renameInput}
+            autoFocus
+            placeholder="folder/sub-folder name…"
+            aria-label="New folder name"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void createFolder(e.currentTarget.value);
+              else if (e.key === 'Escape') setNewFolderOpen(false);
+            }}
+            onBlur={(e) => void createFolder(e.currentTarget.value)}
+          />
+        ) : (
+          <button
+            type="button"
+            className={styles.treeSystemToggle}
+            onClick={() => setNewFolderOpen(true)}
+            title="Create a folder"
+            style={{ cursor: 'pointer', background: 'none', border: 'none' }}
+          >
+            <span>+ New folder</span>
+          </button>
+        )}
       </header>
       <div className={styles.treeBody}>
         {trimmed.length === 1 && !tagFilter ? (
@@ -339,30 +424,55 @@ export const NotesTree = ({
                 : toggled.has(folder);
             return (
             <section key={folder} className={styles.folder} data-open={open || undefined}>
-              <button
-                type="button"
-                className={styles.folderName}
-                onClick={() => toggleFolder(folder)}
-                aria-expanded={open}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  width: '100%',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <span aria-hidden style={{ width: 10, opacity: 0.55 }}>
-                  {open ? '▾' : '▸'}
-                </span>
-                {folder}
-                <span style={{ marginLeft: 'auto', opacity: 0.4, fontSize: '0.85em' }}>
-                  {items.length}
-                </span>
-              </button>
+              {folderRenaming === folder ? (
+                <input
+                  className={styles.renameInput}
+                  autoFocus
+                  defaultValue={folder}
+                  aria-label="Rename folder"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter')
+                      void renameFolder(folder, e.currentTarget.value, items);
+                    else if (e.key === 'Escape') setFolderRenaming(null);
+                  }}
+                  onBlur={(e) => void renameFolder(folder, e.currentTarget.value, items)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className={styles.folderName}
+                  onClick={() => toggleFolder(folder)}
+                  onContextMenu={
+                    folder === '(root)'
+                      ? undefined
+                      : (e) => {
+                          e.preventDefault();
+                          setMenu(null);
+                          setFolderMenu({ folder, x: e.clientX, y: e.clientY });
+                        }
+                  }
+                  aria-expanded={open}
+                  title={folder === '(root)' ? undefined : 'Right-click to rename / delete'}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    width: '100%',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span aria-hidden style={{ width: 10, opacity: 0.55 }}>
+                    {open ? '▾' : '▸'}
+                  </span>
+                  {folder}
+                  <span style={{ marginLeft: 'auto', opacity: 0.4, fontSize: '0.85em' }}>
+                    {items.length}
+                  </span>
+                </button>
+              )}
               {open &&
                 (items.length === 0 ? (
                 <p className={styles.folderEmpty}>Empty</p>
@@ -469,6 +579,60 @@ export const NotesTree = ({
               </button>
             </>
           )}
+        </div>
+      ) : null}
+      {folderMenu ? (
+        <div
+          className={styles.contextMenu}
+          style={{ top: folderMenu.y, left: folderMenu.x }}
+          role="menu"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {(() => {
+            const items = allPaths.filter((p) => p.startsWith(folderMenu.folder + '/'));
+            return confirmDeleteFolder === folderMenu.folder ? (
+              <>
+                <div className={styles.contextMenuLabel}>
+                  Delete “{folderMenu.folder}” + {items.length} note
+                  {items.length === 1 ? '' : 's'}?
+                </div>
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  onClick={() => setConfirmDeleteFolder(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={styles.contextMenuDanger}
+                  onClick={() => void deleteFolder(folderMenu.folder, items)}
+                >
+                  Delete folder
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  onClick={() => {
+                    setFolderRenaming(folderMenu.folder);
+                    setFolderMenu(null);
+                  }}
+                >
+                  Rename / move folder…
+                </button>
+                <button
+                  type="button"
+                  className={styles.contextMenuDanger}
+                  onClick={() => setConfirmDeleteFolder(folderMenu.folder)}
+                >
+                  Delete folder…
+                </button>
+              </>
+            );
+          })()}
         </div>
       ) : null}
     </aside>
