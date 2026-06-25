@@ -283,7 +283,7 @@ export interface AiColumnSummary {
 }
 
 export const smartTableRunAiColumn = (args: AiColumnArgs): Promise<AiColumnSummary> =>
-  invoke('smart_table_run_ai_column', { args });
+  gateInvoke('smart_table_run_ai_column', { ...args });
 
 // §14 Unified Operation Interface — read half (describe / query) over the PWA
 // bridge. The in-app twin of the :17873 gate's `smart_table.describe` /
@@ -360,15 +360,13 @@ export const querySmartTable = (
   path: string,
   request: SmartTableQueryRequest = {},
 ): Promise<SmartTableQueryResult> =>
-  invoke('smart_table_query', {
-    args: {
-      path,
-      filters: request.filters ?? [],
-      conjunction: request.conjunction ?? 'and',
-      sort: request.sort ?? [],
-      group_by: request.group_by ?? [],
-      limit: request.limit ?? null,
-    },
+  gateInvoke('smart_table_query', {
+    path,
+    filters: request.filters ?? [],
+    conjunction: request.conjunction ?? 'and',
+    sort: request.sort ?? [],
+    group_by: request.group_by ?? [],
+    limit: request.limit ?? null,
   });
 
 export const listMcpServers = (): Promise<string[]> => invoke('list_mcp_servers');
@@ -508,36 +506,34 @@ export interface VaultWriteReply {
   path: string;
 }
 
+// Capability calls route through the platform API (gateInvoke → :17873 gate),
+// not private Tauri commands (comms-system-design Phase B). The gate tool takes
+// the MCP arguments directly (no `{ args }` envelope, no `mcp_id` — governance
+// is the gate's, not check_cap's). Shapes mirror the bespoke commands.
 export const vaultWrite = (args: VaultWriteArgs): Promise<VaultWriteReply> =>
-  invoke('vault_write', { args });
+  gateInvoke('vault_write', { ...args });
 
-export const vaultRead = (path: string, mcp_id?: string): Promise<VaultEntry> =>
-  invoke('vault_read', { args: { path, mcp_id: mcp_id ?? null } });
+export const vaultRead = (path: string, _mcp_id?: string): Promise<VaultEntry> =>
+  gateInvoke('vault_read', { path });
 
 export const vaultList = (
   subdir?: string,
-  mcp_id?: string,
-): Promise<string[]> =>
-  invoke('vault_list', {
-    args: { subdir: subdir ?? null, mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<string[]> => gateInvoke('vault_list', { subdir: subdir ?? null });
 
 export const vaultSearch = (
   query: string,
   limit = 50,
-  mcp_id?: string,
-): Promise<string[]> =>
-  invoke('vault_search', {
-    args: { query, limit, mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<string[]> => gateInvoke('vault_search', { query, limit });
 
-export const vaultDelete = (path: string, mcp_id?: string): Promise<void> =>
-  invoke('vault_delete', { args: { path, mcp_id: mcp_id ?? null } });
+export const vaultDelete = (path: string, _mcp_id?: string): Promise<void> =>
+  gateInvoke('vault_delete', { path });
 
-export const vaultRootPath = (): Promise<string> => invoke('vault_root_path');
+export const vaultRootPath = (): Promise<string> => gateInvoke('vault_root_path');
 
 export const vaultRebuildIndex = (): Promise<number> =>
-  invoke('vault_rebuild_index');
+  gateInvoke('vault_rebuild_index');
 
 // ADR-002 substrate § vault v1 §8.3 #9-21 (2026-06-01) — graph + mutation
 // + watcher primitives (memory `decision_vault_adr_002_section_8`).
@@ -584,70 +580,59 @@ export interface VaultWatchEvent {
 
 export const vaultBacklinks = (
   path: string,
-  mcp_id?: string,
+  _mcp_id?: string,
 ): Promise<BacklinkHit[]> =>
-  invoke('vault_backlinks', { args: { path, mcp_id: mcp_id ?? null } });
+  gateInvoke('vault_backlinks', { path });
 
-export const vaultTags = (mcp_id?: string): Promise<TagCount[]> =>
-  invoke('vault_tags', { args: { mcp_id: mcp_id ?? null } });
+export const vaultTags = (_mcp_id?: string): Promise<TagCount[]> =>
+  gateInvoke('vault_tags', {});
 
 export const vaultNotesByTag = (
   tag: string,
-  mcp_id?: string,
-): Promise<string[]> =>
-  invoke('vault_notes_by_tag', { args: { tag, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<string[]> => gateInvoke('vault_notes_by_tag', { tag });
 
 export const vaultMentions = (
   text: string,
-  mcp_id?: string,
-): Promise<MentionHit[]> =>
-  invoke('vault_mentions', { args: { text, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<MentionHit[]> => gateInvoke('vault_mentions', { text });
 
-export const vaultOrphans = (mcp_id?: string): Promise<string[]> =>
-  invoke('vault_orphans', { args: { mcp_id: mcp_id ?? null } });
+export const vaultOrphans = (_mcp_id?: string): Promise<string[]> =>
+  gateInvoke('vault_orphans', {});
 
-export const vaultBrokenLinks = (mcp_id?: string): Promise<BrokenLink[]> =>
-  invoke('vault_broken_links', { args: { mcp_id: mcp_id ?? null } });
+export const vaultBrokenLinks = (_mcp_id?: string): Promise<BrokenLink[]> =>
+  gateInvoke('vault_broken_links', {});
 
-export const vaultGraphData = (mcp_id?: string): Promise<GraphData> =>
-  invoke('vault_graph_data', { args: { mcp_id: mcp_id ?? null } });
+export const vaultGraphData = (_mcp_id?: string): Promise<GraphData> =>
+  gateInvoke('vault_graph_data', {});
 
 export const vaultRename = (
   from: string,
   to: string,
-  mcp_id?: string,
-): Promise<void> =>
-  invoke('vault_rename', { args: { from, to, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<void> => gateInvoke('vault_rename', { from, to });
 
 export const vaultMove = (
   from: string,
   to: string,
-  mcp_id?: string,
-): Promise<void> =>
-  invoke('vault_move', { args: { from, to, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<void> => gateInvoke('vault_move', { from, to });
 
 export const vaultCreateFolder = (
   path: string,
-  mcp_id?: string,
-): Promise<void> =>
-  invoke('vault_create_folder', {
-    args: { path, mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<void> => gateInvoke('vault_create_folder', { path });
 
 export const vaultSetStarred = (
   path: string,
   starred: boolean,
-  mcp_id?: string,
-): Promise<void> =>
-  invoke('vault_set_starred', {
-    args: { path, starred, mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<void> => gateInvoke('vault_set_starred', { path, starred });
 
 export const vaultAliases = (
   path: string,
-  mcp_id?: string,
-): Promise<string[]> =>
-  invoke('vault_aliases', { args: { path, mcp_id: mcp_id ?? null } });
+  _mcp_id?: string,
+): Promise<string[]> => gateInvoke('vault_aliases', { path });
 
 export const vaultWatchRecent = (
   since_ms: number,
@@ -678,18 +663,12 @@ export interface SourcingPendingReply {
 
 export const vaultSourcingRun = (
   date: string,
-  mcp_id?: string,
-): Promise<SourcingRunReport> =>
-  invoke('vault_sourcing_run', {
-    args: { date, mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<SourcingRunReport> => gateInvoke('vault_sourcing_run', { date });
 
 export const vaultSourcingPending = (
-  mcp_id?: string,
-): Promise<SourcingPendingReply> =>
-  invoke('vault_sourcing_pending', {
-    args: { mcp_id: mcp_id ?? null },
-  });
+  _mcp_id?: string,
+): Promise<SourcingPendingReply> => gateInvoke('vault_sourcing_pending', {});
 
 // ADR-005 v2 § soul-md-compat §4.3 — SOUL.md Tauri surface.
 export interface IrisySoulView {
@@ -724,30 +703,28 @@ export interface EmbeddingStatus {
 export const vaultEmbedNote = (
   path: string,
 ): Promise<{ path: string; vector_dims: number; cached: boolean }> =>
-  invoke('vault_embed_note', { args: { path } });
+  gateInvoke('vault_embed_note', { path });
 
 export const vaultReembedAll = (
   force = false,
 ): Promise<{ embedded: number; skipped: number; failed: number }> =>
-  invoke('vault_reembed_all', { args: { force } });
+  gateInvoke('vault_reembed_all', { force });
 
 export const vaultEmbeddingStatus = (): Promise<EmbeddingStatus> =>
-  invoke('vault_embedding_status');
+  gateInvoke('vault_embedding_status');
 
 export const vaultSemanticSearch = (
   query: string,
   limit = 10,
   threshold?: number,
 ): Promise<EmbeddingHit[]> =>
-  invoke('vault_semantic_search', {
-    args: { query, limit, threshold: threshold ?? null },
-  });
+  gateInvoke('vault_semantic_search', { query, limit, threshold: threshold ?? null });
 
 export const vaultSuggestLinks = (
   for_path: string,
   limit = 5,
 ): Promise<EmbeddingHit[]> =>
-  invoke('vault_suggest_links', { args: { for_path, limit } });
+  gateInvoke('vault_suggest_links', { for_path, limit });
 
 // Irisy synthesize — Layer 4 surface
 // (brainstorm §5.3 / §5.5 / §5.10)

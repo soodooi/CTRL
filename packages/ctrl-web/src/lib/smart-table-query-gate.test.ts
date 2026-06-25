@@ -30,7 +30,8 @@ describe('querySmartTable', () => {
   it('fills explicit defaults for an empty request', async () => {
     invoke.mockResolvedValue({ rows: [], match_count: 0 });
     await querySmartTable('tables/leads.md');
-    expect(invoke).toHaveBeenCalledWith('smart_table_query', {
+    expect(invoke).toHaveBeenCalledWith('gate_invoke', {
+      tool: 'smart_table_query',
       args: { path: 'tables/leads.md', filters: [], conjunction: 'and', sort: [], group_by: [], limit: null },
     });
   });
@@ -44,7 +45,8 @@ describe('querySmartTable', () => {
       group_by: ['stage', 'owner'],
       limit: 50,
     });
-    expect(invoke).toHaveBeenCalledWith('smart_table_query', {
+    expect(invoke).toHaveBeenCalledWith('gate_invoke', {
+      tool: 'smart_table_query',
       args: {
         path: 'tables/leads.md',
         filters: [{ field: 'stage', op: 'eq', value: 'won' }],
