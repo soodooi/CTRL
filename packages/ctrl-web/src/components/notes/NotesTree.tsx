@@ -159,6 +159,17 @@ export const NotesTree = ({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
+  // Collapsible folders: a 120-file flat dump reads as "messy". Folders the user
+  // explicitly toggled live here; by default a folder is collapsed unless it is
+  // (root), holds the open note, or a search is active (notes-module-plan §5).
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
+  const toggleFolder = (folder: string): void =>
+    setToggled((prev) => {
+      const next = new Set(prev);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      return next;
+    });
 
   // Dismiss the context menu on any outside click or Escape.
   useEffect(() => {
@@ -319,10 +330,41 @@ export const NotesTree = ({
               : 'No notes yet — press ⌘P or “+ New Note” to start.'}
           </p>
         ) : (
-          grouped.map(({ folder, items }) => (
-            <section key={folder} className={styles.folder}>
-              <h3 className={styles.folderName}>{folder}</h3>
-              {items.length === 0 ? (
+          grouped.map(({ folder, items }) => {
+            const open =
+              isFiltered ||
+              folder === '(root)' ||
+              (selectedPath != null && selectedPath.startsWith(folder + '/'))
+                ? !toggled.has(folder)
+                : toggled.has(folder);
+            return (
+            <section key={folder} className={styles.folder} data-open={open || undefined}>
+              <button
+                type="button"
+                className={styles.folderName}
+                onClick={() => toggleFolder(folder)}
+                aria-expanded={open}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  width: '100%',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span aria-hidden style={{ width: 10, opacity: 0.55 }}>
+                  {open ? '▾' : '▸'}
+                </span>
+                {folder}
+                <span style={{ marginLeft: 'auto', opacity: 0.4, fontSize: '0.85em' }}>
+                  {items.length}
+                </span>
+              </button>
+              {open &&
+                (items.length === 0 ? (
                 <p className={styles.folderEmpty}>Empty</p>
               ) : (
                 <ul className={styles.fileList}>
@@ -368,9 +410,10 @@ export const NotesTree = ({
                     </li>
                   ))}
                 </ul>
-              )}
+              ))}
             </section>
-          ))
+            );
+          })
         )}
       </div>
       {opError ? (
