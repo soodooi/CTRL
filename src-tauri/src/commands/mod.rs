@@ -86,6 +86,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::install_mcp,
             $crate::commands::kernel::install_mcpb,
             $crate::commands::kernel::install_mcp_from_mcp,
+            // Connect a remote MCP server from the registry (ADR-002 §7.4)
+            $crate::commands::kernel::connect_remote_mcp,
             $crate::commands::kernel::run_mcp,
             $crate::commands::kernel::run_action,
             $crate::commands::kernel::uninstall_mcp,

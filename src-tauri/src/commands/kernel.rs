@@ -606,6 +606,64 @@ pub async fn install_mcp_from_mcp(
     Ok(summary)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ConnectRemoteMcpArgs {
+    /// mcp id — the sanitized registry server name.
+    pub id: String,
+    pub name: String,
+    /// Remote streamable-http endpoint (the registry server's `remotes[].url`).
+    pub url: String,
+    /// Optional Authorization header value ("Bearer <token>") when the server
+    /// requires auth. Public servers pass null.
+    pub auth_header: Option<String>,
+    pub description: Option<String>,
+}
+
+/// Connect a remote MCP server from the registry (ADR-002 § composition §7.4):
+/// register an Http descriptor, connect (validates the endpoint actually
+/// responds), list its tools, and persist so it re-registers next boot. Once
+/// connected, the gate proxies its tools to the brain (mcp.proxy_list_tools /
+/// mcp.proxy_call_tool), so Irisy can call them. Returns the tool names. Same
+/// runtime the Obsidian connector uses (mcp_host streamable-http client).
+#[tauri::command]
+pub async fn connect_remote_mcp(
+    args: ConnectRemoteMcpArgs,
+    kernel: State<'_, KernelHandle>,
+) -> Result<Vec<String>, String> {
+    use crate::kernel::mcp_host::{McpServerDescriptor, McpServerSource};
+    validate_mcp_id(&args.id)?;
+    let host = kernel.runtime.mcp_host.clone();
+    host.register(McpServerDescriptor {
+        id: args.id.clone(),
+        name: args.name,
+        version: "remote".into(),
+        description: args.description.unwrap_or_default(),
+        tools: Vec::new(),
+        source: McpServerSource::Http {
+            url: args.url,
+            auth_header: args.auth_header,
+        },
+    })
+    .await;
+    host.connect(&args.id)
+        .await
+        .map_err(|e| format!("connect failed: {e}"))?;
+    let tools = host
+        .list_tools(&args.id)
+        .await
+        .map_err(|e| format!("list_tools failed: {e}"))?
+        .into_iter()
+        .map(|t| t.name.to_string())
+        .collect::<Vec<_>>();
+    if let Some(reg_path) = crate::kernel::mcp_host::McpHost::default_registry_path() {
+        if let Err(e) = host.save_registry(&reg_path).await {
+            tracing::warn!(error = %e, "connect_remote_mcp: save_registry failed (continuing)");
+        }
+    }
+    tracing::info!(id = %args.id, tools = tools.len(), "connect_remote_mcp ok");
+    Ok(tools)
+}
+
 fn derive_server_id(source: &crate::kernel::mcp_host::McpServerSource) -> String {
     use crate::kernel::mcp_host::McpServerSource;
     // Lightweight stable hash via DefaultHasher — collision probability
