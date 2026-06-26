@@ -43,3 +43,7 @@ packages/*/tsconfig.tsbuildinfo
 .olym.bak/
 experiments/
 .provider-research/
+
+# Playwright artifacts
+test-results/
+playwright-report/
