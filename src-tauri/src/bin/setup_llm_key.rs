@@ -11,7 +11,7 @@
 
 use std::process::ExitCode;
 
-const SERVICE: &str = "app.ctrl.spike";
+const SERVICE: &str = "app.ctrl";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);

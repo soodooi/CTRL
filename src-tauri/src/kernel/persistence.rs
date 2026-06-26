@@ -54,7 +54,9 @@ impl EventStore {
         detail: Option<&str>,
     ) -> rusqlite::Result<()> {
         let ts_ms = chrono::Utc::now().timestamp_millis();
-        let conn = self.conn.lock().expect("audit ledger conn poisoned");
+        // Best-effort by contract: a poisoned ledger mutex must never panic and
+        // block the underlying call — recover the guard instead of unwrapping.
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute(
             "INSERT INTO audit_calls (ts_ms, domain, caller, tool, args_hash, outcome, detail) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -73,7 +75,7 @@ impl EventStore {
 
     /// Count audit-ledger rows — inspection/test helper.
     pub fn audit_count(&self) -> rusqlite::Result<i64> {
-        let conn = self.conn.lock().expect("audit ledger conn poisoned");
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.query_row("SELECT COUNT(*) FROM audit_calls", [], |r| r.get(0))
     }
 }

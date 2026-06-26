@@ -120,7 +120,7 @@ impl WindowController {
             tracing::info!("WindowController::toggle — main missing, rebuilding");
             let _w = Self::build_main(app)?;
             #[cfg(target_os = "windows")]
-            cloak::set(&w, false);
+            cloak::set(&_w, false);
             // Don't set focus - this allows hotkey to work while window is visible
             // let _ = w.set_focus();
             return Ok(());

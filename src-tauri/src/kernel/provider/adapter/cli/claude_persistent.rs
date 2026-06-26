@@ -194,6 +194,14 @@ impl Provider for ClaudePersistentProvider {
                 .await
                 .is_err()
             {
+                // The wall-clock
+                // timeout cancels `work` mid-turn, so the child may still emit tail
+                // assistant/result tokens for THIS turn. Flag a drain (mirrors the
+                // consumer-drop and read-error paths above) so the next turn's
+                // `drain_pending_response()` discards them instead of mis-reading
+                // them as that turn's reply. `work` (which held the lock) is dropped
+                // by now, so re-locking here cannot deadlock.
+                cli_arc.lock().await.needs_drain = true;
                 let _ = tx_deadline
                     .send(Err(ProviderError::DeadlineExceeded(deadline)))
                     .await;

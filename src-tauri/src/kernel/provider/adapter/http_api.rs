@@ -213,7 +213,14 @@ fn spawn_sse_reader(
     let (tx, rx) = mpsc::channel(STREAM_BUFFER);
     let mut byte_stream = response.bytes_stream();
     tokio::spawn(async move {
-        let mut buf = String::new();
+        // Accumulate RAW bytes, not lossy-decoded strings. reqwest splits the body at
+        // arbitrary transport boundaries, so a multi-byte UTF-8 char (CJK /
+        // emoji — CTRL's primary users are Chinese) can straddle two chunks.
+        // Decoding each chunk in isolation replaces its split halves with
+        // U+FFFD. We only decode a segment once it is a complete SSE event —
+        // its boundary is a blank line whose bytes (CR/LF) never appear inside
+        // a UTF-8 multi-byte sequence, so the segment can never end mid-char.
+        let mut buf: Vec<u8> = Vec::new();
         while let Some(chunk_result) = byte_stream.next().await {
             let bytes = match chunk_result {
                 Ok(b) => b,
@@ -226,10 +233,10 @@ fn spawn_sse_reader(
                     return;
                 }
             };
-            buf.push_str(&String::from_utf8_lossy(&bytes));
-            while let Some(idx) = buf.find("\n\n") {
-                let event = buf[..idx].to_string();
-                buf.drain(..idx + 2);
+            buf.extend_from_slice(&bytes);
+            while let Some((content_end, next_start)) = find_sse_event_boundary(&buf) {
+                let event = String::from_utf8_lossy(&buf[..content_end]).into_owned();
+                buf.drain(..next_start);
                 let mut data_payload: Option<String> = None;
                 for line in event.lines() {
                     let line = line.trim_start();
@@ -257,6 +264,34 @@ enum ParseOutcome {
     Chunk(ChatChunk),
     Done,
     Skip,
+}
+
+/// Locate the earliest SSE event terminator (a blank line) in the raw byte
+/// buffer. The SSE spec
+/// allows either LF (`\n\n`) or CRLF (`\r\n\r\n`) blank lines, and several
+/// "OpenAI-compatible" third-party endpoints CTRL supports emit CRLF — keying
+/// only on `\n\n` left those events undispatched (empty reply, no error).
+/// Returns `(content_end, next_start)`: the event body is `buf[..content_end]`
+/// and the next event begins at `buf[next_start..]`.
+fn find_sse_event_boundary(buf: &[u8]) -> Option<(usize, usize)> {
+    let lf = find_subslice(buf, b"\n\n");
+    let crlf = find_subslice(buf, b"\r\n\r\n");
+    match (lf, crlf) {
+        (Some(i), Some(j)) => {
+            if i <= j {
+                Some((i, i + 2))
+            } else {
+                Some((j, j + 4))
+            }
+        }
+        (Some(i), None) => Some((i, i + 2)),
+        (None, Some(j)) => Some((j, j + 4)),
+        (None, None) => None,
+    }
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 // ── OpenAI-shape wire ──────────────────────────────────────────────────

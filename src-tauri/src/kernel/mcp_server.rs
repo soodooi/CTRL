@@ -1814,7 +1814,19 @@ the user's Tavily key if set (full web), else a keyless Wikipedia fallback \
         let key = crate::kernel::provider::registry::read_credential("tavily")
             .filter(|k| !k.is_empty());
         let (results, source, note) = match key {
-            Some(k) => (tavily_search(&k, query, n).await?, "tavily", ""),
+            // A Tavily key is set, but the cloud may be unreachable (expired key,
+            // quota, network, 5xx). Derived rule #1: cloud-down degrades, never
+            // hard-fails — so on a Tavily error fall back to keyless Wikipedia
+            // instead of propagating. Only if Wikipedia also fails do we error.
+            Some(k) => match tavily_search(&k, query, n).await {
+                Ok(results) => (results, "tavily", ""),
+                Err(_) => (
+                    wikipedia_search(query, n).await?,
+                    "wikipedia",
+                    "Tavily search failed; degraded to keyless Wikipedia \
+(encyclopedic only). Check your Tavily API key / quota at tavily.com.",
+                ),
+            },
             None => (
                 wikipedia_search(query, n).await?,
                 "wikipedia",
