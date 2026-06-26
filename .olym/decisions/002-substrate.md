@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 33
+version: 34
 status: accepted
-last_updated: 2026-06-22
+last_updated: 2026-06-25
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003, note: "v27 reframed: BYO-CLI driver brain — user-chosen local CLI (Claude Code etc.); CTRL never spawns/supervises a brain. Prior hermes-ACP/Pi/opencode-as-brain content retired, kept in changelog as provenance." }
@@ -16,13 +16,14 @@ sections:
   - { id: crypto,               source: orig-007 }
   - { id: subprocess,           source: orig-012 }
   - { id: mcp-bus,              source: orig-013 }
-  - { id: composition,          source: orig-024 }
+  - { id: composition,          source: orig-024, note: "v34 §7.4: feature packs are systematic — manifest=data, runtime=generic, zero code to add a pack; 3 zero-code sources (local / Discover registry-pull / Irisy-generated via reused Anthropic mcp-server-dev open skills); OFFICIAL_PACKS hardcode retires; gate mcp_pack_{list,install,run} = runtime landing." }
   - { id: vault,                source: new-2026-06-01, note: "kernel vault primitives + feature-layer boundary; Daily Note + Sourcing are feature-layer (Irisy + frontend)" }
   - { id: smart-table-output,   source: new-2026-06-03, note: "mcp output unification — single SmartTable per mcp, schema in manifest output_capture" }
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
   - { id: unified-operation-interface, source: new-2026-06-19, note: "§14 — describe/query/produce: one uniform interface over all content-type feature points (md/html/table/pdf/connector/…) projected on :17873 gate; type layer via describe, read(query)≠write(produce-through-gate); query = kernel service over QuerySource, feature packs + workflows are clients; smart-table = first impl. Research: GraphQL/Plan9/agentic-AI paper." }
 changelog:
+  - v34 2026-06-25: **§7.4 NEW — 功能包系统化方向锁死 (bao 2026-06-25「加功能包不能改代码,要系统化」+「长期」+「网上找方案」).** manifest = 数据,runtime = 通用引擎,**加一个 pack 零代码**。三个零代码数据源: ① 本地装 `~/.ctrl/mcps` (已数据驱动,`loadInstalledPacks` 读任意 manifest) ② Discover commons = registry 客户端 (拉 MCP Registry `.well-known/mcp.json` + Smithery 2000+;`OFFICIAL_PACKS` 硬编码数组退成临时 stand-in,接 registry 后退役) ③ Irisy 生成 (mcp-creator persona + **复用 Anthropic `mcp-server-dev` 开放 Agent Skills** build-mcp-server/app/mcpb,不重造: discovery→scaffold→MCP-Inspector 校验→gate 装)。通用 runtime 落点已就位: `FeaturePackScene` 读 `actions[]` 渲染 / gate `mcp_pack_run` 执行 (secret 不回 brain) / 通用 `knowledge_base` 字段绑专属 KB (`inKbScope` 裁剪,stocks=助理+`Stocks/`+ghostfolio,非新角色) / gate `mcp_pack_install` = brain 自装回流落点。对齐 ADR-001 § projection (projector 投影开放 skills)、ADR-006 §5 commons、ADR-003 §8.6 + ADR-005 v6 (角色=persona 层,pack+KB 正交,不焊死)。NOT 自造 manifest/bundle 格式;NOT 为每 pack 写分支;NOT 人工维护长尾列表。
   - v33 2026-06-22: **§14 深化 — 批判性自审后补 §14.8-§14.11 (事实源 `vault/ctrl/comms-architecture-permanent.md` §10).** 补四项: (1) **§14.8 query 结果随 source_kind 多态** —— 动词仍三个,返回类型随 describe().source_kind 分化 (Records/Text/Blob),修 v29「QueryResult 是 record-shaped {rows}」的类型坍缩,让 pdf/图片 (Blob) + 长文 (Text) 不用 hack 进 record。(2) **§14.9 produce 分 Write vs Effect** —— effectful 长耗时动作返回 OperationHandle{operation_id, idempotency_key},坐到 ADR-001 第五 primitive **Effect** 上;进度复用 §14.7 query{watch}、取消复用 produce、幂等键防重放,run_ai_column 手搓 job 收编成标准 Effect (模型: Google AIP-151 LRO / Temporal / gRPC operations)。(3) **§14.10 协议版本协商** —— describe 自报 protocol_version (SemVer),gate 按版本路由/降级,protobuf 式只增不改,破坏性变更走 major + N/N-1 迁移窗口 (CORBA/SOAP 死于版本脆性)。(4) **§14.11 AI-facing 错误契约** —— 结构化 Feedback{kind, retriable, correction, human},QueryError::UnknownField 收编为特例,闭合 Irisy 自纠回路 (RFC 7807 / gRPC rich error)。NOT 改动词集 (仍三);NOT 改 spine 5 primitive (反而启用 Effect)。配套总纲 D/E/G/H 进 ADR-010 v4。
   - v32 2026-06-22: **§14.7 subscribe — streaming read = query{watch} 投影 (NOT 第四动词).** (此条补记: §14.7 正文在 commit aa990ab 已写入 + frontmatter 已 bump 32,但当时漏记 changelog 行,现补。) Irisy/PWA 订阅 query 结果集,源变 → gate 推增量 (ST-SS Cell/Op);subscribe 不是新动词,是 `query{watch:true}` 传输投影,无流语义的源 (registry/providers) 天然不实现 (ISP);授权+审计经 :17873,字节走 :17872。事实源 `vault/ctrl/comms-architecture-permanent.md`。
   - v31 (provenance, no content change): frontmatter version 在 commit 78a3577 从 30 bump 到 31,但未改动 §14 任何内容、亦无 changelog 行 (无意的版本号 bump)。此条仅为补全版本号连续性,无实质决策。
@@ -680,6 +681,30 @@ Axis 6 `cap_asset` only *copies static files*; axis 7 `provision` *installs exte
 ### §7.3 Packaging + distribution (v21)
 
 Feature-pack file = a v2 mcp manifest (markdown + JSON frontmatter, git-diffable, AI-generatable). Distribution bundle = **Anthropic `.mcpb`** (reused, not a custom format — ecosystem-aligned). **Discover = the pack store**: intent → Irisy 收敛 1-3 (curation, NOT a Quicker-style 8000 long-tail wall) + scene-grouped browse + search. **Create = AI creator** generates the pack from natural language (user writes no JSON unless advanced). Same format both ends → 造的=别人挑的源头 (share-and-be-shared).
+
+### §7.4 Feature packs are systematic — manifest = data, runtime = generic, zero code to add a pack (v34, bao 2026-06-25)
+
+**锁的方向**: 加一个功能包**永远不改一行代码** (bao 2026-06-25: 「我们不能要增加一个功能包就修改一次代码,而是自动的;而是系统化的」)。manifest 是**数据**,runtime 是**通用引擎** —— 引擎读任意 manifest 就能渲染 / 执行 / 绑知识库 / 安装,不为某个具体 pack 写 if 分支。这是 §7.1「CTRL 不长胖,胖的是 pack 库」的硬约束化:pack 库的增长**机制化**,不靠人工接线。
+
+**3 个零代码数据源** (功能包从哪来 —— 三条都不需要改 CTRL 代码):
+
+1. **本地装** `~/.ctrl/mcps/<id>/` —— 已经数据驱动。`loadInstalledPacks` 扫所有已装 manifest,声明 `actions[]` 的即成 feature pack,声明 `knowledge_base` 的即得专属 KB。新 pack 落盘即出现,零代码。
+2. **Discover commons (registry pull)** —— Discover 不是一张写死的列表,是一个 registry 客户端:拉 **MCP Registry** (`.well-known/mcp.json` 约定) + **Smithery** (2000+ MCP) 等公共源,intent → Irisy 收敛 1-3 (curation,不是 8000 长尾墙)。当前 `feature-pack.ts` 的 `OFFICIAL_PACKS` 硬编码数组 = **临时 bundled stand-in**,接上 registry 数据源后**退役** —— 内置 catalog 不是终态,registry 才是。
+3. **Irisy 生成** —— mcp-creator persona (connector-by-Irisy,见 memory) + **复用 Anthropic `mcp-server-dev` 开放格式 Agent Skills** (`build-mcp-server` / `build-mcp-app` / `build-mcpb`,SKILL.md + references/,开放格式不重造)。流程: discovery → scaffold → **MCP Inspector 式校验** → 经 gate 安装。自然语言一句话 → manifest,落地即走数据源 1。
+
+**通用 runtime (已落地的落点)** —— 引擎对任意 manifest 同构:
+- **渲染** = `FeaturePackScene` 读 `actions[]` 出 action bar,不认具体 pack。
+- **执行** = gate `mcp_pack_run` (`mcp_server.rs`) 经 `:17873` 跑 action,secret 由 provision runner 注入,永不回 brain。
+- **绑专属 KB** = manifest 通用字段 `knowledge_base` → `pack.kbDir` → `inKbScope` 裁剪检索 (bao 2026-06-25: stocks = 助理角色 + `Stocks/` KB + ghostfolio pack,**不是新角色**;任何 pack 自声明 KB,零 per-pack 代码)。
+- **安装** = gate `mcp_pack_install` —— brain (hermes / Irisy) 自己装 pack 的回流落点;`mcp_pack_list` 列已装,合起来 ≈ MCP-Inspector 式 smoke 校验面。
+
+**校验** = MCP-Inspector 式 smoke,经 gate (`mcp_pack_list` / `mcp_pack_run`) 跑一遍 action 确认能用,不是离线 lint。
+
+**对齐**: 数据源 3 的开放 skills 由 ADR-001 spine § projection 的 projector 投影给 driver CLI (不重造,骑 Anthropic 升级);commons 分享 = ADR-006 §5 share-and-be-shared;角色 = persona 层 only,pack + KB 是正交 config (ADR-003 §8.6 + ADR-005 v6,**不焊死**)。
+
+**不做**: 不为每个 pack 写 .ts / Rust 分支;不把 Discover 做成人工维护的长尾列表;不自造 manifest/bundle 格式 (沿用 v2 manifest + Anthropic `.mcpb` + mcp-server-dev skills)。
+
+**v1 落地序** (方向已锁,实施分步): ① OFFICIAL_PACKS 退成纯数据 / 接第一个 registry 作 Discover 数据源;② 投影 Anthropic `mcp-server-dev` skills 给 Irisy + hermes;③ mcp-creator 端到端: NL → manifest → gate 安装 → smoke 绿。
 
 ## §8 Vault — RETIRED in v19 (kairo external replaces CTRL-owned editor stack)
 
