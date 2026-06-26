@@ -504,6 +504,15 @@ pub struct MarketScreenArgs {
     pub count: Option<u32>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct WebSearchArgs {
+    /// The search query (natural language or keywords).
+    pub query: String,
+    /// Max results to return (default 5, capped at 10).
+    #[serde(default)]
+    pub max_results: Option<u32>,
+}
+
 // ─── Router impl + tools ────────────────────────────────────────────────
 
 #[tool_router]
@@ -1780,6 +1789,48 @@ percent change for the top movers."
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
+    /// web.search — look something up on the web. Another CONTROLLED data tool
+    /// (ADR-010 communication § trust-domains v9, SC3): it never exposes a raw
+    /// fetch — it calls only fixed search backends. If the user has set a Tavily
+    /// API key (keychain account `tavily`) it uses Tavily (full web, fresh);
+    /// otherwise it falls back to the keyless Wikipedia search API (encyclopedic
+    /// only), so the tool works out of the box and upgrades when a key is added.
+    /// Because it can't reach an arbitrary URL or POST user data anywhere, the
+    /// `websearch` domain is first-party-visible without opening `net`.
+    #[tool(
+        description = "Search the web and return titles + URLs + snippets. Uses \
+the user's Tavily key if set (full web), else a keyless Wikipedia fallback \
+(encyclopedic). Use this for facts / news / research you don't already hold."
+    )]
+    async fn web_search(
+        &self,
+        Parameters(args): Parameters<WebSearchArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let query = args.query.trim();
+        if query.is_empty() {
+            return Err(McpError::invalid_params("query must not be empty", None));
+        }
+        let n = args.max_results.unwrap_or(5).clamp(1, 10);
+        let key = crate::kernel::provider::registry::read_credential("tavily")
+            .filter(|k| !k.is_empty());
+        let (results, source, note) = match key {
+            Some(k) => (tavily_search(&k, query, n).await?, "tavily", ""),
+            None => (
+                wikipedia_search(query, n).await?,
+                "wikipedia",
+                "Keyless Wikipedia fallback (encyclopedic only). For full web \
+search, set a Tavily API key (keychain account 'tavily', free at tavily.com).",
+            ),
+        };
+        let body = serde_json::to_string(&serde_json::json!({
+            "source": source,
+            "results": results,
+            "note": note,
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
     /// mcp.proxy_list_tools — list tools advertised by a downstream MCP
     /// server (the kernel relays the request to that server).
     #[tool(
@@ -2507,6 +2558,112 @@ async fn yahoo_get(url: &str) -> Result<serde_json::Value, McpError> {
     resp.json()
         .await
         .map_err(|e| McpError::internal_error(format!("market parse: {e}"), None))
+}
+
+/// Strip HTML tags from a string (Wikipedia search snippets wrap matches in
+/// `<span>`). Tiny hand-rolled scrubber — no regex dep for one field.
+fn strip_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_tag = false;
+    for c in s.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// web.search backend — Tavily (BYOK). POSTs only the fixed Tavily search
+/// endpoint; the API key never leaves the kernel. Returns [{title,url,snippet}].
+async fn tavily_search(
+    key: &str,
+    query: &str,
+    n: u32,
+) -> Result<Vec<serde_json::Value>, McpError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| McpError::internal_error(format!("search client build: {e}"), None))?;
+    let resp = client
+        .post("https://api.tavily.com/search")
+        .json(&serde_json::json!({
+            "api_key": key,
+            "query": query,
+            "max_results": n,
+            "search_depth": "basic",
+        }))
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("tavily fetch: {e}"), None))?;
+    if !resp.status().is_success() {
+        return Err(McpError::internal_error(
+            format!("tavily search: HTTP {}", resp.status()),
+            None,
+        ));
+    }
+    let j: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| McpError::internal_error(format!("tavily parse: {e}"), None))?;
+    let mut out = Vec::new();
+    if let Some(arr) = j["results"].as_array() {
+        for r in arr.iter().take(n as usize) {
+            out.push(serde_json::json!({
+                "title": r["title"],
+                "url": r["url"],
+                "snippet": r["content"],
+            }));
+        }
+    }
+    Ok(out)
+}
+
+/// web.search keyless fallback — Wikipedia's search API (no key, reliable, but
+/// encyclopedic only). GETs only the fixed MediaWiki endpoint; reqwest encodes
+/// the query so it can't escape the URL. Returns [{title,url,snippet}].
+async fn wikipedia_search(query: &str, n: u32) -> Result<Vec<serde_json::Value>, McpError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| McpError::internal_error(format!("search client build: {e}"), None))?;
+    let resp = client
+        .get("https://en.wikipedia.org/w/api.php")
+        .query(&[
+            ("action", "query"),
+            ("list", "search"),
+            ("format", "json"),
+            ("srlimit", &n.to_string()),
+            ("srsearch", query),
+        ])
+        .header("User-Agent", "CTRL/1.0 (https://github.com/soodooi/CTRL)")
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("wikipedia fetch: {e}"), None))?;
+    if !resp.status().is_success() {
+        return Err(McpError::internal_error(
+            format!("wikipedia search: HTTP {}", resp.status()),
+            None,
+        ));
+    }
+    let j: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| McpError::internal_error(format!("wikipedia parse: {e}"), None))?;
+    let mut out = Vec::new();
+    if let Some(arr) = j["query"]["search"].as_array() {
+        for r in arr {
+            let title = r["title"].as_str().unwrap_or("");
+            out.push(serde_json::json!({
+                "title": title,
+                "url": format!("https://en.wikipedia.org/wiki/{}", title.replace(' ', "_")),
+                "snippet": strip_html(r["snippet"].as_str().unwrap_or("")),
+            }));
+        }
+    }
+    Ok(out)
 }
 
 /// Shared executor for http.get + http.post. Single reqwest::Client

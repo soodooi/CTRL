@@ -56,6 +56,10 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
     // unlike `net` they are safe in the first-party default (ADR-010
     // communication § trust-domains v3, SC3; bao 2026-06-26).
     "market",
+    // Controlled web search (web_search) — calls only fixed search backends
+    // (Tavily BYOK / keyless Wikipedia), never a raw fetch, so it is safe in the
+    // first-party default while `net` stays closed (ADR-010 § trust-domains v9).
+    "websearch",
 ];
 
 /// Callers treated as first-party (in-process app surfaces). The PWA bridge
@@ -76,6 +80,10 @@ pub fn tool_domain(tool: &str) -> &'static str {
     // `vault_root_path` lands in `system`, not `vault`.
     match tool {
         "kernel_status" | "vault_root_path" => return ALWAYS_ON,
+        // Controlled web search — exact-match (not a `web_` prefix) so a future
+        // raw `web_fetch` would NOT inherit the first-party `websearch` domain
+        // (ADR-010 communication § trust-domains v9, SC3).
+        "web_search" => return "websearch",
         _ => {}
     }
     // Prefix table. Order matters only where one prefix is a prefix of another;
@@ -212,6 +220,7 @@ mod tests {
         assert_eq!(tool_domain("http_post"), "net");
         assert_eq!(tool_domain("market_quote"), "market");
         assert_eq!(tool_domain("market_screen"), "market");
+        assert_eq!(tool_domain("web_search"), "websearch");
         assert_eq!(tool_domain("mcp_proxy_call_tool"), "mcp");
         assert_eq!(tool_domain("irisy_soul_get"), "memory");
         // Downstream namespaced tool falls under the mcp group.
@@ -294,9 +303,11 @@ mod tests {
         // 2026-06-26). This is what lets Irisy quote a watchlist without net.
         assert!(intent.allows_tool("market_quote"));
         assert!(intent.allows_tool("market_screen"));
+        assert!(intent.allows_tool("web_search"));
         // Irisy/hermes are first-party too.
         assert!(Intent::default_for_caller("irisy").allows_tool("vault_read"));
         assert!(Intent::default_for_caller("hermes").allows_tool("market_quote"));
+        assert!(Intent::default_for_caller("hermes").allows_tool("web_search"));
         // Even first-party never gets raw net by default.
         assert!(!Intent::default_for_caller("hermes").allows_tool("http_get"));
     }
