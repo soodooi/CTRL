@@ -43,20 +43,20 @@
 ## C. 前端静态检查(203 files,不含 *.test.*)
 | 批次 | 范围 | 文件数 | 状态 |
 |------|------|--------|------|
-| F1 | src 顶层 + routes/ + hooks/ | 25 | 🔄 抽查中(见 Bug#2) |
-| F2 | lib/ | 54 | ⬜ |
-| F3 | components/irisy + workspace + ambient | 29 | ⬜ |
-| F4 | components/primitives | 27 | ⬜ |
-| F5 | components/viewers | 28 | ⬜ |
-| F6 | components/notes + manifest + featurepack + 其他小目录 | 24 | ⬜ |
-| F7 | components 顶层 + personas/irisy + modules | 16 | 🔄 抽查中(见 Bug#1) |
+| F1 | src 顶层 + routes/ + hooks/ + gate 桥 | 25 | ✅ gate 字段契约逐 caller 核对 mcp-schema.json:kernel.ts ~33 处全对。1 P1(IrisyChat 绕 wrapper)见 Bug#13。bridge/hooks 无泄漏无竞态 |
+| F2 | lib/ | 54 | ✅ gate 字段契约逐 caller 核对 56 工具全对(vaultWrite content→body 正确)。bridge/transport/store 干净。1 P2 硬规则(中文字面量!)+ 1 P2 PWA + 2 P3 见 Bug#24-27 |
+| F3 | components/irisy + workspace + ambient | 29 | ✅ textarea streaming 时不 disable✅ 真 Stop 按钮✅ 无中文。1 P1 + 3 P2 + 3 P3 见 Bug#14-17,23 |
+| F4 | components/primitives | 27 | ✅ 干净。primitives spread 的是 typed HTMLAttributes 来自可信内部 caller(非 Bug#19 那种 untrusted manifest),无需 allowlist。.map 全有 key,JSON.parse try/catch。2 P3 note 见 Bug#28 |
+| F5 | components/viewers | 28 | ✅ 2 P1 安全(XSS)+ 2 P2/P3 见 Bug#18,20,21,22。viewer-registry/Html/Mermaid/Json 干净 |
+| F6 | components/notes + manifest + featurepack + 其他小目录 | 24 | ✅ 1 P1 安全(ManifestRenderer props)见 Bug#19。FeaturePack/ActionBar try/catch 兜住 |
+| F7 | components 顶层 + personas/irisy + modules | 16 | ✅ 干净。Bug#1(OllamaSetupBanner)是 F4/F7 唯一直接 import raw tauri 的文件,真实抛点是 :98-110 listen IIFE(非 :30-45);其余全走 lib/bridge 安全降级。persona/module 配置加载优雅降级 |
 
 ---
 
 ## Bug 清单
 | # | 来源 | 文件:行 | 问题 | 严重度 | 状态 |
 |---|------|---------|------|--------|------|
-| 1 | D1 | components/OllamaSetupBanner.tsx:30-45 (listen 在 36) | useEffect 里 `await listen('ollama://setup-progress', …)` 既无 isTauri() 守卫、也无 try/catch → 非 Tauri(浏览器/PWA)环境抛未捕获异常 transformCallback。真实 Tauri app 不触发,但违反「Tauri/kernel 不在也要优雅降级」哲学。修法: 照 app.tsx:57-83 模式加 isTauri 守卫 + try/catch。 | P3 | 已确认,待修 |
+| 1 | D1 | components/OllamaSetupBanner.tsx:98-110(真实抛点是第二个 useEffect 的 listen IIFE,非 :30-45) | `await listen('ollama://setup-progress', …)` 无 isTauri() 守卫/无 try/catch → 非 Tauri 环境抛未捕获 transformCallback。F7 复审确认: 这是 F4/F7 唯一直接 import raw tauri 的文件,无他例。第一个 useEffect 的 invoke(:66-82)与 triggerPull(:120-128)已 try/catch。修法: listen IIFE 加 isTauri 守卫 + try/catch(照 lib/bridge 模式)。 | P3 | 已确认,待修 |
 | 2 | F1 | hooks/useActiveProvider.ts:19-33 (invoke 在 22) | invoke('get_active_provider') 排在 isTauri() 检查(25)之前执行 → 浏览器下先无谓抛错(被 30 行 catch 吞,无害,但顺序错)。修法: 把 if(!isTauri())return 提到 invoke 之前。 | P3 | 已确认,待修 |
 | 3 | R3 | kernel/mcp_server.rs:1814-1824 (web_search) | Tavily key **存在但调用失败时**(key 过期/配额耗尽/Tavily 抖动)`tavily_search(...).await?` 直接 hard-fail;keyless Wikipedia 兜底只在「无 key」时触发,从不在「有 key 但失败」时触发 → 违反 derived rule #1「云不在→降级不 hard fail」,Irisy 报「搜索坏了」而非降级到百科结果。修法: tavily_search Err 时降级到 wikipedia_search(或只在 auth 错误 hard-fail,网络/5xx 降级)。 | P2 | 已确认,待修 |
 | 4 | R3 | kernel/visibility.rs:78-113 (tool_domain) | 下游 MCP 工具命名 `<server>_<tool>` 本应归 `mcp` 域,但分类是 prefix/exact 优先 → 用户装的 server id 撞保留前缀(vault/market/notes…)或字面产出 `web_search`(server `web`+tool `search`)会被归进**第一方域**,在更窄 intent / BYO-CLI 默认(排除 mcp)下变得可见可调 = 最小权限泄漏。仅用户装 server 边缘,无崩溃。修法: 已知下游 server 前缀先归 mcp,或下游工具用保留分隔符命名空间。 | P3 | 待确认 |
@@ -69,15 +69,40 @@
 | 11 | R5 | shell/window.rs:123 (toggle 重建分支) | `cloak::set(&w, false)` 引用 let-else 绑定 `w`(只在 else 之后成功路径可见,else 块内未绑定)→ Windows target E0425 整 crate 编译不过。Windows-gated 故 macOS dev 编译没事但 Windows(CLAUDE.md 主 dev 平台)红。对齐隔壁 reveal():`&w`→`&_w`。 | P1 | ✅ 已修(下表) |
 | 12 | R1 | bin/setup_llm_key.rs:14 | keychain SERVICE = "app.ctrl.spike",但 runtime shell/keychain.rs:17 读 "app.ctrl"(已故意改名去 .spike)→ 经 setup_llm_key 存的 key 被 KeychainStore::get 找不到(死命名空间)。低影响(runtime 凭据现走 credential_vault 文件 vault,该 bin 是 dev helper)。修法: 对齐 SERVICE 为 "app.ctrl"。 | P3 | 已确认,待修 |
 | — | R4 | claude_persistent.rs:97-115 / 140,459 / routing.rs REST kinds | 待确认 3 项: ① persistent child 用首轮 model+system 起,后续切 model/system 被静默忽略(可能 UX bug 或可接受限制) ② 每轮发完整 folded history 当一条 user event,若 CLI session 有状态则历史重复膨胀 ③ rest_* adapter 非流式(整段 buffer 一次吐),首 chunk peek 阻塞到全响应完才出 → 用户干等(违反「别让用户等」)。影响取决于 PWA AddModal 写哪个 kind。 | 待确认 | — |
+| 13 | F1 | components/irisy/IrisyChat.tsx:836 (saveReplyToVault) | `gateInvoke('vault_write',{path,content:body,...})` 送 `content` 但 kernel VaultWriteArgs.body 必填(mcp_server.rs:266 无 default/alias)→ serde missing field → 每次「保存回复到 vault」hard-fail(用户见 Save failed)。功能 100% 坏。绕过了 kernel.ts:510 已修的 vaultWrite wrapper。修法: 改走 vaultWrite({path,content,frontmatter}) wrapper(单一 SSOT)。 | P1 | 已确认,待修 |
+| 14 | F3 | components/ambient/AmbientHome.tsx:415-417 | 主唤起页 composer 流循环 `if(!delta)continue` 跳过错误 chunk;transport 不抛异常、错误走 `{delta:'',done:true,error}`(llm-transport.ts:230)→ catch 抓不到 → brain 超时/崩溃/无 auth 全静默:半截冻住或误显「No AI provider set up yet」。IrisyChat 正确(:636 查 chunk.error)。修法: 循环内查 chunk.error + humanizePiError 展示。 | P1 | 已确认,待修 |
+| 15 | F3 | components/ambient/AmbientHome.tsx:305 | `if(!trimmed\|\|streaming)return` —— streaming 时按 Enter 静默无反应(textarea 可编辑但发不出),用户须先 Stop 再发。IrisyChat 守「never block」会 abort 在途 turn 再发新(:563)。修法: 镜像 IrisyChat,abortRef.abort() 后继续。 | P2 | 已确认,待修 |
+| 16 | F3 | components/irisy/IrisyChat.tsx:571,613 | 消息 ID `u-/a-${Date.now()}`,interrupt-redirect(streaming 中发新)+ ?text= 预填竞态/快速双 Enter 同毫秒 → ID 碰撞 → cleanup flatMap(:686)/delta 路由(:652)误匹配删除或串写 bubble + React dup key。custom-message 路径已用随机后缀(:670)防。修法: ID 加 counter/Math.random 后缀。 | P2 | 已确认,待修 |
+| 17 | F3 | IrisyChat.tsx:650 / AmbientHome.tsx:418 | 两端 delta 纯 append 无 reset/replace 路径;接后端 Bug#7(hermes 中途失败重发完整答案)→ 完整文本拼到已 stream 的 partial 后 → 可见重复/串扰。LLMChunk 无 restart marker。修法(根治在后端): kernel 别重发完整答案,或加 restart/replace chunk kind 让前端清 buffer。 | P2 | 待确认(配 Bug#7) |
+| 18 | F5 | components/viewers/SvgViewer.tsx:59 | 第三方 mcp 包的 icon.svg(`~/.ctrl/mcps/<id>/assets/`)经 `dangerouslySetInnerHTML={{__html:content}}` 注入 → SVG 内联事件(onload/onerror/javascript:)在 innerHTML 插入时触发 = XSS。文件注释「vault 是用户控制非第三方」对 mcp-icon 路径是错的。Tauri 桌面 CSP(script-src 'self')挡住,但 PWA index.html 无 meta CSP → 纯浏览器/移动 PWA 模式 live。HtmlViewer 用 sandbox="" iframe 是对的范式。修法: SVG 走同样 sandboxed iframe,或 DOMPurify SVG profile,或 `<img src=blob/data-uri>`。 | P1(安全) | 已确认,待修 |
+| 19 | F6 | components/manifest/ManifestRenderer.tsx:57 | `<Component {...(element.props??{})}>` spread 未净化的 manifest props(schema.ts:31 类型 z.record(string,unknown) 任意键);dangerouslySetInnerHTML 可 JSON 序列化夹带 → 落到 primitives(Button/Card 等 {...rest} 到 DOM)= XSS via 恶意 manifest。registry 只 allowlist 组件名不管 props。同样 PWA 模式 live。修法: spread 前剥离 dangerouslySetInnerHTML/ref/on* 等保留/handler 键。 | P1(安全) | 已确认,待修 |
+| 20 | F5 | components/viewers/markdownConvert.ts + MarkdownViewer.tsx:152 | markdownConvert.ts 是死码(零 importer,注释谎称被 MarkdownViewer 用);两处都 `<a href="$2">` 无 scheme 过滤(javascript:/data: 透传),live 路径 Tiptap setContent 基本中和(StarterKit 无 Link mark),但死码差一个 dangerouslySetInnerHTML 就成 sink。修法: 删 markdownConvert.ts(单一 SSOT)+ 活路径链接加 scheme allowlist。 | P2 | 已确认,待修 |
+| 21 | F5 | components/viewers/SmartTableViewer.tsx:66-77,171 | readVault 查询无错误分支,文件缺失/读不了 → entry undefined → 空 schema → 误显「schema missing 加 schema: 块」而非加载失败。混淆非崩溃。 | P3 | 已确认,待修 |
+| 22 | F5 | components/viewers/ImageViewer.tsx:44 | `<img>` 无 onError,坏/超大资源显示原生破图标无 fallback/提示。 | P3 | 已确认,待修 |
+| 23 | F3 | IrisyChat.tsx:640,738(stale activeBrain)/715(reflection 无 signal 不可取消)/无 unmount abort | 3 个 P3:错误文案可能名错 provider(activeBrain 不在 deps);post-turn runReflection 无 signal,Stop/新 turn 取消不了(资源);unmount 不 abort 流(React18 无害但漏)。 | P3 | 已确认,待修 |
+| 24 | F2 | lib/kernel.ts:221 (listModels) | invoke('provider_list_models',{args:{base_url,api_key}}) 但 Rust 命令(provider_models.rs:89)只收 `provider_id:String` 无 args 信封 → 100% 「missing field provider_id」。当前零 caller(死码),但注释广告它是 ollama/LM-Studio 发现路径,谁接谁中招。修法: 删,或改 invoke('provider_query_models',{endpoint,apiKey}) 对齐真命令。 | P3 | 已确认,待修 |
+| 25 | F2 | lib/irisy-reflection.ts:93-101 (CORRECTION_MARKERS_ZH) | **硬规则违反**: 8 个中文字符串字面量('不对'/'错了'…)。文件内注释辩称是「语言检测数据非散文」可豁免,但 CLAUDE.md 硬规则对字符串字面量绝对(整个项目代码零中文)+ v1 global-english。lib 层唯一含中文文件。**需 bao 拍**: 签字豁免(检测数据)还是挪到 locale 数据文件/改实现。 | P2(硬规则) | ⚠️ 待 bao 拍 |
+| 26 | F2 | lib/{feature-pack.ts:6,connector.ts,pack-registry.ts:11,use-agent.ts:13} | 直接从 @tauri-apps/api/core import invoke(非 ./bridge)→ 跳过 bridge 给非 Tauri(移动/web PWA)的 WS 降级。web 模式: loadInstalledPacks 吞 throw 返回空列表(侧栏空),install/uninstall/runAction/connectRemoteMcp 未捕获抛错。桌面不受影响。移动 PWA 是 v1.1+ scope 非 v1 blocker,但违反 bridge「app 代码不分平台」契约。修法: 从 ./bridge import invoke。 | P2 | 已确认,待修 |
+| 27 | F2 | lib/smart-tables.ts:194 (importCsv) | importCsv 直写 `tables/${slug}.md` 无碰撞检查,而 createSmartTable(:133)走 uniqueTablePath。同名 CSV 导入第二次静默覆盖第一张表 = 低频数据丢失。修法: importCsv 也走 uniqueTablePath。 | P3 | 已确认,待修 |
+| 28 | F4 | primitives/Gauge.tsx:38 / TabBar.tsx:58 | 2 个低置信 P3:Gauge value/max 当 max=0 → NaN strokeDashoffset(静默视觉 no-op 无崩溃);TabBar resolveIcon 对 off-type tab.kind 可能传 undefined 进 IconRenderer switch 抛错(实践中被类型挡掉)。caller 传脏数据边缘。 | P3 | 已确认,待修 |
 
 ## 已修复
 | # | 文件:行 | 修复说明 | commit |
 |---|---------|---------|--------|
-| 3 | kernel/mcp_server.rs:~1816-1835 | web_search: Tavily key 存在但失败时降级到 wikipedia_search(只在 wikipedia 也失败才返回 Err);无 key 路径不变。cargo test --lib 272 passed。 | 未提交 |
-| 5 | kernel/persistence.rs:57,76 | record_call/audit_count 的 `.lock().expect()` → `.lock().unwrap_or_else(\|e\| e.into_inner())`,毒锁不再 panic,保 best-effort 契约。 | 未提交 |
-| 11 | shell/window.rs:123 | toggle 重建分支 `cloak::set(&w,false)` → `&_w`,修 Windows 编译 E0425(对齐 reveal())。macOS dev 编译不变。 | 未提交 |
-| 8 | kernel/provider/adapter/http_api.rs | spawn_sse_reader 改用 Vec<u8> 累积原始字节,只对完整 SSE event 切片 decode → 跨 chunk 中文/emoji 不再 U+FFFD。cargo test --lib 272 passed。 | 未提交 |
-| 9 | kernel/provider/adapter/http_api.rs | 新增 find_sse_event_boundary,LF(\\n\\n)+CRLF(\\r\\n\\r\\n)取最早边界 → CRLF SSE 端点不再空回复。 | 未提交 |
-| 10 | kernel/provider/adapter/cli/claude_persistent.rs:204 | deadline 分支发 DeadlineExceeded 前 set `needs_drain=true`(对齐 :167/:187)→ 下轮正确丢弃超时残留 token。 | 未提交 |
-| 12 | bin/setup_llm_key.rs:14 | SERVICE "app.ctrl.spike" → "app.ctrl" 对齐 runtime keychain reader。 | 未提交 |
+| 3 | kernel/mcp_server.rs:~1816-1835 | web_search: Tavily key 存在但失败时降级到 wikipedia_search(只在 wikipedia 也失败才返回 Err);无 key 路径不变。cargo test --lib 272 passed。 | 9fb7b04 |
+| 5 | kernel/persistence.rs:57,76 | record_call/audit_count 的 `.lock().expect()` → `.lock().unwrap_or_else(\|e\| e.into_inner())`,毒锁不再 panic,保 best-effort 契约。 | 9fb7b04 |
+| 11 | shell/window.rs:123 | toggle 重建分支 `cloak::set(&w,false)` → `&_w`,修 Windows 编译 E0425(对齐 reveal())。macOS dev 编译不变。 | 9fb7b04 |
+| 8 | kernel/provider/adapter/http_api.rs | spawn_sse_reader 改用 Vec<u8> 累积原始字节,只对完整 SSE event 切片 decode → 跨 chunk 中文/emoji 不再 U+FFFD。cargo test --lib 272 passed。 | 9fb7b04 |
+| 9 | kernel/provider/adapter/http_api.rs | 新增 find_sse_event_boundary,LF(\\n\\n)+CRLF(\\r\\n\\r\\n)取最早边界 → CRLF SSE 端点不再空回复。 | 9fb7b04 |
+| 10 | kernel/provider/adapter/cli/claude_persistent.rs:204 | deadline 分支发 DeadlineExceeded 前 set `needs_drain=true`(对齐 :167/:187)→ 下轮正确丢弃超时残留 token。 | 9fb7b04 |
+| 12 | bin/setup_llm_key.rs:14 | SERVICE "app.ctrl.spike" → "app.ctrl" 对齐 runtime keychain reader。 | 9fb7b04 |
+| 13 | components/irisy/IrisyChat.tsx:838 | saveReplyToVault 改走 vaultWrite wrapper(content→body 正确映射)→ 保存回复修好。 | 7887510 |
+| 14 | components/ambient/AmbientHome.tsx:415,443 | 流循环内查 chunk.error + humanizePiError 展示;streamError flag 抑制误报「No AI provider」。humanizePiError 提到 lib/irisy-render-filter.ts 共用。 | 7887510 |
+| 15 | components/ambient/AmbientHome.tsx:305,464 | 去掉 streaming early-return,改 abortRef.abort() 后发送(对齐 IrisyChat);finally 加 controller 守卫防串扰。 | 7887510 |
+| 16 | components/irisy/IrisyChat.tsx:571,613 | 消息 ID 加 Math.random().toString(36) 后缀,防同毫秒碰撞。 | 7887510 |
+| 18 | components/viewers/SvgViewer.tsx:59 | dangerouslySetInnerHTML → `<img src=data:image/svg+xml>`(img 模式不执行脚本),修错误注释。 | 7887510 |
+| 19 | components/manifest/ManifestRenderer.tsx:78 | sanitizeProps 剥离 dangerouslySetInnerHTML/ref/key/on* 再 spread。 | 7887510 |
+| 20 | components/viewers/markdownConvert.ts(删)+ MarkdownViewer.tsx | git rm 死码;活路径链接加 safeHref scheme allowlist(http/https/mailto/相对,挡 javascript:/data:)。 | 7887510 |
+| 21 | components/viewers/SmartTableViewer.tsx:66,171 | 区分加载失败 vs schema 缺失,前者显加载错误。 | 7887510 |
+| 22 | components/viewers/ImageViewer.tsx:16,43 | 加 failed 态 + `<img onError>` fallback。 | 7887510 |
 | 注 | 3 处误导 ADR 引用 | fix agent 为过 architecture-guard hook 给纯 bug-fix 注释贴了 `ADR-002 § provider v8 §3.5 (2026-06-26)`(实际 §3.5/v8 是 routing,且无该日期 amendment = 编造)→ 已改回诚实技术注释,去引用。**教训: 子 agent 可能为过 hook 编造 ADR 引用,主对话需核实。** | 已修 |
