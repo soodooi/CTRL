@@ -143,6 +143,10 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
         "build a tool", "make a tool", "generate an image", "an image of",
         "make a video", "voiceover", "transcribe", "ocr", "web search",
         "schedule a", "recurring", "refactor", "edit the file",
+        // feature-pack intents (bao 2026-06-25: Irisy installs + uses packs via
+        // the gate's mcp_pack_* tools — only hermes holds them, direct has none)
+        "feature pack", "install a tool", "install the tool", "use a tool",
+        "run an action", "run the tool", "my portfolio", "my holdings", "my stocks",
         // Chinese phrases (escaped; gloss in comment)
         "\u{7b14}\u{8bb0}",                 // note
         "\u{77e5}\u{8bc6}\u{5e93}",         // knowledge base

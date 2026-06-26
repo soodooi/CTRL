@@ -14,7 +14,10 @@ use crate::shell::KernelHandle;
 /// Resolve the on-disk mcp directory ($HOME/.ctrl/mcps). Errors out
 /// when HOME isn't set — typically a misconfigured CI env, not a user
 /// failure mode.
-fn mcp_dir() -> Result<PathBuf, String> {
+// pub(crate) so the :17873 gate tools (mcp_server.rs mcp_pack_*) resolve the
+// same install dir the Tauri commands use (bao 2026-06-25: Irisy installs/uses
+// feature packs through the gate).
+pub(crate) fn mcp_dir() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME env var not set".to_string())?;
     Ok(PathBuf::from(home).join(".ctrl").join("mcps"))
 }
@@ -392,7 +395,9 @@ pub async fn run_action(
         .map_err(|e| format!("run_action task join: {e}"))?
 }
 
-fn run_action_blocking(dir: &Path, mcp_id: &str, action_id: &str) -> Result<String, String> {
+// pub(crate) so the gate's mcp_pack_run tool reuses the exact action runner
+// (provision + shell steps) the Tauri command uses — no duplicate logic.
+pub(crate) fn run_action_blocking(dir: &Path, mcp_id: &str, action_id: &str) -> Result<String, String> {
     let bytes = fs::read(dir.join(mcp_id).join("manifest.json"))
         .map_err(|e| format!("read manifest for '{mcp_id}': {e}"))?;
     let manifest: serde_json::Value =

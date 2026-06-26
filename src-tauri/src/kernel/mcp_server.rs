@@ -432,6 +432,25 @@ pub struct McpProxyListArgs {
     pub server: String,
 }
 
+// Feature-pack gate args (bao 2026-06-25: Irisy installs + uses feature packs).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackInstallArgs {
+    /// The validated manifest (must carry a string `id`). Same shape the PWA installs.
+    pub manifest: serde_json::Value,
+    /// Optional MCP server source code (TypeScript/Python).
+    pub server_code: Option<String>,
+    /// Optional filename for the server code (safe basename).
+    pub server_code_filename: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackRunArgs {
+    /// Installed pack id (the manifest `id`).
+    pub mcp_id: String,
+    /// The action id within that pack to run.
+    pub action_id: String,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct HttpGetArgs {
     /// Full HTTPS URL to fetch.
@@ -1556,6 +1575,60 @@ impl KernelMcpRouter {
             .collect();
         let body = serde_json::to_string(&redacted).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp.pack_list — list the user's installed FEATURE PACKS (~/.ctrl/mcps),
+    /// NOT downstream MCP servers (that's mcp_list_servers). Lets the brain see
+    /// what tools it already has + their actions before running or installing
+    /// (bao 2026-06-25: Irisy uses feature packs). Reuses the Tauri command core.
+    #[tool(description = "List installed feature packs (the user's own mcps), with id/name/actions")]
+    async fn mcp_pack_list(&self) -> Result<CallToolResult, McpError> {
+        let dir = crate::commands::kernel::mcp_dir()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let summaries = crate::commands::kernel::list_installed_in(&dir);
+        let body = serde_json::to_string(&summaries).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp.pack_install — install a feature pack from its manifest (+ optional
+    /// server code) so the brain can set up a tool it needs (bao 2026-06-25:
+    /// Irisy installs feature packs). Same install path the PWA uses; idempotent.
+    #[tool(description = "Install a feature pack from its manifest (+ optional server code)")]
+    async fn mcp_pack_install(
+        &self,
+        Parameters(args): Parameters<McpPackInstallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = crate::commands::kernel::mcp_dir()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let install_args = crate::commands::kernel::InstallMcpArgs {
+            manifest: args.manifest,
+            server_code: args.server_code.unwrap_or_default(),
+            server_code_filename: args.server_code_filename.unwrap_or_default(),
+        };
+        let summary = crate::commands::kernel::install_into(&dir, &install_args)
+            .map_err(|e| McpError::invalid_params(e, None))?;
+        let body = serde_json::to_string(&summary).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp.pack_run — run a feature pack action's shell steps (the brain USING a
+    /// tool, e.g. the Stocks role calling ghostfolio's portfolio action). The
+    /// provision runner resolves secrets from the keychain first; secret values
+    /// never reach the brain (ADR-006 § policy). Reuses run_action_blocking.
+    #[tool(description = "Run a feature pack action (executes its shell steps, returns stdout)")]
+    async fn mcp_pack_run(
+        &self,
+        Parameters(args): Parameters<McpPackRunArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = crate::commands::kernel::mcp_dir()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let output = tokio::task::spawn_blocking(move || {
+            crate::commands::kernel::run_action_blocking(&dir, &args.mcp_id, &args.action_id)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("task join: {e}"), None))?
+        .map_err(|e| McpError::internal_error(e, None))?;
+        Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
     /// http.get — fetch any HTTPS URL. Base mcp atomic. Used by
