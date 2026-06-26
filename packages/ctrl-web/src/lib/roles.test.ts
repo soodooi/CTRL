@@ -24,7 +24,6 @@ describe('role pool', () => {
       'kb-assistant',
       'code-companion',
       'tool-maker',
-      'stocks',
     ]);
   });
 
@@ -53,8 +52,8 @@ describe('roleForPack (opening a pack switches the role)', () => {
     expect(roleForPack('git-box')).toBe('code-companion');
     expect(roleForPack('cf-workers')).toBe('code-companion');
   });
-  it('routes the ghostfolio pack to the stocks role', () => {
-    expect(roleForPack('ghostfolio')).toBe('stocks');
+  it('routes ghostfolio to the default role (stocks is config, not a role)', () => {
+    expect(roleForPack('ghostfolio')).toBe('kb-assistant');
   });
   it('routes an unowned pack to the default role (sees all packs)', () => {
     expect(roleForPack('some-random-pack')).toBe('kb-assistant');
@@ -148,15 +147,14 @@ describe('inKbScope (relatively independent knowledge bases)', () => {
     expect(kb.kbScope).toBeNull();
     expect(inKbScope(kb, 'anything/at/all.md')).toBe(true);
   });
-  it('the Stocks data role is scoped to Stocks/ (worked example)', () => {
-    const stocks = roleById('stocks');
-    expect(stocks.kbScope).toBe('Stocks');
-    expect(stocks.toolset).toEqual(['ghostfolio']);
-    expect(inKbScope(stocks, 'Stocks/aapl.md')).toBe(true);
-    expect(inKbScope(stocks, 'Stocks')).toBe(true);
-    expect(inKbScope(stocks, 'Notes/diary.md')).toBe(false);
+  it('a dedicated KB scope confines retrieval (stocks = assistant + Stocks/)', () => {
+    // Stocks is config, not a role: the kb-assistant persona + a Stocks/ kb.
+    const stocksCfg: Role = { ...roleById('kb-assistant'), kbScope: 'Stocks' };
+    expect(inKbScope(stocksCfg, 'Stocks/aapl.md')).toBe(true);
+    expect(inKbScope(stocksCfg, 'Stocks')).toBe(true);
+    expect(inKbScope(stocksCfg, 'Notes/diary.md')).toBe(false);
     // No false prefix match: "StocksOld/" must not count as inside "Stocks".
-    expect(inKbScope(stocks, 'StocksOld/x.md')).toBe(false);
+    expect(inKbScope(stocksCfg, 'StocksOld/x.md')).toBe(false);
   });
 });
 

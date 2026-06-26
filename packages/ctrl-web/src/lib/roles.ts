@@ -25,12 +25,12 @@ import { IRISY_MCP_CREATOR_PROMPT } from '../personas/irisy/mcp-creator';
 /** L1 scenes that can auto-link a role (ADR-003 §8.6 lock 5). */
 export type SceneKind = 'notes' | 'tables' | 'coding';
 
-/** Initial role set (bao 2026-06-25). v1 does NOT ship user-created roles —
- *  the registry shape below is the reserved interface for that follow-up.
- *  `stocks` is the first DATA role: same KB persona, but a stocks pack +
- *  a Stocks/ knowledge base — the worked example of relatively-independent
- *  knowledge bases (the (persona, toolset, kbScope) derivation). */
-export type RoleId = 'kb-assistant' | 'code-companion' | 'tool-maker' | 'stocks';
+/** Initial role set = the PERSONA layer ONLY (bao 2026-06-25: a role IS a
+ *  persona, NOT a persona+pack+kb bundle — don't weld). A dedicated knowledge
+ *  base + feature packs are orthogonal config the assistant role composes per
+ *  task (e.g. stocks = kb-assistant + a Stocks/ KB + the ghostfolio pack), NOT
+ *  a new role. v1 ships no user-created roles; the registry shape is reserved. */
+export type RoleId = 'kb-assistant' | 'code-companion' | 'tool-maker';
 
 export interface Role {
   id: RoleId;
@@ -80,20 +80,10 @@ const TOOL_MAKER: Role = {
   toolset: [],
   kbScope: null,
 };
-// First data role: same KB persona as the default, derived purely by data +
-// pack — a Stocks/ knowledge base + the Ghostfolio pack. Reached by opening the
-// Ghostfolio pack (roleForPack) or the switcher. Proves relatively-independent
-// KBs: retrieval is confined to Stocks/ via inKbScope.
-const STOCKS: Role = {
-  id: 'stocks',
-  label: 'Stocks',
-  hint: 'Portfolio review over Stocks/ + Ghostfolio',
-  persona: IRISY_SYSTEM_DEFAULT,
-  toolset: ['ghostfolio'],
-  kbScope: 'Stocks',
-};
-
-export const ROLES: Role[] = [KB_ASSISTANT, CODE_COMPANION, TOOL_MAKER, STOCKS];
+// Stocks is NOT a role (bao 2026-06-25: the assistant role is enough). It's the
+// kb-assistant persona + a dedicated Stocks/ knowledge base + the ghostfolio
+// pack — orthogonal config, not a new persona. The pool stays at 3 persona roles.
+export const ROLES: Role[] = [KB_ASSISTANT, CODE_COMPANION, TOOL_MAKER];
 
 /** Look up a role; falls back to the default so callers never get null. */
 export function roleById(id: RoleId): Role {

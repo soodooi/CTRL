@@ -64,7 +64,7 @@
 
 ## 五、与现有实装的收敛 (复用,不重造)
 
-**默认角色 = 个人知识库助理** (bao 2026-06-25 钦定)。其余按 `persona + 功能包 + 对应知识库 (数据)` 派生。
+**角色 = persona 那一层** (bao 2026-06-25「助理角色不够?」校准):只有 3 个 persona 角色 (助理 / 编程伴侣 / 工具创作),默认 = 个人知识库助理。**功能包 + 专属知识库是正交配置,不构成新角色。**
 
 | 角色 (初始集) | 复用的 persona | 复用的功能包 | 知识库 (数据) | 状态 |
 |---|---|---|---|---|
@@ -72,7 +72,7 @@
 | 编程伴侣 | `personas/irisy/code-companion.ts` | coding (终端/PTY) | 代码库 | persona ✅ / 功能包待绑 |
 | 工具创作 | `personas/irisy/mcp-creator.ts` | mcp 建包 | — | persona ✅ |
 
-**角色派生模式 (bao 校准)**:同一类 persona 可按「功能包 + 对应知识库」派生出多个角色实例。例:**股票角色 = (KB persona) + 股票功能包 + 股票知识库**,与「个人知识库助理 = (KB persona) + 通用 notes 包 + 个人 vault」是同 persona、不同 (功能包, 知识库) 的两个角色。这正是 §一「灵活配置」的价值 —— 数据 (知识库) 也是角色的可配置维度,不只 persona + 功能包。
+**关键澄清 (bao 2026-06-25「助理角色不够?」「助理角色 + 专属知识库 + 功能包,是这样」)**:**股票不是新角色**。股票 = **助理角色 (KB persona) + 专属知识库 (Stocks/) + 功能包 (ghostfolio)** 的配置组合 —— persona 仍是助理,只是挂了专属知识库 + 功能包。同 persona 绝不另立角色 (否则又焊死,违反 §一「灵活配置」)。功能包 + 知识库是助理可组合的**正交维度**,不构成角色。曾误加 `stocks` 角色 (2026-06-25),已撤回 —— 这是第二次「焊死角色」反例 (第一次「为什么焊成一个单元」),教训:**新增功能优先想「助理 + 配置」,不要新建 persona 角色。**
 
 底层机制都在:persona 注入 (`lib/irisy-prompts.ts`)、功能包加载 (`lib/feature-pack.ts`)、能力注册表 (`lib/capability-catalog.ts`)、scene 形变 (`AmbientHome.tsx`)。**角色系统 = 把这些组合成"角色"切面 (persona + 功能包 + 知识库) + 加对话框上方切换器**,不是从零造。
 
@@ -98,5 +98,7 @@
   - **toolset**: `packsForRole` 过滤角色可见功能包 (system prompt + L1 rail); code-companion 配 dev 白名单
   - **功能包→角色**: `roleForPack` —— 点开某功能包切到能用它的角色 (bao 点①)
   - **kbScope 数据相对独立** (bao 点②): `inKbScope` 真过滤检索 (`askKnowledgeBase` 搜宽后丢范围外命中); null=全 vault, 非空=只该 prefix
-  - **首个数据角色 Stocks** (bao 选 A): 同 KB persona + Ghostfolio seed pack + `Stocks/` kbScope —— `(persona, toolset, 知识库)` 派生的实证
+  - ~~首个数据角色 Stocks~~ (撤回,见下)
+- 2026-06-25 **gate tools 让 Irisy 装+用功能包** (bao「Irisy 要会安装、使用功能包」): `mcp_server.rs` 加 `mcp_pack_list/install/run` 3 个 gate #[tool] (复用 `list_installed_in/install_into/run_action_blocking`,gate-only 不触发 ratchet);`irisy_chat.rs` routing 加功能包意图关键词→hermes。功能包不再跟 brain 割裂。cargo test 270。
+- 2026-06-25 **撤 `stocks` 角色** (bao「还有 stocks 角色?助理角色不够?」「助理角色 + 专属知识库 + 功能包,是这样」): stocks 的 persona 就是助理 KB,我把 persona+功能包+知识库又焊成角色了 (第二次焊死反例)。**角色 = persona 层 (助理/编程/工具创作 3 个);股票 = 助理 + 专属知识库 (Stocks/) + 功能包 (ghostfolio) 的配置,不是新角色。** `roles.ts` 删 STOCKS;`roleForPack('ghostfolio')→kb-assistant`;21 单元测试绿。**待定:专属知识库怎么绑** (绑功能包 / 场景 / 纯数据组织) —— 见下一步。
 - 2026-06-25 **Ghostfolio 评估 + 官方 demo 真测** (bao "试着评估"): 开源 self-hosted wealth mgmt, REST `/api/v1/*`。**契合 CTRL 数据主权** (用户自己的 instance, CTRL 不在数据路径)。两类数据面: public endpoint `/api/v1/public/<accessId>/portfolio` (免 Bearer, 数据精简) vs `/api/v1/portfolio/details` (Bearer, 完整)。**官方 demo 真测** (`ghostfol.io`, 用 `info.demoAuthToken` 直连 Bearer): details 返回完整组合 —— **净值 $107,534 / 年化 8.75% / 净表现 +1.19% / 9 持仓** (每个含 assetProfile name+symbol / marketPrice / allocation / investment / netPerformance) + summary (cash / totalBuy / annualizedPerformancePercent)。`auth/anonymous` endpoint 存在 (dummy token → 403)。`performance` endpoint 在此版本 404 —— details 才是真相源。**结论: 合适做股票角色后端**。seed pack 升级用 **details Bearer flow** (security token → `GET /auth/anonymous/<token>` 换 authToken → `/portfolio/details`)。完整 connector 后续可交 Irisy mcp-creator flow (connector by Irisy not dev)。bao 自己 instance 端到端真测: 填 URL + Settings 的 security token。
