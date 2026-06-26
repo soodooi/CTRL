@@ -422,9 +422,17 @@ async function loadSoul(): Promise<IrisySoulView | null> {
 }
 
 /** Build the full system prompt that ships per turn: base persona +
- *  SOUL.md core-memory block. Caller injects this as system role. */
-export async function loadIrisySystemPromptWithSoul(): Promise<string> {
-  const [base, soul] = await Promise.all([loadIrisySystemPrompt(), loadSoul()]);
+ *  SOUL.md core-memory block. Caller injects this as system role.
+ *
+ *  `baseOverride` lets a non-default Irisy role supply its own persona prompt
+ *  (ADR-005 v6 role pool); when omitted, the canonical default is used (which
+ *  honors a user-edited vault irisy-system.md). SOUL.md is appended either way
+ *  so core memory stays in context regardless of the active role. */
+export async function loadIrisySystemPromptWithSoul(baseOverride?: string): Promise<string> {
+  const [base, soul] = await Promise.all([
+    baseOverride !== undefined ? Promise.resolve(baseOverride) : loadIrisySystemPrompt(),
+    loadSoul(),
+  ]);
   if (!soul) return base;
   const fm = JSON.stringify(soul.frontmatter, null, 2);
   return [
