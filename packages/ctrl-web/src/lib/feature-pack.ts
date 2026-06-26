@@ -110,10 +110,14 @@ export const OFFICIAL_PACKS: PackListing[] = [
     installs: '—', rating: '—',
     // Seed Finance pack for the Stocks role (bao 2026-06-25). Talks to the
     // user's OWN self-hosted Ghostfolio instance (data sovereignty — CTRL is
-    // never in the data path). Uses the public-portfolio endpoint so no Bearer
-    // exchange is needed: the URL + public access id go through the keychain
-    // (secret substitution is the only env-injection path the provision runner
-    // supports). Opening this pack switches Irisy to the Stocks role.
+    // never in the data path). Verified against the official demo: the
+    // /api/v1/portfolio/details endpoint returns the full picture (net worth,
+    // annualized + net performance, cash, per-holding value/allocation), which
+    // the public endpoint trims. So this exchanges the account security token
+    // for a Bearer (GET /auth/anonymous/<token>) then reads details. URL +
+    // security token go through the keychain (secret substitution is the only
+    // env-injection path the provision runner supports). Opening this pack
+    // switches Irisy to the Stocks role.
     manifest: {
       manifest_version: 2, id: 'ghostfolio', name: 'Ghostfolio', version: '1.0.0',
       author: { name: 'CTRL' }, description: { short: 'Self-hosted portfolio tracker' },
@@ -125,8 +129,8 @@ export const OFFICIAL_PACKS: PackListing[] = [
             description: 'Your instance, e.g. http://localhost:3333', required: true,
           },
           {
-            key: 'ghostfolio_access_id', kind: 'secret', label: 'Public Access ID',
-            description: 'Ghostfolio Settings -> grant public access -> copy the id', required: true,
+            key: 'ghostfolio_security_token', kind: 'secret', label: 'Security Token',
+            description: 'Ghostfolio Settings -> show your security token', required: true,
           },
         ],
       },
@@ -134,7 +138,7 @@ export const OFFICIAL_PACKS: PackListing[] = [
         tools: [],
         env: {
           GHOSTFOLIO_URL: '{{secret:ghostfolio_url}}',
-          GHOSTFOLIO_ACCESS_ID: '{{secret:ghostfolio_access_id}}',
+          GHOSTFOLIO_TOKEN: '{{secret:ghostfolio_security_token}}',
         },
       },
       actions: [
@@ -142,14 +146,18 @@ export const OFFICIAL_PACKS: PackListing[] = [
           id: 'portfolio', name: 'Portfolio', input: 'none', output: 'workspace',
           steps: [{
             type: 'shell',
-            command: 'curl -s "${GHOSTFOLIO_URL}/api/v1/public/${GHOSTFOLIO_ACCESS_ID}/portfolio"',
+            command:
+              `T=$(curl -s "\${GHOSTFOLIO_URL}/api/v1/auth/anonymous/\${GHOSTFOLIO_TOKEN}" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("authToken",""))'); ` +
+              `curl -s "\${GHOSTFOLIO_URL}/api/v1/portfolio/details" -H "Authorization: Bearer $T" | python3 -m json.tool`,
           }],
         },
         {
-          id: 'performance', name: 'Performance', input: 'none', output: 'workspace',
+          id: 'holdings', name: 'Holdings', input: 'none', output: 'workspace',
           steps: [{
             type: 'shell',
-            command: 'curl -s "${GHOSTFOLIO_URL}/api/v1/public/${GHOSTFOLIO_ACCESS_ID}/portfolio" | head -c 6000',
+            command:
+              `T=$(curl -s "\${GHOSTFOLIO_URL}/api/v1/auth/anonymous/\${GHOSTFOLIO_TOKEN}" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("authToken",""))'); ` +
+              `curl -s "\${GHOSTFOLIO_URL}/api/v1/portfolio/holdings" -H "Authorization: Bearer $T" | python3 -m json.tool`,
           }],
         },
       ],
