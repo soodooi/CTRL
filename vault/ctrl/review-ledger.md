@@ -23,13 +23,14 @@
 ---
 
 ## A. 运行时验证(动态 — 主力)
+> ★ 静态审查(R1-R5 + F1-F7)= 全部完成,28 个 finding,22 个已修已提交(见下 commit 列)。**下个会话主力 = D2-D5 运行时**,须跑完整 `npm run tauri:dev`(无 kernel binary 捷径),按真实用户路径抓静态查不到的行为 bug。
 | 批次 | 范围 | 状态 |
 |------|------|------|
-| D1 | 首屏启动(:5173) | ✅ 首屏渲染正常,不白屏。浏览器模式有 3 个环境性错误(2 个真代码缺陷见 Bug#1/#2 + WS 17872 连不上=kernel 没起,预期) |
-| D2 | Irisy 对话主流程 | ⬜ 需「浏览器+独立 kernel」环境 |
-| D3 | mcp 发现 / 连接 / 调用 | ⬜ 需 kernel |
-| D4 | vault 读写 + viewer | ⬜ 需 kernel |
-| D5 | feature-pack 安装 | ⬜ 需 kernel |
+| D1 | 首屏启动(:5173) | ✅ 首屏渲染正常,不白屏。浏览器模式有 3 个环境性错误(2 个真代码缺陷 Bug#1✅修/#2待修 + WS 17872 连不上=kernel 没起,预期) |
+| D2 | Irisy 对话主流程 | ⬜ 需完整 tauri:dev 真机(浏览器连不上 kernel) |
+| D3 | mcp 发现 / 连接 / 调用 | ⬜ 需 tauri:dev 真机 |
+| D4 | vault 读写 + viewer | ⬜ 需 tauri:dev 真机 |
+| D5 | feature-pack 安装 | ⬜ 需 tauri:dev 真机 |
 
 ## B. 后端 Rust 静态检查(113 files)
 | 批次 | 范围 | 文件数 | 状态 |
@@ -81,7 +82,7 @@
 | 22 | F5 | components/viewers/ImageViewer.tsx:44 | `<img>` 无 onError,坏/超大资源显示原生破图标无 fallback/提示。 | P3 | 已确认,待修 |
 | 23 | F3 | IrisyChat.tsx:640,738(stale activeBrain)/715(reflection 无 signal 不可取消)/无 unmount abort | 3 个 P3:错误文案可能名错 provider(activeBrain 不在 deps);post-turn runReflection 无 signal,Stop/新 turn 取消不了(资源);unmount 不 abort 流(React18 无害但漏)。 | P3 | 已确认,待修 |
 | 24 | F2 | lib/kernel.ts:221 (listModels) | invoke('provider_list_models',{args:{base_url,api_key}}) 但 Rust 命令(provider_models.rs:89)只收 `provider_id:String` 无 args 信封 → 100% 「missing field provider_id」。当前零 caller(死码),但注释广告它是 ollama/LM-Studio 发现路径,谁接谁中招。修法: 删,或改 invoke('provider_query_models',{endpoint,apiKey}) 对齐真命令。 | P3 | 已确认,待修 |
-| 25 | F2 | lib/irisy-reflection.ts:93-101 (CORRECTION_MARKERS_ZH) | **硬规则违反**: 8 个中文字符串字面量('不对'/'错了'…)。文件内注释辩称是「语言检测数据非散文」可豁免,但 CLAUDE.md 硬规则对字符串字面量绝对(整个项目代码零中文)+ v1 global-english。lib 层唯一含中文文件。**需 bao 拍**: 签字豁免(检测数据)还是挪到 locale 数据文件/改实现。 | P2(硬规则) | ⚠️ 待 bao 拍 |
+| 25 | F2 | lib/irisy-reflection.ts:93-101 (CORRECTION_MARKERS_ZH) | **硬规则违反**: 8 个中文字符串字面量('不对'/'错了'…)。文件内注释辩称是「语言检测数据非散文」可豁免,但 CLAUDE.md 硬规则对字符串字面量绝对(整个项目代码零中文)+ v1 global-english。lib 层唯一含中文文件。bao 拍板: 挪 locale 数据文件。 | P2(硬规则) | ✅ 已修 a507784 |
 | 26 | F2 | lib/{feature-pack.ts:6,connector.ts,pack-registry.ts:11,use-agent.ts:13} | 直接从 @tauri-apps/api/core import invoke(非 ./bridge)→ 跳过 bridge 给非 Tauri(移动/web PWA)的 WS 降级。web 模式: loadInstalledPacks 吞 throw 返回空列表(侧栏空),install/uninstall/runAction/connectRemoteMcp 未捕获抛错。桌面不受影响。移动 PWA 是 v1.1+ scope 非 v1 blocker,但违反 bridge「app 代码不分平台」契约。修法: 从 ./bridge import invoke。 | P2 | 已确认,待修 |
 | 27 | F2 | lib/smart-tables.ts:194 (importCsv) | importCsv 直写 `tables/${slug}.md` 无碰撞检查,而 createSmartTable(:133)走 uniqueTablePath。同名 CSV 导入第二次静默覆盖第一张表 = 低频数据丢失。修法: importCsv 也走 uniqueTablePath。 | P3 | 已确认,待修 |
 | 28 | F4 | primitives/Gauge.tsx:38 / TabBar.tsx:58 | 2 个低置信 P3:Gauge value/max 当 max=0 → NaN strokeDashoffset(静默视觉 no-op 无崩溃);TabBar resolveIcon 对 off-type tab.kind 可能传 undefined 进 IconRenderer switch 抛错(实践中被类型挡掉)。caller 传脏数据边缘。 | P3 | 已确认,待修 |
@@ -105,4 +106,13 @@
 | 20 | components/viewers/markdownConvert.ts(删)+ MarkdownViewer.tsx | git rm 死码;活路径链接加 safeHref scheme allowlist(http/https/mailto/相对,挡 javascript:/data:)。 | 7887510 |
 | 21 | components/viewers/SmartTableViewer.tsx:66,171 | 区分加载失败 vs schema 缺失,前者显加载错误。 | 7887510 |
 | 22 | components/viewers/ImageViewer.tsx:16,43 | 加 failed 态 + `<img onError>` fallback。 | 7887510 |
+| 25 | lib/irisy-reflection.ts + lib/locale/correction-markers.cjk.json(新) | 8 个中文标记挪进 JSON 数据文件(数据非代码),.ts import 它 → 代码层零中文(bao 钦定方案)。检测逻辑不变。 | a507784 |
+| 4 | kernel/visibility.rs + mcp_server.rs | tool_domain 下游来源工具(<server>_<tool>)在第一方 prefix 表前归 mcp 域(镜像 dispatch_tool 路由);list_tools 隐藏 + call_tool 拒绝(纵深)。+1 单测。cargo 273 passed。 | a507784 |
+| 26 | lib/{feature-pack,connector,pack-registry,use-agent}.ts | invoke 从 @tauri-apps 改 import 自 ./bridge → web/PWA 模式获 WS 降级。 | a507784 |
+| 1 | components/OllamaSetupBanner.tsx | 第二个 useEffect 的 listen IIFE 加 platform()!=='tauri' 守卫 + try/catch。 | a507784 |
+| 23 | components/irisy/IrisyChat.tsx | activeBrain 加进 sendMessage deps;runReflection 传 signal;unmount cleanup abort。 | a507784 |
+| 24 | lib/kernel.ts | 删死的 listModels(坏契约,零 caller)。 | a507784 |
+| 27 | lib/smart-tables.ts | importCsv 走 uniqueTablePath,防同名覆盖。 | a507784 |
+| 28 | primitives/Gauge.tsx + TabBar.tsx | Gauge max<=0 守卫;TabBar off-type kind fallback icon。 | a507784 |
+| 注 | 4 处 + 3 处误导 ADR 引用 | cleanup agent 又为过 PreToolUse hook 给 bridge 改动贴 `ADR-003 §5 (2026-06-26)`(今日假 amendment)→ 已改诚实引用 `ADR-003 §1 (PWA bridge)`。ADR-005 §persona-shell v5 那几处日期真实(2026-06-09)保留。**复证: hook 强制引用 → 子 agent 反复编造,主对话每轮必核。** | a507784 |
 | 注 | 3 处误导 ADR 引用 | fix agent 为过 architecture-guard hook 给纯 bug-fix 注释贴了 `ADR-002 § provider v8 §3.5 (2026-06-26)`(实际 §3.5/v8 是 routing,且无该日期 amendment = 编造)→ 已改回诚实技术注释,去引用。**教训: 子 agent 可能为过 hook 编造 ADR 引用,主对话需核实。** | 已修 |
