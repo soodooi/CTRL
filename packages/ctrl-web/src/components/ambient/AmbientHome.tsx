@@ -72,7 +72,11 @@ import {
   FeaturePackScene,
   type FeaturePack,
 } from '@/components/featurepack/FeaturePackScene';
-import { runInstalledPackAction } from '@/lib/feature-pack';
+import {
+  runInstalledPackAction,
+  loadInstalledPacks,
+  PACKS_CHANGED_EVENT,
+} from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
 import { TablesPanel } from '@/components/tables/TablesPanel';
 import { CodingTerminal } from '@/components/coding/CodingTerminal';
@@ -202,6 +206,21 @@ export function AmbientHome({
   // Shown + switchable in the switcher above the chat box; switching it never
   // touches `messages` (conversation persists). Linked to the L1 scene below.
   const [roleId, setRoleId] = useState<RoleId>(DEFAULT_ROLE_ID);
+  // Role switcher is a dropdown (irisy-roles.md sec.3): collapsed it shows the
+  // active role; open it lists the role pool. `roleMenuOpen` drives that.
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  // Installed feature packs, shown next to the role dropdown so the role's
+  // toolset is visible (bao 2026-06-26: feature packs must show too). The role
+  // decides which ones are in scope via packsForRole. Kept in sync on change.
+  const [installedPacks, setInstalledPacks] = useState<FeaturePack[]>([]);
+  useEffect(() => {
+    const load = () => {
+      void loadInstalledPacks().then(setInstalledPacks).catch(() => {});
+    };
+    load();
+    window.addEventListener(PACKS_CHANGED_EVENT, load);
+    return () => window.removeEventListener(PACKS_CHANGED_EVENT, load);
+  }, []);
   // The smart table the user currently has open (lifted from TablesPanel) so
   // Irisy gets it as ambient context — "operate on THIS table" works without
   // the user naming the file. Stable callback so TablesPanel's effect is calm.
@@ -937,20 +956,69 @@ export function AmbientHome({
   // ARE Irisy, not separate personas (philosophy #5), so they don't belong here.
   // Switching a persona swaps the system prompt WITHOUT resetting the
   // conversation; one brand voice stays (ADR-005 single-brand lock).
+  const activeRole = roleById(roleId);
+  // The active role's in-scope feature packs (empty toolset = all installed).
+  const rolePacks = packsForRole(activeRole, installedPacks);
   const personaRow = (
-    <div className={styles.quickRow} role="group" aria-label="Irisy persona">
-      {ROLES.map((r) => (
+    <div className={styles.quickRow} role="group" aria-label="Irisy role">
+      <div className={styles.roleSwitch}>
         <button
-          key={r.id}
           type="button"
-          className={`${styles.quickChip} ${r.id === roleId ? styles.personaActive : ''}`}
-          aria-pressed={r.id === roleId}
-          onClick={() => setRoleId(r.id)}
-          title={r.hint}
+          className={styles.roleChip}
+          aria-haspopup="menu"
+          aria-expanded={roleMenuOpen}
+          onClick={() => setRoleMenuOpen((o) => !o)}
+          title={activeRole.hint}
         >
-          {r.label}
+          <span className={styles.modelDot} data-on />
+          <span className={styles.roleChipLabel}>{activeRole.label}</span>
+          <span className={styles.roleCaret}>▾</span>
         </button>
-      ))}
+        {roleMenuOpen && (
+          <>
+            <div
+              className={styles.roleBackdrop}
+              onClick={() => setRoleMenuOpen(false)}
+            />
+            <div className={styles.roleMenu} role="menu">
+              {ROLES.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={r.id === roleId}
+                  className={`${styles.roleItem} ${
+                    r.id === roleId ? styles.roleItemActive : ''
+                  }`}
+                  onClick={() => {
+                    setRoleId(r.id);
+                    setRoleMenuOpen(false);
+                  }}
+                >
+                  <span className={styles.roleItemLabel}>{r.label}</span>
+                  <span className={styles.roleItemHint}>{r.hint}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      {rolePacks.length > 0 && (
+        <div className={styles.packChips} aria-label="Feature packs in this role">
+          {rolePacks.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={styles.packChip}
+              onClick={() => setScene(p)}
+              title={p.summary ?? p.name}
+            >
+              {p.icon ? <span className={styles.packIcon}>{p.icon}</span> : null}
+              <span className={styles.packChipLabel}>{p.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 
