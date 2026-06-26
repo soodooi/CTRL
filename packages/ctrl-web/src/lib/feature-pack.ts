@@ -105,6 +105,57 @@ const packManifest = (
  *  registry / .mcpb listings come later; this is the bundled set. */
 export const OFFICIAL_PACKS: PackListing[] = [
   {
+    id: 'ghostfolio', name: 'Ghostfolio', icon: '📈', category: 'Finance',
+    summary: 'Your self-hosted Ghostfolio portfolio — holdings & performance',
+    installs: '—', rating: '—',
+    // Seed Finance pack for the Stocks role (bao 2026-06-25). Talks to the
+    // user's OWN self-hosted Ghostfolio instance (data sovereignty — CTRL is
+    // never in the data path). Uses the public-portfolio endpoint so no Bearer
+    // exchange is needed: the URL + public access id go through the keychain
+    // (secret substitution is the only env-injection path the provision runner
+    // supports). Opening this pack switches Irisy to the Stocks role.
+    manifest: {
+      manifest_version: 2, id: 'ghostfolio', name: 'Ghostfolio', version: '1.0.0',
+      author: { name: 'CTRL' }, description: { short: 'Self-hosted portfolio tracker' },
+      icon: '📈', mcp_color: 'jade', variant: 'builtin',
+      config_schema: {
+        fields: [
+          {
+            key: 'ghostfolio_url', kind: 'secret', label: 'Ghostfolio URL',
+            description: 'Your instance, e.g. http://localhost:3333', required: true,
+          },
+          {
+            key: 'ghostfolio_access_id', kind: 'secret', label: 'Public Access ID',
+            description: 'Ghostfolio Settings -> grant public access -> copy the id', required: true,
+          },
+        ],
+      },
+      provision: {
+        tools: [],
+        env: {
+          GHOSTFOLIO_URL: '{{secret:ghostfolio_url}}',
+          GHOSTFOLIO_ACCESS_ID: '{{secret:ghostfolio_access_id}}',
+        },
+      },
+      actions: [
+        {
+          id: 'portfolio', name: 'Portfolio', input: 'none', output: 'workspace',
+          steps: [{
+            type: 'shell',
+            command: 'curl -s "${GHOSTFOLIO_URL}/api/v1/public/${GHOSTFOLIO_ACCESS_ID}/portfolio"',
+          }],
+        },
+        {
+          id: 'performance', name: 'Performance', input: 'none', output: 'workspace',
+          steps: [{
+            type: 'shell',
+            command: 'curl -s "${GHOSTFOLIO_URL}/api/v1/public/${GHOSTFOLIO_ACCESS_ID}/portfolio" | head -c 6000',
+          }],
+        },
+      ],
+    },
+  },
+  {
     id: 'cf-workers', name: 'CF Workers', icon: '⚡', category: 'Dev',
     summary: 'Deploy Cloudflare Workers — needs your CF API token',
     installs: '2.4k', rating: '4.8',

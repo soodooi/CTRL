@@ -24,6 +24,7 @@ describe('role pool', () => {
       'kb-assistant',
       'code-companion',
       'tool-maker',
+      'stocks',
     ]);
   });
 
@@ -51,6 +52,9 @@ describe('roleForPack (opening a pack switches the role)', () => {
     expect(roleForPack('dev-box')).toBe('code-companion');
     expect(roleForPack('git-box')).toBe('code-companion');
     expect(roleForPack('cf-workers')).toBe('code-companion');
+  });
+  it('routes the ghostfolio pack to the stocks role', () => {
+    expect(roleForPack('ghostfolio')).toBe('stocks');
   });
   it('routes an unowned pack to the default role (sees all packs)', () => {
     expect(roleForPack('some-random-pack')).toBe('kb-assistant');
@@ -126,13 +130,14 @@ describe('L1 -> role + toolset matrix (test plan)', () => {
     expect(roleForScene(null)).toBeNull();
   });
 
-  it('every role in the pool is covered by either the matrix or manual-only', () => {
-    const linked = new Set(MATRIX.map((m) => m.role));
-    // tool-maker is intentionally manual-only (no L1 link — reached via the
-    // switcher / Discover). Assert the full pool is accounted for.
+  it('every role is reachable: scene-linked, pack-linked, or manual-only', () => {
+    const sceneLinked = new Set(MATRIX.map((m) => m.role));
+    // tool-maker is intentionally manual-only (no L1 / pack link — reached via
+    // the switcher / Discover). Everything else must be reachable some way.
     const manualOnly = new Set<RoleId>(['tool-maker']);
     for (const r of ROLES) {
-      expect(linked.has(r.id) || manualOnly.has(r.id)).toBe(true);
+      const packLinked = r.toolset.length > 0; // reachable via roleForPack
+      expect(sceneLinked.has(r.id) || packLinked || manualOnly.has(r.id)).toBe(true);
     }
   });
 });
@@ -143,8 +148,10 @@ describe('inKbScope (relatively independent knowledge bases)', () => {
     expect(kb.kbScope).toBeNull();
     expect(inKbScope(kb, 'anything/at/all.md')).toBe(true);
   });
-  it('a scoped role only sees paths under its prefix', () => {
-    const stocks: Role = { ...roleById('kb-assistant'), kbScope: 'Stocks' };
+  it('the Stocks data role is scoped to Stocks/ (worked example)', () => {
+    const stocks = roleById('stocks');
+    expect(stocks.kbScope).toBe('Stocks');
+    expect(stocks.toolset).toEqual(['ghostfolio']);
     expect(inKbScope(stocks, 'Stocks/aapl.md')).toBe(true);
     expect(inKbScope(stocks, 'Stocks')).toBe(true);
     expect(inKbScope(stocks, 'Notes/diary.md')).toBe(false);
