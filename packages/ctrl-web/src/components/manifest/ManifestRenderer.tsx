@@ -37,6 +37,27 @@ const UnknownComponent = ({ name }: { name: string }): ReactElement => (
   </span>
 );
 
+// Manifest props are `z.record(string, unknown)` — fully attacker-controlled
+// for an untrusted mcp manifest. Stripping the props that React forwards to
+// real DOM as dangerous sinks before they're spread closes the XSS / DOM-clobber
+// holes: `dangerouslySetInnerHTML` injects raw HTML, `on*` smuggles JS event
+// handlers (declarative manifests must not carry handlers — events are out of
+// scope per the header), and `ref` / `key` are React internals a manifest must
+// never set.
+const sanitizeProps = (
+  props: Record<string, unknown>,
+): Record<string, unknown> => {
+  const safe: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(props)) {
+    if (name === 'dangerouslySetInnerHTML' || name === 'ref' || name === 'key') {
+      continue;
+    }
+    if (/^on[A-Z]/.test(name)) continue;
+    safe[name] = value;
+  }
+  return safe;
+};
+
 const renderNode = (node: ManifestNode, idx: number): ReactNode => {
   if (typeof node === 'string') return node;
   return renderElement(node, String(node.key ?? idx));
@@ -54,7 +75,7 @@ const renderElement = (
   }
 
   return (
-    <Component key={reactKey} {...(element.props ?? {})}>
+    <Component key={reactKey} {...sanitizeProps(element.props ?? {})}>
       {children && children.length > 0 ? children : undefined}
     </Component>
   );

@@ -63,7 +63,12 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
     [path],
   );
 
-  const { data: entry, isLoading } = useQuery({
+  const {
+    data: entry,
+    isLoading,
+    isError: loadFailed,
+    error: loadError,
+  } = useQuery({
     queryKey: ['smart-table-file', path],
     queryFn: () => readVault(path),
   });
@@ -163,6 +168,27 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
         <ViewerChrome resource={resource} />
         <div className={styles.scroll}>
           <pre className={styles.markdownStub}>loading…</pre>
+        </div>
+      </div>
+    );
+  }
+
+  // ADR-003 frontend § 6.5.4 (2026-06-26): distinguish a load failure from a
+  // schema-missing file. Without this branch an unreadable file (missing path /
+  // gate error) rendered as "schema missing", sending the user to fix
+  // frontmatter that was never the problem.
+  if (loadFailed && !entry) {
+    const detail = loadError instanceof Error ? loadError.message : String(loadError);
+    return (
+      <div className={styles.frame}>
+        <ViewerChrome resource={resource} />
+        <div className={styles.fallback}>
+          <div className={styles.fallbackKind}>could not load file</div>
+          <p className={styles.fallbackHint}>
+            This table file could not be read from the vault. Check that the file
+            still exists, then try reopening it.
+            {detail ? <> ({detail.slice(0, 160)})</> : null}
+          </p>
         </div>
       </div>
     );

@@ -180,3 +180,42 @@ export function cleanReplyText(text: string): string {
   const d = rewriteCodenames(c);
   return collapseBlankLines(d).trim();
 }
+
+// Translate brain RPC error strings into a friendlier first line. The
+// transport surfaces raw strings like "Timeout waiting for response to
+// prompt. Stderr: <maybe-empty>", which are accurate but unhelpful — the
+// user needs to know what to do, not which timer fired. The original
+// message stays in `detail` for an expandable diagnostics panel. Shared
+// by IrisyChat (docked) and AmbientHome (homepage composer).
+export function humanizePiError(
+  raw: string,
+  activeBrain?: string,
+): { summary: string; detail: string } {
+  const brain =
+    activeBrain && activeBrain !== 'pi' && activeBrain !== 'Model'
+      ? activeBrain
+      : 'the active provider';
+  if (raw.startsWith('Timeout waiting for response to')) {
+    return {
+      summary: `${brain} did not respond. Check provider auth (e.g. run 'claude login') or pick a different provider in Settings.`,
+      detail: raw,
+    };
+  }
+  if (raw.startsWith('Agent process exited immediately')) {
+    return {
+      summary: `Brain crashed on startup. Check your provider config in Settings.`,
+      detail: raw,
+    };
+  }
+  if (raw.startsWith('Timeout waiting for agent to become idle')) {
+    return {
+      summary: `${brain} is still streaming a previous request. Try again in a moment.`,
+      detail: raw,
+    };
+  }
+  const firstLine = raw.split('\n')[0] ?? raw;
+  return {
+    summary: `Brain error: ${firstLine.slice(0, 120)}`,
+    detail: raw,
+  };
+}

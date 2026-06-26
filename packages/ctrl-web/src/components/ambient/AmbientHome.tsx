@@ -34,7 +34,9 @@ import {
   loadIrisySystemPromptWithSoul,
   loadBrainState,
 } from '@/lib/irisy-prompts';
-import { cleanReplyText } from '@/lib/irisy-render-filter';
+// ADR-005 irisy § persona-shell v5 (2026-06-09): humanizePiError shared with
+// IrisyChat so brain errors surface instead of being swallowed by the stream.
+import { cleanReplyText, humanizePiError } from '@/lib/irisy-render-filter';
 // Irisy functional roles (ADR-003 §8.6 + ADR-005 v6): the role switcher above
 // the chat box. A role = (persona, toolset, knowledge base); switching swaps
 // the persona WITHOUT resetting the conversation. Linked to the L1 scene.
@@ -302,7 +304,11 @@ export function AmbientHome({
 
   const send = useCallback(async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || streaming) return;
+    if (!trimmed) return;
+    // ADR-005 irisy § persona-shell v5 (2026-06-09): never block input — if a
+    // turn is still streaming, abort it and send the new one (parity with the
+    // docked IrisyChat) instead of silently dropping the keystroke.
+    abortRef.current?.abort();
     setInput('');
     const userMsg: Msg = { id: `u-${Date.now()}`, role: 'user', content: trimmed };
     // Readiness gate (bao 2026-06-12: check the env + guide, don't go silent):
@@ -412,7 +418,21 @@ export function AmbientHome({
         })),
       ];
       let acc = '';
+      // ADR-005 irisy § persona-shell v5 (2026-06-09): the transport does not
+      // throw — brain timeout / crash / no-auth arrive as a chunk carrying
+      // `error`. Surface it (parity with IrisyChat) instead of `continue`-ing
+      // past it, which froze the bubble or misreported "No AI provider".
+      let streamError = false;
       for await (const chunk of irisyChatTransport().stream(history, { signal: ctrl.signal })) {
+        if (typeof chunk !== 'string' && chunk?.error) {
+          if (chunk.error === 'aborted') break;
+          const { summary } = humanizePiError(String(chunk.error), modelLabel);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === asstId ? { ...m, content: summary } : m)),
+          );
+          streamError = true;
+          break;
+        }
         const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
         if (!delta) continue;
         acc += delta;
@@ -440,7 +460,7 @@ export function AmbientHome({
       if (detected) setPart(detected);
       // Empty stream usually means no provider is configured yet — but NOT when
       // the user hit Stop (aborted on purpose), so guard on the abort signal.
-      if (acc.trim().length === 0 && !ctrl.signal.aborted) {
+      if (acc.trim().length === 0 && !ctrl.signal.aborted && !streamError) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === asstId
@@ -462,8 +482,13 @@ export function AmbientHome({
         prev.map((m) => (m.id === asstId ? { ...m, content: friendly } : m)),
       );
     } finally {
-      setStreaming(false);
-      abortRef.current = null;
+      // ADR-005 irisy § persona-shell v5 (2026-06-09): only the currently-active
+      // turn clears streaming — a superseded (interrupt-redirected) turn must not
+      // flip it off or null the new turn's controller under it.
+      if (abortRef.current === ctrl) {
+        setStreaming(false);
+        abortRef.current = null;
+      }
     }
   }, [messages, streaming, hasProvider, onOpenPicker, scene, roleId, activeTablePath, codingStreamId, getRecentStdout]);
 

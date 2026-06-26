@@ -14,6 +14,10 @@ const basenameFromUri = (uri: string): string => {
 
 export const ImageViewer = ({ resource }: ViewerProps): ReactElement => {
   const [zoom, setZoom] = useState<'fit' | 'actual'>('fit');
+  // ADR-003 frontend § viewers (2026-06-26): a broken/unreachable image source
+  // left a blank stage with no signal; track the load error and show a one-line
+  // fallback instead.
+  const [failed, setFailed] = useState(false);
   const altText = basenameFromUri(resource.uri);
 
   const rightActions = (
@@ -41,13 +45,21 @@ export const ImageViewer = ({ resource }: ViewerProps): ReactElement => {
     <div className={styles.frame}>
       <ViewerChrome resource={resource} rightActions={rightActions} />
       <div className={styles.imageStage} data-zoom={zoom}>
-        <img
-          src={resource.uri}
-          alt={altText}
-          className={styles.imageEl}
-          decoding="async"
-          loading="lazy"
-        />
+        {failed ? (
+          <div className={styles.fallback}>
+            <div className={styles.fallbackKind}>could not load image</div>
+            <p className={styles.fallbackHint}>{altText}</p>
+          </div>
+        ) : (
+          <img
+            src={resource.uri}
+            alt={altText}
+            className={styles.imageEl}
+            decoding="async"
+            loading="lazy"
+            onError={() => setFailed(true)}
+          />
+        )}
       </div>
     </div>
   );

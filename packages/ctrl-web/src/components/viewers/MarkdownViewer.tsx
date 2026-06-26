@@ -121,6 +121,17 @@ const escapeHtml = (s: string): string =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
+// Scheme allowlist for markdown link hrefs. A vault note can carry a
+// `[label](javascript:…)` / `[label](data:text/html,…)` payload that fires
+// on click — block any explicit scheme outside http/https/mailto. Relative
+// paths, anchors and protocol-relative `//` URLs have no scheme and stay.
+const safeHref = (raw: string): string => {
+  const url = raw.trim();
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url);
+  if (scheme && !/^(https?|mailto)$/i.test(scheme[1]!)) return '#';
+  return url;
+};
+
 const inline = (s: string, resolver?: WikilinkResolver): string => {
   // Convert `[[target]]` first — before the `[label](href)` rule —
   // so wikilink syntax never gets caught by the markdown-link regex.
@@ -149,7 +160,11 @@ const inline = (s: string, resolver?: WikilinkResolver): string => {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noopener noreferrer">$1</a>');
+    .replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g,
+      (_m, label: string, href: string) =>
+        `<a href="${safeHref(href)}" rel="noopener noreferrer">${label}</a>`,
+    );
 };
 
 const htmlToMarkdown = (html: string): string => {

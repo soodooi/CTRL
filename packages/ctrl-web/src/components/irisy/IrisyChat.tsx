@@ -37,7 +37,9 @@ import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
 // gateInvoke routes capability calls through the :17873 gate, not a private
 // Tauri command (ADR-002 substrate §14 v29 (2026-06-24) — platform API; gate is
 // the single governed surface).
-import { gateInvoke, listMcps, type McpSummary } from '@/lib/kernel';
+// ADR-002 substrate § vault v1 §8.3 (2026-06-01): saveReplyToVault writes via
+// the vaultWrite wrapper (maps content→body for the gate's VaultWriteArgs).
+import { gateInvoke, vaultWrite, listMcps, type McpSummary } from '@/lib/kernel';
 import { useSessionStateStore, sessionLabel } from '@/lib/session-state';
 // bao 2026-06-05 Pi-first cleanup: PWA-side XML tool dispatch
 // (`dispatchAllCalls` / `formatResultsAsUserTurn` /
@@ -55,7 +57,9 @@ import {
   runReflection,
   type ReflectTurn,
 } from '@/lib/irisy-reflection';
-import { cleanReplyText } from '@/lib/irisy-render-filter';
+// ADR-005 irisy § persona-shell v5 (2026-06-09): humanizePiError shared with
+// AmbientHome so both surfaces show the same friendly brain-error line.
+import { cleanReplyText, humanizePiError } from '@/lib/irisy-render-filter';
 // ADR-002 substrate §1 v19 (2026-06-09): Pi RPC rail controls (sessions /
 // compact / refresh brain / abort) retired with Pi. The rail keeps only
 // the local-state affordances (new chat, clear).
@@ -138,41 +142,8 @@ type DisplayMessage = TextDisplayMessage | CustomDisplayMessage;
 // CustomDisplayMessage render path, not into AssistantBubble.
 // AssistantBubble now renders assistant text as straight markdown.
 
-// Translate Pi RPC error strings into a friendlier first line. Pi's
-// rpc-client throws raw strings like "Timeout waiting for response to
-// prompt. Stderr: <maybe-empty>", which is accurate but unhelpful for
-// the user — they need to know what to do, not which timer fired.
-// Keep the original message in `detail` so the expandable panel
-// still shows the full stderr tail for diagnostics.
-function humanizePiError(
-  raw: string,
-  activeBrain?: string,
-): { summary: string; detail: string } {
-  const brain = activeBrain && activeBrain !== 'pi' ? activeBrain : 'the active provider';
-  if (raw.startsWith('Timeout waiting for response to')) {
-    return {
-      summary: `${brain} did not respond. Check provider auth (e.g. run 'claude login') or pick a different provider in Settings.`,
-      detail: raw,
-    };
-  }
-  if (raw.startsWith('Agent process exited immediately')) {
-    return {
-      summary: `Brain crashed on startup. Check your provider config in Settings.`,
-      detail: raw,
-    };
-  }
-  if (raw.startsWith('Timeout waiting for agent to become idle')) {
-    return {
-      summary: `${brain} is still streaming a previous request. Try again in a moment.`,
-      detail: raw,
-    };
-  }
-  const firstLine = raw.split('\n')[0] ?? raw;
-  return {
-    summary: `Brain error: ${firstLine.slice(0, 120)}`,
-    detail: raw,
-  };
-}
+// ADR-005 irisy § persona-shell v5 (2026-06-09): humanizePiError moved to
+// lib/irisy-render-filter.ts (shared with AmbientHome's homepage composer).
 
 interface AssistantBubbleProps {
   // Only the text variant ever reaches AssistantBubble — the render
@@ -568,7 +539,11 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       setSendingStartedAt(Date.now());
       setChatError(null);
       setErrorExpanded(false);
-      const userId = `u-${Date.now()}`;
+      // ADR-005 irisy § persona-shell v5 (2026-06-09): random suffix so
+      // same-millisecond sends (interrupt-redirect / ?text= prefill / double
+      // Enter) don't collide into one id and misroute deltas / dup React keys.
+      const turnSuffix = Math.random().toString(36).slice(2, 8);
+      const userId = `u-${Date.now()}-${turnSuffix}`;
       const userMsg: DisplayMessage = {
         id: userId,
         role: 'user',
@@ -610,7 +585,9 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       // through `transport.stream`. PWA observes one stream, accepts
       // text + custom-message chunks, fires sleep-time reflection.
       try {
-        const assistantId = `a-${Date.now()}`;
+        // ADR-005 irisy § persona-shell v5 (2026-06-09): share the turn's
+        // random suffix so the assistant id can't collide with the user id.
+        const assistantId = `a-${Date.now()}-${turnSuffix}`;
         setMessages((prev) => [
           ...prev,
           {
@@ -831,7 +808,10 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       ).padStart(2, '0')}-${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}`;
       const path = `irisy/replies/${stamp}-${assistantId.slice(-6)}.md`;
       try {
-        await gateInvoke('vault_write', {
+        // ADR-002 substrate § vault v1 §8.3 (2026-06-01): vaultWrite maps
+        // content→body for the gate's VaultWriteArgs (raw gate_invoke with a
+        // `content` field serde-fails on the required `body`).
+        await vaultWrite({
           path,
           content: body,
           frontmatter: {
