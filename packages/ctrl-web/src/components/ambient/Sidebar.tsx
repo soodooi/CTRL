@@ -5,7 +5,7 @@
 // model. Labels live in tooltips so the rail stays minimal. Selecting an item
 // drives the main area; Irisy is always the conversation column to its right.
 
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { loadConnectors } from '@/lib/connector';
 import { providerBadge } from '@/lib/provider-badge';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
@@ -98,6 +98,32 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel, rol
   // Packs the active role exposes (ADR-003 §8.6 toolset). No role = show all.
   const visiblePacks = roleId ? packsForRole(roleById(roleId), packs) : packs;
 
+  // One unified L1 feature-pack list (bao 2026-06-26: a single pack list, no
+  // hardcoded faces interleaved with packs). Built-in faces (Notes / Tables /
+  // Coding) are entries of the SAME list as installed packs, rendered the same
+  // way; opening still routes to each one's rich scene via its `section` (the
+  // editor / grid / terminal aren't a generic action bar, so they keep their
+  // own viewer — unification is the list, not the renderer). Built-in faces
+  // are core capabilities, always shown; installed packs stay role-filtered.
+  interface L1Entry {
+    key: string;
+    title: string;
+    icon: ReactNode;
+    section: SidebarSection;
+  }
+  const builtinFaces: L1Entry[] = [
+    { key: 'notes', title: 'Notes', icon: <Ico d={NOTES_D} />, section: { kind: 'notes' } },
+    { key: 'tables', title: 'Tables', icon: <TableIcon />, section: { kind: 'tables' } },
+    { key: 'coding', title: 'Coding', icon: <CodeIcon />, section: { kind: 'coding' } },
+  ];
+  const packEntries: L1Entry[] = visiblePacks.map((p) => ({
+    key: `pack.${p.id}`,
+    title: p.name,
+    icon: p.icon ?? '⚡',
+    section: { kind: 'feature-pack', pack: p },
+  }));
+  const packList: L1Entry[] = [...builtinFaces, ...packEntries];
+
   return (
     <aside className={styles.rail} data-tauri-drag-region>
 
@@ -132,40 +158,15 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel, rol
         )),
       )}
 
-      <button
-        type="button"
-        className={`${styles.ic} ${active === 'notes' ? styles.active : ''}`}
-        onClick={() => onSelect({ kind: 'notes' })}
-        title="Notes"
-      >
-        <Ico d={NOTES_D} />
-      </button>
-      <button
-        type="button"
-        className={`${styles.ic} ${active === 'tables' ? styles.active : ''}`}
-        onClick={() => onSelect({ kind: 'tables' })}
-        title="Tables"
-      >
-        <TableIcon />
-      </button>
-      <button
-        type="button"
-        className={`${styles.ic} ${active === 'coding' ? styles.active : ''}`}
-        onClick={() => onSelect({ kind: 'coding' })}
-        title="Coding"
-      >
-        <CodeIcon />
-      </button>
-
-      {visiblePacks.map((p) => (
+      {packList.map((e) => (
         <button
-          key={p.id}
+          key={e.key}
           type="button"
-          className={`${styles.ic} ${active === `pack.${p.id}` ? styles.active : ''}`}
-          onClick={() => onSelect({ kind: 'feature-pack', pack: p })}
-          title={p.name}
+          className={`${styles.ic} ${active === e.key ? styles.active : ''}`}
+          onClick={() => onSelect(e.section)}
+          title={e.title}
         >
-          {p.icon ?? '⚡'}
+          {e.icon}
         </button>
       ))}
 
