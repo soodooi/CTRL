@@ -143,28 +143,23 @@ describe('L1 -> role + toolset matrix (test plan)', () => {
 
 describe('inKbScope (relatively independent knowledge bases)', () => {
   it('null scope spans the whole vault (every path is in scope)', () => {
-    const kb = roleById('kb-assistant');
-    expect(kb.kbScope).toBeNull();
-    expect(inKbScope(kb, 'anything/at/all.md')).toBe(true);
+    expect(inKbScope(null, 'anything/at/all.md')).toBe(true);
   });
-  it('a dedicated KB scope confines retrieval (stocks = assistant + Stocks/)', () => {
-    // Stocks is config, not a role: the kb-assistant persona + a Stocks/ kb.
-    const stocksCfg: Role = { ...roleById('kb-assistant'), kbScope: 'Stocks' };
-    expect(inKbScope(stocksCfg, 'Stocks/aapl.md')).toBe(true);
-    expect(inKbScope(stocksCfg, 'Stocks')).toBe(true);
-    expect(inKbScope(stocksCfg, 'Notes/diary.md')).toBe(false);
+  it('a dedicated KB scope confines retrieval (e.g. ghostfolio -> Stocks/)', () => {
+    expect(inKbScope('Stocks', 'Stocks/aapl.md')).toBe(true);
+    expect(inKbScope('Stocks', 'Stocks')).toBe(true);
+    expect(inKbScope('Stocks', 'Notes/diary.md')).toBe(false);
     // No false prefix match: "StocksOld/" must not count as inside "Stocks".
-    expect(inKbScope(stocksCfg, 'StocksOld/x.md')).toBe(false);
+    expect(inKbScope('Stocks', 'StocksOld/x.md')).toBe(false);
   });
 });
 
 describe('kbScopeAmbient', () => {
-  it('returns null when the role spans the whole vault', () => {
-    expect(kbScopeAmbient(roleById('kb-assistant'))).toBeNull();
+  it('returns null for the whole vault', () => {
+    expect(kbScopeAmbient(null)).toBeNull();
   });
-  it('emits a scoped context line when kbScope is set (e.g. a stocks role)', () => {
-    const stocks: Role = { ...roleById('kb-assistant'), id: 'kb-assistant', kbScope: 'Stocks' };
-    const line = kbScopeAmbient(stocks);
+  it('emits a scoped context line for a dedicated kb (e.g. Stocks/)', () => {
+    const line = kbScopeAmbient('Stocks');
     expect(line).toContain('Stocks');
     expect(line).toMatch(/knowledge base/i);
   });

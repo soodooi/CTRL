@@ -374,9 +374,11 @@ export function AmbientHome({
       // so "filter / sort / AI-fill / add a row to THIS table" resolves to a
       // path without the user naming it (the smart_table.* gate tools need it).
       const ambient: LLMMessage[] = [];
-      // kbScope (ADR-003 §8.6): pin Irisy to this role's knowledge base when it
-      // declares one (null = whole vault, so nothing is injected).
-      const kb = kbScopeAmbient(role);
+      // Dedicated KB (bao 2026-06-25): an open feature pack's knowledge_base wins
+      // (e.g. ghostfolio -> Stocks/), else the role's kbScope. null = whole vault.
+      const activeScope =
+        scene && typeof scene === 'object' && scene.kbDir ? scene.kbDir : role.kbScope;
+      const kb = kbScopeAmbient(activeScope);
       if (kb) ambient.push({ role: 'system', content: kb });
       if (scene === 'tables' && activeTablePath) {
         ambient.push({
@@ -533,7 +535,10 @@ export function AmbientHome({
       // independent — search wide, then drop hits outside the active role's
       // scope (null scope = whole vault, so nothing is dropped).
       const role = roleById(roleId);
-      const hits = (await vaultSearch(q, 20)).filter((p) => inKbScope(role, p));
+      // Same dedicated-KB resolution as handleSend: pack's kb wins, else role's.
+      const activeScope =
+        scene && typeof scene === 'object' && scene.kbDir ? scene.kbDir : role.kbScope;
+      const hits = (await vaultSearch(q, 20)).filter((p) => inKbScope(activeScope, p));
       const parts: string[] = [];
       for (const p of hits.slice(0, 3)) {
         try {
@@ -551,7 +556,7 @@ export function AmbientHome({
       ? `Answer using my notes below. Cite the file names you used. If the notes don't cover it, say so.\n\n=== MY NOTES ===\n${context}\n\n=== QUESTION ===\n${q}`
       : `Answer from my knowledge base. (No notes matched "${q}" yet — answer from general knowledge and say the notes were empty.)\n\n${q}`;
     void send(prompt);
-  }, [messages, send, roleId]);
+  }, [messages, send, roleId, scene]);
 
   const onPickCapability = useCallback((cap: Capability) => {
     setInput(cap.starter ?? `${cap.label}: `);

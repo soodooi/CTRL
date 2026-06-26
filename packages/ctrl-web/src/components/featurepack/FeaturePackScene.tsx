@@ -17,6 +17,10 @@ export interface FeaturePack {
   icon?: string;
   summary?: string;
   actions: PackAction[];
+  /** Dedicated knowledge base = a vault subpath this pack's data lives in
+   *  (manifest `knowledge_base`). When the assistant uses this pack, retrieval
+   *  scopes here (bao 2026-06-25: stocks = assistant + Stocks/ + ghostfolio). */
+  kbDir?: string;
 }
 
 interface FeaturePackSceneProps {

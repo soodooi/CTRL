@@ -128,25 +128,26 @@ export function packsForRole<T extends { id: string }>(
   return installed.filter((p) => allow.has(p.id));
 }
 
-/** A system-context line pinning Irisy to this role's knowledge base, or null
- *  when the role spans the whole vault (kbScope === null). This is how a future
- *  data-scoped role (e.g. a Stocks role bound to a stocks vault) constrains
- *  retrieval — the kbScope dimension of (persona, toolset, knowledge base). */
-export function kbScopeAmbient(role: Role): string | null {
-  if (!role.kbScope) return null;
+/** A system-context line pinning Irisy to a dedicated knowledge base, or null
+ *  for the whole vault. The scope comes from whatever is active — a feature
+ *  pack's dedicated kb (bao 2026-06-25: stocks = assistant + Stocks/ + ghostfolio)
+ *  or a role's kbScope — so this takes the scope string, not a role. */
+export function kbScopeAmbient(kbScope: string | null): string | null {
+  if (!kbScope) return null;
   return (
-    `Knowledge base scope: this role works within "${role.kbScope}" in the vault. ` +
+    `Knowledge base scope: work within "${kbScope}" in the vault. ` +
     `Read, search and cite notes under that path; treat it as the active knowledge base.`
   );
 }
 
-/** Whether a vault path falls inside this role's knowledge base. A null kbScope
+/** Whether a vault path falls inside a dedicated knowledge base. A null scope
  *  spans the whole vault (always true); otherwise the path must sit at or under
- *  the kbScope prefix. This is what makes each role's knowledge base RELATIVELY
- *  INDEPENDENT (bao 2026-06-25) — search results outside the scope are dropped
- *  so a data role (e.g. Stocks) only ever sees its own data. */
-export function inKbScope(role: Role, path: string): boolean {
-  if (!role.kbScope) return true;
-  const prefix = role.kbScope.endsWith('/') ? role.kbScope : `${role.kbScope}/`;
-  return path === role.kbScope || path.startsWith(prefix);
+ *  the prefix. This is what makes a knowledge base RELATIVELY INDEPENDENT (bao
+ *  2026-06-25) — out-of-scope search results are dropped, so a pack's data view
+ *  (e.g. ghostfolio's Stocks/) only ever sees its own data. Scope-string param
+ *  (from the active pack or role), not a role. */
+export function inKbScope(kbScope: string | null, path: string): boolean {
+  if (!kbScope) return true;
+  const prefix = kbScope.endsWith('/') ? kbScope : `${kbScope}/`;
+  return path === kbScope || path.startsWith(prefix);
 }

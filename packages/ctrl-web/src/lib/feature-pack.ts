@@ -18,6 +18,8 @@ interface PackManifest {
   name?: string;
   description?: { short?: string };
   actions?: ManifestAction[];
+  /** Dedicated knowledge base = vault subpath the pack's data lives in. */
+  knowledge_base?: string;
 }
 
 /** Installed feature packs = installed mcps whose manifest declares actions.
@@ -41,6 +43,9 @@ export async function loadInstalledPacks(): Promise<FeaturePack[]> {
           name: a.name,
           description: a.description,
         })),
+        // Generic: ANY pack that declares knowledge_base gets a dedicated kb —
+        // no per-pack code (bao 2026-06-25: systematic, not edit-per-pack).
+        kbDir: m.knowledge_base,
       });
     } catch {
       // Skip an mcp whose manifest is unreadable — never break the list.
@@ -122,6 +127,9 @@ export const OFFICIAL_PACKS: PackListing[] = [
       manifest_version: 2, id: 'ghostfolio', name: 'Ghostfolio', version: '1.0.0',
       author: { name: 'CTRL' }, description: { short: 'Self-hosted portfolio tracker' },
       icon: '📈', mcp_color: 'jade', variant: 'builtin',
+      // Dedicated knowledge base (data, not code): the assistant scopes here when
+      // this pack is open. Any pack declares its own — no per-pack code.
+      knowledge_base: 'Stocks',
       config_schema: {
         fields: [
           {
