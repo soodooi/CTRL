@@ -96,6 +96,14 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
                 </div>
               ))}
             </div>
+            {draft.knowledge_base != null && draft.knowledge_base !== '' && (
+              <div className={styles.reviewSummary}>Data → {draft.knowledge_base}/</div>
+            )}
+            {draft.secrets != null && draft.secrets.length > 0 && (
+              <div className={styles.reviewSummary}>
+                Needs after install: {draft.secrets.map((s) => s.label).join(', ')}
+              </div>
+            )}
             <div className={styles.reviewBtns}>
               <button
                 type="button"

@@ -888,6 +888,15 @@ export const McpManifest = z.object({
    *  `{{secret:<key>}}` from keychain at inject time (never the LLM —
    *  decision 0004). Distinct from cap_asset (copies files, not toolchains). */
   provision: Provision.optional(),
+
+  /** Dedicated knowledge base = a vault subpath this pack's data lives in
+   *  (ADR-002 substrate § composition §7.4 v34). Generic: ANY pack declares
+   *  its own; the runtime scopes the assistant's retrieval here when the pack
+   *  is open (inKbScope drops out-of-scope hits, so a pack's data view only
+   *  ever sees its own data). Zero per-pack code — this is the systematic field
+   *  that lets a creator-generated pack carry a dedicated KB. Absent = whole
+   *  vault. e.g. a portfolio pack declares `"Stocks"`. v2 only. */
+  knowledge_base: z.string().min(1).optional(),
 });
 export type McpManifest = z.infer<typeof McpManifest>;
 
