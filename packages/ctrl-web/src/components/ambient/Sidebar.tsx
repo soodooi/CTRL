@@ -10,6 +10,7 @@ import { loadConnectors } from '@/lib/connector';
 import { providerBadge } from '@/lib/provider-badge';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
 import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
+import { packsForRole, roleById, type RoleId } from '@/lib/roles';
 import styles from './Sidebar.module.css';
 
 // Unified line-icon set (bao 2026-06-16: L1 icons must all be the SAME size).
@@ -75,9 +76,12 @@ interface SidebarProps {
    *  the legacy first-2-letters-of-label slice. Decision 0007 §display. */
   providerId?: string | null;
   onModel: () => void;
+  /** Active Irisy role — filters the feature packs shown to those the role
+   *  exposes (ADR-003 §8.6 toolset). Omitted = show all installed packs. */
+  roleId?: RoleId;
 }
 
-export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: SidebarProps): ReactElement {
+export function Sidebar({ active, onSelect, modelLabel, providerId, onModel, roleId }: SidebarProps): ReactElement {
   const connectors = loadConnectors();
   // Installed feature packs (mcps whose manifest declares actions).
   const [packs, setPacks] = useState<FeaturePack[]>([]);
@@ -91,6 +95,8 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
   }, []);
 
   const modelBadge = providerBadge(providerId ?? '', modelLabel);
+  // Packs the active role exposes (ADR-003 §8.6 toolset). No role = show all.
+  const visiblePacks = roleId ? packsForRole(roleById(roleId), packs) : packs;
 
   return (
     <aside className={styles.rail} data-tauri-drag-region>
@@ -151,7 +157,7 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
         <CodeIcon />
       </button>
 
-      {packs.map((p) => (
+      {visiblePacks.map((p) => (
         <button
           key={p.id}
           type="button"

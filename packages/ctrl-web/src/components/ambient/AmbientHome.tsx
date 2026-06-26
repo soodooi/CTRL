@@ -35,6 +35,18 @@ import {
   loadBrainState,
 } from '@/lib/irisy-prompts';
 import { cleanReplyText } from '@/lib/irisy-render-filter';
+// Irisy functional roles (ADR-003 §8.6 + ADR-005 v6): the role switcher above
+// the chat box. A role = (persona, toolset, knowledge base); switching swaps
+// the persona WITHOUT resetting the conversation. Linked to the L1 scene.
+import {
+  ROLES,
+  DEFAULT_ROLE_ID,
+  roleById,
+  roleForScene,
+  packsForRole,
+  kbScopeAmbient,
+  type RoleId,
+} from '@/lib/roles';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
 import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
@@ -68,7 +80,9 @@ import {
   vaultSearch,
   captureScreenAndOcr,
   csStdin,
+  listMcps,
   type IrisySessionTurn,
+  type McpSummary,
 } from '@/lib/kernel';
 import { platform } from '@/lib/bridge';
 import { useCodingSession } from '@/lib/coding-session';
@@ -192,6 +206,11 @@ export function AmbientHome({
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
   const [scene, setScene] = useState<FeaturePack | 'notes' | 'tables' | 'coding' | null>(null);
+  // The active Irisy role (ADR-003 §8.6): drives the persona shipped per turn.
+  // Shown + switchable in the switcher above the chat box; switching it never
+  // touches `messages` (conversation persists). Linked to the L1 scene below.
+  const [roleId, setRoleId] = useState<RoleId>(DEFAULT_ROLE_ID);
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   // The smart table the user currently has open (lifted from TablesPanel) so
   // Irisy gets it as ambient context — "operate on THIS table" works without
   // the user naming the file. Stable callback so TablesPanel's effect is calm.
@@ -335,14 +354,28 @@ export function AmbientHome({
       // the model has its identity, guardrails and live provider — without it
       // the home composer leaked internals, monologued, and couldn't name its
       // own model. Shared with IrisyChat via composeSystemPrompt.
-      const [base, brain] = await Promise.all([
-        loadIrisySystemPromptWithSoul(),
+      // The active role chooses the persona (ADR-005 v6). The default role keeps
+      // its vault override (a user-edited irisy-system.md still wins); other
+      // roles supply their persona verbatim. SOUL.md is appended either way.
+      const role = roleById(roleId);
+      const baseOverride = roleId === DEFAULT_ROLE_ID ? undefined : role.persona;
+      const [base, brain, allMcps] = await Promise.all([
+        loadIrisySystemPromptWithSoul(baseOverride),
         loadBrainState(),
+        // listMcps fails in browser-only dev (no kernel) — degrade to no packs.
+        listMcps().catch(() => [] as McpSummary[]),
       ]);
+      // toolset (ADR-003 §8.6): the role decides which installed packs Irisy
+      // sees this turn (empty toolset = all; otherwise a whitelist).
+      const roleMcps = packsForRole(role, allMcps);
       // Ambient context: if a smart table is open, tell Irisy which file it is
       // so "filter / sort / AI-fill / add a row to THIS table" resolves to a
       // path without the user naming it (the smart_table.* gate tools need it).
       const ambient: LLMMessage[] = [];
+      // kbScope (ADR-003 §8.6): pin Irisy to this role's knowledge base when it
+      // declares one (null = whole vault, so nothing is injected).
+      const kb = kbScopeAmbient(role);
+      if (kb) ambient.push({ role: 'system', content: kb });
       if (scene === 'tables' && activeTablePath) {
         ambient.push({
           role: 'system',
@@ -371,7 +404,16 @@ export function AmbientHome({
         });
       }
       const history: LLMMessage[] = [
-        { role: 'system', content: composeSystemPrompt({ base, brainState: brain }) },
+        {
+          role: 'system',
+          content: composeSystemPrompt({
+            base,
+            brainState: brain,
+            // Only inject the mcp list when the role actually exposes packs —
+            // an empty list would render a "none yet" section every turn.
+            ...(roleMcps.length > 0 ? { mcps: roleMcps } : {}),
+          }),
+        },
         ...ambient,
         ...[...messages, userMsg].map((m) => ({
           role: m.role,
@@ -432,7 +474,7 @@ export function AmbientHome({
       setStreaming(false);
       abortRef.current = null;
     }
-  }, [messages, streaming, hasProvider, onOpenPicker, scene, activeTablePath, codingStreamId, getRecentStdout]);
+  }, [messages, streaming, hasProvider, onOpenPicker, scene, roleId, activeTablePath, codingStreamId, getRecentStdout]);
 
   // Stop the in-flight turn (composer Stop button / Esc). Aborts the transport's
   // stream; the textarea stays editable throughout so the user never loses input.
@@ -658,6 +700,18 @@ export function AmbientHome({
   useEffect(() => {
     if (openCodingNonce > 0) setScene('coding');
   }, [openCodingNonce]);
+
+  // L1 ↔ role linkage (ADR-003 §8.6 lock 5): opening an L1 scene auto-selects
+  // its linked role (Notes/Tables -> Knowledge Base, Coding -> Code Companion).
+  // A scene with no linked role leaves the user's manual choice untouched.
+  // Switching the role here does NOT clear `messages` — conversation persists.
+  useEffect(() => {
+    const linked =
+      scene === 'notes' || scene === 'tables' || scene === 'coding'
+        ? roleForScene(scene)
+        : null;
+    if (linked) setRoleId(linked);
+  }, [scene]);
 
   // Reset the chat when the shell selects "Irisy" (nonce bump). Since this
   // component stays mounted across routes (hidden, not unmounted), the
@@ -944,6 +998,49 @@ export function AmbientHome({
             Irisy
           </span>
           <div className={styles.statusActions}>
+            {/* Role switcher (ADR-003 §8.6): the active Irisy role, shown +
+                switchable directly above the chat box. Switching swaps the
+                persona but never resets the conversation. One brand voice —
+                still Irisy (ADR-005 single-brand lock). */}
+            <div className={styles.roleSwitch}>
+              <button
+                type="button"
+                className={styles.roleChip}
+                onClick={() => setRoleMenuOpen((v) => !v)}
+                title="Switch Irisy's role — your conversation stays"
+                aria-haspopup="menu"
+                aria-expanded={roleMenuOpen}
+              >
+                <span className={styles.roleChipLabel}>{roleById(roleId).label}</span>
+                <span className={styles.roleCaret} aria-hidden="true">▾</span>
+              </button>
+              {roleMenuOpen && (
+                <>
+                  <div
+                    className={styles.roleBackdrop}
+                    onClick={() => setRoleMenuOpen(false)}
+                  />
+                  <div className={styles.roleMenu} role="menu">
+                    {ROLES.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={r.id === roleId}
+                        className={`${styles.roleItem} ${r.id === roleId ? styles.roleItemActive : ''}`}
+                        onClick={() => {
+                          setRoleId(r.id);
+                          setRoleMenuOpen(false);
+                        }}
+                      >
+                        <span className={styles.roleItemLabel}>{r.label}</span>
+                        <span className={styles.roleItemHint}>{r.hint}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <button
               type="button"
               className={styles.statusBtn}
@@ -1165,6 +1262,7 @@ export function AmbientHome({
               modelLabel={modelLabel}
               providerId={providerId}
               onModel={onOpenPicker}
+              roleId={roleId}
             />
             {!isNarrow && (
               <div
