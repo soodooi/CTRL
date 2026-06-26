@@ -51,6 +51,11 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
     "llm",
     "memory",
     "mcp",
+    // Controlled market-data tools (market_quote / market_screen) — they GET
+    // only fixed Yahoo endpoints and cannot reach an arbitrary URL or POST, so
+    // unlike `net` they are safe in the first-party default (ADR-010
+    // communication § trust-domains v3, SC3; bao 2026-06-26).
+    "market",
 ];
 
 /// Callers treated as first-party (in-process app surfaces). The PWA bridge
@@ -84,6 +89,7 @@ pub fn tool_domain(tool: &str) -> &'static str {
         ("registry_", "registry"),
         ("kv_", "kv"),
         ("llm_", "llm"),
+        ("market_", "market"),
         ("http_", "net"),
         ("mcp_", "mcp"),
     ];
@@ -204,6 +210,8 @@ mod tests {
         assert_eq!(tool_domain("llm_chat"), "llm");
         assert_eq!(tool_domain("http_get"), "net");
         assert_eq!(tool_domain("http_post"), "net");
+        assert_eq!(tool_domain("market_quote"), "market");
+        assert_eq!(tool_domain("market_screen"), "market");
         assert_eq!(tool_domain("mcp_proxy_call_tool"), "mcp");
         assert_eq!(tool_domain("irisy_soul_get"), "memory");
         // Downstream namespaced tool falls under the mcp group.
@@ -281,8 +289,16 @@ mod tests {
         assert!(intent.allows_tool("kernel_status"));
         // net (raw http) is excluded from the first-party default.
         assert!(!intent.allows_tool("http_post"));
+        // ...but the CONTROLLED market tools ARE first-party visible: they GET
+        // only fixed Yahoo endpoints, so they carry no exfil risk (SC3; bao
+        // 2026-06-26). This is what lets Irisy quote a watchlist without net.
+        assert!(intent.allows_tool("market_quote"));
+        assert!(intent.allows_tool("market_screen"));
         // Irisy/hermes are first-party too.
         assert!(Intent::default_for_caller("irisy").allows_tool("vault_read"));
+        assert!(Intent::default_for_caller("hermes").allows_tool("market_quote"));
+        // Even first-party never gets raw net by default.
+        assert!(!Intent::default_for_caller("hermes").allows_tool("http_get"));
     }
 
     #[test]
