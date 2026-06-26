@@ -814,6 +814,13 @@
 .quickChip:hover {
   color: var(--color-primary);
 }
+/* Active persona in the row above the composer — primary + heavier so the
+   selected persona reads clearly against the muted, switchable siblings. */
+.personaActive,
+.personaActive:hover {
+  color: var(--color-primary);
+  font-weight: var(--weight-strong, 600);
+}
 
 /* "More" — the one entry to the long tail; pushed to the right, even quieter
    than the shortcuts so it never competes with them. */

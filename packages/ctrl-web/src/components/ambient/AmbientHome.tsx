@@ -51,7 +51,7 @@ import {
 } from '@/lib/roles';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
-import { floorCapabilities, type Capability } from '@/lib/capability-catalog';
+import { type Capability } from '@/lib/capability-catalog';
 import {
   detectPart,
   renderPart,
@@ -103,18 +103,6 @@ interface Msg {
    *  hidden (§8.3 #1 anti-pattern). */
   route?: RouteHint;
 }
-
-// Action shortcuts above the composer (vault/ctrl/strategy/0009). Minimal by
-// design (bao 2026-06-13, "ui minimal"): plain-text, no icons / no chip
-// borders, <=3 shown, the long tail behind one "More". These are accelerators
-// for high-frequency intents — the user can always just type instead. The set
-// is curated for now; the ambient-ranked / material-aware version lands with
-// the 0007 work (Irisy reads the work area to surface what fits the moment).
-const QUICK_HOOKS: { id: string; label: string }[] = [
-  { id: 'tone-translate', label: 'Translate' },
-  { id: 'draft-polish', label: 'Polish' },
-  { id: 'summarize', label: 'Summarize' },
-];
 
 type Surface = 'empty' | 'chat' | 'chat-part';
 
@@ -212,7 +200,6 @@ export function AmbientHome({
   // Shown + switchable in the switcher above the chat box; switching it never
   // touches `messages` (conversation persists). Linked to the L1 scene below.
   const [roleId, setRoleId] = useState<RoleId>(DEFAULT_ROLE_ID);
-  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   // The smart table the user currently has open (lifted from TablesPanel) so
   // Irisy gets it as ambient context — "operate on THIS table" works without
   // the user naming the file. Stable callback so TablesPanel's effect is calm.
@@ -919,34 +906,26 @@ export function AmbientHome({
     </div>
   );
 
-  // Always-in-view quicker-style hooks above the composer — the daily
-  // high-frequency actions that pull a user back to open CTRL (bao 2026-06-12).
-  const floorCaps = floorCapabilities();
-  const quickRow = (
-    <div className={styles.quickRow}>
-      {QUICK_HOOKS.map((h) => {
-        const cap = floorCaps.find((c) => c.id === h.id);
-        if (!cap) return null;
-        return (
-          <button
-            key={h.id}
-            type="button"
-            className={styles.quickChip}
-            onClick={() => onPickCapability(cap)}
-            title={cap.hint}
-          >
-            {h.label}
-          </button>
-        );
-      })}
-      <button
-        type="button"
-        className={styles.quickMore}
-        onClick={() => onView('discover')}
-        title="More actions — browse or add feature packs"
-      >
-        More
-      </button>
+  // The persona switcher sits directly above the composer (bao 2026-06-26): the
+  // row above the chat box IS the persona picker. Translate / polish / summarize
+  // used to live here — but those are things Irisy does inline (just ask); they
+  // ARE Irisy, not separate personas (philosophy #5), so they don't belong here.
+  // Switching a persona swaps the system prompt WITHOUT resetting the
+  // conversation; one brand voice stays (ADR-005 single-brand lock).
+  const personaRow = (
+    <div className={styles.quickRow} role="group" aria-label="Irisy persona">
+      {ROLES.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          className={`${styles.quickChip} ${r.id === roleId ? styles.personaActive : ''}`}
+          aria-pressed={r.id === roleId}
+          onClick={() => setRoleId(r.id)}
+          title={r.hint}
+        >
+          {r.label}
+        </button>
+      ))}
     </div>
   );
 
@@ -1013,49 +992,8 @@ export function AmbientHome({
             Irisy
           </span>
           <div className={styles.statusActions}>
-            {/* Role switcher (ADR-003 §8.6): the active Irisy role, shown +
-                switchable directly above the chat box. Switching swaps the
-                persona but never resets the conversation. One brand voice —
-                still Irisy (ADR-005 single-brand lock). */}
-            <div className={styles.roleSwitch}>
-              <button
-                type="button"
-                className={styles.roleChip}
-                onClick={() => setRoleMenuOpen((v) => !v)}
-                title="Switch Irisy's role — your conversation stays"
-                aria-haspopup="menu"
-                aria-expanded={roleMenuOpen}
-              >
-                <span className={styles.roleChipLabel}>{roleById(roleId).label}</span>
-                <span className={styles.roleCaret} aria-hidden="true">▾</span>
-              </button>
-              {roleMenuOpen && (
-                <>
-                  <div
-                    className={styles.roleBackdrop}
-                    onClick={() => setRoleMenuOpen(false)}
-                  />
-                  <div className={styles.roleMenu} role="menu">
-                    {ROLES.map((r) => (
-                      <button
-                        key={r.id}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={r.id === roleId}
-                        className={`${styles.roleItem} ${r.id === roleId ? styles.roleItemActive : ''}`}
-                        onClick={() => {
-                          setRoleId(r.id);
-                          setRoleMenuOpen(false);
-                        }}
-                      >
-                        <span className={styles.roleItemLabel}>{r.label}</span>
-                        <span className={styles.roleItemHint}>{r.hint}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+            {/* Persona switcher moved above the composer (bao 2026-06-26) —
+                see `personaRow`. The status bar keeps only chrome actions. */}
             <button
               type="button"
               className={styles.statusBtn}
@@ -1297,7 +1235,7 @@ export function AmbientHome({
             >
               <div className={styles.chatPane}>
                 {conversation}
-                {quickRow}
+                {personaRow}
                 {composer}
               </div>
             </div>
