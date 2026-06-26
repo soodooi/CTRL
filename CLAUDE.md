@@ -18,8 +18,8 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI
 
 - 全英文代码 — **整个项目代码零中文** (注释 / UI 文本 / 字符串字面量 / API 响应 / 错误信息 全英). bao 钦定 2026-05-28
 - 中文只允许出现在 `.md` 文档 (战略文档 / spec / handoff / ADR) + 跟 bao 对话, **不允许出现在任何 `.rs` / `.ts` / `.tsx` / `.css` 代码注释里**
-- License: All Rights Reserved. **所有子包 `private: true` + `license: UNLICENSED`**
-- 禁止 `npm publish` 任何 `@ctrl/*` 包到公开 npm
+- **开源 open-core (bao 2026-06-25, ADR-006 §5.1 v9)**: CTRL 主体 = **AGPL-3.0** (copyleft 护城河, 大厂改了对外服务必须开源); 功能包 = **MIT** (commons definitions, 宽松促共享)。商业 = open-core (付费云/托管/premium = substrate; 开源 core + 免费 commons = 网络效应护城河)。取代旧「All Rights Reserved / 子包 private:true+UNLICENSED」。
+- 开源功能包命名 = **`ctrl-<name>`** (如 `ctrl-ghostfolio`, 各独立 repo `soodooi/ctrl-<name>` 自带 LICENSE; 非 scoped 因 npm `@ctrl` 已被第三方占)。允许 publish 开源功能包; 第三方 AGPL 依赖 (如 Teable) 仅参考不 vendoring; REST 调用用户自托管 AGPL 服务 (Ghostfolio) 非衍生作品无传染。
 - 禁止本地 `wrangler dev` (ctrl-cloud 走 `*.workers.dev` staging)
 - 禁止 `--no-verify` 跳过 git hooks
 - 禁止跨 D1 JOIN

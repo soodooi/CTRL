@@ -2,7 +2,7 @@
 adr_id: 006
 module: cross-cutting
 title: CTRL cross-cutting — BYOK aggregator-first + global English first + plain-text philosophy + policy envelope
-version: 8
+version: 9
 status: accepted
 last_updated: 2026-06-25
 deciders: [bao, zeus]
@@ -13,6 +13,7 @@ sections:
   - { id: policy-envelope,   source: new-2026-06-04, note: "L3/L4/L5 autonomy ladder + blast-radius limit + typed-ISA validation — invariants reused across all 6 self-evolution loops (ADR-001 §8)." }
   - { id: cold-start-loop,   source: new-2026-06-19, note: "End-to-end download→install→first-run→BYOK→first-value loop. Aggregates §1 onboarding + ADR-003 §8 home + ADR-004 §2 distribution into one verified line; fixes the §1 ADR-vs-impl drift (misleading 'Irisy is connecting' stub)." }
 changelog:
+  - v9 2026-06-25: **NEW §5.1 开源 & license 模型 — CTRL 主体 AGPL-3.0 + 功能包 MIT + open-core (bao 2026-06-25).** 战略转向: CTRL 与功能包开源, 但是 §5「monetize substrate, commons free」的 **open-core 形态, 非推翻**。CTRL core = **AGPL-3.0** (copyleft 护城河: 改了对外提供服务必须开源, 大厂无法闭源 fork; 自托管/个人完全自由, 同 Ghostfolio/GitLab CE; 取代旧 All Rights Reserved)。功能包 = **MIT** (commons definitions §5 share-and-be-shared, 宽松促共享/采用)。命名 `ctrl-<name>` (如 `ctrl-ghostfolio`, 各独立 repo `soodooi/ctrl-<name>`, 自带 LICENSE; **非 scoped** 因 npm `@ctrl` 已被第三方占, `ctrl-<name>` 保 repo/Discover/npm 名一致无冲突)。商业不变 = **open-core** (付费云/托管/sync/premium = substrate; 开源 core + 免费 commons = 网络效应护城河; copyleft 防 core 被闭源拿走)。**Supersedes CLAUDE.md hard rules** (All Rights Reserved / 子包 private:true+UNLICENSED / 禁 npm publish @ctrl/*)。第三方依赖各保 license (AGPL 兼容 MIT/Apache/BSD; AGPL 依赖如 Teable 仅参考不 vendoring, 守 ADR-002 v30)。REST 调用用户自托管 AGPL 服务 (如 Ghostfolio) 非衍生作品, 无 AGPL 传染。
   - v8 2026-06-25: **§1 acceptance — clear the volc-paid-fallback code remnant (ADR↔impl drift fix).** v3 (2026-06-09) retired the "irisy.fallback = CTRL-paid volc" path and banned any CTRL-paid auto-fallback, but the kernel still hardcoded `CTRL_FALLBACK_PROVIDER_ID = "volc"` (registry.rs) — and `volc` had also been dropped from BUILTIN_MANIFESTS, so the default fallback pointed at a manifest that is never seeded (the out-of-box path was simply broken: a fresh user's fallback resolved to nothing). bao 2026-06-25 surfaced it ("not every user has a Volc key — you're designing a system"). Fix: the fallback slot now seeds to local `ollama` (0 CTRL cost, 0 vendor key, device-first per CLAUDE.md derived rule #2 — runs offline), which IS the v3 posture: no CTRL-paid fallback; the only always-available zero-cost substrate is the user's own machine (CTRL bootstrap ships hermes3:8b). A CF Workers AI / CTRL-brand cloud provider may take the slot later, but only behind the ctrl-cloud secrets pipeline. Also unified all credential reads through `registry::read_credential` (encrypted vault, not the OS keyring — the keyring apple-native path silently returned nothing under the signed CTRL.app, so three call sites never saw a stored key). No new direction — completes v3. (Note: `.claude/rules/mcp-llm-reference.md` Pattern D still names CF Workers AI as the default — superseded by v3/v8, left as historical reference.)
   - v7 2026-06-25: **§2 + §5 amend — 国内 IM (微信/企微/钉钉/飞书) 重定性: hermes 网关自带能力经 gate 暴露, 非 CTRL 自建 CN adapter.** 来由 (review-only, 网上核实 hermes 上游): NousResearch hermes-agent 已原生支持 Weixin (个人微信, 腾讯 iLink Bot API) + WeCom (企业微信 + 自建应用回调), 国内 IM 接全, 都是 hermes messaging gateway (27+ 平台) 自带能力. **修正 §2 integration-priority 的成本假设**: 微信此前列为 "Lower / CN-only / regional adapter packages, not core", 潜台词「要自己写 adapter, 很贵」—— 与上游现实漂移. 真实成本只在「起 hermes 网关 + 扫码 wizard UI + `:17873` gate 接线」, 不在写 connector (与 ADR-001 spine § byo-cli-driver 一致: hermes 是 Irisy 的脑且不退役, 其网关 IM 覆盖应显式入册). 多渠道 IM 的 "NOT shipped" (§5 / ADR-001) 限定为「CTRL 不自建 IM 网关」, 非「不可用」—— 经 hermes 网关投影 + gate 暴露即可用. 候选目标已记 `vault/ctrl/GOAL.md` (排在两信任域重构之后, 依赖其 gate 治理面). 无新方向, 纯成本/优先级重定性 + 与上游对齐.
   - v6 2026-06-19: **NEW §6 cold-start-loop** — bao 2026-06-19 钦定方向「建立 ADR 唯一真相,再开发」for the home / 用户能下载 / functional user-loop ask. Aggregates the cold-start path (download → install → first-run → BYOK key → first value → output lands) — decisions already existed but were散落 across §1 (BYOK onboarding) / ADR-003 §8 (morphing home, SHIPPED) / ADR-004 §2 (Tauri updater + distribution) and never connected into one verified line. **Fixes a §1 ADR-vs-impl drift**: §1 requires "no provider → clear 'no provider configured' message + onboarding link", but shipped PWA renders a misleading `upgradeStub "Irisy is connecting"` (探查 2026-06-19, `IrisyChat.tsx`). Locks the loop's acceptance (P0 honest-degrade + inline-config + first_run_state上屏; P1 notarization + landing + artifact export; P2 Win). Guards ADR-003 §8.3 anti-pattern (NO mandatory wizard / NO account-before-value). No new direction invented — each gate's decision lives in its cited ADR.
@@ -120,6 +121,23 @@ Write-ops to connected products still gate (intent → review → approve → ex
 | **Two GTMs, one platform** | Consumer (low-barrier general user) and enterprise (system integration) share ONE platform; pick a lead wedge per go-to-market. Enterprise/data-sovereignty has stronger pay signals. |
 
 Aligns with §1 (BYOK aggregator-first — "sell tools + platform, not models") and §3 (local-is-truth). Memory `project-ctrl-local-ai-frontend-over-business-systems`.
+
+### §5.1 Open-source & license model (NEW v9, bao 2026-06-25)
+
+bao 2026-06-25: CTRL and its feature packs go open-source. This is the
+**open-core form** of the §5 "monetize the substrate, commons free" lock —
+NOT a reversal of it. The license choice fixes the moat's shape:
+
+| Surface | License | Why |
+|---|---|---|
+| **CTRL core** | **AGPL-3.0** | Copyleft IS the moat: anyone who modifies CTRL and offers it as a service must open-source their changes — a cloud vendor can't fork it closed. Self-hosting / personal use stays fully free (same posture as Ghostfolio, GitLab CE). Replaces the old "All Rights Reserved". |
+| **Feature packs** | **MIT** | Packs are commons definitions (§5 share-and-be-shared). Permissive licensing maximizes ecosystem sharing/adoption — no copyleft friction for someone publishing a connector. |
+
+- **Naming = `ctrl-<name>`** (e.g. `ctrl-ghostfolio`, `ctrl-feishu`), one repo each (`soodooi/ctrl-<name>`) with its own LICENSE. **Non-scoped on purpose**: the npm `@ctrl` scope is taken by a third party, so `ctrl-<name>` keeps repo / Discover-listing / npm-package names aligned and conflict-free.
+- **Monetization unchanged = open-core.** Revenue = the substrate (paid CTRL cloud / hosting / sync / premium), per §5. The open core + the free commons ARE the network-effect moat; copyleft protects the core from being taken closed.
+- **Dependency hygiene.** Third-party deps keep their own licenses (AGPL is compatible with MIT/Apache/BSD deps). An AGPL dep like Teable stays reference-only, never vendored (ADR-002 v30). Calling a user's self-hosted AGPL service (e.g. Ghostfolio) over REST is NOT derivative work — no AGPL contagion to CTRL.
+
+**Supersedes** the CLAUDE.md hard rules "License: All Rights Reserved / all sub-packages private:true + UNLICENSED / no `npm publish` of `@ctrl/*`". CLAUDE.md updated to match.
 
 ## §4 Policy envelope — L3/L4/L5 autonomy + blast-radius + typed-ISA (NEW v2, 2026-06-04)
 
