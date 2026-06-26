@@ -19,8 +19,8 @@
 // personality; the conversation persists across switches.
 
 import { IRISY_SYSTEM_DEFAULT } from './irisy-prompts';
-import { CODE_COMPANION_SYSTEM_PROMPT } from '@/personas/irisy/code-companion';
-import { IRISY_MCP_CREATOR_PROMPT } from '@/personas/irisy/mcp-creator';
+import { CODE_COMPANION_SYSTEM_PROMPT } from '../personas/irisy/code-companion';
+import { IRISY_MCP_CREATOR_PROMPT } from '../personas/irisy/mcp-creator';
 
 /** L1 scenes that can auto-link a role (ADR-003 §8.6 lock 5). */
 export type SceneKind = 'notes' | 'tables' | 'coding';
@@ -63,7 +63,10 @@ const CODE_COMPANION: Role = {
   label: 'Code Companion',
   hint: 'Pairs with the Coding terminal',
   persona: CODE_COMPANION_SYSTEM_PROMPT,
-  toolset: [],
+  // Dev-focused packs (ids from OFFICIAL_PACKS in feature-pack.ts). A whitelist:
+  // this role only sees these, so the coding session stays uncluttered. Packs
+  // the user hasn't installed simply don't appear.
+  toolset: ['dev-box', 'git-box', 'cf-workers', 'disk-box'],
   kbScope: null,
 };
 const TOOL_MAKER: Role = {
@@ -96,4 +99,29 @@ export function roleForScene(scene: SceneKind | null): RoleId | null {
     default:
       return null;
   }
+}
+
+/** The feature packs this role exposes, filtered from what's installed.
+ *  An empty toolset means the role is unconstrained (sees ALL installed packs);
+ *  a non-empty toolset is a whitelist of pack ids. Generic over the pack shape
+ *  so both the Sidebar (FeaturePack) and the prompt (McpSummary) can use it. */
+export function packsForRole<T extends { id: string }>(
+  role: Role,
+  installed: readonly T[],
+): T[] {
+  if (role.toolset.length === 0) return [...installed];
+  const allow = new Set(role.toolset);
+  return installed.filter((p) => allow.has(p.id));
+}
+
+/** A system-context line pinning Irisy to this role's knowledge base, or null
+ *  when the role spans the whole vault (kbScope === null). This is how a future
+ *  data-scoped role (e.g. a Stocks role bound to a stocks vault) constrains
+ *  retrieval — the kbScope dimension of (persona, toolset, knowledge base). */
+export function kbScopeAmbient(role: Role): string | null {
+  if (!role.kbScope) return null;
+  return (
+    `Knowledge base scope: this role works within "${role.kbScope}" in the vault. ` +
+    `Read, search and cite notes under that path; treat it as the active knowledge base.`
+  );
 }

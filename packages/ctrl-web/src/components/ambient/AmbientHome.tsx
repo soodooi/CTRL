@@ -43,6 +43,8 @@ import {
   DEFAULT_ROLE_ID,
   roleById,
   roleForScene,
+  packsForRole,
+  kbScopeAmbient,
   type RoleId,
 } from '@/lib/roles';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
@@ -78,7 +80,9 @@ import {
   vaultSearch,
   captureScreenAndOcr,
   csStdin,
+  listMcps,
   type IrisySessionTurn,
+  type McpSummary,
 } from '@/lib/kernel';
 import { platform } from '@/lib/bridge';
 import { useCodingSession } from '@/lib/coding-session';
@@ -353,16 +357,25 @@ export function AmbientHome({
       // The active role chooses the persona (ADR-005 v6). The default role keeps
       // its vault override (a user-edited irisy-system.md still wins); other
       // roles supply their persona verbatim. SOUL.md is appended either way.
-      const baseOverride =
-        roleId === DEFAULT_ROLE_ID ? undefined : roleById(roleId).persona;
-      const [base, brain] = await Promise.all([
+      const role = roleById(roleId);
+      const baseOverride = roleId === DEFAULT_ROLE_ID ? undefined : role.persona;
+      const [base, brain, allMcps] = await Promise.all([
         loadIrisySystemPromptWithSoul(baseOverride),
         loadBrainState(),
+        // listMcps fails in browser-only dev (no kernel) — degrade to no packs.
+        listMcps().catch(() => [] as McpSummary[]),
       ]);
+      // toolset (ADR-003 §8.6): the role decides which installed packs Irisy
+      // sees this turn (empty toolset = all; otherwise a whitelist).
+      const roleMcps = packsForRole(role, allMcps);
       // Ambient context: if a smart table is open, tell Irisy which file it is
       // so "filter / sort / AI-fill / add a row to THIS table" resolves to a
       // path without the user naming it (the smart_table.* gate tools need it).
       const ambient: LLMMessage[] = [];
+      // kbScope (ADR-003 §8.6): pin Irisy to this role's knowledge base when it
+      // declares one (null = whole vault, so nothing is injected).
+      const kb = kbScopeAmbient(role);
+      if (kb) ambient.push({ role: 'system', content: kb });
       if (scene === 'tables' && activeTablePath) {
         ambient.push({
           role: 'system',
@@ -391,7 +404,16 @@ export function AmbientHome({
         });
       }
       const history: LLMMessage[] = [
-        { role: 'system', content: composeSystemPrompt({ base, brainState: brain }) },
+        {
+          role: 'system',
+          content: composeSystemPrompt({
+            base,
+            brainState: brain,
+            // Only inject the mcp list when the role actually exposes packs —
+            // an empty list would render a "none yet" section every turn.
+            ...(roleMcps.length > 0 ? { mcps: roleMcps } : {}),
+          }),
+        },
         ...ambient,
         ...[...messages, userMsg].map((m) => ({
           role: m.role,
@@ -1240,6 +1262,7 @@ export function AmbientHome({
               modelLabel={modelLabel}
               providerId={providerId}
               onModel={onOpenPicker}
+              roleId={roleId}
             />
             {!isNarrow && (
               <div
