@@ -2,9 +2,9 @@
 adr_id: 005
 module: irisy
 title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down (3-agent aggregator era)
-version: 5
+version: 6
 status: accepted
-last_updated: 2026-06-09
+last_updated: 2026-06-25
 deciders: [bao, zeus, hephaestus]
 sections:
   - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004) }
@@ -20,6 +20,7 @@ changelog:
   - v3 2026-06-04: **NEW §5 self-reflection-loop** — Irisy implements Loop 1 of ADR-001 §8 self-evolution. Three layers: client-side rule-based **Detect** (failure signals → episodes), Pi background subagent **Reflect** (Letta-code stateless mode, idle-30min trigger), playbook **Improve** (injected into next IrisyChat system prompt). Reuses ADR-002 §11 audit-ledger for cross-loop accountability. Per bao "不仅仅 Irisy LLM, 整个系统都要自我升级成长 — Irisy 自己有自我成长的能力". Brainstorm: `.olym/brainstorm/irisy-self-reflection-loop-2026-06-04.md` + `.olym/brainstorm/system-self-evolution-2026-06-04.md` §3.1.
   - v4 2026-06-04: **NEW §6 capability-decomposition + §7 pi-extension-integration** — root-cause fix for "Pi 一切动词都 install_mcp" + "Pi 说我没 skill 系统" 实测 fail. ctrl-pi-bridge 升级从 provider-only → registerTool + 3 hook (before_agent_start chain / tool_call inspector / resources_discover skills 贡献), Pi `--no-tools` → `--no-builtin-tools` (撤 7 个 built-in 但保 extension 注册的). System prompt 从 monolithic 200 行 → thin base (~30 行) + 8 capability segment, 通过 `before_agent_start` hook 按关键词动态注入 (token cache 友好). PWA `<call>` XML loop 保留作 Volc Qwen/Llama 弱模型 fallback. 调研: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2 §3 (Pi/Letta/Cline/Goose/Cursor 对标) + §8 (background agent 深拉源码).
   - v5 2026-06-09: **Irisy reframed as PWA persona shell (H-2026-06-09-002).** bao 2026-06-09 校准: "Irisy 是表象". Irisy is **no longer a brain / agent runtime** — the brain role belongs to 3 external agents (hermes / opencode / kairo per ADR-002 §1 v19). Irisy is now the PWA UX persona layer: (1) **Avatar + branding** — Irisy character, voice, blink animation (Lottie). (2) **System-prompt injection** — wraps user message with CTRL substrate context (active provider info, Notes folder path, OS hint) before routing to whichever agent matches active L1 chip (default `/assistant` → hermes). (3) **Sycophancy filter** — `packages/ctrl-web/src/lib/persona-filter/patterns.md` (relocated from retired `packages/ctrl-pi-bridge/data/persona-patterns.md`). (4) **Drill-down** — long-press / Alt-click reveals raw agent output before filter. RETIRED sections: lifecycle (moves to ADR-004 § mcp execution), soul-md-compat (applies to hermes memory, not Irisy), self-reflection-loop (migrates to hermes as `~/.ctrl/skills/auto-reflect/SKILL.md`), capability-decomposition (no Irisy system prompt — agents own theirs), pi-extension-integration (Pi exited, ctrl-pi-bridge deleted). Per memory `feedback_no_redundancy_one_ssot` 🔒: hermes is the sole substrate-level agent memory primitive — Irisy doesn't duplicate.
+  - v6 2026-06-25: **§persona-shell + §3 amend — 单一品牌声音 → 可灵活配置的功能角色 (bao 理念「每个功能配 persona + 功能包,灵活配置不焊死」).** Amends `decision_one_persona_irisy`: Irisy 仍是**单一品牌/声音/形象** (绝不分裂成 Janus/Talos 多重人格),但新增**可切换的功能角色** = 每个 L1 一份 `(persona, 功能包[])` 的**灵活配置**。persona 池与功能包池**解耦**、可组合、可跨 L1 复用 —— 换 persona / 加功能包 = 改配置,不动代码 (✗ 不是焊成一个不可分单元)。当前角色显示 + 切换在**对话框上方**;切角色时对话流持续 (不重置)。Supersedes §3「no global persona library」:现在有一个小的策展角色池 + 每-L1 配置,但仍是**扁平配置**不是 brain-self-aware indirection mesh。**L1 ≠ 角色** (L1 = 功能模块含数据/workspace;角色 = 其 persona 配置面)。设计 SSOT = `vault/ctrl/irisy-roles.md`。开放点 (L1↔角色联动 / 初始角色集 / 用户自建角色 v1) 在该文档跟踪。配对 ADR-003 § home (角色切换器 UI)。不动 sycophancy filter / drill-down / 单一品牌声音锁。
 related:
   - .olym/decisions/002-substrate.md
   - .olym/decisions/003-frontend.md
@@ -42,7 +43,7 @@ Irisy = vertically-cross-cutting companion. **8 stages**, each with explicit rol
 
 **Companion ≠ in-your-face**:
 - Default visibility = bubble (collapsed); user click → drawer
-- **Single user-facing persona** (memory `decision_one_persona_irisy` 🔒) — Irisy never switches; internal sub-modes invisible
+- **Single brand voice, switchable functional roles** (amends `decision_one_persona_irisy` 🔒, v6 2026-06-25) — Irisy stays ONE character / voice / brand (never splits into Janus/Talos multi-personalities), but exposes **switchable functional roles** = a flexibly-configured `(persona + toolset)` per L1, shown + switched **above the chat box**, conversation persisting across switches. Switching a role ≠ splitting the persona. Persona pool ⊥ toolset pool (decoupled, composable, cross-L1 reusable; swap/add = config not code). **L1 ≠ role** (L1 = module incl. data/workspace; role = its persona facet). Design SSOT `vault/ctrl/irisy-roles.md`
 - **First-class PWA page**, not a mcp (memory `decision_irisy_is_pwa_native_not_keycap` 🔒)
 - Drawer slides from bottom or right; never full-screen takeover (ADR-003 § nav-keyboard)
 
@@ -73,7 +74,9 @@ Memory `project_remote_co_view_is_irisy` 🔒 — 远程同屏 / mirror / 跨设
 
 ## §3 Persona rule + prompt v5 (binding)
 
-**Persona is per-mcp** — lives inside `cap_asset.files` as markdown (ADR-002 § composition axis 6). Vault override `vault/mcps/<id>/persona.md` wins; no global persona library, no shared persona indirection.
+**Persona sources** (amended v6 2026-06-25 — flexible config, not per-mcp-only):
+- **Per-mcp persona** (original) — lives inside `cap_asset.files` as markdown (ADR-002 § composition axis 6); vault override `vault/mcps/<id>/persona.md` wins.
+- **Role persona pool** (NEW v6) — Irisy's switchable functional roles draw from a small curated persona pool (`lib/irisy-prompts.ts` + `personas/irisy/*`); a persona is **decoupled from any single mcp** and composable into a role. This **supersedes the old "no global persona library" lock** — there IS now a flat curated pool, but it stays a flat pool + per-L1 `(persona, toolset[])` config, NOT a brain-self-aware indirection mesh. Roles switch above the chat box; conversation persists. Design SSOT `vault/ctrl/irisy-roles.md`.
 
 **Irisy prompt v5** (`vault/.irisy-prompts/irisy-system.md`):
 

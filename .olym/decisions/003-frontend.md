@@ -2,7 +2,7 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 21
+version: 22
 status: accepted
 last_updated: 2026-06-25
 deciders: [bao, zeus, daedalus]
@@ -13,6 +13,7 @@ sections:
   - { id: shell-4col,    source: new-2026-06-01 }
   - { id: agent-routes,  source: H-2026-06-09-002 校准 }
 changelog:
+  - v22 2026-06-25: **§8.6 NEW — 对话框上方角色切换器 (bao 理念「每个功能 = 角色 + 功能包,灵活配置不焊死」,配对 ADR-005 v6).** home 两正交轴:**L1 rail (左) = 数据/模块导航**(notes/tables/coding/…,`Sidebar.tsx` 不变);**角色切换器 (对话框上方) = Irisy 当前功能角色 = 每个 L1 一份 `(persona, 功能包[])` 灵活配置**,显示 + 切换在对话框上方,切角色对话流持续(不重置会话)。锁:(1) **角色 = (persona, 功能包) 配置,非焊死单元** —— persona 池 (`lib/irisy-prompts.ts`+`personas/irisy/*`) ⊥ 功能包池 (`lib/feature-pack.ts`+ 已装 MCP actions),各自可选项池,L1 用声明式配置组合,换 persona/加包 = 改配置不动代码,跨 L1 可复用;(2) **L1 ≠ 角色** —— L1 比角色大(含数据 + workspace),角色只是 L1 的 persona 面;有些 L1 不挂角色(discover/settings = 纯导航);(3) **位置 = 对话框上方**(`AmbientHome.tsx` 形变列头部);(4) **单一品牌声音不变**(ADR-005 单一品牌锁),切角色 ≠ 多重人格(始终是 Irisy)。bao 同步拍板 3 决策:**L1↔角色联动 = 是**(输入框上方显示现行角色 + 可手动切,切角色不改对话);**角色 = (persona, 功能包[], 知识库)** 三维,同 persona 按功能包+知识库派生(默认 = 个人知识库助理,股票角色 = 同 KB persona + 股票包 + 股票库);**v1 不做新建角色**(注册表留接口)。设计 SSOT = `vault/ctrl/irisy-roles.md`。本节锁设计,实装 = 后续切片(v1 未发)。NOT 改 spine;NOT 改单一品牌锁。
   - v21 2026-06-25: **Notes 模块收敛为薄 KB 层 + vault 根可配置 + 同步=组合(bao 多轮校准,事实源 `vault/ctrl/notes-module-plan.md`).** 重申 v9/v33「Notes = Obsidian 兼容、CTRL 不自带编辑器」并据业界调研(AI×Obsidian:无一工具重造编辑器,皆用 Obsidian 或操作 vault 文件)落地三块:(1) **Notes = 薄查看/导航层,不是 Obsidian 克隆** —— 废掉未提交 WIP 的 GraphView(中心图谱)+ CommandPalette(交给 Obsidian);保留树/搜索/标签/反链(只读导航)+ 轻量内联 markdown 编辑;**auto-save**(停手 700ms 自存,无手动 save);**文件夹管理**(新建/重命名/删除,右键文件夹头);树**可折叠**(120 文件平铺 → 折叠树);frontmatter 面板默认折叠。**修关键 bug**:`MarkdownViewer.isSmartTable` 因 `ensureRowIds` 注入系统 ID 列而恒真 → 每个笔记(含 README/空笔记)都开成智能表格 → 改判「有非系统列」。(2) **vault 根 = 用户配置**(非写死)—— `default_vault_root()` 改读 `~/.ctrl/config.json`,首次运行**原生文件夹选择器**(Tauri dialog 插件)引导用户指向自己的 Obsidian vault,`~/Documents/CTRL/` 退为 fallback;Settings→General→Vault 可切换。这样「CTRL 与 Obsidian 同 vault」靠配置成立 = 数据主权护城河。(3) **vault 同步 = 组合不自建** —— CTRL 不造同步;用户的 Obsidian Sync/Syncthing/iCloud/git 搬运文件即顺带同步 CTRL 读写(CTRL 不在数据路径);唯一助手 = 薄 `vault_git_sync`(init→add→commit→push,无 origin 降本地)+ Auto-sync 开关(定时+切走触发);**完整 mesh(ADR-002 §4 Automerge CRDT)留 v1.1+ 且仅给 CTRL 自有跨设备态,不碰 vault 文件**(两个 merge owner 损坏文件)。落点:`kernel/vault.rs`(configured/set vault_root + auto_sync)、`commands/{vault,git}.rs`、`components/{VaultSetup,notes/*}.tsx`、`hooks/useAutoSync.ts`、`viewers/{MarkdownViewer,useViewerResource}`。NOT 改 spine;NOT 自造编辑器/同步协议;收敛不推倒(废的是未入册 WIP)。
   - v1 2026-05-31: module reorg — merged orig-002 (PWA pivot + Irisy-as-sole-entry + Keyboard drag-install) + orig-020 (VMark stack adoption: Tiptap + CodeMirror 6 + mermaid + smart table + vault browser).
   - v2 2026-05-31: § nav-keyboard — Settings enters L1 (bao "L1 上的 setting 页面, 点击打开就是 setting 页面, 其中一个页面就是 providers"). Replaces v1 "Settings via StatusBar cog". L1 buttons under `▾`: [Chat] [New] [Vault] [Coding] [Settings]. Each opens its route in workspace EXPANDED area; no floating cog.
@@ -561,6 +562,25 @@ This is neither §7.1's `[▾ Irisy Mcp-pool Coding Settings]` nor § nav-l1 v5'
 **Irisy pane geometry** — `AmbientHome.tsx:147,201`: right-anchored, `irisyWidth` default **480px**, divider-draggable clamp **`Math.max(300, Math.min(640, …))`**. SUPERSEDES §7.8's 380–430 constraint and the changelog-v7 320–820 figure (both stale).
 
 **Brain note**: the home chat path routes through the in-process provider router (Pi exited the hot path, ADR-002 v20 §1.5) — NOT Pi, despite a stale "Pi default" comment in `lib/llm-transport.ts:262` (cosmetic, tracked as `.olym/decisions/DRIFT.md` D5). hermes is fully wired (install / `assistant_oneshot` / dashboard `:17890` / hermes-first branch in `irisy_chat.rs:151-195`) but its turn interception is intentionally **gated off** per bao 2026-06-12 decision A until hermes ships ACP streaming — an ADR-002 v20 intended interim, not a frontend concern.
+
+### §8.6 Role switcher — above the chat box (NEW v22 — 2026-06-25)
+
+bao 理念: **每个功能 = 角色 + 功能包,灵活配置不焊死**。配对 ADR-005 v6 的 persona 模型(单一品牌声音 + 可切换功能角色)。home 有**两条正交轴**:
+
+- **L1 rail（左侧）** = 数据/模块导航(notes / tables / coding / …)— `Sidebar.tsx`,不变。
+- **角色切换器（对话框上方）** = Irisy 当前**功能角色** = 一份灵活配置的 `(persona, 功能包[])`。显示当前角色 + 就地切换;**切角色时对话流持续**(不开新会话)。**尚未实装** —— 本节锁设计。
+
+Locks:
+
+1. **角色 = (persona, 功能包) 配置,非焊死单元。** persona 池(`lib/irisy-prompts.ts` + `personas/irisy/*`)⊥ 功能包池(`lib/feature-pack.ts` + 已装 MCP actions);每个 L1 声明式地配「绑哪个 persona + 挂哪些功能包」;换 persona / 加包 = 改配置不动代码。两者是扁平池 + 每 L1 配置(对齐 ADR-005 v6 §3 persona sources),可跨 L1 复用。
+2. **L1 ≠ 角色。** L1 是模块(数据 + workspace),角色只是它的 persona 切面。有些 L1 不挂角色(discover / settings = 纯导航)。
+3. **切换器位置 = 对话框上方**(`AmbientHome.tsx` 形变列头部,挨着 "Irisy" 标签 / 历史图标)。单一品牌(仍是 Irisy,ADR-005 单一品牌锁)—— 切角色 ≠ 多重人格。
+4. **对话持续化**:persona / 功能包是**每轮可变的上下文**;hermes 会话历史**不随角色切换重置**。
+5. **L1 ↔ 角色联动 = 是**(bao 2026-06-25):切 L1 时角色随之联动;输入框上方显示现行角色 + 可手动切换;切角色不改对话(= lock 4)。
+6. **角色的第三维 = 知识库(数据)**:角色 = `(persona, 功能包[], 知识库)`。同 persona 按「功能包 + 对应知识库」派生多角色 —— 例:**个人知识库助理(默认角色)= KB persona + 通用 notes 包 + 个人 vault**;**股票角色 = 同 KB persona + 股票功能包 + 股票知识库**。
+7. **初始角色集 + v1 范围**(bao 2026-06-25):默认 = 个人知识库助理;初始集 = 个人知识库助理 / 编程伴侣 / 工具创作;**v1 不做"新建角色"**,注册表留接口。
+
+设计 SSOT = `vault/ctrl/irisy-roles.md`(§七 3 决策已落)。实装 = 后续切片(v1 未发)。
 
 ## Dependencies
 
