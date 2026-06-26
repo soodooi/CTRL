@@ -147,6 +147,10 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
         // the gate's mcp_pack_* tools — only hermes holds them, direct has none)
         "feature pack", "install a tool", "install the tool", "use a tool",
         "run an action", "run the tool", "my portfolio", "my holdings", "my stocks",
+        // market-data intents (ADR-005 irisy § persona-shell v5 §6.2, 2026-06-26):
+        // stock/quote turns read live data via the gate's http.get — only the
+        // agent path holds tools; provider-direct has none and would hallucinate.
+        "stock", "ticker", "watchlist", "stock price", "stock quote", "daily review",
         // Chinese phrases (escaped; gloss in comment)
         "\u{7b14}\u{8bb0}",                 // note
         "\u{77e5}\u{8bc6}\u{5e93}",         // knowledge base
@@ -193,6 +197,14 @@ fn cjk_query_needles() -> Vec<String> {
         &[0x8868, 0x91CC],                 // in the table
         &[0x6392, 0x5E8F],                 // sort
         &[0x5206, 0x7EC4],                 // group
+        // market-data intents (ADR-005 irisy § persona-shell v5 §6.2, 2026-06-26)
+        &[0x76EF, 0x76D8],                 // watch the market
+        &[0x9009, 0x80A1],                 // pick stocks
+        &[0x80A1, 0x7968],                 // stock
+        &[0x80A1, 0x4EF7],                 // stock price
+        &[0x884C, 0x60C5],                 // quote / market data
+        &[0x5927, 0x76D8],                 // the broad market
+        &[0x590D, 0x76D8],                 // daily review / recap
     ];
     CODEPOINTS
         .iter()
@@ -484,6 +496,19 @@ mod tests {
         assert!(turn_needs_agent(&user("filter by stage and sort by amount")));
         assert!(turn_needs_agent(&user("show the leads in a kanban board")));
         assert!(turn_needs_agent(&user("query my smart table for won deals")));
+        // ADR-005 irisy § persona-shell v5 §6.2 — market-data turns read live
+        // quotes via the gate's http.get; only the agent path holds tools.
+        assert!(turn_needs_agent(&user("what's the AAPL stock price today")));
+        assert!(turn_needs_agent(&user("track these tickers for me")));
+        assert!(turn_needs_agent(&user("add NVDA to my watchlist")));
+        // Chinese market-data intents (code-point escaped to keep the source
+        // all-English): watch-the-market (U+76EF U+76D8) and pick-stocks
+        // (U+9009 U+80A1) — both must reach the agent path for http.get.
+        assert!(turn_needs_agent(&user("\u{76EF}\u{76D8}")));
+        assert!(turn_needs_agent(&user("\u{5e2e}\u{6211}\u{9009}\u{80A1}")));
+        // daily review / recap (U+590D U+76D8) routes to the agent too.
+        assert!(turn_needs_agent(&user("\u{4eca}\u{65e5}\u{590D}\u{76D8}")));
+        assert!(turn_needs_agent(&user("give me a daily review")));
     }
 
     #[test]

@@ -52,6 +52,19 @@ server (already connected) gives you tools to read / write / search the user's \
 notes and Obsidian vault at ~/Documents/CTRL/Notes (vault.* tools), plus \
 clipboard, OCR and image/video generation. When the user asks about their notes, \
 Obsidian, or knowledge, USE these tools — do not answer from memory alone. \
+For live market data you have two controlled tools — use them, never invent a \
+quote. market_quote takes symbols (a list of tickers; Yahoo suffixes: .SS \
+Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^) \
+and returns price + currency + change_pct for each. market_screen takes screen \
+= day_gainers | day_losers | most_actives and returns the day's top movers. The \
+user's own watchlist lives in their vault at Stocks/watchlist.md (one ticker per \
+line); read it with the vault tools, then market_quote those symbols. For a \
+daily review, combine: (a) the major indices via market_quote ^GSPC ^IXIC ^DJI \
+(US) + 000001.SS 399001.SZ ^HSI (Greater China); (b) market_quote each ticker \
+in Stocks/watchlist.md (skip if the file is absent); (c) market_screen \
+day_gainers and day_losers for notable movers. Then write a concise recap: \
+indices first, then how the watchlist did, then anything notable. Always show \
+real numbers you fetched, never invented ones. \
 Your long-term memory is the user's SOUL.md (ADR-005 irisy v5 §6.3): read it and \
 persist durable facts THERE via the ctrl soul/memory tools, not in your own \
 private store, so the chat and agent paths share one memory and never drift.]";
@@ -95,7 +108,16 @@ fn build_mcp_servers() -> Vec<Value> {
         "type": "http",
         "name": "ctrl",
         "url": format!("http://127.0.0.1:{port}/mcp"),
-        "headers": [{ "name": "Authorization", "value": format!("Bearer {token}") }]
+        // Stamp the caller so the gate recognizes Irisy as first-party and
+        // projects the broad first-party toolset (vault/smart_table/notes/...).
+        // Without this header the gate normalizes the caller to "external" and
+        // applies the minimal scope (system tools only — 2 tools), so Irisy
+        // could not reach vault.* at all (ADR-010 communication § trust-domains
+        // v3, SC3 — intent-scoped projection; default_for_caller("hermes")).
+        "headers": [
+            { "name": "Authorization", "value": format!("Bearer {token}") },
+            { "name": "x-ctrl-caller", "value": "hermes" }
+        ]
     })]
 }
 

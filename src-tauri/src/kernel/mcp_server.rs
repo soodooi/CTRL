@@ -487,6 +487,23 @@ pub struct McpProxyCallArgs {
     pub arguments: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MarketQuoteArgs {
+    /// Ticker symbols, e.g. ["AAPL", "600519.SS", "0700.HK", "^GSPC"].
+    /// Yahoo suffixes: `.SS` Shanghai, `.SZ` Shenzhen, `.HK` Hong Kong;
+    /// US tickers bare; index symbols start with `^`.
+    pub symbols: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MarketScreenArgs {
+    /// Predefined screen id: `day_gainers`, `day_losers`, or `most_actives`.
+    pub screen: String,
+    /// Max rows to return (default 10, capped at 50).
+    #[serde(default)]
+    pub count: Option<u32>,
+}
+
 // ─── Router impl + tools ────────────────────────────────────────────────
 
 #[tool_router]
@@ -1664,6 +1681,105 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
+    /// market.quote — live quotes for a set of tickers. A CONTROLLED data tool
+    /// (ADR-010 communication § trust-domains v3, SC3): unlike raw http.get
+    /// (domain `net`, kept off first-party to deny exfiltration), this only ever
+    /// GETs Yahoo Finance's fixed chart endpoint and returns parsed price /
+    /// currency / day-change — it cannot reach an arbitrary URL or POST. So the
+    /// `market` domain is first-party-visible and Irisy can watch a list / quote
+    /// without opening the raw-network exfil surface (bao 2026-06-26).
+    #[tool(
+        description = "Live stock/index quotes for tickers (Yahoo Finance, no key). \
+Returns price, currency, and percent change vs previous close. Use Yahoo \
+suffixes: .SS Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices \
+start with ^ (e.g. ^GSPC, ^IXIC, ^HSI)."
+    )]
+    async fn market_quote(
+        &self,
+        Parameters(args): Parameters<MarketQuoteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if args.symbols.is_empty() {
+            return Err(McpError::invalid_params("symbols must not be empty", None));
+        }
+        if args.symbols.len() > 50 {
+            return Err(McpError::invalid_params("at most 50 symbols per call", None));
+        }
+        let mut out: Vec<serde_json::Value> = Vec::with_capacity(args.symbols.len());
+        for sym in &args.symbols {
+            let Some(safe) = sanitize_ticker(sym) else {
+                out.push(serde_json::json!({ "symbol": sym, "error": "invalid ticker" }));
+                continue;
+            };
+            let url = format!(
+                "https://query1.finance.yahoo.com/v8/finance/chart/{safe}?interval=1d&range=1d"
+            );
+            match yahoo_get(&url).await {
+                Ok(j) => {
+                    let m = &j["chart"]["result"][0]["meta"];
+                    let price = m["regularMarketPrice"].as_f64();
+                    let prev = m["chartPreviousClose"]
+                        .as_f64()
+                        .or_else(|| m["previousClose"].as_f64());
+                    let change_pct = match (price, prev) {
+                        (Some(p), Some(pc)) if pc != 0.0 => Some((p - pc) / pc * 100.0),
+                        _ => None,
+                    };
+                    out.push(serde_json::json!({
+                        "symbol": sym,
+                        "price": price,
+                        "currency": m["currency"].as_str().unwrap_or(""),
+                        "change_pct": change_pct,
+                    }));
+                }
+                Err(e) => out.push(serde_json::json!({ "symbol": sym, "error": e.message })),
+            }
+        }
+        let body = serde_json::to_string(&out).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// market.screen — the day's notable movers from a predefined Yahoo screen.
+    /// Same controlled shape as market.quote: the screen id is whitelisted and
+    /// the URL is fixed, so the `market` domain stays exfil-free (ADR-010
+    /// communication § trust-domains v3, SC3).
+    #[tool(
+        description = "Predefined stock screen (Yahoo Finance, no key). screen = \
+day_gainers | day_losers | most_actives. Returns symbol, name, price, and \
+percent change for the top movers."
+    )]
+    async fn market_screen(
+        &self,
+        Parameters(args): Parameters<MarketScreenArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let screen = match args.screen.as_str() {
+            s @ ("day_gainers" | "day_losers" | "most_actives") => s,
+            other => {
+                return Err(McpError::invalid_params(
+                    format!("unknown screen '{other}' (use day_gainers|day_losers|most_actives)"),
+                    None,
+                ))
+            }
+        };
+        let count = args.count.unwrap_or(10).min(50);
+        let url = format!(
+            "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds={screen}&count={count}"
+        );
+        let j = yahoo_get(&url).await?;
+        let mut out: Vec<serde_json::Value> = Vec::new();
+        if let Some(arr) = j["finance"]["result"][0]["quotes"].as_array() {
+            for x in arr {
+                out.push(serde_json::json!({
+                    "symbol": x["symbol"],
+                    "name": x["shortName"],
+                    "price": x["regularMarketPrice"],
+                    "change_pct": x["regularMarketChangePercent"],
+                }));
+            }
+        }
+        let body = serde_json::to_string(&out).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
     /// mcp.proxy_list_tools — list tools advertised by a downstream MCP
     /// server (the kernel relays the request to that server).
     #[tool(
@@ -2348,6 +2464,49 @@ fn map_vault_err(e: vault::VaultError) -> McpError {
 
 fn map_serde_err(e: serde_json::Error) -> McpError {
     McpError::internal_error(format!("serialize: {e}"), None)
+}
+
+/// Validate + URL-encode a ticker for the market.* tools. Rejects anything
+/// outside `[A-Za-z0-9.^=-]` so a hostile symbol can't escape the fixed Yahoo
+/// path (the market domain is exfil-free by construction). `^` (index prefix)
+/// is percent-encoded; the rest are path-safe as-is.
+fn sanitize_ticker(s: &str) -> Option<String> {
+    let s = s.trim();
+    if s.is_empty() || s.len() > 16 {
+        return None;
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '^' | '=' | '-'))
+    {
+        return None;
+    }
+    Some(s.replace('^', "%5E"))
+}
+
+/// GET a fixed Yahoo Finance endpoint with a browser-like User-Agent (Yahoo
+/// 429s requests without one) and return the parsed JSON. Used only by the
+/// controlled market.* tools — never exposed as a generic fetch.
+async fn yahoo_get(url: &str) -> Result<serde_json::Value, McpError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| McpError::internal_error(format!("market client build: {e}"), None))?;
+    let resp = client
+        .get(url)
+        .header("User-Agent", "Mozilla/5.0")
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("market fetch: {e}"), None))?;
+    if !resp.status().is_success() {
+        return Err(McpError::internal_error(
+            format!("market fetch: HTTP {}", resp.status()),
+            None,
+        ));
+    }
+    resp.json()
+        .await
+        .map_err(|e| McpError::internal_error(format!("market parse: {e}"), None))
 }
 
 /// Shared executor for http.get + http.post. Single reqwest::Client
