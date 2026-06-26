@@ -93,3 +93,10 @@
 
 - 2026-06-25 建档。bao 理念「每个功能 = 角色 + 功能包」+ 「L1 ≠ 角色,角色在对话框上方」+ 「persona+功能包,灵活切换,对话持续化」。
 - 2026-06-25 bao 拍板 §七 3 问 (L1 联动 + 输入框上方指示/手动切 + 对话不变 / 默认个人知识库助理 + 按功能包+知识库派生 / v1 不新建角色)。→ amend ADR-005 v6 + ADR-003 v22 §8.6 → dev-loop 实施对话框上方角色切换器。
+- 2026-06-25 实装 (单人快速开发, 直接 main, `lib/roles.ts` + 21 单元测试):
+  - 切换器 (对话框上方) + persona 切换 + L1↔角色联动 + 对话持续 (slice 1)
+  - **toolset**: `packsForRole` 过滤角色可见功能包 (system prompt + L1 rail); code-companion 配 dev 白名单
+  - **功能包→角色**: `roleForPack` —— 点开某功能包切到能用它的角色 (bao 点①)
+  - **kbScope 数据相对独立** (bao 点②): `inKbScope` 真过滤检索 (`askKnowledgeBase` 搜宽后丢范围外命中); null=全 vault, 非空=只该 prefix
+  - **首个数据角色 Stocks** (bao 选 A): 同 KB persona + Ghostfolio seed pack + `Stocks/` kbScope —— `(persona, toolset, 知识库)` 派生的实证
+- 2026-06-25 **Ghostfolio 评估** (bao "试着评估"): 开源 self-hosted wealth mgmt, REST `/api/v1/*`。**契合 CTRL 数据主权** (用户自己的 instance, CTRL 不在数据路径)。public portfolio endpoint `/api/v1/public/<accessId>/portfolio` 免 Bearer 一步拿 performance (1d/ytd/max relativeChange) + countries/sectors allocations —— seed pack 用它。完整 holdings/历史需 Bearer 两步流 (`POST /api/v1/auth/anonymous {accessToken}` → token 6 月有效)。**结论: 合适做股票角色后端**; 完整 connector (Bearer + 多 endpoint) 后续可交 Irisy mcp-creator flow (connector by Irisy not dev)。端到端真测需 bao 跑一个 Ghostfolio instance + 授予 public access id。
