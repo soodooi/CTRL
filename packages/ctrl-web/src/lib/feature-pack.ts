@@ -75,8 +75,15 @@ export interface PackListing {
   category: string;
   installs?: string;
   rating?: string;
-  /** Full manifest installed via install_mcp. */
+  /** Full manifest installed via install_mcp. Empty for browse-only entries. */
   manifest: Record<string, unknown>;
+  /** 'pack' (default) = an installable CTRL feature pack. 'remote' = a remote
+   *  MCP server from the registry — browsable/openable, but running it as a
+   *  pack needs the remote-MCP runtime (not wired), so it is not installed
+   *  here (ADR-002 § composition §7.4). */
+  kind?: 'pack' | 'remote';
+  /** For kind 'remote': the server's endpoint / repo to open. */
+  remoteUrl?: string;
 }
 
 // Manifest factory — keeps the bundled catalog terse.

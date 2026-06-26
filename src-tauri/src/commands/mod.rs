@@ -51,6 +51,9 @@ pub mod provider;
 // 2026-06-19 (decision 0007): cloud-sourced refresh layer between
 // bundled and user — new model ids arrive without a CTRL release.
 pub mod cloud_catalog;
+// Discover registry data source — kernel-side fetch of the MCP Registry
+// (ADR-002 substrate § composition §7.4); CSP blocks PWA external fetch.
+pub mod pack_registry;
 // 2026-06-19 (decision 0007 §per-provider-models): opencode-style live
 // /models fetch — provider's own endpoint is the source of truth, not
 // the catalog's static defaultModel.
@@ -88,6 +91,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::uninstall_mcp,
             $crate::commands::kernel::read_mcp_manifest,
             $crate::commands::kernel::set_mcp_config,
+            // Discover registry data source (ADR-002 § composition §7.4)
+            $crate::commands::pack_registry::fetch_pack_registry,
             // chat — raw streaming LLM via Tauri events (mcp-internal use)
             $crate::commands::chat::chat_stream,
             // irisy_chat — Irisy persona PWA shell streaming endpoint.

@@ -17,6 +17,7 @@ import {
   type PackListing,
   type SecretField,
 } from '@/lib/feature-pack';
+import { loadDiscoverListings } from '@/lib/pack-registry';
 import type { ConnectorManifest } from '@/lib/connector';
 import { PackCreator } from './PackCreator';
 import { PackConfig } from './PackConfig';
@@ -29,11 +30,13 @@ interface DiscoverProps {
   styles: Record<string, string>;
 }
 
-const CATEGORIES = ['All', ...Array.from(new Set(OFFICIAL_PACKS.map((p) => p.category)))];
-
 export function Discover(_props: DiscoverProps): ReactElement {
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState('All');
+  // Discover listings = bundled packs (installable) + MCP Registry servers
+  // (browsable). Seed with the bundled set so the grid renders instantly, then
+  // enrich with the registry once the kernel fetch returns (ADR-002 §7.4).
+  const [listings, setListings] = useState<PackListing[]>(OFFICIAL_PACKS);
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [uninstallingId, setUninstallingId] = useState<string | null>(null);
@@ -58,14 +61,27 @@ export function Discover(_props: DiscoverProps): ReactElement {
     return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
   }, []);
 
+  // Pull the registry data source (kernel-side fetch). Degrades to the bundled
+  // seed when offline / on an older binary (ADR-002 § composition §7.4).
+  useEffect(() => {
+    void loadDiscoverListings()
+      .then(setListings)
+      .catch(() => {});
+  }, []);
+
+  const categories = useMemo(
+    () => ['All', ...Array.from(new Set(listings.map((p) => p.category)))],
+    [listings],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return OFFICIAL_PACKS.filter((p) => {
+    return listings.filter((p) => {
       if (cat !== 'All' && p.category !== cat) return false;
       if (!q) return true;
       return `${p.name} ${p.summary} ${p.category}`.toLowerCase().includes(q);
     });
-  }, [query, cat]);
+  }, [query, cat, listings]);
 
   const install = async (p: PackListing): Promise<void> => {
     setInstallingId(p.id);
@@ -114,7 +130,7 @@ export function Discover(_props: DiscoverProps): ReactElement {
   };
 
   const featured = OFFICIAL_PACKS[0];
-  const showFeatured = cat === 'All' && !query && featured;
+  const showFeatured = cat === 'All' && !query && featured != null;
 
   return (
     <div className={styles.root}>
@@ -133,7 +149,7 @@ export function Discover(_props: DiscoverProps): ReactElement {
           />
         </div>
         <div className={styles.chips}>
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <button
               key={c}
               type="button"
@@ -200,6 +216,9 @@ export function Discover(_props: DiscoverProps): ReactElement {
         <div className={styles.grid}>
           {filtered.map((p) => {
             const got = installedIds.has(p.id);
+            // Registry servers are remote MCP — browsable/openable, not yet
+            // runnable as packs (ADR-002 §7.4). Show "Open", not "Install".
+            const remote = p.kind === 'remote';
             return (
               <div key={p.id} className={styles.card}>
                 <div className={styles.cardTop}>
@@ -209,11 +228,27 @@ export function Discover(_props: DiscoverProps): ReactElement {
                 <div className={styles.cardDesc}>{p.summary}</div>
                 <div className={styles.cardFoot}>
                   <span className={styles.cardMeta}>
-                    {p.installs != null && <b>{p.installs}</b>}
-                    {p.installs != null ? ' installs' : ''}
-                    {p.rating != null ? ` · ★ ${p.rating}` : ''}
+                    {remote ? (
+                      'Registry · remote MCP'
+                    ) : (
+                      <>
+                        {p.installs != null && <b>{p.installs}</b>}
+                        {p.installs != null ? ' installs' : ''}
+                        {p.rating != null ? ` · ★ ${p.rating}` : ''}
+                      </>
+                    )}
                   </span>
-                  {got ? (
+                  {remote ? (
+                    <button
+                      type="button"
+                      className={styles.cardBtn}
+                      disabled={p.remoteUrl == null}
+                      onClick={() => p.remoteUrl != null && window.open(p.remoteUrl, '_blank')}
+                      title={p.remoteUrl ?? 'No endpoint listed'}
+                    >
+                      Open ↗
+                    </button>
+                  ) : got ? (
                     <button
                       type="button"
                       className={`${styles.cardBtn} ${styles.cardBtnGot}`}
