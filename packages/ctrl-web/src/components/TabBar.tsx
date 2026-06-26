@@ -48,13 +48,18 @@ const KIND_ICON: Record<Tab['kind'], Icon> = {
 
 const TAB_ICON_SIZE = 16;
 
+// Shown when a tab arrives with a kind outside the known set (off-type data
+// from an older session / external source) so IconRenderer never receives
+// `undefined` and throws.
+const FALLBACK_ICON: Icon = { kind: 'glyph', char: '◌' };
+
 const resolveIcon = (tab: Tab): Icon => {
   const raw = tab.icon;
   if (raw && typeof raw === 'object') return raw;
   if (typeof raw === 'string' && raw.trim().length > 0) {
     return { kind: 'glyph', char: raw.trim() };
   }
-  return KIND_ICON[tab.kind];
+  return KIND_ICON[tab.kind] ?? FALLBACK_ICON;
 };
 
 export const TabBar = ({

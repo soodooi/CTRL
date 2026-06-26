@@ -32,6 +32,7 @@ import {
 } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { platform } from '@/lib/bridge';
 import styles from './OllamaSetupBanner.module.css';
 
 type Reachability = 'not_installed' | 'installed' | 'running';
@@ -92,17 +93,26 @@ export const OllamaSetupBanner = (): ReactElement | null => {
   // events on every progress line — listen for live percentage
   // updates without waiting for the 4 s poll.
   useEffect(() => {
+    // Tauri-only: `listen` reaches into __TAURI_INTERNALS__ and throws an
+    // uncaught transformCallback error in a plain-web (PWA) context. Skip
+    // wiring the event listener entirely off-desktop; the 4 s poll loop
+    // still drives status there.
+    if (platform() !== 'tauri') return;
     let unlisten: UnlistenFn | null = null;
     void (async () => {
-      unlisten = await listen<OllamaInstallStatus>(
-        'ollama-pull-progress',
-        (event) => {
-          setStatus(event.payload);
-          if (event.payload.pull_pct === 100 || event.payload.has_default_model) {
-            setPulling(false);
-          }
-        },
-      );
+      try {
+        unlisten = await listen<OllamaInstallStatus>(
+          'ollama-pull-progress',
+          (event) => {
+            setStatus(event.payload);
+            if (event.payload.pull_pct === 100 || event.payload.has_default_model) {
+              setPulling(false);
+            }
+          },
+        );
+      } catch {
+        // Event bridge unavailable — degrade to poll-only, no uncaught throw.
+      }
     })();
     return (): void => {
       if (unlisten) {

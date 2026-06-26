@@ -34,7 +34,9 @@ export const Gauge = ({
   size = 56,
   className,
 }: GaugeProps): ReactElement => {
-  const pct = Math.max(0, Math.min(1, value / max));
+  // Guard max <= 0: value / 0 yields NaN/Infinity, which poisons the arc
+  // offset and the label. Treat a non-positive max as an empty (0%) gauge.
+  const pct = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
   const cx = size / 2;
   const cy = size / 2;
   const r = (size - 12) / 2;

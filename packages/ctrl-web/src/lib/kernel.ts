@@ -214,13 +214,6 @@ export interface TestProviderResult {
 export const testProvider = (provider: string): Promise<TestProviderResult> =>
   invoke('config_test_provider', { args: { provider } });
 
-// ADR-002 § provider v24 + vault 0012 (2026-06-15): generic model discovery via
-// the OpenAI-compatible /v1/models standard — works for ANY endpoint (local
-// ollama/LM Studio/llama.cpp, cloud, relay), no hardcoded per-runtime logic.
-// Returns [] when the endpoint is down or doesn't support listing.
-export const listModels = (baseUrl: string, apiKey?: string): Promise<string[]> =>
-  invoke('provider_list_models', { args: { base_url: baseUrl, api_key: apiKey } });
-
 export const deleteProvider = (provider: string): Promise<void> =>
   invoke('config_delete_provider', { args: { provider } });
 

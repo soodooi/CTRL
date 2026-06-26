@@ -3,7 +3,10 @@
 // an action through the kernel run_action path (real execution).
 // ADR-002 substrate § composition v21 §7.1.
 
-import { invoke } from '@tauri-apps/api/core';
+// ADR-003 frontend §1 (PWA bridge): invoke via ./bridge so web/PWA mode
+// degrades to the WS transport instead of bypassing it through the raw
+// Tauri core import (desktop behavior unchanged).
+import { invoke } from './bridge';
 import { listMcps } from './kernel';
 import type { FeaturePack } from '@/components/featurepack/FeaturePackScene';
 

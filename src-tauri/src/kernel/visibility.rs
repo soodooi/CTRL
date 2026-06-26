@@ -112,6 +112,30 @@ pub fn tool_domain(tool: &str) -> &'static str {
     "mcp"
 }
 
+/// Source-aware classifier: a tool whose name matches an installed downstream
+/// server's `<id>_` namespace is the `mcp` domain, checked FIRST — mirroring the
+/// dispatch router (`dispatch_tool`), which routes `<server>_<tool>` to the
+/// downstream host before the static kernel router. Without this, a downstream
+/// tool whose namespaced name collides with a first-party prefix (a user-chosen
+/// server id `vault` / `market` / `notes` ...) or literally produces a
+/// first-party exact name (server `web` + tool `search` => `web_search`) would
+/// be misclassified into a first-party domain and become visible/callable under
+/// a narrow intent or the BYO-CLI default that excludes `mcp` — a least-privilege
+/// leak (ADR-010 communication § trust-domains, SC3). Classifying by source (not
+/// just by name string) keeps visibility consistent with routing: whatever
+/// dispatch sends downstream is gated as `mcp`.
+pub fn tool_domain_with_downstream(tool: &str, downstream_ids: &[String]) -> &'static str {
+    for id in downstream_ids {
+        // Match the dispatch router's precedence exactly: `<id>_<tool>`.
+        if let Some(rest) = tool.strip_prefix(id.as_str()) {
+            if rest.starts_with('_') {
+                return "mcp";
+            }
+        }
+    }
+    tool_domain(tool)
+}
+
 /// The capability domains a caller's current intent is scoped to. `None` means
 /// unscoped — the gate exposes the full toolset (migration / no-header default).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,6 +222,15 @@ impl Intent {
     /// Whether a specific tool is visible/callable under this intent.
     pub fn allows_tool(&self, tool: &str) -> bool {
         self.allows_domain(tool_domain(tool))
+    }
+
+    /// Like `allows_tool`, but source-aware: any tool matching an installed
+    /// downstream server's `<id>_` namespace is gated as the `mcp` domain even
+    /// if its name collides with a first-party prefix/exact name (see
+    /// `tool_domain_with_downstream`). Use this on the gate path where the set
+    /// of installed downstream server ids is known.
+    pub fn allows_tool_with_downstream(&self, tool: &str, downstream_ids: &[String]) -> bool {
+        self.allows_domain(tool_domain_with_downstream(tool, downstream_ids))
     }
 }
 
@@ -318,6 +351,52 @@ mod tests {
         assert!(intent.is_scoped());
         assert!(intent.allows_tool("kernel_status"));
         assert!(!intent.allows_tool("vault_read"));
+    }
+
+    #[test]
+    fn downstream_tool_is_mcp_even_when_name_collides_with_first_party() {
+        // A user-installed downstream server whose namespaced tool name collides
+        // with a first-party domain must NOT leak into that first-party domain
+        // (ADR-010 § trust-domains, SC3). Without source awareness `web_search`
+        // (server `web` + tool `search`) classifies as `websearch`, and a server
+        // id colliding with a reserved prefix (`vault`/`market`/`notes`) would
+        // classify as that first-party domain — visible under a narrow intent or
+        // the BYO-CLI default that excludes `mcp`.
+        let ids = vec![
+            "web".to_string(),
+            "vault".to_string(),
+            "market".to_string(),
+            "notes".to_string(),
+        ];
+        assert_eq!(tool_domain_with_downstream("web_search", &ids), "mcp");
+        assert_eq!(tool_domain_with_downstream("vault_read", &ids), "mcp");
+        assert_eq!(tool_domain_with_downstream("market_quote", &ids), "mcp");
+        assert_eq!(tool_domain_with_downstream("notes_query", &ids), "mcp");
+        // A genuine first-party tool (no colliding server installed) is untouched.
+        let no_collision = vec!["obsidian".to_string()];
+        assert_eq!(
+            tool_domain_with_downstream("web_search", &no_collision),
+            "websearch"
+        );
+        assert_eq!(
+            tool_domain_with_downstream("vault_read", &no_collision),
+            "vault"
+        );
+        // The normal downstream namespaced tool still groups under mcp.
+        assert_eq!(
+            tool_domain_with_downstream("obsidian_search_notes", &no_collision),
+            "mcp"
+        );
+
+        // The leak is closed at the Intent boundary: under a narrow `websearch`
+        // intent the colliding downstream tool is hidden, while the real
+        // first-party web_search stays visible.
+        let intent = Intent::parse(Some("websearch"));
+        assert!(!intent.allows_tool_with_downstream("web_search", &ids));
+        assert!(intent.allows_tool_with_downstream("web_search", &no_collision));
+        // And under an `mcp` intent the downstream tool is correctly reachable.
+        let mcp_intent = Intent::parse(Some("mcp"));
+        assert!(mcp_intent.allows_tool_with_downstream("web_search", &ids));
     }
 
     #[test]

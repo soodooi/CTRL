@@ -191,7 +191,9 @@ export const importCsv = async (rawName: string, csv: string): Promise<string> =
   });
   const title = rawName.trim() || 'Imported table';
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'imported';
-  const path = `tables/${slug}.md`;
+  // Avoid silently overwriting an existing table of the same name — pick a
+  // free `tables/<slug>.md` path just like createSmartTable does.
+  const path = await uniqueTablePath(slug);
   const lines = [
     `| ${headers.map((h) => h.trim() || ' ').join(' | ')} |`,
     `|${headers.map(() => '---').join('|')}|`,

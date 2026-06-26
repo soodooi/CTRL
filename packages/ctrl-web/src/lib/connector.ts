@@ -13,7 +13,9 @@
 //
 // bao 2026-06-11: local connection simplified — minimal, working features.
 
-import { invoke } from '@tauri-apps/api/core';
+// ADR-003 frontend §1 (PWA bridge): invoke via ./bridge so web/PWA mode
+// degrades to the WS transport instead of bypassing it (desktop unchanged).
+import { invoke } from './bridge';
 
 export type RenderKind = 'table' | 'record' | 'json' | 'markdown' | 'text';
 

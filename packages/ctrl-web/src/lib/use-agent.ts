@@ -10,7 +10,9 @@
 // goes through invoke('assistant_oneshot') until the ACP streaming client
 // lands, so resolveEndpoint returns a oneshot marker (no launch_agent call).
 
-import { invoke } from '@tauri-apps/api/core';
+// ADR-003 frontend §1 (PWA bridge): invoke via ./bridge so web/PWA mode
+// degrades to the WS transport instead of bypassing it (desktop unchanged).
+import { invoke } from './bridge';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type AgentName = 'hermes';

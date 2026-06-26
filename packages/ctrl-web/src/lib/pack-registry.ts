@@ -8,7 +8,9 @@
 // (a source variant + connection layer not wired yet), so they are kind
 // 'remote' — listed and openable, not installed.
 
-import { invoke } from '@tauri-apps/api/core';
+// ADR-003 frontend §1 (PWA bridge): invoke via ./bridge so web/PWA mode
+// degrades to the WS transport instead of bypassing it (desktop unchanged).
+import { invoke } from './bridge';
 import { OFFICIAL_PACKS, type PackListing } from './feature-pack';
 
 interface RegistryRemote {

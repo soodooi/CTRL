@@ -700,7 +700,11 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt },
                 ],
-                {},
+                // ADR-005 irisy § persona-shell v5 §5 (2026-06-09): tie
+                // reflection to the turn's AbortController so Stop / a new
+                // turn cancels the sleep-time stream too (was leaking past
+                // abort).
+                { signal: ac.signal },
               )) {
                 if (chunk.error) break;
                 if (chunk.delta) acc += chunk.delta;
@@ -731,6 +735,10 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
     // ADR-002 substrate § brain v17 (2026-06-07): currentSkillId removed
     // from session-state along with the retired cap mode; deps shrink.
     [
+      // ADR-005 irisy § persona-shell v5 (2026-06-09): activeBrain feeds
+      // humanizePiError, so it must be a dep or error copy names a stale
+      // provider after a brain switch.
+      activeBrain,
       brainState,
       coreMemory,
       mcps,
@@ -747,6 +755,16 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   useEffect(() => {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
+
+  // ADR-005 irisy § persona-shell v5 (2026-06-09): abort any in-flight turn
+  // on unmount so a streaming request doesn't outlive the component (no
+  // setState-after-unmount, no orphaned stream).
+  useEffect(
+    () => (): void => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
 
   // Homepage hand-off: `/?text=<encoded>` from default.tsx's ChatInput
   // navigates here with the user's first message.

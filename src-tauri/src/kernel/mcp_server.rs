@@ -2255,7 +2255,9 @@ impl ServerHandler for KernelMcpRouter {
         let mut tools = self.tool_router.list_all();
         // Then aggregate each connected downstream server's tools, namespaced
         // so names never collide and call_tool can route them back (§1.9.1).
-        for desc in self.runtime.mcp_host.list_installed().await {
+        let installed = self.runtime.mcp_host.list_installed().await;
+        let downstream_ids: Vec<String> = installed.iter().map(|d| d.id.clone()).collect();
+        for desc in &installed {
             match self.runtime.mcp_host.list_tools(&desc.id).await {
                 Ok(downstream) => {
                     for mut t in downstream {
@@ -2281,7 +2283,10 @@ impl ServerHandler for KernelMcpRouter {
                 Intent::default_for_caller(&caller)
             }
         };
-        tools.retain(|t| intent.allows_tool(t.name.as_ref()));
+        // Source-aware projection: a downstream tool whose namespaced name
+        // collides with a first-party prefix/exact name must stay gated as `mcp`
+        // (SC3), mirroring `dispatch_tool`'s downstream-first routing.
+        tools.retain(|t| intent.allows_tool_with_downstream(t.name.as_ref(), &downstream_ids));
         Ok(ListToolsResult {
             tools,
             next_cursor: None,
@@ -2317,7 +2322,19 @@ impl ServerHandler for KernelMcpRouter {
                 Intent::default_for_caller(&caller)
             }
         };
-        let denied = !intent.allows_tool(&tool_name);
+        // Source-aware gate: classify a downstream-namespaced tool as `mcp` even
+        // when its name collides with a first-party prefix/exact name, so it
+        // can't be reached under a narrow first-party intent (SC3). Mirrors the
+        // downstream-first routing in `dispatch_tool`.
+        let downstream_ids: Vec<String> = self
+            .runtime
+            .mcp_host
+            .list_installed()
+            .await
+            .into_iter()
+            .map(|d| d.id)
+            .collect();
+        let denied = !intent.allows_tool_with_downstream(&tool_name, &downstream_ids);
 
         // SC1 compile-time trust boundary: capture the cross-domain call as a
         // `GateRequest` here at the gate, before `request` is consumed. Only the

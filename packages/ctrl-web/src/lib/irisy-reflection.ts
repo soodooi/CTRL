@@ -20,6 +20,7 @@
 // playbook curation is manual. Detect rules cover three primary cases.
 
 import { invoke } from './bridge';
+import correctionMarkersCjk from './locale/correction-markers.cjk.json';
 
 // bao 2026-06-05 Pi-first cleanup: `isFrontierNativeProvider` lived in
 // irisy-tool-dispatch which the PWA used to branch between XML overlay
@@ -84,22 +85,13 @@ const CORRECTION_MARKERS_EN = [
   'i said',
   'not what i',
 ];
-// Chinese correction markers. NOTE: these CJK tokens are intentional —
-// `isCorrectionMessage` matches them verbatim against real Chinese user
-// input to detect corrections. This is language-detection data (like a
-// dictionary), not developer prose, so the all-English-code rule does not
-// apply here. Removing them would break correction detection for Chinese
-// users (covered by irisy-reflection.test.ts fixtures).
-const CORRECTION_MARKERS_ZH = [
-  '不对',
-  '错了',
-  '不要',
-  '我说的是',
-  '不是这样',
-  '别',
-  '停',
-  '搞错',
-];
+// CJK correction markers. These language-detection tokens are data, not
+// developer prose, so they live in a JSON locale file
+// (`locale/correction-markers.cjk.json`) — keeping this .ts source
+// all-English per the project rule. `isCorrectionMessage` matches them
+// verbatim against real CJK user input to detect corrections (covered by
+// irisy-reflection.test.ts fixtures).
+const CORRECTION_MARKERS_ZH: string[] = correctionMarkersCjk.markers;
 
 /** Heuristic check on a user message body. Case-insensitive for the
  *  English markers; Chinese markers are compared verbatim. */
