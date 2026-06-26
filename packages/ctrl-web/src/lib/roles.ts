@@ -101,6 +101,15 @@ export function roleForScene(scene: SceneKind | null): RoleId | null {
   }
 }
 
+/** The role that owns a feature pack = the role whose toolset whitelists it.
+ *  When an L1 opens a specific pack, Irisy switches to the role that can
+ *  actually use it (bao 2026-06-25). Falls back to the default role, which is
+ *  unconstrained (empty toolset = sees every pack). */
+export function roleForPack(packId: string): RoleId {
+  const owner = ROLES.find((r) => r.toolset.includes(packId));
+  return owner ? owner.id : DEFAULT_ROLE_ID;
+}
+
 /** The feature packs this role exposes, filtered from what's installed.
  *  An empty toolset means the role is unconstrained (sees ALL installed packs);
  *  a non-empty toolset is a whitelist of pack ids. Generic over the pack shape
@@ -124,4 +133,15 @@ export function kbScopeAmbient(role: Role): string | null {
     `Knowledge base scope: this role works within "${role.kbScope}" in the vault. ` +
     `Read, search and cite notes under that path; treat it as the active knowledge base.`
   );
+}
+
+/** Whether a vault path falls inside this role's knowledge base. A null kbScope
+ *  spans the whole vault (always true); otherwise the path must sit at or under
+ *  the kbScope prefix. This is what makes each role's knowledge base RELATIVELY
+ *  INDEPENDENT (bao 2026-06-25) — search results outside the scope are dropped
+ *  so a data role (e.g. Stocks) only ever sees its own data. */
+export function inKbScope(role: Role, path: string): boolean {
+  if (!role.kbScope) return true;
+  const prefix = role.kbScope.endsWith('/') ? role.kbScope : `${role.kbScope}/`;
+  return path === role.kbScope || path.startsWith(prefix);
 }

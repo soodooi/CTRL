@@ -4,8 +4,10 @@ import {
   DEFAULT_ROLE_ID,
   roleById,
   roleForScene,
+  roleForPack,
   packsForRole,
   kbScopeAmbient,
+  inKbScope,
   type Role,
   type RoleId,
   type SceneKind,
@@ -41,6 +43,17 @@ describe('roleForScene (L1 linkage)', () => {
   });
   it('returns null for no scene (keeps the user choice)', () => {
     expect(roleForScene(null)).toBeNull();
+  });
+});
+
+describe('roleForPack (opening a pack switches the role)', () => {
+  it('routes a dev pack to the code companion (its toolset owner)', () => {
+    expect(roleForPack('dev-box')).toBe('code-companion');
+    expect(roleForPack('git-box')).toBe('code-companion');
+    expect(roleForPack('cf-workers')).toBe('code-companion');
+  });
+  it('routes an unowned pack to the default role (sees all packs)', () => {
+    expect(roleForPack('some-random-pack')).toBe('kb-assistant');
   });
 });
 
@@ -121,6 +134,22 @@ describe('L1 -> role + toolset matrix (test plan)', () => {
     for (const r of ROLES) {
       expect(linked.has(r.id) || manualOnly.has(r.id)).toBe(true);
     }
+  });
+});
+
+describe('inKbScope (relatively independent knowledge bases)', () => {
+  it('null scope spans the whole vault (every path is in scope)', () => {
+    const kb = roleById('kb-assistant');
+    expect(kb.kbScope).toBeNull();
+    expect(inKbScope(kb, 'anything/at/all.md')).toBe(true);
+  });
+  it('a scoped role only sees paths under its prefix', () => {
+    const stocks: Role = { ...roleById('kb-assistant'), kbScope: 'Stocks' };
+    expect(inKbScope(stocks, 'Stocks/aapl.md')).toBe(true);
+    expect(inKbScope(stocks, 'Stocks')).toBe(true);
+    expect(inKbScope(stocks, 'Notes/diary.md')).toBe(false);
+    // No false prefix match: "StocksOld/" must not count as inside "Stocks".
+    expect(inKbScope(stocks, 'StocksOld/x.md')).toBe(false);
   });
 });
 

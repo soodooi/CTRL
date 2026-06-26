@@ -43,8 +43,10 @@ import {
   DEFAULT_ROLE_ID,
   roleById,
   roleForScene,
+  roleForPack,
   packsForRole,
   kbScopeAmbient,
+  inKbScope,
   type RoleId,
 } from '@/lib/roles';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
@@ -527,7 +529,11 @@ export function AmbientHome({
     if (!q) return;
     let context = '';
     try {
-      const hits = await vaultSearch(q, 5);
+      // kbScope (bao 2026-06-25): keep each role's knowledge base relatively
+      // independent — search wide, then drop hits outside the active role's
+      // scope (null scope = whole vault, so nothing is dropped).
+      const role = roleById(roleId);
+      const hits = (await vaultSearch(q, 20)).filter((p) => inKbScope(role, p));
       const parts: string[] = [];
       for (const p of hits.slice(0, 3)) {
         try {
@@ -545,7 +551,7 @@ export function AmbientHome({
       ? `Answer using my notes below. Cite the file names you used. If the notes don't cover it, say so.\n\n=== MY NOTES ===\n${context}\n\n=== QUESTION ===\n${q}`
       : `Answer from my knowledge base. (No notes matched "${q}" yet — answer from general knowledge and say the notes were empty.)\n\n${q}`;
     void send(prompt);
-  }, [messages, send]);
+  }, [messages, send, roleId]);
 
   const onPickCapability = useCallback((cap: Capability) => {
     setInput(cap.starter ?? `${cap.label}: `);
@@ -706,10 +712,14 @@ export function AmbientHome({
   // A scene with no linked role leaves the user's manual choice untouched.
   // Switching the role here does NOT clear `messages` — conversation persists.
   useEffect(() => {
-    const linked =
-      scene === 'notes' || scene === 'tables' || scene === 'coding'
-        ? roleForScene(scene)
-        : null;
+    let linked: RoleId | null = null;
+    if (scene === 'notes' || scene === 'tables' || scene === 'coding') {
+      linked = roleForScene(scene);
+    } else if (scene && typeof scene === 'object') {
+      // A feature pack opened in the scene panel -> switch to the role that
+      // can use it (bao 2026-06-25: opening a pack switches the role).
+      linked = roleForPack(scene.id);
+    }
     if (linked) setRoleId(linked);
   }, [scene]);
 
