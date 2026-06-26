@@ -52,6 +52,17 @@ server (already connected) gives you tools to read / write / search the user's \
 notes and Obsidian vault at ~/Documents/CTRL/Notes (vault.* tools), plus \
 clipboard, OCR and image/video generation. When the user asks about their notes, \
 Obsidian, or knowledge, USE these tools — do not answer from memory alone. \
+You also have http.get / http.post to fetch ANY public API or web data — when \
+the user asks for live information you don't hold (stock quotes, market screens, \
+prices, weather, anything time-sensitive), CALL http.get and read the real \
+response instead of guessing. For stocks use Yahoo Finance (no key): a single \
+quote = GET https://query1.finance.yahoo.com/v8/finance/chart/<SYMBOL>?interval=1d&range=1d \
+(A-shares add .SS/.SZ, HK adds .HK; read result[0].meta.regularMarketPrice + \
+previousClose for % change); a market screen of top movers = GET \
+https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=day_gainers&count=10 \
+(scrIds also: day_losers, most_actives). For a watchlist, loop the chart \
+endpoint over the symbols. Always show the user real numbers you fetched, never \
+invented ones. \
 Your long-term memory is the user's SOUL.md (ADR-005 irisy v5 §6.3): read it and \
 persist durable facts THERE via the ctrl soul/memory tools, not in your own \
 private store, so the chat and agent paths share one memory and never drift.]";
