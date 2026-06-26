@@ -17,7 +17,7 @@ import {
   type PackListing,
   type SecretField,
 } from '@/lib/feature-pack';
-import { loadDiscoverListings } from '@/lib/pack-registry';
+import { loadDiscoverListings, connectRemoteMcp } from '@/lib/pack-registry';
 import type { ConnectorManifest } from '@/lib/connector';
 import { PackCreator } from './PackCreator';
 import { PackConfig } from './PackConfig';
@@ -40,6 +40,7 @@ export function Discover(_props: DiscoverProps): ReactElement {
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [uninstallingId, setUninstallingId] = useState<string | null>(null);
+  const [connectingId, setConnectingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [importText, setImportText] = useState('');
@@ -111,6 +112,23 @@ export function Discover(_props: DiscoverProps): ReactElement {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setUninstallingId(null);
+    }
+  };
+
+  const connect = async (p: PackListing): Promise<void> => {
+    setConnectingId(p.id);
+    setMsg(null);
+    try {
+      const tools = await connectRemoteMcp(p);
+      setMsg(
+        `Connected "${p.name}" — Irisy can now use its ${tools.length} ${
+          tools.length === 1 ? 'tool' : 'tools'
+        }.`,
+      );
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConnectingId(null);
     }
   };
 
@@ -242,11 +260,11 @@ export function Discover(_props: DiscoverProps): ReactElement {
                     <button
                       type="button"
                       className={styles.cardBtn}
-                      disabled={p.remoteUrl == null}
-                      onClick={() => p.remoteUrl != null && window.open(p.remoteUrl, '_blank')}
-                      title={p.remoteUrl ?? 'No endpoint listed'}
+                      disabled={p.remoteUrl == null || connectingId === p.id}
+                      onClick={() => void connect(p)}
+                      title={p.remoteUrl ?? 'No remote endpoint listed'}
                     >
-                      Open ↗
+                      {connectingId === p.id ? '…' : 'Connect'}
                     </button>
                   ) : got ? (
                     <button

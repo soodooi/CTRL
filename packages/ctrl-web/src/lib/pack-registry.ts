@@ -83,6 +83,24 @@ export async function fetchRegistryListings(limit = 50): Promise<PackListing[]> 
   }
 }
 
+/** Connect a registry remote MCP server through the kernel (same runtime the
+ *  Obsidian connector uses). Registers + connects + persists it; once up, the
+ *  gate proxies its tools to Irisy. Returns the connected server's tool names.
+ *  Makes a registry entry actually RUNNABLE (ADR-002 § composition §7.4). */
+export async function connectRemoteMcp(listing: PackListing): Promise<string[]> {
+  if (listing.remoteUrl == null || listing.remoteUrl === '') {
+    throw new Error('This server has no remote endpoint to connect to.');
+  }
+  return invoke<string[]>('connect_remote_mcp', {
+    args: {
+      id: listing.id,
+      name: listing.name,
+      url: listing.remoteUrl,
+      description: listing.summary,
+    },
+  });
+}
+
 /** Discover's listings = bundled packs (installable) first, then registry
  *  servers (browsable), de-duplicated against bundled ids. */
 export async function loadDiscoverListings(): Promise<PackListing[]> {
