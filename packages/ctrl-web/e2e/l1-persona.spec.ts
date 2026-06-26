@@ -59,3 +59,14 @@ test('L1 is one list — built-in faces render as entries', async ({ page }) => 
   await expect(page.getByRole('button', { name: 'Coding' }).first()).toBeVisible();
   await page.screenshot({ path: 'test-results/l1-persona-home.png', fullPage: false });
 });
+
+test('opening an L1 entry shows it as the context above Irisy', async ({ page }) => {
+  await page.goto('/');
+  const group = page.getByRole('group', { name: 'Irisy persona' });
+  // No context chip until something is open.
+  await expect(group.locator('[title^="Working in"]')).toHaveCount(0);
+  // Open the Notes face from L1 — the persona row reflects what's open
+  // (bao 2026-06-26: role + the corresponding pack above Irisy).
+  await page.getByRole('button', { name: 'Notes' }).first().click();
+  await expect(group.locator('[title="Working in Notes"]')).toBeVisible();
+});

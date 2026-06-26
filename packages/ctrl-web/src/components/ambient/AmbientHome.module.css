@@ -821,6 +821,25 @@
   color: var(--color-primary);
   font-weight: var(--weight-strong, 600);
 }
+/* Active feature pack / scene context — sits at the right of the persona row
+   so the line reads "<role> … <pack>" (bao 2026-06-26: role + feature pack
+   above Irisy reflect what's open). */
+.activePack {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+  background: var(--color-surface-sunken, rgba(0, 0, 0, 0.04));
+  border-radius: 999px;
+  padding: 2px 10px;
+  max-width: 50%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 
 /* "More" — the one entry to the long tail; pushed to the right, even quieter
    than the shortcuts so it never competes with them. */
