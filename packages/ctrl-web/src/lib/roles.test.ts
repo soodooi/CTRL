@@ -7,6 +7,8 @@ import {
   packsForRole,
   kbScopeAmbient,
   type Role,
+  type RoleId,
+  type SceneKind,
 } from './roles';
 
 describe('role pool', () => {
@@ -67,6 +69,58 @@ describe('packsForRole (toolset)', () => {
     const kb = roleById('kb-assistant');
     const out = packsForRole(kb, installed);
     expect(out).not.toBe(installed);
+  });
+});
+
+// The L1 -> (role, toolset, kbScope) binding matrix. This is the test PLAN for
+// "what role + which packs does each L1 get": one row per L1 that links a role,
+// asserted end-to-end. A new L1 that should carry a role adds a row here, so the
+// binding is never implicit. L1s NOT listed (irisy / discover / settings / a
+// single feature-pack) intentionally do NOT auto-switch the role — the user's
+// current role is kept (roleForScene returns null).
+describe('L1 -> role + toolset matrix (test plan)', () => {
+  interface L1Binding {
+    scene: SceneKind;
+    role: RoleId;
+    /** Expected packs the linked role exposes: [] = all installed (no filter). */
+    toolset: string[];
+    kbScope: string | null;
+  }
+  const MATRIX: L1Binding[] = [
+    { scene: 'notes', role: 'kb-assistant', toolset: [], kbScope: null },
+    { scene: 'tables', role: 'kb-assistant', toolset: [], kbScope: null },
+    {
+      scene: 'coding',
+      role: 'code-companion',
+      toolset: ['dev-box', 'git-box', 'cf-workers', 'disk-box'],
+      kbScope: null,
+    },
+  ];
+
+  it.each(MATRIX)(
+    'L1 "$scene" links role "$role" with the expected toolset + kbScope',
+    ({ scene, role, toolset, kbScope }) => {
+      expect(roleForScene(scene)).toBe(role);
+      const r = roleById(role);
+      expect(r.toolset).toEqual(toolset);
+      expect(r.kbScope).toBe(kbScope);
+    },
+  );
+
+  it('L1 entries with no role binding keep the current role', () => {
+    // null scene stands in for irisy / discover / settings / feature-pack:
+    // roleForScene returns null, so AmbientHome leaves roleId untouched.
+    expect(roleForScene(null)).toBeNull();
+  });
+
+  it('every role in the pool is covered by either the matrix or manual-only', () => {
+    const linked = new Set(MATRIX.map((m) => m.role));
+    // tool-maker is intentionally manual-only (no L1 link — reached via the
+    // switcher / Discover). Assert the full pool is accounted for.
+    const manualOnly = new Set<RoleId>(['tool-maker']);
+    for (const r of ROLES) {
+      expect(linked.has(r.id) || manualOnly.has(r.id)).toBe(true);
+    }
   });
 });
 
