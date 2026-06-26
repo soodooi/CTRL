@@ -28,9 +28,17 @@ interface FeaturePackSceneProps {
   /** Execute an action; resolves to output text/markdown to show. Thrown
    *  errors surface in the output area. */
   onRunAction: (actionId: string) => Promise<string>;
+  /** Open the pack's secret config (url / key / token). Passed only when the
+   *  pack declares secrets — without setting them, actions fail with a keychain
+   *  error, so the work interface surfaces a Configure step. */
+  onConfigure?: () => void;
 }
 
-export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): ReactElement {
+export function FeaturePackScene({
+  pack,
+  onRunAction,
+  onConfigure,
+}: FeaturePackSceneProps): ReactElement {
   const [runningId, setRunningId] = useState<string | null>(null);
   const [output, setOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +68,16 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
           <span className={styles.name}>{pack.name}</span>
           {pack.summary != null && <span className={styles.summary}>{pack.summary}</span>}
         </div>
+        {onConfigure != null && (
+          <button
+            type="button"
+            className={styles.configBtn}
+            onClick={onConfigure}
+            title="Configure this pack — enter its URL / key (stored in your keychain)"
+          >
+            ⚙ Configure
+          </button>
+        )}
       </header>
 
       <ActionBar actions={pack.actions} runningId={runningId} onRun={run} />

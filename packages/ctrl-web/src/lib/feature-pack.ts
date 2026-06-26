@@ -256,6 +256,20 @@ export interface SecretField {
   description?: string;
 }
 
+/** Load a pack's secret fields from its installed manifest. Lets the work
+ *  interface offer a "Configure" step when a pack needs keys (e.g. ghostfolio
+ *  url + token) — without it, running an action fails with a keychain error. */
+export async function loadPackSecretFields(mcpId: string): Promise<SecretField[]> {
+  try {
+    const m = await invoke<Record<string, unknown>>('read_mcp_manifest', {
+      args: { mcp_id: mcpId },
+    });
+    return packSecretFields(m);
+  } catch {
+    return [];
+  }
+}
+
 /** Secret fields a pack declares (config_schema fields with kind: secret). */
 export function packSecretFields(manifest: Record<string, unknown>): SecretField[] {
   const cs = manifest.config_schema as

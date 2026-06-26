@@ -70,7 +70,12 @@ import {
   FeaturePackScene,
   type FeaturePack,
 } from '@/components/featurepack/FeaturePackScene';
-import { runInstalledPackAction } from '@/lib/feature-pack';
+import {
+  runInstalledPackAction,
+  loadPackSecretFields,
+  type SecretField,
+} from '@/lib/feature-pack';
+import { PackConfig } from './PackConfig';
 import { NotesApp } from '@/components/notes/NotesApp';
 import { TablesPanel } from '@/components/tables/TablesPanel';
 import { CodingTerminal } from '@/components/coding/CodingTerminal';
@@ -200,6 +205,11 @@ export function AmbientHome({
   // Shown + switchable in the switcher above the chat box; switching it never
   // touches `messages` (conversation persists). Linked to the L1 scene below.
   const [roleId, setRoleId] = useState<RoleId>(DEFAULT_ROLE_ID);
+  // Secret fields the open feature pack declares (url / key / token). Drives the
+  // Configure step in the work interface — without setting them, an action fails
+  // with a keychain error (bao 2026-06-26).
+  const [packSecrets, setPackSecrets] = useState<SecretField[]>([]);
+  const [configOpen, setConfigOpen] = useState(false);
   // The smart table the user currently has open (lifted from TablesPanel) so
   // Irisy gets it as ambient context — "operate on THIS table" works without
   // the user naming the file. Stable callback so TablesPanel's effect is calm.
@@ -715,6 +725,18 @@ export function AmbientHome({
     if (linked) setRoleId(linked);
   }, [scene]);
 
+  // Load the open pack's secret fields so the work interface can offer a
+  // Configure step (bao 2026-06-26: a pack that needs a url/key must be
+  // settable from where you use it, else its actions fail in the keychain).
+  useEffect(() => {
+    setConfigOpen(false);
+    if (scene != null && typeof scene === 'object') {
+      void loadPackSecretFields(scene.id).then(setPackSecrets).catch(() => setPackSecrets([]));
+    } else {
+      setPackSecrets([]);
+    }
+  }, [scene]);
+
   // Reset the chat when the shell selects "Irisy" (nonce bump). Since this
   // component stays mounted across routes (hidden, not unmounted), the
   // effect fires only on a real bump — never replays on a route return.
@@ -912,6 +934,22 @@ export function AmbientHome({
   // ARE Irisy, not separate personas (philosophy #5), so they don't belong here.
   // Switching a persona swaps the system prompt WITHOUT resetting the
   // conversation; one brand voice stays (ADR-005 single-brand lock).
+  // What's open right now, shown as the context chip on the right of the
+  // persona row (bao 2026-06-26: above Irisy = role + the corresponding feature
+  // pack). A feature pack carries its own icon + name; a built-in face maps to
+  // a label. Opening a pack also switches the role (L1 ↔ role effect), so the
+  // row reads as "<role> · <pack>" — the full Irisy context.
+  const activeContext: { icon: string; name: string } | null =
+    scene == null
+      ? null
+      : typeof scene === 'object'
+        ? { icon: scene.icon ?? '⚡', name: scene.name }
+        : scene === 'notes'
+          ? { icon: '✎', name: 'Notes' }
+          : scene === 'tables'
+            ? { icon: '▦', name: 'Tables' }
+            : { icon: '⟨⟩', name: 'Coding' };
+
   const personaRow = (
     <div className={styles.quickRow} role="group" aria-label="Irisy persona">
       {ROLES.map((r) => (
@@ -926,6 +964,12 @@ export function AmbientHome({
           {r.label}
         </button>
       ))}
+      {activeContext != null && (
+        <span className={styles.activePack} title={`Working in ${activeContext.name}`}>
+          <span aria-hidden>{activeContext.icon}</span>
+          {activeContext.name}
+        </span>
+      )}
     </div>
   );
 
@@ -1117,6 +1161,9 @@ export function AmbientHome({
                     <FeaturePackScene
                       pack={scene}
                       onRunAction={(id) => runInstalledPackAction(scene.id, id)}
+                      onConfigure={
+                        packSecrets.length > 0 ? () => setConfigOpen(true) : undefined
+                      }
                     />
                   </div>
                 ) : part ? (
@@ -1242,6 +1289,15 @@ export function AmbientHome({
           </div>
         </motion.div>
       </AnimatePresence>
+      {configOpen && scene != null && typeof scene === 'object' && (
+        <PackConfig
+          mcpId={scene.id}
+          packName={scene.name}
+          fields={packSecrets}
+          onClose={() => setConfigOpen(false)}
+          onDone={() => setNotice(`Saved ${scene.name} settings — run an action now.`)}
+        />
+      )}
     </div>
   );
 }
