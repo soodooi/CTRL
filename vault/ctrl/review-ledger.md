@@ -26,11 +26,11 @@
 > ★ 静态审查(R1-R5 + F1-F7)= 全部完成,28 个 finding,22 个已修已提交(见下 commit 列)。**下个会话主力 = D2-D5 运行时**,须跑完整 `npm run tauri:dev`(无 kernel binary 捷径),按真实用户路径抓静态查不到的行为 bug。
 | 批次 | 范围 | 状态 |
 |------|------|------|
-| D1 | 首屏启动(:5173) | ✅ 首屏渲染正常,不白屏。浏览器模式有 3 个环境性错误(2 个真代码缺陷 Bug#1✅修/#2待修 + WS 17872 连不上=kernel 没起,预期) |
-| D2 | Irisy 对话主流程 | ⬜ 需完整 tauri:dev 真机(浏览器连不上 kernel) |
-| D3 | mcp 发现 / 连接 / 调用 | ⬜ 需 tauri:dev 真机 |
-| D4 | vault 读写 + viewer | ⬜ 需 tauri:dev 真机 |
-| D5 | feature-pack 安装 | ⬜ 需 tauri:dev 真机 |
+| D1 | 真机启动(tauri:dev) | ✅ **真机 boot 干净**:整 app 编译过(v0.1.621)、无 panic、4 服务全 listening(:5173 vite / :17873 gate / :17890 hermes / :17872 WS)、projector 写 .mcp.json 进 vault 根(/Users/mac/Documents/pkm)。boot log 零 error/panic。 |
+| D2 | Irisy 对话主流程 | 🟡 后端就绪(llm_chat 工具在 scope + provider_chain=[anthropic,ollama,volc-doubao,zhipu] 已配)。**完整流式对话 UI(persona/Stop/morph)是 webview 交互层,需人在窗口点**(headless 驱动不了 Tauri 原生窗口)。 |
+| D3 | mcp 发现 / 连接 / 调用 | ✅ **真机 gate 端到端**:MCP initialize 握手 200+session;tools/list 带 caller+intent 返 51 工具、**net(http/web_search)正确缺席**;不带 intent header 退到最小集(2 system 工具)= SC3 默认最小敞口真机验证;**负向:vault-intent 调 web_search 被拒**(out of scope,纵深防御);kernel_status 真实(1 mcp / uptime)。 |
+| D4 | vault 读写 + viewer | ✅ **真机 vault 往返**:vault_write(body 契约,Bug#13)→wrote→磁盘真出现 64B 文件(vim test 过)→vault_read 取回 content+frontmatter→vault_delete 文件消失;notes_query 返真实行;smart_table_describe 工具可达+参数校验。viewer 渲染层(Tiptap/CodeMirror/mermaid)是 webview,需人在窗口看。 |
+| D5 | feature-pack 安装 | 🟡 后端就绪(registry_query/discover 在 scope,kernel_status 示 1 mcp 已装)。**装包是 UI one-shot 流(拖装/扫码),需人在窗口点**。 |
 
 ## B. 后端 Rust 静态检查(113 files)
 | 批次 | 范围 | 文件数 | 状态 |
