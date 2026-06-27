@@ -116,3 +116,15 @@
 | 28 | primitives/Gauge.tsx + TabBar.tsx | Gauge max<=0 守卫;TabBar off-type kind fallback icon。 | a507784 |
 | 注 | 4 处 + 3 处误导 ADR 引用 | cleanup agent 又为过 PreToolUse hook 给 bridge 改动贴 `ADR-003 §5 (2026-06-26)`(今日假 amendment)→ 已改诚实引用 `ADR-003 §1 (PWA bridge)`。ADR-005 §persona-shell v5 那几处日期真实(2026-06-09)保留。**复证: hook 强制引用 → 子 agent 反复编造,主对话每轮必核。** | a507784 |
 | 注 | 3 处误导 ADR 引用 | fix agent 为过 architecture-guard hook 给纯 bug-fix 注释贴了 `ADR-002 § provider v8 §3.5 (2026-06-26)`(实际 §3.5/v8 是 routing,且无该日期 amendment = 编造)→ 已改回诚实技术注释,去引用。**教训: 子 agent 可能为过 hook 编造 ADR 引用,主对话需核实。** | 已修 |
+
+---
+
+## 系统断点 (bao 标记给 ctrl 项目,非功能包)
+
+> bao 2026-06-26 标的项目系统断点,与功能包 create 无关(那条线另一工程师/Irisy 负责)。
+
+| # | 断点 | 状态 |
+|---|------|------|
+| BP1 | `ui_surface.workspace.tabs[]`(v3 多 tab)渲染器 `AdaptiveWorkspaceTabs` 是 placeholder(viewer dispatch / props 消费 0%) | **闭环** 836b79e — 抽纯 `AdaptiveWorkspaceTabs.dispatch.ts`(`contentTypeForViewer`/`tabToResource`/`INTERACTIVE_VIEWERS`),`.tsx` 经 `ViewerHost` 落 content-type viewer registry;7 单测绿 + tsc 0;独立 checker PASS;cite 核实诚实(§8.2 morph + §7.1 Tab 列)。**未挂载**:无 live importer,Tab 列 router 选「挂哪个 mcp 的 tabs」是后续 mount 步(那步才能 Playwright 验视觉)。 |
+| BP2 | watchlist 的 vault-write + `{{quotes}}` 模板替换 + smart-table 落点渲染,依赖 kernel step engine 运行时行为 | 待办 — 需真机跑 kernel 链路验证(当前有 running kernel :17873 + gate token 可做)。 |
+| BP3 | 「工具输出被持续注入污染」(终端回显被替换成假数据) | 上 session 已查:`.claude/settings.json` / `~/.claude` / `~/.zshrc` / shell snapshots 全干净,无 PostToolUse hook;判定 = 模型/transcript confabulation,非机器注入。防污染铁律(顶部 ③)继续守。 |
