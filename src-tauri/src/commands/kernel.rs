@@ -463,6 +463,26 @@ pub(crate) fn run_action_blocking(dir: &Path, mcp_id: &str, action_id: &str) -> 
     // temp dirs (ADR-004 §1 sandbox).
     let pack_dir = dir.join(mcp_id);
 
+    // Gate-path capability enforcement (ADR-002 §2): mcp_pack_run is the one
+    // gate tool that carries an explicit pack identity (mcp_id), so this is
+    // where per-pack capability binds. Resolve the pack's capability and let
+    // its declared `file.write_allowlist` (FsWrite tokens, absolute paths)
+    // EXPAND the sandbox write scope — floor + declared, never more. A pack
+    // that declares no writes is confined to the floor; an injected model
+    // can't make it write outside what the manifest declared.
+    let cap = crate::kernel::capability_resolver::resolve_for_mcp(mcp_id);
+    let declared_writes: Vec<String> = cap
+        .tokens()
+        .filter_map(|t| match t {
+            crate::kernel::capability::CapToken::FsWrite { path_glob }
+                if path_glob.starts_with('/') =>
+            {
+                Some(path_glob.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
     let mut out = String::new();
     let mut ran_any = false;
     for step in steps {
@@ -474,7 +494,13 @@ pub(crate) fn run_action_blocking(dir: &Path, mcp_id: &str, action_id: &str) -> 
             .and_then(|v| v.as_str())
             .ok_or_else(|| "shell step missing command".to_string())?;
         ran_any = true;
-        out.push_str(&run_shell(command, &provision.env, &tool_dirs, &pack_dir)?);
+        out.push_str(&run_shell(
+            command,
+            &provision.env,
+            &tool_dirs,
+            &pack_dir,
+            &declared_writes,
+        )?);
     }
     if !ran_any {
         return Err(format!(
@@ -489,11 +515,13 @@ fn run_shell(
     env: &std::collections::BTreeMap<String, String>,
     tool_dirs: &[String],
     pack_dir: &Path,
+    declared_writes: &[String],
 ) -> Result<String, String> {
     // A feature-pack shell body is potentially-untrusted third-party code,
     // so it runs inside the OS sandbox (ADR-001 §6 lock #1 + ADR-004 §1):
-    // no network, no filesystem write outside the pack dir + OS temp.
-    let mut cmd = crate::kernel::pack_sandbox::wrap_shell(command, pack_dir);
+    // no network, no filesystem write outside the pack dir + OS temp + the
+    // paths the pack DECLARED in its capability (the upper bound).
+    let mut cmd = crate::kernel::pack_sandbox::wrap_shell(command, pack_dir, declared_writes);
     for (k, v) in env {
         cmd.env(k, v);
     }

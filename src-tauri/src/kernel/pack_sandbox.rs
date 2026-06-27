@@ -39,11 +39,23 @@ use std::process::Command;
 /// interpreter loading working; the later `deny`/`allow` rules override
 /// it (last-match-wins in SBPL).
 #[cfg(target_os = "macos")]
-fn seatbelt_profile(pack_dir: &Path) -> String {
+fn seatbelt_profile(pack_dir: &Path, extra_writes: &[String]) -> String {
     // Writable scopes: the pack's own install dir + the OS temp dirs an
-    // interpreter (python/node) legitimately needs. Everything else is
-    // read-only.
+    // interpreter (python/node) legitimately needs + the absolute paths the
+    // pack DECLARED in its `file.write_allowlist` capability (resolved by the
+    // gate, ADR-002 §2). The declaration is the UPPER BOUND — a pack writes
+    // the floor + exactly what it declared, never more; an injected model
+    // can't make a read-only pack write elsewhere. Everything else read-only.
     let pack = pack_dir.display();
+    // Sanitize declared paths against SBPL injection: only clean absolute
+    // paths (a `"` / `\` / newline could break out of the profile string).
+    let declared: String = extra_writes
+        .iter()
+        .filter(|p| {
+            p.starts_with('/') && !p.contains('"') && !p.contains('\\') && !p.contains('\n')
+        })
+        .map(|p| format!("\n    (subpath \"{p}\")"))
+        .collect();
     format!(
         r#"(version 1)
 (allow default)
@@ -61,7 +73,7 @@ fn seatbelt_profile(pack_dir: &Path) -> String {
     (literal "/dev/urandom")
     (literal "/dev/stdout")
     (literal "/dev/stderr")
-    (regex #"^/dev/tty"))
+    (regex #"^/dev/tty"){declared})
 "#
     )
 }
@@ -73,17 +85,17 @@ fn seatbelt_profile(pack_dir: &Path) -> String {
 ///
 /// `pack_dir` is the pack's install root (`~/.ctrl/mcps/<id>`), used as
 /// the single writable scope outside the OS temp dirs.
-pub fn wrap_shell(command: &str, pack_dir: &Path) -> Command {
+pub fn wrap_shell(command: &str, pack_dir: &Path, extra_writes: &[String]) -> Command {
     #[cfg(target_os = "macos")]
     {
-        let profile = seatbelt_profile(pack_dir);
+        let profile = seatbelt_profile(pack_dir, extra_writes);
         let mut cmd = Command::new("/usr/bin/sandbox-exec");
         cmd.arg("-p").arg(profile).args(["sh", "-c", command]);
         cmd
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let _ = pack_dir;
+        let _ = (pack_dir, extra_writes);
         tracing::warn!(
             "pack_sandbox: Linux landlock+seccomp arm not yet wired \
              (ADR-004 §1) — running pack shell UNSANDBOXED"
@@ -94,7 +106,7 @@ pub fn wrap_shell(command: &str, pack_dir: &Path) -> Command {
     }
     #[cfg(windows)]
     {
-        let _ = pack_dir;
+        let _ = (pack_dir, extra_writes);
         tracing::warn!(
             "pack_sandbox: Windows AppContainer arm not yet wired \
              (ADR-004 §1) — running pack shell UNSANDBOXED"
@@ -111,7 +123,11 @@ mod tests {
     use std::path::PathBuf;
 
     fn run(command: &str, pack_dir: &Path) -> std::process::Output {
-        wrap_shell(command, pack_dir).output().expect("spawn sandbox-exec")
+        wrap_shell(command, pack_dir, &[]).output().expect("spawn sandbox-exec")
+    }
+
+    fn run_with(command: &str, pack_dir: &Path, extra: &[String]) -> std::process::Output {
+        wrap_shell(command, pack_dir, extra).output().expect("spawn sandbox-exec")
     }
 
     #[test]
@@ -145,6 +161,36 @@ mod tests {
             "sandbox let an out-of-scope write through: {escape:?}"
         );
         let _ = std::fs::remove_dir_all(&pack);
+    }
+
+    #[test]
+    fn declared_write_path_is_allowed_undeclared_is_not() {
+        // A pack DECLARES one extra writable path (its `file.write_allowlist`,
+        // resolved by the gate). It may write there + its floor; an injected
+        // command to write any OTHER absolute path is still denied. This is
+        // the per-pack capability upper bound, OS-enforced.
+        let pack = std::env::temp_dir().join("ctrl-sbx-declared-pack");
+        std::fs::create_dir_all(&pack).unwrap();
+        let allowed_dir = std::env::temp_dir().join("ctrl-sbx-declared-allow");
+        std::fs::create_dir_all(&allowed_dir).unwrap();
+        let declared = vec![allowed_dir.display().to_string()];
+
+        // Declared path → write succeeds.
+        let target = allowed_dir.join("ok.txt");
+        let ok = run_with(&format!("echo hi > {}", target.display()), &pack, &declared);
+        assert!(ok.status.success(), "declared path must be writable: {ok:?}");
+        assert_eq!(std::fs::read_to_string(&target).unwrap().trim(), "hi");
+
+        // A DIFFERENT undeclared absolute path → still denied even though the
+        // pack declared *a* write path.
+        let escape = std::env::var("HOME").map(std::path::PathBuf::from).unwrap()
+            .join("ctrl-sbx-declared-escape.txt");
+        let bad = run_with(&format!("echo no > {}", escape.display()), &pack, &declared);
+        assert!(!bad.status.success(), "undeclared path must stay denied");
+        assert!(!escape.exists());
+
+        let _ = std::fs::remove_dir_all(&pack);
+        let _ = std::fs::remove_dir_all(&allowed_dir);
     }
 
     #[test]
