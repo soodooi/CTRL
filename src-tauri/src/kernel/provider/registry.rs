@@ -612,6 +612,23 @@ impl ProviderRegistry {
     /// not resolvable — agents then fall back to their own config.
     pub fn agent_env_injection(&self) -> BTreeMap<String, String> {
         let mut env = BTreeMap::new();
+
+        // Light up hermes's BUILT-IN web tools for Irisy (ADR-002 § brain:
+        // ride hermes, don't rebuild). The `hermes-acp` toolset (enabled by
+        // default in ACP mode) includes `web_search` + `web_extract`; hermes
+        // auto-selects the Tavily backend from `TAVILY_API_KEY` (verified vs
+        // hermes-agent 0.16.0 `web_tools._get_backend` fallback + the upstream
+        // web-search docs). This is the SINGLE env source for every hermes
+        // spawn — ACP launch, one-shot, and `~/.hermes/.env` via
+        // write_hermes_dotenv — so it lands on all paths. Independent of the
+        // LLM provider: Irisy gets web search + URL fetch whenever a Tavily
+        // key is stored. bao 2026-06-27.
+        if let Some(key) = read_credential("tavily") {
+            if !key.is_empty() {
+                env.insert("TAVILY_API_KEY".into(), key);
+            }
+        }
+
         let id = {
             let active = self.active.read().unwrap();
             match active.get(&Consumer::IrisyPrimary) {
