@@ -11,7 +11,6 @@ import { loadConnectors } from '@/lib/connector';
 import { providerBadge } from '@/lib/provider-badge';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
 import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
-import { packsForRole, roleById, type RoleId } from '@/lib/roles';
 import styles from './Sidebar.module.css';
 
 // Unified line-icon set (bao 2026-06-16: L1 icons must all be the SAME size).
@@ -77,12 +76,9 @@ interface SidebarProps {
    *  the legacy first-2-letters-of-label slice. Decision 0007 §display. */
   providerId?: string | null;
   onModel: () => void;
-  /** Active Irisy role — filters the feature packs shown to those the role
-   *  exposes (ADR-003 §8.6 toolset). Omitted = show all installed packs. */
-  roleId?: RoleId;
 }
 
-export function Sidebar({ active, onSelect, modelLabel, providerId, onModel, roleId }: SidebarProps): ReactElement {
+export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: SidebarProps): ReactElement {
   const connectors = loadConnectors();
   // Installed feature packs (mcps whose manifest declares actions).
   const [packs, setPacks] = useState<FeaturePack[]>([]);
@@ -96,16 +92,18 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel, rol
   }, []);
 
   const modelBadge = providerBadge(providerId ?? '', modelLabel);
-  // Packs the active role exposes (ADR-003 §8.6 toolset). No role = show all.
-  const visiblePacks = roleId ? packsForRole(roleById(roleId), packs) : packs;
 
   // One unified L1 feature-pack list (bao 2026-06-26: a single pack list, no
   // hardcoded faces interleaved with packs). Built-in faces (Notes / Tables /
   // Coding) are entries of the SAME list as installed packs, rendered the same
   // way; opening still routes to each one's rich scene via its `section` (the
   // editor / grid / terminal aren't a generic action bar, so they keep their
-  // own viewer — unification is the list, not the renderer). Built-in faces
-  // are core capabilities, always shown; installed packs stay role-filtered.
+  // own viewer — unification is the list, not the renderer). The L1 rail is
+  // EVERY installed capability's entry point, so it is role-independent: all
+  // installed packs always show here (bao 2026-06-27: role-filtering the rail
+  // made the Stocks/ghostfolio entry vanish when a code role opened — you
+  // could no longer get back to it). Role scoping lives where it belongs —
+  // Irisy's per-turn toolset and the composer's context-pack row — not the rail.
   interface L1Entry {
     key: string;
     title: string;
@@ -117,7 +115,7 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel, rol
     { key: 'tables', title: 'Tables', icon: <TableIcon />, section: { kind: 'tables' } },
     { key: 'coding', title: 'Coding', icon: <CodeIcon />, section: { kind: 'coding' } },
   ];
-  const packEntries: L1Entry[] = visiblePacks.map((p) => ({
+  const packEntries: L1Entry[] = packs.map((p) => ({
     key: `pack.${p.id}`,
     title: p.name,
     icon: p.icon ?? '⚡',

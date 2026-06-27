@@ -1321,7 +1321,6 @@ export function AmbientHome({
               modelLabel={modelLabel}
               providerId={providerId}
               onModel={onOpenPicker}
-              roleId={roleId}
             />
             {!isNarrow && (
               <div
