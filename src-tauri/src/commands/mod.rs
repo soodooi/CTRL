@@ -54,6 +54,7 @@ pub mod cloud_catalog;
 // Discover registry data source — kernel-side fetch of the MCP Registry
 // (ADR-002 substrate § composition §7.4); CSP blocks PWA external fetch.
 pub mod pack_registry;
+pub mod review;
 // 2026-06-19 (decision 0007 §per-provider-models): opencode-style live
 // /models fetch — provider's own endpoint is the source of truth, not
 // the catalog's static defaultModel.
@@ -137,6 +138,11 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::irisy::irisy_init,
             // system — kernel health (PWA status bar Phase 1F)
             $crate::commands::system::kernel_status,
+            // review gate — human approval for high-blast calls (ADR-002
+            // §264 + ADR-006 §4). PWA-only surface: the external brain can't
+            // resolve its own pending review (C3 trust boundary).
+            $crate::commands::review::review_pending,
+            $crate::commands::review::review_resolve,
             // provider — ADR-002 substrate § provider v2 §3.6 + §3.7
             // brain_status: Irisy self-awareness (closes "doesn't know stack" gap)
             // provider_list: /settings/providers picker rows

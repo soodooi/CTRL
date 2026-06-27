@@ -63,8 +63,10 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
 ];
 
 /// Callers treated as first-party (in-process app surfaces). The PWA bridge
-/// stamps `pwa`; the embedded assistant may stamp `irisy`/`hermes`.
-fn is_first_party(caller: &str) -> bool {
+/// stamps `pwa`; the embedded assistant may stamp `irisy`/`hermes`. Also used
+/// by the review gate (ADR-002 §264) to scope human-approval to EXTERNAL
+/// callers (the BYO-CLI brain) — first-party app surfaces are CTRL's own.
+pub fn is_first_party(caller: &str) -> bool {
     matches!(caller, "pwa" | "irisy" | "hermes")
 }
 

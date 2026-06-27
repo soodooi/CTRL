@@ -53,6 +53,30 @@ impl KernelSupervisor {
         };
         app.manage(handle.clone());
 
+        // Review-gate forwarder (ADR-002 §264 + ADR-006 §4): when a high-blast
+        // EXTERNAL call parks for human approval, fan the gate-derived request
+        // out to the PWA as a Tauri event so the ReviewGateHost can pop a
+        // confirm. The approve/deny comes back via the `review_resolve` command
+        // (PWA-only surface — the external brain can't reach it: C3 boundary).
+        {
+            use tauri::Emitter;
+            let mut rx = runtime.review_gate.subscribe();
+            let app_for_review = app.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match rx.recv().await {
+                        Ok(req) => {
+                            let _ = app_for_review.emit("review:pending", &req);
+                        }
+                        // Lagged (slow PWA) — the modal re-seeds via the
+                        // `review_pending` command, so dropping is fine.
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
+
         // NOTE (2026-06-21, full-review P0): the unauthenticated `:17878`
         // provider HTTP endpoint (`/text-chat` + `/tool/<name>`) was removed.
         // It existed only for the now-retired Pi bridge (ADR-002 §1 v19) and

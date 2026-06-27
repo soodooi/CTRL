@@ -22,6 +22,7 @@
 //     stay against those modules, not the MCP envelope.
 
 use crate::kernel::audit;
+use crate::kernel::review_gate;
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
@@ -2343,9 +2344,42 @@ impl ServerHandler for KernelMcpRouter {
         let gate_req =
             audit::GateRequest::at_gate(caller, &tool_name, request.arguments.as_ref());
 
+        // Review gate (ADR-002 §264 + ADR-006 §4): high-blast-radius calls
+        // (write/delete/command/network-write) need explicit human approval
+        // before they run. The confirm the human sees is built HERE from the
+        // parsed tool + structured args (never the caller's prose — C3 anti-
+        // injection), and approval arrives out-of-band via the Tauri command
+        // surface the external brain can't reach. Opt-in (CTRL_REVIEW_GATE=1)
+        // until the PWA approval modal is wired; fail-closed on timeout.
+        // Scope to EXTERNAL callers (the BYO-CLI brain): first-party app
+        // surfaces (pwa/irisy/hermes) are CTRL's own and not the C3 threat.
+        let needs_review = !denied
+            && review_gate::ReviewGate::enforcing()
+            && !visibility::is_first_party(gate_req.caller())
+            && review_gate::requires_review(&tool_name);
+        let review_denied = if needs_review {
+            let summary = summarize_args(request.arguments.as_ref());
+            let rx = self
+                .runtime
+                .review_gate
+                .request(gate_req.caller(), &tool_name, summary);
+            match tokio::time::timeout(review_gate::REVIEW_TIMEOUT, rx).await {
+                Ok(Ok(true)) => false,            // approved
+                Ok(Ok(false)) => true,           // denied by human
+                Ok(Err(_)) | Err(_) => true,     // dropped or timed out → deny
+            }
+        } else {
+            false
+        };
+
         let result = if denied {
             Err(McpError::invalid_request(
                 format!("tool '{tool_name}' is out of scope for the declared intent"),
+                None,
+            ))
+        } else if review_denied {
+            Err(McpError::invalid_request(
+                format!("tool '{tool_name}' denied at the review gate (no approval)"),
                 None,
             ))
         } else {
@@ -2700,6 +2734,118 @@ async fn wikipedia_search(query: &str, n: u32) -> Result<Vec<serde_json::Value>,
 /// that the MCP caller parses: `{ status: u16, body: String, headers: {} }`.
 /// Errors map to McpError::internal_error with the underlying message
 /// so creator-side debugging is straightforward.
+/// Build the human-facing review summary GATE-SIDE from the structured
+/// call arguments (ADR-002 §264 review gate, C3 anti-injection). Each
+/// argument renders as `key=value` with values capped so a huge body can't
+/// flood the modal; the human reads this, never the caller's prose. Keys
+/// are sorted for a stable, predictable display.
+fn summarize_args(args: Option<&serde_json::Map<String, serde_json::Value>>) -> String {
+    let Some(map) = args else {
+        return "(no arguments)".to_string();
+    };
+    if map.is_empty() {
+        return "(no arguments)".to_string();
+    }
+    let mut keys: Vec<&String> = map.keys().collect();
+    keys.sort();
+    let mut parts = Vec::new();
+    for k in keys {
+        let v = &map[k];
+        let rendered = match v {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        let capped: String = if rendered.chars().count() > 80 {
+            let head: String = rendered.chars().take(80).collect();
+            format!("{head}… ({} chars)", rendered.chars().count())
+        } else {
+            rendered
+        };
+        parts.push(format!("{k}={capped}"));
+    }
+    parts.join(", ")
+}
+
+/// SSRF / internal-egress floor for the kernel HTTP tools (ADR-002 §2:335
+/// "network http (allowlist-bound)"). The pack shell is already network-
+/// denied by the sandbox (ADR-004 §1); `http_get`/`http_post` are the only
+/// network egress left, so they must not be turnable into a pivot into the
+/// loopback / cloud-metadata / private LAN surface. Per-URL *allowlist*
+/// binding is per-pack (manifest `capabilities.network.http.allowlist`) and
+/// awaits the pack-context-on-call wiring; this is the caller-agnostic
+/// deny-floor that holds regardless.
+///
+/// Rejects: loopback, link-local (incl. 169.254.169.254 metadata),
+/// RFC1918 / unique-local private ranges, and the `localhost` / `*.local`
+/// hostnames — checked against EVERY address the host resolves to.
+fn guard_egress(url: &str) -> Result<(), McpError> {
+    use std::net::{IpAddr, ToSocketAddrs};
+
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| McpError::invalid_params(format!("http: bad url '{url}': {e}"), None))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(McpError::invalid_params(
+                format!("http: scheme '{other}' not allowed (http/https only)"),
+                None,
+            ))
+        }
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| McpError::invalid_params("http: url has no host".to_string(), None))?;
+    // host_str keeps brackets on IPv6 literals ("[::1]"); strip for parsing.
+    let host_bare = host.trim_start_matches('[').trim_end_matches(']');
+    let lower = host_bare.to_ascii_lowercase();
+    if lower == "localhost" || lower.ends_with(".local") || lower.ends_with(".internal") {
+        return Err(McpError::invalid_params(
+            format!("http: host '{host}' is internal — egress denied"),
+            None,
+        ));
+    }
+
+    let blocked = |ip: &IpAddr| -> bool {
+        match ip {
+            IpAddr::V4(v4) => {
+                v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_unspecified()
+                    || v4.is_broadcast()
+                    || v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64 // 100.64/10 CGNAT
+            }
+            IpAddr::V6(v6) => {
+                v6.is_loopback()
+                    || v6.is_unspecified()
+                    || (v6.segments()[0] & 0xffc0) == 0xfe80 // link-local
+                    || (v6.segments()[0] & 0xfe00) == 0xfc00 // unique-local
+                    || v6.to_ipv4_mapped().map(|m| m.is_loopback() || m.is_private()).unwrap_or(false)
+            }
+        }
+    };
+
+    // IP literal → check directly; hostname → resolve and check every
+    // address it lands on (DNS-rebind floor).
+    let port = parsed.port_or_known_default().unwrap_or(443);
+    let addrs: Vec<IpAddr> = if let Ok(ip) = host_bare.parse::<IpAddr>() {
+        vec![ip]
+    } else {
+        (host_bare, port)
+            .to_socket_addrs()
+            .map_err(|e| McpError::invalid_params(format!("http: resolve '{host}': {e}"), None))?
+            .map(|sa| sa.ip())
+            .collect()
+    };
+    if addrs.is_empty() || addrs.iter().any(blocked) {
+        return Err(McpError::invalid_params(
+            "http: host resolves to an internal address — egress denied".to_string(),
+            None,
+        ));
+    }
+    Ok(())
+}
+
 async fn http_request(
     method: reqwest::Method,
     url: String,
@@ -2707,9 +2853,22 @@ async fn http_request(
     body: Option<serde_json::Value>,
     timeout_ms: Option<u64>,
 ) -> Result<String, McpError> {
+    guard_egress(&url)?;
     let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(30_000));
     let client = reqwest::Client::builder()
         .timeout(timeout)
+        // Follow redirects (many APIs http→https), but re-check every hop so
+        // an allowlisted host can't 30x-redirect into the internal surface
+        // guard_egress just cleared.
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() > 10 {
+                return attempt.stop();
+            }
+            match guard_egress(attempt.url().as_str()) {
+                Ok(()) => attempt.follow(),
+                Err(_) => attempt.stop(),
+            }
+        }))
         .build()
         .map_err(|e| McpError::internal_error(format!("http client build: {e}"), None))?;
     let mut req = client.request(method, &url);
@@ -2806,6 +2965,33 @@ mod tests {
         assert_eq!(d2.get("c_email").map(String::as_str), Some("b@beta.co"));
         assert_eq!(d2.get("c_total").map(String::as_str), Some("120"));
         assert_eq!(d2.get("half").map(String::as_str), Some("60"));
+    }
+
+    #[test]
+    fn guard_egress_blocks_internal_targets() {
+        // Loopback + metadata + private ranges + internal hostnames denied.
+        for bad in [
+            "http://127.0.0.1/x",
+            "http://localhost:8080/",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://10.0.0.5/",
+            "http://192.168.1.1/admin",
+            "http://[::1]/",
+            "https://kernel.internal/",
+            "https://foo.local/",
+            " file:///etc/passwd".trim(),
+            "ftp://example.com/",
+        ] {
+            assert!(
+                guard_egress(bad).is_err(),
+                "egress guard must deny internal/odd target: {bad}"
+            );
+        }
+        // A normal public host is allowed (resolves to a routable address).
+        assert!(
+            guard_egress("https://example.com/").is_ok(),
+            "public host should pass the egress guard"
+        );
     }
 
     /// Bind to an ephemeral port + assert the auth middleware rejects

@@ -44,6 +44,10 @@ pub struct KernelRuntime {
     /// Monotonic instant captured at boot — used by the kernel_status
     /// Tauri command to report uptime to the PWA status bar.
     pub booted_at: Instant,
+    /// Human-approval gate for high-blast-radius calls (ADR-002 §264 +
+    /// ADR-006 §4). Shared by the MCP gate (`call_tool`, awaits) and the
+    /// Tauri approval commands (resolve) — same in-process Arc.
+    pub review_gate: Arc<crate::kernel::review_gate::ReviewGate>,
 }
 
 impl KernelRuntime {
@@ -153,6 +157,7 @@ impl KernelRuntime {
             provider_registry,
             local_storage,
             booted_at: Instant::now(),
+            review_gate: Arc::new(crate::kernel::review_gate::ReviewGate::new()),
         })
     }
 

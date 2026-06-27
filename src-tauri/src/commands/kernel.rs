@@ -264,6 +264,8 @@ pub struct InstallMcpbResult {
     /// Env keys injected (values omitted — secrets never leave the kernel,
     /// decision 0004).
     pub provisioned_env_keys: Vec<String>,
+    /// sha256 of the installed `.mcpb` bundle (ADR-004 §6 integrity floor).
+    pub bundle_sha256: String,
 }
 
 /// Install a feature pack from a `.mcpb` bundle (Anthropic format — a zip of
@@ -287,7 +289,23 @@ pub async fn install_mcpb(
     Ok(result)
 }
 
+/// sha256 of the bundle bytes, hex. The integrity floor (ADR-004 §6 v3):
+/// the `.mcpb` spec carries no signature/hash field of its own, so CTRL
+/// records what it installed. This closes the "unzip with zero verification"
+/// gap and gives a git-diffable on-disk record (`installed.json.bundle_sha256`)
+/// a later re-install / update can diff against. It is NOT authorship — the
+/// detached-Ed25519 + TOFU layer (researched, ADR-004 §6 v3) adds that next.
+fn bundle_sha256(mcpb_path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = fs::read(mcpb_path).map_err(|e| format!("read mcpb for hashing: {e}"))?;
+    let digest = Sha256::digest(&bytes);
+    Ok(format!("{digest:x}"))
+}
+
 fn install_mcpb_blocking(mcpb_path: &Path, dir: &Path) -> Result<InstallMcpbResult, String> {
+    // 0. integrity floor — hash the bundle before we trust anything in it.
+    let bundle_sha256 = bundle_sha256(mcpb_path)?;
+
     // 1. unpack the .mcpb (zip) into a staging dir.
     let staging = dir.join(".mcpb-staging");
     let _ = fs::remove_dir_all(&staging);
@@ -326,6 +344,18 @@ fn install_mcpb_blocking(mcpb_path: &Path, dir: &Path) -> Result<InstallMcpbResu
     copy_bundle_assets(&staging, &target)?;
     let _ = fs::remove_dir_all(&staging);
 
+    // 4b. record the bundle hash as a git-diffable on-disk pin (ADR-004 §6
+    // integrity floor). A later re-install / update diffs against this; the
+    // user can `git diff` / `vim` it (plain-text philosophy). Best-effort —
+    // a write failure must not abort an otherwise-good install.
+    let pin = serde_json::json!({ "bundle_sha256": bundle_sha256 });
+    if let Err(e) = fs::write(
+        target.join("installed.json"),
+        serde_json::to_vec_pretty(&pin).unwrap_or_default(),
+    ) {
+        tracing::warn!(mcp_id = %summary.id, error = %e, "install_mcpb: failed to write integrity pin");
+    }
+
     // 5. run provision: toolchain install + env/secret injection.
     let provision = crate::shell::provision_runner::run_provision(&summary.id, &manifest)
         .map_err(|e| format!("provision '{}': {e}", summary.id))?;
@@ -338,6 +368,7 @@ fn install_mcpb_blocking(mcpb_path: &Path, dir: &Path) -> Result<InstallMcpbResu
             .collect(),
         provisioned_env_keys: provision.env.keys().cloned().collect(),
         summary,
+        bundle_sha256,
     })
 }
 
@@ -428,6 +459,10 @@ pub(crate) fn run_action_blocking(dir: &Path, mcp_id: &str, action_id: &str) -> 
         .filter_map(|p| p.parent().map(|d| d.display().to_string()))
         .collect();
 
+    // The pack's install root is its single writable scope outside the OS
+    // temp dirs (ADR-004 §1 sandbox).
+    let pack_dir = dir.join(mcp_id);
+
     let mut out = String::new();
     let mut ran_any = false;
     for step in steps {
@@ -439,7 +474,7 @@ pub(crate) fn run_action_blocking(dir: &Path, mcp_id: &str, action_id: &str) -> 
             .and_then(|v| v.as_str())
             .ok_or_else(|| "shell step missing command".to_string())?;
         ran_any = true;
-        out.push_str(&run_shell(command, &provision.env, &tool_dirs)?);
+        out.push_str(&run_shell(command, &provision.env, &tool_dirs, &pack_dir)?);
     }
     if !ran_any {
         return Err(format!(
@@ -453,19 +488,12 @@ fn run_shell(
     command: &str,
     env: &std::collections::BTreeMap<String, String>,
     tool_dirs: &[String],
+    pack_dir: &Path,
 ) -> Result<String, String> {
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = std::process::Command::new("cmd");
-        c.args(["/C", command]);
-        c
-    };
-    #[cfg(not(windows))]
-    let mut cmd = {
-        let mut c = std::process::Command::new("sh");
-        c.args(["-c", command]);
-        c
-    };
+    // A feature-pack shell body is potentially-untrusted third-party code,
+    // so it runs inside the OS sandbox (ADR-001 §6 lock #1 + ADR-004 §1):
+    // no network, no filesystem write outside the pack dir + OS temp.
+    let mut cmd = crate::kernel::pack_sandbox::wrap_shell(command, pack_dir);
     for (k, v) in env {
         cmd.env(k, v);
     }

@@ -38,6 +38,7 @@ import {
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StatusBar } from './components/StatusBar';
+import { ReviewGateHost } from './components/ReviewGateHost';
 import { OllamaSetupBanner } from './components/OllamaSetupBanner';
 import { MCP_DRAG_MIME } from './components/Keyboard';
 import { RailProvider, PrimaryRail } from './components/PrimaryRail';
@@ -500,6 +501,8 @@ export const App = (): ReactElement => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
+      {/* Human-approval surface for the kernel review gate (ADR-002 §264). */}
+      <ReviewGateHost />
     </QueryClientProvider>
   </ErrorBoundary>
 );
