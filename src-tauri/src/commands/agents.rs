@@ -140,11 +140,16 @@ pub async fn connect_agent_mcp(
 pub(crate) fn write_hermes_dotenv(
     env: &std::collections::BTreeMap<String, String>,
 ) -> Result<(), String> {
-    const MANAGED: [&str; 4] = [
+    // TAVILY_API_KEY lights up hermes's built-in web_search / web_extract for
+    // Irisy. hermes reads it from ~/.hermes/.env (not process env, see the
+    // doc above), so it MUST ride this managed-merge or it never reaches the
+    // agent — process-env injection alone is silently dropped.
+    const MANAGED: [&str; 5] = [
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_BASE_URL",
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
+        "TAVILY_API_KEY",
     ];
     if MANAGED.iter().all(|k| !env.contains_key(*k)) {
         return Ok(());
@@ -301,6 +306,64 @@ fn set_mapping_path(doc: &mut serde_yaml::Value, path: &[&str], value: serde_yam
     }
 }
 
+/// Belt for Irisy's web tools (ADR-002 substrate §1 v36 — Irisy web search).
+///
+/// hermes auto-selects the Tavily backend when `TAVILY_API_KEY` is present, so
+/// on 0.16.0 the key alone (written to `~/.hermes/.env`) is enough. But the
+/// web backend is also configurable via `web.{backend,search_backend,
+/// extract_backend}` in config.yaml, and some hermes builds (issue #29617)
+/// treat an empty/unset value as "disabled" and silently drop web_search /
+/// web_extract. Pin all three to `tavily` so Irisy's web reach survives
+/// version drift — defence in depth on top of the key.
+///
+/// Only written when a Tavily credential exists; with no key we leave
+/// config.yaml untouched (don't pin a backend the user can't authenticate).
+/// Every other field hermes owns is preserved verbatim (free-form merge).
+pub(crate) fn write_hermes_web_belt() -> Result<(), String> {
+    let has_key = crate::kernel::provider::registry::read_credential("tavily")
+        .map(|k| !k.trim().is_empty())
+        .unwrap_or(false);
+    if !has_key {
+        return Ok(());
+    }
+    let base =
+        directories::BaseDirs::new().ok_or_else(|| "could not resolve home dir".to_string())?;
+    let dir = base.home_dir().join(".hermes");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create ~/.hermes: {e}"))?;
+    let path = dir.join("config.yaml");
+
+    let mut doc: serde_yaml::Value = if path.exists() {
+        match std::fs::read_to_string(&path) {
+            Ok(text) => serde_yaml::from_str(&text).unwrap_or_else(|e| {
+                tracing::warn!(
+                    error = %e,
+                    "hermes config.yaml parse failed; rewriting from scratch"
+                );
+                serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+            }),
+            Err(_) => serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+        }
+    } else {
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+    };
+
+    for leaf in ["backend", "search_backend", "extract_backend"] {
+        set_mapping_path(
+            &mut doc,
+            &["web", leaf],
+            serde_yaml::Value::String("tavily".into()),
+        );
+    }
+
+    let serialized = serde_yaml::to_string(&doc)
+        .map_err(|e| format!("serialize ~/.hermes/config.yaml: {e}"))?;
+    let tmp = path.with_extension("yaml.web.tmp");
+    std::fs::write(&tmp, serialized).map_err(|e| format!("write tmp: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))?;
+    tracing::info!("hermes config.yaml web backend pinned to tavily (Irisy web belt)");
+    Ok(())
+}
+
 /// Core hermes one-shot — `uvx --from hermes-agent==<pin> hermes -z "<prompt>"`
 /// prints only the final answer to stdout (verified upstream oneshot.py,
 /// 2026-06-10). Shared by the `assistant_oneshot` command and the
@@ -324,6 +387,12 @@ pub async fn run_hermes_oneshot(
     // a fallback for hermes builds that do read it.
     let provider_env = registry.agent_env_injection();
     write_hermes_dotenv(&provider_env)?;
+    // Pin the web backend so Irisy's search/extract survive hermes version
+    // drift (issue #29617). Best-effort: a config-write hiccup must never
+    // sink the chat turn — the key in .env already enables web on 0.16.0.
+    if let Err(e) = write_hermes_web_belt() {
+        tracing::warn!(error = %e, "hermes web belt write failed; web search may be version-fragile");
+    }
 
     let mut cmd = tokio::process::Command::new(uvx);
     cmd.args(["--from", HERMES_ONESHOT_SPEC, "hermes", "-z", prompt]);
