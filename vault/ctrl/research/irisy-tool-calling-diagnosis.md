@@ -53,16 +53,29 @@ relates:
 
 即:Irisy 用工具要可靠,需要一个 **(a) 标准 OpenAI `tool_calls` 格式 + (b) 足够强(非 8B 级)+ (c) hermes adapter 一等支持** 的模型。doubao 缺 (a),hermes3:8b 缺 (b)。
 
-## 下一步
+## 根因二次修正(2026-06-27 — bao「用 volc 就行,不要写死,你在开发系统」)
 
-1. **测一个强的标准-FC 模型**(决定性):Claude(`anthropic` provider,hermes `anthropic_adapter` 一等支持 + 标准 `tool_use`)最佳;或 GPT-4o / GLM-4 / Nous 托管的大 Hermes。用户已配 `~/.ctrl/providers/{anthropic,zhipu}.toml`。若强模型能调通 ctrl-websearch → 根因坐实 = 模型,Irisy 换强模型即解(执行模式 / 功能包 / 搜索后端都不用动)。**← 下一步**
-2. 若强模型也不调 → 再回头查 hermes-agent ↔ ollama/provider 的工具传递实现。
+**上面「模型能力是瓶颈」也错了** —— 又犯了挑模型的毛病(见 ~/.claude memory `feedback-jump-to-industry-default-not-ctrl-moat`)。bao 校准:不挑模型,用户选 volc 就让系统对 volc 工作。一连串决定性隔离推翻了「模型」假设:
 
-## 关键结论
+| 测试 | 结果 |
+|---|---|
+| volc/doubao API + 1 工具 | ✅ 标准 `tool_calls: web_search` |
+| volc/doubao API + hermes 真实 27 工具集 + 明确意图 | ✅ 调 web_search(工具数量不是问题) |
+| **重放 hermes 完整真实 dump 请求**(model=`doubao-1-5-pro-32k`,27 tools + 6519 字 system,任务=写 html) | ✅ **调 write_file**(hermes 发的 payload 完全正确) |
+| hermes 实际运行(ACP / one-shot) | ❌ 不调,**inputTokens=50545** |
 
-部件全好(功能包 ✓ / 连接 ✓ / 强模型直连 FC ✓ / ACP 握手 ✓),**唯一没验证通的是「在 hermes-agent 真实负载里,一个够强的标准-FC 模型实际产生 tool_call」**。这是 Irisy 工具能力的真正命门,也是「Irisy 为何像在背记忆」的根。
+→ **volc/doubao FC 完美(标准 OpenAI tool_calls)+ hermes 发的 payload 正确。** 瓶颈在 hermes **运行时**,两个具体嫌疑:
+1. **上下文窗口溢出(主嫌疑)**:hermes 运行时把上下文堆到 **50545 tokens**(SOUL.md + skills + memory + 全 27 工具 schema),**超过 `doubao-1-5-pro-32k` 的 32k 窗口** → 模型退化、不产生 tool_call。dump 那次在窗口内(6519 字 system)就正常调 write_file。
+2. **连接稳定性**:失败 dump 的 `reason=max_retries_exhausted, error=APIConnectionError`。
+
+`<\|FunctionCallBegin\|>`(doubao 私有 token 泄漏为文本)= **上下文溢出 / 未收到 tools 时模型的降级输出**,不是 doubao 不支持标准 FC(已证它支持)。
+
+## 系统修复方向(让 hermes 对用户选的 provider 工作,不挑模型)
+
+1. **裁掉运行时上下文膨胀**:hermes 默认塞全部工具 + SOUL + skills,撑爆中等窗口模型。对策 = 限制注入(精简 SOUL / 按需暴露工具 = CTRL intent-scoped projection,ADR-010 SC3 / 关掉不用的 toolset),把 input 压回窗口内。**← 主方向**
+2. 查 hermes↔volc 连接重试(APIConnectionError)。
 
 ## 资产现状
 
 - `ctrl-websearch` 功能包本体:✅ 完成、独立验证、已提交(MIT,`share/modules/ctrl-websearch/`)。任何工具调用正常的 MCP host 都能用。
-- 接 Irisy:阻塞在执行模式,待方向 1 验证。
+- 接 Irisy:阻塞在 hermes 运行时上下文膨胀(超窗口),非功能包 / 非模型 / 非执行模式问题。
