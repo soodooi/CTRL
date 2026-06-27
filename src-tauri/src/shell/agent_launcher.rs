@@ -116,6 +116,19 @@ pub fn launch_with_env(
     for (k, v) in provider_env {
         cmd.env(k, v);
     }
+
+    // Light up hermes's BUILT-IN web tools for Irisy (ADR-002 § brain: ride
+    // hermes's tools, don't rebuild native). hermes-agent ships `web_search`
+    // + `web_extract` (fetch + extract a URL) and auto-selects a backend from
+    // env (TAVILY_API_KEY / EXA_API_KEY / …). CTRL already holds a Tavily key
+    // in the keychain (its own `web_search` uses it), so forward it — Irisy
+    // gets web search + data-fetch with zero CTRL-native tool. bao 2026-06-27.
+    if matches!(name, AgentName::Hermes) {
+        if let Some(key) = crate::kernel::provider::registry::read_credential("tavily") {
+            cmd.env("TAVILY_API_KEY", key);
+        }
+    }
+
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     match manifest.endpoint_type.as_str() {
