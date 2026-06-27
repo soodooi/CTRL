@@ -1,9 +1,10 @@
 // L1 — minimal icon rail (ADR-003 §8 + ADR-006 §5).
 //
 // bao 2026-06-12: layout = L1 | Irisy | output bar. L1 is an icon-only rail
-// (~52px): the assistant, your tools/packs, Notes, Coding, Discover, Settings,
-// model. Labels live in tooltips so the rail stays minimal. Selecting an item
-// drives the main area; Irisy is always the conversation column to its right.
+// (~52px): the assistant, Notes / Tables / Coding, the Feature Pack Library,
+// your installed packs, Settings, model. Labels live in tooltips so the rail
+// stays minimal. Selecting an item drives the main area; Irisy is always the
+// conversation column to its right.
 
 import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { loadConnectors } from '@/lib/connector';
@@ -122,7 +123,18 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel, rol
     icon: p.icon ?? '⚡',
     section: { kind: 'feature-pack', pack: p },
   }));
-  const packList: L1Entry[] = [...builtinFaces, ...packEntries];
+  // The Feature Pack Library — the one resident entry to browse / install /
+  // uninstall packs (bao 2026-06-26: replaces a stray installed pack like the
+  // old dev-box sitting in L1). Opens the Discover view; keyed 'discover' so it
+  // highlights when that view is active. The bottom rail no longer needs a
+  // separate Discover button.
+  const libraryEntry: L1Entry = {
+    key: 'discover',
+    title: 'Feature Packs',
+    icon: <Ico d={DISCOVER_D} />,
+    section: { kind: 'discover' },
+  };
+  const packList: L1Entry[] = [...builtinFaces, libraryEntry, ...packEntries];
 
   return (
     <aside className={styles.rail} data-tauri-drag-region>
@@ -172,14 +184,6 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel, rol
 
       <div className={styles.spacer} />
 
-      <button
-        type="button"
-        className={`${styles.ic} ${active === 'discover' ? styles.active : ''}`}
-        onClick={() => onSelect({ kind: 'discover' })}
-        title="Discover"
-      >
-        <Ico d={DISCOVER_D} />
-      </button>
       <button
         type="button"
         className={styles.ic}
