@@ -252,51 +252,35 @@
   color: var(--color-text-faint);
 }
 
-/* Feature packs in the active role, shown next to the role dropdown above the
-   composer (bao 2026-06-26). Quiet pills — they read as the role's toolset, a
-   peer of the role chip, never competing with the composer. Click opens the
-   pack's scene. */
+/* A role's feature packs, listed inside its dropdown item (irisy-roles.md
+   sec.3 mockup: each role shows the packs it brings). Quiet tags under the
+   hint — display only; the menu item itself is the click target. Scoped to the
+   role's toolset whitelist, so a global pack (ghostfolio/Stocks) never pins
+   itself above every chat. */
 .packChips {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  gap: 4px;
+  margin-top: 3px;
 }
 .packChip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-family: var(--font-display);
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: var(--weight-medium);
   letter-spacing: 0.02em;
   color: var(--color-text-muted);
-  background: var(--color-bg-l1);
-  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l2);
   border-radius: var(--radius-pill);
-  padding: 3px 9px;
-  cursor: pointer;
-  max-width: 160px;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-  transition: border-color var(--duration-fast) var(--ease-out-quart),
-    color var(--duration-fast) var(--ease-out-quart);
-}
-.packChip:hover {
-  border-color: var(--color-border);
-  color: var(--color-text);
+  padding: 1px 7px;
 }
 .packIcon {
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
   flex: none;
-}
-.packChipLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .modelChip {

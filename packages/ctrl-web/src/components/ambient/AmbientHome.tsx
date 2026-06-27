@@ -50,6 +50,7 @@ import {
   kbScopeAmbient,
   inKbScope,
   type RoleId,
+  type Role,
 } from '@/lib/roles';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
@@ -957,8 +958,17 @@ export function AmbientHome({
   // Switching a persona swaps the system prompt WITHOUT resetting the
   // conversation; one brand voice stays (ADR-005 single-brand lock).
   const activeRole = roleById(roleId);
-  // The active role's in-scope feature packs (empty toolset = all installed).
-  const rolePacks = packsForRole(activeRole, installedPacks);
+  // A role's feature packs (irisy-roles.md sec.3 mockup: each role lists its
+  // packs). Scope to the role's EXPLICIT toolset whitelist intersected with
+  // what's installed — NOT packsForRole's "empty toolset = all installed",
+  // which would surface every installed pack (e.g. ghostfolio/Stocks) above
+  // every chat regardless of context. The KB assistant has no whitelist, so it
+  // ships no pinned pack; a dedicated-KB config (Stocks = assistant + Stocks/ +
+  // ghostfolio) surfaces by opening that pack from L1, not as a global pill.
+  const packsOf = (r: Role): FeaturePack[] =>
+    r.toolset.length === 0
+      ? []
+      : installedPacks.filter((p) => r.toolset.includes(p.id));
   const personaRow = (
     <div className={styles.quickRow} role="group" aria-label="Irisy role">
       <div className={styles.roleSwitch}>
@@ -981,44 +991,43 @@ export function AmbientHome({
               onClick={() => setRoleMenuOpen(false)}
             />
             <div className={styles.roleMenu} role="menu">
-              {ROLES.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={r.id === roleId}
-                  className={`${styles.roleItem} ${
-                    r.id === roleId ? styles.roleItemActive : ''
-                  }`}
-                  onClick={() => {
-                    setRoleId(r.id);
-                    setRoleMenuOpen(false);
-                  }}
-                >
-                  <span className={styles.roleItemLabel}>{r.label}</span>
-                  <span className={styles.roleItemHint}>{r.hint}</span>
-                </button>
-              ))}
+              {ROLES.map((r) => {
+                const packs = packsOf(r);
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={r.id === roleId}
+                    className={`${styles.roleItem} ${
+                      r.id === roleId ? styles.roleItemActive : ''
+                    }`}
+                    onClick={() => {
+                      setRoleId(r.id);
+                      setRoleMenuOpen(false);
+                    }}
+                  >
+                    <span className={styles.roleItemLabel}>{r.label}</span>
+                    <span className={styles.roleItemHint}>{r.hint}</span>
+                    {packs.length > 0 && (
+                      <span className={styles.packChips}>
+                        {packs.map((p) => (
+                          <span key={p.id} className={styles.packChip}>
+                            {p.icon ? (
+                              <span className={styles.packIcon}>{p.icon}</span>
+                            ) : null}
+                            {p.name}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </>
         )}
       </div>
-      {rolePacks.length > 0 && (
-        <div className={styles.packChips} aria-label="Feature packs in this role">
-          {rolePacks.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={styles.packChip}
-              onClick={() => setScene(p)}
-              title={p.summary ?? p.name}
-            >
-              {p.icon ? <span className={styles.packIcon}>{p.icon}</span> : null}
-              <span className={styles.packChipLabel}>{p.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 
