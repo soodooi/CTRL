@@ -306,26 +306,28 @@ fn set_mapping_path(doc: &mut serde_yaml::Value, path: &[&str], value: serde_yam
     }
 }
 
-/// Belt for Irisy's web tools (ADR-002 substrate §1 v36 — Irisy web search).
+/// Pin Irisy's web search backend in `~/.hermes/config.yaml` (ADR-002
+/// substrate §1 v36 — Irisy web search).
 ///
-/// hermes auto-selects the Tavily backend when `TAVILY_API_KEY` is present, so
-/// on 0.16.0 the key alone (written to `~/.hermes/.env`) is enough. But the
-/// web backend is also configurable via `web.{backend,search_backend,
-/// extract_backend}` in config.yaml, and some hermes builds (issue #29617)
-/// treat an empty/unset value as "disabled" and silently drop web_search /
-/// web_extract. Pin all three to `tavily` so Irisy's web reach survives
-/// version drift — defence in depth on top of the key.
+/// Tiering mirrors LLM Pattern D — free default, BYOK upgrade:
+///   - **default = `ddgs`** (DuckDuckGo): free, no key, no signup. hermes's
+///     only backend gated on package-presence, not an env var
+///     (`_ddgs_package_importable`), so `run_hermes_oneshot` injects it via
+///     `uvx --with ddgs`. Search-only — no `web_extract`.
+///   - **`tavily`** when the user supplied a Tavily key (full web + extract).
 ///
-/// Only written when a Tavily credential exists; with no key we leave
-/// config.yaml untouched (don't pin a backend the user can't authenticate).
-/// Every other field hermes owns is preserved verbatim (free-form merge).
+/// Pinned explicitly (not left to hermes auto-detect) so it lands on the
+/// fast path in `_get_backend` and is immune to the issue #29617 footgun
+/// where an empty `web.backend` silently disables web tools. Every other
+/// field hermes owns is preserved verbatim (free-form merge).
 pub(crate) fn write_hermes_web_belt() -> Result<(), String> {
-    let has_key = crate::kernel::provider::registry::read_credential("tavily")
+    let has_tavily = crate::kernel::provider::registry::read_credential("tavily")
         .map(|k| !k.trim().is_empty())
         .unwrap_or(false);
-    if !has_key {
-        return Ok(());
-    }
+    // ddgs is search-only, so it has no extract backend; Tavily covers both.
+    let search_backend = if has_tavily { "tavily" } else { "ddgs" };
+    let extract_backend = if has_tavily { "tavily" } else { "" };
+
     let base =
         directories::BaseDirs::new().ok_or_else(|| "could not resolve home dir".to_string())?;
     let dir = base.home_dir().join(".hermes");
@@ -347,20 +349,16 @@ pub(crate) fn write_hermes_web_belt() -> Result<(), String> {
         serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
     };
 
-    for leaf in ["backend", "search_backend", "extract_backend"] {
-        set_mapping_path(
-            &mut doc,
-            &["web", leaf],
-            serde_yaml::Value::String("tavily".into()),
-        );
-    }
+    set_mapping_path(&mut doc, &["web", "backend"], serde_yaml::Value::String(search_backend.into()));
+    set_mapping_path(&mut doc, &["web", "search_backend"], serde_yaml::Value::String(search_backend.into()));
+    set_mapping_path(&mut doc, &["web", "extract_backend"], serde_yaml::Value::String(extract_backend.into()));
 
     let serialized = serde_yaml::to_string(&doc)
         .map_err(|e| format!("serialize ~/.hermes/config.yaml: {e}"))?;
     let tmp = path.with_extension("yaml.web.tmp");
     std::fs::write(&tmp, serialized).map_err(|e| format!("write tmp: {e}"))?;
     std::fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))?;
-    tracing::info!("hermes config.yaml web backend pinned to tavily (Irisy web belt)");
+    tracing::info!(backend = search_backend, "hermes web backend pinned (Irisy web belt)");
     Ok(())
 }
 
@@ -387,15 +385,17 @@ pub async fn run_hermes_oneshot(
     // a fallback for hermes builds that do read it.
     let provider_env = registry.agent_env_injection();
     write_hermes_dotenv(&provider_env)?;
-    // Pin the web backend so Irisy's search/extract survive hermes version
-    // drift (issue #29617). Best-effort: a config-write hiccup must never
-    // sink the chat turn — the key in .env already enables web on 0.16.0.
+    // Pin the web backend (default ddgs, or tavily when a key exists).
+    // Best-effort: a config-write hiccup must never sink the chat turn.
     if let Err(e) = write_hermes_web_belt() {
-        tracing::warn!(error = %e, "hermes web belt write failed; web search may be version-fragile");
+        tracing::warn!(error = %e, "hermes web belt write failed; Irisy web search may be off");
     }
 
     let mut cmd = tokio::process::Command::new(uvx);
-    cmd.args(["--from", HERMES_ONESHOT_SPEC, "hermes", "-z", prompt]);
+    // `--with ddgs` makes the free DuckDuckGo backend importable inside the
+    // isolated uvx env (it's not a hermes dependency / lazy-install target),
+    // so the default tier works with no key. Harmless when Tavily is active.
+    cmd.args(["--from", HERMES_ONESHOT_SPEC, "--with", "ddgs", "hermes", "-z", prompt]);
     for (k, v) in &provider_env {
         cmd.env(k, v);
     }
