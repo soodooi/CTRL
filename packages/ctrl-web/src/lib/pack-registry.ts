@@ -11,7 +11,7 @@
 // ADR-003 frontend §1 (PWA bridge): invoke via ./bridge so web/PWA mode
 // degrades to the WS transport instead of bypassing it (desktop unchanged).
 import { invoke } from './bridge';
-import { OFFICIAL_PACKS, type PackListing } from './feature-pack';
+import { type PackListing } from './feature-pack';
 
 interface RegistryRemote {
   type?: string;
@@ -103,10 +103,10 @@ export async function connectRemoteMcp(listing: PackListing): Promise<string[]> 
   });
 }
 
-/** Discover's listings = bundled packs (installable) first, then registry
- *  servers (browsable), de-duplicated against bundled ids. */
+/** Discover's listings come only from the MCP Registry (browsable remote
+ *  servers). No dev-hardcoded seed catalog (bao 2026-06-26): packs come from
+ *  the registry, Irisy's create flow, or the user's own install — never a
+ *  bundled list shipped by the developer. */
 export async function loadDiscoverListings(): Promise<PackListing[]> {
-  const registry = await fetchRegistryListings();
-  const bundledIds = new Set(OFFICIAL_PACKS.map((p) => p.id));
-  return [...OFFICIAL_PACKS, ...registry.filter((r) => !bundledIds.has(r.id))];
+  return fetchRegistryListings();
 }

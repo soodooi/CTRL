@@ -4,11 +4,10 @@
 // no categories, couldn't hold many packs. Rebuilt app-store style: prominent
 // search (most sessions start with a query), category chips, a card grid that
 // scales, a featured banner, and a "create one" CTA (flexible, not a fixed
-// catalog). Registry-driven by OFFICIAL_PACKS; a real .mcpb registry lands later.
+// catalog). Listings come from the MCP Registry; no dev-hardcoded seed set.
 
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import {
-  OFFICIAL_PACKS,
   installPack,
   uninstallPack,
   loadInstalledPacks,
@@ -33,10 +32,10 @@ interface DiscoverProps {
 export function Discover(_props: DiscoverProps): ReactElement {
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState('All');
-  // Discover listings = bundled packs (installable) + MCP Registry servers
-  // (browsable). Seed with the bundled set so the grid renders instantly, then
-  // enrich with the registry once the kernel fetch returns (ADR-002 §7.4).
-  const [listings, setListings] = useState<PackListing[]>(OFFICIAL_PACKS);
+  // Discover listings come from the MCP Registry (browsable remote servers) —
+  // no dev-hardcoded seed catalog (bao 2026-06-26). Empty until the kernel
+  // fetch returns; degrades to empty offline (ADR-002 §7.4).
+  const [listings, setListings] = useState<PackListing[]>([]);
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [uninstallingId, setUninstallingId] = useState<string | null>(null);
@@ -62,8 +61,8 @@ export function Discover(_props: DiscoverProps): ReactElement {
     return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
   }, []);
 
-  // Pull the registry data source (kernel-side fetch). Degrades to the bundled
-  // seed when offline / on an older binary (ADR-002 § composition §7.4).
+  // Pull the registry data source (kernel-side fetch). Degrades to an empty
+  // list when offline / on an older binary (ADR-002 § composition §7.4).
   useEffect(() => {
     void loadDiscoverListings()
       .then(setListings)
@@ -147,7 +146,10 @@ export function Discover(_props: DiscoverProps): ReactElement {
     }
   };
 
-  const featured = OFFICIAL_PACKS[0];
+  // Feature the first installable listing (registry servers are remote/browse-
+  // only). With no bundled packs and a remote-only registry, nothing is
+  // featured — the banner simply doesn't render.
+  const featured = listings.find((p) => p.kind !== 'remote');
   const showFeatured = cat === 'All' && !query && featured != null;
 
   return (

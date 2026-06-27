@@ -66,9 +66,10 @@ const CODE_COMPANION: Role = {
   label: 'Code Companion',
   hint: 'Pairs with the Coding terminal',
   persona: CODE_COMPANION_SYSTEM_PROMPT,
-  // Dev-focused packs (ids from OFFICIAL_PACKS in feature-pack.ts). A whitelist:
-  // this role only sees these, so the coding session stays uncluttered. Packs
-  // the user hasn't installed simply don't appear.
+  // Dev-focused pack ids this role whitelists, so the coding session stays
+  // uncluttered. Convention-only ids: a pack with one of these ids (from the
+  // registry or Irisy's create flow) is in scope; ones the user hasn't
+  // installed simply don't appear. Not a dev-hardcoded catalog.
   toolset: ['dev-box', 'git-box', 'cf-workers', 'disk-box'],
   kbScope: null,
 };
