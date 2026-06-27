@@ -2372,6 +2372,29 @@ impl ServerHandler for KernelMcpRouter {
             false
         };
 
+        // Network allowlist (ADR-002 §2): http_get/http_post are the prime
+        // exfiltration surface. For EXTERNAL callers (the BYO-CLI brain /
+        // packs), enforce the caller's declared network allowlist on the
+        // target URL — fail-closed, so a caller can only reach hosts it
+        // declared. First-party app surfaces (pwa/irisy/hermes) are NOT bound
+        // here: Irisy's web search/fetch goes through the scoped `web_search`
+        // (domain `websearch`, first-party), never these raw net tools, so its
+        // search + data-fetch capability is untouched.
+        let net_denied = !denied
+            && matches!(tool_name.as_str(), "http_get" | "http_post")
+            && !visibility::is_first_party(gate_req.caller())
+            && {
+                let url = request
+                    .arguments
+                    .as_ref()
+                    .and_then(|m| m.get("url"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let method = if tool_name == "http_post" { "POST" } else { "GET" };
+                let cap = crate::kernel::capability_resolver::resolve_for_mcp(gate_req.caller());
+                !crate::kernel::capability_resolver::network_authorizes(&cap, url, method)
+            };
+
         let result = if denied {
             Err(McpError::invalid_request(
                 format!("tool '{tool_name}' is out of scope for the declared intent"),
@@ -2380,6 +2403,13 @@ impl ServerHandler for KernelMcpRouter {
         } else if review_denied {
             Err(McpError::invalid_request(
                 format!("tool '{tool_name}' denied at the review gate (no approval)"),
+                None,
+            ))
+        } else if net_denied {
+            Err(McpError::invalid_request(
+                format!(
+                    "tool '{tool_name}' target is not in the caller's declared network allowlist (exfil control, ADR-002 §2)"
+                ),
                 None,
             ))
         } else {

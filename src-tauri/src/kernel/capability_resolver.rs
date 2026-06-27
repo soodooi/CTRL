@@ -221,6 +221,35 @@ fn capabilities_object_to_tokens(caps: &serde_json::Value) -> Vec<CapToken> {
     t
 }
 
+/// Does this capability authorize an HTTP request to `url` with `method`?
+/// The per-pack network allowlist (ADR-002 §2 "network http allowlist-bound"):
+/// a GET needs an `HttpGet` token, a write method (POST/PUT/DELETE/PATCH)
+/// needs an `HttpPost` token, whose `url_glob` matches the URL host —
+/// `"*"` = any host, exact host, or a parent domain (`host` ends with
+/// `".<glob>"`). Fail-closed: no matching token → not authorized. This is
+/// what makes `http_get`/`http_post` (the prime exfiltration surface) only
+/// reach hosts a pack actually declared.
+pub fn network_authorizes(cap: &Capability, url: &str, method: &str) -> bool {
+    let host = match reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()))
+    {
+        Some(h) => h.to_ascii_lowercase(),
+        None => return false,
+    };
+    let host = host.trim_start_matches('[').trim_end_matches(']').to_string();
+    let is_write = !method.eq_ignore_ascii_case("GET");
+    let host_matches = |glob: &str| -> bool {
+        let g = glob.to_ascii_lowercase();
+        g == "*" || host == g || host.ends_with(&format!(".{g}"))
+    };
+    cap.tokens().any(|tok| match tok {
+        CapToken::HttpGet { url_glob } if !is_write => host_matches(url_glob),
+        CapToken::HttpPost { url_glob } if is_write => host_matches(url_glob),
+        _ => false,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,6 +323,23 @@ mod tests {
             0,
             "empty write_allowlist grants no FsWrite"
         );
+    }
+
+    #[test]
+    fn network_allowlist_authorizes_only_declared_hosts() {
+        // Pack declared GET access to one host only.
+        let cap = Capability::new(vec![CapToken::HttpGet {
+            url_glob: "push2.eastmoney.com".into(),
+        }]);
+        // Declared host (+ subdomain) GET → allowed.
+        assert!(network_authorizes(&cap, "https://push2.eastmoney.com/api/qt", "GET"));
+        assert!(network_authorizes(&cap, "https://sub.push2.eastmoney.com/x", "GET"));
+        // Undeclared host → denied (no exfil to evil.com).
+        assert!(!network_authorizes(&cap, "https://evil.com/steal", "GET"));
+        // Declared for GET only → POST (write/exfil) denied.
+        assert!(!network_authorizes(&cap, "https://push2.eastmoney.com/up", "POST"));
+        // Empty capability → nothing authorized (fail-closed).
+        assert!(!network_authorizes(&Capability::new(vec![]), "https://push2.eastmoney.com/", "GET"));
     }
 
     #[test]
