@@ -1,27 +1,43 @@
-// AdaptiveWorkspaceTabs — renders a mcp's v3 workspace declaration.
+// AdaptiveWorkspaceTabs — renders a mcp's workspace tab declaration.
 //
-// ADR-003 frontend §7.3 universal adaptive workspace: a mcp manifest declares
-// `ui_surface.workspace.tabs[]`; this component is the **presentation
-// shell** that turns that declaration into the NSWindow's interior.
+// ADR-003 frontend §8.2 (morph-to-output-type via the content-type viewer
+// registry) + §7.1 Tab column: a mcp manifest declares
+// `ui_surface.workspace.tabs[]`; this component is the **presentation shell**
+// that turns that declaration into the Tab column's interior — capability-
+// agnostic, no per-pack code.
 //
-// Scope of THIS file (intentionally minimal):
+// Scope of THIS file:
 //   - Top tab bar (icon-free chip per tab, single-select).
-//   - Active-tab content area — currently a placeholder; full
-//     viewer-registry dispatch is the next PR (the registry expects a
-//     `ViewerResource` with content-type / uri; mapping `tab.viewer`
-//     to a synthetic resource needs a small adapter, not built yet).
+//   - Active-tab content dispatch: `tab.viewer` + `tab.props.uri` are adapted
+//     to a `ViewerResource` (see ./AdaptiveWorkspaceTabs.dispatch) and rendered
+//     through the content-type viewer registry (markdown / code / json / yaml /
+//     toml / html / svg / mermaid / image / pdf / smart-table / fallback). One
+//     declaration → a real multi-tab frontend.
 //   - L2 sub-nav side-effect: when the active tab carries `l2_subnav`,
 //     a `ctrl:l2-open` event fires so the shell root can flip
-//     `[data-l2-open]` and reserve the L2 column.
+//     `[data-l2-open]` and reserve the L2 column (§7.1 L2 column).
 //
-// NOT in scope (next PR per ADR-003 frontend §7.5):
-//   - Viewer dispatch (`tab.viewer` → ViewerHost / chat-stream / form).
+// NOT in scope (follow-up):
+//   - Interactive WorkspaceUi kinds inside a tab (chat-stream streaming /
+//     form / picker / canvas) — these are the §8.2 agent-workspace stream
+//     path, not the content viewer registry; they render a labelled fallback
+//     for now.
 //   - L2 sub-nav rendering inside the shell's L2 slot.
-//   - NSWindow content router that picks WHICH mcp's tabs to mount.
-//   - Tauri event bridge between NSWindow child and main window.
+//   - The router that picks WHICH mcp's tabs to mount in the Tab column.
 
-import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+} from 'react';
 import type { WorkspaceTab } from '@ctrl/mcp-sdk';
+import { ViewerHost } from '@/components/viewers/ViewerHost';
+import {
+  INTERACTIVE_VIEWERS,
+  tabToResource,
+} from './AdaptiveWorkspaceTabs.dispatch';
 import styles from './AdaptiveWorkspaceTabs.module.css';
 
 interface AdaptiveWorkspaceTabsProps {
@@ -44,6 +60,12 @@ export const AdaptiveWorkspaceTabs = ({
   const [activeId, setActiveId] = useState<string>(initialActiveId ?? firstTabId);
 
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
+  // Adapt the active tab to a content resource; null when there's nothing to
+  // render through the registry (interactive kind, or no props.uri declared).
+  const resource = useMemo(
+    () => (activeTab ? tabToResource(activeTab) : null),
+    [activeTab],
+  );
 
   const handleSwitch = useCallback(
     (id: string) => {
@@ -101,11 +123,13 @@ export const AdaptiveWorkspaceTabs = ({
         })}
       </div>
       <div
-        className={styles.content}
+        className={resource ? styles.contentFlush : styles.content}
         role="tabpanel"
         aria-labelledby={activeTab?.id}
       >
-        {activeTab ? (
+        {resource ? (
+          <ViewerHost resource={resource} />
+        ) : activeTab ? (
           <div className={styles.placeholder}>
             <div className={styles.placeholderTitle}>{activeTab.label}</div>
             <div className={styles.placeholderMeta}>
@@ -119,7 +143,9 @@ export const AdaptiveWorkspaceTabs = ({
               ) : null}
             </div>
             <div className={styles.placeholderBody}>
-              Viewer dispatch lands in the next PR — see ADR-003 frontend §7.5.
+              {INTERACTIVE_VIEWERS.has(activeTab.viewer)
+                ? `"${activeTab.viewer}" is an interactive surface — streaming / form rendering inside tabs is a follow-up. Content viewers (markdown / json / smart-table / …) render here when the tab declares a props.uri source.`
+                : 'No content source. Declare props.uri (e.g. a vault:// path) on this tab to render it through the viewer registry.'}
             </div>
           </div>
         ) : null}

@@ -63,6 +63,14 @@
   padding: var(--space-6);
 }
 
+/* When a real viewer is mounted it owns its own frame/scroll — no shell
+   padding, so markdown/smart-table/etc. fill the tab edge-to-edge. */
+.contentFlush {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 .empty {
   display: grid;
   place-items: center;
