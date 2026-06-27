@@ -1,0 +1,35 @@
+{
+  "id": "ctrl-websearch",
+  "name": "Web Search",
+  "version": "0.1.0",
+  "description": "Multi-source web search with automatic failover. Tries free, keyless sources first (DuckDuckGo, public SearXNG) and falls through on rate-limit / exhausted quota / error; upgrades to Brave or Tavily when their keys are present; Wikipedia is the always-on floor.",
+  "license": "MIT",
+  "variant": "mcp-tool",
+  "source": {
+    "type": "mcp",
+    "transport": "stdio",
+    "command": "uvx",
+    "args": ["--from", ".", "--with", "ddgs,httpx", "ctrl-websearch"]
+  },
+  "capabilities": {
+    "network": {
+      "http": {
+        "methods": ["GET", "POST"]
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Search the web across multiple sources with automatic failover. Returns titles + URLs + snippets.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "What to look up." },
+          "max_results": { "type": "integer", "description": "Max results (1-10).", "default": 5 }
+        },
+        "required": ["query"]
+      }
+    }
+  ]
+}
