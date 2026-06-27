@@ -157,6 +157,16 @@ def web_search(query: str, max_results: int = 5) -> dict:
         query: what to look up.
         max_results: max results to return (1-10).
     """
+    # Optional call trace for diagnostics — writes only when the host sets
+    # CTRL_WEBSEARCH_DEBUG to a path. No-op in normal operation.
+    _dbg = os.environ.get("CTRL_WEBSEARCH_DEBUG")
+    if _dbg:
+        try:
+            with open(_dbg, "a") as _f:
+                _f.write(f"web_search {query!r}\n")
+        except OSError:
+            pass
+
     query = (query or "").strip()
     if not query:
         return {"source": None, "results": [], "error": "query must not be empty"}
