@@ -264,13 +264,14 @@ fn engine_argv(engine: &str) -> Result<Vec<String>> {
             }
             Ok(argv)
         }
-        // npm-distributed ACP adapters wrapping the user's own CLI. Package names
-        // verified for codex (zed-industries/codex-acp); claude-code adapter name
-        // to confirm on a machine that has Claude Code installed.
+        // npm-distributed ACP adapters wrapping the user's own CLI (verified on a
+        // real machine 2026-06-29): codex moved to `@agentclientprotocol/codex-acp`
+        // (the old `@zed-industries/codex-acp` is DEPRECATED and answers nothing on
+        // stdio → silent hang); claude-code is still `@zed-industries/claude-code-acp`.
         "codex" => Ok(vec![
             "npx".to_string(),
             "-y".to_string(),
-            "@zed-industries/codex-acp".to_string(),
+            "@agentclientprotocol/codex-acp".to_string(),
         ]),
         "claude-code" => Ok(vec![
             "npx".to_string(),
@@ -393,16 +394,42 @@ impl AcpClient {
         };
 
         let mut noop = |_: &str| {};
-        s.request(
-            "initialize",
-            json!({
-                "protocolVersion": 1,
-                "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false } }
-            }),
-            &mut noop,
-        )
-        .await
-        .context("ACP initialize")?;
+        let init = s
+            .request(
+                "initialize",
+                json!({
+                    "protocolVersion": 1,
+                    "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false } }
+                }),
+                &mut noop,
+            )
+            .await
+            .context("ACP initialize")?;
+
+        // ACP authenticate (ADR-005 §8.8, verified vs codex-acp 1.0.1 2026-06-29):
+        // some engines REQUIRE an explicit `authenticate` before `session/new` —
+        // codex returns "Authentication required" otherwise. hermes advertises no
+        // authMethods, so this is skipped for it (no regression). We prefer the
+        // `api-key` method: codex-acp reads OPENAI_API_KEY (injected from the user's
+        // CTRL provider via byo_engine_auth_env), so this is what lets "use our
+        // OpenAI key, no second login" actually work. A failure here is logged but
+        // not fatal — session/new returns the authoritative error, which the caller
+        // surfaces (e.g. "configure an OpenAI key, or run codex login").
+        if let Some(methods) = init.get("authMethods").and_then(|m| m.as_array()) {
+            let method_id = methods
+                .iter()
+                .find_map(|m| m.get("id").and_then(|i| i.as_str()).filter(|id| *id == "api-key"))
+                .or_else(|| methods.iter().find_map(|m| m.get("id").and_then(|i| i.as_str())));
+            if let Some(mid) = method_id {
+                let mid = mid.to_string();
+                if let Err(e) = s
+                    .request("authenticate", json!({ "methodId": mid }), &mut noop)
+                    .await
+                {
+                    eprintln!("[acp:{engine}] authenticate({mid}) failed: {e}");
+                }
+            }
+        }
 
         // §1.8.2: try with the MCP-bus passthrough; if hermes rejects the
         // entry (format / transport), retry WITHOUT it so the agent still runs

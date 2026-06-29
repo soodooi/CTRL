@@ -739,10 +739,24 @@ user who pre-installed via brew/npm is detected too — CTRL never double-instal
   its own login (never a wrong key); pinned to the canonical id so a coding CLI is never
   misrouted onto an OpenAI-compatible-but-not-OpenAI endpoint. Key stays in the subprocess env
   — never in Irisy's prompt or the PWA (ADR-006 byok-no-claude).
-- [ ] **Pending real-machine verify** (no Node/Codex/Claude on the dev box): that Codex /
-  Claude honor the injected env key end-to-end; the adapter↔managed-binary PATH wiring; the
-  Node/codex release asset names; the `claude-code-acp` package name. Specs are code-correct;
-  asset URLs follow the stable nodejs.org/npm schemes.
+- [x] **Real-machine probe 2026-06-29 (codex)** — resolved three hang causes: (1) the
+  package moved — `@zed-industries/codex-acp` is DEPRECATED and answers NOTHING on stdio (silent
+  180s hang); the maintained one is `@agentclientprotocol/codex-acp` (v1.0.1). (2) the ACP flow
+  needs an explicit `authenticate` before `session/new` (codex returns "Authentication required"
+  otherwise); hermes advertises no authMethods so it's skipped. (3) the adapter couldn't find the
+  managed codex binary (off PATH) → now `CODEX_PATH` + PATH wiring. Also: adapter stderr is now
+  drained to logs so a stall is never silent. `@zed-industries/claude-code-acp` (0.16.2) confirmed
+  still correct.
+- [x] **Codex auth = OpenAI only** (probe: `authMethods` = `api-key`{provider:openai} | `chat-gpt`;
+  api-key reads `OPENAI_API_KEY`/`CODEX_API_KEY` from env at `authenticate`). So `byo_engine_auth_env`
+  injecting the canonical `openai` key IS the right mechanism. CONSEQUENCE: Codex can use "our
+  provider" ONLY when it's an OpenAI key — it cannot ride an arbitrary CTRL provider (doubao/Volc/
+  CF Workers): codex-acp's api-key is openai-scoped and Codex speaks the OpenAI Responses API.
+  Riding the full CTRL provider router is Hermes's role, not Codex's. No key configured → start()
+  fails fast → irisy_chat falls back to the provider router (no hang).
+- [ ] **Still pending**: end-to-end answer with a REAL OpenAI key (probe confirmed the mechanism via
+  the auth-error, not a live completion); claude-code authenticate + end-to-end; Windows Node/codex
+  asset paths.
 
 ## Acceptance
 
