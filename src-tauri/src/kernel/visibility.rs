@@ -122,6 +122,12 @@ pub const BRAIN_TOOLSET: &[&str] = &[
     "vault_search",
     "vault_list",
     "vault_create_folder",
+    // Persistent memory — SOUL.md (ADR-005 irisy §8.8 fix 2026-06-29). The
+    // capability brief promises Irisy long-term memory via these tools; without
+    // them in the curated set the brain never saw them (dropped by the tool cap),
+    // so the promise was a lie. In the core group so the cap can't truncate them.
+    "irisy_soul_get",
+    "irisy_soul_set",
     // Structured data.
     "smart_table_describe",
     "smart_table_query",
@@ -508,9 +514,12 @@ mod tests {
                 "{must} missing from BRAIN_TOOLSET — brain can't create packs"
             );
         }
-        // Fits under the brain's ~25-tool cap (with headroom).
+        // Fits under the brain's tool cap. Ceiling is 27 since the SOUL memory
+        // pair joined the core set (ADR-005 §8.8 fix) — still far under the ~60
+        // where listing truncates destructively, and the niche tools sit at the
+        // tail so any runtime cap trims those, never the creation/memory core.
         assert!(
-            BRAIN_TOOLSET.len() <= 25,
+            BRAIN_TOOLSET.len() <= 27,
             "BRAIN_TOOLSET is {} tools, over the brain cap",
             BRAIN_TOOLSET.len()
         );

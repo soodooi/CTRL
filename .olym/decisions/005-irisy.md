@@ -765,6 +765,13 @@ user who pre-installed via brew/npm is detected too — CTRL never double-instal
   `engineTransport` short-circuits with a plain message ("Codex needs an OpenAI account — it can't use
   your current provider; switch to Hermes") instead of silently falling back to the router. No
   pretend-it-works, no silent wrong-engine answer.
+- [x] **Capability-brief honesty (audit fix 2026-06-29).** The capability brief
+  (`acp_client.rs CTRL_CAPABILITY_BRIEF`) claimed clipboard / OCR / image+video generation — none of
+  which the gate registers, so Irisy was told it could do things it can't. Removed; replaced with the
+  real `smart_table_*` tools. Separately, SOUL.md memory (`irisy_soul_get`/`irisy_soul_set`) was
+  implemented but absent from `BRAIN_TOOLSET`, so the capped brain never saw it despite the brief
+  promising persistent memory — added to the core group (cap raised 25→27). Irisy no longer
+  over-claims, and its memory tools are actually reachable.
 - [ ] **Still pending**: end-to-end answer with a REAL OpenAI key (probe confirmed the mechanism via
   the auth-error, not a live completion); claude-code authenticate + end-to-end; Windows Node/codex
   asset paths.
