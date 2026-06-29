@@ -239,10 +239,10 @@ fn cjk_query_needles() -> Vec<String> {
         // feature-pack management intents (ADR-005 irisy § persona-shell v5 §6.2
         // routing + ADR-002 substrate § composition §7.4 mcp_pack_* tools): only
         // the agent path holds the gate's pack tools (list / install / uninstall
-        // / run). A user asking about "功能包" in plain language must reach
-        // hermes, not the tool-less provider-direct path (2026-06-28: "装了哪些
-        // 功能包" routed direct and the model guessed instead of calling
-        // mcp_pack_list).
+        // / run). Per ADR-005 irisy § persona-shell v5 §6.2: a user asking about
+        // feature packs in plain language must reach hermes, not the tool-less
+        // provider-direct path (2026-06-28: a "which feature packs are installed"
+        // ask routed direct and the model guessed instead of calling mcp_pack_list).
         &[0x529F, 0x80FD, 0x5305],         // feature pack
         &[0x5378, 0x8F7D],                 // uninstall
         &[0x5B89, 0x88C5],                 // install
