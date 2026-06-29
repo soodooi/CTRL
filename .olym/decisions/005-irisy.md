@@ -1,10 +1,10 @@
 ---
 adr_id: 005
 module: irisy
-title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down (3-agent aggregator era)
-version: 6
+title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down + §8 terminal-essence dialog (engine owns loop+context)
+version: 10
 status: accepted
-last_updated: 2026-06-25
+last_updated: 2026-06-29
 deciders: [bao, zeus, hephaestus]
 sections:
   - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004) }
@@ -20,6 +20,10 @@ changelog:
   - v3 2026-06-04: **NEW §5 self-reflection-loop** — Irisy implements Loop 1 of ADR-001 §8 self-evolution. Three layers: client-side rule-based **Detect** (failure signals → episodes), Pi background subagent **Reflect** (Letta-code stateless mode, idle-30min trigger), playbook **Improve** (injected into next IrisyChat system prompt). Reuses ADR-002 §11 audit-ledger for cross-loop accountability. Per bao "不仅仅 Irisy LLM, 整个系统都要自我升级成长 — Irisy 自己有自我成长的能力". Brainstorm: `.olym/brainstorm/irisy-self-reflection-loop-2026-06-04.md` + `.olym/brainstorm/system-self-evolution-2026-06-04.md` §3.1.
   - v4 2026-06-04: **NEW §6 capability-decomposition + §7 pi-extension-integration** — root-cause fix for "Pi 一切动词都 install_mcp" + "Pi 说我没 skill 系统" 实测 fail. ctrl-pi-bridge 升级从 provider-only → registerTool + 3 hook (before_agent_start chain / tool_call inspector / resources_discover skills 贡献), Pi `--no-tools` → `--no-builtin-tools` (撤 7 个 built-in 但保 extension 注册的). System prompt 从 monolithic 200 行 → thin base (~30 行) + 8 capability segment, 通过 `before_agent_start` hook 按关键词动态注入 (token cache 友好). PWA `<call>` XML loop 保留作 Volc Qwen/Llama 弱模型 fallback. 调研: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2 §3 (Pi/Letta/Cline/Goose/Cursor 对标) + §8 (background agent 深拉源码).
   - v5 2026-06-09: **Irisy reframed as PWA persona shell (H-2026-06-09-002).** bao 2026-06-09 校准: "Irisy 是表象". Irisy is **no longer a brain / agent runtime** — the brain role belongs to 3 external agents (hermes / opencode / kairo per ADR-002 §1 v19). Irisy is now the PWA UX persona layer: (1) **Avatar + branding** — Irisy character, voice, blink animation (Lottie). (2) **System-prompt injection** — wraps user message with CTRL substrate context (active provider info, Notes folder path, OS hint) before routing to whichever agent matches active L1 chip (default `/assistant` → hermes). (3) **Sycophancy filter** — `packages/ctrl-web/src/lib/persona-filter/patterns.md` (relocated from retired `packages/ctrl-pi-bridge/data/persona-patterns.md`). (4) **Drill-down** — long-press / Alt-click reveals raw agent output before filter. RETIRED sections: lifecycle (moves to ADR-004 § mcp execution), soul-md-compat (applies to hermes memory, not Irisy), self-reflection-loop (migrates to hermes as `~/.ctrl/skills/auto-reflect/SKILL.md`), capability-decomposition (no Irisy system prompt — agents own theirs), pi-extension-integration (Pi exited, ctrl-pi-bridge deleted). Per memory `feedback_no_redundancy_one_ssot` 🔒: hermes is the sole substrate-level agent memory primitive — Irisy doesn't duplicate.
+  - v7 2026-06-28: **NEW §8 terminal-essence dialog — the engine owns the loop + context (continuity root-fix).** bao 2026-06-28 钦定: Irisy 的对话「**对话框形态, terminal 本质**」—— 友好对话 UI 罩在一个**持久 REPL 引擎**上, 引擎自持 agent loop + 对话上下文 (Claude Code / Codex 同模型), 正是 ADR-001 spine §byo-cli-driver + ADR-002 §brain 早已钦定的「调度权在 CLI/引擎手里, CTRL 不 supervise/编排 loop」。根治 §8.2 三条失忆 (每轮只发 last_user / 一出错就 nuke session / 路径切换两后端不共享记忆) —— 把实装拉回架构本位: CTRL 停止「半管」一个它不该拥有的 loop+context, 回到 projection+gate。「先不用管 provider」(bao): 引擎单元就用现有 hermes, 暂不动 provider/模型层; provider-direct 降为「引擎缺席/离线」纯 fallback, 不再参与正常对话记忆。Supersedes §1「对话持续」intent 的脆弱实装。
+  - v9 2026-06-28: **§8 amend — NEW §8.7 consolidation: left/right regions + the right-region pluggable ACP engine.** bao design pass 2026-06-28 (「你分开一下,左边区域和右边区域」+「Irisy 不是可以选择是 Hermes 或者 Codex 么」). **左区** = workspace/输出 (per-L1; coding 模块的工作区是真终端 PTY, 跑用户**自驱**的 coding agent — Claude/Codex/shell, CTRL 只投影不 supervise)。**右区** = Irisy (单一品牌 persona), **引擎可选 Hermes/Codex/Claude**, CTRL **经 ACP 驱动**之。机制 = ACP (JSON-RPC over stdio): `hermes-acp` (已驱动) / `@zed-industries/codex-acp` / `claude-code-acp` 同协议, `acp_client.rs` 参数化 spawn 即可。**driven(右) vs projected(左)** 区分: 同一 Codex 两区不同角色 (右=被 CTRL 当脑驱动, 左=被用户当 driver), 「不 supervise BYO」只管左区。纠正 §8.6 两处过度声明 (并非所有 surface 同引擎 — 左区 coding 终端不是 Irisy 引擎, `coding_mode` 绕开引擎是对的; BYO 选中不是「死路 handoff」而是 ACP 真驱动流式作答)。坐实 §8.4 真修法 (transcript 回灌 fresh session, 否则只是 UI 记得引擎忘了)。配对 **ADR-002 §brain amend** (hermes→「CTRL 驱动的可选 ACP 引擎」, hermes 仍默认不退役)。§8.7 与 §8.6 冲突时以 §8.7 为准。
+  - v10 2026-06-29: **§8 amend — NEW §8.8 one-click managed install for right-region BYO engines (replaces the copy-command-into-terminal hand-off).** bao 2026-06-29 钦定: 「你希望普通用户这么安装配置吗?普通用户只会一键安装」。§8.7 把 Codex/Claude 当右区引擎驱动了, 但 InstallAgentModal 还在让用户「复制 `npm i -g` 进终端」—— 那是开发者工具的默认装法, 不是 CTRL 模型。**校准**: ① 普通用户**零安装**停在 hermes (CTRL bundle + uvx 自启, 默认引擎, 用户啥都不用动)。② 真要用 Codex/Claude 的人走 **CTRL 一键托管安装** —— 装进 CTRL 自管的 `~/.ctrl/agents/<id>/` (本地 npm `--prefix`, **不全局、不 sudo、不开终端**), 运行时 (Node) 像 `ensure_uvx` 一样**自举** (`ensure_node`, 零前置依赖, 沿用 ADR-002 §1.2 v20「kernel bootstraps what it needs」)。③ 装完只剩一次性 provider 认证 —— 尽量复用用户已在 CTRL 配的 BYOK key (Keychain, 注入 adapter 子进程 env), 否则引导式登录; key 永不入 Irisy/LLM。**driven(右)= CTRL 装+驱动** 与 §8.7「不 supervise BYO」(只管左区 projection) 不冲突 —— 右区引擎本就是 CTRL 拥有的。InstallAgentModal 从「复制命令」改成**一键 Install 按钮 + 进度 + ready**。开放点 (codex-acp↔托管 codex 的 PATH 接线 / Node·codex release asset 名 / claude-code-acp 包名) 真机验证, ADR 内诚实标注 pending。
+  - v8 2026-06-28: **§8 amend — NEW §8.6 unified terminal-essence frontend + selectable agent on every surface.** bao 2026-06-28 钦定: 「前端都是 terminal 实质的, 统一, 可选 agent」。§8.1 的「对话框形态, terminal 本质」**不局限于 Irisy ambient chat —— 它是整个前端的统一交互模型**: 每个 surface (ambient chat / coding L1 / per-L1 workspace / 任何 agent 面) 底下是同一个东西 = §8.3 terminal-essence session (引擎自持 loop+上下文) + **可换的 agent = "shell"** (hermes 内嵌 / Codex / Claude Code BYO, `list_byo_drivers` agent 轴)。统一 = 一套模型 + 一个共享 `active-agent` 选择器贯穿所有 surface (不是 N 个各自为政的 chat/terminal 部件); 切 agent = 换 shell, 不重置 persona/功能包 (正交轴)。embedded vs BYO 诚实性逐 surface 成立。配对 ADR-003 § frontend。
   - v6 2026-06-25: **§persona-shell + §3 amend — 单一品牌声音 → 可灵活配置的功能角色 (bao 理念「每个功能配 persona + 功能包,灵活配置不焊死」).** Amends `decision_one_persona_irisy`: Irisy 仍是**单一品牌/声音/形象** (绝不分裂成 Janus/Talos 多重人格),但新增**可切换的功能角色** = 每个 L1 一份 `(persona, 功能包[])` 的**灵活配置**。persona 池与功能包池**解耦**、可组合、可跨 L1 复用 —— 换 persona / 加功能包 = 改配置,不动代码 (✗ 不是焊成一个不可分单元)。当前角色显示 + 切换在**对话框上方**;切角色时对话流持续 (不重置)。Supersedes §3「no global persona library」:现在有一个小的策展角色池 + 每-L1 配置,但仍是**扁平配置**不是 brain-self-aware indirection mesh。**L1 ≠ 角色** (L1 = 功能模块含数据/workspace;角色 = 其 persona 配置面)。设计 SSOT = `vault/ctrl/irisy-roles.md`。开放点 (L1↔角色联动 / 初始角色集 / 用户自建角色 v1) 在该文档跟踪。配对 ADR-003 § home (角色切换器 UI)。不动 sycophancy filter / drill-down / 单一品牌声音锁。
 related:
   - .olym/decisions/002-substrate.md
@@ -462,6 +466,283 @@ The XML segment is added to the system prompt only when the fallback path is act
 - [ ] Manual: BYOK Anthropic Pro → ctrl-pi-bridge native function calling fires; vault_write tool call visible in Pi event stream as `tool_use`, not XML in chat content.
 - [ ] Manual: Volc default → XML `<call>` loop fires (regression guard).
 - [ ] Manual: "用 frontend-slide" → mcp_run invokes and streams output through chat panel.
+
+## §8 Terminal-essence dialog — the engine owns the loop + context (NEW v7, 2026-06-28)
+
+> Authoritative architecture for this section: ADR-001 spine §byo-cli-driver +
+> ADR-002 §brain + `vault/ctrl/architecture-byo-cli-driver.md` 定案 4/5. Operational
+> truth for the engine: `.claude/skills/hermes/SKILL.md`. §5/§6/§7 above are Pi-era
+> and retired (Pi exited the hot path); §8 is the current interface model.
+
+### §8.1 Decision
+
+Irisy's chat is **dialog in form, terminal in essence**. The conversational UI
+stays friendly (non-technical users — the ambient workbench), but underneath it
+is a **persistent REPL-style engine that owns BOTH the agent loop AND the whole
+conversation context** — the same model Claude Code / Codex / Gemini CLI use, and
+exactly what ADR-001 §byo-cli-driver + ADR-002 §brain already mandate: *调度权在
+CLI/引擎手里; CTRL 不 supervise / 不编排 agent loop* (定案5). CTRL stays its proper
+layer — **projection + `:17873` gate** — and stops reconstructing context per turn.
+
+`先不用管 provider` (bao 2026-06-28): the **engine** is the unit of this decision,
+whatever model backs it. v1 engine = the bundled Hermes Agent (ADR-002 §brain) run
+as ONE persistent session per conversation. The provider/model layer is out of
+scope here; the tool-less **provider-direct path is demoted to a pure fallback**
+(engine absent / offline) and, when used, does NOT become the conversation's
+memory of record.
+
+### §8.2 Root cause this fixes (code-verified 2026-06-28)
+
+Three amnesia mechanisms in the pre-v7 implementation, all from CTRL wrongly
+half-owning a loop it should not own:
+1. the agent path sent the engine **only the latest user message** (`last_user`);
+   continuity relied entirely on the engine's ACP session surviving.
+2. on **ANY** engine prompt error CTRL set the client singleton to `None`
+   (`irisy_chat.rs`) → next turn `session/new` → total amnesia; since only
+   `last_user` is ever sent, a fresh session = zero history.
+3. routing (`turn_needs_agent`) **split turns** between the engine and the
+   tool-less provider-direct path; the two never shared memory.
+
+Ledger truth: across a whole session `caller='hermes'` showed only research tools
+and never `vault_write` — the brain also failed to act, compounding the symptom.
+
+### §8.3 The model (v7 lock)
+
+- **ONE persistent engine session ≡ ONE conversation.** Every turn (tool or chat)
+  goes to that engine; the engine accumulates context. Normal conversation is NOT
+  split to provider-direct.
+- The engine session is **not reset on transient / recoverable errors** — only on a
+  genuine unrecoverable crash (process dead / stdout closed), and then it is
+  re-hydrated (§8.4), never silently dropped into amnesia.
+- The system brief / persona is part of the engine's **standing context** (primed
+  once per session); a re-hydration re-primes it.
+- **Continuity is the ENGINE's responsibility, not CTRL's per-turn reconstruction**
+  — consistent with ADR-001/002 (the engine owns the loop).
+
+### §8.4 Durable transcript (vault-is-truth backstop)
+
+Per plain-text philosophy (本地是 truth), the conversation transcript is persisted
+locally so it survives app restart / engine crash and can **re-hydrate a fresh
+engine session**. The transcript is the recovery source of truth; the live engine
+session is the working context. (Minimal v7 ships the no-reset + single-engine
+routing fixes; durable-transcript re-hydration is the immediately-following
+increment, not a separate ADR.)
+
+### §8.5 Acceptance / implementation
+
+- [ ] All non-coding turns route to the single persistent engine; the
+  `turn_needs_agent` split of normal conversation to provider-direct is removed —
+  provider-direct becomes an explicit engine-absent / offline fallback only.
+- [ ] The engine session is NOT dropped on a transient prompt error; it is reset
+  only when the engine process is genuinely dead, followed by re-hydration.
+- [ ] The session survives across turns for one conversation — verified: a fact
+  stated in turn 1 is recalled in turn N (real run / ledger).
+
+### §8.6 Unified terminal-essence frontend — every surface is a terminal, agent is selectable (NEW v8, 2026-06-28)
+
+bao 2026-06-28: **「前端都是 terminal 实质的, 统一, 可选 agent」**. §8.1's "dialog in
+form, terminal in essence" is **not scoped to the Irisy ambient chat** — it is the
+**unified interaction model for the WHOLE frontend**. Every interaction surface
+(Irisy ambient chat, the coding L1, per-L1 workspaces, any future agent surface)
+is the SAME thing underneath.
+
+**The model (terminal analogy):**
+- A surface ≡ a **terminal session**: a persistent engine (§8.3 — owns loop +
+  context), a durable transcript (§8.4), never-blocked input, and a **selectable
+  agent** = the session's **"shell"**. The shells are the agent axis
+  (`list_byo_drivers`): **hermes** (embedded — answers in-surface) / **Codex** /
+  **Claude Code** (BYO-CLI — projected via gate + AGENTS.md, driven from the user's
+  terminal). Switching agent = switching shell.
+- **统一 = ONE model + ONE shared agent selector** (`packages/ctrl-web/src/lib/
+  active-agent.ts`) across surfaces — NOT N bespoke chat/terminal widgets. The
+  selector built for the ambient chat is the universal control; it appears on
+  every surface.
+- **terminal 实质 = §8.3 engine semantics everywhere** (persistent session, no
+  reset on transient error, continuity is the engine's), under the friendly dialog
+  skin — non-technical users still see a conversation, not a shell prompt.
+- **Axis orthogonality holds per surface** (ADR-005 §8 三轴): agent (engine/shell)
+  ⊥ persona (role dropdown) ⊥ feature-packs. Switching the agent does NOT reset the
+  conversation, persona, or packs.
+- **Embedded vs BYO honesty holds per surface** (the agent axis lock): an embedded
+  agent answers in-surface; a BYO-CLI agent is projected + driven from the user's
+  terminal — the surface shows that honestly, never fakes a streamed answer.
+
+**Why:** one mental model for the user (consistency), and architectural correctness
+— CTRL is projection + gate; the engine/shell owns the loop. True for EVERY surface,
+not just one. Avoids N divergent half-owned loops (the §8.2 amnesia bug, multiplied
+per surface).
+
+**Acceptance:**
+- [ ] The agent selector (`active-agent` store + `list_byo_drivers`) is present on
+  every interaction surface, not only the ambient chat.
+- [ ] Every surface routes through the §8.3 terminal-essence engine model honoring
+  the selected agent (embedded answers in-surface; BYO-CLI = projected + honest
+  hand-off, never a faked stream).
+- [ ] One shared session/transcript abstraction backs the surfaces (no bespoke
+  per-surface loop); persona + feature-packs remain orthogonal axes layered on top.
+- [ ] Non-technical-user skin preserved: the unification is under the hood; the
+  surface still reads as a friendly dialog, not a raw shell.
+- [x] durable transcript persisted (`transcript-store`) + replayed to re-hydrate
+  a fresh engine after restart/crash (`AcpClient::prompt` on `!primed`) — done
+  v0.1.684 per §8.7.
+- [ ] CTRL remains projection + gate; it does not reconstruct context per turn
+  (ADR-001/002 §brain). The fragile pre-v7 path (§8.2) is superseded.
+
+### §8.7 Consolidation — left/right regions + the right-region pluggable ACP engine (NEW v9, 2026-06-28)
+
+> Authoritative consolidation of §8 after a design pass with bao (2026-06-28).
+> Answers the open mechanism question and corrects two overclaims in §8.6.
+> **§8.7 governs where it conflicts with §8.6.**
+
+**The workspace is TWO regions** (bao: 「你分开一下,左边区域和右边区域」):
+
+- **LEFT — workspace / output.** Each L1 module's own workspace (notes, tables,
+  KB, coding). The **coding module's** workspace is a real terminal (PTY,
+  `CodingTerminal`) running a **coding agent the USER drives**: Claude Code /
+  Codex / plain shell. CTRL **projects** its arsenal in (gate `.mcp.json` +
+  `AGENTS.md`, §projector) and **does NOT supervise** it.
+- **RIGHT — Irisy (the assistant).** ONE brand persona (§3 single-brand lock).
+  Irisy's **engine is selectable** — Hermes / Codex / Claude Code — and CTRL
+  **DRIVES** the chosen one as Irisy's brain (bao: 「Irisy 不是可以选择是 Hermes
+  或者 Codex 么」). The `<AgentSelector>` belongs HERE; it is the Irisy-engine
+  picker, not a per-shell toggle.
+
+**The right-region engine = a pluggable ACP agent.** All three speak the Agent
+Client Protocol (JSON-RPC over stdio), which `shell/acp_client.rs` already drives
+for hermes:
+
+| Irisy engine | ACP adapter | spawn |
+|---|---|---|
+| Hermes (default) | `hermes-acp` | uvx (wired) |
+| Codex | `@zed-industries/codex-acp` (Rust binary wrapping the user's Codex) | npx |
+| Claude Code | `claude-code-acp` (Anthropic SDK ACP adapter) | npx |
+
+CTRL spawns the selected adapter and drives it through the SAME client:
+`initialize → session/new {cwd, mcpServers:[gate]} → session/prompt`. The engine
+choice is ONE parameter (the spawn command); everything downstream — gate tools,
+Irisy persona, §8.3 loop+context ownership, streaming — is identical. This makes
+ADR-001 spine §byo-cli-driver's "ACP-aware CLI 增强通道" concrete.
+
+**Driven (right) vs projected (left) — the key distinction.** The same product
+(e.g. Codex) can appear in BOTH regions in DIFFERENT roles (this answers the §8 Q2
+raised in the design pass):
+
+- RIGHT: Codex as Irisy's **engine** — CTRL spawns + drives it over ACP, streams
+  its answer into the chat. **CTRL-driven.**
+- LEFT: Codex as the **terminal coding agent** — the user runs it; CTRL only
+  projected tools in. **User-driven, not supervised.**
+
+They are INDEPENDENT selections. "CTRL does not supervise a BYO CLI" (ADR-001/002)
+governs the LEFT (projection) path only; the RIGHT engine is always CTRL-driven,
+whichever ACP agent backs it.
+
+**Corrections to §8.6** (§8.7 governs on conflict):
+
+1. §8.6's "every surface routes through ONE engine" was an overclaim. The LEFT
+   coding terminal is NOT the Irisy engine — it's a user-driven coding agent.
+   Only the RIGHT (Irisy) surfaces share the ACP engine. `coding_mode`
+   legitimately bypasses the Irisy engine (`irisy_chat.rs`:
+   `use_agent = !coding_mode`); that is correct, not a bug.
+2. The "BYO = honest hand-off, don't fake a stream" device in `engineTransport`
+   was a STOPGAP that conflated left/right. With ACP, picking Codex/Claude as
+   Irisy's engine **really drives it** and streams a real answer — no dead-end.
+   The hand-off survives ONLY as the *not-installed* fallback (§InstallAgentModal).
+
+**Continuity — the real §8.4 fix (still UNMET as of v9, code-verified).** The
+transcript persists to the UI (`transcript-store`) but the engine receives only
+`last_user` (`irisy_chat.rs`), and a fresh ACP session starts empty on
+reload/crash — **UI remembers, engine forgets**. Fix, uniform across all ACP
+engines: on a fresh/reset session (`!primed`), replay the persisted transcript
+into the first `session/prompt` so the engine re-hydrates; send only `last_user`
+while the SAME session continues. Continuity is the engine's (§8.3); the
+transcript is the recovery source (§8.4).
+
+**Pairs with ADR-002 §brain amendment:** generalize "Irisy brain = Hermes Agent"
+→ "Irisy brain = a CTRL-driven, **selectable ACP engine** (Hermes default; Codex /
+Claude Code via their ACP adapters)". Hermes stays the bundled default and does
+NOT retire.
+
+**Acceptance (right region) — implemented 2026-06-29 (v0.1.684):**
+- [x] `acp_client.rs` spawn command is parameterized by the selected engine
+  (`engine_argv`); `hermes-acp` / `codex-acp` / `claude-code-acp` all drive
+  through one client + one ACP handshake. **hermes verified end-to-end**
+  (`acp_smoke`: `ANSWER "ACP OK"`, no regression).
+- [x] The `agent` id (on `irisy_chat_stream`) selects the engine; hermes required
+  installed, BYO trusted (UI-gated on `list_byo_drivers` present); BYO adapters
+  lazy-fetch via npx; engine-switch resets the singleton.
+- [x] Installed BYO drives a REAL ACP answer (no dead-end); `engineTransport`
+  hand-off remains ONLY for a not-installed engine (→ InstallAgentModal).
+  **Codex/Claude end-to-end pending real-machine verify** (neither installed on
+  the dev box; spawn specs are code-correct; `claude-code-acp` package name to
+  confirm).
+- [x] Transcript re-hydrates a fresh engine session (`prompt` replays prior turns
+  when `!primed`) — closes the §8.4 illusion (UI-remembers / engine-forgets).
+  Behavioral recall-after-reload to verify on a real multi-turn run.
+- [x] Left/right roles stay independent: right-region engine selector
+  (`active-agent`) ≠ left-region terminal coding-agent; projection (left) ≠ drive
+  (right).
+
+### §8.8 One-click managed install for right-region BYO engines (NEW v10, 2026-06-29)
+
+bao 2026-06-29: **「你希望普通用户这么安装配置吗?普通用户只会一键安装。」** §8.7 made
+Codex/Claude drivable as Irisy's right-region engine, but the InstallAgentModal still
+told users to copy `npm i -g @openai/codex` into a terminal. That is the **developer-tool
+default**, not CTRL's model — it dead-ends a non-technical user. §8.8 corrects the install
+UX to match the moat (ambient, self-contained, zero-prerequisite).
+
+**The two-tier install model:**
+
+1. **Ordinary users = zero install.** hermes is the bundled default engine (CTRL ships it,
+   uvx auto-starts it). The agent axis defaults to hermes; an ordinary user never installs
+   anything and never sees a terminal command. For them it is **zero-click**, not one-click.
+2. **Codex / Claude (opt-in) = CTRL one-click managed install.** Selecting a not-present BYO
+   engine opens InstallAgentModal with a real **Install** button (no terminal, no copy-paste).
+   CTRL installs it into its OWN managed prefix `~/.ctrl/agents/<id>/` via local `npm install
+   --prefix` — **never global, never sudo** (extends the proven `install_via_npm`, the same
+   path hermes-npm used). The Node runtime is **self-bootstrapped** by `ensure_node()` exactly
+   as `ensure_uvx()` bootstraps uv: download the official Node LTS tarball into `~/.ctrl/bin/`
+   on first need, zero prerequisite on the user's machine (ADR-002 §1.2 v20 — "kernel
+   bootstraps what it needs").
+3. **Auth = one-time, reuse BYOK.** After install the only remaining step is provider auth.
+   Reuse the OpenAI/Anthropic key the user already configured in CTRL (Keychain) by injecting
+   it into the adapter subprocess env (same as `write_hermes_dotenv` / provider injection); the
+   key never reaches Irisy or any LLM payload (ADR-006 byok-no-claude — Codex/Claude are the
+   user's own tools, BYOK, not an SDK on CTRL's hot path). Fall back to a guided sign-in only
+   when no key is configured.
+
+**Why this is consistent with §8.7's "CTRL does not supervise a BYO CLI".** That rule governs
+the **LEFT** (projection) path — a coding agent the user drives in their own terminal. The
+**RIGHT** engine is always **CTRL-driven** (§8.7), so CTRL **installing + owning** the
+right-region engine's runtime is the same ownership, extended to install. "Driven (right)"
+now means **CTRL-installed + CTRL-driven**; "projected (left)" stays user-installed +
+user-driven. No contradiction.
+
+**Detection (honest, no fabricated choices).** `list_byo_drivers` reports `present=true` when
+EITHER the CTRL-managed install exists (`~/.ctrl/agents/<id>/node_modules/.bin/<bin>`) OR the
+user already has their own (`codex`/`claude` on PATH, or legacy `~/.codex` / `~/.claude`). So a
+user who pre-installed via brew/npm is detected too — CTRL never double-installs.
+
+**Acceptance:**
+- [x] InstallAgentModal is a one-click **Install** button → `install_byo_agent(id)` → progress
+  → ready; the copy-command-into-terminal framing is removed (ordinary users never see a shell
+  command).
+- [x] `install_byo_agent` installs into `~/.ctrl/agents/<id>/` via `npm install --prefix`
+  (no global / no sudo); `ensure_node()` self-bootstraps Node LTS into `~/.ctrl/bin/` like
+  `ensure_uvx`.
+- [x] `list_byo_drivers` detects the managed install + PATH binary + legacy home dir; never
+  fabricates an absent driver.
+- [x] Auth reuses the configured BYOK key — `registry.byo_engine_auth_env(engine)` resolves
+  the CANONICAL provider's key from the keychain (codex → `openai`, claude-code → `anthropic`,
+  via `resolve_auth` with alias handling) and `irisy_chat` feeds it as the BYO engine's
+  `provider_env`, which `acp_client::start` injects into the adapter subprocess env
+  (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` [+ BASE_URL]). Empty when unconfigured → the CLI uses
+  its own login (never a wrong key); pinned to the canonical id so a coding CLI is never
+  misrouted onto an OpenAI-compatible-but-not-OpenAI endpoint. Key stays in the subprocess env
+  — never in Irisy's prompt or the PWA (ADR-006 byok-no-claude).
+- [ ] **Pending real-machine verify** (no Node/Codex/Claude on the dev box): that Codex /
+  Claude honor the injected env key end-to-end; the adapter↔managed-binary PATH wiring; the
+  Node/codex release asset names; the `claude-code-acp` package name. Specs are code-correct;
+  asset URLs follow the stable nodejs.org/npm schemes.
 
 ## Acceptance
 

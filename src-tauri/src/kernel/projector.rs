@@ -171,6 +171,137 @@ pub fn project_into_dir(dir: &Path, port: &str, token: &str) -> std::io::Result<
     Ok(true)
 }
 
+// --- Codex BYO-CLI driver projection -------------------------------------
+//
+// Codex is a second BYO-CLI driver (ADR-001 §4 projector; architecture
+// byo-cli-driver path). Unlike Claude Code it does NOT read a project-scoped
+// `.mcp.json` — it loads MCP servers from the user's GLOBAL `~/.codex/config.toml`
+// under `[mcp_servers.<id>]`, and it natively supports the streamable-HTTP
+// transport (`url` + `http_headers`) — verified against the Codex config
+// reference. So we upsert the SAME gate the workspace `.mcp.json` carries, in
+// Codex's TOML shape. We touch `~/.codex/` ONLY when it already exists: CTRL
+// never installs or supervises a BYO-CLI (that's the whole point of the path),
+// so "you already have Codex" is the trigger to wire CTRL's gate into it. We use
+// `toml_edit` so a user's hand-tuned config keeps its comments + layout.
+
+/// Upsert `[mcp_servers.ctrl-kernel]` (streamable-HTTP gate entry) into a Codex
+/// `config.toml`, preserving every other table + the file's formatting. Returns
+/// `Ok(true)` when written, `Ok(false)` when already current or skipped. A
+/// malformed existing file is left untouched (logged) — never clobber a config
+/// the user hand-edited.
+pub fn project_codex_config(
+    path: &Path,
+    port: &str,
+    token: &str,
+    caller: &str,
+    intent: Option<&str>,
+) -> std::io::Result<bool> {
+    use toml_edit::{value, DocumentMut, Item, Table};
+
+    let existing = fs::read_to_string(path).unwrap_or_default();
+    let mut doc: DocumentMut = if existing.trim().is_empty() {
+        DocumentMut::new()
+    } else {
+        match existing.parse() {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "Projector: existing ~/.codex/config.toml is malformed; leaving it untouched"
+                );
+                return Ok(false);
+            }
+        }
+    };
+
+    // Static headers Codex forwards on every MCP request — same identity the
+    // Claude Code projection stamps, so BYO-CLI traffic lands at the gate
+    // attributed + intent-scoped (ADR-010 § trust-domains, SC3).
+    let mut headers = Table::new();
+    headers.set_implicit(false);
+    headers.insert("Authorization", value(format!("Bearer {token}")));
+    headers.insert(audit::CALLER_HEADER, value(caller));
+    if let Some(intent) = intent {
+        headers.insert(visibility::INTENT_HEADER, value(intent));
+    }
+
+    let mut server = Table::new();
+    server.set_implicit(false);
+    server.insert("url", value(format!("http://127.0.0.1:{port}/mcp")));
+    server.insert("http_headers", Item::Table(headers));
+
+    // Ensure [mcp_servers] is a table; preserve any sibling servers the user
+    // configured. `set_implicit(true)` keeps it printing as the dotted
+    // `[mcp_servers.ctrl-kernel]` header rather than a bare `[mcp_servers]`.
+    if !doc.contains_key("mcp_servers") {
+        let mut parent = Table::new();
+        parent.set_implicit(true);
+        doc.insert("mcp_servers", Item::Table(parent));
+    }
+    let Some(servers) = doc["mcp_servers"].as_table_mut() else {
+        tracing::warn!(
+            path = %path.display(),
+            "Projector: [mcp_servers] is not a table; leaving config.toml untouched"
+        );
+        return Ok(false);
+    };
+    servers.insert(KERNEL_SERVER_KEY, Item::Table(server));
+
+    let next = doc.to_string();
+    if next == existing {
+        return Ok(false);
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_file_name("config.toml.tmp");
+    {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(next.as_bytes())?;
+        f.sync_all()?;
+    }
+    fs::rename(&tmp, path)?;
+    Ok(true)
+}
+
+/// Resolve `~/.codex/config.toml`. HOME-based, never hardcoded.
+fn codex_config_path() -> Option<PathBuf> {
+    directories::BaseDirs::new().map(|b| b.home_dir().join(".codex").join("config.toml"))
+}
+
+/// Project the kernel gate into the user's Codex config — best-effort, and ONLY
+/// when `~/.codex/` already exists (CTRL never installs/supervises a BYO-CLI).
+/// `token` is the per-boot gate credential; an empty token (server not up) is a
+/// no-op. Failures are logged, never block boot.
+pub fn project_codex_gate(port: &str, token: &str) {
+    if token.is_empty() {
+        return;
+    }
+    let Some(path) = codex_config_path() else {
+        return;
+    };
+    // Non-invasive: wire CTRL's gate into Codex only if the user actually has it.
+    let Some(codex_dir) = path.parent() else { return };
+    if !codex_dir.exists() {
+        return;
+    }
+    let intent = resolve_byo_intent();
+    match project_codex_config(&path, port, token, BYO_CLI_CALLER, intent.as_deref()) {
+        Ok(true) => tracing::info!(
+            path = %path.display(),
+            "Projector: kernel gate projected into ~/.codex/config.toml (Codex auto-discovers)"
+        ),
+        Ok(false) => { /* unchanged or skipped */ }
+        Err(e) => tracing::error!(
+            path = %path.display(),
+            error = %e,
+            "Projector: failed to project kernel gate into ~/.codex/config.toml"
+        ),
+    }
+}
+
 /// Delimiters around the CTRL-managed block in `AGENTS.md`. Stable across boots
 /// so re-projection replaces (never duplicates) our block while preserving any
 /// user-authored prose outside the markers.
@@ -497,4 +628,74 @@ mod tests {
         assert_eq!(read_agents(dir.path()), corrupt);
     }
 
+    // --- Codex projection ------------------------------------------------
+
+    #[test]
+    fn codex_config_gets_http_gate_entry() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        let wrote =
+            project_codex_config(&path, "17873", FIXTURE_GATE_VALUE, "byo-cli", Some("vault,notes"))
+                .unwrap();
+        assert!(wrote);
+        let doc: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let entry = &doc["mcp_servers"]["ctrl-kernel"];
+        assert_eq!(entry["url"].as_str().unwrap(), "http://127.0.0.1:17873/mcp");
+        let headers = &entry["http_headers"];
+        assert_eq!(
+            headers["Authorization"].as_str().unwrap(),
+            format!("Bearer {FIXTURE_GATE_VALUE}")
+        );
+        assert_eq!(headers[audit::CALLER_HEADER].as_str().unwrap(), "byo-cli");
+        assert_eq!(headers[visibility::INTENT_HEADER].as_str().unwrap(), "vault,notes");
+    }
+
+    #[test]
+    fn codex_config_preserves_user_servers_and_is_idempotent() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        // A user's hand-written config with their own MCP server + a comment.
+        let user = "# my codex config\n\
+            model = \"o3\"\n\
+            \n\
+            [mcp_servers.my-tool]\n\
+            command = \"my-tool\"\n\
+            args = [\"--serve\"]\n";
+        fs::write(&path, user).unwrap();
+
+        assert!(project_codex_config(&path, "17873", FIXTURE_GATE_VALUE, "byo-cli", None).unwrap());
+        let after = fs::read_to_string(&path).unwrap();
+        // User content survives the upsert.
+        assert!(after.contains("# my codex config"));
+        assert!(after.contains("model = \"o3\""));
+        assert!(after.contains("[mcp_servers.my-tool]"));
+        assert!(after.contains("ctrl-kernel"));
+
+        // Re-projecting the same token is a no-op (no needless rewrite).
+        assert!(!project_codex_config(&path, "17873", FIXTURE_GATE_VALUE, "byo-cli", None).unwrap());
+        // A rotated token rewrites.
+        assert!(project_codex_config(
+            &path,
+            "17873",
+            FIXTURE_GATE_VALUE_ROTATED,
+            "byo-cli",
+            None
+        )
+        .unwrap());
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains(&format!("Bearer {FIXTURE_GATE_VALUE_ROTATED}")));
+    }
+
+    #[test]
+    fn codex_config_malformed_left_untouched() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        let bad = "this is = = not valid toml [[[";
+        fs::write(&path, bad).unwrap();
+        let wrote =
+            project_codex_config(&path, "17873", FIXTURE_GATE_VALUE, "byo-cli", None).unwrap();
+        assert!(!wrote);
+        assert_eq!(fs::read_to_string(&path).unwrap(), bad);
+    }
 }

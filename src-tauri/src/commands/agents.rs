@@ -70,6 +70,106 @@ pub async fn agent_status(name: String) -> Result<bool, String> {
     Ok(is_installed(&agent))
 }
 
+/// One selectable "agent" backing Irisy (ADR-005 irisy §8; architecture
+/// byo-cli-driver). Two kinds: `embedded` = hermes, the in-app brain CTRL
+/// launches + supervises and that answers in the chat box; `byo-cli` = a user's
+/// own external CLI (Codex, Claude Code) that CTRL only PROJECTS into (gate +
+/// AGENTS.md) and never supervises. `present` is honest detection — CTRL never
+/// claims a driver the user doesn't have (no fake choices).
+#[derive(Debug, Serialize)]
+pub struct ByoDriver {
+    pub id: String,
+    pub label: String,
+    /// "embedded" | "byo-cli"
+    pub kind: String,
+    pub present: bool,
+    /// Where its config lives / how it was detected (for the Settings card).
+    pub detail: String,
+}
+
+/// List the agents Irisy can be backed by, with honest presence detection
+/// (ADR-005 §8.8). hermes is the zero-install default (CTRL bundles it). Codex /
+/// Claude Code are one-click managed installs — `present` is true when EITHER
+/// CTRL already installed it into ~/.ctrl/agents (managed) OR the user has their
+/// own (binary on PATH / legacy ~/.codex · ~/.claude), so CTRL never reinstalls
+/// a CLI the user already has and never fabricates an absent one. Drives the env
+/// driver selector + the in-chat agent selector.
+#[tauri::command]
+pub async fn list_byo_drivers() -> Result<Vec<ByoDriver>, String> {
+    let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
+    let has_dir = |sub: &str| -> bool {
+        home.as_ref()
+            .map(|h| h.join(sub).exists())
+            .unwrap_or(false)
+    };
+    let on_path =
+        |bin: &str| crate::kernel::provider::path_resolver::resolve_binary_path(bin).is_some();
+
+    let hermes_ready = is_installed(&AgentName::Hermes);
+    // "Ready" once CTRL's one-click managed install landed, or the user already
+    // had it. The not-present detail invites the one-click install (no terminal).
+    let codex_present =
+        is_installed(&AgentName::Codex) || on_path("codex") || has_dir(".codex");
+    let claude_present =
+        is_installed(&AgentName::ClaudeCode) || on_path("claude") || has_dir(".claude");
+    let ready_detail = "Ready \u{2014} CTRL drives it as Irisy's engine over ACP.";
+    let install_detail = "One-click install \u{2014} CTRL sets it up for you, no terminal.";
+
+    Ok(vec![
+        ByoDriver {
+            id: "hermes".into(),
+            label: "Irisy (hermes)".into(),
+            kind: "embedded".into(),
+            present: hermes_ready,
+            detail: if hermes_ready {
+                "In-app brain — installed, answers in this chat.".into()
+            } else {
+                "In-app brain — installs on first use.".into()
+            },
+        },
+        ByoDriver {
+            id: "codex".into(),
+            label: "Codex".into(),
+            kind: "byo-cli".into(),
+            present: codex_present,
+            detail: if codex_present { ready_detail.into() } else { install_detail.into() },
+        },
+        ByoDriver {
+            id: "claude-code".into(),
+            label: "Claude Code".into(),
+            kind: "byo-cli".into(),
+            present: claude_present,
+            detail: if claude_present { ready_detail.into() } else { install_detail.into() },
+        },
+    ])
+}
+
+/// One-click managed install of a right-region BYO engine (ADR-005 §8.8). CTRL
+/// installs Codex / Claude Code into its OWN prefix (~/.ctrl/agents/<id>) via
+/// local `npm install --prefix` — never global, never sudo — bootstrapping Node
+/// first if the machine lacks it (`ensure_node`). No terminal, no copy-paste:
+/// the InstallAgentModal's Install button calls this. hermes installs via the
+/// separate `install_agent` (uvx) path, not here.
+#[tauri::command]
+pub async fn install_byo_agent(id: String) -> Result<InstallResult, String> {
+    let agent = AgentName::from_str(&id).map_err(|e| e.to_string())?;
+    if !matches!(agent, AgentName::Codex | AgentName::ClaudeCode) {
+        return Err(format!("{id} is not a one-click BYO engine"));
+    }
+    let already = is_installed(&agent);
+    // npm install hits the network + disk and blocks; keep the async runtime free.
+    let manifest = tokio::task::spawn_blocking(move || install(agent, false))
+        .await
+        .map_err(|e| format!("install task failed: {e}"))?
+        .map_err(|e| e.to_string())?;
+    Ok(InstallResult {
+        name: manifest.name,
+        version: manifest.version,
+        install_at: manifest.install_at,
+        already_installed: already,
+    })
+}
+
 #[derive(Debug, Serialize)]
 pub struct ConnectedAgentMcp {
     pub server_id: String,

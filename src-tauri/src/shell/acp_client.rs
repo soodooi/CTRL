@@ -40,6 +40,11 @@ pub struct AcpClient {
     next_id: i64,
     /// Whether the CTRL capability preamble has been sent this session (§1.8.2).
     primed: bool,
+    /// Which Irisy engine this client drives — `hermes` | `codex` | `claude-code`
+    /// (ADR-005 irisy §8.7). All speak ACP; only the spawn command differs. When
+    /// the user switches engine the caller resets the singleton so it restarts
+    /// with the chosen adapter.
+    engine_id: String,
 }
 
 /// One-time capability brief prepended to the first turn so hermes KNOWS it can
@@ -66,9 +71,69 @@ day_gainers and day_losers for notable movers. Then write a concise recap: \
 indices first, then how the watchlist did, then anything notable. Always show \
 real numbers you fetched, never invented ones. \
 You also have web_search(query) for facts / news / research you don't already \
-hold — call it instead of guessing, then cite the titles + URLs it returns. (It \
-uses the user's Tavily key for full web search if set, otherwise a keyless \
-Wikipedia fallback.) \
+hold — call it instead of guessing. It uses any BYOK keyed provider you have \
+configured (Tavily / Brave / Serper / Exa) and otherwise a keyless full-web \
+fallback (DuckDuckGo, then Wikipedia) — so YES, you CAN search the live web; \
+never tell the user you cannot, and never call your research 'simulated'. When \
+research is done, ANSWER IN THE CHAT BY DEFAULT. Ordinary questions and short \
+findings stay conversational — do NOT produce an HTML file for them, and do NOT \
+turn every research turn into a document. Build an HTML artifact ONLY when it \
+clearly earns one: the user asks for a document / report / deck / dashboard / \
+slides / something visual or saveable, OR the findings are substantial enough \
+that the user will want to keep, scan, or revisit them (a multi-source report, a \
+comparison, a structured guide). Never make the user name a format or repeat \
+'presentation' to control this — infer it from the request and the result. When \
+you DO build one, write it to the vault (Research/<topic>.html) and leave only a \
+one-line pointer in the chat (it opens in the workspace — good-looking, \
+editable, auto-saved; the dialog stays for conversation). Pick the skill by need \
+(skills_list / skill_view): render-html for a simple report / long-page (static \
+inline CSS) is the lighter default; frontend-slides-editable is ONLY for an \
+actual slide deck or visual dashboard the user wants to present, never for plain \
+findings. Either way the document must be FULLY self-contained — never load from \
+a CDN, never inline a secret. \
+You can also CREATE feature packs for the user — a feature pack is a tool that \
+appears in their workbench and runs when triggered. CRITICAL: describing a pack \
+in prose creates NOTHING. There is NO `add key`, `keycap`, or `create tool` \
+function — never call or mention one. The ONLY way to create a pack is to \
+actually INVOKE two real tools, in order: mcp_pack_install (pass a manifest), \
+then mcp_pack_run (smoke one action). If you write text about what you 'will' or \
+'would' create instead of CALLING these tools, you have created nothing and \
+FAILED. When the user asks for a new tool / button / shortcut / connector / data \
+tracker / \u{529F}\u{80FD}\u{5305}, do this — keep calling tools, do not narrate: \
+(1) RESEARCH FIRST — first open a knowledge base for this pack: read any prior \
+notes under its vault folder (e.g. Packs/<name>/) with the vault tools so you do \
+not start cold, then call discover_packs (MCP Registry + Smithery), \
+discover_skills, and web_search for the real source/API; never invent an \
+endpoint. Write each candidate source you find back into that vault folder, and \
+later declare it as the manifest's knowledge_base so the pack ships with its \
+dossier. Keyless endpoints exist for most data — 'free data needs an API key' \
+is almost always WRONG. For A-share quotes, Tencent is keyless: \
+http://qt.gtimg.cn/q=sh600519,sz000001 . Screening (e.g. top gainers) = fetch a \
+keyless market-wide list (research how akshare/efinance do it), then filter it in \
+the shell step with jq/awk/python. \
+(2) REPORT + CONFIRM what you found, which source you will use, and what the pack \
+will do; if a source needs a key, ask for it (it goes to the keychain — you \
+NEVER see its value). Wait for the user's go-ahead. \
+(3) COMPOSE a manifest and INSTALL it by actually CALLING mcp_pack_install. A \
+working manifest needs only a string `id` plus an `actions[]` array where each \
+action has an `id` and a `steps[]` array; a shell step is \
+{ \"type\": \"shell\", \"command\": \"...\" } and the action returns its stdout. \
+Minimal copy-ready manifest — adapt the command, then CALL mcp_pack_install with \
+it: { \"id\": \"a-share-quote\", \"name\": \"A-Share Quote\", \"actions\": [ \
+{ \"id\": \"quote\", \"name\": \"Quote\", \"steps\": [ { \"type\": \"shell\", \
+\"command\": \"curl -s 'http://qt.gtimg.cn/q=sh600519,sz000001'\" } ] } ] } . A \
+comprehensive workbench is ONE pack with MULTIPLE actions (quote, screen, \
+add-to-watchlist, log-trade), not many separate things; stateful lists \
+(watchlist, trade log) are Markdown the action appends into the vault. For a \
+secret, add config_schema.fields[] with a kind \"secret\" field and map it in \
+provision.env as { \"VAR\": \"{{secret:key}}\" } — never inline a secret value. \
+(4) SMOKE by CALLING mcp_pack_run on one action; a pack is NOT done until an \
+action returns real green output (not lint-clean). If it errors, fix the \
+manifest and CALL mcp_pack_install + mcp_pack_run again. \
+(5) Only after a green run, tell the user in plain words what you made and the \
+real result it produced (never say manifest / variant / schema). mcp_pack_list \
+shows what is already installed; a deeper create-feature-pack skill exists \
+(skills_list / skill_view) if you need more detail. \
 Your long-term memory is the user's SOUL.md (ADR-005 irisy v5 §6.3): read it and \
 persist durable facts THERE via the ctrl soul/memory tools, not in your own \
 private store, so the chat and agent paths share one memory and never drift.]";
@@ -164,28 +229,79 @@ fn select_allow_outcome(req: &Value) -> Value {
     }
 }
 
+/// Build the spawn argv for an Irisy engine (ADR-005 irisy §8.7). All three
+/// engines speak ACP; only the launch command differs. hermes is the bundled
+/// default (uvx, with the Python pin + `--with mcp` the adapter needs); Codex
+/// and Claude Code are driven via their npm-distributed ACP adapters (npx
+/// fetches on first use), which wrap the user's OWN installed CLI — the UI only
+/// offers a BYO engine once `list_byo_drivers` has detected it.
+fn engine_argv(engine: &str) -> Result<Vec<String>> {
+    use crate::shell::agent_installer::{read_manifest, AgentName, HERMES_PYTHON};
+    match engine {
+        "" | "hermes" => {
+            let manifest = read_manifest(&AgentName::Hermes)
+                .ok_or_else(|| anyhow!("hermes not installed"))?;
+            let mut argv = manifest.entry_cmd.clone();
+            if argv.is_empty() {
+                return Err(anyhow!("hermes manifest.entry_cmd empty"));
+            }
+            // Stale manifests lack the Python pin hermes-agent[acp] needs (>=3.11);
+            // inject it so uvx fetches a managed CPython (see agent_installer).
+            if argv[0].ends_with("uvx") && !argv.iter().any(|a| a == "--python") {
+                argv.splice(1..1, ["--python".to_string(), HERMES_PYTHON.to_string()]);
+            }
+            // CRITICAL: `hermes-agent[acp]` does NOT depend on the `mcp` package, so
+            // in the spawned environment hermes's `_MCP_AVAILABLE` is False and
+            // `register_mcp_servers` SILENTLY returns [] — the CTRL gate we pass via
+            // `session/new.mcpServers` never connects and the brain sees ZERO CTRL
+            // tools. Inject `--with mcp>=1.24` so the ephemeral uvx env has the MCP
+            // client SDK (streamable-http API, `_MCP_NEW_HTTP`). Verified end-to-end
+            // 2026-06-28: without it register returns 0 tools; with it all 24 load.
+            if argv[0].ends_with("uvx")
+                && !argv.windows(2).any(|w| w[0] == "--with" && w[1].starts_with("mcp"))
+            {
+                argv.splice(1..1, ["--with".to_string(), "mcp>=1.24".to_string()]);
+            }
+            Ok(argv)
+        }
+        // npm-distributed ACP adapters wrapping the user's own CLI. Package names
+        // verified for codex (zed-industries/codex-acp); claude-code adapter name
+        // to confirm on a machine that has Claude Code installed.
+        "codex" => Ok(vec![
+            "npx".to_string(),
+            "-y".to_string(),
+            "@zed-industries/codex-acp".to_string(),
+        ]),
+        "claude-code" => Ok(vec![
+            "npx".to_string(),
+            "-y".to_string(),
+            "@zed-industries/claude-code-acp".to_string(),
+        ]),
+        other => Err(anyhow!("unknown Irisy engine: {other}")),
+    }
+}
+
 impl AcpClient {
-    /// Spawn hermes-acp, handshake (initialize), and open one ACP session.
-    /// `provider_env` is the active CTRL BYOK provider env (ADR-002 §1.3);
-    /// hermes also reads its own ~/.hermes/.env.
-    pub async fn start(provider_env: &BTreeMap<String, String>) -> Result<Self> {
-        use crate::shell::agent_installer::{read_manifest, AgentName, HERMES_PYTHON};
-        let manifest =
-            read_manifest(&AgentName::Hermes).ok_or_else(|| anyhow!("hermes not installed"))?;
-        let mut argv = manifest.entry_cmd.clone();
-        if argv.is_empty() {
-            return Err(anyhow!("hermes manifest.entry_cmd empty"));
-        }
-        // Stale manifests lack the Python pin hermes-agent[acp] needs (>=3.11);
-        // inject it so uvx fetches a managed CPython (see agent_installer).
-        if argv[0].ends_with("uvx") && !argv.iter().any(|a| a == "--python") {
-            argv.splice(1..1, ["--python".to_string(), HERMES_PYTHON.to_string()]);
-        }
+    /// Spawn the selected ACP engine, handshake (initialize), and open one ACP
+    /// session. `engine` = `hermes` (default) | `codex` | `claude-code`
+    /// (ADR-005 irisy §8.7). `provider_env` is the BYOK credential the engine
+    /// should use (ADR-002 §1.3): for hermes the active Irisy provider (also
+    /// mirrored into ~/.hermes/.env); for a BYO engine its canonical key
+    /// (OPENAI_API_KEY / ANTHROPIC_API_KEY, via byo_engine_auth_env) — injected
+    /// into the adapter subprocess env below so Codex / Claude reuse the key the
+    /// user already configured in CTRL instead of a second sign-in (§8.8).
+    pub async fn start(engine: &str, provider_env: &BTreeMap<String, String>) -> Result<Self> {
+        let engine = if engine.is_empty() { "hermes" } else { engine };
+        let argv = engine_argv(engine)?;
 
         // Mirror CTRL's active provider into ~/.hermes/.env BEFORE spawn —
         // hermes reads it at startup, not from process env (ADR-002 §1.3).
-        // Merge, never clobber; no managed key -> file untouched.
-        let _ = crate::commands::agents::write_hermes_dotenv(provider_env);
+        // Merge, never clobber; no managed key -> file untouched. BYO adapters
+        // read process env, so their key arrives via cmd.env below (§8.8), not
+        // here.
+        if engine == "hermes" {
+            let _ = crate::commands::agents::write_hermes_dotenv(provider_env);
+        }
 
         let cwd = notes_dir()?;
         let mut cmd = Command::new(&argv[0]);
@@ -194,14 +310,16 @@ impl AcpClient {
             cmd.env(k, v);
         }
         cmd.current_dir(&cwd);
-        // stdout = JSON-RPC wire (clean); hermes logs go to stderr → discard
+        // stdout = JSON-RPC wire (clean); agent logs go to stderr → discard
         // so the pipe can't fill. kill_on_drop ties the child to this struct.
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
 
-        let mut child = cmd.spawn().context("spawn hermes-acp")?;
+        let mut child = cmd
+            .spawn()
+            .with_context(|| format!("spawn {engine} acp ({})", argv.join(" ")))?;
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
         let mut s = AcpClient {
@@ -211,6 +329,7 @@ impl AcpClient {
             session_id: String::new(),
             next_id: 0,
             primed: false,
+            engine_id: engine.to_string(),
         };
 
         let mut noop = |_: &str| {};
@@ -262,22 +381,48 @@ impl AcpClient {
 
     /// Run one prompt turn; `on_delta` receives streamed text as it arrives.
     /// Returns the ACP stopReason.
+    /// True while the hermes-acp child is still running. On a prompt error the
+    /// caller uses this to decide whether the engine is recoverable (keep the
+    /// session — the conversation context survives in it) or genuinely dead
+    /// (reset + re-prime). ADR-005 irisy §8.3 — continuity is the ENGINE's; never
+    /// drop a live session into amnesia just because one turn errored.
+    pub fn is_alive(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
+    /// Which Irisy engine this client drives (ADR-005 §8.7). The caller compares
+    /// it to the selected engine and resets the singleton on a switch.
+    pub fn engine(&self) -> &str {
+        &self.engine_id
+    }
+
+    /// Run one prompt turn; `on_delta` receives streamed text as it arrives.
+    /// `turns` is the conversation so far as `(role, content)` pairs (user /
+    /// assistant, in order). The actual prompt = the last `user` turn; the
+    /// earlier turns are used ONLY to re-hydrate a fresh session (§8.4).
+    /// Returns the ACP stopReason.
     pub async fn prompt(
         &mut self,
-        text: &str,
+        turns: &[(String, String)],
         system_preamble: Option<&str>,
         mut on_delta: impl FnMut(&str) + Send,
     ) -> Result<String> {
         let sid = self.session_id.clone();
-        // Prime the first turn with CTRL's composed system prompt (persona +
-        // capability catalog + brain_state, ADR-005 irisy v5 §6.2) THEN the
-        // capability brief. Without the preamble hermes answered from its own
-        // SOUL.md + loaded skills — it didn't know CTRL's capability list and
-        // leaked its own identity ("Hermes Agent", docs URL, an Obsidian-debug
-        // skill). The brief still tells it to actually USE the ctrl bus tools
-        // (§1.8.2).
+        let last_user = turns
+            .iter()
+            .rev()
+            .find(|(r, _)| r == "user")
+            .map(|(_, c)| c.clone())
+            .unwrap_or_default();
+        // Prime the first turn of a session with CTRL's composed system prompt
+        // (persona + capability catalog, ADR-005 v5 §6.2) THEN the capability
+        // brief THEN — the §8.4 fix — a replay of the prior conversation so a
+        // fresh / restarted engine session starts WITH context instead of blank
+        // (the durable transcript is the recovery source; the live session is
+        // the working context). While the SAME session continues, only the
+        // latest user message is sent (the engine already holds the history).
         let turn_text = if self.primed {
-            text.to_string()
+            last_user
         } else {
             self.primed = true;
             let mut head = String::new();
@@ -289,7 +434,20 @@ impl AcpClient {
                 }
             }
             head.push_str(CTRL_CAPABILITY_BRIEF);
-            format!("{head}\n\n{text}")
+            // Replay everything before the final user message (§8.4).
+            let last_idx = turns.iter().rposition(|(r, _)| r == "user");
+            let prior = match last_idx {
+                Some(i) => &turns[..i],
+                None => &turns[..],
+            };
+            if !prior.is_empty() {
+                head.push_str("\n\n[Conversation so far \u{2014} context only, continue it:]\n");
+                for (role, content) in prior {
+                    let who = if role == "user" { "User" } else { "Irisy" };
+                    head.push_str(&format!("{who}: {}\n", content.trim()));
+                }
+            }
+            format!("{head}\n\n{last_user}")
         };
         let res = self
             .request(
@@ -458,10 +616,13 @@ mod tests {
     #[ignore]
     async fn acp_smoke() {
         let env = BTreeMap::new();
-        let mut client = AcpClient::start(&env).await.expect("start hermes-acp");
+        let mut client = AcpClient::start("hermes", &env)
+            .await
+            .expect("start hermes-acp");
         let mut answer = String::new();
+        let turns = vec![("user".to_string(), "Reply with exactly: ACP OK".to_string())];
         let stop = client
-            .prompt("Reply with exactly: ACP OK", None, |d| answer.push_str(d))
+            .prompt(&turns, None, |d| answer.push_str(d))
             .await
             .expect("prompt turn");
         println!("\nANSWER: {answer:?}  stopReason={stop}");

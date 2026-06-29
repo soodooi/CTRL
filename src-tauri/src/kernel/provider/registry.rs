@@ -673,6 +673,51 @@ impl ProviderRegistry {
         env
     }
 
+    /// Resolve the BYOK credential a right-region BYO engine should reuse, so
+    /// installing Codex / Claude Code does NOT make the user sign in again
+    /// (ADR-005 §8.8 — close the auth loop with the key CTRL already holds).
+    ///
+    /// Unlike `agent_env_injection` (which mirrors the ACTIVE Irisy provider),
+    /// this is engine-specific and pins the CANONICAL provider so we never
+    /// misroute a coding CLI onto an OpenAI-compatible-but-not-OpenAI endpoint
+    /// (e.g. pointing Codex at doubao): codex → the `openai` provider's key;
+    /// claude-code → the `anthropic` provider's key. Returns empty when that
+    /// provider isn't configured — the engine then falls back to its own login,
+    /// never a wrong key. The key rides into the adapter SUBPROCESS env only
+    /// (acp_client spawn); it never reaches Irisy's prompt or the PWA
+    /// (ADR-006 byok-no-claude — the user's own CLI, their own BYOK key).
+    pub fn byo_engine_auth_env(&self, engine: &str) -> BTreeMap<String, String> {
+        let mut env = BTreeMap::new();
+        let canonical_id = match engine {
+            "codex" => "openai",
+            "claude-code" => "anthropic",
+            _ => return env,
+        };
+        let providers = self.providers.read().unwrap();
+        let Some(loaded) = providers.get(canonical_id) else {
+            return env;
+        };
+        let m = &loaded.manifest;
+        if m.kind != ProviderKind::HttpApi {
+            return env;
+        }
+        let key = match resolve_auth(m) {
+            Ok(k) if !k.is_empty() => k,
+            _ => return env,
+        };
+        let (key_var, url_var) = match engine {
+            "codex" => ("OPENAI_API_KEY", "OPENAI_BASE_URL"),
+            _ => ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"),
+        };
+        env.insert(key_var.to_string(), key);
+        if let Some(ep) = &m.endpoint {
+            if !ep.is_empty() {
+                env.insert(url_var.to_string(), ep.clone());
+            }
+        }
+        env
+    }
+
     /// Build the resolution chain for one consumer (primary + ordered
     /// fallbacks).
     ///

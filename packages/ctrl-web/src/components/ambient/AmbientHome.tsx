@@ -24,7 +24,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { irisyChatTransport, type LLMMessage } from '@/lib/llm-transport';
+import { engineTransport, type LLMMessage } from '@/lib/llm-transport';
 import { classifyIntent, type RouteHint } from '@/lib/intent-routing';
 // Reply-correctness wiring (parity with the docked IrisyChat): the home
 // composer must ship the persona + brain_state system prompt and filter the
@@ -52,6 +52,14 @@ import {
   type RoleId,
   type Role,
 } from '@/lib/roles';
+// ADR-005 irisy §8.6 (unified terminal-essence frontend): the shared agent
+// ("shell") selector — embedded hermes vs a BYO-CLI driver (Codex / Claude
+// Code). ONE component across every surface, backed by the shared active-agent
+// store, so the agent axis is consistent everywhere.
+import { AgentSelector } from '@/components/agent/AgentSelector';
+// ADR-005 irisy §8.4/§8.6 — durable transcript: the ambient conversation
+// survives reload / engine crash and re-hydrates.
+import { loadTranscript, saveTranscript } from '@/lib/transcript-store';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
 import { type Capability } from '@/lib/capability-catalog';
@@ -100,6 +108,17 @@ import { SessionHistory } from './SessionHistory';
 import { APP_VERSION } from '@/lib/app-meta';
 import { getVersion } from '@tauri-apps/api/app';
 import styles from './AmbientHome.module.css';
+
+// Type-guard for restoring a persisted transcript (ADR-005 §8.4).
+function isAmbientMsg(m: unknown): m is Msg {
+  if (typeof m !== 'object' || m === null) return false;
+  const r = m as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    (r.role === 'user' || r.role === 'assistant') &&
+    typeof r.content === 'string'
+  );
+}
 
 interface Msg {
   id: string;
@@ -189,7 +208,15 @@ export function AmbientHome({
   settingUp = false,
 }: AmbientHomeProps): ReactElement {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Msg[]>([]);
+  // Durable transcript (§8.4): the ambient conversation re-hydrates on load.
+  // An empty restore falls through to the greeting; a "new chat" that sets
+  // messages back to [] persists [] via the save effect below (clears storage).
+  const [messages, setMessages] = useState<Msg[]>(() =>
+    loadTranscript<Msg>('ambient', isAmbientMsg),
+  );
+  useEffect(() => {
+    saveTranscript('ambient', messages);
+  }, [messages]);
   const [streaming, setStreaming] = useState(false);
   // Abort handle for the in-flight turn so the composer's Stop button can cancel
   // streaming WITHOUT locking the textarea. bao (feedback, repeated): never block
@@ -443,7 +470,7 @@ export function AmbientHome({
       // `error`. Surface it (parity with IrisyChat) instead of `continue`-ing
       // past it, which froze the bubble or misreported "No AI provider".
       let streamError = false;
-      for await (const chunk of irisyChatTransport().stream(history, { signal: ctrl.signal })) {
+      for await (const chunk of engineTransport().stream(history, { signal: ctrl.signal })) {
         if (typeof chunk !== 'string' && chunk?.error) {
           if (chunk.error === 'aborted') break;
           const { summary } = humanizePiError(String(chunk.error), modelLabel);
@@ -973,7 +1000,9 @@ export function AmbientHome({
       ? []
       : installedPacks.filter((p) => activeRole.toolset.includes(p.id));
   const personaRow = (
-    <div className={styles.quickRow} role="group" aria-label="Irisy role">
+    // Order (bao 2026-06-28): agent FIRST, then persona, then feature packs.
+    <div className={styles.quickRow} role="group" aria-label="Irisy agent, persona, and feature packs">
+      <AgentSelector />
       <div className={styles.roleSwitch}>
         <button
           type="button"

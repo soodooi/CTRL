@@ -1,0 +1,97 @@
+/* InstallAgentModal — one-click set-up dialog body (ADR-005 §8.8). Editorial /
+   minimal, on the polar paper surface of the shared Modal. Hierarchy comes from
+   type weight + spacing rhythm, not boxes-in-boxes; the action is the single
+   Install button in the footer, so the body stays calm explanatory prose. */
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stepLabel {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.01em;
+  color: var(--color-text-soft);
+}
+
+.body {
+  margin: 0;
+  max-width: 60ch;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+
+.inlineCode {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--color-text-soft);
+  background: color-mix(in oklab, var(--color-text), transparent 92%);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+}
+
+/* Footer-adjacent status line — quiet, with a small state dot. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+}
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  flex: 0 0 auto;
+}
+.status[data-checking='true'] .statusDot {
+  background: var(--color-info);
+  animation: pulse 1s var(--ease-out-quart) infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Detected / ready state. */
+.ready {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+.readyDot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  flex: 0 0 auto;
+}
+.readyText {
+  margin: 0;
+  max-width: 60ch;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status[data-checking='true'] .statusDot {
+    animation: none;
+  }
+}

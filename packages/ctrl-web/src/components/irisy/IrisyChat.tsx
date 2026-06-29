@@ -17,11 +17,13 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
 import {
-  irisyChatTransport,
+  engineTransport,
   type IrisyCustomMessage,
   type LLMMessage,
 } from '@/lib/llm-transport';
 import { IrisyCustomMessageView } from './IrisyCustomMessage';
+// ADR-005 irisy §8.6 — the shared agent ("shell") selector, on every surface.
+import { AgentSelector } from '@/components/agent/AgentSelector';
 import {
   ensurePromptsBootstrap,
   loadIrisySystemPrompt,
@@ -383,7 +385,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   // When Pi isn't reachable, the chat surface flips to a "being upgraded"
   // stub rather than silently degrading — keeps the user from thinking
   // Irisy is broken or slow.
-  const transport = useMemo(() => irisyChatTransport(), []);
+  const transport = useMemo(() => engineTransport(), []);
   const activeBrain = status?.active_brain ?? 'pi';
   // Post-v19 the Pi probe is dead logic (always unreachable) — gating
   // the composer on it locked fresh installs behind a permanent
@@ -1065,6 +1067,12 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
           {statusMessage}
         </button>
       )}
+
+      {/* ADR-005 irisy §8.6 — the shared agent ("shell") selector sits just
+          above the composer, the same control every surface carries. */}
+      <div className={styles.agentRow}>
+        <AgentSelector />
+      </div>
 
       {/* Composer — input + dialog merged into one column (bao 2026-05-31).
           The previous design hid this textarea off-screen and ran the

@@ -63,6 +63,12 @@ export interface LLMStreamOptions {
   mode?: string;
   // Coding-mode project directory (Pi's cwd). Reserved for v2.x.
   project_dir?: string;
+  // ADR-005 irisy §8.6 — the selected agent ("shell") id for this surface
+  // (hermes / codex / claude-code). The engine path reads it; `chat_stream`
+  // ignores it. BYO-CLI selection is short-circuited client-side in
+  // `engineTransport` (CTRL does not supervise a BYO loop), so this reaching
+  // the wire means the embedded engine is in play.
+  agent?: string;
 }
 
 export interface LLMTransport {
@@ -212,6 +218,7 @@ export class ChatStreamTransport implements LLMTransport {
           skill_id: opts.skill_id,
           mode: opts.mode,
           project_dir: opts.project_dir,
+          agent: opts.agent,
         },
       });
       while (true) {
@@ -265,4 +272,53 @@ export function defaultTransport(): LLMTransport {
 // single-turn streaming on this side.
 export function irisyChatTransport(): LLMTransport {
   return new ChatStreamTransport(true, 'irisy_chat_stream');
+}
+
+// ── engineTransport — the UNIFIED terminal-essence entrypoint (ADR-005 §8.6) ──
+//
+// Every interaction surface (ambient chat, coding companion, shell chat) uses
+// THIS, so "terminal essence + selectable agent" is implemented once and applies
+// everywhere. It reads the shared active-agent store (the agent axis = the
+// right-region Irisy engine, ADR-005 §8.7):
+//   • embedded (hermes / none) → the §8 persistent engine (`irisy_chat_stream`).
+//   • BYO-CLI INSTALLED (codex / claude-code) → ALSO the engine: CTRL drives it
+//     over ACP and it streams a REAL answer in-surface (not a terminal hand-off).
+//   • BYO-CLI NOT installed → the only honest short-circuit: a hand-off pointing
+//     at the one-click managed install (§8.8). We never fake a stream for an
+//     engine that isn't on disk yet.
+class EngineTransport implements LLMTransport {
+  private readonly inner = irisyChatTransport();
+
+  async *stream(
+    messages: LLMMessage[],
+    opts: LLMStreamOptions = {},
+  ): AsyncIterable<LLMChunk> {
+    // Lazy import avoids a static cycle (active-agent → bridge only).
+    const { useActiveAgentStore, activeDriver } = await import('./active-agent');
+    const state = useActiveAgentStore.getState();
+    const agent = activeDriver(state);
+
+    // ADR-005 §8.7: a BYO engine that ISN'T installed can't be driven — show the
+    // honest set-up hand-off (the InstallAgentModal carries the install command).
+    // An INSTALLED BYO engine (Codex / Claude Code) IS driven for real: CTRL
+    // spawns its ACP adapter via the engine path below, same as hermes — no
+    // dead-end. Embedded (hermes) always goes to the engine.
+    if (agent.kind === 'byo-cli' && !agent.present) {
+      const text =
+        `**${agent.label}** isn’t set up yet. Open the set-up panel and hit ` +
+        `**Install** — CTRL installs it for you (no terminal) and then drives it ` +
+        `here as Irisy’s engine. Switch back to **Irisy (hermes)** to chat in the ` +
+        `meantime.`;
+      yield { delta: text, done: false };
+      yield { delta: '', done: true };
+      return;
+    }
+
+    yield* this.inner.stream(messages, { ...opts, agent: agent.id });
+  }
+}
+
+/** The unified terminal-essence transport — use this on EVERY surface. */
+export function engineTransport(): LLMTransport {
+  return new EngineTransport();
 }

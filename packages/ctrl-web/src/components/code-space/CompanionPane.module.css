@@ -126,6 +126,14 @@
   background: color-mix(in oklch, var(--color-accent) 10%, transparent);
 }
 
+/* Agent ("shell") selector row above the composer — ADR-005 irisy §8.6, the
+   same control the ambient surface carries. */
+.agentRow {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4) 0;
+}
+
 .inputRow {
   display: flex;
   flex-direction: column;

@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.659"
+version = "0.1.688"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -48,6 +48,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 # Kept separate so CTRL's existing 0.12 usage (provider adapters) is untouched.
 rmcp-reqwest = { package = "reqwest", version = "0.13", default-features = false, features = ["stream", "rustls"] }
 toml = "0.8"
+# Format-preserving TOML editing for the Codex BYO-CLI projection: a user's
+# ~/.codex/config.toml is hand-edited, so we upsert our [mcp_servers.ctrl-kernel]
+# table without clobbering their comments/layout (ADR-001 §4 projector). Already
+# in the lock transitively; pinned direct so the projector can depend on it.
+toml_edit = "0.22"
 keyring = { version = "3", default-features = false, features = ["apple-native", "linux-native", "windows-native"] }
 directories = "5"
 # bao 2026-06-06: credential storage moved off the OS keychain into an

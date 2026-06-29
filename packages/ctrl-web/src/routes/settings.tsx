@@ -25,6 +25,7 @@ import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { useWorkspaceStore } from '@/lib/workspace-store';
 import { ProviderHub } from '@/components/ambient/ProviderHub';
 import { VaultSetup } from '@/components/VaultSetup';
+import { useByoDrivers } from '@/lib/active-agent';
 import {
   listEnvEntries,
   setEnvVar,
@@ -320,14 +321,57 @@ export const SettingsProvidersPage = (): ReactElement => (
 // Settings -> Irisy : embed hermes's own dashboard web UI (config / agent
 // settings / sessions). hermes serves the full front+back at a loopback port;
 // CTRL just frames it so the user configures the agent without leaving CTRL.
+// Agent-backend selector — the env home for Irisy's AGENT axis (ADR-005 irisy
+// §8). Primary place to pick the engine; the in-chat chip mirrors it. Honest
+// detection: a BYO-CLI driver appears selectable only when the user has it.
+// Industry note (2026-06-28 research): consumer AI apps hide the engine behind
+// the persona, so this lives in Settings, not co-equal with the persona chip.
+const AgentBackendSelector = (): ReactElement => {
+  const { drivers, active, setActive, loaded } = useByoDrivers();
+  return (
+    <Section
+      title="Agent backend"
+      description="Which engine backs Irisy. The in-app chat always runs on the embedded brain (hermes). A BYO-CLI driver (Codex / Claude Code) is your own external tool — CTRL projects its gate + workspace context into it but never supervises it, so you drive it from your terminal."
+    >
+      <div className={styles.segmented} role="radiogroup" aria-label="Agent backend">
+        {drivers.map((d) => {
+          const isActive = d.id === active.id;
+          return (
+            <button
+              key={d.id}
+              type="button"
+              role="radio"
+              aria-checked={isActive}
+              data-active={isActive}
+              className={styles.segment}
+              onClick={() => setActive(d.id)}
+              title={d.detail}
+            >
+              <span className={styles.segmentLabel}>
+                {d.label}
+                {d.kind === 'byo-cli' ? ' · BYO' : ''}
+                {!d.present ? ' · not installed' : ''}
+              </span>
+              <span className={styles.segmentHint}>{d.detail}</span>
+            </button>
+          );
+        })}
+      </div>
+      {!loaded && <p className={styles.sectionDesc}>Detecting drivers…</p>}
+    </Section>
+  );
+};
+
 export const SettingsAgentPage = (): ReactElement => (
   <SettingsShell activeTab="agent">
+    <AgentBackendSelector />
     <iframe
       title="Irisy agent settings"
       src={HERMES_DASHBOARD_URL}
       style={{
         width: '100%',
-        height: 'calc(100vh - 160px)',
+        height: 'calc(100vh - 320px)',
+        minHeight: 360,
         border: 'none',
         borderRadius: 12,
         background: '#fff',

@@ -124,6 +124,11 @@ impl KernelSupervisor {
                     // launch. Uses the fresh per-boot gate token (not hardcoded);
                     // best-effort, never blocks boot.
                     crate::kernel::projector::project_kernel_gate(&port, h.auth_token.as_str());
+                    // Second BYO-CLI driver: if the user has Codex, wire the same
+                    // gate into its global ~/.codex/config.toml (it loads MCP from
+                    // there, not the workspace .mcp.json). No-op unless ~/.codex/
+                    // exists — CTRL never installs/supervises a BYO-CLI.
+                    crate::kernel::projector::project_codex_gate(&port, h.auth_token.as_str());
                 }
                 Err(e) => tracing::warn!(error = %e, "kernel: MCP server spawn failed"),
             }

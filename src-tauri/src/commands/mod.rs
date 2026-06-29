@@ -112,6 +112,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::agents::stop_agent,
             $crate::commands::agents::agent_status,
             $crate::commands::agents::list_agents,
+            // list_byo_drivers — agents Irisy can be backed by (embedded hermes
+            // + detected BYO-CLI drivers Codex / Claude Code). Drives the env +
+            // in-chat agent selector (ADR-005 irisy §8).
+            $crate::commands::agents::list_byo_drivers,
+            // install_byo_agent — one-click managed install of a right-region BYO
+            // engine (Codex / Claude Code) into ~/.ctrl/agents (ADR-005 §8.8).
+            $crate::commands::agents::install_byo_agent,
             // connect_agent_mcp — hermes (mcp-stdio) onto the kernel MCP bus
             // (ADR-002 §1.3 v19); PWA chats via mcp_call afterwards.
             $crate::commands::agents::connect_agent_mcp,

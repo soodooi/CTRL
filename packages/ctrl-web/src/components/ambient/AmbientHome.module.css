@@ -200,6 +200,9 @@
   line-height: 1;
   color: var(--color-text-faint);
 }
+/* Agent ("shell") selector styles moved to the shared
+   components/agent/AgentSelector.module.css (ADR-005 irisy §8.6 — one selector,
+   every surface). */
 .roleBackdrop {
   position: fixed;
   inset: 0;

@@ -51,6 +51,12 @@ pub struct IrisyChatStreamArgs {
     // Coding-mode project directory hint.
     #[serde(default)]
     pub project_dir: Option<String>,
+    // ADR-005 irisy §8.6 — the selected agent ("shell") id for this surface
+    // (hermes / codex / claude-code). BYO-CLI selection is short-circuited
+    // client-side (CTRL does not supervise a BYO loop), so a value reaching here
+    // is the embedded engine; recorded for audit/telemetry + future routing.
+    #[serde(default)]
+    pub agent: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -102,20 +108,35 @@ async fn load_skill_system_prompt(skill_id: &str) -> Option<String> {
 /// shell-capable provider can cd there; assistant/cap modes need none
 /// (cap mode's SKILL.md is the prompt, loaded separately).
 fn build_mode_system_header(mode: Option<&str>, project_dir: Option<&str>) -> Option<String> {
-    match mode.unwrap_or("personal") {
-        "coding" => {
-            let dir = project_dir.unwrap_or("~");
-            Some(format!(
-                "You are operating in CTRL's Coding mode. The user's \
-                 active project directory is `{dir}`. Treat this as your \
-                 working directory for the rest of this turn — `cd` there \
-                 with your shell tool before running build / test / git \
-                 commands. Prefer making changes inside this directory \
-                 rather than the user's home folder."
-            ))
-        }
-        _ => None,
+    // Capability truth header, EVERY mode (ADR-005 irisy § persona-shell v5 §6.2):
+    // the provider-direct path holds no tools, so a capability/identity question
+    // ("can you go online?") is answered by the raw base model — which wrongly
+    // denies web access ("I can't browse") and calls its own research
+    // "simulated". State what CTRL actually grants so Irisy never lies about it.
+    // Mentioning web_search here is safe: turn_needs_agent() only scans the last
+    // USER message, never these system headers, so it can't self-trigger routing.
+    let mut header = String::from(
+        "You are Irisy, the user's assistant inside CTRL. Through CTRL you CAN \
+         search the live web (a web_search tool), read and write the user's notes \
+         and vault, and create feature packs — these run whenever a request needs \
+         them. So if the user asks whether you can go online, research, or search \
+         the web, the answer is YES. NEVER tell the user you cannot browse the \
+         internet, and never call your research 'simulated' or 'from training \
+         data' — that is false. If they want live research, have them phrase it as \
+         a request (e.g. \"search the web for ...\") and CTRL runs the search for \
+         you.",
+    );
+    if mode.unwrap_or("personal") == "coding" {
+        let dir = project_dir.unwrap_or("~");
+        header.push_str(&format!(
+            " You are also operating in CTRL's Coding mode. The user's active \
+             project directory is `{dir}`. Treat this as your working directory \
+             for the rest of this turn — `cd` there with your shell tool before \
+             running build / test / git commands. Prefer making changes inside \
+             this directory rather than the user's home folder."
+        ));
     }
+    Some(header)
 }
 
 /// Pick the EXECUTION path for this turn (ADR-005 irisy § persona-shell v5,
@@ -130,6 +151,11 @@ fn build_mode_system_header(mode: Option<&str>, project_dir: Option<&str>) -> Op
 /// anchor on the user's DATA / SYSTEM / MEDIA nouns + clear action phrases.
 /// Chinese phrases are Unicode-escaped to keep the source all-English; the
 /// trailing comment glosses each in English.
+///
+/// ADR-005 irisy §8.3 (v7): this no longer GATES the engine — every non-coding
+/// turn now routes to the persistent engine regardless. Retained (test-covered)
+/// as the documented heuristic should we ever need cheap pre-classification.
+#[allow(dead_code)]
 fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
     let last = messages
         .iter()
@@ -142,6 +168,11 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
         "note", "save to", "save it to", "my notes", "knowledge base",
         "build a tool", "make a tool", "generate an image", "an image of",
         "make a video", "voiceover", "transcribe", "ocr", "web search",
+        // online-research intents (ADR-005 irisy § persona-shell v5 §6.2): the
+        // web_search tool lives only on the agent path; a research request must
+        // reach hermes or the tool-less direct path denies it can go online.
+        "search the web", "search online", "go online", "research online",
+        "look it up online", "browse the web",
         "schedule a", "recurring", "refactor", "edit the file",
         // feature-pack intents (bao 2026-06-25: Irisy installs + uses packs via
         // the gate's mcp_pack_* tools — only hermes holds them, direct has none)
@@ -205,6 +236,24 @@ fn cjk_query_needles() -> Vec<String> {
         &[0x884C, 0x60C5],                 // quote / market data
         &[0x5927, 0x76D8],                 // the broad market
         &[0x590D, 0x76D8],                 // daily review / recap
+        // feature-pack management intents (ADR-005 irisy § persona-shell v5 §6.2
+        // routing + ADR-002 substrate § composition §7.4 mcp_pack_* tools): only
+        // the agent path holds the gate's pack tools (list / install / uninstall
+        // / run). A user asking about "功能包" in plain language must reach
+        // hermes, not the tool-less provider-direct path (2026-06-28: "装了哪些
+        // 功能包" routed direct and the model guessed instead of calling
+        // mcp_pack_list).
+        &[0x529F, 0x80FD, 0x5305],         // feature pack
+        &[0x5378, 0x8F7D],                 // uninstall
+        &[0x5B89, 0x88C5],                 // install
+        // online-research intents (ADR-005 irisy § persona-shell v5 §6.2): route
+        // "go online / research / search the web" to hermes, which holds the
+        // web_search gate tool; the direct path has none and denies it can browse.
+        &[0x8054, 0x7F51],                 // go online (lian-wang)
+        &[0x8FDE, 0x7F51],                 // connect to net (variant)
+        &[0x4E0A, 0x7F51],                 // get online (shang-wang)
+        &[0x8C03, 0x7814],                 // research (diao-yan)
+        &[0x641C, 0x7D22],                 // search (sou-suo)
     ];
     CODEPOINTS
         .iter()
@@ -302,31 +351,63 @@ async fn forward_to_provider(
     // hermes; pure-language turns -> provider-direct (clean + fast). Both share
     // the same persona/memory substrate (composed system prompt). `mode` can
     // force a path: "agent" always hermes, "direct" always provider.
-    let force_agent = args.mode.as_deref() == Some("agent");
+    // ADR-005 irisy §8.3 (v7): ONE persistent engine ≡ ONE conversation. EVERY
+    // non-coding turn goes to the engine so it owns the whole context — we no
+    // longer split normal conversation to the tool-less provider-direct path,
+    // which fragmented memory (§8.2). provider-direct is now ONLY a fallback:
+    // an explicit `direct` mode, coding mode, or hermes not installed. The old
+    // `turn_needs_agent` heuristic + `force_agent` no longer gate the engine.
     let force_direct = args.mode.as_deref() == Some("direct");
-    let use_agent = !coding_mode
-        && !force_direct
-        && crate::shell::agent_installer::is_installed(
+    // ADR-005 irisy §8.7: the RIGHT-region Irisy engine is a selectable ACP agent
+    // (`hermes` default | `codex` | `claude-code`). hermes is the bundled default
+    // and must be installed; a BYO engine reaching here was UI-gated on detection
+    // (`list_byo_drivers` present), so we trust it and let the adapter spawn.
+    let engine = args
+        .agent
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("hermes");
+    let engine_ready = engine != "hermes"
+        || crate::shell::agent_installer::is_installed(
             &crate::shell::agent_installer::AgentName::Hermes,
-        )
-        && (force_agent || turn_needs_agent(&messages));
+        );
+    let use_agent = !coding_mode && !force_direct && engine_ready;
     if use_agent {
-        if let Some(last_user) = messages
+        // Conversation turns (user/assistant, in order) — the engine gets the
+        // latest user message each turn, plus the prior turns replayed ONCE to
+        // re-hydrate a fresh session (§8.4, in AcpClient::prompt).
+        let turns: Vec<(String, String)> = messages
             .iter()
-            .rev()
-            .find(|m| m.role == "user")
-            .map(|m| m.content.clone())
-        {
-            let provider_env = registry.agent_env_injection();
+            .filter(|m| m.role == "user" || m.role == "assistant")
+            .map(|m| (m.role.clone(), m.content.clone()))
+            .collect();
+        if turns.iter().any(|(r, _)| r == "user") {
+            // Auth reuse (ADR-005 §8.8): hermes gets the active Irisy provider;
+            // a BYO engine gets ITS canonical BYOK credential from the keychain
+            // (codex → openai key, claude-code → anthropic key) so the user
+            // never signs in twice. Empty when unconfigured → the CLI uses its
+            // own login. The key rides only into the adapter subprocess env.
+            let provider_env = if engine == "hermes" {
+                registry.agent_env_injection()
+            } else {
+                registry.byo_engine_auth_env(engine)
+            };
             let mut guard = crate::shell::acp_client::singleton().lock().await;
+            // Engine switch (§8.7): if a different engine is running, reset so we
+            // restart with the chosen adapter.
+            if let Some(c) = guard.as_mut() {
+                if c.engine() != engine {
+                    *guard = None;
+                }
+            }
             let ready = if guard.is_none() {
-                match crate::shell::acp_client::AcpClient::start(&provider_env).await {
+                match crate::shell::acp_client::AcpClient::start(engine, &provider_env).await {
                     Ok(c) => {
                         *guard = Some(c);
                         true
                     }
                     Err(e) => {
-                        eprintln!("[acp] hermes start failed, using provider router: {e}");
+                        eprintln!("[acp] {engine} start failed, using provider router: {e}");
                         false
                     }
                 }
@@ -337,12 +418,9 @@ async fn forward_to_provider(
                 let client = guard.as_mut().expect("acp client present");
                 let rid = request_id.to_string();
                 let app2 = app.clone();
-                // Feed hermes CTRL's composed system prompt (persona +
-                // capability catalog + brain_state) the PWA already built —
-                // ADR-005 irisy § persona-shell v5 (§6.2 capabilities).
-                // Previously only `last_user` reached hermes, so it answered
-                // from its own SOUL.md/skills and didn't know CTRL's
-                // capabilities (leaked its own identity instead).
+                // Feed the engine CTRL's composed system prompt (persona +
+                // capability catalog) the PWA built — ADR-005 § persona-shell v5
+                // (§6.2). System messages → preamble; user/assistant → turns.
                 let system_preamble = messages
                     .iter()
                     .filter(|m| m.role == "system")
@@ -350,7 +428,7 @@ async fn forward_to_provider(
                     .collect::<Vec<_>>()
                     .join("\n\n");
                 let result = client
-                    .prompt(&last_user, Some(&system_preamble), |d: &str| {
+                    .prompt(&turns, Some(&system_preamble), |d: &str| {
                         let _ = app2.emit(
                             "chat-stream-delta",
                             StreamDelta {
@@ -370,11 +448,22 @@ async fn forward_to_provider(
                         return Ok(());
                     }
                     Err(e) => {
-                        // Drop the (possibly wedged) client so the next turn
-                        // restarts it cleanly, then fall through to the router.
-                        *guard = None;
+                        // ADR-005 irisy §8.3 (v7): do NOT nuke a LIVE engine session
+                        // on a transient error — that was an amnesia mechanism (§8.2).
+                        // Continuity is the ENGINE's: keep the session so its whole
+                        // conversation context survives for the next turn; reset only
+                        // when the engine process is genuinely DEAD (next turn then
+                        // restarts + re-primes). Either way this turn falls through to
+                        // the provider router so the user still gets an answer.
+                        let dead = guard.as_mut().map(|c| !c.is_alive()).unwrap_or(true);
+                        if dead {
+                            *guard = None;
+                        }
                         drop(guard);
-                        eprintln!("[acp] hermes prompt failed, using provider router: {e}");
+                        eprintln!(
+                            "[acp] hermes prompt failed (engine {}), using provider router: {e}",
+                            if dead { "dead \u{2014} reset" } else { "alive \u{2014} session kept" }
+                        );
                     }
                 }
             }
@@ -509,6 +598,15 @@ mod tests {
         // daily review / recap (U+590D U+76D8) routes to the agent too.
         assert!(turn_needs_agent(&user("\u{4eca}\u{65e5}\u{590D}\u{76D8}")));
         assert!(turn_needs_agent(&user("give me a daily review")));
+        // ADR-005 irisy § persona-shell v5 §6.2 — online-research intents must
+        // reach hermes (it holds the web_search gate tool); the direct path has
+        // none and would wrongly tell the user it cannot browse the internet.
+        assert!(turn_needs_agent(&user("search the web for the latest news")));
+        assert!(turn_needs_agent(&user("go online and research this")));
+        // Chinese: go-online (U+8054 U+7F51) + research (U+8C03 U+7814) — the
+        // exact phrasing that routed direct and got "I can't browse" (2026-06-28).
+        assert!(turn_needs_agent(&user("\u{4f60}\u{80fd}\u{8fde}\u{7f51}\u{8c03}\u{7814}\u{4e86}")));
+        assert!(turn_needs_agent(&user("\u{5e2e}\u{6211}\u{8054}\u{7f51}\u{67e5}\u{4e00}\u{4e0b}")));
     }
 
     #[test]

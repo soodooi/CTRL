@@ -8,13 +8,19 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type KeyboardEvent,
   type ReactElement,
 } from 'react';
-import { defaultTransport, type LLMTransport } from '@/lib/llm-transport';
+import { engineTransport, type LLMTransport } from '@/lib/llm-transport';
 import { composeUserTurn } from '@/personas/irisy/code-companion';
+// ADR-005 irisy §8.4/§8.6 — durable transcript: persist this surface's
+// conversation so a reload / engine crash re-hydrates it.
+import { loadTranscript, saveTranscript } from '@/lib/transcript-store';
+// ADR-005 irisy §8.6 — the SAME agent ("shell") selector every surface carries.
+import { AgentSelector } from '@/components/agent/AgentSelector';
 import styles from './CompanionPane.module.css';
 
 export interface CompanionPaneProps {
@@ -29,6 +35,17 @@ interface Message {
   content: string;
   pending?: boolean;
   error?: string | null;
+}
+
+// Type-guard for restoring a persisted transcript (ADR-005 §8.4).
+function isCompanionMessage(m: unknown): m is Message {
+  if (typeof m !== 'object' || m === null) return false;
+  const r = m as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    (r.role === 'user' || r.role === 'assistant') &&
+    typeof r.content === 'string'
+  );
 }
 
 interface RunnableBlock {
@@ -65,9 +82,26 @@ export function CompanionPane({
   getRecentStdout,
   onSendToTerminal,
 }: CompanionPaneProps): ReactElement {
-  const transportRef = useRef<LLMTransport>(defaultTransport());
+  // ADR-005 irisy §8.6 — terminal-essence engine path (was the raw chat_stream
+  // transport): the coding companion now runs on the same unified engine +
+  // selectable agent as every other surface.
+  const transportRef = useRef<LLMTransport>(engineTransport());
   const abortRef = useRef<AbortController | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Durable transcript (§8.4) — keyed per coding env so each session restores
+  // its own history. Transient flags (`pending`) are reset on restore.
+  const sessionKey = `coding:${envId}`;
+  const [messages, setMessages] = useState<Message[]>(() =>
+    loadTranscript<Message>(sessionKey, isCompanionMessage).map((m) => ({
+      ...m,
+      pending: false,
+    })),
+  );
+  useEffect(() => {
+    saveTranscript(
+      sessionKey,
+      messages.map((m) => ({ ...m, pending: false })),
+    );
+  }, [sessionKey, messages]);
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
 
@@ -224,6 +258,9 @@ export function CompanionPane({
             </div>
           );
         })}
+      </div>
+      <div className={styles.agentRow}>
+        <AgentSelector showNote={false} />
       </div>
       <div className={styles.inputRow}>
         <textarea
