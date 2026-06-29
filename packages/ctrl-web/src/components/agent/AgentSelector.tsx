@@ -14,7 +14,7 @@
 // install (§8.8), so the choice is always actionable, never a dead end.
 
 import { useState, type JSX } from 'react';
-import { useByoDrivers, type ByoDriver } from '@/lib/active-agent';
+import { useByoDrivers, isUsable, type ByoDriver } from '@/lib/active-agent';
 import { InstallAgentModal } from './InstallAgentModal';
 import styles from './AgentSelector.module.css';
 
@@ -41,8 +41,8 @@ export function AgentSelector({
           onClick={() => setOpen((o) => !o)}
           title={active.detail}
         >
-          {/* Solid dot = engine ready; hollow = needs a one-click setup. */}
-          <span className={styles.dot} data-on={active.present} />
+          {/* Solid dot = engine ready to answer; hollow = needs setup or an account. */}
+          <span className={styles.dot} data-on={isUsable(active)} />
           <span className={styles.label}>{active.label}</span>
           <span className={styles.caret}>▾</span>
         </button>
@@ -73,11 +73,24 @@ export function AgentSelector({
           </>
         )}
       </span>
-      {showNote && active.kind === 'byo-cli' && !active.present && (
-        <button type="button" className={styles.setup} onClick={() => setInstallFor(active)}>
-          Set up {active.label} →
-        </button>
-      )}
+      {showNote &&
+        active.kind === 'byo-cli' &&
+        !isUsable(active) &&
+        (!active.present ? (
+          <button type="button" className={styles.setup} onClick={() => setInstallFor(active)}>
+            Set up {active.label} →
+          </button>
+        ) : (
+          // Installed but CTRL has no account for it — be honest: it can't use the
+          // current (e.g. Volc) provider; one tap back to Hermes, which can.
+          <span className={styles.byoNote}>
+            {active.label} needs {active.id === 'codex' ? 'an OpenAI' : 'an Anthropic'} account —
+            it can’t use your current provider.{' '}
+            <button type="button" className={styles.setup} onClick={() => setActive('hermes')}>
+              Use Hermes
+            </button>
+          </span>
+        ))}
       <InstallAgentModal
         driver={installFor}
         open={installFor !== null}

@@ -747,13 +747,24 @@ user who pre-installed via brew/npm is detected too — CTRL never double-instal
   managed codex binary (off PATH) → now `CODEX_PATH` + PATH wiring. Also: adapter stderr is now
   drained to logs so a stall is never silent. `@zed-industries/claude-code-acp` (0.16.2) confirmed
   still correct.
-- [x] **Codex auth = OpenAI only** (probe: `authMethods` = `api-key`{provider:openai} | `chat-gpt`;
-  api-key reads `OPENAI_API_KEY`/`CODEX_API_KEY` from env at `authenticate`). So `byo_engine_auth_env`
-  injecting the canonical `openai` key IS the right mechanism. CONSEQUENCE: Codex can use "our
-  provider" ONLY when it's an OpenAI key — it cannot ride an arbitrary CTRL provider (doubao/Volc/
-  CF Workers): codex-acp's api-key is openai-scoped and Codex speaks the OpenAI Responses API.
-  Riding the full CTRL provider router is Hermes's role, not Codex's. No key configured → start()
-  fails fast → irisy_chat falls back to the provider router (no hang).
+- [x] **Codex auth = OpenAI only — definitively (live `codex exec` test 2026-06-29 with the user's
+  Volc key).** `authMethods` = `api-key`{provider:openai} | `chat-gpt`; api-key reads
+  `OPENAI_API_KEY`/`CODEX_API_KEY`. Tried pointing codex at Volc via a custom `[model_providers]`
+  with `wire_api="chat"` → codex 0.142.4 hard-rejects: *"`wire_api = "chat"` is no longer supported …
+  set `wire_api = "responses"`"* (github.com/openai/codex/discussions/7782). Volc (`ark…/api/v3`) is
+  Chat-Completions, not the Responses API → **Codex CANNOT use Volc or any OpenAI-compatible provider**.
+  CONSEQUENCE locked: per-engine provider constraints — **Hermes** rides the CTRL provider router (any
+  BYOK incl. Volc; it's Irisy's working brain today), **Codex** = OpenAI-Responses only, **Claude** =
+  Anthropic only. The ONLY way to run Codex on an arbitrary provider would be CTRL exposing an
+  OpenAI-Responses-compatible shim that translates to the provider's wire format (deferred feature,
+  not built).
+- [x] **Honest per-engine readiness (bao 2026-06-29 — "用 Hermes 跑 Volc + Codex/Claude 诚实标注").**
+  `list_byo_drivers` now returns `authReady` (CTRL holds the engine's required account key: hermes
+  always; codex=openai key; claude=anthropic key). UI uses `isUsable = present && authReady`: the
+  selector dot is hollow when not usable, the detail says "Needs an OpenAI/Anthropic account", and
+  `engineTransport` short-circuits with a plain message ("Codex needs an OpenAI account — it can't use
+  your current provider; switch to Hermes") instead of silently falling back to the router. No
+  pretend-it-works, no silent wrong-engine answer.
 - [ ] **Still pending**: end-to-end answer with a REAL OpenAI key (probe confirmed the mechanism via
   the auth-error, not a live completion); claude-code authenticate + end-to-end; Windows Node/codex
   asset paths.

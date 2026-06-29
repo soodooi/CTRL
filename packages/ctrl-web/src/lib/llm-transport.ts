@@ -294,20 +294,25 @@ class EngineTransport implements LLMTransport {
     opts: LLMStreamOptions = {},
   ): AsyncIterable<LLMChunk> {
     // Lazy import avoids a static cycle (active-agent → bridge only).
-    const { useActiveAgentStore, activeDriver } = await import('./active-agent');
+    const { useActiveAgentStore, activeDriver, isUsable } = await import('./active-agent');
     const state = useActiveAgentStore.getState();
     const agent = activeDriver(state);
 
-    // ADR-005 §8.7: a BYO engine that ISN'T installed can't be driven — show the
-    // honest set-up hand-off (the InstallAgentModal carries the install command).
-    // An INSTALLED BYO engine (Codex / Claude Code) IS driven for real: CTRL
-    // spawns its ACP adapter via the engine path below, same as hermes — no
-    // dead-end. Embedded (hermes) always goes to the engine.
-    if (agent.kind === 'byo-cli' && !agent.present) {
-      const text =
-        `**${agent.label}** isn’t set up yet. Open the set-up panel and hit ` +
-        `**Install** — CTRL installs it for you (no terminal) and then runs it ` +
-        `as Irisy’s engine. Switch back to **Hermes** to chat in the meantime.`;
+    // ADR-005 §8.8: only drive a BYO engine that can actually answer (installed AND
+    // CTRL holds its required account key). Otherwise be HONEST instead of silently
+    // falling back to the provider router (which would answer "as" the wrong engine):
+    //   • not installed → point at the one-click set-up.
+    //   • installed but no matching account → say so plainly. Codex needs OpenAI,
+    //     Claude needs Anthropic; neither can use an OpenAI-compatible provider like
+    //     Volc (verified 2026-06-29). Hermes is the engine for those — one tap back.
+    if (agent.kind === 'byo-cli' && !isUsable(agent)) {
+      const text = !agent.present
+        ? `**${agent.label}** isn’t set up yet. Open the set-up panel and hit ` +
+          `**Install** — CTRL installs it for you (no terminal). Switch back to ` +
+          `**Hermes** to chat in the meantime.`
+        : `**${agent.label}** needs ${agent.id === 'codex' ? 'an OpenAI' : 'an Anthropic'} ` +
+          `account — it can’t use your current provider. **Hermes** runs on your ` +
+          `provider, so switch the engine back to Hermes to chat here.`;
       yield { delta: text, done: false };
       yield { delta: '', done: true };
       return;

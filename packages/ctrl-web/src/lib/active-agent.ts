@@ -28,7 +28,17 @@ export interface ByoDriver {
   label: string;
   kind: AgentKind;
   present: boolean;
+  /** CTRL holds the credential this engine needs (ADR-005 §8.8). hermes always
+   *  true (rides the provider router); Codex needs OpenAI, Claude needs Anthropic
+   *  — an OpenAI-compatible provider like Volc does NOT satisfy them. */
+  authReady: boolean;
   detail: string;
+}
+
+/** Can this engine actually answer right now: installed AND has its required
+ *  credential. Drives the "ready" dot + the honest in-chat short-circuit. */
+export function isUsable(d: ByoDriver): boolean {
+  return d.present && d.authReady;
 }
 
 /** The always-available default — Irisy's embedded brain. */
@@ -44,7 +54,8 @@ const FALLBACK_DRIVERS: ByoDriver[] = [
     label: 'Hermes',
     kind: 'embedded',
     present: true,
-    detail: 'Default engine',
+    authReady: true,
+    detail: 'Default engine — uses your provider',
   },
 ];
 
@@ -108,7 +119,8 @@ export function activeDriver(s: Pick<ActiveAgentState, 'activeAgentId' | 'driver
       label: 'Hermes',
       kind: 'embedded',
       present: true,
-      detail: 'Default engine',
+      authReady: true,
+      detail: 'Default engine — uses your provider',
     }
   );
 }

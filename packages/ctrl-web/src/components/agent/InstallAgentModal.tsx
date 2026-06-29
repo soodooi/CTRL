@@ -116,9 +116,10 @@ export function InstallAgentModal({
           <section className={styles.step}>
             <p className={styles.stepLabel}>Then</p>
             <p className={styles.body}>
-              {driver.label} becomes Irisy’s engine and answers right here. If it
-              needs a {providerName(driver.id)} sign-in, CTRL reuses the key you
-              already configured — no second setup.
+              {driver.label} becomes Irisy’s engine and answers right here. It runs on
+              a {providerName(driver.id)} account — CTRL reuses the key from Providers
+              if you’ve added one, no second login. (It can’t use other providers; for
+              those, Hermes is the engine.)
             </p>
           </section>
 

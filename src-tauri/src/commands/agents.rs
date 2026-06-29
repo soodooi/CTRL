@@ -77,12 +77,19 @@ pub async fn agent_status(name: String) -> Result<bool, String> {
 /// AGENTS.md) and never supervises. `present` is honest detection — CTRL never
 /// claims a driver the user doesn't have (no fake choices).
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ByoDriver {
     pub id: String,
     pub label: String,
     /// "embedded" | "byo-cli"
     pub kind: String,
     pub present: bool,
+    /// Whether CTRL holds the credential this engine REQUIRES to run (ADR-005
+    /// §8.8): hermes rides the CTRL provider router so it's always ready; Codex
+    /// needs an OpenAI key, Claude an Anthropic key — neither can use an arbitrary
+    /// provider (verified 2026-06-29: Codex is OpenAI-Responses-API only). The UI
+    /// uses this to say "needs an OpenAI account" honestly instead of pretending.
+    pub auth_ready: bool,
     /// Where its config lives / how it was detected (for the Settings card).
     pub detail: String,
 }
@@ -111,33 +118,54 @@ pub async fn list_byo_drivers() -> Result<Vec<ByoDriver>, String> {
         is_installed(&AgentName::Codex) || on_path("codex") || has_dir(".codex");
     let claude_present =
         is_installed(&AgentName::ClaudeCode) || on_path("claude") || has_dir(".claude");
-    let install_detail = "Installs in one click";
+    // Does CTRL hold the credential each BYO engine REQUIRES? Codex talks only to
+    // OpenAI (Responses API), Claude only to Anthropic — an OpenAI-compatible
+    // provider like Volc does NOT satisfy them. hermes rides the router, always ok.
+    let has_key = |id: &str| {
+        crate::kernel::provider::registry::read_credential(id)
+            .map(|k| !k.trim().is_empty())
+            .unwrap_or(false)
+    };
+    let codex_auth = has_key("openai");
+    let claude_auth = has_key("anthropic");
 
     // The user-facing axis is just the ENGINE name (Hermes / Codex / Claude) —
     // Irisy is always the assistant; this only picks its engine. No "BYO" /
-    // "embedded" jargon in labels; `kind` stays internal (it decides whether a
-    // pick needs the one-click install).
+    // "embedded" jargon in labels; `kind` stays internal. The detail is the honest
+    // state: missing account > not installed > ready.
+    let byo_detail = |present: bool, auth: bool, account: &str| -> String {
+        if !auth {
+            format!("Needs a {account} account")
+        } else if !present {
+            "Installs in one click".into()
+        } else {
+            "Ready".into()
+        }
+    };
     Ok(vec![
         ByoDriver {
             id: "hermes".into(),
             label: "Hermes".into(),
             kind: "embedded".into(),
             present: hermes_ready,
-            detail: "Default engine".into(),
+            auth_ready: true,
+            detail: "Default engine \u{2014} uses your provider".into(),
         },
         ByoDriver {
             id: "codex".into(),
             label: "Codex".into(),
             kind: "byo-cli".into(),
             present: codex_present,
-            detail: if codex_present { "Ready".into() } else { install_detail.into() },
+            auth_ready: codex_auth,
+            detail: byo_detail(codex_present, codex_auth, "OpenAI"),
         },
         ByoDriver {
             id: "claude-code".into(),
             label: "Claude".into(),
             kind: "byo-cli".into(),
             present: claude_present,
-            detail: if claude_present { "Ready".into() } else { install_detail.into() },
+            auth_ready: claude_auth,
+            detail: byo_detail(claude_present, claude_auth, "Anthropic"),
         },
     ])
 }
