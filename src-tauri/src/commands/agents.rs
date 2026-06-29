@@ -106,40 +106,38 @@ pub async fn list_byo_drivers() -> Result<Vec<ByoDriver>, String> {
         |bin: &str| crate::kernel::provider::path_resolver::resolve_binary_path(bin).is_some();
 
     let hermes_ready = is_installed(&AgentName::Hermes);
-    // "Ready" once CTRL's one-click managed install landed, or the user already
-    // had it. The not-present detail invites the one-click install (no terminal).
+    // "Ready" once CTRL's one-click install landed, or the user already had it.
     let codex_present =
         is_installed(&AgentName::Codex) || on_path("codex") || has_dir(".codex");
     let claude_present =
         is_installed(&AgentName::ClaudeCode) || on_path("claude") || has_dir(".claude");
-    let ready_detail = "Ready \u{2014} CTRL drives it as Irisy's engine over ACP.";
-    let install_detail = "One-click install \u{2014} CTRL sets it up for you, no terminal.";
+    let install_detail = "Installs in one click";
 
+    // The user-facing axis is just the ENGINE name (Hermes / Codex / Claude) —
+    // Irisy is always the assistant; this only picks its engine. No "BYO" /
+    // "embedded" jargon in labels; `kind` stays internal (it decides whether a
+    // pick needs the one-click install).
     Ok(vec![
         ByoDriver {
             id: "hermes".into(),
-            label: "Irisy (hermes)".into(),
+            label: "Hermes".into(),
             kind: "embedded".into(),
             present: hermes_ready,
-            detail: if hermes_ready {
-                "In-app brain — installed, answers in this chat.".into()
-            } else {
-                "In-app brain — installs on first use.".into()
-            },
+            detail: "Default engine".into(),
         },
         ByoDriver {
             id: "codex".into(),
             label: "Codex".into(),
             kind: "byo-cli".into(),
             present: codex_present,
-            detail: if codex_present { ready_detail.into() } else { install_detail.into() },
+            detail: if codex_present { "Ready".into() } else { install_detail.into() },
         },
         ByoDriver {
             id: "claude-code".into(),
-            label: "Claude Code".into(),
+            label: "Claude".into(),
             kind: "byo-cli".into(),
             present: claude_present,
-            detail: if claude_present { ready_detail.into() } else { install_detail.into() },
+            detail: if claude_present { "Ready".into() } else { install_detail.into() },
         },
     ])
 }

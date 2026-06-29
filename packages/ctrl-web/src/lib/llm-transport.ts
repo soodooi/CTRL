@@ -306,9 +306,8 @@ class EngineTransport implements LLMTransport {
     if (agent.kind === 'byo-cli' && !agent.present) {
       const text =
         `**${agent.label}** isn’t set up yet. Open the set-up panel and hit ` +
-        `**Install** — CTRL installs it for you (no terminal) and then drives it ` +
-        `here as Irisy’s engine. Switch back to **Irisy (hermes)** to chat in the ` +
-        `meantime.`;
+        `**Install** — CTRL installs it for you (no terminal) and then runs it ` +
+        `as Irisy’s engine. Switch back to **Hermes** to chat in the meantime.`;
       yield { delta: text, done: false };
       yield { delta: '', done: true };
       return;

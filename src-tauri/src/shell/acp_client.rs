@@ -281,6 +281,27 @@ fn engine_argv(engine: &str) -> Result<Vec<String>> {
     }
 }
 
+/// Resolve the actual CLI binary a BYO ACP adapter wraps (ADR-005 §8.8): CTRL's
+/// one-click managed install (~/.ctrl/agents/<id>/node_modules/.bin/<bin>) first,
+/// else the user's own on PATH. None when neither exists — the adapter then falls
+/// back to its own discovery. This is what lets codex-acp find the codex CTRL
+/// installed instead of hanging.
+fn resolve_engine_binary(engine: &str) -> Option<PathBuf> {
+    use crate::shell::agent_installer::{agent_dir, AgentName};
+    let agent = match engine {
+        "codex" => AgentName::Codex,
+        "claude-code" => AgentName::ClaudeCode,
+        _ => return None,
+    };
+    if let Ok(dir) = agent_dir(&agent) {
+        let p = dir.join("node_modules").join(".bin").join(agent.bin_name());
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    crate::kernel::provider::path_resolver::resolve_binary_path(agent.bin_name())
+}
+
 impl AcpClient {
     /// Spawn the selected ACP engine, handshake (initialize), and open one ACP
     /// session. `engine` = `hermes` (default) | `codex` | `claude-code`
@@ -310,11 +331,39 @@ impl AcpClient {
             cmd.env(k, v);
         }
         cmd.current_dir(&cwd);
-        // stdout = JSON-RPC wire (clean); agent logs go to stderr → discard
-        // so the pipe can't fill. kill_on_drop ties the child to this struct.
+        // BYO engines launch via npx and WRAP the user's own CLI binary. CTRL's
+        // one-click install lands codex/claude under ~/.ctrl/agents (NOT on PATH),
+        // so without this the adapter can't find the binary and hangs (ADR-005
+        // §8.8 — the pending PATH-wiring item). Make discoverable: (a) the Node
+        // runtime so `npx` resolves even where CTRL bootstrapped Node; (b) the
+        // wrapped binary's dir on PATH; (c) for codex, CODEX_PATH points straight
+        // at it (codex-acp honors it).
+        if engine == "codex" || engine == "claude-code" {
+            let mut extra: Vec<String> = Vec::new();
+            if let Ok(node_bin) = crate::shell::agent_installer::ensure_node() {
+                extra.push(node_bin.display().to_string());
+            }
+            if let Some(cli) = resolve_engine_binary(engine) {
+                if let Some(dir) = cli.parent() {
+                    extra.push(dir.display().to_string());
+                }
+                if engine == "codex" {
+                    cmd.env("CODEX_PATH", &cli);
+                }
+            }
+            if !extra.is_empty() {
+                let sep = if cfg!(windows) { ";" } else { ":" };
+                let existing = std::env::var("PATH").unwrap_or_default();
+                cmd.env("PATH", format!("{}{}{}", extra.join(sep), sep, existing));
+            }
+        }
+        // stdout = JSON-RPC wire (clean); stderr = adapter logs, drained to CTRL's
+        // stderr below so the pipe can't fill AND startup failures (npx fetch,
+        // "binary not found", auth prompts) are VISIBLE instead of a silent 180s
+        // hang. kill_on_drop ties the child to this struct.
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
 
         let mut child = cmd
@@ -322,6 +371,17 @@ impl AcpClient {
             .with_context(|| format!("spawn {engine} acp ({})", argv.join(" ")))?;
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
+        // Drain stderr (ADR-005 §8.8): without this the piped buffer fills and the
+        // adapter blocks; with it, the real reason a BYO engine stalls shows up.
+        if let Some(errpipe) = child.stderr.take() {
+            let eng = engine.to_string();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(errpipe).lines();
+                while let Ok(Some(l)) = lines.next_line().await {
+                    eprintln!("[acp:{eng}] {l}");
+                }
+            });
+        }
         let mut s = AcpClient {
             child,
             stdin,

@@ -41,9 +41,8 @@ export function AgentSelector({
           onClick={() => setOpen((o) => !o)}
           title={active.detail}
         >
-          {/* Solid dot = embedded brain answers here; hollow = a BYO-CLI driver
-              (CTRL only projects into it; you run it in your terminal). */}
-          <span className={styles.dot} data-on={active.kind === 'embedded'} />
+          {/* Solid dot = engine ready; hollow = needs a one-click setup. */}
+          <span className={styles.dot} data-on={active.present} />
           <span className={styles.label}>{active.label}</span>
           <span className={styles.caret}>▾</span>
         </button>
@@ -59,19 +58,14 @@ export function AgentSelector({
                   aria-checked={a.id === activeId}
                   className={`${styles.item} ${a.id === activeId ? styles.itemActive : ''}`}
                   onClick={() => {
-                    // Any agent is selectable — including a BYO-CLI the user
-                    // hasn't installed yet; picking a not-installed one opens
-                    // the set-up dialog so it's actionable, not a dead end.
+                    // Any engine is selectable; picking one that isn't installed
+                    // yet opens the one-click set-up so it's actionable.
                     setActive(a.id);
                     setOpen(false);
                     if (a.kind === 'byo-cli' && !a.present) setInstallFor(a);
                   }}
                 >
-                  <span className={styles.itemLabel}>
-                    {a.label}
-                    {a.kind === 'byo-cli' ? ' · BYO' : ''}
-                    {!a.present ? ' · not installed' : ''}
-                  </span>
+                  <span className={styles.itemLabel}>{a.label}</span>
                   <span className={styles.itemHint}>{a.detail}</span>
                 </button>
               ))}
@@ -79,18 +73,11 @@ export function AgentSelector({
           </>
         )}
       </span>
-      {showNote &&
-        active.kind === 'byo-cli' &&
-        (active.present ? (
-          <span className={styles.byoNote}>
-            Driving Irisy here as the engine — answers in this chat with your
-            projected tools.
-          </span>
-        ) : (
-          <button type="button" className={styles.setup} onClick={() => setInstallFor(active)}>
-            {active.label} isn’t installed — set it up in one click →
-          </button>
-        ))}
+      {showNote && active.kind === 'byo-cli' && !active.present && (
+        <button type="button" className={styles.setup} onClick={() => setInstallFor(active)}>
+          Set up {active.label} →
+        </button>
+      )}
       <InstallAgentModal
         driver={installFor}
         open={installFor !== null}

@@ -330,8 +330,8 @@ const AgentBackendSelector = (): ReactElement => {
   const { drivers, active, setActive, loaded } = useByoDrivers();
   return (
     <Section
-      title="Agent backend"
-      description="Which engine backs Irisy. The in-app chat always runs on the embedded brain (hermes). A BYO-CLI driver (Codex / Claude Code) is your own external tool — CTRL projects its gate + workspace context into it but never supervises it, so you drive it from your terminal."
+      title="Engine"
+      description="Pick the engine behind Irisy — Hermes, Codex, or Claude. Hermes is the built-in default; Codex and Claude install in one click and reuse the API key you set in Providers."
     >
       <div className={styles.segmented} role="radiogroup" aria-label="Agent backend">
         {drivers.map((d) => {
@@ -347,11 +347,7 @@ const AgentBackendSelector = (): ReactElement => {
               onClick={() => setActive(d.id)}
               title={d.detail}
             >
-              <span className={styles.segmentLabel}>
-                {d.label}
-                {d.kind === 'byo-cli' ? ' · BYO' : ''}
-                {!d.present ? ' · not installed' : ''}
-              </span>
+              <span className={styles.segmentLabel}>{d.label}</span>
               <span className={styles.segmentHint}>{d.detail}</span>
             </button>
           );

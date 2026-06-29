@@ -1,21 +1,20 @@
-// active-agent — which agent backs Irisy (ADR-005 irisy §8; architecture
-// byo-cli-driver). One of Irisy's three configurable axes alongside persona +
-// feature packs: the AGENT axis picks the ENGINE that runs the loop.
+// active-agent — which ENGINE backs Irisy (ADR-005 irisy §8.7/§8.8). Irisy is
+// always the assistant; this axis only picks its engine. The user-facing choice
+// is three plain names — Hermes / Codex / Claude — never "BYO" / "embedded".
 //
-// Two kinds (honest, never collapsed — see ADR-005 §8 + the Option A lock):
-//   • embedded  (hermes) — CTRL launches + supervises it; it answers IN the
-//                          in-app chat box. This is the default.
-//   • byo-cli   (Codex / Claude Code) — the user's OWN external CLI. CTRL only
-//                          PROJECTS into it (gate + AGENTS.md) and never
-//                          supervises its loop. Selecting one records the
-//                          active driver + shows projection status; the in-app
-//                          chat keeps answering with Irisy (hermes). Driving the
-//                          BYO CLI happens in the user's terminal, not here.
+// `kind` is an INTERNAL flag (never rendered) that decides install behaviour:
+//   • embedded  (hermes) — CTRL ships it; zero-install default.
+//   • byo-cli   (Codex / Claude) — installed in one click into ~/.ctrl/agents
+//                          (ADR-005 §8.8). Whichever engine is active, CTRL
+//                          DRIVES it over ACP and it answers IN the chat — it is
+//                          NOT a terminal hand-off (that was the retired §8.6
+//                          model). Picking one that isn't installed opens the
+//                          one-click set-up.
 //
-// The active selection is shared by the env (Settings) selector and the in-chat
-// selector so they never drift. Persisted to localStorage (same pattern as
-// session-state); the driver LIST comes from the kernel (`list_byo_drivers`)
-// with honest presence detection — CTRL never offers a driver the user lacks.
+// The active selection is shared by the Settings selector and the in-chat
+// selector so they never drift. Persisted to localStorage; the engine LIST comes
+// from the kernel (`list_byo_drivers`) with honest presence detection — CTRL
+// never offers an engine the user can't run.
 
 import { useEffect } from 'react';
 import { create } from 'zustand';
@@ -42,10 +41,10 @@ export const DEFAULT_AGENT_ID = 'hermes';
 const FALLBACK_DRIVERS: ByoDriver[] = [
   {
     id: DEFAULT_AGENT_ID,
-    label: 'Irisy (hermes)',
+    label: 'Hermes',
     kind: 'embedded',
     present: true,
-    detail: 'In-app brain — answers in this chat.',
+    detail: 'Default engine',
   },
 ];
 
@@ -106,10 +105,10 @@ export function activeDriver(s: Pick<ActiveAgentState, 'activeAgentId' | 'driver
   return (
     s.drivers.find((d) => d.id === s.activeAgentId) ?? {
       id: DEFAULT_AGENT_ID,
-      label: 'Irisy (hermes)',
+      label: 'Hermes',
       kind: 'embedded',
       present: true,
-      detail: 'In-app brain.',
+      detail: 'Default engine',
     }
   );
 }

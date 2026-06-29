@@ -96,8 +96,8 @@ export function InstallAgentModal({
           <span className={styles.readyDot} aria-hidden="true" />
           <p className={styles.readyText}>
             <strong>{driver.label}</strong> now runs as Irisy’s engine — your next
-            message here is answered by it, with your projected tools. Switch the
-            agent back to Irisy (hermes) anytime.
+            message here is answered by it, with your projected tools. Switch back
+            to Hermes anytime.
           </p>
         </div>
       ) : (
