@@ -453,6 +453,22 @@ pub struct McpPackRunArgs {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackUninstallArgs {
+    /// Installed pack id to remove (the manifest `id`).
+    pub mcp_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackWriteFileArgs {
+    /// Installed pack id (install the pack first).
+    pub mcp_id: String,
+    /// Pack-relative path, e.g. "skills/analyze-cn-stocks/SKILL.md". No ".." or absolute.
+    pub path: String,
+    /// File text content (skill markdown, SVG icon, static data).
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct HttpGetArgs {
     /// Full HTTPS URL to fetch.
     pub url: String,
@@ -512,6 +528,35 @@ pub struct WebSearchArgs {
     /// Max results to return (default 5, capped at 10).
     #[serde(default)]
     pub max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DiscoverPacksArgs {
+    /// Keyword to search packs by (e.g. "stock price"). Omit to browse top entries.
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Max entries per source to return (default 25, capped server-side at 100).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DiscoverSkillsArgs {
+    /// Keyword query matched against published SKILL.md skills on GitHub.
+    pub query: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SkillListArgs {
+    /// Optional keyword filter (matches skill name + description). Omit for all.
+    #[serde(default)]
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SkillReadArgs {
+    /// The skill's SKILL.md path, exactly as returned by skill_list.
+    pub path: String,
 }
 
 // ─── Router impl + tools ────────────────────────────────────────────────
@@ -1658,6 +1703,43 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
+    /// mcp.pack_uninstall — remove an installed feature pack (the brain managing
+    /// the user's packs, e.g. "uninstall the stocks pack and let's redo it").
+    /// Same remove path the PWA uses; errors clearly if the pack isn't installed
+    /// so the brain reports "X was not installed" instead of faking success.
+    #[tool(description = "Uninstall a feature pack by id (removes it from the user's installed packs)")]
+    async fn mcp_pack_uninstall(
+        &self,
+        Parameters(args): Parameters<McpPackUninstallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = crate::commands::kernel::mcp_dir()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        crate::commands::kernel::uninstall_from(&dir, &args.mcp_id)
+            .map_err(|e| McpError::invalid_params(e, None))?;
+        let body = serde_json::to_string(&serde_json::json!({ "uninstalled": args.mcp_id }))
+            .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp.pack_write_file — write a skill / asset file into an installed pack
+    /// (the brain shipping the SKILL.md / icon its manifest's cap_asset declares;
+    /// install_into carries only manifest + server code). The path stays inside
+    /// the pack dir (no traversal). This is how Irisy ships a pack WITH a skill:
+    /// install the manifest, then write each declared skill/asset file.
+    #[tool(description = "Write a skill or asset file (e.g. skills/<name>/SKILL.md) into an installed feature pack")]
+    async fn mcp_pack_write_file(
+        &self,
+        Parameters(args): Parameters<McpPackWriteFileArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = crate::commands::kernel::mcp_dir()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        crate::commands::kernel::write_pack_file(&dir, &args.mcp_id, &args.path, &args.content)
+            .map_err(|e| McpError::invalid_params(e, None))?;
+        let body = serde_json::to_string(&serde_json::json!({ "wrote": args.path, "mcp_id": args.mcp_id }))
+            .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
     /// http.get — fetch any HTTPS URL. Base mcp atomic. Used by
     /// composite mcps that need to read external API data (RSS,
     /// REST, webhook ping). Body returned as a string; caller parses
@@ -1792,16 +1874,18 @@ percent change for the top movers."
 
     /// web.search — look something up on the web. Another CONTROLLED data tool
     /// (ADR-010 communication § trust-domains v9, SC3): it never exposes a raw
-    /// fetch — it calls only fixed search backends. If the user has set a Tavily
-    /// API key (keychain account `tavily`) it uses Tavily (full web, fresh);
-    /// otherwise it falls back to the keyless Wikipedia search API (encyclopedic
-    /// only), so the tool works out of the box and upgrades when a key is added.
+    /// fetch — it calls only fixed search backends. It first tries any BYOK keyed
+    /// provider whose key is in the keychain, in priority order: Tavily
+    /// (`tavily`), Brave Search (`brave`), Serper/Google (`serper`), Exa (`exa`).
+    /// With no key set it degrades to a keyless FULL-WEB search (DuckDuckGo, then
+    /// Wikipedia), so the tool works out of the box and upgrades per key added.
     /// Because it can't reach an arbitrary URL or POST user data anywhere, the
     /// `websearch` domain is first-party-visible without opening `net`.
     #[tool(
-        description = "Search the web and return titles + URLs + snippets. Uses \
-the user's Tavily key if set (full web), else a keyless Wikipedia fallback \
-(encyclopedic). Use this for facts / news / research you don't already hold."
+        description = "Search the web and return titles + URLs + snippets. Uses a \
+BYOK keyed provider if one is configured (Tavily / Brave / Serper / Exa), else a \
+keyless full-web fallback (DuckDuckGo, then Wikipedia). Use this for facts / news \
+/ research you don't already hold."
     )]
     async fn web_search(
         &self,
@@ -1812,28 +1896,17 @@ the user's Tavily key if set (full web), else a keyless Wikipedia fallback \
             return Err(McpError::invalid_params("query must not be empty", None));
         }
         let n = args.max_results.unwrap_or(5).clamp(1, 10);
-        let key = crate::kernel::provider::registry::read_credential("tavily")
-            .filter(|k| !k.is_empty());
-        let (results, source, note) = match key {
-            // A Tavily key is set, but the cloud may be unreachable (expired key,
-            // quota, network, 5xx). Derived rule #1: cloud-down degrades, never
-            // hard-fails — so on a Tavily error fall back to keyless Wikipedia
-            // instead of propagating. Only if Wikipedia also fails do we error.
-            Some(k) => match tavily_search(&k, query, n).await {
-                Ok(results) => (results, "tavily", ""),
-                Err(_) => (
-                    wikipedia_search(query, n).await?,
-                    "wikipedia",
-                    "Tavily search failed; degraded to keyless Wikipedia \
-(encyclopedic only). Check your Tavily API key / quota at tavily.com.",
-                ),
-            },
-            None => (
-                wikipedia_search(query, n).await?,
-                "wikipedia",
-                "Keyless Wikipedia fallback (encyclopedic only). For full web \
-search, set a Tavily API key (keychain account 'tavily', free at tavily.com).",
-            ),
+        // BYOK keyed providers first (Tavily / Brave / Serper / Exa), tried in
+        // priority order — the first one whose key is in the keychain and returns
+        // hits wins; on its error or empty result we degrade to the next
+        // configured key, then to the keyless full-web path (DuckDuckGo → real web
+        // + Wikipedia fallback). Keys never leave the kernel (ADR-006 §
+        // byok-no-claude — keychain account == provider slug). web_search works
+        // keyless out of the box and upgrades per key the user sets; cloud-down on
+        // any keyed provider degrades, never hard-fails (derived rule #1).
+        let (results, source, note) = match first_keyed_web_search(query, n).await {
+            Some((r, src)) => (r, src, ""),
+            None => keyless_web_search(query, n).await?,
         };
         let body = serde_json::to_string(&serde_json::json!({
             "source": source,
@@ -1842,6 +1915,87 @@ search, set a Tavily API key (keychain account 'tavily', free at tavily.com).",
         }))
         .map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// discover.packs — search BOTH the MCP Registry and Smithery for installable
+    /// feature packs / MCP servers to reuse (feature-pack creation take-stock
+    /// channel ②, ADR-002 substrate § composition §7.4 names both sources). A
+    /// CONTROLLED discovery tool like web_search: it only GETs the two fixed
+    /// registry endpoints, never a raw fetch, so the `discover` domain is
+    /// first-party-visible without opening `net` (ADR-010 § trust-domains, SC3).
+    /// Returns one normalized, source-tagged listing merged from both registries.
+    #[tool(
+        description = "Search the MCP Registry + Smithery (2000+ servers) for \
+feature packs / MCP servers to reuse — returns merged, source-tagged listings \
+(id, name, description, url, source). Pass `query` to search by keyword (e.g. \
+\"stock price\"). Use this when building a feature pack, to find an existing \
+server before authoring one."
+    )]
+    async fn discover_packs(
+        &self,
+        Parameters(args): Parameters<DiscoverPacksArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let body = crate::commands::pack_registry::discover_packs(
+            args.query,
+            args.limit.unwrap_or(25),
+        )
+        .await
+        .map_err(|e| McpError::internal_error(e, None))?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// discover.skills — search published SKILL.md skills on GitHub (feature-pack
+    /// creation take-stock channel ①, ADR-002 substrate § composition §7.4).
+    /// Another CONTROLLED discovery tool: it queries only GitHub's fixed
+    /// code-search endpoint, never a raw fetch, so the `discover` domain is
+    /// first-party-visible without opening `net`. Needs a GitHub PAT in the
+    /// keychain; without one it returns a clear setup error (degrade, never
+    /// crash — derived rule #1). Reuses the search_skills command core.
+    #[tool(
+        description = "Search published skills (SKILL.md) on GitHub by keyword — \
+returns repo / name / description / stars / url. Use this when building a feature \
+pack, to find a reusable skill before writing one. Requires a GitHub token."
+    )]
+    async fn discover_skills(
+        &self,
+        Parameters(args): Parameters<DiscoverSkillsArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let reply = crate::commands::skills::search_skills(args.query)
+            .await
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let body = serde_json::to_string(&reply).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// skill.list — list the user's LOCAL installed skills (~/.claude/skills +
+    /// plugin cache), so the brain can reuse a skill the user already has before
+    /// authoring one or searching GitHub (discover_skills). Returns name /
+    /// description / path; pass the path to skill_read to see the full SKILL.md.
+    #[tool(description = "List the user's local installed skills (name + description + path), optional keyword filter")]
+    async fn skill_list(
+        &self,
+        Parameters(args): Parameters<SkillListArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let skills = crate::commands::skills::list_local_skills(args.query)
+            .await
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let body = serde_json::to_string(&skills).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// skill.read — read a local skill's full SKILL.md so the brain can see HOW
+    /// the skill works (its steps) before reusing it. Confined to the skill
+    /// directories skill_list scans — it cannot read arbitrary files. Pass a
+    /// path from skill_list.
+    #[tool(description = "Read a local skill's SKILL.md content by its path (from skill_list)")]
+    async fn skill_read(
+        &self,
+        Parameters(args): Parameters<SkillReadArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let content = crate::commands::skills::read_local_skill(args.path)
+            .await
+            .map_err(|e| McpError::invalid_params(e, None))?;
+        Ok(CallToolResult::success(vec![Content::text(content)]))
     }
 
     /// mcp.proxy_list_tools — list tools advertised by a downstream MCP
@@ -2288,6 +2442,17 @@ impl ServerHandler for KernelMcpRouter {
         // collides with a first-party prefix/exact name must stay gated as `mcp`
         // (SC3), mirroring `dispatch_tool`'s downstream-first routing.
         tools.retain(|t| intent.allows_tool_with_downstream(t.name.as_ref(), &downstream_ids));
+        // Capped-brain curation: the embedded brain (hermes) truncates a long
+        // listing to ~25 tools by list order, which silently dropped the entire
+        // feature-pack creation suite (it sorts late in declaration order).
+        // Project the brain to a curated, ordered allowlist so the creation +
+        // research suite is present and FIRST — never truncated away. Only the
+        // brain is capped; the PWA keeps the full first-party set (see
+        // visibility::BRAIN_TOOLSET).
+        if visibility::is_capped_brain(&caller) {
+            tools.retain(|t| visibility::brain_tool_rank(t.name.as_ref()).is_some());
+            tools.sort_by_key(|t| visibility::brain_tool_rank(t.name.as_ref()).unwrap_or(usize::MAX));
+        }
         Ok(ListToolsResult {
             tools,
             next_cursor: None,
@@ -2456,15 +2621,62 @@ impl ServerHandler for KernelMcpRouter {
 
 // ─── Bind / serve ───────────────────────────────────────────────────────
 
+/// Resolve the gate's Bearer token, STABLE across kernel reboots.
+///
+/// The token used to be a fresh `Uuid::new_v4()` per boot. That broke the
+/// embedded brain: hermes is a long-lived process that registers the gate as an
+/// MCP server BY NAME ("ctrl") and is idempotent — it will not re-register a
+/// name it already knows. So after any kernel restart (frequent under
+/// `tauri dev`'s file-watcher), hermes kept its cached connection carrying the
+/// OLD token; every gate call then 401'd and the brain silently saw ZERO CTRL
+/// tools (verified on real hardware 2026-06-28: the gate returns 24 tools to a
+/// fresh client, but the live hermes never reconnected). The per-boot rotation
+/// also left the BYO-CLI `.mcp.json` pinned to a dead token.
+///
+/// Persisting the token in `~/.ctrl/state/gate-token` (mode 0600) keeps hermes's
+/// cached registration and the projected `.mcp.json` valid across reboots. It is
+/// a loopback-only, single-user secret; the file is owner-read/write only.
+fn resolve_stable_gate_token() -> String {
+    let path = std::env::var_os("HOME").map(|home| {
+        std::path::PathBuf::from(home)
+            .join(".ctrl")
+            .join("state")
+            .join("gate-token")
+    });
+    if let Some(path) = &path {
+        if let Ok(existing) = std::fs::read_to_string(path) {
+            let trimmed = existing.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    let token = Uuid::new_v4().to_string();
+    if let Some(path) = &path {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if std::fs::write(path, &token).is_ok() {
+            // Owner-only perms — the token authorizes every gate call.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            }
+        }
+    }
+    token
+}
+
 /// Build the axum router with auth middleware + spawn the listener.
-/// Returns the handle holding the ephemeral auth token; the accept loop
+/// Returns the handle holding the stable auth token; the accept loop
 /// runs as a tokio task spawned on the current runtime.
 pub async fn serve(
     runtime: Arc<KernelRuntime>,
     local_storage: Option<Arc<LocalStorage>>,
     addr: &str,
 ) -> Result<McpServerHandle> {
-    let token = Arc::new(Uuid::new_v4().to_string());
+    let token = Arc::new(resolve_stable_gate_token());
     let token_for_mw = token.clone();
 
     let router_factory = move || Ok(KernelMcpRouter::new(runtime.clone(), local_storage.clone()));
@@ -2714,6 +2926,191 @@ async fn tavily_search(
     Ok(out)
 }
 
+/// BYOK web-search providers in priority order (ADR-006 § byok-no-claude v1).
+/// The keychain account slug IS the provider name — a user upgrades web_search by
+/// storing a key under any of these (same place as the Tavily key). Returns the
+/// first configured provider's non-empty results tagged with its slug, or None
+/// when no key is set / every keyed attempt errors or is empty — the caller then
+/// degrades to the keyless path. Cloud-down on one provider falls through to the
+/// next, never hard-fails (derived rule #1).
+async fn first_keyed_web_search(
+    query: &str,
+    n: u32,
+) -> Option<(Vec<serde_json::Value>, &'static str)> {
+    const PROVIDERS: &[&str] = &["tavily", "brave", "serper", "exa"];
+    for &slug in PROVIDERS {
+        let Some(key) = crate::kernel::provider::registry::read_credential(slug)
+            .filter(|k| !k.is_empty())
+        else {
+            continue;
+        };
+        let attempt = match slug {
+            "tavily" => tavily_search(&key, query, n).await,
+            "brave" => brave_search(&key, query, n).await,
+            "serper" => serper_search(&key, query, n).await,
+            "exa" => exa_search(&key, query, n).await,
+            _ => continue,
+        };
+        if let Ok(hits) = attempt {
+            if !hits.is_empty() {
+                return Some((hits, slug));
+            }
+        }
+        // configured but errored / empty — degrade to the next configured provider
+    }
+    None
+}
+
+/// web.search backend — Brave Search API (BYOK, keychain account `brave`). GETs
+/// only the fixed Brave endpoint with the key in the X-Subscription-Token header;
+/// the key never leaves the kernel. Returns [{title,url,snippet}].
+async fn brave_search(key: &str, query: &str, n: u32) -> Result<Vec<serde_json::Value>, McpError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| McpError::internal_error(format!("search client build: {e}"), None))?;
+    let count = n.to_string();
+    let resp = client
+        .get("https://api.search.brave.com/res/v1/web/search")
+        .query(&[("q", query), ("count", count.as_str())])
+        .header("X-Subscription-Token", key)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("brave fetch: {e}"), None))?;
+    if !resp.status().is_success() {
+        return Err(McpError::internal_error(
+            format!("brave search: HTTP {}", resp.status()),
+            None,
+        ));
+    }
+    let j: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| McpError::internal_error(format!("brave parse: {e}"), None))?;
+    Ok(map_brave_results(&j, n))
+}
+
+/// web.search backend — Serper.dev (Google results, BYOK, keychain account
+/// `serper`). POSTs only the fixed Serper endpoint with the key in the X-API-KEY
+/// header; the key never leaves the kernel. Returns [{title,url,snippet}].
+async fn serper_search(key: &str, query: &str, n: u32) -> Result<Vec<serde_json::Value>, McpError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| McpError::internal_error(format!("search client build: {e}"), None))?;
+    let resp = client
+        .post("https://google.serper.dev/search")
+        .header("X-API-KEY", key)
+        .json(&serde_json::json!({ "q": query, "num": n }))
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("serper fetch: {e}"), None))?;
+    if !resp.status().is_success() {
+        return Err(McpError::internal_error(
+            format!("serper search: HTTP {}", resp.status()),
+            None,
+        ));
+    }
+    let j: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| McpError::internal_error(format!("serper parse: {e}"), None))?;
+    Ok(map_serper_results(&j, n))
+}
+
+/// web.search backend — Exa (neural search, BYOK, keychain account `exa`). POSTs
+/// only the fixed Exa endpoint with the key in the x-api-key header; the key
+/// never leaves the kernel. Asks for text contents so results carry a snippet.
+async fn exa_search(key: &str, query: &str, n: u32) -> Result<Vec<serde_json::Value>, McpError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| McpError::internal_error(format!("search client build: {e}"), None))?;
+    let resp = client
+        .post("https://api.exa.ai/search")
+        .header("x-api-key", key)
+        .json(&serde_json::json!({
+            "query": query,
+            "numResults": n,
+            "contents": { "text": { "maxCharacters": 300 } },
+        }))
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("exa fetch: {e}"), None))?;
+    if !resp.status().is_success() {
+        return Err(McpError::internal_error(
+            format!("exa search: HTTP {}", resp.status()),
+            None,
+        ));
+    }
+    let j: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| McpError::internal_error(format!("exa parse: {e}"), None))?;
+    Ok(map_exa_results(&j, n))
+}
+
+/// Map a Brave web-search response to [{title,url,snippet}]. Brave nests hits
+/// under `web.results[]` with a `description` snippet. Pure — unit-tested.
+fn map_brave_results(j: &serde_json::Value, n: u32) -> Vec<serde_json::Value> {
+    j["web"]["results"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .take(n as usize)
+                .map(|r| {
+                    serde_json::json!({
+                        "title": r["title"],
+                        "url": r["url"],
+                        "snippet": r["description"],
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Map a Serper response to [{title,url,snippet}]. Serper returns Google organic
+/// hits under `organic[]` with `link` + `snippet`. Pure — unit-tested.
+fn map_serper_results(j: &serde_json::Value, n: u32) -> Vec<serde_json::Value> {
+    j["organic"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .take(n as usize)
+                .map(|r| {
+                    serde_json::json!({
+                        "title": r["title"],
+                        "url": r["link"],
+                        "snippet": r["snippet"],
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Map an Exa response to [{title,url,snippet}]. Exa returns hits under
+/// `results[]` with a `text` field (requested via contents). Pure — unit-tested.
+fn map_exa_results(j: &serde_json::Value, n: u32) -> Vec<serde_json::Value> {
+    j["results"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .take(n as usize)
+                .map(|r| {
+                    serde_json::json!({
+                        "title": r["title"],
+                        "url": r["url"],
+                        "snippet": r["text"],
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// web.search keyless fallback — Wikipedia's search API (no key, reliable, but
 /// encyclopedic only). GETs only the fixed MediaWiki endpoint; reqwest encodes
 /// the query so it can't escape the URL. Returns [{title,url,snippet}].
@@ -2757,6 +3154,147 @@ async fn wikipedia_search(query: &str, n: u32) -> Result<Vec<serde_json::Value>,
         }
     }
     Ok(out)
+}
+
+/// Keyless full-web search via DuckDuckGo's lite endpoint (scraped HTML — the
+/// same source the ddgs library uses; ADR-002 § brain v37 verified ddgs on real
+/// hardware). No API key, returns real web results (github / products / API
+/// docs), so Irisy's reach isn't limited to GitHub + the MCP registry.
+/// Best-effort: returns whatever it parses; the caller falls back to Wikipedia.
+async fn duckduckgo_search(query: &str, n: u32) -> Result<Vec<serde_json::Value>, McpError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| McpError::internal_error(format!("search client build: {e}"), None))?;
+    let resp = client
+        .get("https://lite.duckduckgo.com/lite/")
+        .query(&[("q", query)])
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)",
+        )
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("duckduckgo fetch: {e}"), None))?;
+    if !resp.status().is_success() {
+        return Err(McpError::internal_error(
+            format!("duckduckgo search: HTTP {}", resp.status()),
+            None,
+        ));
+    }
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| McpError::internal_error(format!("duckduckgo read: {e}"), None))?;
+    Ok(parse_ddg_lite(&html, n as usize))
+}
+
+/// Percent-decode a URL-encoded string (`%3A` -> `:`, `+` -> space). Bytes that
+/// aren't valid `%XX` pass through verbatim; the result is UTF-8 lossy-decoded.
+/// Small enough to avoid pulling in a percent-encoding crate.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
+                match hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                    Some(b) => {
+                        out.push(b);
+                        i += 3;
+                    }
+                    None => {
+                        out.push(b'%');
+                        i += 1;
+                    }
+                }
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Resolve a DuckDuckGo lite href into the real target URL. Lite wraps every
+/// result in a redirect: `//duckduckgo.com/l/?uddg=<percent-encoded-url>&rut=…`
+/// (the `&` is `&amp;` in the raw HTML). Pull out `uddg` and decode it; pass
+/// direct `http(s)` hrefs through unchanged. Returns None for anything else
+/// (relative nav, JS, ad slots without a real target).
+fn ddg_real_url(href: &str) -> Option<String> {
+    if href.starts_with("http://") || href.starts_with("https://") {
+        return Some(href.to_string());
+    }
+    let key = "uddg=";
+    let start = href.find(key)? + key.len();
+    let rest = &href[start..];
+    // Value ends at the next param separator (`&amp;` in raw HTML, or a bare `&`).
+    let end = rest.find("&amp;").or_else(|| rest.find('&')).unwrap_or(rest.len());
+    let decoded = percent_decode(&rest[..end]);
+    (decoded.starts_with("http://") || decoded.starts_with("https://")).then_some(decoded)
+}
+
+/// Parse DuckDuckGo lite result anchors into {title, url, snippet}. Lite renders
+/// each hit as `<a rel="nofollow" href="//duckduckgo.com/l/?uddg=…" class="result-link">
+/// TITLE</a>` — the href is a redirect wrapper, resolved via `ddg_real_url`. Pure +
+/// testable, so the scrape contract is pinned by a unit test without a network call.
+fn parse_ddg_lite(html: &str, n: usize) -> Vec<serde_json::Value> {
+    let re = match regex::Regex::new(
+        r#"(?s)<a\b[^>]*\bhref="([^"]+)"[^>]*\bclass=['"]?result-link['"]?[^>]*>(.*?)</a>"#,
+    ) {
+        Ok(re) => re,
+        Err(_) => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for cap in re.captures_iter(html) {
+        let raw_href = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+        let Some(url) = ddg_real_url(raw_href) else {
+            continue;
+        };
+        // Skip DuckDuckGo's own ad / internal endpoints.
+        if url.contains("duckduckgo.com/y.js") || url.contains("duckduckgo.com/l/") {
+            continue;
+        }
+        let title = strip_html(cap.get(2).map(|m| m.as_str()).unwrap_or(""));
+        let title = title.trim();
+        if title.is_empty() {
+            continue;
+        }
+        out.push(serde_json::json!({ "title": title, "url": url, "snippet": "" }));
+        if out.len() >= n {
+            break;
+        }
+    }
+    out
+}
+
+/// Keyless full-web search: DuckDuckGo (real web) first, Wikipedia as the final
+/// fallback (DDG unreachable / scrape returned nothing). Returns
+/// (results, source, note) for web_search's response.
+async fn keyless_web_search(
+    query: &str,
+    n: u32,
+) -> Result<(Vec<serde_json::Value>, &'static str, &'static str), McpError> {
+    match duckduckgo_search(query, n).await {
+        Ok(r) if !r.is_empty() => Ok((
+            r,
+            "duckduckgo",
+            "Keyless full-web search via DuckDuckGo. Set a Tavily key for higher-quality results.",
+        )),
+        _ => Ok((
+            wikipedia_search(query, n).await?,
+            "wikipedia",
+            "DuckDuckGo returned nothing; degraded to keyless Wikipedia (encyclopedic only).",
+        )),
+    }
 }
 
 /// Shared executor for http.get + http.post. Single reqwest::Client
@@ -2950,6 +3488,80 @@ async fn http_request(
 mod tests {
     use super::*;
     use crate::kernel::runtime::KernelRuntime;
+
+    #[test]
+    fn parse_ddg_lite_extracts_real_web_results() {
+        // REAL DuckDuckGo lite shape (verified against live HTML 2026-06-28):
+        // every href is a redirect wrapper `//duckduckgo.com/l/?uddg=<encoded>&amp;rut=…`,
+        // protocol-relative, with `&amp;`-separated params — NOT a direct link.
+        let html = r#"
+            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fghostfolio%2Fghostfolio&amp;rut=abc123" class="result-link">Ghostfolio on GitHub</a>
+            <td class='result-snippet'>open source wealth</td>
+            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fghostfol.io%2F&amp;rut=def456" class="result-link">Ghostfolio site</a>
+            <a href="https://duckduckgo.com/y.js?ad=1" class='result-link'>sponsored ad</a>
+        "#;
+        let out = parse_ddg_lite(html, 5);
+        // Both real web results parsed (github + product site), redirect unwrapped
+        // and percent-decoded — Irisy isn't limited to GitHub-only / encyclopedic.
+        assert!(out.len() >= 2, "expected >=2 results, got {}", out.len());
+        assert_eq!(out[0]["url"], "https://github.com/ghostfolio/ghostfolio");
+        assert_eq!(out[0]["title"], "Ghostfolio on GitHub");
+        assert_eq!(out[1]["url"], "https://ghostfol.io/");
+        // The y.js ad slot (no real uddg target) is dropped.
+        assert!(out.iter().all(|r| !r["url"].as_str().unwrap().contains("y.js")));
+        // The cap is honored.
+        assert!(parse_ddg_lite(html, 1).len() == 1);
+    }
+
+    #[test]
+    fn ddg_real_url_unwraps_redirect_and_decodes() {
+        assert_eq!(
+            ddg_real_url("//duckduckgo.com/l/?uddg=https%3A%2F%2Fdocs.twenty.com%2F&amp;rut=x"),
+            Some("https://docs.twenty.com/".to_string())
+        );
+        // Direct links pass through.
+        assert_eq!(
+            ddg_real_url("https://example.com/a?b=c"),
+            Some("https://example.com/a?b=c".to_string())
+        );
+        // No real target -> None.
+        assert_eq!(ddg_real_url("//duckduckgo.com/l/?rut=x"), None);
+        assert_eq!(ddg_real_url("/about"), None);
+    }
+
+    #[test]
+    fn keyed_search_mappers_pull_title_url_snippet() {
+        // Brave: hits under web.results[] with `description` snippet.
+        let brave = serde_json::json!({ "web": { "results": [
+            { "title": "Rust", "url": "https://rust-lang.org", "description": "systems lang" },
+            { "title": "Cargo", "url": "https://crates.io", "description": "packages" },
+        ]}});
+        let out = map_brave_results(&brave, 1);
+        assert_eq!(out.len(), 1, "respects max n");
+        assert_eq!(out[0]["url"], "https://rust-lang.org");
+        assert_eq!(out[0]["snippet"], "systems lang");
+
+        // Serper: Google organic hits under organic[] with `link` + `snippet`.
+        let serper = serde_json::json!({ "organic": [
+            { "title": "Tokio", "link": "https://tokio.rs", "snippet": "async runtime" },
+        ]});
+        let out = map_serper_results(&serper, 5);
+        assert_eq!(out[0]["url"], "https://tokio.rs");
+        assert_eq!(out[0]["snippet"], "async runtime");
+
+        // Exa: hits under results[] with a `text` field.
+        let exa = serde_json::json!({ "results": [
+            { "title": "Serde", "url": "https://serde.rs", "text": "serialization" },
+        ]});
+        let out = map_exa_results(&exa, 5);
+        assert_eq!(out[0]["url"], "https://serde.rs");
+        assert_eq!(out[0]["snippet"], "serialization");
+
+        // Garbage / missing arrays degrade to empty, never panic.
+        assert!(map_brave_results(&serde_json::json!({}), 5).is_empty());
+        assert!(map_serper_results(&serde_json::json!({ "organic": "nope" }), 5).is_empty());
+        assert!(map_exa_results(&serde_json::json!(7), 5).is_empty());
+    }
 
     /// Slice 4c end-to-end (vault-backed): a `deals` table references `contacts`
     /// by name; `augment_relations` indexes both tables, materializes the edges,

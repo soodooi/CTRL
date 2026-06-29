@@ -60,6 +60,18 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
     // (Tavily BYOK / keyless Wikipedia), never a raw fetch, so it is safe in the
     // first-party default while `net` stays closed (ADR-010 § trust-domains v9).
     "websearch",
+    // Controlled discovery tools (discover_packs / discover_skills) — they GET
+    // only fixed catalog backends (the MCP Registry / GitHub code search), never
+    // a raw fetch or user-data POST, so like `websearch` they are safe in the
+    // first-party default while `net` stays closed. These are the feature-pack
+    // creation take-stock channels Irisy searches before authoring a pack
+    // (ADR-002 substrate § composition §7.4; ADR-010 § trust-domains, SC3).
+    "discover",
+    // Local skill tools (skill_list / skill_read) — read-only over the user's
+    // own ~/.claude/skills + plugin cache, no network, path-confined to SKILL.md
+    // files. First-party so Irisy can reuse a skill the user already has when
+    // building a pack.
+    "skill",
 ];
 
 /// Callers treated as first-party (in-process app surfaces). The PWA bridge
@@ -68,6 +80,73 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
 /// callers (the BYO-CLI brain) — first-party app surfaces are CTRL's own.
 pub fn is_first_party(caller: &str) -> bool {
     matches!(caller, "pwa" | "irisy" | "hermes")
+}
+
+/// The embedded brain (hermes) surfaces at most ~25 tools to the model and
+/// arbitrarily truncates the rest by list order. The first-party domain set
+/// projects ~60 tools (the `vault` domain alone is ~35), so that truncation
+/// silently dropped the ENTIRE feature-pack creation + research suite
+/// (`mcp_pack_*`, `discover_*`, `skill_*`, `web_search`) — they sort late in
+/// declaration order. Verified on real hardware 2026-06-28: Gemini-via-hermes
+/// received 25 vault/table tools, none of the creation tools, and hallucinated a
+/// "edit knowledge-base files by hand" workaround instead of building a pack.
+///
+/// So for the capped brain we project a CURATED, ORDERED allowlist that fits
+/// under the cap and lists the creation + research suite FIRST — the brain keeps
+/// the head of the list when it truncates, so the killer capability can never be
+/// cut. Domain-level scoping is too coarse to fix this (it can't trim within the
+/// 35-tool `vault` domain); tool-level curation for the one caller that has a
+/// hard cap is the natural extension of this module's anti-flood purpose. This
+/// is governance config (which kernel tools the brain sees), not hardcoded pack
+/// content. The PWA (`pwa`) is NOT capped — it renders tools in its own UI with
+/// no model limit — so it keeps the full first-party set.
+pub const BRAIN_TOOLSET: &[&str] = &[
+    // Always-on system introspection.
+    "kernel_status",
+    // Feature-pack creation + take-stock research — Irisy's killer capability.
+    // FIRST so the brain's tool cap can never truncate it away.
+    "discover_packs",
+    "discover_skills",
+    "web_search",
+    "skill_list",
+    "skill_read",
+    "mcp_pack_list",
+    "mcp_pack_install",
+    "mcp_pack_run",
+    "mcp_pack_uninstall",
+    "mcp_pack_write_file",
+    "mcp_list_servers",
+    // Core vault — Irisy as the notes / knowledge companion.
+    "vault_read",
+    "vault_write",
+    "vault_search",
+    "vault_list",
+    "vault_create_folder",
+    // Structured data.
+    "smart_table_describe",
+    "smart_table_query",
+    // Watchlist / market data.
+    "market_quote",
+    "market_screen",
+    // Setup + reasoning.
+    "providers_query",
+    "registry_query",
+    "llm_chat",
+];
+
+/// Whether the curated `BRAIN_TOOLSET` should be applied for this caller. Only
+/// the embedded brain (hermes) has the model-side tool cap that makes an
+/// uncurated ~60-tool listing truncate destructively.
+pub fn is_capped_brain(caller: &str) -> bool {
+    caller == "hermes"
+}
+
+/// Position of a tool in `BRAIN_TOOLSET` (its priority rank), or None if the
+/// tool is not in the curated brain set. Used to both FILTER (drop None) and
+/// ORDER (sort by rank) the brain's `tools/list`, so the prioritized creation
+/// suite always survives the brain's truncation.
+pub fn brain_tool_rank(tool: &str) -> Option<usize> {
+    BRAIN_TOOLSET.iter().position(|t| *t == tool)
 }
 
 /// Classify a tool name into its capability domain. Tool names are the kernel
@@ -100,6 +179,8 @@ pub fn tool_domain(tool: &str) -> &'static str {
         ("kv_", "kv"),
         ("llm_", "llm"),
         ("market_", "market"),
+        ("discover_", "discover"),
+        ("skill_", "skill"),
         ("http_", "net"),
         ("mcp_", "mcp"),
     ];
@@ -256,6 +337,10 @@ mod tests {
         assert_eq!(tool_domain("market_quote"), "market");
         assert_eq!(tool_domain("market_screen"), "market");
         assert_eq!(tool_domain("web_search"), "websearch");
+        assert_eq!(tool_domain("discover_packs"), "discover");
+        assert_eq!(tool_domain("discover_skills"), "discover");
+        assert_eq!(tool_domain("skill_list"), "skill");
+        assert_eq!(tool_domain("skill_read"), "skill");
         assert_eq!(tool_domain("mcp_proxy_call_tool"), "mcp");
         assert_eq!(tool_domain("irisy_soul_get"), "memory");
         // Downstream namespaced tool falls under the mcp group.
@@ -399,6 +484,43 @@ mod tests {
         // And under an `mcp` intent the downstream tool is correctly reachable.
         let mcp_intent = Intent::parse(Some("mcp"));
         assert!(mcp_intent.allows_tool_with_downstream("web_search", &ids));
+    }
+
+    #[test]
+    fn brain_toolset_includes_creation_suite_and_fits_under_cap() {
+        // The whole point: the feature-pack creation + research suite must be in
+        // the curated brain set, or the brain's ~25 cap hides Irisy's killer
+        // capability (regression guard for the 2026-06-28 real-hardware failure).
+        for must in [
+            "discover_packs",
+            "discover_skills",
+            "web_search",
+            "skill_list",
+            "skill_read",
+            "mcp_pack_list",
+            "mcp_pack_install",
+            "mcp_pack_run",
+            "mcp_pack_uninstall",
+            "mcp_pack_write_file",
+        ] {
+            assert!(
+                brain_tool_rank(must).is_some(),
+                "{must} missing from BRAIN_TOOLSET — brain can't create packs"
+            );
+        }
+        // Fits under the brain's ~25-tool cap (with headroom).
+        assert!(
+            BRAIN_TOOLSET.len() <= 25,
+            "BRAIN_TOOLSET is {} tools, over the brain cap",
+            BRAIN_TOOLSET.len()
+        );
+        // Ordered creation-first: the creation suite outranks the niche tools, so
+        // truncation keeps it. discover_packs must come before llm_chat.
+        assert!(brain_tool_rank("discover_packs") < brain_tool_rank("llm_chat"));
+        // Only hermes is curated; the PWA keeps the full first-party set.
+        assert!(is_capped_brain("hermes"));
+        assert!(!is_capped_brain("pwa"));
+        assert!(!is_capped_brain("irisy"));
     }
 
     #[test]

@@ -566,3 +566,102 @@ fn parse_skill_meta(md: &str) -> (String, Option<String>) {
     }
     (name, description)
 }
+
+/// Read a SKILL.md under one of `allowed_roots`. Confined to SKILL.md files
+/// inside the given roots (canonicalized, so `..`/symlinks can't escape) — it
+/// can never be turned into an arbitrary-file read. Split out from
+/// read_local_skill so the safety boundary is unit-testable with temp roots.
+fn read_skill_under(allowed_roots: &[PathBuf], path: &str) -> Result<String, String> {
+    let p = Path::new(path);
+    if p.file_name().and_then(|n| n.to_str()) != Some("SKILL.md") {
+        return Err("path must point to a SKILL.md file".to_string());
+    }
+    let canon = std::fs::canonicalize(p).map_err(|e| format!("resolve {path}: {e}"))?;
+    let under_allowed = allowed_roots
+        .iter()
+        .filter_map(|r| std::fs::canonicalize(r).ok())
+        .any(|root| canon.starts_with(&root));
+    if !under_allowed {
+        return Err("skill path is outside the allowed skill directories".to_string());
+    }
+    std::fs::read_to_string(&canon).map_err(|e| format!("read skill: {e}"))
+}
+
+/// Read a local skill's SKILL.md so the brain can see HOW a skill works before
+/// reusing it. Confined to the same roots list_local_skills scans
+/// (~/.claude/skills + ~/.claude/plugins/cache).
+pub async fn read_local_skill(path: String) -> Result<String, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let roots = [
+        PathBuf::from(&home).join(".claude").join("skills"),
+        PathBuf::from(&home).join(".claude").join("plugins").join("cache"),
+    ];
+    read_skill_under(&roots, &path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fresh_tmp(label: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        p.push(format!("ctrl-skills-test-{label}-{pid}-{nanos}"));
+        p
+    }
+
+    #[test]
+    fn read_skill_reads_inside_root_and_blocks_outside() {
+        let root = fresh_tmp("root");
+        let skill_dir = root.join("analyze");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        let skill_md = skill_dir.join("SKILL.md");
+        std::fs::write(&skill_md, "# Analyze\nsteps").unwrap();
+
+        // Reads a SKILL.md inside an allowed root.
+        let body = read_skill_under(&[root.clone()], skill_md.to_str().unwrap())
+            .expect("read inside root");
+        assert!(body.contains("# Analyze"));
+
+        // A non-SKILL.md file is rejected — no arbitrary-file read.
+        let other = skill_dir.join("secret.txt");
+        std::fs::write(&other, "x").unwrap();
+        assert!(read_skill_under(&[root.clone()], other.to_str().unwrap()).is_err());
+
+        // A SKILL.md OUTSIDE the allowed roots is rejected.
+        let outside = fresh_tmp("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let outside_md = outside.join("SKILL.md");
+        std::fs::write(&outside_md, "# Evil").unwrap();
+        assert!(read_skill_under(&[root.clone()], outside_md.to_str().unwrap()).is_err());
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn collect_skills_reads_name_and_desc_from_any_root() {
+        let root = fresh_tmp("collect");
+        let sd = root.join("my-skill");
+        std::fs::create_dir_all(&sd).unwrap();
+        std::fs::write(
+            sd.join("SKILL.md"),
+            "---\nname: My Skill\ndescription: does X\n---\nbody",
+        )
+        .unwrap();
+
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        collect_skills_in(&root, &mut out, &mut seen);
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].name, "My Skill");
+        assert_eq!(out[0].description.as_deref(), Some("does X"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

@@ -2,7 +2,7 @@
   "name": "ctrl",
   "private": true,
   "license": "UNLICENSED",
-  "version": "0.1.689",
+  "version": "0.1.690",
   "type": "module",
   "workspaces": [
     "packages/*"

@@ -1176,6 +1176,70 @@ pub struct UninstallMcpArgs {
     pub mcp_id: String,
 }
 
+/// Remove an installed mcp's directory under `dir`. Errors on "already gone"
+/// (not a silent no-op) so the brain can tell the user "X was not installed"
+/// instead of faking success. Core shared by the Tauri command and the gate's
+/// mcp_pack_uninstall tool (same lineage as install_into / run_action_blocking).
+pub(crate) fn uninstall_from(dir: &Path, mcp_id: &str) -> Result<(), String> {
+    validate_mcp_id(mcp_id)?;
+    let target = dir.join(mcp_id);
+    if !target.exists() {
+        return Err(format!("mcp {mcp_id} not installed"));
+    }
+    fs::remove_dir_all(&target).map_err(|e| format!("remove {target:?}: {e}"))?;
+    Ok(())
+}
+
+/// Resolve a pack-relative path safely under `pack`, allowing subdirectories
+/// (skills/<name>/SKILL.md) but rejecting absolute paths and any `..` component
+/// so a brain-supplied path can never escape the pack dir.
+fn safe_pack_path(pack: &Path, rel: &str) -> Result<PathBuf, String> {
+    use std::path::Component;
+    let rp = Path::new(rel);
+    if rp.is_absolute() {
+        return Err(format!("file path must be relative: {rel}"));
+    }
+    let mut out = pack.to_path_buf();
+    for comp in rp.components() {
+        match comp {
+            Component::Normal(c) => out.push(c),
+            _ => return Err(format!("file path has an illegal component (no '..' or absolute): {rel}")),
+        }
+    }
+    // Defense in depth: the joined path must still be inside the pack dir.
+    if !out.starts_with(pack) {
+        return Err(format!("file path escapes pack dir: {rel}"));
+    }
+    Ok(out)
+}
+
+/// Write a pack-relative file (skill SKILL.md, icon SVG, static asset) into an
+/// already-installed pack. install_into carries only manifest + server code, so
+/// this is how the brain ships a pack WITH the skills/assets its manifest's
+/// cap_asset declares. The pack must exist first; the path is sanitized to stay
+/// inside the pack dir (no `..`, no absolute). Core shared by the Tauri command
+/// and the gate's mcp_pack_write_file tool.
+pub(crate) fn write_pack_file(
+    dir: &Path,
+    mcp_id: &str,
+    rel_path: &str,
+    content: &str,
+) -> Result<(), String> {
+    validate_mcp_id(mcp_id)?;
+    let pack = dir.join(mcp_id);
+    if !pack.exists() {
+        return Err(format!(
+            "mcp {mcp_id} not installed (install the pack before writing its files)"
+        ));
+    }
+    let dest = safe_pack_path(&pack, rel_path)?;
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("create dir {parent:?}: {e}"))?;
+    }
+    fs::write(&dest, content.as_bytes()).map_err(|e| format!("write {rel_path}: {e}"))?;
+    Ok(())
+}
+
 /// Remove an installed mcp's on-disk directory. Surfacing an error on
 /// "already gone" (instead of silent no-op) lets Irisy give the user a
 /// clear "X was not installed" reply rather than pretending success.
@@ -1184,13 +1248,8 @@ pub async fn uninstall_mcp(
     args: UninstallMcpArgs,
     _kernel: State<'_, KernelHandle>,
 ) -> Result<(), String> {
-    validate_mcp_id(&args.mcp_id)?;
     let dir = mcp_dir()?;
-    let target = dir.join(&args.mcp_id);
-    if !target.exists() {
-        return Err(format!("mcp {} not installed", args.mcp_id));
-    }
-    fs::remove_dir_all(&target).map_err(|e| format!("remove {target:?}: {e}"))?;
+    uninstall_from(&dir, &args.mcp_id)?;
     tracing::info!(mcp_id = %args.mcp_id, "uninstall_mcp ok");
     Ok(())
 }
@@ -1318,6 +1377,116 @@ mod tests {
         assert!(mcp_path.join("server.ts").exists());
 
         // Cleanup so we don't leave temp dirs.
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ADR-002 §7.4 — the machine-checkable floor of the feature-pack creation
+    // loop: a natural-language-authored action pack must not just install, it
+    // must actually RUN. This is the smoke the brain performs via
+    // mcp_pack_install + mcp_pack_run ("created -> really works", not offline
+    // lint); here we pin the underlying core so the loop is regression-proof.
+    // A minimal builtin action pack (one echo shell step) installs, then
+    // run_action_blocking executes the step and returns its stdout.
+    #[test]
+    fn create_install_run_smoke_roundtrip() {
+        let dir = fresh_tmp("smoke");
+        let manifest = serde_json::json!({
+            "id": "smoke-echo",
+            "name": "Smoke Echo",
+            "icon": "S",
+            "mcp_color": "jade",
+            "version": "0.1.0",
+            "variant": "builtin",
+            "actions": [{
+                "id": "ping",
+                "name": "Ping",
+                "input": "none",
+                "output": "workspace",
+                "steps": [{ "type": "shell", "command": "echo ctrl-smoke-ok" }]
+            }]
+        });
+        let args = InstallMcpArgs {
+            manifest,
+            server_code: String::new(),
+            server_code_filename: String::new(),
+        };
+        let summary = install_into(&dir, &args).expect("install ok");
+        assert_eq!(summary.id, "smoke-echo");
+
+        // The smoke: run the action and confirm its shell step really executed.
+        let out = run_action_blocking(&dir, "smoke-echo", "ping").expect("run ok");
+        assert!(
+            out.contains("ctrl-smoke-ok"),
+            "action stdout should carry the echo output, got: {out:?}"
+        );
+
+        // A missing action id is a clean error, not a panic — the brain
+        // smoke-probes by id and must get a degradable result.
+        let err = run_action_blocking(&dir, "smoke-echo", "nope").unwrap_err();
+        assert!(err.contains("not found"), "expected not-found error, got: {err}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn install_then_uninstall_roundtrip() {
+        let dir = fresh_tmp("uninstall");
+        let manifest = serde_json::json!({
+            "id": "temp-pack", "name": "Temp", "icon": "T",
+            "mcp_color": "amber", "version": "0.1.0", "variant": "builtin",
+            "actions": [{ "id": "a", "name": "A", "input": "none", "output": "silent",
+                "steps": [{ "type": "shell", "command": "echo hi" }] }]
+        });
+        install_into(&dir, &InstallMcpArgs {
+            manifest,
+            server_code: String::new(),
+            server_code_filename: String::new(),
+        })
+        .expect("install ok");
+        assert_eq!(list_installed_in(&dir).len(), 1);
+
+        uninstall_from(&dir, "temp-pack").expect("uninstall ok");
+        assert_eq!(list_installed_in(&dir).len(), 0);
+
+        // Uninstalling again is a clean error — the brain reports "not installed",
+        // never a silent success or a panic.
+        let err = uninstall_from(&dir, "temp-pack").unwrap_err();
+        assert!(err.contains("not installed"), "got: {err}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_pack_file_lands_skill_and_blocks_traversal() {
+        let dir = fresh_tmp("writefile");
+        install_into(&dir, &InstallMcpArgs {
+            manifest: serde_json::json!({
+                "id": "sk-pack", "name": "Sk", "icon": "S", "mcp_color": "jade",
+                "version": "0.1.0", "variant": "builtin",
+                "actions": [{ "id": "a", "name": "A", "input": "none", "output": "silent",
+                    "steps": [{ "type": "shell", "command": "echo hi" }] }]
+            }),
+            server_code: String::new(),
+            server_code_filename: String::new(),
+        })
+        .expect("install ok");
+
+        // A skill markdown lands in its declared subdir (cap_asset shape).
+        write_pack_file(&dir, "sk-pack", "skills/analyze/SKILL.md", "# Analyze\nsteps")
+            .expect("write skill ok");
+        let landed = dir.join("sk-pack/skills/analyze/SKILL.md");
+        assert!(landed.exists());
+        assert!(fs::read_to_string(&landed).unwrap().contains("# Analyze"));
+
+        // Traversal / absolute paths are rejected — a path can never escape the pack.
+        assert!(write_pack_file(&dir, "sk-pack", "../escape.md", "x").is_err());
+        assert!(write_pack_file(&dir, "sk-pack", "/etc/passwd", "x").is_err());
+        assert!(write_pack_file(&dir, "sk-pack", "a/../../escape.md", "x").is_err());
+
+        // Writing into a pack that isn't installed is a clean error.
+        let err = write_pack_file(&dir, "ghost", "x.md", "y").unwrap_err();
+        assert!(err.contains("not installed"), "got: {err}");
+
         let _ = fs::remove_dir_all(&dir);
     }
 

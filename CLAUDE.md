@@ -24,7 +24,8 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI
 - 禁止 `--no-verify` 跳过 git hooks
 - 禁止跨 D1 JOIN
 - 模棱两可的指令直接询问 bao
-- 涉及战略改动: 先读 ADR-001 spine + `.olym/decisions/INDEX.md` (7 module ADR 索引), 不冲突再动手
+- **动任何模块前先读它的 ADR — ADR 是动手前「读」的真相源, 不是事后「写」的产物** (bao 2026-06-27 硬门, 扩展旧「仅战略改动才读」): 碰一个模块前 (写代码 / 改设计 / **甚至只是评估它「缺什么」「怎么工作」**) 先读 `.olym/decisions/INDEX.md` + 该模块 ADR (+ ADR-001 spine); 冲突以 ADR 为准, **经 bao 共识**才 amend (不擅自改 / 落 ADR), 不重推 ADR 已定的东西。反例 2026-06-27: 动 Irisy/功能包整 session 没读 ADR-002, 自推「net 被裁、Irisy 够不着联网」当缺口, 而 v36/v37 早已为 Irisy 放行网络 + 真机验证 ddgs — 绕一大圈又判错。
+- **每写一次就验证落盘 — 报「完成」前必须 `git status` / grep 确认, 不凭感觉** (bao 2026-06-27 硬门): Edit/Write 之后**立刻**用外部真相 (git status 看文件是否真改 / grep 改动内容 / 重读) 确认写进去了, 验过才说「做完」。原因: 工具调用可能没真正执行 (输出截断时尤甚), 而「写出编辑内容」那一刻会给假的完成感 —— 我对自己的动作没有知觉, 唯一真相在 git / 文件里, 不在我脑子里。反例 2026-06-27: persona v14 + create-feature-pack skill 自以为「完成 + 已 commit」, 实际从未落盘 (`irisy-prompts.ts` 仍 v13 / skill 文件不存在), 一路拿假完成往前走。
 
 ### Working mode: 灵活开发 — 只做 ADR + 代码 + PR
 
