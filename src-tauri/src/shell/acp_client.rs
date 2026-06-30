@@ -52,11 +52,19 @@ pub struct AcpClient {
 /// `ctrl` MCP server passed in session/new) instead of answering from its own
 /// memory (ADR-002 substrate §1.8.2 v23). Concise so it doesn't fight SOUL.md.
 const CTRL_CAPABILITY_BRIEF: &str = "\
-[CTRL context — you are Irisy, the user's assistant inside CTRL. The `ctrl` MCP \
-server (already connected) gives you tools to read / write / search the user's \
-notes and Obsidian vault at ~/Documents/CTRL/Notes (vault.* tools) and their \
-structured tables (smart_table_* tools). When the user asks about their notes, \
-Obsidian, or knowledge, USE these tools — do not answer from memory alone. \
+[CTRL context — you are Irisy, the user's personal assistant inside CTRL. Your \
+CAPABILITIES ARE THE `ctrl` TOOLS connected to you (already wired): that ctrl \
+tool list is the single source of truth for what you can do, and it is your \
+PRIMARY toolset — prefer it over any built-in. Through ctrl you reach the user's \
+OWN notes / Obsidian vault at ~/Documents/CTRL/Notes, their structured tables, \
+live market data, web search, and building new feature packs — their real data \
+and work, on their machine. Built-in tools are a secondary aid (e.g. image \
+generation, browsing) — use them only when the ctrl tools lack a capability, and \
+never present them as your main repertoire. When asked what you can do, lead \
+with what the ctrl tools give you (the user's notes, tables, market data, web \
+search, building feature packs) — not a long list of built-ins — and never \
+claim a capability the ctrl tools don't provide. When the user asks about their \
+notes or knowledge, USE the vault tools — do not answer from memory alone. \
 For live market data you have two controlled tools — use them, never invent a \
 quote. market_quote takes symbols (a list of tickers; Yahoo suffixes: .SS \
 Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^) \
@@ -161,6 +169,31 @@ fn notes_dir() -> Result<PathBuf> {
     let p = base.home_dir().join("Documents").join("CTRL").join("Notes");
     std::fs::create_dir_all(&p).context("create Notes dir")?;
     Ok(p)
+}
+
+/// Irisy's engine soul, owned by CTRL (ADR-005 §9.5). hermes reads ~/.hermes/SOUL.md
+/// as its persona every turn; that file was an ORPHAN runtime copy no code owned,
+/// so it silently kept a stale "co-pilot" persona while the real soul lived
+/// elsewhere. This seed is the single owner of the engine identity.
+const HERMES_SOUL: &str = include_str!("hermes-soul.md");
+
+/// Re-pin ~/.hermes/SOUL.md from the repo seed before every hermes launch
+/// (ADR-005 §9.5 — close the orphan-soul drain). CTRL owns the engine IDENTITY;
+/// the user's learned memory lives in hermes's own MEMORY.md / the vault, not in
+/// this file, so overwriting identity is safe. Idempotent: only writes when the
+/// content differs, to avoid needless IO / mtime churn.
+fn ensure_hermes_soul() {
+    let Some(base) = directories::BaseDirs::new() else {
+        return;
+    };
+    let soul = base.home_dir().join(".hermes").join("SOUL.md");
+    if std::fs::read_to_string(&soul).ok().as_deref() == Some(HERMES_SOUL) {
+        return;
+    }
+    if let Some(dir) = soul.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&soul, HERMES_SOUL);
 }
 
 /// MCP-bus passthrough (ADR-002 §1.8.2): expose CTRL's kernel MCP server
@@ -323,6 +356,7 @@ impl AcpClient {
         // here.
         if engine == "hermes" {
             let _ = crate::commands::agents::write_hermes_dotenv(provider_env);
+            ensure_hermes_soul();
         }
 
         let cwd = notes_dir()?;
