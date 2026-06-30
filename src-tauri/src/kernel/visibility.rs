@@ -122,6 +122,16 @@ pub const BRAIN_TOOLSET: &[&str] = &[
     "vault_search",
     "vault_list",
     "vault_create_folder",
+    // Knowledge-base organization (bao 2026-06-29): these were implemented in the
+    // gate but never projected to the brain, so Irisy "couldn't organize a vault"
+    // — it only saw read/write/search. Backlinks, the tag index, orphan notes,
+    // broken links, and embedding-based related-note suggestions are the core
+    // organize toolkit; without them Irisy can read a note but not tidy a library.
+    "vault_backlinks",
+    "vault_tags",
+    "vault_orphans",
+    "vault_broken_links",
+    "vault_suggest_links",
     // Persistent memory — SOUL.md (ADR-005 irisy §8.8 fix 2026-06-29). The
     // capability brief promises Irisy long-term memory via these tools; without
     // them in the curated set the brain never saw them (dropped by the tool cap),
@@ -519,7 +529,7 @@ mod tests {
         // where listing truncates destructively, and the niche tools sit at the
         // tail so any runtime cap trims those, never the creation/memory core.
         assert!(
-            BRAIN_TOOLSET.len() <= 27,
+            BRAIN_TOOLSET.len() <= 32,
             "BRAIN_TOOLSET is {} tools, over the brain cap",
             BRAIN_TOOLSET.len()
         );

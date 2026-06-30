@@ -56,7 +56,7 @@ const CTRL_CAPABILITY_BRIEF: &str = "\
 CAPABILITIES ARE THE `ctrl` TOOLS connected to you (already wired): that ctrl \
 tool list is the single source of truth for what you can do, and it is your \
 PRIMARY toolset — prefer it over any built-in. Through ctrl you reach the user's \
-OWN notes / Obsidian vault at ~/Documents/CTRL/Notes, their structured tables, \
+OWN notes vault (the vault tools already point at the library the user configured), their structured tables, \
 live market data, web search, and building new feature packs — their real data \
 and work, on their machine. Built-in tools are a secondary aid (e.g. image \
 generation, browsing) — use them only when the ctrl tools lack a capability, and \
@@ -165,9 +165,16 @@ pub fn shutdown() {
 }
 
 fn notes_dir() -> Result<PathBuf> {
-    let base = directories::BaseDirs::new().ok_or_else(|| anyhow!("home dir"))?;
-    let p = base.home_dir().join("Documents").join("CTRL").join("Notes");
-    std::fs::create_dir_all(&p).context("create Notes dir")?;
+    // hermes's cwd = the user's REAL configured vault, NOT a hardcoded Notes dir
+    // (bao 2026-06-29: pkm is the single default knowledge base — there is no
+    // separate notes store; feature-pack-specific docs live in their own project
+    // dir). Follow `configured_vault_root` so the engine's working directory never
+    // drifts from where the vault tools actually read/write (root-fix for "Irisy
+    // organized the wrong library").
+    let p = crate::kernel::vault::configured_vault_root()
+        .or_else(crate::kernel::vault::default_vault_root)
+        .ok_or_else(|| anyhow!("vault root"))?;
+    std::fs::create_dir_all(&p).context("create vault dir")?;
     Ok(p)
 }
 
