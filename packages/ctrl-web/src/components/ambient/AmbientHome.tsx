@@ -1162,14 +1162,11 @@ export function AmbientHome({
                 </button>
               </>
             )}
-            <button
-              type="button"
-              className={styles.modelMini}
-              onClick={onOpenPicker}
-              title={hasProvider ? `Model: ${modelLabel}` : 'Connect a model'}
-            >
-              {hasProvider ? modelLabel : 'Connect'}
-            </button>
+            {/* Right-corner provider/model picker REMOVED (bao, repeated): it
+                duplicated the L1-bound agent/persona pickers in `personaRow`
+                above the composer. Provider choice follows the L1 selection
+                there; this corner pill was redundant. onOpenPicker still fires
+                programmatically when no provider is connected (send path). */}
           </div>
         </div>
       </div>
