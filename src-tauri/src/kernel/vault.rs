@@ -624,12 +624,18 @@ fn split_frontmatter(raw: &str) -> (serde_json::Value, String) {
         return (serde_json::Value::Null, raw.to_string());
     }
     let after_open = &trimmed[4..];
-    let close_pos = after_open.find("\n---");
-    let Some(end_idx) = close_pos else {
+    // An EMPTY frontmatter block (`---\n---`) — the closing fence sits at the
+    // very start of `after_open` with no `\n` before it, so the `\n---` finder
+    // below would miss it and hand the caller back the raw file (fences and
+    // all). This is exactly what `write` emits for an empty-object frontmatter,
+    // so recognize it explicitly: no fm text, body begins after the fence.
+    let (fm_text, body_start) = if after_open.starts_with("---") {
+        ("", 3usize)
+    } else if let Some(end_idx) = after_open.find("\n---") {
+        (&after_open[..end_idx], end_idx + 4) // skip "\n---"
+    } else {
         return (serde_json::Value::Null, raw.to_string());
     };
-    let fm_text = &after_open[..end_idx];
-    let body_start = end_idx + 4; // skip "\n---"
     let after_close = &after_open[body_start..];
     let body = after_close
         .trim_start_matches('\n')
@@ -784,6 +790,21 @@ mod tests {
         let (fm, body) = split_frontmatter("no frontmatter here\nsecond line");
         assert!(fm.is_null());
         assert!(body.starts_with("no frontmatter"));
+    }
+
+    #[test]
+    fn split_frontmatter_handles_empty_block() {
+        // `write` emits `---\n---` for an empty-object frontmatter; the body must
+        // round-trip WITHOUT the fences leaking in (else line indexing breaks).
+        let (fm, body) = split_frontmatter("---\n---\n\n# Head\n- [ ] task\ntail");
+        assert!(fm.is_null());
+        assert_eq!(body, "# Head\n- [ ] task\ntail");
+        // Round-trip through write→read on disk.
+        let root = fresh_tmp("empty-fm");
+        write(&root, "n.md", "# Head\n- [ ] task\ntail", &serde_json::json!({})).unwrap();
+        let entry = read(&root, "n.md").unwrap();
+        assert_eq!(entry.content, "# Head\n- [ ] task\ntail");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

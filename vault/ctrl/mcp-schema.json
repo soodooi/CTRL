@@ -1275,37 +1275,42 @@
       "name": "smart_table_update_cell"
     },
     {
-      "description": "Create a LifeOS task: pass `values` (must include a non-empty title; optional status/due/priority/tags) and an optional body. Writes a plain-markdown file and returns its vault path.",
+      "description": "Create a LifeOS task: append a `- [ ]` checkbox line with `title` (required), optional `due` (YYYY-MM-DD) and `tags`, to `note` (default: today's daily note). Returns the note path.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "task.create — produce/write a new task file (ADR-002 §14 produce verb).",
+        "description": "task.create — produce/write a new checkbox task line (ADR-002 §14 produce\nverb). Appends `- [ ] <title>` to a note (inline-checkbox substrate).",
         "properties": {
-          "body": {
+          "due": {
             "default": null,
-            "description": "Optional task body (markdown notes under the frontmatter).",
+            "description": "Optional due date `YYYY-MM-DD` (rendered as a `📅` inline marker).",
             "type": [
               "string",
               "null"
             ]
           },
-          "subdir": {
+          "note": {
             "default": null,
-            "description": "Vault subdir to create under (default `Tasks/`).",
+            "description": "Target note (vault-relative path). Omit to append to today's daily note.",
             "type": [
               "string",
               "null"
             ]
           },
-          "values": {
-            "additionalProperties": {
+          "tags": {
+            "default": [],
+            "description": "Optional tags (rendered as inline `#tag` tokens).",
+            "items": {
               "type": "string"
             },
-            "description": "Frontmatter fields for the task; must include a non-empty `title`.\n`status` defaults to `todo`; `created`/`modified` are stamped by the\nsource. Recognized keys: title / status / due / priority / tags.",
-            "type": "object"
+            "type": "array"
+          },
+          "title": {
+            "description": "Task text (required, non-empty).",
+            "type": "string"
           }
         },
         "required": [
-          "values"
+          "title"
         ],
         "title": "TaskCreateArgs",
         "type": "object"
@@ -1442,26 +1447,33 @@
       "name": "task_query"
     },
     {
-      "description": "Update one field of a LifeOS task by path (e.g. field='status' value='done' to complete it), then write it back.",
+      "description": "Update one field of a LifeOS task by note + line (from task_query): field='status' value='done' completes it; also due/title/tags. Rewrites the checkbox line in place.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "task.update — produce/write one frontmatter field of a task (ADR-002 §14\nproduce verb). Complete a task with field=`status`, value=`done`.",
+        "description": "task.update — produce/write one field of a task in place (ADR-002 §14\nproduce verb). Complete a task with field=`status`, value=`done`.",
         "properties": {
           "field": {
-            "description": "Frontmatter field to set (not `path`/`created` — owned by the source).",
+            "description": "Field to set: `status` (todo/doing/done) / `due` / `title` / `tags`.",
             "type": "string"
           },
-          "path": {
-            "description": "Vault-relative path to the task `.md` file.",
+          "line": {
+            "description": "Zero-based line index of the checkbox (from `task_query`'s `line` field).",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "description": "Vault-relative path to the note holding the task.",
             "type": "string"
           },
           "value": {
-            "description": "New value (stored as plain text).",
+            "description": "New value (for `tags`, a comma-separated list).",
             "type": "string"
           }
         },
         "required": [
-          "path",
+          "note",
+          "line",
           "field",
           "value"
         ],

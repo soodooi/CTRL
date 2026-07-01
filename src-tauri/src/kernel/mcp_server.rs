@@ -186,30 +186,34 @@ pub struct TaskQueryArgs {
     pub limit: Option<usize>,
 }
 
-/// task.create — produce/write a new task file (ADR-002 §14 produce verb).
+/// task.create — produce/write a new checkbox task line (ADR-002 §14 produce
+/// verb). Appends `- [ ] <title>` to a note (inline-checkbox substrate).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct TaskCreateArgs {
-    /// Frontmatter fields for the task; must include a non-empty `title`.
-    /// `status` defaults to `todo`; `created`/`modified` are stamped by the
-    /// source. Recognized keys: title / status / due / priority / tags.
-    pub values: std::collections::BTreeMap<String, String>,
-    /// Optional task body (markdown notes under the frontmatter).
+    /// Task text (required, non-empty).
+    pub title: String,
+    /// Optional due date `YYYY-MM-DD` (rendered as a `📅` inline marker).
     #[serde(default)]
-    pub body: Option<String>,
-    /// Vault subdir to create under (default `Tasks/`).
+    pub due: Option<String>,
+    /// Optional tags (rendered as inline `#tag` tokens).
     #[serde(default)]
-    pub subdir: Option<String>,
+    pub tags: Vec<String>,
+    /// Target note (vault-relative path). Omit to append to today's daily note.
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
-/// task.update — produce/write one frontmatter field of a task (ADR-002 §14
+/// task.update — produce/write one field of a task in place (ADR-002 §14
 /// produce verb). Complete a task with field=`status`, value=`done`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct TaskUpdateArgs {
-    /// Vault-relative path to the task `.md` file.
-    pub path: String,
-    /// Frontmatter field to set (not `path`/`created` — owned by the source).
+    /// Vault-relative path to the note holding the task.
+    pub note: String,
+    /// Zero-based line index of the checkbox (from `task_query`'s `line` field).
+    pub line: usize,
+    /// Field to set: `status` (todo/doing/done) / `due` / `title` / `tags`.
     pub field: String,
-    /// New value (stored as plain text).
+    /// New value (for `tags`, a comma-separated list).
     pub value: String,
 }
 
@@ -957,51 +961,54 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
-    /// task.create — the produce/write verb (ADR-002 §14): write a new task as a
-    /// plain-markdown file with frontmatter under the tasks dir (vim test).
+    /// task.create — the produce/write verb (ADR-002 §14): append a `- [ ]`
+    /// checkbox task to a note (inline-checkbox substrate; vim test). Omit
+    /// `note` to capture into today's daily note.
     #[tool(
-        description = "Create a LifeOS task: pass `values` (must include a non-empty title; optional status/due/priority/tags) and an optional body. Writes a plain-markdown file and returns its vault path."
+        description = "Create a LifeOS task: append a `- [ ]` checkbox line with `title` (required), optional `due` (YYYY-MM-DD) and `tags`, to `note` (default: today's daily note). Returns the note path."
     )]
     async fn task_create(
         &self,
         Parameters(args): Parameters<TaskCreateArgs>,
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
-        let subdir = args.subdir.as_deref();
-        let dir = subdir.unwrap_or(tasks_source::DEFAULT_TASKS_DIR).to_string();
-        let lock = self.vault_write_lock(&dir).await;
-        let _write_guard = lock.lock().await;
         let now = chrono::Local::now().date_naive();
+        let target = args
+            .note
+            .clone()
+            .unwrap_or_else(|| format!("daily/{}.md", now.format("%Y-%m-%d")));
+        let lock = self.vault_write_lock(&target).await;
+        let _write_guard = lock.lock().await;
         let path = tasks_source::create(
             &root,
-            subdir,
-            &args.values,
-            args.body.as_deref().unwrap_or(""),
+            args.note.as_deref(),
+            &args.title,
+            args.due.as_deref(),
+            &args.tags,
             now,
         )
         .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!("created {path}"))]))
+        Ok(CallToolResult::success(vec![Content::text(format!("created task in {path}"))]))
     }
 
-    /// task.update — the produce/write verb (ADR-002 §14): set one frontmatter
-    /// field of a task and bump `modified`. Complete a task with
+    /// task.update — the produce/write verb (ADR-002 §14): rewrite one checkbox
+    /// line in place (status/due/title/tags). Complete a task with
     /// field=`status`, value=`done`.
     #[tool(
-        description = "Update one field of a LifeOS task by path (e.g. field='status' value='done' to complete it), then write it back."
+        description = "Update one field of a LifeOS task by note + line (from task_query): field='status' value='done' completes it; also due/title/tags. Rewrites the checkbox line in place."
     )]
     async fn task_update(
         &self,
         Parameters(args): Parameters<TaskUpdateArgs>,
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
-        let lock = self.vault_write_lock(&args.path).await;
+        let lock = self.vault_write_lock(&args.note).await;
         let _write_guard = lock.lock().await;
-        let now = chrono::Local::now().date_naive();
-        tasks_source::update(&root, &args.path, &args.field, &args.value, now)
+        tasks_source::update(&root, &args.note, args.line, &args.field, &args.value)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(format!(
-            "updated {} field {}",
-            args.path, args.field
+            "updated {} line {} field {}",
+            args.note, args.line, args.field
         ))]))
     }
 

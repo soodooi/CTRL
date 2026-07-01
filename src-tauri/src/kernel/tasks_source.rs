@@ -1,71 +1,78 @@
 //! Tasks as a first-class RecordSource of the Unified Operation Interface
-//! (ADR-002 §14) — the first slice of the LifeOS layer (GOAL Phase 1 SC1,
+//! (ADR-002 §14) — the first slice of the LifeOS layer (GOAL Phase 1,
 //! governing `vault/ctrl/lifeos-layer-restructure.md`).
 //!
-//! Each task is a plain markdown file with YAML frontmatter under a
-//! configurable vault subdir (default `Tasks/`), so `vim Tasks/<slug>.md`
-//! shows a real, hand-editable task — the vim test passes by construction, no
-//! opaque store. `describe`/`query` reuse the shared kernel query engine (the
-//! same one smart-tables and the KB use); `produce` (create / update) writes
-//! the task file back through the same `vault` layer smart-table `produce`
-//! uses. No bespoke storage, no new spine primitive — a new RecordSource that
-//! Irisy and the BYO-CLI driver operate through the `:17873` gate.
+//! **Storage substrate = inline `- [ ]` checkboxes inside notes**, not a file
+//! per task. Deep research (`lifeos-layer-restructure.md` §1) showed the
+//! LifeOS/Obsidian world models tasks as checkbox lines living in daily /
+//! periodic / project notes (Obsidian Tasks style), surfaced by query — that
+//! is how the user actually captures a task (`vim` today's daily note, type
+//! `- [ ] call bob 📅 2026-07-05 #work`) and how Aino's inbox works. This
+//! source scans those lines across the vault into queryable rows; `produce`
+//! appends a checkbox line to a target note (default: today's daily note) and
+//! rewrites one in place to complete / edit it. The §14 contract, the gate
+//! tools, and the query engine are all shared and unchanged — only the on-disk
+//! substrate is inline markdown, which passes the vim test by construction.
 
 use crate::kernel::query::{
     CellType, Describe, FieldSpec, Operator, QuerySource, Row, SourceKind,
 };
 use crate::kernel::vault;
 use chrono::NaiveDate;
-use serde_json::Value;
-use std::collections::BTreeMap;
 use std::path::Path;
 
-/// Default vault subdir tasks live under. The user can pass another (layout is
-/// user policy — ADR-006 §3 principle #7, not hardcoded beyond this default).
-pub const DEFAULT_TASKS_DIR: &str = "Tasks";
+/// Obsidian-Tasks style due marker: `📅 2026-07-05` (space optional).
+const DUE_MARKER: char = '📅';
 
-/// The lifecycle states a task's `status` field carries. Plain strings on disk
-/// so `vim` edits round-trip; `done` is the single "complete" sentinel.
+/// Checkbox lifecycle: `[ ]` todo, `[/]` doing, `[x]`/`[X]` done.
 pub const STATUS_TODO: &str = "todo";
 pub const STATUS_DOING: &str = "doing";
 pub const STATUS_DONE: &str = "done";
 
-/// A queryable view over the task files in one vault subdir (the Record profile
+/// One parsed task line and where it lives (note path + 0-based line index).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskItem {
+    pub path: String,
+    pub line: usize,
+    pub title: String,
+    pub status: String,
+    pub due: String,
+    pub tags: Vec<String>,
+}
+
+/// A queryable view over every checkbox task in the vault (the Record profile
 /// of the LifeOS Task source).
 pub struct TaskSource {
     rows: Vec<Row>,
 }
 
 impl TaskSource {
-    /// Build from the vault by reading each task file's frontmatter. `subdir`
-    /// scopes the scan (None = the default `Tasks/`). A missing dir (no task
-    /// created yet) is an empty source, not an error — so `query` works before
-    /// the first `produce`.
+    /// Scan the vault for checkbox task lines. `subdir` scopes the scan (None =
+    /// whole vault). Notes that fail to read are skipped (read-only scan); a
+    /// vault with no tasks yet is an empty source, not an error.
     pub fn load(vault_root: &Path, subdir: Option<&str>) -> TaskSource {
-        let dir = subdir.unwrap_or(DEFAULT_TASKS_DIR);
-        let paths = vault::list(vault_root, Some(dir)).unwrap_or_default();
-        let mut rows = Vec::with_capacity(paths.len());
+        let paths = vault::list(vault_root, subdir).unwrap_or_default();
+        let mut rows = Vec::new();
         for path in paths {
-            // A task that fails to read is skipped, not fatal (read-only scan).
-            if let Ok(entry) = vault::read(vault_root, &path) {
-                rows.push(task_to_row(&path, &entry.frontmatter));
+            let Ok(entry) = vault::read(vault_root, &path) else { continue };
+            for item in scan_tasks(&path, &entry.content) {
+                rows.push(item_to_row(&item));
             }
         }
         TaskSource { rows }
     }
 
     /// The stable schema a task RecordSource advertises via `describe`. `status`
-    /// is a Select over the fixed lifecycle so Irisy filters it as an enum.
+    /// is a Select over the fixed lifecycle so Irisy filters it as an enum;
+    /// `line` locates the checkbox for `produce` (read-only to the caller).
     pub fn fields() -> Vec<FieldSpec> {
         vec![
-            field("path", "Path", CellType::Text),
+            field("path", "Note", CellType::Text),
+            field("line", "Line", CellType::Number),
             field("title", "Title", CellType::Text),
             select("status", "Status", &[STATUS_TODO, STATUS_DOING, STATUS_DONE]),
             field("due", "Due", CellType::Date),
-            field("priority", "Priority", CellType::Number),
             field("tags", "Tags", CellType::Tags),
-            field("created", "Created", CellType::Date),
-            field("modified", "Modified", CellType::Date),
         ]
     }
 
@@ -90,8 +97,8 @@ impl QuerySource for TaskSource {
     }
 }
 
-/// The `describe` a task source advertises without loading any rows (the gate's
-/// `task_describe` returns this — the type layer Irisy reads before querying).
+/// The `describe` a task source advertises without scanning any note (the
+/// gate's `task_describe` returns this — the type layer Irisy reads first).
 pub fn describe() -> Describe {
     Describe {
         source_kind: SourceKind::Record,
@@ -100,160 +107,250 @@ pub fn describe() -> Describe {
     }
 }
 
-/// Produce (create) a new task file (ADR-002 §14 `produce` verb). `values`
-/// carries frontmatter fields (at minimum `title`); `status` defaults to
-/// `todo`, `created`/`modified` are stamped to `today` (injected for
-/// determinism). The filename is a unique slug of the title under `subdir`, so
-/// the file is human-findable. Returns the vault-relative path written.
+/// Produce (create) a task: append a `- [ ] <title>` checkbox line to a note
+/// (ADR-002 §14 `produce`). `note` is the target vault path; None routes to
+/// today's daily note (`daily/{YYYY}-{MM}-{DD}.md`), created empty if missing.
+/// `due`/`tags` become inline `📅`/`#tag` tokens. Returns the note path.
 pub fn create(
     vault_root: &Path,
-    subdir: Option<&str>,
-    values: &BTreeMap<String, String>,
-    body: &str,
+    note: Option<&str>,
+    title: &str,
+    due: Option<&str>,
+    tags: &[String],
     today: NaiveDate,
 ) -> Result<String, TaskError> {
-    let dir = subdir.unwrap_or(DEFAULT_TASKS_DIR);
-    let title = values
-        .get("title")
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .ok_or(TaskError::MissingTitle)?;
-
-    let today_str = today.format("%Y-%m-%d").to_string();
-    let mut fm = serde_json::Map::new();
-    // Stored fields, with sensible defaults. Anything the caller passes wins,
-    // except path/created/modified which the source owns.
-    fm.insert("title".into(), Value::String(title.to_string()));
-    fm.insert(
-        "status".into(),
-        Value::String(normalize_status(values.get("status"))),
-    );
-    for key in ["due", "priority", "tags"] {
-        if let Some(v) = values.get(key).map(|s| s.trim()).filter(|s| !s.is_empty()) {
-            fm.insert(key.into(), Value::String(v.to_string()));
-        }
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(TaskError::MissingTitle);
     }
-    fm.insert("created".into(), Value::String(today_str.clone()));
-    fm.insert("modified".into(), Value::String(today_str));
+    let rel = note
+        .map(str::to_string)
+        .unwrap_or_else(|| daily_note_path(today));
 
-    let rel = unique_task_path(vault_root, dir, title);
-    vault::write(vault_root, &rel, body, &Value::Object(fm)).map_err(TaskError::Vault)?;
+    // Read the note if it exists (append), else start a fresh body. Frontmatter
+    // is preserved on existing notes; a new daily note gets a minimal one. A
+    // note with no (or empty) frontmatter reads back as non-object — coerce to
+    // an empty object so the write layer accepts it.
+    let (mut body, frontmatter) = match vault::read(vault_root, &rel) {
+        Ok(entry) => (entry.content, object_or_empty(entry.frontmatter)),
+        Err(_) => (String::new(), serde_json::json!({ "type": "journal", "tags": ["daily"] })),
+    };
+
+    let line = render_task_line(title, due, tags);
+    if !body.is_empty() && !body.ends_with('\n') {
+        body.push('\n');
+    }
+    body.push_str(&line);
+    body.push('\n');
+
+    vault::write(vault_root, &rel, &body, &frontmatter).map_err(TaskError::Vault)?;
     Ok(rel)
 }
 
-/// Produce (update) one frontmatter field of an existing task, bumping
-/// `modified` (ADR-002 §14 `produce`). Read-modify-write through the same vault
-/// layer, preserving the task body. `path`/`created` are owned by the source
-/// and cannot be set this way. Completing a task = `update(.., "status",
-/// "done", ..)`.
+/// Produce (update) one field of a task in place (ADR-002 §14 `produce`):
+/// rewrite the checkbox line at `note`:`line`. `field` ∈ {status, due, tags,
+/// title}; completing a task = `update(.., "status", "done", ..)`. Read-modify-
+/// write through the same vault layer, preserving every other line.
 pub fn update(
     vault_root: &Path,
-    path: &str,
+    note: &str,
+    line: usize,
     field: &str,
     value: &str,
-    today: NaiveDate,
 ) -> Result<(), TaskError> {
-    if matches!(field, "path" | "created") {
-        return Err(TaskError::ReadOnlyField(field.to_string()));
+    let entry = vault::read(vault_root, note).map_err(TaskError::Vault)?;
+    let mut lines: Vec<String> = entry.content.lines().map(str::to_string).collect();
+    let target = lines.get(line).ok_or(TaskError::LineOutOfRange(line))?;
+    let mut item = parse_task_line(note, line, target).ok_or(TaskError::NotATask(line))?;
+
+    match field {
+        "status" => item.status = normalize_status_word(value),
+        "due" => item.due = value.trim().to_string(),
+        "title" => {
+            let t = value.trim();
+            if t.is_empty() {
+                return Err(TaskError::MissingTitle);
+            }
+            item.title = t.to_string();
+        }
+        "tags" => {
+            item.tags = value
+                .split(',')
+                .map(|s| s.trim().trim_start_matches('#').to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+        other => return Err(TaskError::UnknownField(other.to_string())),
     }
-    let entry = vault::read(vault_root, path).map_err(TaskError::Vault)?;
-    let mut fm = match entry.frontmatter {
-        Value::Object(m) => m,
-        _ => serde_json::Map::new(),
-    };
-    if field == "status" {
-        fm.insert("status".into(), Value::String(normalize_status(Some(&value.to_string()))));
-    } else {
-        fm.insert(field.to_string(), Value::String(value.to_string()));
+
+    let indent = leading_ws(target);
+    lines[line] = format!("{indent}{}", render_item(&item));
+    let mut body = lines.join("\n");
+    if entry.content.ends_with('\n') {
+        body.push('\n');
     }
-    fm.insert(
-        "modified".into(),
-        Value::String(today.format("%Y-%m-%d").to_string()),
-    );
-    vault::write(vault_root, path, &entry.content, &Value::Object(fm)).map_err(TaskError::Vault)?;
+    vault::write(vault_root, note, &body, &object_or_empty(entry.frontmatter))
+        .map_err(TaskError::Vault)?;
     Ok(())
 }
 
-/// Errors a task `produce` can return (read stays infallible-per-file).
+/// Errors a task `produce` can return.
 #[derive(Debug)]
 pub enum TaskError {
     MissingTitle,
-    ReadOnlyField(String),
+    LineOutOfRange(usize),
+    NotATask(usize),
+    UnknownField(String),
     Vault(vault::VaultError),
 }
 
 impl std::fmt::Display for TaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TaskError::MissingTitle => write!(f, "task requires a non-empty 'title'"),
-            TaskError::ReadOnlyField(k) => {
-                write!(f, "field '{k}' is owned by the task source (read-only)")
+            TaskError::MissingTitle => write!(f, "task requires a non-empty title"),
+            TaskError::LineOutOfRange(n) => write!(f, "line {n} is out of range"),
+            TaskError::NotATask(n) => write!(f, "line {n} is not a checkbox task"),
+            TaskError::UnknownField(k) => {
+                write!(f, "field '{k}' is not updatable (use status/due/title/tags)")
             }
             TaskError::Vault(e) => write!(f, "{e:?}"),
         }
     }
 }
 
-// ─── internals ──────────────────────────────────────────────────────────────
+// ─── parsing / rendering ─────────────────────────────────────────────────────
 
-/// Map an incoming status onto the known lifecycle; unknown/empty → `todo`.
-fn normalize_status(raw: Option<&String>) -> String {
-    match raw.map(|s| s.trim().to_lowercase()).as_deref() {
-        Some(STATUS_DOING) => STATUS_DOING,
-        Some(STATUS_DONE) => STATUS_DONE,
+/// Extract every checkbox task from a note body.
+pub fn scan_tasks(path: &str, body: &str) -> Vec<TaskItem> {
+    body.lines()
+        .enumerate()
+        .filter_map(|(i, l)| parse_task_line(path, i, l))
+        .collect()
+}
+
+/// Parse one line into a task if it is a `- [ ]` / `- [x]` / `- [/]` checkbox.
+/// Recognizes the Obsidian-Tasks `📅 <date>` due marker and `#tag` tokens; the
+/// remaining text (tokens stripped) is the title used to match on update.
+pub fn parse_task_line(path: &str, line: usize, raw: &str) -> Option<TaskItem> {
+    let trimmed = raw.trim_start();
+    let rest = trimmed.strip_prefix("- [").or_else(|| trimmed.strip_prefix("* ["))?;
+    let mark = rest.chars().next()?;
+    let after = rest.strip_prefix(mark)?.strip_prefix(']')?;
+    let status = match mark {
+        ' ' => STATUS_TODO,
+        '/' => STATUS_DOING,
+        'x' | 'X' => STATUS_DONE,
+        _ => return None,
+    }
+    .to_string();
+
+    let content = after.trim();
+    let mut due = String::new();
+    let mut tags = Vec::new();
+    let mut title_tokens = Vec::new();
+
+    let mut toks = content.split_whitespace().peekable();
+    while let Some(tok) = toks.next() {
+        if tok.starts_with(DUE_MARKER) {
+            // `📅2026-07-05` (glued) or `📅` then the next token is the date.
+            let inline = tok.trim_start_matches(DUE_MARKER).trim();
+            if !inline.is_empty() {
+                due = inline.to_string();
+            } else if let Some(next) = toks.peek() {
+                due = next.to_string();
+                toks.next();
+            }
+        } else if let Some(tag) = tok.strip_prefix('#') {
+            if !tag.is_empty() {
+                tags.push(tag.to_string());
+            }
+        } else {
+            title_tokens.push(tok);
+        }
+    }
+
+    let title = title_tokens.join(" ");
+    if title.is_empty() {
+        return None;
+    }
+    Some(TaskItem { path: path.to_string(), line, title, status, due, tags })
+}
+
+/// Render a full checkbox line (no leading indent) from an item.
+fn render_item(item: &TaskItem) -> String {
+    render_task_line_status(&item.title, &item.status, opt(&item.due), &item.tags)
+}
+
+/// Render a fresh `- [ ] ...` line for `create` (always todo).
+fn render_task_line(title: &str, due: Option<&str>, tags: &[String]) -> String {
+    render_task_line_status(title, STATUS_TODO, due, tags)
+}
+
+fn render_task_line_status(title: &str, status: &str, due: Option<&str>, tags: &[String]) -> String {
+    let mark = match status {
+        STATUS_DOING => "/",
+        STATUS_DONE => "x",
+        _ => " ",
+    };
+    let mut s = format!("- [{mark}] {}", title.trim());
+    if let Some(d) = due.map(str::trim).filter(|d| !d.is_empty()) {
+        s.push_str(&format!(" {DUE_MARKER} {d}"));
+    }
+    for tag in tags {
+        let t = tag.trim().trim_start_matches('#');
+        if !t.is_empty() {
+            s.push_str(&format!(" #{t}"));
+        }
+    }
+    s
+}
+
+fn item_to_row(item: &TaskItem) -> Row {
+    let mut row = Row::new();
+    row.insert("path".into(), item.path.clone());
+    row.insert("line".into(), item.line.to_string());
+    row.insert("title".into(), item.title.clone());
+    row.insert("status".into(), item.status.clone());
+    row.insert("due".into(), item.due.clone());
+    row.insert("tags".into(), item.tags.join(", "));
+    row
+}
+
+/// Map any incoming status word / checkbox onto the known lifecycle.
+fn normalize_status_word(raw: &str) -> String {
+    match raw.trim().to_lowercase().as_str() {
+        STATUS_DOING | "/" | "doing" => STATUS_DOING,
+        STATUS_DONE | "x" | "done" | "complete" | "completed" => STATUS_DONE,
         _ => STATUS_TODO,
     }
     .to_string()
 }
 
-/// Project one task (path + parsed frontmatter) into a queryable row. Same
-/// shape as the schema `describe` advertises.
-fn task_to_row(path: &str, fm: &Value) -> Row {
-    let mut row = Row::new();
-    row.insert("path".into(), path.to_string());
-    row.insert("title".into(), title_of(path, fm));
-    row.insert("status".into(), status_of(fm));
-    for key in ["due", "priority", "created", "modified"] {
-        row.insert(key.into(), fm_str(fm, key));
-    }
-    row.insert("tags".into(), tags_of(fm));
-    row
+fn daily_note_path(today: NaiveDate) -> String {
+    // Matches the seeded daily-notes.yaml path_template (`daily/{YYYY}-{MM}-{DD}.md`).
+    format!("daily/{}.md", today.format("%Y-%m-%d"))
 }
 
-fn title_of(path: &str, fm: &Value) -> String {
-    if let Some(t) = fm.get("title").and_then(Value::as_str) {
-        if !t.trim().is_empty() {
-            return t.to_string();
-        }
-    }
-    Path::new(path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.to_string())
+fn leading_ws(s: &str) -> String {
+    s.chars().take_while(|c| c.is_whitespace()).collect()
 }
 
-fn status_of(fm: &Value) -> String {
-    normalize_status(fm.get("status").and_then(Value::as_str).map(str::to_string).as_ref())
-}
-
-/// Join frontmatter `tags` (array or scalar) into the comma form `HasTag` reads.
-fn tags_of(fm: &Value) -> String {
-    match fm.get("tags") {
-        Some(Value::Array(a)) => a
-            .iter()
-            .filter_map(|x| x.as_str().map(str::to_string))
-            .collect::<Vec<_>>()
-            .join(", "),
-        Some(Value::String(s)) => s.clone(),
-        _ => String::new(),
+fn opt(s: &str) -> Option<&str> {
+    if s.trim().is_empty() {
+        None
+    } else {
+        Some(s)
     }
 }
 
-fn fm_str(fm: &Value, key: &str) -> String {
-    match fm.get(key) {
-        Some(Value::String(s)) => s.clone(),
-        Some(Value::Number(n)) => n.to_string(),
-        _ => String::new(),
+/// Coerce a read-back frontmatter value into a writable JSON object. A note with
+/// no (or empty) frontmatter parses to null; the vault write layer requires an
+/// object, so default to empty.
+fn object_or_empty(v: serde_json::Value) -> serde_json::Value {
+    if v.is_object() {
+        v
+    } else {
+        serde_json::json!({})
     }
 }
 
@@ -270,41 +367,6 @@ fn select(key: &str, label: &str, options: &[&str]) -> FieldSpec {
     }
 }
 
-/// A filesystem-safe, human-readable filename stem from the task title.
-fn slugify(title: &str) -> String {
-    let mut out = String::with_capacity(title.len());
-    let mut prev_dash = false;
-    for ch in title.trim().to_lowercase().chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch);
-            prev_dash = false;
-        } else if !prev_dash {
-            out.push('-');
-            prev_dash = true;
-        }
-    }
-    let slug = out.trim_matches('-').to_string();
-    if slug.is_empty() {
-        "task".to_string()
-    } else {
-        slug
-    }
-}
-
-/// A vault-relative task path that does not collide with an existing file
-/// (`<dir>/<slug>.md`, then `-2`, `-3`, …). Deterministic given vault state.
-fn unique_task_path(vault_root: &Path, dir: &str, title: &str) -> String {
-    let slug = slugify(title);
-    let base = format!("{}/{}", dir.trim_end_matches('/'), slug);
-    let mut rel = format!("{base}.md");
-    let mut n = 2;
-    while vault::read(vault_root, &rel).is_ok() {
-        rel = format!("{base}-{n}.md");
-        n += 1;
-    }
-    rel
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,128 +376,127 @@ mod tests {
         NaiveDate::from_ymd_opt(2026, 6, 30).unwrap()
     }
 
-    fn vals(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
-    }
-
     #[test]
     fn describe_is_record_with_status_select() {
         let d = describe();
         assert_eq!(d.source_kind, SourceKind::Record);
         let status = d.fields.iter().find(|f| f.key == "status").unwrap();
         assert_eq!(status.cell_type, CellType::Select);
-        assert_eq!(
-            status.options.as_ref().unwrap(),
-            &vec!["todo".to_string(), "doing".to_string(), "done".to_string()]
-        );
         assert!(d.operators.contains(&Operator::HasTag));
     }
 
     #[test]
-    fn create_writes_plain_markdown_that_vim_can_read() {
-        // vim test: after produce, the task is a real markdown file with
-        // human-readable frontmatter fields on disk.
-        let dir = tempfile::TempDir::new().unwrap();
-        let root = dir.path();
-        let rel = create(
-            root,
-            None,
-            &vals(&[("title", "Ship the LifeOS layer"), ("due", "2026-07-05"), ("tags", "ctrl, p1")]),
-            "Notes about the task.",
-            today(),
-        )
-        .unwrap();
-        assert_eq!(rel, "Tasks/ship-the-lifeos-layer.md");
-        let raw = std::fs::read_to_string(root.join(&rel)).unwrap();
-        assert!(raw.contains("title: Ship the LifeOS layer"));
-        assert!(raw.contains("status: todo"));
-        assert!(raw.contains("due: 2026-07-05"));
-        assert!(raw.contains("created: 2026-06-30"));
-        assert!(raw.contains("Notes about the task."));
+    fn parse_recognizes_checkbox_states_due_and_tags() {
+        let t = parse_task_line("daily/x.md", 3, "  - [ ] Call Bob 📅 2026-07-05 #work #p1").unwrap();
+        assert_eq!(t.title, "Call Bob");
+        assert_eq!(t.status, "todo");
+        assert_eq!(t.due, "2026-07-05");
+        assert_eq!(t.tags, vec!["work", "p1"]);
+        assert_eq!(t.line, 3);
+
+        assert_eq!(parse_task_line("n.md", 0, "- [x] done one").unwrap().status, "done");
+        assert_eq!(parse_task_line("n.md", 0, "- [/] wip").unwrap().status, "doing");
+        // Not a task.
+        assert!(parse_task_line("n.md", 0, "just a bullet - point").is_none());
+        assert!(parse_task_line("n.md", 0, "- [ ]   ").is_none());
     }
 
     #[test]
-    fn create_slug_collision_gets_suffix() {
+    fn create_appends_plain_checkbox_that_vim_can_read() {
+        // vim test: the created task is a plain `- [ ]` line in a real note.
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        let a = create(root, None, &vals(&[("title", "Call Bob")]), "", today()).unwrap();
-        let b = create(root, None, &vals(&[("title", "Call Bob")]), "", today()).unwrap();
-        assert_eq!(a, "Tasks/call-bob.md");
-        assert_eq!(b, "Tasks/call-bob-2.md");
+        let rel = create(root, None, "Ship the LifeOS layer", Some("2026-07-05"), &["ctrl".into()], today()).unwrap();
+        assert_eq!(rel, "daily/2026-06-30.md");
+        let raw = std::fs::read_to_string(root.join(&rel)).unwrap();
+        assert!(raw.contains("- [ ] Ship the LifeOS layer 📅 2026-07-05 #ctrl"));
+    }
+
+    #[test]
+    fn create_appends_to_existing_note_preserving_content() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        vault::write(root, "projects/acme.md", "# Acme\n\n- [ ] existing", &serde_json::json!({})).unwrap();
+        create(root, Some("projects/acme.md"), "New task", None, &[], today()).unwrap();
+        let raw = std::fs::read_to_string(root.join("projects/acme.md")).unwrap();
+        assert!(raw.contains("- [ ] existing"));
+        assert!(raw.contains("- [ ] New task"));
     }
 
     #[test]
     fn create_requires_title() {
         let dir = tempfile::TempDir::new().unwrap();
         assert!(matches!(
-            create(dir.path(), None, &vals(&[("title", "  ")]), "", today()),
+            create(dir.path(), None, "   ", None, &[], today()),
             Err(TaskError::MissingTitle)
         ));
     }
 
     #[test]
-    fn load_and_query_by_status_and_due() {
+    fn load_and_query_across_notes() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        create(root, None, &vals(&[("title", "Due soon"), ("due", "2026-06-30")]), "", today()).unwrap();
-        create(root, None, &vals(&[("title", "Later"), ("due", "2026-12-01")]), "", today()).unwrap();
-        let done = create(root, None, &vals(&[("title", "Finished")]), "", today()).unwrap();
-        update(root, &done, "status", "done", today()).unwrap();
+        vault::write(root, "daily/2026-06-30.md", "# Today\n- [ ] Due today 📅 2026-06-30 #a\n- [x] Done thing", &serde_json::json!({})).unwrap();
+        vault::write(root, "projects/p.md", "- [ ] Later 📅 2026-12-01", &serde_json::json!({})).unwrap();
 
-        // Query: open (status != done) tasks. Use status Eq todo.
         let src = TaskSource::load(root, None);
+        // 3 tasks scanned across 2 notes.
+        assert_eq!(src.rows().len(), 3);
+
+        // Open (todo) tasks only.
         let req = QueryRequest {
             filters: vec![Filter { field: "status".into(), op: Operator::Eq, value: "todo".into() }],
             ..Default::default()
         };
         let out = src.query(&req, today()).unwrap();
         assert_eq!(out.match_count, 2);
-        assert!(out.rows.iter().all(|r| r["status"] == "todo"));
 
-        // Query: due within today.
+        // Due within today.
         let req = QueryRequest {
             filters: vec![Filter { field: "due".into(), op: Operator::Within, value: "today".into() }],
             ..Default::default()
         };
         let out = src.query(&req, today()).unwrap();
         assert_eq!(out.match_count, 1);
-        assert_eq!(out.rows[0]["title"], "Due soon");
+        assert_eq!(out.rows[0]["title"], "Due today");
     }
 
     #[test]
-    fn update_completes_and_bumps_modified_preserving_body() {
+    fn update_toggles_and_edits_by_line() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        let rel = create(root, None, &vals(&[("title", "Write ADR")]), "body kept", today()).unwrap();
-        let later = NaiveDate::from_ymd_opt(2026, 7, 2).unwrap();
-        update(root, &rel, "status", "done", later).unwrap();
+        vault::write(root, "daily/d.md", "# Head\n- [ ] one\n- [ ] two 📅 2026-07-01 #x\nplain tail", &serde_json::json!({})).unwrap();
+        update(root, "daily/d.md", 2, "status", "done").unwrap();
+        let raw = std::fs::read_to_string(root.join("daily/d.md")).unwrap();
+        assert!(raw.contains("- [x] two 📅 2026-07-01 #x")); // completed, tokens kept
+        assert!(raw.contains("- [ ] one")); // sibling untouched
+        assert!(raw.contains("plain tail")); // non-task line untouched
+        assert!(raw.contains("# Head")); // header untouched
 
-        let entry = vault::read(root, &rel).unwrap();
-        assert_eq!(entry.frontmatter.get("status").unwrap(), "done");
-        assert_eq!(entry.frontmatter.get("modified").unwrap(), "2026-07-02");
-        assert_eq!(entry.frontmatter.get("created").unwrap(), "2026-06-30"); // unchanged
-        assert!(entry.content.contains("body kept"));
+        // Reschedule the due date.
+        update(root, "daily/d.md", 2, "due", "2026-08-15").unwrap();
+        let raw = std::fs::read_to_string(root.join("daily/d.md")).unwrap();
+        assert!(raw.contains("📅 2026-08-15"));
     }
 
     #[test]
-    fn update_rejects_source_owned_fields() {
+    fn update_rejects_non_task_line_and_bad_field() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        let rel = create(root, None, &vals(&[("title", "X")]), "", today()).unwrap();
-        assert!(matches!(
-            update(root, &rel, "created", "2000-01-01", today()),
-            Err(TaskError::ReadOnlyField(_))
-        ));
+        vault::write(root, "n.md", "- [ ] real\nnot a task", &serde_json::json!({})).unwrap();
+        assert!(matches!(update(root, "n.md", 1, "status", "done"), Err(TaskError::NotATask(_))));
+        assert!(matches!(update(root, "n.md", 0, "bogus", "x"), Err(TaskError::UnknownField(_))));
+        assert!(matches!(update(root, "n.md", 99, "status", "done"), Err(TaskError::LineOutOfRange(_))));
     }
 
     #[test]
     fn unknown_field_query_rejected() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        create(root, None, &vals(&[("title", "X")]), "", today()).unwrap();
+        vault::write(root, "n.md", "- [ ] x", &serde_json::json!({})).unwrap();
         let src = TaskSource::load(root, None);
         let req = QueryRequest {
-            filters: vec![Filter { field: "bogus".into(), op: Operator::Eq, value: "1".into() }],
+            filters: vec![Filter { field: "nope".into(), op: Operator::Eq, value: "1".into() }],
             ..Default::default()
         };
         assert!(src.query(&req, today()).is_err());
