@@ -1,8 +1,55 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 56,
+  "toolCount": 72,
   "tools": [
+    {
+      "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Max entries per source to return (default 25, capped server-side at 100).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "query": {
+            "default": null,
+            "description": "Keyword to search packs by (e.g. \"stock price\"). Omit to browse top entries.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "DiscoverPacksArgs",
+        "type": "object"
+      },
+      "name": "discover_packs"
+    },
+    {
+      "description": "Search published skills (SKILL.md) on GitHub by keyword — returns repo / name / description / stars / url. Use this when building a feature pack, to find a reusable skill before writing one. Requires a GitHub token.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "description": "Keyword query matched against published SKILL.md skills on GitHub.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "DiscoverSkillsArgs",
+        "type": "object"
+      },
+      "name": "discover_skills"
+    },
     {
       "description": "HTTP GET request — fetch a URL and return status + body + headers",
       "inputSchema": {
@@ -228,12 +275,169 @@
       "name": "llm_chat"
     },
     {
+      "description": "Live stock/index quotes for tickers (Yahoo Finance, no key). Returns price, currency, and percent change vs previous close. Use Yahoo suffixes: .SS Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^ (e.g. ^GSPC, ^IXIC, ^HSI).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "symbols": {
+            "description": "Ticker symbols, e.g. [\"AAPL\", \"600519.SS\", \"0700.HK\", \"^GSPC\"].\nYahoo suffixes: `.SS` Shanghai, `.SZ` Shenzhen, `.HK` Hong Kong;\nUS tickers bare; index symbols start with `^`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "symbols"
+        ],
+        "title": "MarketQuoteArgs",
+        "type": "object"
+      },
+      "name": "market_quote"
+    },
+    {
+      "description": "Predefined stock screen (Yahoo Finance, no key). screen = day_gainers | day_losers | most_actives. Returns symbol, name, price, and percent change for the top movers.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "count": {
+            "default": null,
+            "description": "Max rows to return (default 10, capped at 50).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "screen": {
+            "description": "Predefined screen id: `day_gainers`, `day_losers`, or `most_actives`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "screen"
+        ],
+        "title": "MarketScreenArgs",
+        "type": "object"
+      },
+      "name": "market_screen"
+    },
+    {
       "description": "List external MCP servers the kernel has registered (proxy view)",
       "inputSchema": {
         "properties": {},
         "type": "object"
       },
       "name": "mcp_list_servers"
+    },
+    {
+      "description": "Install a feature pack from its manifest (+ optional server code)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "manifest": {
+            "description": "The validated manifest (must carry a string `id`). Same shape the PWA installs."
+          },
+          "server_code": {
+            "description": "Optional MCP server source code (TypeScript/Python).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_code_filename": {
+            "description": "Optional filename for the server code (safe basename).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "manifest"
+        ],
+        "title": "McpPackInstallArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_install"
+    },
+    {
+      "description": "List installed feature packs (the user's own mcps), with id/name/actions",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "mcp_pack_list"
+    },
+    {
+      "description": "Run a feature pack action (executes its shell steps, returns stdout)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "action_id": {
+            "description": "The action id within that pack to run.",
+            "type": "string"
+          },
+          "mcp_id": {
+            "description": "Installed pack id (the manifest `id`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mcp_id",
+          "action_id"
+        ],
+        "title": "McpPackRunArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_run"
+    },
+    {
+      "description": "Uninstall a feature pack by id (removes it from the user's installed packs)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "mcp_id": {
+            "description": "Installed pack id to remove (the manifest `id`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mcp_id"
+        ],
+        "title": "McpPackUninstallArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_uninstall"
+    },
+    {
+      "description": "Write a skill or asset file (e.g. skills/<name>/SKILL.md) into an installed feature pack",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "content": {
+            "description": "File text content (skill markdown, SVG icon, static data).",
+            "type": "string"
+          },
+          "mcp_id": {
+            "description": "Installed pack id (install the pack first).",
+            "type": "string"
+          },
+          "path": {
+            "description": "Pack-relative path, e.g. \"skills/analyze-cn-stocks/SKILL.md\". No \"..\" or absolute.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mcp_id",
+          "path",
+          "content"
+        ],
+        "title": "McpPackWriteFileArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_write_file"
     },
     {
       "description": "Invoke a tool on a downstream MCP server (kernel proxies the call)",
@@ -641,6 +845,43 @@
       "name": "registry_query"
     },
     {
+      "description": "List the user's local installed skills (name + description + path), optional keyword filter",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "default": null,
+            "description": "Optional keyword filter (matches skill name + description). Omit for all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "SkillListArgs",
+        "type": "object"
+      },
+      "name": "skill_list"
+    },
+    {
+      "description": "Read a local skill's SKILL.md content by its path (from skill_list)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "description": "The skill's SKILL.md path, exactly as returned by skill_list.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SkillReadArgs",
+        "type": "object"
+      },
+      "name": "skill_read"
+    },
+    {
       "description": "Add a grid or kanban view to a smart table (persisted in frontmatter, not the table body). kanban requires group_by (a field key).",
       "inputSchema": {
         "$defs": {
@@ -1032,6 +1273,202 @@
         "type": "object"
       },
       "name": "smart_table_update_cell"
+    },
+    {
+      "description": "Create a LifeOS task: pass `values` (must include a non-empty title; optional status/due/priority/tags) and an optional body. Writes a plain-markdown file and returns its vault path.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "task.create — produce/write a new task file (ADR-002 §14 produce verb).",
+        "properties": {
+          "body": {
+            "default": null,
+            "description": "Optional task body (markdown notes under the frontmatter).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subdir": {
+            "default": null,
+            "description": "Vault subdir to create under (default `Tasks/`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Frontmatter fields for the task; must include a non-empty `title`.\n`status` defaults to `todo`; `created`/`modified` are stamped by the\nsource. Recognized keys: title / status / due / priority / tags.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "title": "TaskCreateArgs",
+        "type": "object"
+      },
+      "name": "task_create"
+    },
+    {
+      "description": "Describe the LifeOS tasks source as a queryable RecordSource: fields (path/title/status/due/priority/tags/created/modified) and supported operators. Call before task_query.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "task_describe"
+    },
+    {
+      "description": "Query LifeOS tasks by status/due/priority/tags with a structured filter/sort/group request (not a query string). Returns matching tasks. Call task_describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "task.query — a structured read over the LifeOS Task RecordSource (ADR-002\n§14). Fill the parameter object; do NOT write a query string. Call\n`task_describe` first to learn valid fields. `subdir` scopes the task\nfolder (default `Tasks/`).",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "description": "Field filters, combined per `conjunction`. Each `field` must exist.",
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order (first is the primary level).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "description": "Cap the number of returned rows (match_count is reported pre-limit).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sort": {
+            "default": [],
+            "description": "Multi-key sort (first key wins).",
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          },
+          "subdir": {
+            "default": null,
+            "description": "Vault subdir the tasks live under (default `Tasks/`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "TaskQueryArgs",
+        "type": "object"
+      },
+      "name": "task_query"
+    },
+    {
+      "description": "Update one field of a LifeOS task by path (e.g. field='status' value='done' to complete it), then write it back.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "task.update — produce/write one frontmatter field of a task (ADR-002 §14\nproduce verb). Complete a task with field=`status`, value=`done`.",
+        "properties": {
+          "field": {
+            "description": "Frontmatter field to set (not `path`/`created` — owned by the source).",
+            "type": "string"
+          },
+          "path": {
+            "description": "Vault-relative path to the task `.md` file.",
+            "type": "string"
+          },
+          "value": {
+            "description": "New value (stored as plain text).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "field",
+          "value"
+        ],
+        "title": "TaskUpdateArgs",
+        "type": "object"
+      },
+      "name": "task_update"
     },
     {
       "description": "Read the frontmatter aliases list for a vault note",
@@ -1599,6 +2036,34 @@
         "type": "object"
       },
       "name": "vault_write_image"
+    },
+    {
+      "description": "Search the web and return titles + URLs + snippets. Uses a BYOK keyed provider if one is configured (Tavily / Brave / Serper / Exa), else a keyless full-web fallback (DuckDuckGo, then Wikipedia). Use this for facts / news / research you don't already hold.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "max_results": {
+            "default": null,
+            "description": "Max results to return (default 5, capped at 10).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "query": {
+            "description": "The search query (natural language or keywords).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "WebSearchArgs",
+        "type": "object"
+      },
+      "name": "web_search"
     }
   ],
   "transport": "streamable-http on 127.0.0.1:17873/mcp (Bearer auth)"

@@ -54,7 +54,7 @@ const BYO_CLI_CALLER: &str = "byo-cli";
 /// regardless of intent. Override with `CTRL_BYO_INTENT` — a comma-separated
 /// domain list, or `unscoped` for the full toolset (ADR-010 trust-domains,
 /// SC3 intent-scoped projection; ADR-001 section 4 projector subset rule).
-const BYO_CLI_DEFAULT_INTENT: &str = "vault,smart_table,notes,providers,registry,kv,llm,memory";
+const BYO_CLI_DEFAULT_INTENT: &str = "vault,smart_table,tasks,notes,providers,registry,kv,llm,memory";
 
 /// Resolve the intent header value for the base projection. `None` => omit the
 /// header entirely (unscoped / full toolset). Honors the `CTRL_BYO_INTENT`

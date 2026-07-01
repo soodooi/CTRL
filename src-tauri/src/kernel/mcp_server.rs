@@ -27,7 +27,7 @@ use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
-    ai_column, provider::LlmPrompt, query, runtime_sources, smart_table_index, vault,
+    ai_column, provider::LlmPrompt, query, runtime_sources, smart_table_index, tasks_source, vault,
     vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
@@ -158,6 +158,59 @@ pub struct SmartTableAppendRowArgs {
     pub path: String,
     /// Cell values keyed by schema field key; missing keys become empty.
     pub values: std::collections::BTreeMap<String, String>,
+}
+
+/// task.query — a structured read over the LifeOS Task RecordSource (ADR-002
+/// §14). Fill the parameter object; do NOT write a query string. Call
+/// `task_describe` first to learn valid fields. `subdir` scopes the task
+/// folder (default `Tasks/`).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TaskQueryArgs {
+    /// Vault subdir the tasks live under (default `Tasks/`).
+    #[serde(default)]
+    pub subdir: Option<String>,
+    /// Field filters, combined per `conjunction`. Each `field` must exist.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group keys applied in order (first is the primary level).
+    #[serde(default)]
+    pub group_by: Vec<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// task.create — produce/write a new task file (ADR-002 §14 produce verb).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TaskCreateArgs {
+    /// Frontmatter fields for the task; must include a non-empty `title`.
+    /// `status` defaults to `todo`; `created`/`modified` are stamped by the
+    /// source. Recognized keys: title / status / due / priority / tags.
+    pub values: std::collections::BTreeMap<String, String>,
+    /// Optional task body (markdown notes under the frontmatter).
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Vault subdir to create under (default `Tasks/`).
+    #[serde(default)]
+    pub subdir: Option<String>,
+}
+
+/// task.update — produce/write one frontmatter field of a task (ADR-002 §14
+/// produce verb). Complete a task with field=`status`, value=`done`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TaskUpdateArgs {
+    /// Vault-relative path to the task `.md` file.
+    pub path: String,
+    /// Frontmatter field to set (not `path`/`created` — owned by the source).
+    pub field: String,
+    /// New value (stored as plain text).
+    pub value: String,
 }
 
 /// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4): run an
@@ -862,6 +915,94 @@ impl KernelMcpRouter {
         let result = vault_notes_source::text::query(&root, &req).map_err(map_vault_err)?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// task.describe — the LifeOS Task source's type layer (ADR-002 §14, GOAL
+    /// Phase 1). Same `describe` verb as smart-table / notes: tasks are just
+    /// another RecordSource. Call before task_query so Irisy only references
+    /// valid fields (path/title/status/due/priority/tags/created/modified).
+    #[tool(
+        description = "Describe the LifeOS tasks source as a queryable RecordSource: fields (path/title/status/due/priority/tags/created/modified) and supported operators. Call before task_query."
+    )]
+    async fn task_describe(&self) -> Result<CallToolResult, McpError> {
+        let body = serde_json::to_string(&tasks_source::describe()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// task.query — structured read over the LifeOS tasks (ADR-002 §14), routed
+    /// through the shared kernel query engine — identical contract to
+    /// `smart_table.query` / `notes.query`, different RecordSource.
+    #[tool(
+        description = "Query LifeOS tasks by status/due/priority/tags with a structured filter/sort/group request (not a query string). Returns matching tasks. Call task_describe first."
+    )]
+    async fn task_query(
+        &self,
+        Parameters(args): Parameters<TaskQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let source = tasks_source::TaskSource::load(&root, args.subdir.as_deref());
+        let req = query::QueryRequest {
+            filters: args.filters,
+            conjunction: args.conjunction,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = source
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// task.create — the produce/write verb (ADR-002 §14): write a new task as a
+    /// plain-markdown file with frontmatter under the tasks dir (vim test).
+    #[tool(
+        description = "Create a LifeOS task: pass `values` (must include a non-empty title; optional status/due/priority/tags) and an optional body. Writes a plain-markdown file and returns its vault path."
+    )]
+    async fn task_create(
+        &self,
+        Parameters(args): Parameters<TaskCreateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let subdir = args.subdir.as_deref();
+        let dir = subdir.unwrap_or(tasks_source::DEFAULT_TASKS_DIR).to_string();
+        let lock = self.vault_write_lock(&dir).await;
+        let _write_guard = lock.lock().await;
+        let now = chrono::Local::now().date_naive();
+        let path = tasks_source::create(
+            &root,
+            subdir,
+            &args.values,
+            args.body.as_deref().unwrap_or(""),
+            now,
+        )
+        .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!("created {path}"))]))
+    }
+
+    /// task.update — the produce/write verb (ADR-002 §14): set one frontmatter
+    /// field of a task and bump `modified`. Complete a task with
+    /// field=`status`, value=`done`.
+    #[tool(
+        description = "Update one field of a LifeOS task by path (e.g. field='status' value='done' to complete it), then write it back."
+    )]
+    async fn task_update(
+        &self,
+        Parameters(args): Parameters<TaskUpdateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let now = chrono::Local::now().date_naive();
+        tasks_source::update(&root, &args.path, &args.field, &args.value, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "updated {} field {}",
+            args.path, args.field
+        ))]))
     }
 
     /// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4). Runs

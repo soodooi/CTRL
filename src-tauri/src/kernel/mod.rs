@@ -55,6 +55,11 @@ pub mod event_ws;
 pub mod subprocess_actor;
 pub mod subprocess_channel_adapter;
 pub mod smart_table_index;
+// ADR-002 substrate §14 (LifeOS layer Phase 1, governing
+// `vault/ctrl/lifeos-layer-restructure.md`) — tasks as a §14 RecordSource:
+// one plain-markdown file per task (vim test), describe/query via the shared
+// engine, produce (create/update) through the vault layer.
+pub mod tasks_source;
 pub mod vault;
 pub mod visibility;
 pub mod vault_notes_source;
