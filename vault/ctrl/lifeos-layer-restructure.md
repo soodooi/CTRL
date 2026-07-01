@@ -76,6 +76,30 @@
 
 ---
 
+## 5.5 开源蓝图(参悟 clone 的 6 repo, bao 2026-06-30「下载参悟」)
+
+Clone 到 `/Users/mac/Documents/coding/lifeos-reference/`(CTRL 仓外): `obsidian-lifeos`(★568, 付费产品开源本体)· `obsidian-tasks`(★3.8k)· `obsidian-full-calendar`(★987)· `obsidian-periodic-notes`(★1.3k)· `obsidian-dataview`(★9k)· `usememos/memos`(★61k)。
+
+**obsidian-lifeos 拆解(它其实很薄, `src/main.ts` 336 行)**:
+- **PARA = 文件夹约定 + tag 过滤**(`1. Projects/2. Areas/3. Resources/4. Archives`, `para/Item.ts` listByFolder/listByTag 渲染 md 链接), 无 DB。index 文件 `readme`/`folderName` 两模式。Project 还从周期笔记 header 抽 `[[proj]] 4hr20` 做工时统计。
+- **Periodic = 日期解析文件夹层级**(`PeriodicNotes/{year}/Daily/{MM}/YYYY-MM-DD.md`; Weekly/Monthly/Quarterly/Yearly), 每周期一模板(`periodic/Date.ts` 220 行解析 + 范围)。
+- **任务 = 完全靠 Obsidian Tasks + Dataview**(`periodic/Task.ts` 只查 Dataview, 按 `✅date`/文件路径过滤, 排除 `habitHeader` 区)—— **验证 CTRL inline-checkbox 决定正确; 不建任务 DB**(那条「改数据库」建议违反明文哲学, 不采纳)。
+- **日历/DailyRecord = usememos 同步**(`periodic/DailyRecord.ts` 620 行, 拉 memos→插日记时间戳 bullet `- HH:mm [x] text #daily-record ^unixts`, 多 API 版本兼容, 30 分钟自动同步)。
+- **UI = 一个 React ItemView「CreateNote」**: PERIODIC/PARA 模式切换 + 五 Tab 日期选择器(存在日期打点)+ PARA 表单(tag→folder→index); 视图用 ```` ```LifeOS ProjectListByTime ``` ```` 代码块内联渲染。命令 = 建 daily/weekly/…/yearly + sync。
+
+**obsidian-tasks 精确文法(用来补全 CTRL 解析器)**: 状态位 `空=todo/x=done//=in-progress/-=cancelled/h=on-hold`(未知→todo); 字段从行尾往前解析 `📅📆🗓 due·⏳⌛ scheduled·🛫 start·➕ created·✅ done·❌ cancelled·🔺⏫🔼🔽⏬ priority·🔁 recurrence·🆔 id·⛔ depends`; 重复 `🔁 every week [when done]`(rrule.js)。
+**obsidian-full-calendar 事件模型**: 两存储 —— 日记内联 `- [ ] 标题 [date:: ][startTime:: ][endTime:: ]` 或 每事件一 frontmatter 笔记(`type: single|recurring|rrule`, date/allDay/startTime/endTime/rrule/skipDates); ICS+CalDAV 只读, 本地可读写。
+
+**example vault 参悟(`obsidian-example-LifeOS` ★1098, bao 2026-06-30 指出我漏读)—— 真实磁盘布局 + 约定**:
+- **文件夹**: `-1. Capture`(收集箱)· `0. PeriodicNotes`(`{year}/Daily/{MM}/YYYY-MM-DD.md` + `Weekly/YYYY-Www` + `Monthly/YYYY-MM` + `Quarterly/YYYY-Qq` + `{year}.md` + `Templates/`)· `1. Projects` · `2. Areas` · `3. Resources` · `4. Archives` · `5. Express`(输出/blog)· `HOME.canvas`(仪表盘)· `TASK.md`(任务总览)。数字前缀排序。
+- **`TASK.md` = 任务仪表盘**: 全 `​```tasks​` 查询块 —— Focus(PeriodicNotes not done + Important/In-Progress/priority high/due<7d, group by due)· PARA(Projects/Areas/Resources not done group by folder)· PeriodicNotes(not done sort filename reverse)· Cancelled。**CTRL Today view 已对应 Focus 的一部分**。
+- **完成约定 = `- [x] task ✅ YYYY-MM-DD`**(obsidian-tasks 完成日)—— CTRL `update status=done` 必须写 ✅ 日期(否则不兼容 Obsidian + 做不了「今日完成」查询)。
+- **Habit section**: `## Habit` 下 checkbox **不算任务**(插件按 habitHeader 排除)—— CTRL 扫描需支持排除该 section。
+- **Daily 模板 section**: `Project List`(`LifeOS.Project.snapshot()`)· `Daily Record`(`- HH:mm text #tag` 时间戳 memo)· `Habit` · `Energy allocation`(`​```LifeOS ProjectListByTime​````)· `Completed today`(`TaskDoneListByTime`)。Weekly = Priority/Role(Employee/Husband/Father/Son/Myself)/Review。
+- **依赖链**(README Acknowledgements 证实): PARA(Tiago Forte)+ periodic-notes(liamcain)+ dataview(查询)+ Templater(建文件)+ usememos(同步)。CTRL 用自己的 §14 query 替 dataview、自己的模板引擎替 Templater。
+
+**CTRL 已有 vs 需建(校准)**: 已有 = vault/§14 query/tags/`daily/`+template/SmartTable calendar·timeline 视图/gate。需建 = ① 任务解析器补全到 obsidian-tasks 标准 ② periodic 补 weekly/monthly/quarterly/yearly + 模板 ③ PARA 文件夹策略 + tag 过滤视图 ④ **前端 Today/Tasks/Calendar 视图**(bao 要先看见的)⑤ Calendar 事件模型 + CalDAV/ICS 连接器 ⑥ memos 同步连接器(可选)。**关键:全程 markdown = truth, 不引 DB, 不引 Dataview(用 CTRL 自己的 §14 query)。**
+
 ## 6. 执行顺序(分阶段,dev-loop,不 big-bang)
 
 Phase 1 Life 数据模型(后端,最高杠杆,滩头)→ 2 PARA/periodic → 3 Calendar → 4 上下文管道+IA 重排 → 5 远程(最大最险,先调研)。每阶段落 ADR amendment 对齐。**第一步 = SC1 Task Source**(describe/query/produce + 明文落盘 + gate 暴露 `task_*`)。

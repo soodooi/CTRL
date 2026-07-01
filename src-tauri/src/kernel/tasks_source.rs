@@ -23,6 +23,8 @@ use std::path::Path;
 
 /// Obsidian-Tasks style due marker: `📅 2026-07-05` (space optional).
 const DUE_MARKER: char = '📅';
+/// Obsidian-Tasks style done-date marker, stamped on completion: `✅ 2026-07-05`.
+const DONE_MARKER: char = '✅';
 
 /// Checkbox lifecycle: `[ ]` todo, `[/]` doing, `[x]`/`[X]` done.
 pub const STATUS_TODO: &str = "todo";
@@ -37,6 +39,9 @@ pub struct TaskItem {
     pub title: String,
     pub status: String,
     pub due: String,
+    /// Completion date (`✅ YYYY-MM-DD`), stamped when the task is completed —
+    /// the Obsidian-Tasks convention that powers "completed today" queries.
+    pub done: String,
     pub tags: Vec<String>,
 }
 
@@ -72,6 +77,7 @@ impl TaskSource {
             field("title", "Title", CellType::Text),
             select("status", "Status", &[STATUS_TODO, STATUS_DOING, STATUS_DONE]),
             field("due", "Due", CellType::Date),
+            field("done", "Done", CellType::Date),
             field("tags", "Tags", CellType::Tags),
         ]
     }
@@ -157,6 +163,7 @@ pub fn update(
     line: usize,
     field: &str,
     value: &str,
+    today: NaiveDate,
 ) -> Result<(), TaskError> {
     let entry = vault::read(vault_root, note).map_err(TaskError::Vault)?;
     let mut lines: Vec<String> = entry.content.lines().map(str::to_string).collect();
@@ -164,7 +171,16 @@ pub fn update(
     let mut item = parse_task_line(note, line, target).ok_or(TaskError::NotATask(line))?;
 
     match field {
-        "status" => item.status = normalize_status_word(value),
+        "status" => {
+            item.status = normalize_status_word(value);
+            // Stamp / clear the Obsidian-Tasks `✅ done-date` to match the
+            // completion state (powers "completed today" queries).
+            item.done = if item.status == STATUS_DONE {
+                today.format("%Y-%m-%d").to_string()
+            } else {
+                String::new()
+            };
+        }
         "due" => item.due = value.trim().to_string(),
         "title" => {
             let t = value.trim();
@@ -246,20 +262,30 @@ pub fn parse_task_line(path: &str, line: usize, raw: &str) -> Option<TaskItem> {
 
     let content = after.trim();
     let mut due = String::new();
+    let mut done = String::new();
     let mut tags = Vec::new();
     let mut title_tokens = Vec::new();
+
+    // A marker whose date is either glued (`📅2026-07-05`) or the next token.
+    let take_date = |tok: &str, marker: char, toks: &mut std::iter::Peekable<std::str::SplitWhitespace>| -> String {
+        let inline = tok.trim_start_matches(marker).trim().to_string();
+        if !inline.is_empty() {
+            inline
+        } else if let Some(next) = toks.peek() {
+            let d = next.to_string();
+            toks.next();
+            d
+        } else {
+            String::new()
+        }
+    };
 
     let mut toks = content.split_whitespace().peekable();
     while let Some(tok) = toks.next() {
         if tok.starts_with(DUE_MARKER) {
-            // `📅2026-07-05` (glued) or `📅` then the next token is the date.
-            let inline = tok.trim_start_matches(DUE_MARKER).trim();
-            if !inline.is_empty() {
-                due = inline.to_string();
-            } else if let Some(next) = toks.peek() {
-                due = next.to_string();
-                toks.next();
-            }
+            due = take_date(tok, DUE_MARKER, &mut toks);
+        } else if tok.starts_with(DONE_MARKER) {
+            done = take_date(tok, DONE_MARKER, &mut toks);
         } else if let Some(tag) = tok.strip_prefix('#') {
             if !tag.is_empty() {
                 tags.push(tag.to_string());
@@ -273,20 +299,26 @@ pub fn parse_task_line(path: &str, line: usize, raw: &str) -> Option<TaskItem> {
     if title.is_empty() {
         return None;
     }
-    Some(TaskItem { path: path.to_string(), line, title, status, due, tags })
+    Some(TaskItem { path: path.to_string(), line, title, status, due, done, tags })
 }
 
 /// Render a full checkbox line (no leading indent) from an item.
 fn render_item(item: &TaskItem) -> String {
-    render_task_line_status(&item.title, &item.status, opt(&item.due), &item.tags)
+    render_task_line_status(&item.title, &item.status, opt(&item.due), opt(&item.done), &item.tags)
 }
 
-/// Render a fresh `- [ ] ...` line for `create` (always todo).
+/// Render a fresh `- [ ] ...` line for `create` (always todo, no done date).
 fn render_task_line(title: &str, due: Option<&str>, tags: &[String]) -> String {
-    render_task_line_status(title, STATUS_TODO, due, tags)
+    render_task_line_status(title, STATUS_TODO, due, None, tags)
 }
 
-fn render_task_line_status(title: &str, status: &str, due: Option<&str>, tags: &[String]) -> String {
+fn render_task_line_status(
+    title: &str,
+    status: &str,
+    due: Option<&str>,
+    done: Option<&str>,
+    tags: &[String],
+) -> String {
     let mark = match status {
         STATUS_DOING => "/",
         STATUS_DONE => "x",
@@ -295,6 +327,10 @@ fn render_task_line_status(title: &str, status: &str, due: Option<&str>, tags: &
     let mut s = format!("- [{mark}] {}", title.trim());
     if let Some(d) = due.map(str::trim).filter(|d| !d.is_empty()) {
         s.push_str(&format!(" {DUE_MARKER} {d}"));
+    }
+    // The done date rides after the due date (Obsidian-Tasks ordering).
+    if let Some(d) = done.map(str::trim).filter(|d| !d.is_empty()) {
+        s.push_str(&format!(" {DONE_MARKER} {d}"));
     }
     for tag in tags {
         let t = tag.trim().trim_start_matches('#');
@@ -312,6 +348,7 @@ fn item_to_row(item: &TaskItem) -> Row {
     row.insert("title".into(), item.title.clone());
     row.insert("status".into(), item.status.clone());
     row.insert("due".into(), item.due.clone());
+    row.insert("done".into(), item.done.clone());
     row.insert("tags".into(), item.tags.join(", "));
     row
 }
@@ -466,17 +503,35 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         vault::write(root, "daily/d.md", "# Head\n- [ ] one\n- [ ] two 📅 2026-07-01 #x\nplain tail", &serde_json::json!({})).unwrap();
-        update(root, "daily/d.md", 2, "status", "done").unwrap();
+        update(root, "daily/d.md", 2, "status", "done", today()).unwrap();
         let raw = std::fs::read_to_string(root.join("daily/d.md")).unwrap();
-        assert!(raw.contains("- [x] two 📅 2026-07-01 #x")); // completed, tokens kept
+        // Completed: checkbox flipped, due/tags kept, and an Obsidian-Tasks
+        // `✅ done-date` stamped (today) — round-trips with a real Obsidian vault.
+        assert!(raw.contains("- [x] two 📅 2026-07-01 ✅ 2026-06-30 #x"));
         assert!(raw.contains("- [ ] one")); // sibling untouched
         assert!(raw.contains("plain tail")); // non-task line untouched
         assert!(raw.contains("# Head")); // header untouched
 
+        // Re-opening a done task clears the ✅ date.
+        update(root, "daily/d.md", 2, "status", "todo", today()).unwrap();
+        let raw = std::fs::read_to_string(root.join("daily/d.md")).unwrap();
+        assert!(raw.contains("- [ ] two 📅 2026-07-01 #x"));
+        assert!(!raw.contains("✅"));
+
         // Reschedule the due date.
-        update(root, "daily/d.md", 2, "due", "2026-08-15").unwrap();
+        update(root, "daily/d.md", 2, "due", "2026-08-15", today()).unwrap();
         let raw = std::fs::read_to_string(root.join("daily/d.md")).unwrap();
         assert!(raw.contains("📅 2026-08-15"));
+    }
+
+    #[test]
+    fn parse_reads_done_date() {
+        let t = parse_task_line("n.md", 0, "- [x] shipped 📅 2026-07-01 ✅ 2026-07-02 #rel").unwrap();
+        assert_eq!(t.status, "done");
+        assert_eq!(t.due, "2026-07-01");
+        assert_eq!(t.done, "2026-07-02");
+        assert_eq!(t.title, "shipped");
+        assert_eq!(t.tags, vec!["rel"]);
     }
 
     #[test]
@@ -484,9 +539,9 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         vault::write(root, "n.md", "- [ ] real\nnot a task", &serde_json::json!({})).unwrap();
-        assert!(matches!(update(root, "n.md", 1, "status", "done"), Err(TaskError::NotATask(_))));
-        assert!(matches!(update(root, "n.md", 0, "bogus", "x"), Err(TaskError::UnknownField(_))));
-        assert!(matches!(update(root, "n.md", 99, "status", "done"), Err(TaskError::LineOutOfRange(_))));
+        assert!(matches!(update(root, "n.md", 1, "status", "done", today()), Err(TaskError::NotATask(_))));
+        assert!(matches!(update(root, "n.md", 0, "bogus", "x", today()), Err(TaskError::UnknownField(_))));
+        assert!(matches!(update(root, "n.md", 99, "status", "done", today()), Err(TaskError::LineOutOfRange(_))));
     }
 
     #[test]

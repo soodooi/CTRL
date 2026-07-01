@@ -372,6 +372,8 @@ export interface TaskRow {
   title: string;
   status: string;
   due: string;
+  /** Obsidian-Tasks `✅` completion date, set when the task is completed. */
+  done: string;
   tags: string;
 }
 export interface TaskQueryResult {

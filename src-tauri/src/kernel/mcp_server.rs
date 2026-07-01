@@ -1004,7 +1004,8 @@ impl KernelMcpRouter {
         let root = vault_root()?;
         let lock = self.vault_write_lock(&args.note).await;
         let _write_guard = lock.lock().await;
-        tasks_source::update(&root, &args.note, args.line, &args.field, &args.value)
+        let now = chrono::Local::now().date_naive();
+        tasks_source::update(&root, &args.note, args.line, &args.field, &args.value, now)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(format!(
             "updated {} line {} field {}",
