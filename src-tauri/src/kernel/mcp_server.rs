@@ -3917,4 +3917,96 @@ mod tests {
             "http_post must be hidden under the vault intent"
         );
     }
+
+    /// End-to-end proof that the LifeOS task tools are reachable THROUGH the gate
+    /// over real HTTP, and that their argument objects deserialize from JSON-RPC
+    /// params (the serde-shape layer that bit the content/body drift before).
+    /// Read-only: `task_describe` + `task_query` touch no vault writes and don't
+    /// depend on HOME, so this is deterministic; the create/update write path is
+    /// covered by the `tasks_source` tempdir unit tests. GOAL Phase 1.
+    #[tokio::test]
+    async fn task_tools_reachable_over_the_wire() {
+        let data_dir = std::env::temp_dir().join("ctrl-test-mcp-tasks");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
+        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let url = handle.url();
+        let token = handle.auth_token.as_ref().clone();
+        let client = reqwest::Client::new();
+
+        // initialize -> session id (shared helper shape as the intent test).
+        let init = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .body(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}"#,
+            )
+            .send()
+            .await
+            .expect("initialize");
+        let session_id = init
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .expect("server returns a session id");
+
+        let call = |id: u32, name: &str, args: serde_json::Value| {
+            let body = serde_json::json!({
+                "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": { "name": name, "arguments": args }
+            })
+            .to_string();
+            client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json, text/event-stream")
+                .header("Authorization", format!("Bearer {token}"))
+                .header("mcp-session-id", session_id.clone())
+                // Scope the caller to the `tasks` domain so the gate's visibility
+                // trim exposes the task tools (default external caller gets the
+                // minimal set — proof the SC3 trim is live).
+                .header(visibility::INTENT_HEADER, "tasks")
+                .body(body)
+                .send()
+        };
+
+        // task_describe over the wire → a Record source advertising `status`.
+        let resp = call(2, "task_describe", serde_json::json!({})).await.expect("task_describe");
+        let text = extract_jsonrpc(&resp.text().await.expect("body"))["result"]["content"][0]
+            ["text"]
+            .as_str()
+            .expect("describe content text")
+            .to_string();
+        let describe: serde_json::Value = serde_json::from_str(&text).expect("describe json");
+        assert_eq!(describe["source_kind"], "record");
+        assert!(
+            describe["fields"].as_array().unwrap().iter().any(|f| f["key"] == "status"),
+            "task_describe must advertise a status field"
+        );
+
+        // task_query over the wire with a real filter+sort payload → the
+        // arguments must deserialize (the serde-shape guard) and the result must
+        // be the uniform QueryResult shape. Read-only against an empty vault.
+        let resp = call(
+            3,
+            "task_query",
+            serde_json::json!({
+                "filters": [{ "field": "status", "op": "neq", "value": "done" }],
+                "sort": [{ "field": "due" }]
+            }),
+        )
+        .await
+        .expect("task_query");
+        let text = extract_jsonrpc(&resp.text().await.expect("body"))["result"]["content"][0]
+            ["text"]
+            .as_str()
+            .expect("query content text")
+            .to_string();
+        let result: serde_json::Value = serde_json::from_str(&text).expect("query json");
+        assert!(result["rows"].is_array(), "query result must carry a rows array");
+        assert!(result["match_count"].is_number(), "query result must carry match_count");
+    }
 }

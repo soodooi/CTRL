@@ -319,8 +319,8 @@ fn item_to_row(item: &TaskItem) -> Row {
 /// Map any incoming status word / checkbox onto the known lifecycle.
 fn normalize_status_word(raw: &str) -> String {
     match raw.trim().to_lowercase().as_str() {
-        STATUS_DOING | "/" | "doing" => STATUS_DOING,
-        STATUS_DONE | "x" | "done" | "complete" | "completed" => STATUS_DONE,
+        STATUS_DOING | "/" => STATUS_DOING,
+        STATUS_DONE | "x" | "complete" | "completed" => STATUS_DONE,
         _ => STATUS_TODO,
     }
     .to_string()
