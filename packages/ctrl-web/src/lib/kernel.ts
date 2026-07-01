@@ -362,6 +362,64 @@ export const querySmartTable = (
     limit: request.limit ?? null,
   });
 
+// ─── LifeOS tasks (ADR-002 §14 Task source, GOAL Phase 1) ───────────────────
+// Inline-checkbox tasks scanned across the vault, operated through the SAME
+// :17873 gate an external agent uses (task_describe/query/create/update).
+
+export interface TaskRow {
+  path: string;
+  line: string;
+  title: string;
+  status: string;
+  due: string;
+  tags: string;
+}
+export interface TaskQueryResult {
+  rows: TaskRow[];
+  match_count: number;
+}
+export interface TaskQueryRequest {
+  subdir?: string | null;
+  filters?: Array<{ field: string; op: string; value: string }>;
+  conjunction?: 'and' | 'or';
+  sort?: Array<{ field: string; desc?: boolean }>;
+  group_by?: string[];
+  limit?: number | null;
+}
+
+/** Query LifeOS tasks (open/done/due) through the shared kernel engine. */
+export const queryTasks = (request: TaskQueryRequest = {}): Promise<TaskQueryResult> =>
+  gateInvoke('task_query', {
+    subdir: request.subdir ?? null,
+    filters: request.filters ?? [],
+    conjunction: request.conjunction ?? 'and',
+    sort: request.sort ?? [],
+    group_by: request.group_by ?? [],
+    limit: request.limit ?? null,
+  });
+
+/** Create a task: append a `- [ ]` checkbox line (default: today's daily note). */
+export const createTask = (args: {
+  title: string;
+  due?: string | null;
+  tags?: string[];
+  note?: string | null;
+}): Promise<string> =>
+  gateInvoke('task_create', {
+    title: args.title,
+    due: args.due ?? null,
+    tags: args.tags ?? [],
+    note: args.note ?? null,
+  });
+
+/** Update one field of a task in place (status='done' completes it). */
+export const updateTask = (args: {
+  note: string;
+  line: number;
+  field: 'status' | 'due' | 'title' | 'tags';
+  value: string;
+}): Promise<string> => gateInvoke('task_update', { ...args });
+
 export const listMcpServers = (): Promise<string[]> => invoke('list_mcp_servers');
 
 /**

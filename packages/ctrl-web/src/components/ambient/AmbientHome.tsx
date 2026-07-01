@@ -88,6 +88,7 @@ import {
 } from '@/lib/feature-pack';
 import { NotesApp } from '@/components/notes/NotesApp';
 import { TablesPanel } from '@/components/tables/TablesPanel';
+import { TodayView } from '@/components/today/TodayView';
 import { CodingTerminal } from '@/components/coding/CodingTerminal';
 import { Sidebar, type SidebarSection } from './Sidebar';
 import { WorkspacePanel } from './WorkspacePanel';
@@ -163,6 +164,8 @@ export interface AmbientHomeProps {
   /** Feature pack to open in the scene panel alongside Irisy (null until a
    *  pack is selected). */
   packRequest: PackRequest | null;
+  /** Bumped to open the Today (LifeOS tasks) surface alongside Irisy. */
+  openTodayNonce: number;
   /** Bumped to open Notes alongside Irisy (output left, Irisy right). */
   openNotesNonce: number;
   /** Bumped to open the smart-table browser alongside Irisy (same scenePane). */
@@ -198,6 +201,7 @@ export function AmbientHome({
   onToggleDrawer,
   toolRequest,
   packRequest,
+  openTodayNonce,
   openNotesNonce,
   openTablesNonce,
   openCodingNonce,
@@ -229,7 +233,9 @@ export function AmbientHome({
   const [editing, setEditing] = useState(false);
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
-  const [scene, setScene] = useState<FeaturePack | 'notes' | 'tables' | 'coding' | null>(null);
+  const [scene, setScene] = useState<FeaturePack | 'today' | 'notes' | 'tables' | 'coding' | null>(
+    null,
+  );
   // The active Irisy role (ADR-003 §8.6): drives the persona shipped per turn.
   // Shown + switchable in the switcher above the chat box; switching it never
   // touches `messages` (conversation persists). Linked to the L1 scene below.
@@ -760,6 +766,10 @@ export function AmbientHome({
     if (packRequest) setScene(packRequest.pack);
   }, [packRequest]);
 
+  // Open the Today (LifeOS tasks) surface alongside Irisy when sidebar asks.
+  useEffect(() => {
+    if (openTodayNonce > 0) setScene('today');
+  }, [openTodayNonce]);
   // Open Notes alongside Irisy (output left, Irisy right) when sidebar asks.
   useEffect(() => {
     if (openNotesNonce > 0) setScene('notes');
@@ -1077,6 +1087,8 @@ export function AmbientHome({
   const contextLabel =
     view === 'discover'
       ? 'Discover'
+      : scene === 'today'
+      ? 'Today'
       : scene === 'notes'
       ? 'Notes'
       : scene === 'tables'
@@ -1199,6 +1211,18 @@ export function AmbientHome({
                       ✕
                     </button>
                     <Discover onInstalled={() => onView('discover')} styles={styles} />
+                  </div>
+                ) : scene === 'today' ? (
+                  <div className={styles.scenePane}>
+                    <button
+                      type="button"
+                      className={styles.sceneClose}
+                      onClick={() => setScene(null)}
+                      aria-label="Close Today"
+                    >
+                      ✕
+                    </button>
+                    <TodayView />
                   </div>
                 ) : scene === 'notes' ? (
                   <div className={styles.scenePane}>
