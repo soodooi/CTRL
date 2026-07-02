@@ -27,8 +27,8 @@ use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
-    ai_column, provider::LlmPrompt, query, runtime_sources, smart_table_index, tasks_source, vault,
-    vault_notes_source, vault_smart_table,
+    ai_column, ghostfolio_source, provider::LlmPrompt, query, runtime_sources, smart_table_index,
+    tasks_source, vault, vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
 use axum::body::Body;
@@ -169,6 +169,28 @@ pub struct TaskQueryArgs {
     /// Vault subdir the tasks live under (default `Tasks/`).
     #[serde(default)]
     pub subdir: Option<String>,
+    /// Field filters, combined per `conjunction`. Each `field` must exist.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group keys applied in order (first is the primary level).
+    #[serde(default)]
+    pub group_by: Vec<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// ghostfolio.query — a structured read over the Ghostfolio holdings §14 source
+/// (ADR-002 §7 feature pack + §14). Fill the parameter object; call
+/// `ghostfolio_describe` first to learn valid fields. No path — one portfolio.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GhostfolioQueryArgs {
     /// Field filters, combined per `conjunction`. Each `field` must exist.
     #[serde(default)]
     pub filters: Vec<query::Filter>,
@@ -1011,6 +1033,54 @@ impl KernelMcpRouter {
             "updated {} line {} field {}",
             args.note, args.line, args.field
         ))]))
+    }
+
+    /// ghostfolio.describe — the type layer for the Ghostfolio holdings source
+    /// (ADR-002 §7 feature pack, GOAL ctrl-ghostfolio). Same `describe` verb as
+    /// smart-table / notes / tasks — a self-hosted finance app lifted into the
+    /// uniform §14 contract. Call before ghostfolio_query.
+    #[tool(
+        description = "Describe the Ghostfolio portfolio holdings as a queryable RecordSource: fields (symbol/name/quantity/value/allocation/currency) and operators. Call before ghostfolio_query."
+    )]
+    async fn ghostfolio_describe(&self) -> Result<CallToolResult, McpError> {
+        let body = serde_json::to_string(&ghostfolio_source::describe()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// ghostfolio.query — structured read over the self-hosted Ghostfolio
+    /// portfolio (ADR-002 §7 + §14). Resolves the instance URL + token from the
+    /// credential store (never the LLM), fetches live holdings, and runs the
+    /// SAME shared kernel query engine — identical contract to smart_table.query.
+    #[tool(
+        description = "Query the Ghostfolio portfolio holdings by symbol/value/allocation with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live. Call ghostfolio_describe first."
+    )]
+    async fn ghostfolio_query(
+        &self,
+        Parameters(args): Parameters<GhostfolioQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let (base_url, token) = resolve_ghostfolio_creds().ok_or_else(|| {
+            McpError::invalid_params(
+                "ghostfolio not configured — set the instance URL + token (mcp:ctrl-ghostfolio:ghostfolio_url / :ghostfolio_token)",
+                None,
+            )
+        })?;
+        let source = ghostfolio_source::fetch(&base_url, &token)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let req = query::QueryRequest {
+            filters: args.filters,
+            conjunction: args.conjunction,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = source
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
     /// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4). Runs
@@ -2879,6 +2949,25 @@ fn vault_root() -> Result<std::path::PathBuf, McpError> {
         .ok_or_else(|| McpError::internal_error("vault root unresolved (HOME unset)", None))
 }
 
+/// Resolve the ctrl-ghostfolio instance URL + bearer token. Env
+/// (`CTRL_GHOSTFOLIO_URL` / `CTRL_GHOSTFOLIO_TOKEN`) overrides the credential
+/// store — lets tests + power users point at a specific instance without the
+/// keychain; otherwise reads the pack's stored secrets
+/// (`mcp:ctrl-ghostfolio:ghostfolio_url` / `:ghostfolio_token`). The token is
+/// resolved kernel-side and never crosses the LLM boundary (ADR-006 secrets).
+fn resolve_ghostfolio_creds() -> Option<(String, String)> {
+    let from_env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
+    let cred = |field: &str| {
+        crate::shell::credential_vault::get(&format!("mcp:ctrl-ghostfolio:{field}"))
+            .ok()
+            .flatten()
+            .filter(|v| !v.trim().is_empty())
+    };
+    let url = from_env("CTRL_GHOSTFOLIO_URL").or_else(|| cred("ghostfolio_url"))?;
+    let token = from_env("CTRL_GHOSTFOLIO_TOKEN").or_else(|| cred("ghostfolio_token"))?;
+    Some((url, token))
+}
+
 /// Inject computed relational columns (Lookup / Rollup) into a query's result
 /// rows (slice 4c). Cross-table orchestration: index the source + each Reference
 /// target table, materialize the edges, then fill each computed column by
@@ -4009,5 +4098,84 @@ mod tests {
         let result: serde_json::Value = serde_json::from_str(&text).expect("query json");
         assert!(result["rows"].is_array(), "query result must carry a rows array");
         assert!(result["match_count"].is_number(), "query result must carry match_count");
+    }
+
+    /// End-to-end proof that the ctrl-ghostfolio feature-pack's §14 tools are
+    /// reachable THROUGH the :17873 gate and are intent-scoped (surface only
+    /// under the `ghostfolio` intent — the visibility trim). `ghostfolio_describe`
+    /// needs no creds, so this is deterministic; the live `ghostfolio_query`
+    /// fetch against a real instance is bao's machine. GOAL ctrl-ghostfolio SC2.
+    #[tokio::test]
+    async fn ghostfolio_tools_reachable_and_scoped_over_the_wire() {
+        let data_dir = std::env::temp_dir().join("ctrl-test-mcp-ghostfolio");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
+        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let url = handle.url();
+        let token = handle.auth_token.as_ref().clone();
+        let client = reqwest::Client::new();
+
+        let init = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .body(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}"#,
+            )
+            .send()
+            .await
+            .expect("initialize");
+        let session_id = init
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .expect("session id");
+
+        // tools/list scoped to the `ghostfolio` intent → the pack's tools show,
+        // and an out-of-scope write tool (http_post) is hidden.
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id.clone())
+            .header(visibility::INTENT_HEADER, "ghostfolio")
+            .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
+            .send()
+            .await
+            .expect("tools/list");
+        let json = extract_jsonrpc(&resp.text().await.expect("body"));
+        let names: Vec<String> = json["result"]["tools"]
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|t| t["name"].as_str().map(str::to_string))
+            .collect();
+        assert!(names.iter().any(|n| n == "ghostfolio_describe"), "ghostfolio_describe reachable");
+        assert!(names.iter().any(|n| n == "ghostfolio_query"), "ghostfolio_query reachable");
+        assert!(!names.iter().any(|n| n == "http_post"), "out-of-scope tool hidden by intent trim");
+
+        // ghostfolio_describe over the wire → the §14 holdings type layer.
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id)
+            .header(visibility::INTENT_HEADER, "ghostfolio")
+            .body(r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ghostfolio_describe","arguments":{}}}"#)
+            .send()
+            .await
+            .expect("ghostfolio_describe");
+        let text = extract_jsonrpc(&resp.text().await.expect("body"))["result"]["content"][0]
+            ["text"]
+            .as_str()
+            .expect("describe text")
+            .to_string();
+        let describe: serde_json::Value = serde_json::from_str(&text).expect("describe json");
+        assert_eq!(describe["source_kind"], "record");
+        assert!(describe["fields"].as_array().unwrap().iter().any(|f| f["key"] == "symbol"));
     }
 }

@@ -22,6 +22,7 @@ use serde_json::Value;
 
 /// A queryable view over a Ghostfolio account's current holdings (the Record
 /// profile of the Ghostfolio source).
+#[derive(Debug)]
 pub struct GhostfolioSource {
     rows: Vec<Row>,
 }
@@ -281,5 +282,61 @@ mod tests {
     fn empty_or_garbage_body_is_empty_source() {
         assert_eq!(GhostfolioSource::from_json(&serde_json::json!({})).rows().len(), 0);
         assert_eq!(GhostfolioSource::from_json(&serde_json::json!("nope")).rows().len(), 0);
+    }
+
+    // End-to-end over real HTTP: a mock Ghostfolio instance → fetch() → §14 rows.
+    // Proves the full self-hosted-app → AI-native path (fetch → parse → query)
+    // without a real Ghostfolio (that's bao's machine). Loopback is fine — fetch
+    // is kernel-internal reqwest, not the egress-guarded http_get tool.
+    #[tokio::test]
+    async fn fetch_over_http_maps_holdings_to_rows() {
+        use axum::{routing::get, Json, Router};
+        let app = Router::new().route(
+            "/api/v1/portfolio/holdings",
+            get(|| async {
+                Json(serde_json::json!({ "holdings": [
+                    { "symbol": "AAPL", "name": "Apple", "quantity": 5,
+                      "valueInBaseCurrency": 1000, "allocationInPercentage": 80, "currency": "USD" },
+                    { "symbol": "BTC", "name": "Bitcoin", "quantity": 0.1,
+                      "valueInBaseCurrency": 250, "allocationInPercentage": 20, "currency": "USD" }
+                ]}))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let src = fetch(&format!("http://{addr}"), "test-token").await.unwrap();
+        assert_eq!(src.rows().len(), 2);
+        assert_eq!(src.rows()[0]["symbol"], "AAPL");
+        assert_eq!(src.rows()[0]["value"], "1000");
+
+        // A structured §14 query over the live-fetched holdings.
+        let req = QueryRequest {
+            filters: vec![Filter { field: "value".into(), op: Operator::Gt, value: "500".into() }],
+            ..Default::default()
+        };
+        let out = src.query(&req, now()).unwrap();
+        assert_eq!(out.match_count, 1);
+        assert_eq!(out.rows[0]["symbol"], "AAPL");
+    }
+
+    // A wrong bearer / down instance surfaces as a typed error, not a panic.
+    #[tokio::test]
+    async fn fetch_bad_status_is_error() {
+        use axum::{http::StatusCode, routing::get, Router};
+        let app = Router::new()
+            .route("/api/v1/portfolio/holdings", get(|| async { StatusCode::UNAUTHORIZED }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let err = fetch(&format!("http://{addr}"), "bad").await.unwrap_err();
+        assert!(matches!(err, GhostfolioError::Status(401)));
     }
 }

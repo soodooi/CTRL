@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 72,
+  "toolCount": 74,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -49,6 +49,127 @@
         "type": "object"
       },
       "name": "discover_skills"
+    },
+    {
+      "description": "Describe the Ghostfolio portfolio holdings as a queryable RecordSource: fields (symbol/name/quantity/value/allocation/currency) and operators. Call before ghostfolio_query.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "ghostfolio_describe"
+    },
+    {
+      "description": "Query the Ghostfolio portfolio holdings by symbol/value/allocation with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live. Call ghostfolio_describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "ghostfolio.query — a structured read over the Ghostfolio holdings §14 source\n(ADR-002 §7 feature pack + §14). Fill the parameter object; call\n`ghostfolio_describe` first to learn valid fields. No path — one portfolio.",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "description": "Field filters, combined per `conjunction`. Each `field` must exist.",
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order (first is the primary level).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "description": "Cap the number of returned rows (match_count is reported pre-limit).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sort": {
+            "default": [],
+            "description": "Multi-key sort (first key wins).",
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          }
+        },
+        "title": "GhostfolioQueryArgs",
+        "type": "object"
+      },
+      "name": "ghostfolio_query"
     },
     {
       "description": "HTTP GET request — fetch a URL and return status + body + headers",

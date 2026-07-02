@@ -45,6 +45,7 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
     "vault",
     "smart_table",
     "tasks",
+    "ghostfolio",
     "notes",
     "providers",
     "registry",
@@ -195,6 +196,7 @@ pub fn tool_domain(tool: &str) -> &'static str {
     const PREFIXES: &[(&str, &str)] = &[
         ("smart_table_", "smart_table"),
         ("task_", "tasks"),
+        ("ghostfolio_", "ghostfolio"),
         ("irisy_soul_", "memory"),
         ("vault_", "vault"),
         ("notes_", "notes"),
