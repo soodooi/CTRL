@@ -161,6 +161,9 @@ pub fn requires_review(tool_name: &str) -> bool {
         // `<x>_produce`) is a side-effecting write that must pass review, same as
         // vault.write (ADR-002 §14.9 produce = Write through the gate).
         "produce",
+        // Structure/schema writes — `smart_table_add_field` / `add_view` mutate
+        // the table's shape (a write). All current `*_add_*` tools are writes.
+        "add",
     ];
     // Read-ish tools that contain a mutating substring but are safe — keep a
     // tiny explicit exception list so the deny-by-verb default stays simple.
@@ -191,6 +194,10 @@ mod tests {
             "github_create_issue",
             "source_produce", // §14 generic connector write
             "mcp_pack_publish", // registry publish (has `publish`)
+            "smart_table_delete_row", // record delete
+            "smart_table_add_field", // schema write (add column)
+            "smart_table_delete_field", // schema write (drop column)
+            "smart_table_add_view", // structure write
         ] {
             assert!(requires_review(t), "{t} should require review");
         }

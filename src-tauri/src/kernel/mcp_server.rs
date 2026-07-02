@@ -170,6 +170,35 @@ pub struct SmartTableDeleteRowArgs {
     pub row_index: usize,
 }
 
+/// smart_table.add_field — produce a new column (ADR-002 §14; Bitable field-create
+/// parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableAddFieldArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Schema key for the new column (lowercase, unique).
+    pub key: String,
+    /// Human label.
+    pub label: String,
+    /// Cell type: text / number / date / checkbox / tags / select / url (+ the
+    /// render-level types the schema accepts, e.g. currency / percent).
+    #[serde(rename = "type")]
+    pub cell_type: String,
+    /// Options for a `select` / `tags` column.
+    #[serde(default)]
+    pub options: Option<Vec<String>>,
+}
+
+/// smart_table.delete_field — produce/drop a column (ADR-002 §14; Bitable
+/// field-delete parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableDeleteFieldArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Schema key of the column to drop.
+    pub key: String,
+}
+
 /// task.query — a structured read over the LifeOS Task RecordSource (ADR-002
 /// §14). Fill the parameter object; do NOT write a query string. Call
 /// `task_describe` first to learn valid fields. `subdir` scopes the task
@@ -960,6 +989,102 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(format!(
             "deleted row {} from {}",
             args.row_index, args.path
+        ))]))
+    }
+
+    /// smart_table.add_field — produce a new column (ADR-002 §14; Bitable
+    /// field-create parity). Appends the field to the frontmatter `schema` array
+    /// (preserving sibling items, incl. relational fields' metadata) + an empty
+    /// cell to every row. Schema write → audited + review-gated.
+    #[tool(
+        description = "Add a column to a smart table: key + label + type (text/number/date/checkbox/tags/select/url) + optional options for select/tags. Fails if the key already exists."
+    )]
+    async fn smart_table_add_field(
+        &self,
+        Parameters(args): Parameters<SmartTableAddFieldArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if table.has_field(&args.key) {
+            return Err(McpError::invalid_params(
+                format!("field '{}' already exists", args.key),
+                None,
+            ));
+        }
+        let cell_type = query::CellType::parse(&args.cell_type);
+        table.add_field(query::FieldSpec {
+            key: args.key.clone(),
+            label: args.label.clone(),
+            cell_type,
+            options: args.options.clone(),
+        });
+        // Append the schema item to the frontmatter (never rebuild — preserve
+        // every sibling, incl. relational flow-string items verbatim).
+        let mut frontmatter = entry.frontmatter.clone();
+        let mut item = serde_json::Map::new();
+        item.insert("key".into(), serde_json::json!(args.key));
+        item.insert("label".into(), serde_json::json!(args.label));
+        item.insert("type".into(), serde_json::json!(args.cell_type));
+        if let Some(opts) = &args.options {
+            item.insert("options".into(), serde_json::json!(opts));
+        }
+        match frontmatter.get_mut("schema").and_then(|v| v.as_array_mut()) {
+            Some(arr) => arr.push(serde_json::Value::Object(item)),
+            None => {
+                frontmatter
+                    .as_object_mut()
+                    .ok_or_else(|| McpError::internal_error("frontmatter not an object", None))?
+                    .insert("schema".into(), serde_json::json!([serde_json::Value::Object(item)]));
+            }
+        }
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "added field {} ({}) to {}",
+            args.key, args.cell_type, args.path
+        ))]))
+    }
+
+    /// smart_table.delete_field — produce/drop a column (ADR-002 §14; Bitable
+    /// field-delete parity). Removes the field from the frontmatter `schema` (by
+    /// key, both object + flow-string forms) and from every row. Schema write →
+    /// audited + review-gated.
+    #[tool(description = "Delete a column from a smart table by schema key (drops it from the schema + every row).")]
+    async fn smart_table_delete_field(
+        &self,
+        Parameters(args): Parameters<SmartTableDeleteFieldArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.delete_field(&args.key) {
+            return Err(McpError::invalid_params(
+                format!("no such field '{}'", args.key),
+                None,
+            ));
+        }
+        let mut frontmatter = entry.frontmatter.clone();
+        if let Some(arr) = frontmatter.get_mut("schema").and_then(|v| v.as_array_mut()) {
+            arr.retain(|it| {
+                vault_smart_table::schema_item_key(it).as_deref() != Some(args.key.as_str())
+            });
+        }
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "deleted field {} from {}",
+            args.key, args.path
         ))]))
     }
 

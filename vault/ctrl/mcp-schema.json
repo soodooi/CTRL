@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 80,
+  "toolCount": 82,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -977,6 +977,51 @@
       "name": "skill_read"
     },
     {
+      "description": "Add a column to a smart table: key + label + type (text/number/date/checkbox/tags/select/url) + optional options for select/tags. Fails if the key already exists.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.add_field — produce a new column (ADR-002 §14; Bitable field-create\nparity).",
+        "properties": {
+          "key": {
+            "description": "Schema key for the new column (lowercase, unique).",
+            "type": "string"
+          },
+          "label": {
+            "description": "Human label.",
+            "type": "string"
+          },
+          "options": {
+            "default": null,
+            "description": "Options for a `select` / `tags` column.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Cell type: text / number / date / checkbox / tags / select / url (+ the\nrender-level types the schema accepts, e.g. currency / percent).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "key",
+          "label",
+          "type"
+        ],
+        "title": "SmartTableAddFieldArgs",
+        "type": "object"
+      },
+      "name": "smart_table_add_field"
+    },
+    {
       "description": "Add a grid or kanban view to a smart table (persisted in frontmatter, not the table body). kanban requires group_by (a field key).",
       "inputSchema": {
         "$defs": {
@@ -1044,6 +1089,30 @@
         "type": "object"
       },
       "name": "smart_table_append_row"
+    },
+    {
+      "description": "Delete a column from a smart table by schema key (drops it from the schema + every row).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.delete_field — produce/drop a column (ADR-002 §14; Bitable\nfield-delete parity).",
+        "properties": {
+          "key": {
+            "description": "Schema key of the column to drop.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "key"
+        ],
+        "title": "SmartTableDeleteFieldArgs",
+        "type": "object"
+      },
+      "name": "smart_table_delete_field"
     },
     {
       "description": "Delete a row from a smart table by zero-based row index, then write it back.",

@@ -144,6 +144,45 @@ impl SmartTable {
         self.rows.remove(row_index);
         true
     }
+
+    /// True if a field (column) with this key exists.
+    pub fn has_field(&self, key: &str) -> bool {
+        self.fields.iter().any(|f| f.key == key)
+    }
+
+    /// Add a plain field (column) — Bitable field-create parity. Appends it to the
+    /// schema + an empty cell to every row (so `serialize_body` emits the column).
+    /// The gate tool also appends the matching item to the frontmatter schema.
+    pub fn add_field(&mut self, spec: FieldSpec) {
+        let key = spec.key.clone();
+        self.fields.push(spec);
+        for row in &mut self.rows {
+            row.entry(key.clone()).or_default();
+        }
+    }
+
+    /// Delete a field (column) by key — Bitable field-delete parity. Drops it from
+    /// the schema, its relational metadata, and every row. Returns false if there
+    /// is no such field.
+    pub fn delete_field(&mut self, key: &str) -> bool {
+        let before = self.fields.len();
+        self.fields.retain(|f| f.key != key);
+        if self.fields.len() == before {
+            return false;
+        }
+        for row in &mut self.rows {
+            row.remove(key);
+        }
+        self.relations.retain(|r| r.field_key != key);
+        true
+    }
+}
+
+/// Extract the `key` of a schema item (a JSON object OR an inline flow-mapping
+/// string) — lets a gate tool add/remove a field in the frontmatter `schema`
+/// array without losing sibling items (incl. relational fields' metadata).
+pub fn schema_item_key(item: &Value) -> Option<String> {
+    item_fields(item)?.get("key").cloned()
 }
 
 impl QuerySource for SmartTable {
@@ -927,6 +966,58 @@ mod tests {
         // Round-trips: re-parse the serialized body yields the same rows.
         let back = SmartTable::parse(&frontmatter(), &t.serialize_body());
         assert_eq!(back.rows.len(), before - 1);
+    }
+
+    #[test]
+    fn add_field_appends_column_and_empty_cells() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        let rows_before = t.rows.len();
+        assert!(!t.has_field("stage"));
+        t.add_field(FieldSpec {
+            key: "stage".into(),
+            label: "Stage".into(),
+            cell_type: CellType::Select,
+            options: Some(vec!["lead".into(), "won".into()]),
+        });
+        assert!(t.has_field("stage"));
+        // Every existing row got an empty cell for the new column.
+        assert_eq!(t.rows.len(), rows_before);
+        assert!(t.rows.iter().all(|r| r.get("stage").map(String::as_str) == Some("")));
+        // serialize_body now emits the new column (last, schema order).
+        assert!(t.fields.last().unwrap().key == "stage");
+    }
+
+    #[test]
+    fn delete_field_drops_column_and_preserves_unrelated_relations() {
+        // A table with a plain field + a relational (reference) field.
+        let fm = serde_json::json!({
+            "schema": [
+                { "key": "name", "label": "Name", "type": "text" },
+                "{ key: contact, label: Contact, type: reference, table: contacts.md, display: name }"
+            ]
+        });
+        let mut t = SmartTable::parse(&fm, "| name | contact |\n|---|---|\n| Acme | [[contacts/acme]] |\n");
+        assert!(t.has_field("name") && t.has_field("contact"));
+        assert_eq!(t.relations.len(), 1);
+        // Delete the PLAIN field — the relational field + its metadata survive.
+        assert!(t.delete_field("name"));
+        assert!(!t.has_field("name"));
+        assert!(t.rows.iter().all(|r| !r.contains_key("name")));
+        assert!(t.has_field("contact"));
+        assert_eq!(t.relations.len(), 1, "unrelated relation preserved");
+        // Deleting a relational field also drops its relation metadata.
+        assert!(t.delete_field("contact"));
+        assert_eq!(t.relations.len(), 0);
+        assert!(!t.delete_field("nope")); // no such field → false
+    }
+
+    #[test]
+    fn schema_item_key_reads_object_and_flow_string() {
+        let obj = serde_json::json!({ "key": "amount", "label": "Amount", "type": "number" });
+        assert_eq!(schema_item_key(&obj).as_deref(), Some("amount"));
+        let flow = serde_json::json!("{ key: contact, type: reference, table: c.md }");
+        assert_eq!(schema_item_key(&flow).as_deref(), Some("contact"));
+        assert_eq!(schema_item_key(&serde_json::json!(42)), None);
     }
 
     #[test]
