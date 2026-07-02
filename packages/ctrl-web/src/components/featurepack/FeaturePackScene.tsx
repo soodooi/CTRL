@@ -8,7 +8,9 @@
 // the scene renders/iterates independently of the kernel run_action wiring.
 
 import { useState, type ReactElement } from 'react';
+import { type PackConfigField } from '@/lib/feature-pack';
 import { ActionBar, type PackAction } from './ActionBar';
+import { PackConfigModal } from './PackConfigModal';
 import styles from './FeaturePackScene.module.css';
 
 export interface FeaturePack {
@@ -21,6 +23,9 @@ export interface FeaturePack {
    *  (manifest `knowledge_base`). When the assistant uses this pack, retrieval
    *  scopes here (bao 2026-06-25: stocks = assistant + Stocks/ + ghostfolio). */
   kbDir?: string;
+  /** Post-install config the pack needs (manifest `config_schema`) — drives the
+   *  Configure wizard; values land under `mcp:<id>:<key>` for the kernel. */
+  configFields?: PackConfigField[];
 }
 
 interface FeaturePackSceneProps {
@@ -35,6 +40,8 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
   const [output, setOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
+  const [showConfig, setShowConfig] = useState(false);
+  const configFields = pack.configFields ?? [];
 
   const run = async (actionId: string): Promise<void> => {
     setRunningId(actionId);
@@ -60,7 +67,26 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
           <span className={styles.name}>{pack.name}</span>
           {pack.summary != null && <span className={styles.summary}>{pack.summary}</span>}
         </div>
+        {configFields.length > 0 && (
+          <button
+            type="button"
+            className={styles.configBtn}
+            onClick={() => setShowConfig(true)}
+            title={`Configure ${pack.name}`}
+          >
+            Configure
+          </button>
+        )}
       </header>
+
+      {showConfig && (
+        <PackConfigModal
+          packId={pack.id}
+          packName={pack.name}
+          fields={configFields}
+          onClose={() => setShowConfig(false)}
+        />
+      )}
 
       <ActionBar actions={pack.actions} runningId={runningId} onRun={run} />
 

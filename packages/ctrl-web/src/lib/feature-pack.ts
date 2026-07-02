@@ -49,6 +49,8 @@ export async function loadInstalledPacks(): Promise<FeaturePack[]> {
         // Generic: ANY pack that declares knowledge_base gets a dedicated kb —
         // no per-pack code (bao 2026-06-25: systematic, not edit-per-pack).
         kbDir: m.knowledge_base,
+        // Generic: ANY pack declaring config_schema gets a Configure wizard.
+        configFields: packConfigFields(m as unknown as Record<string, unknown>),
       });
     } catch {
       // Skip an mcp whose manifest is unreadable — never break the list.
@@ -139,6 +141,41 @@ export interface SecretField {
   key: string;
   label: string;
   description?: string;
+}
+
+/** One field a pack asks the user to fill post-install (config_schema). */
+export interface PackConfigField {
+  key: string;
+  /** ConfigFieldKind — `secret` renders masked; `url`/`string`/… render text. */
+  kind: string;
+  label: string;
+  description?: string;
+  required: boolean;
+}
+
+/** ALL config fields a pack declares (not only secrets) — the config wizard
+ *  walks these; every value is stored under `mcp:<id>:<key>`, where the kernel
+ *  resolves a pack's creds (e.g. resolve_ghostfolio_creds reads url + token). */
+export function packConfigFields(manifest: Record<string, unknown>): PackConfigField[] {
+  const cs = manifest.config_schema as
+    | {
+        fields?: {
+          key: string;
+          kind: string;
+          label: string;
+          description?: string;
+          required?: boolean;
+        }[];
+      }
+    | undefined;
+  if (!cs?.fields) return [];
+  return cs.fields.map((f) => ({
+    key: f.key,
+    kind: f.kind,
+    label: f.label,
+    description: f.description,
+    required: f.required ?? true,
+  }));
 }
 
 /** Secret fields a pack declares (config_schema fields with kind: secret). */
