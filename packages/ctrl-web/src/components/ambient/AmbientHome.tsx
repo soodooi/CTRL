@@ -1272,6 +1272,9 @@ export function AmbientHome({
                       ✕
                     </button>
                     <FeaturePackScene
+                      // Key by pack id so switching packs fully resets scene
+                      // state (no stale records flash before the refetch).
+                      key={scene.id}
                       pack={scene}
                       onRunAction={(id) => runInstalledPackAction(scene.id, id)}
                       loadRecords={
