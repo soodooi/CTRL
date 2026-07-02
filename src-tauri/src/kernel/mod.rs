@@ -67,6 +67,11 @@ pub mod pack_provision;
 // generic runtime reproduces the hand-coded connector (ghostfolio = first
 // data-driven instance) so adding a connector is zero Rust (§7.4/§7.5).
 pub mod manifest_source;
+// Feature-pack evals (ADR-002 §7.4/§7.5; mcp-builder review+evals phase) — the
+// gate validates a brain-authored candidate manifest BEFORE install and returns
+// structured, self-correctable feedback (the quality step home-grown pipelines
+// skip). Pure over a parsed manifest, so the gate tool is a thin wrapper.
+pub mod pack_validate;
 // ADR-002 substrate §14 (LifeOS layer Phase 1, governing
 // `vault/ctrl/lifeos-layer-restructure.md`) — tasks as a §14 RecordSource:
 // one plain-markdown file per task (vim test), describe/query via the shared

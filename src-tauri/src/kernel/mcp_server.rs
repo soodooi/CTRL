@@ -194,6 +194,15 @@ pub struct McpPackProvisionArgs {
     pub mcp_id: String,
 }
 
+/// mcp_pack.validate — evaluate a brain-authored candidate manifest before
+/// install (mcp-builder review + evals). The brain generates the manifest with
+/// its own model, then validates here for structured, self-correctable feedback.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackValidateArgs {
+    /// The candidate feature-pack manifest to evaluate (a full manifest object).
+    pub manifest: serde_json::Value,
+}
+
 /// source.describe — the GENERIC §14 read type-layer over ANY installed
 /// connector that declares a `record_source` (ADR-002 §14.12). No per-connector
 /// tool; the source is addressed by `source_id`.
@@ -1157,6 +1166,23 @@ impl KernelMcpRouter {
             .await
             .map_err(|e| McpError::internal_error(e, None))?;
         Ok(CallToolResult::success(vec![Content::text(summary)]))
+    }
+
+    /// mcp_pack.validate — the evals gate a brain calls to check a candidate
+    /// manifest BEFORE install (mcp-builder review + evals; §7.4/§7.5). Returns a
+    /// structured report (ok + issues{field,severity,fix} + a positive
+    /// record_source describe eval) the authoring brain self-corrects from — the
+    /// quality step home-grown pipelines skip. Read-only: validates, never writes.
+    #[tool(
+        description = "Evaluate a candidate feature-pack manifest BEFORE install: checks id/version, that it declares actions[] or a §14 record_source, and that any record_source is coherent (parses, has fields + a read endpoint, describe resolves). Returns { ok, issues[{field,severity,fix}] } to self-correct. Call before mcp_pack_install."
+    )]
+    async fn mcp_pack_validate(
+        &self,
+        Parameters(args): Parameters<McpPackValidateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let report = crate::kernel::pack_validate::validate_manifest(&args.manifest);
+        let body = serde_json::to_string(&report).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
     /// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4). Runs

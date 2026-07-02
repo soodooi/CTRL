@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 76,
+  "toolCount": 77,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -429,6 +429,24 @@
         "type": "object"
       },
       "name": "mcp_pack_uninstall"
+    },
+    {
+      "description": "Evaluate a candidate feature-pack manifest BEFORE install: checks id/version, that it declares actions[] or a §14 record_source, and that any record_source is coherent (parses, has fields + a read endpoint, describe resolves). Returns { ok, issues[{field,severity,fix}] } to self-correct. Call before mcp_pack_install.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "mcp_pack.validate — evaluate a brain-authored candidate manifest before\ninstall (mcp-builder review + evals). The brain generates the manifest with\nits own model, then validates here for structured, self-correctable feedback.",
+        "properties": {
+          "manifest": {
+            "description": "The candidate feature-pack manifest to evaluate (a full manifest object)."
+          }
+        },
+        "required": [
+          "manifest"
+        ],
+        "title": "McpPackValidateArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_validate"
     },
     {
       "description": "Write a skill or asset file (e.g. skills/<name>/SKILL.md) into an installed feature pack",
