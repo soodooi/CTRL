@@ -225,6 +225,19 @@ export function provisionPack(mcpId: string): Promise<string> {
   return gateInvoke('mcp_pack_provision', { mcp_id: mcpId });
 }
 
+/** The reference a registry returns after publishing (what a peer discovers). */
+export interface PackPublishRef {
+  id: string;
+  namespace?: string;
+  url?: string;
+}
+
+/** Publish an installed pack to a registry/commons (share-and-be-shared, §7.6).
+ *  The gate evals it first (a broken pack is rejected, not published). */
+export function publishPack(mcpId: string, registry?: string): Promise<PackPublishRef> {
+  return gateInvoke('mcp_pack_publish', { mcp_id: mcpId, registry });
+}
+
 /** Store a pack secret in the keychain (account namespaced per the provision
  *  runner: mcp:<id>:<field>); the value never touches the LLM (decision 0004). */
 export async function storePackSecret(

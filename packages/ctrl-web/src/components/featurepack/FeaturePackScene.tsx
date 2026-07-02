@@ -13,7 +13,7 @@
 // kernel wiring — and unit-tests + visually verifies with mock data.
 
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
-import { type PackConfigField, provisionPack } from '@/lib/feature-pack';
+import { type PackConfigField, provisionPack, publishPack } from '@/lib/feature-pack';
 import { ActionBar, type PackAction } from './ActionBar';
 import { PackConfigModal } from './PackConfigModal';
 import { SourceDataView, type SourceData } from './SourceDataView';
@@ -69,6 +69,8 @@ export function FeaturePackScene({
   const [showConfig, setShowConfig] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
   const [records, setRecords] = useState<RecordsState>({ status: 'idle' });
+  const [publishing, setPublishing] = useState(false);
+  const [publishMsg, setPublishMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const configFields = pack.configFields ?? [];
   const showsRecords = pack.hasRecords === true && loadRecords != null;
 
@@ -103,6 +105,20 @@ export function FeaturePackScene({
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSettingUp(false);
+    }
+  };
+
+  const share = async (): Promise<void> => {
+    setPublishing(true);
+    setPublishMsg(null);
+    try {
+      const ref = await publishPack(pack.id);
+      const where = ref.url ?? [ref.namespace, ref.id].filter(Boolean).join('/');
+      setPublishMsg({ ok: true, text: `Published to ${where}` });
+    } catch (e) {
+      setPublishMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -143,6 +159,15 @@ export function FeaturePackScene({
             {records.status === 'loading' ? 'Refreshing…' : 'Refresh'}
           </button>
         )}
+        <button
+          type="button"
+          className={styles.configBtn}
+          onClick={() => void share()}
+          disabled={publishing}
+          title={`Publish ${pack.name} to the commons (share-and-be-shared)`}
+        >
+          {publishing ? 'Publishing…' : 'Share'}
+        </button>
         {pack.needsProvision ? (
           <button
             type="button"
@@ -164,6 +189,12 @@ export function FeaturePackScene({
           </button>
         ) : null}
       </header>
+
+      {publishMsg != null && (
+        <div className={publishMsg.ok ? styles.publishOk : styles.publishErr} role="status">
+          {publishMsg.text}
+        </div>
+      )}
 
       {showConfig && (
         <PackConfigModal

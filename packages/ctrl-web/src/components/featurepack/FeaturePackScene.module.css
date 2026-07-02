@@ -167,3 +167,19 @@
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
+
+/* ── publish status (share-and-be-shared, §7.6) ─────────────────────────── */
+.publishOk,
+.publishErr {
+  padding: 8px 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--border);
+}
+.publishOk {
+  color: var(--color-success, #2f9e44);
+  background: var(--primary-soft, transparent);
+}
+.publishErr {
+  color: var(--color-danger, var(--destructive));
+}
