@@ -20,9 +20,9 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **85** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **68** are bespoke tools (not section-14 shaped)
-- **29** writes (produce, through the review gate) / **56** reads
+- **86** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **69** are bespoke tools (not section-14 shaped)
+- **29** writes (produce, through the review gate) / **57** reads
 - **111** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
@@ -33,7 +33,7 @@ sources are not built.**
 
 Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE** = produce (gated) · read
 
-### smart-table (15 endpoints, 9 s14)
+### smart-table (16 endpoints, 9 s14)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
@@ -46,6 +46,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `smart_table_delete_field` | 2 | **WRITE** | bespoke | Delete a column from a smart table by schema key (drops it from the schema + every row). |  |
 | `smart_table_delete_row` | 2 | **WRITE** | bespoke | Delete a row from a smart table by zero-based row index, then write it back. |  |
 | `smart_table_describe` | 1 | read | s14 | Describe a smart table: its fields, types, and supported query operators. Call this before smart_table.query. |  |
+| `smart_table_produce` | 2 | read | bespoke | Write to a smart table with ONE unified produce verb. `op` is a tagged union: {kind:"set_cell",row,field,value} / {kind:"upsert_rows",rows:[{field:value}]} / {kind:"delete_rows",indices:[..]} / {kind:"add_field",key,label,type,options?,relation?} / {kind:"update_field",key,label?,type?,options?} / {kind:"delete_field",key}. relation = {kind:"reference"|"lookup"|"rollup",..} for relational columns. |  |
 | `smart_table_query` | 6 | read | s14 | Query a smart table with a structured filter/sort/group request (not a query string). Call smart_table.describe first to learn valid fields. |  |
 | `smart_table_run_ai_column` | 6 | **WRITE** | s14 | Run an AI field shortcut down a column: per row, classify/extract/summarize/translate/generate using {field} tokens, then write results into target_field. Cost-gated at 100 rows (pass confirm_over_gate=true to exceed). Skips already-filled cells unless force=true. |  |
 | `smart_table_run_ai_column_cancel` | 1 | **WRITE** | s14 | Cancel an in-flight AI-column job by id (already-written cells are kept). |  |

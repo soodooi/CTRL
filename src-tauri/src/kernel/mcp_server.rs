@@ -199,6 +199,20 @@ pub struct SmartTableDeleteFieldArgs {
     pub key: String,
 }
 
+/// smart_table.produce — the UNIFIED write verb (ADR-002 §14.13). One gate tool
+/// over a typed `ProduceOp` union (set_cell / upsert_rows / delete_rows /
+/// add_field / update_field / delete_field), dispatched to the table's
+/// `RecordSink`. This is the §14 "produce" verb made literal — the bespoke
+/// smart_table_* write tools collapse into this (they stay during the PWA
+/// transition, ghostfolio_*→source_* style).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableProduceArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// The write operation to apply (tagged by `kind`).
+    pub op: query::ProduceOp,
+}
+
 /// One field in a table-create request.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SmartTableFieldInput {
@@ -1131,6 +1145,48 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(format!(
             "deleted field {} from {}",
             args.key, args.path
+        ))]))
+    }
+
+    /// smart_table.produce — the UNIFIED §14 write verb (ADR-002 §14.13). Reads
+    /// fresh, dispatches one typed `ProduceOp` to the table's `RecordSink`, then
+    /// persists: body from `serialize_body`, and for schema-mutating ops the
+    /// frontmatter `schema` is rebuilt from `serialize_schema` (round-trips
+    /// relational metadata + options). Routed through the gate → audited +
+    /// review-gated like every produce. This one verb subsumes the bespoke
+    /// smart_table_* write tools (kept during the PWA transition).
+    #[tool(
+        description = "Write to a smart table with ONE unified produce verb. `op` is a tagged union: {kind:\"set_cell\",row,field,value} / {kind:\"upsert_rows\",rows:[{field:value}]} / {kind:\"delete_rows\",indices:[..]} / {kind:\"add_field\",key,label,type,options?,relation?} / {kind:\"update_field\",key,label?,type?,options?} / {kind:\"delete_field\",key}. relation = {kind:\"reference\"|\"lookup\"|\"rollup\",..} for relational columns."
+    )]
+    async fn smart_table_produce(
+        &self,
+        Parameters(args): Parameters<SmartTableProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use query::RecordSink;
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let summary = describe_produce_op(&args.op);
+        // Apply the op to the in-memory table (validates + mutates fields/rows).
+        table
+            .produce(args.op.clone())
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let new_body = table.serialize_body();
+        // Row-only ops leave frontmatter untouched. Schema-mutating ops patch the
+        // existing `schema` array IN PLACE (never full-regenerate) so untouched
+        // columns keep their render-level type sugar (currency/percent/…) + any
+        // extra keys — matching the bespoke smart_table_add_field/delete_field.
+        let mut frontmatter = entry.frontmatter.clone();
+        patch_schema_in_place(&mut frontmatter, &args.op, &table)?;
+        vault::write(&root, &args.path, &new_body, &frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "produce {} on {}",
+            summary, args.path
         ))]))
     }
 
@@ -3428,6 +3484,95 @@ fn vault_root() -> Result<std::path::PathBuf, McpError> {
         .ok_or_else(|| McpError::internal_error("vault root unresolved (HOME unset)", None))
 }
 
+/// A short human summary of a produce op for the gate's success message + audit
+/// trail (the op itself is structured; this is just the log line).
+fn describe_produce_op(op: &query::ProduceOp) -> String {
+    match op {
+        query::ProduceOp::SetCell { row, field, .. } => format!("set_cell row {row} field {field}"),
+        query::ProduceOp::UpsertRows { rows } => format!("upsert_rows ({} rows)", rows.len()),
+        query::ProduceOp::DeleteRows { indices } => {
+            format!("delete_rows ({} rows)", indices.len())
+        }
+        query::ProduceOp::AddField { key, .. } => format!("add_field {key}"),
+        query::ProduceOp::UpdateField { key, .. } => format!("update_field {key}"),
+        query::ProduceOp::DeleteField { key } => format!("delete_field {key}"),
+    }
+}
+
+/// Patch the frontmatter `schema:` array IN PLACE for a schema-mutating produce
+/// op (§14.13). Row-only ops are a no-op. In-place (vs full-regenerate) preserves
+/// render-level type sugar + extra keys on untouched columns; the just-mutated
+/// `table` supplies the fresh item shape for add / flow-string fallback.
+fn patch_schema_in_place(
+    frontmatter: &mut serde_json::Value,
+    op: &query::ProduceOp,
+    table: &vault_smart_table::SmartTable,
+) -> Result<(), McpError> {
+    let (key_is_schema, target_key) = match op {
+        query::ProduceOp::AddField { key, .. }
+        | query::ProduceOp::UpdateField { key, .. }
+        | query::ProduceOp::DeleteField { key } => (true, key.as_str()),
+        _ => (false, ""),
+    };
+    if !key_is_schema {
+        return Ok(());
+    }
+    let obj = frontmatter
+        .as_object_mut()
+        .ok_or_else(|| McpError::internal_error("frontmatter not an object", None))?;
+    let arr = obj
+        .entry("schema")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| McpError::internal_error("frontmatter `schema` not an array", None))?;
+    match op {
+        query::ProduceOp::AddField { key, .. } => {
+            // The field was just added to `table`; emit its item shape (base type
+            // is correct — a brand-new column has no prior render-level type).
+            if let Some(item) = table.serialize_field(key) {
+                arr.push(item);
+            }
+        }
+        query::ProduceOp::DeleteField { .. } => {
+            arr.retain(|it| {
+                vault_smart_table::schema_item_key(it).as_deref() != Some(target_key)
+            });
+        }
+        query::ProduceOp::UpdateField { key, label, cell_type, options } => {
+            let pos = arr.iter().position(|it| {
+                vault_smart_table::schema_item_key(it).as_deref() == Some(key.as_str())
+            });
+            match pos.and_then(|p| arr[p].as_object_mut()) {
+                // Object item → patch only the provided keys (render-level type of
+                // an UNchanged column survives).
+                Some(item) => {
+                    if let Some(l) = label {
+                        item.insert("label".into(), serde_json::json!(l));
+                    }
+                    if let Some(t) = cell_type {
+                        item.insert("type".into(), serde_json::to_value(t).unwrap_or(serde_json::Value::Null));
+                    }
+                    if let Some(o) = options {
+                        item.insert("options".into(), serde_json::json!(o));
+                    }
+                }
+                // Legacy flow-string item (or missing) → best-effort rebuild from
+                // the mutated table (order preserved when the slot exists).
+                None => {
+                    if let Some(fresh) = table.serialize_field(key) {
+                        match pos {
+                            Some(p) => arr[p] = fresh,
+                            None => arr.push(fresh),
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 /// Slugify a table title into a filename stem (ASCII lowercase alnum, `-`
 /// separated). Non-ASCII (e.g. CJK) titles collapse to `table` — the title stays
 /// verbatim in frontmatter; only the file stem is ASCII (mirrors the front end's
@@ -4294,7 +4439,103 @@ async fn http_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::query::RecordSink;
     use crate::kernel::runtime::KernelRuntime;
+
+    // ── §14.13 unified produce: in-place schema patch preserves rich per-item
+    // keys the kernel model doesn't know about (ai_prompt / color_op / system /
+    // min-max — written by the frontend serializeSmartTable). A schema-mutating
+    // produce must NOT strip these off untouched columns (markdown = truth).
+    fn rich_frontmatter() -> serde_json::Value {
+        serde_json::json!({
+            "schema": [
+                { "key": "id", "label": "ID", "type": "text", "system": true },
+                { "key": "amount", "label": "Amount", "type": "currency", "symbol": "$", "min": 0, "max": 1000 },
+                { "key": "stage", "label": "Stage", "type": "select", "options": ["new", "won"],
+                  "ai_op": "classify", "ai_prompt": "pick a stage", "color_op": "eq", "color_value": "won", "color_bg": "#0f0" }
+            ]
+        })
+    }
+
+    fn schema_item<'a>(fm: &'a serde_json::Value, key: &str) -> &'a serde_json::Map<String, serde_json::Value> {
+        fm["schema"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|it| it["key"] == key)
+            .unwrap_or_else(|| panic!("no schema item '{key}'"))
+            .as_object()
+            .unwrap()
+    }
+
+    #[test]
+    fn produce_add_field_preserves_sibling_rich_keys() {
+        let mut fm = rich_frontmatter();
+        let mut table = vault_smart_table::SmartTable::parse(&fm, "");
+        let op = query::ProduceOp::AddField {
+            key: "owner".into(),
+            label: "Owner".into(),
+            cell_type: query::CellType::Text,
+            options: None,
+            relation: None,
+        };
+        table.produce(op.clone()).unwrap();
+        patch_schema_in_place(&mut fm, &op, &table).unwrap();
+        // New column appended…
+        assert_eq!(schema_item(&fm, "owner")["type"], "text");
+        // …and EVERY rich key on siblings survives verbatim.
+        assert_eq!(schema_item(&fm, "amount")["type"], "currency");
+        assert_eq!(schema_item(&fm, "amount")["symbol"], "$");
+        assert_eq!(schema_item(&fm, "amount")["max"], 1000);
+        assert_eq!(schema_item(&fm, "stage")["ai_prompt"], "pick a stage");
+        assert_eq!(schema_item(&fm, "stage")["color_bg"], "#0f0");
+        assert_eq!(schema_item(&fm, "id")["system"], true);
+    }
+
+    #[test]
+    fn produce_update_field_patches_only_named_keys() {
+        let mut fm = rich_frontmatter();
+        let mut table = vault_smart_table::SmartTable::parse(&fm, "");
+        // Rename the amount column's label only — its currency/symbol/min/max stay.
+        let op = query::ProduceOp::UpdateField {
+            key: "amount".into(),
+            label: Some("Deal Size".into()),
+            cell_type: None,
+            options: None,
+        };
+        table.produce(op.clone()).unwrap();
+        patch_schema_in_place(&mut fm, &op, &table).unwrap();
+        let amt = schema_item(&fm, "amount");
+        assert_eq!(amt["label"], "Deal Size");
+        assert_eq!(amt["type"], "currency", "type sugar NOT downgraded");
+        assert_eq!(amt["symbol"], "$");
+        assert_eq!(amt["min"], 0);
+        assert_eq!(amt["max"], 1000);
+    }
+
+    #[test]
+    fn produce_delete_field_keeps_other_items_verbatim() {
+        let mut fm = rich_frontmatter();
+        let mut table = vault_smart_table::SmartTable::parse(&fm, "");
+        let op = query::ProduceOp::DeleteField { key: "stage".into() };
+        table.produce(op.clone()).unwrap();
+        patch_schema_in_place(&mut fm, &op, &table).unwrap();
+        let arr = fm["schema"].as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert!(arr.iter().all(|it| it["key"] != "stage"));
+        // The surviving currency column keeps its full config.
+        assert_eq!(schema_item(&fm, "amount")["symbol"], "$");
+    }
+
+    #[test]
+    fn produce_row_ops_leave_schema_untouched() {
+        let mut fm = rich_frontmatter();
+        let before = fm["schema"].clone();
+        let table = vault_smart_table::SmartTable::parse(&fm, "");
+        let op = query::ProduceOp::SetCell { row: 0, field: "amount".into(), value: "5".into() };
+        patch_schema_in_place(&mut fm, &op, &table).unwrap();
+        assert_eq!(fm["schema"], before, "row-only op must not touch the schema");
+    }
 
     #[test]
     fn parse_ddg_lite_extracts_real_web_results() {
