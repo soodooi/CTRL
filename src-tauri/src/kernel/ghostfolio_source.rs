@@ -81,20 +81,57 @@ pub fn describe() -> Describe {
     }
 }
 
-/// Fetch the current holdings from a self-hosted Ghostfolio instance and build a
-/// §14 source. `base_url` + `token` come from the credential store (never the
-/// LLM). Kernel-internal reqwest (not the caller-facing `http_get` tool, so it
-/// is not subject to the SSRF egress-guard that denies loopback — a self-hosted
-/// connector legitimately targets loopback/LAN).
-pub async fn fetch(base_url: &str, token: &str) -> Result<GhostfolioSource, GhostfolioError> {
-    let url = format!("{}/api/v1/portfolio/holdings", base_url.trim_end_matches('/'));
-    let client = reqwest::Client::builder()
+fn http_client() -> Result<reqwest::Client, GhostfolioError> {
+    reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
+        .map_err(|_| GhostfolioError::Http("could not build http client".into()))
+}
+
+/// Exchange a Ghostfolio **Security Token** for a short-lived Bearer JWT
+/// (`POST /api/v1/auth/anonymous` with `{ accessToken }` → `{ authToken }`).
+/// The Security Token is the account's identity credential (Settings → Security
+/// Token), NOT a usable API bearer — every call must first mint a JWT. Tolerant
+/// of the response key (`authToken` / `accessToken`).
+async fn authenticate(
+    client: &reqwest::Client,
+    base_url: &str,
+    security_token: &str,
+) -> Result<String, GhostfolioError> {
+    let url = format!("{}/api/v1/auth/anonymous", base_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({ "accessToken": security_token }))
+        .send()
+        .await
         .map_err(|_| GhostfolioError::Http("could not reach the ghostfolio instance".into()))?;
+    if !resp.status().is_success() {
+        return Err(GhostfolioError::Status(resp.status().as_u16()));
+    }
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| GhostfolioError::Parse(e.to_string()))?;
+    body.get("authToken")
+        .or_else(|| body.get("accessToken"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| GhostfolioError::Parse("auth response carried no token".into()))
+}
+
+/// Fetch the current holdings from a self-hosted Ghostfolio instance and build a
+/// §14 source. `security_token` comes from the credential store (never the LLM);
+/// it is first exchanged for a JWT, then the JWT authorizes the read. Kernel-
+/// internal reqwest (not the caller-facing `http_get` tool, so it is not subject
+/// to the SSRF egress-guard that denies loopback — a self-hosted connector
+/// legitimately targets loopback/LAN).
+pub async fn fetch(base_url: &str, security_token: &str) -> Result<GhostfolioSource, GhostfolioError> {
+    let client = http_client()?;
+    let jwt = authenticate(&client, base_url, security_token).await?;
+    let url = format!("{}/api/v1/portfolio/holdings", base_url.trim_end_matches('/'));
     let resp = client
         .get(&url)
-        .header("Authorization", format!("Bearer {token}"))
+        .header("Authorization", format!("Bearer {jwt}"))
         .send()
         .await
         .map_err(|_| GhostfolioError::Http("could not reach the ghostfolio instance".into()))?;
@@ -132,10 +169,9 @@ pub struct TransactionInput {
 /// `vault.write`). Returns the created order JSON. Token stays kernel-side.
 pub async fn add_transaction(
     base_url: &str,
-    token: &str,
+    security_token: &str,
     txn: &TransactionInput,
 ) -> Result<Value, GhostfolioError> {
-    let url = format!("{}/api/v1/order", base_url.trim_end_matches('/'));
     let mut body = serde_json::json!({
         "symbol": txn.symbol,
         "type": txn.kind.to_uppercase(),
@@ -149,13 +185,12 @@ pub async fn add_transaction(
     if let Some(acc) = &txn.account_id {
         body["accountId"] = Value::String(acc.clone());
     }
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|_| GhostfolioError::Http("could not reach the ghostfolio instance".into()))?;
+    let client = http_client()?;
+    let jwt = authenticate(&client, base_url, security_token).await?;
+    let url = format!("{}/api/v1/order", base_url.trim_end_matches('/'));
     let resp = client
         .post(&url)
-        .header("Authorization", format!("Bearer {token}"))
+        .header("Authorization", format!("Bearer {jwt}"))
         .json(&body)
         .send()
         .await
@@ -350,18 +385,28 @@ mod tests {
     // is kernel-internal reqwest, not the egress-guarded http_get tool.
     #[tokio::test]
     async fn fetch_over_http_maps_holdings_to_rows() {
-        use axum::{routing::get, Json, Router};
-        let app = Router::new().route(
-            "/api/v1/portfolio/holdings",
-            get(|| async {
-                Json(serde_json::json!({ "holdings": [
-                    { "symbol": "AAPL", "name": "Apple", "quantity": 5,
-                      "valueInBaseCurrency": 1000, "allocationInPercentage": 80, "currency": "USD" },
-                    { "symbol": "BTC", "name": "Bitcoin", "quantity": 0.1,
-                      "valueInBaseCurrency": 250, "allocationInPercentage": 20, "currency": "USD" }
-                ]}))
-            }),
-        );
+        use axum::{
+            routing::{get, post},
+            Json, Router,
+        };
+        // The mock speaks Ghostfolio's real auth flow: exchange the security
+        // token for a JWT, then serve holdings.
+        let app = Router::new()
+            .route(
+                "/api/v1/auth/anonymous",
+                post(|| async { Json(serde_json::json!({ "authToken": "jwt-xyz" })) }),
+            )
+            .route(
+                "/api/v1/portfolio/holdings",
+                get(|| async {
+                    Json(serde_json::json!({ "holdings": [
+                        { "symbol": "AAPL", "name": "Apple", "quantity": 5,
+                          "valueInBaseCurrency": 1000, "allocationInPercentage": 80, "currency": "USD" },
+                        { "symbol": "BTC", "name": "Bitcoin", "quantity": 0.1,
+                          "valueInBaseCurrency": 250, "allocationInPercentage": 20, "currency": "USD" }
+                    ]}))
+                }),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -384,12 +429,13 @@ mod tests {
         assert_eq!(out.rows[0]["symbol"], "AAPL");
     }
 
-    // A wrong bearer / down instance surfaces as a typed error, not a panic.
+    // A wrong security token surfaces as a typed error, not a panic — the auth
+    // exchange fails (401) before any data call.
     #[tokio::test]
     async fn fetch_bad_status_is_error() {
-        use axum::{http::StatusCode, routing::get, Router};
+        use axum::{http::StatusCode, routing::post, Router};
         let app = Router::new()
-            .route("/api/v1/portfolio/holdings", get(|| async { StatusCode::UNAUTHORIZED }));
+            .route("/api/v1/auth/anonymous", post(|| async { StatusCode::UNAUTHORIZED }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -406,10 +452,15 @@ mod tests {
     #[tokio::test]
     async fn add_transaction_posts_order_body() {
         use axum::{routing::post, Json, Router};
-        let app = Router::new().route(
-            "/api/v1/order",
-            post(|Json(body): Json<Value>| async move { Json(body) }),
-        );
+        let app = Router::new()
+            .route(
+                "/api/v1/auth/anonymous",
+                post(|| async { Json(serde_json::json!({ "authToken": "jwt-xyz" })) }),
+            )
+            .route(
+                "/api/v1/order",
+                post(|Json(body): Json<Value>| async move { Json(body) }),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
