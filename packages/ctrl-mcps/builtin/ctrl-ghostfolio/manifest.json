@@ -35,6 +35,32 @@
       "capture_bearer": "/authToken"
     }
   },
+  "record_source": {
+    "kind": "record",
+    "query": { "endpoint": "/api/v1/portfolio/holdings", "array_at": "holdings" },
+    "operators": ["eq", "neq", "contains", "gt", "lt", "gte", "lte"],
+    "fields": [
+      { "key": "symbol", "label": "Symbol", "type": "text", "from": ["symbol", "SymbolProfile.symbol"] },
+      { "key": "name", "label": "Name", "type": "text", "from": ["name", "SymbolProfile.name"] },
+      { "key": "quantity", "label": "Quantity", "type": "number", "from": ["quantity"] },
+      { "key": "value", "label": "Value", "type": "number", "from": ["valueInBaseCurrency", "value"] },
+      { "key": "allocation", "label": "Allocation %", "type": "number", "from": ["allocationInPercentage", "allocation"] },
+      { "key": "currency", "label": "Currency", "type": "text", "from": ["currency"] }
+    ],
+    "produce": {
+      "endpoint": "/api/v1/order",
+      "label": "Record a trade",
+      "body": [
+        { "field": "symbol", "from": "symbol" },
+        { "field": "type", "from": "kind", "transform": "uppercase" },
+        { "field": "quantity", "from": "quantity", "type": "number" },
+        { "field": "unitPrice", "from": "unitPrice", "type": "number" },
+        { "field": "currency", "from": "currency" },
+        { "field": "date", "from": "date" },
+        { "field": "dataSource", "from": "dataSource" }
+      ]
+    }
+  },
   "actions": [
     {
       "id": "view_holdings",

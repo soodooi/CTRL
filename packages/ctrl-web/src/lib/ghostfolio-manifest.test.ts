@@ -44,4 +44,27 @@ describe('ctrl-ghostfolio manifest', () => {
     expect(auth.token_exchange?.path).toBe('/api/v1/auth/anonymous');
     expect(auth.token_exchange?.capture_bearer).toBe('/authToken');
   });
+
+  it('declares a §14 record_source so the generic connector source is data, not code', () => {
+    // ADR-002 §14.12 — the connector's describe/query/produce is manifest DATA;
+    // the generic kernel source (manifest_source.rs) reads exactly this.
+    const rs = manifest.record_source as {
+      kind: string;
+      query: { endpoint: string; array_at: string };
+      fields: { key: string; from: string[] }[];
+      produce?: { endpoint: string; body: { field: string; from: string; transform?: string }[] };
+    };
+    expect(rs.kind).toBe('record');
+    expect(rs.query.endpoint).toBe('/api/v1/portfolio/holdings');
+    expect(rs.query.array_at).toBe('holdings');
+    // The nested-path fallback (SymbolProfile.symbol) is declared, not hand-coded.
+    const symbol = rs.fields.find((f) => f.key === 'symbol');
+    expect(symbol?.from).toContain('SymbolProfile.symbol');
+    // produce (write a trade) is a mapped body, incl. the uppercase transform.
+    expect(rs.produce?.endpoint).toBe('/api/v1/order');
+    const typeField = rs.produce?.body.find((b) => b.field === 'type');
+    expect(typeField?.transform).toBe('uppercase');
+    // Auth is NOT duplicated here — it reuses auth.token_exchange.
+    expect((rs as Record<string, unknown>).token_exchange).toBeUndefined();
+  });
 });

@@ -794,6 +794,69 @@ export const PackAuth = z
   .strict();
 export type PackAuth = z.infer<typeof PackAuth>;
 
+// ── §14 record source (ADR-002 §14.12) ─────────────────────────────────────
+// Declare a REST connector's describe/query/produce shape as DATA, so ONE
+// generic runtime source (kernel `manifest_source.rs`) makes it AI-native with
+// zero per-connector code (§7.4 manifest=data / §7.5 product-grade zero-code).
+// Auth is NOT re-declared here — the generic source reuses `auth.token_exchange`
+// above. Enum values mirror the kernel's fixed serde variants exactly, so a
+// bad operator/type in a manifest fails fast, not silently (§14.1).
+
+const CellTypeEnum = z.enum(['text', 'number', 'date', 'checkbox', 'tags', 'select', 'url']);
+const OperatorEnum = z.enum([
+  'eq', 'neq', 'contains', 'gt', 'lt', 'gte', 'lte', 'before', 'after', 'within', 'is', 'has_tag',
+]);
+
+/** One field of the source schema + how to read it from a response item. */
+const RecordFieldMap = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  type: CellTypeEnum,
+  /** JSON paths (dotted, nested-aware) tried in order; first present wins.
+   *  Empty → `[key]`. */
+  from: z.array(z.string()).default([]),
+});
+
+/** The read endpoint + where the row array lives in the response. */
+const RecordQuery = z.object({
+  endpoint: z.string().min(1),
+  method: z.enum(['GET', 'POST']).default('GET'),
+  /** Key or dotted path to the array; `""` = the response body IS the array. */
+  array_at: z.string().default(''),
+});
+
+/** One produce body-map entry: input[`from`] → request body[`field`]. */
+const RecordProduceField = z.object({
+  field: z.string().min(1),
+  from: z.string().min(1),
+  /** `uppercase` (string) — extend as connectors need. */
+  transform: z.enum(['uppercase']).optional(),
+  /** `number` → coerce a string input to a JSON number before sending. */
+  type: z.enum(['number']).optional(),
+});
+
+const RecordProduce = z.object({
+  endpoint: z.string().min(1),
+  method: z.enum(['GET', 'POST']).default('POST'),
+  /** High-signal label for the write ("Record a trade") — §14 produce is an
+   *  atom, not a raw endpoint mirror. */
+  label: z.string().default(''),
+  body: z.array(RecordProduceField).min(1),
+});
+
+export const RecordSource = z
+  .object({
+    kind: z.enum(['record', 'text', 'blob']).default('record'),
+    query: RecordQuery,
+    fields: z.array(RecordFieldMap).min(1),
+    /** Absent → the default operator set for the kind. */
+    operators: z.array(OperatorEnum).optional(),
+    /** The write verb — absent for read-only sources. */
+    produce: RecordProduce.optional(),
+  })
+  .strict();
+export type RecordSource = z.infer<typeof RecordSource>;
+
 // ── Top-level manifest ───────────────────────────────────────────────────
 
 export const McpManifest = z.object({
@@ -969,6 +1032,12 @@ export const McpManifest = z.object({
    *  back to the config_schema wizard. Design:
    *  feature-pack-provision-auth-engine.md. */
   auth: PackAuth.optional(),
+
+  /** §14 record source (ADR-002 §14.12) — declares this connector's
+   *  describe/query/produce shape as DATA so the generic kernel source
+   *  (`manifest_source.rs`) makes it AI-native with zero per-connector code.
+   *  Auth reuses `auth.token_exchange` above. v2 only. */
+  record_source: RecordSource.optional(),
 
   /** Dedicated knowledge base = a vault subpath this pack's data lives in
    *  (ADR-002 substrate § composition §7.4 v34). Generic: ANY pack declares
