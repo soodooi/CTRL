@@ -203,6 +203,17 @@ pub struct McpPackValidateArgs {
     pub manifest: serde_json::Value,
 }
 
+/// mcp_pack.publish — publish an installed pack to a registry/commons (§7.6
+/// share-and-be-shared). Evals first, then POSTs the manifest.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackPublishArgs {
+    /// Installed pack id (folder under `~/.ctrl/mcps/`).
+    pub mcp_id: String,
+    /// Registry endpoint override; otherwise the configured `ctrl:registry:publish_url`.
+    #[serde(default)]
+    pub registry: Option<String>,
+}
+
 /// source.describe — the GENERIC §14 read type-layer over ANY installed
 /// connector that declares a `record_source` (ADR-002 §14.12). No per-connector
 /// tool; the source is addressed by `source_id`.
@@ -1182,6 +1193,38 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let report = crate::kernel::pack_validate::validate_manifest(&args.manifest);
         let body = serde_json::to_string(&report).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp_pack.publish — the produce side of share-and-be-shared (§7.6): evals an
+    /// installed pack, then POSTs its manifest to a registry/commons. Never
+    /// publishes a broken pack (evals first). Registry URL + token resolve
+    /// kernel-side (never the LLM); returns the published reference.
+    #[tool(
+        description = "Publish an installed feature pack to a registry/commons (share-and-be-shared). Evals the manifest first (never publishes a pack with errors — returns the issues to fix), then POSTs it. Returns the published reference {id,namespace,url}."
+    )]
+    async fn mcp_pack_publish(
+        &self,
+        Parameters(args): Parameters<McpPackPublishArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let manifest = read_installed_manifest(&args.mcp_id)?;
+        let (url, token) = resolve_registry_creds(args.registry.as_deref()).ok_or_else(|| {
+            McpError::invalid_params(
+                "no registry configured — set ctrl:registry:publish_url (+ optional :publish_token)",
+                None,
+            )
+        })?;
+        let published = crate::kernel::pack_publish::publish(&manifest, &url, &token)
+            .await
+            .map_err(|e| match e {
+                crate::kernel::pack_publish::PublishError::Blocked(issues) => {
+                    // Surface the eval issues so the author fixes them (not published).
+                    let detail = serde_json::to_string(&issues).unwrap_or_default();
+                    McpError::invalid_params(format!("pack has eval errors, not published: {detail}"), None)
+                }
+                other => McpError::internal_error(other.to_string(), None),
+            })?;
+        let body = serde_json::to_string(&published).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -3069,6 +3112,28 @@ fn load_source_spec(source_id: &str) -> Result<manifest_source::RecordSourceSpec
     manifest_source::spec_from_manifest(&manifest).ok_or_else(|| {
         McpError::invalid_params(format!("{source_id} declares no record_source"), None)
     })
+}
+
+/// Registry creds for publish (§7.6): endpoint (call override → env → configured
+/// `ctrl:registry:publish_url`) + optional bearer token (`:publish_token`). Env
+/// override lets tests + power users target a specific registry. Kernel-side.
+fn resolve_registry_creds(registry_override: Option<&str>) -> Option<(String, String)> {
+    let from_env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
+    let cred = |field: &str| {
+        crate::shell::credential_vault::get(&format!("ctrl:registry:{field}"))
+            .ok()
+            .flatten()
+            .filter(|v| !v.trim().is_empty())
+    };
+    let url = registry_override
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| from_env("CTRL_REGISTRY_PUBLISH_URL"))
+        .or_else(|| cred("publish_url"))?;
+    let token = from_env("CTRL_REGISTRY_PUBLISH_TOKEN")
+        .or_else(|| cred("publish_token"))
+        .unwrap_or_default();
+    Some((url, token))
 }
 
 /// Generic connector creds: base URL (provision-set `_base_url` → configured

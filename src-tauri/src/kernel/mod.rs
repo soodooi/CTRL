@@ -72,6 +72,10 @@ pub mod manifest_source;
 // structured, self-correctable feedback (the quality step home-grown pipelines
 // skip). Pure over a parsed manifest, so the gate tool is a thin wrapper.
 pub mod pack_validate;
+// Feature-pack publish (ADR-002 §7.6) — the produce side of share-and-be-shared:
+// evals a pack then POSTs its manifest to a registry/commons. Kernel-internal
+// HTTPS, token kernel-side; the real public registry is the honest external gap.
+pub mod pack_publish;
 // ADR-002 substrate §14 (LifeOS layer Phase 1, governing
 // `vault/ctrl/lifeos-layer-restructure.md`) — tasks as a §14 RecordSource:
 // one plain-markdown file per task (vim test), describe/query via the shared

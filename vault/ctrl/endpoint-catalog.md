@@ -20,9 +20,9 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **77** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **60** are bespoke tools (not section-14 shaped)
-- **23** writes (produce, through the review gate) / **54** reads
+- **78** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **61** are bespoke tools (not section-14 shaped)
+- **24** writes (produce, through the review gate) / **54** reads
 - **111** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
@@ -129,7 +129,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `http_get` | 3 | read | bespoke | HTTP GET request — fetch a URL and return status + body + headers |  |
 | `http_post` | 4 | **WRITE** | bespoke | HTTP POST request — send JSON or text body and return status + body + headers |  |
 
-### mcp-bus (10 endpoints, all bespoke)
+### mcp-bus (11 endpoints, all bespoke)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
@@ -137,6 +137,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `mcp_pack_install` | 3 | read | bespoke | Install a feature pack from its manifest (+ optional server code) |  |
 | `mcp_pack_list` | 0 | read | bespoke | List installed feature packs (the user's own mcps), with id/name/actions |  |
 | `mcp_pack_provision` | 1 | read | bespoke | Provision + auto-authenticate an installed feature pack from its manifest (one-click, silent): bring up its declared service and run bootstrap auth. Idempotent. Requires a container runtime for service packs. |  |
+| `mcp_pack_publish` | 2 | **WRITE** | bespoke | Publish an installed feature pack to a registry/commons (share-and-be-shared). Evals the manifest first (never publishes a pack with errors — returns the issues to fix), then POSTs it. Returns the published reference {id,namespace,url}. |  |
 | `mcp_pack_run` | 2 | **WRITE** | bespoke | Run a feature pack action (executes its shell steps, returns stdout) |  |
 | `mcp_pack_uninstall` | 1 | read | bespoke | Uninstall a feature pack by id (removes it from the user's installed packs) |  |
 | `mcp_pack_validate` | 1 | read | bespoke | Evaluate a candidate feature-pack manifest BEFORE install: checks id/version, that it declares actions[] or a §14 record_source, and that any record_source is coherent (parses, has fields + a read endpoint, describe resolves). Returns { ok, issues[{field,severity,fix}] } to self-correct. Call before mcp_pack_install. |  |

@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 77,
+  "toolCount": 78,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -388,6 +388,33 @@
         "type": "object"
       },
       "name": "mcp_pack_provision"
+    },
+    {
+      "description": "Publish an installed feature pack to a registry/commons (share-and-be-shared). Evals the manifest first (never publishes a pack with errors — returns the issues to fix), then POSTs it. Returns the published reference {id,namespace,url}.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "mcp_pack.publish — publish an installed pack to a registry/commons (§7.6\nshare-and-be-shared). Evals first, then POSTs the manifest.",
+        "properties": {
+          "mcp_id": {
+            "description": "Installed pack id (folder under `~/.ctrl/mcps/`).",
+            "type": "string"
+          },
+          "registry": {
+            "default": null,
+            "description": "Registry endpoint override; otherwise the configured `ctrl:registry:publish_url`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "mcp_id"
+        ],
+        "title": "McpPackPublishArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_publish"
     },
     {
       "description": "Run a feature pack action (executes its shell steps, returns stdout)",
