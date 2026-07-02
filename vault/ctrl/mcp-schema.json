@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 82,
+  "toolCount": 83,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -1089,6 +1089,69 @@
         "type": "object"
       },
       "name": "smart_table_append_row"
+    },
+    {
+      "description": "Create a new smart table from a name + fields (each key/label/type[/options]). Seeds an empty table at tables/<slug>.md and returns its path. Then use smart_table_append_row to add data.",
+      "inputSchema": {
+        "$defs": {
+          "SmartTableFieldInput": {
+            "description": "One field in a table-create request.",
+            "properties": {
+              "key": {
+                "description": "Schema key (lowercase, unique within the table).",
+                "type": "string"
+              },
+              "label": {
+                "description": "Human label.",
+                "type": "string"
+              },
+              "options": {
+                "default": null,
+                "description": "Options for a `select` / `tags` column.",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "type": {
+                "description": "Cell type: text / number / date / checkbox / tags / select / url (+ the\nrender-level types the schema accepts).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "label",
+              "type"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.create — produce a new empty table (ADR-002 §14; Bitable App-create\nparity). Irisy builds a table from scratch.",
+        "properties": {
+          "fields": {
+            "description": "The columns (at least one).",
+            "items": {
+              "$ref": "#/$defs/SmartTableFieldInput"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Table title (kept verbatim in frontmatter; the file slug is derived).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fields"
+        ],
+        "title": "SmartTableCreateArgs",
+        "type": "object"
+      },
+      "name": "smart_table_create"
     },
     {
       "description": "Delete a column from a smart table by schema key (drops it from the schema + every row).",

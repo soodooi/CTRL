@@ -185,6 +185,31 @@ pub fn schema_item_key(item: &Value) -> Option<String> {
     item_fields(item)?.get("key").cloned()
 }
 
+/// Build the frontmatter + markdown body for a NEW empty table (Bitable App-create
+/// parity). Pure: `title` + fields → (`{title, schema}` frontmatter, a header +
+/// separator pipe table with no data rows). The gate tool resolves a free path
+/// and writes these. Round-trips through `parse` (0 rows).
+pub fn seed_table(title: &str, fields: &[FieldSpec]) -> (Value, String) {
+    let schema: Vec<Value> = fields
+        .iter()
+        .map(|f| {
+            let mut item = serde_json::Map::new();
+            item.insert("key".into(), Value::String(f.key.clone()));
+            item.insert("label".into(), Value::String(f.label.clone()));
+            item.insert("type".into(), serde_json::to_value(f.cell_type).unwrap_or(Value::Null));
+            if let Some(opts) = &f.options {
+                item.insert("options".into(), serde_json::json!(opts));
+            }
+            Value::Object(item)
+        })
+        .collect();
+    let frontmatter = serde_json::json!({ "title": title, "schema": schema });
+    let header = fields.iter().map(|f| f.label.as_str()).collect::<Vec<_>>().join(" | ");
+    let sep = fields.iter().map(|_| "---").collect::<Vec<_>>().join("|");
+    let body = format!("| {header} |\n|{sep}|\n");
+    (frontmatter, body)
+}
+
 impl QuerySource for SmartTable {
     fn describe(&self) -> Describe {
         Describe {
@@ -1009,6 +1034,23 @@ mod tests {
         assert!(t.delete_field("contact"));
         assert_eq!(t.relations.len(), 0);
         assert!(!t.delete_field("nope")); // no such field → false
+    }
+
+    #[test]
+    fn seed_table_round_trips_to_empty_table_with_schema() {
+        let fields = vec![
+            FieldSpec { key: "name".into(), label: "Name".into(), cell_type: CellType::Text, options: None },
+            FieldSpec { key: "amount".into(), label: "Amount".into(), cell_type: CellType::Number, options: None },
+        ];
+        let (fm, body) = seed_table("My CRM", &fields);
+        assert_eq!(fm["title"], "My CRM");
+        assert_eq!(fm["schema"].as_array().unwrap().len(), 2);
+        assert_eq!(fm["schema"][1]["type"], "number");
+        // Parse the seed back: same fields, zero data rows.
+        let t = SmartTable::parse(&fm, &body);
+        assert_eq!(t.fields.len(), 2);
+        assert!(t.has_field("name") && t.has_field("amount"));
+        assert_eq!(t.rows.len(), 0);
     }
 
     #[test]

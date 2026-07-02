@@ -199,6 +199,32 @@ pub struct SmartTableDeleteFieldArgs {
     pub key: String,
 }
 
+/// One field in a table-create request.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableFieldInput {
+    /// Schema key (lowercase, unique within the table).
+    pub key: String,
+    /// Human label.
+    pub label: String,
+    /// Cell type: text / number / date / checkbox / tags / select / url (+ the
+    /// render-level types the schema accepts).
+    #[serde(rename = "type")]
+    pub cell_type: String,
+    /// Options for a `select` / `tags` column.
+    #[serde(default)]
+    pub options: Option<Vec<String>>,
+}
+
+/// smart_table.create — produce a new empty table (ADR-002 §14; Bitable App-create
+/// parity). Irisy builds a table from scratch.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableCreateArgs {
+    /// Table title (kept verbatim in frontmatter; the file slug is derived).
+    pub name: String,
+    /// The columns (at least one).
+    pub fields: Vec<SmartTableFieldInput>,
+}
+
 /// task.query — a structured read over the LifeOS Task RecordSource (ADR-002
 /// §14). Fill the parameter object; do NOT write a query string. Call
 /// `task_describe` first to learn valid fields. `subdir` scopes the task
@@ -1086,6 +1112,42 @@ impl KernelMcpRouter {
             "deleted field {} from {}",
             args.key, args.path
         ))]))
+    }
+
+    /// smart_table.create — produce a new empty table (ADR-002 §14; Bitable
+    /// App-create parity). Seeds `tables/<slug>.md` from a name + fields so Irisy
+    /// can build a table from scratch. `create` verb → audited + review-gated.
+    #[tool(
+        description = "Create a new smart table from a name + fields (each key/label/type[/options]). Seeds an empty table at tables/<slug>.md and returns its path. Then use smart_table_append_row to add data."
+    )]
+    async fn smart_table_create(
+        &self,
+        Parameters(args): Parameters<SmartTableCreateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if args.fields.is_empty() {
+            return Err(McpError::invalid_params("a table needs at least one field", None));
+        }
+        let root = vault_root()?;
+        let fields: Vec<query::FieldSpec> = args
+            .fields
+            .iter()
+            .map(|f| query::FieldSpec {
+                key: f.key.clone(),
+                label: f.label.clone(),
+                cell_type: query::CellType::parse(&f.cell_type),
+                options: f.options.clone(),
+            })
+            .collect();
+        let (frontmatter, body) = vault_smart_table::seed_table(&args.name, &fields);
+        let path = unique_table_path(&root, &slugify(&args.name));
+        let lock = self.vault_write_lock(&path).await;
+        let _write_guard = lock.lock().await;
+        vault::write(&root, &path, &body, &frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            let table = vault_smart_table::SmartTable::parse(&frontmatter, &body);
+            table.reindex_into(idx, &path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!("created table {path}"))]))
     }
 
     /// notes.describe — the knowledge base's type layer (ADR-002 §14). Same
@@ -3296,6 +3358,39 @@ fn extract_bearer(headers: &HeaderMap) -> Option<String> {
 fn vault_root() -> Result<std::path::PathBuf, McpError> {
     vault::default_vault_root()
         .ok_or_else(|| McpError::internal_error("vault root unresolved (HOME unset)", None))
+}
+
+/// Slugify a table title into a filename stem (ASCII lowercase alnum, `-`
+/// separated). Non-ASCII (e.g. CJK) titles collapse to `table` — the title stays
+/// verbatim in frontmatter; only the file stem is ASCII (mirrors the front end's
+/// `createSmartTable`).
+fn slugify(name: &str) -> String {
+    let slug = name
+        .to_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if slug.is_empty() {
+        "table".to_string()
+    } else {
+        slug
+    }
+}
+
+/// A free `tables/<slug>.md` path (never overwrite an existing table — append a
+/// counter, like the front end's `uniqueTablePath`).
+fn unique_table_path(root: &std::path::Path, slug: &str) -> String {
+    if !root.join(format!("tables/{slug}.md")).exists() {
+        return format!("tables/{slug}.md");
+    }
+    for n in 2..10_000 {
+        let candidate = format!("tables/{slug}-{n}.md");
+        if !root.join(&candidate).exists() {
+            return candidate;
+        }
+    }
+    format!("tables/{slug}-{}.md", std::process::id())
 }
 
 

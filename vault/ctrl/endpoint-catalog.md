@@ -20,9 +20,9 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **82** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **65** are bespoke tools (not section-14 shaped)
-- **26** writes (produce, through the review gate) / **56** reads
+- **83** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **66** are bespoke tools (not section-14 shaped)
+- **27** writes (produce, through the review gate) / **56** reads
 - **111** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
@@ -33,13 +33,14 @@ sources are not built.**
 
 Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE** = produce (gated) · read
 
-### smart-table (12 endpoints, 9 s14)
+### smart-table (13 endpoints, 9 s14)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
 | `smart_table_add_field` | 5 | read | bespoke | Add a column to a smart table: key + label + type (text/number/date/checkbox/tags/select/url) + optional options for select/tags. Fails if the key already exists. |  |
 | `smart_table_add_view` | 3 | read | s14 | Add a grid or kanban view to a smart table (persisted in frontmatter, not the table body). kanban requires group_by (a field key). |  |
 | `smart_table_append_row` | 2 | **WRITE** | s14 | Append a row to a smart table (values keyed by field key). |  |
+| `smart_table_create` | 2 | **WRITE** | bespoke | Create a new smart table from a name + fields (each key/label/type[/options]). Seeds an empty table at tables/<slug>.md and returns its path. Then use smart_table_append_row to add data. |  |
 | `smart_table_delete_field` | 2 | **WRITE** | bespoke | Delete a column from a smart table by schema key (drops it from the schema + every row). |  |
 | `smart_table_delete_row` | 2 | **WRITE** | bespoke | Delete a row from a smart table by zero-based row index, then write it back. |  |
 | `smart_table_describe` | 1 | read | s14 | Describe a smart table: its fields, types, and supported query operators. Call this before smart_table.query. |  |
