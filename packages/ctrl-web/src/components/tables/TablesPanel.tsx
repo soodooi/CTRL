@@ -11,7 +11,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactElement } from 'react';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
-import { createSmartTable, importCsv, listSmartTables, TEMPLATES } from '@/lib/smart-tables';
+import {
+  createSmartTable,
+  exportTableCsv,
+  importCsv,
+  listSmartTables,
+  TEMPLATES,
+} from '@/lib/smart-tables';
 import styles from './TablesPanel.module.css';
 
 interface TablesPanelProps {
@@ -58,6 +64,12 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
     setSelected(path);
   };
 
+  const onExport = async (): Promise<void> => {
+    if (!selected) return;
+    const title = tables?.find((t) => t.path === selected)?.title ?? 'table';
+    await exportTableCsv(selected, title);
+  };
+
   if (collapsed) {
     return (
       <div className={styles.page} data-collapsed="true">
@@ -101,6 +113,16 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
                 }}
               />
             </label>
+            <button
+              type="button"
+              className={styles.ghostBtn}
+              onClick={() => void onExport()}
+              disabled={!selected}
+              title={selected ? 'Export the open table as CSV' : 'Open a table to export it'}
+              data-testid="export-csv"
+            >
+              Export
+            </button>
           </span>
           <button
             type="button"

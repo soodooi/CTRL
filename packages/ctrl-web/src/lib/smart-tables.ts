@@ -3,9 +3,21 @@
 // `schema:` block; this lists those files for the /tables browse page and seeds
 // new ones.
 
-import { vaultList, vaultRead, vaultWrite } from '@/lib/kernel';
+import {
+  vaultList,
+  vaultRead,
+  vaultWrite,
+  describeSmartTable,
+  querySmartTable,
+} from '@/lib/kernel';
 import { columnKeyFromLabel } from '@/lib/smart-table';
 import { isSmartTableFrontmatter } from '@/modules/smart-table';
+import { parseCsv, toCsv } from './smart-table-csv';
+
+// Re-export the pure CSV codec so existing `import { parseCsv } from smart-tables`
+// call sites keep working (the codec moved to smart-table-csv.ts to unit-test it
+// without pulling the kernel/alias graph).
+export { parseCsv, toCsv } from './smart-table-csv';
 
 export interface SmartTableEntry {
   path: string;
@@ -137,45 +149,33 @@ export const createSmartTable = async (rawTitle: string, templateKey = 'blank'):
   return path;
 };
 
-/** Minimal RFC4180-ish CSV parser: handles quoted fields, escaped quotes,
- *  and \r\n. Drops fully blank rows. */
-export const parseCsv = (text: string): string[][] => {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cur = '';
-  let quoted = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const c = text[i];
-    if (quoted) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          cur += '"';
-          i += 1;
-        } else {
-          quoted = false;
-        }
-      } else {
-        cur += c;
-      }
-    } else if (c === '"') {
-      quoted = true;
-    } else if (c === ',') {
-      row.push(cur);
-      cur = '';
-    } else if (c === '\n') {
-      row.push(cur);
-      rows.push(row);
-      row = [];
-      cur = '';
-    } else if (c !== '\r') {
-      cur += c;
-    }
-  }
-  if (cur !== '' || row.length > 0) {
-    row.push(cur);
-    rows.push(row);
-  }
-  return rows.filter((r) => r.some((cell) => cell.trim() !== ''));
+/** Trigger a browser download of a text blob — the local-first "export" (mirrors
+ *  AmbientHome's artifact download). */
+const downloadTextFile = (filename: string, text: string, mime: string): void => {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+/** Export a smart table as a downloaded CSV (Grist/Bitable export parity): describe
+ *  (labels + field order) + query (all rows, incl. computed relational columns)
+ *  through the :17873 gate, serialize, download. The plain-text `.md` stays the
+ *  real truth (vim test) — this is a convenience snapshot. */
+export const exportTableCsv = async (path: string, title: string): Promise<void> => {
+  const [describe, result] = await Promise.all([
+    describeSmartTable(path),
+    querySmartTable(path, {}),
+  ]);
+  const headers = describe.fields.map((f) => f.label || f.key);
+  const rows = result.rows.map((r) => describe.fields.map((f) => r[f.key] ?? ''));
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'table';
+  downloadTextFile(`${slug}.csv`, toCsv(headers, rows), 'text/csv;charset=utf-8');
 };
 
 /** Import a CSV string as a new smart table (header row -> text schema). */
