@@ -3,7 +3,7 @@ title: 飞书 (Lark) MCP 现状核实 — 带源
 kind: reference
 created_at: 2026-06-23
 author: deep-research (101 agent / 18 源 / 25 断言 3 票对抗验证 / 22 确认 3 驳回)
-serves: 智能表格对标飞书 Bitable + 飞书作 sync provider (connector) + 能力市场 seam ⑤
+serves: 智能表格对标飞书 Bitable (parity 参照) + 可选单向 sync-out mirror 的写通道参照 (次要)。【纠正 2026-07-02:飞书 NOT 作 connect 目标 —— 见顶部纠正块】
 related:
   - "[[GOAL]]"
   - 010-communication.md   # seam ⑤ 第三方 app = MCP
@@ -12,11 +12,15 @@ related:
 
 # 飞书 MCP 现状核实(2026-06,带源)
 
+> **⚠️ 定性纠正 2026-07-02(bao「我们是飞书而非集成飞书吧?」)—— governing,凌驾下文旧框。**
+> 本文旧框把飞书当「CTRL 要挂载的 connector / 后端」= **错**。**CTRL 是**本地 / AI-native / 数据主权版的飞书(原生 Smart-table = Bitable,Notes = docs);飞书是 CTRL 要**替代其角色**的云端 incumbent,**不是 connect 目标**——你不集成你要替代的东西(违 Ctrl-唯一入口 + 不嵌第三方 app + 数据主权;根因 memory `feedback-ctrl-is-feishu-not-integrate-feishu` + `feedback-jump-to-industry-default-not-ctrl-moat`)。
+> **本文下文仍有价值,但角色变两个**:① **Bitable parity 参照** —— 飞书 Bitable 的字段类型 / 读写端点 / batch 是原生 Smart-table 要对标做到的能力清单;② **可选单向 sync-out mirror 的写通道参照(次要、晚做)** —— 若日后要把本地 Smart-table(=truth)镜像写回真飞书给还在飞书上的同事看,官方 MCP 是现成写通道。**凡下文说「挂飞书当 connector / 飞书是后端」一律读作 retracted。**
+
 > 时效:核心事实截至 2026-06。官方 server 为 **Beta**,最新 release **v0.5.1 (2025-08-06)**,能力面/preset 名可能随后续 release 变,接入前复核 presets.md + README 最新版。
 
 ## 一句话
 
-**飞书有官方 MCP server,且生产可用、local-first 友好、Bitable 全读写** —— CTRL 可零自研把它挂 `:17873` gate 当 connector。社区第三方实现全是玩具,别用。飞书没有 Claude-Code 式 agent CLI(只有 MCP server + API CLI + SDK),**这反向印证 CTRL 的定位:CTRL 是 AI 前端/brain 层,飞书只是后端/connector**。
+**飞书有官方 MCP server,生产可用、local-first 友好、Bitable 全读写** —— 事实核实无误。**但**(纠正 2026-07-02)这**不**意味「CTRL 挂它当 connector」:**CTRL 就是本地飞书**(原生 Smart-table = Bitable),飞书是被替代的 incumbent。官方 MCP 的用途降为 ① Bitable parity 参照 + ② 可选 sync-out mirror 写通道(次要)。飞书没有 Claude-Code 式 agent CLI —— 这印证 CTRL 定位:**CTRL 是本地 AI 前端 + 替代飞书那层,不是飞书的客户**。
 
 ## 核实结论
 

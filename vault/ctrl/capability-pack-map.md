@@ -25,7 +25,7 @@ CTRL 的三层能力是三种不同的东西,实现主体不同。**术语校准
 |---|---|---|---|---|---|
 | **① 原生能力模块** | 按 Ctrl→intent 浮现的主能力,各对标一个成熟单点 | ✅ **产品级功能包** | **固定 4 个**:**Notes/PKM**(Obsidian,base 必含)· Coding(Codex terminal)· Smart-table(飞书 Bitable)· 远程桌面(ToDesk) | **CTRL 自建** | master-plan §二·五 B |
 | **② 内置工具 mcps** | 端侧原子工具(Top 15) | ❌ **工具/配料,非功能包** | **固定 ~15 个**:Clipboard/OCR/Translate/Text/Chat(P0)· 窗口/PDF/LaTeX/智识/屏幕录(P1)· Snippet/Code/Email/会议/同步 | **CTRL 自建** | CLAUDE.md mcp-llm-reference |
-| **③ 外部系统 connector** | 把外部业务系统(飞书/CRM/ERP/…)包成 MCP 接进来 | ✅ **产品级功能包** | **故意无固定清单(长尾开放)** | **Irisy 创作流造 + 第三方造**(非 dev 手写) | 本文 + marketplace plan |
+| **③ 外部系统 connector** | 把 **OPC 自托管开源软件**(CRM/ERP/财务/…,用户自己跑的)包成能力接进来。**注:非飞书这类云 incumbent —— 那些 CTRL 原生替代(见 ① Smart-table=Bitable),不 connect**(纠正 2026-07-02) | ✅ **产品级功能包** | **故意无固定清单(长尾开放)** | **Irisy 创作流造 + 第三方造**(非 dev 手写) | 本文 + marketplace plan |
 
 **架构铁律(CLAUDE.md「What CTRL is NOT」):CTRL 不建 ③ 的长尾。** 「100+ 长尾 platform adapter → 给创作者自己接」。CTRL 只做 **substrate(gate / projector / manifest / 4 块安全)+ 能力市场**,让第三方造、用户一键装。
 
@@ -108,14 +108,17 @@ CTRL 的三层能力是三种不同的东西,实现主体不同。**术语校准
 
 ## 种子优先级(claude 提案,bao 可否决)
 
-### 🥇 Tier 1 — 现在种(2 个,一快一深)— **bao 钦定 2026-06-23,由 Irisy 创作流做**
+> **⚠️ 纠正 2026-07-02(bao「我们是飞书而非集成飞书吧?」):飞书从 Tier-1 connector 移除。** CTRL **是**本地 / AI-native / 数据主权版的飞书(原生 Smart-table = Bitable,Notes = docs)—— 飞书是 CTRL 要**替代其角色**的云端 incumbent,**不是要 connect 的目标**;你不去集成你要替代的东西(违 Ctrl-唯一入口 + 不嵌第三方 app + 数据主权)。**连接目标 = OPC 自己自托管的产品**(Ghostfolio/Twenty/ERPNext,用户自己跑的开源软件)。飞书唯一残留角色 = **可选单向 sync-out mirror**(本地 Smart-table = truth → 飞书 = mirror,给同事还在飞书上的人互通),次要、晚做、不是种子。根因 + 详见 memory `feedback-ctrl-is-feishu-not-integrate-feishu`。**下方原飞书行 = 错框,留删除线作 provenance。**
+
+### 🥇 Tier 1 — 现在种 — **纠正后(2026-07-02):Ghostfolio(已落地种子)+ Twenty(下一个)**
 
 | connector | 现成度 | 数据主权 | OPC 痛感 | 滩头 | Irisy 创作流怎么造 | 拍它的理由 |
 |---|---|---|---|---|---|---|
-| **飞书 / Lark**(Bitable + IM + docs) | ✅ **官方 MCP 现成**(`@larksuiteoapi/lark-mcp`,Bitable 全读写) | ⚠️ SaaS(本地 vault=truth,飞书=mirror) | 高(国内 OPC 日用) | ✅ 放大 **Smart-table beachhead**(SC8) | **source.type=mcp**:Irisy 挂现成官方 MCP(不生成 server.ts),最轻 | **最快**:挂现成官方 MCP + 直接喂智能表格 ↔ Bitable 双向 sync + 现成市场切片测试用例。已是参照样本 [[feishu-mcp-research]]。 |
-| **Twenty(开源 CRM)** ← 选定 | ⚠️ GraphQL/REST API 成熟,MCP 需生成或 bless 社区 | ✅✅ **自托管,数据全本地** | 高(OPC 核心=管客户) | ✅ 拉 solopreneur/agency 段 | **source.type=oauth/mcp**:Irisy 从 Twenty API 生成 connector(`server.ts`),或挂社区 MCP | **最深**:**护城河命题的正脸示范** —— 自托管 CRM + CTRL 当 AI 前端 + 写操作过 gate review = memory「local AI front-end over business systems」的活证。**且最能压测 Irisy 创作流**(接一个真实复杂业务 API)。 |
+| **Ghostfolio(开源自托管财务)** ← **已端到端落地**(本 session) | ✅ REST 成熟,§14 record_source 纯 manifest 数据(零 Rust) | ✅✅ **自托管,数据全本地** | 中-高(OPC 财务/投资) | ✅ 数据主权护城河正脸 | **source.type=§14 record_source**:纯 manifest 声明,通用引擎读 | **已证命题**:自托管开源软件 + CTRL 当 AI 前端 + 写过 gate review + 可分享 MIT commons。加 connector = 纯数据零代码。 |
+| **Twenty(开源 CRM)** ← 下一个 | ⚠️ GraphQL API 成熟(注:§14 v1 是 REST 形状,GraphQL 需先扩引擎支持 POST-body 查询) | ✅✅ **自托管,数据全本地** | 高(OPC 核心=管客户) | ✅ 拉 solopreneur/agency 段 | Irisy 从 Twenty API 生成 / 或 §14 引擎扩 GraphQL 后声明 | **最深**:护城河命题正脸 + 最能压测创作流(真实复杂业务 API)。 |
+| ~~**飞书 / Lark**~~ | ~~官方 MCP 挂载~~ | — | — | — | ~~source.type=mcp~~ | **❌ 移除(2026-07-02)**:CTRL 原生替代它(Smart-table=Bitable),非 connect 目标;至多单向 sync-out mirror。见上方纠正块。 |
 
-> Tier 1 选这两个的逻辑:**一快(飞书,Irisy 挂现成官方 MCP)+ 一深(Twenty,Irisy 生成 connector、证护城河 + 压测创作流)**。两个都精确放大 CTRL 已有楔子,不开新战线。**两个都由 Irisy `mcp-creator` 流造,dev 只打磨流。**
+> **Tier-1 逻辑(纠正后)**:连接目标是**OPC 自托管开源产品** —— Ghostfolio(已落,财务)一深已证 + Twenty(CRM)下一个压测创作流。**飞书不在此列**(CTRL 就是它)。都精确放大 CTRL 已有楔子,不开新战线。
 
 ### 🥈 Tier 2 — 种子证明模式后再上(业务系统铺宽)
 
@@ -140,15 +143,15 @@ CTRL 的三层能力是三种不同的东西,实现主体不同。**术语校准
 - **不与原生模块抢**:① 已覆盖的(Notes/Coding)对应外部 connector(Notion/GitHub)自动降级。
 - 不碰法务灰区做官方种子(社媒多账号自动发)。
 
-## 已拍(bao 钦定 2026-06-23)
-1. ✅ **Tier 1 = 飞书 + 开源 CRM**。
+## 已拍(bao 钦定 2026-06-23,§1 纠正 2026-07-02)
+1. ~~Tier 1 = 飞书 + 开源 CRM~~ → **纠正 2026-07-02:Tier 1 = Ghostfolio(已落地)+ Twenty(下一个)。飞书移除**(CTRL 原生替代它,非 connect 目标 —— 见上方纠正块 + memory `feedback-ctrl-is-feishu-not-integrate-feishu`)。
 2. ✅ **CRM = Twenty**(现代 API、活跃、自托管)。
 3. ✅ **由 Irisy 创作流(`mcp-creator`)做,不是 dev 手写 MCP wrapper** —— 种子 connector = Irisy 命题的活体测试 + 护城河示范。
 4. ✅ GitHub 缓到 T2(BYO-CLI 已覆盖 dev git)。
 
 ## 真正的下一步开放问题(决策已拍,剩工程前置)
 1. **Irisy `mcp-creator` 流的产出质量** —— 它现在能生成接真实复杂业务 API(Twenty GraphQL)的**能用** connector 吗,还是只能生成玩具 server.ts?接 Twenty 前要先验证/打磨这条流(auth / 分页 / 错误处理 / 写操作过 gate)。**这是种子 connector 的真前置,不是 connector 本身。**
-2. **飞书走 source.type=mcp 挂现成官方 MCP** —— 验证 Irisy 创作流支持「挂一个现成 npm MCP server」这条最轻路径(vs 总是生成 server.ts)。
+2. ~~飞书走 source.type=mcp 挂现成官方 MCP~~ → **删除(2026-07-02):飞书不 connect(CTRL 就是它)。**「挂现成 npm MCP server」这条 source.type=mcp 最轻路径仍要验证,但用一个**真该 connect 的目标**(有官方 MCP 的 OPC 自托管产品),不是飞书。
 3. **Twenty MCP 成熟度** —— 社区有没有现成 Twenty MCP(则 Irisy bless 即可),还是必须 Irisy 生成(则压测创作流)。接前各核一轮(像 [[feishu-mcp-research]] 那样)。
 
 ## 诚实缺口
