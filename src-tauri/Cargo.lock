@@ -969,7 +969,7 @@ dependencies = [
 
 [[package]]
 name = "ctrl"
-version = "0.1.757"
+version = "0.1.758"
 dependencies = [
  "anyhow",
  "arboard",
