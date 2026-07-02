@@ -60,6 +60,13 @@ pub mod smart_table_index;
 // seed proving "make an open-source app AI-native through the gate", the
 // AI-native uplift layer (uniform describe/query) over its raw REST.
 pub mod ghostfolio_source;
+// Feature-pack provision+auth engine (governing
+// `vault/ctrl/feature-pack-provision-auth-engine.md`) — generic runtime that
+// makes any self-hosted connector one-click + silent from its manifest data:
+// pack_auth = declared bootstrap / token-exchange executors; pack_provision =
+// generated-secret + compose provisioning + install orchestration.
+pub mod pack_auth;
+pub mod pack_provision;
 // ADR-002 substrate §14 (LifeOS layer Phase 1, governing
 // `vault/ctrl/lifeos-layer-restructure.md`) — tasks as a §14 RecordSource:
 // one plain-markdown file per task (vim test), describe/query via the shared

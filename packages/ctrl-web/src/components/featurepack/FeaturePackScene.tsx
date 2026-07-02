@@ -8,7 +8,7 @@
 // the scene renders/iterates independently of the kernel run_action wiring.
 
 import { useState, type ReactElement } from 'react';
-import { type PackConfigField } from '@/lib/feature-pack';
+import { type PackConfigField, provisionPack } from '@/lib/feature-pack';
 import { ActionBar, type PackAction } from './ActionBar';
 import { PackConfigModal } from './PackConfigModal';
 import styles from './FeaturePackScene.module.css';
@@ -26,6 +26,9 @@ export interface FeaturePack {
   /** Post-install config the pack needs (manifest `config_schema`) — drives the
    *  Configure wizard; values land under `mcp:<id>:<key>` for the kernel. */
   configFields?: PackConfigField[];
+  /** Declares a service/bootstrap auth → one-click silent "Set up" (the
+   *  provision engine) instead of the manual Configure wizard. */
+  needsProvision?: boolean;
 }
 
 interface FeaturePackSceneProps {
@@ -41,7 +44,22 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
   const [error, setError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [settingUp, setSettingUp] = useState(false);
   const configFields = pack.configFields ?? [];
+
+  const setUp = async (): Promise<void> => {
+    setSettingUp(true);
+    setError(null);
+    setOutput(null);
+    setLastAction('Set up');
+    try {
+      setOutput(await provisionPack(pack.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSettingUp(false);
+    }
+  };
 
   const run = async (actionId: string): Promise<void> => {
     setRunningId(actionId);
@@ -67,7 +85,17 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
           <span className={styles.name}>{pack.name}</span>
           {pack.summary != null && <span className={styles.summary}>{pack.summary}</span>}
         </div>
-        {configFields.length > 0 && (
+        {pack.needsProvision ? (
+          <button
+            type="button"
+            className={styles.configBtn}
+            onClick={() => void setUp()}
+            disabled={settingUp}
+            title={`Set up ${pack.name} (one-click, silent)`}
+          >
+            {settingUp ? 'Setting up…' : 'Set up'}
+          </button>
+        ) : configFields.length > 0 ? (
           <button
             type="button"
             className={styles.configBtn}
@@ -76,7 +104,7 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
           >
             Configure
           </button>
-        )}
+        ) : null}
       </header>
 
       {showConfig && (

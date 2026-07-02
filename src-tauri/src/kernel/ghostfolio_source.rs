@@ -88,35 +88,30 @@ fn http_client() -> Result<reqwest::Client, GhostfolioError> {
         .map_err(|_| GhostfolioError::Http("could not build http client".into()))
 }
 
-/// Exchange a Ghostfolio **Security Token** for a short-lived Bearer JWT
-/// (`POST /api/v1/auth/anonymous` with `{ accessToken }` → `{ authToken }`).
-/// The Security Token is the account's identity credential (Settings → Security
-/// Token), NOT a usable API bearer — every call must first mint a JWT. Tolerant
-/// of the response key (`authToken` / `accessToken`).
+/// Exchange a Ghostfolio **Security Token** for a short-lived Bearer JWT via the
+/// GENERIC token-exchange executor (`pack_auth::mint_bearer`) — the same engine
+/// any connector's declared `auth.token_exchange` uses. The Security Token is
+/// the account's identity credential (Settings → Security Token / auto-minted by
+/// bootstrap), NOT a usable API bearer — every call first mints a JWT.
 async fn authenticate(
     client: &reqwest::Client,
     base_url: &str,
     security_token: &str,
 ) -> Result<String, GhostfolioError> {
-    let url = format!("{}/api/v1/auth/anonymous", base_url.trim_end_matches('/'));
-    let resp = client
-        .post(&url)
-        .json(&serde_json::json!({ "accessToken": security_token }))
-        .send()
-        .await
-        .map_err(|_| GhostfolioError::Http("could not reach the ghostfolio instance".into()))?;
-    if !resp.status().is_success() {
-        return Err(GhostfolioError::Status(resp.status().as_u16()));
-    }
-    let body: Value = resp
-        .json()
-        .await
-        .map_err(|e| GhostfolioError::Parse(e.to_string()))?;
-    body.get("authToken")
-        .or_else(|| body.get("accessToken"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| GhostfolioError::Parse("auth response carried no token".into()))
+    crate::kernel::pack_auth::mint_bearer(
+        client,
+        base_url,
+        "/api/v1/auth/anonymous",
+        "accessToken",
+        security_token,
+        "/authToken",
+    )
+    .await
+    .map_err(|e| match e {
+        crate::kernel::pack_auth::AuthError::Status(c) => GhostfolioError::Status(c),
+        crate::kernel::pack_auth::AuthError::Parse(m) => GhostfolioError::Parse(m),
+        crate::kernel::pack_auth::AuthError::Http(m) => GhostfolioError::Http(m),
+    })
 }
 
 /// Fetch the current holdings from a self-hosted Ghostfolio instance and build a

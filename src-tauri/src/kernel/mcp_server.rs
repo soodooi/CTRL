@@ -234,6 +234,14 @@ pub struct GhostfolioAddTxnArgs {
     pub account_id: Option<String>,
 }
 
+/// mcp_pack.provision — one-click + silent setup of an installed feature pack
+/// (bring up its declared service + run bootstrap auth) from its manifest data.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackProvisionArgs {
+    /// Installed pack id (folder under `~/.ctrl/mcps/`).
+    pub mcp_id: String,
+}
+
 /// task.create — produce/write a new checkbox task line (ADR-002 §14 produce
 /// verb). Appends `- [ ] <title>` to a note (inline-checkbox substrate).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1143,6 +1151,30 @@ impl KernelMcpRouter {
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let body = serde_json::to_string(&created).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp_pack.provision — the generic one-click + silent setup (feature-pack
+    /// provision+auth engine): read an installed pack's manifest, bring up its
+    /// declared `provision.service` (docker compose) and run its `auth.bootstrap`
+    /// (mint + store the credential). Zero manual entry; idempotent. This is what
+    /// makes any self-hosted connector one-click — driven by manifest data.
+    #[tool(
+        description = "Provision + auto-authenticate an installed feature pack from its manifest (one-click, silent): bring up its declared service and run bootstrap auth. Idempotent. Requires a container runtime for service packs."
+    )]
+    async fn mcp_pack_provision(
+        &self,
+        Parameters(args): Parameters<McpPackProvisionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
+        let path = dir.join(&args.mcp_id).join("manifest.json");
+        let bytes = std::fs::read(&path).map_err(|e| {
+            McpError::invalid_params(format!("no installed manifest for {}: {e}", args.mcp_id), None)
+        })?;
+        let manifest: serde_json::Value = serde_json::from_slice(&bytes).map_err(map_serde_err)?;
+        let summary = crate::kernel::pack_provision::install_pack(&args.mcp_id, &manifest)
+            .await
+            .map_err(|e| McpError::internal_error(e, None))?;
+        Ok(CallToolResult::success(vec![Content::text(summary)]))
     }
 
     /// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4). Runs
@@ -3025,7 +3057,11 @@ fn resolve_ghostfolio_creds() -> Option<(String, String)> {
             .flatten()
             .filter(|v| !v.trim().is_empty())
     };
-    let url = from_env("CTRL_GHOSTFOLIO_URL").or_else(|| cred("ghostfolio_url"))?;
+    // URL: env override → the provision engine's recorded base URL (`_base_url`,
+    // set by pack_provision) → a manual `ghostfolio_url` (config-wizard fallback).
+    let url = from_env("CTRL_GHOSTFOLIO_URL")
+        .or_else(|| cred("_base_url"))
+        .or_else(|| cred("ghostfolio_url"))?;
     let token = from_env("CTRL_GHOSTFOLIO_TOKEN").or_else(|| cred("ghostfolio_token"))?;
     Some((url, token))
 }

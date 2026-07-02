@@ -7,7 +7,7 @@
 // degrades to the WS transport instead of bypassing it through the raw
 // Tauri core import (desktop behavior unchanged).
 import { invoke } from './bridge';
-import { listMcps } from './kernel';
+import { listMcps, gateInvoke } from './kernel';
 import type { FeaturePack } from '@/components/featurepack/FeaturePackScene';
 
 interface ManifestAction {
@@ -51,6 +51,9 @@ export async function loadInstalledPacks(): Promise<FeaturePack[]> {
         kbDir: m.knowledge_base,
         // Generic: ANY pack declaring config_schema gets a Configure wizard.
         configFields: packConfigFields(m as unknown as Record<string, unknown>),
+        // Declares a service to bring up and/or bootstrap auth → one-click
+        // "Set up" (silent provision) instead of a manual wizard.
+        needsProvision: manifestNeedsProvision(m as unknown as Record<string, unknown>),
       });
     } catch {
       // Skip an mcp whose manifest is unreadable — never break the list.
@@ -187,6 +190,21 @@ export function packSecretFields(manifest: Record<string, unknown>): SecretField
   return cs.fields
     .filter((f) => f.kind === 'secret')
     .map((f) => ({ key: f.key, label: f.label, description: f.description }));
+}
+
+/** True when the pack declares a service to bring up or a bootstrap auth — i.e.
+ *  it can be set up one-click + silently (provision engine) rather than via the
+ *  manual config wizard. */
+export function manifestNeedsProvision(manifest: Record<string, unknown>): boolean {
+  const provision = manifest.provision as { service?: unknown } | undefined;
+  const auth = manifest.auth as { bootstrap?: unknown; oauth?: unknown } | undefined;
+  return Boolean(provision?.service || auth?.bootstrap || auth?.oauth);
+}
+
+/** One-click, silent setup of an installed pack: run the generic provision+auth
+ *  engine (bring up its service + bootstrap auth) via the :17873 gate. */
+export function provisionPack(mcpId: string): Promise<string> {
+  return gateInvoke('mcp_pack_provision', { mcp_id: mcpId });
 }
 
 /** Store a pack secret in the keychain (account namespaced per the provision

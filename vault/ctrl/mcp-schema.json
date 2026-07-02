@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 75,
+  "toolCount": 76,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -559,6 +559,25 @@
         "type": "object"
       },
       "name": "mcp_pack_list"
+    },
+    {
+      "description": "Provision + auto-authenticate an installed feature pack from its manifest (one-click, silent): bring up its declared service and run bootstrap auth. Idempotent. Requires a container runtime for service packs.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "mcp_pack.provision — one-click + silent setup of an installed feature pack\n(bring up its declared service + run bootstrap auth) from its manifest data.",
+        "properties": {
+          "mcp_id": {
+            "description": "Installed pack id (folder under `~/.ctrl/mcps/`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mcp_id"
+        ],
+        "title": "McpPackProvisionArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_provision"
     },
     {
       "description": "Run a feature pack action (executes its shell steps, returns stdout)",
