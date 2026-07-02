@@ -10,6 +10,7 @@
 
 import { type ReactElement } from 'react';
 import { FeaturePackScene } from '@/components/featurepack/FeaturePackScene';
+import { PackEvals } from '@/components/ambient/PackEvals';
 import {
   DEMO_CF_WORKERS,
   DEMO_GHOSTFOLIO,
@@ -19,18 +20,52 @@ import {
 
 export function PackLabRoute(): ReactElement {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', height: '100vh' }}>
-      <div style={{ borderRight: '1px solid var(--border)', minWidth: 0 }}>
-        <FeaturePackScene
-          pack={DEMO_GHOSTFOLIO}
-          onRunAction={(id) => runPackAction(DEMO_GHOSTFOLIO.id, id)}
-          loadRecords={demoGhostfolioRecords}
-        />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'auto' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', height: '70vh' }}>
+        <div style={{ borderRight: '1px solid var(--border)', minWidth: 0 }}>
+          <FeaturePackScene
+            pack={DEMO_GHOSTFOLIO}
+            onRunAction={(id) => runPackAction(DEMO_GHOSTFOLIO.id, id)}
+            loadRecords={demoGhostfolioRecords}
+          />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <FeaturePackScene
+            pack={DEMO_CF_WORKERS}
+            onRunAction={(id) => runPackAction(DEMO_CF_WORKERS.id, id)}
+          />
+        </div>
       </div>
-      <div style={{ minWidth: 0 }}>
-        <FeaturePackScene
-          pack={DEMO_CF_WORKERS}
-          onRunAction={(id) => runPackAction(DEMO_CF_WORKERS.id, id)}
+      {/* Pack-authoring evals (mcp_pack_validate) — the three report states. */}
+      <div style={{ display: 'flex', gap: 24, padding: 24, borderTop: '1px solid var(--border)' }}>
+        <PackEvals report={{ ok: true, issues: [], record_source_fields: 6 }} />
+        <PackEvals
+          report={{
+            ok: false,
+            issues: [
+              { field: 'id', severity: 'error', message: 'manifest has no id', fix: 'add a lowercase id' },
+              {
+                field: 'record_source.query.endpoint',
+                severity: 'error',
+                message: 'endpoint is empty — nothing to fetch',
+                fix: 'set the read endpoint',
+              },
+            ],
+          }}
+        />
+        <PackEvals
+          report={{
+            ok: true,
+            issues: [
+              {
+                field: 'auth',
+                severity: 'warn',
+                message: 'record_source has no auth — a self-hosted connector usually needs one',
+                fix: 'add auth.token_exchange',
+              },
+            ],
+            record_source_fields: 3,
+          }}
         />
       </div>
     </div>

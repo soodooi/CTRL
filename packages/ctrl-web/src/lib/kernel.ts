@@ -388,6 +388,30 @@ export const querySource = (
     limit: request.limit ?? null,
   });
 
+// ─── Feature-pack evals (ADR-002 §7.4/§7.5, mcp-builder review+evals) ────────
+// Validate a candidate manifest BEFORE install so a bad pack self-corrects
+// instead of shipping — the quality step home-grown pipelines skip.
+
+export interface PackValidationIssue {
+  field: string;
+  severity: 'error' | 'warn';
+  message: string;
+  fix?: string;
+}
+
+export interface PackValidationReport {
+  /** True iff there are no error-severity issues (warnings still allow install). */
+  ok: boolean;
+  issues: PackValidationIssue[];
+  /** When a coherent §14 record_source is declared, its describe field count. */
+  record_source_fields?: number;
+}
+
+/** Evaluate a candidate feature-pack manifest through the gate (mcp_pack_validate).
+ *  Returns structured, self-correctable issues. */
+export const validatePack = (manifest: unknown): Promise<PackValidationReport> =>
+  gateInvoke('mcp_pack_validate', { manifest });
+
 // ─── LifeOS tasks (ADR-002 §14 Task source, GOAL Phase 1) ───────────────────
 // Inline-checkbox tasks scanned across the vault, operated through the SAME
 // :17873 gate an external agent uses (task_describe/query/create/update).
