@@ -72,6 +72,10 @@ pub mod manifest_source;
 // structured, self-correctable feedback (the quality step home-grown pipelines
 // skip). Pure over a parsed manifest, so the gate tool is a thin wrapper.
 pub mod pack_validate;
+// OpenAPI -> §14 record_source scaffold (ADR-002 §7.4 AutoMCP): generate a
+// best-effort record_source draft from an OpenAPI read op + spec-repair notes,
+// which the author refines + evals before install. Pure, no I/O.
+pub mod openapi;
 // Feature-pack publish (ADR-002 §7.6) — the produce side of share-and-be-shared:
 // evals a pack then POSTs its manifest to a registry/commons. Kernel-internal
 // HTTPS, token kernel-side; the real public registry is the honest external gap.

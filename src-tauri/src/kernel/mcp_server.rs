@@ -203,6 +203,19 @@ pub struct McpPackValidateArgs {
     pub manifest: serde_json::Value,
 }
 
+/// mcp_pack.scaffold — draft a §14 record_source from an OpenAPI operation
+/// (AutoMCP posture, §7.4). Best-effort draft + spec-repair notes.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackScaffoldArgs {
+    /// The OpenAPI 3 document (a JSON object).
+    pub openapi: serde_json::Value,
+    /// The read path to scaffold from, e.g. `/api/v1/portfolio/holdings`.
+    pub path: String,
+    /// HTTP method (default `GET`).
+    #[serde(default)]
+    pub method: Option<String>,
+}
+
 /// mcp_pack.publish — publish an installed pack to a registry/commons (§7.6
 /// share-and-be-shared). Evals first, then POSTs the manifest.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1193,6 +1206,31 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let report = crate::kernel::pack_validate::validate_manifest(&args.manifest);
         let body = serde_json::to_string(&report).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp_pack.scaffold — draft a §14 record_source from an OpenAPI read op
+    /// (AutoMCP, §7.4). The research: codegen is largely solved, spec quality is
+    /// the bottleneck — so this returns a best-effort draft + spec-repair notes
+    /// the author refines (edit) then evals (mcp_pack_validate) before install.
+    /// Read-only: pure transform, no writes.
+    #[tool(
+        description = "Draft a §14 record_source from an OpenAPI operation (a GET path returning a list). Returns { record_source, notes } — a best-effort draft (endpoint + array location + fields from the response schema) plus repair notes (auth/missing fields). Refine it, then mcp_pack_validate before install."
+    )]
+    async fn mcp_pack_scaffold(
+        &self,
+        Parameters(args): Parameters<McpPackScaffoldArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let method = args.method.as_deref().unwrap_or("GET");
+        let scaffold = crate::kernel::openapi::record_source_from_openapi(&args.openapi, &args.path, method)
+            .ok_or_else(|| {
+                McpError::invalid_params(
+                    format!("no {} operation at '{}' in the OpenAPI spec", method.to_uppercase(), args.path),
+                    None,
+                )
+            })?;
+        let out = serde_json::json!({ "record_source": scaffold.record_source, "notes": scaffold.notes });
+        let body = serde_json::to_string(&out).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 

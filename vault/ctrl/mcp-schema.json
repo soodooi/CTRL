@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 78,
+  "toolCount": 79,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -438,6 +438,37 @@
         "type": "object"
       },
       "name": "mcp_pack_run"
+    },
+    {
+      "description": "Draft a §14 record_source from an OpenAPI operation (a GET path returning a list). Returns { record_source, notes } — a best-effort draft (endpoint + array location + fields from the response schema) plus repair notes (auth/missing fields). Refine it, then mcp_pack_validate before install.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "mcp_pack.scaffold — draft a §14 record_source from an OpenAPI operation\n(AutoMCP posture, §7.4). Best-effort draft + spec-repair notes.",
+        "properties": {
+          "method": {
+            "default": null,
+            "description": "HTTP method (default `GET`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openapi": {
+            "description": "The OpenAPI 3 document (a JSON object)."
+          },
+          "path": {
+            "description": "The read path to scaffold from, e.g. `/api/v1/portfolio/holdings`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "openapi",
+          "path"
+        ],
+        "title": "McpPackScaffoldArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_scaffold"
     },
     {
       "description": "Uninstall a feature pack by id (removes it from the user's installed packs)",
