@@ -157,6 +157,10 @@ pub fn requires_review(tool_name: &str) -> bool {
         "write", "delete", "remove", "rename", "append_row", "create",
         "update", "put", "post", "run", "exec", "install", "uninstall",
         "move", "drop", "send", "publish", "deploy",
+        // §14 write verb — the generic connector write `source_produce` (and any
+        // `<x>_produce`) is a side-effecting write that must pass review, same as
+        // vault.write (ADR-002 §14.9 produce = Write through the gate).
+        "produce",
     ];
     // Read-ish tools that contain a mutating substring but are safe — keep a
     // tiny explicit exception list so the deny-by-verb default stays simple.
@@ -185,6 +189,8 @@ mod tests {
             "http_post",
             "stock-cn_run",
             "github_create_issue",
+            "source_produce", // §14 generic connector write
+            "mcp_pack_publish", // registry publish (has `publish`)
         ] {
             assert!(requires_review(t), "{t} should require review");
         }
@@ -199,6 +205,8 @@ mod tests {
             "vault_text_query",
             "market_quote",
             "http_get",
+            "source_describe", // §14 read verbs — no review
+            "source_query",
         ] {
             assert!(!requires_review(t), "{t} should NOT require review");
         }
