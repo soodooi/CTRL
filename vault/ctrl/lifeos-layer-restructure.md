@@ -100,7 +100,73 @@ Clone 到 `/Users/mac/Documents/coding/lifeos-reference/`(CTRL 仓外): `obsidia
 
 **CTRL 已有 vs 需建(校准)**: 已有 = vault/§14 query/tags/`daily/`+template/SmartTable calendar·timeline 视图/gate。需建 = ① 任务解析器补全到 obsidian-tasks 标准 ② periodic 补 weekly/monthly/quarterly/yearly + 模板 ③ PARA 文件夹策略 + tag 过滤视图 ④ **前端 Today/Tasks/Calendar 视图**(bao 要先看见的)⑤ Calendar 事件模型 + CalDAV/ICS 连接器 ⑥ memos 同步连接器(可选)。**关键:全程 markdown = truth, 不引 DB, 不引 Dataview(用 CTRL 自己的 §14 query)。**
 
-## 6. 执行顺序(分阶段,dev-loop,不 big-bang)
+## 6.4 真看 LifeOS 前端后的更正(bao 2026-06-30「你清楚 lifeos 前端?」+ 下载 LifeOS Pro 全套)
+
+> 我之前的「五面 rail」目标态是**脑补的工业默认**,错。看了官方截图(plugin + LifeOS Pro Home/Task/Calendar)+ LifeOS Pro 四套 example vault 后的**真实前端**:
+
+- **它是 Obsidian 三栏,没有自定义 app 壳**。**左 = 导航 = 日历 date-picker(Periodic Notes|Theme Notes 切换 + Day/Week/Month/Quarter/Year tab + 月历,有笔记的日期打点)+ 按 PARA/Periodic 组织的文件树**。中 = 笔记(编辑器)。右 = AI 助手 + backlinks。
+- **Home = 查询驱动的流水线仪表盘**(LifeOS Pro Home = `Input | Project | Task | Output` 四列;OPC vault = Input→Departments→Output + CEO Dashboard)。**不是「五个顶层 face」**。
+- **工作面 = 笔记本身**,内嵌 `​```LifeOS​`/`​```tasks​`/`​```PeriodicPARA​` **实时查询块**(Project List、Task focus、Completed today、First-Things/Role 维度)。周期笔记 = 目标级联(Year→Q→Month→Day),按 First-Things Dimension + Role Dimension(Employee/Husband/Father/Son/Myself)拆。
+- **AI = 右栏助手**,读 index note + 附近笔记 → 写 `.AI.md` 综合仪表盘。**这正是 CTRL 的 Irisy**(Aino 把它硬塞进 Obsidian 侧栏;CTRL 原生就是这个)。
+
+**★ 最大发现 = OPC LifeOS Vault(one-person company)= CTRL 的精确愿景**:「AI-agent-led operating system for a one-person company」,结构 = `0 Periodic / 1 Input / 2 Output / 3 Departments / 99 Templates` + `Soul.md`(CEO 原则)/ `Agent.md`(CEO agent 职责/触发/工作流)/ `Memory.md`(耐久决策)/ `CEO Dashboard.md`+`.AI.md`。**这和 CTRL 的 Irisy SOUL.md + 记忆 + OPC 定位一一对应**。LifeOS 四套方法论 vault:PARA / GTD(Inbox/Actions/Projects/Reference/Reviews)/ IPO(Input/Themes/Output)/ **OPC**。
+
+**更正后的 CTRL 目标(仍是独立 app,但对齐真实 LifeOS 机制 + CTRL 是 agent-native 版)**:
+- **左栏加日历 date-picker + PARA/Periodic 树**(我之前完全漏了日历,这是 periodic 导航的核心)。
+- **Home = §14 查询驱动的流水线/focus 仪表盘**(Input/Project/Task/Output,OPC 化:Input→Departments→Output + CEO/Irisy 综合)。
+- **笔记内嵌 §14 查询视图**(CTRL 用自己的 §14 + SmartTable 视图当 `​```LifeOS​` 块的等价物)。
+- **Irisy = `.AI.md` 仪表盘生成器**(读 index+笔记→写综合)—— 本就是它。
+- **vault 布局支持多方法论模板**(PARA/GTD/IPO/OPC 可选,LifeOS Pro 全带,直接参悟其结构)。
+- **CTRL 的护城河更清晰了**:OPC vault 证明 LifeOS *想要* AI agent 当 OS 大脑,却只能把 Aino 侧栏贴到 Obsidian 上;**CTRL 原生就是「gate + Irisy/Hermes agent + projection」的 agent-native OPC OS** —— 这是插件做不到的整合。
+
+## 6.5 目标态 IA(⚠ 被 6.4 更正 —— 五面 rail 是脑补,保留作对比)
+
+> 系统设计先行:这是统管全局的规划图,所有局部对齐它。不是加功能,是把 app 的信息架构**整体重排**成 LifeOS。
+
+**前端壳 = LifeOS 脊**(L1 rail 从「Irisy + Notes/Tables/Coding 平铺」重排成 LifeOS 工作流):
+
+```
+┌ L1: LifeOS 脊 ┐   ┌ Main: 该 surface 自己的 workspace ┐   ┌ Irisy = pipe ┐
+│ ◆ Irisy       │   │                                   │   │ 贯穿每个     │
+│ ✓ Today  home │   │  Today / Capture / PARA /         │   │ surface,     │
+│ ⊞ Capture     │   │  Calendar / Review 各自的界面      │   │ 把输出路由   │
+│ ▤ PARA        │   │  (per-L1-workspace,各拥有自己的)  │   │ 进 owning    │
+│ ▦ Calendar    │   │                                   │   │ 模块的       │
+│ ↻ Review      │   │                                   │   │ workspace    │
+│ ── tools ──   │   │                                   │   │             │
+│ ▧ Tables      │   │  (Tables/Coding/Packs 降为工具,   │   │             │
+│ ‹› Coding     │   │   不再是顶层身份)                  │   │             │
+│ + Packs / ⚙   │   │                                   │   │             │
+└───────────────┘   └───────────────────────────────────┘   └─────────────┘
+```
+
+**LifeOS 工作流** = Capture → 组织(PARA)→ 计划(Periodic)→ 做(Tasks)→ 复盘(Review)→ 输出(Express)。
+
+**五个主 surface × 前后端**:
+
+| Surface | 是什么 | 前端 | 后端 |
+|---|---|---|---|
+| **Today** | home 仪表盘:今天日记 + 任务 focus(近到期/高优先)+ 快速捕获 | `TodayView`(已有,扩展成 home)| `task_query` + daily note |
+| **Capture** | 收集箱 `-1. Capture`,三分类进 PARA | 新建 | vault + move-to-PARA |
+| **PARA** | vault 按 Projects/Areas/Resources/Archives 组织 | 把 Notes face 重排成 PARA browser | vault PARA 布局策略 + notes source |
+| **Calendar** | periodic 导航(日/周/月/季/年)+ 任务/事件日历 | 新建(复用 SmartTable calendar/timeline 视图)| periodic source + 事件模型 + CalDAV/ICS |
+| **Review** | periodic 复盘仪表盘 + 习惯统计 | 新建 | task/habit query 派生 |
+
+**后端底座**:vault 默认布局策略 = LifeOS 结构(`-1. Capture / 0. PeriodicNotes/{Templates,{year}/...} / 1-4 PARA / 5. Express`,用户可改不 hardcode)+ 日/周/月/季/年模板(照 example vault section)+ §14 sources(tasks/notes-by-PARA/periodic/habits/events 全 markdown-truth 过 gate)。**不引 DB、不引 Dataview、不自带编辑器**(用现有 Tiptap)。
+
+**保住的护城河**:`:17873` gate 治理 + projection + Irisy-as-pipe + 双脑 —— LifeOS 只是重排身份层,底座锁点不动。
+
+## 7. 执行顺序(目标态确认后,连续驱动,不再给菜单)
+
+1. **壳 IA 重排**:L1 rail → LifeOS 脊(Today 设为 home + Capture/PARA/Calendar/Review 入位 + Tables/Coding/Packs 降为 tools)。视觉立即可见。
+2. **vault 布局策略 + 模板**(PARA + PeriodicNotes 默认 seed)。
+3. **PARA face**(Notes 重排成 PARA browser)。
+4. **Periodic + Calendar face**。
+5. **Review + 习惯统计**。
+6. **Capture 收集箱 + 三分类**。
+7. **Irisy threading**(输出路由进 owning face,兑现 per-L1-workspace)。
+
+## 6.6 旧「执行顺序」(被 6.5/7 取代,保留历史)
 
 Phase 1 Life 数据模型(后端,最高杠杆,滩头)→ 2 PARA/periodic → 3 Calendar → 4 上下文管道+IA 重排 → 5 远程(最大最险,先调研)。每阶段落 ADR amendment 对齐。**第一步 = SC1 Task Source**(describe/query/produce + 明文落盘 + gate 暴露 `task_*`)。
 

@@ -7,57 +7,44 @@
 
 ## 目标 (Goal)
 
-**LifeOS layer 重构:在 CTRL 已有的更强地基(独立 Tauri app + 自带 Tiptap/CodeMirror6 编辑器 + `:17873` gate + projection)上,嫁接 Aino/LifeOS 的「人生管理」功能面(任务/目标/习惯/时间块/periodic notes/PARA/日历)+ DeepAsk 式「上下文管道」+ 远程能力。分阶段、走 dev-loop。**
+**证明功能包真命题 —— 把开源软件变 AI-native:端到端跑通 `ctrl-ghostfolio` 当活体证明。** 复用现成开源 Ghostfolio(自托管财务)+ 其社区 MCP → 经 `:17873` gate 治理(审计+可见性,比它自带的粗 `READ_ONLY_MODE` 开关细)→ §14 化(describe/query/produce)+「AI-native 提升层」(one-shot 原子 / 高信号,不是一 endpoint 一 tool)→ Irisy 能操作它。这一个种子把 create→govern→uplift→distribute 整条功能包链走通,同时打磨 substrate + Irisy 创作流(种子 = 创作流的活体测试 + 护城河示范)。
 
-bao 2026-06-30 指令「根据 aino lifeos 重构 ctrl 前端和后端;这次仔细认真」+「哪个好用哪个,我们毕竟还有不一样的点」+「远程功能要有,目前没实现」。
+bao 2026-07-01 校准:「你是不是不知道做功能包的意义 —— 把大量开源软件/MCP 编程成 AI-native 的,这方向你不懂,要调研」→ 深研落 `vault/ctrl/ai-native-feature-pack-research.md`(25/25 主张验证)→ bao 拍「从 ctrl-ghostfolio 端到端跑通」。
 
-**深研的定盘发现(governing,别忘)**:所谓「Aino」其实是**两个产品**——(1) `aino.md` = 真·独立 app(本地 markdown,能开 Obsidian vault 互操作,编辑器/壳未公开);(2) bao 贴的付费分层(Community / Calendar Pro $29.90 / LifeOS Pro $49.90 / DeepAsk AI $29.90)属于 **`lifeos.vip` / GitHub `quanru/obsidian-lifeos` 这个 Obsidian 社区插件**——它**没有自己的编辑器**(骑 Obsidian 的 CodeMirror6),DeepAsk 靠**把 Obsidian 上下文直接管道喂给本地 Claude Code/Codex CLI 子进程**(不走 MCP,另跑内嵌 Koa MCP server 供普通聊天)。→ **CTRL 现有地基比要抄的那套更强**(独立 app + 自带编辑器 + gate + projection,它俩都没有)。所以重构 ≠ 推倒/变插件,= **把 LifeOS 功能面嫁接到 CTRL 更强地基上 + 补远程**;CTRL 护城河(gate 治理 + projection + 数据主权)全留。研究一手来源与逐条映射见 governing 设计文档 `vault/ctrl/lifeos-layer-restructure.md`。
+**调研定盘(governing)**:砖都有了,CTRL 拼装不重造 —— Agent Skills(SKILL.md)打包 · Anthropic `mcp-builder` 四阶段(含 evals)· AutoMCP OpenAPI→MCP(瓶颈是 spec 质量非 codegen)· 官方 MCP Registry + Smithery(6639)分发 · OpenAI Apps SDK generative UI(structuredContent/content/_meta)· Ghostfolio/Twenty MCP 已有前身 · AWS MCP Gateway = CTRL `:17873` gate 的形状(证明 gate 是行业标准)。**护城河 = ①「raw-wrap → AI-native 提升层」(one-shot/§14/per-call gate 治理,行业普遍欠缺)②「discovery→scaffold→govern→distribute→UI」整条链无统一玩家 = 白地**。CTRL local-first + Irisy + one-shot 哲学正好长在这。
 
-governing = `vault/ctrl/lifeos-layer-restructure.md`(重构规划图 + 竞品拆解 + Aino→CTRL 逐条映射)+ ADR-002 §14(Life Source amend)+ ADR-005(Irisy 上下文管道)+ ADR-010 缝⑧(远程桌面扶正)。锁点不动:5 primitives / 三动词(describe·query·produce)/ `:17873` gate / 明文 vim-test / 不自带笔记编辑器(ADR agent 已确认功能面在锁内自由)。
+governing = `vault/ctrl/ai-native-feature-pack-research.md` + `vault/ctrl/capability-pack-map.md`(③ 长尾 connector = Irisy 造非 dev 手写)+ ADR-002 §7(composition)+ §7.4(系统化:manifest=数据/runtime=通用/加 pack 零代码)+ §14。锁点不动:5 primitives / 三动词 / `:17873` gate / secret 不进 LLM / plain-text。
 
-## 成功标准 (Success criteria — 可验证, 分阶段)
+## 成功标准 (Success criteria — 可验证)
 
-> 每阶段走 dev-loop(三层验证 + 独立 checker),绿了 commit;不 big-bang。
+> 走 dev-loop(编译 + kernel/e2e 测试 + 视觉/独立 checker),绿了 commit。真实 Ghostfolio 连接需 bao 机器(跑着 Ghostfolio 实例 + token);CTRL 侧接线由 in-process 测试 + mock 验证(与所有 gate smoke 同一诚实 gap)。
 
-**Phase 1 — Life 数据模型(后端,最高杠杆)**
-1. Task 作 §14 Source:实现 `describe`/`query`/`produce`,数据 = 明文 md + YAML frontmatter 落盘(vim test 过:vim 手编一条任务,CTRL 读得到),SQLite 派生索引(仿 `smart_table_index.rs`,markdown 永远 truth),经 `:17873` gate 暴露 `task_describe/query/produce`。kernel 单测 + parity。
-2. Goal / Habit / TimeBlock 复用同一 Source 范式(schema 差异化),describe 广告字段给 Irisy。
+1. **功能包 manifest**:`ctrl-ghostfolio` manifest(复用 `manifest-schema.ts`)声明连接 Ghostfolio(社区 MCP over HTTP,或其 REST)+ secret(URL+token 从 keychain,**永不进 LLM**)+ capabilities + actions。
+2. **连接 + 治理**:Ghostfolio 工具经 `:17873` gate 可达并**记审计 ledger + 受 intent 可见性裁剪**(caller 只在授权时见到);写操作过 review gate。kernel e2e(in-process HTTP 过 gate,mock Ghostfolio 上游)。
+3. **AI-native 提升层(护城河)**:把 Ghostfolio 组合暴露为 **§14 RecordSource**(`ghostfolio` describe/query 持仓·交易),Irisy 用统一契约查;+ 至少一个 **one-shot 原子动作**(如「记一笔交易」经 review gate),不是裸 endpoint 镜像。
+4. **pack 落地**:装进 `~/.ctrl/mcps/` 被 `loadInstalledPacks` 读到 + `FeaturePackScene` 渲染;Irisy 经 gate 查到组合(真机点或 e2e)。
+5. **ADR 对齐**:与实装对齐落 ADR-002 §7 amendment(把「reuse 行业砖 + AI-native 提升层」写实)。
 
-**Phase 2 — PARA + Periodic Notes(前后端)**
-3. vault 布局策略 = PARA(Projects/Areas/Resources/Archives)+ 模板(日/周/月/季/年 periodic notes),用户可换(不 hardcode)。
-4. 复盘 dashboard:完成率 + 趋势(从 Task/Habit Source `query` 派生,不另存)。
-
-**Phase 3 — Calendar 一级模块(前后端)**
-5. 把 SmartTable 现有 calendar/timeline/kanban 视图升成一级 Calendar 模块;CalDAV/ICS 订阅连接器经 gate(自托管友好,对齐 usememos 主权叙事)。
-
-**Phase 4 — 上下文管道 + Shell/IA 重排(前端为主)**
-6. 「一键把当前笔记/选区喂给 Irisy/BYO-CLI」= 经 projection + gate(比 DeepAsk raw 子进程干净);AI-is-pipe。
-7. ambient 壳按 capture→plan→review 重排,L1 = Notes/Calendar/Tasks/Review,Irisy 当 pipe 路由输出进各模块 workspace(对齐 per-L1-workspace)。视觉验证不回归。
-
-**Phase 5 — 远程模块(最大、独立、需专项调研)**
-8. 在 `packages/ctrl-mesh` 骨架上建远程:WebRTC(屏幕流 downstream + 输入 data channel upstream)+ `ctrl-wire` protobuf + P2P/E2EE + NAT 失败走 content-blind relay。**先专项调研**(RustDesk wire / 远控 E2EE / NAT 穿透,从没研究过),ADR-010 缝⑧从「留口」扶正为 spec。
-
-**ADR 对齐(贯穿)**
-9. 每阶段落 ADR amendment 与实装对齐(不漂移):ADR-002 §14(Life Source)/ ADR-005(Irisy 管道)/ ADR-010(远程)。
-
-> **第一步(最小可验证)= SC1**:Task Source(describe/query/produce + 明文落盘 + gate 暴露)——LifeOS 层的地基与滩头。
+> **第一步(最小可验证)= SC1+SC2 的最小切片**:`ctrl-ghostfolio` manifest + kernel 侧连接一个 mock Ghostfolio MCP 经 gate 可达并记审计(照 Obsidian connector 先例)。
 
 ## 候选目标 (next-up — 未激活, 待 bao 拍)
 
 > 不是当前活跃目标。记下来锚定,别丢。
 
-**国内 IM 接入 = 暴露 hermes 已有网关能力, 不自建 connector。** CTRL 只做「起 hermes 网关 + 扫码 UI + 收口到 `:17873` gate」, 不碰微信/iLink 协议。gate 治理面(SC2 ledger + SC3 可见性裁剪)已在通讯重构中落地,微信收发是它第一个真实外部 caller。来由 (2026-06-25, review-only): hermes 上游已原生支持 Weixin(个人微信 iLink Bot API)+ WeCom + 钉钉/飞书,CTRL 零接线;成本只在 UI wizard + gate 接线。
+- **LifeOS Notes workspace**(bao 2026-07-01「note 的工作区可以根据 lifeos 来实现」):把 LifeOS 的日历 date-picker + PARA/periodic 树 + 笔记内嵌 §14 查询块**收进 Notes 这一个模块的 workspace**(不是 app 壳)。已起步:`LifeCalendar` 组件 + Task §14 Source 已落地(见进展日志)。设计 = `lifeos-layer-restructure.md`(注:§6.4 已更正「整个 app 变 LifeOS」是脑补;app 壳走 agent-native 那路)。**排在 ctrl-ghostfolio 之后**——功能包命题优先。
+- **国内 IM 接入 = 暴露 hermes 已有网关能力**(hermes 上游原生支持微信/企微/钉钉/飞书,CTRL 零接线,只做 wizard + gate 收口)。
 
 ## 非目标 / 范围外 (Non-goals)
 
-- **不推倒 CTRL 现有地基**:独立 Tauri app / 自带 Tiptap 编辑器 / gate / projection / 5 primitives / 三动词 / plain-text / vim-test 全不动——重构是**在其上加 LifeOS 功能层**,不是变成 Obsidian 插件。
-- **不 big-bang**:分阶段、每步 dev-loop 可验证;远程(Phase 5)最大最险,先专项调研再动。
-- **不自建私有云 / 私有二进制格式**:Life 数据全明文落盘;远程走 P2P/E2EE + content-blind relay,不做内容中转云。
-- **不重复造轮子**:日历订阅用 CalDAV/ICS 标准;同步对齐 usememos 自托管开源范式;编辑器不换栈。
-- **通讯两信任域重构 = 已完成让位**:SC1/2/3/5/6/7 已落地(见下方进展日志 2026-06-25),不在本目标内继续。
+- **不手写长尾 connector**:③ 层 connector = Irisy 的 mcp-creator 流造(capability-pack-map 铁律);ghostfolio 种子 = **这条创作流的活体测试**,dev 打磨 substrate/流,不亲手写长尾。
+- **不重造行业砖**:不自造 manifest/bundle 格式(用 Agent Skills + mcpb)· 不写 codegen(用 AutoMCP 式 + 投 spec-repair)· 不自建 registry(拉官方 + Smithery)。
+- **不建整个能力市场**:先一个种子端到端,不铺市场全机制。
+- **不 big-bang / 不克隆界面**:功能包的意义是让 agent 原生操作开源工具,不是复刻某 app 的 UI(克隆 LifeOS 前端已判为跑偏)。
+- 不动 5 primitives / 三动词 / gate / secret 不进 LLM / plain-text。
 
 ## 进展日志 (Progress log — append-only)
 
+- 2026-07-01 **目标替换(LifeOS layer 重构 → 功能包真命题 / ctrl-ghostfolio 端到端)。** 理由:bao 多轮校准把方向拨正 —— 先否「整个 app 变 LifeOS」(那是脑补,LifeOS 只做 Notes workspace),再点破**功能包的意义 = 把开源软件/MCP 变 AI-native**(「这方向你不懂,要调研」)。深研(105 agent/23 源/25 主张 25/25 验证,落 `ai-native-feature-pack-research.md`)结论:砖都有了(Agent Skills/mcp-builder/AutoMCP/MCP Registry+Smithery/Apps SDK/Ghostfolio·Twenty MCP/AWS Gateway=gate 形状),CTRL 拼装不重造;护城河 = AI-native 提升层(one-shot/§14/per-call 治理)+ 端到端整链无统一玩家(白地)。bao 拍「从 ctrl-ghostfolio 端到端跑通」。本 session 副产物(仍有效,归入候选/相关):Task §14 Source + gate e2e(`80ef272/6b71c68/c5dd8e6/e8258b6`,是「把能力变 AI-native」的对活)· Today view + LifeCalendar 组件(`0a33873` + working tree,归 LifeOS-Notes-workspace 候选)· 竞品/参考调研(lifeos-layer-restructure §6.4 + reference memory + 6 repo clone + LifeOS Pro OPC vault)。**下一步 = SC1+SC2 最小切片:ctrl-ghostfolio manifest + kernel 连 mock Ghostfolio MCP 经 gate 可达记审计(照 Obsidian connector 先例)。** 先派 Explore 测绘功能包/mcp_host 机制(动模块先读)。
 - 2026-06-20 **目标替换**(原 Irisy 回复正确性测试 → §14 统一操作接口 feature 实装)。理由:bao 连续多轮指挥从「智能表格对标飞书」→「§14 修改架构」→「按架构全量做」,独立 reviewer 复审指出 GOAL.md 旧了。当前状态:`feat/unified-query` 11 commit、kernel 180 测试绿、reviewer PASS、ADR 对齐。下一步 = PR + PWA 前端消费(SC8)。
 - 2026-06-21 **对标基线校准 (bao 钦定): 智能表格前端先对标 Grist (getgrist.com) 做功能一致, 再叠加飞书 Bitable 的 AI 智能表格能力。** 现状盘点 (真实代码 + `/table-lab` 视觉验证): 字段类型 25 种、8 视图 (Grid 已用 glide-data-grid)、filter/sort/group/隐藏/冻结/密度、AI 列、link/lookup/rollup/formula、条件格式、CSV 导入 —— route A 基本做完, `feishu-bitable-parity-assessment.md` 已过时。
   - **Grist 对标差距** (按 Grist 灵魂排序): ① Creator Panel 右侧三栏配置面板 ② Linked widgets / "Select By" 一页多 widget 联动 ③ Summary tables 作数据源 ④ Reference display-column + `$Ref.Field` 解引用 ⑤ trigger formula ⑥ 列宽/行高/换行 ⑦ DateTime/Integer 类型。Access rules / Raw data 多为 non-goal (单人)。

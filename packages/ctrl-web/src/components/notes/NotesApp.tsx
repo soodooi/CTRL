@@ -42,6 +42,7 @@ import {
   renderDailyNotePath,
 } from '@/lib/vault-conventions';
 import { NotesTree, type PathMutation } from './NotesTree';
+import { LifeCalendar } from './LifeCalendar';
 import { NotesEditor } from './NotesEditor';
 import { NotesBacklinks } from './NotesBacklinks';
 import { NotesTabBar } from './NotesTabBar';
@@ -230,6 +231,7 @@ export const NotesApp = (): ReactElement => {
       <div className={styles.cols}>
         {treeOpen && (
           <aside className={styles.leftCol} aria-label="Notes sidebar">
+            <LifeCalendar onPickDate={(isoDate) => handleSelect(`daily/${isoDate}.md`)} />
             <input
               type="search"
               className={styles.sidebarSearch}
