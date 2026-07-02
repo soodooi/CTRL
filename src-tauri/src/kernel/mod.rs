@@ -55,11 +55,6 @@ pub mod event_ws;
 pub mod subprocess_actor;
 pub mod subprocess_channel_adapter;
 pub mod smart_table_index;
-// ADR-002 §7 feature pack (governing `vault/ctrl/ai-native-feature-pack-research.md`)
-// — Ghostfolio (self-hosted finance) lifted into a §14 RecordSource: the first
-// seed proving "make an open-source app AI-native through the gate", the
-// AI-native uplift layer (uniform describe/query) over its raw REST.
-pub mod ghostfolio_source;
 // Feature-pack provision+auth engine (governing
 // `vault/ctrl/feature-pack-provision-auth-engine.md`) — generic runtime that
 // makes any self-hosted connector one-click + silent from its manifest data:

@@ -20,9 +20,9 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **79** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **62** are bespoke tools (not section-14 shaped)
-- **23** writes (produce, through the review gate) / **56** reads
+- **76** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **59** are bespoke tools (not section-14 shaped)
+- **23** writes (produce, through the review gate) / **53** reads
 - **111** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
@@ -150,15 +150,12 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `kernel_status` | 0 | read | bespoke | Report kernel health: uptime, registered LLM adapters, MCP server count | cmd too |
 | `vault_root_path` | 0 | read | bespoke | Return the absolute vault root path on disk |  |
 
-### other (17 endpoints, all bespoke)
+### other (14 endpoints, all bespoke)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
 | `discover_packs` | 2 | read | bespoke | Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. "stock price"). Use this when building a feature pack, to find an existing server before authoring one. |  |
 | `discover_skills` | 1 | read | bespoke | Search published skills (SKILL.md) on GitHub by keyword — returns repo / name / description / stars / url. Use this when building a feature pack, to find a reusable skill before writing one. Requires a GitHub token. |  |
-| `ghostfolio_add_transaction` | 9 | read | bespoke | Record a trade in Ghostfolio (a write): symbol + kind (buy/sell) + quantity + unit_price + currency + date (+ optional data_source/fee/account_id). POSTs an order to the self-hosted instance and returns the created transaction. |  |
-| `ghostfolio_describe` | 0 | read | bespoke | Describe the Ghostfolio portfolio holdings as a queryable RecordSource: fields (symbol/name/quantity/value/allocation/currency) and operators. Call before ghostfolio_query. |  |
-| `ghostfolio_query` | 5 | read | bespoke | Query the Ghostfolio portfolio holdings by symbol/value/allocation with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live. Call ghostfolio_describe first. |  |
 | `market_quote` | 1 | read | bespoke | Live stock/index quotes for tickers (Yahoo Finance, no key). Returns price, currency, and percent change vs previous close. Use Yahoo suffixes: .SS Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^ (e.g. ^GSPC, ^IXIC, ^HSI). |  |
 | `market_screen` | 2 | read | bespoke | Predefined stock screen (Yahoo Finance, no key). screen = day_gainers | day_losers | most_actives. Returns symbol, name, price, and percent change for the top movers. |  |
 | `skill_list` | 1 | read | bespoke | List the user's local installed skills (name + description + path), optional keyword filter |  |

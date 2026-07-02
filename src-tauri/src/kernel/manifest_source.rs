@@ -1,8 +1,10 @@
 //! Generic manifest-driven §14 connector source (ADR-002 §14.12). A REST
 //! connector's §14 shape — its schema, its JSON→Row mapping, its read endpoint,
 //! its write body — is declared as manifest DATA (`record_source`), and this ONE
-//! runtime source reproduces what a hand-coded connector (`ghostfolio_source.rs`)
-//! did. Adding a REST connector becomes pure manifest data, zero Rust — closing
+//! runtime source drives describe/query/produce for ANY connector (ghostfolio is
+//! the first, declared entirely in its manifest — the earlier hand-coded
+//! `ghostfolio_source.rs` retired into this path). A REST connector becomes pure
+//! manifest data, zero Rust — closing
 //! the gap §14.6 promised but per-source code broke (§7.4 manifest=data /
 //! §7.5 product-grade packs are zero-code to add).
 //!
@@ -445,7 +447,7 @@ mod tests {
     }
 
     /// The ghostfolio §14 shape expressed as PURE MANIFEST DATA — the proof that a
-    /// connector needs no Rust. Mirrors `ghostfolio_source.rs` exactly.
+    /// connector needs no Rust (the shape the retired hand-coded connector had).
     fn ghostfolio_spec() -> RecordSourceSpec {
         serde_json::from_value(serde_json::json!({
             "kind": "record",
@@ -481,8 +483,8 @@ mod tests {
         .unwrap()
     }
 
-    // Same payload shape ghostfolio_source.rs tests use (object-wrapped, mixed flat
-    // + nested SymbolProfile) to prove the generic reader reproduces it.
+    // A Ghostfolio holdings payload (object-wrapped, mixed flat + nested
+    // SymbolProfile) proving the generic reader handles both shapes.
     fn sample() -> Value {
         serde_json::json!({
             "holdings": [

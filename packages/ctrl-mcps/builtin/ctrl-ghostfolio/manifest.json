@@ -6,7 +6,7 @@
   "author": { "name": "soodooi" },
   "description": {
     "short": "Your self-hosted Ghostfolio portfolio, made AI-native — one-click install, silent auth, then Irisy reads holdings and records trades through the :17873 gate.",
-    "long": "A CTRL feature pack for Ghostfolio (open-source, self-hosted finance). One-click + silent by declaration: CTRL's generic provision engine brings up Ghostfolio's Docker stack (app + PostgreSQL + Redis) with freshly generated secrets, then the auth engine mints an account automatically (bootstrap) and exchanges the security token for a JWT per call (token-exchange) — no manual URL/token entry. Beyond the raw REST, CTRL lifts the portfolio into the uniform §14 describe/query/produce contract (ghostfolio_describe / ghostfolio_query / ghostfolio_add_transaction), governed + audited at :17873, credentials kernel-side and never shown to the model."
+    "long": "A CTRL feature pack for Ghostfolio (open-source, self-hosted finance). One-click + silent by declaration: CTRL's generic provision engine brings up Ghostfolio's Docker stack (app + PostgreSQL + Redis) with freshly generated secrets, then the auth engine mints an account automatically (bootstrap) and exchanges the security token for a JWT per call (token-exchange) — no manual URL/token entry. Beyond the raw REST, the manifest's record_source declaration lifts the portfolio into the uniform §14 describe/query/produce contract, reached through the generic connector tools (source_describe / source_query / source_produce with source_id=ctrl-ghostfolio), governed + audited at :17873, credentials kernel-side and never shown to the model."
   },
   "icon": "📊",
   "knowledge_base": "Finance/Ghostfolio",
@@ -70,7 +70,7 @@
       "steps": [
         {
           "type": "shell",
-          "command": "echo 'Ask Irisy for your holdings — routed through the :17873 gate via ghostfolio_query.'"
+          "command": "echo 'Ask Irisy for your holdings — routed through the :17873 gate via source_query (source_id=ctrl-ghostfolio).'"
         }
       ]
     }

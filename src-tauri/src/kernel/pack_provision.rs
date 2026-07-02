@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Credential-store account for a pack field (mirrors the provision runner +
-/// resolve_ghostfolio_creds): `mcp:<pack_id>:<field>`.
+/// the gate's generic `resolve_pack_creds`): `mcp:<pack_id>:<field>`.
 pub fn secret_account(pack_id: &str, field: &str) -> String {
     format!("mcp:{pack_id}:{field}")
 }

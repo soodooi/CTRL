@@ -45,7 +45,6 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
     "vault",
     "smart_table",
     "tasks",
-    "ghostfolio",
     // Generic §14 connector source tools (source_describe / source_query /
     // source_produce) — data-driven access to ANY installed connector that
     // declares a `record_source` (ADR-002 §14.12). First-party so Irisy/PWA can
@@ -202,7 +201,6 @@ pub fn tool_domain(tool: &str) -> &'static str {
     const PREFIXES: &[(&str, &str)] = &[
         ("smart_table_", "smart_table"),
         ("task_", "tasks"),
-        ("ghostfolio_", "ghostfolio"),
         ("source_", "source"),
         ("irisy_soul_", "memory"),
         ("vault_", "vault"),
