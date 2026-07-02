@@ -91,13 +91,13 @@ pub async fn fetch(base_url: &str, token: &str) -> Result<GhostfolioSource, Ghos
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
-        .map_err(|e| GhostfolioError::Http(e.to_string()))?;
+        .map_err(|_| GhostfolioError::Http("could not reach the ghostfolio instance".into()))?;
     let resp = client
         .get(&url)
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
-        .map_err(|e| GhostfolioError::Http(e.to_string()))?;
+        .map_err(|_| GhostfolioError::Http("could not reach the ghostfolio instance".into()))?;
     if !resp.status().is_success() {
         return Err(GhostfolioError::Status(resp.status().as_u16()));
     }
@@ -106,6 +106,66 @@ pub async fn fetch(base_url: &str, token: &str) -> Result<GhostfolioSource, Ghos
         .await
         .map_err(|e| GhostfolioError::Parse(e.to_string()))?;
     Ok(GhostfolioSource::from_json(&body))
+}
+
+/// A transaction (order) to record in Ghostfolio via the §14 `produce` verb.
+#[derive(Debug, Clone)]
+pub struct TransactionInput {
+    pub symbol: String,
+    /// `BUY` or `SELL` (normalized upper-case on send).
+    pub kind: String,
+    pub quantity: f64,
+    pub unit_price: f64,
+    pub currency: String,
+    /// ISO date, e.g. `2026-07-01`.
+    pub date: String,
+    /// Ghostfolio market data source, e.g. `YAHOO` / `MANUAL`.
+    pub data_source: String,
+    pub fee: f64,
+    pub account_id: Option<String>,
+}
+
+/// Produce (write) a transaction into Ghostfolio (`POST /api/v1/order`) — the
+/// §14 write verb: serial, side-effecting, high-signal ("record a trade"), NOT a
+/// raw endpoint mirror. Routed through the :17873 gate so it is audited; write
+/// approval is the review-gate discipline (ADR-006 §4 ladder, parity with
+/// `vault.write`). Returns the created order JSON. Token stays kernel-side.
+pub async fn add_transaction(
+    base_url: &str,
+    token: &str,
+    txn: &TransactionInput,
+) -> Result<Value, GhostfolioError> {
+    let url = format!("{}/api/v1/order", base_url.trim_end_matches('/'));
+    let mut body = serde_json::json!({
+        "symbol": txn.symbol,
+        "type": txn.kind.to_uppercase(),
+        "quantity": txn.quantity,
+        "unitPrice": txn.unit_price,
+        "currency": txn.currency,
+        "date": txn.date,
+        "dataSource": txn.data_source,
+        "fee": txn.fee,
+    });
+    if let Some(acc) = &txn.account_id {
+        body["accountId"] = Value::String(acc.clone());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|_| GhostfolioError::Http("could not reach the ghostfolio instance".into()))?;
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|_| GhostfolioError::Http("could not reach the ghostfolio instance".into()))?;
+    if !resp.status().is_success() {
+        return Err(GhostfolioError::Status(resp.status().as_u16()));
+    }
+    resp.json()
+        .await
+        .map_err(|e| GhostfolioError::Parse(e.to_string()))
 }
 
 #[derive(Debug)]
@@ -150,7 +210,7 @@ fn holding_to_row(h: &Value) -> Row {
     row.insert("value".into(), num_field(h, &["valueInBaseCurrency", "value"]));
     row.insert(
         "allocation".into(),
-        num_field(h, &["allocationInPercentage", "allocationInPercentage"]),
+        num_field(h, &["allocationInPercentage", "allocation"]),
     );
     row.insert("currency".into(), str_field(h, &["currency"]));
     row
@@ -338,5 +398,43 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let err = fetch(&format!("http://{addr}"), "bad").await.unwrap_err();
         assert!(matches!(err, GhostfolioError::Status(401)));
+    }
+
+    // produce (add transaction) over real HTTP: POST /api/v1/order with the
+    // correct order body (symbol/type/quantity/unitPrice/...). The mock echoes
+    // the received JSON so we can assert exactly what was sent.
+    #[tokio::test]
+    async fn add_transaction_posts_order_body() {
+        use axum::{routing::post, Json, Router};
+        let app = Router::new().route(
+            "/api/v1/order",
+            post(|Json(body): Json<Value>| async move { Json(body) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let txn = TransactionInput {
+            symbol: "AAPL".into(),
+            kind: "buy".into(), // normalized to BUY on send
+            quantity: 10.0,
+            unit_price: 190.0,
+            currency: "USD".into(),
+            date: "2026-07-01".into(),
+            data_source: "YAHOO".into(),
+            fee: 0.0,
+            account_id: Some("acc-1".into()),
+        };
+        let created = add_transaction(&format!("http://{addr}"), "test-token", &txn)
+            .await
+            .unwrap();
+        assert_eq!(created["symbol"], "AAPL");
+        assert_eq!(created["type"], "BUY"); // lower-case input normalized
+        assert_eq!(created["quantity"], 10.0);
+        assert_eq!(created["unitPrice"], 190.0);
+        assert_eq!(created["accountId"], "acc-1");
     }
 }

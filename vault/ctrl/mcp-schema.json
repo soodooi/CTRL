@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 74,
+  "toolCount": 75,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -49,6 +49,75 @@
         "type": "object"
       },
       "name": "discover_skills"
+    },
+    {
+      "description": "Record a trade in Ghostfolio (a write): symbol + kind (buy/sell) + quantity + unit_price + currency + date (+ optional data_source/fee/account_id). POSTs an order to the self-hosted instance and returns the created transaction.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "ghostfolio.add_transaction — the §14 `produce` verb: record a trade into the\nself-hosted Ghostfolio instance (POST /api/v1/order). High-signal atomic\naction, not a raw endpoint mirror.",
+        "properties": {
+          "account_id": {
+            "default": null,
+            "description": "Target account id (optional).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currency": {
+            "description": "ISO currency, e.g. `USD`.",
+            "type": "string"
+          },
+          "data_source": {
+            "default": null,
+            "description": "Market data source (default `YAHOO`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "description": "ISO date, e.g. `2026-07-01`.",
+            "type": "string"
+          },
+          "fee": {
+            "default": null,
+            "description": "Transaction fee (default 0).",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "`buy` or `sell` (normalized upper-case on send).",
+            "type": "string"
+          },
+          "quantity": {
+            "format": "double",
+            "type": "number"
+          },
+          "symbol": {
+            "description": "Ticker symbol, e.g. `AAPL`.",
+            "type": "string"
+          },
+          "unit_price": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "symbol",
+          "kind",
+          "quantity",
+          "unit_price",
+          "currency",
+          "date"
+        ],
+        "title": "GhostfolioAddTxnArgs",
+        "type": "object"
+      },
+      "name": "ghostfolio_add_transaction"
     },
     {
       "description": "Describe the Ghostfolio portfolio holdings as a queryable RecordSource: fields (symbol/name/quantity/value/allocation/currency) and operators. Call before ghostfolio_query.",

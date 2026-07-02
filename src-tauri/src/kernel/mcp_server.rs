@@ -208,6 +208,32 @@ pub struct GhostfolioQueryArgs {
     pub limit: Option<usize>,
 }
 
+/// ghostfolio.add_transaction — the §14 `produce` verb: record a trade into the
+/// self-hosted Ghostfolio instance (POST /api/v1/order). High-signal atomic
+/// action, not a raw endpoint mirror.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GhostfolioAddTxnArgs {
+    /// Ticker symbol, e.g. `AAPL`.
+    pub symbol: String,
+    /// `buy` or `sell` (normalized upper-case on send).
+    pub kind: String,
+    pub quantity: f64,
+    pub unit_price: f64,
+    /// ISO currency, e.g. `USD`.
+    pub currency: String,
+    /// ISO date, e.g. `2026-07-01`.
+    pub date: String,
+    /// Market data source (default `YAHOO`).
+    #[serde(default)]
+    pub data_source: Option<String>,
+    /// Transaction fee (default 0).
+    #[serde(default)]
+    pub fee: Option<f64>,
+    /// Target account id (optional).
+    #[serde(default)]
+    pub account_id: Option<String>,
+}
+
 /// task.create — produce/write a new checkbox task line (ADR-002 §14 produce
 /// verb). Appends `- [ ] <title>` to a note (inline-checkbox substrate).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1080,6 +1106,42 @@ impl KernelMcpRouter {
             .query(&req, now)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// ghostfolio.add_transaction — the §14 `produce` verb: record a trade into
+    /// the self-hosted Ghostfolio instance (POST /api/v1/order). A high-signal
+    /// atomic action (not a raw endpoint mirror). Serial + side-effecting;
+    /// routed through the gate so it is audited (write approval = review-gate
+    /// discipline, ADR-006 §4, parity with vault.write). Creds kernel-side.
+    #[tool(
+        description = "Record a trade in Ghostfolio (a write): symbol + kind (buy/sell) + quantity + unit_price + currency + date (+ optional data_source/fee/account_id). POSTs an order to the self-hosted instance and returns the created transaction."
+    )]
+    async fn ghostfolio_add_transaction(
+        &self,
+        Parameters(args): Parameters<GhostfolioAddTxnArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let (base_url, token) = resolve_ghostfolio_creds().ok_or_else(|| {
+            McpError::invalid_params(
+                "ghostfolio not configured — set the instance URL + token (mcp:ctrl-ghostfolio:ghostfolio_url / :ghostfolio_token)",
+                None,
+            )
+        })?;
+        let txn = ghostfolio_source::TransactionInput {
+            symbol: args.symbol,
+            kind: args.kind,
+            quantity: args.quantity,
+            unit_price: args.unit_price,
+            currency: args.currency,
+            date: args.date,
+            data_source: args.data_source.unwrap_or_else(|| "YAHOO".to_string()),
+            fee: args.fee.unwrap_or(0.0),
+            account_id: args.account_id,
+        };
+        let created = ghostfolio_source::add_transaction(&base_url, &token, &txn)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let body = serde_json::to_string(&created).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 

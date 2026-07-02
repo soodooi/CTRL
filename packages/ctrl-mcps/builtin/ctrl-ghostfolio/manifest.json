@@ -1,0 +1,53 @@
+{
+  "manifest_version": 2,
+  "id": "ctrl-ghostfolio",
+  "name": "Ghostfolio",
+  "version": "0.1.0",
+  "author": { "name": "soodooi" },
+  "description": {
+    "short": "Your self-hosted Ghostfolio portfolio, made AI-native — Irisy reads holdings and records trades through the :17873 gate.",
+    "long": "A CTRL feature pack for Ghostfolio (open-source, self-hosted finance). Beyond the raw REST, CTRL lifts the portfolio into the uniform §14 describe/query contract (ghostfolio_describe / ghostfolio_query) and a one-shot produce (ghostfolio_add_transaction) — governed + audited at :17873, with the instance URL + token kept in the credential store and never shown to the model."
+  },
+  "icon": "📊",
+  "knowledge_base": "Finance/Ghostfolio",
+  "ui_surface": "html-output",
+  "config_schema": {
+    "fields": [
+      {
+        "key": "ghostfolio_url",
+        "kind": "url",
+        "label": "Ghostfolio instance URL",
+        "description": "Your self-hosted Ghostfolio base URL, e.g. http://127.0.0.1:3333",
+        "required": true
+      },
+      {
+        "key": "ghostfolio_token",
+        "kind": "secret",
+        "label": "Security token",
+        "description": "Ghostfolio API security token (Settings → Security Token). Stored in the OS keychain, never sent to the model.",
+        "required": true
+      }
+    ]
+  },
+  "provision": {
+    "tools": [],
+    "env": {
+      "GHOSTFOLIO_URL": "{{secret:ghostfolio_url}}",
+      "GHOSTFOLIO_TOKEN": "{{secret:ghostfolio_token}}"
+    }
+  },
+  "actions": [
+    {
+      "id": "view_holdings",
+      "name": "View holdings",
+      "input": "none",
+      "output": "workspace",
+      "steps": [
+        {
+          "type": "shell",
+          "command": "curl -fsS -H \"Authorization: Bearer $GHOSTFOLIO_TOKEN\" \"$GHOSTFOLIO_URL/api/v1/portfolio/holdings\""
+        }
+      ]
+    }
+  ]
+}
