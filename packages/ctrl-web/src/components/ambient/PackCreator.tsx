@@ -80,9 +80,12 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
     setError(null);
     try {
       const manifest = currentManifest();
-      // Gate the install on the evals — never ship a pack with errors.
+      // Gate the install on the evals — never ship a pack with errors. Fail
+      // CLOSED: if the evals couldn't run (kernel unreachable → null report),
+      // block install rather than shipping an un-evaluated pack (`evaluate`
+      // already surfaced the error).
       const r = await evaluate(manifest);
-      if (r != null && !r.ok) {
+      if (r == null || !r.ok) {
         setInstalling(false);
         return;
       }

@@ -218,7 +218,7 @@ mod tests {
             "record_source": { "query": { "endpoint": "/x" }, "fields": [] }
         }));
         assert!(!report.ok);
-        // fields:[] fails the schema parse → record_source parse error (fail-closed).
+        // fields:[] parses to an empty Vec → trips the fields.is_empty() branch.
         assert!(report.issues.iter().any(|i| i.field.starts_with("record_source")));
     }
 
