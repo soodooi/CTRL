@@ -134,6 +134,16 @@ impl SmartTable {
             None => false,
         }
     }
+
+    /// Delete a row by index (the §14 produce delete verb — Bitable record delete
+    /// parity). Returns false if the index is out of range.
+    pub fn delete_row(&mut self, row_index: usize) -> bool {
+        if row_index >= self.rows.len() {
+            return false;
+        }
+        self.rows.remove(row_index);
+        true
+    }
 }
 
 impl QuerySource for SmartTable {
@@ -900,6 +910,23 @@ mod tests {
         assert_eq!(t.rows[0]["amount"], "111");
         assert!(!t.update_cell(99, "amount", "1")); // bad index
         assert!(!t.update_cell(0, "nope", "1")); // bad field
+    }
+
+    #[test]
+    fn delete_row_in_range_and_out_of_range() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        let before = t.rows.len();
+        assert!(before >= 2);
+        let second = t.rows[1].clone();
+        // Deleting row 0 removes it; the old row 1 shifts into slot 0.
+        assert!(t.delete_row(0));
+        assert_eq!(t.rows.len(), before - 1);
+        assert_eq!(t.rows[0], second);
+        assert!(!t.delete_row(99)); // out of range → false, no change
+        assert_eq!(t.rows.len(), before - 1);
+        // Round-trips: re-parse the serialized body yields the same rows.
+        let back = SmartTable::parse(&frontmatter(), &t.serialize_body());
+        assert_eq!(back.rows.len(), before - 1);
     }
 
     #[test]

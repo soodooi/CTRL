@@ -160,6 +160,16 @@ pub struct SmartTableAppendRowArgs {
     pub values: std::collections::BTreeMap<String, String>,
 }
 
+/// smart_table.delete_row — produce/delete a row (ADR-002 §14; Bitable record
+/// delete parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableDeleteRowArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Zero-based row index to delete.
+    pub row_index: usize,
+}
+
 /// task.query — a structured read over the LifeOS Task RecordSource (ADR-002
 /// §14). Fill the parameter object; do NOT write a query string. Call
 /// `task_describe` first to learn valid fields. `subdir` scopes the task
@@ -919,6 +929,37 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(format!(
             "appended row to {}",
             args.path
+        ))]))
+    }
+
+    /// smart_table.delete_row — the produce/delete verb (ADR-002 §14; Bitable
+    /// record-delete parity). Reads fresh, removes the row by index, re-serializes,
+    /// writes back. Routed through the gate so it is audited + review-gated (a
+    /// destructive write, like vault.delete).
+    #[tool(description = "Delete a row from a smart table by zero-based row index, then write it back.")]
+    async fn smart_table_delete_row(
+        &self,
+        Parameters(args): Parameters<SmartTableDeleteRowArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.delete_row(args.row_index) {
+            return Err(McpError::invalid_params(
+                format!("delete_row rejected: row {} out of range", args.row_index),
+                None,
+            ));
+        }
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "deleted row {} from {}",
+            args.row_index, args.path
         ))]))
     }
 

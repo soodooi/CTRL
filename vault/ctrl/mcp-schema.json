@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 79,
+  "toolCount": 80,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -1044,6 +1044,32 @@
         "type": "object"
       },
       "name": "smart_table_append_row"
+    },
+    {
+      "description": "Delete a row from a smart table by zero-based row index, then write it back.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.delete_row — produce/delete a row (ADR-002 §14; Bitable record\ndelete parity).",
+        "properties": {
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "row_index": {
+            "description": "Zero-based row index to delete.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "row_index"
+        ],
+        "title": "SmartTableDeleteRowArgs",
+        "type": "object"
+      },
+      "name": "smart_table_delete_row"
     },
     {
       "description": "Describe a smart table: its fields, types, and supported query operators. Call this before smart_table.query.",
