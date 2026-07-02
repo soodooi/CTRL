@@ -362,6 +362,32 @@ export const querySmartTable = (
     limit: request.limit ?? null,
   });
 
+// ─── Generic §14 connector source (ADR-002 §14.12) ──────────────────────────
+// Any installed connector that declares a `record_source` is describe/query'd
+// through the SAME gate + shared engine as smart-table — data-driven, so the PWA
+// reads a product-grade data view (e.g. Ghostfolio holdings) with zero per-pack
+// code. Addressed by source_id (the installed pack id).
+
+/** Describe a connector's records — fields + operators, read from its manifest
+ *  record_source. Same shape as a smart-table describe (the §14 type layer). */
+export const describeSource = (sourceId: string): Promise<SmartTableDescribe> =>
+  gateInvoke('source_describe', { source_id: sourceId });
+
+/** Query a connector's records live through the gate (fetches the self-hosted
+ *  instance from its manifest). Same request/result shape as smart_table.query. */
+export const querySource = (
+  sourceId: string,
+  request: SmartTableQueryRequest = {},
+): Promise<SmartTableQueryResult> =>
+  gateInvoke('source_query', {
+    source_id: sourceId,
+    filters: request.filters ?? [],
+    conjunction: request.conjunction ?? 'and',
+    sort: request.sort ?? [],
+    group_by: request.group_by ?? [],
+    limit: request.limit ?? null,
+  });
+
 // ─── LifeOS tasks (ADR-002 §14 Task source, GOAL Phase 1) ───────────────────
 // Inline-checkbox tasks scanned across the vault, operated through the SAME
 // :17873 gate an external agent uses (task_describe/query/create/update).

@@ -83,6 +83,7 @@ import {
 } from '@/components/featurepack/FeaturePackScene';
 import {
   runInstalledPackAction,
+  loadPackRecords,
   loadInstalledPacks,
   PACKS_CHANGED_EVENT,
 } from '@/lib/feature-pack';
@@ -1273,6 +1274,9 @@ export function AmbientHome({
                     <FeaturePackScene
                       pack={scene}
                       onRunAction={(id) => runInstalledPackAction(scene.id, id)}
+                      loadRecords={
+                        scene.hasRecords ? () => loadPackRecords(scene.id) : undefined
+                      }
                     />
                   </div>
                 ) : part ? (

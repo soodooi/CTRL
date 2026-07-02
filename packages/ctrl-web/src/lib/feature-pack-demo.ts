@@ -7,6 +7,7 @@
 // command lands — the call site (FeaturePackScene.onRunAction) stays the same.
 
 import type { FeaturePack } from '@/components/featurepack/FeaturePackScene';
+import type { SourceData } from '@/components/featurepack/SourceDataView';
 
 export const DEMO_CF_WORKERS: FeaturePack = {
   id: 'pack.cf-workers',
@@ -19,6 +20,41 @@ export const DEMO_CF_WORKERS: FeaturePack = {
     { id: 'preview', name: 'Local preview', description: 'wrangler dev' },
   ],
 };
+
+/** A §14 record_source pack (ADR-002 §14.12) — leads with its records (a
+ *  product-grade data table) instead of an action bar. Ghostfolio holdings. */
+export const DEMO_GHOSTFOLIO: FeaturePack = {
+  id: 'ctrl-ghostfolio',
+  name: 'Ghostfolio',
+  icon: '📊',
+  summary: 'Your self-hosted portfolio, made AI-native',
+  hasRecords: true,
+  actions: [{ id: 'add', name: 'Record a trade', description: 'source_produce' }],
+};
+
+/** Stub records loader — stands in for describe+query through the gate (the live
+ *  fetch needs the real kernel + a running Ghostfolio). Shape = what
+ *  loadPackRecords returns, so /pack-lab shows the real product-grade table. */
+export async function demoGhostfolioRecords(): Promise<SourceData> {
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return {
+    matchCount: 4,
+    fields: [
+      { key: 'symbol', label: 'Symbol', type: 'text' },
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'quantity', label: 'Quantity', type: 'number' },
+      { key: 'value', label: 'Value', type: 'currency' },
+      { key: 'allocation', label: 'Allocation %', type: 'percent' },
+      { key: 'currency', label: 'Currency', type: 'text' },
+    ],
+    rows: [
+      { symbol: 'AAPL', name: 'Apple Inc.', quantity: '40', value: '9021.6', allocation: '38.2', currency: 'USD' },
+      { symbol: 'VEU', name: 'Vanguard FTSE All-World ex-US', quantity: '85', value: '5218', allocation: '22.1', currency: 'USD' },
+      { symbol: 'BTC', name: 'Bitcoin', quantity: '0.35', value: '4655.75', allocation: '19.7', currency: 'USD' },
+      { symbol: 'MSFT', name: 'Microsoft Corp.', quantity: '12', value: '4710.24', allocation: '20', currency: 'USD' },
+    ],
+  };
+}
 
 /** Stub executor — stands in for the kernel run_action path so the scene
  *  renders end to end. Output mirrors what a real wrangler action returns. */

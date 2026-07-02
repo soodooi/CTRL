@@ -1,16 +1,22 @@
-// FeaturePackScene — the "using" face of an installed feature pack: an action
-// bar (manifest.actions) over an output area. Irisy stays alongside via the
-// parent split (this component owns only the right/scene column).
-// ADR-002 substrate § composition v21 §7.1.
+// FeaturePackScene — the "using" face of an installed feature pack. Two faces,
+// picked by the manifest:
+//  • a pack that declares a §14 `record_source` (ADR-002 §14.12) leads with its
+//    RECORDS — a product-grade data table (e.g. Ghostfolio holdings), the pack's
+//    data IS the view; actions sit above it (e.g. "record a trade").
+//  • otherwise it is an action bar over an output area.
+// Irisy stays alongside via the parent split (this component owns only the
+// right/scene column). ADR-002 substrate § composition v21 §7.1 + §7.5.
 //
 // Best-fit component, not a reuse of McpRunView (bao 2026-06-12: don't reuse,
-// build the best fit, refactor-ok). Execution is injected via onRunAction so
-// the scene renders/iterates independently of the kernel run_action wiring.
+// build the best fit, refactor-ok). Execution + record loading are injected
+// (onRunAction / loadRecords) so the scene renders/iterates independently of the
+// kernel wiring — and unit-tests + visually verifies with mock data.
 
-import { useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { type PackConfigField, provisionPack } from '@/lib/feature-pack';
 import { ActionBar, type PackAction } from './ActionBar';
 import { PackConfigModal } from './PackConfigModal';
+import { SourceDataView, type SourceData } from './SourceDataView';
 import styles from './FeaturePackScene.module.css';
 
 export interface FeaturePack {
@@ -29,6 +35,9 @@ export interface FeaturePack {
   /** Declares a service/bootstrap auth → one-click silent "Set up" (the
    *  provision engine) instead of the manual Configure wizard. */
   needsProvision?: boolean;
+  /** Manifest declares a §14 `record_source` → the scene leads with its records
+   *  (a product-grade data table) instead of a bare action bar (§14.12). */
+  hasRecords?: boolean;
 }
 
 interface FeaturePackSceneProps {
@@ -36,16 +45,51 @@ interface FeaturePackSceneProps {
   /** Execute an action; resolves to output text/markdown to show. Thrown
    *  errors surface in the output area. */
   onRunAction: (actionId: string) => Promise<string>;
+  /** Fetch the pack's §14 records (describe + query through the gate). Injected
+   *  so the scene is testable/visual without the live kernel. Present iff
+   *  `pack.hasRecords`. */
+  loadRecords?: () => Promise<SourceData>;
 }
 
-export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): ReactElement {
+type RecordsState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; data: SourceData }
+  | { status: 'error'; message: string };
+
+export function FeaturePackScene({
+  pack,
+  onRunAction,
+  loadRecords,
+}: FeaturePackSceneProps): ReactElement {
   const [runningId, setRunningId] = useState<string | null>(null);
   const [output, setOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
+  const [records, setRecords] = useState<RecordsState>({ status: 'idle' });
   const configFields = pack.configFields ?? [];
+  const showsRecords = pack.hasRecords === true && loadRecords != null;
+
+  const refreshRecords = useCallback(async (): Promise<void> => {
+    if (loadRecords == null) return;
+    setRecords({ status: 'loading' });
+    try {
+      setRecords({ status: 'ready', data: await loadRecords() });
+    } catch (e) {
+      setRecords({ status: 'error', message: e instanceof Error ? e.message : String(e) });
+    }
+  }, [loadRecords]);
+
+  // Load records when the scene opens (or the pack changes).
+  useEffect(() => {
+    if (showsRecords) void refreshRecords();
+    // Reset transient action output when switching packs.
+    setOutput(null);
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pack.id]);
 
   const setUp = async (): Promise<void> => {
     setSettingUp(true);
@@ -54,6 +98,7 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
     setLastAction('Set up');
     try {
       setOutput(await provisionPack(pack.id));
+      if (showsRecords) void refreshRecords();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -68,6 +113,8 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
     setOutput(null);
     try {
       setOutput(await onRunAction(actionId));
+      // An action may have produced a record (e.g. recorded a trade) — refresh.
+      if (showsRecords) void refreshRecords();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -85,6 +132,17 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
           <span className={styles.name}>{pack.name}</span>
           {pack.summary != null && <span className={styles.summary}>{pack.summary}</span>}
         </div>
+        {showsRecords && (
+          <button
+            type="button"
+            className={styles.configBtn}
+            onClick={() => void refreshRecords()}
+            disabled={records.status === 'loading'}
+            title={`Refresh ${pack.name} records`}
+          >
+            {records.status === 'loading' ? 'Refreshing…' : 'Refresh'}
+          </button>
+        )}
         {pack.needsProvision ? (
           <button
             type="button"
@@ -119,7 +177,20 @@ export function FeaturePackScene({ pack, onRunAction }: FeaturePackSceneProps): 
       <ActionBar actions={pack.actions} runningId={runningId} onRun={run} />
 
       <div className={styles.output}>
-        {error != null ? (
+        {showsRecords ? (
+          <>
+            {error != null && <pre className={styles.error}>{error}</pre>}
+            {records.status === 'loading' ? (
+              <div className={styles.empty}>Loading {pack.name} records…</div>
+            ) : records.status === 'error' ? (
+              <pre className={styles.error}>{records.message}</pre>
+            ) : records.status === 'ready' ? (
+              <SourceDataView data={records.data} title={pack.name} />
+            ) : (
+              <div className={styles.empty}>No records loaded.</div>
+            )}
+          </>
+        ) : error != null ? (
           <pre className={styles.error}>{error}</pre>
         ) : runningId != null ? (
           <div className={styles.empty}>Running {lastAction}…</div>

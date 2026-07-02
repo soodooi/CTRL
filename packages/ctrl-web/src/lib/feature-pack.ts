@@ -7,8 +7,9 @@
 // degrades to the WS transport instead of bypassing it through the raw
 // Tauri core import (desktop behavior unchanged).
 import { invoke } from './bridge';
-import { listMcps, gateInvoke } from './kernel';
+import { listMcps, gateInvoke, describeSource, querySource } from './kernel';
 import type { FeaturePack } from '@/components/featurepack/FeaturePackScene';
+import type { SourceData } from '@/components/featurepack/SourceDataView';
 
 interface ManifestAction {
   id: string;
@@ -23,6 +24,9 @@ interface PackManifest {
   actions?: ManifestAction[];
   /** Dedicated knowledge base = vault subpath the pack's data lives in. */
   knowledge_base?: string;
+  /** §14 record_source (ADR-002 §14.12) → the scene leads with the pack's
+   *  records. Presence is all the frontend needs; the shape lives kernel-side. */
+  record_source?: unknown;
 }
 
 /** Installed feature packs = installed mcps whose manifest declares actions.
@@ -54,6 +58,9 @@ export async function loadInstalledPacks(): Promise<FeaturePack[]> {
         // Declares a service to bring up and/or bootstrap auth → one-click
         // "Set up" (silent provision) instead of a manual wizard.
         needsProvision: manifestNeedsProvision(m as unknown as Record<string, unknown>),
+        // Generic: ANY pack declaring a §14 record_source leads with its records
+        // (product-grade data table) — no per-pack code (ADR-002 §14.12).
+        hasRecords: m.record_source != null,
       });
     } catch {
       // Skip an mcp whose manifest is unreadable — never break the list.
@@ -67,6 +74,17 @@ export function runInstalledPackAction(packId: string, actionId: string): Promis
   return invoke<string>('run_action', {
     args: { mcp_id: packId, action_id: actionId },
   });
+}
+
+/** Load a pack's §14 records for the product-grade data view (ADR-002 §14.12):
+ *  describe (fields) + query (rows) through the same :17873 gate an external
+ *  agent uses. Generic — works for any pack that declares a record_source. */
+export async function loadPackRecords(sourceId: string): Promise<SourceData> {
+  const [describe, result] = await Promise.all([
+    describeSource(sourceId),
+    querySource(sourceId, {}),
+  ]);
+  return { fields: describe.fields, rows: result.rows, matchCount: result.match_count };
 }
 
 // ── Install (the user's action — Discover one-click) ──────────────────────
