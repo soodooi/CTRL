@@ -145,6 +145,30 @@ impl SmartTable {
         true
     }
 
+    /// Append many rows in one shot (Bitable batchCreate parity). Returns how many
+    /// were appended.
+    pub fn append_rows(&mut self, rows: Vec<Row>) -> usize {
+        let n = rows.len();
+        for values in rows {
+            self.append_row(values);
+        }
+        n
+    }
+
+    /// Delete many rows by index in one shot (Bitable batchDelete parity). Removes
+    /// in descending order so earlier removals don't shift later indices;
+    /// out-of-range + duplicate indices are ignored. Returns how many were deleted.
+    pub fn delete_rows(&mut self, indices: &[usize]) -> usize {
+        let mut idx: Vec<usize> = indices.iter().copied().filter(|&i| i < self.rows.len()).collect();
+        idx.sort_unstable_by(|a, b| b.cmp(a)); // descending
+        idx.dedup();
+        let n = idx.len();
+        for i in idx {
+            self.rows.remove(i);
+        }
+        n
+    }
+
     /// True if a field (column) with this key exists.
     pub fn has_field(&self, key: &str) -> bool {
         self.fields.iter().any(|f| f.key == key)
@@ -991,6 +1015,30 @@ mod tests {
         // Round-trips: re-parse the serialized body yields the same rows.
         let back = SmartTable::parse(&frontmatter(), &t.serialize_body());
         assert_eq!(back.rows.len(), before - 1);
+    }
+
+    #[test]
+    fn batch_append_and_delete_rows() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        let base = t.rows.len();
+        // Append 3 more rows in one shot.
+        let added = t.append_rows(vec![
+            row(&[("name", "R1"), ("amount", "1")]),
+            row(&[("name", "R2"), ("amount", "2")]),
+            row(&[("name", "R3"), ("amount", "3")]),
+        ]);
+        assert_eq!(added, 3);
+        assert_eq!(t.rows.len(), base + 3);
+        let names_before: Vec<String> = t.rows.iter().map(|r| r["name"].clone()).collect();
+        // Delete indices 0 and (base+2) — out-of-desc-order + one at the end;
+        // descending removal must not shift the wrong rows.
+        let last = t.rows.len() - 1;
+        let deleted = t.delete_rows(&[last, 0, last, 999]); // dup + out-of-range ignored
+        assert_eq!(deleted, 2); // last + 0 (999 out of range, dup last collapsed)
+        assert_eq!(t.rows.len(), base + 3 - 2);
+        // The surviving middle rows kept their identity (row 0 and last gone).
+        assert_eq!(t.rows.first().unwrap()["name"], names_before[1]);
+        assert_eq!(t.rows.last().unwrap()["name"], names_before[names_before.len() - 2]);
     }
 
     #[test]

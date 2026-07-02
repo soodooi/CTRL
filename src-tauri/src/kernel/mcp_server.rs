@@ -225,6 +225,26 @@ pub struct SmartTableCreateArgs {
     pub fields: Vec<SmartTableFieldInput>,
 }
 
+/// smart_table.batch_append_rows — produce many rows at once (ADR-002 §14; Bitable
+/// batchCreate parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableBatchAppendArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Rows to append; each is cell values keyed by schema field key.
+    pub rows: Vec<std::collections::BTreeMap<String, String>>,
+}
+
+/// smart_table.batch_delete_rows — delete many rows at once (ADR-002 §14; Bitable
+/// batchDelete parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableBatchDeleteArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Zero-based row indices to delete (out-of-range + duplicates ignored).
+    pub row_indices: Vec<usize>,
+}
+
 /// task.query — a structured read over the LifeOS Task RecordSource (ADR-002
 /// §14). Fill the parameter object; do NOT write a query string. Call
 /// `task_describe` first to learn valid fields. `subdir` scopes the task
@@ -1148,6 +1168,54 @@ impl KernelMcpRouter {
             table.reindex_into(idx, &path);
         }
         Ok(CallToolResult::success(vec![Content::text(format!("created table {path}"))]))
+    }
+
+    /// smart_table.batch_append_rows — produce many rows in one write (ADR-002 §14;
+    /// Bitable batchCreate parity). Reads fresh, appends all, one re-serialize.
+    #[tool(description = "Append multiple rows to a smart table in one call (each row = values keyed by field key). Bitable batch-create parity.")]
+    async fn smart_table_batch_append_rows(
+        &self,
+        Parameters(args): Parameters<SmartTableBatchAppendArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let n = table.append_rows(args.rows.into_iter().map(|r| r.into_iter().collect()).collect());
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "appended {n} rows to {}",
+            args.path
+        ))]))
+    }
+
+    /// smart_table.batch_delete_rows — delete many rows in one write (ADR-002 §14;
+    /// Bitable batchDelete parity). Descending-order removal; out-of-range ignored.
+    #[tool(description = "Delete multiple rows from a smart table by zero-based indices in one call (out-of-range + duplicate indices ignored). Bitable batch-delete parity.")]
+    async fn smart_table_batch_delete_rows(
+        &self,
+        Parameters(args): Parameters<SmartTableBatchDeleteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let n = table.delete_rows(&args.row_indices);
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "deleted {n} rows from {}",
+            args.path
+        ))]))
     }
 
     /// notes.describe — the knowledge base's type layer (ADR-002 §14). Same
