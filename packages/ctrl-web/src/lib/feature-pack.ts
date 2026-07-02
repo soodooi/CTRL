@@ -225,6 +225,22 @@ export function provisionPack(mcpId: string): Promise<string> {
   return gateInvoke('mcp_pack_provision', { mcp_id: mcpId });
 }
 
+/** A scaffolded record_source draft + spec-repair notes (from mcp_pack_scaffold). */
+export interface OpenApiScaffold {
+  record_source: Record<string, unknown>;
+  notes: string[];
+}
+
+/** Draft a §14 record_source from an OpenAPI operation (AutoMCP, §7.4). The draft
+ *  is best-effort — refine it, then evals, before install. */
+export function scaffoldFromOpenApi(
+  openapi: unknown,
+  path: string,
+  method = 'GET',
+): Promise<OpenApiScaffold> {
+  return gateInvoke('mcp_pack_scaffold', { openapi, path, method });
+}
+
 /** The reference a registry returns after publishing (what a peer discovers). */
 export interface PackPublishRef {
   id: string;

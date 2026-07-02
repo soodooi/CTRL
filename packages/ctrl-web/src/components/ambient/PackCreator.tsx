@@ -6,7 +6,7 @@
 
 import { useState, type ReactElement } from 'react';
 import { generatePack, draftToManifest, type DraftPack } from '@/lib/feature-pack-create';
-import { installPack } from '@/lib/feature-pack';
+import { installPack, scaffoldFromOpenApi } from '@/lib/feature-pack';
 import { validatePack, type PackValidationReport } from '@/lib/kernel';
 import { PackEvals } from './PackEvals';
 import styles from './PackCreator.module.css';
@@ -25,6 +25,10 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
   const [report, setReport] = useState<PackValidationReport | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [json, setJson] = useState('');
+  const [openapiText, setOpenapiText] = useState('');
+  const [openapiPath, setOpenapiPath] = useState('');
+  const [scaffolding, setScaffolding] = useState(false);
+  const [scaffoldNotes, setScaffoldNotes] = useState<string[]>([]);
 
   // The manifest to install/validate: the edited JSON when editing, else the
   // draft's. Throws on invalid JSON so the caller surfaces a parse error.
@@ -61,6 +65,37 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setGenerating(false);
+    }
+  };
+
+  // Scaffold a §14 connector from an OpenAPI spec (AutoMCP): draft a record_source
+  // via the gate, wrap it in a manifest, drop into the JSON editor + evals.
+  const scaffold = async (): Promise<void> => {
+    setScaffolding(true);
+    setError(null);
+    setScaffoldNotes([]);
+    try {
+      const spec = JSON.parse(openapiText) as unknown;
+      const out = await scaffoldFromOpenApi(spec, openapiPath.trim());
+      const manifest = {
+        manifest_version: 2,
+        id: 'ctrl-new-connector',
+        name: 'New connector',
+        record_source: out.record_source,
+        actions: [{ id: 'view', name: 'View records' }],
+      };
+      setJson(JSON.stringify(manifest, null, 2));
+      setScaffoldNotes(out.notes);
+      setEditMode(true);
+      await evaluate(manifest);
+    } catch (e) {
+      setError(
+        openapiText.trim() === '' || openapiPath.trim() === ''
+          ? 'paste an OpenAPI spec and a path first'
+          : `scaffold failed — ${e instanceof Error ? e.message : String(e)}`,
+      );
+    } finally {
+      setScaffolding(false);
     }
   };
 
@@ -120,19 +155,49 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
           rows={3}
           disabled={generating}
         />
-        {draft == null && (
-          <button
-            type="button"
-            className={styles.primary}
-            disabled={!desc.trim() || generating}
-            onClick={() => void generate()}
-          >
-            {generating ? 'Drafting…' : 'Generate'}
-          </button>
+        {draft == null && !editMode && (
+          <>
+            <button
+              type="button"
+              className={styles.primary}
+              disabled={!desc.trim() || generating}
+              onClick={() => void generate()}
+            >
+              {generating ? 'Drafting…' : 'Generate'}
+            </button>
+            <details className={styles.openapi}>
+              <summary>or scaffold a connector from an OpenAPI spec</summary>
+              <input
+                className={styles.input}
+                value={openapiPath}
+                onChange={(e) => setOpenapiPath(e.target.value)}
+                placeholder="read path, e.g. /api/v1/portfolio/holdings"
+                disabled={scaffolding}
+              />
+              <textarea
+                className={styles.jsonEditor}
+                value={openapiText}
+                onChange={(e) => setOpenapiText(e.target.value)}
+                placeholder="paste the OpenAPI 3 JSON spec"
+                spellCheck={false}
+                rows={5}
+                disabled={scaffolding}
+                aria-label="OpenAPI spec JSON"
+              />
+              <button
+                type="button"
+                className={styles.secondary}
+                disabled={scaffolding || !openapiText.trim() || !openapiPath.trim()}
+                onClick={() => void scaffold()}
+              >
+                {scaffolding ? 'Scaffolding…' : 'Scaffold from OpenAPI'}
+              </button>
+            </details>
+          </>
         )}
-        {draft != null && (
+        {(draft != null || editMode) && (
           <div className={styles.review}>
-            {!editMode ? (
+            {!editMode && draft != null ? (
               <>
                 <div className={styles.reviewHead}>
                   <span className={styles.reviewIcon}>{draft.icon}</span>
@@ -170,21 +235,34 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
             )}
 
             {/* Evals result — errors block install, warnings are advisory. */}
+            {/* Spec-repair notes from an OpenAPI scaffold — what to refine. */}
+            {scaffoldNotes.length > 0 && (
+              <ul className={styles.notes}>
+                {scaffoldNotes.map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+            )}
+
             {report != null && <PackEvals report={report} />}
 
             <div className={styles.reviewBtns}>
-              <button
-                type="button"
-                className={styles.secondary}
-                onClick={() => {
-                  setEditMode((v) => !v);
-                  setError(null);
-                }}
-                disabled={installing}
-                title={editMode ? 'Back to the review card' : 'Edit the pack JSON by hand'}
-              >
-                {editMode ? 'Done editing' : 'Edit JSON'}
-              </button>
+              {/* Toggle back to the review card only when there IS a draft (an
+                  OpenAPI scaffold has no NL draft — it stays in the editor). */}
+              {draft != null && (
+                <button
+                  type="button"
+                  className={styles.secondary}
+                  onClick={() => {
+                    setEditMode((v) => !v);
+                    setError(null);
+                  }}
+                  disabled={installing}
+                  title={editMode ? 'Back to the review card' : 'Edit the pack JSON by hand'}
+                >
+                  {editMode ? 'Done editing' : 'Edit JSON'}
+                </button>
+              )}
               {editMode && (
                 <button
                   type="button"
@@ -210,14 +288,16 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
               >
                 Copy
               </button>
-              <button
-                type="button"
-                className={styles.secondary}
-                onClick={() => void generate()}
-                disabled={generating || installing}
-              >
-                Regenerate
-              </button>
+              {draft != null && (
+                <button
+                  type="button"
+                  className={styles.secondary}
+                  onClick={() => void generate()}
+                  disabled={generating || installing}
+                >
+                  Regenerate
+                </button>
+              )}
               <button
                 type="button"
                 className={styles.primary}
