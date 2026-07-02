@@ -67,6 +67,11 @@ pub mod ghostfolio_source;
 // generated-secret + compose provisioning + install orchestration.
 pub mod pack_auth;
 pub mod pack_provision;
+// ADR-002 substrate §14.12 — generic manifest-driven §14 connector source: a REST
+// connector's schema + JSON→Row map + endpoints are DATA (`record_source`), one
+// generic runtime reproduces the hand-coded connector (ghostfolio = first
+// data-driven instance) so adding a connector is zero Rust (§7.4/§7.5).
+pub mod manifest_source;
 // ADR-002 substrate §14 (LifeOS layer Phase 1, governing
 // `vault/ctrl/lifeos-layer-restructure.md`) — tasks as a §14 RecordSource:
 // one plain-markdown file per task (vim test), describe/query via the shared

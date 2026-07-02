@@ -19,13 +19,13 @@ related:
 
 ## 三层功能包(别混为一谈)
 
-CTRL 的「功能包」是三种不同的东西,实现主体不同:
+CTRL 的三层能力是三种不同的东西,实现主体不同。**术语校准 (ADR-002 §7.5 v41, 读法 A, bao 2026-07-01)**:「**功能包**」专指**产品级单位** = **① + ③**(每个都是完整产品,是用户**创造 + 分享**的单位);**② 是原子工具 (ingredient/primitive),不是「功能包」**(没人「分享一个 Translate 原子」)—— ② 仍是 mcp manifest 但**不进 Discover 的产品级货架**。IA 收敛: **功能包 = 产品,工具 = 配料**。
 
-| 层 | 是什么 | 清单 | 谁实现 | 真相源 |
-|---|---|---|---|---|
-| **① 原生能力模块** | 按 Ctrl→intent 浮现的主能力,各对标一个成熟单点 | **固定 4 个**:**Notes/PKM**(Obsidian,base 必含)· Coding(Codex terminal)· Smart-table(飞书 Bitable)· 远程桌面(ToDesk) | **CTRL 自建** | master-plan §二·五 B |
-| **② 内置工具 mcps** | 端侧原子工具(Top 15) | **固定 ~15 个**:Clipboard/OCR/Translate/Text/Chat(P0)· 窗口/PDF/LaTeX/智识/屏幕录(P1)· Snippet/Code/Email/会议/同步 | **CTRL 自建** | CLAUDE.md mcp-llm-reference |
-| **③ 外部系统 connector** | 把外部业务系统(飞书/CRM/ERP/…)包成 MCP 接进来 | **故意无固定清单(长尾开放)** | **Irisy 创作流造 + 第三方造**(非 dev 手写) | 本文 + marketplace plan |
+| 层 | 是什么 | 是「功能包」吗 | 清单 | 谁实现 | 真相源 |
+|---|---|---|---|---|---|
+| **① 原生能力模块** | 按 Ctrl→intent 浮现的主能力,各对标一个成熟单点 | ✅ **产品级功能包** | **固定 4 个**:**Notes/PKM**(Obsidian,base 必含)· Coding(Codex terminal)· Smart-table(飞书 Bitable)· 远程桌面(ToDesk) | **CTRL 自建** | master-plan §二·五 B |
+| **② 内置工具 mcps** | 端侧原子工具(Top 15) | ❌ **工具/配料,非功能包** | **固定 ~15 个**:Clipboard/OCR/Translate/Text/Chat(P0)· 窗口/PDF/LaTeX/智识/屏幕录(P1)· Snippet/Code/Email/会议/同步 | **CTRL 自建** | CLAUDE.md mcp-llm-reference |
+| **③ 外部系统 connector** | 把外部业务系统(飞书/CRM/ERP/…)包成 MCP 接进来 | ✅ **产品级功能包** | **故意无固定清单(长尾开放)** | **Irisy 创作流造 + 第三方造**(非 dev 手写) | 本文 + marketplace plan |
 
 **架构铁律(CLAUDE.md「What CTRL is NOT」):CTRL 不建 ③ 的长尾。** 「100+ 长尾 platform adapter → 给创作者自己接」。CTRL 只做 **substrate(gate / projector / manifest / 4 块安全)+ 能力市场**,让第三方造、用户一键装。
 
