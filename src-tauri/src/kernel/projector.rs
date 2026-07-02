@@ -468,6 +468,16 @@ fn project_installed_packs(port: &str, token: &str) {
         return;
     };
     for entry in entries.flatten() {
+        // Use the INSTALL DIRECTORY name as the pack id — it was validated by
+        // `validate_mcp_id` on install (rejects `..`, `/`, `\`), so it is
+        // traversal-safe. NEVER the on-disk `manifest["id"]`, which a hand-edited
+        // file could set to `../../evil` to escape the workspace root.
+        let Some(pack_id) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if !entry.path().is_dir() {
+            continue;
+        }
         let Ok(bytes) = fs::read(entry.path().join("manifest.json")) else {
             continue;
         };
@@ -477,14 +487,10 @@ fn project_installed_packs(port: &str, token: &str) {
         if manifest.get("record_source").is_none() {
             continue; // v1: only §14 data packs get an auto per-pack scope.
         }
-        let Some(pack_id) = manifest.get("id").and_then(Value::as_str).filter(|s| !s.is_empty())
-        else {
-            continue;
-        };
-        let name = manifest.get("name").and_then(Value::as_str).unwrap_or(pack_id);
+        let name = manifest.get("name").and_then(Value::as_str).unwrap_or(&pack_id);
         let kb = manifest.get("knowledge_base").and_then(Value::as_str);
         // A record_source pack is reached through the generic `source` domain.
-        if let Err(e) = project_pack(pack_id, name, kb, "source", port, token) {
+        if let Err(e) = project_pack(&pack_id, name, kb, "source", port, token) {
             tracing::warn!(pack = %pack_id, error = %e, "Projector: per-pack scope projection failed");
         }
     }
