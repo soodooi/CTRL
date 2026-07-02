@@ -54,7 +54,7 @@ related:
 4. **能力空白要 fallback**:CTRL 若需写回飞书云文档 / 走审批流 / 传文件,**MCP 做不到,得走 `@larksuiteoapi/node-sdk` 自实现**。
 5. **Beta + tool-poisoning 风险**:MCP 工具描述可被注入 → 正好用 CTRL gate 刚做的 **caller/intent 可见性裁剪 + 审计 ledger(SC1/2/3)** 兜:把飞书 MCP 归到一个 intent 域、白名单可见工具、审计每次调用。
 
-> **架构印证**:飞书 MCP 是「现成 connector」的标准样本 —— 它正好需要 CTRL gate 治理面(写审批 + 可见性裁剪 + 审计)才能让普通用户安全用。这验证了「CTRL = 整合 + 治理层,不重造后端」的命题,也验证了刚做的 SC3 治理面是对的。
+> **架构印证** ~~飞书 MCP 是「现成 connector」的标准样本~~ **(retracted 2026-07-02,见顶部纠正块:飞书非 connect 目标,CTRL 替代它)**。仍成立的部分:CTRL 的 gate 治理面(写审批 + 可见性裁剪 + 审计)是让**任意**现成 MCP(真该 connect 的自托管产品)对普通用户安全的关键,SC3 治理面是对的 —— 只是这个「标准样本」该换成一个真 connect 目标(Ghostfolio/Twenty),不是飞书。
 
 ## Bitable 对标的额外价值(智能表格)
 
