@@ -711,14 +711,88 @@ const ProvisionTool = z.object({
   install: z.record(z.string(), ToolInstallVia).optional(),
 });
 
+// A self-hosted service the pack provisions — the "one-click install" half of
+// the provision+auth engine (design: feature-pack-provision-auth-engine.md).
+// The manifest DECLARES a container stack; the generic kernel runtime brings it
+// up (render generated secrets → compose up → poll ready), so any Docker
+// self-hosted app (Ghostfolio / Memos / Twenty) is one-click with zero per-pack
+// code. v1 = docker/podman compose only.
+const ProvisionService = z.object({
+  runtime: z.literal('compose').default('compose'),
+  /** Inline compose YAML (mutually exclusive with compose_ref). */
+  compose_inline: z.string().optional(),
+  /** Path to a compose file bundled in the pack (relative to its dir). */
+  compose_ref: z.string().optional(),
+  /** Env keys the runtime fills with fresh random values on first provision
+   *  (e.g. JWT_SECRET_KEY / DB password), injected into compose + stored in the
+   *  credential store (idempotent — reused on re-provision). */
+  generated_secrets: z.array(z.string()).default([]),
+  /** Logical name → host port the runtime allocates/records; usable as
+   *  `{port:<name>}` in ready.url / auth paths. */
+  ports: z.record(z.string(), z.number()).default({}),
+  /** Poll until the service is up before running auth / first use. */
+  ready: z
+    .object({ url: z.string().min(1), timeout_s: z.number().int().positive().default(180) })
+    .optional(),
+});
+
 export const Provision = z.object({
   tools: z.array(ProvisionTool).default([]),
   /** Env vars injected into the pack's actions/subprocesses. A value may
    *  reference a keychain secret via `{{secret:<config_key>}}`, resolved
    *  kernel-side at inject time — never exposed to the LLM (decision 0004). */
   env: z.record(z.string(), z.string()).default({}),
+  /** Optional self-hosted service to bring up (the one-click-install half). */
+  service: ProvisionService.optional(),
 });
 export type Provision = z.infer<typeof Provision>;
+
+// ── Auth (the "silent security" half of the provision+auth engine) ──────────
+// The manifest DECLARES how a pack obtains credentials; the generic runtime
+// executes it with no manual token entry. `manual` (config_schema wizard) is
+// the last-resort fallback. Design: feature-pack-provision-auth-engine.md.
+
+/** Where a captured value goes: a JSON pointer into the response → a pack
+ *  secret (stored `mcp:<id>:<into_secret>`, never the LLM). */
+const AuthCapture = z.object({
+  pointer: z.string().min(1),
+  into_secret: z.string().regex(/^[a-z0-9_]+$/),
+});
+
+/** Composable phases — a pack may need several (e.g. Ghostfolio: bootstrap once
+ *  to mint the long-lived secret, THEN token-exchange per call). All optional;
+ *  the runtime runs whichever are present. */
+export const PackAuth = z
+  .object({
+    /** End-side loopback OAuth (big platforms) — zero manual token. */
+    oauth: z
+      .object({ provider: z.string().min(1), scopes: z.array(z.string()).default([]) })
+      .optional(),
+    /** Run once post-provision to mint the long-lived secret (e.g. Ghostfolio
+     *  POST /api/v1/user → capture `/accessToken`). Fully automatic. */
+    bootstrap: z
+      .object({
+        method: z.enum(['GET', 'POST']).default('POST'),
+        path: z.string().min(1),
+        body: z.record(z.string(), z.unknown()).optional(),
+        capture: AuthCapture,
+      })
+      .optional(),
+    /** Exchange a stored long-lived secret for a short-lived bearer on each call
+     *  (e.g. Ghostfolio /api/v1/auth/anonymous {accessToken} → {authToken}). */
+    token_exchange: z
+      .object({
+        path: z.string().min(1),
+        send_secret: z.string().regex(/^[a-z0-9_]+$/),
+        as_body_field: z.string().min(1),
+        capture_bearer: z.string().min(1),
+      })
+      .optional(),
+    /** Last-resort: fall back to the config_schema wizard (manual entry). */
+    manual: z.boolean().optional(),
+  })
+  .strict();
+export type PackAuth = z.infer<typeof PackAuth>;
 
 // ── Top-level manifest ───────────────────────────────────────────────────
 
@@ -888,6 +962,13 @@ export const McpManifest = z.object({
    *  `{{secret:<key>}}` from keychain at inject time (never the LLM —
    *  decision 0004). Distinct from cap_asset (copies files, not toolchains). */
   provision: Provision.optional(),
+
+  /** How the pack obtains credentials — the "silent security" declaration the
+   *  generic runtime executes (oauth / bootstrap / token-exchange), so a
+   *  self-hosted connector needs no manual token. Absent or `manual` = fall
+   *  back to the config_schema wizard. Design:
+   *  feature-pack-provision-auth-engine.md. */
+  auth: PackAuth.optional(),
 
   /** Dedicated knowledge base = a vault subpath this pack's data lives in
    *  (ADR-002 substrate § composition §7.4 v34). Generic: ANY pack declares

@@ -2,38 +2,37 @@
   "manifest_version": 2,
   "id": "ctrl-ghostfolio",
   "name": "Ghostfolio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": { "name": "soodooi" },
   "description": {
-    "short": "Your self-hosted Ghostfolio portfolio, made AI-native — Irisy reads holdings and records trades through the :17873 gate.",
-    "long": "A CTRL feature pack for Ghostfolio (open-source, self-hosted finance). Beyond the raw REST, CTRL lifts the portfolio into the uniform §14 describe/query contract (ghostfolio_describe / ghostfolio_query) and a one-shot produce (ghostfolio_add_transaction) — governed + audited at :17873, with the instance URL + token kept in the credential store and never shown to the model."
+    "short": "Your self-hosted Ghostfolio portfolio, made AI-native — one-click install, silent auth, then Irisy reads holdings and records trades through the :17873 gate.",
+    "long": "A CTRL feature pack for Ghostfolio (open-source, self-hosted finance). One-click + silent by declaration: CTRL's generic provision engine brings up Ghostfolio's Docker stack (app + PostgreSQL + Redis) with freshly generated secrets, then the auth engine mints an account automatically (bootstrap) and exchanges the security token for a JWT per call (token-exchange) — no manual URL/token entry. Beyond the raw REST, CTRL lifts the portfolio into the uniform §14 describe/query/produce contract (ghostfolio_describe / ghostfolio_query / ghostfolio_add_transaction), governed + audited at :17873, credentials kernel-side and never shown to the model."
   },
   "icon": "📊",
   "knowledge_base": "Finance/Ghostfolio",
   "ui_surface": "html-output",
-  "config_schema": {
-    "fields": [
-      {
-        "key": "ghostfolio_url",
-        "kind": "url",
-        "label": "Ghostfolio instance URL",
-        "description": "Your self-hosted Ghostfolio base URL, e.g. http://127.0.0.1:3333",
-        "required": true
-      },
-      {
-        "key": "ghostfolio_token",
-        "kind": "secret",
-        "label": "Security token",
-        "description": "Ghostfolio API security token (Settings → Security Token). Stored in the OS keychain, never sent to the model.",
-        "required": true
-      }
-    ]
-  },
   "provision": {
     "tools": [],
-    "env": {
-      "GHOSTFOLIO_URL": "{{secret:ghostfolio_url}}",
-      "GHOSTFOLIO_TOKEN": "{{secret:ghostfolio_token}}"
+    "env": {},
+    "service": {
+      "runtime": "compose",
+      "generated_secrets": ["POSTGRES_PASSWORD", "REDIS_PASSWORD", "ACCESS_TOKEN_SALT", "JWT_SECRET_KEY"],
+      "ports": { "app": 3333 },
+      "ready": { "url": "http://127.0.0.1:{port:app}/api/v1/health", "timeout_s": 240 },
+      "compose_inline": "services:\n  ghostfolio:\n    image: ghostfolio/ghostfolio:latest\n    restart: unless-stopped\n    depends_on:\n      postgres:\n        condition: service_healthy\n      redis:\n        condition: service_healthy\n    environment:\n      DATABASE_URL: postgresql://ghostfolio:${POSTGRES_PASSWORD}@postgres:5432/ghostfolio?connect_timeout=300&sslmode=prefer\n      REDIS_HOST: redis\n      REDIS_PORT: 6379\n      REDIS_PASSWORD: ${REDIS_PASSWORD}\n      ACCESS_TOKEN_SALT: ${ACCESS_TOKEN_SALT}\n      JWT_SECRET_KEY: ${JWT_SECRET_KEY}\n    ports:\n      - \"${PORT_APP}:3333\"\n  postgres:\n    image: postgres:15-alpine\n    restart: unless-stopped\n    environment:\n      POSTGRES_DB: ghostfolio\n      POSTGRES_USER: ghostfolio\n      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U ghostfolio\"]\n      interval: 5s\n      timeout: 5s\n      retries: 20\n    volumes:\n      - ghostfolio-postgres:/var/lib/postgresql/data\n  redis:\n    image: redis:7-alpine\n    restart: unless-stopped\n    command: [\"redis-server\", \"--requirepass\", \"${REDIS_PASSWORD}\"]\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"-a\", \"${REDIS_PASSWORD}\", \"ping\"]\n      interval: 5s\n      timeout: 5s\n      retries: 20\nvolumes:\n  ghostfolio-postgres:\n"
+    }
+  },
+  "auth": {
+    "bootstrap": {
+      "method": "POST",
+      "path": "/api/v1/user",
+      "capture": { "pointer": "/accessToken", "into_secret": "ghostfolio_token" }
+    },
+    "token_exchange": {
+      "path": "/api/v1/auth/anonymous",
+      "send_secret": "ghostfolio_token",
+      "as_body_field": "accessToken",
+      "capture_bearer": "/authToken"
     }
   },
   "actions": [
@@ -45,7 +44,7 @@
       "steps": [
         {
           "type": "shell",
-          "command": "curl -fsS -H \"Authorization: Bearer $GHOSTFOLIO_TOKEN\" \"$GHOSTFOLIO_URL/api/v1/portfolio/holdings\""
+          "command": "echo 'Ask Irisy for your holdings — routed through the :17873 gate via ghostfolio_query.'"
         }
       ]
     }

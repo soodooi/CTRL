@@ -1,13 +1,11 @@
-// Validates the ctrl-ghostfolio seed feature-pack manifest against the Zod SSOT
-// (via @ctrl/mcp-sdk). The manifest is the "distribute" end of the feature-pack
-// pipeline + the config loop-closer: its config_schema keys (ghostfolio_url /
-// ghostfolio_token) are stored under `mcp:ctrl-ghostfolio:*`, which the kernel's
-// resolve_ghostfolio_creds reads — so this guards that the seed stays a valid,
-// installable pack whose Configure wizard collects the creds (GOAL SC1).
+// Validates the ctrl-ghostfolio seed against the Zod SSOT (via @ctrl/mcp-sdk)
+// and guards that it is fully DECLARATIVE — one-click install + silent auth by
+// data, zero manual config (bao 2026-07-01): the generic provision+auth engine
+// runs the declared compose + bootstrap + token-exchange. Design:
+// feature-pack-provision-auth-engine.md.
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { McpManifestSchema } from '@ctrl/mcp-sdk';
-import { packConfigFields } from './feature-pack';
 
 // Read the manifest via fs (not a cross-package TS import, which would break
 // ctrl-web's rootDir) — it lives in packages/ctrl-mcps/, outside src/.
@@ -25,13 +23,25 @@ describe('ctrl-ghostfolio manifest', () => {
     expect(r.success, issues).toBe(true);
   });
 
-  it('the config wizard walks all fields (url + secret), not only secrets', () => {
-    const fields = packConfigFields(manifest);
-    expect(fields.map((f) => f.key)).toEqual(['ghostfolio_url', 'ghostfolio_token']);
-    // url is not a secret but MUST still be collected (kernel reads both).
-    expect(fields.find((f) => f.key === 'ghostfolio_url')?.kind).toBe('url');
-    // The token is a keychain secret, never config.json / the model.
-    expect(fields.find((f) => f.key === 'ghostfolio_token')?.kind).toBe('secret');
-    expect(fields.every((f) => f.required)).toBe(true);
+  it('is one-click + silent by declaration (no manual config_schema)', () => {
+    // No manual config wizard — the engine provisions + auto-auths.
+    expect(manifest.config_schema).toBeUndefined();
+
+    const provision = manifest.provision as { service?: Record<string, unknown> };
+    expect(provision.service?.runtime).toBe('compose');
+    expect(provision.service?.compose_inline).toBeTypeOf('string');
+    // Secrets the engine generates on first provision (never user-entered).
+    expect(provision.service?.generated_secrets).toContain('JWT_SECRET_KEY');
+
+    const auth = manifest.auth as {
+      bootstrap?: { path: string; capture: { into_secret: string } };
+      token_exchange?: { path: string; capture_bearer: string };
+    };
+    // bootstrap mints the account/token automatically (no manual token).
+    expect(auth.bootstrap?.path).toBe('/api/v1/user');
+    expect(auth.bootstrap?.capture.into_secret).toBe('ghostfolio_token');
+    // token-exchange mints a JWT per call from that stored secret.
+    expect(auth.token_exchange?.path).toBe('/api/v1/auth/anonymous');
+    expect(auth.token_exchange?.capture_bearer).toBe('/authToken');
   });
 });
