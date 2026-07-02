@@ -76,11 +76,21 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
     setScaffoldNotes([]);
     try {
       const spec = JSON.parse(openapiText) as unknown;
-      const out = await scaffoldFromOpenApi(spec, openapiPath.trim());
+      const path = openapiPath.trim();
+      const out = await scaffoldFromOpenApi(spec, path);
+      // Derive a distinct id/name from the endpoint's last real segment so two
+      // scaffolds don't collide on a placeholder (the author still renames).
+      const seg =
+        path
+          .split('/')
+          .filter((s) => s && !s.startsWith('{'))
+          .pop()
+          ?.replace(/[^a-z0-9-]/gi, '-')
+          .toLowerCase() ?? 'connector';
       const manifest = {
         manifest_version: 2,
-        id: 'ctrl-new-connector',
-        name: 'New connector',
+        id: `ctrl-${seg || 'connector'}`,
+        name: seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : 'New connector',
         record_source: out.record_source,
         actions: [{ id: 'view', name: 'View records' }],
       };
