@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 76,
+  "toolCount": 79,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -1482,6 +1482,168 @@
         "type": "object"
       },
       "name": "smart_table_update_cell"
+    },
+    {
+      "description": "Describe an installed connector's queryable records by source_id: fields + operators, read from its manifest record_source. Works for any connector. Call before source_query.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "source.describe — the GENERIC §14 read type-layer over ANY installed\nconnector that declares a `record_source` (ADR-002 §14.12). No per-connector\ntool; the source is addressed by `source_id`.",
+        "properties": {
+          "source_id": {
+            "description": "Installed connector id (folder under `~/.ctrl/mcps/`), e.g. `ctrl-ghostfolio`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "SourceDescribeArgs",
+        "type": "object"
+      },
+      "name": "source_describe"
+    },
+    {
+      "description": "Record data into an installed connector by source_id (a write): pass an input object whose keys match the source's produce fields. POSTs to the manifest-declared endpoint and returns the created resource.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "source.produce — generic §14 write into an installed connector (ADR-002\n§14.12). `input` keys match the source's declared `produce` body `from`\nfields; routed through the gate + audited, same as any write.",
+        "properties": {
+          "input": {
+            "description": "The produce input object; keys match the source's produce body map."
+          },
+          "source_id": {
+            "description": "Installed connector id, e.g. `ctrl-ghostfolio`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "input"
+        ],
+        "title": "SourceProduceArgs",
+        "type": "object"
+      },
+      "name": "source_produce"
+    },
+    {
+      "description": "Query an installed connector's records by source_id with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live from its manifest. Call source_describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "source.query — generic structured read over an installed connector's records\n(ADR-002 §14.12). Same filter/sort/group request as every §14 source.",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "description": "Field filters, combined per `conjunction`. Each `field` must exist.",
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order (first is the primary level).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "description": "Cap the number of returned rows (match_count is reported pre-limit).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sort": {
+            "default": [],
+            "description": "Multi-key sort (first key wins).",
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          },
+          "source_id": {
+            "description": "Installed connector id, e.g. `ctrl-ghostfolio`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "SourceQueryArgs",
+        "type": "object"
+      },
+      "name": "source_query"
     },
     {
       "description": "Create a LifeOS task: append a `- [ ]` checkbox line with `title` (required), optional `due` (YYYY-MM-DD) and `tags`, to `note` (default: today's daily note). Returns the note path.",

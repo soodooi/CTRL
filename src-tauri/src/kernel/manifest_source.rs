@@ -274,6 +274,39 @@ pub async fn produce(
     resp.json().await.map_err(|e| SourceError::Parse(e.to_string()))
 }
 
+/// Build a full `RecordSourceSpec` from an installed manifest: the `record_source`
+/// declaration + the `auth.token_exchange` (reused, NOT re-declared in
+/// record_source — the manifest's auth field names are mapped onto the spec's).
+/// Returns None if the manifest declares no `record_source`.
+pub fn spec_from_manifest(manifest: &Value) -> Option<RecordSourceSpec> {
+    let mut spec: RecordSourceSpec = serde_json::from_value(manifest.get("record_source")?.clone()).ok()?;
+    // Reuse auth.token_exchange (manifest: path / as_body_field / capture_bearer)
+    // → the generic source's token_exchange (path / as_body_field / capture_pointer).
+    if let Some(tx) = manifest.pointer("/auth/token_exchange") {
+        if let (Some(path), Some(field), Some(ptr)) = (
+            tx.get("path").and_then(Value::as_str),
+            tx.get("as_body_field").and_then(Value::as_str),
+            tx.get("capture_bearer").and_then(Value::as_str),
+        ) {
+            spec.token_exchange = Some(TokenExchangeSpec {
+                path: path.to_string(),
+                as_body_field: field.to_string(),
+                capture_pointer: ptr.to_string(),
+            });
+        }
+    }
+    Some(spec)
+}
+
+/// The credential name a manifest stores its long-lived security token under
+/// (`auth.token_exchange.send_secret`), so the gate resolves `mcp:<id>:<here>`.
+pub fn send_secret_of(manifest: &Value) -> Option<String> {
+    manifest
+        .pointer("/auth/token_exchange/send_secret")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
 // ─── internals ────────────────────────────────────────────────────────────────
 
 fn join(base_url: &str, path: &str) -> String {
@@ -615,6 +648,43 @@ mod tests {
         assert_eq!(created["type"], "BUY");
         assert_eq!(created["quantity"], 10.0);
         assert_eq!(created["unitPrice"], 190.0);
+    }
+
+    // The REAL shipped ctrl-ghostfolio manifest → spec: proves the whole data
+    // path (manifest file → record_source + reused auth.token_exchange → spec →
+    // §14 rows) with zero ghostfolio-specific Rust. This is the seed the ADR
+    // §14.12 thesis rests on.
+    #[test]
+    fn spec_from_real_ghostfolio_manifest_maps_auth_and_produce() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../packages/ctrl-mcps/builtin/ctrl-ghostfolio/manifest.json"
+        );
+        let bytes = std::fs::read(path).expect("read shipped ghostfolio manifest");
+        let manifest: Value = serde_json::from_slice(&bytes).unwrap();
+        let spec = spec_from_manifest(&manifest).expect("record_source present");
+
+        assert_eq!(spec.query.endpoint, "/api/v1/portfolio/holdings");
+        assert_eq!(spec.query.array_at, "holdings");
+        assert_eq!(spec.fields.len(), 6);
+        // token_exchange reused from auth (manifest field names mapped over).
+        let tx = spec.token_exchange.clone().expect("token_exchange from auth");
+        assert_eq!(tx.path, "/api/v1/auth/anonymous");
+        assert_eq!(tx.as_body_field, "accessToken");
+        assert_eq!(tx.capture_pointer, "/authToken");
+        assert_eq!(send_secret_of(&manifest).as_deref(), Some("ghostfolio_token"));
+        assert!(spec.produce.is_some(), "produce (record a trade) declared");
+
+        // The generic source over the REAL manifest spec reproduces holdings rows,
+        // incl. the nested SymbolProfile.symbol fallback declared in the manifest.
+        let src = ManifestConnectorSource::from_json(&spec, &sample());
+        assert_eq!(src.rows().len(), 3);
+        assert_eq!(src.rows()[1]["symbol"], "VEU");
+    }
+
+    #[test]
+    fn spec_from_manifest_none_without_record_source() {
+        assert!(spec_from_manifest(&serde_json::json!({ "id": "x" })).is_none());
     }
 
     #[tokio::test]

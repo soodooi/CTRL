@@ -27,8 +27,8 @@ use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
-    ai_column, ghostfolio_source, provider::LlmPrompt, query, runtime_sources, smart_table_index,
-    tasks_source, vault, vault_notes_source, vault_smart_table,
+    ai_column, ghostfolio_source, manifest_source, provider::LlmPrompt, query, runtime_sources,
+    smart_table_index, tasks_source, vault, vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
 use axum::body::Body;
@@ -240,6 +240,49 @@ pub struct GhostfolioAddTxnArgs {
 pub struct McpPackProvisionArgs {
     /// Installed pack id (folder under `~/.ctrl/mcps/`).
     pub mcp_id: String,
+}
+
+/// source.describe — the GENERIC §14 read type-layer over ANY installed
+/// connector that declares a `record_source` (ADR-002 §14.12). No per-connector
+/// tool; the source is addressed by `source_id`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SourceDescribeArgs {
+    /// Installed connector id (folder under `~/.ctrl/mcps/`), e.g. `ctrl-ghostfolio`.
+    pub source_id: String,
+}
+
+/// source.query — generic structured read over an installed connector's records
+/// (ADR-002 §14.12). Same filter/sort/group request as every §14 source.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SourceQueryArgs {
+    /// Installed connector id, e.g. `ctrl-ghostfolio`.
+    pub source_id: String,
+    /// Field filters, combined per `conjunction`. Each `field` must exist.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group keys applied in order (first is the primary level).
+    #[serde(default)]
+    pub group_by: Vec<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// source.produce — generic §14 write into an installed connector (ADR-002
+/// §14.12). `input` keys match the source's declared `produce` body `from`
+/// fields; routed through the gate + audited, same as any write.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SourceProduceArgs {
+    /// Installed connector id, e.g. `ctrl-ghostfolio`.
+    pub source_id: String,
+    /// The produce input object; keys match the source's produce body map.
+    pub input: serde_json::Value,
 }
 
 /// task.create — produce/write a new checkbox task line (ADR-002 §14 produce
@@ -1147,6 +1190,77 @@ impl KernelMcpRouter {
             account_id: args.account_id,
         };
         let created = ghostfolio_source::add_transaction(&base_url, &token, &txn)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let body = serde_json::to_string(&created).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// source.describe — GENERIC §14 type layer over ANY installed connector that
+    /// declares a `record_source` (ADR-002 §14.12). Loads the manifest, builds
+    /// the describe from data — zero per-connector code. This is the product-grade
+    /// zero-code path the ghostfolio_* tools prototype; new connectors need no
+    /// bespoke gate tools (§7.4/§7.5).
+    #[tool(
+        description = "Describe an installed connector's queryable records by source_id: fields + operators, read from its manifest record_source. Works for any connector. Call before source_query."
+    )]
+    async fn source_describe(
+        &self,
+        Parameters(args): Parameters<SourceDescribeArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let spec = load_source_spec(&args.source_id)?;
+        let d = manifest_source::ManifestConnectorSource::describe_spec(&spec);
+        let body = serde_json::to_string(&d).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// source.query — GENERIC §14 read over an installed connector (ADR-002
+    /// §14.12). Resolves creds kernel-side (never the LLM), fetches the
+    /// self-hosted instance live from the manifest's declared endpoint, and runs
+    /// the SAME shared kernel query engine — identical contract to smart_table /
+    /// ghostfolio, but data-driven for any connector.
+    #[tool(
+        description = "Query an installed connector's records by source_id with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live from its manifest. Call source_describe first."
+    )]
+    async fn source_query(
+        &self,
+        Parameters(args): Parameters<SourceQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let (spec, base_url, token) = load_source(&args.source_id)?;
+        let source = manifest_source::fetch(&spec, &base_url, &token)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let req = query::QueryRequest {
+            filters: args.filters,
+            conjunction: args.conjunction,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = source
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// source.produce — GENERIC §14 write into an installed connector (ADR-002
+    /// §14.12 / §14.9). Builds the request body from the manifest's `produce`
+    /// map over the caller's `input`, POSTs to the declared endpoint. Serial +
+    /// side-effecting; routed through the gate so it is audited (write approval =
+    /// review-gate discipline). Creds kernel-side.
+    #[tool(
+        description = "Record data into an installed connector by source_id (a write): pass an input object whose keys match the source's produce fields. POSTs to the manifest-declared endpoint and returns the created resource."
+    )]
+    async fn source_produce(
+        &self,
+        Parameters(args): Parameters<SourceProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let (spec, base_url, token) = load_source(&args.source_id)?;
+        let input = args.input.as_object().cloned().unwrap_or_default();
+        let created = manifest_source::produce(&spec, &base_url, &token, &input)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let body = serde_json::to_string(&created).map_err(map_serde_err)?;
@@ -3066,6 +3180,59 @@ fn resolve_ghostfolio_creds() -> Option<(String, String)> {
     Some((url, token))
 }
 
+/// Read an installed connector's manifest from disk (`~/.ctrl/mcps/<id>/`).
+fn read_installed_manifest(source_id: &str) -> Result<serde_json::Value, McpError> {
+    let dir = crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
+    let path = dir.join(source_id).join("manifest.json");
+    let bytes = std::fs::read(&path).map_err(|e| {
+        McpError::invalid_params(format!("no installed manifest for {source_id}: {e}"), None)
+    })?;
+    serde_json::from_slice(&bytes).map_err(map_serde_err)
+}
+
+/// Build a connector's §14 spec from its installed manifest (`record_source` +
+/// reused `auth.token_exchange`). Creds not needed — describe is the type layer.
+fn load_source_spec(source_id: &str) -> Result<manifest_source::RecordSourceSpec, McpError> {
+    let manifest = read_installed_manifest(source_id)?;
+    manifest_source::spec_from_manifest(&manifest).ok_or_else(|| {
+        McpError::invalid_params(format!("{source_id} declares no record_source"), None)
+    })
+}
+
+/// Generic connector creds: base URL (provision-set `_base_url` → configured
+/// `base_url`) + the security token stored under the manifest's declared
+/// `send_secret`. Kernel-side only; the token never crosses the LLM boundary.
+fn resolve_pack_creds(source_id: &str, send_secret: &str) -> Option<(String, String)> {
+    let cred = |field: &str| {
+        crate::shell::credential_vault::get(&format!("mcp:{source_id}:{field}"))
+            .ok()
+            .flatten()
+            .filter(|v| !v.trim().is_empty())
+    };
+    let url = cred("_base_url").or_else(|| cred("base_url"))?;
+    let token = cred(send_secret)?;
+    Some((url, token))
+}
+
+/// Load a connector's spec + resolved creds for a live read/write. Bundles the
+/// two so `source_query` / `source_produce` share one manifest read.
+fn load_source(
+    source_id: &str,
+) -> Result<(manifest_source::RecordSourceSpec, String, String), McpError> {
+    let manifest = read_installed_manifest(source_id)?;
+    let spec = manifest_source::spec_from_manifest(&manifest).ok_or_else(|| {
+        McpError::invalid_params(format!("{source_id} declares no record_source"), None)
+    })?;
+    let send_secret = manifest_source::send_secret_of(&manifest).unwrap_or_else(|| "token".into());
+    let (base_url, token) = resolve_pack_creds(source_id, &send_secret).ok_or_else(|| {
+        McpError::invalid_params(
+            format!("{source_id} not configured — provision or set its credentials (mcp:{source_id}:_base_url / :{send_secret})"),
+            None,
+        )
+    })?;
+    Ok((spec, base_url, token))
+}
+
 /// Inject computed relational columns (Lookup / Rollup) into a query's result
 /// rows (slice 4c). Cross-table orchestration: index the source + each Reference
 /// target table, materialize the edges, then fill each computed column by
@@ -4275,5 +4442,85 @@ mod tests {
         let describe: serde_json::Value = serde_json::from_str(&text).expect("describe json");
         assert_eq!(describe["source_kind"], "record");
         assert!(describe["fields"].as_array().unwrap().iter().any(|f| f["key"] == "symbol"));
+    }
+
+    /// End-to-end proof that the GENERIC §14 connector tools (source_describe /
+    /// source_query / source_produce, ADR-002 §14.12) are reachable THROUGH the
+    /// gate under the `source` intent, hidden otherwise, and actually run the
+    /// manifest loader (a bogus source_id surfaces the "no installed manifest"
+    /// path). Race-free: no HOME manipulation — the manifest→spec→rows data path
+    /// is covered by the `manifest_source` unit tests over the real manifest.
+    #[tokio::test]
+    async fn source_tools_reachable_and_wired_over_the_wire() {
+        let data_dir = std::env::temp_dir().join("ctrl-test-mcp-source");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
+        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let url = handle.url();
+        let token = handle.auth_token.as_ref().clone();
+        let client = reqwest::Client::new();
+
+        let init = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .body(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}"#,
+            )
+            .send()
+            .await
+            .expect("initialize");
+        let session_id = init
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .expect("server returns a session id");
+
+        // tools/list under the `source` intent → the generic trio is reachable,
+        // out-of-scope tools hidden.
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id.clone())
+            .header(visibility::INTENT_HEADER, "source")
+            .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
+            .send()
+            .await
+            .expect("tools/list");
+        let json = extract_jsonrpc(&resp.text().await.expect("body"));
+        let names: Vec<String> = json["result"]["tools"]
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .map(|t| t["name"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert!(names.iter().any(|n| n == "source_describe"), "source_describe reachable");
+        assert!(names.iter().any(|n| n == "source_query"), "source_query reachable");
+        assert!(names.iter().any(|n| n == "source_produce"), "source_produce reachable");
+        assert!(!names.iter().any(|n| n == "http_post"), "out-of-scope tool hidden by intent trim");
+
+        // source_describe with a bogus id → the tool runs and reaches the manifest
+        // loader (proves wiring, not just registration).
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id)
+            .header(visibility::INTENT_HEADER, "source")
+            .body(r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"source_describe","arguments":{"source_id":"no-such-pack"}}}"#)
+            .send()
+            .await
+            .expect("source_describe");
+        let out = extract_jsonrpc(&resp.text().await.expect("body"));
+        let msg = serde_json::to_string(&out).unwrap_or_default();
+        assert!(
+            msg.contains("no installed manifest"),
+            "source_describe must reach the manifest loader for an unknown id, got: {msg}"
+        );
     }
 }

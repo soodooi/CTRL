@@ -20,10 +20,10 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **56** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **39** are bespoke tools (not section-14 shaped)
-- **19** writes (produce, through the review gate) / **37** reads
-- **135** Tauri commands (the frontend RPC surface); **31** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
+- **79** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **62** are bespoke tools (not section-14 shaped)
+- **23** writes (produce, through the review gate) / **56** reads
+- **111** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
 vault/notes is mostly the old bespoke `vault_*` tools; html/pdf and other envisioned
@@ -39,9 +39,9 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 |---|---|---|---|---|---|
 | `smart_table_add_view` | 3 | read | s14 | Add a grid or kanban view to a smart table (persisted in frontmatter, not the table body). kanban requires group_by (a field key). |  |
 | `smart_table_append_row` | 2 | **WRITE** | s14 | Append a row to a smart table (values keyed by field key). |  |
-| `smart_table_describe` | 1 | read | s14 | Describe a smart table: its fields, types, and supported query operators. Call this before smart_table.query. | cmd too |
-| `smart_table_query` | 6 | read | s14 | Query a smart table with a structured filter/sort/group request (not a query string). Call smart_table.describe first to learn valid fields. | cmd too |
-| `smart_table_run_ai_column` | 6 | **WRITE** | s14 | Run an AI field shortcut down a column: per row, classify/extract/summarize/translate/generate using {field} tokens, then write results into target_field. Cost-gated at 100 rows (pass confirm_over_gate=true to exceed). Skips already-filled cells unless force=true. | cmd too |
+| `smart_table_describe` | 1 | read | s14 | Describe a smart table: its fields, types, and supported query operators. Call this before smart_table.query. |  |
+| `smart_table_query` | 6 | read | s14 | Query a smart table with a structured filter/sort/group request (not a query string). Call smart_table.describe first to learn valid fields. |  |
+| `smart_table_run_ai_column` | 6 | **WRITE** | s14 | Run an AI field shortcut down a column: per row, classify/extract/summarize/translate/generate using {field} tokens, then write results into target_field. Cost-gated at 100 rows (pass confirm_over_gate=true to exceed). Skips already-filled cells unless force=true. |  |
 | `smart_table_run_ai_column_cancel` | 1 | **WRITE** | s14 | Cancel an in-flight AI-column job by id (already-written cells are kept). |  |
 | `smart_table_run_ai_column_start` | 6 | **WRITE** | s14 | Start an async AI field-shortcut job over a column (classify/extract/summarize/translate/generate, {field} tokens). Cost-gated at 100 rows. Returns a job_id; poll smart_table.run_ai_column_status. |  |
 | `smart_table_run_ai_column_status` | 1 | read | s14 | Get the status of an AI-column job: phase, rows_done/total, rows_written, errors. |  |
@@ -72,34 +72,34 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
-| `vault_aliases` | 1 | read | bespoke | Read the frontmatter aliases list for a vault note | cmd too |
-| `vault_backlinks` | 1 | read | bespoke | Backlinks for a vault note (paths + snippets) | cmd too |
-| `vault_broken_links` | 0 | read | bespoke | List vault outgoing links that point at no existing note (broken links) | cmd too |
-| `vault_create_folder` | 1 | **WRITE** | bespoke | Create a vault subdirectory (mkdir -p semantics) | cmd too |
-| `vault_delete` | 1 | **WRITE** | bespoke | Delete a vault note (the file is removed; no soft-delete) | cmd too |
-| `vault_embed_note` | 1 | **WRITE** | bespoke | Embed a single vault note into the local embeddings index | cmd too |
-| `vault_embedding_status` | 0 | read | bespoke | Snapshot of the vault embedding index (available / total / embedded / stale) | cmd too |
-| `vault_graph_data` | 0 | read | bespoke | Return the entire vault link graph (nodes + edges) | cmd too |
-| `vault_list` | 1 | read | bespoke | List markdown files under a vault subdirectory (or vault root) | cmd too |
-| `vault_mentions` | 1 | read | bespoke | Find unlinked mentions of text across the vault (excludes [[wikilinked]] hits) | cmd too |
-| `vault_move` | 2 | **WRITE** | bespoke | Move a vault note to a new path (alias of vault.rename) | cmd too |
-| `vault_notes_by_tag` | 1 | read | bespoke | List notes tagged with a specific tag | cmd too |
-| `vault_orphans` | 0 | read | bespoke | List vault notes that no other note links to | cmd too |
-| `vault_read` | 1 | read | bespoke | Read a markdown file from the user's vault | cmd too |
-| `vault_rebuild_index` | 0 | **WRITE** | bespoke | Rebuild the FTS5 vault search index from disk (returns indexed file count) | cmd too |
-| `vault_reembed_all` | 1 | **WRITE** | bespoke | Re-embed all vault notes (bulk; respects content_hash unless force=true) | cmd too |
-| `vault_rename` | 2 | **WRITE** | bespoke | Rename a vault note to a new path (no inbound-link rewrite) | cmd too |
-| `vault_search` | 2 | read | bespoke | Full-text search the vault (FTS5 when available, substring fallback) | cmd too |
-| `vault_semantic_search` | 3 | read | bespoke | Semantic-similarity vault search (cosine over local embeddings) | cmd too |
-| `vault_set_starred` | 2 | **WRITE** | bespoke | Toggle the starred flag on a vault note's frontmatter | cmd too |
-| `vault_sourcing_pending` | 0 | read | bespoke | Count un-integrated items in the sourcing inbox | cmd too |
-| `vault_sourcing_run` | 1 | **WRITE** | bespoke | Run the kernel sourcing routine for the given YYYY-MM-DD date and write the review-queue file | cmd too |
-| `vault_suggest_links` | 2 | read | bespoke | Suggest related notes for a given path (embeddings-based autolink) | cmd too |
-| `vault_tags` | 0 | read | bespoke | List every tag in the vault with usage count (descending) | cmd too |
+| `vault_aliases` | 1 | read | bespoke | Read the frontmatter aliases list for a vault note |  |
+| `vault_backlinks` | 1 | read | bespoke | Backlinks for a vault note (paths + snippets) |  |
+| `vault_broken_links` | 0 | read | bespoke | List vault outgoing links that point at no existing note (broken links) |  |
+| `vault_create_folder` | 1 | **WRITE** | bespoke | Create a vault subdirectory (mkdir -p semantics) |  |
+| `vault_delete` | 1 | **WRITE** | bespoke | Delete a vault note (the file is removed; no soft-delete) |  |
+| `vault_embed_note` | 1 | **WRITE** | bespoke | Embed a single vault note into the local embeddings index |  |
+| `vault_embedding_status` | 0 | read | bespoke | Snapshot of the vault embedding index (available / total / embedded / stale) |  |
+| `vault_graph_data` | 0 | read | bespoke | Return the entire vault link graph (nodes + edges) |  |
+| `vault_list` | 1 | read | bespoke | List markdown files under a vault subdirectory (or vault root) |  |
+| `vault_mentions` | 1 | read | bespoke | Find unlinked mentions of text across the vault (excludes [[wikilinked]] hits) |  |
+| `vault_move` | 2 | **WRITE** | bespoke | Move a vault note to a new path (alias of vault.rename) |  |
+| `vault_notes_by_tag` | 1 | read | bespoke | List notes tagged with a specific tag |  |
+| `vault_orphans` | 0 | read | bespoke | List vault notes that no other note links to |  |
+| `vault_read` | 1 | read | bespoke | Read a markdown file from the user's vault |  |
+| `vault_rebuild_index` | 0 | **WRITE** | bespoke | Rebuild the FTS5 vault search index from disk (returns indexed file count) |  |
+| `vault_reembed_all` | 1 | **WRITE** | bespoke | Re-embed all vault notes (bulk; respects content_hash unless force=true) |  |
+| `vault_rename` | 2 | **WRITE** | bespoke | Rename a vault note to a new path (no inbound-link rewrite) |  |
+| `vault_search` | 2 | read | bespoke | Full-text search the vault (FTS5 when available, substring fallback) |  |
+| `vault_semantic_search` | 3 | read | bespoke | Semantic-similarity vault search (cosine over local embeddings) |  |
+| `vault_set_starred` | 2 | **WRITE** | bespoke | Toggle the starred flag on a vault note's frontmatter |  |
+| `vault_sourcing_pending` | 0 | read | bespoke | Count un-integrated items in the sourcing inbox |  |
+| `vault_sourcing_run` | 1 | **WRITE** | bespoke | Run the kernel sourcing routine for the given YYYY-MM-DD date and write the review-queue file |  |
+| `vault_suggest_links` | 2 | read | bespoke | Suggest related notes for a given path (embeddings-based autolink) |  |
+| `vault_tags` | 0 | read | bespoke | List every tag in the vault with usage count (descending) |  |
 | `vault_text_describe` | 0 | read | s14 | Describe the vault full-text source: source_kind=text; query content with a Contains filter whose value is the search needle. Call before vault_text_query. |  |
 | `vault_text_query` | 2 | read | s14 | Full-text query the vault as a §14 source: pass a Contains filter (field 'content', value = search text); returns matching note paths. Call vault_text_describe first. |  |
 | `vault_watch` | 2 | read | bespoke | Drain recent vault filesystem events since a millis cursor (lazy-starts watcher) |  |
-| `vault_write` | 3 | **WRITE** | bespoke | Write a markdown file to the user's vault (creates parents) | cmd too |
+| `vault_write` | 3 | **WRITE** | bespoke | Write a markdown file to the user's vault (creates parents) |  |
 | `vault_write_image` | 4 | **WRITE** | bespoke | Write a binary image asset to the vault (optionally with sidecar .md frontmatter) | cmd too |
 
 ### memory (2 endpoints, all bespoke)
@@ -129,11 +129,17 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `http_get` | 3 | read | bespoke | HTTP GET request — fetch a URL and return status + body + headers |  |
 | `http_post` | 4 | **WRITE** | bespoke | HTTP POST request — send JSON or text body and return status + body + headers |  |
 
-### mcp-bus (3 endpoints, all bespoke)
+### mcp-bus (9 endpoints, all bespoke)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
 | `mcp_list_servers` | 0 | read | bespoke | List external MCP servers the kernel has registered (proxy view) |  |
+| `mcp_pack_install` | 3 | read | bespoke | Install a feature pack from its manifest (+ optional server code) |  |
+| `mcp_pack_list` | 0 | read | bespoke | List installed feature packs (the user's own mcps), with id/name/actions |  |
+| `mcp_pack_provision` | 1 | read | bespoke | Provision + auto-authenticate an installed feature pack from its manifest (one-click, silent): bring up its declared service and run bootstrap auth. Idempotent. Requires a container runtime for service packs. |  |
+| `mcp_pack_run` | 2 | **WRITE** | bespoke | Run a feature pack action (executes its shell steps, returns stdout) |  |
+| `mcp_pack_uninstall` | 1 | read | bespoke | Uninstall a feature pack by id (removes it from the user's installed packs) |  |
+| `mcp_pack_write_file` | 3 | **WRITE** | bespoke | Write a skill or asset file (e.g. skills/<name>/SKILL.md) into an installed feature pack |  |
 | `mcp_proxy_call_tool` | 3 | read | bespoke | Invoke a tool on a downstream MCP server (kernel proxies the call) |  |
 | `mcp_proxy_list_tools` | 1 | read | bespoke | List tools advertised by a downstream MCP server (kernel proxies the call) |  |
 
@@ -142,42 +148,65 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
 | `kernel_status` | 0 | read | bespoke | Report kernel health: uptime, registered LLM adapters, MCP server count | cmd too |
-| `vault_root_path` | 0 | read | bespoke | Return the absolute vault root path on disk | cmd too |
+| `vault_root_path` | 0 | read | bespoke | Return the absolute vault root path on disk |  |
 
-## Dual-surface evidence — Tauri commands per module (135 total)
+### other (17 endpoints, all bespoke)
+
+| endpoint | params | r/w | face | description | dual? |
+|---|---|---|---|---|---|
+| `discover_packs` | 2 | read | bespoke | Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. "stock price"). Use this when building a feature pack, to find an existing server before authoring one. |  |
+| `discover_skills` | 1 | read | bespoke | Search published skills (SKILL.md) on GitHub by keyword — returns repo / name / description / stars / url. Use this when building a feature pack, to find a reusable skill before writing one. Requires a GitHub token. |  |
+| `ghostfolio_add_transaction` | 9 | read | bespoke | Record a trade in Ghostfolio (a write): symbol + kind (buy/sell) + quantity + unit_price + currency + date (+ optional data_source/fee/account_id). POSTs an order to the self-hosted instance and returns the created transaction. |  |
+| `ghostfolio_describe` | 0 | read | bespoke | Describe the Ghostfolio portfolio holdings as a queryable RecordSource: fields (symbol/name/quantity/value/allocation/currency) and operators. Call before ghostfolio_query. |  |
+| `ghostfolio_query` | 5 | read | bespoke | Query the Ghostfolio portfolio holdings by symbol/value/allocation with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live. Call ghostfolio_describe first. |  |
+| `market_quote` | 1 | read | bespoke | Live stock/index quotes for tickers (Yahoo Finance, no key). Returns price, currency, and percent change vs previous close. Use Yahoo suffixes: .SS Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^ (e.g. ^GSPC, ^IXIC, ^HSI). |  |
+| `market_screen` | 2 | read | bespoke | Predefined stock screen (Yahoo Finance, no key). screen = day_gainers | day_losers | most_actives. Returns symbol, name, price, and percent change for the top movers. |  |
+| `skill_list` | 1 | read | bespoke | List the user's local installed skills (name + description + path), optional keyword filter |  |
+| `skill_read` | 1 | read | bespoke | Read a local skill's SKILL.md content by its path (from skill_list) |  |
+| `source_describe` | 1 | read | bespoke | Describe an installed connector's queryable records by source_id: fields + operators, read from its manifest record_source. Works for any connector. Call before source_query. |  |
+| `source_produce` | 2 | read | bespoke | Record data into an installed connector by source_id (a write): pass an input object whose keys match the source's produce fields. POSTs to the manifest-declared endpoint and returns the created resource. |  |
+| `source_query` | 6 | read | bespoke | Query an installed connector's records by source_id with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live from its manifest. Call source_describe first. |  |
+| `task_create` | 4 | **WRITE** | bespoke | Create a LifeOS task: append a `- [ ]` checkbox line with `title` (required), optional `due` (YYYY-MM-DD) and `tags`, to `note` (default: today's daily note). Returns the note path. |  |
+| `task_describe` | 0 | read | bespoke | Describe the LifeOS tasks source as a queryable RecordSource: fields (path/title/status/due/priority/tags/created/modified) and supported operators. Call before task_query. |  |
+| `task_query` | 6 | read | bespoke | Query LifeOS tasks by status/due/priority/tags with a structured filter/sort/group request (not a query string). Returns matching tasks. Call task_describe first. |  |
+| `task_update` | 4 | **WRITE** | bespoke | Update one field of a LifeOS task by note + line (from task_query): field='status' value='done' completes it; also due/title/tags. Rewrites the checkbox line in place. |  |
+| `web_search` | 2 | read | bespoke | Search the web and return titles + URLs + snippets. Uses a BYOK keyed provider if one is configured (Tavily / Brave / Serper / Exa), else a keyless full-web fallback (DuckDuckGo, then Wikipedia). Use this for facts / news / research you don't already hold. |  |
+
+## Dual-surface evidence — Tauri commands per module (111 total)
 
 Many capabilities are BOTH an MCP tool and a Tauri command = the P1 drift risk ADR-010 diagnosed. SC5 (collapse the dual surface) is not done.
 
 | commands module | count |
 |---|---|
-| `commands/vault.rs` | 28 |
-| `commands/kernel.rs` | 12 |
+| `commands/kernel.rs` | 13 |
 | `commands/system.rs` | 10 |
 | `commands/storage.rs` | 10 |
-| `commands/agents.rs` | 7 |
+| `commands/agents.rs` | 9 |
 | `commands/draft.rs` | 6 |
 | `commands/code_space.rs` | 6 |
+| `commands/git.rs` | 6 |
 | `commands/provider.rs` | 5 |
-| `commands/vault_embeddings.rs` | 5 |
-| `commands/git.rs` | 5 |
+| `commands/vault.rs` | 5 |
 | `commands/obsidian.rs` | 4 |
-| `commands/stss.rs` | 4 |
 | `commands/config.rs` | 4 |
 | `commands/workshop.rs` | 4 |
 | `commands/memory.rs` | 3 |
 | `commands/keychain.rs` | 3 |
 | `commands/irisy_synth.rs` | 3 |
 | `commands/hermes_acp.rs` | 2 |
+| `commands/review.rs` | 2 |
 | `commands/provider_templates.rs` | 2 |
 | `commands/provider_models.rs` | 2 |
 | `commands/skills.rs` | 2 |
 | `commands/gate.rs` | 1 |
+| `commands/pack_registry.rs` | 1 |
 | `commands/chat.rs` | 1 |
 | `commands/irisy_chat.rs` | 1 |
 | `commands/image.rs` | 1 |
 | `commands/screenshot.rs` | 1 |
 | `commands/irisy.rs` | 1 |
 | `commands/updater.rs` | 1 |
+| `commands/event_stream.rs` | 1 |
 | `commands/draft_run.rs` | 1 |
 
 ## Section-14 contract coverage (spec vs built)
@@ -194,7 +223,7 @@ Many capabilities are BOTH an MCP tool and a Tauri command = the P1 drift risk A
 
 ## Gaps this catalog exposes
 1. **Section-14 is one module deep** (smart-table); notes is half (no produce), vault/Obsidian/html/pdf not migrated or not built.
-2. **Dual surface not collapsed** (31 MCP tools share a name with a Tauri command) = SC5 not done.
+2. **Dual surface not collapsed** (2 MCP tools share a name with a Tauri command) = SC5 not done.
 3. **No versioned external endpoint contract** (section 14.10 version negotiation is spec'd, gate routing not implemented).
 
 Convergence path = make section-14 cover everything (migrate `vault_*` etc. into
