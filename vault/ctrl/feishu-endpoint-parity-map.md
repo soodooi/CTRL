@@ -67,6 +67,37 @@ related:
 
 每片：§14 produce 过 gate + review + markdown/plain-text round-trip + 测试。
 
+## C 桶细化 —— deep-research 到端点粒度挖「适合的切片」(2026-07-02, bao「2000 个也要分析，有哪些适合的也要」)
+
+> 深研 110 agent / 27 一手源，**撞账号 session 限额**：3/13 产品过对抗验证(✓)，其余从飞书官方文档挖出但未过验证(⚠️ 需 limit 重置后复验)。**结论：C 桶不是铁板一块 —— bao 对，有真该建的切片。**
+
+### C1 —— 该建的切片（从「企业云」里挖出，适合本地单用户 CTRL）
+
+| 飞书端点/能力 | 验证 | 为什么适合 | CTRL 对应形态 |
+|---|---|---|---|
+| **审批 Approval v4 · instance 动词**(query/create/withdraw/CC 抄送/preview/detail/batch) | ✅ 3-0 | 全 org-agnostic 离散端点 | **自我 review / gate 原语**：create 一个实例来 gate 一个动作、query/detail 看状态、CC=**触达客户**、withdraw 取消。CTRL 已有 `review_gate` —— 正好接 |
+| **审批 · task 动词**(同意/拒绝/转交/退回/加签/重提) | ✅ 3-0 | 1:1 原子决策动词 | gate 决策 + **任务派给我/来自他人**(接 §14 Task) |
+| **审批 · 4 个通用事件**(实例/任务/抄送状态变更 + 定义更新) | ✅ 3-0 | org-agnostic | gate 的状态流(订阅);6 个 HR 特殊事件(请假/出差/加班…)不要 |
+| **妙记 Minutes v1 · minute/get** | ⚠️ 官方文档,未验 | 返回转写/摘要/章节/**action items**/时长/url —— AI 生成的会议产物 | **会议纪要能力**(Top15「会议」mcp):把纪要/转写拉进 vault 当 §14 数据 |
+| **VC 录制 · meeting-recording/get** | ⚠️ 未验 | 返回录制 url + 时长,**支持 user_access_token**(单用户可拉自己的) | 自己会议的录制检索 |
+| **Bot/Event · 自定义机器人 outbound webhook + im.message.receive + WS 长连接** | ⚠️ 未验 | **WS 长连接无需公网 IP** —— 本地单用户服务器能直接收飞书事件! | **触达/集成路径**(经 hermes 网关):本地收发消息、订阅事件,不需公网暴露面 —— 正合 CTRL 本地模型 |
+| **OKR v1 · period/list 等** | ⚠️ 未验 | 一人公司也设目标/OKR | **目标追踪**(CTRL 有 GOAL 概念):OKR 当 §14 数据型 |
+
+### C2 —— 确认结构上不适用（本地单用户没有意义）
+
+| 产品 | 验证 | 为什么不适用 |
+|---|---|---|
+| **目录 Directory v1** | ✅ 3-0 | 组织架构 CRUD(部门/员工/离职)—— 无组织即无意义 |
+| **通讯录 Contact v3** | ✅ 3-0 | 组织成员 + org 树;**无个人/客户联系人资源**;User Group/Unit = 多租户权限隔离(双重不适用) |
+| **人事 CoreHR** | ⚠️ 官方文档 | 域模型全建在企业组织上(员工/任职/部门/汇报线),单用户无「员工」概念 |
+| **考勤 Attendance** | ⚠️ | 企业打卡/排班 = 多员工 HR |
+| **服务台 Helpdesk** | ⚠️ | FAQ/工单/客服 = 多 agent 支持 |
+| **管理后台 Admin/权限/角色** | ✅(Contact 侧) | 无账号/无组织,无可管 |
+
+**净结论(修正上文「C 桶全 out」)**：C 桶 ~2000 里 **~6 个切片该建/该接**(审批-gate[已可建,接现有 review_gate]、妙记/VC 会议纪要、Bot/Event 本地 WS 触达、OKR 目标),其余(Directory/Contact/CoreHR/考勤/Helpdesk/Admin)结构上确实 out。**「适合的」占 2000 的比例小,但不是零 —— bao 对。**
+
+**诚实缺口**：妙记/VC/Bot/OKR 是从官方文档挖出但**未过对抗验证**(session 限额),建之前需复验端点路径 + user_access_token 支持。审批已验证可建。
+
 ## 待 bao 拍的边界问题（系统设计的关键决策）
 
 1. **C 桶确认 out?** HR/考勤/审批/组织通讯录/会议/管理后台 —— 我判**结构上不是 CTRL、不建**。你同意这条边界，还是有哪个你想要（要的话怎么本地化？多人审批/组织架构在单用户本地无实体）？
