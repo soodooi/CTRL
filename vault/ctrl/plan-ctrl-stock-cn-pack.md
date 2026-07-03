@@ -124,6 +124,44 @@ related:
 
 **待续（成完整「系统」）**：表间关联（自选 reference 个股 / 复盘 rollup 自选表现 / 持仓 lookup 行情）—— 关系型字段能力已在（§14 v30），下一步建关联让 4 表成关联系统。
 
+## 3.7 功能管线驱动的表系统（bao 2026-07-03「建全六 viewer 其余表 + 表间关联，根据功能管线来做」）
+
+**数据管线（表和关联跟着数据流走）**：
+```
+情绪(mood) + 强度(ladder) ─┐
+板块强度(sector工具) ───────┼→ [sectors 板块] ←rollup─ 自选股数
+                            │        ↑reference(sector)
+[strategies 策略] → 筛选 → [screen 结果] ─加入→ [watchlist 自选] ─建仓→ [positions 持仓]
+                                                   │ ↑reference(theme)          │
+[themes 题材] ─────────────────────────────────────┘                          │
+[analysis 决策看板] ─reference(stock)→ [watchlist] ─lookup name/price          │
+每日收盘 → [review 复盘] ←rollup── 当日 positions 盈亏 / watchlist 表现 ────────┘
+```
+
+**8 表 ↔ 六 viewer**：
+| 表 | viewer | 状态 |
+|---|---|---|
+| stocks-watchlist 自选 | ①盯盘 | ✅ |
+| stocks-strategies 策略 | ②选股 | ✅ |
+| stocks-screen-<date> 结果 | ②选股 | ✅ |
+| stocks-review 复盘 | ⑥复盘 | ✅ |
+| **stocks-sectors 板块** ✅ | ①盯盘热度/④题材 | 建 |
+| **stocks-themes 题材** ✅ | ④题材 | 建 |
+| **stocks-analysis 决策看板** ✅ | ③分析 | 建 |
+| **stocks-positions 持仓** ✅ | ⑤持仓 | 建 |
+
+**关联（reference/lookup/rollup，§14.13 AddField relation；跟着管线）**：
+1. `watchlist.sector` → **reference** → sectors（自选股属哪个板块）
+2. `watchlist.theme` → **reference** → themes（自选股属哪个题材）
+3. `positions.stock` → **reference** → watchlist（持仓来自自选）
+4. `analysis.stock` → **reference** → watchlist；`analysis.price` → **lookup** via stock → watchlist.price（决策看板拉现价）
+5. `sectors.watch_count` → **rollup** via watchlist.sector → count（板块里我关注几只）
+6. `positions.name` → **lookup** via stock → watchlist.name
+
+管线是设计源：新表字段服务于「上游产出→下游消费」，关联让孤立表变成一个数据系统。
+
+**2026-07-03 建成实录（Irisy 经 gate）**：8 表系统全建 —— 新增 sectors/themes/analysis/positions 4 表（含 select 富字段）；6 关系型列真落盘验证：watchlist.sector/theme = reference / positions.stock_ref + name(lookup) / analysis.stock_ref + price(lookup) / sectors.watch_count = rollup(count)。改自选的 sector → sectors 板块的 watch_count 自动变；建仓时 positions 经 lookup 拉自选的 name。**4 孤立表 → 8 表关联系统（飞书式多维表格 App 成型）**。git 归属 author=irisy。**待续**：填真实内容（板块强度真数、题材研究、持仓）+ workspace scene 视觉验收。
+
 ## 4. 红线
 
 - **不做交易**：无下单工具、无券商凭证。所有「写」都是表格/笔记（照常过 review gate + 审计 + git 归属）。
