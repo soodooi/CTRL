@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 97,
+  "toolCount": 100,
   "tools": [
     {
       "description": "Describe the calendar as a queryable RecordSource: fields (path/title/date/start/end/location/tags) and supported operators. Call before calendar_query.",
@@ -1492,6 +1492,30 @@
       "name": "note_active_get"
     },
     {
+      "description": "The unified diff a commit (hex rev from note_history) made to a note. Use to inspect exactly what an AI edit changed.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.diff — one commit's change to one note (E6).",
+        "properties": {
+          "path": {
+            "description": "Vault-relative path.",
+            "type": "string"
+          },
+          "rev": {
+            "description": "Hex commit id (from note_history).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "rev"
+        ],
+        "title": "NoteDiffArgs",
+        "type": "object"
+      },
+      "name": "note_diff"
+    },
+    {
       "description": "Read a note with ALL its context in one call: content, frontmatter, tags, stat (mtime/size), outgoing links, and backlinks. Prefer this over vault_read when you also need the note's connections.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1507,6 +1531,35 @@
         "type": "object"
       },
       "name": "note_get"
+    },
+    {
+      "description": "Per-note git history: [{rev, author, time, message}] newest first (follows renames). Author \"user\" = the human's edits; agent names (irisy/claude-code/…) = AI edits. Empty when the vault has no git repo.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.history — per-note git history (ADR-002 §1.9 v46 E6).",
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Max commits (default 20).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Vault-relative path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "NoteHistoryArgs",
+        "type": "object"
+      },
+      "name": "note_history"
     },
     {
       "description": "Get a note's document map: headings (level/text/line, code fences excluded), ^block-id refs, and frontmatter keys. Call before doc_produce to pick a real heading anchor.",
@@ -3983,6 +4036,28 @@
         "type": "object"
       },
       "name": "vault_orphans"
+    },
+    {
+      "description": "Vault activity pulse: per-day commit counts for the last N days (default 14) split user vs agents, plus the 20 most recent commits. Answers \"what happened in my vault this week\".",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "vault.pulse — activity summary (E6).",
+        "properties": {
+          "days": {
+            "default": null,
+            "description": "Window in days (default 14).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "VaultPulseArgs",
+        "type": "object"
+      },
+      "name": "vault_pulse"
     },
     {
       "description": "Read a markdown file from the user's vault",

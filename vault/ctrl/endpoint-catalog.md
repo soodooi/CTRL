@@ -20,9 +20,9 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **97** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **80** are bespoke tools (not section-14 shaped)
-- **34** writes (produce, through the review gate) / **63** reads
+- **100** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **83** are bespoke tools (not section-14 shaped)
+- **34** writes (produce, through the review gate) / **66** reads
 - **108** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
@@ -75,7 +75,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `registry_describe` | 0 | read | s14 | Describe the installed-MCP registry as a queryable RecordSource (fields: id/name/version/description/tools). Call before registry.query. |  |
 | `registry_query` | 5 | read | s14 | Query installed MCP servers by id/name/tool-count with a structured filter/sort/group request. Call registry.describe first. |  |
 
-### vault/notes (29 endpoints, 2 s14)
+### vault/notes (30 endpoints, 2 s14)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
@@ -92,6 +92,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `vault_move` | 2 | **WRITE** | bespoke | Move a vault note to a new path (alias of vault.rename) |  |
 | `vault_notes_by_tag` | 1 | read | bespoke | List notes tagged with a specific tag |  |
 | `vault_orphans` | 0 | read | bespoke | List vault notes that no other note links to |  |
+| `vault_pulse` | 1 | read | bespoke | Vault activity pulse: per-day commit counts for the last N days (default 14) split user vs agents, plus the 20 most recent commits. Answers "what happened in my vault this week". |  |
 | `vault_read` | 1 | read | bespoke | Read a markdown file from the user's vault |  |
 | `vault_rebuild_index` | 0 | **WRITE** | bespoke | Rebuild the FTS5 vault search index from disk (returns indexed file count) |  |
 | `vault_reembed_all` | 1 | **WRITE** | bespoke | Re-embed all vault notes (bulk; respects content_hash unless force=true) |  |
@@ -160,7 +161,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `kernel_status` | 0 | read | bespoke | Report kernel health: uptime, registered LLM adapters, MCP server count | cmd too |
 | `vault_root_path` | 0 | read | bespoke | Return the absolute vault root path on disk |  |
 
-### other (25 endpoints, all bespoke)
+### other (27 endpoints, all bespoke)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
@@ -173,7 +174,9 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `market_quote` | 1 | read | bespoke | Live stock/index quotes for tickers (Yahoo Finance, no key). Returns price, currency, and percent change vs previous close. Use Yahoo suffixes: .SS Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^ (e.g. ^GSPC, ^IXIC, ^HSI). |  |
 | `market_screen` | 2 | read | bespoke | Predefined stock screen (Yahoo Finance, no key). screen = day_gainers | day_losers | most_actives. Returns symbol, name, price, and percent change for the top movers. |  |
 | `note_active_get` | 0 | read | bespoke | Which note the user is looking at RIGHT NOW in the CTRL workspace. Returns {path} or {path:null} when none is open. Follow with note_get(path) to read it or doc_produce(path,…) to edit it. |  |
+| `note_diff` | 2 | read | bespoke | The unified diff a commit (hex rev from note_history) made to a note. Use to inspect exactly what an AI edit changed. |  |
 | `note_get` | 1 | read | bespoke | Read a note with ALL its context in one call: content, frontmatter, tags, stat (mtime/size), outgoing links, and backlinks. Prefer this over vault_read when you also need the note's connections. |  |
+| `note_history` | 2 | read | bespoke | Per-note git history: [{rev, author, time, message}] newest first (follows renames). Author "user" = the human's edits; agent names (irisy/claude-code/…) = AI edits. Empty when the vault has no git repo. |  |
 | `note_map` | 1 | read | bespoke | Get a note's document map: headings (level/text/line, code fences excluded), ^block-id refs, and frontmatter keys. Call before doc_produce to pick a real heading anchor. |  |
 | `note_open` | 2 | read | bespoke | Open a note in the CTRL workspace for the user (optionally scrolled to a heading). Validates the path exists first. Returns whether a UI was listening. |  |
 | `note_periodic` | 3 | read | bespoke | Resolve the periodic note for a date: period=daily/weekly/monthly/quarterly/yearly, date=YYYY-MM-DD (default today). Returns {path, exists, content?, frontmatter?}; create=true seeds it (journal frontmatter) when missing. Use with doc_produce to append to today's daily note. |  |

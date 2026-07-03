@@ -608,6 +608,33 @@ pub struct NoteOpenArgs {
     pub heading: Option<String>,
 }
 
+/// note.history — per-note git history (ADR-002 §1.9 v46 E6).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NoteHistoryArgs {
+    /// Vault-relative path.
+    pub path: String,
+    /// Max commits (default 20).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// note.diff — one commit's change to one note (E6).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NoteDiffArgs {
+    /// Vault-relative path.
+    pub path: String,
+    /// Hex commit id (from note_history).
+    pub rev: String,
+}
+
+/// vault.pulse — activity summary (E6).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultPulseArgs {
+    /// Window in days (default 14).
+    #[serde(default)]
+    pub days: Option<u32>,
+}
+
 /// note.recent_changes — most recently modified notes (ADR-002 §1.9 v46 E12).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct NoteRecentChangesArgs {
@@ -2525,6 +2552,70 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
+    /// note.history — per-note git history (ADR-002 §1.9 v46 E6; the vault's
+    /// git layer doubles as the AI-vs-user attribution trail: author "user" =
+    /// PWA edits, agent callers keep their own names).
+    #[tool(
+        description = "Per-note git history: [{rev, author, time, message}] newest first (follows renames). Author \"user\" = the human's edits; agent names (irisy/claude-code/…) = AI edits. Empty when the vault has no git repo."
+    )]
+    async fn note_history(
+        &self,
+        Parameters(args): Parameters<NoteHistoryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        if !root.join(".git").is_dir() {
+            return Ok(CallToolResult::success(vec![Content::text("[]".to_string())]));
+        }
+        let limit = args.limit.unwrap_or(20);
+        let hist = crate::kernel::vault_git::note_history(&root, &args.path, limit)
+            .await
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let body = serde_json::to_string(&hist).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.diff — what one commit changed in one note (E6).
+    #[tool(
+        description = "The unified diff a commit (hex rev from note_history) made to a note. Use to inspect exactly what an AI edit changed."
+    )]
+    async fn note_diff(
+        &self,
+        Parameters(args): Parameters<NoteDiffArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let diff = crate::kernel::vault_git::note_diff(&root, &args.path, &args.rev)
+            .await
+            .map_err(|e| McpError::invalid_params(e, None))?;
+        Ok(CallToolResult::success(vec![Content::text(diff)]))
+    }
+
+    /// vault.pulse — vault activity over recent days (E6; Tolaria Pulse
+    /// parity): per-day commit counts split user-vs-agents + recent commits.
+    #[tool(
+        description = "Vault activity pulse: per-day commit counts for the last N days (default 14) split user vs agents, plus the 20 most recent commits. Answers \"what happened in my vault this week\"."
+    )]
+    async fn vault_pulse(
+        &self,
+        Parameters(args): Parameters<VaultPulseArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        if !root.join(".git").is_dir() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                "{\"days\":[],\"recent\":[]}".to_string(),
+            )]));
+        }
+        let days = args.days.unwrap_or(14);
+        let (day_rows, recent) = crate::kernel::vault_git::pulse(&root, days)
+            .await
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let body = serde_json::to_string(&serde_json::json!({
+            "days": day_rows,
+            "recent": recent,
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
     /// vault.backlinks — every note linking to `path` + snippet preview.
     #[tool(description = "Backlinks for a vault note (paths + snippets)")]
     async fn vault_backlinks(
@@ -3799,6 +3890,15 @@ impl ServerHandler for KernelMcpRouter {
             .record_call(&gate_req, outcome, detail.as_deref())
         {
             tracing::warn!(tool = %tool_name, error = %e, "audit ledger write failed");
+        }
+
+        // Git audit layer (ADR-002 §1.9 v46/v47, notes-plan S4 — Tolaria's
+        // git-as-AI-audit-trail, CTRL-native): a SUCCESSFUL mutating call on a
+        // vault-backed domain schedules a coalesced auto-commit authored as the
+        // caller (user vs agent attribution at the file layer, complementing
+        // this ledger at the call layer). Fire-and-forget; no-op without .git.
+        if outcome == "ok" && crate::kernel::vault_git::should_autocommit(&tool_name) {
+            crate::kernel::vault_git::schedule(gate_req.caller(), &tool_name);
         }
 
         result
