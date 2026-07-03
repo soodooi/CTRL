@@ -53,6 +53,21 @@ related:
 | 次 | ④ 题材 | 产业链拆解+轮动节奏 | 题材 md + 板块 smart-table |
 | 改性质 | ⑤ 持仓（**管理，非交易**） | 真实持仓（ghostfolio 或手记）+ 盈亏/配比 + 模拟账本 | ghostfolio source_query（有则连）+ 持仓 smart-table（手动/半自动记）；**无下单** |
 
+## 2.5 CTRL 版本 v1 收窄（bao 2026-07-03「市场情绪、强度是关键；先把选股和复盘做好，其他后续」）
+
+**v1 只做两件事，两个关键信号贯穿**：
+
+**核心信号（数据服务的第一等公民，全部 akshare 免 key 可得）**：
+- **市场情绪**：涨跌家数比 · 涨停/跌停家数 · 炸板率 · 昨涨停今表现（赚钱效应）· 情绪周期阶段判定（冰点/修复/发酵/高潮/退潮 —— 判定规则参考 youzi MIT 情绪周期派 + dalh 92科比四阶段，自写）
+- **强度**：连板天梯（最高板/晋级率）· 板块强度榜（涨幅+主力净流入+涨停家数）· 个股强度（量比/换手/相对大盘 RS）
+
+**v1 工具面（Irisy 写的服务，6-8 个 tool）**：
+`market_mood()` 情绪总貌+周期阶段 · `limit_ladder()` 连板天梯 · `sector_strength()` 板块强度榜 · `screen_strong(criteria)` 强势股筛选 · `stock_quote(symbols)` · `stock_kline(symbol)` —— 每个返回结构化 JSON，reference 现货：hhxg-python(MIT) 的数据路径 + UZI 的免 key API 注册表。
+
+**选股（重点1）**：筛选条件 = 情绪门槛（周期阶段允许才出手 —— 退哥 market-regime 三态）+ 强度条件（连板高度/板块排名/RS）→ 结果落 smart-table；策略存行可复跑。
+**复盘（重点2）**：收盘后一句「今天复盘」→ ① 情绪面（周期阶段+赚钱效应数字）② 强度面（天梯+板块轮动 —— plate-rotation MIT 双源件）③ 自选/持仓表现归因 → 结构化 md 进 daily note + 交易日记表。
+**后置**：题材深挖/游资 persona 面板/缠论择时/盯盘 dashboard —— 素材已备齐（附录清单），v1 不做。
+
 ## 3. 切片（每片 dev-loop + checker）
 
 | 片 | 内容 | 验收（可验证） |
