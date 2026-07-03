@@ -277,6 +277,22 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::notes_ui::git_commit,
             // git_push: served by the existing commands::git::git_push.
             $crate::commands::notes_ui::git_author_identity,
+            $crate::commands::notes_ui::detect_renames,
+            $crate::commands::notes_ui::update_wikilinks_for_renames,
+            $crate::commands::notes_ui::auto_rename_untitled,
+            $crate::commands::notes_ui::save_image,
+            $crate::commands::notes_ui::copy_image_to_vault,
+            $crate::commands::notes_ui::start_vault_watcher,
+            $crate::commands::notes_ui::stop_vault_watcher,
+            $crate::commands::notes_ui::copy_text_to_clipboard,
+            $crate::commands::notes_ui::read_text_from_clipboard,
+            $crate::commands::notes_ui::open_vault_file_external,
+            $crate::commands::notes_ui::update_menu_state,
+            $crate::commands::notes_ui::update_current_window_min_size,
+            $crate::commands::notes_ui::sync_vault_asset_scope_for_window,
+            $crate::commands::notes_ui::should_use_external_media_preview,
+            $crate::commands::notes_ui::get_process_memory_snapshot,
+            $crate::commands::notes_ui::check_for_app_update,
             $crate::commands::vault::vault_set_auto_sync,
             // SOUL.md (Irisy persistent memory) retired to the gate's memory-domain
             // tools irisy_soul_get/set (SC5 convergence); PWA reaches them via gate_invoke.

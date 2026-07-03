@@ -278,6 +278,367 @@ pub async fn git_author_identity(vault_path: Option<String>) -> Result<GitAuthor
     Ok(GitAuthorIdentity { name: clean(name), email: clean(email) })
 }
 
+// ── rename commands (upstream rename_cmds.rs shapes; CTRL-own impls) ────────
+
+#[derive(Debug, Clone, serde::Deserialize, Serialize)]
+pub struct DetectedRename {
+    pub old_path: String,
+    pub new_path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RenameResult {
+    /// New ABSOLUTE file path after the rename (upstream contract).
+    pub new_path: String,
+    pub updated_files: usize,
+    pub failed_updates: usize,
+}
+
+/// Renamed-but-uncommitted files, from git (upstream semantics: diff HEAD
+/// with rename detection). Empty when the vault has no repo.
+#[tauri::command]
+pub fn detect_renames(args: serde_json::Value) -> Result<Vec<DetectedRename>, String> {
+    let _ = args; // upstream carries vaultPath; single-vault v1 uses the root
+    let root = vault::default_vault_root().ok_or("vault root unresolved")?;
+    if !root.join(".git").is_dir() {
+        return Ok(Vec::new());
+    }
+    let out = std::process::Command::new("git")
+        .args(["diff", "HEAD", "--name-status", "--diff-filter=R", "-M"])
+        .current_dir(&root)
+        .output()
+        .map_err(|e| format!("git spawn: {e}"))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    Ok(text
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split('\t');
+            let status = it.next()?;
+            if !status.starts_with('R') {
+                return None;
+            }
+            Some(DetectedRename {
+                old_path: it.next()?.to_string(),
+                new_path: it.next()?.to_string(),
+            })
+        })
+        .collect())
+}
+
+/// Rewrite `[[wikilinks]]` pointing at renamed notes (E11 link-aware rename —
+/// the LRA ecosystem's known gap, served natively). Own implementation: for
+/// each rename, every `.md` file containing `[[<old-stem>` gets those link
+/// targets rewritten to the new stem (plain + `|aliased` + `#heading` forms
+/// all share the `[[target` prefix, so one boundary-aware replace covers them).
+#[tauri::command]
+pub fn update_wikilinks_for_renames(args: UpdateWikilinksArgs) -> Result<usize, String> {
+    let root = vault::default_vault_root().ok_or("vault root unresolved")?;
+    let mut updated_total = 0usize;
+    for rename in &args.renames {
+        updated_total += rewrite_wikilinks(&root, &rename.old_path, &rename.new_path)?;
+    }
+    Ok(updated_total)
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateWikilinksArgs {
+    /// Upstream carries the vault; single-vault v1 ignores it (root-checked).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub vault_path: Option<String>,
+    pub renames: Vec<DetectedRename>,
+}
+
+fn stem_of(p: &str) -> String {
+    Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+}
+
+/// Replace `[[old_stem` link heads with `[[new_stem` across the vault,
+/// boundary-aware (the char after the stem must close/qualify the link:
+/// `]]`, `|`, or `#`). Returns how many files changed.
+fn rewrite_wikilinks(root: &Path, old_path: &str, new_path: &str) -> Result<usize, String> {
+    let old_stem = stem_of(old_path);
+    let new_stem = stem_of(new_path);
+    if old_stem.is_empty() || old_stem == new_stem {
+        return Ok(0);
+    }
+    let mut updated = 0usize;
+    let paths = vault::list(root, None).map_err(|e| format!("{e:?}"))?;
+    let head = format!("[[{old_stem}");
+    for rel in paths {
+        let full = root.join(&rel);
+        let Ok(raw) = std::fs::read_to_string(&full) else { continue };
+        if !raw.contains(&head) {
+            continue;
+        }
+        let mut out = String::with_capacity(raw.len());
+        let mut rest = raw.as_str();
+        let mut changed = false;
+        while let Some(at) = rest.find(&head) {
+            let after = &rest[at + head.len()..];
+            let boundary = after.starts_with("]]") || after.starts_with('|') || after.starts_with('#');
+            out.push_str(&rest[..at]);
+            if boundary {
+                out.push_str("[[");
+                out.push_str(&new_stem);
+                changed = true;
+            } else {
+                out.push_str(&head);
+            }
+            rest = after;
+        }
+        out.push_str(rest);
+        if changed {
+            std::fs::write(&full, &out).map_err(|e| format!("write {rel}: {e}"))?;
+            vault::refresh_index_for(root, &rel, &out);
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
+/// Rename an `Untitled*` note after its first heading / first line (upstream
+/// auto-rename semantics, own impl). Returns None when the note is not
+/// untitled or no title can be derived.
+#[tauri::command]
+pub fn auto_rename_untitled(args: AutoRenameArgs) -> Result<Option<RenameResult>, String> {
+    let (root, rel) = to_rel(Path::new(&args.note_path))?;
+    let stem = stem_of(&rel);
+    if !stem.to_lowercase().starts_with("untitled") {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(root.join(&rel)).map_err(|e| e.to_string())?;
+    let title = raw
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && *l != "---")
+        .map(|l| l.trim_start_matches('#').trim())
+        .unwrap_or("");
+    let clean: String = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if clean.is_empty() {
+        return Ok(None);
+    }
+    let parent = Path::new(&rel).parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    // Dedupe with ` 2`, ` 3`, … suffixes.
+    let mut candidate = parent.join(format!("{clean}.md"));
+    let mut n = 2;
+    while root.join(&candidate).exists() {
+        candidate = parent.join(format!("{clean} {n}.md"));
+        n += 1;
+        if n > 99 {
+            return Err("could not find a free filename".into());
+        }
+    }
+    let new_rel = candidate.to_string_lossy().to_string();
+    std::fs::rename(root.join(&rel), root.join(&new_rel)).map_err(|e| e.to_string())?;
+    let updated_files = rewrite_wikilinks(&root, &rel, &new_rel).unwrap_or(0);
+    vault::refresh_index_for(&root, &new_rel, &raw);
+    Ok(Some(RenameResult {
+        new_path: root.join(&new_rel).to_string_lossy().to_string(),
+        updated_files,
+        failed_updates: 0,
+    }))
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoRenameArgs {
+    /// Upstream carries the vault; single-vault v1 ignores it (root-checked).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub vault_path: Option<String>,
+    pub note_path: String,
+}
+
+// ── image commands (upstream image.rs contract: attachments/ + timestamp) ───
+
+#[tauri::command]
+pub fn save_image(
+    vault_path: Option<PathBuf>,
+    filename: String,
+    data: String,
+) -> Result<String, String> {
+    use base64::Engine;
+    let _ = vault_path;
+    let root = vault::default_vault_root().ok_or("vault root unresolved")?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data)
+        .map_err(|e| format!("invalid base64: {e}"))?;
+    let dir = root.join("attachments");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let safe_name: String = filename
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+    let target = dir.join(format!("{ts}-{safe_name}"));
+    std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn copy_image_to_vault(
+    vault_path: Option<PathBuf>,
+    source_path: PathBuf,
+) -> Result<String, String> {
+    let _ = vault_path;
+    let root = vault::default_vault_root().ok_or("vault root unresolved")?;
+    if !source_path.exists() {
+        return Err(format!("source does not exist: {}", source_path.display()));
+    }
+    let name = source_path
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .ok_or("source has no filename")?;
+    let dir = root.join("attachments");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let target = dir.join(format!("{ts}-{name}"));
+    std::fs::copy(&source_path, &target).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+// ── watcher bridge (upstream vault-changed event, camelCase payload) ────────
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VaultChangedPayload {
+    vault_path: String,
+    paths: Vec<String>,
+}
+
+static WATCHER_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Start the vault watcher and bridge kernel watch events to the upstream
+/// `vault-changed` Tauri event (2s poll over kernel::vault_watch, which is
+/// already notify-backed — one watcher serves both the gate tool and the UI).
+#[tauri::command]
+pub fn start_vault_watcher(app: tauri::AppHandle, path: PathBuf) -> Result<(), String> {
+    use tauri::Emitter;
+    let _ = path; // single-vault v1: the CTRL root is watched
+    let root = vault::default_vault_root().ok_or("vault root unresolved")?;
+    crate::kernel::vault_watch::start(&root).map_err(|e| format!("{e:?}"))?;
+    if WATCHER_RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Ok(()); // bridge already polling
+    }
+    let root_str = root.to_string_lossy().to_string();
+    tauri::async_runtime::spawn(async move {
+        let mut since_ms = chrono::Utc::now().timestamp_millis();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if !WATCHER_RUNNING.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            let events = crate::kernel::vault_watch::recent(None, since_ms);
+            if events.is_empty() {
+                continue;
+            }
+            since_ms = events.iter().map(|e| e.ts_ms).max().unwrap_or(since_ms);
+            let paths: Vec<String> = events
+                .into_iter()
+                .map(|e| format!("{root_str}/{}", e.path))
+                .collect();
+            let _ = app.emit(
+                "vault-changed",
+                VaultChangedPayload { vault_path: root_str.clone(), paths },
+            );
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_vault_watcher() -> Result<(), String> {
+    WATCHER_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
+// ── clipboard + misc shell partials ─────────────────────────────────────────
+
+#[tauri::command]
+pub fn copy_text_to_clipboard(text: String) -> Result<(), String> {
+    let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    cb.set_text(text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn read_text_from_clipboard() -> Result<String, String> {
+    let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    cb.get_text().map_err(|e| e.to_string())
+}
+
+/// Open a vault file with the OS default app (upstream escape hatch for
+/// non-markdown assets — PDFs, images).
+#[tauri::command]
+pub fn open_vault_file_external(path: PathBuf, vault_path: Option<PathBuf>) -> Result<(), String> {
+    let _ = vault_path;
+    let (root, rel) = to_rel(&path)?;
+    let full = root.join(&rel);
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(target_os = "linux")]
+    let opener = "xdg-open";
+    #[cfg(target_os = "windows")]
+    let opener = "explorer";
+    std::process::Command::new(opener)
+        .arg(&full)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ── safe no-op stubs (upstream app-shell / AI-layer surface the CTRL build
+//    intentionally does not serve — the AI panel is replaced by Irisy in F4;
+//    updater/menu/telemetry are CTRL-shell concerns) ─────────────────────────
+
+#[tauri::command]
+pub fn update_menu_state(args: serde_json::Value) -> Result<(), String> {
+    let _ = args;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_current_window_min_size(args: serde_json::Value) -> Result<(), String> {
+    let _ = args;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn sync_vault_asset_scope_for_window(args: serde_json::Value) -> Result<(), String> {
+    let _ = args;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn should_use_external_media_preview(args: serde_json::Value) -> Result<bool, String> {
+    let _ = args;
+    Ok(false)
+}
+
+#[tauri::command]
+pub fn get_process_memory_snapshot() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({ "available": false }))
+}
+
+#[tauri::command]
+pub fn check_for_app_update() -> Result<serde_json::Value, String> {
+    // CTRL owns updates (ADR-004); the vendored UI's updater is inert.
+    Ok(serde_json::json!({ "available": false }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,5 +663,30 @@ mod tests {
     fn snippet_falls_back_to_head_when_needle_absent() {
         assert_eq!(snippet_around("hello world", "zzz", 5), "hello");
         assert!(snippet_around("abc needle def", "needle", 3).contains("needle"));
+    }
+
+    #[test]
+    fn rewrite_wikilinks_is_boundary_aware() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        std::fs::write(
+            root.join("a.md"),
+            "see [[old-note]] and [[old-note|alias]] and [[old-note#Heading]]\nbut [[old-note-longer]] stays\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("b.md"), "no links here\n").unwrap();
+        let n = rewrite_wikilinks(root, "old-note.md", "new-note.md").unwrap();
+        assert_eq!(n, 1, "only the file with matching links rewrites");
+        let out = std::fs::read_to_string(root.join("a.md")).unwrap();
+        assert!(out.contains("[[new-note]]"));
+        assert!(out.contains("[[new-note|alias]]"));
+        assert!(out.contains("[[new-note#Heading]]"));
+        assert!(out.contains("[[old-note-longer]]"), "longer stem is NOT a boundary match");
+    }
+
+    #[test]
+    fn rewrite_wikilinks_noop_on_same_stem() {
+        let dir = tempfile::TempDir::new().unwrap();
+        assert_eq!(rewrite_wikilinks(dir.path(), "x/a.md", "y/a.md").unwrap(), 0);
     }
 }
