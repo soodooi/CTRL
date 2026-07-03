@@ -100,7 +100,7 @@ related:
 ## 3.45 场景组合模型（bao 2026-07-03 拍板：包 = persona + 名称 + 知识库(含 skills)）
 
 - **功能包携带完整场景配置**：manifest 增 `persona`（引用制，persona 池保持个位数原型：助理/coding/创造者/**盘手 trader-desk 新增**）+ `knowledge_base`（内含 `skills/`）+ `category`。
-- **L1 选中包才组合**：scene=pack → persona 换装 + KB scope + **skills 一行指针**（按需 `skill_list/skill_read`，绝不整包灌上下文）。未选包 = 素 Irisy + 薄全局 brief。
+- **scene→persona 全映射（bao 2026-07-03 纠正：没有「未选包」的裸态，每个场景都有 persona）**：home/notes/tables → 助理 persona；coding → coding persona；包场景 → 包声明的 persona（如 stocks→盘手）。组合内容 = persona + KB scope + **skills 一行指针**（按需 `skill_list/skill_read`，绝不整包灌上下文）+ 同类包聚合。全局 brief 只装跨场景通用能力。
 - **全局 brief 瘦身完成**：股票段（watchlist 惯例/日评流程）整体搬出 `CTRL_CAPABILITY_BRIEF` → 落为包 KB skills（`skills/mood-cycle.md` 情绪周期判定 + `skills/daily-review.md` 复盘流程，首批已产出）。
 - 与 kernel 侧 §1B.8 per-pack 投影作用域对称（同一思想两侧镜像）。
 - stock-cn + ghostfolio 均已挂 `persona: trader-desk`（stocks 家族共用一个原型）。
