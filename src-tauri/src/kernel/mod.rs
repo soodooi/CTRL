@@ -38,6 +38,7 @@ pub mod review_gate;
 // (project-scoped `.mcp.json`) so the driver auto-discovers it on launch.
 pub mod projector;
 pub mod provider;
+pub mod periodic_notes;
 pub mod query;
 pub mod runtime;
 pub mod runtime_sources;

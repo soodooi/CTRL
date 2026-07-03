@@ -574,6 +574,39 @@ pub struct VaultSearchArgs {
     /// Max results. Defaults to 20 if absent.
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Return match context snippets (ADR-002 §1.9 v46 E13). When true, each
+    /// hit is {path, context} with ~context_length chars around the first
+    /// match; when false/absent, plain path strings (back-compat).
+    #[serde(default)]
+    pub with_context: bool,
+    /// Snippet radius in chars (default 100), used with `with_context`.
+    #[serde(default)]
+    pub context_length: Option<usize>,
+}
+
+/// note.periodic — resolve/read/create the periodic note for a date (ADR-002
+/// §1.9 v46 E1; LRA /periodic/ parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NotePeriodicArgs {
+    /// Which period: daily / weekly / monthly / quarterly / yearly.
+    pub period: crate::kernel::periodic_notes::Period,
+    /// Anchor date YYYY-MM-DD (default: today).
+    #[serde(default)]
+    pub date: Option<String>,
+    /// Create the note (with journal frontmatter) when missing.
+    #[serde(default)]
+    pub create: bool,
+}
+
+/// note.recent_changes — most recently modified notes (ADR-002 §1.9 v46 E12).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NoteRecentChangesArgs {
+    /// Max results (default 20).
+    #[serde(default)]
+    pub limit: Option<usize>,
+    /// Only notes modified within the last N days (default: no cutoff).
+    #[serde(default)]
+    pub days: Option<u32>,
 }
 
 // ADR-002 substrate § vault v1 §8.3 (2026-06-01) — 13 new vault MCP tools
@@ -2333,7 +2366,109 @@ impl KernelMcpRouter {
         let root = vault_root()?;
         let limit = args.limit.unwrap_or(20);
         let hits = vault::search(&root, &args.query, limit).map_err(map_vault_err)?;
-        let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
+        if !args.with_context {
+            // Back-compat shape: plain path strings (the PWA consumes this).
+            let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
+            return Ok(CallToolResult::success(vec![Content::text(body)]));
+        }
+        // E13 (ADR-002 §1.9 v46): attach ~context_length chars around the first
+        // case-insensitive match so the AI can judge relevance without a second
+        // read per hit (LRA /search/simple/ contextLength parity).
+        let radius = args.context_length.unwrap_or(100);
+        let needle = args.query.to_lowercase();
+        let rich: Vec<serde_json::Value> = hits
+            .into_iter()
+            .map(|path| {
+                let context = vault::read(&root, &path)
+                    .ok()
+                    .and_then(|e| snippet_around(&e.content, &needle, radius));
+                serde_json::json!({ "path": path, "context": context })
+            })
+            .collect();
+        let body = serde_json::to_string(&rich).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.periodic — resolve (and optionally create) the daily / weekly /
+    /// monthly / quarterly / yearly note for a date (ADR-002 §1.9 v46 E1).
+    /// Daily resolution matches the task source's daily-note convention, so
+    /// "add a task to today" and "open today's note" land on the same file.
+    #[tool(
+        description = "Resolve the periodic note for a date: period=daily/weekly/monthly/quarterly/yearly, date=YYYY-MM-DD (default today). Returns {path, exists, content?, frontmatter?}; create=true seeds it (journal frontmatter) when missing. Use with doc_produce to append to today's daily note."
+    )]
+    async fn note_periodic(
+        &self,
+        Parameters(args): Parameters<NotePeriodicArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use crate::kernel::periodic_notes;
+        let root = vault_root()?;
+        let date = match &args.date {
+            Some(s) => chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
+                .map_err(|_| McpError::invalid_params(format!("'{s}' is not YYYY-MM-DD"), None))?,
+            None => chrono::Local::now().date_naive(),
+        };
+        let path = periodic_notes::note_path(args.period, date);
+        let lock = self.vault_write_lock(&path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &path).ok();
+        let exists = entry.is_some();
+        if !exists && args.create {
+            vault::write(&root, &path, "", &periodic_notes::seed_frontmatter(args.period))
+                .map_err(map_vault_err)?;
+        }
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": path,
+            "exists": exists || args.create,
+            "content": entry.as_ref().map(|e| e.content.clone()),
+            "frontmatter": entry.as_ref().map(|e| e.frontmatter.clone()),
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.recent_changes — most recently modified notes by mtime (ADR-002
+    /// §1.9 v46 E12; the "what did I touch lately" recall the LRA ecosystem
+    /// had to work around via search).
+    #[tool(
+        description = "List the most recently modified notes: [{path, mtime_ms}] sorted newest first. Optional days cutoff. Answers \"what did I work on recently\"."
+    )]
+    async fn note_recent_changes(
+        &self,
+        Parameters(args): Parameters<NoteRecentChangesArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let limit = args.limit.unwrap_or(20);
+        let cutoff_ms = args.days.map(|d| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            now.saturating_sub(u64::from(d) * 86_400_000)
+        });
+        let mut rows: Vec<(String, u64)> = vault::list(&root, None)
+            .map_err(map_vault_err)?
+            .into_iter()
+            .filter_map(|p| {
+                let m = std::fs::metadata(root.join(&p)).ok()?;
+                let mtime_ms = m
+                    .modified()
+                    .ok()?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()?
+                    .as_millis() as u64;
+                if cutoff_ms.is_some_and(|c| mtime_ms < c) {
+                    return None;
+                }
+                Some((p, mtime_ms))
+            })
+            .collect();
+        rows.sort_by_key(|r| std::cmp::Reverse(r.1));
+        rows.truncate(limit);
+        let out: Vec<serde_json::Value> = rows
+            .into_iter()
+            .map(|(path, mtime_ms)| serde_json::json!({ "path": path, "mtime_ms": mtime_ms }))
+            .collect();
+        let body = serde_json::to_string(&out).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -3749,6 +3884,29 @@ fn vault_root() -> Result<std::path::PathBuf, McpError> {
         .ok_or_else(|| McpError::internal_error("vault root unresolved (HOME unset)", None))
 }
 
+/// ~`radius` chars of context around the first case-insensitive occurrence of
+/// `needle_lower` (pre-lowercased) in `content`, char-boundary safe. None when
+/// the needle is absent (e.g. an FTS stem matched but the literal didn't).
+fn snippet_around(content: &str, needle_lower: &str, radius: usize) -> Option<String> {
+    let lower = content.to_lowercase();
+    let at = lower.find(needle_lower)?;
+    // Map the byte offset in the lowered string back to the source string
+    // conservatively: lowercasing can change byte lengths (rare, non-ASCII),
+    // so clamp to the nearest char boundary in the source.
+    let start = at.saturating_sub(radius);
+    let end = (at + needle_lower.len() + radius).min(content.len());
+    let start = (0..=start.min(content.len())).rev().find(|&i| content.is_char_boundary(i))?;
+    let end = (end..=content.len()).find(|&i| content.is_char_boundary(i))?;
+    let mut s = content[start..end].trim().to_string();
+    if start > 0 {
+        s = format!("…{s}");
+    }
+    if end < content.len() {
+        s = format!("{s}…");
+    }
+    Some(s)
+}
+
 /// A short human summary of a produce op for the gate's success message + audit
 /// trail (the op itself is structured; this is just the log line).
 fn describe_produce_op(op: &query::ProduceOp) -> String {
@@ -4810,6 +4968,23 @@ mod tests {
         let op = query::ProduceOp::SetCell { row: 0, field: "amount".into(), value: "5".into() };
         patch_schema_in_place(&mut fm, &op, &table).unwrap();
         assert_eq!(fm["schema"], before, "row-only op must not touch the schema");
+    }
+
+    #[test]
+    fn snippet_around_clamps_and_marks_ellipses() {
+        let content = "aaaa needle bbbb";
+        // Full string within radius: no ellipses.
+        assert_eq!(snippet_around(content, "needle", 100).unwrap(), "aaaa needle bbbb");
+        // Tight radius: both ellipses.
+        let s = snippet_around(&format!("{}needle{}", "x".repeat(300), "y".repeat(300)), "needle", 10).unwrap();
+        assert!(s.starts_with('…') && s.ends_with('…') && s.contains("needle"));
+        // Case-insensitive (needle passed pre-lowered).
+        assert!(snippet_around("Has NEEDLE here", "needle", 50).is_some());
+        // Absent needle → None.
+        assert!(snippet_around("nothing", "needle", 50).is_none());
+        // Non-ASCII neighbors: char-boundary safe (must not panic).
+        let cjk_adjacent = "\u{4f60}\u{597d}needle\u{4e16}\u{754c}";
+        assert!(snippet_around(cjk_adjacent, "needle", 1).is_some());
     }
 
     #[test]

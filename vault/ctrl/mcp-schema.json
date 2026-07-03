@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 93,
+  "toolCount": 95,
   "tools": [
     {
       "description": "Describe the calendar as a queryable RecordSource: fields (path/title/date/start/end/location/tags) and supported operators. Call before calendar_query.",
@@ -1516,6 +1516,83 @@
         "type": "object"
       },
       "name": "note_map"
+    },
+    {
+      "description": "Resolve the periodic note for a date: period=daily/weekly/monthly/quarterly/yearly, date=YYYY-MM-DD (default today). Returns {path, exists, content?, frontmatter?}; create=true seeds it (journal frontmatter) when missing. Use with doc_produce to append to today's daily note.",
+      "inputSchema": {
+        "$defs": {
+          "Period": {
+            "description": "The fixed period set — a compile-time enum, never a free string\n(anti-hallucination, ADR-002 §14.1).",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly",
+              "quarterly",
+              "yearly"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.periodic — resolve/read/create the periodic note for a date (ADR-002\n§1.9 v46 E1; LRA /periodic/ parity).",
+        "properties": {
+          "create": {
+            "default": false,
+            "description": "Create the note (with journal frontmatter) when missing.",
+            "type": "boolean"
+          },
+          "date": {
+            "default": null,
+            "description": "Anchor date YYYY-MM-DD (default: today).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "period": {
+            "$ref": "#/$defs/Period",
+            "description": "Which period: daily / weekly / monthly / quarterly / yearly."
+          }
+        },
+        "required": [
+          "period"
+        ],
+        "title": "NotePeriodicArgs",
+        "type": "object"
+      },
+      "name": "note_periodic"
+    },
+    {
+      "description": "List the most recently modified notes: [{path, mtime_ms}] sorted newest first. Optional days cutoff. Answers \"what did I work on recently\".",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.recent_changes — most recently modified notes (ADR-002 §1.9 v46 E12).",
+        "properties": {
+          "days": {
+            "default": null,
+            "description": "Only notes modified within the last N days (default: no cutoff).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Max results (default 20).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "NoteRecentChangesArgs",
+        "type": "object"
+      },
+      "name": "note_recent_changes"
     },
     {
       "description": "Describe the knowledge base as a queryable RecordSource: fields (path/title/tags/created/modified) and supported operators. Call before notes.query.",
@@ -3947,6 +4024,16 @@
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "context_length": {
+            "default": null,
+            "description": "Snippet radius in chars (default 100), used with `with_context`.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "limit": {
             "default": null,
             "description": "Max results. Defaults to 20 if absent.",
@@ -3960,6 +4047,11 @@
           "query": {
             "description": "FTS5 query string. Falls back to substring scan when FTS unavailable.",
             "type": "string"
+          },
+          "with_context": {
+            "default": false,
+            "description": "Return match context snippets (ADR-002 §1.9 v46 E13). When true, each\nhit is {path, context} with ~context_length chars around the first\nmatch; when false/absent, plain path strings (back-compat).",
+            "type": "boolean"
           }
         },
         "required": [

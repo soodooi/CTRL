@@ -20,9 +20,9 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **93** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **76** are bespoke tools (not section-14 shaped)
-- **34** writes (produce, through the review gate) / **59** reads
+- **95** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **78** are bespoke tools (not section-14 shaped)
+- **34** writes (produce, through the review gate) / **61** reads
 - **107** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
@@ -96,7 +96,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `vault_rebuild_index` | 0 | **WRITE** | bespoke | Rebuild the FTS5 vault search index from disk (returns indexed file count) |  |
 | `vault_reembed_all` | 1 | **WRITE** | bespoke | Re-embed all vault notes (bulk; respects content_hash unless force=true) |  |
 | `vault_rename` | 2 | **WRITE** | bespoke | Rename a vault note to a new path (no inbound-link rewrite) |  |
-| `vault_search` | 2 | read | bespoke | Full-text search the vault (FTS5 when available, substring fallback) |  |
+| `vault_search` | 4 | read | bespoke | Full-text search the vault (FTS5 when available, substring fallback) |  |
 | `vault_semantic_search` | 3 | read | bespoke | Semantic-similarity vault search (cosine over local embeddings) |  |
 | `vault_set_starred` | 2 | **WRITE** | bespoke | Toggle the starred flag on a vault note's frontmatter |  |
 | `vault_sourcing_pending` | 0 | read | bespoke | Count un-integrated items in the sourcing inbox |  |
@@ -160,7 +160,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `kernel_status` | 0 | read | bespoke | Report kernel health: uptime, registered LLM adapters, MCP server count | cmd too |
 | `vault_root_path` | 0 | read | bespoke | Return the absolute vault root path on disk |  |
 
-### other (21 endpoints, all bespoke)
+### other (23 endpoints, all bespoke)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
@@ -174,6 +174,8 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `market_screen` | 2 | read | bespoke | Predefined stock screen (Yahoo Finance, no key). screen = day_gainers | day_losers | most_actives. Returns symbol, name, price, and percent change for the top movers. |  |
 | `note_get` | 1 | read | bespoke | Read a note with ALL its context in one call: content, frontmatter, tags, stat (mtime/size), outgoing links, and backlinks. Prefer this over vault_read when you also need the note's connections. |  |
 | `note_map` | 1 | read | bespoke | Get a note's document map: headings (level/text/line, code fences excluded), ^block-id refs, and frontmatter keys. Call before doc_produce to pick a real heading anchor. |  |
+| `note_periodic` | 3 | read | bespoke | Resolve the periodic note for a date: period=daily/weekly/monthly/quarterly/yearly, date=YYYY-MM-DD (default today). Returns {path, exists, content?, frontmatter?}; create=true seeds it (journal frontmatter) when missing. Use with doc_produce to append to today's daily note. |  |
+| `note_recent_changes` | 2 | read | bespoke | List the most recently modified notes: [{path, mtime_ms}] sorted newest first. Optional days cutoff. Answers "what did I work on recently". |  |
 | `skill_list` | 1 | read | bespoke | List the user's local installed skills (name + description + path), optional keyword filter |  |
 | `skill_read` | 1 | read | bespoke | Read a local skill's SKILL.md content by its path (from skill_list) |  |
 | `source_describe` | 1 | read | bespoke | Describe an installed connector's queryable records by source_id: fields + operators, read from its manifest record_source. Works for any connector. Call before source_query. |  |
