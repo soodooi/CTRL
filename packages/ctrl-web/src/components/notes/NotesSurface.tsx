@@ -1,5 +1,5 @@
 // NotesSurface — the ONE notes entry point (ADR-002 section 1.9 v47,
-// bao 2026-07-02 "the frontend uses tolaria" + "放在 ctrl 显示"): on desktop
+// bao 2026-07-02 "the frontend uses tolaria" + render-inside-CTRL): on desktop
 // every notes entry (L1 scene, /notes route) renders the vendored Tolaria UI
 // EMBEDDED in the CTRL workspace (iframe + IPC bridge — see NotesEmbed); the
 // in-house NotesApp remains only as the browser-PWA fallback.

@@ -1,5 +1,5 @@
 // NotesEmbed — the vendored Tolaria notes UI rendered INSIDE the CTRL
-// workspace (ADR-002 §1.9 v47; bao 2026-07-02 "放在 ctrl 显示"). Tauri does
+// workspace (ADR-002 §1.9 v47; bao 2026-07-02: render it inside CTRL). Tauri does
 // not inject IPC into iframes, so this component is the parent half of the
 // bridge: the iframe's shim (ctrl-notes-ui/src/ctrl-bridge.ts) forwards every
 // invoke over postMessage; we execute it with the REAL Tauri invoke and post
