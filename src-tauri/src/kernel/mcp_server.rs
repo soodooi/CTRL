@@ -1610,7 +1610,7 @@ impl KernelMcpRouter {
     /// record sources; record ops return Unsupported here (supported_ops works
     /// in both directions). Frontmatter passes through verbatim. Review-gated.
     #[tool(
-        description = "Edit one markdown note by section with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections. Heading match is case-insensitive on the text after #s. Prefer this over vault_write for surgical edits — it never rewrites the whole file."
+        description = "Edit one markdown note by section with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections. Heading match is case-insensitive on the text after #s; with duplicate headings the FIRST match wins. Frontmatter is untouched byte-for-byte. Prefer this over vault_write for surgical edits — it never rewrites the whole file."
     )]
     async fn doc_produce(
         &self,
@@ -1624,8 +1624,10 @@ impl KernelMcpRouter {
         let mut doc = vault_doc::DocBody::parse(&entry.content);
         let summary = describe_produce_op(&args.op);
         doc.produce(args.op).map_err(|e| McpError::invalid_params(e.to_string(), None))?;
-        vault::write(&root, &args.path, &doc.serialize(), &entry.frontmatter)
-            .map_err(map_vault_err)?;
+        // write_body, NOT write: raw frontmatter bytes pass through verbatim
+        // (key order / comments / quoting), and a plain note without
+        // frontmatter stays writable + fm-less (write would error on Null fm).
+        vault::write_body(&root, &args.path, &doc.serialize()).map_err(map_vault_err)?;
         Ok(CallToolResult::success(vec![Content::text(format!(
             "doc produce {summary} on {}",
             args.path

@@ -303,6 +303,62 @@ pub fn write(
     Ok(full)
 }
 
+/// Rewrite ONLY the body of an existing note, preserving the raw frontmatter
+/// block bytes VERBATIM — key order, comments, quoting untouched (the §14
+/// doc-produce contract: zero frontmatter churn). A note WITHOUT frontmatter
+/// stays without one (unlike `write`, which always emits a fm block — and
+/// errors on a Null frontmatter, which is what a plain note reads back as).
+pub fn write_body(vault_root: &Path, rel_path: &str, body: &str) -> Result<PathBuf, VaultError> {
+    let safe = sanitize_relative_path(rel_path)?;
+    let full = vault_root.join(&safe);
+    let raw = fs::read_to_string(&full).map_err(|e| VaultError::Io(e.to_string()))?;
+    let prefix = raw_frontmatter_prefix(&raw);
+    let out = if prefix.is_empty() {
+        body.to_string()
+    } else {
+        // Same close-fence/body separation `write` emits, so `read` round-trips
+        // the body exactly (its parser strips the separator newlines).
+        format!("{prefix}\n\n{body}")
+    };
+    fs::write(&full, &out).map_err(|e| VaultError::Io(e.to_string()))?;
+
+    // Best-effort index upsert + embedding staleness — same posture as `write`.
+    #[cfg(not(test))]
+    if let Some(idx) = try_global_index() {
+        let (fm, _) = split_frontmatter(&raw);
+        let fm_str = serde_json::to_string(&fm).unwrap_or_default();
+        let mtime_ms = current_mtime_ms(&full);
+        if let Err(e) = idx.upsert(&safe.to_string_lossy(), body, &fm_str, mtime_ms) {
+            tracing::warn!(path = %safe.display(), error = %e, "vault: index upsert failed");
+        }
+    }
+    #[cfg(not(test))]
+    flag_embedding_stale(&safe, body);
+
+    Ok(full)
+}
+
+/// The raw frontmatter block of a file — everything through the closing `---`
+/// fence — or `""` when the file has none. Boundary rules MIRROR
+/// `split_frontmatter` (the read side), so write_body's notion of "body" is
+/// exactly what `read` hands callers.
+fn raw_frontmatter_prefix(raw: &str) -> &str {
+    let lead = raw.len() - raw.trim_start().len();
+    let trimmed = &raw[lead..];
+    if !trimmed.starts_with("---\n") && !trimmed.starts_with("---\r\n") {
+        return "";
+    }
+    let after_open = &trimmed[4..];
+    let body_start = if after_open.starts_with("---") {
+        3usize
+    } else if let Some(end_idx) = after_open.find("\n---") {
+        end_idx + 4
+    } else {
+        return "";
+    };
+    &raw[..lead + 4 + body_start]
+}
+
 /// Mark a note's embedding stale so the next embed pass re-embeds it. See the
 /// call site in `write`. Best-effort and side-effect-free on failure: only
 /// markdown notes are tracked (skip `tables/` smart tables and non-`.md` files),
@@ -790,6 +846,50 @@ mod tests {
         let (fm, body) = split_frontmatter("no frontmatter here\nsecond line");
         assert!(fm.is_null());
         assert!(body.starts_with("no frontmatter"));
+    }
+
+    #[test]
+    fn write_body_preserves_raw_frontmatter_bytes_verbatim() {
+        let root = fresh_tmp("write-body-fm");
+        // Hand-authored fm with a COMMENT, deliberate key order (z before a),
+        // and quoting — exactly what a write()-roundtrip would destroy.
+        let raw = "---\n# hand comment\nz_last: \"quoted\"\na_first: 1\n---\n\nold body\n";
+        let full = root.join("doc.md");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&full, raw).unwrap();
+
+        write_body(&root, "doc.md", "new body").unwrap();
+        let out = fs::read_to_string(&full).unwrap();
+        assert!(out.starts_with("---\n# hand comment\nz_last: \"quoted\"\na_first: 1\n---\n"),
+            "raw fm bytes verbatim (comment + order + quoting), got: {out}");
+        assert!(out.ends_with("\n\nnew body"));
+        // And read() hands back exactly the new body.
+        let entry = read(&root, "doc.md").unwrap();
+        assert_eq!(entry.content, "new body");
+        assert_eq!(entry.frontmatter["a_first"], 1);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_body_on_a_plain_note_stays_frontmatterless() {
+        let root = fresh_tmp("write-body-plain");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("plain.md"), "just text\n").unwrap();
+        write_body(&root, "plain.md", "# Section\n\nedited").unwrap();
+        let out = fs::read_to_string(root.join("plain.md")).unwrap();
+        assert_eq!(out, "# Section\n\nedited", "no fm block invented");
+        let entry = read(&root, "plain.md").unwrap();
+        assert!(entry.frontmatter.is_null());
+        assert_eq!(entry.content, "# Section\n\nedited");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_body_missing_file_errors() {
+        let root = fresh_tmp("write-body-missing");
+        fs::create_dir_all(&root).unwrap();
+        assert!(write_body(&root, "nope.md", "x").is_err());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

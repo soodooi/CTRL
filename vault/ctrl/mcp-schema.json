@@ -524,7 +524,7 @@
       "name": "discover_skills"
     },
     {
-      "description": "Edit one markdown note by section with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections. Heading match is case-insensitive on the text after #s. Prefer this over vault_write for surgical edits — it never rewrites the whole file.",
+      "description": "Edit one markdown note by section with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections. Heading match is case-insensitive on the text after #s; with duplicate headings the FIRST match wins. Frontmatter is untouched byte-for-byte. Prefer this over vault_write for surgical edits — it never rewrites the whole file.",
       "inputSchema": {
         "$defs": {
           "CellType": {

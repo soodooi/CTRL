@@ -44,7 +44,7 @@ function moduleOf(tool) {
 }
 
 // Read vs write (produce) by name heuristic.
-const WRITE_RE = /(write|append|update|create|rename|move|delete|set|embed|reembed|rebuild|run|cancel|import|star|folder|patch|post|publish)/;
+const WRITE_RE = /(write|append|update|create|rename|move|delete|set|embed|reembed|rebuild|run|cancel|import|star|folder|patch|post|publish|produce)/;
 function rw(tool) {
   if (/^(.*_)?(describe|query|get|list|search|read|status|graph|tags|backlinks|orphans|mentions|aliases|broken|root|count|snapshot|suggest)/.test(tool))
     return 'read';

@@ -72,6 +72,11 @@ impl CalendarSource {
             ProduceOp::DeleteRows { indices } => {
                 indices.iter().filter_map(|&i| self.row_path(i).ok()).collect()
             }
+            // Locks the BASE path; `create_event` may write a deduped `-2` name
+            // outside the lock set. Concurrent same-base creates still serialize
+            // on the base lock (covers the dedup race); a collision on the
+            // deduped name needs a stale-index op addressing that exact path —
+            // the same cross-call TOCTOU class slice 2 documents.
             ProduceOp::UpsertRows { rows } => rows
                 .iter()
                 .map(|r| {
@@ -213,7 +218,7 @@ fn create_event(root: &Path, row: &Row) -> Result<(), ProduceError> {
         fm.insert("tags".into(), tags_value(t));
     }
     let base = event_note_path(date, title);
-    let path = unique_note_path(root, &base);
+    let path = unique_note_path(root, &base)?;
     vault::write(root, &path, "", &Value::Object(fm)).map_err(map_vault_err)?;
     Ok(())
 }
@@ -224,19 +229,22 @@ fn event_note_path(date: &str, title: &str) -> String {
 }
 
 /// Dedupe a target path with `-2`, `-3`, … if a same-slug event already exists
-/// on that date (two "standup" events on one day are distinct notes).
-fn unique_note_path(root: &Path, base: &str) -> String {
+/// on that date (two "standup" events on one day are distinct notes). Beyond 99
+/// same-slug same-day events we refuse rather than silently overwrite.
+fn unique_note_path(root: &Path, base: &str) -> Result<String, ProduceError> {
     if vault::read(root, base).is_err() {
-        return base.to_string();
+        return Ok(base.to_string());
     }
     let stem = base.strip_suffix(".md").unwrap_or(base);
     for n in 2..100 {
         let candidate = format!("{stem}-{n}.md");
         if vault::read(root, &candidate).is_err() {
-            return candidate;
+            return Ok(candidate);
         }
     }
-    format!("{stem}-overflow.md")
+    Err(ProduceError::Conflict {
+        message: format!("more than 99 same-slug events on one day ({base})"),
+    })
 }
 
 /// ASCII slug of an event title (lowercase alnum, `-` separated; non-ASCII
@@ -516,7 +524,9 @@ mod tests {
     #[test]
     fn slugify_handles_non_ascii_and_spaces() {
         assert_eq!(slugify("Team Sync #2"), "team-sync-2");
-        assert_eq!(slugify("周会"), "event");
+        // CJK collapses to the `event` fallback (escaped: the all-English hard
+        // rule bans raw CJK literals even in tests).
+        assert_eq!(slugify("\u{5468}\u{4f1a}"), "event");
         assert_eq!(slugify("  "), "event");
     }
 }

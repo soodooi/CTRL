@@ -38,22 +38,52 @@ impl DocBody {
         out
     }
 
+    /// Line indices that are real ATX headings — i.e. NOT inside a fenced code
+    /// block (``` / ~~~). A `# comment` line inside a fence must never count as
+    /// a section boundary (would corrupt replace/delete on any doc with code).
+    fn heading_lines(&self) -> Vec<usize> {
+        let mut out = Vec::new();
+        let mut fence: Option<char> = None;
+        for (i, l) in self.lines.iter().enumerate() {
+            let t = l.trim_start();
+            let opener = if t.starts_with("```") {
+                Some('`')
+            } else if t.starts_with("~~~") {
+                Some('~')
+            } else {
+                None
+            };
+            match (fence, opener) {
+                (None, Some(c)) => fence = Some(c),
+                (Some(c), Some(o)) if c == o => fence = None,
+                _ => {}
+            }
+            if fence.is_none() && opener.is_none() && heading_text(l).is_some() {
+                out.push(i);
+            }
+        }
+        out
+    }
+
     /// Locate a section by ATX heading text: returns (heading line index,
     /// exclusive end index). The section runs from the heading line until the
     /// next heading of the SAME or HIGHER level (fewer or equal `#`s), or EOF.
     /// Matching is on the heading TEXT (after `#`s, trimmed, case-insensitive)
-    /// so the AI can say "overview" for `## Overview`.
+    /// so the AI can say "overview" for `## Overview`. The FIRST matching
+    /// heading wins (duplicate headings: address the first). Heading lines
+    /// inside fenced code blocks are ignored (see `heading_lines`).
     fn find_section(&self, heading: &str) -> Option<(usize, usize)> {
         let needle = heading.trim().to_lowercase();
-        let start = self
-            .lines
+        let headings = self.heading_lines();
+        let start = *headings
             .iter()
-            .position(|l| heading_text(l).is_some_and(|t| t.to_lowercase() == needle))?;
+            .find(|&&i| heading_text(&self.lines[i]).is_some_and(|t| t.to_lowercase() == needle))?;
         let level = heading_level(&self.lines[start]).unwrap_or(6);
-        let end = self.lines[start + 1..]
+        let end = headings
             .iter()
-            .position(|l| heading_level(l).is_some_and(|lv| lv <= level))
-            .map(|off| start + 1 + off)
+            .filter(|&&i| i > start)
+            .find(|&&i| heading_level(&self.lines[i]).is_some_and(|lv| lv <= level))
+            .copied()
             .unwrap_or(self.lines.len());
         Some((start, end))
     }
@@ -74,6 +104,10 @@ impl DocBody {
             insert.push(String::new());
         }
         insert.extend(content.lines().map(str::to_string));
+        // House style: keep a blank line before an abutting next heading.
+        if at < self.lines.len() && !self.lines[at].trim().is_empty() {
+            insert.push(String::new());
+        }
         self.lines.splice(at..at, insert);
         Ok(())
     }
@@ -83,6 +117,10 @@ impl DocBody {
         let (start, end) = self.find_section(heading).ok_or_else(|| section_not_found(heading))?;
         let mut insert: Vec<String> = vec![String::new()];
         insert.extend(content.lines().map(str::to_string));
+        // House style: keep a blank line before an abutting next heading.
+        if end < self.lines.len() {
+            insert.push(String::new());
+        }
         self.lines.splice(start + 1..end, insert);
         Ok(())
     }
@@ -131,7 +169,13 @@ fn section_not_found(heading: &str) -> ProduceError {
 
 /// The text of an ATX heading line (`## Title` → `Title`), or None if the line
 /// is not a heading. Trailing closing `#`s are stripped (`## Title ##`).
+/// CommonMark caps ATX indentation at 3 spaces — 4+ is indented code, not a
+/// heading (`    # comment` must never be a section boundary).
 fn heading_text(line: &str) -> Option<&str> {
+    let indent = line.len() - line.trim_start().len();
+    if indent > 3 || line[..indent].contains('\t') {
+        return None;
+    }
     let trimmed = line.trim_start();
     let hashes = trimmed.chars().take_while(|&c| c == '#').count();
     if hashes == 0 || hashes > 6 {
@@ -217,7 +261,7 @@ mod tests {
         })
         .unwrap();
         let out = d.serialize();
-        assert!(out.contains("## Overview\n\nfresh body\n## Details"));
+        assert!(out.contains("## Overview\n\nfresh body\n\n## Details"), "blank line kept before the next heading");
         assert!(!out.contains("old overview body"));
         assert!(out.contains("detail body")); // sibling untouched
     }
@@ -271,6 +315,52 @@ mod tests {
         assert_eq!(DocBody::parse(DOC).serialize(), DOC);
         assert_eq!(DocBody::parse("no trailing newline").serialize(), "no trailing newline");
         assert_eq!(DocBody::parse("").serialize(), "");
+    }
+
+    #[test]
+    fn fenced_code_hash_lines_are_not_section_boundaries() {
+        // A doc whose code block contains `# not a heading` — the section must
+        // run PAST the fence, and the fake heading must not be addressable.
+        let doc = "## Setup\n\n```bash\n# install deps\nnpm install\n```\n\nafter code\n\n## Next\n\nnext body\n";
+        let d = DocBody::parse(doc);
+        let (start, end) = d.find_section("Setup").unwrap();
+        assert!(d.lines[start].contains("## Setup"));
+        assert!(d.lines[end].contains("## Next"), "section spans the whole fence");
+        assert!(d.find_section("install deps").is_none(), "fence content not addressable");
+
+        // replace_section keeps everything outside the Setup body intact.
+        let mut d = DocBody::parse(doc);
+        d.produce(ProduceOp::ReplaceSection { heading: "Setup".into(), content: "new setup".into() })
+            .unwrap();
+        let out = d.serialize();
+        assert!(!out.contains("npm install"), "old body incl. fence replaced");
+        assert!(out.contains("## Next\n\nnext body"), "sibling untouched");
+
+        // ~~~ fences behave the same.
+        let d2 = DocBody::parse("## A\n\n~~~\n# fake\n~~~\n\n## B\n\nb\n");
+        let (_, end2) = d2.find_section("A").unwrap();
+        assert!(d2.lines[end2].contains("## B"));
+    }
+
+    #[test]
+    fn indented_code_lines_are_not_headings() {
+        // CommonMark: 4+ spaces = indented code, never a heading.
+        assert_eq!(heading_text("    # not a heading"), None);
+        assert_eq!(heading_text("   ### still a heading"), Some("still a heading"));
+        assert_eq!(heading_text("\t# tab-indented code"), None);
+        let d = DocBody::parse("## A\n\n    # indented code\n\n## B\n\nb\n");
+        let (_, end) = d.find_section("A").unwrap();
+        assert!(d.lines[end].contains("## B"), "indented code is not a boundary");
+    }
+
+    #[test]
+    fn unclosed_fence_swallows_the_rest_of_the_doc() {
+        // An unclosed ``` means everything after it is (conservatively) code:
+        // no heading below it is addressable, so no splice can tear the fence.
+        let d = DocBody::parse("## A\n\n```\n# fake\n## Also Fake\n\nnever closed\n");
+        let (_, end) = d.find_section("A").unwrap();
+        assert_eq!(end, d.lines.len());
+        assert!(d.find_section("Also Fake").is_none());
     }
 
     #[test]
