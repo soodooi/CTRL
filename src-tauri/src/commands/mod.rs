@@ -29,6 +29,7 @@ pub mod chat;
 // Adapter for the vendored Tolaria notes frontend (ADR-002 §1.9 v47 F2):
 // serves its exact command names from CTRL's kernel.
 pub mod notes_ui;
+pub mod notes_ui_scan;
 // ADR-002 substrate § capability-faces v19 §13.4 (2026-06-09): image
 // generation surface. Currently fal.ai-only; multi-provider routing for
 // image.generate lands when the second image provider is wired.
@@ -293,6 +294,14 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::notes_ui::should_use_external_media_preview,
             $crate::commands::notes_ui::get_process_memory_snapshot,
             $crate::commands::notes_ui::check_for_app_update,
+            $crate::commands::notes_ui_scan::list_vault,
+            $crate::commands::notes_ui_scan::reload_vault,
+            $crate::commands::notes_ui_scan::list_vault_folders,
+            $crate::commands::notes_ui_scan::check_vault_exists,
+            $crate::commands::notes_ui::get_file_history,
+            $crate::commands::notes_ui::get_file_diff,
+            $crate::commands::notes_ui::get_file_diff_at_commit,
+            $crate::commands::notes_ui::get_modified_files,
             $crate::commands::vault::vault_set_auto_sync,
             // SOUL.md (Irisy persistent memory) retired to the gate's memory-domain
             // tools irisy_soul_get/set (SC5 convergence); PWA reaches them via gate_invoke.

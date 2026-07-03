@@ -639,6 +639,116 @@ pub fn check_for_app_update() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "available": false }))
 }
 
+// ── git UI commands (upstream commands/git.rs shapes) ──────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct UiGitCommit {
+    pub hash: String,
+    #[serde(rename = "shortHash")]
+    pub short_hash: String,
+    pub message: String,
+    pub author: String,
+    /// Unix seconds (upstream contract).
+    pub date: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UiModifiedFile {
+    pub path: String,
+    #[serde(rename = "relativePath")]
+    pub relative_path: String,
+    pub status: String,
+    #[serde(rename = "addedLines")]
+    pub added_lines: Option<usize>,
+    #[serde(rename = "deletedLines")]
+    pub deleted_lines: Option<usize>,
+    pub binary: bool,
+}
+
+#[tauri::command]
+pub async fn get_file_history(
+    vault_path: String,
+    path: String,
+) -> Result<Vec<UiGitCommit>, String> {
+    let _ = vault_path;
+    let root = vault::default_vault_root().ok_or("vault root unresolved")?;
+    if !root.join(".git").is_dir() {
+        return Ok(Vec::new());
+    }
+    let (_, rel) = to_rel(Path::new(&path))?;
+    let hist = crate::kernel::vault_git::note_history(&root, &rel, 50).await?;
+    Ok(hist
+        .into_iter()
+        .map(|c| UiGitCommit {
+            short_hash: c.rev.chars().take(7).collect(),
+            hash: c.rev,
+            message: c.message,
+            author: c.author,
+            date: c.time,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn get_file_diff(vault_path: String, path: String) -> Result<String, String> {
+    let _ = vault_path;
+    let (_, rel) = to_rel(Path::new(&path))?;
+    // Uncommitted diff vs HEAD (upstream semantics).
+    let (out, _) = run_git_at_root(&["diff", "HEAD", "--", &rel]).await?;
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn get_file_diff_at_commit(
+    vault_path: String,
+    path: String,
+    commit: String,
+) -> Result<String, String> {
+    let _ = vault_path;
+    let root = vault::default_vault_root().ok_or("vault root unresolved")?;
+    let (_, rel) = to_rel(Path::new(&path))?;
+    crate::kernel::vault_git::note_diff(&root, &rel, &commit).await
+}
+
+#[tauri::command]
+pub async fn get_modified_files(
+    vault_path: String,
+    include_stats: Option<bool>,
+) -> Result<Vec<UiModifiedFile>, String> {
+    let _ = (vault_path, include_stats);
+    let root = vault::default_vault_root().ok_or("vault root unresolved")?;
+    if !root.join(".git").is_dir() {
+        return Ok(Vec::new());
+    }
+    let (out, _) = run_git_at_root(&["status", "--porcelain=v1"]).await?;
+    Ok(out
+        .lines()
+        .filter_map(|l| {
+            if l.len() < 4 {
+                return None;
+            }
+            let xy = &l[..2];
+            let rel = l[3..].trim().trim_matches('"').to_string();
+            let status = match xy.trim() {
+                "??" => "untracked",
+                s if s.contains('M') => "modified",
+                s if s.contains('A') => "added",
+                s if s.contains('D') => "deleted",
+                s if s.contains('R') => "renamed",
+                _ => "modified",
+            };
+            Some(UiModifiedFile {
+                path: root.join(&rel).to_string_lossy().to_string(),
+                relative_path: rel,
+                status: status.to_string(),
+                added_lines: None,
+                deleted_lines: None,
+                binary: false,
+            })
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -43,6 +43,7 @@ import {
   loadDailyNotesConfig,
   renderDailyNotePath,
 } from '@/lib/vault-conventions';
+import { openNotesStudio } from '@/lib/notes-studio';
 import { NotesTree, type PathMutation } from './NotesTree';
 import { LifeCalendar } from './LifeCalendar';
 import { NotesEditor } from './NotesEditor';
@@ -288,6 +289,14 @@ export const NotesApp = (): ReactElement => {
               disabled={busy}
             >
               + New Note
+            </button>
+            <button
+              type="button"
+              className={styles.sidebarNewBtn}
+              onClick={() => void openNotesStudio()}
+              title="Open the full notes workspace (rich editor, types, views, git history, whiteboards)"
+            >
+              Notes Studio
             </button>
             <VaultHealthFold />
             <div
