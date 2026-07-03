@@ -13,6 +13,8 @@ sources:
 
 # Notes 全替代 — CTRL 原生成为最好的本地 AI 笔记系统
 
+> **⚠️ 2026-07-02 晚转向（bao「前端就用 tolaria」，governing）**：前端不再原生重建 —— **vendor Tolaria 前端**（`packages/ctrl-notes-ui`，AGPL→AGPL，ADR-006 §5.1.1 例外）+ **adapter 把它的 ~49 命令面接到 CTRL kernel**（唯一后端；审计/可见性/review/§14 主权全保留；它的 Rust/CLI 层不要）。依据：它的组件对后端耦合面实测只有 ~49 个 Tauri command（~15 直接映射已有 vault 面 / ~10 AI 层裁掉换 Irisy / ~10 app 壳 / ~5 缺口本来就在 E 系列）。**编辑器随之 = BlockNote**（Tiptap 锁收窄为其他 viewer）；notes UI 懒加载保关键路径预算。§1/§2 的 kernel/端点工作（S1-S4 + E1-E13）**全部继续 load-bearing** —— 正是 adapter 要喂的东西。§3 的 S5-S10 前端切片 superseded by **F 系列**：F1 vendor+license ✅ → F2 adapter → F3 挂载为 notes workspace → F4 裁剪+商标剥离+视觉验收 → F5 cherry-pick playbook（升级姿态：快照 + 按 release 摘）。ADR 真相源：ADR-002 §1.9 v47 + ADR-006 §5.1.1 v11。
+
 > **两句话**：① 前端把 NotesApp 升到 Tolaria 级功能面（types 透镜 / git 层 / 编辑器补齐），在**自己的 Tiptap + ctrl-web 栈**上做，零 Tolaria 代码（AGPL 仅参考，ADR-006 §5.1）。② 端点把 Obsidian Local REST API 的全部能力**原生建成 CTRL gate 端点**（CTRL 惯用法，非 API 兼容层），同时**退役 Obsidian**（connector + provision 全撤，ADR-002 §1.9 v24-v28 姿态 superseded）。
 
 ## 0. 两个正式 amend（经 bao 2026-07-02 拍板）
