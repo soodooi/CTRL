@@ -280,7 +280,10 @@ export function AmbientHome({
   // Irisy column width — a fixed default the user can drag via the divider
   // between Irisy and the output bar (bao 2026-06-13). Window resizing keeps
   // this width (the output bar absorbs the change); only dragging changes it.
-  const [irisyWidth, setIrisyWidth] = useState(480);
+  // Irisy dialog ("creator") column width. Default kept narrow so the workspace
+  // (outbar) stays the primary surface — a 480px dialog ate ~half the page on
+  // smaller screens (bao 2026-07-03). Draggable 260..560 via the divider.
+  const [irisyWidth, setIrisyWidth] = useState(360);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -334,7 +337,7 @@ export function AmbientHome({
       const onMove = (ev: MouseEvent): void => {
         // Irisy sits on the RIGHT (CSS order), so dragging the divider left
         // (clientX decreases) widens Irisy — hence startW minus the delta.
-        const next = Math.max(300, Math.min(640, startW - (ev.clientX - startX)));
+        const next = Math.max(260, Math.min(560, startW - (ev.clientX - startX)));
         setIrisyWidth(next);
       };
       const onUp = (): void => {
