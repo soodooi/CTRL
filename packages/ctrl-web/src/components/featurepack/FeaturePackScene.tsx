@@ -45,7 +45,7 @@ export interface FeaturePack {
   needsProvision?: boolean;
   /** Workspace = smart-tables that ARE this pack's operating UI (§7.5 v48).
    *  v1: a table_prefix convention — vault tables under `tables/<pack>-*` are
-   *  its work surface (飞书 Bitable-style). The scene renders them as tabs. */
+   *  its work surface (Feishu Bitable-style). The scene renders them as tabs. */
   workspace?: { tablePrefix?: string };
   /** Manifest declares a §14 `record_source` → the scene leads with its records
    *  (a product-grade data table) instead of a bare action bar (§14.12). */
@@ -90,7 +90,7 @@ export function FeaturePackScene({
   // manifest declares a workspace table_prefix, list the vault tables under it
   // and render each as a tab (the generic smart-table viewer, multi-view). A
   // pack with a workspace leads with it, over records/intro (bao 2026-07-03:
-  // 智能表格 = 功能包的操作页面, 飞书 Bitable 式; zero bespoke UI).
+  // smart-table = the pack's operating page, Feishu Bitable-style; zero bespoke UI).
   const wsPrefix = pack.workspace?.tablePrefix ?? null;
   const [wsTables, setWsTables] = useState<string[] | null>(null);
   const [wsActive, setWsActive] = useState<string | null>(null);
