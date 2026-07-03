@@ -72,9 +72,11 @@ related:
 
 ## 3. 切片（每片 dev-loop + checker）
 
+> **P1 完成实录（2026-07-03 凌晨，全程真 gate 调用 caller=irisy，审计在册）**：写服务（211 行 fastmcp+akshare，源码 `pkm/projects/stock-cn/service/main.py`）→ validate 首次报缺 actions → 按结构化反馈自纠 → `{"ok":true}` → install 成功 → 暴露通用缺口（`server` 块无人消费）→ **当场修两个 kernel 能力**（装包即连总线 + boot 自动重连，commit `59a32b4`，所有 mcp-server 型包受益）→ app 重启后 `stock-cn_*` 六工具上 gate（104 工具）→ **经 gate 真调 market_mood 返回 07-03 实盘**：涨停池 108/炸板率 32.5%/最高 4 板/周期 ferment。介绍页 intro.md（含真实输出示例）同步产出。**残留**：sector_strength 三源在凌晨维护窗全挂，盘中重验；vault root 乌龙已纠（真 root = `~/Documents/pkm`，文件已搬）。
+
 | 片 | 内容 | 验收（可验证） |
 |---|---|---|
-| **P1 编码创造流走通** | 我以 Irisy 身份：写 `projects/stock-cn/service/main.py`（fastmcp+akshare：行情/K线/MACD 筛选 3-5 个 tool，crib MIT 参考）→ manifest（service+免责）→ validate → install → provision 起 → `stock-cn_*` 上 gate | 「筛出今天 MACD 金叉的股票」真机出真数；服务源码在 vault 里 vim 可读；审计 ledger + git 归属（author=irisy）都有记录 |
+| **P1 编码创造流走通 ✅ 2026-07-03 完成** | 我以 Irisy 身份：写 `projects/stock-cn/service/main.py`（fastmcp+akshare：行情/K线/MACD 筛选 3-5 个 tool，crib MIT 参考）→ manifest（service+免责）→ validate → install → provision 起 → `stock-cn_*` 上 gate | 「筛出今天 MACD 金叉的股票」真机出真数；服务源码在 vault 里 vim 可读；审计 ledger + git 归属（author=irisy）都有记录 |
 | **P2 ②选股（重点）** | 筛选工具加全（技术/量化/龙虎榜/北向）；结果表 + 「策略」表（条件存行、一键复跑）；AI 列标注 | 「用我存的『强势股』策略再筛一遍」跑通；结果在 Tables 面板 |
 | **P3 ⑥复盘（重点）** | 日复盘生成（当日盘面+自选表现+持仓归因）进 daily note；交易日记表 + 完成清单（task 源）；「今天复盘」一句话三件套 | 连续两天真机复盘，数字全真源、可回溯（note_history） |
 | **P4 ①盯盘+③分析+④题材** | 自选表+Chart 视图+择时判词；单股决策看板；题材拆解 md；知识层第一批 commons（缠/利弗莫尔/流派，MIT 现成复用） | 「深挖宁德时代」「新能源题材拆一下」真机 |
