@@ -47,6 +47,7 @@ import {
   roleForScene,
   roleForPack,
   packsForRole,
+  packPersona,
   kbScopeAmbient,
   inKbScope,
   type RoleId,
@@ -407,7 +408,13 @@ export function AmbientHome({
       // its vault override (a user-edited irisy-system.md still wins); other
       // roles supply their persona verbatim. SOUL.md is appended either way.
       const role = roleById(roleId);
-      const baseOverride = roleId === DEFAULT_ROLE_ID ? undefined : role.persona;
+      // Pack persona wins while its scene is open (bao 2026-07-03: a feature
+      // pack composes persona + name + kb(incl. skills) — the scene IS the
+      // context; nothing stock-specific lives in the global prompt).
+      const scenePersona =
+        scene && typeof scene === 'object' ? packPersona(scene.persona) : null;
+      const baseOverride =
+        scenePersona ?? (roleId === DEFAULT_ROLE_ID ? undefined : role.persona);
       const [base, brain, allMcps] = await Promise.all([
         loadIrisySystemPromptWithSoul(baseOverride),
         loadBrainState(),
@@ -427,6 +434,18 @@ export function AmbientHome({
         scene && typeof scene === 'object' && scene.kbDir ? scene.kbDir : role.kbScope;
       const kb = kbScopeAmbient(activeScope);
       if (kb) ambient.push({ role: 'system', content: kb });
+      // Domain skills pointer (bao 2026-07-03: skills load ON DEMAND — inject
+      // one line telling Irisy WHERE this pack's skills live, never their
+      // contents; it skill_list/skill_read only when the task matches).
+      if (scene && typeof scene === 'object' && scene.kbDir) {
+        ambient.push({
+          role: 'system',
+          content:
+            `This pack's domain skills live under "${scene.kbDir}/skills" in the vault. ` +
+            `When a task matches a skill's territory, load it on demand with skill_list / ` +
+            `skill_read (or vault_read on that path) — do not recite skills unprompted.`,
+        });
+      }
       if (scene === 'tables' && activeTablePath) {
         ambient.push({
           role: 'system',

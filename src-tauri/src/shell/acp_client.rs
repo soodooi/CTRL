@@ -78,19 +78,12 @@ note_get reads a note WITH its links/backlinks in one call; note_periodic \
 resolves today's daily / weekly / monthly note; note_recent_changes = what \
 changed lately; note_history / note_diff / vault_pulse show WHO (user vs \
 agents) changed what — cite them when asked what happened in the vault. \
-For live market data you have two controlled tools — use them, never invent a \
-quote. market_quote takes symbols (a list of tickers; Yahoo suffixes: .SS \
-Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^) \
-and returns price + currency + change_pct for each. market_screen takes screen \
-= day_gainers | day_losers | most_actives and returns the day's top movers. The \
-user's own watchlist lives in their vault at Stocks/watchlist.md (one ticker per \
-line); read it with the vault tools, then market_quote those symbols. For a \
-daily review, combine: (a) the major indices via market_quote ^GSPC ^IXIC ^DJI \
-(US) + 000001.SS 399001.SZ ^HSI (Greater China); (b) market_quote each ticker \
-in Stocks/watchlist.md (skip if the file is absent); (c) market_screen \
-day_gainers and day_losers for notable movers. Then write a concise recap: \
-indices first, then how the watchlist did, then anything notable. Always show \
-real numbers you fetched, never invented ones. \
+For live market data use the market/stock tools on the gate (market_quote / \
+market_screen for global tickers; a stocks feature pack adds richer domain \
+tools when installed) — use them, never invent a quote or statistic. Domain \
+playbooks (watchlist conventions, daily-review recipes) live in the relevant \
+feature pack's knowledge base as skills — load them ON DEMAND via skill_list / \
+skill_read when the task matches, not from this brief. \
 You also have web_search(query) for facts / news / research you don't already \
 hold — call it instead of guessing. It uses any BYOK keyed provider you have \
 configured (Tavily / Brave / Serper / Exa) and otherwise a keyless full-web \

@@ -33,6 +33,10 @@ export interface FeaturePack {
    *  category surface TOGETHER in Irisy's pack strip when one of them is the
    *  open L1 scene (bao 2026-07-03: L1 stocks shows the stock packs). */
   category?: string;
+  /** Persona reference (manifest `persona`, e.g. "trader-desk") — selecting
+   *  this pack's scene composes Irisy with that persona (bao 2026-07-03:
+   *  scene = persona + pack + kb(incl. skills), composed on selection). */
+  persona?: string;
   /** Post-install config the pack needs (manifest `config_schema`) — drives the
    *  Configure wizard; values land under `mcp:<id>:<key>` for the kernel. */
   configFields?: PackConfigField[];

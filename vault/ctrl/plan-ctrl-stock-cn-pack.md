@@ -97,6 +97,14 @@ related:
 | **包详情** | intro.md 渲染进 Discover/库详情页 | 前端小片（与 §3.5 连通状态同批）⬜ |
 | **Stocks scene 工作区** | 打开股票 L1 = FeaturePackScene（actions + 未来 record_source records 视图） | ✅ 现货；record_source 后续加 |
 
+## 3.45 场景组合模型（bao 2026-07-03 拍板：包 = persona + 名称 + 知识库(含 skills)）
+
+- **功能包携带完整场景配置**：manifest 增 `persona`（引用制，persona 池保持个位数原型：助理/coding/创造者/**盘手 trader-desk 新增**）+ `knowledge_base`（内含 `skills/`）+ `category`。
+- **L1 选中包才组合**：scene=pack → persona 换装 + KB scope + **skills 一行指针**（按需 `skill_list/skill_read`，绝不整包灌上下文）。未选包 = 素 Irisy + 薄全局 brief。
+- **全局 brief 瘦身完成**：股票段（watchlist 惯例/日评流程）整体搬出 `CTRL_CAPABILITY_BRIEF` → 落为包 KB skills（`skills/mood-cycle.md` 情绪周期判定 + `skills/daily-review.md` 复盘流程，首批已产出）。
+- 与 kernel 侧 §1B.8 per-pack 投影作用域对称（同一思想两侧镜像）。
+- stock-cn + ghostfolio 均已挂 `persona: trader-desk`（stocks 家族共用一个原型）。
+
 ## 3.5 功能包库 UX 两个必修（bao 2026-07-03 实测反馈）
 
 1. **基础包应显示 connected**：功能包库里 builtin/基础 MCP 应当开箱即连、状态列真实显示 connected（现在用户分不清哪些活着）。落点 = Discover/库页状态列接 `mcp_host.list_installed` 的连接真相 + builtin 自动连接核查。前端小片，排 P2 前。

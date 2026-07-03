@@ -20,6 +20,7 @@
 
 import { IRISY_SYSTEM_DEFAULT } from './irisy-prompts';
 import { CODE_COMPANION_SYSTEM_PROMPT } from '../personas/irisy/code-companion';
+import { TRADER_DESK_SYSTEM_PROMPT } from '../personas/irisy/trader-desk';
 import { IRISY_MCP_CREATOR_PROMPT } from '../personas/irisy/mcp-creator';
 
 /** L1 scenes that can auto-link a role (ADR-003 §8.6 lock 5). */
@@ -111,6 +112,22 @@ export function roleForScene(scene: SceneKind | null): RoleId | null {
  *  When an L1 opens a specific pack, Irisy switches to the role that can
  *  actually use it (bao 2026-06-25). Falls back to the default role, which is
  *  unconstrained (empty toolset = sees every pack). */
+/** Persona registry for PACK references (bao 2026-07-03: a feature pack may
+ *  declare `persona: "<id>"` in its manifest; selecting the pack's L1 scene
+ *  composes Irisy with that persona + the pack's kb + its tools. Personas
+ *  stay FEW — archetypes shared across pack families, never one-per-pack. */
+const PACK_PERSONAS: Record<string, string> = {
+  'trader-desk': TRADER_DESK_SYSTEM_PROMPT,
+  'code-companion': CODE_COMPANION_SYSTEM_PROMPT,
+};
+
+/** Resolve a pack-declared persona id to its system prompt, or null when the
+ *  pack declares none / an unknown id (fall back to the active role). */
+export function packPersona(id: string | undefined): string | null {
+  if (!id) return null;
+  return PACK_PERSONAS[id] ?? null;
+}
+
 export function roleForPack(packId: string): RoleId {
   const owner = ROLES.find((r) => r.toolset.includes(packId));
   return owner ? owner.id : DEFAULT_ROLE_ID;
