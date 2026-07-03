@@ -27,6 +27,8 @@ interface PackManifest {
   /** §14 record_source (ADR-002 §14.12) → the scene leads with the pack's
    *  records. Presence is all the frontend needs; the shape lives kernel-side. */
   record_source?: unknown;
+  /** Domain grouping (e.g. "stocks") — same-category packs surface together. */
+  category?: string;
 }
 
 /** Installed feature packs = installed mcps whose manifest declares actions.
@@ -53,6 +55,7 @@ export async function loadInstalledPacks(): Promise<FeaturePack[]> {
         // Generic: ANY pack that declares knowledge_base gets a dedicated kb —
         // no per-pack code (bao 2026-06-25: systematic, not edit-per-pack).
         kbDir: m.knowledge_base,
+        category: m.category,
         // Generic: ANY pack declaring config_schema gets a Configure wizard.
         configFields: packConfigFields(m as unknown as Record<string, unknown>),
         // Declares a service to bring up and/or bootstrap auth → one-click

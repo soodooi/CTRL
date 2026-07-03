@@ -83,6 +83,18 @@ related:
 | **P5 ⑤持仓管理** | ghostfolio 有则连（source_query 汇合）；无则持仓 smart-table 手记 + 盈亏列 | 「我持仓怎么样」真机（ghostfolio 或手记表） |
 | **P6 发布** | evals + `mcp_pack_publish` → `ctrl-stock-cn`（MIT） | Discover 可见可装 |
 
+## 3.4 P2 前端展示规划（bao 2026-07-03「规划一下前端如何展示」；全部现有端点，零新组件）
+
+| 面 | 内容 | 用什么（现货核对） |
+|---|---|---|
+| **Irisy 对话（主面）** | 情绪/天梯/筛选一问一答 | `stock-cn_*` 工具 ✅ 已通；**pack 条按类目聚合**：L1 选股票 → stocks 类包全显（ghostfolio+stock-cn，manifest `category` 字段 + contextPacks 同类归并 —— 2026-07-03 已实装）✅ |
+| **自选股表** | `stocks/watchlist.md`：代码/名称/现价/涨跌%/量比/换手/成本/备注 + AI 标注列 | smart_table_create + produce 填行情；Tables 面板 + Sparkline/Chart 视图 ✅ 现货 |
+| **筛选结果 + 策略表** | 结果落 `stocks/screens/<date>-<name>.md`；策略存 `stocks/strategies.md`（一行=一组条件），「用策略X再筛」= Irisy 读行→screen_strong→写结果表 | smart-table 全套 ✅ |
+| **复盘** | daily note 尾追「盘面复盘」章节（情绪+强度+自选归因）+ 交易日记表 `stocks/journal.md` + 完成清单（`- [ ]`） | note_periodic + doc_produce append_section + task 源 ✅ |
+| **板块热度** | 板块表 + 涨跌幅色阶列（热力图降级方案） | smart-table 色阶（前端已有 color 列机制）✅ |
+| **包详情** | intro.md 渲染进 Discover/库详情页 | 前端小片（与 §3.5 连通状态同批）⬜ |
+| **Stocks scene 工作区** | 打开股票 L1 = FeaturePackScene（actions + 未来 record_source records 视图） | ✅ 现货；record_source 后续加 |
+
 ## 3.5 功能包库 UX 两个必修（bao 2026-07-03 实测反馈）
 
 1. **基础包应显示 connected**：功能包库里 builtin/基础 MCP 应当开箱即连、状态列真实显示 connected（现在用户分不清哪些活着）。落点 = Discover/库页状态列接 `mcp_host.list_installed` 的连接真相 + builtin 自动连接核查。前端小片，排 P2 前。

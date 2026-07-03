@@ -29,6 +29,10 @@ export interface FeaturePack {
    *  (manifest `knowledge_base`). When the assistant uses this pack, retrieval
    *  scopes here (bao 2026-06-25: stocks = assistant + Stocks/ + ghostfolio). */
   kbDir?: string;
+  /** Domain grouping (manifest `category`, e.g. "stocks") — packs of the same
+   *  category surface TOGETHER in Irisy's pack strip when one of them is the
+   *  open L1 scene (bao 2026-07-03: L1 stocks shows the stock packs). */
+  category?: string;
   /** Post-install config the pack needs (manifest `config_schema`) — drives the
    *  Configure wizard; values land under `mcp:<id>:<key>` for the kernel. */
   configFields?: PackConfigField[];
