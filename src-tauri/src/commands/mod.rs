@@ -26,6 +26,9 @@ pub mod agents;
 // CTRL's NotesApp is the full native notes surface; Obsidian is a
 // format-compatible neighbor with zero wiring (vault stays plain markdown).
 pub mod chat;
+// Adapter for the vendored Tolaria notes frontend (ADR-002 §1.9 v47 F2):
+// serves its exact command names from CTRL's kernel.
+pub mod notes_ui;
 // ADR-002 substrate § capability-faces v19 §13.4 (2026-06-09): image
 // generation surface. Currently fal.ai-only; multi-provider routing for
 // image.generate lands when the second image provider is wired.
@@ -258,6 +261,22 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_set_root,
             // PWA-only focus report (ADR-002 §1.9 v46 E2, C3 boundary).
             $crate::commands::vault::set_active_note,
+            // Tolaria notes-UI adapter surface (ADR-002 §1.9 v47 F2) — the
+            // vendored frontend's exact command names, served by the kernel.
+            $crate::commands::notes_ui::get_note_content,
+            $crate::commands::notes_ui::save_note_content,
+            $crate::commands::notes_ui::create_note_content,
+            $crate::commands::notes_ui::reload_vault_entry,
+            $crate::commands::notes_ui::batch_delete_notes_async,
+            $crate::commands::notes_ui::create_vault_folder,
+            $crate::commands::notes_ui::rename_vault_folder,
+            $crate::commands::notes_ui::delete_vault_folder,
+            $crate::commands::notes_ui::search_vault,
+            $crate::commands::notes_ui::is_git_repo,
+            $crate::commands::notes_ui::init_git_repo,
+            $crate::commands::notes_ui::git_commit,
+            // git_push: served by the existing commands::git::git_push.
+            $crate::commands::notes_ui::git_author_identity,
             $crate::commands::vault::vault_set_auto_sync,
             // SOUL.md (Irisy persistent memory) retired to the gate's memory-domain
             // tools irisy_soul_get/set (SC5 convergence); PWA reaches them via gate_invoke.

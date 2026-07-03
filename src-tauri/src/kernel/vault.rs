@@ -459,6 +459,25 @@ fn render_fm_entry(key: &str, value: &str) -> Result<String, VaultError> {
     serde_yaml::to_string(&map).map_err(|e| VaultError::InvalidFrontmatter(e.to_string()))
 }
 
+/// Best-effort index + embedding refresh after a RAW file write that bypassed
+/// `write`/`write_body` (the notes-ui adapter writes whole files verbatim —
+/// ADR-002 §1.9 v47 F2). Never fails; no-op under test / without an index.
+pub fn refresh_index_for(root: &Path, rel: &str, raw: &str) {
+    let _ = (root, rel, raw);
+    #[cfg(not(test))]
+    {
+        let (fm, content) = split_frontmatter(raw);
+        if let Some(idx) = try_global_index() {
+            let fm_str = serde_json::to_string(&fm).unwrap_or_default();
+            let mtime_ms = current_mtime_ms(&root.join(rel));
+            if let Err(e) = idx.upsert(rel, &content, &fm_str, mtime_ms) {
+                tracing::warn!(path = %rel, error = %e, "vault: index upsert failed");
+            }
+        }
+        flag_embedding_stale(Path::new(rel), &content);
+    }
+}
+
 /// The raw frontmatter block of a file — everything through the closing `---`
 /// fence — or `""` when the file has none. Boundary rules MIRROR
 /// `split_frontmatter` (the read side), so write_body's notion of "body" is
