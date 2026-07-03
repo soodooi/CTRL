@@ -220,6 +220,20 @@ pub enum ProduceOp {
     },
     /// Drop a column (and its relation metadata) by key.
     DeleteField { key: String },
+    /// Append markdown content: under the named section (heading), or at the
+    /// end of the document when `heading` is None. (Block op — Doc sources;
+    /// record sources return Unsupported.)
+    AppendSection {
+        #[serde(default)]
+        heading: Option<String>,
+        content: String,
+    },
+    /// Replace the BODY under a markdown heading (the heading line itself is
+    /// kept). (Block op — Doc sources.)
+    ReplaceSection { heading: String, content: String },
+    /// Remove a markdown heading AND its body (until the next same-or-higher
+    /// level heading). (Block op — Doc sources.)
+    DeleteSection { heading: String },
 }
 
 impl ProduceOp {
@@ -232,6 +246,9 @@ impl ProduceOp {
             ProduceOp::AddField { .. } => "add_field",
             ProduceOp::UpdateField { .. } => "update_field",
             ProduceOp::DeleteField { .. } => "delete_field",
+            ProduceOp::AppendSection { .. } => "append_section",
+            ProduceOp::ReplaceSection { .. } => "replace_section",
+            ProduceOp::DeleteSection { .. } => "delete_section",
         }
     }
 }

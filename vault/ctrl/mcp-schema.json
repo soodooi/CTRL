@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 90,
+  "toolCount": 91,
   "tools": [
     {
       "description": "Describe the calendar as a queryable RecordSource: fields (path/title/date/start/end/location/tags) and supported operators. Call before calendar_query.",
@@ -207,6 +207,68 @@
                 "required": [
                   "kind",
                   "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append markdown content: under the named section (heading), or at the\nend of the document when `heading` is None. (Block op — Doc sources;\nrecord sources return Unsupported.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kind": {
+                    "const": "append_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Replace the BODY under a markdown heading (the heading line itself is\nkept). (Block op — Doc sources.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "replace_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove a markdown heading AND its body (until the next same-or-higher\nlevel heading). (Block op — Doc sources.)",
+                "properties": {
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading"
                 ],
                 "type": "object"
               }
@@ -460,6 +522,363 @@
         "type": "object"
       },
       "name": "discover_skills"
+    },
+    {
+      "description": "Edit one markdown note by section with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections. Heading match is case-insensitive on the text after #s. Prefer this over vault_write for surgical edits — it never rewrites the whole file.",
+      "inputSchema": {
+        "$defs": {
+          "CellType": {
+            "description": "Cell types a RecordSource field can carry. On disk all cells are strings;\nthis drives type-aware comparison (number < / date within / tags membership).",
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "checkbox",
+              "tags",
+              "select",
+              "url"
+            ],
+            "type": "string"
+          },
+          "ProduceOp": {
+            "description": "The WRITE half of ADR-002 §14 (§14.13) — a compile-time-fixed union of produce\noperations. Like `Operator`, this is an enum, never a free-form string (the AI\npicks a `kind` + fills typed fields — anti-hallucination §14.1). Only the Write\nhalf (§14.9); Effect-class side-effects use the Effect primitive, not this.",
+            "oneOf": [
+              {
+                "description": "Set one cell by row index + field key.",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_cell",
+                    "type": "string"
+                  },
+                  "row": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "row",
+                  "field",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append one or more rows (batch-create; each keyed by field key). NOTE:\ncurrently append-only — no update-by-key merge yet, so repeated calls with\nthe same logical row create duplicates (matches smart_table_batch_append).",
+                "properties": {
+                  "kind": {
+                    "const": "upsert_rows",
+                    "type": "string"
+                  },
+                  "rows": {
+                    "items": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "rows"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Delete rows by index (out-of-range + duplicates ignored).",
+                "properties": {
+                  "indices": {
+                    "items": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "kind": {
+                    "const": "delete_rows",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "indices"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Add a column. `relation` present → a Reference/Lookup/Rollup column.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "add_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "relation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/RelationSpec"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "$ref": "#/$defs/CellType"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Change a column's label / type / options in place.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "update_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/CellType"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Drop a column (and its relation metadata) by key.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_field",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append markdown content: under the named section (heading), or at the\nend of the document when `heading` is None. (Block op — Doc sources;\nrecord sources return Unsupported.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kind": {
+                    "const": "append_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Replace the BODY under a markdown heading (the heading line itself is\nkept). (Block op — Doc sources.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "replace_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove a markdown heading AND its body (until the next same-or-higher\nlevel heading). (Block op — Doc sources.)",
+                "properties": {
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "RelationSpec": {
+            "description": "A relational-column declaration for `AddField.relation` (§14.13). Mirrors the\nfrontmatter schema's relational shape (design: smart-table-relational-index).",
+            "oneOf": [
+              {
+                "description": "A link to rows in another table (its cell holds `[[...]]` link tokens).",
+                "properties": {
+                  "display": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "reference",
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "table",
+                  "display"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Pull a field from the referenced rows (computed, not stored).",
+                "properties": {
+                  "kind": {
+                    "const": "lookup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Aggregate a field over the referenced rows (computed, not stored).",
+                "properties": {
+                  "func": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "rollup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target",
+                  "func"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "doc.produce — the unified §14.13 write verb over one vault markdown note\n(the BLOCK profile: sections addressed by ATX heading).",
+        "properties": {
+          "op": {
+            "$ref": "#/$defs/ProduceOp",
+            "description": "The write op (tagged by `kind`). Docs support append_section /\nreplace_section / delete_section; record ops are unsupported here."
+          },
+          "path": {
+            "description": "Vault-relative path to the markdown note.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "op"
+        ],
+        "title": "DocProduceArgs",
+        "type": "object"
+      },
+      "name": "doc_produce"
     },
     {
       "description": "HTTP GET request — fetch a URL and return status + body + headers",
@@ -1889,6 +2308,68 @@
                   "key"
                 ],
                 "type": "object"
+              },
+              {
+                "description": "Append markdown content: under the named section (heading), or at the\nend of the document when `heading` is None. (Block op — Doc sources;\nrecord sources return Unsupported.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kind": {
+                    "const": "append_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Replace the BODY under a markdown heading (the heading line itself is\nkept). (Block op — Doc sources.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "replace_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove a markdown heading AND its body (until the next same-or-higher\nlevel heading). (Block op — Doc sources.)",
+                "properties": {
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -2701,6 +3182,68 @@
                 "required": [
                   "kind",
                   "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append markdown content: under the named section (heading), or at the\nend of the document when `heading` is None. (Block op — Doc sources;\nrecord sources return Unsupported.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kind": {
+                    "const": "append_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Replace the BODY under a markdown heading (the heading line itself is\nkept). (Block op — Doc sources.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "replace_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove a markdown heading AND its body (until the next same-or-higher\nlevel heading). (Block op — Doc sources.)",
+                "properties": {
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading"
                 ],
                 "type": "object"
               }

@@ -88,6 +88,7 @@ pub mod pack_publish;
 pub mod tasks_source;
 pub mod vault;
 pub mod visibility;
+pub mod vault_doc;
 pub mod vault_notes_source;
 pub mod vault_smart_table;
 // ADR-002 substrate § vault v1 §8.3 #9-15, 2026-06-01 —

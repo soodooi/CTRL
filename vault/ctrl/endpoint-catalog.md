@@ -20,9 +20,9 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **90** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **73** are bespoke tools (not section-14 shaped)
-- **29** writes (produce, through the review gate) / **61** reads
+- **91** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **74** are bespoke tools (not section-14 shaped)
+- **29** writes (produce, through the review gate) / **62** reads
 - **111** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
@@ -160,7 +160,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `kernel_status` | 0 | read | bespoke | Report kernel health: uptime, registered LLM adapters, MCP server count | cmd too |
 | `vault_root_path` | 0 | read | bespoke | Return the absolute vault root path on disk |  |
 
-### other (18 endpoints, all bespoke)
+### other (19 endpoints, all bespoke)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
@@ -169,6 +169,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `calendar_query` | 5 | read | bespoke | Query calendar events by date/title/location/tags with a structured filter/sort/group request (e.g. date within:today / this_week). Returns matching events. Call calendar_describe first. |  |
 | `discover_packs` | 2 | read | bespoke | Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. "stock price"). Use this when building a feature pack, to find an existing server before authoring one. |  |
 | `discover_skills` | 1 | read | bespoke | Search published skills (SKILL.md) on GitHub by keyword — returns repo / name / description / stars / url. Use this when building a feature pack, to find a reusable skill before writing one. Requires a GitHub token. |  |
+| `doc_produce` | 2 | read | bespoke | Edit one markdown note by section with the unified produce verb. `op` (tagged by kind): {kind:"append_section",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:"replace_section",heading,content} replaces the body under a heading (heading kept); {kind:"delete_section",heading} removes a heading + its body incl. nested subsections. Heading match is case-insensitive on the text after #s. Prefer this over vault_write for surgical edits — it never rewrites the whole file. |  |
 | `market_quote` | 1 | read | bespoke | Live stock/index quotes for tickers (Yahoo Finance, no key). Returns price, currency, and percent change vs previous close. Use Yahoo suffixes: .SS Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^ (e.g. ^GSPC, ^IXIC, ^HSI). |  |
 | `market_screen` | 2 | read | bespoke | Predefined stock screen (Yahoo Finance, no key). screen = day_gainers | day_losers | most_actives. Returns symbol, name, price, and percent change for the top movers. |  |
 | `skill_list` | 1 | read | bespoke | List the user's local installed skills (name + description + path), optional keyword filter |  |

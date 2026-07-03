@@ -28,7 +28,7 @@ use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
     ai_column, calendar_source, manifest_source, provider::LlmPrompt, query, runtime_sources,
-    smart_table_index, tasks_source, vault, vault_notes_source, vault_smart_table,
+    smart_table_index, tasks_source, vault, vault_doc, vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
 use axum::body::Body;
@@ -312,6 +312,17 @@ pub struct CalendarQueryArgs {
 pub struct CalendarProduceArgs {
     /// The write op (tagged by `kind`). Calendar supports set_cell /
     /// upsert_rows / delete_rows; field ops are unsupported (fixed schema).
+    pub op: query::ProduceOp,
+}
+
+/// doc.produce — the unified §14.13 write verb over one vault markdown note
+/// (the BLOCK profile: sections addressed by ATX heading).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DocProduceArgs {
+    /// Vault-relative path to the markdown note.
+    pub path: String,
+    /// The write op (tagged by `kind`). Docs support append_section /
+    /// replace_section / delete_section; record ops are unsupported here.
     pub op: query::ProduceOp,
 }
 
@@ -1591,6 +1602,34 @@ impl KernelMcpRouter {
             .produce(args.op)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(format!("calendar produce {summary}"))]))
+    }
+
+    /// doc.produce — the UNIFIED §14.13 write verb over one markdown note (the
+    /// BLOCK profile: sections addressed by ATX heading, the AI-native way to
+    /// say "rewrite the Overview section"). Same typed `ProduceOp` union as the
+    /// record sources; record ops return Unsupported here (supported_ops works
+    /// in both directions). Frontmatter passes through verbatim. Review-gated.
+    #[tool(
+        description = "Edit one markdown note by section with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections. Heading match is case-insensitive on the text after #s. Prefer this over vault_write for surgical edits — it never rewrites the whole file."
+    )]
+    async fn doc_produce(
+        &self,
+        Parameters(args): Parameters<DocProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use query::RecordSink;
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut doc = vault_doc::DocBody::parse(&entry.content);
+        let summary = describe_produce_op(&args.op);
+        doc.produce(args.op).map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        vault::write(&root, &args.path, &doc.serialize(), &entry.frontmatter)
+            .map_err(map_vault_err)?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "doc produce {summary} on {}",
+            args.path
+        ))]))
     }
 
     /// source.describe — GENERIC §14 type layer over ANY installed connector that
@@ -3640,6 +3679,12 @@ fn describe_produce_op(op: &query::ProduceOp) -> String {
         query::ProduceOp::AddField { key, .. } => format!("add_field {key}"),
         query::ProduceOp::UpdateField { key, .. } => format!("update_field {key}"),
         query::ProduceOp::DeleteField { key } => format!("delete_field {key}"),
+        query::ProduceOp::AppendSection { heading, .. } => format!(
+            "append_section {}",
+            heading.as_deref().unwrap_or("(end of doc)")
+        ),
+        query::ProduceOp::ReplaceSection { heading, .. } => format!("replace_section {heading}"),
+        query::ProduceOp::DeleteSection { heading } => format!("delete_section {heading}"),
     }
 }
 
