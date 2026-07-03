@@ -15,11 +15,12 @@
 //! substrate is inline markdown, which passes the vim test by construction.
 
 use crate::kernel::query::{
-    CellType, Describe, FieldSpec, Operator, QuerySource, Row, SourceKind,
+    CellType, Describe, FieldSpec, Operator, ProduceError, ProduceOp, QuerySource, RecordSink,
+    Row, SourceKind,
 };
 use crate::kernel::vault;
 use chrono::NaiveDate;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Obsidian-Tasks style due marker: `📅 2026-07-05` (space optional).
 const DUE_MARKER: char = '📅';
@@ -49,6 +50,12 @@ pub struct TaskItem {
 /// of the LifeOS Task source).
 pub struct TaskSource {
     rows: Vec<Row>,
+    /// Vault root — held so `produce` (RecordSink) can read-modify-write the
+    /// notes a row addresses. Empty for the query-only path.
+    root: PathBuf,
+    /// Server clock, injected before `produce` (status→done stamping + the
+    /// daily-note default target). `None` on the query path (unused there).
+    today: Option<NaiveDate>,
 }
 
 impl TaskSource {
@@ -64,7 +71,14 @@ impl TaskSource {
                 rows.push(item_to_row(&item));
             }
         }
-        TaskSource { rows }
+        TaskSource { rows, root: vault_root.to_path_buf(), today: None }
+    }
+
+    /// Inject the server clock so `produce` can stamp done-dates + resolve the
+    /// daily-note default. The produce gate calls this before `produce`.
+    pub fn with_today(mut self, today: NaiveDate) -> Self {
+        self.today = Some(today);
+        self
     }
 
     /// The stable schema a task RecordSource advertises via `describe`. `status`
@@ -208,6 +222,141 @@ pub fn update(
     vault::write(vault_root, note, &body, &object_or_empty(entry.frontmatter))
         .map_err(TaskError::Vault)?;
     Ok(())
+}
+
+/// Produce (delete) a task (ADR-002 §14 `produce`): remove the checkbox line at
+/// `note`:`line`, preserving every other line + the frontmatter. Refuses to
+/// delete a non-task line (guards against a stale index deleting real content).
+pub fn delete(vault_root: &Path, note: &str, line: usize) -> Result<(), TaskError> {
+    let entry = vault::read(vault_root, note).map_err(TaskError::Vault)?;
+    let mut lines: Vec<String> = entry.content.lines().map(str::to_string).collect();
+    let target = lines.get(line).ok_or(TaskError::LineOutOfRange(line))?;
+    if parse_task_line(note, line, target).is_none() {
+        return Err(TaskError::NotATask(line));
+    }
+    lines.remove(line);
+    let mut body = lines.join("\n");
+    if entry.content.ends_with('\n') && !body.is_empty() {
+        body.push('\n');
+    }
+    vault::write(vault_root, note, &body, &object_or_empty(entry.frontmatter))
+        .map_err(TaskError::Vault)?;
+    Ok(())
+}
+
+/// The WRITE side of the task source (ADR-002 §14.13): the unified `ProduceOp`
+/// vocabulary dispatched onto the checkbox substrate. Tasks have a FIXED schema,
+/// so the field-mutating ops are `Unsupported` (advertised via `supported_ops`).
+/// Rows are addressed by scan index → their `path`+`line`; produce self-persists
+/// (multi-note IO), unlike a single-file SmartTable.
+impl RecordSink for TaskSource {
+    fn supported_ops(&self) -> Vec<&'static str> {
+        vec!["set_cell", "upsert_rows", "delete_rows"]
+    }
+
+    fn produce(&mut self, op: ProduceOp) -> Result<(), ProduceError> {
+        match op {
+            ProduceOp::SetCell { row, field, value } => {
+                let (note, line) = self.row_address(row)?;
+                let today = self.require_today()?;
+                update(&self.root, &note, line, &field, &value, today).map_err(map_task_err)
+            }
+            ProduceOp::UpsertRows { rows } => {
+                let today = self.require_today()?;
+                for r in rows {
+                    let title = r.get("title").map(String::as_str).unwrap_or("");
+                    let note = r.get("path").map(String::as_str);
+                    let due = r.get("due").filter(|s| !s.is_empty()).map(String::as_str);
+                    let tags: Vec<String> = r
+                        .get("tags")
+                        .map(|s| {
+                            s.split(',')
+                                .map(|t| t.trim().trim_start_matches('#').to_string())
+                                .filter(|t| !t.is_empty())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    create(&self.root, note, title, due, &tags, today).map_err(map_task_err)?;
+                }
+                Ok(())
+            }
+            ProduceOp::DeleteRows { indices } => {
+                // Resolve to (note, line), then delete highest-line-first so an
+                // earlier delete never shifts a line we still need to remove.
+                let mut targets: Vec<(String, usize)> = indices
+                    .iter()
+                    .filter_map(|&i| self.row_address(i).ok())
+                    .collect();
+                targets.sort_by_key(|t| std::cmp::Reverse(t.1));
+                targets.dedup();
+                for (note, line) in targets {
+                    delete(&self.root, &note, line).map_err(map_task_err)?;
+                }
+                Ok(())
+            }
+            other => Err(ProduceError::Unsupported {
+                op: other.kind().to_string(),
+                supported: self.supported_ops().iter().map(|s| s.to_string()).collect(),
+            }),
+        }
+    }
+}
+
+impl TaskSource {
+    /// The vault notes a produce op will write, so the gate can lock them before
+    /// dispatching (tasks are multi-note; the gate holds these locks across
+    /// `produce` to prevent a lost update). Bad indices resolve to nothing (the
+    /// op errors in `produce` before any write). Mirrors `produce`'s addressing.
+    pub fn affected_notes(&self, op: &ProduceOp, today: NaiveDate) -> Vec<String> {
+        match op {
+            ProduceOp::SetCell { row, .. } => {
+                self.row_address(*row).map(|(n, _)| vec![n]).unwrap_or_default()
+            }
+            ProduceOp::DeleteRows { indices } => indices
+                .iter()
+                .filter_map(|&i| self.row_address(i).ok().map(|(n, _)| n))
+                .collect(),
+            ProduceOp::UpsertRows { rows } => rows
+                .iter()
+                .map(|r| r.get("path").cloned().unwrap_or_else(|| daily_note_path(today)))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The (note, line) a scanned row addresses — the checkbox `produce` targets.
+    fn row_address(&self, row: usize) -> Result<(String, usize), ProduceError> {
+        let r = self
+            .rows
+            .get(row)
+            .ok_or_else(|| ProduceError::OutOfRange { what: format!("row {row}") })?;
+        let note = r
+            .get("path")
+            .cloned()
+            .ok_or_else(|| ProduceError::UnknownField { field: "path".into() })?;
+        let line = r
+            .get("line")
+            .and_then(|s| s.parse::<usize>().ok())
+            .ok_or_else(|| ProduceError::OutOfRange { what: format!("row {row} line") })?;
+        Ok((note, line))
+    }
+
+    fn require_today(&self) -> Result<NaiveDate, ProduceError> {
+        self.today.ok_or_else(|| ProduceError::Conflict {
+            message: "task produce needs the server clock (with_today) — wiring bug".into(),
+        })
+    }
+}
+
+/// Map a task-layer error onto the unified `ProduceError` shape (§14.11).
+fn map_task_err(e: TaskError) -> ProduceError {
+    match &e {
+        TaskError::MissingTitle => ProduceError::Conflict { message: e.to_string() },
+        TaskError::LineOutOfRange(n) => ProduceError::OutOfRange { what: format!("line {n}") },
+        TaskError::NotATask(n) => ProduceError::Conflict { message: format!("line {n} is not a task") },
+        TaskError::UnknownField(k) => ProduceError::UnknownField { field: k.clone() },
+        TaskError::Vault(_) => ProduceError::Conflict { message: e.to_string() },
+    }
 }
 
 /// Errors a task `produce` can return.
@@ -407,7 +556,9 @@ fn select(key: &str, label: &str, options: &[&str]) -> FieldSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::query::{Filter, Operator, QueryRequest, QuerySource};
+    use crate::kernel::query::{
+        Filter, Operator, ProduceError, ProduceOp, QueryRequest, QuerySource, RecordSink,
+    };
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 6, 30).unwrap()
@@ -555,5 +706,94 @@ mod tests {
             ..Default::default()
         };
         assert!(src.query(&req, today()).is_err());
+    }
+
+    // ── §14.13 unified write side: TaskSource RecordSink ──────────────────────
+
+    fn row_of(title: &str, path: &str) -> Row {
+        let mut r = Row::new();
+        r.insert("title".into(), title.into());
+        r.insert("path".into(), path.into());
+        r
+    }
+
+    #[test]
+    fn produce_set_cell_completes_task_by_scan_index() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        vault::write(root, "daily/d.md", "# H\n- [ ] one\n- [ ] two 📅 2026-07-01", &serde_json::json!({})).unwrap();
+        let mut src = TaskSource::load(root, None).with_today(today());
+        let idx = src.rows().iter().position(|r| r["title"] == "two").unwrap();
+        src.produce(ProduceOp::SetCell { row: idx, field: "status".into(), value: "done".into() })
+            .unwrap();
+        let raw = std::fs::read_to_string(root.join("daily/d.md")).unwrap();
+        assert!(raw.contains("- [x] two 📅 2026-07-01 ✅ 2026-06-30"));
+        assert!(raw.contains("- [ ] one")); // sibling untouched
+    }
+
+    #[test]
+    fn produce_upsert_rows_creates_tasks() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        let mut src = TaskSource::load(root, None).with_today(today());
+        src.produce(ProduceOp::UpsertRows {
+            rows: vec![row_of("New one", "projects/p.md"), row_of("New two", "projects/p.md")],
+        })
+        .unwrap();
+        let raw = std::fs::read_to_string(root.join("projects/p.md")).unwrap();
+        assert!(raw.contains("- [ ] New one"));
+        assert!(raw.contains("- [ ] New two"));
+    }
+
+    #[test]
+    fn produce_delete_rows_removes_highest_line_first() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        // a=line1, b=line2, c=line3 in one note; delete a + c, keep b + non-tasks.
+        vault::write(root, "n.md", "# H\n- [ ] a\n- [ ] b\n- [ ] c\ntail", &serde_json::json!({})).unwrap();
+        let mut src = TaskSource::load(root, None).with_today(today());
+        let ia = src.rows().iter().position(|r| r["title"] == "a").unwrap();
+        let ic = src.rows().iter().position(|r| r["title"] == "c").unwrap();
+        src.produce(ProduceOp::DeleteRows { indices: vec![ia, ic] }).unwrap();
+        let raw = std::fs::read_to_string(root.join("n.md")).unwrap();
+        assert!(!raw.contains("- [ ] a"));
+        assert!(!raw.contains("- [ ] c"));
+        assert!(raw.contains("- [ ] b")); // middle task survives the line shift
+        assert!(raw.contains("# H"));
+        assert!(raw.contains("tail"));
+    }
+
+    #[test]
+    fn produce_field_ops_are_unsupported() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut src = TaskSource::load(dir.path(), None).with_today(today());
+        let err = src
+            .produce(ProduceOp::AddField {
+                key: "x".into(),
+                label: "X".into(),
+                cell_type: CellType::Text,
+                options: None,
+                relation: None,
+            })
+            .unwrap_err();
+        match err {
+            ProduceError::Unsupported { op, supported } => {
+                assert_eq!(op, "add_field");
+                assert!(supported.contains(&"set_cell".to_string()));
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn produce_without_clock_is_a_wiring_error() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        vault::write(root, "n.md", "- [ ] x", &serde_json::json!({})).unwrap();
+        let mut src = TaskSource::load(root, None); // no with_today
+        let err = src
+            .produce(ProduceOp::SetCell { row: 0, field: "status".into(), value: "done".into() })
+            .unwrap_err();
+        assert!(matches!(err, ProduceError::Conflict { .. }));
     }
 }

@@ -400,6 +400,15 @@ pub struct TaskUpdateArgs {
     pub value: String,
 }
 
+/// task.produce — the unified §14.13 write verb over the task source. Rows are
+/// addressed by their scan index in `task_query` order.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TaskProduceArgs {
+    /// The write op (tagged by `kind`). Tasks support set_cell / upsert_rows /
+    /// delete_rows; field ops (add/update/delete_field) are unsupported.
+    pub op: query::ProduceOp,
+}
+
 /// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4): run an
 /// LLM per row down a target column. Cost-gated at 100 rows.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1447,6 +1456,43 @@ impl KernelMcpRouter {
             "updated {} line {} field {}",
             args.note, args.line, args.field
         ))]))
+    }
+
+    /// task.produce — the UNIFIED §14.13 write verb over the task source. Same
+    /// typed `ProduceOp` union as smart_table_produce, dispatched to TaskSource's
+    /// `RecordSink` (set_cell / upsert_rows / delete_rows; field ops unsupported —
+    /// tasks have a fixed schema). Rows are addressed by scan index in task_query
+    /// order. produce self-persists across the addressed notes. Review-gated.
+    #[tool(
+        description = "Write to LifeOS tasks with the unified produce verb. `op` (tagged by kind): {kind:\"set_cell\",row,field,value} sets status/due/title/tags on the row-th task from task_query; {kind:\"upsert_rows\",rows:[{title,path?,due?,tags?}]} creates tasks (path = target note, default today's daily); {kind:\"delete_rows\",indices:[..]} removes checkbox lines. add/update/delete_field are unsupported (fixed schema)."
+    )]
+    async fn task_produce(
+        &self,
+        Parameters(args): Parameters<TaskProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use query::RecordSink;
+        let root = vault_root()?;
+        let now = chrono::Local::now().date_naive();
+        let summary = describe_produce_op(&args.op);
+        // Scan the whole vault so row indices match task_query, inject the clock.
+        let mut source = tasks_source::TaskSource::load(&root, None).with_today(now);
+        // Lock EVERY note this op writes before dispatching — tasks are multi-note,
+        // but each note still needs the same write lock the bespoke task_create /
+        // task_update hold, or a concurrent single-note write could lose an update.
+        // Sorted + deduped so multi-lock acquisition can't deadlock. (Row-index
+        // addressing across the earlier task_query call is still a documented TOCTOU
+        // — locks bound intra-call safety, not cross-call.)
+        let mut notes = source.affected_notes(&args.op, now);
+        notes.sort();
+        notes.dedup();
+        let mut _guards = Vec::with_capacity(notes.len());
+        for n in &notes {
+            _guards.push(self.vault_write_lock(n).await.lock_owned().await);
+        }
+        source
+            .produce(args.op)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!("task produce {summary}"))]))
     }
 
     /// source.describe — GENERIC §14 type layer over ANY installed connector that

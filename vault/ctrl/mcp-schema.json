@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 86,
+  "toolCount": 87,
   "tools": [
     {
       "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
@@ -2093,6 +2093,296 @@
         "type": "object"
       },
       "name": "task_describe"
+    },
+    {
+      "description": "Write to LifeOS tasks with the unified produce verb. `op` (tagged by kind): {kind:\"set_cell\",row,field,value} sets status/due/title/tags on the row-th task from task_query; {kind:\"upsert_rows\",rows:[{title,path?,due?,tags?}]} creates tasks (path = target note, default today's daily); {kind:\"delete_rows\",indices:[..]} removes checkbox lines. add/update/delete_field are unsupported (fixed schema).",
+      "inputSchema": {
+        "$defs": {
+          "CellType": {
+            "description": "Cell types a RecordSource field can carry. On disk all cells are strings;\nthis drives type-aware comparison (number < / date within / tags membership).",
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "checkbox",
+              "tags",
+              "select",
+              "url"
+            ],
+            "type": "string"
+          },
+          "ProduceOp": {
+            "description": "The WRITE half of ADR-002 §14 (§14.13) — a compile-time-fixed union of produce\noperations. Like `Operator`, this is an enum, never a free-form string (the AI\npicks a `kind` + fills typed fields — anti-hallucination §14.1). Only the Write\nhalf (§14.9); Effect-class side-effects use the Effect primitive, not this.",
+            "oneOf": [
+              {
+                "description": "Set one cell by row index + field key.",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_cell",
+                    "type": "string"
+                  },
+                  "row": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "row",
+                  "field",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append one or more rows (batch-create; each keyed by field key). NOTE:\ncurrently append-only — no update-by-key merge yet, so repeated calls with\nthe same logical row create duplicates (matches smart_table_batch_append).",
+                "properties": {
+                  "kind": {
+                    "const": "upsert_rows",
+                    "type": "string"
+                  },
+                  "rows": {
+                    "items": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "rows"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Delete rows by index (out-of-range + duplicates ignored).",
+                "properties": {
+                  "indices": {
+                    "items": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "kind": {
+                    "const": "delete_rows",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "indices"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Add a column. `relation` present → a Reference/Lookup/Rollup column.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "add_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "relation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/RelationSpec"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "$ref": "#/$defs/CellType"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Change a column's label / type / options in place.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "update_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/CellType"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Drop a column (and its relation metadata) by key.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_field",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "RelationSpec": {
+            "description": "A relational-column declaration for `AddField.relation` (§14.13). Mirrors the\nfrontmatter schema's relational shape (design: smart-table-relational-index).",
+            "oneOf": [
+              {
+                "description": "A link to rows in another table (its cell holds `[[...]]` link tokens).",
+                "properties": {
+                  "display": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "reference",
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "table",
+                  "display"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Pull a field from the referenced rows (computed, not stored).",
+                "properties": {
+                  "kind": {
+                    "const": "lookup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Aggregate a field over the referenced rows (computed, not stored).",
+                "properties": {
+                  "func": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "rollup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target",
+                  "func"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "task.produce — the unified §14.13 write verb over the task source. Rows are\naddressed by their scan index in `task_query` order.",
+        "properties": {
+          "op": {
+            "$ref": "#/$defs/ProduceOp",
+            "description": "The write op (tagged by `kind`). Tasks support set_cell / upsert_rows /\ndelete_rows; field ops (add/update/delete_field) are unsupported."
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "title": "TaskProduceArgs",
+        "type": "object"
+      },
+      "name": "task_produce"
     },
     {
       "description": "Query LifeOS tasks by status/due/priority/tags with a structured filter/sort/group request (not a query string). Returns matching tasks. Call task_describe first.",

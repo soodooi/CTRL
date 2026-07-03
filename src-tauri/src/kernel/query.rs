@@ -222,6 +222,20 @@ pub enum ProduceOp {
     DeleteField { key: String },
 }
 
+impl ProduceOp {
+    /// The op's `kind` tag (matches the serde discriminant + `supported_ops`).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            ProduceOp::SetCell { .. } => "set_cell",
+            ProduceOp::UpsertRows { .. } => "upsert_rows",
+            ProduceOp::DeleteRows { .. } => "delete_rows",
+            ProduceOp::AddField { .. } => "add_field",
+            ProduceOp::UpdateField { .. } => "update_field",
+            ProduceOp::DeleteField { .. } => "delete_field",
+        }
+    }
+}
+
 /// A relational-column declaration for `AddField.relation` (§14.13). Mirrors the
 /// frontmatter schema's relational shape (design: smart-table-relational-index).
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

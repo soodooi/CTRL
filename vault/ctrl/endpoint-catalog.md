@@ -20,9 +20,9 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **86** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **69** are bespoke tools (not section-14 shaped)
-- **29** writes (produce, through the review gate) / **57** reads
+- **87** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **70** are bespoke tools (not section-14 shaped)
+- **29** writes (produce, through the review gate) / **58** reads
 - **111** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
@@ -160,7 +160,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `kernel_status` | 0 | read | bespoke | Report kernel health: uptime, registered LLM adapters, MCP server count | cmd too |
 | `vault_root_path` | 0 | read | bespoke | Return the absolute vault root path on disk |  |
 
-### other (14 endpoints, all bespoke)
+### other (15 endpoints, all bespoke)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
@@ -175,6 +175,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `source_query` | 6 | read | bespoke | Query an installed connector's records by source_id with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live from its manifest. Call source_describe first. |  |
 | `task_create` | 4 | **WRITE** | bespoke | Create a LifeOS task: append a `- [ ]` checkbox line with `title` (required), optional `due` (YYYY-MM-DD) and `tags`, to `note` (default: today's daily note). Returns the note path. |  |
 | `task_describe` | 0 | read | bespoke | Describe the LifeOS tasks source as a queryable RecordSource: fields (path/title/status/due/priority/tags/created/modified) and supported operators. Call before task_query. |  |
+| `task_produce` | 1 | read | bespoke | Write to LifeOS tasks with the unified produce verb. `op` (tagged by kind): {kind:"set_cell",row,field,value} sets status/due/title/tags on the row-th task from task_query; {kind:"upsert_rows",rows:[{title,path?,due?,tags?}]} creates tasks (path = target note, default today's daily); {kind:"delete_rows",indices:[..]} removes checkbox lines. add/update/delete_field are unsupported (fixed schema). |  |
 | `task_query` | 6 | read | bespoke | Query LifeOS tasks by status/due/priority/tags with a structured filter/sort/group request (not a query string). Returns matching tasks. Call task_describe first. |  |
 | `task_update` | 4 | **WRITE** | bespoke | Update one field of a LifeOS task by note + line (from task_query): field='status' value='done' completes it; also due/title/tags. Rewrites the checkbox line in place. |  |
 | `web_search` | 2 | read | bespoke | Search the web and return titles + URLs + snippets. Uses a BYOK keyed provider if one is configured (Tavily / Brave / Serper / Exa), else a keyless full-web fallback (DuckDuckGo, then Wikipedia). Use this for facts / news / research you don't already hold. |  |

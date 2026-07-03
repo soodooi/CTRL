@@ -194,6 +194,7 @@ mod tests {
             "github_create_issue",
             "source_produce", // §14 generic connector write
             "smart_table_produce", // §14.13 unified smart-table write verb
+            "task_produce", // §14.13 unified task write verb
             "mcp_pack_publish", // registry publish (has `publish`)
             "smart_table_delete_row", // record delete
             "smart_table_add_field", // schema write (add column)

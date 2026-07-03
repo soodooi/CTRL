@@ -65,10 +65,10 @@ trait RecordSink {                        // 写侧 = QuerySource 的镜像
 
 | 产品 | plain-text 形态 | QuerySource | RecordSink 支持的 op | 现状 |
 |---|---|---|---|---|
-| **Smart-table/Bitable** | `tables/*.md`(frontmatter schema + pipe table) | ✅ | 全 CRUD + field + view + relation | 🟡 已有(bespoke,待收敛) |
+| **Smart-table/Bitable** | `tables/*.md`(frontmatter schema + pipe table) | ✅ | 全 CRUD + field + view + relation | ✅ RecordSink (slice 1, in-place schema patch) |
 | **Sheets** | `.md` 表 / csv | (复用 record) | cell/row/col | ⬜ |
 | **Docs** | `.md`(vault) | Text profile | 块级 produce | 🟡 vault 有 |
-| **Task** | inline-checkbox `.md` | ✅(task source) | create/update/delete | 🟡 部分 |
+| **Task** | inline-checkbox `.md` | ✅(task source) | set_cell/upsert_rows/delete_rows(字段 op Unsupported) | ✅ RecordSink (slice 2, self-persist 多 note) |
 | **Calendar** | `.md` events | ⬜ | event CRUD | ⬜ |
 | **Drive** | vault files | list | file CRUD | 🟡 vault |
 | **连接器(Ghostfolio/…)** | 远端 REST | manifest source | manifest-declared produce | ✅ |
