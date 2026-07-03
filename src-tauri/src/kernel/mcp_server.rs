@@ -27,8 +27,8 @@ use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
-    ai_column, manifest_source, provider::LlmPrompt, query, runtime_sources, smart_table_index,
-    tasks_source, vault, vault_notes_source, vault_smart_table,
+    ai_column, calendar_source, manifest_source, provider::LlmPrompt, query, runtime_sources,
+    smart_table_index, tasks_source, vault, vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
 use axum::body::Body;
@@ -283,6 +283,36 @@ pub struct TaskQueryArgs {
     /// Cap the number of returned rows (match_count is reported pre-limit).
     #[serde(default)]
     pub limit: Option<usize>,
+}
+
+/// calendar.query — structured read over event notes (§14, same contract as
+/// task_query / notes_query, different RecordSource).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CalendarQueryArgs {
+    /// Field filters, combined per `conjunction`. Each `field` must exist.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group keys applied in order (first is the primary level).
+    #[serde(default)]
+    pub group_by: Vec<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// calendar.produce — the unified §14.13 write verb over event notes. Rows are
+/// addressed by scan index in `calendar_query` order.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CalendarProduceArgs {
+    /// The write op (tagged by `kind`). Calendar supports set_cell /
+    /// upsert_rows / delete_rows; field ops are unsupported (fixed schema).
+    pub op: query::ProduceOp,
 }
 
 /// mcp_pack.provision — one-click + silent setup of an installed feature pack
@@ -1493,6 +1523,74 @@ impl KernelMcpRouter {
             .produce(args.op)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(format!("task produce {summary}"))]))
+    }
+
+    /// calendar.describe — the calendar source's type layer (ADR-002 §14.13
+    /// slice 3 — the first product built trait-only: 3 verbs, zero bespoke
+    /// per-op tools). Events are one-note-per-event under `calendar/`.
+    #[tool(
+        description = "Describe the calendar as a queryable RecordSource: fields (path/title/date/start/end/location/tags) and supported operators. Call before calendar_query."
+    )]
+    async fn calendar_describe(&self) -> Result<CallToolResult, McpError> {
+        let body = serde_json::to_string(&calendar_source::describe()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// calendar.query — structured read over event notes (ADR-002 §14), routed
+    /// through the shared kernel query engine — identical contract to
+    /// task_query / notes_query, different RecordSource.
+    #[tool(
+        description = "Query calendar events by date/title/location/tags with a structured filter/sort/group request (e.g. date within:today / this_week). Returns matching events. Call calendar_describe first."
+    )]
+    async fn calendar_query(
+        &self,
+        Parameters(args): Parameters<CalendarQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let source = calendar_source::CalendarSource::load(&root);
+        let req = query::QueryRequest {
+            filters: args.filters,
+            conjunction: args.conjunction,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = source
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// calendar.produce — the UNIFIED §14.13 write verb over event notes. Same
+    /// typed `ProduceOp` union as smart_table_produce / task_produce, dispatched
+    /// to CalendarSource's `RecordSink`. Rows are addressed by scan index in
+    /// calendar_query order. Locks every note the op writes. Review-gated.
+    #[tool(
+        description = "Write to the calendar with the unified produce verb. `op` (tagged by kind): {kind:\"set_cell\",row,field,value} edits one event field (title/date/start/end/location/tags) on the row-th event from calendar_query; {kind:\"upsert_rows\",rows:[{title,date,start?,end?,location?,tags?}]} creates event notes (date=YYYY-MM-DD); {kind:\"delete_rows\",indices:[..]} deletes event notes. Field ops are unsupported (fixed schema)."
+    )]
+    async fn calendar_produce(
+        &self,
+        Parameters(args): Parameters<CalendarProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use query::RecordSink;
+        let root = vault_root()?;
+        let summary = describe_produce_op(&args.op);
+        let mut source = calendar_source::CalendarSource::load(&root);
+        // Lock every event note this op writes (same posture as task_produce).
+        let mut notes = source.affected_notes(&args.op);
+        notes.sort();
+        notes.dedup();
+        let mut _guards = Vec::with_capacity(notes.len());
+        for n in &notes {
+            _guards.push(self.vault_write_lock(n).await.lock_owned().await);
+        }
+        source
+            .produce(args.op)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!("calendar produce {summary}"))]))
     }
 
     /// source.describe — GENERIC §14 type layer over ANY installed connector that

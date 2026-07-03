@@ -66,10 +66,10 @@ trait RecordSink {                        // 写侧 = QuerySource 的镜像
 | 产品 | plain-text 形态 | QuerySource | RecordSink 支持的 op | 现状 |
 |---|---|---|---|---|
 | **Smart-table/Bitable** | `tables/*.md`(frontmatter schema + pipe table) | ✅ | 全 CRUD + field + view + relation | ✅ RecordSink (slice 1, in-place schema patch) |
-| **Sheets** | `.md` 表 / csv | (复用 record) | cell/row/col | ⬜ |
-| **Docs** | `.md`(vault) | Text profile | 块级 produce | 🟡 vault 有 |
+| **Sheets** | —(由 smart-table 覆盖) | — | — | ✅ 裁决:Sheets 和 smart-table 同为 record grid,不单开源(加一个源=加一份碎片;Bitable 本就是「表格+视图」超集) |
+| **Docs** | `.md`(vault) | Text profile ✅ | **块级 produce = ProduceOp 显式扩展**(AppendSection/ReplaceSection/DeleteSection,按 markdown heading 定位;record 源对块 op 返 Unsupported,反向同理——supported_ops 双向生效) | ✅ RecordSink (slice 4, DocBody 单文件模型同 smart-table) |
 | **Task** | inline-checkbox `.md` | ✅(task source) | set_cell/upsert_rows/delete_rows(字段 op Unsupported) | ✅ RecordSink (slice 2, self-persist 多 note) |
-| **Calendar** | `.md` events | ⬜ | event CRUD | ⬜ |
+| **Calendar** | **`calendar/*.md` 一事件一 note**,frontmatter {title,date,start?,end?,location?,tags?},文件名 `<date>-<slug>.md`,正文=自由笔记 —— 对齐 Obsidian Full Calendar note-per-event 惯例(vim test + Obsidian 兼容) | ✅ (slice 3) | set_cell(改 frontmatter 字段)/upsert_rows(建事件 note)/delete_rows(删事件 note);字段 op Unsupported | ✅ RecordSink (slice 3, **第一个从零 trait-only 建的产品:3 动词 0 bespoke 工具**) |
 | **Drive** | vault files | list | file CRUD | 🟡 vault |
 | **连接器(Ghostfolio/…)** | 远端 REST | manifest source | manifest-declared produce | ✅ |
 

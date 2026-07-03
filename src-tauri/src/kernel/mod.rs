@@ -21,6 +21,7 @@ pub mod actor;
 pub mod ai_column;
 pub mod audit;
 pub mod cache;
+pub mod calendar_source;
 pub mod capability;
 pub mod capability_resolver;
 pub mod channel;
