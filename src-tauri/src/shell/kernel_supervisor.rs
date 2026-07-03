@@ -180,6 +180,17 @@ impl KernelSupervisor {
             // Obsidian-format-compatible, unwired.
         });
 
+        // Reconnect installed mcp-server packs (ADR-002 §7 Pattern D): a pack
+        // whose manifest declares a `server` block was wired at install time;
+        // re-register + reconnect on every boot so its tools come back to the
+        // gate without a reinstall. Best-effort, never blocks boot.
+        {
+            let host = runtime.mcp_host.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::kernel::mcp_host::reconnect_installed_pack_servers(&host).await;
+            });
+        }
+
         // ADR-002 substrate § provider + vault/ctrl/strategy/0013 (2026-06-16):
         // start hermes's own dashboard web UI on a fixed loopback port so the
         // PWA's Settings -> Irisy page can embed it (the agent's config / sessions

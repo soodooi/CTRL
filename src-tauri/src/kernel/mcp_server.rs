@@ -2973,6 +2973,7 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let dir = crate::commands::kernel::mcp_dir()
             .map_err(|e| McpError::internal_error(e, None))?;
+        let manifest = args.manifest.clone();
         let install_args = crate::commands::kernel::InstallMcpArgs {
             manifest: args.manifest,
             server_code: args.server_code.unwrap_or_default(),
@@ -2980,7 +2981,69 @@ impl KernelMcpRouter {
         };
         let summary = crate::commands::kernel::install_into(&dir, &install_args)
             .map_err(|e| McpError::invalid_params(e, None))?;
-        let body = serde_json::to_string(&summary).map_err(map_serde_err)?;
+        // mcp-server variant (ADR-002 §7 Pattern D): a manifest may declare a
+        // `server` block — a local MCP server the pack IS. Consume it here:
+        // register on the bus + connect, so the pack's tools surface as
+        // `<id>_<tool>` right after install (the gap the ctrl-stock-cn P1
+        // install exposed: installed packs' servers were never wired).
+        let mut connected_tools: Vec<String> = Vec::new();
+        if let Some(server) = manifest.get("server").and_then(|v| v.as_object()) {
+            let id = manifest
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("pack")
+                .trim_start_matches("ctrl-")
+                .to_string();
+            let command = server.get("command").and_then(|v| v.as_str()).unwrap_or("");
+            let cmd_args: Vec<String> = server
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            if !command.is_empty() {
+                let desc = crate::kernel::mcp_host::McpServerDescriptor {
+                    id: id.clone(),
+                    name: manifest
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&id)
+                        .to_string(),
+                    version: manifest
+                        .get("version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("0.0.0")
+                        .to_string(),
+                    description: String::new(),
+                    tools: Vec::new(),
+                    source: crate::kernel::mcp_host::McpServerSource::Local {
+                        command: command.to_string(),
+                        args: cmd_args,
+                    },
+                };
+                self.runtime.mcp_host.register(desc).await;
+                match self.runtime.mcp_host.connect(&id).await {
+                    Ok(()) => {
+                        connected_tools = self
+                            .runtime
+                            .mcp_host
+                            .list_tools(&id)
+                            .await
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|t| format!("{id}_{}", t.name))
+                            .collect();
+                    }
+                    Err(e) => {
+                        tracing::warn!(pack = %id, error = %e, "pack server connect failed (tools not on gate yet)");
+                    }
+                }
+            }
+        }
+        let mut body_v = serde_json::to_value(&summary).map_err(map_serde_err)?;
+        if let Some(obj) = body_v.as_object_mut() {
+            obj.insert("server_tools".into(), serde_json::json!(connected_tools));
+        }
+        let body = serde_json::to_string(&body_v).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 

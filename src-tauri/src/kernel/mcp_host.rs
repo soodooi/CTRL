@@ -75,6 +75,50 @@ pub enum McpServerSource {
     },
 }
 
+/// Reconnect every installed feature pack that declares a `server` block
+/// (mcp-server variant, ADR-002 §7 Pattern D) — called at boot so pack tools
+/// return to the gate after a restart without a reinstall. Best-effort:
+/// a pack whose server fails to spawn logs and is skipped.
+pub async fn reconnect_installed_pack_servers(host: &McpHost) {
+    let Some(home) = std::env::var_os("HOME") else { return };
+    let dir = std::path::PathBuf::from(home).join(".ctrl").join("mcps");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    for entry in entries.flatten() {
+        let manifest_path = entry.path().join("manifest.json");
+        let Ok(raw) = std::fs::read_to_string(&manifest_path) else { continue };
+        let Ok(m) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
+        let Some(server) = m.get("server").and_then(|v| v.as_object()) else { continue };
+        let command = server.get("command").and_then(|v| v.as_str()).unwrap_or("");
+        if command.is_empty() {
+            continue;
+        }
+        // Use the validated install-dir name as the id base (path-safe).
+        let id = entry
+            .file_name()
+            .to_string_lossy()
+            .trim_start_matches("ctrl-")
+            .to_string();
+        let args: Vec<String> = server
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        let desc = McpServerDescriptor {
+            id: id.clone(),
+            name: m.get("name").and_then(|v| v.as_str()).unwrap_or(&id).to_string(),
+            version: m.get("version").and_then(|v| v.as_str()).unwrap_or("0.0.0").to_string(),
+            description: String::new(),
+            tools: Vec::new(),
+            source: McpServerSource::Local { command: command.to_string(), args },
+        };
+        host.register(desc).await;
+        match host.connect(&id).await {
+            Ok(()) => tracing::info!(pack = %id, "pack mcp server reconnected to bus"),
+            Err(e) => tracing::info!(pack = %id, error = %e, "pack mcp server reconnect deferred"),
+        }
+    }
+}
+
 impl McpServerSource {
     /// Build the spawn Command for child-process transports.
     /// Returns None for Http source.
