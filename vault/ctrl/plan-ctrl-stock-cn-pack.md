@@ -118,19 +118,19 @@ related:
 - **Irisy 写的代码放 vault**（`projects/stock-cn/`）：vim test + git 归属 + bao 可改 —— 代码也是用户资产。
 - 锁点不动：5 primitives / 三动词 / gate / plain-text / secret-not-LLM。
 
-## 5. 终局：蒸馏成标准 skill `create-feature-pack`（bao 2026-07-03）
+## 5. 标准 skill `create-feature-pack` ✅ 2026-07-03 已蒸馏
 
-股票包做完后，把整条编码创造流**蒸馏成 Irisy 的标准 skill**，用户从此能用 Irisy 集成任意目标：
+从跑通的 stock-cn 真流程蒸馏（非凭空写 —— 上次「自以为完成实际没落盘」的反例已避免）。落 `~/.claude/skills/create-feature-pack/`，已经 gate `skill_list` 验证可发现。
 
-| 集成目标 | 形态（两个种子各证一半） | 展示（前端 = CTRL 端点） |
-|---|---|---|
-| **app**（自托管/本地开源软件） | ghostfolio 形态：REST connector（§14.12 record_source manifest） | smart-table / records view |
-| **MCP**（现成 MCP server） | provision + mcp_host 连 bus，工具命名空间上 gate | Irisy 对话 + 表格 |
-| **API**（任意 REST/无现成服务） | stock-cn 形态：**Irisy 写本地服务**（fastmcp/HTTP，源码进 vault）+ provision | md 决策看板（doc_produce）/ 智能表格 / **html**（render-html skill 落 vault，workspace 打开） |
+**8 步流程**（Irisy coding persona 按需 skill_read）：0 判形态（app/MCP/API 三分支）→ 1 写服务代码（API 形态，沙箱断网决定必须是 service 非 fetch 脚本）→ 2 写 manifest（无 persona 字段、带 category）→ 3 validate（evals 先行，坏包不装）→ 4 install+connect（返回 `<name>_*` 工具名）→ 5 冒烟真调（唯一「做完」证据）→ 6 **写 intro.md（必产物，输出示例必须来自真实冒烟，防吹牛）**→ 7 KB + 按需 skills → 8（可选）publish MIT commons。
 
-skill 内容 = 本 plan §1 创造流的固化：判形态（app/MCP/API 三分支）→ 写码或写 manifest → validate → install → provision → 冒烟 → 选展示面（md/表格/html）→（可选）publish。**教训入册**：上次 create-feature-pack skill「自以为完成实际没落盘」（CLAUDE.md 反例 2026-06-27）——这次先用股票包把流跑真，skill 是从真流程里蒸馏，不是凭空写。
+**4 个 reference**（渐进读）：forms.md（三形态判定表）· manifest-template.md · service-template.md · intro-template.md。
 
-## 6. 待 bao 拍
+**内嵌的架构真相**（= 本 session 定的模型）：功能包不自带 persona（叠在个人助理上）；前端只用 CTRL 端点（smart-table/daily note/FeaturePackScene，零 bespoke）；secret 走 credential store 不进 LLM；域 playbook 进包 skills 不进全局 brief。
+
+**后续迭代空间**（bao「有了基本架构，后续逐步迭代升级」）：app 形态的 record_source 模板补全 · 建包 UI（slot-token）与 coding 终端合一 · publish 自包含打包 · skill 自身随每个新包的实战反馈校准。
+
+## 6. 待 bao 拍## 6. 待 bao 拍
 
 1. P1 的服务形态：**Irisy 写 fastmcp+akshare 本地服务**（源码进 vault，provision 拉起）—— 对齐「Irisy 用 coding 开发」了吗？
 2. 优先序：P1 创造流 → P2 选股 → P3 复盘（两个重点提前），P4-P6 随后 —— OK？
