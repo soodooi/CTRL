@@ -29,8 +29,6 @@ interface PackManifest {
   record_source?: unknown;
   /** Domain grouping (e.g. "stocks") — same-category packs surface together. */
   category?: string;
-  /** Persona reference (e.g. "trader-desk") — composed when the scene opens. */
-  persona?: string;
 }
 
 /** Installed feature packs = installed mcps whose manifest declares actions.
@@ -58,7 +56,6 @@ export async function loadInstalledPacks(): Promise<FeaturePack[]> {
         // no per-pack code (bao 2026-06-25: systematic, not edit-per-pack).
         kbDir: m.knowledge_base,
         category: m.category,
-        persona: m.persona,
         // Generic: ANY pack declaring config_schema gets a Configure wizard.
         configFields: packConfigFields(m as unknown as Record<string, unknown>),
         // Declares a service to bring up and/or bootstrap auth → one-click

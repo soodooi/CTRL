@@ -47,7 +47,6 @@ import {
   roleForScene,
   roleForPack,
   packsForRole,
-  packPersona,
   kbScopeAmbient,
   inKbScope,
   type RoleId,
@@ -408,13 +407,12 @@ export function AmbientHome({
       // its vault override (a user-edited irisy-system.md still wins); other
       // roles supply their persona verbatim. SOUL.md is appended either way.
       const role = roleById(roleId);
-      // Pack persona wins while its scene is open (bao 2026-07-03: a feature
-      // pack composes persona + name + kb(incl. skills) — the scene IS the
-      // context; nothing stock-specific lives in the global prompt).
-      const scenePersona =
-        scene && typeof scene === 'object' ? packPersona(scene.persona) : null;
-      const baseOverride =
-        scenePersona ?? (roleId === DEFAULT_ROLE_ID ? undefined : role.persona);
+      // Persona = the active ROLE's persona (bao 2026-07-03: only TWO personas
+      // — personal assistant + coding; a feature pack does NOT carry its own
+      // persona, it composes ON TOP of the assistant via its kb + on-demand
+      // skills + tools. roleForPack lands an unknown pack on the assistant, so
+      // "stocks = assistant + stock pack" falls out naturally).
+      const baseOverride = roleId === DEFAULT_ROLE_ID ? undefined : role.persona;
       const [base, brain, allMcps] = await Promise.all([
         loadIrisySystemPromptWithSoul(baseOverride),
         loadBrainState(),

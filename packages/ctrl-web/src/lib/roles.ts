@@ -20,7 +20,6 @@
 
 import { IRISY_SYSTEM_DEFAULT } from './irisy-prompts';
 import { CODE_COMPANION_SYSTEM_PROMPT } from '../personas/irisy/code-companion';
-import { TRADER_DESK_SYSTEM_PROMPT } from '../personas/irisy/trader-desk';
 import { IRISY_MCP_CREATOR_PROMPT } from '../personas/irisy/mcp-creator';
 
 /** L1 scenes that can auto-link a role (ADR-003 §8.6 lock 5). */
@@ -62,10 +61,15 @@ const KB_ASSISTANT: Role = {
   toolset: [],
   kbScope: null,
 };
+// Coding persona family (bao 2026-07-03: personas are just TWO — personal
+// assistant + coding; "coding" spans writing code AND building feature packs).
+// Two roles remain only because they drive DIFFERENT UI surfaces of the same
+// persona: code-companion emits ```bash blocks (send-to-terminal), pack-builder
+// emits <mcp-slot> tokens (the build canvas). Same family, two UI contracts.
 const CODE_COMPANION: Role = {
   id: 'code-companion',
-  label: 'Code Companion',
-  hint: 'Pairs with the Coding terminal',
+  label: 'Coding',
+  hint: 'Write code · pairs with the terminal',
   persona: CODE_COMPANION_SYSTEM_PROMPT,
   // Dev-focused pack ids this role whitelists, so the coding session stays
   // uncluttered. Convention-only ids: a pack with one of these ids (from the
@@ -76,8 +80,8 @@ const CODE_COMPANION: Role = {
 };
 const TOOL_MAKER: Role = {
   id: 'tool-maker',
-  label: 'Tool Maker',
-  hint: 'Build a CTRL mcp from a description',
+  label: 'Coding · Build a pack',
+  hint: 'Build a CTRL feature pack from a description (coding persona family)',
   persona: IRISY_MCP_CREATOR_PROMPT,
   toolset: [],
   kbScope: null,
@@ -112,22 +116,6 @@ export function roleForScene(scene: SceneKind | null): RoleId | null {
  *  When an L1 opens a specific pack, Irisy switches to the role that can
  *  actually use it (bao 2026-06-25). Falls back to the default role, which is
  *  unconstrained (empty toolset = sees every pack). */
-/** Persona registry for PACK references (bao 2026-07-03: a feature pack may
- *  declare `persona: "<id>"` in its manifest; selecting the pack's L1 scene
- *  composes Irisy with that persona + the pack's kb + its tools. Personas
- *  stay FEW — archetypes shared across pack families, never one-per-pack. */
-const PACK_PERSONAS: Record<string, string> = {
-  'trader-desk': TRADER_DESK_SYSTEM_PROMPT,
-  'code-companion': CODE_COMPANION_SYSTEM_PROMPT,
-};
-
-/** Resolve a pack-declared persona id to its system prompt, or null when the
- *  pack declares none / an unknown id (fall back to the active role). */
-export function packPersona(id: string | undefined): string | null {
-  if (!id) return null;
-  return PACK_PERSONAS[id] ?? null;
-}
-
 export function roleForPack(packId: string): RoleId {
   const owner = ROLES.find((r) => r.toolset.includes(packId));
   return owner ? owner.id : DEFAULT_ROLE_ID;

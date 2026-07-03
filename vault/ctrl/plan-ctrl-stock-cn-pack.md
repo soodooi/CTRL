@@ -97,13 +97,13 @@ related:
 | **包详情** | intro.md 渲染进 Discover/库详情页 | 前端小片（与 §3.5 连通状态同批）⬜ |
 | **Stocks scene 工作区** | 打开股票 L1 = FeaturePackScene（actions + 未来 record_source records 视图） | ✅ 现货；record_source 后续加 |
 
-## 3.45 场景组合模型（bao 2026-07-03 拍板：包 = persona + 名称 + 知识库(含 skills)）
+## 3.45 persona × 功能包 组合模型（bao 2026-07-03 钦定，纠正过度设计）
 
-- **功能包携带完整场景配置**：manifest 增 `persona`（引用制，persona 池保持个位数原型：助理/coding/创造者/**盘手 trader-desk 新增**）+ `knowledge_base`（内含 `skills/`）+ `category`。
-- **scene→persona 全映射（bao 2026-07-03 纠正：没有「未选包」的裸态，每个场景都有 persona）**：home/notes/tables → 助理 persona；coding → coding persona；包场景 → 包声明的 persona（如 stocks→盘手）。组合内容 = persona + KB scope + **skills 一行指针**（按需 `skill_list/skill_read`，绝不整包灌上下文）+ 同类包聚合。全局 brief 只装跨场景通用能力。
-- **全局 brief 瘦身完成**：股票段（watchlist 惯例/日评流程）整体搬出 `CTRL_CAPABILITY_BRIEF` → 落为包 KB skills（`skills/mood-cycle.md` 情绪周期判定 + `skills/daily-review.md` 复盘流程，首批已产出）。
-- 与 kernel 侧 §1B.8 per-pack 投影作用域对称（同一思想两侧镜像）。
-- stock-cn + ghostfolio 均已挂 `persona: trader-desk`（stocks 家族共用一个原型）。
+- **persona 只有两个原型**：① **个人助理**（默认，通用）② **coding**（= 写代码 + 建功能包；`code-companion` 终端陪伴 与 `tool-maker` 建包是同一 coding 家族的两个 UI 变体 —— bash-block vs mcp-slot token，底层两套 UI 契约故留两 role，概念同源）。**不为每个域造 persona。**
+- **功能包 = 工具 + 知识库(含 skills)，叠加在 persona 上**，不自带 persona。默认组合 = **个人助理 + 功能包**（股票就是这个：助理 persona + 股票包的 KB/skills/工具，专业性全来自包，不需要「盘手」persona —— 我此前造的 trader-desk 是过度设计，已删）。
+- **scene→persona 全映射，无裸态**：home/notes/tables/任意功能包 → 个人助理 persona；coding/建包 → coding persona。功能包场景通过 `roleForPack` 自然落到个人助理（未知包→DEFAULT），叠加其 KB scope + skills 一行指针 + 同类包聚合。
+- **skills 按需调用**：注入的只是「你的域 skills 在 `<kb>/skills`，任务匹配才 skill_list/skill_read」一行，内容绝不整包灌（渐进披露）。
+- **全局 brief 只装跨场景通用能力**；域 playbook 搬进包 KB skills（股票段已搬 → `skills/mood-cycle.md` + `skills/daily-review.md`）。
 
 ## 3.5 功能包库 UX 两个必修（bao 2026-07-03 实测反馈）
 
