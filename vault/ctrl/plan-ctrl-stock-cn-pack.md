@@ -34,6 +34,21 @@ OPC 用户（非技术）对 Irisy 说：
 - 「买入 100 股 XX」→（P5）**review gate 弹人工确认**，批准才执行——绝不静默下单
 - 「分享这个包」→ **分享中心**：mcp_pack_publish → `ctrl-stock-cn`（MIT commons）
 
+## 1.5 产品信息架构 —— 六个 viewer（bao 供的前次调研，2026-07-03 收进唯一规划）
+
+> 这是包的 **workspace 蓝图**（per-L1 workspace：功能包拥有自己的工作区，Irisy 把产出路由进来）。每个 viewer 都映射到**已有的 CTRL 端点/视图**，逐格核过：
+
+| # | viewer | 功能点 | CTRL 落法（现有能力核对） |
+|---|---|---|---|
+| ① 盯盘/择时 | dashboard(summary+chart+banner) | 自选盯盘+现价涨跌+市场环境择时(缠/利弗莫尔判「激进/回调/空仓」)+板块热力图+热门概念+快讯 | 自选/涨跌 = smart-table + **Sparkline/SmartTableChart ✅**；择时判词 = Irisy+知识 skill 写进 markdown 看板；**热力图 = 唯一真缺口**（先用板块表排序+色阶列顶，热力图 viewer 后补） |
+| ② 选股 Screener | SmartTable(条件进→结果表) | 量化/技术(MACD金叉/趋势共振/强势)/游资/题材选股+龙虎榜/北向筛 | `stock-cn_*` 筛选工具 → 结果落 smart-table（§14 typed query 天然是条件面）✅ |
+| ③ 分析 Analysis | markdown 决策看板 | 单股深挖:技术60%+消息30%+宏观10% 评分/信号+6游资流派视角+缠/利弗莫尔择时点 | Irisy 调数据工具+知识 skill → `doc_produce` 写决策看板 md（Tiptap 渲染）✅；流派 = 知识层 commons |
+| ④ 题材 Themes | markdown + sector SmartTable | 题材深挖(产业链上下游/传导逻辑/核心企业)+板块轮动节奏 | 题材 md（web_search+数据工具落 doc_produce）+ 板块 smart-table ✅ |
+| ⑤ 持仓 Portfolio | SmartTable(grid+chart) | 真实持仓(**ghostfolio**)+盈亏/配比+模拟盘买卖+下单(review gate 人工确认) | **两个种子包在此汇合**：真实持仓走 ctrl-ghostfolio 的 source_query；模拟盘 = smart-table 账本；下单 P5 三闸 ✅ |
+| ⑥ 复盘 Review | markdown + 交易日志 SmartTable | 日复盘+板块轮动复盘+交易日记(盈亏归因)+完成清单 | 复盘 md 进 **daily note**（note_periodic）+ 交易日志 smart-table + 清单 = task 源（`- [ ]`）✅ |
+
+**核对结论**：六格里五格纯现有端点组合（smart-table/chart/timeline/doc_produce/note_periodic/task/ghostfolio source），唯一前端缺口 = ①的板块热力图（降级方案先行，不阻塞）。
+
 ## 2. 架构（每层用什么、为什么）
 
 ```
@@ -52,14 +67,14 @@ CTRL 前端    只用 CTRL 端点：FeaturePackScene records view + TablesPanel 
 
 ## 3. 切片（每片 dev-loop + checker；P1-P3 不需要券商环境）
 
-| 片 | 内容 | 验收（可验证） |
+| 片 | 内容（映射 viewer） | 验收（可验证） |
 |---|---|---|
-| **P1 数据包成包** | Irisy 流程走通：manifest（`ctrl-stock-cn`，声明外部 MCP：uvx 命令 + provision + capabilities）→ `mcp_pack_validate` → `install` → provision 起 server → mcp_host 连上 bus → 工具以 `stock-cn_*` 出现在 gate | Irisy 真机：「装 A股助手」一句话 → `stock-cn_*` 工具可调；review_gate 已预置 `stock-cn_run` 分类 ✅；审计 ledger 有记录 |
-| **P2 自选股表** | `stocks/watchlist.md` smart-table（列：代码/名称/现价/涨跌%/成本/持仓/备注 + AI 列「技术面一句话」）；Irisy 用 `smart_table_produce` 填行情、`run_ai_column` 跑标注 | 「加茅台进自选」「自选今天怎么样」两句真机跑通；表在 Tables 面板可见（**CTRL 端点前端**） |
-| **P3 盘前/盘后简报** | 简报 = 数据包工具 + `note_periodic`（写进当日 daily note）+（可选）skill 化成 `a-share-brief` | 「给我盘前简报」→ daily note 里出现结构化简报，数字全真源 |
-| **P4 持仓只读** | easytrader / miniQMT 只读桥（需 bao 券商环境）→ 持仓进 smart-table | bao 机器实测；无环境则 mock 验收（诚实 gap） |
-| **P5 交易下单** | 下单工具（默认**模拟盘**）；实盘开关显式配置；**每笔订单过 review gate 人工批准** + 审计 + git 归属 | 模拟盘下单全链路：Irisy 提交 → 弹审批 → 批准执行/拒绝取消；**绝无静默下单路径**（测试断言） |
-| **P6 发布** | `mcp_pack_publish` → `ctrl-stock-cn`（MIT）；含 evals | 包在 Discover 可见可装 |
+| **P1 数据包成包** | Irisy 流程走通：manifest（`ctrl-stock-cn`，声明外部 MCP：uvx 命令 + provision + capabilities）→ `mcp_pack_validate` → `install` → provision 起 server → mcp_host 连上 bus → 工具以 `stock-cn_*` 出现在 gate —— **喂全部六格的数据地基** | Irisy 真机：「装 A股助手」一句话 → `stock-cn_*` 工具可调；review_gate 已预置 `stock-cn_run` 分类 ✅；审计 ledger 有记录 |
+| **P2 ①盯盘+②选股** | 自选股 smart-table（现价/涨跌 + Sparkline/Chart 视图 + AI 列标注）+ 筛选条件→结果表；市场快讯列 | 「加茅台进自选」「自选今天怎么样」「筛 MACD 金叉的强势股」真机跑通；Tables 面板可见 |
+| **P3 ①择时+③分析+⑥复盘骨架** | 择时判词+盘前/盘后简报进 daily note（note_periodic）；单股决策看板 md（doc_produce）；知识层第一批 commons（缠/利弗莫尔/流派 skill 复用 MIT 现成） | 「给我盘前简报」「深挖一下宁德时代」→ daily note + 决策看板生成，数字全真源 |
+| **P4 ④题材 + ⑤持仓只读** | 题材深挖 md + 板块表；真实持仓接 **ctrl-ghostfolio**（两种子汇合）；easytrader/miniQMT 只读（需 bao 券商环境） | 「新能源题材拆一下」「我持仓怎么样」真机；无券商环境则 ghostfolio+mock 验收（诚实 gap） |
+| **P5 ⑤下单** | 模拟盘账本买卖（smart-table produce）→ 实盘（显式开关）；**每笔订单过 review gate 人工批准** + 审计 + git 归属 | 模拟盘全链路：Irisy 提交 → 弹审批 → 批准执行/拒绝取消；**绝无静默下单路径**（测试断言） |
+| **P6 ⑥复盘完整 + 发布** | 交易日记表+盈亏归因+完成清单（task 源）；`mcp_pack_publish` → MIT commons | 「今天复盘」一句生成三件套；包在 Discover 可见可装 |
 
 ## 4. 红线（合规 + 锁点自检）
 
