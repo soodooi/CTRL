@@ -478,6 +478,54 @@ pub fn refresh_index_for(root: &Path, rel: &str, raw: &str) {
     }
 }
 
+/// Rewrite `[[wikilinks]]` pointing at a renamed note across the whole vault
+/// (ADR-002 §1.9 v46 E11 — link-aware rename; the LRA ecosystem's known gap).
+/// Boundary-aware: `[[old]]`, `[[old|alias]]`, `[[old#heading]]` rewrite;
+/// a LONGER stem sharing the prefix does not. Returns changed-file count.
+pub fn rewrite_wikilinks(root: &Path, old_path: &str, new_path: &str) -> Result<usize, VaultError> {
+    let stem_of = |p: &str| {
+        Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+    };
+    let old_stem = stem_of(old_path);
+    let new_stem = stem_of(new_path);
+    if old_stem.is_empty() || old_stem == new_stem {
+        return Ok(0);
+    }
+    let mut updated = 0usize;
+    let head = format!("[[{old_stem}");
+    for rel in list(root, None)? {
+        let full = root.join(&rel);
+        let Ok(raw) = fs::read_to_string(&full) else { continue };
+        if !raw.contains(&head) {
+            continue;
+        }
+        let mut out = String::with_capacity(raw.len());
+        let mut rest = raw.as_str();
+        let mut changed = false;
+        while let Some(at) = rest.find(&head) {
+            let after = &rest[at + head.len()..];
+            let boundary =
+                after.starts_with("]]") || after.starts_with('|') || after.starts_with('#');
+            out.push_str(&rest[..at]);
+            if boundary {
+                out.push_str("[[");
+                out.push_str(&new_stem);
+                changed = true;
+            } else {
+                out.push_str(&head);
+            }
+            rest = after;
+        }
+        out.push_str(rest);
+        if changed {
+            fs::write(&full, &out).map_err(|e| VaultError::Io(e.to_string()))?;
+            refresh_index_for(root, &rel, &out);
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
 /// The raw frontmatter block of a file — everything through the closing `---`
 /// fence — or `""` when the file has none. Boundary rules MIRROR
 /// `split_frontmatter` (the read side), so write_body's notion of "body" is

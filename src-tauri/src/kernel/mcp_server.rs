@@ -2709,8 +2709,12 @@ impl KernelMcpRouter {
         vault::write(&root, &args.to, &entry.content, &entry.frontmatter)
             .map_err(map_vault_err)?;
         vault::delete(&root, &args.from).map_err(map_vault_err)?;
+        // Link-aware (ADR-002 §1.9 v46 E11): rewrite [[wikilinks]] that pointed
+        // at the old name so an Irisy rename never silently breaks links (the
+        // known LRA-ecosystem gap, served natively). Best-effort.
+        let relinked = vault::rewrite_wikilinks(&root, &args.from, &args.to).unwrap_or(0);
         Ok(CallToolResult::success(vec![Content::text(format!(
-            "renamed {} -> {}",
+            "renamed {} -> {} ({relinked} linking notes updated)",
             args.from, args.to
         ))]))
     }

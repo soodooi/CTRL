@@ -166,6 +166,9 @@
       })();
     </script>
     <div id="root"></div>
+    <!-- CTRL modification (AGPL section 5 notice): iframe IPC bridge must
+         install before the app's first invoke. -->
+    <script type="module" src="/src/ctrl-bridge.ts"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

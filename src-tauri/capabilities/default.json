@@ -17,6 +17,8 @@
     "global-shortcut:default",
     "updater:default",
     "process:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-focus"
   ]
 }

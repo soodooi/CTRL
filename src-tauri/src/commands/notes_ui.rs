@@ -354,48 +354,10 @@ fn stem_of(p: &str) -> String {
     Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
 }
 
-/// Replace `[[old_stem` link heads with `[[new_stem` across the vault,
-/// boundary-aware (the char after the stem must close/qualify the link:
-/// `]]`, `|`, or `#`). Returns how many files changed.
+/// Delegates to the kernel's link-aware rewrite (single implementation —
+/// the vault_rename gate tool uses the same one).
 fn rewrite_wikilinks(root: &Path, old_path: &str, new_path: &str) -> Result<usize, String> {
-    let old_stem = stem_of(old_path);
-    let new_stem = stem_of(new_path);
-    if old_stem.is_empty() || old_stem == new_stem {
-        return Ok(0);
-    }
-    let mut updated = 0usize;
-    let paths = vault::list(root, None).map_err(|e| format!("{e:?}"))?;
-    let head = format!("[[{old_stem}");
-    for rel in paths {
-        let full = root.join(&rel);
-        let Ok(raw) = std::fs::read_to_string(&full) else { continue };
-        if !raw.contains(&head) {
-            continue;
-        }
-        let mut out = String::with_capacity(raw.len());
-        let mut rest = raw.as_str();
-        let mut changed = false;
-        while let Some(at) = rest.find(&head) {
-            let after = &rest[at + head.len()..];
-            let boundary = after.starts_with("]]") || after.starts_with('|') || after.starts_with('#');
-            out.push_str(&rest[..at]);
-            if boundary {
-                out.push_str("[[");
-                out.push_str(&new_stem);
-                changed = true;
-            } else {
-                out.push_str(&head);
-            }
-            rest = after;
-        }
-        out.push_str(rest);
-        if changed {
-            std::fs::write(&full, &out).map_err(|e| format!("write {rel}: {e}"))?;
-            vault::refresh_index_for(root, &rel, &out);
-            updated += 1;
-        }
-    }
-    Ok(updated)
+    vault::rewrite_wikilinks(root, old_path, new_path).map_err(|e| format!("{e:?}"))
 }
 
 /// Rename an `Untitled*` note after its first heading / first line (upstream
@@ -747,6 +709,92 @@ pub async fn get_modified_files(
             })
         })
         .collect())
+}
+
+// ── settings + vault-list (upstream settings.rs / vault_list.rs contracts) ──
+// Settings are an OPAQUE JSON blob to CTRL (the UI normalizes/fills defaults
+// itself), persisted under ~/.ctrl/ — robust across upstream schema changes.
+
+fn ctrl_config_path(name: &str) -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME unset")?;
+    let dir = std::path::Path::new(&home).join(".ctrl");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join(name))
+}
+
+#[tauri::command]
+pub fn get_settings() -> Result<serde_json::Value, String> {
+    let path = ctrl_config_path("notes-ui-settings.json")?;
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => serde_json::from_str(&raw).map_err(|e| e.to_string()),
+        Err(_) => Ok(serde_json::json!({
+            // First run inside CTRL: telemetry OFF by default (data sovereignty;
+            // the consent dialog still lets the user opt in), AI panel off —
+            // Irisy is CTRL's assistant (F4 trims the panel entirely).
+            "telemetry_consent": false,
+            "crash_reporting_enabled": false,
+            "analytics_enabled": false,
+            "anonymous_id": null,
+            "ai_features_enabled": false,
+        })),
+    }
+}
+
+#[tauri::command]
+pub fn save_settings(settings: serde_json::Value) -> Result<(), String> {
+    let path = ctrl_config_path("notes-ui-settings.json")?;
+    std::fs::write(&path, serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_default_vault_path() -> Result<String, String> {
+    let root = vault::default_vault_root().ok_or("vault root unresolved")?;
+    Ok(root.to_string_lossy().to_string())
+}
+
+/// Single-vault v1: the list always contains the CTRL vault (both snake_case
+/// and camelCase keys emitted — upstream mixes casings across fields).
+#[tauri::command]
+pub fn load_vault_list() -> Result<serde_json::Value, String> {
+    let root = get_default_vault_path()?;
+    let stored = ctrl_config_path("notes-ui-vaults.json")
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+    if let Some(v) = stored {
+        return Ok(v);
+    }
+    Ok(serde_json::json!({
+        "vaults": [{ "label": "CTRL", "path": root, "mounted": true }],
+        "active_vault": root,
+        "activeVault": root,
+        "default_workspace_path": null,
+        "defaultWorkspacePath": null,
+        "hidden_defaults": [],
+        "hiddenDefaults": [],
+    }))
+}
+
+#[tauri::command]
+pub fn save_vault_list(list: serde_json::Value) -> Result<(), String> {
+    let path = ctrl_config_path("notes-ui-vaults.json")?;
+    std::fs::write(&path, serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
+/// CTRL's vault already exists — "create" commands resolve to it (the UI's
+/// vault-picker flows land on the CTRL vault instead of making a new one).
+#[tauri::command]
+pub fn create_empty_vault(args: serde_json::Value) -> Result<String, String> {
+    let _ = args;
+    get_default_vault_path()
+}
+
+#[tauri::command]
+pub fn create_getting_started_vault(args: serde_json::Value) -> Result<String, String> {
+    let _ = args;
+    get_default_vault_path()
 }
 
 #[cfg(test)]

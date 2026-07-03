@@ -302,6 +302,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::notes_ui::get_file_diff,
             $crate::commands::notes_ui::get_file_diff_at_commit,
             $crate::commands::notes_ui::get_modified_files,
+            $crate::commands::notes_ui::get_settings,
+            $crate::commands::notes_ui::save_settings,
+            $crate::commands::notes_ui::get_default_vault_path,
+            $crate::commands::notes_ui::load_vault_list,
+            $crate::commands::notes_ui::save_vault_list,
+            $crate::commands::notes_ui::create_empty_vault,
+            $crate::commands::notes_ui::create_getting_started_vault,
             $crate::commands::vault::vault_set_auto_sync,
             // SOUL.md (Irisy persistent memory) retired to the gate's memory-domain
             // tools irisy_soul_get/set (SC5 convergence); PWA reaches them via gate_invoke.

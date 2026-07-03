@@ -966,7 +966,15 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // CTRL modification (AGPL section 5 notice; ADR-002 section 1.9 v47 F3):
+      // pin react to THIS package's nested React 19 — the npm workspace hoists
+      // ctrl-web's React 18 to the root, and a mixed-instance bundle dies at
+      // runtime with useRef-null (two Reacts). Prefix alias covers subpaths
+      // (react/jsx-runtime, react-dom/client).
+      react: path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
     },
+    dedupe: ['react', 'react-dom'],
   },
 
   // Inject the demo-vault-v2 path in local dev only — production Tauri builds and

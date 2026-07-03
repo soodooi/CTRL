@@ -87,7 +87,7 @@ import {
   loadInstalledPacks,
   PACKS_CHANGED_EVENT,
 } from '@/lib/feature-pack';
-import { NotesApp } from '@/components/notes/NotesApp';
+import { NotesSurface } from '@/components/notes/NotesSurface';
 import { TablesPanel } from '@/components/tables/TablesPanel';
 import { TodayView } from '@/components/today/TodayView';
 import { CodingTerminal } from '@/components/coding/CodingTerminal';
@@ -1235,7 +1235,7 @@ export function AmbientHome({
                     >
                       ✕
                     </button>
-                    <NotesApp />
+                    <NotesSurface />
                   </div>
                 ) : scene === 'tables' ? (
                   <div className={styles.scenePane}>
