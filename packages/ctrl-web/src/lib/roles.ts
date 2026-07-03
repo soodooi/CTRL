@@ -71,11 +71,11 @@ const CODE_COMPANION: Role = {
   label: 'Coding',
   hint: 'Write code · pairs with the terminal',
   persona: CODE_COMPANION_SYSTEM_PROMPT,
-  // Dev-focused pack ids this role whitelists, so the coding session stays
-  // uncluttered. Convention-only ids: a pack with one of these ids (from the
-  // registry or Irisy's create flow) is in scope; ones the user hasn't
-  // installed simply don't appear. Not a dev-hardcoded catalog.
-  toolset: ['dev-box', 'git-box', 'cf-workers', 'disk-box'],
+  // No hardcoded pack whitelist (bao 2026-07-03: hardcoding isn't the system's
+  // job). Empty = unconstrained — coding sees whatever is installed; the gate
+  // governs actual reachability, and pack visibility follows scene selection,
+  // not a role-baked id list.
+  toolset: [],
   kbScope: null,
 };
 const TOOL_MAKER: Role = {
