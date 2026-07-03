@@ -1610,7 +1610,7 @@ impl KernelMcpRouter {
     /// record sources; record ops return Unsupported here (supported_ops works
     /// in both directions). Frontmatter passes through verbatim. Review-gated.
     #[tool(
-        description = "Edit one markdown note by section with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections. Heading match is case-insensitive on the text after #s; with duplicate headings the FIRST match wins. Frontmatter is untouched byte-for-byte. Prefer this over vault_write for surgical edits — it never rewrites the whole file."
+        description = "Edit one markdown note surgically with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections; {kind:\"set_frontmatter_key\",key,value} / {kind:\"delete_frontmatter_key\",key} edit ONE top-level frontmatter key in place (other keys/comments byte-identical; set creates the block on a plain note). Heading match is case-insensitive on the text after #s; with duplicate headings the FIRST match wins. Call note_map first to see the headings. Prefer this over vault_write — it never rewrites the whole file."
     )]
     async fn doc_produce(
         &self,
@@ -1620,18 +1620,97 @@ impl KernelMcpRouter {
         let root = vault_root()?;
         let lock = self.vault_write_lock(&args.path).await;
         let _write_guard = lock.lock().await;
-        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
-        let mut doc = vault_doc::DocBody::parse(&entry.content);
         let summary = describe_produce_op(&args.op);
-        doc.produce(args.op).map_err(|e| McpError::invalid_params(e.to_string(), None))?;
-        // write_body, NOT write: raw frontmatter bytes pass through verbatim
-        // (key order / comments / quoting), and a plain note without
-        // frontmatter stays writable + fm-less (write would error on Null fm).
-        vault::write_body(&root, &args.path, &doc.serialize()).map_err(map_vault_err)?;
+        // Frontmatter ops bypass DocBody (it models the body only): surgical
+        // single-key patch at the raw-bytes layer (ADR-002 §1.9 v46 E4).
+        match &args.op {
+            query::ProduceOp::SetFrontmatterKey { key, value } => {
+                vault::patch_frontmatter_key(&root, &args.path, key, Some(value))
+                    .map_err(map_vault_err)?;
+            }
+            query::ProduceOp::DeleteFrontmatterKey { key } => {
+                vault::patch_frontmatter_key(&root, &args.path, key, None)
+                    .map_err(map_vault_err)?;
+            }
+            _ => {
+                let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+                let mut doc = vault_doc::DocBody::parse(&entry.content);
+                doc.produce(args.op)
+                    .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+                // write_body, NOT write: raw frontmatter bytes pass through
+                // verbatim (key order / comments / quoting), and a plain note
+                // without frontmatter stays writable + fm-less.
+                vault::write_body(&root, &args.path, &doc.serialize())
+                    .map_err(map_vault_err)?;
+            }
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "doc produce {summary} on {}",
             args.path
         ))]))
+    }
+
+    /// note.map — the document map (ADR-002 §1.9 v46 E9): headings tree +
+    /// `^block-id` refs + frontmatter keys, so the AI targets `doc_produce`
+    /// anchors it can SEE instead of guessing (LRA `vault_get_document_map`
+    /// parity, fence-aware).
+    #[tool(
+        description = "Get a note's document map: headings (level/text/line, code fences excluded), ^block-id refs, and frontmatter keys. Call before doc_produce to pick a real heading anchor."
+    )]
+    async fn note_map(
+        &self,
+        Parameters(args): Parameters<VaultPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let doc = vault_doc::DocBody::parse(&entry.content);
+        let fm_keys: Vec<String> = entry
+            .frontmatter
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": args.path,
+            "headings": doc.map_headings(),
+            "block_refs": doc.map_block_refs(),
+            "frontmatter_keys": fm_keys,
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.get — ONE structured read (ADR-002 §1.9 v46 E10, LRA NoteJson
+    /// parity): content + frontmatter + tags + stat + outgoing links +
+    /// backlinks in a single call, instead of 3-4 separate gate calls.
+    #[tool(
+        description = "Read a note with ALL its context in one call: content, frontmatter, tags, stat (mtime/size), outgoing links, and backlinks. Prefer this over vault_read when you also need the note's connections."
+    )]
+    async fn note_get(
+        &self,
+        Parameters(args): Parameters<VaultPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let g = crate::kernel::vault_graph::scan(&root)
+            .map_err(|e| McpError::internal_error(format!("note.get: {e}"), None))?;
+        let node = g.node_of(&args.path);
+        let stat = std::fs::metadata(root.join(&args.path)).ok();
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": args.path,
+            "content": entry.content,
+            "frontmatter": entry.frontmatter,
+            "tags": node.map(|n| n.tags.clone()).unwrap_or_default(),
+            "links": node.map(|n| n.outlinks.clone()).unwrap_or_default(),
+            "backlinks": g.backlinks_of(&args.path),
+            "stat": stat.map(|m| serde_json::json!({
+                "size": m.len(),
+                "mtime_ms": m.modified().ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64),
+            })),
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
     /// source.describe — GENERIC §14 type layer over ANY installed connector that
@@ -3285,8 +3364,9 @@ fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, M
 // NOTE: `#[tool_handler]` intentionally NOT used. We hand-write list_tools +
 // call_tool so the kernel's static tools (#[tool_router]) are MERGED with the
 // downstream MCP servers' tools, surfaced as first-class namespaced
-// `<server>_<tool>` entries (ADR-002 substrate §1.9.1). This is why Irisy/hermes
-// see e.g. Obsidian's tools directly instead of only behind mcp_proxy_*.
+// `<server>_<tool>` entries (generic downstream merge; first consumer was the
+// retired Obsidian connector, ADR-002 §1.9 v46). This is why Irisy/hermes see
+// a connected downstream server's tools directly, not only behind mcp_proxy_*.
 /// Read a request header from the HTTP parts that rmcp's StreamableHttp
 /// transport stashes in the `RequestContext` extensions. Returns `None` when
 /// the transport is not HTTP (e.g. an in-process test) or the header is absent.
@@ -3687,6 +3767,10 @@ fn describe_produce_op(op: &query::ProduceOp) -> String {
         ),
         query::ProduceOp::ReplaceSection { heading, .. } => format!("replace_section {heading}"),
         query::ProduceOp::DeleteSection { heading } => format!("delete_section {heading}"),
+        query::ProduceOp::SetFrontmatterKey { key, .. } => format!("set_frontmatter_key {key}"),
+        query::ProduceOp::DeleteFrontmatterKey { key } => {
+            format!("delete_frontmatter_key {key}")
+        }
     }
 }
 

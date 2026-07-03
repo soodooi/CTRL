@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 91,
+  "toolCount": 93,
   "tools": [
     {
       "description": "Describe the calendar as a queryable RecordSource: fields (path/title/date/start/end/location/tags) and supported operators. Call before calendar_query.",
@@ -271,6 +271,44 @@
                   "heading"
                 ],
                 "type": "object"
+              },
+              {
+                "description": "Set ONE top-level frontmatter key to a scalar value, surgically — every\nother frontmatter byte (order/comments/quoting) stays verbatim. Creates\nthe frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_frontmatter_key",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove ONE top-level frontmatter key (and its nested value block).\n(Doc sources.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_frontmatter_key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -524,7 +562,7 @@
       "name": "discover_skills"
     },
     {
-      "description": "Edit one markdown note by section with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections. Heading match is case-insensitive on the text after #s; with duplicate headings the FIRST match wins. Frontmatter is untouched byte-for-byte. Prefer this over vault_write for surgical edits — it never rewrites the whole file.",
+      "description": "Edit one markdown note surgically with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections; {kind:\"set_frontmatter_key\",key,value} / {kind:\"delete_frontmatter_key\",key} edit ONE top-level frontmatter key in place (other keys/comments byte-identical; set creates the block on a plain note). Heading match is case-insensitive on the text after #s; with duplicate headings the FIRST match wins. Call note_map first to see the headings. Prefer this over vault_write — it never rewrites the whole file.",
       "inputSchema": {
         "$defs": {
           "CellType": {
@@ -781,6 +819,44 @@
                 "required": [
                   "kind",
                   "heading"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Set ONE top-level frontmatter key to a scalar value, surgically — every\nother frontmatter byte (order/comments/quoting) stays verbatim. Creates\nthe frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_frontmatter_key",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove ONE top-level frontmatter key (and its nested value block).\n(Doc sources.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_frontmatter_key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
                 ],
                 "type": "object"
               }
@@ -1406,6 +1482,40 @@
         "type": "object"
       },
       "name": "mcp_proxy_list_tools"
+    },
+    {
+      "description": "Read a note with ALL its context in one call: content, frontmatter, tags, stat (mtime/size), outgoing links, and backlinks. Prefer this over vault_read when you also need the note's connections.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultPathArgs",
+        "type": "object"
+      },
+      "name": "note_get"
+    },
+    {
+      "description": "Get a note's document map: headings (level/text/line, code fences excluded), ^block-id refs, and frontmatter keys. Call before doc_produce to pick a real heading anchor.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultPathArgs",
+        "type": "object"
+      },
+      "name": "note_map"
     },
     {
       "description": "Describe the knowledge base as a queryable RecordSource: fields (path/title/tags/created/modified) and supported operators. Call before notes.query.",
@@ -2370,6 +2480,44 @@
                   "heading"
                 ],
                 "type": "object"
+              },
+              {
+                "description": "Set ONE top-level frontmatter key to a scalar value, surgically — every\nother frontmatter byte (order/comments/quoting) stays verbatim. Creates\nthe frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_frontmatter_key",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove ONE top-level frontmatter key (and its nested value block).\n(Doc sources.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_frontmatter_key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -3244,6 +3392,44 @@
                 "required": [
                   "kind",
                   "heading"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Set ONE top-level frontmatter key to a scalar value, surgically — every\nother frontmatter byte (order/comments/quoting) stays verbatim. Creates\nthe frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_frontmatter_key",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove ONE top-level frontmatter key (and its nested value block).\n(Doc sources.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_frontmatter_key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
                 ],
                 "type": "object"
               }

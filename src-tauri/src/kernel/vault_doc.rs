@@ -141,6 +141,53 @@ impl DocBody {
     }
 }
 
+/// One heading in a document map (ADR-002 §1.9 v46 E9 — `note_map`).
+#[derive(Debug, serde::Serialize)]
+pub struct MapHeading {
+    pub level: usize,
+    pub text: String,
+    /// 0-based body line index.
+    pub line: usize,
+}
+
+/// One `^block-id` reference in a document map.
+#[derive(Debug, serde::Serialize)]
+pub struct MapBlockRef {
+    pub id: String,
+    pub line: usize,
+}
+
+impl DocBody {
+    /// The document map's heading list (fence-aware — code-block `#` lines are
+    /// never headings). Feeds `note_map` so the AI targets `doc_produce`
+    /// headings it can SEE instead of guessing.
+    pub fn map_headings(&self) -> Vec<MapHeading> {
+        self.heading_lines()
+            .into_iter()
+            .map(|i| MapHeading {
+                level: heading_level(&self.lines[i]).unwrap_or(6),
+                text: heading_text(&self.lines[i]).unwrap_or("").to_string(),
+                line: i,
+            })
+            .collect()
+    }
+
+    /// Obsidian-convention `^block-id` markers (line-trailing), for block-level
+    /// addressing (E5 future) + the document map.
+    pub fn map_block_refs(&self) -> Vec<MapBlockRef> {
+        self.lines
+            .iter()
+            .enumerate()
+            .filter_map(|(i, l)| {
+                let id = l.rsplit_once(" ^").map(|(_, id)| id)?;
+                let ok = !id.is_empty()
+                    && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+                ok.then(|| MapBlockRef { id: id.to_string(), line: i })
+            })
+            .collect()
+    }
+}
+
 impl RecordSink for DocBody {
     fn supported_ops(&self) -> Vec<&'static str> {
         vec!["append_section", "replace_section", "delete_section"]
@@ -361,6 +408,25 @@ mod tests {
         let (_, end) = d.find_section("A").unwrap();
         assert_eq!(end, d.lines.len());
         assert!(d.find_section("Also Fake").is_none());
+    }
+
+    #[test]
+    fn map_headings_and_block_refs_are_fence_aware() {
+        let doc = "# Top\n\ntext ^intro-1\n\n```\n# fake heading\nx ^fake-ref\n```\n\n## Sub\n\nend ^tail_2\n";
+        let d = DocBody::parse(doc);
+        let hs = d.map_headings();
+        assert_eq!(hs.len(), 2, "fence heading excluded");
+        assert_eq!((hs[0].level, hs[0].text.as_str(), hs[0].line), (1, "Top", 0));
+        assert_eq!((hs[1].level, hs[1].text.as_str()), (2, "Sub"));
+        let refs = d.map_block_refs();
+        let ids: Vec<&str> = refs.iter().map(|r| r.id.as_str()).collect();
+        assert!(ids.contains(&"intro-1"));
+        assert!(ids.contains(&"tail_2"));
+        // Fence content ref IS collected (block refs are textual markers; the
+        // conservative choice is to list them — addressing validates later).
+        // No false positives from arbitrary carets:
+        let none = DocBody::parse("math a^2 + b^2\n");
+        assert!(none.map_block_refs().is_empty());
     }
 
     #[test]

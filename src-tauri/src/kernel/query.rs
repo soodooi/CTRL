@@ -234,6 +234,13 @@ pub enum ProduceOp {
     /// Remove a markdown heading AND its body (until the next same-or-higher
     /// level heading). (Block op — Doc sources.)
     DeleteSection { heading: String },
+    /// Set ONE top-level frontmatter key to a scalar value, surgically — every
+    /// other frontmatter byte (order/comments/quoting) stays verbatim. Creates
+    /// the frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)
+    SetFrontmatterKey { key: String, value: String },
+    /// Remove ONE top-level frontmatter key (and its nested value block).
+    /// (Doc sources.)
+    DeleteFrontmatterKey { key: String },
 }
 
 impl ProduceOp {
@@ -249,6 +256,8 @@ impl ProduceOp {
             ProduceOp::AppendSection { .. } => "append_section",
             ProduceOp::ReplaceSection { .. } => "replace_section",
             ProduceOp::DeleteSection { .. } => "delete_section",
+            ProduceOp::SetFrontmatterKey { .. } => "set_frontmatter_key",
+            ProduceOp::DeleteFrontmatterKey { .. } => "delete_frontmatter_key",
         }
     }
 }

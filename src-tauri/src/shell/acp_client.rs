@@ -15,7 +15,8 @@
 // MCP-bus passthrough (§1.8.2): `session/new` passes CTRL's :17873 bus as the
 // agent's MCP server (build_mcp_servers), so hermes reaches the FULL CTRL tool
 // surface — Notes / clipboard / OCR / provider router (fal.ai image/video) /
-// Obsidian (via mcp.proxy_*) / skills — through the single ACP door. This is how
+// downstream MCP servers (via mcp.proxy_*; Obsidian connector retired, ADR-002
+// §1.9 v46) / skills — through the single ACP door. This is how
 // the functions ACP itself scopes out (messaging/cron) are supplied by CTRL's
 // own layers instead of hermes's upgrade-fragile internal protocol.
 
@@ -48,9 +49,10 @@ pub struct AcpClient {
 }
 
 /// One-time capability brief prepended to the first turn so hermes KNOWS it can
-/// drive CTRL's tools (the user's notes / Obsidian vault are reachable via the
-/// `ctrl` MCP server passed in session/new) instead of answering from its own
-/// memory (ADR-002 substrate §1.8.2 v23). Concise so it doesn't fight SOUL.md.
+/// drive CTRL's tools (the user's notes vault is reachable via the `ctrl` MCP
+/// server passed in session/new; ADR-002 §1.9 v46 — notes are CTRL-native)
+/// instead of answering from its own memory (ADR-002 substrate §1.8.2 v23).
+/// Concise so it doesn't fight SOUL.md.
 const CTRL_CAPABILITY_BRIEF: &str = "\
 [CTRL context — you are Irisy, the user's personal assistant inside CTRL. Your \
 CAPABILITIES ARE THE `ctrl` TOOLS connected to you (already wired): that ctrl \

@@ -338,6 +338,109 @@ pub fn write_body(vault_root: &Path, rel_path: &str, body: &str) -> Result<PathB
     Ok(full)
 }
 
+/// Surgically set (`value: Some`) or remove (`value: None`) ONE top-level
+/// frontmatter key, keeping every other frontmatter byte verbatim — key order,
+/// comments, quoting of untouched keys all survive (ADR-002 §1.9 v46 E4, the
+/// PATCH Target-Type:frontmatter parity; same zero-churn contract as
+/// `write_body`). Setting a key on a note WITHOUT frontmatter creates the
+/// block. A nested value (indented lines / `- ` list items under the key) is
+/// replaced/removed together with its key. Returns VaultError::Io("no such
+/// frontmatter key ...") when deleting a key that does not exist.
+pub fn patch_frontmatter_key(
+    vault_root: &Path,
+    rel_path: &str,
+    key: &str,
+    value: Option<&str>,
+) -> Result<PathBuf, VaultError> {
+    let safe = sanitize_relative_path(rel_path)?;
+    let full = vault_root.join(&safe);
+    let raw = fs::read_to_string(&full).map_err(|e| VaultError::Io(e.to_string()))?;
+    let prefix = raw_frontmatter_prefix(&raw);
+
+    let out = if prefix.is_empty() {
+        // Plain note: only a SET can create the block; a DELETE has no target.
+        let Some(v) = value else {
+            return Err(VaultError::Io(format!("no such frontmatter key '{key}'")));
+        };
+        format!("---\n{}---\n\n{raw}", render_fm_entry(key, v)?)
+    } else {
+        // Split the prefix into open fence / inner lines / close fence, edit
+        // only the matched key's line-span, reassemble byte-identically.
+        let body = &raw[prefix.len()..];
+        let inner_start = prefix.find('\n').map(|i| i + 1).unwrap_or(prefix.len());
+        let inner_end = prefix.rfind("\n---").map(|i| i + 1).unwrap_or(prefix.len());
+        let (open, close) = (&prefix[..inner_start], &prefix[inner_end..]);
+        let inner = &prefix[inner_start..inner_end];
+        let mut lines: Vec<String> = inner.lines().map(str::to_string).collect();
+        let needle = format!("{key}:");
+        let hit = lines.iter().position(|l| {
+            l.starts_with(&needle)
+                && l[needle.len()..].chars().next().map_or(true, |c| c == ' ' || c == '\t')
+        });
+        // A key's value span: its line + following continuation lines (indented,
+        // or zero-indent `- ` sequence items). Zero-indent `#` comments are NOT
+        // consumed — they may describe the next key.
+        let span_end = hit.map(|h| {
+            let mut e = h + 1;
+            while e < lines.len()
+                && (lines[e].starts_with(' ')
+                    || lines[e].starts_with('\t')
+                    || lines[e].starts_with("- ")
+                    || lines[e] == "-")
+            {
+                e += 1;
+            }
+            e
+        });
+        match (hit, value) {
+            (Some(h), Some(v)) => {
+                let entry = render_fm_entry(key, v)?;
+                let replacement: Vec<String> = entry.lines().map(str::to_string).collect();
+                lines.splice(h..span_end.unwrap(), replacement);
+            }
+            (Some(h), None) => {
+                lines.drain(h..span_end.unwrap());
+            }
+            (None, Some(v)) => {
+                let entry = render_fm_entry(key, v)?;
+                lines.extend(entry.lines().map(str::to_string));
+            }
+            (None, None) => {
+                return Err(VaultError::Io(format!("no such frontmatter key '{key}'")));
+            }
+        }
+        let mut inner_out = lines.join("\n");
+        if !inner_out.is_empty() {
+            inner_out.push('\n');
+        }
+        format!("{open}{inner_out}{close}{body}")
+    };
+    fs::write(&full, &out).map_err(|e| VaultError::Io(e.to_string()))?;
+
+    // Best-effort index upsert — same posture as `write` / `write_body`.
+    #[cfg(not(test))]
+    if let Some(idx) = try_global_index() {
+        let (fm, content) = split_frontmatter(&out);
+        let fm_str = serde_json::to_string(&fm).unwrap_or_default();
+        let mtime_ms = current_mtime_ms(&full);
+        if let Err(e) = idx.upsert(&safe.to_string_lossy(), &content, &fm_str, mtime_ms) {
+            tracing::warn!(path = %safe.display(), error = %e, "vault: index upsert failed");
+        }
+    }
+    Ok(full)
+}
+
+/// Render one `key: value` frontmatter entry via serde_yaml (handles quoting /
+/// block scalars for values with newlines), always ending in `\n`.
+fn render_fm_entry(key: &str, value: &str) -> Result<String, VaultError> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert(
+        serde_yaml::Value::String(key.to_string()),
+        serde_yaml::Value::String(value.to_string()),
+    );
+    serde_yaml::to_string(&map).map_err(|e| VaultError::InvalidFrontmatter(e.to_string()))
+}
+
 /// The raw frontmatter block of a file — everything through the closing `---`
 /// fence — or `""` when the file has none. Boundary rules MIRROR
 /// `split_frontmatter` (the read side), so write_body's notion of "body" is
@@ -890,6 +993,92 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         assert!(write_body(&root, "nope.md", "x").is_err());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    // ── patch_frontmatter_key (ADR-002 §1.9 v46 E4) ─────────────────────────
+
+    const FM_DOC: &str = "---\n# comment describing z\nz_last: \"quoted\"\ntags:\n  - a\n  - b\na_first: 1\n---\n\nbody text\n";
+
+    #[test]
+    fn patch_fm_set_existing_scalar_keeps_everything_else_verbatim() {
+        let root = fresh_tmp("fm-set");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), FM_DOC).unwrap();
+        patch_frontmatter_key(&root, "n.md", "a_first", Some("2")).unwrap();
+        let out = fs::read_to_string(root.join("n.md")).unwrap();
+        // Untouched keys byte-identical: comment, quoting, order, nested list.
+        assert!(out.contains("# comment describing z\nz_last: \"quoted\"\ntags:\n  - a\n  - b\n"));
+        assert!(out.contains("a_first: '2'") || out.contains("a_first: 2") || out.contains("a_first: \"2\""));
+        assert!(out.ends_with("body text\n"), "body untouched");
+        // And it still parses.
+        let entry = read(&root, "n.md").unwrap();
+        assert_eq!(entry.frontmatter["z_last"], "quoted");
+    }
+
+    #[test]
+    fn patch_fm_set_replaces_nested_value_block() {
+        let root = fresh_tmp("fm-nested");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), FM_DOC).unwrap();
+        // tags currently spans 3 lines (key + 2 items) — replacing it with a
+        // scalar must consume the whole block, not leave orphan `- a` lines.
+        patch_frontmatter_key(&root, "n.md", "tags", Some("replaced")).unwrap();
+        let out = fs::read_to_string(root.join("n.md")).unwrap();
+        assert!(out.contains("tags: replaced"));
+        assert!(!out.contains("- a"), "old nested items consumed");
+        assert!(out.contains("a_first: 1"), "next key intact");
+    }
+
+    #[test]
+    fn patch_fm_insert_new_key_before_close_fence() {
+        let root = fresh_tmp("fm-insert");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), FM_DOC).unwrap();
+        patch_frontmatter_key(&root, "n.md", "status", Some("active")).unwrap();
+        let entry = read(&root, "n.md").unwrap();
+        assert_eq!(entry.frontmatter["status"], "active");
+        assert_eq!(entry.frontmatter["a_first"], 1);
+        assert_eq!(entry.content.trim(), "body text");
+    }
+
+    #[test]
+    fn patch_fm_delete_key_and_its_block() {
+        let root = fresh_tmp("fm-del");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), FM_DOC).unwrap();
+        patch_frontmatter_key(&root, "n.md", "tags", None).unwrap();
+        let out = fs::read_to_string(root.join("n.md")).unwrap();
+        assert!(!out.contains("tags:"));
+        assert!(!out.contains("- a"));
+        assert!(out.contains("z_last: \"quoted\""), "siblings verbatim");
+        // Deleting a missing key errors.
+        assert!(patch_frontmatter_key(&root, "n.md", "nope", None).is_err());
+    }
+
+    #[test]
+    fn patch_fm_set_on_plain_note_creates_the_block() {
+        let root = fresh_tmp("fm-plain");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("p.md"), "just body\n").unwrap();
+        patch_frontmatter_key(&root, "p.md", "type", Some("journal")).unwrap();
+        let entry = read(&root, "p.md").unwrap();
+        assert_eq!(entry.frontmatter["type"], "journal");
+        assert_eq!(entry.content.trim(), "just body");
+        // Delete on a plain note (no block) errors.
+        fs::write(root.join("q.md"), "no fm\n").unwrap();
+        assert!(patch_frontmatter_key(&root, "q.md", "x", None).is_err());
+    }
+
+    #[test]
+    fn patch_fm_key_prefix_does_not_false_match() {
+        let root = fresh_tmp("fm-prefix");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), "---\ntag: one\ntags: two\n---\n\nb\n").unwrap();
+        // Patching `tag` must not touch `tags` (and vice versa).
+        patch_frontmatter_key(&root, "n.md", "tag", Some("changed")).unwrap();
+        let entry = read(&root, "n.md").unwrap();
+        assert_eq!(entry.frontmatter["tag"], "changed");
+        assert_eq!(entry.frontmatter["tags"], "two");
     }
 
     #[test]

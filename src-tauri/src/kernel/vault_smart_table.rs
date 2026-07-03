@@ -348,10 +348,12 @@ impl RecordSink for SmartTable {
                     Err(ProduceError::UnknownField { field: key })
                 }
             }
-            // Block ops belong to Doc sources (§14.13 slice 4).
+            // Block + frontmatter ops belong to Doc sources (§14.13 slice 4 / §1.9 v46 E4).
             other @ (ProduceOp::AppendSection { .. }
             | ProduceOp::ReplaceSection { .. }
-            | ProduceOp::DeleteSection { .. }) => Err(ProduceError::Unsupported {
+            | ProduceOp::DeleteSection { .. }
+            | ProduceOp::SetFrontmatterKey { .. }
+            | ProduceOp::DeleteFrontmatterKey { .. }) => Err(ProduceError::Unsupported {
                 op: other.kind().to_string(),
                 supported: self.supported_ops().iter().map(|s| s.to_string()).collect(),
             }),

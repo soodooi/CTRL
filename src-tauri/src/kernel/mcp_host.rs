@@ -152,8 +152,9 @@ impl McpHost {
                 .ok_or_else(|| McpHostError::NotInstalled(server_id.into()))?
         };
 
-        // Transport per source kind: HTTP MCP servers (ADR-002 §1.9.1) use the
-        // rmcp streamable-http client; everything else spawns a stdio child.
+        // Transport per source kind: HTTP MCP servers (registry remotes etc.,
+        // ADR-002 §1.9 v46 — generic since the Obsidian connector retired) use
+        // the rmcp streamable-http client; everything else spawns a stdio child.
         let service = match &desc.source {
             McpServerSource::Http { url, auth_header } => {
                 use rmcp::transport::streamable_http_client::{
