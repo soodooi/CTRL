@@ -39,3 +39,31 @@ related:
 - **可直接复用的 MIT commons**:`stock-mcp` / `tradingview-akshare-mcp`(数据功能包)· `a-share-skill` / `lzwme/finance-quant-skills` / `ZhuLinsen/daily_stock_analysis`(知识 skill)。
 
 **下一步 = 建「A股数据功能包」**(AkShare / stock-mcp,经通用 provision+auth 引擎一键装 + §14 + gate),对上 capability-pack-map「国内股票 = CTRL 自己当那个软件 + AkShare 数据源」。skill 骑在上面,后叠。
+
+## 附录 2026-07-03：全网扫描（bao 点名 游资 persona + 题材 skill）—— 15 repo 已 clone
+
+> 全部在 `/Users/mac/Documents/coding/stock-skills-reference/`。付费原品不泄露（诚实阴性，多指纹搜过）；开源生态比预期富。
+
+### 可直接拉（MIT/Apache，合法干净）
+| repo | ★ | 拿来做什么 |
+|---|---|---|
+| `wbh604/UZI-Skill` (MIT) | 4939 | persona 面板骨架：66 评委×9 流派（F 组 24 游资：养家/陈小群/赵老哥/北京炒家/章盟主…）+ 70+ 免 key 数据 API + HTML 报告 + 13 项自查 gate + hermes 安装脚本。**实核缺陷**：多数游资 persona 是 auto_generated stub（仅 12 个旗舰手写）、无智能调度、无缠论 |
+| `hssqz/plate-rotation-skill` (MIT) | 40 | **板块轮动**：同花顺×开盘啦双源互证防幻觉，自动标 真主线/妖板/接棒/让位 四象限 —— 复盘的轮动件现货 |
+| `simonlin1212/a-stock-data` (Apache-2.0) | 6286 | 数据接地层：40 端点 13 源（行情/研报/资金/筹码/打板/舆情），自带 SKILL.md |
+| `waditu/czsc` (Apache-2.0) | 5441 | **缠论计算层首选**：分型/笔/中枢/背驰 + 220+ 信号函数，pip 装，自带 skill |
+| `Vespa314/chan.py` (MIT) | 1913 | 缠论备选（公开版是作者 22k 私库的 5.3k 子集） |
+| `noahnan-max/chanlun-trading-system` (MIT) | 17 | 缠论纪律 gate 提示层（14 条不可协商门：先定级别/先认结构/先写失效点） |
+| `AIPMAndy/youzi-trading-skill` (MIT) | 9 | 23 位游资按流派：**情绪周期派（养家/涅槃重生）**/纪律执行（职业炒手/Asking）/龙头战法（赵老哥/著名刺客） |
+| `Niceck/hhxg-top-hhxg-python` (MIT) | 63 | 一句话日度数据：**赚钱效应/热门题材/连板天梯/游资龙虎榜** —— 情绪+强度信号现货 |
+
+### 仅学习（无 license，不 vendor；可给作者提 issue 求 MIT）
+- `meiwulang/dalh`：**唯一有 92科比**（手写高质量：情绪周期四阶段 + 龙头补涨切换三要素）+ 陈小群/涅槃重升/橘子洲，且附每人的公开源文章（淘股吧/直播）—— 独立整编非盗版；**自写 persona 的方法论模板**
+- `tingbo-c/invest-research-skills`：题材深挖最佳方法论（题材链 6 问：瓶颈/性质/受益者/价值迁移/反证/阶段 + 拥挤度标签 + 强制 WebSearch）
+- `Cat-Geek/investment-master-mindset`：persona 蒸馏格式模板（每人 = SKILL.md + 6 参考件：著述/对话/表达DNA/框架/时间线/外评）
+- `sherjy/chen-xiaoqun-skill`：单 persona 工艺样本（第一人称语气规则 + 术语表）
+
+### 付费品 6 游资的开源覆盖终账
+养家 ✅UZI · 陈小群 ✅UZI+专库 · Asking ✅youzi · 涅槃 ✅youzi+dalh · 刺客 ✅youzi · **92科比 ✅dalh（仅学）** —— 6/6 有源可循；智能调度器全网无，自写（问题类型→流派路由，小活）。
+
+### 必自写清单
+① 调度器（流派路由）② 题材六段报告 composer ③ 利弗莫尔择时（原著公有领域：最小阻力线/市场重心/关键点）④ 6 persona 手写深度（照 dalh 的公开资料蒸馏法）。避雷：`yijixiuxin/chanlun-pro`（名义 Apache 实则微信授权付费门）。
