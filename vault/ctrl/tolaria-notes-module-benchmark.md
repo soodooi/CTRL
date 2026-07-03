@@ -52,6 +52,26 @@ Tolaria 作者从 Swift 起步、因 markdown 编辑器限制转 BlockNote（blo
 
 18.2k stars 的 alpha，正好长在 CTRL 同一细分（local-first markdown + AI-agent-native）。**既是最好的参照，也是最近的邻居** —— 值得持续跟踪其 MCP server 的工具面设计与 CLI 接入 UX（它对 Claude Code 用户的开箱体验就是 CTRL BYO-CLI 路径要赢的那场仗）。
 
+## 开源影响（bao 问「影响我们的开源吗？」）
+
+**不影响，反而三重验证。**
+
+1. **许可面**：两边都 AGPL-3.0，理论上代码互通。但 ADR-006 §5.1 v9 已锁「第三方 AGPL 依赖仅参考不 vendoring」（原为 Teable 立的规矩），Tolaria 同样待遇。理由：(a) 版权不属于我们 → vendoring 会永久锁死未来 dual-license/商业弹性（不能重许可自己不拥有版权的代码）；(b) 功能包是 **MIT**，AGPL 代码绝不能混入 MIT 包（传染）；(c) provenance 干净是开源信誉。
+2. **竞争面**：它选 AGPL + 无账号 + free forever = 独立验证了 CTRL 的 AGPL 护城河判断（大厂拿去改对外服务必须开源）。它没有 gate/projection/功能包 —— CTRL 卖 substrate 不卖笔记 app，定位不冲突。
+3. **对称性**：我们 AGPL，它也能看我们的代码 —— AGPL 是双向透明的游戏规则；护城河在网络效应（功能包 commons + registry + 分享中心），不在代码保密。这正是 §5.1 开源决策的原设定，Tolaria 没有改变任何前提。
+
+## 前端复用（bao 问「前端如何复用？」）
+
+**复用「模式」，不复用「代码」** —— 三层：
+
+1. **代码层：不搬。** 组件是 AGPL（仅参考不 vendoring，同上）。它的编辑器 BlockNote 我们也不用 —— 锁点是 Tiptap，且 HN 反馈（fence 怪癖/保真/大文件性能）反向证明 block-over-markdown 有摩擦。
+2. **模式层：随便偷（UX 模式不受版权保护，重实现进自己的 Tiptap + ctrl-web 栈）**：
+   - types-as-lenses 的导航 UI（类型色/icon 作透镜）→ Notes workspace 组织原语；
+   - per-note git 历史 + AI/人 attribution 视图 → transparency-by-drill-down 的文件层落法；
+   - AI sidebar 与 CLI 接入的开箱 UX（它给 Claude Code 用户的 setup 流 = CTRL BYO-CLI 要赢的体验基准）；
+   - slash command / 命令面板细节。
+3. **用户研究层：免费的。** 18k stars alpha 的 HN/issue 反馈 = 别人替我们踩的坑（block editor 摩擦、大文件性能、git commit 后排序 bug），设计 Notes workspace 时直接绕开。
+
 ## 建议（待 bao 拍）
 
 1. **合适对标，采纳为 Notes 模块基准** —— 哲学同构度是所有已调研项目里最高的（比 Obsidian 更贴：同 Tauri/React/AGPL/MCP/BYO-CLI）。
