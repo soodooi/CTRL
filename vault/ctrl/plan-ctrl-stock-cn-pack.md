@@ -80,7 +80,7 @@ related:
 |---|---|---|
 | **P1 编码创造流走通 ✅ 2026-07-03 完成** | 我以 Irisy 身份：写 `projects/stock-cn/service/main.py`（fastmcp+akshare：行情/K线/MACD 筛选 3-5 个 tool，crib MIT 参考）→ manifest（service+免责）→ validate → install → provision 起 → `stock-cn_*` 上 gate | 「筛出今天 MACD 金叉的股票」真机出真数；服务源码在 vault 里 vim 可读；审计 ledger + git 归属（author=irisy）都有记录 |
 | **P2 ②选股（重点）🟡 2026-07-03 基建完成，待盘中数据验收** | 筛选工具加全（技术/量化/龙虎榜/北向）；结果表 + 「策略」表（条件存行、一键复跑）；AI 列标注 | 「用我存的『强势股』策略再筛一遍」跑通；结果在 Tables 面板 |
-| **P3 ⑥复盘（重点）** | 日复盘生成（当日盘面+自选表现+持仓归因）进 daily note；交易日记表 + 完成清单（task 源）；「今天复盘」一句话三件套 | 连续两天真机复盘，数字全真源、可回溯（note_history） |
+| **P3 ⑥复盘（重点）🟡 2026-07-03 复盘模块建成** | 日复盘生成（当日盘面+自选表现+持仓归因）进 daily note；交易日记表 + 完成清单（task 源）；「今天复盘」一句话三件套 | 连续两天真机复盘，数字全真源、可回溯（note_history） |
 | **P4 ①盯盘+③分析+④题材** | 自选表+Chart 视图+择时判词；单股决策看板；题材拆解 md；知识层第一批 commons（缠/利弗莫尔/流派，MIT 现成复用） | 「深挖宁德时代」「新能源题材拆一下」真机 |
 | **P5 ⑤持仓管理** | ghostfolio 有则连（source_query 汇合）；无则持仓 smart-table 手记 + 盈亏列 | 「我持仓怎么样」真机（ghostfolio 或手记表） |
 | **P6 发布** | evals + `mcp_pack_publish` → `ctrl-stock-cn`（MIT） | Discover 可见可装 |
@@ -109,6 +109,20 @@ related:
 
 1. **基础包应显示 connected**：功能包库里 builtin/基础 MCP 应当开箱即连、状态列真实显示 connected（现在用户分不清哪些活着）。落点 = Discover/库页状态列接 `mcp_host.list_installed` 的连接真相 + builtin 自动连接核查。前端小片，排 P2 前。
 2. **每个包必须有「图文介绍页」（Irisy 创造流的必产物）**：用户不知道一个 MCP 是什么 → 包详情页 = `intro.md`（这是什么/你可以对 Irisy 说什么/真实输出示例/权限与治理/怎么长大），**Irisy 做包时必须生成**，且输出示例必须来自真实冒烟（防吹牛）。stock-cn 的 `projects/stock-cn/intro.md` 已按此标准产出（含 07-03 实盘 mood 输出）——它就是 create-feature-pack 标准 skill 里「介绍页」一步的模板。库页/详情页渲染 intro.md = 前端小片，与 1 同批。
+
+## 3.6 复盘模块 = 首个产品级智能表格系统（bao 2026-07-03「智能表格操作页面改成产品级；stock 先创建复盘模块」）
+
+**核实定盘**：智能表格单表页面**已是产品级**（`SmartTableView` 36KB：8 视图本地切换 grid/kanban/calendar/chart/gallery/form/summary/timeline + 记录卡侧栏 + 筛选/排序/分组 + 字段编辑器）。用户之前看到「一张表不成系统」是**内容问题**（表少+无关联+screen 前缀漏），非能力问题。
+
+**复盘模块（Irisy 经 gate 建成）**：
+- `tables/stocks-review.md` 复盘表，11 富字段（date / select mood 冰点-退潮 / number 涨停数/连板 / select action flat-exit / rating 评分 / text 归因-心得）—— 产品级字段类型。
+- 今日真实复盘行（`stock-cn_market_mood` 真数：ferment / 涨停108 / 4板 / 炸板率0.325），数字不编。
+- 前端本地即可切 grid（编辑）/ calendar（按日看复盘）/ summary（月度统计）—— 产品级多视图，无需 gate 建。
+- daily-review skill 更新：复盘 = daily note 叙述 + 复盘表结构化行（互补）。
+
+**stock workspace 现为 4 表系统**（前缀 tables/stocks-）：watchlist / strategies / screen / review —— 飞书式多维表格 App 雏形。修了 screen 表前缀（P2 漏的）→ 入 workspace。
+
+**待续（成完整「系统」）**：表间关联（自选 reference 个股 / 复盘 rollup 自选表现 / 持仓 lookup 行情）—— 关系型字段能力已在（§14 v30），下一步建关联让 4 表成关联系统。
 
 ## 4. 红线
 
