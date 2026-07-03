@@ -20,10 +20,10 @@ the machine-readable spec is `mcp-schema.json`.
 
 ## Overview
 
-- **95** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **17** are on the section-14 three-verb contract; the other **78** are bespoke tools (not section-14 shaped)
-- **34** writes (produce, through the review gate) / **61** reads
-- **107** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
+- **97** MCP tools on the :17873 gate (the endpoints AI actually sees)
+- **17** are on the section-14 three-verb contract; the other **80** are bespoke tools (not section-14 shaped)
+- **34** writes (produce, through the review gate) / **63** reads
+- **108** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
 vault/notes is mostly the old bespoke `vault_*` tools; html/pdf and other envisioned
@@ -160,7 +160,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `kernel_status` | 0 | read | bespoke | Report kernel health: uptime, registered LLM adapters, MCP server count | cmd too |
 | `vault_root_path` | 0 | read | bespoke | Return the absolute vault root path on disk |  |
 
-### other (23 endpoints, all bespoke)
+### other (25 endpoints, all bespoke)
 
 | endpoint | params | r/w | face | description | dual? |
 |---|---|---|---|---|---|
@@ -172,8 +172,10 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `doc_produce` | 2 | **WRITE** | bespoke | Edit one markdown note surgically with the unified produce verb. `op` (tagged by kind): {kind:"append_section",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:"replace_section",heading,content} replaces the body under a heading (heading kept); {kind:"delete_section",heading} removes a heading + its body incl. nested subsections; {kind:"set_frontmatter_key",key,value} / {kind:"delete_frontmatter_key",key} edit ONE top-level frontmatter key in place (other keys/comments byte-identical; set creates the block on a plain note). Heading match is case-insensitive on the text after #s; with duplicate headings the FIRST match wins. Call note_map first to see the headings. Prefer this over vault_write — it never rewrites the whole file. |  |
 | `market_quote` | 1 | read | bespoke | Live stock/index quotes for tickers (Yahoo Finance, no key). Returns price, currency, and percent change vs previous close. Use Yahoo suffixes: .SS Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^ (e.g. ^GSPC, ^IXIC, ^HSI). |  |
 | `market_screen` | 2 | read | bespoke | Predefined stock screen (Yahoo Finance, no key). screen = day_gainers | day_losers | most_actives. Returns symbol, name, price, and percent change for the top movers. |  |
+| `note_active_get` | 0 | read | bespoke | Which note the user is looking at RIGHT NOW in the CTRL workspace. Returns {path} or {path:null} when none is open. Follow with note_get(path) to read it or doc_produce(path,…) to edit it. |  |
 | `note_get` | 1 | read | bespoke | Read a note with ALL its context in one call: content, frontmatter, tags, stat (mtime/size), outgoing links, and backlinks. Prefer this over vault_read when you also need the note's connections. |  |
 | `note_map` | 1 | read | bespoke | Get a note's document map: headings (level/text/line, code fences excluded), ^block-id refs, and frontmatter keys. Call before doc_produce to pick a real heading anchor. |  |
+| `note_open` | 2 | read | bespoke | Open a note in the CTRL workspace for the user (optionally scrolled to a heading). Validates the path exists first. Returns whether a UI was listening. |  |
 | `note_periodic` | 3 | read | bespoke | Resolve the periodic note for a date: period=daily/weekly/monthly/quarterly/yearly, date=YYYY-MM-DD (default today). Returns {path, exists, content?, frontmatter?}; create=true seeds it (journal frontmatter) when missing. Use with doc_produce to append to today's daily note. |  |
 | `note_recent_changes` | 2 | read | bespoke | List the most recently modified notes: [{path, mtime_ms}] sorted newest first. Optional days cutoff. Answers "what did I work on recently". |  |
 | `skill_list` | 1 | read | bespoke | List the user's local installed skills (name + description + path), optional keyword filter |  |
@@ -188,7 +190,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `task_update` | 4 | **WRITE** | bespoke | Update one field of a LifeOS task by note + line (from task_query): field='status' value='done' completes it; also due/title/tags. Rewrites the checkbox line in place. |  |
 | `web_search` | 2 | read | bespoke | Search the web and return titles + URLs + snippets. Uses a BYOK keyed provider if one is configured (Tavily / Brave / Serper / Exa), else a keyless full-web fallback (DuckDuckGo, then Wikipedia). Use this for facts / news / research you don't already hold. |  |
 
-## Dual-surface evidence — Tauri commands per module (107 total)
+## Dual-surface evidence — Tauri commands per module (108 total)
 
 Many capabilities are BOTH an MCP tool and a Tauri command = the P1 drift risk ADR-010 diagnosed. SC5 (collapse the dual surface) is not done.
 
@@ -200,9 +202,9 @@ Many capabilities are BOTH an MCP tool and a Tauri command = the P1 drift risk A
 | `commands/agents.rs` | 9 |
 | `commands/draft.rs` | 6 |
 | `commands/code_space.rs` | 6 |
+| `commands/vault.rs` | 6 |
 | `commands/git.rs` | 6 |
 | `commands/provider.rs` | 5 |
-| `commands/vault.rs` | 5 |
 | `commands/config.rs` | 4 |
 | `commands/workshop.rs` | 4 |
 | `commands/memory.rs` | 3 |

@@ -27,12 +27,14 @@
 
 import {
   useCallback,
+  useEffect,
   useState,
   type ChangeEvent,
   type ReactElement,
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  setActiveNote,
   vaultList,
   vaultRead,
   vaultWrite,
@@ -125,6 +127,43 @@ export const NotesApp = (): ReactElement => {
       return [...prev, { path, dirty: false }];
     });
   }, []);
+
+  // E2 (ADR-002 §1.9 v46): report the focused note to the kernel so Irisy's
+  // note_active_get answers "what am I looking at". Fire-and-forget; clears
+  // on unmount (leaving the notes workspace = nothing focused).
+  useEffect(() => {
+    void setActiveNote(selectedPath).catch(() => undefined);
+    return () => {
+      void setActiveNote(null).catch(() => undefined);
+    };
+  }, [selectedPath]);
+
+  // E3 (ADR-002 §1.9 v46): the brain's note_open lands here — the kernel
+  // supervisor forwards it as the `notes:open` Tauri event; navigate to the
+  // requested note. Desktop-only (dynamic import mirrors app.tsx's tray hook).
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const un = await listen<{ path: string; heading: string | null }>(
+          'notes:open',
+          (e) => {
+            openNoteTab(e.payload.path);
+          },
+        );
+        if (cancelled) un();
+        else off = un;
+      } catch {
+        // Browser PWA (no Tauri): note_open reports delivered:false instead.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      off?.();
+    };
+  }, [openNoteTab]);
 
   const closeNoteTab = useCallback(
     (path: string) => {

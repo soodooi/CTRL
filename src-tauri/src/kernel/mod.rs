@@ -87,6 +87,7 @@ pub mod pack_publish;
 // one plain-markdown file per task (vim test), describe/query via the shared
 // engine, produce (create/update) through the vault layer.
 pub mod tasks_source;
+pub mod ui_bridge;
 pub mod vault;
 pub mod visibility;
 pub mod vault_doc;

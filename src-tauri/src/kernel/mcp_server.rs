@@ -598,6 +598,16 @@ pub struct NotePeriodicArgs {
     pub create: bool,
 }
 
+/// note.open — open a note in the CTRL workspace UI (ADR-002 §1.9 v46 E3).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NoteOpenArgs {
+    /// Vault-relative path to open.
+    pub path: String,
+    /// Optional heading to scroll to.
+    #[serde(default)]
+    pub heading: Option<String>,
+}
+
 /// note.recent_changes — most recently modified notes (ADR-002 §1.9 v46 E12).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct NoteRecentChangesArgs {
@@ -2469,6 +2479,49 @@ impl KernelMcpRouter {
             .map(|(path, mtime_ms)| serde_json::json!({ "path": path, "mtime_ms": mtime_ms }))
             .collect();
         let body = serde_json::to_string(&out).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.active_get — the note currently focused in the CTRL workspace
+    /// (ADR-002 §1.9 v46 E2; LRA /active/ parity). The PWA REPORTS focus via
+    /// the `set_active_note` Tauri command (PWA-only surface, C3 boundary —
+    /// the brain can't forge it); this tool only READS. Follow with note_get /
+    /// doc_produce on the returned path ("summarize what I'm looking at").
+    #[tool(
+        description = "Which note the user is looking at RIGHT NOW in the CTRL workspace. Returns {path} or {path:null} when none is open. Follow with note_get(path) to read it or doc_produce(path,…) to edit it."
+    )]
+    async fn note_active_get(&self) -> Result<CallToolResult, McpError> {
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": self.runtime.ui_bridge.active_note(),
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.open — open a note in the CTRL workspace UI (ADR-002 §1.9 v46 E3;
+    /// LRA /open/ + URI-open parity, closing the loop INSIDE CTRL — no
+    /// jump-out). Pushes over the supervisor's Tauri-event forwarder.
+    #[tool(
+        description = "Open a note in the CTRL workspace for the user (optionally scrolled to a heading). Validates the path exists first. Returns whether a UI was listening."
+    )]
+    async fn note_open(
+        &self,
+        Parameters(args): Parameters<NoteOpenArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        // Validate existence so the UI never navigates to a dead path.
+        vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let delivered = self.runtime.ui_bridge.request_open(
+            crate::kernel::ui_bridge::OpenNoteRequest {
+                path: args.path.clone(),
+                heading: args.heading.clone(),
+            },
+        );
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": args.path,
+            "delivered": delivered,
+        }))
+        .map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 

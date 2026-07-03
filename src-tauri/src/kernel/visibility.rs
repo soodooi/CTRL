@@ -45,6 +45,10 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
     "vault",
     "smart_table",
     "tasks",
+    // Calendar (trait-only §14 source, ADR-002 §14.13 slice 3 + §1.9 v46) —
+    // previously its tools fell through to `mcp` (also first-party); now that
+    // `calendar_` classifies properly it must stay in the default.
+    "calendar",
     // Generic §14 connector source tools (source_describe / source_query /
     // source_produce) — data-driven access to ANY installed connector that
     // declares a `record_source` (ADR-002 §14.12). First-party so Irisy/PWA can
@@ -196,15 +200,24 @@ pub fn tool_domain(tool: &str) -> &'static str {
         "web_search" => return "websearch",
         _ => {}
     }
-    // Prefix table. Order matters only where one prefix is a prefix of another;
-    // none of these are, so the order is for readability.
+    // Prefix table. Order matters only where one prefix is a prefix of another
+    // (`notes_` before `note_` — both map to `notes`, so even that pair is
+    // order-insensitive in effect); otherwise the order is for readability.
     const PREFIXES: &[(&str, &str)] = &[
         ("smart_table_", "smart_table"),
         ("task_", "tasks"),
         ("source_", "source"),
         ("irisy_soul_", "memory"),
         ("vault_", "vault"),
+        // Native note endpoints (ADR-002 §1.9 v46 E-series): `note_` subsumes
+        // the older `notes_` — both land in the notes intent domain, so a
+        // notes-scoped caller sees note_map/note_get/note_periodic/… (they
+        // previously fell through to `mcp` and vanished from the notes scope).
         ("notes_", "notes"),
+        ("note_", "notes"),
+        // Doc block/fm produce + calendar: notes-suite domains (§14.13).
+        ("doc_", "notes"),
+        ("calendar_", "calendar"),
         ("providers_", "providers"),
         ("registry_", "registry"),
         ("kv_", "kv"),
@@ -376,6 +389,17 @@ mod tests {
         assert_eq!(tool_domain("irisy_soul_get"), "memory");
         // Downstream namespaced tool falls under the mcp group.
         assert_eq!(tool_domain("obsidian_search_notes"), "mcp");
+        // Native note endpoints land in the notes intent, NOT mcp (ADR-002
+        // §1.9 v46 — a notes-scoped caller must see them).
+        assert_eq!(tool_domain("note_map"), "notes");
+        assert_eq!(tool_domain("note_get"), "notes");
+        assert_eq!(tool_domain("note_periodic"), "notes");
+        assert_eq!(tool_domain("note_recent_changes"), "notes");
+        assert_eq!(tool_domain("note_active_get"), "notes");
+        assert_eq!(tool_domain("note_open"), "notes");
+        assert_eq!(tool_domain("doc_produce"), "notes");
+        assert_eq!(tool_domain("calendar_query"), "calendar");
+        assert_eq!(tool_domain("calendar_produce"), "calendar");
     }
 
     #[test]

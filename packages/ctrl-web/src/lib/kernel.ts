@@ -23,6 +23,12 @@ export const gateInvoke = <T = unknown>(
   args: Record<string, unknown> = {},
 ): Promise<T> => invoke('gate_invoke', { tool, args }) as Promise<T>;
 
+// Report which note is focused (ADR-002 §1.9 v46 E2). Deliberately a Tauri
+// command, NOT a gate tool: only the UI may set focus (C3 boundary — the
+// brain reads it via `note_active_get` but can never forge it). Fire-and-forget.
+export const setActiveNote = (path: string | null): Promise<void> =>
+  invoke('set_active_note', { path }) as Promise<void>;
+
 // === Kernel status (system instruments) ===
 //
 // Mirror of `src-tauri/src/commands/system.rs::KernelStatus`. The StatusBar

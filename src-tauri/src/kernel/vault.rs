@@ -371,6 +371,9 @@ pub fn patch_frontmatter_key(
         let inner_end = prefix.rfind("\n---").map(|i| i + 1).unwrap_or(prefix.len());
         let (open, close) = (&prefix[..inner_start], &prefix[inner_end..]);
         let inner = &prefix[inner_start..inner_end];
+        // Preserve the file's line ending so untouched fm lines stay
+        // byte-identical on CRLF files too (checker 2026-07-02).
+        let eol = if inner.contains("\r\n") { "\r\n" } else { "\n" };
         let mut lines: Vec<String> = inner.lines().map(str::to_string).collect();
         let needle = format!("{key}:");
         let hit = lines.iter().position(|l| {
@@ -392,6 +395,21 @@ pub fn patch_frontmatter_key(
             }
             e
         });
+        // Fail CLOSED on the YAML-legal shape the span rule can't edit safely:
+        // a zero-indent `#` comment sitting BETWEEN the key and (more of) its
+        // value lines — splicing there would orphan the remainder and leave an
+        // unparseable block (checker 2026-07-02). Surgical means never-corrupt.
+        if let Some(e) = span_end {
+            let comment_then_continuation = lines.get(e).is_some_and(|l| l.starts_with('#'))
+                && lines.get(e + 1).is_some_and(|l| {
+                    l.starts_with(' ') || l.starts_with('\t') || l.starts_with("- ") || l == "-"
+                });
+            if comment_then_continuation {
+                return Err(VaultError::InvalidFrontmatter(format!(
+                    "key '{key}' has a comment interleaved inside its value block — refusing a surgical edit that would corrupt it"
+                )));
+            }
+        }
         match (hit, value) {
             (Some(h), Some(v)) => {
                 let entry = render_fm_entry(key, v)?;
@@ -409,9 +427,9 @@ pub fn patch_frontmatter_key(
                 return Err(VaultError::Io(format!("no such frontmatter key '{key}'")));
             }
         }
-        let mut inner_out = lines.join("\n");
+        let mut inner_out = lines.join(eol);
         if !inner_out.is_empty() {
-            inner_out.push('\n');
+            inner_out.push_str(eol);
         }
         format!("{open}{inner_out}{close}{body}")
     };
@@ -1067,6 +1085,36 @@ mod tests {
         // Delete on a plain note (no block) errors.
         fs::write(root.join("q.md"), "no fm\n").unwrap();
         assert!(patch_frontmatter_key(&root, "q.md", "x", None).is_err());
+    }
+
+    #[test]
+    fn patch_fm_fails_closed_on_comment_inside_value_block() {
+        // YAML-legal: a zero-indent comment BETWEEN a key and more of its list
+        // items. A splice would orphan `- b`; the surgical contract is
+        // never-corrupt, so this must error, not write.
+        let root = fresh_tmp("fm-comment-orphan");
+        fs::create_dir_all(&root).unwrap();
+        let raw = "---\ntags:\n- a\n# comment inside the block\n- b\ntitle: x\n---\n\nbody\n";
+        fs::write(root.join("n.md"), raw).unwrap();
+        assert!(patch_frontmatter_key(&root, "n.md", "tags", Some("y")).is_err());
+        assert!(patch_frontmatter_key(&root, "n.md", "tags", None).is_err());
+        // File untouched.
+        assert_eq!(fs::read_to_string(root.join("n.md")).unwrap(), raw);
+        // Other keys in the same file still editable.
+        patch_frontmatter_key(&root, "n.md", "title", Some("y")).unwrap();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn patch_fm_preserves_crlf_line_endings() {
+        let root = fresh_tmp("fm-crlf");
+        fs::create_dir_all(&root).unwrap();
+        let raw = "---\r\nkeep: one\r\ntitle: x\r\n---\r\n\r\nbody\r\n";
+        fs::write(root.join("n.md"), raw).unwrap();
+        patch_frontmatter_key(&root, "n.md", "title", Some("y")).unwrap();
+        let out = fs::read_to_string(root.join("n.md")).unwrap();
+        assert!(out.contains("keep: one\r\n"), "untouched CRLF line stays CRLF: {out:?}");
+        assert!(out.contains("body"), "body untouched");
     }
 
     #[test]

@@ -256,6 +256,8 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_watch_recent,
             $crate::commands::vault::vault_get_config,
             $crate::commands::vault::vault_set_root,
+            // PWA-only focus report (ADR-002 §1.9 v46 E2, C3 boundary).
+            $crate::commands::vault::set_active_note,
             $crate::commands::vault::vault_set_auto_sync,
             // SOUL.md (Irisy persistent memory) retired to the gate's memory-domain
             // tools irisy_soul_get/set (SC5 convergence); PWA reaches them via gate_invoke.

@@ -1,7 +1,7 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 95,
+  "toolCount": 97,
   "tools": [
     {
       "description": "Describe the calendar as a queryable RecordSource: fields (path/title/date/start/end/location/tags) and supported operators. Call before calendar_query.",
@@ -1484,6 +1484,14 @@
       "name": "mcp_proxy_list_tools"
     },
     {
+      "description": "Which note the user is looking at RIGHT NOW in the CTRL workspace. Returns {path} or {path:null} when none is open. Follow with note_get(path) to read it or doc_produce(path,…) to edit it.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "note_active_get"
+    },
+    {
       "description": "Read a note with ALL its context in one call: content, frontmatter, tags, stat (mtime/size), outgoing links, and backlinks. Prefer this over vault_read when you also need the note's connections.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1516,6 +1524,33 @@
         "type": "object"
       },
       "name": "note_map"
+    },
+    {
+      "description": "Open a note in the CTRL workspace for the user (optionally scrolled to a heading). Validates the path exists first. Returns whether a UI was listening.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.open — open a note in the CTRL workspace UI (ADR-002 §1.9 v46 E3).",
+        "properties": {
+          "heading": {
+            "default": null,
+            "description": "Optional heading to scroll to.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Vault-relative path to open.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "NoteOpenArgs",
+        "type": "object"
+      },
+      "name": "note_open"
     },
     {
       "description": "Resolve the periodic note for a date: period=daily/weekly/monthly/quarterly/yearly, date=YYYY-MM-DD (default today). Returns {path, exists, content?, frontmatter?}; create=true seeds it (journal frontmatter) when missing. Use with doc_produce to append to today's daily note.",

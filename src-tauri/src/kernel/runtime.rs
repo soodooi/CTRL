@@ -48,6 +48,9 @@ pub struct KernelRuntime {
     /// ADR-006 §4). Shared by the MCP gate (`call_tool`, awaits) and the
     /// Tauri approval commands (resolve) — same in-process Arc.
     pub review_gate: Arc<crate::kernel::review_gate::ReviewGate>,
+    /// UI-session bridge (ADR-002 §1.9 v46 E2/E3): active-note state reported
+    /// by the PWA + the open-note push channel the supervisor forwards to it.
+    pub ui_bridge: Arc<crate::kernel::ui_bridge::UiBridge>,
 }
 
 impl KernelRuntime {
@@ -158,6 +161,7 @@ impl KernelRuntime {
             local_storage,
             booted_at: Instant::now(),
             review_gate: Arc::new(crate::kernel::review_gate::ReviewGate::new()),
+            ui_bridge: Arc::new(crate::kernel::ui_bridge::UiBridge::new()),
         })
     }
 

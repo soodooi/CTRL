@@ -77,6 +77,28 @@ impl KernelSupervisor {
             });
         }
 
+        // Open-note forwarder (ADR-002 §1.9 v46 E3): when the brain calls the
+        // `note_open` gate tool, fan the request out to the PWA as a Tauri
+        // event so the notes workspace navigates — same pattern as the
+        // review-gate forwarder above. Lagged/no-listener is fine (the tool
+        // reports `delivered:false`).
+        {
+            use tauri::Emitter;
+            let mut rx = runtime.ui_bridge.subscribe_open();
+            let app_for_notes = app.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match rx.recv().await {
+                        Ok(req) => {
+                            let _ = app_for_notes.emit("notes:open", &req);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
+
         // NOTE (2026-06-21, full-review P0): the unauthenticated `:17878`
         // provider HTTP endpoint (`/text-chat` + `/tool/<name>`) was removed.
         // It existed only for the now-retired Pi bridge (ADR-002 §1 v19) and
