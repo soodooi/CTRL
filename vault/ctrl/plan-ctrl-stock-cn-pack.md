@@ -130,6 +130,23 @@ related:
 
 **后续迭代空间**（bao「有了基本架构，后续逐步迭代升级」）：app 形态的 record_source 模板补全 · 建包 UI（slot-token）与 coding 终端合一 · publish 自包含打包 · skill 自身随每个新包的实战反馈校准。
 
+## 5.5 硬编码打补丁的清算（bao 2026-07-03「硬编码的都不是系统该做的」）
+
+我承认这一段一直在硬编码打补丁而非让系统通用。bao 点出后清算：
+
+**认错的硬编码**：手改 manifest 塞 `category` · 为过 validate 塞假 `self_check` action · category「聚合」前端特判 · （更早）trader-desk persona + PACK_PERSONAS 映射。这些全违反 §7.4「manifest=数据 / runtime=通用 / 加 pack 零代码」。
+
+**根因**：把「股票有两个包」当问题，然后硬编码「解决」，制造更多特判。系统层面 ghostfolio 与 stock-cn 就是两个独立 manifest，各自数据驱动展示，不该由我硬绑或纠结合并。
+
+**改成系统化的四处（未来所有工具型包零特判受益）**：
+- **缺口A（kernel + 前端）**：validate 与 loadInstalledPacks 都只认 actions/record_source → 工具型 `server` 包被拒/不显示，逼我塞假 action。修：两处都接受 `server` 块作为能力面（+ 回归测试）。删 stock-cn 假 action。
+- **缺口B（前端）**：无 record_source 的包 scene 空白。修：fallback 渲染包的 `intro.md`（数据驱动，任何声明 knowledge_base + 带 intro.md 的包受益）。
+- **缺口C（前端）**：category 聚合特判 → 退，回归「一次一个场景」。
+- **清数据**：stock-cn/ghostfolio 手改的 category 去掉；ghostfolio 还原独立（它是持仓接入种子，不是 A股助手）。
+- **修 skill**：create-feature-pack 里教的「塞 self_check smoke action」「category 必填」是错的，已改为「server 包自成立、不塞假 action、category 可选、intro.md 是工具包的 scene 展示」。
+
+结果：424 kernel 测试 + tsc + ratchet 全绿。**stock-cn 现在是纯工具包，validate 过、前端显示、scene 展示 intro.md，零硬编码。**
+
 ## 6. 待 bao 拍## 6. 待 bao 拍
 
 1. P1 的服务形态：**Irisy 写 fastmcp+akshare 本地服务**（源码进 vault，provision 拉起）—— 对齐「Irisy 用 coding 开发」了吗？

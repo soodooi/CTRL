@@ -13,7 +13,9 @@
 // kernel wiring — and unit-tests + visually verifies with mock data.
 
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { type PackConfigField, provisionPack, publishPack } from '@/lib/feature-pack';
+import { vaultRead } from '@/lib/kernel';
 import { ActionBar, type PackAction } from './ActionBar';
 import { PackConfigModal } from './PackConfigModal';
 import { SourceDataView, type SourceData } from './SourceDataView';
@@ -77,6 +79,29 @@ export function FeaturePackScene({
   const [publishMsg, setPublishMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const configFields = pack.configFields ?? [];
   const showsRecords = pack.hasRecords === true && loadRecords != null;
+
+  // Tools-only packs (no record_source) lead with their intro.md — the
+  // pack's own detail page (bao 2026-07-03: data-driven, not a blank scene;
+  // any pack that declares knowledge_base + ships intro.md gets this, zero
+  // per-pack code).
+  const [intro, setIntro] = useState<string | null>(null);
+  useEffect(() => {
+    if (showsRecords || pack.kbDir == null) {
+      setIntro(null);
+      return;
+    }
+    let alive = true;
+    void vaultRead(`${pack.kbDir}/intro.md`)
+      .then((e) => {
+        if (alive) setIntro(e.content ?? null);
+      })
+      .catch(() => {
+        if (alive) setIntro(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [pack.kbDir, showsRecords]);
 
   const refreshRecords = useCallback(async (): Promise<void> => {
     if (loadRecords == null) return;
@@ -234,8 +259,16 @@ export function FeaturePackScene({
             {lastAction != null && <div className={styles.outputLabel}>{lastAction}</div>}
             <pre className={styles.outputBody}>{output}</pre>
           </>
+        ) : intro != null ? (
+          <div className={styles.intro}>
+            <ReactMarkdown>{intro}</ReactMarkdown>
+          </div>
         ) : (
-          <div className={styles.empty}>Pick an action above to run it.</div>
+          <div className={styles.empty}>
+            {pack.actions.length > 0
+              ? 'Pick an action above to run it.'
+              : `Use ${pack.name} through Irisy — ask it in the chat.`}
+          </div>
         )}
       </div>
     </section>

@@ -41,13 +41,20 @@ export async function loadInstalledPacks(): Promise<FeaturePack[]> {
       const m = await invoke<PackManifest>('read_mcp_manifest', {
         args: { mcp_id: s.id },
       });
-      if (!m.actions || m.actions.length === 0) continue;
+      // A feature pack = declares ANY capability surface: actions (shell
+      // steps), a `server` (mcp-server variant — its tools ARE the surface),
+      // or a §14 record_source. Tools-only packs (Irisy-written services) must
+      // show WITHOUT a fake action (bao 2026-07-03: no hardcoded workarounds).
+      const hasAction = Array.isArray(m.actions) && m.actions.length > 0;
+      const hasServer = (m as { server?: unknown }).server != null;
+      const hasRecordSource = m.record_source != null;
+      if (!hasAction && !hasServer && !hasRecordSource) continue;
       packs.push({
         id: s.id,
         name: m.name ?? s.name,
         icon: typeof s.icon === 'string' && s.icon ? s.icon : '⚡',
         summary: m.description?.short,
-        actions: m.actions.map((a) => ({
+        actions: (m.actions ?? []).map((a) => ({
           id: a.id,
           name: a.name,
           description: a.description,

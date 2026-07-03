@@ -99,11 +99,20 @@ pub fn validate_manifest(manifest: &Value) -> ValidationReport {
         .map(|a| !a.is_empty())
         .unwrap_or(false);
     let has_record_source = manifest.get("record_source").is_some();
-    if !has_actions && !has_record_source {
+    // A `server` block (mcp-server variant, ADR-002 §7 Pattern D) IS a
+    // capability surface — its tools ARE what the pack does. A tools-only pack
+    // (an Irisy-written service) must validate WITHOUT a fake action (bao
+    // 2026-07-03: no hardcoded workaround to satisfy the validator).
+    let has_server = manifest
+        .get("server")
+        .and_then(Value::as_object)
+        .map(|o| o.get("command").and_then(Value::as_str).is_some_and(|c| !c.is_empty()))
+        .unwrap_or(false);
+    if !has_actions && !has_record_source && !has_server {
         issues.push(Issue::error(
             "actions",
-            "a feature pack must declare actions[] or a §14 record_source — otherwise it does nothing",
-            "add an actions[] entry or a record_source declaration",
+            "a feature pack must declare a server (mcp-server tools), actions[], or a §14 record_source — otherwise it does nothing",
+            "add a server{command,args} block, an actions[] entry, or a record_source declaration",
         ));
     }
 
@@ -174,6 +183,23 @@ mod tests {
             "/../packages/ctrl-mcps/builtin/ctrl-ghostfolio/manifest.json"
         );
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn server_only_pack_validates_without_actions() {
+        // A tools-only mcp-server pack (an Irisy-written service) is valid on
+        // its server block alone — no fake action needed (bao 2026-07-03).
+        let m = serde_json::json!({
+            "id": "ctrl-stock-cn",
+            "name": "A-Share Assistant",
+            "version": "0.1.0",
+            "server": { "command": "/x/uv", "args": ["run", "main.py"] }
+        });
+        let r = validate_manifest(&m);
+        assert!(r.ok, "server-only pack should validate: {:?}", r.issues);
+        // And a pack with none of {server, actions, record_source} still fails.
+        let bare = serde_json::json!({"id": "ctrl-x", "name": "X", "version": "0.1.0"});
+        assert!(!validate_manifest(&bare).ok);
     }
 
     #[test]

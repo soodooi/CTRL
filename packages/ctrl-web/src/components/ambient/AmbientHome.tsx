@@ -1021,20 +1021,12 @@ export function AmbientHome({
   // not a role). When an L1 opens a pack (Stocks -> ghostfolio) scene IS that
   // pack, so it shows; a built-in scene (coding) falls back to that role's
   // installed toolset packs; plain home/notes shows none.
-  // When the open scene IS a pack, its same-category siblings ride along
-  // (bao 2026-07-03: selecting the Stocks L1 must surface ALL stock packs —
-  // ghostfolio + stock-cn — not just the one that opened the scene).
+  // One scene = one pack (bao 2026-07-03: a pack IS the scenario; no hardcoded
+  // same-category aggregation). The open pack scene shows exactly that pack;
+  // a built-in scene falls back to the role's toolset packs.
   const contextPacks: FeaturePack[] =
     scene && typeof scene === 'object'
-      ? [
-          scene,
-          ...installedPacks.filter(
-            (p) =>
-              p.id !== scene.id &&
-              p.category != null &&
-              p.category === scene.category,
-          ),
-        ]
+      ? [scene]
       : activeRole.toolset.length === 0
       ? []
       : installedPacks.filter((p) => activeRole.toolset.includes(p.id));

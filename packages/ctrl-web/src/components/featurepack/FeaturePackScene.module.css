@@ -183,3 +183,16 @@
 .publishErr {
   color: var(--color-danger, var(--destructive));
 }
+
+.intro {
+  padding: 12px 16px;
+  overflow-y: auto;
+  line-height: 1.55;
+  font-size: 13px;
+}
+.intro h1 { font-size: 18px; margin: 0 0 8px; }
+.intro h2 { font-size: 15px; margin: 16px 0 6px; }
+.intro table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.intro th, .intro td { border: 1px solid var(--border, #e0e0e0); padding: 4px 8px; text-align: left; }
+.intro pre { background: var(--surface-2, #f5f5f5); padding: 8px; border-radius: 6px; overflow-x: auto; }
+.intro code { font-size: 12px; }
