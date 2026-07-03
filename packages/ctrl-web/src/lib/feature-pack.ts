@@ -29,6 +29,8 @@ interface PackManifest {
   record_source?: unknown;
   /** Domain grouping (e.g. "stocks") — same-category packs surface together. */
   category?: string;
+  /** Smart-table workspace convention: `{ table_prefix }` (§7.5 v48). */
+  workspace?: { table_prefix?: string };
 }
 
 /** Installed feature packs = installed mcps whose manifest declares actions.
@@ -63,6 +65,11 @@ export async function loadInstalledPacks(): Promise<FeaturePack[]> {
         // no per-pack code (bao 2026-06-25: systematic, not edit-per-pack).
         kbDir: m.knowledge_base,
         category: m.category,
+        // §7.5 v48: the pack's smart-table workspace (its operating UI).
+        workspace:
+          m.workspace?.table_prefix != null
+            ? { tablePrefix: m.workspace.table_prefix }
+            : undefined,
         // Generic: ANY pack declaring config_schema gets a Configure wizard.
         configFields: packConfigFields(m as unknown as Record<string, unknown>),
         // Declares a service to bring up and/or bootstrap auth → one-click

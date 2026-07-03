@@ -15,7 +15,9 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { type PackConfigField, provisionPack, publishPack } from '@/lib/feature-pack';
-import { vaultRead } from '@/lib/kernel';
+import { vaultRead, vaultList } from '@/lib/kernel';
+import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
+import { resourceFromVaultPath } from '@/lib/viewer-resource';
 import { ActionBar, type PackAction } from './ActionBar';
 import { PackConfigModal } from './PackConfigModal';
 import { SourceDataView, type SourceData } from './SourceDataView';
@@ -41,6 +43,10 @@ export interface FeaturePack {
   /** Declares a service/bootstrap auth → one-click silent "Set up" (the
    *  provision engine) instead of the manual Configure wizard. */
   needsProvision?: boolean;
+  /** Workspace = smart-tables that ARE this pack's operating UI (§7.5 v48).
+   *  v1: a table_prefix convention — vault tables under `tables/<pack>-*` are
+   *  its work surface (飞书 Bitable-style). The scene renders them as tabs. */
+  workspace?: { tablePrefix?: string };
   /** Manifest declares a §14 `record_source` → the scene leads with its records
    *  (a product-grade data table) instead of a bare action bar (§14.12). */
   hasRecords?: boolean;
@@ -79,6 +85,38 @@ export function FeaturePackScene({
   const [publishMsg, setPublishMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const configFields = pack.configFields ?? [];
   const showsRecords = pack.hasRecords === true && loadRecords != null;
+
+  // §7.5 v48: the pack's smart-table WORKSPACE — its operating UI. When the
+  // manifest declares a workspace table_prefix, list the vault tables under it
+  // and render each as a tab (the generic smart-table viewer, multi-view). A
+  // pack with a workspace leads with it, over records/intro (bao 2026-07-03:
+  // 智能表格 = 功能包的操作页面, 飞书 Bitable 式; zero bespoke UI).
+  const wsPrefix = pack.workspace?.tablePrefix ?? null;
+  const [wsTables, setWsTables] = useState<string[] | null>(null);
+  const [wsActive, setWsActive] = useState<string | null>(null);
+  useEffect(() => {
+    if (wsPrefix == null) {
+      setWsTables(null);
+      return;
+    }
+    let alive = true;
+    void vaultList()
+      .then((paths) => {
+        if (!alive) return;
+        const t = paths
+          .filter((p) => p.startsWith(wsPrefix) && p.endsWith('.md'))
+          .sort();
+        setWsTables(t);
+        setWsActive((cur) => (cur != null && t.includes(cur) ? cur : (t[0] ?? null)));
+      })
+      .catch(() => {
+        if (alive) setWsTables([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [wsPrefix]);
+  const showsWorkspace = wsPrefix != null;
 
   // Tools-only packs (no record_source) lead with their intro.md — the
   // pack's own detail page (bao 2026-07-03: data-driven, not a blank scene;
@@ -237,7 +275,42 @@ export function FeaturePackScene({
       <ActionBar actions={pack.actions} runningId={runningId} onRun={run} />
 
       <div className={styles.output}>
-        {showsRecords ? (
+        {showsWorkspace ? (
+          wsTables == null ? (
+            <div className={styles.empty}>Loading {pack.name} workspace…</div>
+          ) : wsTables.length === 0 ? (
+            <div className={styles.empty}>
+              No tables yet — ask Irisy to create one (e.g. a watchlist), and it
+              appears here as a tab.
+            </div>
+          ) : (
+            <div className={styles.workspace}>
+              <div className={styles.wsTabs} role="tablist" aria-label={`${pack.name} tables`}>
+                {wsTables.map((t) => {
+                  const label = t.replace(wsPrefix ?? '', '').replace(/\.md$/, '');
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      role="tab"
+                      aria-selected={t === wsActive}
+                      className={styles.wsTab}
+                      data-active={t === wsActive || undefined}
+                      onClick={() => setWsActive(t)}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className={styles.wsBody}>
+                {wsActive != null && (
+                  <SmartTableViewer resource={resourceFromVaultPath(wsActive)} />
+                )}
+              </div>
+            </div>
+          )
+        ) : showsRecords ? (
           <>
             {error != null && <pre className={styles.error}>{error}</pre>}
             {records.status === 'loading' ? (
