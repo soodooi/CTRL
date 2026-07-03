@@ -8,7 +8,7 @@
 //   (the official SDK parses the same line).
 // - hermes: ACP stdio server (`hermes-acp` via uvx) — the pipe handle is
 //   the endpoint; pid returned for bookkeeping.
-// Notes/KB = the user's Obsidian (ADR-002 §1.9 v25), not a launched agent.
+// Notes/KB = CTRL's native NotesApp (ADR-002 §1.9 v46), not a launched agent.
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};

@@ -151,36 +151,11 @@ impl KernelSupervisor {
                 Ok(m) => tracing::info!(agent = label, version = %m.version, "agent resource pack ready"),
                 Err(e) => tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)"),
             }
-            // Obsidian notes connector auto-init (ADR-002 §1.9.1), best-effort.
-            // Silently install the app if absent (like hermes), then provision the
-            // Local REST API plugin + register the vault. Idempotent; activates
-            // when Obsidian next opens. The plugin self-generates its token.
-            match crate::commands::obsidian::ensure_obsidian_installed() {
-                Ok(true) => tracing::info!("obsidian app installed"),
-                Ok(false) => tracing::debug!("obsidian app already present"),
-                Err(e) => tracing::info!(error = %e, "obsidian install deferred"),
-            }
-            match crate::commands::obsidian::provision_plugin() {
-                Ok(d) => tracing::info!(downloaded = d, "obsidian connector provisioned"),
-                Err(e) => tracing::info!(error = %e, "obsidian provision deferred"),
-            }
-        });
-
-        // Auto-connect the Obsidian Local REST API MCP connector to the kernel
-        // bus so Irisy/hermes see the user's vault tools (ADR-002 substrate
-        // §1.9.1). Best-effort, no window-launch at boot — connects only when
-        // Obsidian is already serving; retries internally, never blocks boot.
-        let mcp_host_for_obsidian = runtime.mcp_host.clone();
-        tauri::async_runtime::spawn(async move {
-            match crate::commands::obsidian::register_and_connect(mcp_host_for_obsidian, false).await
-            {
-                Ok(c) => {
-                    tracing::info!(tools = c.tools.len(), "obsidian connector connected to bus")
-                }
-                Err(e) => {
-                    tracing::info!(error = %e, "obsidian connector not connected yet (retries on demand)")
-                }
-            }
+            // Obsidian connector RETIRED per ADR-002 substrate §1.9 v46
+            // (2026-07-02, notes-module-replacement-plan S1): no app install,
+            // no plugin provision, no bus connect. CTRL's NotesApp + native
+            // note endpoints are the notes surface; the vault stays
+            // Obsidian-format-compatible, unwired.
         });
 
         // ADR-002 substrate § provider + vault/ctrl/strategy/0013 (2026-06-16):

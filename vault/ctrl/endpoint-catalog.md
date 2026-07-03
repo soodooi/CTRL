@@ -23,7 +23,7 @@ the machine-readable spec is `mcp-schema.json`.
 - **91** MCP tools on the :17873 gate (the endpoints AI actually sees)
 - **17** are on the section-14 three-verb contract; the other **74** are bespoke tools (not section-14 shaped)
 - **34** writes (produce, through the review gate) / **57** reads
-- **111** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
+- **107** Tauri commands (the frontend RPC surface); **2** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
 
 Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
 vault/notes is mostly the old bespoke `vault_*` tools; html/pdf and other envisioned
@@ -184,7 +184,7 @@ Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE**
 | `task_update` | 4 | **WRITE** | bespoke | Update one field of a LifeOS task by note + line (from task_query): field='status' value='done' completes it; also due/title/tags. Rewrites the checkbox line in place. |  |
 | `web_search` | 2 | read | bespoke | Search the web and return titles + URLs + snippets. Uses a BYOK keyed provider if one is configured (Tavily / Brave / Serper / Exa), else a keyless full-web fallback (DuckDuckGo, then Wikipedia). Use this for facts / news / research you don't already hold. |  |
 
-## Dual-surface evidence — Tauri commands per module (111 total)
+## Dual-surface evidence — Tauri commands per module (107 total)
 
 Many capabilities are BOTH an MCP tool and a Tauri command = the P1 drift risk ADR-010 diagnosed. SC5 (collapse the dual surface) is not done.
 
@@ -199,7 +199,6 @@ Many capabilities are BOTH an MCP tool and a Tauri command = the P1 drift risk A
 | `commands/git.rs` | 6 |
 | `commands/provider.rs` | 5 |
 | `commands/vault.rs` | 5 |
-| `commands/obsidian.rs` | 4 |
 | `commands/config.rs` | 4 |
 | `commands/workshop.rs` | 4 |
 | `commands/memory.rs` | 3 |

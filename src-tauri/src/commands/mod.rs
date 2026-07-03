@@ -22,8 +22,9 @@
 // `agents` command surface (install_agent / launch_agent / agent_status /
 // stop_agent). Streaming + tool calling happen agent-to-PWA, not kernel-mediated.
 pub mod agents;
-// Obsidian Local REST API connector (ADR-002 §1.9.1).
-pub mod obsidian;
+// Obsidian connector RETIRED (notes-module-replacement-plan S1, bao 2026-07-02):
+// CTRL's NotesApp is the full native notes surface; Obsidian is a
+// format-compatible neighbor with zero wiring (vault stays plain markdown).
 pub mod chat;
 // ADR-002 substrate § capability-faces v19 §13.4 (2026-06-09): image
 // generation surface. Currently fal.ai-only; multi-provider routing for
@@ -122,11 +123,6 @@ macro_rules! pwa_invoke_handler {
             // connect_agent_mcp — hermes (mcp-stdio) onto the kernel MCP bus
             // (ADR-002 §1.3 v19); PWA chats via mcp_call afterwards.
             $crate::commands::agents::connect_agent_mcp,
-            // Obsidian Local REST API connector (ADR-002 §1.9.1)
-            $crate::commands::obsidian::obsidian_status,
-            $crate::commands::obsidian::obsidian_connect,
-            $crate::commands::obsidian::obsidian_provision,
-            $crate::commands::obsidian::obsidian_launch,
             // assistant_oneshot — hermes -z bridge until the ACP
             // streaming client lands (ADR-002 §1.1 v20, 2026-06-10).
             $crate::commands::agents::assistant_oneshot,

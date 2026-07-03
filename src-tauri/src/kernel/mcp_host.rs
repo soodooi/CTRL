@@ -64,9 +64,10 @@ pub enum McpServerSource {
         #[serde(default)]
         args: Vec<String>,
     },
-    /// HTTP endpoint (remote / local HTTP MCP server, e.g. the Obsidian
-    /// Local REST API plugin's built-in /mcp/). `auth_header` is the full
-    /// Authorization header value (e.g. "Bearer <token>") when required.
+    /// HTTP endpoint (remote / local HTTP MCP server serving streamable-http
+    /// /mcp/). `auth_header` is the full Authorization header value (e.g.
+    /// "Bearer <token>") when required. (Generic transport — outlived its
+    /// first consumer, the Obsidian connector, retired ADR-002 §1.9 v46.)
     Http {
         url: String,
         #[serde(default)]

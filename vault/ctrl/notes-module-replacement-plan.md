@@ -37,8 +37,8 @@ sources:
 | G3 | **编辑器补齐**：TOC、math(KaTeX)、折叠段、块重排、callouts、图片 lightbox、PDF 导出 | BlockNote 生态 | **Tiptap 官方扩展**逐个装（栈已锁，全有现成 ext） | 中 |
 | G4 | **Wikilink 前端**：内联 token + 自动补全 + 粘贴恢复 | 自研 inline-wikilink 系列 | Tiptap suggestion + gate `vault_suggest_links`（已有） | 小 |
 | G5 | **Properties 面板升级**：typed 属性编辑 | DynamicPropertiesPanel | FrontmatterPanel 升级 + 新 fm-patch 端点（E4） | 小 |
-| G6 | **白板** | tldraw（⚠️ 非 MIT：tldraw license 带水印/商用需授权） | **Excalidraw（MIT）**作 viewer registry 新 content-type（`.excalidraw.md`） | 中 |
-| G7 | 多 vault / workspaces | 多 vault 切换 | **不做 v1**（CTRL 单 vault root 是 ADR 锁点；后评估） | — |
+| G6 | **白板** | tldraw | **tldraw（bao 2026-07-02 拍「先用 tldraw」）**作 viewer registry 新 content-type。license 约束记录在案：免费档带 "Made with tldraw" 水印，商用去水印需购 license —— 先带水印用，后续要么购 license 要么换 Excalidraw(MIT) | 中 |
+| G7 | **多 vault / workspaces（bao 2026-07-02 拍「用 tolaria」= 做）** | WorkspaceSelector + 多 vault 注册/切换 + per-vault 设置 | kernel vault-registry（`~/.ctrl/vaults.json` 已知 vault 列表 + active）+ gate `vault_registry_*` 端点 + PWA WorkspaceSelector；**amend ADR-002 §8**（单 vault root → registry + active-vault 概念，per-vault 索引隔离） | 大 |
 | G8 | 命令面板/QuickOpen | CommandPalette+AI mode | ctrl-web 已有底子，补 notes 作用域 | 小 |
 
 ## 2. 端点计划 — 参考 Obsidian LRA，建 CTRL 原生全端点
@@ -78,8 +78,9 @@ sources:
 | S5 | **G1 git 层前端半**：per-note History/Diff 面板 + Pulse 活动流 | 视觉验证（Playwright） |
 | S6 | **G2 types 透镜 + views**：fm type: 软类型 + 保存的 §14 查询当 sidebar 透镜 | 建 type/建 view/过滤全流跑通 |
 | S7 | **G3+G4 编辑器补齐**：TOC/math/折叠/块重排/callout/lightbox/wikilink 自动补全/PDF | 逐项视觉验证 |
-| S8 | **G6 白板**：Excalidraw viewer type | 建白板/存 `.excalidraw.md`/vim 可读(JSON in md) |
+| S8 | **G6 白板**：tldraw viewer type（水印档） | 建白板/存盘/vim 可读(JSON in md) |
 | S9 | **E7 模板端点 + E11 link-aware 改名 + G8 命令面板 notes 作用域** + 收尾（E5/E8 视需求） | 改名后全 vault wikilink 不断链（回归测试）；全端点 catalog 重生成 |
+| S10 | **G7 多 vault**：kernel vault-registry + gate 端点 + WorkspaceSelector + ADR-002 §8 amendment | 双 vault 建/切/索引隔离全流跑通 |
 
 依赖：S1 独立先行；S2→S3（active 写复用 fm/heading 手术）；S4→S5；其余并行度高。
 
@@ -93,7 +94,7 @@ sources:
 
 5 primitives 不动；三动词加固（E4/E5 是 ProduceOp 变体不是新工具族）；`:17873` gate + review 全覆盖；plain-text/vim test 全过（白板也是 md 内 JSON）；秘密不进 LLM；**「Ctrl-key 唯一入口」反而被加强**（Obsidian escape 口消失）。
 
-## 待 bao 拍
-1. 切片序 OK？（我建议 S1 立即做——退役是净删除，最安全的第一刀）
-2. G7 多 vault 确认不做 v1？
-3. 白板 Excalidraw 替 tldraw，OK？
+## bao 已拍（2026-07-02）
+1. 切片序 OK，S1 先行 ✅
+2. 多 vault **做**，跟 Tolaria（→ G7/S10）✅
+3. 白板**先用 tldraw**（水印档；license 约束见 G6）✅

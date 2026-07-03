@@ -679,8 +679,9 @@ pub struct ConnectRemoteMcpArgs {
 /// register an Http descriptor, connect (validates the endpoint actually
 /// responds), list its tools, and persist so it re-registers next boot. Once
 /// connected, the gate proxies its tools to the brain (mcp.proxy_list_tools /
-/// mcp.proxy_call_tool), so Irisy can call them. Returns the tool names. Same
-/// runtime the Obsidian connector uses (mcp_host streamable-http client).
+/// mcp.proxy_call_tool), so Irisy can call them. Returns the tool names.
+/// Uses the generic mcp_host streamable-http client (ADR-002 §1.9 v46 —
+/// the Obsidian connector that first drove it is retired; transport stays).
 #[tauri::command]
 pub async fn connect_remote_mcp(
     args: ConnectRemoteMcpArgs,
