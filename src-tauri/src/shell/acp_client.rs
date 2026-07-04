@@ -23,14 +23,13 @@
 use agent_client_protocol::schema::v1 as acp_v1;
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex as StdMutex, OnceLock};
+use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::Mutex;
 
 /// Per-line read budget — covers uvx cold start + first-token model latency.
 const READ_TIMEOUT: Duration = Duration::from_secs(180);
@@ -74,149 +73,6 @@ pub enum AcpEvent {
         status: String,
         output: String,
     },
-    /// `session/request_permission` for a WRITE tool — the review gate (ADR-005
-    /// §8.6.2). The turn PAUSES here awaiting the user's approve/deny; the PWA
-    /// renders a card and calls back `resolve_permission(permission_id, …)`.
-    PermissionRequest {
-        permission_id: u64,
-        title: String,
-        input: String,
-        options: Vec<PermissionOptionView>,
-    },
-}
-
-/// One approve/deny choice on a permission card (mirrors ACP `PermissionOption`).
-pub struct PermissionOptionView {
-    pub id: String,
-    pub label: String,
-    /// ACP kind: `allow_once` / `allow_always` / `reject_once` / `reject_always`.
-    pub kind: String,
-}
-
-// ADR-005 §8.6.2 review gate — pending write-op prompts keyed by a monotonic id.
-// The PWA's decision resolves the matching oneshot so the ACP read loop can
-// answer the agent. Locks are brief (insert/remove); the await is on the oneshot.
-static PERMISSION_SEQ: AtomicU64 = AtomicU64::new(1);
-#[allow(clippy::type_complexity)]
-static PENDING_PERMISSIONS: OnceLock<StdMutex<HashMap<u64, oneshot::Sender<Option<String>>>>> =
-    OnceLock::new();
-fn pending_permissions() -> &'static StdMutex<HashMap<u64, oneshot::Sender<Option<String>>>> {
-    PENDING_PERMISSIONS.get_or_init(|| StdMutex::new(HashMap::new()))
-}
-
-/// Resolve a pending write-op permission with the user's choice: `Some(optionId)`
-/// = approved with that scope, `None` = denied. Called by the Tauri command the
-/// PWA invokes when the user taps the approval card. Returns whether a matching
-/// pending request existed.
-pub fn resolve_permission(permission_id: u64, option_id: Option<String>) -> bool {
-    if let Some(tx) = pending_permissions()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&permission_id)
-    {
-        let _ = tx.send(option_id);
-        true
-    } else {
-        false
-    }
-}
-
-/// How long the read loop waits for a decision before defaulting to deny (safe).
-const PERMISSION_TIMEOUT: Duration = Duration::from_secs(300);
-
-/// CTRL classifies which gate tools are WRITES (need approval) by NAME — hermes
-/// reports `kind:"other"` for every MCP tool, so its ACP kind is unreliable.
-/// Reads/searches/queries flow freely (no approval fatigue); writes prompt.
-fn is_write_tool(title: &str) -> bool {
-    let t = title
-        .strip_prefix("mcp_ctrl_")
-        .or_else(|| title.strip_prefix("mcp_"))
-        .unwrap_or(title);
-    const WRITE_MARKERS: &[&str] = &[
-        "write", "create", "update", "delete", "produce", "append", "set_",
-        "provision", "install", "uninstall", "publish", "scaffold", "move",
-        "rename", "remove", "del_", "insert", "add_",
-    ];
-    WRITE_MARKERS.iter().any(|m| t.contains(m))
-}
-
-fn selected_outcome(option_id: &str) -> Value {
-    json!({ "outcome": { "outcome": "selected", "optionId": option_id } })
-}
-
-/// Handle a `session/request_permission`. Reads auto-allow via the existing
-/// tested `select_allow_outcome`; WRITES pause the turn — emit a card via
-/// `on_event`, await the user's decision, and default to deny on timeout.
-async fn handle_permission(v: &Value, on_event: &mut (dyn FnMut(AcpEvent) + Send)) -> Value {
-    use acp_v1::PermissionOptionKind::{AllowAlways, AllowOnce, RejectAlways, RejectOnce};
-    let params = match v.get("params") {
-        Some(p) => p,
-        None => return select_allow_outcome(v),
-    };
-    let req: acp_v1::RequestPermissionRequest = match serde_json::from_value(params.clone()) {
-        Ok(r) => r,
-        // Unparseable → preserve the old safe auto-allow behavior.
-        Err(_) => return select_allow_outcome(v),
-    };
-    let title = req.tool_call.fields.title.clone().unwrap_or_default();
-    if !is_write_tool(&title) {
-        return select_allow_outcome(v);
-    }
-    // Write op — the moat. Prompt the user and pause the turn.
-    let reject_id = req
-        .options
-        .iter()
-        .find(|o| matches!(o.kind, RejectOnce | RejectAlways))
-        .map(|o| o.option_id.0.to_string());
-    let options: Vec<PermissionOptionView> = req
-        .options
-        .iter()
-        .map(|o| PermissionOptionView {
-            id: o.option_id.0.to_string(),
-            label: o.name.clone(),
-            kind: serde_json::to_value(o.kind)
-                .ok()
-                .and_then(|k| k.as_str().map(str::to_string))
-                .unwrap_or_default(),
-        })
-        .collect();
-    // Sanity: if the agent offered no allow option, don't fabricate one.
-    let _ = (AllowOnce, AllowAlways);
-    let input = req
-        .tool_call
-        .fields
-        .raw_input
-        .as_ref()
-        .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
-        .unwrap_or_default();
-    let pid = PERMISSION_SEQ.fetch_add(1, Ordering::Relaxed);
-    let (tx, rx) = oneshot::channel();
-    pending_permissions()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(pid, tx);
-    on_event(AcpEvent::PermissionRequest {
-        permission_id: pid,
-        title,
-        input,
-        options,
-    });
-    let decision = match tokio::time::timeout(PERMISSION_TIMEOUT, rx).await {
-        Ok(Ok(choice)) => choice,
-        _ => {
-            pending_permissions()
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(&pid);
-            None
-        }
-    };
-    match decision {
-        Some(opt_id) => selected_outcome(&opt_id),
-        None => reject_id
-            .map(|id| selected_outcome(&id))
-            .unwrap_or_else(|| json!({ "outcome": { "outcome": "cancelled" } })),
-    }
 }
 
 /// Plain text of an ACP `ContentBlock` (only the `text` variant carries text).
@@ -919,14 +775,13 @@ impl AcpClient {
                 continue;
             }
 
-            // Agent → client request (id + method) → reply. Permission requests
-            // for writes PAUSE here on the user (ADR-005 §8.6.2 review gate).
+            // Agent → client request (id + method) → minimal reply.
             if let (Some(req_id), Some(req_method)) = (
                 v.get("id").and_then(|i| i.as_i64()),
-                v.get("method").and_then(|m| m.as_str()).map(str::to_string),
+                v.get("method").and_then(|m| m.as_str()),
             ) {
                 let result = if req_method == "session/request_permission" {
-                    handle_permission(&v, &mut *on_event).await
+                    select_allow_outcome(&v)
                 } else if req_method == "fs/read_text_file" {
                     json!({ "content": "" })
                 } else {
@@ -1050,44 +905,6 @@ mod tests {
         // usage_update / available_commands_update are not surfaced yet.
         let usage = json!({ "sessionUpdate": "usage_update", "tokens": 42 });
         assert!(parse_session_update(&usage).is_none());
-    }
-
-    // ADR-005 §8.6.2 — the review gate classifies gate tools by NAME (hermes
-    // reports kind:"other" for all MCP tools). Writes must prompt; reads flow.
-    #[test]
-    fn write_tools_prompt_reads_flow() {
-        for w in [
-            "mcp_ctrl_vault_write",
-            "mcp_ctrl_smart_table_produce",
-            "mcp_ctrl_smart_table_create",
-            "mcp_ctrl_mcp_pack_install",
-            "mcp_ctrl_mcp_pack_write_file",
-            "mcp_ctrl_task_update",
-            "mcp_ctrl_append_row",
-            "mcp_ctrl_vault_delete",
-            "mcp_ctrl_smart_table_base_scaffold",
-            "mcp_ctrl_vault_rename",
-        ] {
-            assert!(is_write_tool(w), "should gate write tool: {w}");
-        }
-        for r in [
-            "mcp_ctrl_vault_search",
-            "mcp_ctrl_vault_read",
-            "mcp_ctrl_smart_table_query",
-            "mcp_ctrl_smart_table_describe",
-            "mcp_ctrl_market_quote",
-            "mcp_ctrl_discover_packs",
-            "mcp_ctrl_web_search",
-            "mcp_ctrl_registry_query",
-            "mcp_ctrl_kernel_status",
-        ] {
-            assert!(!is_write_tool(r), "should NOT gate read tool: {r}");
-        }
-    }
-
-    #[test]
-    fn resolve_permission_unknown_id_is_false() {
-        assert!(!resolve_permission(u64::MAX, Some("x".to_string())));
     }
 
     /// Real end-to-end: spawn hermes-acp via the kernel client, run one

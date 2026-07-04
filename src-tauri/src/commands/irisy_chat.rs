@@ -106,42 +106,6 @@ struct ThoughtStep {
     delta: String,
 }
 
-// ADR-005 §8.6.2 review gate — a write-op permission prompt the PWA renders as an
-// approve/deny card. The turn is PAUSED in the ACP read loop until the user taps
-// a choice, which routes back through `irisy_permission_respond`.
-#[derive(Debug, Serialize, Clone)]
-struct PermissionOptionWire {
-    id: String,
-    label: String,
-    // ACP kind: allow_once / allow_always / reject_once / reject_always.
-    kind: String,
-}
-
-#[derive(Debug, Serialize, Clone)]
-struct PermissionCard {
-    request_id: String,
-    permission_id: u64,
-    // Tool the agent wants to run, e.g. mcp_ctrl_vault_write.
-    title: String,
-    // Pretty-printed tool arguments (drill-down / transparency).
-    input: String,
-    options: Vec<PermissionOptionWire>,
-}
-
-/// The PWA calls this when the user taps a choice on the approval card; it resolves
-/// the paused ACP permission request (ADR-005 §8.6.2). `option_id` = the selected
-/// ACP option (approve with scope); `None` = deny.
-#[tauri::command]
-pub async fn irisy_permission_respond(
-    permission_id: u64,
-    option_id: Option<String>,
-) -> Result<bool, String> {
-    Ok(crate::shell::acp_client::resolve_permission(
-        permission_id,
-        option_id,
-    ))
-}
-
 #[tauri::command]
 pub async fn irisy_chat_stream(
     args: IrisyChatStreamArgs,
@@ -551,31 +515,6 @@ async fn forward_to_provider(
                                         status: Some(status),
                                         input: None,
                                         output: Some(output),
-                                    },
-                                );
-                            }
-                            // The review gate — a write op paused on the user.
-                            AcpEvent::PermissionRequest {
-                                permission_id,
-                                title,
-                                input,
-                                options,
-                            } => {
-                                let _ = app2.emit(
-                                    "chat-permission-request",
-                                    PermissionCard {
-                                        request_id: rid.clone(),
-                                        permission_id,
-                                        title,
-                                        input,
-                                        options: options
-                                            .into_iter()
-                                            .map(|o| PermissionOptionWire {
-                                                id: o.id,
-                                                label: o.label,
-                                                kind: o.kind,
-                                            })
-                                            .collect(),
                                     },
                                 );
                             }
