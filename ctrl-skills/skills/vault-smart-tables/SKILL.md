@@ -25,6 +25,26 @@ pipe-table body. They live under `tables/` in the vault and are queryable via
 - User wants to query, filter, or sort existing table data
 - User wants to add a field, change a type, or wire a relation to an existing table
 
+## Requirements first — propose, don't demand a spec
+
+A real user asks vaguely ("build me a CRM", "track my job applications"). They
+will NOT hand you fields, types, and relations — that is YOUR job. Do NOT reply
+with a blank questionnaire asking them to list every column either. Instead:
+
+1. **Propose a sensible structure from domain knowledge.** Name the table(s),
+   their key fields (with types), and the relations. For a CRM that is
+   `Contacts (name, company, email)` + `Deals (name, amount, stage, contact →
+   Contacts)`. If the domain is unfamiliar, RESEARCH it first with `web_search`
+   (what does a "<domain> tracker" usually track?) — do not invent blindly.
+2. **Ask only the genuinely ambiguous choices — at most 1-2**, each with a
+   sensible default, e.g. "Deals usually have a stage — I'll use lead/won/lost
+   unless you have your own." Never interrogate; a user should confirm in one
+   short reply, not fill a form.
+3. **Confirm briefly, then build in ONE `smart_table_base_scaffold` call.** If
+   the user already gave a precise spec, skip the proposal and just build.
+
+The goal: the user says three words, you do the thinking, they nod, it exists.
+
 ## File structure
 
 Every smart table is one `.md` file under `tables/`:
