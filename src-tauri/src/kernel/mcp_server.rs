@@ -1128,7 +1128,16 @@ impl KernelMcpRouter {
         let mut request = CallToolRequestParams::default();
         request.name = args.name.into();
         request.arguments = arguments;
-        self.dispatch_tool(request, context).await
+        // Graceful degradation (bao 2026-07-04): a tool the brain reached via
+        // discovery that fails ONLY for lack of setup (missing credential) comes
+        // back as a friendly "connect X first" result, not a raw -32603.
+        match self.dispatch_tool(request, context).await {
+            Ok(r) => Ok(r),
+            Err(e) => match setup_hint(&e.to_string()) {
+                Some(hint) => Ok(hint),
+                None => Err(e),
+            },
+        }
     }
 
     /// kernel.status — uptime + adapter chain. Sanity ping for clients.
@@ -3528,9 +3537,17 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
         &self,
         Parameters(args): Parameters<DiscoverSkillsArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let reply = crate::commands::skills::search_skills(args.query)
-            .await
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let reply = match crate::commands::skills::search_skills(args.query).await {
+            Ok(r) => r,
+            // Missing GitHub token etc. → a friendly "connect it first" result the
+            // brain relays, not a raw -32603 (graceful degradation, ADR-005).
+            Err(e) => {
+                if let Some(hint) = setup_hint(&e) {
+                    return Ok(hint);
+                }
+                return Err(McpError::internal_error(e, None));
+            }
+        };
         let body = serde_json::to_string(&reply).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
@@ -4725,6 +4742,31 @@ fn map_serde_err(e: serde_json::Error) -> McpError {
     McpError::internal_error(format!("serialize: {e}"), None)
 }
 
+/// Graceful degradation for setup-gated capabilities (bao 2026-07-04, ledger:
+/// `discover_skills` failed 9/9 on a missing GitHub token — a raw `-32603` the
+/// brain treats as an internal bug). When a tool fails only because a credential
+/// / connection isn't configured YET, hand the brain a CLEAR, actionable RESULT
+/// ("connect X first, tell the user, don't retry") instead of an error, so it
+/// relays a helpful message rather than a cryptic failure. Returns `Some(result)`
+/// for a setup error, `None` to let a genuine error propagate.
+fn setup_hint(err: &str) -> Option<CallToolResult> {
+    let e = err.to_ascii_lowercase();
+    let needs_setup = e.contains("no github token")
+        || e.contains(" in keychain")
+        || e.contains("not configured")
+        || e.contains("no such secret")
+        || (e.contains("secret ") && e.contains("provision"))
+        || (e.contains("api key") && (e.contains("missing") || e.contains("not set")));
+    needs_setup.then(|| {
+        CallToolResult::success(vec![Content::text(format!(
+            "SETUP NEEDED — this capability isn't connected yet: {err}\n\nTell the \
+             user in plain language what to connect and that they can set it up in \
+             Settings; do NOT retry this tool until it is configured, and do not \
+             claim you performed the action."
+        ))])
+    })
+}
+
 /// Validate + URL-encode a ticker for the market.* tools. Rejects anything
 /// outside `[A-Za-z0-9.^=-]` so a hostile symbol can't escape the fixed Yahoo
 /// path (the market domain is exfil-free by construction). `^` (index prefix)
@@ -5392,6 +5434,27 @@ mod tests {
     use super::*;
     use crate::kernel::query::RecordSink;
     use crate::kernel::runtime::KernelRuntime;
+
+    #[test]
+    fn setup_hint_degrades_only_missing_setup_errors() {
+        // Setup-gated failures → a friendly result (Some), not an error.
+        for e in [
+            "No GitHub token in Keychain. Store a PAT under service 'app.ctrl'.",
+            "ctrl-ghostfolio not configured — provision or set its credentials",
+            "provision 'ctrl-ghostfolio': secret 'ghostfolio_token' missing",
+            "OpenAI api key missing",
+        ] {
+            assert!(setup_hint(e).is_some(), "should degrade gracefully: {e}");
+        }
+        // Genuine errors still propagate (None).
+        for e in [
+            "IO error: No such file or directory (os error 2)",
+            "vault: invalid frontmatter",
+            "args must be an object",
+        ] {
+            assert!(setup_hint(e).is_none(), "should NOT swallow real error: {e}");
+        }
+    }
 
     // ── §14.13 unified produce: in-place schema patch preserves rich per-item
     // keys the kernel model doesn't know about (ai_prompt / color_op / system /
