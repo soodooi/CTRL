@@ -851,23 +851,42 @@ pub fn sanitize_relative_path(p: &str) -> Result<PathBuf, VaultError> {
 /// smart-table `schema:` block reads as clean YAML, not an escaped JSON string
 /// (vim test). The read side (`parse_yaml_to_json`) is the symmetric deserialize.
 fn frontmatter_to_yaml(value: &serde_json::Value) -> Result<String, VaultError> {
-    // A note may legitimately have NO frontmatter. `split_frontmatter` returns
-    // Null in that case, so a read->write round-trip (move / rename / body edit)
-    // must treat Null as "no frontmatter block", not reject it. This was the
-    // recurring "frontmatter must be a JSON object" bug: an empty-frontmatter
-    // note came back as Null and broke vault_move/rename (bao 2026-07-04 endpoint
-    // sweep). A non-null, non-object value (a stray string/number) is still an
-    // error — that is genuinely malformed input.
-    if value.is_null() {
-        return Ok(String::new());
+    // TOLERANT WRITER (bao 2026-07-04, ledger-driven: vault_write was ~64% failing
+    // on "frontmatter must be a JSON object"). The note body is the user's real
+    // content — NEVER fail the whole write because the frontmatter shape is off.
+    // Coerce what we can (an object, or a YAML/JSON STRING the LLM passed instead
+    // of an object); anything else degrades to "no frontmatter block", not an error.
+    use serde_json::Value;
+    match value {
+        // No frontmatter — empty note, or a read->write round-trip on a note that
+        // had none (split_frontmatter returns Null; move/rename/body edit).
+        Value::Null => Ok(String::new()),
+        Value::Object(obj) => {
+            if obj.is_empty() {
+                Ok(String::new())
+            } else {
+                serde_yaml::to_string(value)
+                    .map_err(|e| VaultError::InvalidFrontmatter(e.to_string()))
+            }
+        }
+        // LLMs frequently pass frontmatter as a STRING — a YAML block
+        // ("title: X\ntags: [a]") or a JSON-object string. Parse it into a map and
+        // use that; a scalar/plain string that isn't a map keeps the note with no
+        // frontmatter (drop the stray value, never fail the write).
+        Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return Ok(String::new());
+            }
+            match serde_yaml::from_str::<Value>(s) {
+                Ok(parsed) if parsed.is_object() => frontmatter_to_yaml(&parsed),
+                _ => Ok(String::new()),
+            }
+        }
+        // Arrays / numbers / bools are not a frontmatter map — degrade to no
+        // frontmatter rather than fail (the body content is what matters).
+        _ => Ok(String::new()),
     }
-    let obj = value.as_object().ok_or_else(|| {
-        VaultError::InvalidFrontmatter("frontmatter must be a JSON object".to_string())
-    })?;
-    if obj.is_empty() {
-        return Ok(String::new());
-    }
-    serde_yaml::to_string(value).map_err(|e| VaultError::InvalidFrontmatter(e.to_string()))
 }
 
 /// Split a markdown file into its frontmatter (JSON value) and body.
@@ -1060,9 +1079,28 @@ mod tests {
         assert!(entry.frontmatter.is_null());
         // The move/rename round-trip: read then write to the new path.
         write(&root, "b.md", &entry.content, &entry.frontmatter).expect("re-write null fm (move)");
-        // A genuinely malformed frontmatter (a string) is still rejected.
-        assert!(frontmatter_to_yaml(&serde_json::json!("oops")).is_err());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn tolerant_writer_coerces_llm_frontmatter_shapes() {
+        // bao 2026-07-04 (ledger: vault_write ~64% failing). NEVER fail the write
+        // because the frontmatter shape is off — the body is the user's content.
+        use serde_json::json;
+        // LLM passed a YAML STRING instead of an object → parse into a real map.
+        let yaml = frontmatter_to_yaml(&json!("title: My Note\ntags: [a, b]")).unwrap();
+        assert!(yaml.contains("title: My Note"), "YAML-string frontmatter parsed: {yaml}");
+        assert!(yaml.contains("- a"));
+        // LLM passed a JSON-object STRING → also parsed (YAML is a JSON superset).
+        let j = frontmatter_to_yaml(&json!("{\"title\":\"X\"}")).unwrap();
+        assert!(j.contains("title: X"));
+        // A normal object still works.
+        assert!(frontmatter_to_yaml(&json!({"title": "Z"})).unwrap().contains("title: Z"));
+        // Degrade-not-fail: a scalar string, an array, a number → no block, no error.
+        assert_eq!(frontmatter_to_yaml(&json!("just a title")).unwrap(), "");
+        assert_eq!(frontmatter_to_yaml(&json!(["a", "b"])).unwrap(), "");
+        assert_eq!(frontmatter_to_yaml(&json!(42)).unwrap(), "");
+        assert_eq!(frontmatter_to_yaml(&serde_json::Value::Null).unwrap(), "");
     }
 
     #[test]
