@@ -16,3 +16,9 @@ debug endpoints `GET /debug/review/pending` + `POST /debug/review/resolve`
   dev-only `/debug/irisy/turn` endpoint (isolated engine), auto-approving any
   review the turn triggers. Verifies: think -> tool selection -> review pause ->
   approve -> answer. `python3 scripts/debug/chat_turn.py "write a note saying hi"`
+
+- **`visual.mjs`** — renders the REAL React components in a browser (Vite :5173)
+  with a MOCKED Tauri IPC (`window.__TAURI_INTERNALS__`), so the review modal,
+  @-mention menu etc. render with fake data and can be screenshotted — the visual
+  layer, no desktop app. `node scripts/debug/visual.mjs` (screenshots to
+  /tmp/ctrl-debug/). Layer 2 of the harness.
