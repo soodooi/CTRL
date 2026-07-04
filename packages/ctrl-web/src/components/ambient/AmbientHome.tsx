@@ -194,6 +194,17 @@ function applyToolStep(
   return list;
 }
 
+/** A `/` slash command (ADR-005 §8.6.2 terminal command surface). `run` = an
+ *  immediate local action; `template` = prefill the composer for the user to
+ *  complete then send (a natural-language shortcut Irisy handles via its tools —
+ *  menu, not memorization). */
+interface SlashCommand {
+  cmd: string;
+  label: string;
+  template?: string;
+  run?: () => void;
+}
+
 type Surface = 'empty' | 'chat' | 'chat-part';
 
 // A sidebar tool click, forwarded from the shell. `nonce` makes each
@@ -951,6 +962,40 @@ export function AmbientHome({
     }
   }, [irisyNonce]);
 
+  // ADR-005 §8.6.2 terminal command surface — `/` slash menu + ↑/↓ history recall.
+  const [slashSel, setSlashSel] = useState(0);
+  const [histIdx, setHistIdx] = useState<number | null>(null);
+  const slashCommands: SlashCommand[] = [
+    { cmd: '/new', label: 'New conversation', run: newChat },
+    { cmd: '/table', label: 'Create a table', template: 'Create a table for ' },
+    { cmd: '/note', label: 'Write a note', template: 'Write a note: ' },
+    { cmd: '/plan', label: 'Make a plan', template: 'Make a plan for ' },
+    { cmd: '/summarize', label: 'Summarize', template: 'Summarize ' },
+    { cmd: '/search', label: 'Search my notes', template: 'Search my notes for ' },
+    { cmd: '/pack', label: 'Build a feature pack', template: 'Build a feature pack that ' },
+  ];
+  const userHistory = messages.filter((m) => m.role === 'user').map((m) => m.content);
+  const slashQuery = input.startsWith('/') && !/\s/.test(input) ? input.toLowerCase() : null;
+  const slashMatches = slashQuery
+    ? slashCommands.filter((c) => c.cmd.startsWith(slashQuery))
+    : [];
+  const slashOpen = slashMatches.length > 0;
+  const slashActive = Math.min(slashSel, Math.max(0, slashMatches.length - 1));
+  const applySlash = (c: SlashCommand): void => {
+    setHistIdx(null);
+    setSlashSel(0);
+    if (c.run) {
+      setInput('');
+      c.run();
+    } else {
+      setInput(c.template ?? `${c.cmd} `);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        autoGrow();
+      });
+    }
+  };
+
   const composer = (
     <form
       className={styles.composer}
@@ -959,6 +1004,27 @@ export function AmbientHome({
         void send(input);
       }}
     >
+      {/* `/` slash menu — filterable, teaches its own commands (ADR-005 §8.6.2). */}
+      {slashOpen && (
+        <div className={styles.slashMenu} role="listbox">
+          {slashMatches.map((c, i) => (
+            <button
+              type="button"
+              key={c.cmd}
+              className={styles.slashItem}
+              data-sel={i === slashActive ? 'yes' : 'no'}
+              onMouseEnter={() => setSlashSel(i)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applySlash(c);
+              }}
+            >
+              <span className={styles.slashCmd}>{c.cmd}</span>
+              <span className={styles.slashLabel}>{c.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <textarea
         ref={inputRef}
         className={styles.input}
@@ -967,12 +1033,64 @@ export function AmbientHome({
         placeholder="Ask Irisy, or pick something above…"
         onChange={(e) => {
           setInput(e.target.value);
+          setHistIdx(null);
+          setSlashSel(0);
           autoGrow();
         }}
         onKeyDown={(e) => {
           if (isImeComposing(e)) return;
+          // Slash menu navigation (ADR-005 §8.6.2).
+          if (slashOpen) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setSlashSel((s) => (s + 1) % slashMatches.length);
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setSlashSel((s) => (s - 1 + slashMatches.length) % slashMatches.length);
+              return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              const chosen = slashMatches[slashActive];
+              if (chosen) applySlash(chosen);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setInput('');
+              return;
+            }
+          }
+          // ↑/↓ history recall — walk previous inputs when the caret is at the
+          // very start (so multi-line editing still works normally).
+          const ta = e.currentTarget;
+          const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
+          if (!slashOpen && userHistory.length > 0 && e.key === 'ArrowUp' && (input === '' || atStart)) {
+            e.preventDefault();
+            const next = histIdx === null ? userHistory.length - 1 : Math.max(0, histIdx - 1);
+            setHistIdx(next);
+            setInput(userHistory[next] ?? '');
+            requestAnimationFrame(autoGrow);
+            return;
+          }
+          if (!slashOpen && histIdx !== null && e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (histIdx >= userHistory.length - 1) {
+              setHistIdx(null);
+              setInput('');
+            } else {
+              const next = histIdx + 1;
+              setHistIdx(next);
+              setInput(userHistory[next] ?? '');
+            }
+            requestAnimationFrame(autoGrow);
+            return;
+          }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            setHistIdx(null);
             void send(input);
           }
         }}

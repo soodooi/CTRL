@@ -1456,6 +1456,51 @@
   to { transform: rotate(360deg); }
 }
 
+/* ADR-005 §8.6.2 terminal command surface — the `/` slash menu above the
+   composer. Filterable, teaches its own commands (shortcut hint on each row). */
+.slashMenu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--color-bg-l0, #fff);
+  border: 1px solid var(--color-border-soft, #e5e5ea);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+  z-index: 20;
+}
+.slashItem {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.slashItem[data-sel='yes'] {
+  background: color-mix(in srgb, var(--color-primary, #0d9488) 12%, transparent);
+}
+.slashCmd {
+  font-family: var(--font-mono, 'SF Mono', monospace);
+  font-size: 13px;
+  color: var(--color-primary, #0d9488);
+  min-width: 92px;
+}
+.slashLabel {
+  font-size: 13px;
+  color: var(--color-text, #1d1d1f);
+}
+
 /* ADR-005 §8.6 — the engine's reasoning trace (see it think), collapsed by
    default so the answer stays front-and-centre for non-technical users. */
 .reasoning {

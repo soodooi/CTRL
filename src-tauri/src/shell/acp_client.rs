@@ -268,7 +268,12 @@ shows what is already installed; a deeper create-feature-pack skill exists \
 (skills_list / skill_view) if you need more detail. \
 Your long-term memory is the user's SOUL.md (ADR-005 irisy v5 §6.3): read it and \
 persist durable facts THERE via the ctrl soul/memory tools, not in your own \
-private store, so the chat and agent paths share one memory and never drift.]";
+private store, so the chat and agent paths share one memory and never drift. \
+REVIEW GATE (ADR-002 §264): high-blast writes you make (creating/updating/deleting \
+notes, tables, rows, fields; sending; publishing; installing packs) pause for the \
+user's one-tap approval — this is normal and by design (their data sovereignty). \
+Proceed to the write as usual; if a call comes back denied, the user declined it \
+— acknowledge and adjust, do not silently retry the same write.]";
 
 /// Process-wide persistent client. `None` until the first turn starts it;
 /// reset to `None` on any error so the next turn restarts cleanly.
