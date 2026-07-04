@@ -35,11 +35,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: install + typecheck
-        working-directory: packages/ctrl-web
+      - name: install (root workspaces) + typecheck
         run: |
-          npm ci --ignore-scripts
-          npx tsc --noEmit
+          npm ci
+          cd packages/ctrl-web && npx tsc --noEmit
 
   # --- live smoke: boot the headless kernel + run the master test's Part A ---
   # Opt-in (nightly / manual), NOT a per-push blocker: it needs a running kernel
