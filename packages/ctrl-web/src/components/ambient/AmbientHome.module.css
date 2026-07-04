@@ -1534,6 +1534,30 @@
   display: flex;
   flex-direction: column;
 }
+
+/* Blocks (ADR-005 §8.6.2) — a per-turn action row, revealed on hover so an
+   addressable turn can be acted on (re-run) without cluttering the transcript. */
+.blockActions {
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity var(--duration-fast, 120ms) ease;
+}
+.msg:hover .blockActions {
+  opacity: 1;
+}
+.blockAction {
+  padding: 2px 9px;
+  border: 1px solid var(--color-border-soft, #e5e5ea);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-bg-l0, #fff);
+  color: var(--color-text-muted, #6e6e73);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.blockAction:hover {
+  border-color: var(--color-primary, #0d9488);
+  color: var(--color-primary, #0d9488);
+}
 .statusLine {
   display: flex;
   align-items: center;

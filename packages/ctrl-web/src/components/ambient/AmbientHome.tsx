@@ -1035,6 +1035,8 @@ export function AmbientHome({
   // ADR-005 §8.6.2 terminal command surface — `/` slash menu + ↑/↓ history recall.
   const [slashSel, setSlashSel] = useState(0);
   const [histIdx, setHistIdx] = useState<number | null>(null);
+  // `:` jump — go to a module workspace (Notes / Tables / Coding / Today / chat).
+  const [jumpSel, setJumpSel] = useState(0);
   // `@`-mention — reference a note / table (fetched once; filtered as you type).
   const [mentionSel, setMentionSel] = useState(0);
   const [mentionItems, setMentionItems] = useState<{ label: string; kind: string }[]>([]);
@@ -1090,8 +1092,25 @@ export function AmbientHome({
       });
     }
   };
-  // `@`-mention: the trailing `@word` at the caret (never when the slash menu is up).
-  const mentionMatch = !slashOpen ? input.match(/@([^\s@]*)$/) : null;
+  // `:` jump-to-module (a terminal go-to). Whole-input token, like the slash menu.
+  const jumpTargets: { cmd: string; label: string; go: () => void }[] = [
+    { cmd: ':chat', label: 'Conversation', go: () => setScene(null) },
+    { cmd: ':notes', label: 'Notes', go: () => setScene('notes') },
+    { cmd: ':tables', label: 'Tables', go: () => setScene('tables') },
+    { cmd: ':coding', label: 'Coding', go: () => setScene('coding') },
+    { cmd: ':today', label: 'Today', go: () => setScene('today') },
+  ];
+  const jumpQuery = input.startsWith(':') && !/\s/.test(input) ? input.toLowerCase() : null;
+  const jumpMatches = jumpQuery ? jumpTargets.filter((j) => j.cmd.startsWith(jumpQuery)) : [];
+  const jumpOpen = jumpMatches.length > 0;
+  const jumpActive = Math.min(jumpSel, Math.max(0, jumpMatches.length - 1));
+  const applyJump = (j: { go: () => void }): void => {
+    setInput('');
+    setJumpSel(0);
+    j.go();
+  };
+  // `@`-mention: the trailing `@word` at the caret (never when another menu is up).
+  const mentionMatch = !slashOpen && !jumpOpen ? input.match(/@([^\s@]*)$/) : null;
   const mentionQuery = mentionMatch ? (mentionMatch[1] ?? '').toLowerCase() : null;
   const mentionMatches =
     mentionQuery !== null
@@ -1151,6 +1170,27 @@ export function AmbientHome({
           ))}
         </div>
       )}
+      {/* `:` jump menu — go to a module workspace (ADR-005 §8.6.2). */}
+      {jumpOpen && (
+        <div className={styles.slashMenu} role="listbox">
+          {jumpMatches.map((j, i) => (
+            <button
+              type="button"
+              key={j.cmd}
+              className={styles.slashItem}
+              data-sel={i === jumpActive ? 'yes' : 'no'}
+              onMouseEnter={() => setJumpSel(i)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applyJump(j);
+              }}
+            >
+              <span className={styles.slashCmd}>{j.cmd}</span>
+              <span className={styles.slashLabel}>{j.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {/* `@`-mention menu — reference a note or table (ADR-005 §8.6.2). */}
       {mentionOpen && (
         <div className={styles.slashMenu} role="listbox">
@@ -1183,10 +1223,35 @@ export function AmbientHome({
           setHistIdx(null);
           setSlashSel(0);
           setMentionSel(0);
+          setJumpSel(0);
           autoGrow();
         }}
         onKeyDown={(e) => {
           if (isImeComposing(e)) return;
+          // `:` jump menu navigation (ADR-005 §8.6.2).
+          if (jumpOpen) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setJumpSel((s) => (s + 1) % jumpMatches.length);
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setJumpSel((s) => (s - 1 + jumpMatches.length) % jumpMatches.length);
+              return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              const chosen = jumpMatches[jumpActive];
+              if (chosen) applyJump(chosen);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setInput('');
+              return;
+            }
+          }
           // Slash menu navigation (ADR-005 §8.6.2).
           if (slashOpen) {
             if (e.key === 'ArrowDown') {
@@ -1472,7 +1537,23 @@ export function AmbientHome({
                 : null}
             </>
           ) : (
-            m.content
+            <>
+              {m.content}
+              {/* Blocks (ADR-005 §8.6.2) — an addressable turn: re-run this input
+                  (terminal `!!`). Shown on hover so it never clutters. */}
+              {!streaming && (
+                <div className={styles.blockActions}>
+                  <button
+                    type="button"
+                    className={styles.blockAction}
+                    title="Re-run this message"
+                    onClick={() => void send(m.content)}
+                  >
+                    ↻ Re-run
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
         ))
