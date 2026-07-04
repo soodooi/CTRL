@@ -190,34 +190,122 @@ const str = (v: Val): string => (typeof v === 'string' ? v : typeof v === 'boole
 const truthy = (v: Val): boolean =>
   typeof v === 'boolean' ? v : typeof v === 'number' ? v !== 0 : v !== '' && v !== 'false';
 
+// Parse a value as a JS Date; NaN-safe. A bare `YYYY-MM-DD` is built as a LOCAL
+// date (not UTC) so getDate()/getMonth() don't shift a day across timezones —
+// the classic `new Date('2026-01-15')` UTC-midnight gotcha.
+const toDate = (v: Val): Date => {
+  const s = str(v).trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return new Date(s);
+};
+const validDate = (d: Date): boolean => !Number.isNaN(d.getTime());
+// Whole days between two dates (b - a).
+const daysBetween = (a: Date, b: Date): number =>
+  Math.round((b.getTime() - a.getTime()) / 86_400_000);
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+const isoDate = (d: Date): string =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+// Per-row formula functions. NOTE: range/table functions (SUMIF, COUNTIF,
+// VLOOKUP) are intentionally NOT here — those cross rows and are served by the
+// rollup / lookup FIELD types, not a per-row cell formula. Univer's full 400+
+// engine backs the standalone `.sheet.md` spreadsheet surface (S1) for heavy
+// work; this evaluator stays synchronous + pure for grid columns (S2,
+// plan-univer-formula-augment.md).
 const FNS: Record<string, (args: Val[]) => Val> = {
+  // ── aggregation over the args passed in one call ──
   SUM: (a) => a.reduce<number>((s, x) => s + num(x), 0),
   AVG: (a) => (a.length ? a.reduce<number>((s, x) => s + num(x), 0) / a.length : 0),
   AVERAGE: (a) => (a.length ? a.reduce<number>((s, x) => s + num(x), 0) / a.length : 0),
   MIN: (a) => (a.length ? Math.min(...a.map(num)) : 0),
   MAX: (a) => (a.length ? Math.max(...a.map(num)) : 0),
-  COUNT: (a) => a.filter((x) => str(x) !== '').length,
+  COUNT: (a) => a.filter((x) => str(x) !== '' && !Number.isNaN(Number(str(x)))).length,
+  COUNTA: (a) => a.filter((x) => str(x) !== '').length,
+  PRODUCT: (a) => a.reduce<number>((s, x) => s * num(x), 1),
+  MEDIAN: (a) => {
+    const xs = a.map(num).sort((x, y) => x - y);
+    if (!xs.length) return 0;
+    const mid = Math.floor(xs.length / 2);
+    return xs.length % 2 ? (xs[mid] as number) : ((xs[mid - 1] as number) + (xs[mid] as number)) / 2;
+  },
+  // ── math ──
   ROUND: (a) => {
     const m = 10 ** num(a[1] ?? 0);
     return Math.round(num(a[0] ?? 0) * m) / m;
   },
+  ROUNDUP: (a) => {
+    const m = 10 ** num(a[1] ?? 0);
+    return Math.ceil(num(a[0] ?? 0) * m) / m;
+  },
+  ROUNDDOWN: (a) => {
+    const m = 10 ** num(a[1] ?? 0);
+    return Math.trunc(num(a[0] ?? 0) * m) / m;
+  },
   CEILING: (a) => Math.ceil(num(a[0] ?? 0)),
   FLOOR: (a) => Math.floor(num(a[0] ?? 0)),
+  INT: (a) => Math.floor(num(a[0] ?? 0)),
+  TRUNC: (a) => Math.trunc(num(a[0] ?? 0)),
   ABS: (a) => Math.abs(num(a[0] ?? 0)),
+  SIGN: (a) => Math.sign(num(a[0] ?? 0)),
   MOD: (a) => num(a[0] ?? 0) % num(a[1] ?? 1),
   POWER: (a) => num(a[0] ?? 0) ** num(a[1] ?? 0),
+  SQRT: (a) => Math.sqrt(num(a[0] ?? 0)),
+  EXP: (a) => Math.exp(num(a[0] ?? 0)),
+  LN: (a) => Math.log(num(a[0] ?? 0)),
+  LOG10: (a) => Math.log10(num(a[0] ?? 0)),
+  LOG: (a) => (a[1] == null ? Math.log10(num(a[0] ?? 0)) : Math.log(num(a[0] ?? 0)) / Math.log(num(a[1]))),
+  // ── logical ──
   IF: (a) => (truthy(a[0] ?? false) ? (a[1] ?? '') : (a[2] ?? '')),
+  IFS: (a) => {
+    for (let i = 0; i + 1 < a.length; i += 2) if (truthy(a[i] ?? false)) return a[i + 1] ?? '';
+    return '';
+  },
+  SWITCH: (a) => {
+    const target = str(a[0] ?? '');
+    for (let i = 1; i + 1 < a.length; i += 2) if (str(a[i] ?? '') === target) return a[i + 1] ?? '';
+    // Odd trailing arg = default.
+    return (a.length - 1) % 2 === 1 ? (a[a.length - 1] ?? '') : '';
+  },
   AND: (a) => a.every(truthy),
   OR: (a) => a.some(truthy),
+  XOR: (a) => a.filter(truthy).length % 2 === 1,
   NOT: (a) => !truthy(a[0] ?? false),
+  ISBLANK: (a) => str(a[0] ?? '') === '',
+  ISNUMBER: (a) => str(a[0] ?? '') !== '' && !Number.isNaN(Number(str(a[0] ?? ''))),
+  // ── text ──
   CONCATENATE: (a) => a.map(str).join(''),
   CONCAT: (a) => a.map(str).join(''),
+  TEXTJOIN: (a) => a.slice(2).map(str).filter((s) => !truthy(a[1] ?? true) || s !== '').join(str(a[0] ?? '')),
   LEN: (a) => str(a[0] ?? '').length,
   UPPER: (a) => str(a[0] ?? '').toUpperCase(),
   LOWER: (a) => str(a[0] ?? '').toLowerCase(),
+  PROPER: (a) => str(a[0] ?? '').replace(/\b\w/g, (c) => c.toUpperCase()),
   TRIM: (a) => str(a[0] ?? '').trim(),
   LEFT: (a) => str(a[0] ?? '').slice(0, num(a[1] ?? 1)),
   RIGHT: (a) => str(a[0] ?? '').slice(-num(a[1] ?? 1)),
+  MID: (a) => str(a[0] ?? '').slice(num(a[1] ?? 1) - 1, num(a[1] ?? 1) - 1 + num(a[2] ?? 0)),
+  FIND: (a) => str(a[1] ?? '').indexOf(str(a[0] ?? '')) + 1,
+  SUBSTITUTE: (a) => str(a[0] ?? '').split(str(a[1] ?? '')).join(str(a[2] ?? '')),
+  REPT: (a) => str(a[0] ?? '').repeat(Math.max(0, num(a[1] ?? 0))),
+  VALUE: (a) => num(a[0] ?? 0),
+  // ── date (per-row, deterministic given the args; TODAY reads the clock) ──
+  TODAY: () => isoDate(new Date()),
+  DATE: (a) => isoDate(new Date(num(a[0] ?? 0), num(a[1] ?? 1) - 1, num(a[2] ?? 1))),
+  YEAR: (a) => (validDate(toDate(a[0] ?? '')) ? toDate(a[0] ?? '').getFullYear() : 0),
+  MONTH: (a) => (validDate(toDate(a[0] ?? '')) ? toDate(a[0] ?? '').getMonth() + 1 : 0),
+  DAY: (a) => (validDate(toDate(a[0] ?? '')) ? toDate(a[0] ?? '').getDate() : 0),
+  WEEKDAY: (a) => (validDate(toDate(a[0] ?? '')) ? toDate(a[0] ?? '').getDay() + 1 : 0),
+  DATEDIF: (a) => {
+    const d0 = toDate(a[0] ?? '');
+    const d1 = toDate(a[1] ?? '');
+    if (!validDate(d0) || !validDate(d1)) return 0;
+    const unit = str(a[2] ?? 'D').toUpperCase();
+    if (unit === 'Y') return d1.getFullYear() - d0.getFullYear();
+    if (unit === 'M') return (d1.getFullYear() - d0.getFullYear()) * 12 + (d1.getMonth() - d0.getMonth());
+    return daysBetween(d0, d1);
+  },
+  // ── constants ──
   TRUE: () => true,
   FALSE: () => false,
   PI: () => Math.PI,

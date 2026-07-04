@@ -69,6 +69,13 @@ export default defineConfig({
       workbox: {
         // Skip the kernel WS bridge (different origin/scheme in production tunnels)
         navigateFallbackDenylist: [/^\/ws/],
+        // Heavy, on-demand chunks must NOT be precached — they load over the
+        // network only when their surface is opened, keeping the critical-path
+        // shell small (ADR-003 ≤200KB). The vendored notes-ui (BlockNote + wasm)
+        // and the Univer spreadsheet engine (~5.6MB) are the offenders; without
+        // this, workbox errors on the 2MB precache limit at build time.
+        globIgnores: ['**/notes-ui/**', '**/UniverSheetViewer-*.js'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,

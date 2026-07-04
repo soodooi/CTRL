@@ -109,6 +109,14 @@ const SmartTableViewer = lazy(() =>
     default: m.SmartTableViewer,
   })),
 );
+// Univer spreadsheet viewer — Excel-style free grid + 400+ formula functions
+// (plan-univer-formula-augment.md S1). Heavy: its own chunk, loaded only when
+// a `.sheet.md` file is opened, never on the critical path.
+const UniverSheetViewer = lazy(() =>
+  import('@/components/viewers/UniverSheetViewer').then((m) => ({
+    default: m.UniverSheetViewer,
+  })),
+);
 
 /**
  * Content-type → lazy viewer. Aliases: any image/* uses ImageViewer; any
@@ -127,6 +135,8 @@ const VIEWERS: Record<string, LazyViewer> = {
   // identity declared by the module, src/modules/smart-table.ts). File on disk
   // is still markdown (vim test).
   [SMART_TABLE_CONTENT_TYPE]: SmartTableViewer,
+  // Univer spreadsheet — `<name>.sheet.md` (Univer snapshot JSON in the body).
+  'application/vnd.ctrl.univer-sheet': UniverSheetViewer,
   // Binary
   'application/pdf': PdfViewer,
   // Code (generic — registers individual lang aliases below)

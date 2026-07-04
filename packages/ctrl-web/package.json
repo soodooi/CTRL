@@ -1,6 +1,6 @@
 {
   "name": "@ctrl/web",
-  "version": "0.1.820",
+  "version": "0.1.822",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -39,6 +39,7 @@
     "@uiw/react-codemirror": "^4.25.10",
     "@univerjs/core": "^0.25.1",
     "@univerjs/engine-formula": "^0.25.1",
+    "@univerjs/presets": "^0.25.1",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "@xyflow/react": "^12.11.0",
