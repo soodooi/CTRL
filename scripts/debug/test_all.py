@@ -8,7 +8,7 @@
 import json, urllib.request, os, re, sys, time, threading
 TOKEN = open(os.path.expanduser("~/.ctrl/state/gate-token")).read().strip()
 AUTH = "Bearer " + TOKEN
-BASE = "http://127.0.0.1:17873"
+BASE = os.environ.get("CTRL_GATE_BASE", "http://127.0.0.1:17873")
 
 # ---- transports ----
 def _http(path, data=None, timeout=180):
