@@ -14,7 +14,17 @@ related:
 
 # Irisy 能力清单 + 资源清单
 
-> **两个大脑面**：① **CTRL gate（:17873）工具** = Irisy 够得着的 CTRL 本地能力（40 个精选,BRAIN_TOOLSET）② **Hermes 原生** = 大脑自带的通用工具 + 平台（~71 工具 + skills-hub/mcp-catalog/memory/curator）。建包能力 = 两面合起来。
+> **两个大脑面**：① **CTRL gate（:17873）工具** = **~100 个真实注册**（不是早先说的 76——那是过滤视图）② **Hermes 原生** = 大脑自带（~71 工具 + skills-hub/mcp-catalog/memory/curator）。建包能力 = 两面合起来。
+
+## ★ 修正 + 工具发现层（2026-07-04）
+
+早先本文说 76 端点 / Irisy 见 40 —— **两处不准**：
+- **真实注册 ~100 个**（vault 32 / smart 17 / mcp 12 / note 8 / task 6 / source 3 连接器 / http / calendar / discover / web…）。76 是 pwa 某个 intent 的过滤视图。
+- **Irisy 默认只见 ~42**（BRAIN_TOOLSET,含新加的 2 元工具),但**全 ~100 现在都够得着** —— 通过**工具发现层**（本日落地,commit cf3a811）:
+  - `gate_tool_search(query)` → 搜全 ~100 的任何工具（名+描述+schema）
+  - `gate_tool_call(name, args)` → 调任何一个（走正常 dispatch,权限+审计照旧）
+- **建包关键工具**（`mcp_pack_scaffold`/`validate`/`publish`、`source_*` 连接器、`http_*`、`mcp_proxy_call_tool`)早先"被藏",**现在经工具发现层全部可达**。建包 skill(create-feature-pack)已进 ctrl-skills 并引用它们。
+- **结论更新**:建包**资源够 + 现在够得到 + 有 research-first skill 引导**。三缺口都补上了。
 
 ## A. Irisy 的 CTRL gate 工具（40 个，实测 caller=hermes）
 
