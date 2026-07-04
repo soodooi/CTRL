@@ -4046,11 +4046,19 @@ impl ServerHandler for KernelMcpRouter {
             Err(e) if denied => ("denied", Some(e.to_string())),
             Err(e) => ("error", Some(e.to_string())),
         };
-        if let Err(e) = self
-            .runtime
-            .event_store
-            .record_call(&gate_req, outcome, detail.as_deref())
-        {
+        // S2 (plan-agent-observability.md): capture the tool's RESULT for the
+        // trace (serialized CallToolResult; truncated in record_call). On error
+        // the detail already carries the message, so leave result None.
+        let result_text: Option<String> = match &result {
+            Ok(r) => serde_json::to_string(r).ok(),
+            Err(_) => None,
+        };
+        if let Err(e) = self.runtime.event_store.record_call(
+            &gate_req,
+            outcome,
+            detail.as_deref(),
+            result_text.as_deref(),
+        ) {
             tracing::warn!(tool = %tool_name, error = %e, "audit ledger write failed");
         }
 
