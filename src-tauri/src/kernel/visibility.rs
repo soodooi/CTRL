@@ -127,6 +127,20 @@ pub const BRAIN_TOOLSET: &[&str] = &[
     "mcp_pack_uninstall",
     "mcp_pack_write_file",
     "mcp_list_servers",
+    // Structured data — BUILD + edit smart-tables and multi-sheet bases. These
+    // are creation tools (peers of the pack suite): without them the brain can
+    // only READ tables and hallucinates a hand-write-the-frontmatter workaround
+    // (bao 2026-07-04: Irisy hand-wrote a CRM + hit "frontmatter must be a JSON
+    // object" because base_scaffold/create/produce were not in its toolset — the
+    // exact 2026-06-28 failure mode this list exists to prevent). High in the
+    // list so the model cap can never truncate the build capability.
+    "smart_table_base_scaffold",
+    "smart_table_create",
+    "smart_table_produce",
+    "smart_table_append_row",
+    "smart_table_batch_append_rows",
+    "smart_table_describe",
+    "smart_table_query",
     // Core vault — Irisy as the notes / knowledge companion.
     "vault_read",
     "vault_write",
@@ -149,9 +163,6 @@ pub const BRAIN_TOOLSET: &[&str] = &[
     // so the promise was a lie. In the core group so the cap can't truncate them.
     "irisy_soul_get",
     "irisy_soul_set",
-    // Structured data.
-    "smart_table_describe",
-    "smart_table_query",
     // LifeOS tasks (Phase 1) — Irisy as the life/task companion. Create + query
     // + complete so it can actually manage a task list, not just read one.
     "task_describe",
@@ -557,19 +568,26 @@ mod tests {
             "mcp_pack_run",
             "mcp_pack_uninstall",
             "mcp_pack_write_file",
+            // Smart-table BUILD suite — the brain must be able to build tables +
+            // bases, not just read them (bao 2026-07-04 regression guard).
+            "smart_table_base_scaffold",
+            "smart_table_create",
+            "smart_table_produce",
         ] {
             assert!(
                 brain_tool_rank(must).is_some(),
                 "{must} missing from BRAIN_TOOLSET — brain can't create packs"
             );
         }
-        // Fits under the brain's tool cap. Ceiling rose to 36 as the LifeOS task
-        // suite (describe/query/create/update) joined the core set (GOAL Phase 1
-        // — Irisy as the life/task companion) — still far under the ~60 where
-        // listing truncates destructively, and the niche tools sit at the tail so
-        // any runtime cap trims those, never the creation/memory/task core.
+        // Fits under the brain's tool cap. Ceiling rose to 40 as the smart-table
+        // BUILD suite (base_scaffold/create/produce/append/batch) joined the core
+        // set (bao 2026-07-04 — Irisy could only read tables and hand-wrote a CRM;
+        // building tables/bases is a peer of the pack-creation killer capability).
+        // Still far under the ~60 where listing truncates destructively, and the
+        // niche tools sit at the tail so any runtime cap trims those, never the
+        // creation/build core (which sits high and survives).
         assert!(
-            BRAIN_TOOLSET.len() <= 36,
+            BRAIN_TOOLSET.len() <= 40,
             "BRAIN_TOOLSET is {} tools, over the brain cap",
             BRAIN_TOOLSET.len()
         );
