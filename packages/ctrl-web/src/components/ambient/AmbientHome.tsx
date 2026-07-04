@@ -392,6 +392,9 @@ export function AmbientHome({
   const [irisyWidth, setIrisyWidth] = useState(440);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // ADR-005 §8.6.2 output-routing — note-write tool_call_id → path, so we can
+  // auto-open the note the moment its write completes (post review-gate).
+  const pendingNoteWrites = useRef<Map<string, string>>(new Map());
 
   // Keep the newest message pinned to the bottom. The stream loop scrolls on
   // each token, but segment gaps (tool calls), the trailing "working" row, and
@@ -645,6 +648,24 @@ export function AmbientHome({
         // turn's step list so the user sees Irisy's work live (drill-down §6).
         if (typeof chunk !== 'string' && chunk?.tool) {
           const step = chunk.tool;
+          // ADR-005 §8.6.2 output-routing — AUTO-open a note Irisy writes (no
+          // manual click): remember the path on the `call`, and the moment the
+          // write COMPLETES (post-approval), route the workspace to that note.
+          if (step.phase === 'call' && /vault_write|doc_produce|note_/.test(step.title)) {
+            const p = extractNotePath(step.input);
+            if (p && !/\.sheet\.md$/.test(p) && !p.startsWith('tables/')) {
+              pendingNoteWrites.current.set(step.tool_call_id, p);
+            }
+          }
+          if (step.phase === 'result') {
+            const p = pendingNoteWrites.current.get(step.tool_call_id);
+            if (p) {
+              pendingNoteWrites.current.delete(step.tool_call_id);
+              // Only when the write actually landed (approved, not denied/failed).
+              const denied = /denied|declined|not approved|rejected/i.test(step.output ?? '');
+              if (step.status !== 'failed' && !denied) openNoteInWorkspace(p);
+            }
+          }
           setMessages((prev) =>
             prev.map((m) =>
               m.id === asstId ? { ...m, tools: applyToolStep(m.tools, step) } : m,
