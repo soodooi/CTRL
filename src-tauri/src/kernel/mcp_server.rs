@@ -4085,11 +4085,14 @@ impl ServerHandler for KernelMcpRouter {
         // injection), and approval arrives out-of-band via the Tauri command
         // surface the external brain can't reach. Opt-in (CTRL_REVIEW_GATE=1)
         // until the PWA approval modal is wired; fail-closed on timeout.
-        // Scope to EXTERNAL callers (the BYO-CLI brain): first-party app
-        // surfaces (pwa/irisy/hermes) are CTRL's own and not the C3 threat.
+        // Scope to autonomous BRAINS (hermes + BYO-CLI): their high-blast writes
+        // are reviewed. Only USER SURFACES (pwa/irisy — the human acting directly)
+        // are exempt (ADR-002 §264 / ADR-006 §4, amended 2026-07-04 — bao chose B:
+        // hermes is an injectable LLM, so the moat covers it too, not just the
+        // external C3 threat).
         let needs_review = !denied
             && review_gate::ReviewGate::enforcing()
-            && !visibility::is_first_party(gate_req.caller())
+            && !visibility::is_user_surface(gate_req.caller())
             && review_gate::requires_review(&tool_name);
         let review_denied = if needs_review {
             let summary = summarize_args(request.arguments.as_ref());

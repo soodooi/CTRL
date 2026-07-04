@@ -93,6 +93,18 @@ pub fn is_first_party(caller: &str) -> bool {
     matches!(caller, "pwa" | "irisy" | "hermes")
 }
 
+/// User-driven surfaces — the human acting directly through the app. Their gate
+/// calls are the user's OWN intent, so they are NOT subject to the write-review
+/// gate. Everything else that reaches the gate is an autonomous BRAIN (hermes +
+/// BYO CLIs) whose high-blast writes ARE reviewed (ADR-002 §264 / ADR-006 §4,
+/// amended 2026-07-04 — bao chose B: the moat covers hermes too, since it is an
+/// LLM that can be prompt-injected via notes/web/connector data). Distinct from
+/// `is_first_party` (which stays {pwa,irisy,hermes} for intent projection + net
+/// allowlist); only the review gate uses THIS narrower user-surface predicate.
+pub fn is_user_surface(caller: &str) -> bool {
+    matches!(caller, "pwa" | "irisy")
+}
+
 /// The embedded brain (hermes) surfaces at most ~25 tools to the model and
 /// arbitrarily truncates the rest by list order. The first-party domain set
 /// projects ~60 tools (the `vault` domain alone is ~35), so that truncation
@@ -383,6 +395,18 @@ impl Intent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_surface_excludes_brains() {
+        // User-driven surfaces — their gate calls are the user's own intent.
+        assert!(is_user_surface("pwa"));
+        assert!(is_user_surface("irisy"));
+        // Autonomous brains (prompt-injectable) are NOT user surfaces → their
+        // high-blast writes go through the review gate (ADR-002 §264, B).
+        for b in ["hermes", "byo-cli", "external", "codex", "claude-code"] {
+            assert!(!is_user_surface(b), "{b} is a brain, must be reviewed");
+        }
+    }
 
     #[test]
     fn domain_classification_covers_every_tool_family() {
