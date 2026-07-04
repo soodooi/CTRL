@@ -1026,7 +1026,7 @@ dependencies = [
 
 [[package]]
 name = "ctrl"
-version = "0.1.858"
+version = "0.1.859"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
