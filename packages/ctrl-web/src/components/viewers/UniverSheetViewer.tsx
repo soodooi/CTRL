@@ -94,7 +94,11 @@ export function UniverSheetViewer({ resource }: ViewerProps): ReactElement {
           locale: LocaleType.EN_US,
           locales: { [LocaleType.EN_US]: mergeLocales(sheetsCoreEnUS) },
           theme: CTRL_THEME,
-          presets: [UniverSheetsCorePreset({ container })],
+          // 'collapsed' = a single compact toolbar row instead of the default
+          // classic Office ribbon (groups-on-top + toolbar-below) — matches
+          // CTRL's minimal density so the sheet reads less like a foreign Office
+          // app (plan-tables-workspace-ux.md T3).
+          presets: [UniverSheetsCorePreset({ container, ribbonType: 'collapsed' })],
         });
         univerRef.current = univer;
         apiRef.current = univerAPI;

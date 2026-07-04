@@ -23,6 +23,10 @@ export interface SmartTableEntry {
   path: string;
   title: string;
   fields: number;
+  /** Saved views (name + kind) so the tree can nest them under the table
+   *  (Feishu spine model, plan-tables-workspace-ux.md T1). Empty = no declared
+   *  views, so the tree shows just the table leaf. */
+  views: Array<{ name: string; kind: string }>;
 }
 
 /** Scan the vault for markdown files carrying a `schema:` frontmatter block. */
@@ -37,10 +41,18 @@ export const listSmartTables = async (): Promise<SmartTableEntry[]> => {
     if (!path.startsWith('tables/')) continue;
     try {
       const entry = await vaultRead(path);
-      const fm = entry.frontmatter as { schema?: unknown[]; title?: unknown };
+      const fm = entry.frontmatter as { schema?: unknown[]; title?: unknown; views?: unknown };
       if (isSmartTableFrontmatter(fm)) {
         const title = typeof fm.title === 'string' && fm.title.trim() ? fm.title : path.replace(/\.md$/i, '');
-        entries.push({ path, title, fields: fm.schema?.length ?? 0 });
+        const views = Array.isArray(fm.views)
+          ? (fm.views as Array<Record<string, unknown>>)
+              .filter((v) => v && typeof v === 'object')
+              .map((v) => ({
+                kind: typeof v.kind === 'string' ? v.kind : 'grid',
+                name: typeof v.name === 'string' && v.name.trim() ? v.name : String(v.kind ?? 'view'),
+              }))
+          : [];
+        entries.push({ path, title, fields: fm.schema?.length ?? 0, views });
       }
     } catch {
       // Unreadable file — skip, not fatal for a read-only scan.

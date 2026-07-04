@@ -448,13 +448,26 @@ export function AmbientHome({
         });
       }
       if (scene === 'tables' && activeTablePath) {
-        ambient.push({
-          role: 'system',
-          content:
-            `Ambient context: the user is viewing the smart table at "${activeTablePath}". ` +
-            `When they ask to filter / sort / group / AI-fill a column / add a row / edit "this table" ` +
-            `(or refer to it without naming a file), call the smart_table.* gate tools with path="${activeTablePath}".`,
-        });
+        if (activeTablePath.toLowerCase().endsWith('.sheet.md')) {
+          ambient.push({
+            role: 'system',
+            content:
+              `Ambient context: the user is viewing the Univer spreadsheet at "${activeTablePath}" ` +
+              `(an Excel-style free grid with 400+ formulas, stored as a workbook snapshot in the .sheet.md body). ` +
+              `When they refer to "this sheet" / a cell / a formula, act on that file; it is NOT a smart-table, ` +
+              `so smart_table.* tools do not apply — read/edit it via the vault tools on that path.`,
+          });
+        } else {
+          ambient.push({
+            role: 'system',
+            content:
+              `Ambient context: the user is viewing the smart table at "${activeTablePath}". ` +
+              `It may have SAVED VIEWS (each a lens = filter + sort + group); before acting on "this view" or ` +
+              `a filtered subset, query the table through the gate to see its current rows + view state rather ` +
+              `than assuming. When they ask to filter / sort / group / AI-fill a column / add a row / edit ` +
+              `"this table" (or refer to it without naming a file), call the smart_table.* gate tools with path="${activeTablePath}".`,
+          });
+        }
       }
       // Coding companion (A1/A2 eyes + B0/C1/C2): when the Coding terminal is
       // open, Irisy can SEE its recent output and should propose shell commands
