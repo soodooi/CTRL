@@ -227,6 +227,12 @@ function noteTargetsOf(tools?: ToolStepView[]): string[] {
   return [...out];
 }
 
+/** Slugify a pack/action name into a command token, e.g. "Record a trade" →
+ *  "record-a-trade" (ADR-005 §8.6.2 — registry-driven command surface). */
+function slugCmd(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'action';
+}
+
 /** A `/` slash command (ADR-005 §8.6.2 terminal command surface). `run` = an
  *  immediate local action; `template` = prefill the composer for the user to
  *  complete then send (a natural-language shortcut Irisy handles via its tools —
@@ -1062,14 +1068,44 @@ export function AmbientHome({
   const activeAgentId = useActiveAgentStore((s) => s.activeAgentId);
   const drivers = useActiveAgentStore((s) => s.drivers);
   const engineLabel = drivers.find((d) => d.id === activeAgentId)?.label ?? 'Hermes';
+  // Run an installed pack's action inline; its output lands as an assistant turn.
+  const runPackAction = (pack: FeaturePack, action: { id: string; name: string }): void => {
+    const id = `a-${Date.now()}`;
+    setMessages((prev) => [...prev, { id, role: 'assistant', content: `Running ${action.name}…` }]);
+    void runInstalledPackAction(pack.id, action.id)
+      .then((out) =>
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, content: out.trim() || `${action.name} done.` } : m)),
+        ),
+      )
+      .catch((e: unknown) =>
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === id
+              ? {
+                  ...m,
+                  content: `Could not run ${action.name}: ${e instanceof Error ? e.message : String(e)}`,
+                }
+              : m,
+          ),
+        ),
+      );
+  };
+  // ADR-005 §8.6.2 — the command surface is a MECHANISM; its entries come from the
+  // REGISTRY (installed / created / shared / downloaded feature packs), NOT a
+  // hardcoded capability list. Core ships only the generic /new; every installed
+  // pack contributes its actions automatically (download a pack → its actions
+  // appear here, zero code). Irisy's inline abilities (summarize/plan/translate)
+  // are NOT commands — you just ask (philosophy #5, AI-is-a-pipe).
   const slashCommands: SlashCommand[] = [
     { cmd: '/new', label: 'New conversation', run: newChat },
-    { cmd: '/table', label: 'Create a table', template: 'Create a table for ' },
-    { cmd: '/note', label: 'Write a note', template: 'Write a note: ' },
-    { cmd: '/plan', label: 'Make a plan', template: 'Make a plan for ' },
-    { cmd: '/summarize', label: 'Summarize', template: 'Summarize ' },
-    { cmd: '/search', label: 'Search my notes', template: 'Search my notes for ' },
-    { cmd: '/pack', label: 'Build a feature pack', template: 'Build a feature pack that ' },
+    ...installedPacks.flatMap((p) =>
+      p.actions.map((a) => ({
+        cmd: `/${slugCmd(a.name)}`,
+        label: `${a.name} · ${p.name}`,
+        run: () => runPackAction(p, a),
+      })),
+    ),
   ];
   const userHistory = messages.filter((m) => m.role === 'user').map((m) => m.content);
   const slashQuery = input.startsWith('/') && !/\s/.test(input) ? input.toLowerCase() : null;
@@ -1094,11 +1130,18 @@ export function AmbientHome({
   };
   // `:` jump-to-module (a terminal go-to). Whole-input token, like the slash menu.
   const jumpTargets: { cmd: string; label: string; go: () => void }[] = [
+    // Core module workspaces (the platform's own faces).
     { cmd: ':chat', label: 'Conversation', go: () => setScene(null) },
     { cmd: ':notes', label: 'Notes', go: () => setScene('notes') },
     { cmd: ':tables', label: 'Tables', go: () => setScene('tables') },
     { cmd: ':coding', label: 'Coding', go: () => setScene('coding') },
     { cmd: ':today', label: 'Today', go: () => setScene('today') },
+    // Installed feature packs are jumpable too (registry-driven, ADR-005 §8.6.2).
+    ...installedPacks.map((p) => ({
+      cmd: `:${slugCmd(p.name)}`,
+      label: p.name,
+      go: () => setScene(p),
+    })),
   ];
   const jumpQuery = input.startsWith(':') && !/\s/.test(input) ? input.toLowerCase() : null;
   const jumpMatches = jumpQuery ? jumpTargets.filter((j) => j.cmd.startsWith(jumpQuery)) : [];
