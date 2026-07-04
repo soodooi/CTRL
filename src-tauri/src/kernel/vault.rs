@@ -851,6 +851,16 @@ pub fn sanitize_relative_path(p: &str) -> Result<PathBuf, VaultError> {
 /// smart-table `schema:` block reads as clean YAML, not an escaped JSON string
 /// (vim test). The read side (`parse_yaml_to_json`) is the symmetric deserialize.
 fn frontmatter_to_yaml(value: &serde_json::Value) -> Result<String, VaultError> {
+    // A note may legitimately have NO frontmatter. `split_frontmatter` returns
+    // Null in that case, so a read->write round-trip (move / rename / body edit)
+    // must treat Null as "no frontmatter block", not reject it. This was the
+    // recurring "frontmatter must be a JSON object" bug: an empty-frontmatter
+    // note came back as Null and broke vault_move/rename (bao 2026-07-04 endpoint
+    // sweep). A non-null, non-object value (a stray string/number) is still an
+    // error — that is genuinely malformed input.
+    if value.is_null() {
+        return Ok(String::new());
+    }
     let obj = value.as_object().ok_or_else(|| {
         VaultError::InvalidFrontmatter("frontmatter must be a JSON object".to_string())
     })?;
@@ -1034,6 +1044,25 @@ mod tests {
         let (fm, body) = split_frontmatter("no frontmatter here\nsecond line");
         assert!(fm.is_null());
         assert!(body.starts_with("no frontmatter"));
+    }
+
+    #[test]
+    fn null_frontmatter_writes_as_no_block_not_error() {
+        // A note with no frontmatter reads back as Null; re-writing it (what
+        // move / rename / body-edit do) must NOT fail with "frontmatter must be a
+        // JSON object" (bao 2026-07-04 endpoint sweep: vault_move crashed on
+        // empty-frontmatter notes). A stray non-object frontmatter is still an
+        // error — only Null / empty-object mean "no block".
+        assert_eq!(frontmatter_to_yaml(&serde_json::Value::Null).unwrap(), "");
+        let root = fresh_tmp("fm-null");
+        write(&root, "a.md", "just body, no fm", &serde_json::Value::Null).expect("write null fm");
+        let entry = read(&root, "a.md").expect("read");
+        assert!(entry.frontmatter.is_null());
+        // The move/rename round-trip: read then write to the new path.
+        write(&root, "b.md", &entry.content, &entry.frontmatter).expect("re-write null fm (move)");
+        // A genuinely malformed frontmatter (a string) is still rejected.
+        assert!(frontmatter_to_yaml(&serde_json::json!("oops")).is_err());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
