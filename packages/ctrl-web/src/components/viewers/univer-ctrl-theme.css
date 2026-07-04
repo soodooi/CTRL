@@ -1,5 +1,5 @@
 /* Univer -> CTRL theme bridge (plan-univer-formula-augment.md B; bao 2026-07-03
-   「配色统一到 CTRL」). Univer injects its color ramps as --univer-* CSS vars on
+   "unify the palette to CTRL"). Univer injects its color ramps as --univer-* CSS vars on
    its own root at runtime; we override the PRIMARY ramp to CTRL's teal accent
    (600 = CTRL --color-primary #0D9488) so selection / active / buttons read as
    CTRL, not Univer's stock blue. Scoped to the viewer host so nothing else is
