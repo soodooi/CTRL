@@ -911,14 +911,21 @@ export function AmbientHome({
                   {m.route.label}
                 </span>
               )}
-              {m.content ? (
+              {m.content && (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {stripDetectedPart(cleanReplyText(m.content)) ||
                     'Opened in the workspace on the left →'}
                 </ReactMarkdown>
-              ) : m.id === lastAssistantId && streaming ? (
-                <div className={styles.thinking} aria-label="Irisy is thinking">
-                  <span>Irisy is thinking</span>
+              )}
+              {/* Keep the working indicator visible for the WHOLE streaming turn,
+                  not only before the first token — Irisy emits text segment by
+                  segment with tool calls in between, and the user must be able to
+                  tell it is still working vs done (bao 2026-07-04). Empty content
+                  → "thinking"; mid-output → a trailing "working" row under the
+                  text; both animate until the turn ends (streaming flips false). */}
+              {m.id === lastAssistantId && streaming ? (
+                <div className={styles.thinking} aria-label="Irisy is working">
+                  <span>{m.content.trim() ? 'Irisy is working' : 'Irisy is thinking'}</span>
                   <span className={styles.thinkingDots}>
                     <i />
                     <i />
@@ -926,7 +933,7 @@ export function AmbientHome({
                   </span>
                 </div>
               ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{'…'}</ReactMarkdown>
+                !m.content && <ReactMarkdown remarkPlugins={[remarkGfm]}>{'…'}</ReactMarkdown>
               )}
               {m.id === lastAssistantId && m.content.trim() && !streaming && (
                 <div className={styles.aiChips}>

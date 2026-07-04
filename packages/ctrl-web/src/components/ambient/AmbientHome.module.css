@@ -1353,11 +1353,12 @@
 /* Irisy thinking indicator — animated so the user isn't staring at a static
    dot during the agent's (multi-second) turn. bao 2026-06-16. */
 .thinking {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  margin-top: 6px;
   color: var(--color-text-muted, #6e6e73);
-  font-size: 14px;
+  font-size: 13px;
 }
 .thinkingDots {
   display: inline-flex;
