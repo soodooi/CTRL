@@ -7,6 +7,7 @@ import {
   vaultList,
   vaultRead,
   vaultWrite,
+  vaultDelete,
   describeSmartTable,
   querySmartTable,
 } from '@/lib/kernel';
@@ -317,6 +318,52 @@ export const reorderSheets = async (baseId: string, orderedPaths: string[]): Pro
     content: entry?.content ?? '',
     frontmatter: { ...fm, sheet_order: order },
   });
+};
+
+/** Rename a base = its display name. A folder base stores it in
+ *  tables/<id>/_base.md `name` (folder id stays stable); a flat single-sheet
+ *  base has no folder, so renaming it renames its one data-table's title. */
+export const renameBase = async (base: Base, rawName: string): Promise<void> => {
+  const name = rawName.trim();
+  if (!name) return;
+  const isFolder = base.sheets.some((s) => s.path.startsWith(`tables/${base.id}/`));
+  if (!isFolder) {
+    const only = base.sheets[0];
+    if (only) await renameSheet(only.path, name);
+    return;
+  }
+  const entry = await vaultRead(`tables/${base.id}/_base.md`).catch(() => null);
+  const fm = (entry?.frontmatter ?? {}) as Record<string, unknown>;
+  await vaultWrite({
+    path: `tables/${base.id}/_base.md`,
+    content: entry?.content ?? '',
+    frontmatter: { ...fm, name },
+  });
+};
+
+/** Delete a data-table sheet file. */
+export const deleteSheet = async (path: string): Promise<void> => {
+  await vaultDelete(path);
+};
+
+/** Duplicate a data-table sheet (schema + rows) into a sibling file, returning
+ *  the new path. Lands in the same base folder (or flat tables/). */
+export const duplicateSheet = async (path: string): Promise<string> => {
+  const entry = await vaultRead(path);
+  const fm = (entry.frontmatter ?? {}) as Record<string, unknown>;
+  const title = `${typeof fm.title === 'string' ? fm.title : path.split('/').pop()?.replace(/\.md$/i, '')} copy`;
+  const dir = path.slice(0, path.lastIndexOf('/'));
+  const slug = slugify(title) || 'copy';
+  let existing: Set<string>;
+  try {
+    existing = new Set(await vaultList());
+  } catch {
+    existing = new Set();
+  }
+  let dest = `${dir}/${slug}.md`;
+  for (let n = 2; existing.has(dest); n += 1) dest = `${dir}/${slug}-${n}.md`;
+  await vaultWrite({ path: dest, content: entry.content, frontmatter: { ...fm, title } });
+  return dest;
 };
 
 /** Create a new multi-sheet base (a folder) with a first data-table sheet. */

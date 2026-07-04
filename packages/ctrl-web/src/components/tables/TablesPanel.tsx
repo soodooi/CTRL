@@ -16,6 +16,7 @@ import {
   exportTableCsv,
   importCsv,
   listBases,
+  renameBase,
   TEMPLATES,
   type Base,
 } from '@/lib/smart-tables';
@@ -47,6 +48,17 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  // Inline base rename in the tree (double-click a base).
+  const [renaming, setRenaming] = useState<{ key: string; value: string } | null>(null);
+
+  const commitBaseRename = async (b: Base): Promise<void> => {
+    const val = renaming?.value.trim();
+    setRenaming(null);
+    if (val && val !== b.name) {
+      await renameBase(b, val);
+      await qc.invalidateQueries({ queryKey: ['bases'] });
+    }
+  };
 
   const selectedBase = (bases ?? []).find((b) => baseKey(b) === selectedKey) ?? null;
 
@@ -240,23 +252,41 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
             <div className={styles.empty}>loading…</div>
           ) : bases && bases.length > 0 ? (
             <ul className={styles.items}>
-              {bases.map((b) => (
-                <li key={baseKey(b)}>
-                  <button
-                    type="button"
-                    className={styles.item}
-                    data-active={selectedKey === baseKey(b)}
-                    onClick={() => openBase(b)}
-                    title={b.id}
-                  >
-                    <span className={styles.itemIcon}>{b.kind === 'univer' ? '▦' : '▤'}</span>
-                    <span className={styles.itemTitle}>{b.name}</span>
-                    <span className={styles.itemMeta}>
-                      {b.kind === 'univer' ? 'fx' : b.sheets.length > 1 ? `${b.sheets.length}` : ''}
-                    </span>
-                  </button>
-                </li>
-              ))}
+              {bases.map((b) =>
+                renaming?.key === baseKey(b) ? (
+                  <li key={baseKey(b)}>
+                    <input
+                      className={styles.baseRename}
+                      value={renaming.value}
+                      autoFocus
+                      onChange={(e) => setRenaming({ key: baseKey(b), value: e.target.value })}
+                      onBlur={() => void commitBaseRename(b)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void commitBaseRename(b);
+                        else if (e.key === 'Escape') setRenaming(null);
+                      }}
+                      data-testid="base-rename"
+                    />
+                  </li>
+                ) : (
+                  <li key={baseKey(b)}>
+                    <button
+                      type="button"
+                      className={styles.item}
+                      data-active={selectedKey === baseKey(b)}
+                      onClick={() => openBase(b)}
+                      onDoubleClick={() => setRenaming({ key: baseKey(b), value: b.name })}
+                      title={`${b.id} · double-click to rename`}
+                    >
+                      <span className={styles.itemIcon}>{b.kind === 'univer' ? '▦' : '▤'}</span>
+                      <span className={styles.itemTitle}>{b.name}</span>
+                      <span className={styles.itemMeta}>
+                        {b.kind === 'univer' ? 'fx' : b.sheets.length > 1 ? `${b.sheets.length}` : ''}
+                      </span>
+                    </button>
+                  </li>
+                ),
+              )}
             </ul>
           ) : (
             <div className={styles.empty}>

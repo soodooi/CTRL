@@ -284,6 +284,55 @@
   min-height: 0;
   overflow: hidden;
 }
+
+/* Sheet-tab right-click menu (Duplicate / Rename / Delete). */
+.tabMenu {
+  position: fixed;
+  z-index: 60;
+  min-width: 148px;
+  padding: 4px;
+  background: var(--surface-elevated, var(--surface-1, #fff));
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 9px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tabMenuItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text, #1a1a1a);
+  cursor: pointer;
+}
+.tabMenuItem:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+}
+.tabMenuDanger {
+  color: var(--color-danger, #d64545);
+}
+.tabMenuDanger:hover {
+  background: rgba(214, 69, 69, 0.1);
+}
+
+/* Inline base rename in the tree. */
+.baseRename {
+  width: calc(100% - 16px);
+  margin: 1px 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--primary-ring, rgba(13, 148, 136, 0.4));
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: var(--surface-1, #fff);
+  color: var(--text, #1a1a1a);
+}
 .detailEmpty {
   margin: auto;
   text-align: center;

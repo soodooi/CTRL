@@ -9,7 +9,14 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
-import { createSheetInBase, renameSheet, reorderSheets, type Base } from '@/lib/smart-tables';
+import {
+  createSheetInBase,
+  deleteSheet,
+  duplicateSheet,
+  renameSheet,
+  reorderSheets,
+  type Base,
+} from '@/lib/smart-tables';
 import styles from './TablesPanel.module.css';
 
 interface BaseViewProps {
@@ -23,9 +30,18 @@ export function BaseView({ base, onActiveSheet }: BaseViewProps): ReactElement {
   const [active, setActive] = useState<string | null>(base.sheets[0]?.path ?? null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<{ path: string; value: string } | null>(null);
+  // Right-click context menu on a tab: position + which sheet + delete-armed.
+  const [menu, setMenu] = useState<{ path: string; x: number; y: number; confirm: boolean } | null>(null);
   const dragPath = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const multi = base.sheets.length > 1;
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = (): void => setMenu(null);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menu]);
 
   // Keep the active sheet valid as the base's sheets change (add / switch base).
   useEffect(() => {
@@ -75,6 +91,21 @@ export function BaseView({ base, onActiveSheet }: BaseViewProps): ReactElement {
     await refresh();
   };
 
+  const onDuplicate = async (path: string): Promise<void> => {
+    setMenu(null);
+    const dest = await duplicateSheet(path);
+    await refresh();
+    setActive(dest);
+  };
+
+  const onDelete = async (path: string): Promise<void> => {
+    setMenu(null);
+    const remaining = base.sheets.filter((s) => s.path !== path);
+    await deleteSheet(path);
+    await refresh();
+    if (active === path) setActive(remaining[0]?.path ?? null);
+  };
+
   return (
     <div className={styles.baseView}>
       <div className={styles.sheetTabs} role="tablist" aria-label={`${base.name} data tables`}>
@@ -105,6 +136,10 @@ export function BaseView({ base, onActiveSheet }: BaseViewProps): ReactElement {
               draggable={multi}
               onClick={() => setActive(s.path)}
               onDoubleClick={() => setEditing({ path: s.path, value: s.title })}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenu({ path: s.path, x: e.clientX, y: e.clientY, confirm: false });
+              }}
               onDragStart={() => {
                 dragPath.current = s.path;
               }}
@@ -143,6 +178,51 @@ export function BaseView({ base, onActiveSheet }: BaseViewProps): ReactElement {
           <div className={styles.detailEmpty}>This base has no tables yet.</div>
         )}
       </div>
+      {menu && (
+        <div
+          className={styles.tabMenu}
+          style={{ left: menu.x, top: menu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+          role="menu"
+          data-testid="sheet-tab-menu"
+        >
+          <button
+            type="button"
+            className={styles.tabMenuItem}
+            onClick={() => void onDuplicate(menu.path)}
+          >
+            Duplicate
+          </button>
+          <button
+            type="button"
+            className={styles.tabMenuItem}
+            onClick={() => {
+              setEditing({ path: menu.path, value: base.sheets.find((s) => s.path === menu.path)?.title ?? '' });
+              setMenu(null);
+            }}
+          >
+            Rename
+          </button>
+          {menu.confirm ? (
+            <button
+              type="button"
+              className={`${styles.tabMenuItem} ${styles.tabMenuDanger}`}
+              onClick={() => void onDelete(menu.path)}
+              data-testid="sheet-delete-confirm"
+            >
+              Confirm delete
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`${styles.tabMenuItem} ${styles.tabMenuDanger}`}
+              onClick={() => setMenu({ ...menu, confirm: true })}
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
