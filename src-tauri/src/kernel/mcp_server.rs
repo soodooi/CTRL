@@ -239,6 +239,47 @@ pub struct SmartTableCreateArgs {
     pub fields: Vec<SmartTableFieldInput>,
 }
 
+/// smart_table.base_scaffold — build a whole multi-sheet BASE (Bitable) from one
+/// spec: N data-tables + reference (link) relations between them, in one atomic
+/// call (ADR-002 §14; the AI-native "build a base from a sentence" uplift). Irisy
+/// plans this spec from the user's NL, then calls it once.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct BaseScaffoldArgs {
+    /// Base display name (a folder slug is derived; the folder groups all tables).
+    pub base_name: String,
+    /// The data-tables (sheets) to create in this base (at least one).
+    pub tables: Vec<ScaffoldTable>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ScaffoldTable {
+    /// Data-table title.
+    pub name: String,
+    /// Columns (at least one).
+    pub fields: Vec<ScaffoldField>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ScaffoldField {
+    /// Schema key (lowercase, unique within the table).
+    pub key: String,
+    /// Human label.
+    pub label: String,
+    /// Cell type: text / number / date / checkbox / tags / select / url / currency …
+    #[serde(rename = "type")]
+    pub cell_type: String,
+    /// Options for a `select` / `tags` column.
+    #[serde(default)]
+    pub options: Option<Vec<String>>,
+    /// If set, this column is a REFERENCE (link) to another table in THIS base —
+    /// the value is that table's `name`. Wires the relation (cell_type is ignored).
+    #[serde(default)]
+    pub link_to: Option<String>,
+    /// For a link column: which field of the target row to display (default "name").
+    #[serde(default)]
+    pub display: Option<String>,
+}
+
 /// smart_table.batch_append_rows — produce many rows at once (ADR-002 §14; Bitable
 /// batchCreate parity).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1344,6 +1385,60 @@ impl KernelMcpRouter {
             table.reindex_into(idx, &path);
         }
         Ok(CallToolResult::success(vec![Content::text(format!("created table {path}"))]))
+    }
+
+    /// smart_table.base_scaffold — build a whole multi-sheet BASE in one atomic
+    /// call: N data-tables in `tables/<base>/` + reference (link) relations
+    /// between them + the `_base.md` manifest. The AI-native "build a base from a
+    /// sentence" uplift — Irisy plans the spec from NL, one call materializes it.
+    #[tool(
+        description = "Build a whole multi-sheet BASE (Bitable) in one call from a spec: base_name + tables[{name, fields[{key,label,type,options?, link_to?, display?}]}]. A field with link_to=<another table's name> becomes a REFERENCE (link) column wiring that relation. Creates tables/<base>/<slug>.md per table + a _base.md manifest. Use this to build a whole related-table base from a user's description in one shot; then smart_table_append_row / batch_append_rows to seed data."
+    )]
+    async fn smart_table_base_scaffold(
+        &self,
+        Parameters(args): Parameters<BaseScaffoldArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if args.tables.is_empty() {
+            return Err(McpError::invalid_params("a base needs at least one table", None));
+        }
+        for t in &args.tables {
+            if t.fields.is_empty() {
+                return Err(McpError::invalid_params(
+                    format!("table '{}' needs at least one field", t.name),
+                    None,
+                ));
+            }
+        }
+        let root = vault_root()?;
+        let base_slug = unique_base_folder(&root, &slugify(&args.base_name));
+        let (files, manifest) = scaffold_base_files(&base_slug, &args.base_name, &args.tables);
+
+        let mut created: Vec<String> = Vec::new();
+        for (path, frontmatter, body) in &files {
+            let lock = self.vault_write_lock(path).await;
+            let _write_guard = lock.lock().await;
+            vault::write(&root, path, body, frontmatter).map_err(map_vault_err)?;
+            if let Some(idx) = self.st_index.as_deref() {
+                let table = vault_smart_table::SmartTable::parse(frontmatter, body);
+                table.reindex_into(idx, path);
+            }
+            created.push(path.clone());
+        }
+
+        // Manifest: display name + sheet order (the frontend base model reads it).
+        let bpath = format!("tables/{base_slug}/_base.md");
+        {
+            let lock = self.vault_write_lock(&bpath).await;
+            let _write_guard = lock.lock().await;
+            vault::write(&root, &bpath, "", &manifest).map_err(map_vault_err)?;
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "created base '{}' ({base_slug}) with {} tables: {}",
+            args.base_name,
+            created.len(),
+            created.join(", ")
+        ))]))
     }
 
     /// smart_table.batch_append_rows — produce many rows in one write (ADR-002 §14;
@@ -4246,6 +4341,89 @@ fn slugify(name: &str) -> String {
 
 /// A free `tables/<slug>.md` path (never overwrite an existing table — append a
 /// counter, like the front end's `uniqueTablePath`).
+/// Pure builder for smart_table_base_scaffold — turns a base spec into the
+/// per-table (path, frontmatter, body) triples + the `_base.md` manifest, with
+/// link fields resolved to `type:reference` pointing at their target table's
+/// in-base path. No I/O, so it is unit-testable.
+fn scaffold_base_files(
+    base_slug: &str,
+    base_name: &str,
+    tables: &[ScaffoldTable],
+) -> (Vec<(String, serde_json::Value, String)>, serde_json::Value) {
+    // Pre-slug every table so link fields can resolve their target paths.
+    let mut slugs: Vec<String> = Vec::new();
+    for t in tables {
+        let mut s = slugify(&t.name);
+        if s.is_empty() {
+            s = format!("table{}", slugs.len() + 1);
+        }
+        let base = s.clone();
+        let mut n = 2;
+        while slugs.contains(&s) {
+            s = format!("{base}-{n}");
+            n += 1;
+        }
+        slugs.push(s);
+    }
+    let target_path = |name: &str| -> String {
+        for (t, s) in tables.iter().zip(&slugs) {
+            if t.name == name {
+                return format!("tables/{base_slug}/{s}.md");
+            }
+        }
+        format!("tables/{base_slug}/{}.md", slugify(name))
+    };
+
+    let mut files: Vec<(String, serde_json::Value, String)> = Vec::new();
+    for (t, slug) in tables.iter().zip(&slugs) {
+        let schema: Vec<serde_json::Value> = t
+            .fields
+            .iter()
+            .map(|f| {
+                let mut item = serde_json::Map::new();
+                item.insert("key".into(), serde_json::Value::String(f.key.clone()));
+                item.insert("label".into(), serde_json::Value::String(f.label.clone()));
+                if let Some(link) = &f.link_to {
+                    item.insert("type".into(), serde_json::Value::String("reference".into()));
+                    item.insert("table".into(), serde_json::Value::String(target_path(link)));
+                    let disp = f.display.clone().unwrap_or_else(|| "name".to_string());
+                    item.insert("display".into(), serde_json::Value::String(disp));
+                } else {
+                    let ct = query::CellType::parse(&f.cell_type);
+                    item.insert("type".into(), serde_json::to_value(ct).unwrap_or(serde_json::Value::Null));
+                    if let Some(opts) = &f.options {
+                        item.insert("options".into(), serde_json::json!(opts));
+                    }
+                }
+                serde_json::Value::Object(item)
+            })
+            .collect();
+        let frontmatter = serde_json::json!({ "title": t.name, "schema": schema });
+        let header = t.fields.iter().map(|f| f.label.as_str()).collect::<Vec<_>>().join(" | ");
+        let sep = t.fields.iter().map(|_| "---").collect::<Vec<_>>().join("|");
+        let body = format!("| {header} |\n|{sep}|\n");
+        files.push((format!("tables/{base_slug}/{slug}.md"), frontmatter, body));
+    }
+    let manifest = serde_json::json!({ "name": base_name, "sheet_order": slugs });
+    (files, manifest)
+}
+
+/// A free base-folder slug under tables/ (avoids an existing folder OR a flat
+/// table of the same name). Returns the slug (not a path).
+fn unique_base_folder(root: &std::path::Path, slug: &str) -> String {
+    let taken = |s: &str| root.join(format!("tables/{s}")).exists() || root.join(format!("tables/{s}.md")).exists();
+    if !taken(slug) {
+        return slug.to_string();
+    }
+    for n in 2..10_000 {
+        let candidate = format!("{slug}-{n}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+    }
+    format!("{slug}-{}", std::process::id())
+}
+
 fn unique_table_path(root: &std::path::Path, slug: &str) -> String {
     if !root.join(format!("tables/{slug}.md")).exists() {
         return format!("tables/{slug}.md");
@@ -5119,6 +5297,61 @@ mod tests {
             .unwrap_or_else(|| panic!("no schema item '{key}'"))
             .as_object()
             .unwrap()
+    }
+
+    #[test]
+    fn base_scaffold_builds_tables_with_link_relations() {
+        let tables = vec![
+            super::ScaffoldTable {
+                name: "Deals".into(),
+                fields: vec![
+                    super::ScaffoldField {
+                        key: "name".into(),
+                        label: "Deal".into(),
+                        cell_type: "text".into(),
+                        options: None,
+                        link_to: None,
+                        display: None,
+                    },
+                    super::ScaffoldField {
+                        key: "contact".into(),
+                        label: "Contact".into(),
+                        cell_type: "text".into(),
+                        options: None,
+                        link_to: Some("Contacts".into()),
+                        display: Some("name".into()),
+                    },
+                ],
+            },
+            super::ScaffoldTable {
+                name: "Contacts".into(),
+                fields: vec![super::ScaffoldField {
+                    key: "name".into(),
+                    label: "Name".into(),
+                    cell_type: "text".into(),
+                    options: None,
+                    link_to: None,
+                    display: None,
+                }],
+            },
+        ];
+        let (files, manifest) = super::scaffold_base_files("crm", "CRM", &tables);
+        // Two data-tables in the base folder.
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].0, "tables/crm/deals.md");
+        assert_eq!(files[1].0, "tables/crm/contacts.md");
+        // The link field resolved to a reference pointing at the sibling table.
+        let deals_schema = files[0].1["schema"].as_array().unwrap();
+        let contact = deals_schema.iter().find(|c| c["key"] == "contact").unwrap();
+        assert_eq!(contact["type"], "reference");
+        assert_eq!(contact["table"], "tables/crm/contacts.md");
+        assert_eq!(contact["display"], "name");
+        // A plain field stays a normal typed column.
+        let name = deals_schema.iter().find(|c| c["key"] == "name").unwrap();
+        assert_eq!(name["type"], "text");
+        // Manifest carries the display name + sheet order.
+        assert_eq!(manifest["name"], "CRM");
+        assert_eq!(manifest["sheet_order"], serde_json::json!(["deals", "contacts"]));
     }
 
     #[test]

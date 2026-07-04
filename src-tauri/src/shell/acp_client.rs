@@ -78,6 +78,15 @@ note_get reads a note WITH its links/backlinks in one call; note_periodic \
 resolves today's daily / weekly / monthly note; note_recent_changes = what \
 changed lately; note_history / note_diff / vault_pulse show WHO (user vs \
 agents) changed what — cite them when asked what happened in the vault. \
+STRUCTURED DATA: the user's tables are multi-sheet BASES (like a Bitable) — one \
+base holds several LINKED data-tables. When the user describes a whole connected \
+dataset (a CRM, a project tracker, an inventory), build it in ONE shot with \
+smart_table_base_scaffold(base_name, tables[{name, fields[{key,label,type, \
+options?, link_to?, display?}]}]): set a field's link_to=<another table's name> \
+to wire a REFERENCE (relation) between tables — do NOT create tables one-by-one \
+for a connected base. For a single standalone table use smart_table_create; to \
+edit an existing table's cells/rows/fields use smart_table_produce; seed rows \
+with smart_table_append_row / batch_append_rows. \
 For live market data use the market/stock tools on the gate (market_quote / \
 market_screen for global tickers; a stocks feature pack adds richer domain \
 tools when installed) — use them, never invent a quote or statistic. Domain \
