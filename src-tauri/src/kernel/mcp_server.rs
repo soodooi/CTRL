@@ -4352,8 +4352,29 @@ pub async fn serve(
                         }
                     }
                 }),
+            )
+            .route(
+                // Inject a credential into the vault (dev harness ONLY) so an E2E
+                // can point a connector at a MOCK upstream. The real path is the
+                // user configuring creds in Settings or `mcp_pack_provision`
+                // bringing the service up + bootstrapping — neither is reachable
+                // headless. Localhost + Bearer-gated like the rest; dormant in a
+                // release build unless CTRL_DEBUG=1 (same gate as the sibling
+                // /debug routes — `debug_assertions` is off in release).
+                "/debug/secret/set",
+                axum::routing::post(move |axum::Json(body): axum::Json<serde_json::Value>| async move {
+                    let account = body.get("account").and_then(|v| v.as_str()).unwrap_or("");
+                    let value = body.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                    if account.is_empty() {
+                        return axum::Json(serde_json::json!({ "ok": false, "error": "account required" }));
+                    }
+                    match crate::shell::credential_vault::set(account, value) {
+                        Ok(()) => axum::Json(serde_json::json!({ "ok": true })),
+                        Err(e) => axum::Json(serde_json::json!({ "ok": false, "error": e })),
+                    }
+                }),
             );
-        info!("kernel::mcp_server DEBUG endpoints enabled (/debug/review/*, /debug/irisy/turn)");
+        info!("kernel::mcp_server DEBUG endpoints enabled (/debug/review/*, /debug/irisy/turn, /debug/secret/set)");
     }
     let app = app.layer(auth_layer);
 

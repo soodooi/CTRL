@@ -1,6 +1,6 @@
 # CTRL — Claude Code Project Entry
 
-> **新 session 必读**: `vault/ctrl/architecture-byo-cli-driver.md` (架构唯一真相源, authoritative — 顶部 2026-06-18 纠正块 governing) + `.olym/decisions/INDEX.md` (7 module ADRs) + `.olym/decisions/001-spine.md` (architecture lock)
+> **新 session 必读**: `vault/ctrl/architecture-byo-cli-driver.md` (架构唯一真相源, authoritative — 顶部 2026-06-18 纠正块 governing) + `.olym/decisions/INDEX.md` (8 module ADRs) + `.olym/decisions/001-spine.md` (architecture lock)
 
 ---
 
@@ -31,7 +31,7 @@ CTRL = **AI-native ambient OS 中枢** (野心), v1 落地 = **global ambient AI
 
 bao 2026-05-25 进一步校准: **只 3 件事**:
 
-1. **ADR** — 战略决策必写 ADR (module-based, 7 个, 编号 001-007 锁死). **section amendment = bump version: + 加 changelog 行, 不开新 ADR** (PROCESS.md §1 锁). **ADR 跟最新决策有冲突立刻改**, 不留拖延 (memory `decision_pi_is_sole_brain_hermes_is_keycap` 反例: 原 ADR-019 hermes-primary 等到第二天才删 — 不允许再发生)
+1. **ADR** — 战略决策必写 ADR (module-based, 8 个, 编号 001-007 + 010 锁死). **section amendment = bump version: + 加 changelog 行, 不开新 ADR** (PROCESS.md §1 锁). **ADR 跟最新决策有冲突立刻改**, 不留拖延 (memory `decision_pi_is_sole_brain_hermes_is_keycap` 反例: 原 ADR-019 hermes-primary 等到第二天才删 — 不允许再发生)
 2. **代码** — 直接动手实施, 走 `dev-loop` skill (三层验证 + 独立 checker), 绿了就 commit
 3. **PR** — 单 branch 累积 commit, 一次性 PR → main, squash merge
 
@@ -84,9 +84,9 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 4. **One-shot, not flows** — 一个 mcp = 一个原子动作。无 wizard / 无 multi-step / 无 dialog tree。
 5. **AI 是 pipe, 不是 sidebar** — 发收消息 / 处理内容时 AI 默认 in-line 处理 (润色 / 摘要 / 抽 action item / 翻译), 可关默认开。
 6. **Transparency by drill-down** — 任何 AI / 抽象处理都可长按 / hover 看 raw 数据 (飞书原文 / AI 改后 / 本地草稿三层视图)。
-7. **CTRL 不自带通用 brain;两条并行路径,都经 `:17873` gate** *(ADR-001 spine § byo-cli-driver v8 + ADR-002 substrate § brain v28; 真相源 `vault/ctrl/architecture-byo-cli-driver.md`)*:
+7. **CTRL 不自带通用 brain;两条并行路径,都经 `:17873` gate** *(ADR-001 spine § byo-cli-driver v9 + ADR-002 substrate § brain v38; 真相源 `vault/ctrl/architecture-byo-cli-driver.md`)*:
    - **Irisy(app 内助手)的脑 = Hermes Agent** (NousResearch). CTRL bundle + lazy-install + 启动它 (dashboard `:17890`, Irisy 嵌入). **hermes 不退役.**
-   - **BYO-CLI driver(projection)= 附加并行路径** — CTRL 把工具/技能/记忆/工作流投影 (materialize) 进用户自选本地 CLI (Claude Code 旗舰) 的原生落点 (`.mcp.json` / `SKILL.md` / `CLAUDE.md`·`AGENTS.md` / slash command), CLI 启动自动发现; CTRL 不 lazy-install / 不 supervise 该 CLI 的 agent loop. 已落地 `kernel/projector.rs` (项目级 `~/Documents/CTRL/.mcp.json`).
+   - **BYO-CLI driver(projection)= 附加并行路径** — CTRL 把资产投影 (materialize) 进用户自选本地 CLI (Claude Code 旗舰) 的原生落点, CLI 启动自动发现; CTRL 不 lazy-install / 不 supervise 该 CLI 的 agent loop. **实装现状 (`kernel/projector.rs`, 落点根 `~/Documents/CTRL/`)**: tools→`.mcp.json` (写 `ctrl-kernel` gate 指针, 非逐工具展开) + memory→`AGENTS.md` (刻意不写 `CLAUDE.md`, 保持 driver-agnostic) + Codex `~/.codex/config.toml`. **未落地 (设计目标, 待 slice)**: skills→`SKILL.md` (现改走 gate 工具 `skill_list`/`skill_read`/`skill_write`) + workflows→slash command.
    - **Pi 已退役** (ADR-002 v19, 2026-06-09 PR — `@mariozechner/pi-coding-agent` + ctrl-pi-bridge / ctrl-pi-plugin / `~/.ctrl/pi/` 全删, 代码零接线). opencode 已下线 (2026-06-25, bao 裁决; 曾误接线, 已移除). ACP 降级为 future「ACP-aware CLI 增强通道」, 代码保留.
    - **调度权在 brain 手里** — CTRL 只「让 brain 看见资产 (projection)」+「调用回流经 `:17873` gate (权限/审计/可见性)」, 不编排决策 (符合 one-shot / AI-is-pipe).
 
@@ -105,7 +105,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 
 ## Architecture overview
 
-> 真相源: `vault/ctrl/architecture-byo-cli-driver.md` (governing). Spine: `.olym/decisions/001-spine.md` § byo-cli-driver (v8). INDEX = `.olym/decisions/INDEX.md` (7 module ADR).
+> 真相源: `vault/ctrl/architecture-byo-cli-driver.md` (governing). Spine: `.olym/decisions/001-spine.md` § byo-cli-driver (v9). INDEX = `.olym/decisions/INDEX.md` (8 module ADR).
 
 **CTRL = BYO-CLI driver projection 平台** (不自带通用 brain; CTRL 把本地武器库投影给 brain 看, 调用回流经 gate). 演进: Pi-centric (retired) → 3-agent aggregator (retired) → **BYO-CLI driver platform ★**.
 
@@ -114,7 +114,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 1. **Irisy 路径** — app 内助手 Irisy 的脑 = **Hermes Agent** (CTRL bundle + 启动, dashboard `:17890`, Irisy 嵌入).
 2. **BYO-CLI 路径** — 用户自选本地 CLI (Claude Code 旗舰) 当 driver; kernel `projector` 把资产物化进它的原生配置, 它启动自动发现. CTRL 不 supervise.
 
-**kernel 极薄 — 只做 4 件事**: ① `projector` (tools→`.mcp.json` / skills→`SKILL.md` / memory→`CLAUDE.md`·`AGENTS.md` / workflows→slash command, 按 intent 投影子集) ② `mcp_server :17873` = the gate (权限/审计/可见性, 工具回流落点) ③ `provider/` (fal.ai 旗舰 + Anthropic/OpenAI/Hunyuan/DeepSeek/Volc BYOK) ④ keychain.
+**kernel 极薄 — 只做 4 件事**: ① `projector` (实装: tools→`.mcp.json` gate 指针 + memory→`AGENTS.md` + Codex config; skills→`SKILL.md` / workflows→slash command 为设计目标待落地; 按 intent 投影子集) ② `mcp_server :17873` = the gate (权限/审计/可见性, 工具回流落点) ③ `provider/` (fal.ai 旗舰 + Anthropic/OpenAI/Hunyuan/DeepSeek/Volc BYOK) ④ keychain.
 
 **3-capability-face SSOT** (互补不塌缩): **MCP** (协议) + **API** (provider router, fal.ai 985 endpoints) + **Skills** (markdown `SKILL.md`).
 
@@ -122,7 +122,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 
 **4 mcp sources**: MCP servers / Big-platform OAuth / Local agents / Built-in. (ST-SS shared windows retired as a source 2026-06-25, ADR-001 spine v9 — one-way broadcast, can't do remote control; the kernel→PWA stream it named lives on as plain WS `event_ws.rs`.)
 
-物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 spine § layers v8 — BYO-CLI driver 5-块是 logical view, 4 层是 implementation view, 两图并存.
+物理 topology (L0-L3 + PWA 4 层垂直栈) 见 ADR-001 spine § layers v9 — BYO-CLI driver 5-块是 logical view, 4 层是 implementation view, 两图并存.
 
 ---
 
@@ -149,7 +149,7 @@ handoff / fleet 机制已剥离 (`vault/ctrl/harness-minimal.md`)。
 
 When you need to make any non-trivial decision:
 
-1. **Read** `.olym/decisions/INDEX.md` (1 min) — 7 module ADR map
+1. **Read** `.olym/decisions/INDEX.md` (1 min) — 8 module ADR map
 2. **Open** the relevant module ADR — § Decision + § Acceptance + § Future work
 3. **Ask** bao if conflict between ADRs or decision absent
 

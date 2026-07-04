@@ -67,7 +67,7 @@ const SYSTEM_PROMPT = ...;
 
 ## 6. INDEX.md 维护
 
-- 7 行表 (按 adr_id 升序) — 改 ADR title / status / version → 同 commit 改 INDEX
+- 8 行表 (按 adr_id 升序) — 改 ADR title / status / version → 同 commit 改 INDEX
 - "Provenance — 原 22 numbered ADR" 区永不删 (历史 audit trail)
 - 不再有 `## Reserved` 区 — 没有空号
 
