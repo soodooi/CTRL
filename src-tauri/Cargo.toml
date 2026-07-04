@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.855"
+version = "0.1.856"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -95,6 +95,7 @@ portable-pty = "0.9"
 regex = "1"
 walkdir = "2"
 notify = "8"
+agent-client-protocol = "1.0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # H-2026-05-14-002 mac/a — CGEventTap port lives in shell/hotkey.rs::mac_impl,

@@ -20,6 +20,7 @@
 // the functions ACP itself scopes out (messaging/cron) are supplied by CTRL's
 // own layers instead of hermes's upgrade-fragile internal protocol.
 
+use agent_client_protocol::schema::v1 as acp_v1;
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -74,67 +75,76 @@ pub enum AcpEvent {
     },
 }
 
-/// Extract plain text from an ACP `content` value — either an object `{type,text}`
-/// or an array of `{type:"content", content:{type,text}}` (or `{text}`) items.
-fn acp_content_text(content: &Value) -> String {
-    if let Some(t) = content.get("text").and_then(|t| t.as_str()) {
-        return t.to_string();
+/// Plain text of an ACP `ContentBlock` (only the `text` variant carries text).
+fn block_text(b: &acp_v1::ContentBlock) -> String {
+    match b {
+        acp_v1::ContentBlock::Text(t) => t.text.clone(),
+        _ => String::new(),
     }
-    if let Some(arr) = content.as_array() {
-        let mut out = String::new();
-        for item in arr {
-            let inner = item.get("content").unwrap_or(item);
-            if let Some(t) = inner.get("text").and_then(|t| t.as_str()) {
-                out.push_str(t);
-            }
+}
+
+/// Concatenated text of a tool call's `content` items (skips diff/terminal).
+fn tool_content_text(items: &[acp_v1::ToolCallContent]) -> String {
+    let mut out = String::new();
+    for it in items {
+        if let acp_v1::ToolCallContent::Content(c) = it {
+            out.push_str(&block_text(&c.content));
         }
-        return out;
     }
-    String::new()
+    out
+}
+
+/// The ACP status string (`completed` / `failed` / …) via serde, future-proof to
+/// new variants — no hand-maintained match.
+fn status_str(s: &acp_v1::ToolCallStatus) -> String {
+    serde_json::to_value(s)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 /// Map one ACP `session/update` payload to an `AcpEvent`, or `None` for update
-/// kinds we don't surface yet (usage_update / available_commands_update / plan).
+/// kinds we don't surface yet (usage / available_commands / plan / mode).
+///
+/// ADR-005 §8.6.2 (v15): deserialize into the maintained `agent-client-protocol`
+/// (Apache-2.0) `SessionUpdate` type instead of hand-poking JSON — the crate owns
+/// the wire schema, so new fields / variants ride along and `#[non_exhaustive]`
+/// keeps us forward-compatible.
 fn parse_session_update(u: &Value) -> Option<AcpEvent> {
-    match u.get("sessionUpdate").and_then(|s| s.as_str())? {
-        "agent_message_chunk" => {
-            let t = acp_content_text(u.get("content")?);
+    let update: acp_v1::SessionUpdate = serde_json::from_value(u.clone()).ok()?;
+    match update {
+        acp_v1::SessionUpdate::AgentMessageChunk(cc) => {
+            let t = block_text(&cc.content);
             (!t.is_empty()).then_some(AcpEvent::Text(t))
         }
-        "agent_thought_chunk" => {
-            let t = acp_content_text(u.get("content")?);
+        acp_v1::SessionUpdate::AgentThoughtChunk(cc) => {
+            let t = block_text(&cc.content);
             (!t.is_empty()).then_some(AcpEvent::Thought(t))
         }
-        "tool_call" => {
-            let id = u
-                .get("toolCallId")
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            let title = u
-                .get("title")
-                .and_then(|s| s.as_str())
-                .unwrap_or("tool")
-                .to_string();
-            let input = match u.get("rawInput") {
-                Some(r) if !r.is_null() => serde_json::to_string(r).unwrap_or_default(),
-                _ => u.get("content").map(acp_content_text).unwrap_or_default(),
+        acp_v1::SessionUpdate::ToolCall(tc) => {
+            let input = match tc.raw_input {
+                Some(v) if !v.is_null() => serde_json::to_string(&v).unwrap_or_default(),
+                _ => tool_content_text(&tc.content),
             };
-            Some(AcpEvent::ToolCall { id, title, input })
+            Some(AcpEvent::ToolCall {
+                id: tc.tool_call_id.0.to_string(),
+                title: tc.title,
+                input,
+            })
         }
-        "tool_call_update" => {
-            let id = u
-                .get("toolCallId")
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            let status = u
-                .get("status")
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            let output = u.get("content").map(acp_content_text).unwrap_or_default();
-            Some(AcpEvent::ToolResult { id, status, output })
+        acp_v1::SessionUpdate::ToolCallUpdate(tcu) => {
+            let status = tcu.fields.status.as_ref().map(status_str).unwrap_or_default();
+            let output = tcu
+                .fields
+                .content
+                .as_deref()
+                .map(tool_content_text)
+                .unwrap_or_default();
+            Some(AcpEvent::ToolResult {
+                id: tcu.tool_call_id.0.to_string(),
+                status,
+                output,
+            })
         }
         _ => None,
     }
