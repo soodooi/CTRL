@@ -1501,6 +1501,33 @@
   color: var(--color-text, #1d1d1f);
 }
 
+/* ADR-005 §8.6.2 output-routing — "open the note Irisy just wrote" shortcut. */
+.openNoteChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 2px;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border-soft, #e5e5ea);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg-l1, #f5f5f7);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text, #1d1d1f);
+  transition: border-color var(--duration-fast, 120ms) ease;
+}
+.openNoteChip:hover {
+  border-color: var(--color-primary, #0d9488);
+}
+.openNoteName {
+  font-family: var(--font-mono, 'SF Mono', monospace);
+  font-size: 12.5px;
+}
+.openNoteGo {
+  color: var(--color-primary, #0d9488);
+  font-weight: var(--weight-medium, 500);
+}
+
 /* ADR-005 §8.6 — the engine's reasoning trace (see it think), collapsed by
    default so the answer stays front-and-centre for non-technical users. */
 .reasoning {

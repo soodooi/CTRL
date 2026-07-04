@@ -194,6 +194,36 @@ function applyToolStep(
   return list;
 }
 
+/** First `.md` string value in a tool's input args (the note path), or null. */
+function extractNotePath(input?: string): string | null {
+  if (!input) return null;
+  try {
+    const obj = JSON.parse(input) as Record<string, unknown>;
+    for (const v of Object.values(obj)) {
+      if (typeof v === 'string' && /\.md$/.test(v)) return v;
+    }
+  } catch {
+    /* input isn't a JSON object — no path to surface */
+  }
+  return null;
+}
+
+/** Note files this turn's tool calls WROTE — so the chat can offer a shortcut to
+ *  open them in the Notes workspace (ADR-005 §8.6.2 / output-routing: Irisy is the
+ *  pipe that routes output into the owning module's workspace). Notes only (not
+ *  tables/sheets). */
+function noteTargetsOf(tools?: ToolStepView[]): string[] {
+  if (!tools) return [];
+  const out = new Set<string>();
+  for (const t of tools) {
+    if (t.status !== 'completed') continue;
+    if (!/vault_write|doc_produce|note_/.test(t.title)) continue;
+    const p = extractNotePath(t.input);
+    if (p && !/\.sheet\.md$/.test(p) && !p.startsWith('tables/')) out.add(p);
+  }
+  return [...out];
+}
+
 /** A `/` slash command (ADR-005 §8.6.2 terminal command surface). `run` = an
  *  immediate local action; `template` = prefill the composer for the user to
  *  complete then send (a natural-language shortcut Irisy handles via its tools —
@@ -702,6 +732,22 @@ export function AmbientHome({
     setStreaming(false);
   }, []);
 
+  // ADR-005 §8.6.2 output-routing — open a note Irisy just wrote in the Notes
+  // workspace: switch the scene, then best-effort nudge the notes UI (NotesApp /
+  // the Tolaria embed both listen for `notes:open`) to the exact note.
+  const openNoteInWorkspace = useCallback((path: string) => {
+    setScene('notes');
+    void import('@tauri-apps/api/event')
+      .then(({ emit }) =>
+        new Promise((r) => setTimeout(r, 180)).then(() =>
+          emit('notes:open', { path, heading: null }),
+        ),
+      )
+      .catch(() => {
+        /* browser PWA (no Tauri) — the scene switch alone lands in Notes */
+      });
+  }, []);
+
   // Irisy capture/recall (bao 2026-06-12: the two AI chips under a reply).
   // Capture = append this reply to today's Irisy log note (vault is truth).
   // Recall = answer the last question grounded in matching notes (light RAG).
@@ -1175,6 +1221,21 @@ export function AmbientHome({
                   ))}
                 </div>
               )}
+              {/* ADR-005 §8.6.2 output-routing — a shortcut to open a note Irisy
+                  just wrote in the Notes workspace (bao: slash worked but no jump
+                  to the note page). */}
+              {noteTargetsOf(m.tools).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={styles.openNoteChip}
+                  onClick={() => openNoteInWorkspace(p)}
+                >
+                  <span aria-hidden>📄</span>
+                  <span className={styles.openNoteName}>{p.split('/').pop()}</span>
+                  <span className={styles.openNoteGo}>Open in Notes →</span>
+                </button>
+              ))}
               {m.content && (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {stripDetectedPart(cleanReplyText(m.content)) ||
