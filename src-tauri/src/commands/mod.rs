@@ -22,9 +22,14 @@
 // `agents` command surface (install_agent / launch_agent / agent_status /
 // stop_agent). Streaming + tool calling happen agent-to-PWA, not kernel-mediated.
 pub mod agents;
-// Obsidian Local REST API connector (ADR-002 §1.9.1).
-pub mod obsidian;
+// Obsidian connector RETIRED (notes-module-replacement-plan S1, bao 2026-07-02):
+// CTRL's NotesApp is the full native notes surface; Obsidian is a
+// format-compatible neighbor with zero wiring (vault stays plain markdown).
 pub mod chat;
+// Adapter for the vendored Tolaria notes frontend (ADR-002 §1.9 v47 F2):
+// serves its exact command names from CTRL's kernel.
+pub mod notes_ui;
+pub mod notes_ui_scan;
 // ADR-002 substrate § capability-faces v19 §13.4 (2026-06-09): image
 // generation surface. Currently fal.ai-only; multi-provider routing for
 // image.generate lands when the second image provider is wired.
@@ -102,6 +107,8 @@ macro_rules! pwa_invoke_handler {
             // ADR-005 v5: Irisy = persona shell, not brain. Routes to whichever
             // agent matches the active L1 chip (default hermes via /assistant).
             $crate::commands::irisy_chat::irisy_chat_stream,
+            // Reset the engine session on new-chat / resume / fork (ADR-005 §8.4).
+            $crate::commands::irisy_chat::irisy_reset_engine,
             // Irisy conversation history (reads hermes session store) — vault 0013
             $crate::commands::hermes_acp::irisy_session_list,
             $crate::commands::hermes_acp::irisy_session_get,
@@ -122,11 +129,6 @@ macro_rules! pwa_invoke_handler {
             // connect_agent_mcp — hermes (mcp-stdio) onto the kernel MCP bus
             // (ADR-002 §1.3 v19); PWA chats via mcp_call afterwards.
             $crate::commands::agents::connect_agent_mcp,
-            // Obsidian Local REST API connector (ADR-002 §1.9.1)
-            $crate::commands::obsidian::obsidian_status,
-            $crate::commands::obsidian::obsidian_connect,
-            $crate::commands::obsidian::obsidian_provision,
-            $crate::commands::obsidian::obsidian_launch,
             // assistant_oneshot — hermes -z bridge until the ACP
             // streaming client lands (ADR-002 §1.1 v20, 2026-06-10).
             $crate::commands::agents::assistant_oneshot,
@@ -260,6 +262,55 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_watch_recent,
             $crate::commands::vault::vault_get_config,
             $crate::commands::vault::vault_set_root,
+            // PWA-only focus report (ADR-002 §1.9 v46 E2, C3 boundary).
+            $crate::commands::vault::set_active_note,
+            // Tolaria notes-UI adapter surface (ADR-002 §1.9 v47 F2) — the
+            // vendored frontend's exact command names, served by the kernel.
+            $crate::commands::notes_ui::get_note_content,
+            $crate::commands::notes_ui::save_note_content,
+            $crate::commands::notes_ui::create_note_content,
+            $crate::commands::notes_ui::reload_vault_entry,
+            $crate::commands::notes_ui::batch_delete_notes_async,
+            $crate::commands::notes_ui::create_vault_folder,
+            $crate::commands::notes_ui::rename_vault_folder,
+            $crate::commands::notes_ui::delete_vault_folder,
+            $crate::commands::notes_ui::search_vault,
+            $crate::commands::notes_ui::is_git_repo,
+            $crate::commands::notes_ui::init_git_repo,
+            $crate::commands::notes_ui::git_commit,
+            // git_push: served by the existing commands::git::git_push.
+            $crate::commands::notes_ui::git_author_identity,
+            $crate::commands::notes_ui::detect_renames,
+            $crate::commands::notes_ui::update_wikilinks_for_renames,
+            $crate::commands::notes_ui::auto_rename_untitled,
+            $crate::commands::notes_ui::save_image,
+            $crate::commands::notes_ui::copy_image_to_vault,
+            $crate::commands::notes_ui::start_vault_watcher,
+            $crate::commands::notes_ui::stop_vault_watcher,
+            $crate::commands::notes_ui::copy_text_to_clipboard,
+            $crate::commands::notes_ui::read_text_from_clipboard,
+            $crate::commands::notes_ui::open_vault_file_external,
+            $crate::commands::notes_ui::update_menu_state,
+            $crate::commands::notes_ui::update_current_window_min_size,
+            $crate::commands::notes_ui::sync_vault_asset_scope_for_window,
+            $crate::commands::notes_ui::should_use_external_media_preview,
+            $crate::commands::notes_ui::get_process_memory_snapshot,
+            $crate::commands::notes_ui::check_for_app_update,
+            $crate::commands::notes_ui_scan::list_vault,
+            $crate::commands::notes_ui_scan::reload_vault,
+            $crate::commands::notes_ui_scan::list_vault_folders,
+            $crate::commands::notes_ui_scan::check_vault_exists,
+            $crate::commands::notes_ui::get_file_history,
+            $crate::commands::notes_ui::get_file_diff,
+            $crate::commands::notes_ui::get_file_diff_at_commit,
+            $crate::commands::notes_ui::get_modified_files,
+            $crate::commands::notes_ui::get_settings,
+            $crate::commands::notes_ui::save_settings,
+            $crate::commands::notes_ui::get_default_vault_path,
+            $crate::commands::notes_ui::load_vault_list,
+            $crate::commands::notes_ui::save_vault_list,
+            $crate::commands::notes_ui::create_empty_vault,
+            $crate::commands::notes_ui::create_getting_started_vault,
             $crate::commands::vault::vault_set_auto_sync,
             // SOUL.md (Irisy persistent memory) retired to the gate's memory-domain
             // tools irisy_soul_get/set (SC5 convergence); PWA reaches them via gate_invoke.

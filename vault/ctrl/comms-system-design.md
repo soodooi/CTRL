@@ -54,7 +54,7 @@ related:
 | **数据源**(vault/smart-table/notes/kv/embeddings/skills/providers/registry) | **§14 source**(describe/query/produce) | MCP 工具 | ✅ | `gate_invoke`(in-process) |
 | **Effect**(subprocess/LLM 流/AI 列/OCR/image) | **§14 produce → Effect**(§14.9 OperationHandle) | MCP + 流 | ✅ | `gate_invoke` + 流订阅 |
 | **流**(Irisy 回复/终端/进度) | `query{watch}` 投影 | **AsyncAPI** over WS/Channels | 授权回 gate | WS 订阅 |
-| **外部 connector**(飞书/CRM…) | 挂载的 MCP source | MCP | ✅ | `gate_invoke` |
+| **外部 connector**(CRM/ERP/Ghostfolio… OPC 自托管产品;**非飞书 — CTRL 替代它,见 feedback-ctrl-is-feishu**) | 挂载的 MCP source | MCP | ✅ | `gate_invoke` |
 | **app-shell**(窗口/托盘/生命周期/agent 启停/keychain/config) | **Tauri command,合法 only**(非 §14,非双表面) | Tauri IPC | ❌(内核域/本地) | `invoke`(直接) |
 | **跨设备/远程桌面** | ctrl-wire | **protobuf** over WebRTC | 授权回 gate | 独立模块 |
 

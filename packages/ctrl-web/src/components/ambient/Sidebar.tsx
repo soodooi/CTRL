@@ -55,12 +55,22 @@ function TableIcon(): ReactElement {
     </svg>
   );
 }
+// Today (LifeOS home) — a checkmark-in-circle for the task/day surface.
+function TodayIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 12.5l2.5 2.5 4.5-5" />
+    </svg>
+  );
+}
 
 export type SidebarSection =
   | { kind: 'irisy' }
   | { kind: 'tool'; connectorId: string; toolName: string; label: string; sub: string }
   | { kind: 'route'; to: string }
   | { kind: 'feature-pack'; pack: FeaturePack }
+  | { kind: 'today' }
   | { kind: 'notes' }
   | { kind: 'tables' }
   | { kind: 'coding' }
@@ -111,6 +121,7 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
     section: SidebarSection;
   }
   const builtinFaces: L1Entry[] = [
+    { key: 'today', title: 'Today', icon: <TodayIcon />, section: { kind: 'today' } },
     { key: 'notes', title: 'Notes', icon: <Ico d={NOTES_D} />, section: { kind: 'notes' } },
     { key: 'tables', title: 'Tables', icon: <TableIcon />, section: { kind: 'tables' } },
     { key: 'coding', title: 'Coding', icon: <CodeIcon />, section: { kind: 'coding' } },

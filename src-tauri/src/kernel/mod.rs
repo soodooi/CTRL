@@ -21,6 +21,7 @@ pub mod actor;
 pub mod ai_column;
 pub mod audit;
 pub mod cache;
+pub mod calendar_source;
 pub mod capability;
 pub mod capability_resolver;
 pub mod channel;
@@ -37,6 +38,7 @@ pub mod review_gate;
 // (project-scoped `.mcp.json`) so the driver auto-discovers it on launch.
 pub mod projector;
 pub mod provider;
+pub mod periodic_notes;
 pub mod query;
 pub mod runtime;
 pub mod runtime_sources;
@@ -55,8 +57,41 @@ pub mod event_ws;
 pub mod subprocess_actor;
 pub mod subprocess_channel_adapter;
 pub mod smart_table_index;
+// Feature-pack provision+auth engine (governing
+// `vault/ctrl/feature-pack-provision-auth-engine.md`) — generic runtime that
+// makes any self-hosted connector one-click + silent from its manifest data:
+// pack_auth = declared bootstrap / token-exchange executors; pack_provision =
+// generated-secret + compose provisioning + install orchestration.
+pub mod pack_auth;
+pub mod pack_provision;
+// ADR-002 substrate §14.12 — generic manifest-driven §14 connector source: a REST
+// connector's schema + JSON→Row map + endpoints are DATA (`record_source`), one
+// generic runtime reproduces the hand-coded connector (ghostfolio = first
+// data-driven instance) so adding a connector is zero Rust (§7.4/§7.5).
+pub mod manifest_source;
+// Feature-pack evals (ADR-002 §7.4/§7.5; mcp-builder review+evals phase) — the
+// gate validates a brain-authored candidate manifest BEFORE install and returns
+// structured, self-correctable feedback (the quality step home-grown pipelines
+// skip). Pure over a parsed manifest, so the gate tool is a thin wrapper.
+pub mod pack_validate;
+// OpenAPI -> §14 record_source scaffold (ADR-002 §7.4 AutoMCP): generate a
+// best-effort record_source draft from an OpenAPI read op + spec-repair notes,
+// which the author refines + evals before install. Pure, no I/O.
+pub mod openapi;
+// Feature-pack publish (ADR-002 §7.6) — the produce side of share-and-be-shared:
+// evals a pack then POSTs its manifest to a registry/commons. Kernel-internal
+// HTTPS, token kernel-side; the real public registry is the honest external gap.
+pub mod pack_publish;
+// ADR-002 substrate §14 (LifeOS layer Phase 1, governing
+// `vault/ctrl/lifeos-layer-restructure.md`) — tasks as a §14 RecordSource:
+// one plain-markdown file per task (vim test), describe/query via the shared
+// engine, produce (create/update) through the vault layer.
+pub mod tasks_source;
+pub mod ui_bridge;
 pub mod vault;
 pub mod visibility;
+pub mod vault_doc;
+pub mod vault_git;
 pub mod vault_notes_source;
 pub mod vault_smart_table;
 // ADR-002 substrate § vault v1 §8.3 #9-15, 2026-06-01 —

@@ -1,0 +1,31 @@
+/* Univer -> CTRL theme bridge (plan-univer-formula-augment.md B; bao 2026-07-03
+   "unify the palette to CTRL"). Univer injects its color ramps as --univer-* CSS vars on
+   its own root at runtime; we override the PRIMARY ramp to CTRL's teal accent
+   (600 = CTRL --color-primary #0D9488) so selection / active / buttons read as
+   CTRL, not Univer's stock blue. Scoped to the viewer host so nothing else is
+   touched. Grays stay Univer's neutral chrome in light mode (CTRL default is
+   light); dark mode remaps the low gray steps to CTRL dark surfaces. */
+
+[data-univer-ctrl-theme] {
+  --univer-primary-50: #f0fdfa;
+  --univer-primary-100: #ccfbf1;
+  --univer-primary-200: #99f6e4;
+  --univer-primary-300: #5eead4;
+  --univer-primary-400: #2dd4bf;
+  --univer-primary-500: #14b8a6;
+  --univer-primary-600: #0d9488; /* CTRL --color-primary */
+  --univer-primary-700: #0f766e;
+  --univer-primary-800: #115e59;
+  --univer-primary-900: #134e4a;
+}
+
+/* Dark mode (opt-in via :root[data-theme='dark']) — bring Univer's surfaces
+   down to CTRL's dark chrome so the sheet doesn't glare white inside a dark app.
+   Univer ships a .univer-dark path; we align its grays to CTRL dark tokens. */
+:root[data-theme='dark'] [data-univer-ctrl-theme] {
+  --univer-gray-50: #17171a;
+  --univer-gray-100: #1d1d20;
+  --univer-gray-200: #26262a;
+  --univer-gray-300: #38383a;
+  --univer-gray-400: #525257;
+}

@@ -303,6 +303,250 @@ pub fn write(
     Ok(full)
 }
 
+/// Rewrite ONLY the body of an existing note, preserving the raw frontmatter
+/// block bytes VERBATIM — key order, comments, quoting untouched (the §14
+/// doc-produce contract: zero frontmatter churn). A note WITHOUT frontmatter
+/// stays without one (unlike `write`, which always emits a fm block — and
+/// errors on a Null frontmatter, which is what a plain note reads back as).
+pub fn write_body(vault_root: &Path, rel_path: &str, body: &str) -> Result<PathBuf, VaultError> {
+    let safe = sanitize_relative_path(rel_path)?;
+    let full = vault_root.join(&safe);
+    let raw = fs::read_to_string(&full).map_err(|e| VaultError::Io(e.to_string()))?;
+    let prefix = raw_frontmatter_prefix(&raw);
+    let out = if prefix.is_empty() {
+        body.to_string()
+    } else {
+        // Same close-fence/body separation `write` emits, so `read` round-trips
+        // the body exactly (its parser strips the separator newlines).
+        format!("{prefix}\n\n{body}")
+    };
+    fs::write(&full, &out).map_err(|e| VaultError::Io(e.to_string()))?;
+
+    // Best-effort index upsert + embedding staleness — same posture as `write`.
+    #[cfg(not(test))]
+    if let Some(idx) = try_global_index() {
+        let (fm, _) = split_frontmatter(&raw);
+        let fm_str = serde_json::to_string(&fm).unwrap_or_default();
+        let mtime_ms = current_mtime_ms(&full);
+        if let Err(e) = idx.upsert(&safe.to_string_lossy(), body, &fm_str, mtime_ms) {
+            tracing::warn!(path = %safe.display(), error = %e, "vault: index upsert failed");
+        }
+    }
+    #[cfg(not(test))]
+    flag_embedding_stale(&safe, body);
+
+    Ok(full)
+}
+
+/// Surgically set (`value: Some`) or remove (`value: None`) ONE top-level
+/// frontmatter key, keeping every other frontmatter byte verbatim — key order,
+/// comments, quoting of untouched keys all survive (ADR-002 §1.9 v46 E4, the
+/// PATCH Target-Type:frontmatter parity; same zero-churn contract as
+/// `write_body`). Setting a key on a note WITHOUT frontmatter creates the
+/// block. A nested value (indented lines / `- ` list items under the key) is
+/// replaced/removed together with its key. Returns VaultError::Io("no such
+/// frontmatter key ...") when deleting a key that does not exist.
+pub fn patch_frontmatter_key(
+    vault_root: &Path,
+    rel_path: &str,
+    key: &str,
+    value: Option<&str>,
+) -> Result<PathBuf, VaultError> {
+    let safe = sanitize_relative_path(rel_path)?;
+    let full = vault_root.join(&safe);
+    let raw = fs::read_to_string(&full).map_err(|e| VaultError::Io(e.to_string()))?;
+    let prefix = raw_frontmatter_prefix(&raw);
+
+    let out = if prefix.is_empty() {
+        // Plain note: only a SET can create the block; a DELETE has no target.
+        let Some(v) = value else {
+            return Err(VaultError::Io(format!("no such frontmatter key '{key}'")));
+        };
+        format!("---\n{}---\n\n{raw}", render_fm_entry(key, v)?)
+    } else {
+        // Split the prefix into open fence / inner lines / close fence, edit
+        // only the matched key's line-span, reassemble byte-identically.
+        let body = &raw[prefix.len()..];
+        let inner_start = prefix.find('\n').map(|i| i + 1).unwrap_or(prefix.len());
+        let inner_end = prefix.rfind("\n---").map(|i| i + 1).unwrap_or(prefix.len());
+        let (open, close) = (&prefix[..inner_start], &prefix[inner_end..]);
+        let inner = &prefix[inner_start..inner_end];
+        // Preserve the file's line ending so untouched fm lines stay
+        // byte-identical on CRLF files too (checker 2026-07-02).
+        let eol = if inner.contains("\r\n") { "\r\n" } else { "\n" };
+        let mut lines: Vec<String> = inner.lines().map(str::to_string).collect();
+        let needle = format!("{key}:");
+        let hit = lines.iter().position(|l| {
+            l.starts_with(&needle)
+                && l[needle.len()..].chars().next().map_or(true, |c| c == ' ' || c == '\t')
+        });
+        // A key's value span: its line + following continuation lines (indented,
+        // or zero-indent `- ` sequence items). Zero-indent `#` comments are NOT
+        // consumed — they may describe the next key.
+        let span_end = hit.map(|h| {
+            let mut e = h + 1;
+            while e < lines.len()
+                && (lines[e].starts_with(' ')
+                    || lines[e].starts_with('\t')
+                    || lines[e].starts_with("- ")
+                    || lines[e] == "-")
+            {
+                e += 1;
+            }
+            e
+        });
+        // Fail CLOSED on the YAML-legal shape the span rule can't edit safely:
+        // a zero-indent `#` comment sitting BETWEEN the key and (more of) its
+        // value lines — splicing there would orphan the remainder and leave an
+        // unparseable block (checker 2026-07-02). Surgical means never-corrupt.
+        if let Some(e) = span_end {
+            let comment_then_continuation = lines.get(e).is_some_and(|l| l.starts_with('#'))
+                && lines.get(e + 1).is_some_and(|l| {
+                    l.starts_with(' ') || l.starts_with('\t') || l.starts_with("- ") || l == "-"
+                });
+            if comment_then_continuation {
+                return Err(VaultError::InvalidFrontmatter(format!(
+                    "key '{key}' has a comment interleaved inside its value block — refusing a surgical edit that would corrupt it"
+                )));
+            }
+        }
+        match (hit, value) {
+            (Some(h), Some(v)) => {
+                let entry = render_fm_entry(key, v)?;
+                let replacement: Vec<String> = entry.lines().map(str::to_string).collect();
+                lines.splice(h..span_end.unwrap(), replacement);
+            }
+            (Some(h), None) => {
+                lines.drain(h..span_end.unwrap());
+            }
+            (None, Some(v)) => {
+                let entry = render_fm_entry(key, v)?;
+                lines.extend(entry.lines().map(str::to_string));
+            }
+            (None, None) => {
+                return Err(VaultError::Io(format!("no such frontmatter key '{key}'")));
+            }
+        }
+        let mut inner_out = lines.join(eol);
+        if !inner_out.is_empty() {
+            inner_out.push_str(eol);
+        }
+        format!("{open}{inner_out}{close}{body}")
+    };
+    fs::write(&full, &out).map_err(|e| VaultError::Io(e.to_string()))?;
+
+    // Best-effort index upsert — same posture as `write` / `write_body`.
+    #[cfg(not(test))]
+    if let Some(idx) = try_global_index() {
+        let (fm, content) = split_frontmatter(&out);
+        let fm_str = serde_json::to_string(&fm).unwrap_or_default();
+        let mtime_ms = current_mtime_ms(&full);
+        if let Err(e) = idx.upsert(&safe.to_string_lossy(), &content, &fm_str, mtime_ms) {
+            tracing::warn!(path = %safe.display(), error = %e, "vault: index upsert failed");
+        }
+    }
+    Ok(full)
+}
+
+/// Render one `key: value` frontmatter entry via serde_yaml (handles quoting /
+/// block scalars for values with newlines), always ending in `\n`.
+fn render_fm_entry(key: &str, value: &str) -> Result<String, VaultError> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert(
+        serde_yaml::Value::String(key.to_string()),
+        serde_yaml::Value::String(value.to_string()),
+    );
+    serde_yaml::to_string(&map).map_err(|e| VaultError::InvalidFrontmatter(e.to_string()))
+}
+
+/// Best-effort index + embedding refresh after a RAW file write that bypassed
+/// `write`/`write_body` (the notes-ui adapter writes whole files verbatim —
+/// ADR-002 §1.9 v47 F2). Never fails; no-op under test / without an index.
+pub fn refresh_index_for(root: &Path, rel: &str, raw: &str) {
+    let _ = (root, rel, raw);
+    #[cfg(not(test))]
+    {
+        let (fm, content) = split_frontmatter(raw);
+        if let Some(idx) = try_global_index() {
+            let fm_str = serde_json::to_string(&fm).unwrap_or_default();
+            let mtime_ms = current_mtime_ms(&root.join(rel));
+            if let Err(e) = idx.upsert(rel, &content, &fm_str, mtime_ms) {
+                tracing::warn!(path = %rel, error = %e, "vault: index upsert failed");
+            }
+        }
+        flag_embedding_stale(Path::new(rel), &content);
+    }
+}
+
+/// Rewrite `[[wikilinks]]` pointing at a renamed note across the whole vault
+/// (ADR-002 §1.9 v46 E11 — link-aware rename; the LRA ecosystem's known gap).
+/// Boundary-aware: `[[old]]`, `[[old|alias]]`, `[[old#heading]]` rewrite;
+/// a LONGER stem sharing the prefix does not. Returns changed-file count.
+pub fn rewrite_wikilinks(root: &Path, old_path: &str, new_path: &str) -> Result<usize, VaultError> {
+    let stem_of = |p: &str| {
+        Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+    };
+    let old_stem = stem_of(old_path);
+    let new_stem = stem_of(new_path);
+    if old_stem.is_empty() || old_stem == new_stem {
+        return Ok(0);
+    }
+    let mut updated = 0usize;
+    let head = format!("[[{old_stem}");
+    for rel in list(root, None)? {
+        let full = root.join(&rel);
+        let Ok(raw) = fs::read_to_string(&full) else { continue };
+        if !raw.contains(&head) {
+            continue;
+        }
+        let mut out = String::with_capacity(raw.len());
+        let mut rest = raw.as_str();
+        let mut changed = false;
+        while let Some(at) = rest.find(&head) {
+            let after = &rest[at + head.len()..];
+            let boundary =
+                after.starts_with("]]") || after.starts_with('|') || after.starts_with('#');
+            out.push_str(&rest[..at]);
+            if boundary {
+                out.push_str("[[");
+                out.push_str(&new_stem);
+                changed = true;
+            } else {
+                out.push_str(&head);
+            }
+            rest = after;
+        }
+        out.push_str(rest);
+        if changed {
+            fs::write(&full, &out).map_err(|e| VaultError::Io(e.to_string()))?;
+            refresh_index_for(root, &rel, &out);
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
+/// The raw frontmatter block of a file — everything through the closing `---`
+/// fence — or `""` when the file has none. Boundary rules MIRROR
+/// `split_frontmatter` (the read side), so write_body's notion of "body" is
+/// exactly what `read` hands callers.
+fn raw_frontmatter_prefix(raw: &str) -> &str {
+    let lead = raw.len() - raw.trim_start().len();
+    let trimmed = &raw[lead..];
+    if !trimmed.starts_with("---\n") && !trimmed.starts_with("---\r\n") {
+        return "";
+    }
+    let after_open = &trimmed[4..];
+    let body_start = if after_open.starts_with("---") {
+        3usize
+    } else if let Some(end_idx) = after_open.find("\n---") {
+        end_idx + 4
+    } else {
+        return "";
+    };
+    &raw[..lead + 4 + body_start]
+}
+
 /// Mark a note's embedding stale so the next embed pass re-embeds it. See the
 /// call site in `write`. Best-effort and side-effect-free on failure: only
 /// markdown notes are tracked (skip `tables/` smart tables and non-`.md` files),
@@ -607,13 +851,42 @@ pub fn sanitize_relative_path(p: &str) -> Result<PathBuf, VaultError> {
 /// smart-table `schema:` block reads as clean YAML, not an escaped JSON string
 /// (vim test). The read side (`parse_yaml_to_json`) is the symmetric deserialize.
 fn frontmatter_to_yaml(value: &serde_json::Value) -> Result<String, VaultError> {
-    let obj = value.as_object().ok_or_else(|| {
-        VaultError::InvalidFrontmatter("frontmatter must be a JSON object".to_string())
-    })?;
-    if obj.is_empty() {
-        return Ok(String::new());
+    // TOLERANT WRITER (bao 2026-07-04, ledger-driven: vault_write was ~64% failing
+    // on "frontmatter must be a JSON object"). The note body is the user's real
+    // content — NEVER fail the whole write because the frontmatter shape is off.
+    // Coerce what we can (an object, or a YAML/JSON STRING the LLM passed instead
+    // of an object); anything else degrades to "no frontmatter block", not an error.
+    use serde_json::Value;
+    match value {
+        // No frontmatter — empty note, or a read->write round-trip on a note that
+        // had none (split_frontmatter returns Null; move/rename/body edit).
+        Value::Null => Ok(String::new()),
+        Value::Object(obj) => {
+            if obj.is_empty() {
+                Ok(String::new())
+            } else {
+                serde_yaml::to_string(value)
+                    .map_err(|e| VaultError::InvalidFrontmatter(e.to_string()))
+            }
+        }
+        // LLMs frequently pass frontmatter as a STRING — a YAML block
+        // ("title: X\ntags: [a]") or a JSON-object string. Parse it into a map and
+        // use that; a scalar/plain string that isn't a map keeps the note with no
+        // frontmatter (drop the stray value, never fail the write).
+        Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return Ok(String::new());
+            }
+            match serde_yaml::from_str::<Value>(s) {
+                Ok(parsed) if parsed.is_object() => frontmatter_to_yaml(&parsed),
+                _ => Ok(String::new()),
+            }
+        }
+        // Arrays / numbers / bools are not a frontmatter map — degrade to no
+        // frontmatter rather than fail (the body content is what matters).
+        _ => Ok(String::new()),
     }
-    serde_yaml::to_string(value).map_err(|e| VaultError::InvalidFrontmatter(e.to_string()))
 }
 
 /// Split a markdown file into its frontmatter (JSON value) and body.
@@ -624,12 +897,18 @@ fn split_frontmatter(raw: &str) -> (serde_json::Value, String) {
         return (serde_json::Value::Null, raw.to_string());
     }
     let after_open = &trimmed[4..];
-    let close_pos = after_open.find("\n---");
-    let Some(end_idx) = close_pos else {
+    // An EMPTY frontmatter block (`---\n---`) — the closing fence sits at the
+    // very start of `after_open` with no `\n` before it, so the `\n---` finder
+    // below would miss it and hand the caller back the raw file (fences and
+    // all). This is exactly what `write` emits for an empty-object frontmatter,
+    // so recognize it explicitly: no fm text, body begins after the fence.
+    let (fm_text, body_start) = if after_open.starts_with("---") {
+        ("", 3usize)
+    } else if let Some(end_idx) = after_open.find("\n---") {
+        (&after_open[..end_idx], end_idx + 4) // skip "\n---"
+    } else {
         return (serde_json::Value::Null, raw.to_string());
     };
-    let fm_text = &after_open[..end_idx];
-    let body_start = end_idx + 4; // skip "\n---"
     let after_close = &after_open[body_start..];
     let body = after_close
         .trim_start_matches('\n')
@@ -784,6 +1063,219 @@ mod tests {
         let (fm, body) = split_frontmatter("no frontmatter here\nsecond line");
         assert!(fm.is_null());
         assert!(body.starts_with("no frontmatter"));
+    }
+
+    #[test]
+    fn null_frontmatter_writes_as_no_block_not_error() {
+        // A note with no frontmatter reads back as Null; re-writing it (what
+        // move / rename / body-edit do) must NOT fail with "frontmatter must be a
+        // JSON object" (bao 2026-07-04 endpoint sweep: vault_move crashed on
+        // empty-frontmatter notes). A stray non-object frontmatter is still an
+        // error — only Null / empty-object mean "no block".
+        assert_eq!(frontmatter_to_yaml(&serde_json::Value::Null).unwrap(), "");
+        let root = fresh_tmp("fm-null");
+        write(&root, "a.md", "just body, no fm", &serde_json::Value::Null).expect("write null fm");
+        let entry = read(&root, "a.md").expect("read");
+        assert!(entry.frontmatter.is_null());
+        // The move/rename round-trip: read then write to the new path.
+        write(&root, "b.md", &entry.content, &entry.frontmatter).expect("re-write null fm (move)");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn tolerant_writer_coerces_llm_frontmatter_shapes() {
+        // bao 2026-07-04 (ledger: vault_write ~64% failing). NEVER fail the write
+        // because the frontmatter shape is off — the body is the user's content.
+        use serde_json::json;
+        // LLM passed a YAML STRING instead of an object → parse into a real map.
+        let yaml = frontmatter_to_yaml(&json!("title: My Note\ntags: [a, b]")).unwrap();
+        assert!(yaml.contains("title: My Note"), "YAML-string frontmatter parsed: {yaml}");
+        assert!(yaml.contains("- a"));
+        // LLM passed a JSON-object STRING → also parsed (YAML is a JSON superset).
+        let j = frontmatter_to_yaml(&json!("{\"title\":\"X\"}")).unwrap();
+        assert!(j.contains("title: X"));
+        // A normal object still works.
+        assert!(frontmatter_to_yaml(&json!({"title": "Z"})).unwrap().contains("title: Z"));
+        // Degrade-not-fail: a scalar string, an array, a number → no block, no error.
+        assert_eq!(frontmatter_to_yaml(&json!("just a title")).unwrap(), "");
+        assert_eq!(frontmatter_to_yaml(&json!(["a", "b"])).unwrap(), "");
+        assert_eq!(frontmatter_to_yaml(&json!(42)).unwrap(), "");
+        assert_eq!(frontmatter_to_yaml(&serde_json::Value::Null).unwrap(), "");
+    }
+
+    #[test]
+    fn write_body_preserves_raw_frontmatter_bytes_verbatim() {
+        let root = fresh_tmp("write-body-fm");
+        // Hand-authored fm with a COMMENT, deliberate key order (z before a),
+        // and quoting — exactly what a write()-roundtrip would destroy.
+        let raw = "---\n# hand comment\nz_last: \"quoted\"\na_first: 1\n---\n\nold body\n";
+        let full = root.join("doc.md");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&full, raw).unwrap();
+
+        write_body(&root, "doc.md", "new body").unwrap();
+        let out = fs::read_to_string(&full).unwrap();
+        assert!(out.starts_with("---\n# hand comment\nz_last: \"quoted\"\na_first: 1\n---\n"),
+            "raw fm bytes verbatim (comment + order + quoting), got: {out}");
+        assert!(out.ends_with("\n\nnew body"));
+        // And read() hands back exactly the new body.
+        let entry = read(&root, "doc.md").unwrap();
+        assert_eq!(entry.content, "new body");
+        assert_eq!(entry.frontmatter["a_first"], 1);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_body_on_a_plain_note_stays_frontmatterless() {
+        let root = fresh_tmp("write-body-plain");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("plain.md"), "just text\n").unwrap();
+        write_body(&root, "plain.md", "# Section\n\nedited").unwrap();
+        let out = fs::read_to_string(root.join("plain.md")).unwrap();
+        assert_eq!(out, "# Section\n\nedited", "no fm block invented");
+        let entry = read(&root, "plain.md").unwrap();
+        assert!(entry.frontmatter.is_null());
+        assert_eq!(entry.content, "# Section\n\nedited");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_body_missing_file_errors() {
+        let root = fresh_tmp("write-body-missing");
+        fs::create_dir_all(&root).unwrap();
+        assert!(write_body(&root, "nope.md", "x").is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // ── patch_frontmatter_key (ADR-002 §1.9 v46 E4) ─────────────────────────
+
+    const FM_DOC: &str = "---\n# comment describing z\nz_last: \"quoted\"\ntags:\n  - a\n  - b\na_first: 1\n---\n\nbody text\n";
+
+    #[test]
+    fn patch_fm_set_existing_scalar_keeps_everything_else_verbatim() {
+        let root = fresh_tmp("fm-set");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), FM_DOC).unwrap();
+        patch_frontmatter_key(&root, "n.md", "a_first", Some("2")).unwrap();
+        let out = fs::read_to_string(root.join("n.md")).unwrap();
+        // Untouched keys byte-identical: comment, quoting, order, nested list.
+        assert!(out.contains("# comment describing z\nz_last: \"quoted\"\ntags:\n  - a\n  - b\n"));
+        assert!(out.contains("a_first: '2'") || out.contains("a_first: 2") || out.contains("a_first: \"2\""));
+        assert!(out.ends_with("body text\n"), "body untouched");
+        // And it still parses.
+        let entry = read(&root, "n.md").unwrap();
+        assert_eq!(entry.frontmatter["z_last"], "quoted");
+    }
+
+    #[test]
+    fn patch_fm_set_replaces_nested_value_block() {
+        let root = fresh_tmp("fm-nested");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), FM_DOC).unwrap();
+        // tags currently spans 3 lines (key + 2 items) — replacing it with a
+        // scalar must consume the whole block, not leave orphan `- a` lines.
+        patch_frontmatter_key(&root, "n.md", "tags", Some("replaced")).unwrap();
+        let out = fs::read_to_string(root.join("n.md")).unwrap();
+        assert!(out.contains("tags: replaced"));
+        assert!(!out.contains("- a"), "old nested items consumed");
+        assert!(out.contains("a_first: 1"), "next key intact");
+    }
+
+    #[test]
+    fn patch_fm_insert_new_key_before_close_fence() {
+        let root = fresh_tmp("fm-insert");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), FM_DOC).unwrap();
+        patch_frontmatter_key(&root, "n.md", "status", Some("active")).unwrap();
+        let entry = read(&root, "n.md").unwrap();
+        assert_eq!(entry.frontmatter["status"], "active");
+        assert_eq!(entry.frontmatter["a_first"], 1);
+        assert_eq!(entry.content.trim(), "body text");
+    }
+
+    #[test]
+    fn patch_fm_delete_key_and_its_block() {
+        let root = fresh_tmp("fm-del");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), FM_DOC).unwrap();
+        patch_frontmatter_key(&root, "n.md", "tags", None).unwrap();
+        let out = fs::read_to_string(root.join("n.md")).unwrap();
+        assert!(!out.contains("tags:"));
+        assert!(!out.contains("- a"));
+        assert!(out.contains("z_last: \"quoted\""), "siblings verbatim");
+        // Deleting a missing key errors.
+        assert!(patch_frontmatter_key(&root, "n.md", "nope", None).is_err());
+    }
+
+    #[test]
+    fn patch_fm_set_on_plain_note_creates_the_block() {
+        let root = fresh_tmp("fm-plain");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("p.md"), "just body\n").unwrap();
+        patch_frontmatter_key(&root, "p.md", "type", Some("journal")).unwrap();
+        let entry = read(&root, "p.md").unwrap();
+        assert_eq!(entry.frontmatter["type"], "journal");
+        assert_eq!(entry.content.trim(), "just body");
+        // Delete on a plain note (no block) errors.
+        fs::write(root.join("q.md"), "no fm\n").unwrap();
+        assert!(patch_frontmatter_key(&root, "q.md", "x", None).is_err());
+    }
+
+    #[test]
+    fn patch_fm_fails_closed_on_comment_inside_value_block() {
+        // YAML-legal: a zero-indent comment BETWEEN a key and more of its list
+        // items. A splice would orphan `- b`; the surgical contract is
+        // never-corrupt, so this must error, not write.
+        let root = fresh_tmp("fm-comment-orphan");
+        fs::create_dir_all(&root).unwrap();
+        let raw = "---\ntags:\n- a\n# comment inside the block\n- b\ntitle: x\n---\n\nbody\n";
+        fs::write(root.join("n.md"), raw).unwrap();
+        assert!(patch_frontmatter_key(&root, "n.md", "tags", Some("y")).is_err());
+        assert!(patch_frontmatter_key(&root, "n.md", "tags", None).is_err());
+        // File untouched.
+        assert_eq!(fs::read_to_string(root.join("n.md")).unwrap(), raw);
+        // Other keys in the same file still editable.
+        patch_frontmatter_key(&root, "n.md", "title", Some("y")).unwrap();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn patch_fm_preserves_crlf_line_endings() {
+        let root = fresh_tmp("fm-crlf");
+        fs::create_dir_all(&root).unwrap();
+        let raw = "---\r\nkeep: one\r\ntitle: x\r\n---\r\n\r\nbody\r\n";
+        fs::write(root.join("n.md"), raw).unwrap();
+        patch_frontmatter_key(&root, "n.md", "title", Some("y")).unwrap();
+        let out = fs::read_to_string(root.join("n.md")).unwrap();
+        assert!(out.contains("keep: one\r\n"), "untouched CRLF line stays CRLF: {out:?}");
+        assert!(out.contains("body"), "body untouched");
+    }
+
+    #[test]
+    fn patch_fm_key_prefix_does_not_false_match() {
+        let root = fresh_tmp("fm-prefix");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("n.md"), "---\ntag: one\ntags: two\n---\n\nb\n").unwrap();
+        // Patching `tag` must not touch `tags` (and vice versa).
+        patch_frontmatter_key(&root, "n.md", "tag", Some("changed")).unwrap();
+        let entry = read(&root, "n.md").unwrap();
+        assert_eq!(entry.frontmatter["tag"], "changed");
+        assert_eq!(entry.frontmatter["tags"], "two");
+    }
+
+    #[test]
+    fn split_frontmatter_handles_empty_block() {
+        // `write` emits `---\n---` for an empty-object frontmatter; the body must
+        // round-trip WITHOUT the fences leaking in (else line indexing breaks).
+        let (fm, body) = split_frontmatter("---\n---\n\n# Head\n- [ ] task\ntail");
+        assert!(fm.is_null());
+        assert_eq!(body, "# Head\n- [ ] task\ntail");
+        // Round-trip through write→read on disk.
+        let root = fresh_tmp("empty-fm");
+        write(&root, "n.md", "# Head\n- [ ] task\ntail", &serde_json::json!({})).unwrap();
+        let entry = read(&root, "n.md").unwrap();
+        assert_eq!(entry.content, "# Head\n- [ ] task\ntail");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

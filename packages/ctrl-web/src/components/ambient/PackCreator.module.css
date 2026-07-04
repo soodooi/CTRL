@@ -156,3 +156,48 @@
   color: var(--color-danger, #e03131);
   line-height: 1.5;
 }
+
+/* ── JSON edit (ADR-002 §7.4/§7.5; evals styling → PackEvals.module.css) ── */
+.jsonEditor {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text, #1d1d1f);
+  background: var(--color-bg-subtle, #fafafa);
+  border: 1px solid var(--color-border-soft, #e5e5e7);
+  border-radius: 8px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+/* ── OpenAPI scaffold (AutoMCP, §7.4) ──────────────────────────────────── */
+.openapi {
+  margin-top: 12px;
+  font-size: 12.5px;
+}
+.openapi summary {
+  cursor: pointer;
+  color: var(--color-text-muted, #6e6e73);
+  padding: 4px 0;
+}
+.openapi > * {
+  margin-top: 8px;
+}
+
+.notes {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.notes li {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-muted, #6e6e73);
+  padding-left: 12px;
+  border-left: 2px solid var(--color-border-soft, #e5e5e7);
+}

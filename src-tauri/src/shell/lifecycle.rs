@@ -44,7 +44,7 @@ impl ShellLifecycle {
 
         // ADR-002 substrate § brain v19 (aggregator): kernel no longer
         // supervises brains. The external brain agents (hermes / opencode;
-        // notes = the user's Obsidian, §1.9 v25, not bundled)
+        // notes = CTRL's native NotesApp, §1.9 v46, nothing bundled)
         // are lazy-installed under ~/.ctrl/agents/<name>/ on first use, then
         // launched on-demand via shell::agent_launcher when the PWA invokes
         // launch_agent. There is no kernel-side supervision loop. Pi exited the

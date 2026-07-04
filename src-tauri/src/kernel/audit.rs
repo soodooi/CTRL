@@ -55,12 +55,15 @@ pub struct GateRequest {
     caller: String,
     tool: String,
     args_hash: String,
+    args_json: String,
 }
 
 impl GateRequest {
     /// The ONLY constructor — at the gate boundary, from the caller header + the
-    /// tool call. Hashes the args (data sovereignty: the ledger keeps the shape,
-    /// not the payload). There is intentionally no internal constructor.
+    /// tool call. Keeps BOTH a hash (stable shape id, dedup) and a REDACTED JSON
+    /// of the args (real trace: what was actually passed, minus secrets — OTel
+    /// GenAI `gen_ai.tool.call.arguments`, plan-agent-observability.md S2). There
+    /// is intentionally no internal constructor.
     pub fn at_gate(
         caller: String,
         tool: &str,
@@ -70,6 +73,7 @@ impl GateRequest {
             caller,
             tool: tool.to_string(),
             args_hash: hash_args(args),
+            args_json: redact_args(args),
         }
     }
 
@@ -86,6 +90,45 @@ impl GateRequest {
     pub fn args_hash(&self) -> &str {
         &self.args_hash
     }
+    /// Redacted JSON of the args (secrets stripped) — the real-trace payload.
+    pub fn args_json(&self) -> &str {
+        &self.args_json
+    }
+}
+
+/// Keys whose VALUE is a secret and must never land in the ledger (privacy —
+/// content capture stays local + redacted, plan-agent-observability.md §red-line).
+fn is_secret_key(key: &str) -> bool {
+    let k = key.to_ascii_lowercase();
+    ["token", "secret", "password", "passwd", "authorization", "bearer", "credential", "api_key", "apikey", "access_key", "private_key"]
+        .iter()
+        .any(|s| k.contains(s))
+    // NB: "key" alone is too broad (a smart-table field is called `key`), so we
+    // only match the compound secret-ish names above, not bare "key".
+}
+
+/// Redact secret values in the args, then serialize to a bounded JSON string —
+/// the ledger keeps WHAT was passed (for debugging) without leaking credentials
+/// or ballooning on a huge payload.
+pub fn redact_args(args: Option<&serde_json::Map<String, serde_json::Value>>) -> String {
+    const MAX: usize = 4000;
+    let Some(map) = args else {
+        return String::new();
+    };
+    let mut out = serde_json::Map::new();
+    for (k, v) in map {
+        if is_secret_key(k) {
+            out.insert(k.clone(), serde_json::Value::String("<redacted>".into()));
+        } else {
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    let mut s = serde_json::to_string(&serde_json::Value::Object(out)).unwrap_or_default();
+    if s.len() > MAX {
+        s.truncate(MAX);
+        s.push_str("…<truncated>");
+    }
+    s
 }
 
 /// The `Internal` half of the trust-domain boundary (ADR-010 communication

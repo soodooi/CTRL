@@ -24,6 +24,7 @@ export {
   WorkspaceDeclaration as WorkspaceDeclarationSchema,
   UiSurface as UiSurfaceSchema,
   WorkspaceUi as WorkspaceUiSchema,
+  McpManifest as McpManifestSchema,
 } from './manifest-schema';
 
 /* ---------- Types ---------- */

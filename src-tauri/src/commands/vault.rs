@@ -214,6 +214,19 @@ pub async fn vault_set_auto_sync(args: AutoSyncArgs) -> Result<(), String> {
     vault::set_auto_sync(args.enabled).map_err(|e| format!("save auto-sync: {e}"))
 }
 
+/// PWA reports which note is focused (ADR-002 substrate section 1.9 v46 E2).
+/// Tauri-command surface ON PURPOSE (same C3 boundary as review_resolve): the
+/// brain reads the active note via the `note_active_get` gate tool but can
+/// never FORGE focus — only the UI can set it.
+#[tauri::command]
+pub async fn set_active_note(
+    kernel: tauri::State<'_, crate::shell::kernel_supervisor::KernelHandle>,
+    path: Option<String>,
+) -> Result<(), String> {
+    kernel.runtime.ui_bridge.set_active_note(path);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn vault_set_root(path: String) -> Result<VaultConfig, String> {
     let p = PathBuf::from(path.trim());

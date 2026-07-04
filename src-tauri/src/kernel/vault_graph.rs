@@ -380,6 +380,12 @@ impl VaultGraph {
         GraphData { nodes, edges }
     }
 
+    /// The node for one note (tags + outgoing links + aliases), if scanned.
+    /// Feeds `note_get` (ADR-002 §1.9 v46 E10 — one structured read).
+    pub fn node_of(&self, path: &str) -> Option<&NodeInfo> {
+        self.nodes.get(path)
+    }
+
     pub fn aliases_of(&self, path: &str) -> Vec<String> {
         self.nodes
             .get(path)

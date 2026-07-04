@@ -33,4 +33,39 @@ describe('evalFormula', () => {
     expect(evalFormula('{price} +', row)).toBe('#ERR');
     expect(evalFormula('NOPE({price})', row)).toBe('#ERR');
   });
+
+  // S2 (plan-univer-formula-augment.md): expanded math/logical/text/date set.
+  it('expanded math functions', () => {
+    expect(evalFormula('SQRT(16)', row)).toBe('4');
+    expect(evalFormula('POWER(2, 10)', row)).toBe('1024');
+    expect(evalFormula('ROUNDUP(4.1, 0)', row)).toBe('5');
+    expect(evalFormula('ROUNDDOWN(4.9, 0)', row)).toBe('4');
+    expect(evalFormula('INT(4.9)', row)).toBe('4');
+    expect(evalFormula('SIGN(-3)', row)).toBe('-1');
+    expect(evalFormula('PRODUCT({price}, {qty})', row)).toBe('36');
+    expect(evalFormula('MEDIAN(1, 3, 2)', row)).toBe('2');
+  });
+  it('expanded logical: IFS / SWITCH / XOR / ISNUMBER', () => {
+    expect(evalFormula('IFS({price} > 100, "a", {price} > 5, "b")', row)).toBe('b');
+    expect(evalFormula('SWITCH({qty}, 1, "one", 3, "three", "other")', row)).toBe('three');
+    expect(evalFormula('SWITCH({qty}, 1, "one", "other")', row)).toBe('other');
+    expect(evalFormula('IF(XOR({price} > 5, {qty} > 100), "y", "n")', row)).toBe('y');
+    expect(evalFormula('IF(ISNUMBER({price}), "num", "no")', row)).toBe('num');
+    expect(evalFormula('IF(ISNUMBER({name}), "num", "no")', row)).toBe('no');
+  });
+  it('expanded text: MID / FIND / SUBSTITUTE / PROPER / LEN', () => {
+    expect(evalFormula('MID({name}, 2, 2)', row)).toBe('cm');
+    expect(evalFormula('FIND("c", {name})', row)).toBe('2');
+    expect(evalFormula('SUBSTITUTE({name}, "c", "C")', row)).toBe('ACme');
+    expect(evalFormula('PROPER("hello world")', row)).toBe('Hello World');
+    expect(evalFormula('LEN({name})', row)).toBe('4');
+  });
+  it('date functions', () => {
+    const d = { start: '2026-01-15', end: '2026-07-03' };
+    expect(evalFormula('YEAR({start})', d)).toBe('2026');
+    expect(evalFormula('MONTH({start})', d)).toBe('1');
+    expect(evalFormula('DAY({start})', d)).toBe('15');
+    expect(evalFormula('DATEDIF({start}, {end}, "M")', d)).toBe('6');
+    expect(evalFormula('DATE(2026, 7, 3)', d)).toBe('2026-07-03');
+  });
 });

@@ -64,7 +64,7 @@ related:
 
 ## 三点五、首个 connector 参照样本 — 飞书官方 MCP(2026-06-23,先作参照,后续迭代)
 
-核实结论见 `[[feishu-mcp-research]]`。要点:飞书有**官方 MCP**(`@larksuiteoapi/lark-mcp`,Beta,Bitable 全读写,OAuth loopback + keychain,local-first 友好)→ 是「现成第三方 connector 经 gate 挂载」的标准样本。它正好需要本市场要补的 4 块安全(扫描/hash-pin/凭证/写审批)+ SC3 caller/intent 可见性裁剪才能让普通用户安全用。**用途**:① marketplace 切片设计的真实测试用例(拿飞书 MCP 跑 切片 0-4)② 智能表格 ↔ Bitable 双向 sync 的现成写通道。诚实留口:docx 写/审批/传文件 MCP 不支持,需 oapi-sdk fallback。
+核实结论见 `[[feishu-mcp-research]]`。**⚠️ 纠正 2026-07-02(bao「我们是飞书而非集成飞书」)**:飞书**不是** CTRL 要挂载的 connector —— CTRL **原生替代**飞书(Smart-table = Bitable),飞书是被替代的 incumbent(见 memory `feedback-ctrl-is-feishu-not-integrate-feishu`)。要点(事实无误):飞书有**官方 MCP**(`@larksuiteoapi/lark-mcp`,Bitable 全读写,OAuth loopback + keychain)。**其用途降为两个,均非 connector**:① **Bitable parity 参照**(原生 Smart-table 要对标的字段/操作清单)② **可选单向 sync-out mirror 写通道**(本地 Smart-table=truth → 飞书=mirror,给同事还在飞书上的人;次要、晚做)。~~marketplace 切片的真实测试用例~~ 应改用一个**真该 connect 的目标**(Ghostfolio/Twenty 等 OPC 自托管产品)跑切片,不是飞书。
 
 ## 四、可执行落地路径(切片,排在 SC8 之后,慢慢实现)
 

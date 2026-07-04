@@ -77,6 +77,28 @@ impl KernelSupervisor {
             });
         }
 
+        // Open-note forwarder (ADR-002 §1.9 v46 E3): when the brain calls the
+        // `note_open` gate tool, fan the request out to the PWA as a Tauri
+        // event so the notes workspace navigates — same pattern as the
+        // review-gate forwarder above. Lagged/no-listener is fine (the tool
+        // reports `delivered:false`).
+        {
+            use tauri::Emitter;
+            let mut rx = runtime.ui_bridge.subscribe_open();
+            let app_for_notes = app.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match rx.recv().await {
+                        Ok(req) => {
+                            let _ = app_for_notes.emit("notes:open", &req);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
+
         // NOTE (2026-06-21, full-review P0): the unauthenticated `:17878`
         // provider HTTP endpoint (`/text-chat` + `/tool/<name>`) was removed.
         // It existed only for the now-retired Pi bridge (ADR-002 §1 v19) and
@@ -151,37 +173,23 @@ impl KernelSupervisor {
                 Ok(m) => tracing::info!(agent = label, version = %m.version, "agent resource pack ready"),
                 Err(e) => tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)"),
             }
-            // Obsidian notes connector auto-init (ADR-002 §1.9.1), best-effort.
-            // Silently install the app if absent (like hermes), then provision the
-            // Local REST API plugin + register the vault. Idempotent; activates
-            // when Obsidian next opens. The plugin self-generates its token.
-            match crate::commands::obsidian::ensure_obsidian_installed() {
-                Ok(true) => tracing::info!("obsidian app installed"),
-                Ok(false) => tracing::debug!("obsidian app already present"),
-                Err(e) => tracing::info!(error = %e, "obsidian install deferred"),
-            }
-            match crate::commands::obsidian::provision_plugin() {
-                Ok(d) => tracing::info!(downloaded = d, "obsidian connector provisioned"),
-                Err(e) => tracing::info!(error = %e, "obsidian provision deferred"),
-            }
+            // Obsidian connector RETIRED per ADR-002 substrate §1.9 v46
+            // (2026-07-02, notes-module-replacement-plan S1): no app install,
+            // no plugin provision, no bus connect. CTRL's NotesApp + native
+            // note endpoints are the notes surface; the vault stays
+            // Obsidian-format-compatible, unwired.
         });
 
-        // Auto-connect the Obsidian Local REST API MCP connector to the kernel
-        // bus so Irisy/hermes see the user's vault tools (ADR-002 substrate
-        // §1.9.1). Best-effort, no window-launch at boot — connects only when
-        // Obsidian is already serving; retries internally, never blocks boot.
-        let mcp_host_for_obsidian = runtime.mcp_host.clone();
-        tauri::async_runtime::spawn(async move {
-            match crate::commands::obsidian::register_and_connect(mcp_host_for_obsidian, false).await
-            {
-                Ok(c) => {
-                    tracing::info!(tools = c.tools.len(), "obsidian connector connected to bus")
-                }
-                Err(e) => {
-                    tracing::info!(error = %e, "obsidian connector not connected yet (retries on demand)")
-                }
-            }
-        });
+        // Reconnect installed mcp-server packs (ADR-002 §7 Pattern D): a pack
+        // whose manifest declares a `server` block was wired at install time;
+        // re-register + reconnect on every boot so its tools come back to the
+        // gate without a reinstall. Best-effort, never blocks boot.
+        {
+            let host = runtime.mcp_host.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::kernel::mcp_host::reconnect_installed_pack_servers(&host).await;
+            });
+        }
 
         // ADR-002 substrate § provider + vault/ctrl/strategy/0013 (2026-06-16):
         // start hermes's own dashboard web UI on a fixed loopback port so the

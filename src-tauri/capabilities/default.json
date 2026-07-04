@@ -1,8 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for CTRL windows. Core invoke + window/event/menu/tray APIs and PWA plugins. NOTE: core:window:allow-start-dragging is listed explicitly because it is NOT part of core:window:default — without it the decorationless window's data-tauri-drag-region handle (StatusBar) silently no-ops and the window cannot be moved. Do not remove it. BYOK keychain access lives in a SEPARATE capability (see keychain.json) so it can be gated independently once WASM mcps land — they must NOT inherit BYOK reach via this default scope.",
-  "windows": ["main"],
+  "description": "Default capability for CTRL windows. Core invoke + window/event/menu/tray APIs and PWA plugins. NOTE: core:window:allow-start-dragging is listed explicitly because it is NOT part of core:window:default \u2014 without it the decorationless window's data-tauri-drag-region handle (StatusBar) silently no-ops and the window cannot be moved. Do not remove it. BYOK keychain access lives in a SEPARATE capability (see keychain.json) so it can be gated independently once WASM mcps land \u2014 they must NOT inherit BYOK reach via this default scope.",
+  "windows": [
+    "main",
+    "notes-studio"
+  ],
   "permissions": [
     "core:default",
     "core:event:default",
@@ -14,6 +17,8 @@
     "global-shortcut:default",
     "updater:default",
     "process:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-focus"
   ]
 }

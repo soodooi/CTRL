@@ -1,8 +1,8 @@
 ---
 adr_id: 005
 module: irisy
-title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down + §8 terminal-essence dialog (engine owns loop+context)
-version: 10
+title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down + §8 terminal-essence dialog (engine owns loop+context) + §9 mission + knowledge system (数字员工 operator)
+version: 16
 status: accepted
 last_updated: 2026-06-29
 deciders: [bao, zeus, hephaestus]
@@ -15,11 +15,17 @@ sections:
   - { id: capability-decomposition,   source: new-2026-06-04 — RETIRED in v5 (no Irisy system prompt — agents own their prompts) }
   - { id: pi-extension-integration,   source: new-2026-06-04 — RETIRED in v5 (Pi exited CTRL hot path, ctrl-pi-bridge deleted) }
 changelog:
+  - v11 2026-06-29: **NEW §9 mission + knowledge system (root-fix for "Irisy isn't smart").** bao 2026-06-29 钦定: 「Irisy 要做什么他不清楚 → 得有一个整体架构和 Irisy 的整体知识体系」+「你还是做个调研吧」→ 3 路调研 (knowledge/context-engineering · proactive-operator · China-OPC) 合成。**魂 LOCKED** = Irisy = 一人公司的数字员工/运营官 (按角色把整件事做完 / 本地记住你的生意 / 缺工具就造 / 经 gate)。病根 = ①没使命 ②知识散 5 摊无 SSOT。§9.2 = 8 层知识栈 (每层一 SSOT, 注入 vs 召回, **能力意识从 gate 注册表派生不手写**, 记忆存 vault markdown 写时对账)。§9.3 = 操作循环 Sense→Anticipate→Plan→Act(经gate)→Produce→Persist + 4 条主动性护栏 (可逆性=ask 边界)。定位红线: 不抢免费超级框 / 不做陪伴 / 隐私=商业数据主权。Governing SSOT = `vault/ctrl/irisy-architecture.md` v2 + [[irisy-roles.md]]。配 §3 persona-shell (§9 在 persona 之上 = Irisy 是为了什么)。实施走 dev-loop 分步。**+ §9.5 实施路径校准 (bao「hermes 已做了一些, 你要综合考虑」)= 驯化非造**: hermes 已是完整 agent 引擎 (记忆/循环/技能/cron/kanban), Irisy 三件 = 给魂 + 把记忆引流回 vault + 藏黑话 (减法非加法)。审计: CTRL 早把三件设计在 `vault_seed/irisy-soul.md` (记忆体系 episodes/playbook/curator + privacy + 藏黑话规则) + `CTRL_CAPABILITY_BRIEF` (已命令 hermes 把记忆写 vault SOUL 不写私有库) 里, 只是魂旧 (co-pilot/passenger/Pi/keycap) + 散两处会漂 + 引流没收口 (hermes 双写) + `vault/irisy/SOUL.md` 从未 seed。本刀已: 换魂 (seed about/identity → operator/back-office-of-one-person-company, 擦 Pi/keycap/co-pilot) + PWA spine 注入使命 (irisy-prompts v13→v14)。待做: 收口引流 (hermes 启动同步 vault SOUL + 停私有 MEMORY 双写) + 合并两源成单 spine。
   - v1 2026-05-31: module reorg — merged orig-016 (8-stage mcp lifecycle) + orig-017 (remote co-view = Irisy primitives) + lifted orig-024 §7 persona rule into this ADR + amended persona rule with prompt v5 (brain self-awareness with brand labels).
   - v2 2026-06-03: NEW §4 soul-md-compat — Irisy persistent memory adopts the SOUL.md spec (github.com/aaronjmars/soul.md) verbatim, ecosystem-aligned with OpenClaw (350k stars, 2,999+ ClawHub skills, WorkBuddy compat) and Claude Code. CTRL-only extensions land in an `x-ctrl:` frontmatter namespace so vanilla SOUL.md readers stay forward-compatible. Driven by bao 2026-06-03 competitive research summarised in `.olym/brainstorm/openclaw-compat-2026-06-03.md`.
   - v3 2026-06-04: **NEW §5 self-reflection-loop** — Irisy implements Loop 1 of ADR-001 §8 self-evolution. Three layers: client-side rule-based **Detect** (failure signals → episodes), Pi background subagent **Reflect** (Letta-code stateless mode, idle-30min trigger), playbook **Improve** (injected into next IrisyChat system prompt). Reuses ADR-002 §11 audit-ledger for cross-loop accountability. Per bao "不仅仅 Irisy LLM, 整个系统都要自我升级成长 — Irisy 自己有自我成长的能力". Brainstorm: `.olym/brainstorm/irisy-self-reflection-loop-2026-06-04.md` + `.olym/brainstorm/system-self-evolution-2026-06-04.md` §3.1.
   - v4 2026-06-04: **NEW §6 capability-decomposition + §7 pi-extension-integration** — root-cause fix for "Pi 一切动词都 install_mcp" + "Pi 说我没 skill 系统" 实测 fail. ctrl-pi-bridge 升级从 provider-only → registerTool + 3 hook (before_agent_start chain / tool_call inspector / resources_discover skills 贡献), Pi `--no-tools` → `--no-builtin-tools` (撤 7 个 built-in 但保 extension 注册的). System prompt 从 monolithic 200 行 → thin base (~30 行) + 8 capability segment, 通过 `before_agent_start` hook 按关键词动态注入 (token cache 友好). PWA `<call>` XML loop 保留作 Volc Qwen/Llama 弱模型 fallback. 调研: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2 §3 (Pi/Letta/Cline/Goose/Cursor 对标) + §8 (background agent 深拉源码).
   - v5 2026-06-09: **Irisy reframed as PWA persona shell (H-2026-06-09-002).** bao 2026-06-09 校准: "Irisy 是表象". Irisy is **no longer a brain / agent runtime** — the brain role belongs to 3 external agents (hermes / opencode / kairo per ADR-002 §1 v19). Irisy is now the PWA UX persona layer: (1) **Avatar + branding** — Irisy character, voice, blink animation (Lottie). (2) **System-prompt injection** — wraps user message with CTRL substrate context (active provider info, Notes folder path, OS hint) before routing to whichever agent matches active L1 chip (default `/assistant` → hermes). (3) **Sycophancy filter** — `packages/ctrl-web/src/lib/persona-filter/patterns.md` (relocated from retired `packages/ctrl-pi-bridge/data/persona-patterns.md`). (4) **Drill-down** — long-press / Alt-click reveals raw agent output before filter. RETIRED sections: lifecycle (moves to ADR-004 § mcp execution), soul-md-compat (applies to hermes memory, not Irisy), self-reflection-loop (migrates to hermes as `~/.ctrl/skills/auto-reflect/SKILL.md`), capability-decomposition (no Irisy system prompt — agents own theirs), pi-extension-integration (Pi exited, ctrl-pi-bridge deleted). Per memory `feedback_no_redundancy_one_ssot` 🔒: hermes is the sole substrate-level agent memory primitive — Irisy doesn't duplicate.
+  - v16 2026-07-04: **§8.6.1/§8.6.2 SHIPPED — the terminal frontend, built + verified.** bao 「继续做…」 across a long build. Delivered (each a commit): §8.6.1 work-trace (reasoning + tool-call steps, ACP `SessionUpdate` types adopted); the **review-gate moat** — NOT a new ACP-layer approval card as §8.6.2 planned but a RECONCILE to CTRL's EXISTING red-team-reviewed kernel `ReviewGate` (already wired to dispatch + mounted `ReviewGateHost` modal); the only fix was scope `is_first_party`→`is_user_surface` so it covers hermes (ADR-002 §264 v51, bao chose B) + reverting the duplicate ACP-layer approval I built before finding it (lesson: grep existing infra first); the **command surface, registry-driven** (`/` = `/new` + installed packs' actions; `:` jump = modules + packs; `@` vault notes/tables; `↑`/`↓` history — bao corrected my hardcoded capability list: CTRL is create/share/download, entries come from the registry); status line; session resume + **fork/checkpoint** (`irisy_reset_engine` + engine re-hydrate §8.4, also fixing a latent engine-memory-drift bug on switch); Blocks (re-run + fork-from-here); output-routing (auto-open a note Irisy writes). Status markers updated in the §8.6.1 table + §8.6.2 priority. Honest gap: real-data + engine round-trip verify on desktop (browser can't reach the kernel).
+  - v15 2026-07-04: **§8.6.2 amend — verified build kit + detailed capability/resource plan.** 3 more research agents verified the reference SOURCE CODE + licenses (live from repos): official ACP SDKs moved to `agentclientprotocol` org and are **Apache-2.0** (crate `agent-client-protocol` + `@agentclientprotocol/sdk` + codegen `schema.json`) — adopt, retire hand-rolled `acp_client.rs` parsing; UI kit all MIT/Apache and 4/6 extend CTRL's existing Tiptap/CM6: `cmdk` + `@tiptap/suggestion`/`extension-mention` + `@codemirror/merge` (built-in per-hunk accept/reject) + `assistant-ui`(MIT) or AI Elements(Apache) chat shell + `agent-inbox` 4-flag approval (approve/deny/edit-args); Zed's UI = GPL, read-only reference. Avoid `@nlux/react` (MPL+AI-training clause), Open WebUI (branding). Detailed slash-set/modes/keyboard/approval/status/blocks plan → `vault/ctrl/irisy-terminal-frontend-plan.md`.
+  - v14 2026-07-04: **NEW §8.6.2 — terminal FRONTEND advantages + the reference to copy (5-facet web research).** bao 「前端也有不一样，发挥 terminal 前端优势 / 全网调研」. 5 parallel research agents (9 agentic CLIs · terminal renaissance · agent transparency/approval · REPL HCI primitives · keyboard-first consumer apps), cross-verified, full synthesis + primary sources in `vault/ctrl/terminal-frontend-research.md`. Decision: **Irisy's frontend = an ACP-contract-driven friendly GUI review client** (render ACP wire types as dialog + cards + approval + status; keep terminal SEMANTICS, GUI the delivery, drop the raw shell per §8.1). References to copy: contract → **ACP (Zed)**; form → **Zed + Warp**; write-gate moat → **LangGraph HITL + Copilot approval card** (approve/deny/edit-args, gated after-pick-before-execute, deferred write — CTRL today auto-allows via `select_allow_outcome`, the top gap); keyboard/command → **Raycast + GitHub/VS Code sigil palette**. Priority: ①✅ trace → ②★ inline approval → ③ command surface → ④ status line → ⑤ session fork/checkpoint → ⑥ Blocks.
+  - v13 2026-07-04: **NEW §8.6.1 — the terminal-essence advantage map + surface the first three.** bao 「对比 terminal 本质和对话框本质的优势，将这些优势发挥出来」. A dialog box = one stateless Q→A (context rebuilt per turn, tool use hidden, no session object); terminal-essence (engine owns loop+context) is strictly more powerful, and each advantage is a moat vs the default chatbot. Shipped the live WORK-TRACE (advantages #1–3): a per-turn **reasoning trace** (`chat-stream-thought` ← `agent_thought_chunk`, collapsible "Thinking") + **tool-step chips** (`chat-stream-tool` ← `tool_call`/`tool_call_update`, drill-down to raw I/O §6). Kernel now maps ALL of the engine's session/update kinds (`acp_client.rs` `AcpEvent` + `parse_session_update`) instead of dropping everything but the answer text. Roadmap in §8.6.1: #4 session resume/list/fork (engine-advertised), #5 mid-loop steering, #6 slash/@-mention, #7 usage chip. Rule: surface the ESSENCE, keep the friendly dialog FORM (§8.1 "not a raw shell"). Empirical basis captured 2026-07-04.
+  - v12 2026-07-04: **§8.5 acceptance verified — terminal-essence is REAL (not just designed).** bao 「验证 terminal 本质」. All three §8.5 criteria confirmed: (#1 routing) `irisy_chat.rs` `use_agent = !coding_mode && !force_direct && engine_ready` sends EVERY non-coding turn to the single persistent engine — `turn_needs_agent` no longer gates it (comment §8.3, tests-only now); (#2 no-nuke) on a prompt error CTRL keeps the LIVE session and resets only when `!c.is_alive()` (process genuinely dead) → re-hydrate, never per-turn amnesia; (#3 continuity) **runtime-proven** — a controlled 2-turn ACP test drove a fresh `hermes-acp` (same spawn as `acp_client.rs`) on ONE session: turn 1 stated codeword `sky-anchor-7731`, turn 2 recalled it verbatim without restating (`acp_continuity_test.py`, 29s). Engine = single long-lived process per app-session (verified PID). `primed` flag confirms §8.4 re-hydration (first turn = system + brief + prior-turn replay; continuing turns = last_user only). Form stays a friendly dialog (§8.1/§8.6 lock: "not a raw shell") — the terminal is the ESSENCE (engine owns loop+context), not the look. No decision change; records verification per dev-loop.
   - v7 2026-06-28: **NEW §8 terminal-essence dialog — the engine owns the loop + context (continuity root-fix).** bao 2026-06-28 钦定: Irisy 的对话「**对话框形态, terminal 本质**」—— 友好对话 UI 罩在一个**持久 REPL 引擎**上, 引擎自持 agent loop + 对话上下文 (Claude Code / Codex 同模型), 正是 ADR-001 spine §byo-cli-driver + ADR-002 §brain 早已钦定的「调度权在 CLI/引擎手里, CTRL 不 supervise/编排 loop」。根治 §8.2 三条失忆 (每轮只发 last_user / 一出错就 nuke session / 路径切换两后端不共享记忆) —— 把实装拉回架构本位: CTRL 停止「半管」一个它不该拥有的 loop+context, 回到 projection+gate。「先不用管 provider」(bao): 引擎单元就用现有 hermes, 暂不动 provider/模型层; provider-direct 降为「引擎缺席/离线」纯 fallback, 不再参与正常对话记忆。Supersedes §1「对话持续」intent 的脆弱实装。
   - v9 2026-06-28: **§8 amend — NEW §8.7 consolidation: left/right regions + the right-region pluggable ACP engine.** bao design pass 2026-06-28 (「你分开一下,左边区域和右边区域」+「Irisy 不是可以选择是 Hermes 或者 Codex 么」). **左区** = workspace/输出 (per-L1; coding 模块的工作区是真终端 PTY, 跑用户**自驱**的 coding agent — Claude/Codex/shell, CTRL 只投影不 supervise)。**右区** = Irisy (单一品牌 persona), **引擎可选 Hermes/Codex/Claude**, CTRL **经 ACP 驱动**之。机制 = ACP (JSON-RPC over stdio): `hermes-acp` (已驱动) / `@zed-industries/codex-acp` / `claude-code-acp` 同协议, `acp_client.rs` 参数化 spawn 即可。**driven(右) vs projected(左)** 区分: 同一 Codex 两区不同角色 (右=被 CTRL 当脑驱动, 左=被用户当 driver), 「不 supervise BYO」只管左区。纠正 §8.6 两处过度声明 (并非所有 surface 同引擎 — 左区 coding 终端不是 Irisy 引擎, `coding_mode` 绕开引擎是对的; BYO 选中不是「死路 handoff」而是 ACP 真驱动流式作答)。坐实 §8.4 真修法 (transcript 回灌 fresh session, 否则只是 UI 记得引擎忘了)。配对 **ADR-002 §brain amend** (hermes→「CTRL 驱动的可选 ACP 引擎」, hermes 仍默认不退役)。§8.7 与 §8.6 冲突时以 §8.7 为准。
   - v10 2026-06-29: **§8 amend — NEW §8.8 one-click managed install for right-region BYO engines (replaces the copy-command-into-terminal hand-off).** bao 2026-06-29 钦定: 「你希望普通用户这么安装配置吗?普通用户只会一键安装」。§8.7 把 Codex/Claude 当右区引擎驱动了, 但 InstallAgentModal 还在让用户「复制 `npm i -g` 进终端」—— 那是开发者工具的默认装法, 不是 CTRL 模型。**校准**: ① 普通用户**零安装**停在 hermes (CTRL bundle + uvx 自启, 默认引擎, 用户啥都不用动)。② 真要用 Codex/Claude 的人走 **CTRL 一键托管安装** —— 装进 CTRL 自管的 `~/.ctrl/agents/<id>/` (本地 npm `--prefix`, **不全局、不 sudo、不开终端**), 运行时 (Node) 像 `ensure_uvx` 一样**自举** (`ensure_node`, 零前置依赖, 沿用 ADR-002 §1.2 v20「kernel bootstraps what it needs」)。③ 装完只剩一次性 provider 认证 —— 尽量复用用户已在 CTRL 配的 BYOK key (Keychain, 注入 adapter 子进程 env), 否则引导式登录; key 永不入 Irisy/LLM。**driven(右)= CTRL 装+驱动** 与 §8.7「不 supervise BYO」(只管左区 projection) 不冲突 —— 右区引擎本就是 CTRL 拥有的。InstallAgentModal 从「复制命令」改成**一键 Install 按钮 + 进度 + ready**。开放点 (codex-acp↔托管 codex 的 PATH 接线 / Node·codex release asset 名 / claude-code-acp 包名) 真机验证, ADR 内诚实标注 pending。
@@ -530,13 +536,18 @@ increment, not a separate ADR.)
 
 ### §8.5 Acceptance / implementation
 
-- [ ] All non-coding turns route to the single persistent engine; the
+- [x] All non-coding turns route to the single persistent engine; the
   `turn_needs_agent` split of normal conversation to provider-direct is removed —
   provider-direct becomes an explicit engine-absent / offline fallback only.
-- [ ] The engine session is NOT dropped on a transient prompt error; it is reset
+  *(v12 2026-07-04: `irisy_chat.rs` `use_agent = !coding_mode && !force_direct &&
+  engine_ready`; `turn_needs_agent` no longer gates the engine — tests only.)*
+- [x] The engine session is NOT dropped on a transient prompt error; it is reset
   only when the engine process is genuinely dead, followed by re-hydration.
-- [ ] The session survives across turns for one conversation — verified: a fact
+  *(v12: keeps live session; `if dead { *guard = None }` where `dead = !c.is_alive()`.)*
+- [x] The session survives across turns for one conversation — verified: a fact
   stated in turn 1 is recalled in turn N (real run / ledger).
+  *(v12 2026-07-04 RUNTIME: 2-turn ACP test on ONE session — turn 1 stated
+  `sky-anchor-7731`, turn 2 recalled it verbatim without restating.)*
 
 ### §8.6 Unified terminal-essence frontend — every surface is a terminal, agent is selectable (NEW v8, 2026-06-28)
 
@@ -587,6 +598,92 @@ per surface).
   v0.1.684 per §8.7.
 - [ ] CTRL remains projection + gate; it does not reconstruct context per turn
   (ADR-001/002 §brain). The fragile pre-v7 path (§8.2) is superseded.
+
+#### §8.6.1 Why terminal-essence beats a dialog box — the advantages, and surfacing them (NEW v13, 2026-07-04)
+
+bao 「对比 terminal 本质和对话框本质有哪些优势，将这些优势发挥出来」. A dialog box is
+one stateless Q→A: the app reconstructs context per turn, the model answers, tool
+use (if any) is hidden, there is no session object. Terminal-essence (the engine
+owns the loop + context, §8.1) is strictly more powerful — and every advantage is
+a moat vs the industry-default chatbot. The governing surfacing plan:
+
+| # | Terminal-essence advantage (a dialog box can't) | Surface it as | Status |
+|---|---|---|---|
+| 1 | **Agentic multi-step**: plans → calls tools → observes → continues until done, in ONE turn | a live work-trace (below), not a single answer | ✅ visible via 2+3 |
+| 2 | **See it think**: the reasoning stream (`agent_thought_chunk`) | collapsible "Thinking" trace per turn | ✅ v13 (`chat-stream-thought`) |
+| 3 | **See it work**: each tool call + result (`tool_call`/`tool_call_update`) | step chips w/ drill-down to raw I/O (§6) | ✅ v13 (`chat-stream-tool`) |
+| 4 | **Session is an object**: `resume`/`list`/`fork`/`loadSession` (engine-advertised) | conversation history + resume + branch | ✅ v16 (resume + fork/checkpoint via `irisy_reset_engine` §8.4) |
+| 5 | **Steerable mid-loop**: it's a running process, not a fired request | inject a correction while it works (beyond Stop) | ⧗ next |
+| 6 | **Command surface**: `available_commands_update` (slash) | slash / quick-actions + @-mention vault | ✅ v16 (`/` registry-driven + `@` mention + `:` jump + `↑` history) |
+| 7 | **Cost/usage visible**: `usage_update` | per-turn token/cost chip | ⧗ later |
+| 8 | **Persistent continuity**: no per-turn amnesia | one engine session ≡ one conversation | ✅ §8.5 (v12) |
+
+Rule: surface the ESSENCE, keep the friendly dialog FORM (§8.1 lock "not a raw
+shell") — every advantage lands under the approachable skin, drill-down optional.
+Empirical basis: hermes-acp 0.16.0 `initialize` advertises `{fork,list,resume,
+loadSession, image}` + emits all of `agent_thought_chunk`/`tool_call`/`tool_call_
+update`/`available_commands_update`/`usage_update` (captured 2026-07-04).
+
+#### §8.6.2 The terminal FRONTEND advantages + the reference to copy (NEW v14, 2026-07-04)
+
+bao 「前端也有不一样，发挥 terminal 前端优势 / 全网调研」. 5-facet web research (9 agentic
+CLIs + terminal renaissance + agent transparency/approval + REPL HCI primitives +
+keyboard-first consumer apps) — full cross-verified synthesis + primary sources in
+`vault/ctrl/terminal-frontend-research.md` (governing reference). Meta-thesis (all 5
+converge): **terminal-frontend power decouples from shell syntax** — keep the
+semantics (nameable/repeatable actions, addressable output, keyboard-first flow,
+ambient context, plan-then-approve, reversibility), GUI the delivery, drop the raw
+shell. This is exactly what Zed ACP + Warp did, and what §8.1 ("not a raw shell")
+already mandates.
+
+**THE PLAN (best): Irisy's frontend = an ACP-contract-driven friendly GUI review
+client.** Not a shell — render ACP's wire types as dialog + cards + approval + status.
+
+**WHAT TO COPY (references, decided):**
+- **Frontend↔brain contract → ACP (Zed).** The one tool that publishes the
+  client↔agent frontend contract as a spec, ~1:1 onto CTRL's `:17873` gate; CTRL
+  already drives hermes over it. Its `session/update` (8 variants), `request_permission`
+  (4-value enum), `tool_call` (kind/status/**diff** content/locations), `plan`, session
+  modes, `usage_update` = the ready-made schema for the WHOLE terminal frontend. Extend
+  along ACP; do not invent a protocol.
+- **Friendly-GUI-over-terminal-agent form → Zed + Warp** (buttons not raw scrollback;
+  Blocks = addressable turn/result cards; rich plan editor; per-hunk diff review).
+- **Write-review gate (the moat) → LangGraph HITL + Copilot approval dialog** — the
+  inline approve/deny/**edit-args** card, gated AFTER the model picks a write and BEFORE
+  execution, write deferred until resume, scope once/session/always. CTRL today
+  AUTO-ALLOWS this (`select_allow_outcome`) — the single highest-leverage gap.
+- **Keyboard/command surface → Raycast** (menu teaches its own shortcut, Action Panel,
+  Quicklinks) + GitHub/VS Code sigil palette (`>`/`@`/`#`/`/`/`:`).
+
+**Detailed capability + resource plan** (Irisy slash set, conversation modes, keyboard,
+approval card, status line, sessions, blocks — each mapped to a verified open-source
+code reference + license + where it plugs into CTRL): `vault/ctrl/irisy-terminal-frontend-plan.md`.
+Build kit (all licenses verified 2026-07-04): kernel/PWA **adopt the official Apache-2.0
+ACP SDKs** (`agent-client-protocol` crate + `@agentclientprotocol/sdk`) + codegen from
+`schema.json`; UI = `cmdk` (palette, MIT) + `@tiptap/suggestion`+`@tiptap/extension-mention`
+(slash/@ on CTRL's existing Tiptap, MIT) + `@codemirror/merge` (per-hunk diff on CTRL's
+existing CM6, MIT) + `assistant-ui` (MIT) **or** Vercel AI Elements (Apache-2.0) for the
+chat shell + approval card, with `agent-inbox`'s 4-flag model for approve/deny/edit-args.
+Avoid `@nlux/react` (MPL + AI-training clause) and Open WebUI (branding clause).
+
+**Surfacing priority — SHIPPED v16 (2026-07-04):** ① ✅ thinking + tool-step trace
+(§8.6.1) → ② ✅ **review gate** (the moat — NOT a new ACP-layer card as planned:
+CTRL already had a red-team-reviewed kernel `ReviewGate` wired to dispatch + a
+mounted `ReviewGateHost` modal; the fix was `is_first_party`→`is_user_surface` so
+it covers hermes, ADR-002 §264 v51) → ③ ✅ **command surface, REGISTRY-DRIVEN**
+(`/` = core `/new` + installed feature packs' actions; `:` jump = core modules +
+installed packs; `@` mention vault notes/tables; `↑`/`↓` history — bao: CTRL is a
+create/share/download platform, entries come from the registry not a hardcoded
+list) → ④ ✅ status line (engine · model · state · version) → ⑤ ✅ session
+resume + fork/checkpoint (`irisy_reset_engine`, engine re-hydrates from the
+transcript §8.4) → ⑥ ✅ Blocks (re-run + fork-from-here per turn). Also ✅ output-
+routing (auto-open a note Irisy writes) + ACP crate `SessionUpdate` types adopted
+(retired hand-rolled parsing). **Remaining ⧗:** #5 steering mid-loop, #7 usage
+chip, full ACP-schema codegen, diff-review via `@codemirror/merge`, richer @-mention
+(inject resolved path/content). **Skip (raw-shell, §8.1):** alt-screen mechanics,
+permission DSLs, --yolo, leader/chord/vim-as-default, raw token math, two-axis flags.
+Honest gap: much is tsc/Playwright-verified (render + client logic); real-data +
+engine round-trip (approval modal, auto-open, fork re-hydrate) verify on desktop.
 
 ### §8.7 Consolidation — left/right regions + the right-region pluggable ACP engine (NEW v9, 2026-06-28)
 
@@ -790,6 +887,62 @@ user who pre-installed via brew/npm is detected too — CTRL never double-instal
 
 ### SOUL.md compat (§4 — NEW v2)
 - [x] Strategic lock recorded — SOUL.md spec adopted verbatim, `x-ctrl:` namespace reserved for CTRL extensions, ecosystem stance documented in `.olym/brainstorm/openclaw-compat-2026-06-03.md` and memory `decision_openclaw_compat_layer`. Code follow-up tracked in **Future work** below (deferred batch, not a blocker for ongoing P0 fixes).
+## §9 Mission + knowledge system (NEW v11, 2026-06-29)
+
+> Governing design SSOT = `vault/ctrl/irisy-architecture.md` (3-track research-backed map). This § records the DECISION; the doc holds the detail. Pairs with §3 persona-shell (§9 is the layer ABOVE persona: what Irisy is FOR) + [[irisy-roles.md]] (the role axis).
+
+### §9.1 The mission (LOCKED, bao 2026-06-29)
+
+bao picked the research-backed frame: **Irisy = the 数字员工 / operator for a one-person company** — by **role** (sales follow-up / customer service / docs / bookkeeping) it **completes the whole job**, on the user's **own local data** it **remembers the business** (customers, context), it **self-extends** (builds a feature pack when a capability is missing), all **through the `:17873` gate**.
+
+Root-fix for "Irisy isn't smart" (bao 2026-06-29): not the model — two structural gaps. ① **No mission** — the system prompt had identity + voice + a tool list + guardrails but no *purpose*, so Irisy always "waits to be asked → answers shallow." ② **Knowledge scattered across 5 sources** with no SSOT (`irisy-prompts.ts` + `acp_client.rs::CTRL_CAPABILITY_BRIEF` + hermes SOUL/config + vault + skills) → drift (brief over-claimed capabilities, SOUL went unread). Three research tracks (knowledge/context-engineering · proactive-operator · China-OPC market) converge: leading assistants make the mission a model-external persistent scaffold and the knowledge a layered, single-SSOT, injected-vs-retrieved system.
+
+Three differentiators (all three required): **completes the whole job** (not answers) · **remembers your business — locally** (rivals all park the customer book in their cloud; Irisy gives the agent that context WITHOUT exporting = vault-is-truth, the sharpest seam) · **self-extends** (feature packs, Manus Skills/Projects analog). Positioning red lines: NOT the free all-in-one super-box (Doubao/Quark/Yuanbao own that via free + IM distribution — undistributable for us) → owner-role colleague; NOT a companion (shallow market, >50% churn, regulatory exposure) → warm-but-reliable colleague, trust from accuracy+consistency+drill-down; privacy framed as **business data sovereignty** (PIPL/DSL + leak/lockout avoidance, e.g. cross-app automation getting banned), NOT abstract consumer privacy.
+
+### §9.2 Knowledge system — 8 layers, single SSOT each, injected-vs-retrieved
+
+Principle (Anthropic context-engineering et al.): keep the static prompt small at the "right altitude", route dynamic knowledge through tools just-in-time, one SSOT per layer, **capability-awareness DERIVED not hand-written**.
+
+| # | Layer | SSOT | Injected per-turn vs retrieved on-demand |
+|---|---|---|---|
+| 1 | Identity / mission | `irisy-prompts.ts` (versioned) | injected, tiny — who + OPC mission + operating loop |
+| 2 | persona / voice | persona pool (versioned) | injected, tiny, per-role |
+| 3 | **Capability awareness** | **live gate registry** (MCP `tools/list` / `visibility.rs`) | injected, **generated per-turn from the registry** ← honesty fix |
+| 4 | Durable user/business facts (customer-profile core) | `vault/irisy/` markdown (md+YAML) | injected, **bounded** (Letta core-block style), reconcile-on-write (ADD/UPDATE/DELETE, mem0 style) |
+| 5 | Skill metadata | `SKILL.md` frontmatter | injected, name+desc only (progressive disclosure) |
+| 6 | Inferred prefs / soft context | derived index over past sessions | retrieved top-k |
+| 7 | Vault project-brain / customer book | user markdown vault (vault-is-truth) | retrieved just-in-time — agentic file-read > chunked RAG at personal scale (<1M tok); FTS5+sqlite-vec+RRF when it grows |
+| 8 | Archival / session memory | out-of-window files (memory-tool dir) | retrieved; flush before compaction |
+
+Three iron rules: **one SSOT per layer** (merge the two drifting prompts; fold `CTRL_CAPABILITY_BRIEF` into a single assembly point) · **capability-awareness derived not hand-written** (kills both fake-capability claims and missed-tool blindness) · **brain and chat share ONE knowledge source** (hermes sees what the chat path assembles — kills the unread-SOUL bug).
+
+local-first / BYOK fit + traps: memory stored as vault markdown (passes vim test, no lock-in); on-demand file-read IS vault-is-truth; capability-derivation IS the existing gate. Traps to avoid: mem0/Letta are hosted — borrow the patterns (memory blocks, reconcile-on-write, sleep-time tidy) on vault files, don't use their cloud; under BYOK an embedder can leak the vault to a cloud — default a LOCAL embedder, cloud-embed needs explicit consent + gate audit, FTS5/BM25 always-local fallback; route all memory writes through the gate (auditable, reversible).
+
+### §9.3 Operating loop + proactivity guardrails
+
+The system prompt teaches the LOOP (a "right-altitude" heuristic), not a tool list: **Sense → Anticipate (idle pre-stage; present-now/save/hold) → Plan (answer / act / build-a-pack) → Act (through `:17873` gate — read/reversible = automatic, write/spend/send/delete = confirm first) → Produce (answer in chat; documents/pages routed into the owning module's workspace) → Persist (write decisions/results back to vault → smarter next turn)**.
+
+Proactivity guardrails (research: unsolicited help can hurt competence): ① reversibility = the ask boundary (= the gate's job) · ② only trigger-born + goal-relevant nudges, batched into ONE brief not a stream · ③ one-tap suggestions the user can ignore (don't usurp autonomy) · ④ transparency + sovereignty (drill-down to raw, runs on local vault, NEVER block the input box, any proactive routine is switch-off-able).
+
+### §9.5 Implementation path — TAME hermes, don't build (bao 2026-06-29: "有些 hermes 应该都做了一些了,你要综合考虑")
+
+Critical calibration after auditing hermes + the existing code. **hermes is already a complete agent engine** — it has its own memory, an agent loop that runs to task-completion (max_turns 90, task_completion_guidance), skills, cron (proactivity), a kanban task board, web search, a terminal. The execution substrate is THERE. So Irisy's job is NOT to build capabilities (that re-invents what hermes has — the exact mistake bao corrected 3×). Irisy's job is to **tame** a generic, raw engine whose data lives in its own private store:
+
+> **hermes is the engine; Irisy is the car. The user must never perceive the engine.** CTRL adds the three things hermes structurally lacks, each of which IS the user experience: ① **give it a soul** (the OPC operator mission — hermes can't grow one) · ② **drain its memory back into the user's vault** (hermes defaults to a private DB → violates the vim test; CTRL lands it as the user's own markdown) · ③ **a one-Ctrl-key warm entry that hides all the jargon** (toolsets / cron / providers vanish behind one trustworthy colleague). This is subtraction + taming, not addition + wheel-building.
+
+Audit finding: CTRL already DESIGNED all three, scattered + stale. `vault_seed/irisy-soul.md` (a ~200-line soul seed) already carries the whole memory system (episodes / playbook / curator reconcile-on-write), the privacy locks, the output-routing-to-vault, and the hide-jargon rules. `acp_client.rs::CTRL_CAPABILITY_BRIEF` already commands hermes "your long-term memory is the user's SOUL.md — persist durable facts THERE via the ctrl soul/memory tools, not your private store, so the chat and agent paths share one memory and never drift." So the DRAIN MECHANISM exists. What was actually wrong: (a) the soul was stale (`co-pilot` / `passenger-seat` + retired `Pi`/`keycap` jargon), (b) two sources (seed + brief) drift = the §9.2 "scattered knowledge" disease, (c) the drain isn't closed (hermes still double-writes its own private MEMORY.md), (d) `vault/irisy/SOUL.md` was NEVER seeded into the user's vault, so the rich soul never reached anyone.
+
+### §9.4 Acceptance (§9)
+
+- [x] Mission LOCKED by bao 2026-06-29 (数字员工/operator frame) — recorded here + in governing doc §一.
+- [x] Governing design SSOT written: `vault/ctrl/irisy-architecture.md` v2 (research-backed mission + 8-layer knowledge stack + operating loop + positioning), `vault/ctrl/irisy-roles.md` role axis.
+- [x] **Soul re-souled (§9.5 ③ + ②-jargon)**: `vault_seed/irisy-soul.md` `about` + `x-ctrl.identity` rewritten co-pilot/passenger → operator/back-office-of-your-one-person-company; retired jargon (`Pi`/`keycap`/`co-pilot`/`servant`) wiped. Seeds into `vault/irisy/SOUL.md` on next launch (`write_if_missing`, currently absent → writes the new soul). PWA chat path reads it via `irisy_soul_get`.
+- [x] **Mission in the PWA spine**: `irisy-prompts.ts` v13→v14 prepends mission + operating loop (layer 1).
+- [ ] **Close the drain (§9.5 ②)**: on hermes launch, sync `vault/irisy/SOUL.md` → `~/.hermes/SOUL.md` (or point hermes at the vault) so the engine path reads the SAME re-souled file as the PWA path; stop hermes double-writing its private `~/.hermes/memories/MEMORY.md` (land durable facts in the vault instead). ← needs on-device hermes verification.
+- [~] **One spine + capability from registry (§9.2 iron-rules, in progress)**. **一脉 = CTRL real functions are the capability backbone** (bao 2026-06-29 chose this over hermes built-ins): Irisy stands on TWO toolsets — hermes's own (browser/subagent/image/kanban/sessions/its-own-memory) + the CTRL gate (:17873: vault/market/feature-packs/smart-table/soul-memory). A live probe (`hermes -z`) proved Irisy was reciting the hermes built-in list while the CTRL real functions stayed invisible — the "no single spine" disease, live. Landed: (a) `CTRL_CAPABILITY_BRIEF` no longer hand-lists tools — it pins the `ctrl` tool list (tools/list) as the SINGLE source of truth + the PRIMARY toolset, demotes built-ins to "fill gaps only (image/browse)", tells Irisy to answer capability questions from ctrl tools not a built-in list (cargo check green). (b) SOUL widened to **personal assistant** (not one-person-company) + capabilities-come-from-the-tool-list, persona-talk removed. Remaining: disable hermes's DUPLICATE built-in toolsets (its memory/sessions/kanban — needs `hermes tools` granularity, interactive-only); behavior verify in-app (oneshot can't reach the gated ctrl tools). Do NOT re-implement hermes's loop/memory.
+- [ ] **Close the orphan-soul drain (treblesoul → one owner)**: `~/.hermes/SOUL.md` is an orphan runtime file (no code owned it → held a stale co-pilot persona). Re-souled by hand for now; still needs code to re-pin it from a repo seed on every hermes launch (`acp_client::start`, alongside `write_hermes_dotenv`) so it can't drift back.
+- [ ] China-OPC hero feature: local customer-profile memory (drained from hermes into per-customer vault markdown) + cross-IM (WeChat) ingestion → next-up after the drain is closed.
+
 ## Future work
 
 - Irisy prompt v5 — bumps `PROMPT_VERSION` 4 → 5 in `packages/ctrl-web/src/lib/irisy-prompts.ts`; replaces v4 "no codenames" hard-ban with "brand labels only + self-aware via brain_status + failover transition + Settings deflect". Lands with ADR-002 § provider §3.7 introspection wiring.

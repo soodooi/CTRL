@@ -15,10 +15,12 @@
 // MCP-bus passthrough (§1.8.2): `session/new` passes CTRL's :17873 bus as the
 // agent's MCP server (build_mcp_servers), so hermes reaches the FULL CTRL tool
 // surface — Notes / clipboard / OCR / provider router (fal.ai image/video) /
-// Obsidian (via mcp.proxy_*) / skills — through the single ACP door. This is how
+// downstream MCP servers (via mcp.proxy_*; Obsidian connector retired, ADR-002
+// §1.9 v46) / skills — through the single ACP door. This is how
 // the functions ACP itself scopes out (messaging/cron) are supplied by CTRL's
 // own layers instead of hermes's upgrade-fragile internal protocol.
 
+use agent_client_protocol::schema::v1 as acp_v1;
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -47,29 +49,159 @@ pub struct AcpClient {
     engine_id: String,
 }
 
+/// Structured streaming events from the ACP engine (ADR-005 §8.6 transparency).
+/// The read loop maps each `session/update` sub-type to one of these so the
+/// caller can surface the engine's WORK — its reasoning and each tool call /
+/// result — instead of only the final answer text (§6 transparency by drill-down).
+/// Owned strings: tool events are rare and text deltas are small, so the alloc
+/// per event is negligible and it keeps the callback free of lifetimes.
+pub enum AcpEvent {
+    /// `agent_message_chunk` — a chunk of the visible answer.
+    Text(String),
+    /// `agent_thought_chunk` — a chunk of the engine's reasoning.
+    Thought(String),
+    /// `tool_call` — the engine started a tool. `input` = compact JSON of rawInput.
+    ToolCall {
+        id: String,
+        title: String,
+        input: String,
+    },
+    /// `tool_call_update` — a tool finished (or changed status). `output` = its
+    /// result text; `status` = e.g. `completed` / `failed` / `in_progress`.
+    ToolResult {
+        id: String,
+        status: String,
+        output: String,
+    },
+}
+
+/// Plain text of an ACP `ContentBlock` (only the `text` variant carries text).
+fn block_text(b: &acp_v1::ContentBlock) -> String {
+    match b {
+        acp_v1::ContentBlock::Text(t) => t.text.clone(),
+        _ => String::new(),
+    }
+}
+
+/// Concatenated text of a tool call's `content` items (skips diff/terminal).
+fn tool_content_text(items: &[acp_v1::ToolCallContent]) -> String {
+    let mut out = String::new();
+    for it in items {
+        if let acp_v1::ToolCallContent::Content(c) = it {
+            out.push_str(&block_text(&c.content));
+        }
+    }
+    out
+}
+
+/// The ACP status string (`completed` / `failed` / …) via serde, future-proof to
+/// new variants — no hand-maintained match.
+fn status_str(s: &acp_v1::ToolCallStatus) -> String {
+    serde_json::to_value(s)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+/// Map one ACP `session/update` payload to an `AcpEvent`, or `None` for update
+/// kinds we don't surface yet (usage / available_commands / plan / mode).
+///
+/// ADR-005 §8.6.2 (v15): deserialize into the maintained `agent-client-protocol`
+/// (Apache-2.0) `SessionUpdate` type instead of hand-poking JSON — the crate owns
+/// the wire schema, so new fields / variants ride along and `#[non_exhaustive]`
+/// keeps us forward-compatible.
+fn parse_session_update(u: &Value) -> Option<AcpEvent> {
+    let update: acp_v1::SessionUpdate = serde_json::from_value(u.clone()).ok()?;
+    match update {
+        acp_v1::SessionUpdate::AgentMessageChunk(cc) => {
+            let t = block_text(&cc.content);
+            (!t.is_empty()).then_some(AcpEvent::Text(t))
+        }
+        acp_v1::SessionUpdate::AgentThoughtChunk(cc) => {
+            let t = block_text(&cc.content);
+            (!t.is_empty()).then_some(AcpEvent::Thought(t))
+        }
+        acp_v1::SessionUpdate::ToolCall(tc) => {
+            let input = match tc.raw_input {
+                Some(v) if !v.is_null() => serde_json::to_string(&v).unwrap_or_default(),
+                _ => tool_content_text(&tc.content),
+            };
+            Some(AcpEvent::ToolCall {
+                id: tc.tool_call_id.0.to_string(),
+                title: tc.title,
+                input,
+            })
+        }
+        acp_v1::SessionUpdate::ToolCallUpdate(tcu) => {
+            let status = tcu.fields.status.as_ref().map(status_str).unwrap_or_default();
+            let output = tcu
+                .fields
+                .content
+                .as_deref()
+                .map(tool_content_text)
+                .unwrap_or_default();
+            Some(AcpEvent::ToolResult {
+                id: tcu.tool_call_id.0.to_string(),
+                status,
+                output,
+            })
+        }
+        _ => None,
+    }
+}
+
 /// One-time capability brief prepended to the first turn so hermes KNOWS it can
-/// drive CTRL's tools (the user's notes / Obsidian vault are reachable via the
-/// `ctrl` MCP server passed in session/new) instead of answering from its own
-/// memory (ADR-002 substrate §1.8.2 v23). Concise so it doesn't fight SOUL.md.
+/// drive CTRL's tools (the user's notes vault is reachable via the `ctrl` MCP
+/// server passed in session/new; ADR-002 §1.9 v46 — notes are CTRL-native)
+/// instead of answering from its own memory (ADR-002 substrate §1.8.2 v23).
+/// Concise so it doesn't fight SOUL.md.
 const CTRL_CAPABILITY_BRIEF: &str = "\
-[CTRL context — you are Irisy, the user's assistant inside CTRL. The `ctrl` MCP \
-server (already connected) gives you tools to read / write / search the user's \
-notes and Obsidian vault at ~/Documents/CTRL/Notes (vault.* tools) and their \
-structured tables (smart_table_* tools). When the user asks about their notes, \
-Obsidian, or knowledge, USE these tools — do not answer from memory alone. \
-For live market data you have two controlled tools — use them, never invent a \
-quote. market_quote takes symbols (a list of tickers; Yahoo suffixes: .SS \
-Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^) \
-and returns price + currency + change_pct for each. market_screen takes screen \
-= day_gainers | day_losers | most_actives and returns the day's top movers. The \
-user's own watchlist lives in their vault at Stocks/watchlist.md (one ticker per \
-line); read it with the vault tools, then market_quote those symbols. For a \
-daily review, combine: (a) the major indices via market_quote ^GSPC ^IXIC ^DJI \
-(US) + 000001.SS 399001.SZ ^HSI (Greater China); (b) market_quote each ticker \
-in Stocks/watchlist.md (skip if the file is absent); (c) market_screen \
-day_gainers and day_losers for notable movers. Then write a concise recap: \
-indices first, then how the watchlist did, then anything notable. Always show \
-real numbers you fetched, never invented ones. \
+[CTRL context — you are Irisy, the user's personal assistant inside CTRL. Your \
+CAPABILITIES ARE THE `ctrl` TOOLS connected to you (already wired): that ctrl \
+tool list is the single source of truth for what you can do, and it is your \
+PRIMARY toolset — prefer it over any built-in. Your VISIBLE ctrl tools are the \
+common set, but the gate has ~100 tools total; the rest are one search away. \
+When you need a capability that is not in your visible tools — editing a note \
+surgically, AI table columns, connectors (REST/calendar), scaffolding / \
+validating / publishing a feature pack, or calling an installed MCP — call \
+`gate_tool_search(\"keywords\")` to find the tool (name + schema), then \
+`gate_tool_call(name, args)` to run it. NEVER tell the user you cannot do \
+something before searching the full tool surface this way. Through ctrl you reach the user's \
+OWN notes vault (the vault tools already point at the library the user configured), their structured tables, \
+live market data, web search, and building new feature packs — their real data \
+and work, on their machine. Built-in tools are a secondary aid (e.g. image \
+generation, browsing) — use them only when the ctrl tools lack a capability, and \
+never present them as your main repertoire. When asked what you can do, lead \
+with what the ctrl tools give you (the user's notes, tables, market data, web \
+search, building feature packs) — not a long list of built-ins — and never \
+claim a capability the ctrl tools don't provide. When the user asks about their \
+notes or knowledge, USE the vault tools — do not answer from memory alone. \
+PROJECT COMPANION: the user's projects live under projects/<name>/ in the \
+vault; CTRL itself is the FIRST companion project (projects/ctrl/vault = its \
+strategy docs, projects/ctrl/decisions = its ADRs) — when asked about the CTRL \
+project, its architecture or decisions, READ those files, never answer from \
+memory. For note edits prefer the surgical tools over whole-file writes: \
+note_map first (see real headings/frontmatter keys), then doc_produce \
+(append/replace/delete_section by heading; set/delete_frontmatter_key). \
+note_get reads a note WITH its links/backlinks in one call; note_periodic \
+resolves today's daily / weekly / monthly note; note_recent_changes = what \
+changed lately; note_history / note_diff / vault_pulse show WHO (user vs \
+agents) changed what — cite them when asked what happened in the vault. \
+STRUCTURED DATA: the user's tables are multi-sheet BASES (like a Bitable) — one \
+base holds several LINKED data-tables. When the user describes a whole connected \
+dataset (a CRM, a project tracker, an inventory), build it in ONE shot with \
+smart_table_base_scaffold(base_name, tables[{name, fields[{key,label,type, \
+options?, link_to?, display?}]}]): set a field's link_to=<another table's name> \
+to wire a REFERENCE (relation) between tables — do NOT create tables one-by-one \
+for a connected base. For a single standalone table use smart_table_create; to \
+edit an existing table's cells/rows/fields use smart_table_produce; seed rows \
+with smart_table_append_row / batch_append_rows. \
+For live market data use the market/stock tools on the gate (market_quote / \
+market_screen for global tickers; a stocks feature pack adds richer domain \
+tools when installed) — use them, never invent a quote or statistic. Domain \
+playbooks (watchlist conventions, daily-review recipes) live in the relevant \
+feature pack's knowledge base as skills — load them ON DEMAND via skill_list / \
+skill_read when the task matches, not from this brief. \
 You also have web_search(query) for facts / news / research you don't already \
 hold — call it instead of guessing. It uses any BYOK keyed provider you have \
 configured (Tavily / Brave / Serper / Exa) and otherwise a keyless full-web \
@@ -136,7 +268,12 @@ shows what is already installed; a deeper create-feature-pack skill exists \
 (skills_list / skill_view) if you need more detail. \
 Your long-term memory is the user's SOUL.md (ADR-005 irisy v5 §6.3): read it and \
 persist durable facts THERE via the ctrl soul/memory tools, not in your own \
-private store, so the chat and agent paths share one memory and never drift.]";
+private store, so the chat and agent paths share one memory and never drift. \
+REVIEW GATE (ADR-002 §264): high-blast writes you make (creating/updating/deleting \
+notes, tables, rows, fields; sending; publishing; installing packs) pause for the \
+user's one-tap approval — this is normal and by design (their data sovereignty). \
+Proceed to the write as usual; if a call comes back denied, the user declined it \
+— acknowledge and adjust, do not silently retry the same write.]";
 
 /// Process-wide persistent client. `None` until the first turn starts it;
 /// reset to `None` on any error so the next turn restarts cleanly.
@@ -157,10 +294,42 @@ pub fn shutdown() {
 }
 
 fn notes_dir() -> Result<PathBuf> {
-    let base = directories::BaseDirs::new().ok_or_else(|| anyhow!("home dir"))?;
-    let p = base.home_dir().join("Documents").join("CTRL").join("Notes");
-    std::fs::create_dir_all(&p).context("create Notes dir")?;
+    // hermes's cwd = the user's REAL configured vault, NOT a hardcoded Notes dir
+    // (bao 2026-06-29: pkm is the single default knowledge base — there is no
+    // separate notes store; feature-pack-specific docs live in their own project
+    // dir). Follow `configured_vault_root` so the engine's working directory never
+    // drifts from where the vault tools actually read/write (root-fix for "Irisy
+    // organized the wrong library").
+    let p = crate::kernel::vault::configured_vault_root()
+        .or_else(crate::kernel::vault::default_vault_root)
+        .ok_or_else(|| anyhow!("vault root"))?;
+    std::fs::create_dir_all(&p).context("create vault dir")?;
     Ok(p)
+}
+
+/// Irisy's engine soul, owned by CTRL (ADR-005 §9.5). hermes reads ~/.hermes/SOUL.md
+/// as its persona every turn; that file was an ORPHAN runtime copy no code owned,
+/// so it silently kept a stale "co-pilot" persona while the real soul lived
+/// elsewhere. This seed is the single owner of the engine identity.
+const HERMES_SOUL: &str = include_str!("hermes-soul.md");
+
+/// Re-pin ~/.hermes/SOUL.md from the repo seed before every hermes launch
+/// (ADR-005 §9.5 — close the orphan-soul drain). CTRL owns the engine IDENTITY;
+/// the user's learned memory lives in hermes's own MEMORY.md / the vault, not in
+/// this file, so overwriting identity is safe. Idempotent: only writes when the
+/// content differs, to avoid needless IO / mtime churn.
+fn ensure_hermes_soul() {
+    let Some(base) = directories::BaseDirs::new() else {
+        return;
+    };
+    let soul = base.home_dir().join(".hermes").join("SOUL.md");
+    if std::fs::read_to_string(&soul).ok().as_deref() == Some(HERMES_SOUL) {
+        return;
+    }
+    if let Some(dir) = soul.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&soul, HERMES_SOUL);
 }
 
 /// MCP-bus passthrough (ADR-002 §1.8.2): expose CTRL's kernel MCP server
@@ -323,6 +492,7 @@ impl AcpClient {
         // here.
         if engine == "hermes" {
             let _ = crate::commands::agents::write_hermes_dotenv(provider_env);
+            ensure_hermes_soul();
         }
 
         let cwd = notes_dir()?;
@@ -393,7 +563,7 @@ impl AcpClient {
             engine_id: engine.to_string(),
         };
 
-        let mut noop = |_: &str| {};
+        let mut noop = |_: AcpEvent| {};
         let init = s
             .request(
                 "initialize",
@@ -483,7 +653,7 @@ impl AcpClient {
         &self.engine_id
     }
 
-    /// Run one prompt turn; `on_delta` receives streamed text as it arrives.
+    /// Run one prompt turn; `on_event` receives streamed events as they arrive.
     /// `turns` is the conversation so far as `(role, content)` pairs (user /
     /// assistant, in order). The actual prompt = the last `user` turn; the
     /// earlier turns are used ONLY to re-hydrate a fresh session (§8.4).
@@ -492,7 +662,7 @@ impl AcpClient {
         &mut self,
         turns: &[(String, String)],
         system_preamble: Option<&str>,
-        mut on_delta: impl FnMut(&str) + Send,
+        mut on_event: impl FnMut(AcpEvent) + Send,
     ) -> Result<String> {
         let sid = self.session_id.clone();
         let last_user = turns
@@ -540,7 +710,7 @@ impl AcpClient {
             .request(
                 "session/prompt",
                 json!({ "sessionId": sid, "prompt": [{ "type": "text", "text": turn_text }] }),
-                &mut on_delta,
+                &mut on_event,
             )
             .await?;
         Ok(res
@@ -559,14 +729,14 @@ impl AcpClient {
     }
 
     /// Send a JSON-RPC request, then pump stdout until its response arrives,
-    /// streaming agent_message_chunk text to `on_delta` and answering any
-    /// agent->client requests (permission / fs) minimally so the turn never
-    /// stalls.
+    /// mapping each `session/update` to an `AcpEvent` for `on_event` (text,
+    /// reasoning, tool call / result) and answering any agent->client requests
+    /// (permission / fs) minimally so the turn never stalls.
     async fn request(
         &mut self,
         method: &str,
         params: Value,
-        on_delta: &mut (dyn FnMut(&str) + Send),
+        on_event: &mut (dyn FnMut(AcpEvent) + Send),
     ) -> Result<Value> {
         let id = self.next_id;
         self.next_id += 1;
@@ -600,18 +770,11 @@ impl AcpClient {
                 return Ok(v.get("result").cloned().unwrap_or(Value::Null));
             }
 
-            // session/update notification → stream chunk text.
+            // session/update notification → map to an AcpEvent (ADR-005 §8.6).
             if v.get("method").and_then(|m| m.as_str()) == Some("session/update") {
                 if let Some(u) = v.get("params").and_then(|p| p.get("update")) {
-                    if u.get("sessionUpdate").and_then(|s| s.as_str()) == Some("agent_message_chunk")
-                    {
-                        if let Some(t) = u
-                            .get("content")
-                            .and_then(|c| c.get("text"))
-                            .and_then(|t| t.as_str())
-                        {
-                            on_delta(t);
-                        }
+                    if let Some(ev) = parse_session_update(u) {
+                        on_event(ev);
                     }
                 }
                 continue;
@@ -696,6 +859,59 @@ mod tests {
         );
     }
 
+    // ADR-005 §8.6 — the read loop maps ACP session/update to AcpEvent. These
+    // payloads are the real shapes captured from hermes-acp 0.16.0 (2026-07-04).
+    #[test]
+    fn maps_tool_call_and_result_from_real_payloads() {
+        let call = json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "tc-1d09b052f3af",
+            "title": "mcp_ctrl_vault_search",
+            "kind": "other",
+            "rawInput": { "query": "ghostfolio" },
+            "content": [{ "type": "content", "content": { "type": "text", "text": "{}" } }]
+        });
+        match parse_session_update(&call) {
+            Some(AcpEvent::ToolCall { id, title, input }) => {
+                assert_eq!(id, "tc-1d09b052f3af");
+                assert_eq!(title, "mcp_ctrl_vault_search");
+                assert_eq!(input, r#"{"query":"ghostfolio"}"#);
+            }
+            _ => panic!("expected ToolCall"),
+        }
+
+        let update = json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "tc-1d09b052f3af",
+            "status": "completed",
+            "content": [{ "type": "content",
+                "content": { "type": "text", "text": "mcp_ctrl_vault_search result\n- **result:** []" } }]
+        });
+        match parse_session_update(&update) {
+            Some(AcpEvent::ToolResult { id, status, output }) => {
+                assert_eq!(id, "tc-1d09b052f3af");
+                assert_eq!(status, "completed");
+                assert!(output.contains("result"));
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn maps_text_and_thought_and_ignores_noise() {
+        let msg = json!({ "sessionUpdate": "agent_message_chunk",
+            "content": { "type": "text", "text": "hello" } });
+        assert!(matches!(parse_session_update(&msg), Some(AcpEvent::Text(t)) if t == "hello"));
+
+        let thought = json!({ "sessionUpdate": "agent_thought_chunk",
+            "content": { "type": "text", "text": "thinking" } });
+        assert!(matches!(parse_session_update(&thought), Some(AcpEvent::Thought(t)) if t == "thinking"));
+
+        // usage_update / available_commands_update are not surfaced yet.
+        let usage = json!({ "sessionUpdate": "usage_update", "tokens": 42 });
+        assert!(parse_session_update(&usage).is_none());
+    }
+
     /// Real end-to-end: spawn hermes-acp via the kernel client, run one
     /// streamed prompt turn. Network + uvx + a configured hermes provider.
     /// Run: `cargo test acp_smoke -- --ignored --nocapture`
@@ -709,7 +925,11 @@ mod tests {
         let mut answer = String::new();
         let turns = vec![("user".to_string(), "Reply with exactly: ACP OK".to_string())];
         let stop = client
-            .prompt(&turns, None, |d| answer.push_str(d))
+            .prompt(&turns, None, |e| {
+                if let AcpEvent::Text(t) = e {
+                    answer.push_str(&t)
+                }
+            })
             .await
             .expect("prompt turn");
         println!("\nANSWER: {answer:?}  stopReason={stop}");

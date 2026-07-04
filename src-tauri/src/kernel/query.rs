@@ -182,6 +182,137 @@ pub trait QuerySource {
     }
 }
 
+/// The WRITE half of ADR-002 §14 (§14.13) — a compile-time-fixed union of produce
+/// operations. Like `Operator`, this is an enum, never a free-form string (the AI
+/// picks a `kind` + fills typed fields — anti-hallucination §14.1). Only the Write
+/// half (§14.9); Effect-class side-effects use the Effect primitive, not this.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProduceOp {
+    /// Set one cell by row index + field key.
+    SetCell { row: usize, field: String, value: String },
+    /// Append one or more rows (batch-create; each keyed by field key). NOTE:
+    /// currently append-only — no update-by-key merge yet, so repeated calls with
+    /// the same logical row create duplicates (matches smart_table_batch_append).
+    UpsertRows { rows: Vec<Row> },
+    /// Delete rows by index (out-of-range + duplicates ignored).
+    DeleteRows { indices: Vec<usize> },
+    /// Add a column. `relation` present → a Reference/Lookup/Rollup column.
+    AddField {
+        key: String,
+        label: String,
+        #[serde(rename = "type")]
+        cell_type: CellType,
+        #[serde(default)]
+        options: Option<Vec<String>>,
+        #[serde(default)]
+        relation: Option<RelationSpec>,
+    },
+    /// Change a column's label / type / options in place.
+    UpdateField {
+        key: String,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(rename = "type", default)]
+        cell_type: Option<CellType>,
+        #[serde(default)]
+        options: Option<Vec<String>>,
+    },
+    /// Drop a column (and its relation metadata) by key.
+    DeleteField { key: String },
+    /// Append markdown content: under the named section (heading), or at the
+    /// end of the document when `heading` is None. (Block op — Doc sources;
+    /// record sources return Unsupported.)
+    AppendSection {
+        #[serde(default)]
+        heading: Option<String>,
+        content: String,
+    },
+    /// Replace the BODY under a markdown heading (the heading line itself is
+    /// kept). (Block op — Doc sources.)
+    ReplaceSection { heading: String, content: String },
+    /// Remove a markdown heading AND its body (until the next same-or-higher
+    /// level heading). (Block op — Doc sources.)
+    DeleteSection { heading: String },
+    /// Set ONE top-level frontmatter key to a scalar value, surgically — every
+    /// other frontmatter byte (order/comments/quoting) stays verbatim. Creates
+    /// the frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)
+    SetFrontmatterKey { key: String, value: String },
+    /// Remove ONE top-level frontmatter key (and its nested value block).
+    /// (Doc sources.)
+    DeleteFrontmatterKey { key: String },
+}
+
+impl ProduceOp {
+    /// The op's `kind` tag (matches the serde discriminant + `supported_ops`).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            ProduceOp::SetCell { .. } => "set_cell",
+            ProduceOp::UpsertRows { .. } => "upsert_rows",
+            ProduceOp::DeleteRows { .. } => "delete_rows",
+            ProduceOp::AddField { .. } => "add_field",
+            ProduceOp::UpdateField { .. } => "update_field",
+            ProduceOp::DeleteField { .. } => "delete_field",
+            ProduceOp::AppendSection { .. } => "append_section",
+            ProduceOp::ReplaceSection { .. } => "replace_section",
+            ProduceOp::DeleteSection { .. } => "delete_section",
+            ProduceOp::SetFrontmatterKey { .. } => "set_frontmatter_key",
+            ProduceOp::DeleteFrontmatterKey { .. } => "delete_frontmatter_key",
+        }
+    }
+}
+
+/// A relational-column declaration for `AddField.relation` (§14.13). Mirrors the
+/// frontmatter schema's relational shape (design: smart-table-relational-index).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RelationSpec {
+    /// A link to rows in another table (its cell holds `[[...]]` link tokens).
+    Reference { table: String, display: String },
+    /// Pull a field from the referenced rows (computed, not stored).
+    Lookup { via: String, target: String },
+    /// Aggregate a field over the referenced rows (computed, not stored).
+    Rollup { via: String, target: String, func: String },
+}
+
+/// Structured, machine-actionable produce failure (§14.11 Feedback shape).
+#[derive(Debug, Clone)]
+pub enum ProduceError {
+    /// The source does not support this op kind (see `supported_ops`).
+    Unsupported { op: String, supported: Vec<String> },
+    /// A row/index reference was out of range.
+    OutOfRange { what: String },
+    /// A field reference did not exist.
+    UnknownField { field: String },
+    /// The op would violate an invariant (e.g. duplicate field key).
+    Conflict { message: String },
+}
+
+impl std::fmt::Display for ProduceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProduceError::Unsupported { op, supported } => {
+                write!(f, "unsupported op '{op}' (supported: {})", supported.join(", "))
+            }
+            ProduceError::OutOfRange { what } => write!(f, "out of range: {what}"),
+            ProduceError::UnknownField { field } => write!(f, "field_not_found: '{field}'"),
+            ProduceError::Conflict { message } => write!(f, "conflict: {message}"),
+        }
+    }
+}
+
+/// The WRITE mirror of `QuerySource` (§14.13). A source advertises which ops it
+/// accepts (`supported_ops`, surfaced through `describe`) and applies one
+/// (`produce`). Native vault sources + connectors both implement it, so the gate
+/// exposes ONE `produce` verb over any source — adding a product is a trait impl,
+/// not a new tool.
+pub trait RecordSink {
+    /// The op kinds this source accepts (snake_case, matching `ProduceOp` tags).
+    fn supported_ops(&self) -> Vec<&'static str>;
+    /// Apply a write op to the in-memory source; the caller persists.
+    fn produce(&mut self, op: ProduceOp) -> Result<(), ProduceError>;
+}
+
 /// Shared kernel query engine: validate → filter → sort → group → limit over
 /// typed string rows. The single place filtering lives (ADR-002 §14.1).
 pub fn run_query(

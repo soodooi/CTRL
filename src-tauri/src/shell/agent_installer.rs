@@ -90,8 +90,8 @@ impl AgentName {
 /// (ADR-002 substrate §1.1 v20):
 /// - hermes = NousResearch/hermes-agent (PyPI, MIT). Embedding path is the
 ///   ACP stdio server (`hermes-acp`), NOT an MCP `chat` tool.
-/// Notes/KB = the user's Obsidian (ADR-002 §1.9 v25), not a bundled agent —
-/// the kairo/SilverBullet binary download was retired (don't reinvent the wheel).
+/// Notes/KB = CTRL's native NotesApp (ADR-002 §1.9 v46 — Obsidian connector
+/// retired; earlier the kairo/SilverBullet binary download was retired too).
 pub const HERMES_ACP_SPEC: &str = "hermes-agent[acp]==0.16.0";
 pub const HERMES_ONESHOT_SPEC: &str = "hermes-agent==0.16.0";
 /// hermes-agent requires Python >=3.11,<3.14; pin one so uv fetches a managed

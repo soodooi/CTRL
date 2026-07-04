@@ -1353,11 +1353,12 @@
 /* Irisy thinking indicator — animated so the user isn't staring at a static
    dot during the agent's (multi-second) turn. bao 2026-06-16. */
 .thinking {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  margin-top: 6px;
   color: var(--color-text-muted, #6e6e73);
-  font-size: 14px;
+  font-size: 13px;
 }
 .thinkingDots {
   display: inline-flex;
@@ -1380,4 +1381,256 @@
 @keyframes irisyThinking {
   0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* ADR-005 §8.6 terminal-essence transparency — the engine's tool calls shown as
+   steps in the assistant turn (see it work), each drill-down-able to raw I/O. */
+.toolSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 8px;
+  border-left: 2px solid var(--color-border-soft, #e5e5ea);
+  padding-left: 10px;
+}
+.toolStep {
+  font-size: 12.5px;
+  color: var(--color-text-muted, #6e6e73);
+}
+.toolStep > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  padding: 2px 0;
+  user-select: none;
+}
+.toolStep > summary::-webkit-details-marker {
+  display: none;
+}
+.toolGlyph {
+  font-size: 12px;
+  width: 14px;
+  text-align: center;
+  color: var(--color-primary, #0d9488);
+}
+.toolStep[data-status='running'] .toolGlyph {
+  animation: irisyToolSpin 1s linear infinite;
+}
+.toolStep[data-status='failed'] .toolGlyph {
+  color: var(--color-danger, #d1453b);
+}
+.toolTitle {
+  font-family: var(--font-mono, 'SF Mono', 'JetBrains Mono', monospace);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+.toolStep[data-status='running'] .toolTitle {
+  color: var(--color-text, #1d1d1f);
+}
+.toolIo {
+  margin: 4px 0 2px;
+  padding: 8px 10px;
+  background: var(--color-bg-l1, #f5f5f7);
+  border: 1px solid var(--color-border-soft, #e5e5ea);
+  border-radius: var(--radius-sm, 6px);
+  font-family: var(--font-mono, 'SF Mono', monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--color-text, #1d1d1f);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+.toolIoLabel {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted, #6e6e73);
+  margin-bottom: 4px;
+}
+@keyframes irisyToolSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ADR-005 §8.6.2 terminal command surface — the `/` slash menu above the
+   composer. Filterable, teaches its own commands (shortcut hint on each row). */
+.slashMenu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--color-bg-l0, #fff);
+  border: 1px solid var(--color-border-soft, #e5e5ea);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+  z-index: 20;
+}
+.slashItem {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.slashItem[data-sel='yes'] {
+  background: color-mix(in srgb, var(--color-primary, #0d9488) 12%, transparent);
+}
+.slashCmd {
+  font-family: var(--font-mono, 'SF Mono', monospace);
+  font-size: 13px;
+  color: var(--color-primary, #0d9488);
+  min-width: 92px;
+}
+.slashLabel {
+  font-size: 13px;
+  color: var(--color-text, #1d1d1f);
+}
+
+/* ADR-005 §8.6.2 output-routing — "open the note Irisy just wrote" shortcut. */
+.openNoteChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 2px;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border-soft, #e5e5ea);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg-l1, #f5f5f7);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text, #1d1d1f);
+  transition: border-color var(--duration-fast, 120ms) ease;
+}
+.openNoteChip:hover {
+  border-color: var(--color-primary, #0d9488);
+}
+.openNoteName {
+  font-family: var(--font-mono, 'SF Mono', monospace);
+  font-size: 12.5px;
+}
+.openNoteGo {
+  color: var(--color-primary, #0d9488);
+  font-weight: var(--weight-medium, 500);
+}
+
+/* ADR-005 §8.6.2 ambient chrome — a calm status line above the composer:
+   engine · model · state · version (glanceable, never demands attention). */
+.composerWrap {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Blocks (ADR-005 §8.6.2) — a per-turn action row, revealed on hover so an
+   addressable turn can be acted on (re-run) without cluttering the transcript. */
+.blockActions {
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity var(--duration-fast, 120ms) ease;
+}
+.msg:hover .blockActions {
+  opacity: 1;
+}
+.blockAction {
+  padding: 2px 9px;
+  border: 1px solid var(--color-border-soft, #e5e5ea);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-bg-l0, #fff);
+  color: var(--color-text-muted, #6e6e73);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.blockAction:hover {
+  border-color: var(--color-primary, #0d9488);
+  color: var(--color-primary, #0d9488);
+}
+.statusLine {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 6px;
+  font-size: 11.5px;
+  color: var(--color-text-muted, #6e6e73);
+  user-select: none;
+}
+.statusItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.statusSep {
+  opacity: 0.4;
+}
+.statusGrow {
+  flex: 1;
+}
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-muted, #6e6e73);
+}
+.statusDot[data-state='working'] {
+  background: var(--color-primary, #0d9488);
+  animation: irisyThinking 1.2s infinite ease-in-out;
+}
+.statusDot[data-state='ready'] {
+  background: color-mix(in srgb, var(--color-primary, #0d9488) 55%, transparent);
+}
+
+/* ADR-005 §8.6 — the engine's reasoning trace (see it think), collapsed by
+   default so the answer stays front-and-centre for non-technical users. */
+.reasoning {
+  margin: 2px 0 6px;
+  font-size: 12.5px;
+  color: var(--color-text-muted, #6e6e73);
+}
+.reasoning > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  padding: 2px 0;
+  user-select: none;
+  font-style: italic;
+}
+.reasoning > summary::-webkit-details-marker {
+  display: none;
+}
+.reasoningGlyph {
+  font-size: 12px;
+  width: 14px;
+  text-align: center;
+  color: var(--color-primary, #0d9488);
+}
+.reasoning[open] .reasoningGlyph {
+  animation: none;
+}
+.reasoningBody {
+  margin-top: 4px;
+  padding: 8px 11px;
+  border-left: 2px solid var(--color-border-soft, #e5e5ea);
+  color: var(--color-text-muted, #6e6e73);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
 }

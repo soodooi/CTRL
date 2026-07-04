@@ -3,14 +3,31 @@
 // `schema:` block; this lists those files for the /tables browse page and seeds
 // new ones.
 
-import { vaultList, vaultRead, vaultWrite } from '@/lib/kernel';
+import {
+  vaultList,
+  vaultRead,
+  vaultWrite,
+  vaultDelete,
+  describeSmartTable,
+  querySmartTable,
+} from '@/lib/kernel';
 import { columnKeyFromLabel } from '@/lib/smart-table';
 import { isSmartTableFrontmatter } from '@/modules/smart-table';
+import { parseCsv, toCsv } from './smart-table-csv';
+
+// Re-export the pure CSV codec so existing `import { parseCsv } from smart-tables`
+// call sites keep working (the codec moved to smart-table-csv.ts to unit-test it
+// without pulling the kernel/alias graph).
+export { parseCsv, toCsv } from './smart-table-csv';
 
 export interface SmartTableEntry {
   path: string;
   title: string;
   fields: number;
+  /** Saved views (name + kind) so the tree can nest them under the table
+   *  (Feishu spine model, plan-tables-workspace-ux.md T1). Empty = no declared
+   *  views, so the tree shows just the table leaf. */
+  views: Array<{ name: string; kind: string }>;
 }
 
 /** Scan the vault for markdown files carrying a `schema:` frontmatter block. */
@@ -25,10 +42,18 @@ export const listSmartTables = async (): Promise<SmartTableEntry[]> => {
     if (!path.startsWith('tables/')) continue;
     try {
       const entry = await vaultRead(path);
-      const fm = entry.frontmatter as { schema?: unknown[]; title?: unknown };
+      const fm = entry.frontmatter as { schema?: unknown[]; title?: unknown; views?: unknown };
       if (isSmartTableFrontmatter(fm)) {
         const title = typeof fm.title === 'string' && fm.title.trim() ? fm.title : path.replace(/\.md$/i, '');
-        entries.push({ path, title, fields: fm.schema?.length ?? 0 });
+        const views = Array.isArray(fm.views)
+          ? (fm.views as Array<Record<string, unknown>>)
+              .filter((v) => v && typeof v === 'object')
+              .map((v) => ({
+                kind: typeof v.kind === 'string' ? v.kind : 'grid',
+                name: typeof v.name === 'string' && v.name.trim() ? v.name : String(v.kind ?? 'view'),
+              }))
+          : [];
+        entries.push({ path, title, fields: fm.schema?.length ?? 0, views });
       }
     } catch {
       // Unreadable file — skip, not fatal for a read-only scan.
@@ -137,45 +162,275 @@ export const createSmartTable = async (rawTitle: string, templateKey = 'blank'):
   return path;
 };
 
-/** Minimal RFC4180-ish CSV parser: handles quoted fields, escaped quotes,
- *  and \r\n. Drops fully blank rows. */
-export const parseCsv = (text: string): string[][] => {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cur = '';
-  let quoted = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const c = text[i];
-    if (quoted) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          cur += '"';
-          i += 1;
-        } else {
-          quoted = false;
-        }
-      } else {
-        cur += c;
-      }
-    } else if (c === '"') {
-      quoted = true;
-    } else if (c === ',') {
-      row.push(cur);
-      cur = '';
-    } else if (c === '\n') {
-      row.push(cur);
-      rows.push(row);
-      row = [];
-      cur = '';
-    } else if (c !== '\r') {
-      cur += c;
+// ── Univer spreadsheets (`tables/*.sheet.md`) — the Excel-style sibling of the
+// smart-table (plan-univer-formula-augment.md). Same tables/ home so the panel
+// is one tabular-data workspace; a .sheet.md carries no `schema:` block so
+// listSmartTables skips it and the two lists never overlap.
+export interface SheetEntry {
+  path: string;
+  title: string;
+}
+
+/** Scan the vault for Univer spreadsheets (`tables/<name>.sheet.md`). */
+export const listSheets = async (): Promise<SheetEntry[]> => {
+  let paths: string[];
+  try {
+    paths = await vaultList();
+  } catch {
+    return [];
+  }
+  return paths
+    .filter((p) => p.startsWith('tables/') && p.toLowerCase().endsWith('.sheet.md'))
+    .map((path) => ({ path, title: path.replace(/^tables\//, '').replace(/\.sheet\.md$/i, '') }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+};
+
+/** Pick a free `tables/<slug>.sheet.md` path (no silent overwrite). */
+const uniqueSheetPath = async (baseSlug: string): Promise<string> => {
+  let existing: Set<string>;
+  try {
+    existing = new Set(await vaultList());
+  } catch {
+    existing = new Set();
+  }
+  const slug = baseSlug || 'spreadsheet';
+  if (!existing.has(`tables/${slug}.sheet.md`)) return `tables/${slug}.sheet.md`;
+  for (let n = 2; ; n += 1) {
+    const candidate = `tables/${slug}-${n}.sheet.md`;
+    if (!existing.has(candidate)) return candidate;
+  }
+};
+
+// ── Bases (multi-sheet containers) — a smart-table (Bitable) IS a base holding
+// multiple data-tables (sheets), each with its own views (bao 2026-07-03: a
+// smart-table must be multi-sheet). Plain-text realization (bao chose folder=base):
+//   tables/<base>/<sheet>.md  = a data-table sheet inside base <base>
+//   tables/<name>.md          = a flat single-sheet base (back-compat)
+//   tables/<name>.sheet.md    = a Univer workbook base (already multi-sheet)
+// plan-tables-workspace-ux.md multi-sheet section.
+export interface BaseSheet {
+  path: string;
+  title: string;
+}
+export interface Base {
+  /** Folder name for a multi-sheet base, or the file basename for a flat one. */
+  id: string;
+  name: string;
+  /** 'smart' = data-table sheets (this app renders sheet tabs); 'univer' =
+   *  a .sheet.md workbook (Univer owns its own bottom sheet tabs). */
+  kind: 'smart' | 'univer';
+  sheets: BaseSheet[];
+}
+
+const baseFolderOf = (path: string): string | null => {
+  const rel = path.slice('tables/'.length);
+  const slash = rel.indexOf('/');
+  return slash >= 0 ? rel.slice(0, slash) : null;
+};
+
+/** Group the vault's tables/ files into bases (multi-sheet containers). */
+export const listBases = async (): Promise<Base[]> => {
+  const [tables, sheets] = await Promise.all([listSmartTables(), listSheets()]);
+  const folders = new Map<string, Base>();
+  const flat: Base[] = [];
+  for (const t of tables) {
+    const folder = baseFolderOf(t.path);
+    if (folder) {
+      const b = folders.get(folder) ?? { id: folder, name: folder, kind: 'smart', sheets: [] };
+      b.sheets.push({ path: t.path, title: t.title });
+      folders.set(folder, b);
+    } else {
+      flat.push({
+        id: t.path.slice('tables/'.length).replace(/\.md$/i, ''),
+        name: t.title,
+        kind: 'smart',
+        sheets: [{ path: t.path, title: t.title }],
+      });
     }
   }
-  if (cur !== '' || row.length > 0) {
-    row.push(cur);
-    rows.push(row);
+  for (const s of sheets) {
+    // A Univer .sheet.md is its own base (Univer manages its internal sheets).
+    flat.push({
+      id: s.path.slice('tables/'.length).replace(/\.sheet\.md$/i, ''),
+      name: s.title,
+      kind: 'univer',
+      sheets: [{ path: s.path, title: s.title }],
+    });
   }
-  return rows.filter((r) => r.some((cell) => cell.trim() !== ''));
+  // Apply each folder-base's saved sheet order + display name (tables/<id>/_base.md).
+  await Promise.all(
+    [...folders.values()].map(async (b) => {
+      const idx = await vaultRead(`tables/${b.id}/_base.md`).catch(() => null);
+      if (!idx) return;
+      const fm = (idx.frontmatter ?? {}) as { sheet_order?: unknown; name?: unknown };
+      if (typeof fm.name === 'string' && fm.name.trim()) b.name = fm.name;
+      if (Array.isArray(fm.sheet_order)) {
+        const order = (fm.sheet_order as unknown[]).map(String);
+        const rank = (p: string): number => {
+          const bn = p.split('/').pop()!.replace(/\.md$/i, '');
+          const i = order.indexOf(bn);
+          return i < 0 ? order.length : i;
+        };
+        b.sheets.sort((x, y) => rank(x.path) - rank(y.path) || x.title.localeCompare(y.title));
+      }
+    }),
+  );
+  return [...folders.values(), ...flat].sort((a, b) => a.name.localeCompare(b.name));
+};
+
+/** Add a new data-table sheet to an existing folder-base and return its path. */
+export const createSheetInBase = async (baseId: string, rawTitle = 'Sheet'): Promise<string> => {
+  const title = rawTitle.trim() || 'Sheet';
+  let existing: Set<string>;
+  try {
+    existing = new Set(await vaultList());
+  } catch {
+    existing = new Set();
+  }
+  const slug = slugify(title) || 'sheet';
+  let path = `tables/${baseId}/${slug}.md`;
+  for (let n = 2; existing.has(path); n += 1) path = `tables/${baseId}/${slug}-${n}.md`;
+  const tpl = TEMPLATES.blank as TableTemplate;
+  const headers = tpl.schema.map((c) => c.label);
+  const content = `| ${headers.join(' | ')} |\n|${tpl.schema.map(() => '---').join('|')}|\n| ${tpl.schema.map(() => ' ').join(' | ')} |\n`;
+  await vaultWrite({ path, content, frontmatter: { title, schema: tpl.schema } });
+  return path;
+};
+
+/** Rename a data-table sheet = update its frontmatter `title` (the file path is
+ *  the stable id, so relations keep working). */
+export const renameSheet = async (path: string, rawTitle: string): Promise<void> => {
+  const title = rawTitle.trim();
+  if (!title) return;
+  const entry = await vaultRead(path);
+  const fm = (entry.frontmatter ?? {}) as Record<string, unknown>;
+  await vaultWrite({ path, content: entry.content, frontmatter: { ...fm, title } });
+};
+
+/** Persist the sheet order of a folder-base into `tables/<base>/_base.md`
+ *  (basenames, no extension). listBases reads it back. */
+export const reorderSheets = async (baseId: string, orderedPaths: string[]): Promise<void> => {
+  const order = orderedPaths.map((p) => p.split('/').pop()!.replace(/\.md$/i, ''));
+  const entry = await vaultRead(`tables/${baseId}/_base.md`).catch(() => null);
+  const fm = (entry?.frontmatter ?? {}) as Record<string, unknown>;
+  await vaultWrite({
+    path: `tables/${baseId}/_base.md`,
+    content: entry?.content ?? '',
+    frontmatter: { ...fm, sheet_order: order },
+  });
+};
+
+/** Rename a base = its display name. A folder base stores it in
+ *  tables/<id>/_base.md `name` (folder id stays stable); a flat single-sheet
+ *  base has no folder, so renaming it renames its one data-table's title. */
+export const renameBase = async (base: Base, rawName: string): Promise<void> => {
+  const name = rawName.trim();
+  if (!name) return;
+  const isFolder = base.sheets.some((s) => s.path.startsWith(`tables/${base.id}/`));
+  if (!isFolder) {
+    const only = base.sheets[0];
+    if (only) await renameSheet(only.path, name);
+    return;
+  }
+  const entry = await vaultRead(`tables/${base.id}/_base.md`).catch(() => null);
+  const fm = (entry?.frontmatter ?? {}) as Record<string, unknown>;
+  await vaultWrite({
+    path: `tables/${base.id}/_base.md`,
+    content: entry?.content ?? '',
+    frontmatter: { ...fm, name },
+  });
+};
+
+/** Delete a data-table sheet file. */
+export const deleteSheet = async (path: string): Promise<void> => {
+  await vaultDelete(path);
+};
+
+/** Duplicate a data-table sheet (schema + rows) into a sibling file, returning
+ *  the new path. Lands in the same base folder (or flat tables/). */
+export const duplicateSheet = async (path: string): Promise<string> => {
+  const entry = await vaultRead(path);
+  const fm = (entry.frontmatter ?? {}) as Record<string, unknown>;
+  const title = `${typeof fm.title === 'string' ? fm.title : path.split('/').pop()?.replace(/\.md$/i, '')} copy`;
+  const dir = path.slice(0, path.lastIndexOf('/'));
+  const slug = slugify(title) || 'copy';
+  let existing: Set<string>;
+  try {
+    existing = new Set(await vaultList());
+  } catch {
+    existing = new Set();
+  }
+  let dest = `${dir}/${slug}.md`;
+  for (let n = 2; existing.has(dest); n += 1) dest = `${dir}/${slug}-${n}.md`;
+  await vaultWrite({ path: dest, content: entry.content, frontmatter: { ...fm, title } });
+  return dest;
+};
+
+/** Create a new multi-sheet base (a folder) with a first data-table sheet. */
+export const createBase = async (rawTitle = 'Base'): Promise<{ baseId: string; sheetPath: string }> => {
+  const title = rawTitle.trim() || 'Base';
+  let existing: Set<string>;
+  try {
+    existing = new Set(await vaultList());
+  } catch {
+    existing = new Set();
+  }
+  const slug = slugify(title) || 'base';
+  const taken = (id: string): boolean =>
+    [...existing].some((p) => p.startsWith(`tables/${id}/`) || p === `tables/${id}.md`);
+  let baseId = slug;
+  for (let n = 2; taken(baseId); n += 1) baseId = `${slug}-${n}`;
+  const sheetPath = await createSheetInBase(baseId, 'Table 1');
+  return { baseId, sheetPath };
+};
+
+/** Create a blank Univer spreadsheet and return its path (one-shot; no prompt,
+ *  rename via the title afterwards — mirrors createSmartTable). */
+export const createSheet = async (rawTitle = 'Spreadsheet'): Promise<string> => {
+  const title = rawTitle.trim() || 'Spreadsheet';
+  const slug = slugify(title);
+  const path = await uniqueSheetPath(slug);
+  const snapshot = {
+    id: slug || 'sheet',
+    name: title,
+    sheetOrder: ['sheet-01'],
+    sheets: { 'sheet-01': { id: 'sheet-01', name: 'Sheet1', cellData: {} } },
+  };
+  await vaultWrite({
+    path,
+    content: JSON.stringify(snapshot, null, 2),
+    frontmatter: { kind: 'univer-sheet' },
+  });
+  return path;
+};
+
+/** Trigger a browser download of a text blob — the local-first "export" (mirrors
+ *  AmbientHome's artifact download). */
+const downloadTextFile = (filename: string, text: string, mime: string): void => {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+/** Export a smart table as a downloaded CSV (Grist/Bitable export parity): describe
+ *  (labels + field order) + query (all rows, incl. computed relational columns)
+ *  through the :17873 gate, serialize, download. The plain-text `.md` stays the
+ *  real truth (vim test) — this is a convenience snapshot. */
+export const exportTableCsv = async (path: string, title: string): Promise<void> => {
+  const [describe, result] = await Promise.all([
+    describeSmartTable(path),
+    querySmartTable(path, {}),
+  ]);
+  const headers = describe.fields.map((f) => f.label || f.key);
+  const rows = result.rows.map((r) => describe.fields.map((f) => r[f.key] ?? ''));
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'table';
+  downloadTextFile(`${slug}.csv`, toCsv(headers, rows), 'text/csv;charset=utf-8');
 };
 
 /** Import a CSV string as a new smart table (header row -> text schema). */

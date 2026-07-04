@@ -8,7 +8,7 @@
 // component state and never mutates the rows. Edits still target the canonical
 // row via a preserved original index, so editing a filtered view is correct.
 
-import { useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type ReactElement } from 'react';
 import type {
   AiColumnOp,
   AiColumnSummary,
@@ -104,6 +104,54 @@ export interface SmartTableViewProps {
   relations?: Record<string, SmartTable>;
   /** Other smart tables in the vault (link-target picker in the field editor). */
   linkTargets?: Array<{ path: string; title: string }>;
+}
+
+/** A toolbar popover — the convergent pattern across Feishu/Airtable/Notion/
+ *  Teable (plan-tables-workspace-ux.md T2): a button that drops an anchored
+ *  panel, ≤2 clicks, closed on outside-click. `active` = the control holds a
+ *  non-default value (e.g. a filter is set), shown as an accent dot. */
+function ToolPopover({
+  label,
+  icon,
+  active,
+  testId,
+  children,
+}: {
+  label: string;
+  icon: string;
+  active?: boolean;
+  testId?: string;
+  children: ReactNode;
+}): ReactElement {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+  return (
+    <div className={styles.pop} ref={ref}>
+      <button
+        type="button"
+        className={styles.popBtn}
+        data-open={open || undefined}
+        data-active={active || undefined}
+        onClick={() => setOpen((o) => !o)}
+        data-testid={testId}
+      >
+        <span className={styles.popIcon} aria-hidden>
+          {icon}
+        </span>
+        {label}
+        {active && <span className={styles.popDot} aria-hidden />}
+      </button>
+      {open && <div className={styles.popPanel}>{children}</div>}
+    </div>
+  );
 }
 
 export const SmartTableView = ({
@@ -208,12 +256,8 @@ export const SmartTableView = ({
   // 3-pane layout — grid on the left, configuration on the right — instead of
   // a transient modal. Collapsible; reopened from the query-bar "Panel" button.
   const [panelOpen, setPanelOpen] = useState(true);
-  // The panel has two tabs (Grist's Widget + Column): "table" = view config
-  // (filter / sort / group / fields), "column" = the selected column's schema.
-  const [panelTab, setPanelTab] = useState<'table' | 'column'>('table');
   const openFieldInPanel = (edit: FieldEdit): void => {
     setFieldEdit(edit);
-    setPanelTab('column');
     setPanelOpen(true);
   };
 
@@ -268,6 +312,7 @@ export const SmartTableView = ({
         </div>
       )}
       <div className={styles.queryBar} data-testid="smart-table-query-bar">
+        {/* View-type switcher (grid / kanban / …) — the layout kind. */}
         <div className={styles.viewToggle}>
           {(['grid', 'kanban', 'gallery', 'calendar', 'form', 'summary', 'chart', 'timeline'] as const).map((m) => (
             <button
@@ -282,7 +327,233 @@ export const SmartTableView = ({
             </button>
           ))}
         </div>
+
+        <span className={styles.zoneDivider} aria-hidden />
+
+        {/* LEFT zone = view-shaping (how THIS view displays): Group · Sort.
+            (Feishu two-zone toolbar, plan-tables-workspace-ux.md T2.) */}
+        <ToolPopover label="Group" icon="⊞" active={groupBy != null} testId="tp-group">
+          <div className={styles.popSection}>
+            <div className={styles.creatorSectionTitle}>Group by</div>
+            <div className={styles.creatorRow}>
+              <select
+                className={styles.querySelect}
+                value={groupBy ?? ''}
+                onChange={(e) => {
+                  setGroupBy(e.target.value || null);
+                  if (!e.target.value) setGroupBy2(null);
+                }}
+                aria-label="Group field"
+                data-testid="smart-table-group"
+              >
+                <option value="">none</option>
+                {visibleSchema.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {groupBy && (
+              <div className={styles.creatorRow}>
+                <select
+                  className={styles.querySelect}
+                  value={groupBy2 ?? ''}
+                  onChange={(e) => setGroupBy2(e.target.value || null)}
+                  aria-label="Second group level"
+                  data-testid="smart-table-group2"
+                >
+                  <option value="">then…</option>
+                  {visibleSchema
+                    .filter((c) => c.key !== groupBy)
+                    .map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </ToolPopover>
+
+        <ToolPopover label="Sort" icon="↕" active={sort.length > 0} testId="tp-sort">
+          <div className={styles.popSection}>
+            <div className={styles.creatorSectionTitle}>Sort</div>
+            {sort.map((s, i) => (
+              <div key={`${s.field}-${i}`} className={styles.creatorRow} data-testid="smart-table-sort-key">
+                <select
+                  className={styles.querySelect}
+                  value={s.field}
+                  onChange={(e) =>
+                    setSort((prev) =>
+                      prev.map((k, j) => (j === i ? { field: e.target.value, desc: k.desc ?? false } : k)),
+                    )
+                  }
+                  aria-label={`Sort field ${i + 1}`}
+                  data-testid={i === 0 ? 'smart-table-sort' : `smart-table-sort-${i}`}
+                >
+                  {visibleSchema
+                    .filter((c) => c.key === s.field || !sort.some((k) => k.field === c.key))
+                    .map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  className={styles.querySort}
+                  onClick={() => setSort((prev) => prev.map((k, j) => (j === i ? { ...k, desc: !k.desc } : k)))}
+                  title="Toggle direction"
+                  data-testid={`smart-table-sort-dir-${i}`}
+                >
+                  {s.desc ? '↓' : '↑'}
+                </button>
+                <button
+                  type="button"
+                  className={styles.queryChip}
+                  onClick={() => setSort((prev) => prev.filter((_, j) => j !== i))}
+                  title="Remove this sort key"
+                  data-testid={`smart-table-sort-remove-${i}`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            {(() => {
+              const used = new Set(sort.map((s) => s.field));
+              const next = visibleSchema.find((c) => !used.has(c.key));
+              if (!next) return null;
+              return (
+                <div className={styles.creatorRow}>
+                  <button
+                    type="button"
+                    className={styles.queryAdd}
+                    onClick={() => setSort((prev) => [...prev, { field: next.key, desc: false }])}
+                    title="Add a sort key"
+                    data-testid="smart-table-sort-add"
+                  >
+                    + Sort
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+        </ToolPopover>
+
         <span className={styles.querySpacer} />
+
+        {/* RIGHT zone = actions: Filter · Fields (hide + layout). */}
+        <ToolPopover label="Filter" icon="⚑" active={filters.length > 0} testId="tp-filter">
+          <div className={styles.popSection}>
+            <div className={styles.creatorSectionTitle}>Filter</div>
+            <div className={styles.creatorRow}>
+              <select
+                className={styles.querySelect}
+                value={draft.field}
+                onChange={(e) => {
+                  const field = e.target.value;
+                  const ops = OPERATORS_BY_TYPE[typeOf(field)] ?? ['contains'];
+                  setDraft({ field, op: ops[0] ?? 'contains', value: '' });
+                }}
+                aria-label="Filter field"
+              >
+                {visibleSchema.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className={styles.querySelect}
+                value={draft.op}
+                onChange={(e) => setDraft((d) => ({ ...d, op: e.target.value as Operator }))}
+                aria-label="Filter operator"
+              >
+                {draftOps.map((op) => (
+                  <option key={op} value={op}>
+                    {op}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.creatorRow}>
+              <input
+                className={styles.queryInput}
+                value={draft.value}
+                placeholder={VALUE_HINT[draft.op] ?? 'value'}
+                onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && addFilter()}
+                data-testid="filter-value"
+              />
+              <button type="button" className={styles.queryAdd} onClick={addFilter} title="Add filter">
+                + Add
+              </button>
+            </div>
+          </div>
+        </ToolPopover>
+
+        <ToolPopover label="Fields" icon="◫" active={hiddenFields.size > 0} testId="tp-fields">
+          <div className={styles.popSection}>
+            <div className={styles.creatorSectionTitle}>Fields &amp; layout</div>
+            {viewMode === 'grid' && (
+              <div className={styles.creatorRow}>
+                <select
+                  className={styles.querySelect}
+                  value={density}
+                  onChange={(e) => setDensity(e.target.value as typeof density)}
+                  title="Row density"
+                  data-testid="smart-table-density"
+                >
+                  <option value="compact">Compact</option>
+                  <option value="cozy">Cozy</option>
+                  <option value="comfortable">Comfortable</option>
+                </select>
+                <button
+                  type="button"
+                  className={styles.queryToggle}
+                  data-active={freezePrimary}
+                  onClick={() => setFreezePrimary((f) => !f)}
+                  title="Freeze the first column"
+                  data-testid="smart-table-freeze"
+                >
+                  ⇥ Freeze
+                </button>
+                <button
+                  type="button"
+                  className={styles.queryToggle}
+                  data-active={wrapText}
+                  onClick={() => setWrapText((w) => !w)}
+                  title="Wrap cell text onto multiple lines (taller rows)"
+                  data-testid="smart-table-wrap"
+                >
+                  ⏎ Wrap text
+                </button>
+              </div>
+            )}
+            {table.schema
+              .filter((c) => !c.system)
+              .map((c) => (
+                <label key={c.key} className={styles.fieldsItem}>
+                  <input
+                    type="checkbox"
+                    checked={!hiddenFields.has(c.key)}
+                    onChange={(e) =>
+                      setHiddenFields((prev) => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.delete(c.key);
+                        else next.add(c.key);
+                        return next;
+                      })
+                    }
+                  />
+                  {c.label}
+                </label>
+              ))}
+          </div>
+        </ToolPopover>
+
         <input
           className={styles.querySearch}
           type="search"
@@ -313,18 +584,6 @@ export const SmartTableView = ({
             data-testid="add-field"
           >
             + Field
-          </button>
-        )}
-
-        {editsSchema && !panelOpen && (
-          <button
-            type="button"
-            className={styles.queryToggle}
-            onClick={() => setPanelOpen(true)}
-            title="Show the configuration panel"
-            data-testid="smart-table-panel-open"
-          >
-            ⚏ Panel
           </button>
         )}
 
@@ -608,251 +867,8 @@ export const SmartTableView = ({
               ⇥
             </button>
           </div>
-          <div className={styles.creatorTabs} role="tablist">
-            <button
-              type="button"
-              role="tab"
-              className={styles.creatorTab}
-              data-active={panelTab === 'table'}
-              onClick={() => setPanelTab('table')}
-              data-testid="creator-tab-table"
-            >
-              Table
-            </button>
-            <button
-              type="button"
-              role="tab"
-              className={styles.creatorTab}
-              data-active={panelTab === 'column'}
-              onClick={() => setPanelTab('column')}
-              data-testid="creator-tab-column"
-            >
-              Column
-            </button>
-          </div>
 
-          {panelTab === 'table' ? (
-            <div className={styles.creatorBody} data-testid="creator-table-tab">
-              {/* Sort & Filter (Grist's Widget tab) */}
-              <section className={styles.creatorSection}>
-                <div className={styles.creatorSectionTitle}>Filter</div>
-                <div className={styles.creatorRow}>
-                  <select
-                    className={styles.querySelect}
-                    value={draft.field}
-                    onChange={(e) => {
-                      const field = e.target.value;
-                      const ops = OPERATORS_BY_TYPE[typeOf(field)] ?? ['contains'];
-                      setDraft({ field, op: ops[0] ?? 'contains', value: '' });
-                    }}
-                    aria-label="Filter field"
-                  >
-                    {visibleSchema.map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className={styles.querySelect}
-                    value={draft.op}
-                    onChange={(e) => setDraft((d) => ({ ...d, op: e.target.value as Operator }))}
-                    aria-label="Filter operator"
-                  >
-                    {draftOps.map((op) => (
-                      <option key={op} value={op}>
-                        {op}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className={styles.creatorRow}>
-                  <input
-                    className={styles.queryInput}
-                    value={draft.value}
-                    placeholder={VALUE_HINT[draft.op] ?? 'value'}
-                    onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))}
-                    onKeyDown={(e) => e.key === 'Enter' && addFilter()}
-                    data-testid="filter-value"
-                  />
-                  <button type="button" className={styles.queryAdd} onClick={addFilter} title="Add filter">
-                    + Add
-                  </button>
-                </div>
-              </section>
-
-              <section className={styles.creatorSection}>
-                <div className={styles.creatorSectionTitle}>Sort</div>
-                {/* Grist-style multi-column sort: ordered keys, the first wins
-                    and the rest break ties. Each row picks a field, toggles its
-                    direction, or removes itself. */}
-                {sort.map((s, i) => (
-                  <div key={`${s.field}-${i}`} className={styles.creatorRow} data-testid="smart-table-sort-key">
-                    <select
-                      className={styles.querySelect}
-                      value={s.field}
-                      onChange={(e) =>
-                        setSort((prev) =>
-                          prev.map((k, j) => (j === i ? { field: e.target.value, desc: k.desc ?? false } : k)),
-                        )
-                      }
-                      aria-label={`Sort field ${i + 1}`}
-                      data-testid={i === 0 ? 'smart-table-sort' : `smart-table-sort-${i}`}
-                    >
-                      {visibleSchema
-                        // Avoid duplicating a field already used by another key.
-                        .filter((c) => c.key === s.field || !sort.some((k) => k.field === c.key))
-                        .map((c) => (
-                          <option key={c.key} value={c.key}>
-                            {c.label}
-                          </option>
-                        ))}
-                    </select>
-                    <button
-                      type="button"
-                      className={styles.querySort}
-                      onClick={() =>
-                        setSort((prev) => prev.map((k, j) => (j === i ? { ...k, desc: !k.desc } : k)))
-                      }
-                      title="Toggle direction"
-                      data-testid={`smart-table-sort-dir-${i}`}
-                    >
-                      {s.desc ? '↓' : '↑'}
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.queryChip}
-                      onClick={() => setSort((prev) => prev.filter((_, j) => j !== i))}
-                      title="Remove this sort key"
-                      data-testid={`smart-table-sort-remove-${i}`}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-                {(() => {
-                  const used = new Set(sort.map((s) => s.field));
-                  const next = visibleSchema.find((c) => !used.has(c.key));
-                  if (!next) return null;
-                  return (
-                    <div className={styles.creatorRow}>
-                      <button
-                        type="button"
-                        className={styles.queryAdd}
-                        onClick={() => setSort((prev) => [...prev, { field: next.key, desc: false }])}
-                        title="Add a sort key"
-                        data-testid="smart-table-sort-add"
-                      >
-                        + Sort
-                      </button>
-                    </div>
-                  );
-                })()}
-              </section>
-
-              <section className={styles.creatorSection}>
-                <div className={styles.creatorSectionTitle}>Group</div>
-                <div className={styles.creatorRow}>
-                  <select
-                    className={styles.querySelect}
-                    value={groupBy ?? ''}
-                    onChange={(e) => {
-                      setGroupBy(e.target.value || null);
-                      if (!e.target.value) setGroupBy2(null);
-                    }}
-                    aria-label="Group field"
-                    data-testid="smart-table-group"
-                  >
-                    <option value="">none</option>
-                    {visibleSchema.map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {groupBy && (
-                  <div className={styles.creatorRow}>
-                    <select
-                      className={styles.querySelect}
-                      value={groupBy2 ?? ''}
-                      onChange={(e) => setGroupBy2(e.target.value || null)}
-                      aria-label="Second group level"
-                      data-testid="smart-table-group2"
-                    >
-                      <option value="">then…</option>
-                      {visibleSchema
-                        .filter((c) => c.key !== groupBy)
-                        .map((c) => (
-                          <option key={c.key} value={c.key}>
-                            {c.label}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                )}
-              </section>
-
-              {/* Fields & layout */}
-              <section className={styles.creatorSection}>
-                <div className={styles.creatorSectionTitle}>Fields</div>
-                {viewMode === 'grid' && (
-                  <div className={styles.creatorRow}>
-                    <select
-                      className={styles.querySelect}
-                      value={density}
-                      onChange={(e) => setDensity(e.target.value as typeof density)}
-                      title="Row density"
-                      data-testid="smart-table-density"
-                    >
-                      <option value="compact">Compact</option>
-                      <option value="cozy">Cozy</option>
-                      <option value="comfortable">Comfortable</option>
-                    </select>
-                    <button
-                      type="button"
-                      className={styles.queryToggle}
-                      data-active={freezePrimary}
-                      onClick={() => setFreezePrimary((f) => !f)}
-                      title="Freeze the first column"
-                      data-testid="smart-table-freeze"
-                    >
-                      ⇥ Freeze
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.queryToggle}
-                      data-active={wrapText}
-                      onClick={() => setWrapText((w) => !w)}
-                      title="Wrap cell text onto multiple lines (taller rows)"
-                      data-testid="smart-table-wrap"
-                    >
-                      ⏎ Wrap text
-                    </button>
-                  </div>
-                )}
-                {table.schema
-                  .filter((c) => !c.system)
-                  .map((c) => (
-                    <label key={c.key} className={styles.fieldsItem}>
-                      <input
-                        type="checkbox"
-                        checked={!hiddenFields.has(c.key)}
-                        onChange={(e) =>
-                          setHiddenFields((prev) => {
-                            const next = new Set(prev);
-                            if (e.target.checked) next.delete(c.key);
-                            else next.add(c.key);
-                            return next;
-                          })
-                        }
-                      />
-                      {c.label}
-                    </label>
-                  ))}
-              </section>
-            </div>
-          ) : fieldEdit ? (
+          {fieldEdit ? (
             <SmartTableFieldEditor
               editing={fieldEdit}
               table={table}

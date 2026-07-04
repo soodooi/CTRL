@@ -61,22 +61,27 @@ const KB_ASSISTANT: Role = {
   toolset: [],
   kbScope: null,
 };
+// Coding persona family (bao 2026-07-03: personas are just TWO — personal
+// assistant + coding; "coding" spans writing code AND building feature packs).
+// Two roles remain only because they drive DIFFERENT UI surfaces of the same
+// persona: code-companion emits ```bash blocks (send-to-terminal), pack-builder
+// emits <mcp-slot> tokens (the build canvas). Same family, two UI contracts.
 const CODE_COMPANION: Role = {
   id: 'code-companion',
-  label: 'Code Companion',
-  hint: 'Pairs with the Coding terminal',
+  label: 'Coding',
+  hint: 'Write code · pairs with the terminal',
   persona: CODE_COMPANION_SYSTEM_PROMPT,
-  // Dev-focused pack ids this role whitelists, so the coding session stays
-  // uncluttered. Convention-only ids: a pack with one of these ids (from the
-  // registry or Irisy's create flow) is in scope; ones the user hasn't
-  // installed simply don't appear. Not a dev-hardcoded catalog.
-  toolset: ['dev-box', 'git-box', 'cf-workers', 'disk-box'],
+  // No hardcoded pack whitelist (bao 2026-07-03: hardcoding isn't the system's
+  // job). Empty = unconstrained — coding sees whatever is installed; the gate
+  // governs actual reachability, and pack visibility follows scene selection,
+  // not a role-baked id list.
+  toolset: [],
   kbScope: null,
 };
 const TOOL_MAKER: Role = {
   id: 'tool-maker',
-  label: 'Tool Maker',
-  hint: 'Build a CTRL mcp from a description',
+  label: 'Coding · Build a pack',
+  hint: 'Build a CTRL feature pack from a description (coding persona family)',
   persona: IRISY_MCP_CREATOR_PROMPT,
   toolset: [],
   kbScope: null,

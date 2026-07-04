@@ -83,11 +83,13 @@ import {
 } from '@/components/featurepack/FeaturePackScene';
 import {
   runInstalledPackAction,
+  loadPackRecords,
   loadInstalledPacks,
   PACKS_CHANGED_EVENT,
 } from '@/lib/feature-pack';
-import { NotesApp } from '@/components/notes/NotesApp';
+import { NotesSurface } from '@/components/notes/NotesSurface';
 import { TablesPanel } from '@/components/tables/TablesPanel';
+import { TodayView } from '@/components/today/TodayView';
 import { CodingTerminal } from '@/components/coding/CodingTerminal';
 import { Sidebar, type SidebarSection } from './Sidebar';
 import { WorkspacePanel } from './WorkspacePanel';
@@ -95,12 +97,16 @@ import {
   vaultRead,
   vaultWrite,
   vaultSearch,
+  vaultList,
+  resetEngine,
   captureScreenAndOcr,
   csStdin,
   listMcps,
   type IrisySessionTurn,
   type McpSummary,
 } from '@/lib/kernel';
+import { listSmartTables } from '@/lib/smart-tables';
+import { useActiveAgentStore } from '@/lib/active-agent';
 import { platform } from '@/lib/bridge';
 import { useCodingSession } from '@/lib/coding-session';
 import { extractRunnableBlocks } from '@/lib/runnable-blocks';
@@ -128,6 +134,115 @@ interface Msg {
    *  when the turn is created so routing is shown BEFORE work starts, never
    *  hidden (§8.3 #1 anti-pattern). */
   route?: RouteHint;
+  /** ADR-005 §8.6 terminal-essence transparency — the tool calls the engine ran
+   *  during THIS turn, in order, each drill-down-able to raw input/output (§6). */
+  tools?: ToolStepView[];
+  /** ADR-005 §8.6 — the engine's accumulated reasoning for this turn, shown as a
+   *  collapsible "thinking" trace (see it think, not just the final answer). */
+  reasoning?: string;
+}
+
+/** Humanize an engine tool id for the step summary: `mcp_ctrl_vault_search` →
+ *  "vault search". The raw id stays available in the drill-down for power users. */
+function prettyToolTitle(t: string): string {
+  return t
+    .replace(/^mcp_ctrl_/, '')
+    .replace(/^mcp_/, '')
+    .replace(/_/g, ' ')
+    .trim();
+}
+
+/** A tool call folded from the engine's `call` + `result` steps (ADR-005 §8.6). */
+interface ToolStepView {
+  id: string;
+  title: string;
+  status: 'running' | 'completed' | 'failed';
+  input?: string;
+  output?: string;
+}
+
+/** Fold one streamed ToolStep into a turn's step list: `call` appends a running
+ *  step, `result` completes the matching one (by id). Pure — returns a new array. */
+function applyToolStep(
+  prev: ToolStepView[] | undefined,
+  step: {
+    tool_call_id: string;
+    phase: 'call' | 'result';
+    title: string;
+    status?: string;
+    input?: string;
+    output?: string;
+  },
+): ToolStepView[] {
+  const list = prev ? [...prev] : [];
+  const i = list.findIndex((s) => s.id === step.tool_call_id);
+  const cur = i >= 0 ? list[i] : undefined;
+  if (step.phase === 'call') {
+    const view: ToolStepView = {
+      id: step.tool_call_id,
+      title: step.title || 'tool',
+      status: 'running',
+      input: step.input,
+    };
+    if (cur) list[i] = { ...cur, ...view };
+    else list.push(view);
+    return list;
+  }
+  // result: complete the matching step (or create one if we missed the call).
+  const status: ToolStepView['status'] = step.status === 'failed' ? 'failed' : 'completed';
+  if (cur) {
+    list[i] = { ...cur, status, output: step.output };
+  } else {
+    list.push({ id: step.tool_call_id, title: step.title || 'tool', status, output: step.output });
+  }
+  return list;
+}
+
+/** First `.md` string value in a tool's input args (the note path), or null. */
+function extractNotePath(input?: string): string | null {
+  if (!input) return null;
+  try {
+    const obj = JSON.parse(input) as Record<string, unknown>;
+    for (const v of Object.values(obj)) {
+      if (typeof v === 'string' && /\.md$/.test(v)) return v;
+    }
+  } catch {
+    /* input isn't a JSON object — no path to surface */
+  }
+  return null;
+}
+
+/** Note files this turn's tool calls WROTE — so the chat can offer a shortcut to
+ *  open them in the Notes workspace (ADR-005 §8.6.2 / output-routing: Irisy is the
+ *  pipe that routes output into the owning module's workspace). Notes only (not
+ *  tables/sheets). */
+function noteTargetsOf(tools?: ToolStepView[]): string[] {
+  if (!tools) return [];
+  const out = new Set<string>();
+  for (const t of tools) {
+    if (t.status !== 'completed') continue;
+    if (!/vault_write|doc_produce|note_/.test(t.title)) continue;
+    const p = extractNotePath(t.input);
+    if (p && !/\.sheet\.md$/.test(p) && !p.startsWith('tables/')) out.add(p);
+  }
+  return [...out];
+}
+
+/** Slugify a pack/action name into a command token, e.g. "Record a trade" →
+ *  "record-a-trade" (ADR-005 §8.6.2 — registry-driven command surface). */
+function slugCmd(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'action';
+}
+
+/** A `/` slash command (ADR-005 §8.6.2 terminal command surface). `run` = an
+ *  immediate local action; `template` = prefill the composer for the user to
+ *  complete then send (a natural-language shortcut Irisy handles via its tools —
+ *  menu, not memorization). */
+interface SlashCommand {
+  cmd: string;
+  label: string;
+  template?: string;
+  run?: () => void;
 }
 
 type Surface = 'empty' | 'chat' | 'chat-part';
@@ -163,6 +278,8 @@ export interface AmbientHomeProps {
   /** Feature pack to open in the scene panel alongside Irisy (null until a
    *  pack is selected). */
   packRequest: PackRequest | null;
+  /** Bumped to open the Today (LifeOS tasks) surface alongside Irisy. */
+  openTodayNonce: number;
   /** Bumped to open Notes alongside Irisy (output left, Irisy right). */
   openNotesNonce: number;
   /** Bumped to open the smart-table browser alongside Irisy (same scenePane). */
@@ -198,6 +315,7 @@ export function AmbientHome({
   onToggleDrawer,
   toolRequest,
   packRequest,
+  openTodayNonce,
   openNotesNonce,
   openTablesNonce,
   openCodingNonce,
@@ -229,7 +347,9 @@ export function AmbientHome({
   const [editing, setEditing] = useState(false);
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
-  const [scene, setScene] = useState<FeaturePack | 'notes' | 'tables' | 'coding' | null>(null);
+  const [scene, setScene] = useState<FeaturePack | 'today' | 'notes' | 'tables' | 'coding' | null>(
+    null,
+  );
   // The active Irisy role (ADR-003 §8.6): drives the persona shipped per turn.
   // Shown + switchable in the switcher above the chat box; switching it never
   // touches `messages` (conversation persists). Linked to the L1 scene below.
@@ -273,9 +393,33 @@ export function AmbientHome({
   // Irisy column width — a fixed default the user can drag via the divider
   // between Irisy and the output bar (bao 2026-06-13). Window resizing keeps
   // this width (the output bar absorbs the change); only dragging changes it.
-  const [irisyWidth, setIrisyWidth] = useState(480);
+  // Irisy dialog ("creator") column width. Default kept narrow so the workspace
+  // (outbar) stays the primary surface — a 480px dialog ate ~half the page on
+  // smaller screens (bao 2026-07-03). Draggable 260..560 via the divider.
+  // Irisy dialog width. The chat is the primary surface most of the time, so a
+  // comfortable default (bao 2026-07-04: 360 read too narrow); draggable wider
+  // for pure chat or narrower to give a workspace scene room.
+  const [irisyWidth, setIrisyWidth] = useState(440);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // ADR-005 §8.6.2 output-routing — note-write tool_call_id → path, so we can
+  // auto-open the note the moment its write completes (post review-gate).
+  const pendingNoteWrites = useRef<Map<string, string>>(new Map());
+
+  // Keep the newest message pinned to the bottom. The stream loop scrolls on
+  // each token, but segment gaps (tool calls), the trailing "working" row, and
+  // late-rendering markdown grow the height afterwards — so also pin whenever
+  // the message list or streaming flag changes (bao 2026-07-04: chat didn't
+  // show the bottom). Double rAF so we scroll AFTER layout has settled.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        el.scrollTo({ top: el.scrollHeight });
+      }),
+    );
+  }, [messages, streaming]);
 
   // Stack the part panel below the chat (vertical resize) on phones
   // instead of side-by-side — the real fix for the prior CSS override.
@@ -293,10 +437,14 @@ export function AmbientHome({
     setPart(null);
     setScene(null);
     setInput('');
+    // ADR-005 §8.4 — the engine's memory must follow the UI: a fresh chat gets a
+    // fresh engine session (else it silently carries the old conversation).
+    void resetEngine();
   }, []);
 
-  // Load a past hermes session into the conversation view (read-only). bao:
-  // Irisy must have history. New chat / sending clears the "viewing past" flag.
+  // Load a past hermes session into the conversation view. bao: Irisy must have
+  // history. Resetting the engine makes the next turn re-hydrate from THIS loaded
+  // transcript (§8.4) rather than continuing the engine's previous context.
   const loadPastSession = useCallback((turns: IrisySessionTurn[], _title: string) => {
     setMessages(
       turns.map((t, i) => ({
@@ -308,6 +456,20 @@ export function AmbientHome({
     setPart(null);
     setScene(null);
     setShowHistory(false);
+    void resetEngine();
+  }, []);
+
+  // ADR-005 §8.6.2 fork / checkpoint (Claude /rewind · Gemini /restore): rewind to
+  // a past turn and continue in a NEW direction. Truncate the transcript to that
+  // message and reset the engine, so it re-hydrates from the checkpoint (§8.4).
+  // The prior full conversation stays in Irisy's session history (drawer).
+  const forkFromHere = useCallback((msgId: string) => {
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === msgId);
+      return idx >= 0 ? prev.slice(0, idx + 1) : prev;
+    });
+    setPart(null);
+    void resetEngine();
   }, []);
 
   // Auto-grow the composer to its content (cheap, works in every webview).
@@ -327,7 +489,7 @@ export function AmbientHome({
       const onMove = (ev: MouseEvent): void => {
         // Irisy sits on the RIGHT (CSS order), so dragging the divider left
         // (clientX decreases) widens Irisy — hence startW minus the delta.
-        const next = Math.max(300, Math.min(640, startW - (ev.clientX - startX)));
+        const next = Math.max(300, Math.min(680, startW - (ev.clientX - startX)));
         setIrisyWidth(next);
       };
       const onUp = (): void => {
@@ -400,6 +562,11 @@ export function AmbientHome({
       // its vault override (a user-edited irisy-system.md still wins); other
       // roles supply their persona verbatim. SOUL.md is appended either way.
       const role = roleById(roleId);
+      // Persona = the active ROLE's persona (bao 2026-07-03: only TWO personas
+      // — personal assistant + coding; a feature pack does NOT carry its own
+      // persona, it composes ON TOP of the assistant via its kb + on-demand
+      // skills + tools. roleForPack lands an unknown pack on the assistant, so
+      // "stocks = assistant + stock pack" falls out naturally).
       const baseOverride = roleId === DEFAULT_ROLE_ID ? undefined : role.persona;
       const [base, brain, allMcps] = await Promise.all([
         loadIrisySystemPromptWithSoul(baseOverride),
@@ -420,14 +587,39 @@ export function AmbientHome({
         scene && typeof scene === 'object' && scene.kbDir ? scene.kbDir : role.kbScope;
       const kb = kbScopeAmbient(activeScope);
       if (kb) ambient.push({ role: 'system', content: kb });
-      if (scene === 'tables' && activeTablePath) {
+      // Domain skills pointer (bao 2026-07-03: skills load ON DEMAND — inject
+      // one line telling Irisy WHERE this pack's skills live, never their
+      // contents; it skill_list/skill_read only when the task matches).
+      if (scene && typeof scene === 'object' && scene.kbDir) {
         ambient.push({
           role: 'system',
           content:
-            `Ambient context: the user is viewing the smart table at "${activeTablePath}". ` +
-            `When they ask to filter / sort / group / AI-fill a column / add a row / edit "this table" ` +
-            `(or refer to it without naming a file), call the smart_table.* gate tools with path="${activeTablePath}".`,
+            `This pack's domain skills live under "${scene.kbDir}/skills" in the vault. ` +
+            `When a task matches a skill's territory, load it on demand with skill_list / ` +
+            `skill_read (or vault_read on that path) — do not recite skills unprompted.`,
         });
+      }
+      if (scene === 'tables' && activeTablePath) {
+        if (activeTablePath.toLowerCase().endsWith('.sheet.md')) {
+          ambient.push({
+            role: 'system',
+            content:
+              `Ambient context: the user is viewing the Univer spreadsheet at "${activeTablePath}" ` +
+              `(an Excel-style free grid with 400+ formulas, stored as a workbook snapshot in the .sheet.md body). ` +
+              `When they refer to "this sheet" / a cell / a formula, act on that file; it is NOT a smart-table, ` +
+              `so smart_table.* tools do not apply — read/edit it via the vault tools on that path.`,
+          });
+        } else {
+          ambient.push({
+            role: 'system',
+            content:
+              `Ambient context: the user is viewing the smart table at "${activeTablePath}". ` +
+              `It may have SAVED VIEWS (each a lens = filter + sort + group); before acting on "this view" or ` +
+              `a filtered subset, query the table through the gate to see its current rows + view state rather ` +
+              `than assuming. When they ask to filter / sort / group / AI-fill a column / add a row / edit ` +
+              `"this table" (or refer to it without naming a file), call the smart_table.* gate tools with path="${activeTablePath}".`,
+          });
+        }
       }
       // Coding companion (A1/A2 eyes + B0/C1/C2): when the Coding terminal is
       // open, Irisy can SEE its recent output and should propose shell commands
@@ -479,6 +671,49 @@ export function AmbientHome({
           );
           streamError = true;
           break;
+        }
+        // ADR-005 §8.6 — a tool step the engine streamed: fold it into THIS
+        // turn's step list so the user sees Irisy's work live (drill-down §6).
+        if (typeof chunk !== 'string' && chunk?.tool) {
+          const step = chunk.tool;
+          // ADR-005 §8.6.2 output-routing — AUTO-open a note Irisy writes (no
+          // manual click): remember the path on the `call`, and the moment the
+          // write COMPLETES (post-approval), route the workspace to that note.
+          if (step.phase === 'call' && /vault_write|doc_produce|note_/.test(step.title)) {
+            const p = extractNotePath(step.input);
+            if (p && !/\.sheet\.md$/.test(p) && !p.startsWith('tables/')) {
+              pendingNoteWrites.current.set(step.tool_call_id, p);
+            }
+          }
+          if (step.phase === 'result') {
+            const p = pendingNoteWrites.current.get(step.tool_call_id);
+            if (p) {
+              pendingNoteWrites.current.delete(step.tool_call_id);
+              // Only when the write actually landed (approved, not denied/failed).
+              const denied = /denied|declined|not approved|rejected/i.test(step.output ?? '');
+              if (step.status !== 'failed' && !denied) openNoteInWorkspace(p);
+            }
+          }
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === asstId ? { ...m, tools: applyToolStep(m.tools, step) } : m,
+            ),
+          );
+          requestAnimationFrame(() => {
+            scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+          });
+          continue;
+        }
+        // ADR-005 §8.6 — a reasoning chunk: accumulate into THIS turn's thinking
+        // trace (see it think), kept separate from the answer text.
+        if (typeof chunk !== 'string' && chunk?.thought) {
+          const t = chunk.thought;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === asstId ? { ...m, reasoning: (m.reasoning ?? '') + t } : m,
+            ),
+          );
+          continue;
         }
         const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
         if (!delta) continue;
@@ -544,6 +779,22 @@ export function AmbientHome({
   const stopGeneration = useCallback(() => {
     abortRef.current?.abort();
     setStreaming(false);
+  }, []);
+
+  // ADR-005 §8.6.2 output-routing — open a note Irisy just wrote in the Notes
+  // workspace: switch the scene, then best-effort nudge the notes UI (NotesApp /
+  // the Tolaria embed both listen for `notes:open`) to the exact note.
+  const openNoteInWorkspace = useCallback((path: string) => {
+    setScene('notes');
+    void import('@tauri-apps/api/event')
+      .then(({ emit }) =>
+        new Promise((r) => setTimeout(r, 180)).then(() =>
+          emit('notes:open', { path, heading: null }),
+        ),
+      )
+      .catch(() => {
+        /* browser PWA (no Tauri) — the scene switch alone lands in Notes */
+      });
   }, []);
 
   // Irisy capture/recall (bao 2026-06-12: the two AI chips under a reply).
@@ -760,6 +1011,10 @@ export function AmbientHome({
     if (packRequest) setScene(packRequest.pack);
   }, [packRequest]);
 
+  // Open the Today (LifeOS tasks) surface alongside Irisy when sidebar asks.
+  useEffect(() => {
+    if (openTodayNonce > 0) setScene('today');
+  }, [openTodayNonce]);
   // Open Notes alongside Irisy (output left, Irisy right) when sidebar asks.
   useEffect(() => {
     if (openNotesNonce > 0) setScene('notes');
@@ -802,14 +1057,223 @@ export function AmbientHome({
     }
   }, [irisyNonce]);
 
+  // ADR-005 §8.6.2 terminal command surface — `/` slash menu + ↑/↓ history recall.
+  const [slashSel, setSlashSel] = useState(0);
+  const [histIdx, setHistIdx] = useState<number | null>(null);
+  // `:` jump — go to a module workspace (Notes / Tables / Coding / Today / chat).
+  const [jumpSel, setJumpSel] = useState(0);
+  // `@`-mention — reference a note / table (fetched once; filtered as you type).
+  const [mentionSel, setMentionSel] = useState(0);
+  const [mentionItems, setMentionItems] = useState<{ label: string; kind: string }[]>([]);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [paths, tables] = await Promise.all([vaultList(), listSmartTables()]);
+        const notes = paths
+          .filter((p) => p.endsWith('.md') && !p.endsWith('.sheet.md'))
+          .map((p) => ({ label: p.replace(/\.md$/, '').split('/').pop() ?? p, kind: 'note' }));
+        const tbls = tables.map((t) => ({ label: t.title || t.path, kind: 'table' }));
+        const seen = new Set<string>();
+        const merged = [...notes, ...tbls].filter((i) =>
+          seen.has(i.label) ? false : (seen.add(i.label), true),
+        );
+        setMentionItems(merged.slice(0, 400));
+      } catch {
+        /* browser/no-vault — mention menu stays empty */
+      }
+    })();
+  }, []);
+  // Status line data — engine + model + state (ADR-005 §8.6.2 ambient chrome).
+  const activeAgentId = useActiveAgentStore((s) => s.activeAgentId);
+  const drivers = useActiveAgentStore((s) => s.drivers);
+  const engineLabel = drivers.find((d) => d.id === activeAgentId)?.label ?? 'Hermes';
+  // Run an installed pack's action inline; its output lands as an assistant turn.
+  const runPackAction = (pack: FeaturePack, action: { id: string; name: string }): void => {
+    const id = `a-${Date.now()}`;
+    setMessages((prev) => [...prev, { id, role: 'assistant', content: `Running ${action.name}…` }]);
+    void runInstalledPackAction(pack.id, action.id)
+      .then((out) =>
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, content: out.trim() || `${action.name} done.` } : m)),
+        ),
+      )
+      .catch((e: unknown) =>
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === id
+              ? {
+                  ...m,
+                  content: `Could not run ${action.name}: ${e instanceof Error ? e.message : String(e)}`,
+                }
+              : m,
+          ),
+        ),
+      );
+  };
+  // ADR-005 §8.6.2 — the command surface is a MECHANISM; its entries come from the
+  // REGISTRY (installed / created / shared / downloaded feature packs), NOT a
+  // hardcoded capability list. Core ships only the generic /new; every installed
+  // pack contributes its actions automatically (download a pack → its actions
+  // appear here, zero code). Irisy's inline abilities (summarize/plan/translate)
+  // are NOT commands — you just ask (philosophy #5, AI-is-a-pipe).
+  const slashCommands: SlashCommand[] = [
+    { cmd: '/new', label: 'New conversation', run: newChat },
+    ...installedPacks.flatMap((p) =>
+      p.actions.map((a) => ({
+        cmd: `/${slugCmd(a.name)}`,
+        label: `${a.name} · ${p.name}`,
+        run: () => runPackAction(p, a),
+      })),
+    ),
+  ];
+  const userHistory = messages.filter((m) => m.role === 'user').map((m) => m.content);
+  const slashQuery = input.startsWith('/') && !/\s/.test(input) ? input.toLowerCase() : null;
+  const slashMatches = slashQuery
+    ? slashCommands.filter((c) => c.cmd.startsWith(slashQuery))
+    : [];
+  const slashOpen = slashMatches.length > 0;
+  const slashActive = Math.min(slashSel, Math.max(0, slashMatches.length - 1));
+  const applySlash = (c: SlashCommand): void => {
+    setHistIdx(null);
+    setSlashSel(0);
+    if (c.run) {
+      setInput('');
+      c.run();
+    } else {
+      setInput(c.template ?? `${c.cmd} `);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        autoGrow();
+      });
+    }
+  };
+  // `:` jump-to-module (a terminal go-to). Whole-input token, like the slash menu.
+  const jumpTargets: { cmd: string; label: string; go: () => void }[] = [
+    // Core module workspaces (the platform's own faces).
+    { cmd: ':chat', label: 'Conversation', go: () => setScene(null) },
+    { cmd: ':notes', label: 'Notes', go: () => setScene('notes') },
+    { cmd: ':tables', label: 'Tables', go: () => setScene('tables') },
+    { cmd: ':coding', label: 'Coding', go: () => setScene('coding') },
+    { cmd: ':today', label: 'Today', go: () => setScene('today') },
+    // Installed feature packs are jumpable too (registry-driven, ADR-005 §8.6.2).
+    ...installedPacks.map((p) => ({
+      cmd: `:${slugCmd(p.name)}`,
+      label: p.name,
+      go: () => setScene(p),
+    })),
+  ];
+  const jumpQuery = input.startsWith(':') && !/\s/.test(input) ? input.toLowerCase() : null;
+  const jumpMatches = jumpQuery ? jumpTargets.filter((j) => j.cmd.startsWith(jumpQuery)) : [];
+  const jumpOpen = jumpMatches.length > 0;
+  const jumpActive = Math.min(jumpSel, Math.max(0, jumpMatches.length - 1));
+  const applyJump = (j: { go: () => void }): void => {
+    setInput('');
+    setJumpSel(0);
+    j.go();
+  };
+  // `@`-mention: the trailing `@word` at the caret (never when another menu is up).
+  const mentionMatch = !slashOpen && !jumpOpen ? input.match(/@([^\s@]*)$/) : null;
+  const mentionQuery = mentionMatch ? (mentionMatch[1] ?? '').toLowerCase() : null;
+  const mentionMatches =
+    mentionQuery !== null
+      ? mentionItems.filter((i) => i.label.toLowerCase().includes(mentionQuery)).slice(0, 8)
+      : [];
+  const mentionOpen = mentionMatches.length > 0;
+  const mentionActive = Math.min(mentionSel, Math.max(0, mentionMatches.length - 1));
+  const applyMention = (label: string): void => {
+    setInput(input.replace(/@[^\s@]*$/, `@${label} `));
+    setMentionSel(0);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      autoGrow();
+    });
+  };
+
   const composer = (
-    <form
-      className={styles.composer}
-      onSubmit={(e) => {
-        e.preventDefault();
-        void send(input);
-      }}
-    >
+    <div className={styles.composerWrap}>
+      {/* Status line — engine · model · state · version (ADR-005 §8.6.2 chrome). */}
+      <div className={styles.statusLine}>
+        <span className={styles.statusItem}>
+          <span className={styles.statusDot} data-state={streaming ? 'working' : 'ready'} />
+          {streaming ? 'Working' : 'Ready'}
+        </span>
+        <span className={styles.statusSep}>·</span>
+        <span className={styles.statusItem}>{engineLabel}</span>
+        <span className={styles.statusSep}>·</span>
+        <span className={styles.statusItem}>{modelLabel}</span>
+        <span className={styles.statusGrow} />
+        <span className={styles.statusItem}>v{APP_VERSION}</span>
+      </div>
+      <form
+        className={styles.composer}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(input);
+        }}
+      >
+      {/* `/` slash menu — filterable, teaches its own commands (ADR-005 §8.6.2). */}
+      {slashOpen && (
+        <div className={styles.slashMenu} role="listbox">
+          {slashMatches.map((c, i) => (
+            <button
+              type="button"
+              key={c.cmd}
+              className={styles.slashItem}
+              data-sel={i === slashActive ? 'yes' : 'no'}
+              onMouseEnter={() => setSlashSel(i)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applySlash(c);
+              }}
+            >
+              <span className={styles.slashCmd}>{c.cmd}</span>
+              <span className={styles.slashLabel}>{c.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {/* `:` jump menu — go to a module workspace (ADR-005 §8.6.2). */}
+      {jumpOpen && (
+        <div className={styles.slashMenu} role="listbox">
+          {jumpMatches.map((j, i) => (
+            <button
+              type="button"
+              key={j.cmd}
+              className={styles.slashItem}
+              data-sel={i === jumpActive ? 'yes' : 'no'}
+              onMouseEnter={() => setJumpSel(i)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applyJump(j);
+              }}
+            >
+              <span className={styles.slashCmd}>{j.cmd}</span>
+              <span className={styles.slashLabel}>{j.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {/* `@`-mention menu — reference a note or table (ADR-005 §8.6.2). */}
+      {mentionOpen && (
+        <div className={styles.slashMenu} role="listbox">
+          {mentionMatches.map((it, i) => (
+            <button
+              type="button"
+              key={`${it.kind}:${it.label}`}
+              className={styles.slashItem}
+              data-sel={i === mentionActive ? 'yes' : 'no'}
+              onMouseEnter={() => setMentionSel(i)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applyMention(it.label);
+              }}
+            >
+              <span className={styles.slashCmd}>@{it.label}</span>
+              <span className={styles.slashLabel}>{it.kind}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <textarea
         ref={inputRef}
         className={styles.input}
@@ -818,12 +1282,114 @@ export function AmbientHome({
         placeholder="Ask Irisy, or pick something above…"
         onChange={(e) => {
           setInput(e.target.value);
+          setHistIdx(null);
+          setSlashSel(0);
+          setMentionSel(0);
+          setJumpSel(0);
           autoGrow();
         }}
         onKeyDown={(e) => {
           if (isImeComposing(e)) return;
+          // `:` jump menu navigation (ADR-005 §8.6.2).
+          if (jumpOpen) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setJumpSel((s) => (s + 1) % jumpMatches.length);
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setJumpSel((s) => (s - 1 + jumpMatches.length) % jumpMatches.length);
+              return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              const chosen = jumpMatches[jumpActive];
+              if (chosen) applyJump(chosen);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setInput('');
+              return;
+            }
+          }
+          // Slash menu navigation (ADR-005 §8.6.2).
+          if (slashOpen) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setSlashSel((s) => (s + 1) % slashMatches.length);
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setSlashSel((s) => (s - 1 + slashMatches.length) % slashMatches.length);
+              return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              const chosen = slashMatches[slashActive];
+              if (chosen) applySlash(chosen);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setInput('');
+              return;
+            }
+          }
+          // `@`-mention menu navigation.
+          if (mentionOpen) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setMentionSel((s) => (s + 1) % mentionMatches.length);
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setMentionSel((s) => (s - 1 + mentionMatches.length) % mentionMatches.length);
+              return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              const chosen = mentionMatches[mentionActive];
+              if (chosen) applyMention(chosen.label);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setInput(input.replace(/@[^\s@]*$/, ''));
+              return;
+            }
+          }
+          // ↑/↓ history recall — walk previous inputs when the caret is at the
+          // very start (so multi-line editing still works normally).
+          const ta = e.currentTarget;
+          const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
+          if (!slashOpen && userHistory.length > 0 && e.key === 'ArrowUp' && (input === '' || atStart)) {
+            e.preventDefault();
+            const next = histIdx === null ? userHistory.length - 1 : Math.max(0, histIdx - 1);
+            setHistIdx(next);
+            setInput(userHistory[next] ?? '');
+            requestAnimationFrame(autoGrow);
+            return;
+          }
+          if (!slashOpen && histIdx !== null && e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (histIdx >= userHistory.length - 1) {
+              setHistIdx(null);
+              setInput('');
+            } else {
+              const next = histIdx + 1;
+              setHistIdx(next);
+              setInput(userHistory[next] ?? '');
+            }
+            requestAnimationFrame(autoGrow);
+            return;
+          }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            setHistIdx(null);
             void send(input);
           }
         }}
@@ -843,7 +1409,8 @@ export function AmbientHome({
           ↑
         </button>
       )}
-    </form>
+      </form>
+    </div>
   );
 
   const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant')?.id;
@@ -867,14 +1434,77 @@ export function AmbientHome({
                   {m.route.label}
                 </span>
               )}
-              {m.content ? (
+              {/* ADR-005 §8.6 — the engine's REASONING, streamed live: a
+                  collapsible "thinking" trace (see it think), never the answer. */}
+              {m.reasoning && m.reasoning.trim() && (
+                <details className={styles.reasoning}>
+                  <summary>
+                    <span className={styles.reasoningGlyph} aria-hidden>
+                      {m.id === lastAssistantId && streaming ? '◐' : '✦'}
+                    </span>
+                    <span>{m.id === lastAssistantId && streaming ? 'Thinking…' : 'Thought process'}</span>
+                  </summary>
+                  <div className={styles.reasoningBody}>{m.reasoning.trim()}</div>
+                </details>
+              )}
+              {/* ADR-005 §8.6 — the engine's WORK, streamed live: each tool call
+                  as a step (running → done/failed), drill-down to raw I/O (§6). */}
+              {m.tools && m.tools.length > 0 && (
+                <div className={styles.toolSteps}>
+                  {m.tools.map((s) => (
+                    <details key={s.id} className={styles.toolStep} data-status={s.status}>
+                      <summary>
+                        <span className={styles.toolGlyph} aria-hidden>
+                          {s.status === 'running' ? '◐' : s.status === 'failed' ? '✗' : '✓'}
+                        </span>
+                        <span className={styles.toolTitle}>{prettyToolTitle(s.title)}</span>
+                      </summary>
+                      {s.input && (
+                        <pre className={styles.toolIo}>
+                          <span className={styles.toolIoLabel}>input</span>
+                          {s.input}
+                        </pre>
+                      )}
+                      {s.output && (
+                        <pre className={styles.toolIo}>
+                          <span className={styles.toolIoLabel}>output</span>
+                          {s.output}
+                        </pre>
+                      )}
+                    </details>
+                  ))}
+                </div>
+              )}
+              {/* ADR-005 §8.6.2 output-routing — a shortcut to open a note Irisy
+                  just wrote in the Notes workspace (bao: slash worked but no jump
+                  to the note page). */}
+              {noteTargetsOf(m.tools).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={styles.openNoteChip}
+                  onClick={() => openNoteInWorkspace(p)}
+                >
+                  <span aria-hidden>📄</span>
+                  <span className={styles.openNoteName}>{p.split('/').pop()}</span>
+                  <span className={styles.openNoteGo}>Open in Notes →</span>
+                </button>
+              ))}
+              {m.content && (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {stripDetectedPart(cleanReplyText(m.content)) ||
                     'Opened in the workspace on the left →'}
                 </ReactMarkdown>
-              ) : m.id === lastAssistantId && streaming ? (
-                <div className={styles.thinking} aria-label="Irisy is thinking">
-                  <span>Irisy is thinking</span>
+              )}
+              {/* Keep the working indicator visible for the WHOLE streaming turn,
+                  not only before the first token — Irisy emits text segment by
+                  segment with tool calls in between, and the user must be able to
+                  tell it is still working vs done (bao 2026-07-04). Empty content
+                  → "thinking"; mid-output → a trailing "working" row under the
+                  text; both animate until the turn ends (streaming flips false). */}
+              {m.id === lastAssistantId && streaming ? (
+                <div className={styles.thinking} aria-label="Irisy is working">
+                  <span>{m.content.trim() ? 'Irisy is working' : 'Irisy is thinking'}</span>
                   <span className={styles.thinkingDots}>
                     <i />
                     <i />
@@ -882,7 +1512,7 @@ export function AmbientHome({
                   </span>
                 </div>
               ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{'…'}</ReactMarkdown>
+                !m.content && <ReactMarkdown remarkPlugins={[remarkGfm]}>{'…'}</ReactMarkdown>
               )}
               {m.id === lastAssistantId && m.content.trim() && !streaming && (
                 <div className={styles.aiChips}>
@@ -969,7 +1599,31 @@ export function AmbientHome({
                 : null}
             </>
           ) : (
-            m.content
+            <>
+              {m.content}
+              {/* Blocks (ADR-005 §8.6.2) — an addressable turn: re-run this input
+                  (terminal `!!`). Shown on hover so it never clutters. */}
+              {!streaming && (
+                <div className={styles.blockActions}>
+                  <button
+                    type="button"
+                    className={styles.blockAction}
+                    title="Re-run this message"
+                    onClick={() => void send(m.content)}
+                  >
+                    ↻ Re-run
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.blockAction}
+                    title="Rewind here and continue in a new direction"
+                    onClick={() => forkFromHere(m.id)}
+                  >
+                    ⑂ Fork from here
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
         ))
@@ -993,6 +1647,9 @@ export function AmbientHome({
   // not a role). When an L1 opens a pack (Stocks -> ghostfolio) scene IS that
   // pack, so it shows; a built-in scene (coding) falls back to that role's
   // installed toolset packs; plain home/notes shows none.
+  // One scene = one pack (bao 2026-07-03: a pack IS the scenario; no hardcoded
+  // same-category aggregation). The open pack scene shows exactly that pack;
+  // a built-in scene falls back to the role's toolset packs.
   const contextPacks: FeaturePack[] =
     scene && typeof scene === 'object'
       ? [scene]
@@ -1077,6 +1734,8 @@ export function AmbientHome({
   const contextLabel =
     view === 'discover'
       ? 'Discover'
+      : scene === 'today'
+      ? 'Today'
       : scene === 'notes'
       ? 'Notes'
       : scene === 'tables'
@@ -1162,14 +1821,11 @@ export function AmbientHome({
                 </button>
               </>
             )}
-            <button
-              type="button"
-              className={styles.modelMini}
-              onClick={onOpenPicker}
-              title={hasProvider ? `Model: ${modelLabel}` : 'Connect a model'}
-            >
-              {hasProvider ? modelLabel : 'Connect'}
-            </button>
+            {/* Right-corner provider/model picker REMOVED (bao, repeated): it
+                duplicated the L1-bound agent/persona pickers in `personaRow`
+                above the composer. Provider choice follows the L1 selection
+                there; this corner pill was redundant. onOpenPicker still fires
+                programmatically when no provider is connected (send path). */}
           </div>
         </div>
       </div>
@@ -1203,6 +1859,18 @@ export function AmbientHome({
                     </button>
                     <Discover onInstalled={() => onView('discover')} styles={styles} />
                   </div>
+                ) : scene === 'today' ? (
+                  <div className={styles.scenePane}>
+                    <button
+                      type="button"
+                      className={styles.sceneClose}
+                      onClick={() => setScene(null)}
+                      aria-label="Close Today"
+                    >
+                      ✕
+                    </button>
+                    <TodayView />
+                  </div>
                 ) : scene === 'notes' ? (
                   <div className={styles.scenePane}>
                     <button
@@ -1213,7 +1881,7 @@ export function AmbientHome({
                     >
                       ✕
                     </button>
-                    <NotesApp />
+                    <NotesSurface />
                   </div>
                 ) : scene === 'tables' ? (
                   <div className={styles.scenePane}>
@@ -1250,8 +1918,14 @@ export function AmbientHome({
                       ✕
                     </button>
                     <FeaturePackScene
+                      // Key by pack id so switching packs fully resets scene
+                      // state (no stale records flash before the refetch).
+                      key={scene.id}
                       pack={scene}
                       onRunAction={(id) => runInstalledPackAction(scene.id, id)}
+                      loadRecords={
+                        scene.hasRecords ? () => loadPackRecords(scene.id) : undefined
+                      }
                     />
                   </div>
                 ) : part ? (

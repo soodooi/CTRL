@@ -85,10 +85,11 @@ export async function fetchRegistryListings(limit = 50): Promise<PackListing[]> 
   }
 }
 
-/** Connect a registry remote MCP server through the kernel (same runtime the
- *  Obsidian connector uses). Registers + connects + persists it; once up, the
- *  gate proxies its tools to Irisy. Returns the connected server's tool names.
- *  Makes a registry entry actually RUNNABLE (ADR-002 § composition §7.4). */
+/** Connect a registry remote MCP server through the kernel (the generic
+ *  mcp_host streamable-http client, ADR-002 §1.9 v46). Registers + connects +
+ *  persists it; once up, the gate proxies its tools to Irisy. Returns the
+ *  connected server's tool names. Makes a registry entry actually RUNNABLE
+ *  (ADR-002 § composition §7.4). */
 export async function connectRemoteMcp(listing: PackListing): Promise<string[]> {
   if (listing.remoteUrl == null || listing.remoteUrl === '') {
     throw new Error('This server has no remote endpoint to connect to.');

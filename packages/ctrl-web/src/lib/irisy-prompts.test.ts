@@ -19,8 +19,8 @@ import {
 } from './irisy-prompts';
 
 describe('PROMPT_VERSION (P3 — re-seed pin)', () => {
-  it('is pinned to 13 (bump when IRISY_SYSTEM_DEFAULT changes)', () => {
-    expect(PROMPT_VERSION).toBe(13);
+  it('is pinned to 14 (bump when IRISY_SYSTEM_DEFAULT changes)', () => {
+    expect(PROMPT_VERSION).toBe(14);
   });
 });
 
@@ -110,12 +110,14 @@ describe('loadIrisySystemPromptWithSoul (P3 — SOUL.md core-memory injection)',
     vi.resetModules();
   });
 
+  // SOUL.md + base persona both load through the kernel gate (SC5 convergence:
+  // loadSoul → irisySoulRead, base → vaultRead). Mock @/lib/kernel — the three
+  // functions irisy-prompts uses — rather than the old bridge/tauri-core invoke.
   it('falls back to the base persona when SOUL.md is absent', async () => {
-    vi.doMock('./bridge', () => ({
-      invoke: vi.fn().mockRejectedValue(new Error('no kernel')),
-    }));
-    vi.doMock('@tauri-apps/api/core', () => ({
-      invoke: vi.fn().mockRejectedValue(new Error('no kernel')),
+    vi.doMock('@/lib/kernel', () => ({
+      vaultRead: vi.fn().mockRejectedValue(new Error('no kernel')),
+      vaultWrite: vi.fn(),
+      irisySoulRead: vi.fn().mockRejectedValue(new Error('no soul')),
     }));
     const mod = await import('./irisy-prompts');
     const out = await mod.loadIrisySystemPromptWithSoul();
@@ -123,11 +125,10 @@ describe('loadIrisySystemPromptWithSoul (P3 — SOUL.md core-memory injection)',
   });
 
   it('prepends the SOUL.md core-memory block (body + x-ctrl frontmatter) when present', async () => {
-    vi.doMock('./bridge', () => ({
-      invoke: vi.fn().mockRejectedValue(new Error('no vault prompt')),
-    }));
-    vi.doMock('@tauri-apps/api/core', () => ({
-      invoke: vi.fn().mockResolvedValue({
+    vi.doMock('@/lib/kernel', () => ({
+      vaultRead: vi.fn().mockRejectedValue(new Error('no vault prompt')),
+      vaultWrite: vi.fn(),
+      irisySoulRead: vi.fn().mockResolvedValue({
         path: 'irisy/SOUL.md',
         frontmatter: { 'x-ctrl:tone': 'brief' },
         body: 'Core: bao prefers path:line citations.',

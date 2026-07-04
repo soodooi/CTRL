@@ -45,6 +45,26 @@ export interface LLMChunk {
    *  render the custom message via IrisyCustomMessage component, not
    *  append text to the assistant bubble. */
   custom?: IrisyCustomMessage;
+  /** ADR-005 §8.6 terminal-essence transparency — a tool-call step the engine
+   *  streamed alongside the answer (see it work). `delta` is empty; the chat UI
+   *  renders it as a step in the assistant turn, drill-down to input/output. */
+  tool?: ToolStep;
+  /** ADR-005 §8.6 — a chunk of the engine's reasoning (see it think). `delta` is
+   *  empty; the chat UI accumulates these into a collapsible "thinking" trace. */
+  thought?: string;
+}
+
+/** One tool-call step from the engine (ADR-005 §8.6). Emitted twice per call:
+ *  `phase: 'call'` (title + input) then `phase: 'result'` (status + output),
+ *  correlated by `tool_call_id`. Mirrors the Rust `ToolStep` in irisy_chat.rs. */
+export interface ToolStep {
+  request_id: string;
+  tool_call_id: string;
+  phase: 'call' | 'result';
+  title: string;
+  status?: string;
+  input?: string;
+  output?: string;
 }
 
 export interface LLMStreamOptions {
@@ -181,7 +201,13 @@ export class ChatStreamTransport implements LLMTransport {
     const requestId = crypto.randomUUID();
     const { listen } = await import('@tauri-apps/api/event');
 
-    const queue: ChatStreamDelta[] = [];
+    // One ordered queue carries every channel so text, reasoning and tool steps
+    // interleave in the true order the engine produced them (ADR-005 §8.6).
+    type QueueItem =
+      | { delta: ChatStreamDelta }
+      | { tool: ToolStep }
+      | { thought: string };
+    const queue: QueueItem[] = [];
     let resolveNext: (() => void) | null = null;
     const wakeWaiter = (): void => {
       const w = resolveNext;
@@ -190,14 +216,35 @@ export class ChatStreamTransport implements LLMTransport {
         w();
       }
     };
-    const unlisten: UnlistenFn = await listen<ChatStreamDelta>(
+    const unlistenDelta: UnlistenFn = await listen<ChatStreamDelta>(
       'chat-stream-delta',
       (event) => {
         if (event.payload.request_id !== requestId) return;
-        queue.push(event.payload);
+        queue.push({ delta: event.payload });
         wakeWaiter();
       },
     );
+    const unlistenTool: UnlistenFn = await listen<ToolStep>(
+      'chat-stream-tool',
+      (event) => {
+        if (event.payload.request_id !== requestId) return;
+        queue.push({ tool: event.payload });
+        wakeWaiter();
+      },
+    );
+    const unlistenThought: UnlistenFn = await listen<{
+      request_id: string;
+      delta: string;
+    }>('chat-stream-thought', (event) => {
+      if (event.payload.request_id !== requestId) return;
+      queue.push({ thought: event.payload.delta });
+      wakeWaiter();
+    });
+    const unlisten: UnlistenFn = () => {
+      unlistenDelta();
+      unlistenTool();
+      unlistenThought();
+    };
     // Abort listener wakes any pending Promise so the while-loop's
     // signal.aborted check fires immediately instead of hanging forever
     // when no further chat-stream-delta arrives (e.g. user cancelled
@@ -232,8 +279,21 @@ export class ChatStreamTransport implements LLMTransport {
           });
           continue;
         }
-        const next = queue.shift();
-        if (!next) continue;
+        const item = queue.shift();
+        if (!item) continue;
+        // Tool-step channel — yield as a discrete chunk (empty delta) so the
+        // consumer renders it as a step, not appended text (ADR-005 §8.6).
+        if ('tool' in item) {
+          yield { delta: '', done: false, tool: item.tool };
+          continue;
+        }
+        // Reasoning channel — a discrete chunk the consumer folds into the
+        // turn's "thinking" trace, never the answer text (ADR-005 §8.6).
+        if ('thought' in item) {
+          yield { delta: '', done: false, thought: item.thought };
+          continue;
+        }
+        const next = item.delta;
         if (next.error) {
           yield { delta: '', done: true, error: next.error };
           return;

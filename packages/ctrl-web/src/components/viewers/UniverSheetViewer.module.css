@@ -1,0 +1,65 @@
+/* UniverSheetViewer — hosts Univer's own canvas UI. The host div must have a
+   concrete height or Univer renders 0px, so the wrap is a flex column and the
+   host takes the remaining space. */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saveBtn {
+  margin-left: auto;
+  padding: 4px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-ring);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.saveBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.loading,
+.error {
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.error {
+  color: var(--color-danger, var(--destructive));
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+
+/* Univer paints its canvas + chrome here. flex:1 so it fills the pane. */
+.univerHost {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.univerHost[data-status='loading'] {
+  visibility: hidden;
+}

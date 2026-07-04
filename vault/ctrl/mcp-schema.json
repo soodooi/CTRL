@@ -1,8 +1,961 @@
 {
   "kind": "ctrl-kernel-mcp-endpoint-spec",
   "note": "Authoritative endpoint spec = the MCP tools/list JSON Schema. Generated, do not hand-edit. Regenerate: cargo run --bin dump_mcp_schema.",
-  "toolCount": 56,
+  "toolCount": 100,
   "tools": [
+    {
+      "description": "Describe the calendar as a queryable RecordSource: fields (path/title/date/start/end/location/tags) and supported operators. Call before calendar_query.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "calendar_describe"
+    },
+    {
+      "description": "Write to the calendar with the unified produce verb. `op` (tagged by kind): {kind:\"set_cell\",row,field,value} edits one event field (title/date/start/end/location/tags) on the row-th event from calendar_query; {kind:\"upsert_rows\",rows:[{title,date,start?,end?,location?,tags?}]} creates event notes (date=YYYY-MM-DD); {kind:\"delete_rows\",indices:[..]} deletes event notes. Field ops are unsupported (fixed schema).",
+      "inputSchema": {
+        "$defs": {
+          "CellType": {
+            "description": "Cell types a RecordSource field can carry. On disk all cells are strings;\nthis drives type-aware comparison (number < / date within / tags membership).",
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "checkbox",
+              "tags",
+              "select",
+              "url"
+            ],
+            "type": "string"
+          },
+          "ProduceOp": {
+            "description": "The WRITE half of ADR-002 §14 (§14.13) — a compile-time-fixed union of produce\noperations. Like `Operator`, this is an enum, never a free-form string (the AI\npicks a `kind` + fills typed fields — anti-hallucination §14.1). Only the Write\nhalf (§14.9); Effect-class side-effects use the Effect primitive, not this.",
+            "oneOf": [
+              {
+                "description": "Set one cell by row index + field key.",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_cell",
+                    "type": "string"
+                  },
+                  "row": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "row",
+                  "field",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append one or more rows (batch-create; each keyed by field key). NOTE:\ncurrently append-only — no update-by-key merge yet, so repeated calls with\nthe same logical row create duplicates (matches smart_table_batch_append).",
+                "properties": {
+                  "kind": {
+                    "const": "upsert_rows",
+                    "type": "string"
+                  },
+                  "rows": {
+                    "items": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "rows"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Delete rows by index (out-of-range + duplicates ignored).",
+                "properties": {
+                  "indices": {
+                    "items": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "kind": {
+                    "const": "delete_rows",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "indices"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Add a column. `relation` present → a Reference/Lookup/Rollup column.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "add_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "relation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/RelationSpec"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "$ref": "#/$defs/CellType"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Change a column's label / type / options in place.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "update_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/CellType"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Drop a column (and its relation metadata) by key.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_field",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append markdown content: under the named section (heading), or at the\nend of the document when `heading` is None. (Block op — Doc sources;\nrecord sources return Unsupported.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kind": {
+                    "const": "append_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Replace the BODY under a markdown heading (the heading line itself is\nkept). (Block op — Doc sources.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "replace_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove a markdown heading AND its body (until the next same-or-higher\nlevel heading). (Block op — Doc sources.)",
+                "properties": {
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Set ONE top-level frontmatter key to a scalar value, surgically — every\nother frontmatter byte (order/comments/quoting) stays verbatim. Creates\nthe frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_frontmatter_key",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove ONE top-level frontmatter key (and its nested value block).\n(Doc sources.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_frontmatter_key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "RelationSpec": {
+            "description": "A relational-column declaration for `AddField.relation` (§14.13). Mirrors the\nfrontmatter schema's relational shape (design: smart-table-relational-index).",
+            "oneOf": [
+              {
+                "description": "A link to rows in another table (its cell holds `[[...]]` link tokens).",
+                "properties": {
+                  "display": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "reference",
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "table",
+                  "display"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Pull a field from the referenced rows (computed, not stored).",
+                "properties": {
+                  "kind": {
+                    "const": "lookup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Aggregate a field over the referenced rows (computed, not stored).",
+                "properties": {
+                  "func": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "rollup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target",
+                  "func"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "calendar.produce — the unified §14.13 write verb over event notes. Rows are\naddressed by scan index in `calendar_query` order.",
+        "properties": {
+          "op": {
+            "$ref": "#/$defs/ProduceOp",
+            "description": "The write op (tagged by `kind`). Calendar supports set_cell /\nupsert_rows / delete_rows; field ops are unsupported (fixed schema)."
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "title": "CalendarProduceArgs",
+        "type": "object"
+      },
+      "name": "calendar_produce"
+    },
+    {
+      "description": "Query calendar events by date/title/location/tags with a structured filter/sort/group request (e.g. date within:today / this_week). Returns matching events. Call calendar_describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "calendar.query — structured read over event notes (§14, same contract as\ntask_query / notes_query, different RecordSource).",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "description": "Field filters, combined per `conjunction`. Each `field` must exist.",
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order (first is the primary level).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "description": "Cap the number of returned rows (match_count is reported pre-limit).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sort": {
+            "default": [],
+            "description": "Multi-key sort (first key wins).",
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          }
+        },
+        "title": "CalendarQueryArgs",
+        "type": "object"
+      },
+      "name": "calendar_query"
+    },
+    {
+      "description": "Search the MCP Registry + Smithery (2000+ servers) for feature packs / MCP servers to reuse — returns merged, source-tagged listings (id, name, description, url, source). Pass `query` to search by keyword (e.g. \"stock price\"). Use this when building a feature pack, to find an existing server before authoring one.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Max entries per source to return (default 25, capped server-side at 100).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "query": {
+            "default": null,
+            "description": "Keyword to search packs by (e.g. \"stock price\"). Omit to browse top entries.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "DiscoverPacksArgs",
+        "type": "object"
+      },
+      "name": "discover_packs"
+    },
+    {
+      "description": "Search published skills (SKILL.md) on GitHub by keyword — returns repo / name / description / stars / url. Use this when building a feature pack, to find a reusable skill before writing one. Requires a GitHub token.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "description": "Keyword query matched against published SKILL.md skills on GitHub.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "DiscoverSkillsArgs",
+        "type": "object"
+      },
+      "name": "discover_skills"
+    },
+    {
+      "description": "Edit one markdown note surgically with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections; {kind:\"set_frontmatter_key\",key,value} / {kind:\"delete_frontmatter_key\",key} edit ONE top-level frontmatter key in place (other keys/comments byte-identical; set creates the block on a plain note). Heading match is case-insensitive on the text after #s; with duplicate headings the FIRST match wins. Call note_map first to see the headings. Prefer this over vault_write — it never rewrites the whole file.",
+      "inputSchema": {
+        "$defs": {
+          "CellType": {
+            "description": "Cell types a RecordSource field can carry. On disk all cells are strings;\nthis drives type-aware comparison (number < / date within / tags membership).",
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "checkbox",
+              "tags",
+              "select",
+              "url"
+            ],
+            "type": "string"
+          },
+          "ProduceOp": {
+            "description": "The WRITE half of ADR-002 §14 (§14.13) — a compile-time-fixed union of produce\noperations. Like `Operator`, this is an enum, never a free-form string (the AI\npicks a `kind` + fills typed fields — anti-hallucination §14.1). Only the Write\nhalf (§14.9); Effect-class side-effects use the Effect primitive, not this.",
+            "oneOf": [
+              {
+                "description": "Set one cell by row index + field key.",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_cell",
+                    "type": "string"
+                  },
+                  "row": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "row",
+                  "field",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append one or more rows (batch-create; each keyed by field key). NOTE:\ncurrently append-only — no update-by-key merge yet, so repeated calls with\nthe same logical row create duplicates (matches smart_table_batch_append).",
+                "properties": {
+                  "kind": {
+                    "const": "upsert_rows",
+                    "type": "string"
+                  },
+                  "rows": {
+                    "items": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "rows"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Delete rows by index (out-of-range + duplicates ignored).",
+                "properties": {
+                  "indices": {
+                    "items": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "kind": {
+                    "const": "delete_rows",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "indices"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Add a column. `relation` present → a Reference/Lookup/Rollup column.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "add_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "relation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/RelationSpec"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "$ref": "#/$defs/CellType"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Change a column's label / type / options in place.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "update_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/CellType"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Drop a column (and its relation metadata) by key.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_field",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append markdown content: under the named section (heading), or at the\nend of the document when `heading` is None. (Block op — Doc sources;\nrecord sources return Unsupported.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kind": {
+                    "const": "append_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Replace the BODY under a markdown heading (the heading line itself is\nkept). (Block op — Doc sources.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "replace_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove a markdown heading AND its body (until the next same-or-higher\nlevel heading). (Block op — Doc sources.)",
+                "properties": {
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Set ONE top-level frontmatter key to a scalar value, surgically — every\nother frontmatter byte (order/comments/quoting) stays verbatim. Creates\nthe frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_frontmatter_key",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove ONE top-level frontmatter key (and its nested value block).\n(Doc sources.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_frontmatter_key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "RelationSpec": {
+            "description": "A relational-column declaration for `AddField.relation` (§14.13). Mirrors the\nfrontmatter schema's relational shape (design: smart-table-relational-index).",
+            "oneOf": [
+              {
+                "description": "A link to rows in another table (its cell holds `[[...]]` link tokens).",
+                "properties": {
+                  "display": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "reference",
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "table",
+                  "display"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Pull a field from the referenced rows (computed, not stored).",
+                "properties": {
+                  "kind": {
+                    "const": "lookup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Aggregate a field over the referenced rows (computed, not stored).",
+                "properties": {
+                  "func": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "rollup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target",
+                  "func"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "doc.produce — the unified §14.13 write verb over one vault markdown note\n(the BLOCK profile: sections addressed by ATX heading).",
+        "properties": {
+          "op": {
+            "$ref": "#/$defs/ProduceOp",
+            "description": "The write op (tagged by `kind`). Docs support append_section /\nreplace_section / delete_section; record ops are unsupported here."
+          },
+          "path": {
+            "description": "Vault-relative path to the markdown note.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "op"
+        ],
+        "title": "DocProduceArgs",
+        "type": "object"
+      },
+      "name": "doc_produce"
+    },
     {
       "description": "HTTP GET request — fetch a URL and return status + body + headers",
       "inputSchema": {
@@ -228,12 +1181,264 @@
       "name": "llm_chat"
     },
     {
+      "description": "Live stock/index quotes for tickers (Yahoo Finance, no key). Returns price, currency, and percent change vs previous close. Use Yahoo suffixes: .SS Shanghai, .SZ Shenzhen, .HK Hong Kong; US tickers bare; indices start with ^ (e.g. ^GSPC, ^IXIC, ^HSI).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "symbols": {
+            "description": "Ticker symbols, e.g. [\"AAPL\", \"600519.SS\", \"0700.HK\", \"^GSPC\"].\nYahoo suffixes: `.SS` Shanghai, `.SZ` Shenzhen, `.HK` Hong Kong;\nUS tickers bare; index symbols start with `^`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "symbols"
+        ],
+        "title": "MarketQuoteArgs",
+        "type": "object"
+      },
+      "name": "market_quote"
+    },
+    {
+      "description": "Predefined stock screen (Yahoo Finance, no key). screen = day_gainers | day_losers | most_actives. Returns symbol, name, price, and percent change for the top movers.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "count": {
+            "default": null,
+            "description": "Max rows to return (default 10, capped at 50).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "screen": {
+            "description": "Predefined screen id: `day_gainers`, `day_losers`, or `most_actives`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "screen"
+        ],
+        "title": "MarketScreenArgs",
+        "type": "object"
+      },
+      "name": "market_screen"
+    },
+    {
       "description": "List external MCP servers the kernel has registered (proxy view)",
       "inputSchema": {
         "properties": {},
         "type": "object"
       },
       "name": "mcp_list_servers"
+    },
+    {
+      "description": "Install a feature pack from its manifest (+ optional server code)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "manifest": {
+            "description": "The validated manifest (must carry a string `id`). Same shape the PWA installs."
+          },
+          "server_code": {
+            "description": "Optional MCP server source code (TypeScript/Python).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_code_filename": {
+            "description": "Optional filename for the server code (safe basename).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "manifest"
+        ],
+        "title": "McpPackInstallArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_install"
+    },
+    {
+      "description": "List installed feature packs (the user's own mcps), with id/name/actions",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "mcp_pack_list"
+    },
+    {
+      "description": "Provision + auto-authenticate an installed feature pack from its manifest (one-click, silent): bring up its declared service and run bootstrap auth. Idempotent. Requires a container runtime for service packs.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "mcp_pack.provision — one-click + silent setup of an installed feature pack\n(bring up its declared service + run bootstrap auth) from its manifest data.",
+        "properties": {
+          "mcp_id": {
+            "description": "Installed pack id (folder under `~/.ctrl/mcps/`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mcp_id"
+        ],
+        "title": "McpPackProvisionArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_provision"
+    },
+    {
+      "description": "Publish an installed feature pack to a registry/commons (share-and-be-shared). Evals the manifest first (never publishes a pack with errors — returns the issues to fix), then POSTs it. Returns the published reference {id,namespace,url}.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "mcp_pack.publish — publish an installed pack to a registry/commons (§7.6\nshare-and-be-shared). Evals first, then POSTs the manifest.",
+        "properties": {
+          "mcp_id": {
+            "description": "Installed pack id (folder under `~/.ctrl/mcps/`).",
+            "type": "string"
+          },
+          "registry": {
+            "default": null,
+            "description": "Registry endpoint override; otherwise the configured `ctrl:registry:publish_url`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "mcp_id"
+        ],
+        "title": "McpPackPublishArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_publish"
+    },
+    {
+      "description": "Run a feature pack action (executes its shell steps, returns stdout)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "action_id": {
+            "description": "The action id within that pack to run.",
+            "type": "string"
+          },
+          "mcp_id": {
+            "description": "Installed pack id (the manifest `id`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mcp_id",
+          "action_id"
+        ],
+        "title": "McpPackRunArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_run"
+    },
+    {
+      "description": "Draft a §14 record_source from an OpenAPI operation (a GET path returning a list). Returns { record_source, notes } — a best-effort draft (endpoint + array location + fields from the response schema) plus repair notes (auth/missing fields). Refine it, then mcp_pack_validate before install.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "mcp_pack.scaffold — draft a §14 record_source from an OpenAPI operation\n(AutoMCP posture, §7.4). Best-effort draft + spec-repair notes.",
+        "properties": {
+          "method": {
+            "default": null,
+            "description": "HTTP method (default `GET`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openapi": {
+            "description": "The OpenAPI 3 document (a JSON object)."
+          },
+          "path": {
+            "description": "The read path to scaffold from, e.g. `/api/v1/portfolio/holdings`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "openapi",
+          "path"
+        ],
+        "title": "McpPackScaffoldArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_scaffold"
+    },
+    {
+      "description": "Uninstall a feature pack by id (removes it from the user's installed packs)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "mcp_id": {
+            "description": "Installed pack id to remove (the manifest `id`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mcp_id"
+        ],
+        "title": "McpPackUninstallArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_uninstall"
+    },
+    {
+      "description": "Evaluate a candidate feature-pack manifest BEFORE install: checks id/version, that it declares actions[] or a §14 record_source, and that any record_source is coherent (parses, has fields + a read endpoint, describe resolves). Returns { ok, issues[{field,severity,fix}] } to self-correct. Call before mcp_pack_install.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "mcp_pack.validate — evaluate a brain-authored candidate manifest before\ninstall (mcp-builder review + evals). The brain generates the manifest with\nits own model, then validates here for structured, self-correctable feedback.",
+        "properties": {
+          "manifest": {
+            "description": "The candidate feature-pack manifest to evaluate (a full manifest object)."
+          }
+        },
+        "required": [
+          "manifest"
+        ],
+        "title": "McpPackValidateArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_validate"
+    },
+    {
+      "description": "Write a skill or asset file (e.g. skills/<name>/SKILL.md) into an installed feature pack",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "content": {
+            "description": "File text content (skill markdown, SVG icon, static data).",
+            "type": "string"
+          },
+          "mcp_id": {
+            "description": "Installed pack id (install the pack first).",
+            "type": "string"
+          },
+          "path": {
+            "description": "Pack-relative path, e.g. \"skills/analyze-cn-stocks/SKILL.md\". No \"..\" or absolute.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mcp_id",
+          "path",
+          "content"
+        ],
+        "title": "McpPackWriteFileArgs",
+        "type": "object"
+      },
+      "name": "mcp_pack_write_file"
     },
     {
       "description": "Invoke a tool on a downstream MCP server (kernel proxies the call)",
@@ -277,6 +1482,205 @@
         "type": "object"
       },
       "name": "mcp_proxy_list_tools"
+    },
+    {
+      "description": "Which note the user is looking at RIGHT NOW in the CTRL workspace. Returns {path} or {path:null} when none is open. Follow with note_get(path) to read it or doc_produce(path,…) to edit it.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "note_active_get"
+    },
+    {
+      "description": "The unified diff a commit (hex rev from note_history) made to a note. Use to inspect exactly what an AI edit changed.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.diff — one commit's change to one note (E6).",
+        "properties": {
+          "path": {
+            "description": "Vault-relative path.",
+            "type": "string"
+          },
+          "rev": {
+            "description": "Hex commit id (from note_history).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "rev"
+        ],
+        "title": "NoteDiffArgs",
+        "type": "object"
+      },
+      "name": "note_diff"
+    },
+    {
+      "description": "Read a note with ALL its context in one call: content, frontmatter, tags, stat (mtime/size), outgoing links, and backlinks. Prefer this over vault_read when you also need the note's connections.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultPathArgs",
+        "type": "object"
+      },
+      "name": "note_get"
+    },
+    {
+      "description": "Per-note git history: [{rev, author, time, message}] newest first (follows renames). Author \"user\" = the human's edits; agent names (irisy/claude-code/…) = AI edits. Empty when the vault has no git repo.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.history — per-note git history (ADR-002 §1.9 v46 E6).",
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Max commits (default 20).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Vault-relative path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "NoteHistoryArgs",
+        "type": "object"
+      },
+      "name": "note_history"
+    },
+    {
+      "description": "Get a note's document map: headings (level/text/line, code fences excluded), ^block-id refs, and frontmatter keys. Call before doc_produce to pick a real heading anchor.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "VaultPathArgs",
+        "type": "object"
+      },
+      "name": "note_map"
+    },
+    {
+      "description": "Open a note in the CTRL workspace for the user (optionally scrolled to a heading). Validates the path exists first. Returns whether a UI was listening.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.open — open a note in the CTRL workspace UI (ADR-002 §1.9 v46 E3).",
+        "properties": {
+          "heading": {
+            "default": null,
+            "description": "Optional heading to scroll to.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Vault-relative path to open.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "NoteOpenArgs",
+        "type": "object"
+      },
+      "name": "note_open"
+    },
+    {
+      "description": "Resolve the periodic note for a date: period=daily/weekly/monthly/quarterly/yearly, date=YYYY-MM-DD (default today). Returns {path, exists, content?, frontmatter?}; create=true seeds it (journal frontmatter) when missing. Use with doc_produce to append to today's daily note.",
+      "inputSchema": {
+        "$defs": {
+          "Period": {
+            "description": "The fixed period set — a compile-time enum, never a free string\n(anti-hallucination, ADR-002 §14.1).",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly",
+              "quarterly",
+              "yearly"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.periodic — resolve/read/create the periodic note for a date (ADR-002\n§1.9 v46 E1; LRA /periodic/ parity).",
+        "properties": {
+          "create": {
+            "default": false,
+            "description": "Create the note (with journal frontmatter) when missing.",
+            "type": "boolean"
+          },
+          "date": {
+            "default": null,
+            "description": "Anchor date YYYY-MM-DD (default: today).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "period": {
+            "$ref": "#/$defs/Period",
+            "description": "Which period: daily / weekly / monthly / quarterly / yearly."
+          }
+        },
+        "required": [
+          "period"
+        ],
+        "title": "NotePeriodicArgs",
+        "type": "object"
+      },
+      "name": "note_periodic"
+    },
+    {
+      "description": "List the most recently modified notes: [{path, mtime_ms}] sorted newest first. Optional days cutoff. Answers \"what did I work on recently\".",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "note.recent_changes — most recently modified notes (ADR-002 §1.9 v46 E12).",
+        "properties": {
+          "days": {
+            "default": null,
+            "description": "Only notes modified within the last N days (default: no cutoff).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Max results (default 20).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "NoteRecentChangesArgs",
+        "type": "object"
+      },
+      "name": "note_recent_changes"
     },
     {
       "description": "Describe the knowledge base as a queryable RecordSource: fields (path/title/tags/created/modified) and supported operators. Call before notes.query.",
@@ -641,6 +2045,88 @@
       "name": "registry_query"
     },
     {
+      "description": "List the user's local installed skills (name + description + path), optional keyword filter",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "default": null,
+            "description": "Optional keyword filter (matches skill name + description). Omit for all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "SkillListArgs",
+        "type": "object"
+      },
+      "name": "skill_list"
+    },
+    {
+      "description": "Read a local skill's SKILL.md content by its path (from skill_list)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "path": {
+            "description": "The skill's SKILL.md path, exactly as returned by skill_list.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SkillReadArgs",
+        "type": "object"
+      },
+      "name": "skill_read"
+    },
+    {
+      "description": "Add a column to a smart table: key + label + type (text/number/date/checkbox/tags/select/url) + optional options for select/tags. Fails if the key already exists.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.add_field — produce a new column (ADR-002 §14; Bitable field-create\nparity).",
+        "properties": {
+          "key": {
+            "description": "Schema key for the new column (lowercase, unique).",
+            "type": "string"
+          },
+          "label": {
+            "description": "Human label.",
+            "type": "string"
+          },
+          "options": {
+            "default": null,
+            "description": "Options for a `select` / `tags` column.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Cell type: text / number / date / checkbox / tags / select / url (+ the\nrender-level types the schema accepts, e.g. currency / percent).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "key",
+          "label",
+          "type"
+        ],
+        "title": "SmartTableAddFieldArgs",
+        "type": "object"
+      },
+      "name": "smart_table_add_field"
+    },
+    {
       "description": "Add a grid or kanban view to a smart table (persisted in frontmatter, not the table body). kanban requires group_by (a field key).",
       "inputSchema": {
         "$defs": {
@@ -710,6 +2196,178 @@
       "name": "smart_table_append_row"
     },
     {
+      "description": "Append multiple rows to a smart table in one call (each row = values keyed by field key). Bitable batch-create parity.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.batch_append_rows — produce many rows at once (ADR-002 §14; Bitable\nbatchCreate parity).",
+        "properties": {
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "rows": {
+            "description": "Rows to append; each is cell values keyed by schema field key.",
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "rows"
+        ],
+        "title": "SmartTableBatchAppendArgs",
+        "type": "object"
+      },
+      "name": "smart_table_batch_append_rows"
+    },
+    {
+      "description": "Delete multiple rows from a smart table by zero-based indices in one call (out-of-range + duplicate indices ignored). Bitable batch-delete parity.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.batch_delete_rows — delete many rows at once (ADR-002 §14; Bitable\nbatchDelete parity).",
+        "properties": {
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "row_indices": {
+            "description": "Zero-based row indices to delete (out-of-range + duplicates ignored).",
+            "items": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "row_indices"
+        ],
+        "title": "SmartTableBatchDeleteArgs",
+        "type": "object"
+      },
+      "name": "smart_table_batch_delete_rows"
+    },
+    {
+      "description": "Create a new smart table from a name + fields (each key/label/type[/options]). Seeds an empty table at tables/<slug>.md and returns its path. Then use smart_table_append_row to add data.",
+      "inputSchema": {
+        "$defs": {
+          "SmartTableFieldInput": {
+            "description": "One field in a table-create request.",
+            "properties": {
+              "key": {
+                "description": "Schema key (lowercase, unique within the table).",
+                "type": "string"
+              },
+              "label": {
+                "description": "Human label.",
+                "type": "string"
+              },
+              "options": {
+                "default": null,
+                "description": "Options for a `select` / `tags` column.",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "type": {
+                "description": "Cell type: text / number / date / checkbox / tags / select / url (+ the\nrender-level types the schema accepts).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "label",
+              "type"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.create — produce a new empty table (ADR-002 §14; Bitable App-create\nparity). Irisy builds a table from scratch.",
+        "properties": {
+          "fields": {
+            "description": "The columns (at least one).",
+            "items": {
+              "$ref": "#/$defs/SmartTableFieldInput"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Table title (kept verbatim in frontmatter; the file slug is derived).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fields"
+        ],
+        "title": "SmartTableCreateArgs",
+        "type": "object"
+      },
+      "name": "smart_table_create"
+    },
+    {
+      "description": "Delete a column from a smart table by schema key (drops it from the schema + every row).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.delete_field — produce/drop a column (ADR-002 §14; Bitable\nfield-delete parity).",
+        "properties": {
+          "key": {
+            "description": "Schema key of the column to drop.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "key"
+        ],
+        "title": "SmartTableDeleteFieldArgs",
+        "type": "object"
+      },
+      "name": "smart_table_delete_field"
+    },
+    {
+      "description": "Delete a row from a smart table by zero-based row index, then write it back.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.delete_row — produce/delete a row (ADR-002 §14; Bitable record\ndelete parity).",
+        "properties": {
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          },
+          "row_index": {
+            "description": "Zero-based row index to delete.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "row_index"
+        ],
+        "title": "SmartTableDeleteRowArgs",
+        "type": "object"
+      },
+      "name": "smart_table_delete_row"
+    },
+    {
       "description": "Describe a smart table: its fields, types, and supported query operators. Call this before smart_table.query.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -726,6 +2384,401 @@
         "type": "object"
       },
       "name": "smart_table_describe"
+    },
+    {
+      "description": "Write to a smart table with ONE unified produce verb. `op` is a tagged union: {kind:\"set_cell\",row,field,value} / {kind:\"upsert_rows\",rows:[{field:value}]} / {kind:\"delete_rows\",indices:[..]} / {kind:\"add_field\",key,label,type,options?,relation?} / {kind:\"update_field\",key,label?,type?,options?} / {kind:\"delete_field\",key}. relation = {kind:\"reference\"|\"lookup\"|\"rollup\",..} for relational columns.",
+      "inputSchema": {
+        "$defs": {
+          "CellType": {
+            "description": "Cell types a RecordSource field can carry. On disk all cells are strings;\nthis drives type-aware comparison (number < / date within / tags membership).",
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "checkbox",
+              "tags",
+              "select",
+              "url"
+            ],
+            "type": "string"
+          },
+          "ProduceOp": {
+            "description": "The WRITE half of ADR-002 §14 (§14.13) — a compile-time-fixed union of produce\noperations. Like `Operator`, this is an enum, never a free-form string (the AI\npicks a `kind` + fills typed fields — anti-hallucination §14.1). Only the Write\nhalf (§14.9); Effect-class side-effects use the Effect primitive, not this.",
+            "oneOf": [
+              {
+                "description": "Set one cell by row index + field key.",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_cell",
+                    "type": "string"
+                  },
+                  "row": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "row",
+                  "field",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append one or more rows (batch-create; each keyed by field key). NOTE:\ncurrently append-only — no update-by-key merge yet, so repeated calls with\nthe same logical row create duplicates (matches smart_table_batch_append).",
+                "properties": {
+                  "kind": {
+                    "const": "upsert_rows",
+                    "type": "string"
+                  },
+                  "rows": {
+                    "items": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "rows"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Delete rows by index (out-of-range + duplicates ignored).",
+                "properties": {
+                  "indices": {
+                    "items": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "kind": {
+                    "const": "delete_rows",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "indices"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Add a column. `relation` present → a Reference/Lookup/Rollup column.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "add_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "relation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/RelationSpec"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "$ref": "#/$defs/CellType"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Change a column's label / type / options in place.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "update_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/CellType"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Drop a column (and its relation metadata) by key.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_field",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append markdown content: under the named section (heading), or at the\nend of the document when `heading` is None. (Block op — Doc sources;\nrecord sources return Unsupported.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kind": {
+                    "const": "append_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Replace the BODY under a markdown heading (the heading line itself is\nkept). (Block op — Doc sources.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "replace_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove a markdown heading AND its body (until the next same-or-higher\nlevel heading). (Block op — Doc sources.)",
+                "properties": {
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Set ONE top-level frontmatter key to a scalar value, surgically — every\nother frontmatter byte (order/comments/quoting) stays verbatim. Creates\nthe frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_frontmatter_key",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove ONE top-level frontmatter key (and its nested value block).\n(Doc sources.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_frontmatter_key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "RelationSpec": {
+            "description": "A relational-column declaration for `AddField.relation` (§14.13). Mirrors the\nfrontmatter schema's relational shape (design: smart-table-relational-index).",
+            "oneOf": [
+              {
+                "description": "A link to rows in another table (its cell holds `[[...]]` link tokens).",
+                "properties": {
+                  "display": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "reference",
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "table",
+                  "display"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Pull a field from the referenced rows (computed, not stored).",
+                "properties": {
+                  "kind": {
+                    "const": "lookup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Aggregate a field over the referenced rows (computed, not stored).",
+                "properties": {
+                  "func": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "rollup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target",
+                  "func"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "smart_table.produce — the UNIFIED write verb (ADR-002 §14.13). One gate tool\nover a typed `ProduceOp` union (set_cell / upsert_rows / delete_rows /\nadd_field / update_field / delete_field), dispatched to the table's\n`RecordSink`. This is the §14 \"produce\" verb made literal — the bespoke\nsmart_table_* write tools collapse into this (they stay during the PWA\ntransition, ghostfolio_*→source_* style).",
+        "properties": {
+          "op": {
+            "$ref": "#/$defs/ProduceOp",
+            "description": "The write operation to apply (tagged by `kind`)."
+          },
+          "path": {
+            "description": "Vault-relative path to the smart-table `.md` file.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "op"
+        ],
+        "title": "SmartTableProduceArgs",
+        "type": "object"
+      },
+      "name": "smart_table_produce"
     },
     {
       "description": "Query a smart table with a structured filter/sort/group request (not a query string). Call smart_table.describe first to learn valid fields.",
@@ -1034,6 +3087,766 @@
       "name": "smart_table_update_cell"
     },
     {
+      "description": "Describe an installed connector's queryable records by source_id: fields + operators, read from its manifest record_source. Works for any connector. Call before source_query.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "source.describe — the GENERIC §14 read type-layer over ANY installed\nconnector that declares a `record_source` (ADR-002 §14.12). No per-connector\ntool; the source is addressed by `source_id`.",
+        "properties": {
+          "source_id": {
+            "description": "Installed connector id (folder under `~/.ctrl/mcps/`), e.g. `ctrl-ghostfolio`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "SourceDescribeArgs",
+        "type": "object"
+      },
+      "name": "source_describe"
+    },
+    {
+      "description": "Record data into an installed connector by source_id (a write): pass an input object whose keys match the source's produce fields. POSTs to the manifest-declared endpoint and returns the created resource.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "source.produce — generic §14 write into an installed connector (ADR-002\n§14.12). `input` keys match the source's declared `produce` body `from`\nfields; routed through the gate + audited, same as any write.",
+        "properties": {
+          "input": {
+            "description": "The produce input object; keys match the source's produce body map."
+          },
+          "source_id": {
+            "description": "Installed connector id, e.g. `ctrl-ghostfolio`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "input"
+        ],
+        "title": "SourceProduceArgs",
+        "type": "object"
+      },
+      "name": "source_produce"
+    },
+    {
+      "description": "Query an installed connector's records by source_id with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live from its manifest. Call source_describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "source.query — generic structured read over an installed connector's records\n(ADR-002 §14.12). Same filter/sort/group request as every §14 source.",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "description": "Field filters, combined per `conjunction`. Each `field` must exist.",
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order (first is the primary level).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "description": "Cap the number of returned rows (match_count is reported pre-limit).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sort": {
+            "default": [],
+            "description": "Multi-key sort (first key wins).",
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          },
+          "source_id": {
+            "description": "Installed connector id, e.g. `ctrl-ghostfolio`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "SourceQueryArgs",
+        "type": "object"
+      },
+      "name": "source_query"
+    },
+    {
+      "description": "Create a LifeOS task: append a `- [ ]` checkbox line with `title` (required), optional `due` (YYYY-MM-DD) and `tags`, to `note` (default: today's daily note). Returns the note path.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "task.create — produce/write a new checkbox task line (ADR-002 §14 produce\nverb). Appends `- [ ] <title>` to a note (inline-checkbox substrate).",
+        "properties": {
+          "due": {
+            "default": null,
+            "description": "Optional due date `YYYY-MM-DD` (rendered as a `📅` inline marker).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "default": null,
+            "description": "Target note (vault-relative path). Omit to append to today's daily note.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "default": [],
+            "description": "Optional tags (rendered as inline `#tag` tokens).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "Task text (required, non-empty).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "TaskCreateArgs",
+        "type": "object"
+      },
+      "name": "task_create"
+    },
+    {
+      "description": "Describe the LifeOS tasks source as a queryable RecordSource: fields (path/title/status/due/priority/tags/created/modified) and supported operators. Call before task_query.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "task_describe"
+    },
+    {
+      "description": "Write to LifeOS tasks with the unified produce verb. `op` (tagged by kind): {kind:\"set_cell\",row,field,value} sets status/due/title/tags on the row-th task from task_query; {kind:\"upsert_rows\",rows:[{title,path?,due?,tags?}]} creates tasks (path = target note, default today's daily); {kind:\"delete_rows\",indices:[..]} removes checkbox lines. add/update/delete_field are unsupported (fixed schema).",
+      "inputSchema": {
+        "$defs": {
+          "CellType": {
+            "description": "Cell types a RecordSource field can carry. On disk all cells are strings;\nthis drives type-aware comparison (number < / date within / tags membership).",
+            "enum": [
+              "text",
+              "number",
+              "date",
+              "checkbox",
+              "tags",
+              "select",
+              "url"
+            ],
+            "type": "string"
+          },
+          "ProduceOp": {
+            "description": "The WRITE half of ADR-002 §14 (§14.13) — a compile-time-fixed union of produce\noperations. Like `Operator`, this is an enum, never a free-form string (the AI\npicks a `kind` + fills typed fields — anti-hallucination §14.1). Only the Write\nhalf (§14.9); Effect-class side-effects use the Effect primitive, not this.",
+            "oneOf": [
+              {
+                "description": "Set one cell by row index + field key.",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_cell",
+                    "type": "string"
+                  },
+                  "row": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "row",
+                  "field",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append one or more rows (batch-create; each keyed by field key). NOTE:\ncurrently append-only — no update-by-key merge yet, so repeated calls with\nthe same logical row create duplicates (matches smart_table_batch_append).",
+                "properties": {
+                  "kind": {
+                    "const": "upsert_rows",
+                    "type": "string"
+                  },
+                  "rows": {
+                    "items": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "rows"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Delete rows by index (out-of-range + duplicates ignored).",
+                "properties": {
+                  "indices": {
+                    "items": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "kind": {
+                    "const": "delete_rows",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "indices"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Add a column. `relation` present → a Reference/Lookup/Rollup column.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "add_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "relation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/RelationSpec"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "$ref": "#/$defs/CellType"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Change a column's label / type / options in place.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "update_field",
+                    "type": "string"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "options": {
+                    "default": null,
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/CellType"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Drop a column (and its relation metadata) by key.",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_field",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Append markdown content: under the named section (heading), or at the\nend of the document when `heading` is None. (Block op — Doc sources;\nrecord sources return Unsupported.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kind": {
+                    "const": "append_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Replace the BODY under a markdown heading (the heading line itself is\nkept). (Block op — Doc sources.)",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "replace_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading",
+                  "content"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove a markdown heading AND its body (until the next same-or-higher\nlevel heading). (Block op — Doc sources.)",
+                "properties": {
+                  "heading": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_section",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "heading"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Set ONE top-level frontmatter key to a scalar value, surgically — every\nother frontmatter byte (order/comments/quoting) stays verbatim. Creates\nthe frontmatter block on a plain note. (Doc sources; ADR-002 §1.9 v46 E4.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "set_frontmatter_key",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Remove ONE top-level frontmatter key (and its nested value block).\n(Doc sources.)",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "delete_frontmatter_key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "RelationSpec": {
+            "description": "A relational-column declaration for `AddField.relation` (§14.13). Mirrors the\nfrontmatter schema's relational shape (design: smart-table-relational-index).",
+            "oneOf": [
+              {
+                "description": "A link to rows in another table (its cell holds `[[...]]` link tokens).",
+                "properties": {
+                  "display": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "reference",
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "table",
+                  "display"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Pull a field from the referenced rows (computed, not stored).",
+                "properties": {
+                  "kind": {
+                    "const": "lookup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Aggregate a field over the referenced rows (computed, not stored).",
+                "properties": {
+                  "func": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "rollup",
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "via": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "via",
+                  "target",
+                  "func"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "task.produce — the unified §14.13 write verb over the task source. Rows are\naddressed by their scan index in `task_query` order.",
+        "properties": {
+          "op": {
+            "$ref": "#/$defs/ProduceOp",
+            "description": "The write op (tagged by `kind`). Tasks support set_cell / upsert_rows /\ndelete_rows; field ops (add/update/delete_field) are unsupported."
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "title": "TaskProduceArgs",
+        "type": "object"
+      },
+      "name": "task_produce"
+    },
+    {
+      "description": "Query LifeOS tasks by status/due/priority/tags with a structured filter/sort/group request (not a query string). Returns matching tasks. Call task_describe first.",
+      "inputSchema": {
+        "$defs": {
+          "Conjunction": {
+            "description": "How a request's filters combine — table-independent, a genuine enum (never a\ncaller string). `And` (default) keeps the original semantics; `Or` passes a\nrow that satisfies any filter (an empty filter set always passes, both ways).",
+            "enum": [
+              "and",
+              "or"
+            ],
+            "type": "string"
+          },
+          "Filter": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/$defs/Operator"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "op",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Operator": {
+            "description": "Table-INDEPENDENT operator set — a genuine compile-time enum (ADR-002 §14.1).\nOnly the `field` of a `Filter` is a validated string; the operator never is.",
+            "enum": [
+              "eq",
+              "neq",
+              "contains",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "before",
+              "after",
+              "within",
+              "is",
+              "has_tag"
+            ],
+            "type": "string"
+          },
+          "SortKey": {
+            "properties": {
+              "desc": {
+                "default": false,
+                "type": "boolean"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "task.query — a structured read over the LifeOS Task RecordSource (ADR-002\n§14). Fill the parameter object; do NOT write a query string. Call\n`task_describe` first to learn valid fields. `subdir` scopes the task\nfolder (default `Tasks/`).",
+        "properties": {
+          "conjunction": {
+            "$ref": "#/$defs/Conjunction",
+            "default": "and",
+            "description": "How filters combine: `and` (default) or `or`."
+          },
+          "filters": {
+            "default": [],
+            "description": "Field filters, combined per `conjunction`. Each `field` must exist.",
+            "items": {
+              "$ref": "#/$defs/Filter"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "default": [],
+            "description": "Group keys applied in order (first is the primary level).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "default": null,
+            "description": "Cap the number of returned rows (match_count is reported pre-limit).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sort": {
+            "default": [],
+            "description": "Multi-key sort (first key wins).",
+            "items": {
+              "$ref": "#/$defs/SortKey"
+            },
+            "type": "array"
+          },
+          "subdir": {
+            "default": null,
+            "description": "Vault subdir the tasks live under (default `Tasks/`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "TaskQueryArgs",
+        "type": "object"
+      },
+      "name": "task_query"
+    },
+    {
+      "description": "Update one field of a LifeOS task by note + line (from task_query): field='status' value='done' completes it; also due/title/tags. Rewrites the checkbox line in place.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "task.update — produce/write one field of a task in place (ADR-002 §14\nproduce verb). Complete a task with field=`status`, value=`done`.",
+        "properties": {
+          "field": {
+            "description": "Field to set: `status` (todo/doing/done) / `due` / `title` / `tags`.",
+            "type": "string"
+          },
+          "line": {
+            "description": "Zero-based line index of the checkbox (from `task_query`'s `line` field).",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "description": "Vault-relative path to the note holding the task.",
+            "type": "string"
+          },
+          "value": {
+            "description": "New value (for `tags`, a comma-separated list).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note",
+          "line",
+          "field",
+          "value"
+        ],
+        "title": "TaskUpdateArgs",
+        "type": "object"
+      },
+      "name": "task_update"
+    },
+    {
       "description": "Read the frontmatter aliases list for a vault note",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1225,6 +4038,28 @@
       "name": "vault_orphans"
     },
     {
+      "description": "Vault activity pulse: per-day commit counts for the last N days (default 14) split user vs agents, plus the 20 most recent commits. Answers \"what happened in my vault this week\".",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "vault.pulse — activity summary (E6).",
+        "properties": {
+          "days": {
+            "default": null,
+            "description": "Window in days (default 14).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "VaultPulseArgs",
+        "type": "object"
+      },
+      "name": "vault_pulse"
+    },
+    {
       "description": "Read a markdown file from the user's vault",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1299,6 +4134,16 @@
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "context_length": {
+            "default": null,
+            "description": "Snippet radius in chars (default 100), used with `with_context`.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "limit": {
             "default": null,
             "description": "Max results. Defaults to 20 if absent.",
@@ -1312,6 +4157,11 @@
           "query": {
             "description": "FTS5 query string. Falls back to substring scan when FTS unavailable.",
             "type": "string"
+          },
+          "with_context": {
+            "default": false,
+            "description": "Return match context snippets (ADR-002 §1.9 v46 E13). When true, each\nhit is {path, context} with ~context_length chars around the first\nmatch; when false/absent, plain path strings (back-compat).",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1599,6 +4449,34 @@
         "type": "object"
       },
       "name": "vault_write_image"
+    },
+    {
+      "description": "Search the web and return titles + URLs + snippets. Uses a BYOK keyed provider if one is configured (Tavily / Brave / Serper / Exa), else a keyless full-web fallback (DuckDuckGo, then Wikipedia). Use this for facts / news / research you don't already hold.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "max_results": {
+            "default": null,
+            "description": "Max results to return (default 5, capped at 10).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "query": {
+            "description": "The search query (natural language or keywords).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "WebSearchArgs",
+        "type": "object"
+      },
+      "name": "web_search"
     }
   ],
   "transport": "streamable-http on 127.0.0.1:17873/mcp (Bearer auth)"

@@ -44,6 +44,17 @@ const ALWAYS_ON: &str = "system";
 const FIRST_PARTY_DOMAINS: &[&str] = &[
     "vault",
     "smart_table",
+    "tasks",
+    // Calendar (trait-only §14 source, ADR-002 §14.13 slice 3 + §1.9 v46) —
+    // previously its tools fell through to `mcp` (also first-party); now that
+    // `calendar_` classifies properly it must stay in the default.
+    "calendar",
+    // Generic §14 connector source tools (source_describe / source_query /
+    // source_produce) — data-driven access to ANY installed connector that
+    // declares a `record_source` (ADR-002 §14.12). First-party so Irisy/PWA can
+    // operate connectors; per-source authorization (does the caller's intent
+    // include THIS source's domain) is a follow-up — v1 gates at tool level.
+    "source",
     "notes",
     "providers",
     "registry",
@@ -82,6 +93,18 @@ pub fn is_first_party(caller: &str) -> bool {
     matches!(caller, "pwa" | "irisy" | "hermes")
 }
 
+/// User-driven surfaces — the human acting directly through the app. Their gate
+/// calls are the user's OWN intent, so they are NOT subject to the write-review
+/// gate. Everything else that reaches the gate is an autonomous BRAIN (hermes +
+/// BYO CLIs) whose high-blast writes ARE reviewed (ADR-002 §264 / ADR-006 §4,
+/// amended 2026-07-04 — bao chose B: the moat covers hermes too, since it is an
+/// LLM that can be prompt-injected via notes/web/connector data). Distinct from
+/// `is_first_party` (which stays {pwa,irisy,hermes} for intent projection + net
+/// allowlist); only the review gate uses THIS narrower user-surface predicate.
+pub fn is_user_surface(caller: &str) -> bool {
+    matches!(caller, "pwa" | "irisy")
+}
+
 /// The embedded brain (hermes) surfaces at most ~25 tools to the model and
 /// arbitrarily truncates the rest by list order. The first-party domain set
 /// projects ~60 tools (the `vault` domain alone is ~35), so that truncation
@@ -103,6 +126,14 @@ pub fn is_first_party(caller: &str) -> bool {
 pub const BRAIN_TOOLSET: &[&str] = &[
     // Always-on system introspection.
     "kernel_status",
+    // Tool-discovery escape hatch — the curated list below is only a SUBSET of
+    // the ~100 registered tools (the model cap forces curation). These two keep
+    // the WHOLE surface reachable on demand: gate_tool_search finds any tool,
+    // gate_tool_call invokes it (bao 2026-07-04 — Irisy could only see 40 of 100,
+    // hiding note editing / AI columns / connectors / pack scaffold-validate-
+    // publish). FIRST so they can never be truncated.
+    "gate_tool_search",
+    "gate_tool_call",
     // Feature-pack creation + take-stock research — Irisy's killer capability.
     // FIRST so the brain's tool cap can never truncate it away.
     "discover_packs",
@@ -116,21 +147,48 @@ pub const BRAIN_TOOLSET: &[&str] = &[
     "mcp_pack_uninstall",
     "mcp_pack_write_file",
     "mcp_list_servers",
+    // Structured data — BUILD + edit smart-tables and multi-sheet bases. These
+    // are creation tools (peers of the pack suite): without them the brain can
+    // only READ tables and hallucinates a hand-write-the-frontmatter workaround
+    // (bao 2026-07-04: Irisy hand-wrote a CRM + hit "frontmatter must be a JSON
+    // object" because base_scaffold/create/produce were not in its toolset — the
+    // exact 2026-06-28 failure mode this list exists to prevent). High in the
+    // list so the model cap can never truncate the build capability.
+    "smart_table_base_scaffold",
+    "smart_table_create",
+    "smart_table_produce",
+    "smart_table_append_row",
+    "smart_table_batch_append_rows",
+    "smart_table_describe",
+    "smart_table_query",
     // Core vault — Irisy as the notes / knowledge companion.
     "vault_read",
     "vault_write",
     "vault_search",
     "vault_list",
     "vault_create_folder",
+    // Knowledge-base organization (bao 2026-06-29): these were implemented in the
+    // gate but never projected to the brain, so Irisy "couldn't organize a vault"
+    // — it only saw read/write/search. Backlinks, the tag index, orphan notes,
+    // broken links, and embedding-based related-note suggestions are the core
+    // organize toolkit; without them Irisy can read a note but not tidy a library.
+    "vault_backlinks",
+    "vault_tags",
+    "vault_orphans",
+    "vault_broken_links",
+    "vault_suggest_links",
     // Persistent memory — SOUL.md (ADR-005 irisy §8.8 fix 2026-06-29). The
     // capability brief promises Irisy long-term memory via these tools; without
     // them in the curated set the brain never saw them (dropped by the tool cap),
     // so the promise was a lie. In the core group so the cap can't truncate them.
     "irisy_soul_get",
     "irisy_soul_set",
-    // Structured data.
-    "smart_table_describe",
-    "smart_table_query",
+    // LifeOS tasks (Phase 1) — Irisy as the life/task companion. Create + query
+    // + complete so it can actually manage a task list, not just read one.
+    "task_describe",
+    "task_query",
+    "task_create",
+    "task_update",
     // Watchlist / market data.
     "market_quote",
     "market_screen",
@@ -173,13 +231,24 @@ pub fn tool_domain(tool: &str) -> &'static str {
         "web_search" => return "websearch",
         _ => {}
     }
-    // Prefix table. Order matters only where one prefix is a prefix of another;
-    // none of these are, so the order is for readability.
+    // Prefix table. Order matters only where one prefix is a prefix of another
+    // (`notes_` before `note_` — both map to `notes`, so even that pair is
+    // order-insensitive in effect); otherwise the order is for readability.
     const PREFIXES: &[(&str, &str)] = &[
         ("smart_table_", "smart_table"),
+        ("task_", "tasks"),
+        ("source_", "source"),
         ("irisy_soul_", "memory"),
         ("vault_", "vault"),
+        // Native note endpoints (ADR-002 §1.9 v46 E-series): `note_` subsumes
+        // the older `notes_` — both land in the notes intent domain, so a
+        // notes-scoped caller sees note_map/note_get/note_periodic/… (they
+        // previously fell through to `mcp` and vanished from the notes scope).
         ("notes_", "notes"),
+        ("note_", "notes"),
+        // Doc block/fm produce + calendar: notes-suite domains (§14.13).
+        ("doc_", "notes"),
+        ("calendar_", "calendar"),
         ("providers_", "providers"),
         ("registry_", "registry"),
         ("kv_", "kv"),
@@ -328,6 +397,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn user_surface_excludes_brains() {
+        // User-driven surfaces — their gate calls are the user's own intent.
+        assert!(is_user_surface("pwa"));
+        assert!(is_user_surface("irisy"));
+        // Autonomous brains (prompt-injectable) are NOT user surfaces → their
+        // high-blast writes go through the review gate (ADR-002 §264, B).
+        for b in ["hermes", "byo-cli", "external", "codex", "claude-code"] {
+            assert!(!is_user_surface(b), "{b} is a brain, must be reviewed");
+        }
+    }
+
+    #[test]
     fn domain_classification_covers_every_tool_family() {
         assert_eq!(tool_domain("vault_read"), "vault");
         assert_eq!(tool_domain("vault_write"), "vault");
@@ -351,6 +432,17 @@ mod tests {
         assert_eq!(tool_domain("irisy_soul_get"), "memory");
         // Downstream namespaced tool falls under the mcp group.
         assert_eq!(tool_domain("obsidian_search_notes"), "mcp");
+        // Native note endpoints land in the notes intent, NOT mcp (ADR-002
+        // §1.9 v46 — a notes-scoped caller must see them).
+        assert_eq!(tool_domain("note_map"), "notes");
+        assert_eq!(tool_domain("note_get"), "notes");
+        assert_eq!(tool_domain("note_periodic"), "notes");
+        assert_eq!(tool_domain("note_recent_changes"), "notes");
+        assert_eq!(tool_domain("note_active_get"), "notes");
+        assert_eq!(tool_domain("note_open"), "notes");
+        assert_eq!(tool_domain("doc_produce"), "notes");
+        assert_eq!(tool_domain("calendar_query"), "calendar");
+        assert_eq!(tool_domain("calendar_produce"), "calendar");
     }
 
     #[test]
@@ -508,21 +600,33 @@ mod tests {
             "mcp_pack_run",
             "mcp_pack_uninstall",
             "mcp_pack_write_file",
+            // Smart-table BUILD suite — the brain must be able to build tables +
+            // bases, not just read them (bao 2026-07-04 regression guard).
+            "smart_table_base_scaffold",
+            "smart_table_create",
+            "smart_table_produce",
         ] {
             assert!(
                 brain_tool_rank(must).is_some(),
                 "{must} missing from BRAIN_TOOLSET — brain can't create packs"
             );
         }
-        // Fits under the brain's tool cap. Ceiling is 27 since the SOUL memory
-        // pair joined the core set (ADR-005 §8.8 fix) — still far under the ~60
-        // where listing truncates destructively, and the niche tools sit at the
-        // tail so any runtime cap trims those, never the creation/memory core.
+        // Fits under the brain's tool cap. Ceiling rose to 40 as the smart-table
+        // BUILD suite (base_scaffold/create/produce/append/batch) joined the core
+        // set (bao 2026-07-04 — Irisy could only read tables and hand-wrote a CRM;
+        // building tables/bases is a peer of the pack-creation killer capability).
+        // Still far under the ~60 where listing truncates destructively, and the
+        // niche tools sit at the tail so any runtime cap trims those, never the
+        // creation/build core (which sits high and survives).
         assert!(
-            BRAIN_TOOLSET.len() <= 27,
+            BRAIN_TOOLSET.len() <= 42,
             "BRAIN_TOOLSET is {} tools, over the brain cap",
             BRAIN_TOOLSET.len()
         );
+        // The tool-discovery escape hatch must be present — it is what keeps the
+        // full ~100-tool surface reachable under the model cap.
+        assert!(brain_tool_rank("gate_tool_search").is_some());
+        assert!(brain_tool_rank("gate_tool_call").is_some());
         // Ordered creation-first: the creation suite outranks the niche tools, so
         // truncation keeps it. discover_packs must come before llm_chat.
         assert!(brain_tool_rank("discover_packs") < brain_tool_rank("llm_chat"));

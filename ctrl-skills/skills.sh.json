@@ -1,0 +1,8 @@
+{
+  "name": "ctrl-skills",
+  "description": "Official CTRL skills for Irisy (Hermes Agent) — how to drive CTRL's gate tools: smart-tables/bases, notes, and research-first feature-pack creation. Source of truth in the CTRL repo; distributed to the local Hermes via skills.external_dirs, shareable as a Hermes Skills Hub tap.",
+  "groups": [
+    { "title": "CTRL — data & vault", "skills": ["vault-smart-tables"] },
+    { "title": "CTRL — build", "skills": ["create-feature-pack"] }
+  ]
+}

@@ -2,14 +2,14 @@
   "name": "ctrl",
   "private": true,
   "license": "UNLICENSED",
-  "version": "0.1.695",
+  "version": "0.1.900",
   "type": "module",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "dev": "npm --workspace @ctrl/web run dev",
-    "build": "npm --workspace @ctrl/web run build",
+    "build": "npm --workspace @ctrl/web run build && npm --workspace ctrl-notes-ui run build -- --outDir ../ctrl-web/dist/notes-ui --emptyOutDir",
     "preview": "npm --workspace @ctrl/web run preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -17,7 +17,8 @@
     "typecheck": "npm --workspace @ctrl/web run typecheck",
     "test:workspaces": "npm test --workspaces --if-present",
     "install:viewer-deps": "npm install --workspace @ctrl/web @tiptap/react@^2.10.0 @tiptap/pm@^2.10.0 @tiptap/starter-kit@^2.10.0 @tiptap/extension-link@^2.10.0 @tiptap/extension-image@^2.10.0 @tiptap/extension-code-block-lowlight@^2.10.0 lowlight@^3.3.0 codemirror@^6.0.1 @codemirror/state@^6.5.0 @codemirror/view@^6.36.0 @codemirror/lang-json@^6.0.1 @codemirror/lang-yaml@^6.1.2 @codemirror/lang-javascript@^6.2.2 @codemirror/lang-html@^6.4.9 @codemirror/lang-markdown@^6.3.1 @codemirror/legacy-modes@^6.4.2 @uiw/react-codemirror@^4.23.6 mermaid@^11.4.0 @tanstack/react-table@^8.20.5 papaparse@^5.4.1 && npm install --workspace @ctrl/web --save-dev @types/papaparse@^5.3.15",
-    "prepare": "husky"
+    "prepare": "husky",
+    "dev:notes-ui": "npm --workspace ctrl-notes-ui run build -- --watch --outDir ../ctrl-web/public/notes-ui --emptyOutDir"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.6.0",

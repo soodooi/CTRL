@@ -47,10 +47,12 @@ describe('roleForScene (L1 linkage)', () => {
 });
 
 describe('roleForPack (opening a pack switches the role)', () => {
-  it('routes a dev pack to the code companion (its toolset owner)', () => {
-    expect(roleForPack('dev-box')).toBe('code-companion');
-    expect(roleForPack('git-box')).toBe('code-companion');
-    expect(roleForPack('cf-workers')).toBe('code-companion');
+  it('routes every pack to the default role now that no role hardcodes a toolset (bao 2026-07-03: hardcoding is not the system\'s job)', () => {
+    // CODE_COMPANION.toolset is [] — pack visibility follows scene selection,
+    // not a role-baked id list — so roleForPack finds no owner and falls back.
+    expect(roleForPack('dev-box')).toBe('kb-assistant');
+    expect(roleForPack('git-box')).toBe('kb-assistant');
+    expect(roleForPack('cf-workers')).toBe('kb-assistant');
   });
   it('routes ghostfolio to the default role (stocks is config, not a role)', () => {
     expect(roleForPack('ghostfolio')).toBe('kb-assistant');
@@ -75,8 +77,10 @@ describe('packsForRole (toolset)', () => {
   });
 
   it('non-empty toolset is a whitelist', () => {
-    const code = roleById('code-companion');
-    const ids = packsForRole(code, installed).map((p) => p.id);
+    // No shipped role hardcodes a toolset anymore (all []), so exercise the
+    // filter path with a synthetic role — the whitelist behavior itself stays.
+    const whitelisted: Role = { ...roleById('code-companion'), toolset: ['dev-box', 'git-box', 'cf-workers'] };
+    const ids = packsForRole(whitelisted, installed).map((p) => p.id);
     expect(ids).toEqual(['dev-box', 'git-box', 'cf-workers']);
     expect(ids).not.toContain('notes-helper');
   });
@@ -105,12 +109,9 @@ describe('L1 -> role + toolset matrix (test plan)', () => {
   const MATRIX: L1Binding[] = [
     { scene: 'notes', role: 'kb-assistant', toolset: [], kbScope: null },
     { scene: 'tables', role: 'kb-assistant', toolset: [], kbScope: null },
-    {
-      scene: 'coding',
-      role: 'code-companion',
-      toolset: ['dev-box', 'git-box', 'cf-workers', 'disk-box'],
-      kbScope: null,
-    },
+    // coding's toolset is [] (unconstrained) — no hardcoded pack whitelist
+    // (bao 2026-07-03); it sees whatever is installed, gated by scene + the gate.
+    { scene: 'coding', role: 'code-companion', toolset: [], kbScope: null },
   ];
 
   it.each(MATRIX)(

@@ -21,6 +21,7 @@ impl EventStore {
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
         let conn = Connection::open(path)?;
         conn.execute_batch(SCHEMA)?;
+        Self::run_migrations(&conn);
         // Enable WAL for crash safety + concurrent reads.
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -32,9 +33,19 @@ impl EventStore {
     pub fn open_memory() -> rusqlite::Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(SCHEMA)?;
+        Self::run_migrations(&conn);
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// Apply idempotent ADD-COLUMN migrations; a "duplicate column" error means
+    /// the migration already ran (SQLite lacks ADD COLUMN IF NOT EXISTS), so it
+    /// is expected and ignored.
+    fn run_migrations(conn: &Connection) {
+        for stmt in MIGRATIONS {
+            let _ = conn.execute(stmt, []);
+        }
     }
 
     /// Record one gate-crossing call in the audit ledger
@@ -52,14 +63,26 @@ impl EventStore {
         req: &GateRequest,
         outcome: &str,
         detail: Option<&str>,
+        result: Option<&str>,
     ) -> rusqlite::Result<()> {
         let ts_ms = chrono::Utc::now().timestamp_millis();
+        // Bound the stored result so a big tool output doesn't bloat the ledger.
+        const MAX_RESULT: usize = 4000;
+        let result_trunc = result.map(|r| {
+            if r.len() > MAX_RESULT {
+                let mut s = r[..MAX_RESULT].to_string();
+                s.push_str("…<truncated>");
+                s
+            } else {
+                r.to_string()
+            }
+        });
         // Best-effort by contract: a poisoned ledger mutex must never panic and
         // block the underlying call — recover the guard instead of unwrapping.
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute(
-            "INSERT INTO audit_calls (ts_ms, domain, caller, tool, args_hash, outcome, detail) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO audit_calls (ts_ms, domain, caller, tool, args_hash, outcome, detail, args, result) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 ts_ms,
                 req.domain().as_str(),
@@ -67,7 +90,9 @@ impl EventStore {
                 req.tool(),
                 req.args_hash(),
                 outcome,
-                detail
+                detail,
+                req.args_json(),
+                result_trunc,
             ],
         )?;
         Ok(())
@@ -122,11 +147,22 @@ CREATE TABLE IF NOT EXISTS audit_calls (
     tool        TEXT NOT NULL,
     args_hash   TEXT NOT NULL,
     outcome     TEXT NOT NULL,
-    detail      TEXT
+    detail      TEXT,
+    args        TEXT,
+    result      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_calls(ts_ms);
 CREATE INDEX IF NOT EXISTS idx_audit_tool ON audit_calls(tool);
 "#;
+
+/// Idempotent migrations for DBs created before a column existed (SQLite has no
+/// ADD COLUMN IF NOT EXISTS, so we run it and ignore the "duplicate column"
+/// error). S2 (plan-agent-observability.md): the audit ledger gains real-trace
+/// `args` (redacted) + `result` columns on top of the existing `args_hash`.
+const MIGRATIONS: &[&str] = &[
+    "ALTER TABLE audit_calls ADD COLUMN args TEXT",
+    "ALTER TABLE audit_calls ADD COLUMN result TEXT",
+];
 
 #[cfg(test)]
 mod tests {
@@ -144,6 +180,7 @@ mod tests {
                 &GateRequest::at_gate("external".into(), "vault_read", None),
                 "ok",
                 None,
+                Some("read ok"),
             )
             .unwrap();
         store
@@ -151,9 +188,41 @@ mod tests {
                 &GateRequest::at_gate("external".into(), "vault_write", None),
                 "error",
                 Some("boom"),
+                None,
             )
             .unwrap();
 
         assert_eq!(store.audit_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn audit_ledger_captures_redacted_args_and_result() {
+        let store = EventStore::open_memory().unwrap();
+        let placeholder = "leaky-placeholder-xyz";
+        let mut args = serde_json::Map::new();
+        args.insert("path".into(), serde_json::Value::String("crm/deals.md".into()));
+        args.insert("token".into(), serde_json::Value::String(placeholder.into()));
+        store
+            .record_call(
+                &GateRequest::at_gate("hermes".into(), "smart_table_base_scaffold", Some(&args)),
+                "ok",
+                None,
+                Some("created base"),
+            )
+            .unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (a, r): (String, String) = conn
+            .query_row(
+                "SELECT args, result FROM audit_calls ORDER BY id DESC LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        // The real arg is kept for debugging…
+        assert!(a.contains("crm/deals.md"), "args should keep the real payload: {a}");
+        // …but the secret VALUE is redacted (privacy red-line).
+        assert!(a.contains("<redacted>"), "secret must be redacted: {a}");
+        assert!(!a.contains(placeholder), "secret value must not leak: {a}");
+        assert_eq!(r, "created base");
     }
 }

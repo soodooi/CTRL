@@ -11,6 +11,10 @@ import type { ViewerResource } from './viewer-registry';
 /** Guess content type from a file extension. */
 export const inferContentTypeFromPath = (path: string): string => {
   const lower = path.toLowerCase();
+  // Univer spreadsheet — a `<name>.sheet.md` file (checked BEFORE .md so it
+  // wins over the markdown viewer; still a real .md so it round-trips through
+  // vault_write). plan-univer-formula-augment.md S1.
+  if (lower.endsWith('.sheet.md')) return 'application/vnd.ctrl.univer-sheet';
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'text/markdown';
   if (lower.endsWith('.json')) return 'application/json';
   if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'text/yaml';

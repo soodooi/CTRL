@@ -27,8 +27,8 @@ use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::{
-    ai_column, provider::LlmPrompt, query, runtime_sources, smart_table_index, vault,
-    vault_notes_source, vault_smart_table,
+    ai_column, calendar_source, manifest_source, provider::LlmPrompt, query, runtime_sources,
+    smart_table_index, tasks_source, vault, vault_doc, vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
 use axum::body::Body;
@@ -160,6 +160,363 @@ pub struct SmartTableAppendRowArgs {
     pub values: std::collections::BTreeMap<String, String>,
 }
 
+/// smart_table.delete_row — produce/delete a row (ADR-002 §14; Bitable record
+/// delete parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableDeleteRowArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Zero-based row index to delete.
+    pub row_index: usize,
+}
+
+/// smart_table.add_field — produce a new column (ADR-002 §14; Bitable field-create
+/// parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableAddFieldArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Schema key for the new column (lowercase, unique).
+    pub key: String,
+    /// Human label.
+    pub label: String,
+    /// Cell type: text / number / date / checkbox / tags / select / url (+ the
+    /// render-level types the schema accepts, e.g. currency / percent).
+    #[serde(rename = "type")]
+    pub cell_type: String,
+    /// Options for a `select` / `tags` column.
+    #[serde(default)]
+    pub options: Option<Vec<String>>,
+}
+
+/// smart_table.delete_field — produce/drop a column (ADR-002 §14; Bitable
+/// field-delete parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableDeleteFieldArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Schema key of the column to drop.
+    pub key: String,
+}
+
+/// smart_table.produce — the UNIFIED write verb (ADR-002 §14.13). One gate tool
+/// over a typed `ProduceOp` union (set_cell / upsert_rows / delete_rows /
+/// add_field / update_field / delete_field), dispatched to the table's
+/// `RecordSink`. This is the §14 "produce" verb made literal — the bespoke
+/// smart_table_* write tools collapse into this (they stay during the PWA
+/// transition, ghostfolio_*→source_* style).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableProduceArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// The write operation to apply (tagged by `kind`).
+    pub op: query::ProduceOp,
+}
+
+/// One field in a table-create request.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableFieldInput {
+    /// Schema key (lowercase, unique within the table).
+    pub key: String,
+    /// Human label.
+    pub label: String,
+    /// Cell type: text / number / date / checkbox / tags / select / url (+ the
+    /// render-level types the schema accepts).
+    #[serde(rename = "type")]
+    pub cell_type: String,
+    /// Options for a `select` / `tags` column.
+    #[serde(default)]
+    pub options: Option<Vec<String>>,
+}
+
+/// smart_table.create — produce a new empty table (ADR-002 §14; Bitable App-create
+/// parity). Irisy builds a table from scratch.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableCreateArgs {
+    /// Table title (kept verbatim in frontmatter; the file slug is derived).
+    pub name: String,
+    /// The columns (at least one).
+    pub fields: Vec<SmartTableFieldInput>,
+}
+
+/// gate.tool_search — search the FULL registered tool surface (~100) by keyword.
+/// The brain (hermes) has a model tool cap so its `tools/list` is curated to the
+/// high-frequency set; this + `gate_tool_call` are the escape hatch that keeps
+/// the whole surface reachable on demand (the tool-discovery layer, bao
+/// 2026-07-04 — Irisy could only see 40 of ~100 tools).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GateToolSearchArgs {
+    /// Keywords, matched (AND) against each tool's name + description
+    /// (case-insensitive). e.g. "edit note", "ai column", "connector", "publish".
+    pub query: String,
+    /// Max results (default 15).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// gate.tool_call — invoke ANY registered gate tool by name, even one not in the
+/// curated list. Find it first with `gate_tool_search`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GateToolCallArgs {
+    /// The tool name (e.g. `note_map`, `doc_produce`, `mcp_pack_scaffold`).
+    pub name: String,
+    /// The tool's arguments object (as it would appear in a normal tool call).
+    #[serde(default)]
+    pub args: serde_json::Value,
+}
+
+/// smart_table.base_scaffold — build a whole multi-sheet BASE (Bitable) from one
+/// spec: N data-tables + reference (link) relations between them, in one atomic
+/// call (ADR-002 §14; the AI-native "build a base from a sentence" uplift). Irisy
+/// plans this spec from the user's NL, then calls it once.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct BaseScaffoldArgs {
+    /// Base display name (a folder slug is derived; the folder groups all tables).
+    pub base_name: String,
+    /// The data-tables (sheets) to create in this base (at least one).
+    pub tables: Vec<ScaffoldTable>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ScaffoldTable {
+    /// Data-table title.
+    pub name: String,
+    /// Columns (at least one).
+    pub fields: Vec<ScaffoldField>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ScaffoldField {
+    /// Schema key (lowercase, unique within the table).
+    pub key: String,
+    /// Human label.
+    pub label: String,
+    /// Cell type: text / number / date / checkbox / tags / select / url / currency …
+    #[serde(rename = "type")]
+    pub cell_type: String,
+    /// Options for a `select` / `tags` column.
+    #[serde(default)]
+    pub options: Option<Vec<String>>,
+    /// If set, this column is a REFERENCE (link) to another table in THIS base —
+    /// the value is that table's `name`. Wires the relation (cell_type is ignored).
+    #[serde(default)]
+    pub link_to: Option<String>,
+    /// For a link column: which field of the target row to display (default "name").
+    #[serde(default)]
+    pub display: Option<String>,
+}
+
+/// smart_table.batch_append_rows — produce many rows at once (ADR-002 §14; Bitable
+/// batchCreate parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableBatchAppendArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Rows to append; each is cell values keyed by schema field key.
+    pub rows: Vec<std::collections::BTreeMap<String, String>>,
+}
+
+/// smart_table.batch_delete_rows — delete many rows at once (ADR-002 §14; Bitable
+/// batchDelete parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SmartTableBatchDeleteArgs {
+    /// Vault-relative path to the smart-table `.md` file.
+    pub path: String,
+    /// Zero-based row indices to delete (out-of-range + duplicates ignored).
+    pub row_indices: Vec<usize>,
+}
+
+/// task.query — a structured read over the LifeOS Task RecordSource (ADR-002
+/// §14). Fill the parameter object; do NOT write a query string. Call
+/// `task_describe` first to learn valid fields. `subdir` scopes the task
+/// folder (default `Tasks/`).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TaskQueryArgs {
+    /// Vault subdir the tasks live under (default `Tasks/`).
+    #[serde(default)]
+    pub subdir: Option<String>,
+    /// Field filters, combined per `conjunction`. Each `field` must exist.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group keys applied in order (first is the primary level).
+    #[serde(default)]
+    pub group_by: Vec<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// calendar.query — structured read over event notes (§14, same contract as
+/// task_query / notes_query, different RecordSource).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CalendarQueryArgs {
+    /// Field filters, combined per `conjunction`. Each `field` must exist.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group keys applied in order (first is the primary level).
+    #[serde(default)]
+    pub group_by: Vec<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// calendar.produce — the unified §14.13 write verb over event notes. Rows are
+/// addressed by scan index in `calendar_query` order.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CalendarProduceArgs {
+    /// The write op (tagged by `kind`). Calendar supports set_cell /
+    /// upsert_rows / delete_rows; field ops are unsupported (fixed schema).
+    pub op: query::ProduceOp,
+}
+
+/// doc.produce — the unified §14.13 write verb over one vault markdown note
+/// (the BLOCK profile: sections addressed by ATX heading).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DocProduceArgs {
+    /// Vault-relative path to the markdown note.
+    pub path: String,
+    /// The write op (tagged by `kind`). Docs support append_section /
+    /// replace_section / delete_section; record ops are unsupported here.
+    pub op: query::ProduceOp,
+}
+
+/// mcp_pack.provision — one-click + silent setup of an installed feature pack
+/// (bring up its declared service + run bootstrap auth) from its manifest data.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackProvisionArgs {
+    /// Installed pack id (folder under `~/.ctrl/mcps/`).
+    pub mcp_id: String,
+}
+
+/// mcp_pack.validate — evaluate a brain-authored candidate manifest before
+/// install (mcp-builder review + evals). The brain generates the manifest with
+/// its own model, then validates here for structured, self-correctable feedback.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackValidateArgs {
+    /// The candidate feature-pack manifest to evaluate (a full manifest object).
+    pub manifest: serde_json::Value,
+}
+
+/// mcp_pack.scaffold — draft a §14 record_source from an OpenAPI operation
+/// (AutoMCP posture, §7.4). Best-effort draft + spec-repair notes.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackScaffoldArgs {
+    /// The OpenAPI 3 document (a JSON object).
+    pub openapi: serde_json::Value,
+    /// The read path to scaffold from, e.g. `/api/v1/portfolio/holdings`.
+    pub path: String,
+    /// HTTP method (default `GET`).
+    #[serde(default)]
+    pub method: Option<String>,
+}
+
+/// mcp_pack.publish — publish an installed pack to a registry/commons (§7.6
+/// share-and-be-shared). Evals first, then POSTs the manifest.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct McpPackPublishArgs {
+    /// Installed pack id (folder under `~/.ctrl/mcps/`).
+    pub mcp_id: String,
+    /// Registry endpoint override; otherwise the configured `ctrl:registry:publish_url`.
+    #[serde(default)]
+    pub registry: Option<String>,
+}
+
+/// source.describe — the GENERIC §14 read type-layer over ANY installed
+/// connector that declares a `record_source` (ADR-002 §14.12). No per-connector
+/// tool; the source is addressed by `source_id`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SourceDescribeArgs {
+    /// Installed connector id (folder under `~/.ctrl/mcps/`), e.g. `ctrl-ghostfolio`.
+    pub source_id: String,
+}
+
+/// source.query — generic structured read over an installed connector's records
+/// (ADR-002 §14.12). Same filter/sort/group request as every §14 source.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SourceQueryArgs {
+    /// Installed connector id, e.g. `ctrl-ghostfolio`.
+    pub source_id: String,
+    /// Field filters, combined per `conjunction`. Each `field` must exist.
+    #[serde(default)]
+    pub filters: Vec<query::Filter>,
+    /// How filters combine: `and` (default) or `or`.
+    #[serde(default)]
+    pub conjunction: query::Conjunction,
+    /// Multi-key sort (first key wins).
+    #[serde(default)]
+    pub sort: Vec<query::SortKey>,
+    /// Group keys applied in order (first is the primary level).
+    #[serde(default)]
+    pub group_by: Vec<String>,
+    /// Cap the number of returned rows (match_count is reported pre-limit).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// source.produce — generic §14 write into an installed connector (ADR-002
+/// §14.12). `input` keys match the source's declared `produce` body `from`
+/// fields; routed through the gate + audited, same as any write.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SourceProduceArgs {
+    /// Installed connector id, e.g. `ctrl-ghostfolio`.
+    pub source_id: String,
+    /// The produce input object; keys match the source's produce body map.
+    pub input: serde_json::Value,
+}
+
+/// task.create — produce/write a new checkbox task line (ADR-002 §14 produce
+/// verb). Appends `- [ ] <title>` to a note (inline-checkbox substrate).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TaskCreateArgs {
+    /// Task text (required, non-empty).
+    pub title: String,
+    /// Optional due date `YYYY-MM-DD` (rendered as a `📅` inline marker).
+    #[serde(default)]
+    pub due: Option<String>,
+    /// Optional tags (rendered as inline `#tag` tokens).
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Target note (vault-relative path). Omit to append to today's daily note.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// task.update — produce/write one field of a task in place (ADR-002 §14
+/// produce verb). Complete a task with field=`status`, value=`done`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TaskUpdateArgs {
+    /// Vault-relative path to the note holding the task.
+    pub note: String,
+    /// Zero-based line index of the checkbox (from `task_query`'s `line` field).
+    pub line: usize,
+    /// Field to set: `status` (todo/doing/done) / `due` / `title` / `tags`.
+    pub field: String,
+    /// New value (for `tags`, a comma-separated list).
+    pub value: String,
+}
+
+/// task.produce — the unified §14.13 write verb over the task source. Rows are
+/// addressed by their scan index in `task_query` order.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TaskProduceArgs {
+    /// The write op (tagged by `kind`). Tasks support set_cell / upsert_rows /
+    /// delete_rows; field ops (add/update/delete_field) are unsupported.
+    pub op: query::ProduceOp,
+}
+
 /// smart_table.run_ai_column — the AI field shortcut (ADR-003 §6.5.4): run an
 /// LLM per row down a target column. Cost-gated at 100 rows.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -284,6 +641,76 @@ pub struct VaultSearchArgs {
     /// Max results. Defaults to 20 if absent.
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Return match context snippets (ADR-002 §1.9 v46 E13). When true, each
+    /// hit is {path, context} with ~context_length chars around the first
+    /// match; when false/absent, plain path strings (back-compat).
+    #[serde(default)]
+    pub with_context: bool,
+    /// Snippet radius in chars (default 100), used with `with_context`.
+    #[serde(default)]
+    pub context_length: Option<usize>,
+}
+
+/// note.periodic — resolve/read/create the periodic note for a date (ADR-002
+/// §1.9 v46 E1; LRA /periodic/ parity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NotePeriodicArgs {
+    /// Which period: daily / weekly / monthly / quarterly / yearly.
+    pub period: crate::kernel::periodic_notes::Period,
+    /// Anchor date YYYY-MM-DD (default: today).
+    #[serde(default)]
+    pub date: Option<String>,
+    /// Create the note (with journal frontmatter) when missing.
+    #[serde(default)]
+    pub create: bool,
+}
+
+/// note.open — open a note in the CTRL workspace UI (ADR-002 §1.9 v46 E3).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NoteOpenArgs {
+    /// Vault-relative path to open.
+    pub path: String,
+    /// Optional heading to scroll to.
+    #[serde(default)]
+    pub heading: Option<String>,
+}
+
+/// note.history — per-note git history (ADR-002 §1.9 v46 E6).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NoteHistoryArgs {
+    /// Vault-relative path.
+    pub path: String,
+    /// Max commits (default 20).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// note.diff — one commit's change to one note (E6).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NoteDiffArgs {
+    /// Vault-relative path.
+    pub path: String,
+    /// Hex commit id (from note_history).
+    pub rev: String,
+}
+
+/// vault.pulse — activity summary (E6).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaultPulseArgs {
+    /// Window in days (default 14).
+    #[serde(default)]
+    pub days: Option<u32>,
+}
+
+/// note.recent_changes — most recently modified notes (ADR-002 §1.9 v46 E12).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NoteRecentChangesArgs {
+    /// Max results (default 20).
+    #[serde(default)]
+    pub limit: Option<usize>,
+    /// Only notes modified within the last N days (default: no cutoff).
+    #[serde(default)]
+    pub days: Option<u32>,
 }
 
 // ADR-002 substrate § vault v1 §8.3 (2026-06-01) — 13 new vault MCP tools
@@ -621,6 +1048,98 @@ impl KernelMcpRouter {
             .clone()
     }
 
+    /// gate.tool_search — the tool-discovery layer. The brain's curated list is a
+    /// SUBSET of the ~100 registered tools (model cap); this searches the FULL
+    /// surface so any tool stays reachable on demand.
+    #[tool(
+        description = "Search ALL gate tools (~100) by keyword — your default list is only a subset. Returns matching tools with name + description + input schema. Use when you need a capability that is not in your visible tools (editing a note surgically, AI columns, connectors, scaffolding/validating/publishing a feature pack, calling an installed MCP). Then invoke the match with gate_tool_call."
+    )]
+    async fn gate_tool_search(
+        &self,
+        Parameters(args): Parameters<GateToolSearchArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let q = args.query.to_lowercase();
+        let terms: Vec<&str> = q.split_whitespace().collect();
+        let limit = args.limit.unwrap_or(15).min(50);
+        let matches: Vec<serde_json::Value> = Self::tool_router()
+            .list_all()
+            .into_iter()
+            .filter(|t| {
+                let hay = format!(
+                    "{} {}",
+                    t.name,
+                    t.description.as_deref().unwrap_or("")
+                )
+                .to_lowercase();
+                terms.iter().all(|term| hay.contains(term))
+            })
+            .take(limit)
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": serde_json::Value::Object((*t.input_schema).clone()),
+                })
+            })
+            .collect();
+        let body = serde_json::json!({ "matches": matches, "count": matches.len() });
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&body).unwrap_or_default(),
+        )]))
+    }
+
+    /// gate.tool_call — invoke any registered tool by name (the escape hatch that
+    /// pairs with gate_tool_search). Re-enters the normal dispatch path, so the
+    /// same intent authorization + audit apply as a direct call.
+    #[tool(
+        description = "Call ANY gate tool by name, including tools not in your visible list. `name` = the tool name (find it with gate_tool_search), `args` = its arguments object. Same permissions + audit as a direct call."
+    )]
+    async fn gate_tool_call(
+        &self,
+        Parameters(args): Parameters<GateToolCallArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        if args.name == "gate_tool_call" || args.name == "gate_tool_search" {
+            return Err(McpError::invalid_params(
+                "gate_tool_call cannot call the tool-discovery tools themselves",
+                None,
+            ));
+        }
+        // LLMs frequently STRINGIFY the nested args object, so accept a JSON
+        // string and parse it — not just a literal object (bao 2026-07-04: Irisy
+        // passed args as "{\"mcp_id\":...}" and gate_tool_call rejected it).
+        let args_val = match args.args {
+            serde_json::Value::String(s) if !s.trim().is_empty() => {
+                serde_json::from_str(&s).unwrap_or(serde_json::Value::String(s))
+            }
+            other => other,
+        };
+        let arguments = match args_val {
+            serde_json::Value::Object(m) => Some(m),
+            serde_json::Value::Null => None,
+            serde_json::Value::String(ref s) if s.trim().is_empty() => None,
+            _ => {
+                return Err(McpError::invalid_params(
+                    "args must be an object (or a JSON string encoding one)",
+                    None,
+                ))
+            }
+        };
+        let mut request = CallToolRequestParams::default();
+        request.name = args.name.into();
+        request.arguments = arguments;
+        // Graceful degradation (bao 2026-07-04): a tool the brain reached via
+        // discovery that fails ONLY for lack of setup (missing credential) comes
+        // back as a friendly "connect X first" result, not a raw -32603.
+        match self.dispatch_tool(request, context).await {
+            Ok(r) => Ok(r),
+            Err(e) => match setup_hint(&e.to_string()) {
+                Some(hint) => Ok(hint),
+                None => Err(e),
+            },
+        }
+    }
+
     /// kernel.status — uptime + adapter chain. Sanity ping for clients.
     #[tool(description = "Report kernel health: uptime, registered LLM adapters, MCP server count")]
     async fn kernel_status(&self) -> Result<CallToolResult, McpError> {
@@ -781,6 +1300,313 @@ impl KernelMcpRouter {
         ))]))
     }
 
+    /// smart_table.delete_row — the produce/delete verb (ADR-002 §14; Bitable
+    /// record-delete parity). Reads fresh, removes the row by index, re-serializes,
+    /// writes back. Routed through the gate so it is audited + review-gated (a
+    /// destructive write, like vault.delete).
+    #[tool(description = "Delete a row from a smart table by zero-based row index, then write it back.")]
+    async fn smart_table_delete_row(
+        &self,
+        Parameters(args): Parameters<SmartTableDeleteRowArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.delete_row(args.row_index) {
+            return Err(McpError::invalid_params(
+                format!("delete_row rejected: row {} out of range", args.row_index),
+                None,
+            ));
+        }
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "deleted row {} from {}",
+            args.row_index, args.path
+        ))]))
+    }
+
+    /// smart_table.add_field — produce a new column (ADR-002 §14; Bitable
+    /// field-create parity). Appends the field to the frontmatter `schema` array
+    /// (preserving sibling items, incl. relational fields' metadata) + an empty
+    /// cell to every row. Schema write → audited + review-gated.
+    #[tool(
+        description = "Add a column to a smart table: key + label + type (text/number/date/checkbox/tags/select/url) + optional options for select/tags. Fails if the key already exists."
+    )]
+    async fn smart_table_add_field(
+        &self,
+        Parameters(args): Parameters<SmartTableAddFieldArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if table.has_field(&args.key) {
+            return Err(McpError::invalid_params(
+                format!("field '{}' already exists", args.key),
+                None,
+            ));
+        }
+        let cell_type = query::CellType::parse(&args.cell_type);
+        table.add_field(query::FieldSpec {
+            key: args.key.clone(),
+            label: args.label.clone(),
+            cell_type,
+            options: args.options.clone(),
+        });
+        // Append the schema item to the frontmatter (never rebuild — preserve
+        // every sibling, incl. relational flow-string items verbatim).
+        let mut frontmatter = entry.frontmatter.clone();
+        let mut item = serde_json::Map::new();
+        item.insert("key".into(), serde_json::json!(args.key));
+        item.insert("label".into(), serde_json::json!(args.label));
+        item.insert("type".into(), serde_json::json!(args.cell_type));
+        if let Some(opts) = &args.options {
+            item.insert("options".into(), serde_json::json!(opts));
+        }
+        match frontmatter.get_mut("schema").and_then(|v| v.as_array_mut()) {
+            Some(arr) => arr.push(serde_json::Value::Object(item)),
+            None => {
+                frontmatter
+                    .as_object_mut()
+                    .ok_or_else(|| McpError::internal_error("frontmatter not an object", None))?
+                    .insert("schema".into(), serde_json::json!([serde_json::Value::Object(item)]));
+            }
+        }
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "added field {} ({}) to {}",
+            args.key, args.cell_type, args.path
+        ))]))
+    }
+
+    /// smart_table.delete_field — produce/drop a column (ADR-002 §14; Bitable
+    /// field-delete parity). Removes the field from the frontmatter `schema` (by
+    /// key, both object + flow-string forms) and from every row. Schema write →
+    /// audited + review-gated.
+    #[tool(description = "Delete a column from a smart table by schema key (drops it from the schema + every row).")]
+    async fn smart_table_delete_field(
+        &self,
+        Parameters(args): Parameters<SmartTableDeleteFieldArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        if !table.delete_field(&args.key) {
+            return Err(McpError::invalid_params(
+                format!("no such field '{}'", args.key),
+                None,
+            ));
+        }
+        let mut frontmatter = entry.frontmatter.clone();
+        if let Some(arr) = frontmatter.get_mut("schema").and_then(|v| v.as_array_mut()) {
+            arr.retain(|it| {
+                vault_smart_table::schema_item_key(it).as_deref() != Some(args.key.as_str())
+            });
+        }
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "deleted field {} from {}",
+            args.key, args.path
+        ))]))
+    }
+
+    /// smart_table.produce — the UNIFIED §14 write verb (ADR-002 §14.13). Reads
+    /// fresh, dispatches one typed `ProduceOp` to the table's `RecordSink`, then
+    /// persists: body from `serialize_body`, and for schema-mutating ops the
+    /// frontmatter `schema` is rebuilt from `serialize_schema` (round-trips
+    /// relational metadata + options). Routed through the gate → audited +
+    /// review-gated like every produce. This one verb subsumes the bespoke
+    /// smart_table_* write tools (kept during the PWA transition).
+    #[tool(
+        description = "Write to a smart table with ONE unified produce verb. `op` is a tagged union: {kind:\"set_cell\",row,field,value} / {kind:\"upsert_rows\",rows:[{field:value}]} / {kind:\"delete_rows\",indices:[..]} / {kind:\"add_field\",key,label,type,options?,relation?} / {kind:\"update_field\",key,label?,type?,options?} / {kind:\"delete_field\",key}. relation = {kind:\"reference\"|\"lookup\"|\"rollup\",..} for relational columns."
+    )]
+    async fn smart_table_produce(
+        &self,
+        Parameters(args): Parameters<SmartTableProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use query::RecordSink;
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let summary = describe_produce_op(&args.op);
+        // Apply the op to the in-memory table (validates + mutates fields/rows).
+        table
+            .produce(args.op.clone())
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let new_body = table.serialize_body();
+        // Row-only ops leave frontmatter untouched. Schema-mutating ops patch the
+        // existing `schema` array IN PLACE (never full-regenerate) so untouched
+        // columns keep their render-level type sugar (currency/percent/…) + any
+        // extra keys — matching the bespoke smart_table_add_field/delete_field.
+        let mut frontmatter = entry.frontmatter.clone();
+        patch_schema_in_place(&mut frontmatter, &args.op, &table)?;
+        vault::write(&root, &args.path, &new_body, &frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "produce {} on {}",
+            summary, args.path
+        ))]))
+    }
+
+    /// smart_table.create — produce a new empty table (ADR-002 §14; Bitable
+    /// App-create parity). Seeds `tables/<slug>.md` from a name + fields so Irisy
+    /// can build a table from scratch. `create` verb → audited + review-gated.
+    #[tool(
+        description = "Create a new smart table from a name + fields (each key/label/type[/options]). Seeds an empty table at tables/<slug>.md and returns its path. Then use smart_table_append_row to add data."
+    )]
+    async fn smart_table_create(
+        &self,
+        Parameters(args): Parameters<SmartTableCreateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if args.fields.is_empty() {
+            return Err(McpError::invalid_params("a table needs at least one field", None));
+        }
+        let root = vault_root()?;
+        let fields: Vec<query::FieldSpec> = args
+            .fields
+            .iter()
+            .map(|f| query::FieldSpec {
+                key: f.key.clone(),
+                label: f.label.clone(),
+                cell_type: query::CellType::parse(&f.cell_type),
+                options: f.options.clone(),
+            })
+            .collect();
+        let (frontmatter, body) = vault_smart_table::seed_table(&args.name, &fields);
+        let path = unique_table_path(&root, &slugify(&args.name));
+        let lock = self.vault_write_lock(&path).await;
+        let _write_guard = lock.lock().await;
+        vault::write(&root, &path, &body, &frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            let table = vault_smart_table::SmartTable::parse(&frontmatter, &body);
+            table.reindex_into(idx, &path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!("created table {path}"))]))
+    }
+
+    /// smart_table.base_scaffold — build a whole multi-sheet BASE in one atomic
+    /// call: N data-tables in `tables/<base>/` + reference (link) relations
+    /// between them + the `_base.md` manifest. The AI-native "build a base from a
+    /// sentence" uplift — Irisy plans the spec from NL, one call materializes it.
+    #[tool(
+        description = "Build a whole multi-sheet BASE (Bitable) in one call from a spec: base_name + tables[{name, fields[{key,label,type,options?, link_to?, display?}]}]. A field with link_to=<another table's name> becomes a REFERENCE (link) column wiring that relation. Creates tables/<base>/<slug>.md per table + a _base.md manifest. Use this to build a whole related-table base from a user's description in one shot; then smart_table_append_row / batch_append_rows to seed data."
+    )]
+    async fn smart_table_base_scaffold(
+        &self,
+        Parameters(args): Parameters<BaseScaffoldArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if args.tables.is_empty() {
+            return Err(McpError::invalid_params("a base needs at least one table", None));
+        }
+        for t in &args.tables {
+            if t.fields.is_empty() {
+                return Err(McpError::invalid_params(
+                    format!("table '{}' needs at least one field", t.name),
+                    None,
+                ));
+            }
+        }
+        let root = vault_root()?;
+        let base_slug = unique_base_folder(&root, &slugify(&args.base_name));
+        let (files, manifest) = scaffold_base_files(&base_slug, &args.base_name, &args.tables);
+
+        let mut created: Vec<String> = Vec::new();
+        for (path, frontmatter, body) in &files {
+            let lock = self.vault_write_lock(path).await;
+            let _write_guard = lock.lock().await;
+            vault::write(&root, path, body, frontmatter).map_err(map_vault_err)?;
+            if let Some(idx) = self.st_index.as_deref() {
+                let table = vault_smart_table::SmartTable::parse(frontmatter, body);
+                table.reindex_into(idx, path);
+            }
+            created.push(path.clone());
+        }
+
+        // Manifest: display name + sheet order (the frontend base model reads it).
+        let bpath = format!("tables/{base_slug}/_base.md");
+        {
+            let lock = self.vault_write_lock(&bpath).await;
+            let _write_guard = lock.lock().await;
+            vault::write(&root, &bpath, "", &manifest).map_err(map_vault_err)?;
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "created base '{}' ({base_slug}) with {} tables: {}",
+            args.base_name,
+            created.len(),
+            created.join(", ")
+        ))]))
+    }
+
+    /// smart_table.batch_append_rows — produce many rows in one write (ADR-002 §14;
+    /// Bitable batchCreate parity). Reads fresh, appends all, one re-serialize.
+    #[tool(description = "Append multiple rows to a smart table in one call (each row = values keyed by field key). Bitable batch-create parity.")]
+    async fn smart_table_batch_append_rows(
+        &self,
+        Parameters(args): Parameters<SmartTableBatchAppendArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let n = table.append_rows(args.rows.into_iter().map(|r| r.into_iter().collect()).collect());
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "appended {n} rows to {}",
+            args.path
+        ))]))
+    }
+
+    /// smart_table.batch_delete_rows — delete many rows in one write (ADR-002 §14;
+    /// Bitable batchDelete parity). Descending-order removal; out-of-range ignored.
+    #[tool(description = "Delete multiple rows from a smart table by zero-based indices in one call (out-of-range + duplicate indices ignored). Bitable batch-delete parity.")]
+    async fn smart_table_batch_delete_rows(
+        &self,
+        Parameters(args): Parameters<SmartTableBatchDeleteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
+        let n = table.delete_rows(&args.row_indices);
+        let new_body = table.serialize_body();
+        vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+        if let Some(idx) = self.st_index.as_deref() {
+            table.reindex_into(idx, &args.path);
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "deleted {n} rows from {}",
+            args.path
+        ))]))
+    }
+
     /// notes.describe — the knowledge base's type layer (ADR-002 §14). Same
     /// `describe` verb as smart-table: the KB is just another RecordSource.
     #[tool(
@@ -861,6 +1687,481 @@ impl KernelMcpRouter {
         };
         let result = vault_notes_source::text::query(&root, &req).map_err(map_vault_err)?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// task.describe — the LifeOS Task source's type layer (ADR-002 §14, GOAL
+    /// Phase 1). Same `describe` verb as smart-table / notes: tasks are just
+    /// another RecordSource. Call before task_query so Irisy only references
+    /// valid fields (path/title/status/due/priority/tags/created/modified).
+    #[tool(
+        description = "Describe the LifeOS tasks source as a queryable RecordSource: fields (path/title/status/due/priority/tags/created/modified) and supported operators. Call before task_query."
+    )]
+    async fn task_describe(&self) -> Result<CallToolResult, McpError> {
+        let body = serde_json::to_string(&tasks_source::describe()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// task.query — structured read over the LifeOS tasks (ADR-002 §14), routed
+    /// through the shared kernel query engine — identical contract to
+    /// `smart_table.query` / `notes.query`, different RecordSource.
+    #[tool(
+        description = "Query LifeOS tasks by status/due/priority/tags with a structured filter/sort/group request (not a query string). Returns matching tasks. Call task_describe first."
+    )]
+    async fn task_query(
+        &self,
+        Parameters(args): Parameters<TaskQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let source = tasks_source::TaskSource::load(&root, args.subdir.as_deref());
+        let req = query::QueryRequest {
+            filters: args.filters,
+            conjunction: args.conjunction,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = source
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// task.create — the produce/write verb (ADR-002 §14): append a `- [ ]`
+    /// checkbox task to a note (inline-checkbox substrate; vim test). Omit
+    /// `note` to capture into today's daily note.
+    #[tool(
+        description = "Create a LifeOS task: append a `- [ ]` checkbox line with `title` (required), optional `due` (YYYY-MM-DD) and `tags`, to `note` (default: today's daily note). Returns the note path."
+    )]
+    async fn task_create(
+        &self,
+        Parameters(args): Parameters<TaskCreateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let now = chrono::Local::now().date_naive();
+        let target = args
+            .note
+            .clone()
+            .unwrap_or_else(|| format!("daily/{}.md", now.format("%Y-%m-%d")));
+        let lock = self.vault_write_lock(&target).await;
+        let _write_guard = lock.lock().await;
+        let path = tasks_source::create(
+            &root,
+            args.note.as_deref(),
+            &args.title,
+            args.due.as_deref(),
+            &args.tags,
+            now,
+        )
+        .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!("created task in {path}"))]))
+    }
+
+    /// task.update — the produce/write verb (ADR-002 §14): rewrite one checkbox
+    /// line in place (status/due/title/tags). Complete a task with
+    /// field=`status`, value=`done`.
+    #[tool(
+        description = "Update one field of a LifeOS task by note + line (from task_query): field='status' value='done' completes it; also due/title/tags. Rewrites the checkbox line in place."
+    )]
+    async fn task_update(
+        &self,
+        Parameters(args): Parameters<TaskUpdateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.note).await;
+        let _write_guard = lock.lock().await;
+        let now = chrono::Local::now().date_naive();
+        tasks_source::update(&root, &args.note, args.line, &args.field, &args.value, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "updated {} line {} field {}",
+            args.note, args.line, args.field
+        ))]))
+    }
+
+    /// task.produce — the UNIFIED §14.13 write verb over the task source. Same
+    /// typed `ProduceOp` union as smart_table_produce, dispatched to TaskSource's
+    /// `RecordSink` (set_cell / upsert_rows / delete_rows; field ops unsupported —
+    /// tasks have a fixed schema). Rows are addressed by scan index in task_query
+    /// order. produce self-persists across the addressed notes. Review-gated.
+    #[tool(
+        description = "Write to LifeOS tasks with the unified produce verb. `op` (tagged by kind): {kind:\"set_cell\",row,field,value} sets status/due/title/tags on the row-th task from task_query; {kind:\"upsert_rows\",rows:[{title,path?,due?,tags?}]} creates tasks (path = target note, default today's daily); {kind:\"delete_rows\",indices:[..]} removes checkbox lines. add/update/delete_field are unsupported (fixed schema)."
+    )]
+    async fn task_produce(
+        &self,
+        Parameters(args): Parameters<TaskProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use query::RecordSink;
+        let root = vault_root()?;
+        let now = chrono::Local::now().date_naive();
+        let summary = describe_produce_op(&args.op);
+        // Scan the whole vault so row indices match task_query, inject the clock.
+        let mut source = tasks_source::TaskSource::load(&root, None).with_today(now);
+        // Lock EVERY note this op writes before dispatching — tasks are multi-note,
+        // but each note still needs the same write lock the bespoke task_create /
+        // task_update hold, or a concurrent single-note write could lose an update.
+        // Sorted + deduped so multi-lock acquisition can't deadlock. (Row-index
+        // addressing across the earlier task_query call is still a documented TOCTOU
+        // — locks bound intra-call safety, not cross-call.)
+        let mut notes = source.affected_notes(&args.op, now);
+        notes.sort();
+        notes.dedup();
+        let mut _guards = Vec::with_capacity(notes.len());
+        for n in &notes {
+            _guards.push(self.vault_write_lock(n).await.lock_owned().await);
+        }
+        source
+            .produce(args.op)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!("task produce {summary}"))]))
+    }
+
+    /// calendar.describe — the calendar source's type layer (ADR-002 §14.13
+    /// slice 3 — the first product built trait-only: 3 verbs, zero bespoke
+    /// per-op tools). Events are one-note-per-event under `calendar/`.
+    #[tool(
+        description = "Describe the calendar as a queryable RecordSource: fields (path/title/date/start/end/location/tags) and supported operators. Call before calendar_query."
+    )]
+    async fn calendar_describe(&self) -> Result<CallToolResult, McpError> {
+        let body = serde_json::to_string(&calendar_source::describe()).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// calendar.query — structured read over event notes (ADR-002 §14), routed
+    /// through the shared kernel query engine — identical contract to
+    /// task_query / notes_query, different RecordSource.
+    #[tool(
+        description = "Query calendar events by date/title/location/tags with a structured filter/sort/group request (e.g. date within:today / this_week). Returns matching events. Call calendar_describe first."
+    )]
+    async fn calendar_query(
+        &self,
+        Parameters(args): Parameters<CalendarQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let source = calendar_source::CalendarSource::load(&root);
+        let req = query::QueryRequest {
+            filters: args.filters,
+            conjunction: args.conjunction,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = source
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// calendar.produce — the UNIFIED §14.13 write verb over event notes. Same
+    /// typed `ProduceOp` union as smart_table_produce / task_produce, dispatched
+    /// to CalendarSource's `RecordSink`. Rows are addressed by scan index in
+    /// calendar_query order. Locks every note the op writes. Review-gated.
+    #[tool(
+        description = "Write to the calendar with the unified produce verb. `op` (tagged by kind): {kind:\"set_cell\",row,field,value} edits one event field (title/date/start/end/location/tags) on the row-th event from calendar_query; {kind:\"upsert_rows\",rows:[{title,date,start?,end?,location?,tags?}]} creates event notes (date=YYYY-MM-DD); {kind:\"delete_rows\",indices:[..]} deletes event notes. Field ops are unsupported (fixed schema)."
+    )]
+    async fn calendar_produce(
+        &self,
+        Parameters(args): Parameters<CalendarProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use query::RecordSink;
+        let root = vault_root()?;
+        let summary = describe_produce_op(&args.op);
+        let mut source = calendar_source::CalendarSource::load(&root);
+        // Lock every event note this op writes (same posture as task_produce).
+        let mut notes = source.affected_notes(&args.op);
+        notes.sort();
+        notes.dedup();
+        let mut _guards = Vec::with_capacity(notes.len());
+        for n in &notes {
+            _guards.push(self.vault_write_lock(n).await.lock_owned().await);
+        }
+        source
+            .produce(args.op)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!("calendar produce {summary}"))]))
+    }
+
+    /// doc.produce — the UNIFIED §14.13 write verb over one markdown note (the
+    /// BLOCK profile: sections addressed by ATX heading, the AI-native way to
+    /// say "rewrite the Overview section"). Same typed `ProduceOp` union as the
+    /// record sources; record ops return Unsupported here (supported_ops works
+    /// in both directions). Frontmatter passes through verbatim. Review-gated.
+    #[tool(
+        description = "Edit one markdown note surgically with the unified produce verb. `op` (tagged by kind): {kind:\"append_section\",heading?,content} appends under the named heading (or end of doc when heading omitted); {kind:\"replace_section\",heading,content} replaces the body under a heading (heading kept); {kind:\"delete_section\",heading} removes a heading + its body incl. nested subsections; {kind:\"set_frontmatter_key\",key,value} / {kind:\"delete_frontmatter_key\",key} edit ONE top-level frontmatter key in place (other keys/comments byte-identical; set creates the block on a plain note). Heading match is case-insensitive on the text after #s; with duplicate headings the FIRST match wins. Call note_map first to see the headings. Prefer this over vault_write — it never rewrites the whole file."
+    )]
+    async fn doc_produce(
+        &self,
+        Parameters(args): Parameters<DocProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use query::RecordSink;
+        let root = vault_root()?;
+        let lock = self.vault_write_lock(&args.path).await;
+        let _write_guard = lock.lock().await;
+        let summary = describe_produce_op(&args.op);
+        // Frontmatter ops bypass DocBody (it models the body only): surgical
+        // single-key patch at the raw-bytes layer (ADR-002 §1.9 v46 E4).
+        match &args.op {
+            query::ProduceOp::SetFrontmatterKey { key, value } => {
+                vault::patch_frontmatter_key(&root, &args.path, key, Some(value))
+                    .map_err(map_vault_err)?;
+            }
+            query::ProduceOp::DeleteFrontmatterKey { key } => {
+                vault::patch_frontmatter_key(&root, &args.path, key, None)
+                    .map_err(map_vault_err)?;
+            }
+            _ => {
+                let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+                let mut doc = vault_doc::DocBody::parse(&entry.content);
+                doc.produce(args.op)
+                    .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+                // write_body, NOT write: raw frontmatter bytes pass through
+                // verbatim (key order / comments / quoting), and a plain note
+                // without frontmatter stays writable + fm-less.
+                vault::write_body(&root, &args.path, &doc.serialize())
+                    .map_err(map_vault_err)?;
+            }
+        }
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "doc produce {summary} on {}",
+            args.path
+        ))]))
+    }
+
+    /// note.map — the document map (ADR-002 §1.9 v46 E9): headings tree +
+    /// `^block-id` refs + frontmatter keys, so the AI targets `doc_produce`
+    /// anchors it can SEE instead of guessing (LRA `vault_get_document_map`
+    /// parity, fence-aware).
+    #[tool(
+        description = "Get a note's document map: headings (level/text/line, code fences excluded), ^block-id refs, and frontmatter keys. Call before doc_produce to pick a real heading anchor."
+    )]
+    async fn note_map(
+        &self,
+        Parameters(args): Parameters<VaultPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let doc = vault_doc::DocBody::parse(&entry.content);
+        let fm_keys: Vec<String> = entry
+            .frontmatter
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": args.path,
+            "headings": doc.map_headings(),
+            "block_refs": doc.map_block_refs(),
+            "frontmatter_keys": fm_keys,
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.get — ONE structured read (ADR-002 §1.9 v46 E10, LRA NoteJson
+    /// parity): content + frontmatter + tags + stat + outgoing links +
+    /// backlinks in a single call, instead of 3-4 separate gate calls.
+    #[tool(
+        description = "Read a note with ALL its context in one call: content, frontmatter, tags, stat (mtime/size), outgoing links, and backlinks. Prefer this over vault_read when you also need the note's connections."
+    )]
+    async fn note_get(
+        &self,
+        Parameters(args): Parameters<VaultPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let g = crate::kernel::vault_graph::scan(&root)
+            .map_err(|e| McpError::internal_error(format!("note.get: {e}"), None))?;
+        let node = g.node_of(&args.path);
+        let stat = std::fs::metadata(root.join(&args.path)).ok();
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": args.path,
+            "content": entry.content,
+            "frontmatter": entry.frontmatter,
+            "tags": node.map(|n| n.tags.clone()).unwrap_or_default(),
+            "links": node.map(|n| n.outlinks.clone()).unwrap_or_default(),
+            "backlinks": g.backlinks_of(&args.path),
+            "stat": stat.map(|m| serde_json::json!({
+                "size": m.len(),
+                "mtime_ms": m.modified().ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64),
+            })),
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// source.describe — GENERIC §14 type layer over ANY installed connector that
+    /// declares a `record_source` (ADR-002 §14.12). Loads the manifest, builds
+    /// the describe from data — zero per-connector code. This is the product-grade
+    /// zero-code path the ghostfolio_* tools prototype; new connectors need no
+    /// bespoke gate tools (§7.4/§7.5).
+    #[tool(
+        description = "Describe an installed connector's queryable records by source_id: fields + operators, read from its manifest record_source. Works for any connector. Call before source_query."
+    )]
+    async fn source_describe(
+        &self,
+        Parameters(args): Parameters<SourceDescribeArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let spec = load_source_spec(&args.source_id)?;
+        let d = manifest_source::ManifestConnectorSource::describe_spec(&spec);
+        let body = serde_json::to_string(&d).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// source.query — GENERIC §14 read over an installed connector (ADR-002
+    /// §14.12). Resolves creds kernel-side (never the LLM), fetches the
+    /// self-hosted instance live from the manifest's declared endpoint, and runs
+    /// the SAME shared kernel query engine — identical contract to smart_table /
+    /// ghostfolio, but data-driven for any connector.
+    #[tool(
+        description = "Query an installed connector's records by source_id with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live from its manifest. Call source_describe first."
+    )]
+    async fn source_query(
+        &self,
+        Parameters(args): Parameters<SourceQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let (spec, base_url, token) = load_source(&args.source_id)?;
+        let source = manifest_source::fetch(&spec, &base_url, &token)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let req = query::QueryRequest {
+            filters: args.filters,
+            conjunction: args.conjunction,
+            sort: args.sort,
+            group_by: args.group_by,
+            limit: args.limit,
+        };
+        let now = chrono::Local::now().date_naive();
+        use query::QuerySource;
+        let result = source
+            .query(&req, now)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let body = serde_json::to_string(&result).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// source.produce — GENERIC §14 write into an installed connector (ADR-002
+    /// §14.12 / §14.9). Builds the request body from the manifest's `produce`
+    /// map over the caller's `input`, POSTs to the declared endpoint. Serial +
+    /// side-effecting; routed through the gate so it is audited (write approval =
+    /// review-gate discipline). Creds kernel-side.
+    #[tool(
+        description = "Record data into an installed connector by source_id (a write): pass an input object whose keys match the source's produce fields. POSTs to the manifest-declared endpoint and returns the created resource."
+    )]
+    async fn source_produce(
+        &self,
+        Parameters(args): Parameters<SourceProduceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let (spec, base_url, token) = load_source(&args.source_id)?;
+        let input = args.input.as_object().cloned().unwrap_or_default();
+        let created = manifest_source::produce(&spec, &base_url, &token, &input)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let body = serde_json::to_string(&created).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp_pack.provision — the generic one-click + silent setup (feature-pack
+    /// provision+auth engine): read an installed pack's manifest, bring up its
+    /// declared `provision.service` (docker compose) and run its `auth.bootstrap`
+    /// (mint + store the credential). Zero manual entry; idempotent. This is what
+    /// makes any self-hosted connector one-click — driven by manifest data.
+    #[tool(
+        description = "Provision + auto-authenticate an installed feature pack from its manifest (one-click, silent): bring up its declared service and run bootstrap auth. Idempotent. Requires a container runtime for service packs."
+    )]
+    async fn mcp_pack_provision(
+        &self,
+        Parameters(args): Parameters<McpPackProvisionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
+        let path = dir.join(&args.mcp_id).join("manifest.json");
+        let bytes = std::fs::read(&path).map_err(|e| {
+            McpError::invalid_params(format!("no installed manifest for {}: {e}", args.mcp_id), None)
+        })?;
+        let manifest: serde_json::Value = serde_json::from_slice(&bytes).map_err(map_serde_err)?;
+        let summary = crate::kernel::pack_provision::install_pack(&args.mcp_id, &manifest)
+            .await
+            .map_err(|e| McpError::internal_error(e, None))?;
+        Ok(CallToolResult::success(vec![Content::text(summary)]))
+    }
+
+    /// mcp_pack.validate — the evals gate a brain calls to check a candidate
+    /// manifest BEFORE install (mcp-builder review + evals; §7.4/§7.5). Returns a
+    /// structured report (ok + issues{field,severity,fix} + a positive
+    /// record_source describe eval) the authoring brain self-corrects from — the
+    /// quality step home-grown pipelines skip. Read-only: validates, never writes.
+    #[tool(
+        description = "Evaluate a candidate feature-pack manifest BEFORE install: checks id/version, that it declares actions[] or a §14 record_source, and that any record_source is coherent (parses, has fields + a read endpoint, describe resolves). Returns { ok, issues[{field,severity,fix}] } to self-correct. Call before mcp_pack_install."
+    )]
+    async fn mcp_pack_validate(
+        &self,
+        Parameters(args): Parameters<McpPackValidateArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let report = crate::kernel::pack_validate::validate_manifest(&args.manifest);
+        let body = serde_json::to_string(&report).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp_pack.scaffold — draft a §14 record_source from an OpenAPI read op
+    /// (AutoMCP, §7.4). The research: codegen is largely solved, spec quality is
+    /// the bottleneck — so this returns a best-effort draft + spec-repair notes
+    /// the author refines (edit) then evals (mcp_pack_validate) before install.
+    /// Read-only: pure transform, no writes.
+    #[tool(
+        description = "Draft a §14 record_source from an OpenAPI operation (a GET path returning a list). Returns { record_source, notes } — a best-effort draft (endpoint + array location + fields from the response schema) plus repair notes (auth/missing fields). Refine it, then mcp_pack_validate before install."
+    )]
+    async fn mcp_pack_scaffold(
+        &self,
+        Parameters(args): Parameters<McpPackScaffoldArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let method = args.method.as_deref().unwrap_or("GET");
+        let scaffold = crate::kernel::openapi::record_source_from_openapi(&args.openapi, &args.path, method)
+            .ok_or_else(|| {
+                McpError::invalid_params(
+                    format!("no {} operation at '{}' in the OpenAPI spec", method.to_uppercase(), args.path),
+                    None,
+                )
+            })?;
+        let out = serde_json::json!({ "record_source": scaffold.record_source, "notes": scaffold.notes });
+        let body = serde_json::to_string(&out).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// mcp_pack.publish — the produce side of share-and-be-shared (§7.6): evals an
+    /// installed pack, then POSTs its manifest to a registry/commons. Never
+    /// publishes a broken pack (evals first). Registry URL + token resolve
+    /// kernel-side (never the LLM); returns the published reference.
+    #[tool(
+        description = "Publish an installed feature pack to a registry/commons (share-and-be-shared). Evals the manifest first (never publishes a pack with errors — returns the issues to fix), then POSTs it. Returns the published reference {id,namespace,url}."
+    )]
+    async fn mcp_pack_publish(
+        &self,
+        Parameters(args): Parameters<McpPackPublishArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let manifest = read_installed_manifest(&args.mcp_id)?;
+        let (url, token) = resolve_registry_creds(args.registry.as_deref()).ok_or_else(|| {
+            McpError::invalid_params(
+                "no registry configured — set ctrl:registry:publish_url (+ optional :publish_token)",
+                None,
+            )
+        })?;
+        let published = crate::kernel::pack_publish::publish(&manifest, &url, &token)
+            .await
+            .map_err(|e| match e {
+                crate::kernel::pack_publish::PublishError::Blocked(issues) => {
+                    // Surface the eval issues so the author fixes them (not published).
+                    let detail = serde_json::to_string(&issues).unwrap_or_default();
+                    McpError::invalid_params(format!("pack has eval errors, not published: {detail}"), None)
+                }
+                other => McpError::internal_error(other.to_string(), None),
+            })?;
+        let body = serde_json::to_string(&published).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -1315,7 +2616,216 @@ impl KernelMcpRouter {
         let root = vault_root()?;
         let limit = args.limit.unwrap_or(20);
         let hits = vault::search(&root, &args.query, limit).map_err(map_vault_err)?;
-        let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
+        if !args.with_context {
+            // Back-compat shape: plain path strings (the PWA consumes this).
+            let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
+            return Ok(CallToolResult::success(vec![Content::text(body)]));
+        }
+        // E13 (ADR-002 §1.9 v46): attach ~context_length chars around the first
+        // case-insensitive match so the AI can judge relevance without a second
+        // read per hit (LRA /search/simple/ contextLength parity).
+        let radius = args.context_length.unwrap_or(100);
+        let needle = args.query.to_lowercase();
+        let rich: Vec<serde_json::Value> = hits
+            .into_iter()
+            .map(|path| {
+                let context = vault::read(&root, &path)
+                    .ok()
+                    .and_then(|e| snippet_around(&e.content, &needle, radius));
+                serde_json::json!({ "path": path, "context": context })
+            })
+            .collect();
+        let body = serde_json::to_string(&rich).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.periodic — resolve (and optionally create) the daily / weekly /
+    /// monthly / quarterly / yearly note for a date (ADR-002 §1.9 v46 E1).
+    /// Daily resolution matches the task source's daily-note convention, so
+    /// "add a task to today" and "open today's note" land on the same file.
+    #[tool(
+        description = "Resolve the periodic note for a date: period=daily/weekly/monthly/quarterly/yearly, date=YYYY-MM-DD (default today). Returns {path, exists, content?, frontmatter?}; create=true seeds it (journal frontmatter) when missing. Use with doc_produce to append to today's daily note."
+    )]
+    async fn note_periodic(
+        &self,
+        Parameters(args): Parameters<NotePeriodicArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        use crate::kernel::periodic_notes;
+        let root = vault_root()?;
+        let date = match &args.date {
+            Some(s) => chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
+                .map_err(|_| McpError::invalid_params(format!("'{s}' is not YYYY-MM-DD"), None))?,
+            None => chrono::Local::now().date_naive(),
+        };
+        let path = periodic_notes::note_path(args.period, date);
+        let lock = self.vault_write_lock(&path).await;
+        let _write_guard = lock.lock().await;
+        let entry = vault::read(&root, &path).ok();
+        let exists = entry.is_some();
+        if !exists && args.create {
+            vault::write(&root, &path, "", &periodic_notes::seed_frontmatter(args.period))
+                .map_err(map_vault_err)?;
+        }
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": path,
+            "exists": exists || args.create,
+            "content": entry.as_ref().map(|e| e.content.clone()),
+            "frontmatter": entry.as_ref().map(|e| e.frontmatter.clone()),
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.recent_changes — most recently modified notes by mtime (ADR-002
+    /// §1.9 v46 E12; the "what did I touch lately" recall the LRA ecosystem
+    /// had to work around via search).
+    #[tool(
+        description = "List the most recently modified notes: [{path, mtime_ms}] sorted newest first. Optional days cutoff. Answers \"what did I work on recently\"."
+    )]
+    async fn note_recent_changes(
+        &self,
+        Parameters(args): Parameters<NoteRecentChangesArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let limit = args.limit.unwrap_or(20);
+        let cutoff_ms = args.days.map(|d| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            now.saturating_sub(u64::from(d) * 86_400_000)
+        });
+        let mut rows: Vec<(String, u64)> = vault::list(&root, None)
+            .map_err(map_vault_err)?
+            .into_iter()
+            .filter_map(|p| {
+                let m = std::fs::metadata(root.join(&p)).ok()?;
+                let mtime_ms = m
+                    .modified()
+                    .ok()?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()?
+                    .as_millis() as u64;
+                if cutoff_ms.is_some_and(|c| mtime_ms < c) {
+                    return None;
+                }
+                Some((p, mtime_ms))
+            })
+            .collect();
+        rows.sort_by_key(|r| std::cmp::Reverse(r.1));
+        rows.truncate(limit);
+        let out: Vec<serde_json::Value> = rows
+            .into_iter()
+            .map(|(path, mtime_ms)| serde_json::json!({ "path": path, "mtime_ms": mtime_ms }))
+            .collect();
+        let body = serde_json::to_string(&out).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.active_get — the note currently focused in the CTRL workspace
+    /// (ADR-002 §1.9 v46 E2; LRA /active/ parity). The PWA REPORTS focus via
+    /// the `set_active_note` Tauri command (PWA-only surface, C3 boundary —
+    /// the brain can't forge it); this tool only READS. Follow with note_get /
+    /// doc_produce on the returned path ("summarize what I'm looking at").
+    #[tool(
+        description = "Which note the user is looking at RIGHT NOW in the CTRL workspace. Returns {path} or {path:null} when none is open. Follow with note_get(path) to read it or doc_produce(path,…) to edit it."
+    )]
+    async fn note_active_get(&self) -> Result<CallToolResult, McpError> {
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": self.runtime.ui_bridge.active_note(),
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.open — open a note in the CTRL workspace UI (ADR-002 §1.9 v46 E3;
+    /// LRA /open/ + URI-open parity, closing the loop INSIDE CTRL — no
+    /// jump-out). Pushes over the supervisor's Tauri-event forwarder.
+    #[tool(
+        description = "Open a note in the CTRL workspace for the user (optionally scrolled to a heading). Validates the path exists first. Returns whether a UI was listening."
+    )]
+    async fn note_open(
+        &self,
+        Parameters(args): Parameters<NoteOpenArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        // Validate existence so the UI never navigates to a dead path.
+        vault::read(&root, &args.path).map_err(map_vault_err)?;
+        let delivered = self.runtime.ui_bridge.request_open(
+            crate::kernel::ui_bridge::OpenNoteRequest {
+                path: args.path.clone(),
+                heading: args.heading.clone(),
+            },
+        );
+        let body = serde_json::to_string(&serde_json::json!({
+            "path": args.path,
+            "delivered": delivered,
+        }))
+        .map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.history — per-note git history (ADR-002 §1.9 v46 E6; the vault's
+    /// git layer doubles as the AI-vs-user attribution trail: author "user" =
+    /// PWA edits, agent callers keep their own names).
+    #[tool(
+        description = "Per-note git history: [{rev, author, time, message}] newest first (follows renames). Author \"user\" = the human's edits; agent names (irisy/claude-code/…) = AI edits. Empty when the vault has no git repo."
+    )]
+    async fn note_history(
+        &self,
+        Parameters(args): Parameters<NoteHistoryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        if !root.join(".git").is_dir() {
+            return Ok(CallToolResult::success(vec![Content::text("[]".to_string())]));
+        }
+        let limit = args.limit.unwrap_or(20);
+        let hist = crate::kernel::vault_git::note_history(&root, &args.path, limit)
+            .await
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let body = serde_json::to_string(&hist).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(body)]))
+    }
+
+    /// note.diff — what one commit changed in one note (E6).
+    #[tool(
+        description = "The unified diff a commit (hex rev from note_history) made to a note. Use to inspect exactly what an AI edit changed."
+    )]
+    async fn note_diff(
+        &self,
+        Parameters(args): Parameters<NoteDiffArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        let diff = crate::kernel::vault_git::note_diff(&root, &args.path, &args.rev)
+            .await
+            .map_err(|e| McpError::invalid_params(e, None))?;
+        Ok(CallToolResult::success(vec![Content::text(diff)]))
+    }
+
+    /// vault.pulse — vault activity over recent days (E6; Tolaria Pulse
+    /// parity): per-day commit counts split user-vs-agents + recent commits.
+    #[tool(
+        description = "Vault activity pulse: per-day commit counts for the last N days (default 14) split user vs agents, plus the 20 most recent commits. Answers \"what happened in my vault this week\"."
+    )]
+    async fn vault_pulse(
+        &self,
+        Parameters(args): Parameters<VaultPulseArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = vault_root()?;
+        if !root.join(".git").is_dir() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                "{\"days\":[],\"recent\":[]}".to_string(),
+            )]));
+        }
+        let days = args.days.unwrap_or(14);
+        let (day_rows, recent) = crate::kernel::vault_git::pulse(&root, days)
+            .await
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let body = serde_json::to_string(&serde_json::json!({
+            "days": day_rows,
+            "recent": recent,
+        }))
+        .map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -1412,8 +2922,12 @@ impl KernelMcpRouter {
         vault::write(&root, &args.to, &entry.content, &entry.frontmatter)
             .map_err(map_vault_err)?;
         vault::delete(&root, &args.from).map_err(map_vault_err)?;
+        // Link-aware (ADR-002 §1.9 v46 E11): rewrite [[wikilinks]] that pointed
+        // at the old name so an Irisy rename never silently breaks links (the
+        // known LRA-ecosystem gap, served natively). Best-effort.
+        let relinked = vault::rewrite_wikilinks(&root, &args.from, &args.to).unwrap_or(0);
         Ok(CallToolResult::success(vec![Content::text(format!(
-            "renamed {} -> {}",
+            "renamed {} -> {} ({relinked} linking notes updated)",
             args.from, args.to
         ))]))
     }
@@ -1672,6 +3186,7 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let dir = crate::commands::kernel::mcp_dir()
             .map_err(|e| McpError::internal_error(e, None))?;
+        let manifest = args.manifest.clone();
         let install_args = crate::commands::kernel::InstallMcpArgs {
             manifest: args.manifest,
             server_code: args.server_code.unwrap_or_default(),
@@ -1679,7 +3194,69 @@ impl KernelMcpRouter {
         };
         let summary = crate::commands::kernel::install_into(&dir, &install_args)
             .map_err(|e| McpError::invalid_params(e, None))?;
-        let body = serde_json::to_string(&summary).map_err(map_serde_err)?;
+        // mcp-server variant (ADR-002 §7 Pattern D): a manifest may declare a
+        // `server` block — a local MCP server the pack IS. Consume it here:
+        // register on the bus + connect, so the pack's tools surface as
+        // `<id>_<tool>` right after install (the gap the ctrl-stock-cn P1
+        // install exposed: installed packs' servers were never wired).
+        let mut connected_tools: Vec<String> = Vec::new();
+        if let Some(server) = manifest.get("server").and_then(|v| v.as_object()) {
+            let id = manifest
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("pack")
+                .trim_start_matches("ctrl-")
+                .to_string();
+            let command = server.get("command").and_then(|v| v.as_str()).unwrap_or("");
+            let cmd_args: Vec<String> = server
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            if !command.is_empty() {
+                let desc = crate::kernel::mcp_host::McpServerDescriptor {
+                    id: id.clone(),
+                    name: manifest
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&id)
+                        .to_string(),
+                    version: manifest
+                        .get("version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("0.0.0")
+                        .to_string(),
+                    description: String::new(),
+                    tools: Vec::new(),
+                    source: crate::kernel::mcp_host::McpServerSource::Local {
+                        command: command.to_string(),
+                        args: cmd_args,
+                    },
+                };
+                self.runtime.mcp_host.register(desc).await;
+                match self.runtime.mcp_host.connect(&id).await {
+                    Ok(()) => {
+                        connected_tools = self
+                            .runtime
+                            .mcp_host
+                            .list_tools(&id)
+                            .await
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|t| format!("{id}_{}", t.name))
+                            .collect();
+                    }
+                    Err(e) => {
+                        tracing::warn!(pack = %id, error = %e, "pack server connect failed (tools not on gate yet)");
+                    }
+                }
+            }
+        }
+        let mut body_v = serde_json::to_value(&summary).map_err(map_serde_err)?;
+        if let Some(obj) = body_v.as_object_mut() {
+            obj.insert("server_tools".into(), serde_json::json!(connected_tools));
+        }
+        let body = serde_json::to_string(&body_v).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -1960,9 +3537,17 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
         &self,
         Parameters(args): Parameters<DiscoverSkillsArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let reply = crate::commands::skills::search_skills(args.query)
-            .await
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let reply = match crate::commands::skills::search_skills(args.query).await {
+            Ok(r) => r,
+            // Missing GitHub token etc. → a friendly "connect it first" result the
+            // brain relays, not a raw -32603 (graceful degradation, ADR-005).
+            Err(e) => {
+                if let Some(hint) = setup_hint(&e) {
+                    return Ok(hint);
+                }
+                return Err(McpError::internal_error(e, None));
+            }
+        };
         let body = serde_json::to_string(&reply).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
@@ -2346,8 +3931,9 @@ fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, M
 // NOTE: `#[tool_handler]` intentionally NOT used. We hand-write list_tools +
 // call_tool so the kernel's static tools (#[tool_router]) are MERGED with the
 // downstream MCP servers' tools, surfaced as first-class namespaced
-// `<server>_<tool>` entries (ADR-002 substrate §1.9.1). This is why Irisy/hermes
-// see e.g. Obsidian's tools directly instead of only behind mcp_proxy_*.
+// `<server>_<tool>` entries (generic downstream merge; first consumer was the
+// retired Obsidian connector, ADR-002 §1.9 v46). This is why Irisy/hermes see
+// a connected downstream server's tools directly, not only behind mcp_proxy_*.
 /// Read a request header from the HTTP parts that rmcp's StreamableHttp
 /// transport stashes in the `RequestContext` extensions. Returns `None` when
 /// the transport is not HTTP (e.g. an in-process test) or the header is absent.
@@ -2516,11 +4102,14 @@ impl ServerHandler for KernelMcpRouter {
         // injection), and approval arrives out-of-band via the Tauri command
         // surface the external brain can't reach. Opt-in (CTRL_REVIEW_GATE=1)
         // until the PWA approval modal is wired; fail-closed on timeout.
-        // Scope to EXTERNAL callers (the BYO-CLI brain): first-party app
-        // surfaces (pwa/irisy/hermes) are CTRL's own and not the C3 threat.
+        // Scope to autonomous BRAINS (hermes + BYO-CLI): their high-blast writes
+        // are reviewed. Only USER SURFACES (pwa/irisy — the human acting directly)
+        // are exempt (ADR-002 §264 / ADR-006 §4, amended 2026-07-04 — bao chose B:
+        // hermes is an injectable LLM, so the moat covers it too, not just the
+        // external C3 threat).
         let needs_review = !denied
             && review_gate::ReviewGate::enforcing()
-            && !visibility::is_first_party(gate_req.caller())
+            && !visibility::is_user_surface(gate_req.caller())
             && review_gate::requires_review(&tool_name);
         let review_denied = if needs_review {
             let summary = summarize_args(request.arguments.as_ref());
@@ -2586,12 +4175,29 @@ impl ServerHandler for KernelMcpRouter {
             Err(e) if denied => ("denied", Some(e.to_string())),
             Err(e) => ("error", Some(e.to_string())),
         };
-        if let Err(e) = self
-            .runtime
-            .event_store
-            .record_call(&gate_req, outcome, detail.as_deref())
-        {
+        // S2 (plan-agent-observability.md): capture the tool's RESULT for the
+        // trace (serialized CallToolResult; truncated in record_call). On error
+        // the detail already carries the message, so leave result None.
+        let result_text: Option<String> = match &result {
+            Ok(r) => serde_json::to_string(r).ok(),
+            Err(_) => None,
+        };
+        if let Err(e) = self.runtime.event_store.record_call(
+            &gate_req,
+            outcome,
+            detail.as_deref(),
+            result_text.as_deref(),
+        ) {
             tracing::warn!(tool = %tool_name, error = %e, "audit ledger write failed");
+        }
+
+        // Git audit layer (ADR-002 §1.9 v46/v47, notes-plan S4 — Tolaria's
+        // git-as-AI-audit-trail, CTRL-native): a SUCCESSFUL mutating call on a
+        // vault-backed domain schedules a coalesced auto-commit authored as the
+        // caller (user vs agent attribution at the file layer, complementing
+        // this ledger at the call layer). Fire-and-forget; no-op without .git.
+        if outcome == "ok" && crate::kernel::vault_git::should_autocommit(&tool_name) {
+            crate::kernel::vault_git::schedule(gate_req.caller(), &tool_name);
         }
 
         result
@@ -2679,6 +4285,14 @@ pub async fn serve(
     let token = Arc::new(resolve_stable_gate_token());
     let token_for_mw = token.clone();
 
+    // Debug harness (bao 2026-07-04 "build a debug endpoint for Irisy"): behind
+    // CTRL_DEBUG=1, expose the review-gate pending/resolve over HTTP so an
+    // automated test can drive Irisy end-to-end — a brain write pauses on the
+    // gate (§8.6.2 moat) and the harness approves/denies it externally, no PWA
+    // click. Same Bearer auth as /mcp; localhost-only. Closes the last
+    // "desktop-only" gap in autonomous verification.
+    let runtime_dbg = runtime.clone();
+
     let router_factory = move || Ok(KernelMcpRouter::new(runtime.clone(), local_storage.clone()));
     let service = StreamableHttpService::new(
         router_factory,
@@ -2696,9 +4310,52 @@ pub async fn serve(
         }
     });
 
-    let app = axum::Router::new()
-        .nest_service(MCP_PATH, service)
-        .layer(auth_layer);
+    let mut app = axum::Router::new().nest_service(MCP_PATH, service);
+    // Dev-only debug endpoints for autonomous E2E of the review gate. On in debug
+    // builds (never in a shipped release — `debug_assertions` is off there), or
+    // force-on via CTRL_DEBUG=1. Localhost + Bearer-gated regardless.
+    if cfg!(debug_assertions) || std::env::var("CTRL_DEBUG").as_deref() == Ok("1") {
+        let rt_pending = runtime_dbg.clone();
+        let rt_resolve = runtime_dbg.clone();
+        let rt_turn = runtime_dbg.clone();
+        app = app
+            .route(
+                "/debug/review/pending",
+                axum::routing::get(move || {
+                    let rt = rt_pending.clone();
+                    async move { axum::Json(rt.review_gate.list_pending()) }
+                }),
+            )
+            .route(
+                "/debug/review/resolve",
+                axum::routing::post(move |axum::Json(body): axum::Json<serde_json::Value>| {
+                    let rt = rt_resolve.clone();
+                    async move {
+                        let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let approved = body.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let ok = rt.review_gate.resolve(id, approved);
+                        axum::Json(serde_json::json!({ "resolved": ok }))
+                    }
+                }),
+            )
+            .route(
+                // Drive one full Irisy turn end-to-end (message -> think -> tools ->
+                // review -> answer) on an isolated engine.
+                "/debug/irisy/turn",
+                axum::routing::post(move |axum::Json(body): axum::Json<serde_json::Value>| {
+                    let rt = rt_turn.clone();
+                    async move {
+                        let msg = body.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        match run_debug_irisy_turn(&rt, msg).await {
+                            Ok(j) => axum::Json(j),
+                            Err(e) => axum::Json(serde_json::json!({ "error": e })),
+                        }
+                    }
+                }),
+            );
+        info!("kernel::mcp_server DEBUG endpoints enabled (/debug/review/*, /debug/irisy/turn)");
+    }
+    let app = app.layer(auth_layer);
 
     let listener = TcpListener::bind(addr).await?;
     let listen_addr = listener.local_addr()?.to_string();
@@ -2728,6 +4385,320 @@ fn extract_bearer(headers: &HeaderMap) -> Option<String> {
 fn vault_root() -> Result<std::path::PathBuf, McpError> {
     vault::default_vault_root()
         .ok_or_else(|| McpError::internal_error("vault root unresolved (HOME unset)", None))
+}
+
+/// ~`radius` chars of context around the first case-insensitive occurrence of
+/// `needle_lower` (pre-lowercased) in `content`, char-boundary safe. None when
+/// the needle is absent (e.g. an FTS stem matched but the literal didn't).
+fn snippet_around(content: &str, needle_lower: &str, radius: usize) -> Option<String> {
+    let lower = content.to_lowercase();
+    let at = lower.find(needle_lower)?;
+    // Map the byte offset in the lowered string back to the source string
+    // conservatively: lowercasing can change byte lengths (rare, non-ASCII),
+    // so clamp to the nearest char boundary in the source.
+    let start = at.saturating_sub(radius);
+    let end = (at + needle_lower.len() + radius).min(content.len());
+    let start = (0..=start.min(content.len())).rev().find(|&i| content.is_char_boundary(i))?;
+    let end = (end..=content.len()).find(|&i| content.is_char_boundary(i))?;
+    let mut s = content[start..end].trim().to_string();
+    if start > 0 {
+        s = format!("…{s}");
+    }
+    if end < content.len() {
+        s = format!("{s}…");
+    }
+    Some(s)
+}
+
+/// A short human summary of a produce op for the gate's success message + audit
+/// trail (the op itself is structured; this is just the log line).
+fn describe_produce_op(op: &query::ProduceOp) -> String {
+    match op {
+        query::ProduceOp::SetCell { row, field, .. } => format!("set_cell row {row} field {field}"),
+        query::ProduceOp::UpsertRows { rows } => format!("upsert_rows ({} rows)", rows.len()),
+        query::ProduceOp::DeleteRows { indices } => {
+            format!("delete_rows ({} rows)", indices.len())
+        }
+        query::ProduceOp::AddField { key, .. } => format!("add_field {key}"),
+        query::ProduceOp::UpdateField { key, .. } => format!("update_field {key}"),
+        query::ProduceOp::DeleteField { key } => format!("delete_field {key}"),
+        query::ProduceOp::AppendSection { heading, .. } => format!(
+            "append_section {}",
+            heading.as_deref().unwrap_or("(end of doc)")
+        ),
+        query::ProduceOp::ReplaceSection { heading, .. } => format!("replace_section {heading}"),
+        query::ProduceOp::DeleteSection { heading } => format!("delete_section {heading}"),
+        query::ProduceOp::SetFrontmatterKey { key, .. } => format!("set_frontmatter_key {key}"),
+        query::ProduceOp::DeleteFrontmatterKey { key } => {
+            format!("delete_frontmatter_key {key}")
+        }
+    }
+}
+
+/// Patch the frontmatter `schema:` array IN PLACE for a schema-mutating produce
+/// op (§14.13). Row-only ops are a no-op. In-place (vs full-regenerate) preserves
+/// render-level type sugar + extra keys on untouched columns; the just-mutated
+/// `table` supplies the fresh item shape for add / flow-string fallback.
+fn patch_schema_in_place(
+    frontmatter: &mut serde_json::Value,
+    op: &query::ProduceOp,
+    table: &vault_smart_table::SmartTable,
+) -> Result<(), McpError> {
+    let (key_is_schema, target_key) = match op {
+        query::ProduceOp::AddField { key, .. }
+        | query::ProduceOp::UpdateField { key, .. }
+        | query::ProduceOp::DeleteField { key } => (true, key.as_str()),
+        _ => (false, ""),
+    };
+    if !key_is_schema {
+        return Ok(());
+    }
+    let obj = frontmatter
+        .as_object_mut()
+        .ok_or_else(|| McpError::internal_error("frontmatter not an object", None))?;
+    let arr = obj
+        .entry("schema")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| McpError::internal_error("frontmatter `schema` not an array", None))?;
+    match op {
+        query::ProduceOp::AddField { key, .. } => {
+            // The field was just added to `table`; emit its item shape (base type
+            // is correct — a brand-new column has no prior render-level type).
+            if let Some(item) = table.serialize_field(key) {
+                arr.push(item);
+            }
+        }
+        query::ProduceOp::DeleteField { .. } => {
+            arr.retain(|it| {
+                vault_smart_table::schema_item_key(it).as_deref() != Some(target_key)
+            });
+        }
+        query::ProduceOp::UpdateField { key, label, cell_type, options } => {
+            let pos = arr.iter().position(|it| {
+                vault_smart_table::schema_item_key(it).as_deref() == Some(key.as_str())
+            });
+            match pos.and_then(|p| arr[p].as_object_mut()) {
+                // Object item → patch only the provided keys (render-level type of
+                // an UNchanged column survives).
+                Some(item) => {
+                    if let Some(l) = label {
+                        item.insert("label".into(), serde_json::json!(l));
+                    }
+                    if let Some(t) = cell_type {
+                        item.insert("type".into(), serde_json::to_value(t).unwrap_or(serde_json::Value::Null));
+                    }
+                    if let Some(o) = options {
+                        item.insert("options".into(), serde_json::json!(o));
+                    }
+                }
+                // Legacy flow-string item (or missing) → best-effort rebuild from
+                // the mutated table (order preserved when the slot exists).
+                None => {
+                    if let Some(fresh) = table.serialize_field(key) {
+                        match pos {
+                            Some(p) => arr[p] = fresh,
+                            None => arr.push(fresh),
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Slugify a table title into a filename stem (ASCII lowercase alnum, `-`
+/// separated). Non-ASCII (e.g. CJK) titles collapse to `table` — the title stays
+/// verbatim in frontmatter; only the file stem is ASCII (mirrors the front end's
+/// `createSmartTable`).
+fn slugify(name: &str) -> String {
+    let slug = name
+        .to_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if slug.is_empty() {
+        "table".to_string()
+    } else {
+        slug
+    }
+}
+
+/// A free `tables/<slug>.md` path (never overwrite an existing table — append a
+/// counter, like the front end's `uniqueTablePath`).
+/// Pure builder for smart_table_base_scaffold — turns a base spec into the
+/// per-table (path, frontmatter, body) triples + the `_base.md` manifest, with
+/// link fields resolved to `type:reference` pointing at their target table's
+/// in-base path. No I/O, so it is unit-testable.
+fn scaffold_base_files(
+    base_slug: &str,
+    base_name: &str,
+    tables: &[ScaffoldTable],
+) -> (Vec<(String, serde_json::Value, String)>, serde_json::Value) {
+    // Pre-slug every table so link fields can resolve their target paths.
+    let mut slugs: Vec<String> = Vec::new();
+    for t in tables {
+        let mut s = slugify(&t.name);
+        if s.is_empty() {
+            s = format!("table{}", slugs.len() + 1);
+        }
+        let base = s.clone();
+        let mut n = 2;
+        while slugs.contains(&s) {
+            s = format!("{base}-{n}");
+            n += 1;
+        }
+        slugs.push(s);
+    }
+    let target_path = |name: &str| -> String {
+        for (t, s) in tables.iter().zip(&slugs) {
+            if t.name == name {
+                return format!("tables/{base_slug}/{s}.md");
+            }
+        }
+        format!("tables/{base_slug}/{}.md", slugify(name))
+    };
+
+    let mut files: Vec<(String, serde_json::Value, String)> = Vec::new();
+    for (t, slug) in tables.iter().zip(&slugs) {
+        let schema: Vec<serde_json::Value> = t
+            .fields
+            .iter()
+            .map(|f| {
+                let mut item = serde_json::Map::new();
+                item.insert("key".into(), serde_json::Value::String(f.key.clone()));
+                item.insert("label".into(), serde_json::Value::String(f.label.clone()));
+                if let Some(link) = &f.link_to {
+                    item.insert("type".into(), serde_json::Value::String("reference".into()));
+                    item.insert("table".into(), serde_json::Value::String(target_path(link)));
+                    let disp = f.display.clone().unwrap_or_else(|| "name".to_string());
+                    item.insert("display".into(), serde_json::Value::String(disp));
+                } else {
+                    let ct = query::CellType::parse(&f.cell_type);
+                    item.insert("type".into(), serde_json::to_value(ct).unwrap_or(serde_json::Value::Null));
+                    if let Some(opts) = &f.options {
+                        item.insert("options".into(), serde_json::json!(opts));
+                    }
+                }
+                serde_json::Value::Object(item)
+            })
+            .collect();
+        let frontmatter = serde_json::json!({ "title": t.name, "schema": schema });
+        let header = t.fields.iter().map(|f| f.label.as_str()).collect::<Vec<_>>().join(" | ");
+        let sep = t.fields.iter().map(|_| "---").collect::<Vec<_>>().join("|");
+        let body = format!("| {header} |\n|{sep}|\n");
+        files.push((format!("tables/{base_slug}/{slug}.md"), frontmatter, body));
+    }
+    let manifest = serde_json::json!({ "name": base_name, "sheet_order": slugs });
+    (files, manifest)
+}
+
+/// A free base-folder slug under tables/ (avoids an existing folder OR a flat
+/// table of the same name). Returns the slug (not a path).
+fn unique_base_folder(root: &std::path::Path, slug: &str) -> String {
+    let taken = |s: &str| root.join(format!("tables/{s}")).exists() || root.join(format!("tables/{s}.md")).exists();
+    if !taken(slug) {
+        return slug.to_string();
+    }
+    for n in 2..10_000 {
+        let candidate = format!("{slug}-{n}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+    }
+    format!("{slug}-{}", std::process::id())
+}
+
+fn unique_table_path(root: &std::path::Path, slug: &str) -> String {
+    if !root.join(format!("tables/{slug}.md")).exists() {
+        return format!("tables/{slug}.md");
+    }
+    for n in 2..10_000 {
+        let candidate = format!("tables/{slug}-{n}.md");
+        if !root.join(&candidate).exists() {
+            return candidate;
+        }
+    }
+    format!("tables/{slug}-{}.md", std::process::id())
+}
+
+
+/// Read an installed connector's manifest from disk (`~/.ctrl/mcps/<id>/`).
+fn read_installed_manifest(source_id: &str) -> Result<serde_json::Value, McpError> {
+    let dir = crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
+    let path = dir.join(source_id).join("manifest.json");
+    let bytes = std::fs::read(&path).map_err(|e| {
+        McpError::invalid_params(format!("no installed manifest for {source_id}: {e}"), None)
+    })?;
+    serde_json::from_slice(&bytes).map_err(map_serde_err)
+}
+
+/// Build a connector's §14 spec from its installed manifest (`record_source` +
+/// reused `auth.token_exchange`). Creds not needed — describe is the type layer.
+fn load_source_spec(source_id: &str) -> Result<manifest_source::RecordSourceSpec, McpError> {
+    let manifest = read_installed_manifest(source_id)?;
+    manifest_source::spec_from_manifest(&manifest).ok_or_else(|| {
+        McpError::invalid_params(format!("{source_id} declares no record_source"), None)
+    })
+}
+
+/// Registry creds for publish (§7.6): endpoint (call override → env → configured
+/// `ctrl:registry:publish_url`) + optional bearer token (`:publish_token`). Env
+/// override lets tests + power users target a specific registry. Kernel-side.
+fn resolve_registry_creds(registry_override: Option<&str>) -> Option<(String, String)> {
+    let from_env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
+    let cred = |field: &str| {
+        crate::shell::credential_vault::get(&format!("ctrl:registry:{field}"))
+            .ok()
+            .flatten()
+            .filter(|v| !v.trim().is_empty())
+    };
+    let url = registry_override
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| from_env("CTRL_REGISTRY_PUBLISH_URL"))
+        .or_else(|| cred("publish_url"))?;
+    let token = from_env("CTRL_REGISTRY_PUBLISH_TOKEN")
+        .or_else(|| cred("publish_token"))
+        .unwrap_or_default();
+    Some((url, token))
+}
+
+/// Generic connector creds: base URL (provision-set `_base_url` → configured
+/// `base_url`) + the security token stored under the manifest's declared
+/// `send_secret`. Kernel-side only; the token never crosses the LLM boundary.
+fn resolve_pack_creds(source_id: &str, send_secret: &str) -> Option<(String, String)> {
+    let cred = |field: &str| {
+        crate::shell::credential_vault::get(&format!("mcp:{source_id}:{field}"))
+            .ok()
+            .flatten()
+            .filter(|v| !v.trim().is_empty())
+    };
+    let url = cred("_base_url").or_else(|| cred("base_url"))?;
+    let token = cred(send_secret)?;
+    Some((url, token))
+}
+
+/// Load a connector's spec + resolved creds for a live read/write. Bundles the
+/// two so `source_query` / `source_produce` share one manifest read.
+fn load_source(
+    source_id: &str,
+) -> Result<(manifest_source::RecordSourceSpec, String, String), McpError> {
+    let manifest = read_installed_manifest(source_id)?;
+    let spec = manifest_source::spec_from_manifest(&manifest).ok_or_else(|| {
+        McpError::invalid_params(format!("{source_id} declares no record_source"), None)
+    })?;
+    let send_secret = manifest_source::send_secret_of(&manifest).unwrap_or_else(|| "token".into());
+    let (base_url, token) = resolve_pack_creds(source_id, &send_secret).ok_or_else(|| {
+        McpError::invalid_params(
+            format!("{source_id} not configured — provision or set its credentials (mcp:{source_id}:_base_url / :{send_secret})"),
+            None,
+        )
+    })?;
+    Ok((spec, base_url, token))
 }
 
 /// Inject computed relational columns (Lookup / Rollup) into a query's result
@@ -2820,6 +4791,71 @@ fn map_vault_err(e: vault::VaultError) -> McpError {
 
 fn map_serde_err(e: serde_json::Error) -> McpError {
     McpError::internal_error(format!("serialize: {e}"), None)
+}
+
+/// Graceful degradation for setup-gated capabilities (bao 2026-07-04, ledger:
+/// `discover_skills` failed 9/9 on a missing GitHub token — a raw `-32603` the
+/// brain treats as an internal bug). When a tool fails only because a credential
+/// / connection isn't configured YET, hand the brain a CLEAR, actionable RESULT
+/// ("connect X first, tell the user, don't retry") instead of an error, so it
+/// relays a helpful message rather than a cryptic failure. Returns `Some(result)`
+/// for a setup error, `None` to let a genuine error propagate.
+fn setup_hint(err: &str) -> Option<CallToolResult> {
+    let e = err.to_ascii_lowercase();
+    let needs_setup = e.contains("no github token")
+        || e.contains(" in keychain")
+        || e.contains("not configured")
+        || e.contains("no such secret")
+        || (e.contains("secret ") && e.contains("provision"))
+        || (e.contains("api key") && (e.contains("missing") || e.contains("not set")));
+    needs_setup.then(|| {
+        CallToolResult::success(vec![Content::text(format!(
+            "SETUP NEEDED — this capability isn't connected yet: {err}\n\nTell the \
+             user in plain language what to connect and that they can set it up in \
+             Settings; do NOT retry this tool until it is configured, and do not \
+             claim you performed the action."
+        ))])
+    })
+}
+
+/// Drive ONE full Irisy turn headlessly for the debug harness (bao 2026-07-04
+/// "chat-turn driver"): spawn an ISOLATED engine (never the shared singleton, so
+/// the user's live conversation is untouched), prompt it with `message`, and
+/// collect the streamed events — the answer text, the reasoning, and every tool
+/// call/result. Tool calls run through THIS gate as `caller=hermes`, so a write
+/// pauses on the review gate; the harness approves it via `/debug/review/resolve`,
+/// giving true end-to-end drive (message → think → tools → review → answer).
+async fn run_debug_irisy_turn(
+    runtime: &Arc<KernelRuntime>,
+    message: String,
+) -> Result<serde_json::Value, String> {
+    use crate::shell::acp_client::{AcpClient, AcpEvent};
+    let env = runtime.provider_registry.agent_env_injection();
+    let mut client = AcpClient::start("hermes", &env).await.map_err(|e| e.to_string())?;
+    let mut text = String::new();
+    let mut thoughts = String::new();
+    let mut tools: Vec<serde_json::Value> = Vec::new();
+    let turns = vec![("user".to_string(), message)];
+    let stop = client
+        .prompt(&turns, None, |ev| match ev {
+            AcpEvent::Text(t) => text.push_str(&t),
+            AcpEvent::Thought(t) => thoughts.push_str(&t),
+            AcpEvent::ToolCall { title, input, .. } => {
+                tools.push(serde_json::json!({ "call": title, "input": input }));
+            }
+            AcpEvent::ToolResult { status, output, .. } => {
+                let snip: String = output.chars().take(120).collect();
+                tools.push(serde_json::json!({ "result": status, "output": snip }));
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "stop_reason": stop,
+        "text": text,
+        "thoughts": thoughts.chars().take(400).collect::<String>(),
+        "tools": tools,
+    }))
 }
 
 /// Validate + URL-encode a ticker for the market.* tools. Rejects anything
@@ -3487,7 +5523,196 @@ async fn http_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::query::RecordSink;
     use crate::kernel::runtime::KernelRuntime;
+
+    #[test]
+    fn setup_hint_degrades_only_missing_setup_errors() {
+        // Setup-gated failures → a friendly result (Some), not an error.
+        for e in [
+            "No GitHub token in Keychain. Store a PAT under service 'app.ctrl'.",
+            "ctrl-ghostfolio not configured — provision or set its credentials",
+            "provision 'ctrl-ghostfolio': secret 'ghostfolio_token' missing",
+            "OpenAI api key missing",
+        ] {
+            assert!(setup_hint(e).is_some(), "should degrade gracefully: {e}");
+        }
+        // Genuine errors still propagate (None).
+        for e in [
+            "IO error: No such file or directory (os error 2)",
+            "vault: invalid frontmatter",
+            "args must be an object",
+        ] {
+            assert!(setup_hint(e).is_none(), "should NOT swallow real error: {e}");
+        }
+    }
+
+    // ── §14.13 unified produce: in-place schema patch preserves rich per-item
+    // keys the kernel model doesn't know about (ai_prompt / color_op / system /
+    // min-max — written by the frontend serializeSmartTable). A schema-mutating
+    // produce must NOT strip these off untouched columns (markdown = truth).
+    fn rich_frontmatter() -> serde_json::Value {
+        serde_json::json!({
+            "schema": [
+                { "key": "id", "label": "ID", "type": "text", "system": true },
+                { "key": "amount", "label": "Amount", "type": "currency", "symbol": "$", "min": 0, "max": 1000 },
+                { "key": "stage", "label": "Stage", "type": "select", "options": ["new", "won"],
+                  "ai_op": "classify", "ai_prompt": "pick a stage", "color_op": "eq", "color_value": "won", "color_bg": "#0f0" }
+            ]
+        })
+    }
+
+    fn schema_item<'a>(fm: &'a serde_json::Value, key: &str) -> &'a serde_json::Map<String, serde_json::Value> {
+        fm["schema"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|it| it["key"] == key)
+            .unwrap_or_else(|| panic!("no schema item '{key}'"))
+            .as_object()
+            .unwrap()
+    }
+
+    #[test]
+    fn base_scaffold_builds_tables_with_link_relations() {
+        let tables = vec![
+            super::ScaffoldTable {
+                name: "Deals".into(),
+                fields: vec![
+                    super::ScaffoldField {
+                        key: "name".into(),
+                        label: "Deal".into(),
+                        cell_type: "text".into(),
+                        options: None,
+                        link_to: None,
+                        display: None,
+                    },
+                    super::ScaffoldField {
+                        key: "contact".into(),
+                        label: "Contact".into(),
+                        cell_type: "text".into(),
+                        options: None,
+                        link_to: Some("Contacts".into()),
+                        display: Some("name".into()),
+                    },
+                ],
+            },
+            super::ScaffoldTable {
+                name: "Contacts".into(),
+                fields: vec![super::ScaffoldField {
+                    key: "name".into(),
+                    label: "Name".into(),
+                    cell_type: "text".into(),
+                    options: None,
+                    link_to: None,
+                    display: None,
+                }],
+            },
+        ];
+        let (files, manifest) = super::scaffold_base_files("crm", "CRM", &tables);
+        // Two data-tables in the base folder.
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].0, "tables/crm/deals.md");
+        assert_eq!(files[1].0, "tables/crm/contacts.md");
+        // The link field resolved to a reference pointing at the sibling table.
+        let deals_schema = files[0].1["schema"].as_array().unwrap();
+        let contact = deals_schema.iter().find(|c| c["key"] == "contact").unwrap();
+        assert_eq!(contact["type"], "reference");
+        assert_eq!(contact["table"], "tables/crm/contacts.md");
+        assert_eq!(contact["display"], "name");
+        // A plain field stays a normal typed column.
+        let name = deals_schema.iter().find(|c| c["key"] == "name").unwrap();
+        assert_eq!(name["type"], "text");
+        // Manifest carries the display name + sheet order.
+        assert_eq!(manifest["name"], "CRM");
+        assert_eq!(manifest["sheet_order"], serde_json::json!(["deals", "contacts"]));
+    }
+
+    #[test]
+    fn produce_add_field_preserves_sibling_rich_keys() {
+        let mut fm = rich_frontmatter();
+        let mut table = vault_smart_table::SmartTable::parse(&fm, "");
+        let op = query::ProduceOp::AddField {
+            key: "owner".into(),
+            label: "Owner".into(),
+            cell_type: query::CellType::Text,
+            options: None,
+            relation: None,
+        };
+        table.produce(op.clone()).unwrap();
+        patch_schema_in_place(&mut fm, &op, &table).unwrap();
+        // New column appended…
+        assert_eq!(schema_item(&fm, "owner")["type"], "text");
+        // …and EVERY rich key on siblings survives verbatim.
+        assert_eq!(schema_item(&fm, "amount")["type"], "currency");
+        assert_eq!(schema_item(&fm, "amount")["symbol"], "$");
+        assert_eq!(schema_item(&fm, "amount")["max"], 1000);
+        assert_eq!(schema_item(&fm, "stage")["ai_prompt"], "pick a stage");
+        assert_eq!(schema_item(&fm, "stage")["color_bg"], "#0f0");
+        assert_eq!(schema_item(&fm, "id")["system"], true);
+    }
+
+    #[test]
+    fn produce_update_field_patches_only_named_keys() {
+        let mut fm = rich_frontmatter();
+        let mut table = vault_smart_table::SmartTable::parse(&fm, "");
+        // Rename the amount column's label only — its currency/symbol/min/max stay.
+        let op = query::ProduceOp::UpdateField {
+            key: "amount".into(),
+            label: Some("Deal Size".into()),
+            cell_type: None,
+            options: None,
+        };
+        table.produce(op.clone()).unwrap();
+        patch_schema_in_place(&mut fm, &op, &table).unwrap();
+        let amt = schema_item(&fm, "amount");
+        assert_eq!(amt["label"], "Deal Size");
+        assert_eq!(amt["type"], "currency", "type sugar NOT downgraded");
+        assert_eq!(amt["symbol"], "$");
+        assert_eq!(amt["min"], 0);
+        assert_eq!(amt["max"], 1000);
+    }
+
+    #[test]
+    fn produce_delete_field_keeps_other_items_verbatim() {
+        let mut fm = rich_frontmatter();
+        let mut table = vault_smart_table::SmartTable::parse(&fm, "");
+        let op = query::ProduceOp::DeleteField { key: "stage".into() };
+        table.produce(op.clone()).unwrap();
+        patch_schema_in_place(&mut fm, &op, &table).unwrap();
+        let arr = fm["schema"].as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert!(arr.iter().all(|it| it["key"] != "stage"));
+        // The surviving currency column keeps its full config.
+        assert_eq!(schema_item(&fm, "amount")["symbol"], "$");
+    }
+
+    #[test]
+    fn produce_row_ops_leave_schema_untouched() {
+        let mut fm = rich_frontmatter();
+        let before = fm["schema"].clone();
+        let table = vault_smart_table::SmartTable::parse(&fm, "");
+        let op = query::ProduceOp::SetCell { row: 0, field: "amount".into(), value: "5".into() };
+        patch_schema_in_place(&mut fm, &op, &table).unwrap();
+        assert_eq!(fm["schema"], before, "row-only op must not touch the schema");
+    }
+
+    #[test]
+    fn snippet_around_clamps_and_marks_ellipses() {
+        let content = "aaaa needle bbbb";
+        // Full string within radius: no ellipses.
+        assert_eq!(snippet_around(content, "needle", 100).unwrap(), "aaaa needle bbbb");
+        // Tight radius: both ellipses.
+        let s = snippet_around(&format!("{}needle{}", "x".repeat(300), "y".repeat(300)), "needle", 10).unwrap();
+        assert!(s.starts_with('…') && s.ends_with('…') && s.contains("needle"));
+        // Case-insensitive (needle passed pre-lowered).
+        assert!(snippet_around("Has NEEDLE here", "needle", 50).is_some());
+        // Absent needle → None.
+        assert!(snippet_around("nothing", "needle", 50).is_none());
+        // Non-ASCII neighbors: char-boundary safe (must not panic).
+        let cjk_adjacent = "\u{4f60}\u{597d}needle\u{4e16}\u{754c}";
+        assert!(snippet_around(cjk_adjacent, "needle", 1).is_some());
+    }
 
     #[test]
     fn parse_ddg_lite_extracts_real_web_results() {
@@ -3767,6 +5992,178 @@ mod tests {
         assert!(
             !tools.iter().any(|t| t["name"] == "http_post"),
             "http_post must be hidden under the vault intent"
+        );
+    }
+
+    /// End-to-end proof that the LifeOS task tools are reachable THROUGH the gate
+    /// over real HTTP, and that their argument objects deserialize from JSON-RPC
+    /// params (the serde-shape layer that bit the content/body drift before).
+    /// Read-only: `task_describe` + `task_query` touch no vault writes and don't
+    /// depend on HOME, so this is deterministic; the create/update write path is
+    /// covered by the `tasks_source` tempdir unit tests. GOAL Phase 1.
+    #[tokio::test]
+    async fn task_tools_reachable_over_the_wire() {
+        let data_dir = std::env::temp_dir().join("ctrl-test-mcp-tasks");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
+        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let url = handle.url();
+        let token = handle.auth_token.as_ref().clone();
+        let client = reqwest::Client::new();
+
+        // initialize -> session id (shared helper shape as the intent test).
+        let init = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .body(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}"#,
+            )
+            .send()
+            .await
+            .expect("initialize");
+        let session_id = init
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .expect("server returns a session id");
+
+        let call = |id: u32, name: &str, args: serde_json::Value| {
+            let body = serde_json::json!({
+                "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": { "name": name, "arguments": args }
+            })
+            .to_string();
+            client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json, text/event-stream")
+                .header("Authorization", format!("Bearer {token}"))
+                .header("mcp-session-id", session_id.clone())
+                // Scope the caller to the `tasks` domain so the gate's visibility
+                // trim exposes the task tools (default external caller gets the
+                // minimal set — proof the SC3 trim is live).
+                .header(visibility::INTENT_HEADER, "tasks")
+                .body(body)
+                .send()
+        };
+
+        // task_describe over the wire → a Record source advertising `status`.
+        let resp = call(2, "task_describe", serde_json::json!({})).await.expect("task_describe");
+        let text = extract_jsonrpc(&resp.text().await.expect("body"))["result"]["content"][0]
+            ["text"]
+            .as_str()
+            .expect("describe content text")
+            .to_string();
+        let describe: serde_json::Value = serde_json::from_str(&text).expect("describe json");
+        assert_eq!(describe["source_kind"], "record");
+        assert!(
+            describe["fields"].as_array().unwrap().iter().any(|f| f["key"] == "status"),
+            "task_describe must advertise a status field"
+        );
+
+        // task_query over the wire with a real filter+sort payload → the
+        // arguments must deserialize (the serde-shape guard) and the result must
+        // be the uniform QueryResult shape. Read-only against an empty vault.
+        let resp = call(
+            3,
+            "task_query",
+            serde_json::json!({
+                "filters": [{ "field": "status", "op": "neq", "value": "done" }],
+                "sort": [{ "field": "due" }]
+            }),
+        )
+        .await
+        .expect("task_query");
+        let text = extract_jsonrpc(&resp.text().await.expect("body"))["result"]["content"][0]
+            ["text"]
+            .as_str()
+            .expect("query content text")
+            .to_string();
+        let result: serde_json::Value = serde_json::from_str(&text).expect("query json");
+        assert!(result["rows"].is_array(), "query result must carry a rows array");
+        assert!(result["match_count"].is_number(), "query result must carry match_count");
+    }
+
+    /// End-to-end proof that the GENERIC §14 connector tools (source_describe /
+    /// source_query / source_produce, ADR-002 §14.12) are reachable THROUGH the
+    /// gate under the `source` intent, hidden otherwise, and actually run the
+    /// manifest loader (a bogus source_id surfaces the "no installed manifest"
+    /// path). Race-free: no HOME manipulation — the manifest→spec→rows data path
+    /// is covered by the `manifest_source` unit tests over the real manifest.
+    #[tokio::test]
+    async fn source_tools_reachable_and_wired_over_the_wire() {
+        let data_dir = std::env::temp_dir().join("ctrl-test-mcp-source");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
+        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let url = handle.url();
+        let token = handle.auth_token.as_ref().clone();
+        let client = reqwest::Client::new();
+
+        let init = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .body(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}"#,
+            )
+            .send()
+            .await
+            .expect("initialize");
+        let session_id = init
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .expect("server returns a session id");
+
+        // tools/list under the `source` intent → the generic trio is reachable,
+        // out-of-scope tools hidden.
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id.clone())
+            .header(visibility::INTENT_HEADER, "source")
+            .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
+            .send()
+            .await
+            .expect("tools/list");
+        let json = extract_jsonrpc(&resp.text().await.expect("body"));
+        let names: Vec<String> = json["result"]["tools"]
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .map(|t| t["name"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert!(names.iter().any(|n| n == "source_describe"), "source_describe reachable");
+        assert!(names.iter().any(|n| n == "source_query"), "source_query reachable");
+        assert!(names.iter().any(|n| n == "source_produce"), "source_produce reachable");
+        assert!(!names.iter().any(|n| n == "http_post"), "out-of-scope tool hidden by intent trim");
+
+        // source_describe with a bogus id → the tool runs and reaches the manifest
+        // loader (proves wiring, not just registration).
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id)
+            .header(visibility::INTENT_HEADER, "source")
+            .body(r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"source_describe","arguments":{"source_id":"no-such-pack"}}}"#)
+            .send()
+            .await
+            .expect("source_describe");
+        let out = extract_jsonrpc(&resp.text().await.expect("body"));
+        let msg = serde_json::to_string(&out).unwrap_or_default();
+        assert!(
+            msg.contains("no installed manifest"),
+            "source_describe must reach the manifest loader for an unknown id, got: {msg}"
         );
     }
 }

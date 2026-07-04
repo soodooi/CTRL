@@ -6,8 +6,8 @@
 //! the shared kernel query engine in `query.rs`.
 
 use crate::kernel::query::{
-    run_query, CellType, Describe, FieldSpec, Operator, QueryError, QueryRequest, QueryResult,
-    QuerySource, Row, SourceKind,
+    run_query, CellType, Describe, FieldSpec, Operator, ProduceError, ProduceOp, QueryError,
+    QueryRequest, QueryResult, QuerySource, RecordSink, RelationSpec, Row, SourceKind,
 };
 use crate::kernel::smart_table_index::{table_id_for, SmartTableIndex, StIndexError};
 use crate::kernel::vault_embeddings::content_hash;
@@ -134,6 +134,263 @@ impl SmartTable {
             None => false,
         }
     }
+
+    /// Delete a row by index (the §14 produce delete verb — Bitable record delete
+    /// parity). Returns false if the index is out of range.
+    pub fn delete_row(&mut self, row_index: usize) -> bool {
+        if row_index >= self.rows.len() {
+            return false;
+        }
+        self.rows.remove(row_index);
+        true
+    }
+
+    /// Append many rows in one shot (Bitable batchCreate parity). Returns how many
+    /// were appended.
+    pub fn append_rows(&mut self, rows: Vec<Row>) -> usize {
+        let n = rows.len();
+        for values in rows {
+            self.append_row(values);
+        }
+        n
+    }
+
+    /// Delete many rows by index in one shot (Bitable batchDelete parity). Removes
+    /// in descending order so earlier removals don't shift later indices;
+    /// out-of-range + duplicate indices are ignored. Returns how many were deleted.
+    pub fn delete_rows(&mut self, indices: &[usize]) -> usize {
+        let mut idx: Vec<usize> = indices.iter().copied().filter(|&i| i < self.rows.len()).collect();
+        idx.sort_unstable_by(|a, b| b.cmp(a)); // descending
+        idx.dedup();
+        let n = idx.len();
+        for i in idx {
+            self.rows.remove(i);
+        }
+        n
+    }
+
+    /// True if a field (column) with this key exists.
+    pub fn has_field(&self, key: &str) -> bool {
+        self.fields.iter().any(|f| f.key == key)
+    }
+
+    /// Add a plain field (column) — Bitable field-create parity. Appends it to the
+    /// schema + an empty cell to every row (so `serialize_body` emits the column).
+    /// The gate tool also appends the matching item to the frontmatter schema.
+    pub fn add_field(&mut self, spec: FieldSpec) {
+        let key = spec.key.clone();
+        self.fields.push(spec);
+        for row in &mut self.rows {
+            row.entry(key.clone()).or_default();
+        }
+    }
+
+    /// Delete a field (column) by key — Bitable field-delete parity. Drops it from
+    /// the schema, its relational metadata, and every row. Returns false if there
+    /// is no such field.
+    pub fn delete_field(&mut self, key: &str) -> bool {
+        let before = self.fields.len();
+        self.fields.retain(|f| f.key != key);
+        if self.fields.len() == before {
+            return false;
+        }
+        for row in &mut self.rows {
+            row.remove(key);
+        }
+        self.relations.retain(|r| r.field_key != key);
+        true
+    }
+
+    /// Update a field's label / type / options in place. Returns false if there is
+    /// no such field. (Relational metadata is untouched — change that by delete+add.)
+    pub fn update_field(
+        &mut self,
+        key: &str,
+        label: Option<String>,
+        cell_type: Option<CellType>,
+        options: Option<Vec<String>>,
+    ) -> bool {
+        let Some(f) = self.fields.iter_mut().find(|f| f.key == key) else {
+            return false;
+        };
+        if let Some(l) = label {
+            f.label = l;
+        }
+        if let Some(t) = cell_type {
+            f.cell_type = t;
+        }
+        if let Some(o) = options {
+            f.options = Some(o);
+        }
+        true
+    }
+
+    /// Serialize ONE field to its frontmatter `schema:` item shape — a relational
+    /// column re-emits its kind + params; a plain column emits {key,label,type,
+    /// options?}. NOTE: `type` is the parsed *base* `CellType`, so this DROPS
+    /// render-level sugar (currency/percent → number). The gate's in-place schema
+    /// patch therefore only calls this for a NEW column (`add_field`, no existing
+    /// type to preserve) or a legacy flow-string fallback — an existing object
+    /// item is patched key-by-key so its render-level type survives.
+    pub fn serialize_field(&self, key: &str) -> Option<Value> {
+        self.fields.iter().find(|f| f.key == key).map(|f| self.serialize_field_spec(f))
+    }
+
+    fn serialize_field_spec(&self, f: &FieldSpec) -> Value {
+        let mut item = serde_json::Map::new();
+        item.insert("key".into(), Value::String(f.key.clone()));
+        item.insert("label".into(), Value::String(f.label.clone()));
+        match self.relations.iter().find(|r| r.field_key == f.key).map(|r| &r.kind) {
+            Some(RelationKind::Reference { target_table, display }) => {
+                item.insert("type".into(), Value::String("reference".into()));
+                item.insert("table".into(), Value::String(target_table.clone()));
+                item.insert("display".into(), Value::String(display.clone()));
+            }
+            Some(RelationKind::Lookup { via, target }) => {
+                item.insert("type".into(), Value::String("lookup".into()));
+                item.insert("via".into(), Value::String(via.clone()));
+                item.insert("target".into(), Value::String(target.clone()));
+            }
+            Some(RelationKind::Rollup { via, target, func }) => {
+                item.insert("type".into(), Value::String("rollup".into()));
+                item.insert("via".into(), Value::String(via.clone()));
+                item.insert("target".into(), Value::String(target.clone()));
+                item.insert("fn".into(), Value::String(func.clone()));
+            }
+            Some(RelationKind::Formula { expr }) => {
+                item.insert("type".into(), Value::String("formula".into()));
+                item.insert("expr".into(), Value::String(expr.clone()));
+            }
+            None => {
+                item.insert(
+                    "type".into(),
+                    serde_json::to_value(f.cell_type).unwrap_or(Value::Null),
+                );
+                if let Some(opts) = &f.options {
+                    item.insert("options".into(), serde_json::json!(opts));
+                }
+            }
+        }
+        Value::Object(item)
+    }
+
+    /// Rebuild the WHOLE `schema:` array from fields + relations (round-trips
+    /// relations + base types + options). Used for build-from-scratch; not the
+    /// mutate-in-place write-back (which patches the existing array to keep
+    /// render-level types). Round-trips losslessly through `parse` for tables
+    /// without render-level type sugar.
+    pub fn serialize_schema(&self) -> Vec<Value> {
+        self.fields.iter().map(|f| self.serialize_field_spec(f)).collect()
+    }
+}
+
+impl RecordSink for SmartTable {
+    fn supported_ops(&self) -> Vec<&'static str> {
+        vec!["set_cell", "upsert_rows", "delete_rows", "add_field", "update_field", "delete_field"]
+    }
+
+    fn produce(&mut self, op: ProduceOp) -> Result<(), ProduceError> {
+        match op {
+            ProduceOp::SetCell { row, field, value } => {
+                if self.is_read_only_field(&field) {
+                    return Err(ProduceError::Conflict {
+                        message: format!("'{field}' is a computed column (read-only)"),
+                    });
+                }
+                if !self.has_field(&field) {
+                    return Err(ProduceError::UnknownField { field });
+                }
+                if !self.update_cell(row, &field, &value) {
+                    return Err(ProduceError::OutOfRange { what: format!("row {row}") });
+                }
+                Ok(())
+            }
+            ProduceOp::UpsertRows { rows } => {
+                self.append_rows(rows);
+                Ok(())
+            }
+            ProduceOp::DeleteRows { indices } => {
+                self.delete_rows(&indices);
+                Ok(())
+            }
+            ProduceOp::AddField { key, label, cell_type, options, relation } => {
+                if self.has_field(&key) {
+                    return Err(ProduceError::Conflict {
+                        message: format!("field '{key}' already exists"),
+                    });
+                }
+                self.add_field(FieldSpec { key: key.clone(), label, cell_type, options });
+                if let Some(rel) = relation {
+                    let kind = match rel {
+                        RelationSpec::Reference { table, display } => {
+                            RelationKind::Reference { target_table: table, display }
+                        }
+                        RelationSpec::Lookup { via, target } => RelationKind::Lookup { via, target },
+                        RelationSpec::Rollup { via, target, func } => {
+                            RelationKind::Rollup { via, target, func }
+                        }
+                    };
+                    self.relations.push(RelationField { field_key: key, kind });
+                }
+                Ok(())
+            }
+            ProduceOp::UpdateField { key, label, cell_type, options } => {
+                if self.update_field(&key, label, cell_type, options) {
+                    Ok(())
+                } else {
+                    Err(ProduceError::UnknownField { field: key })
+                }
+            }
+            ProduceOp::DeleteField { key } => {
+                if self.delete_field(&key) {
+                    Ok(())
+                } else {
+                    Err(ProduceError::UnknownField { field: key })
+                }
+            }
+            // Block + frontmatter ops belong to Doc sources (§14.13 slice 4 / §1.9 v46 E4).
+            other @ (ProduceOp::AppendSection { .. }
+            | ProduceOp::ReplaceSection { .. }
+            | ProduceOp::DeleteSection { .. }
+            | ProduceOp::SetFrontmatterKey { .. }
+            | ProduceOp::DeleteFrontmatterKey { .. }) => Err(ProduceError::Unsupported {
+                op: other.kind().to_string(),
+                supported: self.supported_ops().iter().map(|s| s.to_string()).collect(),
+            }),
+        }
+    }
+}
+
+/// Extract the `key` of a schema item (a JSON object OR an inline flow-mapping
+/// string) — lets a gate tool add/remove a field in the frontmatter `schema`
+/// array without losing sibling items (incl. relational fields' metadata).
+pub fn schema_item_key(item: &Value) -> Option<String> {
+    item_fields(item)?.get("key").cloned()
+}
+
+/// Build the frontmatter + markdown body for a NEW empty table (Bitable App-create
+/// parity). Pure: `title` + fields → (`{title, schema}` frontmatter, a header +
+/// separator pipe table with no data rows). The gate tool resolves a free path
+/// and writes these. Round-trips through `parse` (0 rows).
+pub fn seed_table(title: &str, fields: &[FieldSpec]) -> (Value, String) {
+    let schema: Vec<Value> = fields
+        .iter()
+        .map(|f| {
+            let mut item = serde_json::Map::new();
+            item.insert("key".into(), Value::String(f.key.clone()));
+            item.insert("label".into(), Value::String(f.label.clone()));
+            item.insert("type".into(), serde_json::to_value(f.cell_type).unwrap_or(Value::Null));
+            if let Some(opts) = &f.options {
+                item.insert("options".into(), serde_json::json!(opts));
+            }
+            Value::Object(item)
+        })
+        .collect();
+    let frontmatter = serde_json::json!({ "title": title, "schema": schema });
+    let header = fields.iter().map(|f| f.label.as_str()).collect::<Vec<_>>().join(" | ");
+    let sep = fields.iter().map(|_| "---").collect::<Vec<_>>().join("|");
+    let body = format!("| {header} |\n|{sep}|\n");
+    (frontmatter, body)
 }
 
 impl QuerySource for SmartTable {
@@ -903,6 +1160,116 @@ mod tests {
     }
 
     #[test]
+    fn delete_row_in_range_and_out_of_range() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        let before = t.rows.len();
+        assert!(before >= 2);
+        let second = t.rows[1].clone();
+        // Deleting row 0 removes it; the old row 1 shifts into slot 0.
+        assert!(t.delete_row(0));
+        assert_eq!(t.rows.len(), before - 1);
+        assert_eq!(t.rows[0], second);
+        assert!(!t.delete_row(99)); // out of range → false, no change
+        assert_eq!(t.rows.len(), before - 1);
+        // Round-trips: re-parse the serialized body yields the same rows.
+        let back = SmartTable::parse(&frontmatter(), &t.serialize_body());
+        assert_eq!(back.rows.len(), before - 1);
+    }
+
+    #[test]
+    fn batch_append_and_delete_rows() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        let base = t.rows.len();
+        // Append 3 more rows in one shot.
+        let added = t.append_rows(vec![
+            row(&[("name", "R1"), ("amount", "1")]),
+            row(&[("name", "R2"), ("amount", "2")]),
+            row(&[("name", "R3"), ("amount", "3")]),
+        ]);
+        assert_eq!(added, 3);
+        assert_eq!(t.rows.len(), base + 3);
+        let names_before: Vec<String> = t.rows.iter().map(|r| r["name"].clone()).collect();
+        // Delete indices 0 and (base+2) — out-of-desc-order + one at the end;
+        // descending removal must not shift the wrong rows.
+        let last = t.rows.len() - 1;
+        let deleted = t.delete_rows(&[last, 0, last, 999]); // dup + out-of-range ignored
+        assert_eq!(deleted, 2); // last + 0 (999 out of range, dup last collapsed)
+        assert_eq!(t.rows.len(), base + 3 - 2);
+        // The surviving middle rows kept their identity (row 0 and last gone).
+        assert_eq!(t.rows.first().unwrap()["name"], names_before[1]);
+        assert_eq!(t.rows.last().unwrap()["name"], names_before[names_before.len() - 2]);
+    }
+
+    #[test]
+    fn add_field_appends_column_and_empty_cells() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        let rows_before = t.rows.len();
+        assert!(!t.has_field("stage"));
+        t.add_field(FieldSpec {
+            key: "stage".into(),
+            label: "Stage".into(),
+            cell_type: CellType::Select,
+            options: Some(vec!["lead".into(), "won".into()]),
+        });
+        assert!(t.has_field("stage"));
+        // Every existing row got an empty cell for the new column.
+        assert_eq!(t.rows.len(), rows_before);
+        assert!(t.rows.iter().all(|r| r.get("stage").map(String::as_str) == Some("")));
+        // serialize_body now emits the new column (last, schema order).
+        assert!(t.fields.last().unwrap().key == "stage");
+    }
+
+    #[test]
+    fn delete_field_drops_column_and_preserves_unrelated_relations() {
+        // A table with a plain field + a relational (reference) field.
+        let fm = serde_json::json!({
+            "schema": [
+                { "key": "name", "label": "Name", "type": "text" },
+                "{ key: contact, label: Contact, type: reference, table: contacts.md, display: name }"
+            ]
+        });
+        let mut t = SmartTable::parse(&fm, "| name | contact |\n|---|---|\n| Acme | [[contacts/acme]] |\n");
+        assert!(t.has_field("name") && t.has_field("contact"));
+        assert_eq!(t.relations.len(), 1);
+        // Delete the PLAIN field — the relational field + its metadata survive.
+        assert!(t.delete_field("name"));
+        assert!(!t.has_field("name"));
+        assert!(t.rows.iter().all(|r| !r.contains_key("name")));
+        assert!(t.has_field("contact"));
+        assert_eq!(t.relations.len(), 1, "unrelated relation preserved");
+        // Deleting a relational field also drops its relation metadata.
+        assert!(t.delete_field("contact"));
+        assert_eq!(t.relations.len(), 0);
+        assert!(!t.delete_field("nope")); // no such field → false
+    }
+
+    #[test]
+    fn seed_table_round_trips_to_empty_table_with_schema() {
+        let fields = vec![
+            FieldSpec { key: "name".into(), label: "Name".into(), cell_type: CellType::Text, options: None },
+            FieldSpec { key: "amount".into(), label: "Amount".into(), cell_type: CellType::Number, options: None },
+        ];
+        let (fm, body) = seed_table("My CRM", &fields);
+        assert_eq!(fm["title"], "My CRM");
+        assert_eq!(fm["schema"].as_array().unwrap().len(), 2);
+        assert_eq!(fm["schema"][1]["type"], "number");
+        // Parse the seed back: same fields, zero data rows.
+        let t = SmartTable::parse(&fm, &body);
+        assert_eq!(t.fields.len(), 2);
+        assert!(t.has_field("name") && t.has_field("amount"));
+        assert_eq!(t.rows.len(), 0);
+    }
+
+    #[test]
+    fn schema_item_key_reads_object_and_flow_string() {
+        let obj = serde_json::json!({ "key": "amount", "label": "Amount", "type": "number" });
+        assert_eq!(schema_item_key(&obj).as_deref(), Some("amount"));
+        let flow = serde_json::json!("{ key: contact, type: reference, table: c.md }");
+        assert_eq!(schema_item_key(&flow).as_deref(), Some("contact"));
+        assert_eq!(schema_item_key(&serde_json::json!(42)), None);
+    }
+
+    #[test]
     fn parses_schema_from_inline_flow_strings() {
         // This is what vault::read's YAML parser actually yields: each schema
         // item is a flow-mapping STRING, not a JSON object. Was silently
@@ -946,5 +1313,156 @@ mod tests {
         assert_eq!(t2.fields.len(), 3, "schema still intact after a produce write");
         assert_eq!(t2.rows[0]["amount"], "777");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── §14.13 unified write side: serialize_schema round-trip + RecordSink ──
+
+    #[test]
+    fn serialize_schema_round_trips_relations_and_options() {
+        // A table with a plain select (options), a reference, a lookup, a rollup.
+        let fm = serde_json::json!({
+            "schema": [
+                { "key": "title", "label": "Title", "type": "text" },
+                { "key": "stage", "label": "Stage", "type": "select", "options": ["new", "won"] },
+                { "key": "contact", "label": "Contact", "type": "reference", "table": "contacts.md", "display": "name" },
+                { "key": "c_email", "label": "Email", "type": "lookup", "via": "contact", "target": "email" },
+                { "key": "c_total", "label": "Total", "type": "rollup", "via": "contact", "target": "spend", "fn": "sum" }
+            ]
+        });
+        let t = SmartTable::parse(&fm, "");
+        // Re-emit the schema, then parse THAT back — must be identical semantics.
+        let schema = t.serialize_schema();
+        let fm2 = serde_json::json!({ "schema": schema });
+        let t2 = SmartTable::parse(&fm2, "");
+        assert_eq!(t2.fields.len(), 5, "all columns survive");
+        assert_eq!(t2.relations.len(), 3, "reference + lookup + rollup survive");
+        // Options survive on the plain select.
+        let stage = t2.fields.iter().find(|f| f.key == "stage").unwrap();
+        assert_eq!(stage.options.as_deref(), Some(&["new".to_string(), "won".to_string()][..]));
+        // Rollup keeps its aggregate fn through the round-trip.
+        let rollup = t2.relations.iter().find(|r| r.field_key == "c_total").unwrap();
+        assert_eq!(
+            rollup.kind,
+            RelationKind::Rollup { via: "contact".into(), target: "spend".into(), func: "sum".into() }
+        );
+        assert!(t2.is_read_only_field("c_email"));
+    }
+
+    #[test]
+    fn record_sink_dispatches_every_op() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        assert_eq!(t.rows.len(), 2);
+
+        // set_cell
+        t.produce(ProduceOp::SetCell {
+            row: 0,
+            field: "amount".into(),
+            value: "999".into(),
+        })
+        .unwrap();
+        assert_eq!(t.rows[0]["amount"], "999");
+
+        // upsert_rows (append)
+        t.produce(ProduceOp::UpsertRows {
+            rows: vec![row(&[("name", "Gamma"), ("amount", "5")])],
+        })
+        .unwrap();
+        assert_eq!(t.rows.len(), 3);
+
+        // delete_rows
+        t.produce(ProduceOp::DeleteRows { indices: vec![1] }).unwrap();
+        assert_eq!(t.rows.len(), 2);
+
+        // add_field (plain) then the column exists + is writable
+        t.produce(ProduceOp::AddField {
+            key: "owner".into(),
+            label: "Owner".into(),
+            cell_type: CellType::Text,
+            options: None,
+            relation: None,
+        })
+        .unwrap();
+        assert!(t.has_field("owner"));
+
+        // add_field (relational) registers a RelationField
+        t.produce(ProduceOp::AddField {
+            key: "contact".into(),
+            label: "Contact".into(),
+            cell_type: CellType::Text,
+            options: None,
+            relation: Some(RelationSpec::Reference {
+                table: "contacts.md".into(),
+                display: "name".into(),
+            }),
+        })
+        .unwrap();
+        assert!(t.relations.iter().any(|r| r.field_key == "contact"));
+
+        // update_field renames a label
+        t.produce(ProduceOp::UpdateField {
+            key: "owner".into(),
+            label: Some("Account Owner".into()),
+            cell_type: None,
+            options: None,
+        })
+        .unwrap();
+        assert_eq!(t.fields.iter().find(|f| f.key == "owner").unwrap().label, "Account Owner");
+
+        // delete_field drops the relational column + its relation metadata
+        t.produce(ProduceOp::DeleteField { key: "contact".into() }).unwrap();
+        assert!(!t.has_field("contact"));
+        assert!(!t.relations.iter().any(|r| r.field_key == "contact"));
+    }
+
+    #[test]
+    fn record_sink_reports_structured_errors() {
+        let mut t = SmartTable::parse(&frontmatter(), BODY);
+        // set_cell unknown field
+        assert!(matches!(
+            t.produce(ProduceOp::SetCell { row: 0, field: "nope".into(), value: "x".into() }),
+            Err(ProduceError::UnknownField { .. })
+        ));
+        // set_cell out of range
+        assert!(matches!(
+            t.produce(ProduceOp::SetCell { row: 99, field: "amount".into(), value: "x".into() }),
+            Err(ProduceError::OutOfRange { .. })
+        ));
+        // add_field duplicate
+        assert!(matches!(
+            t.produce(ProduceOp::AddField {
+                key: "amount".into(),
+                label: "Dup".into(),
+                cell_type: CellType::Number,
+                options: None,
+                relation: None,
+            }),
+            Err(ProduceError::Conflict { .. })
+        ));
+        // update / delete unknown field
+        assert!(matches!(
+            t.produce(ProduceOp::UpdateField { key: "nope".into(), label: None, cell_type: None, options: None }),
+            Err(ProduceError::UnknownField { .. })
+        ));
+        assert!(matches!(
+            t.produce(ProduceOp::DeleteField { key: "nope".into() }),
+            Err(ProduceError::UnknownField { .. })
+        ));
+    }
+
+    #[test]
+    fn record_sink_rejects_write_to_computed_column() {
+        let fm = serde_json::json!({
+            "schema": [
+                { "key": "title", "label": "Title", "type": "text" },
+                { "key": "contact", "label": "Contact", "type": "reference", "table": "contacts.md", "display": "name" },
+                { "key": "c_email", "label": "Email", "type": "lookup", "via": "contact", "target": "email" }
+            ]
+        });
+        let mut t = SmartTable::parse(&fm, "");
+        // A lookup column is a read-only derivative — set_cell must be refused.
+        assert!(matches!(
+            t.produce(ProduceOp::SetCell { row: 0, field: "c_email".into(), value: "x".into() }),
+            Err(ProduceError::Conflict { .. })
+        ));
     }
 }

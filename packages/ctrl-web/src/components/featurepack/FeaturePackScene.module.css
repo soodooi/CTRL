@@ -152,3 +152,78 @@
   color: var(--text-subtle);
   font-size: 13px;
 }
+
+.configBtn {
+  margin-left: auto;
+  padding: 5px 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.configBtn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* ── publish status (share-and-be-shared, §7.6) ─────────────────────────── */
+.publishOk,
+.publishErr {
+  padding: 8px 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--border);
+}
+.publishOk {
+  color: var(--color-success, #2f9e44);
+  background: var(--primary-soft, transparent);
+}
+.publishErr {
+  color: var(--color-danger, var(--destructive));
+}
+
+.intro {
+  padding: 12px 16px;
+  overflow-y: auto;
+  line-height: 1.55;
+  font-size: 13px;
+}
+.intro h1 { font-size: 18px; margin: 0 0 8px; }
+.intro h2 { font-size: 15px; margin: 16px 0 6px; }
+.intro table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.intro th, .intro td { border: 1px solid var(--border, #e0e0e0); padding: 4px 8px; text-align: left; }
+.intro pre { background: var(--surface-2, #f5f5f5); padding: 8px; border-radius: 6px; overflow-x: auto; }
+.intro code { font-size: 12px; }
+
+/* Feishu Bitable-style: the tables are a LEFT vertical nav (a table list),
+   not top tabs (bao 2026-07-03). workspace is a row = nav rail | table body. */
+.workspace { display: flex; flex-direction: row; height: 100%; min-height: 0; }
+.wsTabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  width: 168px;
+  padding: 8px 6px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border, #e0e0e0);
+  background: var(--surface-1, transparent);
+}
+.wsTab {
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-2, #666);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wsTab:hover { background: var(--surface-2, #f2f2f2); }
+.wsTab[data-active] { background: var(--surface-2, #f2f2f2); color: var(--text, #111); font-weight: 600; }
+.wsBody { flex: 1; min-width: 0; min-height: 0; overflow: auto; }

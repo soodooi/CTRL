@@ -23,6 +23,12 @@ export const gateInvoke = <T = unknown>(
   args: Record<string, unknown> = {},
 ): Promise<T> => invoke('gate_invoke', { tool, args }) as Promise<T>;
 
+// Report which note is focused (ADR-002 §1.9 v46 E2). Deliberately a Tauri
+// command, NOT a gate tool: only the UI may set focus (C3 boundary — the
+// brain reads it via `note_active_get` but can never forge it). Fire-and-forget.
+export const setActiveNote = (path: string | null): Promise<void> =>
+  invoke('set_active_note', { path }) as Promise<void>;
+
 // === Kernel status (system instruments) ===
 //
 // Mirror of `src-tauri/src/commands/system.rs::KernelStatus`. The StatusBar
@@ -362,6 +368,116 @@ export const querySmartTable = (
     limit: request.limit ?? null,
   });
 
+// ─── Generic §14 connector source (ADR-002 §14.12) ──────────────────────────
+// Any installed connector that declares a `record_source` is describe/query'd
+// through the SAME gate + shared engine as smart-table — data-driven, so the PWA
+// reads a product-grade data view (e.g. Ghostfolio holdings) with zero per-pack
+// code. Addressed by source_id (the installed pack id).
+
+/** Describe a connector's records — fields + operators, read from its manifest
+ *  record_source. Same shape as a smart-table describe (the §14 type layer). */
+export const describeSource = (sourceId: string): Promise<SmartTableDescribe> =>
+  gateInvoke('source_describe', { source_id: sourceId });
+
+/** Query a connector's records live through the gate (fetches the self-hosted
+ *  instance from its manifest). Same request/result shape as smart_table.query. */
+export const querySource = (
+  sourceId: string,
+  request: SmartTableQueryRequest = {},
+): Promise<SmartTableQueryResult> =>
+  gateInvoke('source_query', {
+    source_id: sourceId,
+    filters: request.filters ?? [],
+    conjunction: request.conjunction ?? 'and',
+    sort: request.sort ?? [],
+    group_by: request.group_by ?? [],
+    limit: request.limit ?? null,
+  });
+
+// ─── Feature-pack evals (ADR-002 §7.4/§7.5, mcp-builder review+evals) ────────
+// Validate a candidate manifest BEFORE install so a bad pack self-corrects
+// instead of shipping — the quality step home-grown pipelines skip.
+
+export interface PackValidationIssue {
+  field: string;
+  severity: 'error' | 'warn';
+  message: string;
+  fix?: string;
+}
+
+export interface PackValidationReport {
+  /** True iff there are no error-severity issues (warnings still allow install). */
+  ok: boolean;
+  issues: PackValidationIssue[];
+  /** When a coherent §14 record_source is declared, its describe field count. */
+  record_source_fields?: number;
+}
+
+/** Evaluate a candidate feature-pack manifest through the gate (mcp_pack_validate).
+ *  Returns structured, self-correctable issues. */
+export const validatePack = (manifest: unknown): Promise<PackValidationReport> =>
+  gateInvoke('mcp_pack_validate', { manifest });
+
+// ─── LifeOS tasks (ADR-002 §14 Task source, GOAL Phase 1) ───────────────────
+// Inline-checkbox tasks scanned across the vault, operated through the SAME
+// :17873 gate an external agent uses (task_describe/query/create/update).
+
+export interface TaskRow {
+  path: string;
+  line: string;
+  title: string;
+  status: string;
+  due: string;
+  /** Obsidian-Tasks `✅` completion date, set when the task is completed. */
+  done: string;
+  tags: string;
+}
+export interface TaskQueryResult {
+  rows: TaskRow[];
+  match_count: number;
+}
+export interface TaskQueryRequest {
+  subdir?: string | null;
+  filters?: Array<{ field: string; op: string; value: string }>;
+  conjunction?: 'and' | 'or';
+  sort?: Array<{ field: string; desc?: boolean }>;
+  group_by?: string[];
+  limit?: number | null;
+}
+
+/** Query LifeOS tasks (open/done/due) through the shared kernel engine. */
+export const queryTasks = (request: TaskQueryRequest = {}): Promise<TaskQueryResult> =>
+  gateInvoke('task_query', {
+    subdir: request.subdir ?? null,
+    filters: request.filters ?? [],
+    conjunction: request.conjunction ?? 'and',
+    sort: request.sort ?? [],
+    group_by: request.group_by ?? [],
+    limit: request.limit ?? null,
+  });
+
+/** Create a task: append a `- [ ]` checkbox line (default: today's daily note). */
+export const createTask = (args: {
+  title: string;
+  due?: string | null;
+  tags?: string[];
+  note?: string | null;
+}): Promise<string> =>
+  gateInvoke('task_create', {
+    title: args.title,
+    due: args.due ?? null,
+    tags: args.tags ?? [],
+    note: args.note ?? null,
+  });
+
+/** Update one field of a task in place (status='done' completes it). */
+export const updateTask = (args: {
+  note: string;
+  line: number;
+  field: 'status' | 'due' | 'title' | 'tags';
+  value: string;
+}): Promise<string> => gateInvoke('task_update', { ...args });
+
 export const listMcpServers = (): Promise<string[]> => invoke('list_mcp_servers');
 
 /**
@@ -514,6 +630,11 @@ export const vaultList = (
   subdir?: string,
   _mcp_id?: string,
 ): Promise<string[]> => gateInvoke('vault_list', { subdir: subdir ?? null });
+
+/** Reset Irisy's engine session so the next turn re-hydrates from the current
+ *  transcript (ADR-005 §8.4). Best-effort — no-op in browser dev (no kernel). */
+export const resetEngine = (): Promise<void> =>
+  invoke<void>('irisy_reset_engine').catch(() => undefined);
 
 export const vaultSearch = (
   query: string,

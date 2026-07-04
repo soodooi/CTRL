@@ -40,7 +40,7 @@
   gap: 6px;
 }
 .newBtn {
-  background: var(--color-accent, #6aa3ff);
+  background: var(--primary, #0d9488);
   color: #fff;
   border: none;
   border-radius: 5px;
@@ -144,7 +144,38 @@
   background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
 }
 .item[data-active='true'] {
-  background: var(--color-accent-soft, rgba(106, 163, 255, 0.14));
+  background: var(--primary-soft, rgba(13, 148, 136, 0.12));
+  box-shadow: inset 2px 0 0 var(--primary, #0d9488);
+}
+
+/* Nested saved-views under a smart-table (Feishu spine — views are secondary,
+   indented, quieter). plan-tables-workspace-ux.md T1. */
+.subItems {
+  list-style: none;
+  margin: 0 0 2px;
+  padding: 0 0 0 22px;
+}
+.subItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.subItem:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+}
+.subIcon {
+  font-size: 11px;
+  color: var(--text-subtle, #aaa);
+  flex: 0 0 auto;
+  width: 13px;
+  text-align: center;
 }
 .itemIcon {
   font-size: 12px;
@@ -181,7 +212,184 @@
   flex-direction: column;
   min-height: 0;
 }
+
+/* BaseView — a multi-sheet base opened: top data-table tabs + active sheet.
+   plan-tables-workspace-ux.md (multi-sheet). */
+.baseView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.sheetTabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  overflow-x: auto;
+  flex: none;
+}
+.sheetTab {
+  padding: 6px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text-2, #666);
+}
+.sheetTab:hover {
+  color: var(--text, #1a1a1a);
+}
+.sheetTab[data-active] {
+  color: var(--primary, #0d9488);
+  border-bottom-color: var(--primary, #0d9488);
+  font-weight: 600;
+}
+.sheetTab[data-dragover] {
+  box-shadow: inset 2px 0 0 var(--primary, #0d9488);
+  background: var(--primary-soft, rgba(13, 148, 136, 0.08));
+}
+.sheetTab[draggable='true'] {
+  cursor: grab;
+}
+.sheetRename {
+  padding: 5px 10px;
+  border: 1px solid var(--primary-ring, rgba(13, 148, 136, 0.4));
+  border-radius: 6px;
+  font-size: 13px;
+  width: 120px;
+  outline: none;
+  background: var(--surface-1, #fff);
+  color: var(--text, #1a1a1a);
+}
+.sheetAdd {
+  margin-left: 4px;
+  padding: 4px 9px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text-subtle, #999);
+}
+.sheetAdd:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+  color: var(--primary, #0d9488);
+}
+.sheetBody {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Sheet-tab right-click menu (Duplicate / Rename / Delete). */
+.tabMenu {
+  position: fixed;
+  z-index: 60;
+  min-width: 148px;
+  padding: 4px;
+  background: var(--surface-elevated, var(--surface-1, #fff));
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 9px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tabMenuItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text, #1a1a1a);
+  cursor: pointer;
+}
+.tabMenuItem:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+}
+.tabMenuDanger {
+  color: var(--color-danger, #d64545);
+}
+.tabMenuDanger:hover {
+  background: rgba(214, 69, 69, 0.1);
+}
+
+/* Inline base rename in the tree. */
+.baseRename {
+  width: calc(100% - 16px);
+  margin: 1px 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--primary-ring, rgba(13, 148, 136, 0.4));
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: var(--surface-1, #fff);
+  color: var(--text, #1a1a1a);
+}
 .detailEmpty {
   margin: auto;
   text-align: center;
+}
+
+/* Empty-state create tiles (T5 — Blank / Spreadsheet / Template + Irisy hint). */
+.emptyTiles {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+}
+.emptyHint {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #1a1a1a);
+}
+.tileRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 168px;
+  padding: 16px;
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 12px;
+  background: var(--surface-1, #fff);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.tile:hover {
+  border-color: var(--primary, #0d9488);
+  box-shadow: 0 2px 12px rgba(13, 148, 136, 0.1);
+}
+.tileIcon {
+  font-size: 20px;
+  color: var(--primary, #0d9488);
+}
+.tileTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text, #1a1a1a);
+}
+.tileSub {
+  font-size: 11.5px;
+  color: var(--text-subtle, #999);
+}
+.emptyIrisy {
+  font-size: 12.5px;
+  color: var(--text-subtle, #999);
 }

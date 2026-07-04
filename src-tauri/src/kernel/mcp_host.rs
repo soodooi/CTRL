@@ -64,14 +64,59 @@ pub enum McpServerSource {
         #[serde(default)]
         args: Vec<String>,
     },
-    /// HTTP endpoint (remote / local HTTP MCP server, e.g. the Obsidian
-    /// Local REST API plugin's built-in /mcp/). `auth_header` is the full
-    /// Authorization header value (e.g. "Bearer <token>") when required.
+    /// HTTP endpoint (remote / local HTTP MCP server serving streamable-http
+    /// /mcp/). `auth_header` is the full Authorization header value (e.g.
+    /// "Bearer <token>") when required. (Generic transport — outlived its
+    /// first consumer, the Obsidian connector, retired ADR-002 §1.9 v46.)
     Http {
         url: String,
         #[serde(default)]
         auth_header: Option<String>,
     },
+}
+
+/// Reconnect every installed feature pack that declares a `server` block
+/// (mcp-server variant, ADR-002 §7 Pattern D) — called at boot so pack tools
+/// return to the gate after a restart without a reinstall. Best-effort:
+/// a pack whose server fails to spawn logs and is skipped.
+pub async fn reconnect_installed_pack_servers(host: &McpHost) {
+    let Some(home) = std::env::var_os("HOME") else { return };
+    let dir = std::path::PathBuf::from(home).join(".ctrl").join("mcps");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    for entry in entries.flatten() {
+        let manifest_path = entry.path().join("manifest.json");
+        let Ok(raw) = std::fs::read_to_string(&manifest_path) else { continue };
+        let Ok(m) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
+        let Some(server) = m.get("server").and_then(|v| v.as_object()) else { continue };
+        let command = server.get("command").and_then(|v| v.as_str()).unwrap_or("");
+        if command.is_empty() {
+            continue;
+        }
+        // Use the validated install-dir name as the id base (path-safe).
+        let id = entry
+            .file_name()
+            .to_string_lossy()
+            .trim_start_matches("ctrl-")
+            .to_string();
+        let args: Vec<String> = server
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        let desc = McpServerDescriptor {
+            id: id.clone(),
+            name: m.get("name").and_then(|v| v.as_str()).unwrap_or(&id).to_string(),
+            version: m.get("version").and_then(|v| v.as_str()).unwrap_or("0.0.0").to_string(),
+            description: String::new(),
+            tools: Vec::new(),
+            source: McpServerSource::Local { command: command.to_string(), args },
+        };
+        host.register(desc).await;
+        match host.connect(&id).await {
+            Ok(()) => tracing::info!(pack = %id, "pack mcp server reconnected to bus"),
+            Err(e) => tracing::info!(pack = %id, error = %e, "pack mcp server reconnect deferred"),
+        }
+    }
 }
 
 impl McpServerSource {
@@ -151,8 +196,9 @@ impl McpHost {
                 .ok_or_else(|| McpHostError::NotInstalled(server_id.into()))?
         };
 
-        // Transport per source kind: HTTP MCP servers (ADR-002 §1.9.1) use the
-        // rmcp streamable-http client; everything else spawns a stdio child.
+        // Transport per source kind: HTTP MCP servers (registry remotes etc.,
+        // ADR-002 §1.9 v46 — generic since the Obsidian connector retired) use
+        // the rmcp streamable-http client; everything else spawns a stdio child.
         let service = match &desc.source {
             McpServerSource::Http { url, auth_header } => {
                 use rmcp::transport::streamable_http_client::{

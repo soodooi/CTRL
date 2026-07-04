@@ -157,6 +157,13 @@ pub fn requires_review(tool_name: &str) -> bool {
         "write", "delete", "remove", "rename", "append_row", "create",
         "update", "put", "post", "run", "exec", "install", "uninstall",
         "move", "drop", "send", "publish", "deploy",
+        // §14 write verb — the generic connector write `source_produce` (and any
+        // `<x>_produce`) is a side-effecting write that must pass review, same as
+        // vault.write (ADR-002 §14.9 produce = Write through the gate).
+        "produce",
+        // Structure/schema writes — `smart_table_add_field` / `add_view` mutate
+        // the table's shape (a write). All current `*_add_*` tools are writes.
+        "add",
     ];
     // Read-ish tools that contain a mutating substring but are safe — keep a
     // tiny explicit exception list so the deny-by-verb default stays simple.
@@ -185,6 +192,16 @@ mod tests {
             "http_post",
             "stock-cn_run",
             "github_create_issue",
+            "source_produce", // §14 generic connector write
+            "smart_table_produce", // §14.13 unified smart-table write verb
+            "task_produce", // §14.13 unified task write verb
+            "calendar_produce", // §14.13 unified calendar write verb
+            "doc_produce", // §14.13 unified doc (block) write verb
+            "mcp_pack_publish", // registry publish (has `publish`)
+            "smart_table_delete_row", // record delete
+            "smart_table_add_field", // schema write (add column)
+            "smart_table_delete_field", // schema write (drop column)
+            "smart_table_add_view", // structure write
         ] {
             assert!(requires_review(t), "{t} should require review");
         }
@@ -199,6 +216,8 @@ mod tests {
             "vault_text_query",
             "market_quote",
             "http_get",
+            "source_describe", // §14 read verbs — no review
+            "source_query",
         ] {
             assert!(!requires_review(t), "{t} should NOT require review");
         }

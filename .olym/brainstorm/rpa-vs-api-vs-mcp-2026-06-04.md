@@ -148,7 +148,7 @@ ADR-002 §7 composition v1 锁。所有 keycap（builtin / mcp / oauth / local_a
 
 按以下顺序选：
 
-1. **有 official API + OAuth** → 直接包 MCP server（Notion / GitHub / Linear / Stripe / 飞书 open platform）。
+1. **有 official API + OAuth** → 直接包 MCP server（Notion / GitHub / Linear / Stripe）。〔纠正 2026-07-02:原列了「飞书 open platform」= 错 —— 飞书是 CTRL 原生替代的 incumbent,非 wrap 目标,见 memory `feedback-ctrl-is-feishu-not-integrate-feishu`。此为 dated brainstorm scratch,非真相源。〕
 2. **有 official API 但只 enterprise tier** → 评估用户量，按需 MCP 包。
 3. **无 API 但 web 端 OK** → 用户自己装 Playwright MCP / browser-use MCP，CTRL 不内置 headless browser。
 4. **无 API 且必须 native app**（如 SAP GUI / 用友 NC client）→ RPA 工具是用户已有的现实方案，CTRL 视作 **外部 keycap source**（用户跑 UiPath / 影刀，CTRL 给 hotkey + workspace 显示进度），不内置 RPA runtime。

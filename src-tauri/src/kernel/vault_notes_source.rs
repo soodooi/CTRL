@@ -85,10 +85,15 @@ impl NotesSource {
     }
 
     /// The stable schema a notes RecordSource advertises via `describe`.
+    /// `type`/`status` mirror the notes UI's types-as-lenses frontmatter
+    /// (ADR-002 §1.9 v47) so Irisy can query "all Projects with status=active"
+    /// exactly like the user filters in the UI.
     pub fn fields() -> Vec<FieldSpec> {
         vec![
             field("path", "Path", CellType::Text),
             field("title", "Title", CellType::Text),
+            field("type", "Type", CellType::Text),
+            field("status", "Status", CellType::Text),
             field("tags", "Tags", CellType::Tags),
             field("created", "Created", CellType::Date),
             field("modified", "Modified", CellType::Date),
@@ -129,6 +134,10 @@ fn note_to_row(path: &str, frontmatter: &Value) -> Row {
     let mut row = Row::new();
     row.insert("path".into(), path.to_string());
     row.insert("title".into(), title_of(path, frontmatter));
+    // Types-as-lenses keys (type / "Is A" / is_a; Status / status) — the same
+    // frontmatter conventions the notes UI reads (ADR-002 §1.9 v47).
+    row.insert("type".into(), fm_first(frontmatter, &["type", "Is A", "is_a"]));
+    row.insert("status".into(), fm_first(frontmatter, &["Status", "status"]));
     row.insert("tags".into(), tags_of(frontmatter));
     row.insert("created".into(), fm_str(frontmatter, "created"));
     row.insert("modified".into(), fm_str(frontmatter, "modified"));
@@ -158,6 +167,22 @@ fn tags_of(fm: &Value) -> String {
         Some(Value::String(s)) => s.clone(),
         _ => String::new(),
     }
+}
+
+/// First string of a scalar-or-list frontmatter value under any of `names`.
+fn fm_first(fm: &Value, names: &[&str]) -> String {
+    for n in names {
+        match fm.get(n) {
+            Some(Value::String(s)) => return s.clone(),
+            Some(Value::Array(a)) => {
+                if let Some(s) = a.iter().find_map(|x| x.as_str()) {
+                    return s.to_string();
+                }
+            }
+            _ => {}
+        }
+    }
+    String::new()
 }
 
 fn fm_str(fm: &Value, key: &str) -> String {

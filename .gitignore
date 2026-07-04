@@ -47,3 +47,4 @@ experiments/
 # Playwright artifacts
 test-results/
 playwright-report/
+packages/ctrl-web/public/notes-ui/

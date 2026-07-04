@@ -670,6 +670,17 @@ impl ProviderRegistry {
                 }
             }
         }
+        // ADR-002 substrate § provider §1.3 v9 + Decision 0007 §hermes-sync v1
+        // (bao 2026-06-30): keep hermes's OWN config.yaml model in lockstep with
+        // the active provider. The caller mirrors only the KEY via
+        // write_hermes_dotenv, but hermes resolves its MODEL from config.yaml —
+        // so without this the model drifted (config stuck on a stale default like
+        // gemini while the active provider was switched to glm).
+        // write_hermes_config_yaml was only wired to the Settings provider-switch
+        // command, so editing active-providers.json directly never synced.
+        // Hanging it on this unified injection point lands it on EVERY hermes
+        // spawn (ACP launch + one-shot), same path as the key.
+        let _ = crate::commands::agents::write_hermes_config_yaml(m, &key);
         env
     }
 

@@ -31,6 +31,7 @@ export function AmbientWorkbench(): ReactElement {
   const [view, setView] = useState<'chat' | 'discover'>('chat');
   const [toolRequest, setToolRequest] = useState<ToolRequest | null>(null);
   const [packRequest, setPackRequest] = useState<PackRequest | null>(null);
+  const [openTodayNonce, setOpenTodayNonce] = useState(0);
   const [openNotesNonce, setOpenNotesNonce] = useState(0);
   const [openTablesNonce, setOpenTablesNonce] = useState(0);
   const [openCodingNonce, setOpenCodingNonce] = useState(0);
@@ -81,6 +82,10 @@ export function AmbientWorkbench(): ReactElement {
         setView('chat');
         setNavSel(`pack.${s.pack.id}`);
         setPackRequest({ pack: s.pack, nonce: Date.now() });
+      } else if (s.kind === 'today') {
+        setView('chat');
+        setNavSel('today');
+        setOpenTodayNonce((n) => n + 1);
       } else if (s.kind === 'notes') {
         setView('chat');
         setNavSel('notes');
@@ -120,6 +125,7 @@ export function AmbientWorkbench(): ReactElement {
         onToggleDrawer={() => setDrawerOpen((v) => !v)}
         toolRequest={toolRequest}
         packRequest={packRequest}
+        openTodayNonce={openTodayNonce}
         openNotesNonce={openNotesNonce}
         openTablesNonce={openTablesNonce}
         openCodingNonce={openCodingNonce}
