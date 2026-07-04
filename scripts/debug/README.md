@@ -4,6 +4,12 @@ Autonomous verification of CTRL/Irisy without a desktop click. See the plan in
 `vault/ctrl/debug-harness-plan.md`. The kernel must be running (dev build) — the
 gate token is read from `~/.ctrl/state/gate-token`.
 
+- **`test_all.py`** ★ — the master autonomous test. Part A = capability smoke
+  (every gate tool, correct return); Part B = chat-turn E2E (drive full Irisy
+  turns: think -> tool -> review -> answer, verifying a write lands on disk).
+  Exit 0 = all green. `python3 scripts/debug/test_all.py` (both) /
+  `--no-turns` (Part A only, fast).
+
 - **`capabilities.py`** — drives every core gate capability over `:17873` (HTTP MCP)
   and asserts a correct return. Exit 0 = all green (DEGRADE = a correct
   setup-needed reply). `python3 scripts/debug/capabilities.py`
