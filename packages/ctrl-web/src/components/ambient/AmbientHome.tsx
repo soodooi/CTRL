@@ -283,9 +283,27 @@ export function AmbientHome({
   // Irisy dialog ("creator") column width. Default kept narrow so the workspace
   // (outbar) stays the primary surface — a 480px dialog ate ~half the page on
   // smaller screens (bao 2026-07-03). Draggable 260..560 via the divider.
-  const [irisyWidth, setIrisyWidth] = useState(360);
+  // Irisy dialog width. The chat is the primary surface most of the time, so a
+  // comfortable default (bao 2026-07-04: 360 read too narrow); draggable wider
+  // for pure chat or narrower to give a workspace scene room.
+  const [irisyWidth, setIrisyWidth] = useState(440);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep the newest message pinned to the bottom. The stream loop scrolls on
+  // each token, but segment gaps (tool calls), the trailing "working" row, and
+  // late-rendering markdown grow the height afterwards — so also pin whenever
+  // the message list or streaming flag changes (bao 2026-07-04: chat didn't
+  // show the bottom). Double rAF so we scroll AFTER layout has settled.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        el.scrollTo({ top: el.scrollHeight });
+      }),
+    );
+  }, [messages, streaming]);
 
   // Stack the part panel below the chat (vertical resize) on phones
   // instead of side-by-side — the real fix for the prior CSS override.
@@ -337,7 +355,7 @@ export function AmbientHome({
       const onMove = (ev: MouseEvent): void => {
         // Irisy sits on the RIGHT (CSS order), so dragging the divider left
         // (clientX decreases) widens Irisy — hence startW minus the delta.
-        const next = Math.max(260, Math.min(560, startW - (ev.clientX - startX)));
+        const next = Math.max(300, Math.min(680, startW - (ev.clientX - startX)));
         setIrisyWidth(next);
       };
       const onUp = (): void => {
