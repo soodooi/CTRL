@@ -631,6 +631,11 @@ export const vaultList = (
   _mcp_id?: string,
 ): Promise<string[]> => gateInvoke('vault_list', { subdir: subdir ?? null });
 
+/** Reset Irisy's engine session so the next turn re-hydrates from the current
+ *  transcript (ADR-005 §8.4). Best-effort — no-op in browser dev (no kernel). */
+export const resetEngine = (): Promise<void> =>
+  invoke<void>('irisy_reset_engine').catch(() => undefined);
+
 export const vaultSearch = (
   query: string,
   limit = 50,

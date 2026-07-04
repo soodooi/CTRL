@@ -106,6 +106,17 @@ struct ThoughtStep {
     delta: String,
 }
 
+/// Reset Irisy's engine session so the NEXT turn starts a FRESH session and
+/// re-hydrates from the replayed transcript (ADR-005 §8.4). Called on new-chat /
+/// resume / fork so the engine's memory follows the conversation the user is
+/// actually looking at, instead of silently carrying the old context across a
+/// switch. Cheap + safe: the next `prompt` re-primes + replays the transcript.
+#[tauri::command]
+pub async fn irisy_reset_engine() -> Result<(), String> {
+    *crate::shell::acp_client::singleton().lock().await = None;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn irisy_chat_stream(
     args: IrisyChatStreamArgs,

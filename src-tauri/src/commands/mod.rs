@@ -107,6 +107,8 @@ macro_rules! pwa_invoke_handler {
             // ADR-005 v5: Irisy = persona shell, not brain. Routes to whichever
             // agent matches the active L1 chip (default hermes via /assistant).
             $crate::commands::irisy_chat::irisy_chat_stream,
+            // Reset the engine session on new-chat / resume / fork (ADR-005 §8.4).
+            $crate::commands::irisy_chat::irisy_reset_engine,
             // Irisy conversation history (reads hermes session store) — vault 0013
             $crate::commands::hermes_acp::irisy_session_list,
             $crate::commands::hermes_acp::irisy_session_get,

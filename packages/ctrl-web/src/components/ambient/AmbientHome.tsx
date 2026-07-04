@@ -98,6 +98,7 @@ import {
   vaultWrite,
   vaultSearch,
   vaultList,
+  resetEngine,
   captureScreenAndOcr,
   csStdin,
   listMcps,
@@ -436,10 +437,14 @@ export function AmbientHome({
     setPart(null);
     setScene(null);
     setInput('');
+    // ADR-005 §8.4 — the engine's memory must follow the UI: a fresh chat gets a
+    // fresh engine session (else it silently carries the old conversation).
+    void resetEngine();
   }, []);
 
-  // Load a past hermes session into the conversation view (read-only). bao:
-  // Irisy must have history. New chat / sending clears the "viewing past" flag.
+  // Load a past hermes session into the conversation view. bao: Irisy must have
+  // history. Resetting the engine makes the next turn re-hydrate from THIS loaded
+  // transcript (§8.4) rather than continuing the engine's previous context.
   const loadPastSession = useCallback((turns: IrisySessionTurn[], _title: string) => {
     setMessages(
       turns.map((t, i) => ({
@@ -451,6 +456,20 @@ export function AmbientHome({
     setPart(null);
     setScene(null);
     setShowHistory(false);
+    void resetEngine();
+  }, []);
+
+  // ADR-005 §8.6.2 fork / checkpoint (Claude /rewind · Gemini /restore): rewind to
+  // a past turn and continue in a NEW direction. Truncate the transcript to that
+  // message and reset the engine, so it re-hydrates from the checkpoint (§8.4).
+  // The prior full conversation stays in Irisy's session history (drawer).
+  const forkFromHere = useCallback((msgId: string) => {
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === msgId);
+      return idx >= 0 ? prev.slice(0, idx + 1) : prev;
+    });
+    setPart(null);
+    void resetEngine();
   }, []);
 
   // Auto-grow the composer to its content (cheap, works in every webview).
@@ -1593,6 +1612,14 @@ export function AmbientHome({
                     onClick={() => void send(m.content)}
                   >
                     ↻ Re-run
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.blockAction}
+                    title="Rewind here and continue in a new direction"
+                    onClick={() => forkFromHere(m.id)}
+                  >
+                    ⑂ Fork from here
                   </button>
                 </div>
               )}
