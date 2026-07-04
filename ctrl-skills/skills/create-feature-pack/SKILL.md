@@ -42,17 +42,28 @@ Find the real thing that will power the pack:
   you design anything.
 
 ### C. Pick the form — from what you researched
-- **app** — a self-hosted product with a REST API (Ghostfolio, Twenty). Declare a
-  `record_source` / `actions[]` in the manifest that call its endpoints; no code.
-  Connector tools (via gate_tool_search): `source_describe/query/produce`,
-  `http_get/post`.
+
+**CRITICAL — how packs reach the network:** the pack `shell` sandbox is
+network-DENIED (ADR-004 §1). A `shell` action that `curl`s a URL WILL be blocked
+— never build a connector as a shell-curl action. The network front doors are:
+(1) a `record_source` (the kernel fetches it server-side, and it legitimately
+reaches your OWN self-hosted instance incl. `localhost` / private IPs — it is NOT
+egress-guarded); (2) a `server` you write (fastmcp service).
+
+- **app** — an EXISTING self-hosted product with a REST API (Ghostfolio, Twenty
+  CRM). Declare a **`record_source`** in the manifest: `query.endpoint` +
+  `fields[]` (key/label/type/from json-path) + `auth` (token_exchange or a stored
+  Bearer). The kernel fetches the user's configured instance live — reaches
+  `http://127.0.0.1:3333` fine. **Do NOT use a shell `actions[]` curl (sandbox
+  denies network).** Scaffold it from the API's OpenAPI with `mcp_pack_scaffold`
+  (gate_tool_search); test with `source_describe` / `source_query`.
 - **MCP** — an existing MCP server: a manifest `server` block; the gate connects
   it. Install-and-wire: `discover_packs` → `mcp_pack_install`.
-- **API / no server** — raw data or custom logic (akshare, any REST). You WRITE a
-  small local service (fastmcp + the data lib) and declare it as the manifest
-  `server`; its source lives in `projects/<pack>/service/` (vim-readable,
-  git-attributed, user-editable). **The pack shell sandbox is network-denied — an
-  API integration is a SERVICE you write, not a fetch script.**
+- **API / no server** — raw data or custom logic (akshare, any REST with no ready
+  product). You WRITE a small local service (fastmcp + the data lib) and declare
+  it as the manifest `server`; its source lives in `projects/<pack>/service/`
+  (vim-readable, git-attributed, user-editable). An API integration is a SERVICE
+  you write, not a fetch script.
 
 ### D. Build
 - `mcp_pack_scaffold` (gate_tool_search) scaffolds the pack skeleton, or
