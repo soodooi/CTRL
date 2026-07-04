@@ -239,6 +239,32 @@ pub struct SmartTableCreateArgs {
     pub fields: Vec<SmartTableFieldInput>,
 }
 
+/// gate.tool_search — search the FULL registered tool surface (~100) by keyword.
+/// The brain (hermes) has a model tool cap so its `tools/list` is curated to the
+/// high-frequency set; this + `gate_tool_call` are the escape hatch that keeps
+/// the whole surface reachable on demand (the tool-discovery layer, bao
+/// 2026-07-04 — Irisy could only see 40 of ~100 tools).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GateToolSearchArgs {
+    /// Keywords, matched (AND) against each tool's name + description
+    /// (case-insensitive). e.g. "edit note", "ai column", "connector", "publish".
+    pub query: String,
+    /// Max results (default 15).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// gate.tool_call — invoke ANY registered gate tool by name, even one not in the
+/// curated list. Find it first with `gate_tool_search`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GateToolCallArgs {
+    /// The tool name (e.g. `note_map`, `doc_produce`, `mcp_pack_scaffold`).
+    pub name: String,
+    /// The tool's arguments object (as it would appear in a normal tool call).
+    #[serde(default)]
+    pub args: serde_json::Value,
+}
+
 /// smart_table.base_scaffold — build a whole multi-sheet BASE (Bitable) from one
 /// spec: N data-tables + reference (link) relations between them, in one atomic
 /// call (ADR-002 §14; the AI-native "build a base from a sentence" uplift). Irisy
@@ -1020,6 +1046,79 @@ impl KernelMcpRouter {
         map.entry(path.to_string())
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
+    }
+
+    /// gate.tool_search — the tool-discovery layer. The brain's curated list is a
+    /// SUBSET of the ~100 registered tools (model cap); this searches the FULL
+    /// surface so any tool stays reachable on demand.
+    #[tool(
+        description = "Search ALL gate tools (~100) by keyword — your default list is only a subset. Returns matching tools with name + description + input schema. Use when you need a capability that is not in your visible tools (editing a note surgically, AI columns, connectors, scaffolding/validating/publishing a feature pack, calling an installed MCP). Then invoke the match with gate_tool_call."
+    )]
+    async fn gate_tool_search(
+        &self,
+        Parameters(args): Parameters<GateToolSearchArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let q = args.query.to_lowercase();
+        let terms: Vec<&str> = q.split_whitespace().collect();
+        let limit = args.limit.unwrap_or(15).min(50);
+        let matches: Vec<serde_json::Value> = Self::tool_router()
+            .list_all()
+            .into_iter()
+            .filter(|t| {
+                let hay = format!(
+                    "{} {}",
+                    t.name,
+                    t.description.as_deref().unwrap_or("")
+                )
+                .to_lowercase();
+                terms.iter().all(|term| hay.contains(term))
+            })
+            .take(limit)
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": serde_json::Value::Object((*t.input_schema).clone()),
+                })
+            })
+            .collect();
+        let body = serde_json::json!({ "matches": matches, "count": matches.len() });
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&body).unwrap_or_default(),
+        )]))
+    }
+
+    /// gate.tool_call — invoke any registered tool by name (the escape hatch that
+    /// pairs with gate_tool_search). Re-enters the normal dispatch path, so the
+    /// same intent authorization + audit apply as a direct call.
+    #[tool(
+        description = "Call ANY gate tool by name, including tools not in your visible list. `name` = the tool name (find it with gate_tool_search), `args` = its arguments object. Same permissions + audit as a direct call."
+    )]
+    async fn gate_tool_call(
+        &self,
+        Parameters(args): Parameters<GateToolCallArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        if args.name == "gate_tool_call" || args.name == "gate_tool_search" {
+            return Err(McpError::invalid_params(
+                "gate_tool_call cannot call the tool-discovery tools themselves",
+                None,
+            ));
+        }
+        let arguments = match args.args {
+            serde_json::Value::Object(m) => Some(m),
+            serde_json::Value::Null => None,
+            _ => {
+                return Err(McpError::invalid_params(
+                    "args must be an object (the target tool's arguments)",
+                    None,
+                ))
+            }
+        };
+        let mut request = CallToolRequestParams::default();
+        request.name = args.name.into();
+        request.arguments = arguments;
+        self.dispatch_tool(request, context).await
     }
 
     /// kernel.status — uptime + adapter chain. Sanity ping for clients.

@@ -114,6 +114,14 @@ pub fn is_first_party(caller: &str) -> bool {
 pub const BRAIN_TOOLSET: &[&str] = &[
     // Always-on system introspection.
     "kernel_status",
+    // Tool-discovery escape hatch — the curated list below is only a SUBSET of
+    // the ~100 registered tools (the model cap forces curation). These two keep
+    // the WHOLE surface reachable on demand: gate_tool_search finds any tool,
+    // gate_tool_call invokes it (bao 2026-07-04 — Irisy could only see 40 of 100,
+    // hiding note editing / AI columns / connectors / pack scaffold-validate-
+    // publish). FIRST so they can never be truncated.
+    "gate_tool_search",
+    "gate_tool_call",
     // Feature-pack creation + take-stock research — Irisy's killer capability.
     // FIRST so the brain's tool cap can never truncate it away.
     "discover_packs",
@@ -587,10 +595,14 @@ mod tests {
         // niche tools sit at the tail so any runtime cap trims those, never the
         // creation/build core (which sits high and survives).
         assert!(
-            BRAIN_TOOLSET.len() <= 40,
+            BRAIN_TOOLSET.len() <= 42,
             "BRAIN_TOOLSET is {} tools, over the brain cap",
             BRAIN_TOOLSET.len()
         );
+        // The tool-discovery escape hatch must be present — it is what keeps the
+        // full ~100-tool surface reachable under the model cap.
+        assert!(brain_tool_rank("gate_tool_search").is_some());
+        assert!(brain_tool_rank("gate_tool_call").is_some());
         // Ordered creation-first: the creation suite outranks the niche tools, so
         // truncation keeps it. discover_packs must come before llm_chat.
         assert!(brain_tool_rank("discover_packs") < brain_tool_rank("llm_chat"));
