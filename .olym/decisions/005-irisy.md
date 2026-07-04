@@ -2,7 +2,7 @@
 adr_id: 005
 module: irisy
 title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down + §8 terminal-essence dialog (engine owns loop+context) + §9 mission + knowledge system (数字员工 operator)
-version: 11
+version: 15
 status: accepted
 last_updated: 2026-06-29
 deciders: [bao, zeus, hephaestus]
@@ -21,6 +21,10 @@ changelog:
   - v3 2026-06-04: **NEW §5 self-reflection-loop** — Irisy implements Loop 1 of ADR-001 §8 self-evolution. Three layers: client-side rule-based **Detect** (failure signals → episodes), Pi background subagent **Reflect** (Letta-code stateless mode, idle-30min trigger), playbook **Improve** (injected into next IrisyChat system prompt). Reuses ADR-002 §11 audit-ledger for cross-loop accountability. Per bao "不仅仅 Irisy LLM, 整个系统都要自我升级成长 — Irisy 自己有自我成长的能力". Brainstorm: `.olym/brainstorm/irisy-self-reflection-loop-2026-06-04.md` + `.olym/brainstorm/system-self-evolution-2026-06-04.md` §3.1.
   - v4 2026-06-04: **NEW §6 capability-decomposition + §7 pi-extension-integration** — root-cause fix for "Pi 一切动词都 install_mcp" + "Pi 说我没 skill 系统" 实测 fail. ctrl-pi-bridge 升级从 provider-only → registerTool + 3 hook (before_agent_start chain / tool_call inspector / resources_discover skills 贡献), Pi `--no-tools` → `--no-builtin-tools` (撤 7 个 built-in 但保 extension 注册的). System prompt 从 monolithic 200 行 → thin base (~30 行) + 8 capability segment, 通过 `before_agent_start` hook 按关键词动态注入 (token cache 友好). PWA `<call>` XML loop 保留作 Volc Qwen/Llama 弱模型 fallback. 调研: `.olym/brainstorm/irisy-pipeline-2026-06-04.md` v2 §3 (Pi/Letta/Cline/Goose/Cursor 对标) + §8 (background agent 深拉源码).
   - v5 2026-06-09: **Irisy reframed as PWA persona shell (H-2026-06-09-002).** bao 2026-06-09 校准: "Irisy 是表象". Irisy is **no longer a brain / agent runtime** — the brain role belongs to 3 external agents (hermes / opencode / kairo per ADR-002 §1 v19). Irisy is now the PWA UX persona layer: (1) **Avatar + branding** — Irisy character, voice, blink animation (Lottie). (2) **System-prompt injection** — wraps user message with CTRL substrate context (active provider info, Notes folder path, OS hint) before routing to whichever agent matches active L1 chip (default `/assistant` → hermes). (3) **Sycophancy filter** — `packages/ctrl-web/src/lib/persona-filter/patterns.md` (relocated from retired `packages/ctrl-pi-bridge/data/persona-patterns.md`). (4) **Drill-down** — long-press / Alt-click reveals raw agent output before filter. RETIRED sections: lifecycle (moves to ADR-004 § mcp execution), soul-md-compat (applies to hermes memory, not Irisy), self-reflection-loop (migrates to hermes as `~/.ctrl/skills/auto-reflect/SKILL.md`), capability-decomposition (no Irisy system prompt — agents own theirs), pi-extension-integration (Pi exited, ctrl-pi-bridge deleted). Per memory `feedback_no_redundancy_one_ssot` 🔒: hermes is the sole substrate-level agent memory primitive — Irisy doesn't duplicate.
+  - v15 2026-07-04: **§8.6.2 amend — verified build kit + detailed capability/resource plan.** 3 more research agents verified the reference SOURCE CODE + licenses (live from repos): official ACP SDKs moved to `agentclientprotocol` org and are **Apache-2.0** (crate `agent-client-protocol` + `@agentclientprotocol/sdk` + codegen `schema.json`) — adopt, retire hand-rolled `acp_client.rs` parsing; UI kit all MIT/Apache and 4/6 extend CTRL's existing Tiptap/CM6: `cmdk` + `@tiptap/suggestion`/`extension-mention` + `@codemirror/merge` (built-in per-hunk accept/reject) + `assistant-ui`(MIT) or AI Elements(Apache) chat shell + `agent-inbox` 4-flag approval (approve/deny/edit-args); Zed's UI = GPL, read-only reference. Avoid `@nlux/react` (MPL+AI-training clause), Open WebUI (branding). Detailed slash-set/modes/keyboard/approval/status/blocks plan → `vault/ctrl/irisy-terminal-frontend-plan.md`.
+  - v14 2026-07-04: **NEW §8.6.2 — terminal FRONTEND advantages + the reference to copy (5-facet web research).** bao 「前端也有不一样，发挥 terminal 前端优势 / 全网调研」. 5 parallel research agents (9 agentic CLIs · terminal renaissance · agent transparency/approval · REPL HCI primitives · keyboard-first consumer apps), cross-verified, full synthesis + primary sources in `vault/ctrl/terminal-frontend-research.md`. Decision: **Irisy's frontend = an ACP-contract-driven friendly GUI review client** (render ACP wire types as dialog + cards + approval + status; keep terminal SEMANTICS, GUI the delivery, drop the raw shell per §8.1). References to copy: contract → **ACP (Zed)**; form → **Zed + Warp**; write-gate moat → **LangGraph HITL + Copilot approval card** (approve/deny/edit-args, gated after-pick-before-execute, deferred write — CTRL today auto-allows via `select_allow_outcome`, the top gap); keyboard/command → **Raycast + GitHub/VS Code sigil palette**. Priority: ①✅ trace → ②★ inline approval → ③ command surface → ④ status line → ⑤ session fork/checkpoint → ⑥ Blocks.
+  - v13 2026-07-04: **NEW §8.6.1 — the terminal-essence advantage map + surface the first three.** bao 「对比 terminal 本质和对话框本质的优势，将这些优势发挥出来」. A dialog box = one stateless Q→A (context rebuilt per turn, tool use hidden, no session object); terminal-essence (engine owns loop+context) is strictly more powerful, and each advantage is a moat vs the default chatbot. Shipped the live WORK-TRACE (advantages #1–3): a per-turn **reasoning trace** (`chat-stream-thought` ← `agent_thought_chunk`, collapsible "Thinking") + **tool-step chips** (`chat-stream-tool` ← `tool_call`/`tool_call_update`, drill-down to raw I/O §6). Kernel now maps ALL of the engine's session/update kinds (`acp_client.rs` `AcpEvent` + `parse_session_update`) instead of dropping everything but the answer text. Roadmap in §8.6.1: #4 session resume/list/fork (engine-advertised), #5 mid-loop steering, #6 slash/@-mention, #7 usage chip. Rule: surface the ESSENCE, keep the friendly dialog FORM (§8.1 "not a raw shell"). Empirical basis captured 2026-07-04.
+  - v12 2026-07-04: **§8.5 acceptance verified — terminal-essence is REAL (not just designed).** bao 「验证 terminal 本质」. All three §8.5 criteria confirmed: (#1 routing) `irisy_chat.rs` `use_agent = !coding_mode && !force_direct && engine_ready` sends EVERY non-coding turn to the single persistent engine — `turn_needs_agent` no longer gates it (comment §8.3, tests-only now); (#2 no-nuke) on a prompt error CTRL keeps the LIVE session and resets only when `!c.is_alive()` (process genuinely dead) → re-hydrate, never per-turn amnesia; (#3 continuity) **runtime-proven** — a controlled 2-turn ACP test drove a fresh `hermes-acp` (same spawn as `acp_client.rs`) on ONE session: turn 1 stated codeword `sky-anchor-7731`, turn 2 recalled it verbatim without restating (`acp_continuity_test.py`, 29s). Engine = single long-lived process per app-session (verified PID). `primed` flag confirms §8.4 re-hydration (first turn = system + brief + prior-turn replay; continuing turns = last_user only). Form stays a friendly dialog (§8.1/§8.6 lock: "not a raw shell") — the terminal is the ESSENCE (engine owns loop+context), not the look. No decision change; records verification per dev-loop.
   - v7 2026-06-28: **NEW §8 terminal-essence dialog — the engine owns the loop + context (continuity root-fix).** bao 2026-06-28 钦定: Irisy 的对话「**对话框形态, terminal 本质**」—— 友好对话 UI 罩在一个**持久 REPL 引擎**上, 引擎自持 agent loop + 对话上下文 (Claude Code / Codex 同模型), 正是 ADR-001 spine §byo-cli-driver + ADR-002 §brain 早已钦定的「调度权在 CLI/引擎手里, CTRL 不 supervise/编排 loop」。根治 §8.2 三条失忆 (每轮只发 last_user / 一出错就 nuke session / 路径切换两后端不共享记忆) —— 把实装拉回架构本位: CTRL 停止「半管」一个它不该拥有的 loop+context, 回到 projection+gate。「先不用管 provider」(bao): 引擎单元就用现有 hermes, 暂不动 provider/模型层; provider-direct 降为「引擎缺席/离线」纯 fallback, 不再参与正常对话记忆。Supersedes §1「对话持续」intent 的脆弱实装。
   - v9 2026-06-28: **§8 amend — NEW §8.7 consolidation: left/right regions + the right-region pluggable ACP engine.** bao design pass 2026-06-28 (「你分开一下,左边区域和右边区域」+「Irisy 不是可以选择是 Hermes 或者 Codex 么」). **左区** = workspace/输出 (per-L1; coding 模块的工作区是真终端 PTY, 跑用户**自驱**的 coding agent — Claude/Codex/shell, CTRL 只投影不 supervise)。**右区** = Irisy (单一品牌 persona), **引擎可选 Hermes/Codex/Claude**, CTRL **经 ACP 驱动**之。机制 = ACP (JSON-RPC over stdio): `hermes-acp` (已驱动) / `@zed-industries/codex-acp` / `claude-code-acp` 同协议, `acp_client.rs` 参数化 spawn 即可。**driven(右) vs projected(左)** 区分: 同一 Codex 两区不同角色 (右=被 CTRL 当脑驱动, 左=被用户当 driver), 「不 supervise BYO」只管左区。纠正 §8.6 两处过度声明 (并非所有 surface 同引擎 — 左区 coding 终端不是 Irisy 引擎, `coding_mode` 绕开引擎是对的; BYO 选中不是「死路 handoff」而是 ACP 真驱动流式作答)。坐实 §8.4 真修法 (transcript 回灌 fresh session, 否则只是 UI 记得引擎忘了)。配对 **ADR-002 §brain amend** (hermes→「CTRL 驱动的可选 ACP 引擎」, hermes 仍默认不退役)。§8.7 与 §8.6 冲突时以 §8.7 为准。
   - v10 2026-06-29: **§8 amend — NEW §8.8 one-click managed install for right-region BYO engines (replaces the copy-command-into-terminal hand-off).** bao 2026-06-29 钦定: 「你希望普通用户这么安装配置吗?普通用户只会一键安装」。§8.7 把 Codex/Claude 当右区引擎驱动了, 但 InstallAgentModal 还在让用户「复制 `npm i -g` 进终端」—— 那是开发者工具的默认装法, 不是 CTRL 模型。**校准**: ① 普通用户**零安装**停在 hermes (CTRL bundle + uvx 自启, 默认引擎, 用户啥都不用动)。② 真要用 Codex/Claude 的人走 **CTRL 一键托管安装** —— 装进 CTRL 自管的 `~/.ctrl/agents/<id>/` (本地 npm `--prefix`, **不全局、不 sudo、不开终端**), 运行时 (Node) 像 `ensure_uvx` 一样**自举** (`ensure_node`, 零前置依赖, 沿用 ADR-002 §1.2 v20「kernel bootstraps what it needs」)。③ 装完只剩一次性 provider 认证 —— 尽量复用用户已在 CTRL 配的 BYOK key (Keychain, 注入 adapter 子进程 env), 否则引导式登录; key 永不入 Irisy/LLM。**driven(右)= CTRL 装+驱动** 与 §8.7「不 supervise BYO」(只管左区 projection) 不冲突 —— 右区引擎本就是 CTRL 拥有的。InstallAgentModal 从「复制命令」改成**一键 Install 按钮 + 进度 + ready**。开放点 (codex-acp↔托管 codex 的 PATH 接线 / Node·codex release asset 名 / claude-code-acp 包名) 真机验证, ADR 内诚实标注 pending。
@@ -531,13 +535,18 @@ increment, not a separate ADR.)
 
 ### §8.5 Acceptance / implementation
 
-- [ ] All non-coding turns route to the single persistent engine; the
+- [x] All non-coding turns route to the single persistent engine; the
   `turn_needs_agent` split of normal conversation to provider-direct is removed —
   provider-direct becomes an explicit engine-absent / offline fallback only.
-- [ ] The engine session is NOT dropped on a transient prompt error; it is reset
+  *(v12 2026-07-04: `irisy_chat.rs` `use_agent = !coding_mode && !force_direct &&
+  engine_ready`; `turn_needs_agent` no longer gates the engine — tests only.)*
+- [x] The engine session is NOT dropped on a transient prompt error; it is reset
   only when the engine process is genuinely dead, followed by re-hydration.
-- [ ] The session survives across turns for one conversation — verified: a fact
+  *(v12: keeps live session; `if dead { *guard = None }` where `dead = !c.is_alive()`.)*
+- [x] The session survives across turns for one conversation — verified: a fact
   stated in turn 1 is recalled in turn N (real run / ledger).
+  *(v12 2026-07-04 RUNTIME: 2-turn ACP test on ONE session — turn 1 stated
+  `sky-anchor-7731`, turn 2 recalled it verbatim without restating.)*
 
 ### §8.6 Unified terminal-essence frontend — every surface is a terminal, agent is selectable (NEW v8, 2026-06-28)
 
@@ -588,6 +597,79 @@ per surface).
   v0.1.684 per §8.7.
 - [ ] CTRL remains projection + gate; it does not reconstruct context per turn
   (ADR-001/002 §brain). The fragile pre-v7 path (§8.2) is superseded.
+
+#### §8.6.1 Why terminal-essence beats a dialog box — the advantages, and surfacing them (NEW v13, 2026-07-04)
+
+bao 「对比 terminal 本质和对话框本质有哪些优势，将这些优势发挥出来」. A dialog box is
+one stateless Q→A: the app reconstructs context per turn, the model answers, tool
+use (if any) is hidden, there is no session object. Terminal-essence (the engine
+owns the loop + context, §8.1) is strictly more powerful — and every advantage is
+a moat vs the industry-default chatbot. The governing surfacing plan:
+
+| # | Terminal-essence advantage (a dialog box can't) | Surface it as | Status |
+|---|---|---|---|
+| 1 | **Agentic multi-step**: plans → calls tools → observes → continues until done, in ONE turn | a live work-trace (below), not a single answer | ✅ visible via 2+3 |
+| 2 | **See it think**: the reasoning stream (`agent_thought_chunk`) | collapsible "Thinking" trace per turn | ✅ v13 (`chat-stream-thought`) |
+| 3 | **See it work**: each tool call + result (`tool_call`/`tool_call_update`) | step chips w/ drill-down to raw I/O (§6) | ✅ v13 (`chat-stream-tool`) |
+| 4 | **Session is an object**: `resume`/`list`/`fork`/`loadSession` (engine-advertised) | conversation history + resume + branch | ⧗ next |
+| 5 | **Steerable mid-loop**: it's a running process, not a fired request | inject a correction while it works (beyond Stop) | ⧗ next |
+| 6 | **Command surface**: `available_commands_update` (slash) | slash / quick-actions + @-mention vault | ⧗ later |
+| 7 | **Cost/usage visible**: `usage_update` | per-turn token/cost chip | ⧗ later |
+| 8 | **Persistent continuity**: no per-turn amnesia | one engine session ≡ one conversation | ✅ §8.5 (v12) |
+
+Rule: surface the ESSENCE, keep the friendly dialog FORM (§8.1 lock "not a raw
+shell") — every advantage lands under the approachable skin, drill-down optional.
+Empirical basis: hermes-acp 0.16.0 `initialize` advertises `{fork,list,resume,
+loadSession, image}` + emits all of `agent_thought_chunk`/`tool_call`/`tool_call_
+update`/`available_commands_update`/`usage_update` (captured 2026-07-04).
+
+#### §8.6.2 The terminal FRONTEND advantages + the reference to copy (NEW v14, 2026-07-04)
+
+bao 「前端也有不一样，发挥 terminal 前端优势 / 全网调研」. 5-facet web research (9 agentic
+CLIs + terminal renaissance + agent transparency/approval + REPL HCI primitives +
+keyboard-first consumer apps) — full cross-verified synthesis + primary sources in
+`vault/ctrl/terminal-frontend-research.md` (governing reference). Meta-thesis (all 5
+converge): **terminal-frontend power decouples from shell syntax** — keep the
+semantics (nameable/repeatable actions, addressable output, keyboard-first flow,
+ambient context, plan-then-approve, reversibility), GUI the delivery, drop the raw
+shell. This is exactly what Zed ACP + Warp did, and what §8.1 ("not a raw shell")
+already mandates.
+
+**THE PLAN (best): Irisy's frontend = an ACP-contract-driven friendly GUI review
+client.** Not a shell — render ACP's wire types as dialog + cards + approval + status.
+
+**WHAT TO COPY (references, decided):**
+- **Frontend↔brain contract → ACP (Zed).** The one tool that publishes the
+  client↔agent frontend contract as a spec, ~1:1 onto CTRL's `:17873` gate; CTRL
+  already drives hermes over it. Its `session/update` (8 variants), `request_permission`
+  (4-value enum), `tool_call` (kind/status/**diff** content/locations), `plan`, session
+  modes, `usage_update` = the ready-made schema for the WHOLE terminal frontend. Extend
+  along ACP; do not invent a protocol.
+- **Friendly-GUI-over-terminal-agent form → Zed + Warp** (buttons not raw scrollback;
+  Blocks = addressable turn/result cards; rich plan editor; per-hunk diff review).
+- **Write-review gate (the moat) → LangGraph HITL + Copilot approval dialog** — the
+  inline approve/deny/**edit-args** card, gated AFTER the model picks a write and BEFORE
+  execution, write deferred until resume, scope once/session/always. CTRL today
+  AUTO-ALLOWS this (`select_allow_outcome`) — the single highest-leverage gap.
+- **Keyboard/command surface → Raycast** (menu teaches its own shortcut, Action Panel,
+  Quicklinks) + GitHub/VS Code sigil palette (`>`/`@`/`#`/`/`/`:`).
+
+**Detailed capability + resource plan** (Irisy slash set, conversation modes, keyboard,
+approval card, status line, sessions, blocks — each mapped to a verified open-source
+code reference + license + where it plugs into CTRL): `vault/ctrl/irisy-terminal-frontend-plan.md`.
+Build kit (all licenses verified 2026-07-04): kernel/PWA **adopt the official Apache-2.0
+ACP SDKs** (`agent-client-protocol` crate + `@agentclientprotocol/sdk`) + codegen from
+`schema.json`; UI = `cmdk` (palette, MIT) + `@tiptap/suggestion`+`@tiptap/extension-mention`
+(slash/@ on CTRL's existing Tiptap, MIT) + `@codemirror/merge` (per-hunk diff on CTRL's
+existing CM6, MIT) + `assistant-ui` (MIT) **or** Vercel AI Elements (Apache-2.0) for the
+chat shell + approval card, with `agent-inbox`'s 4-flag model for approve/deny/edit-args.
+Avoid `@nlux/react` (MPL + AI-training clause) and Open WebUI (branding clause).
+
+**Surfacing priority:** ① ✅ thinking + tool-step trace (§8.6.1) → ② ★ inline approval
+card (moat) → ③ keyboard/command surface → ④ status line (context-health bar) → ⑤
+session resume/fork + checkpoint → ⑥ Blocks (addressable cards). **Skip (raw-shell,
+§8.1):** alt-screen mechanics, permission DSLs, --yolo, leader/chord/vim-as-default,
+raw token math, two-axis approval flags.
 
 ### §8.7 Consolidation — left/right regions + the right-region pluggable ACP engine (NEW v9, 2026-06-28)
 
