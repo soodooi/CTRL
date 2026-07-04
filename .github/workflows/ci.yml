@@ -60,7 +60,7 @@ jobs:
           workspaces: src-tauri
       - name: build headless kernel
         run: cargo build --bin ctrl_kernel --manifest-path src-tauri/Cargo.toml
-      - name: boot kernel + run capability smoke
+      - name: boot kernel + run capability + pack-e2e smoke
         run: |
           ./src-tauri/target/debug/ctrl_kernel &
           KPID=$!
@@ -71,7 +71,8 @@ jobs:
             if curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:17873/mcp | grep -qE '4|2'; then break; fi
             sleep 2
           done
-          python3 scripts/debug/test_all.py --no-turns
+          python3 scripts/debug/test_all.py --no-turns && \
+            python3 scripts/debug/pack_e2e.py
           RC=$?
           kill $KPID 2>/dev/null || true
           exit $RC
