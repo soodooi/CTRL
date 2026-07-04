@@ -256,6 +256,24 @@ export const listBases = async (): Promise<Base[]> => {
       sheets: [{ path: s.path, title: s.title }],
     });
   }
+  // Apply each folder-base's saved sheet order + display name (tables/<id>/_base.md).
+  await Promise.all(
+    [...folders.values()].map(async (b) => {
+      const idx = await vaultRead(`tables/${b.id}/_base.md`).catch(() => null);
+      if (!idx) return;
+      const fm = (idx.frontmatter ?? {}) as { sheet_order?: unknown; name?: unknown };
+      if (typeof fm.name === 'string' && fm.name.trim()) b.name = fm.name;
+      if (Array.isArray(fm.sheet_order)) {
+        const order = (fm.sheet_order as unknown[]).map(String);
+        const rank = (p: string): number => {
+          const bn = p.split('/').pop()!.replace(/\.md$/i, '');
+          const i = order.indexOf(bn);
+          return i < 0 ? order.length : i;
+        };
+        b.sheets.sort((x, y) => rank(x.path) - rank(y.path) || x.title.localeCompare(y.title));
+      }
+    }),
+  );
   return [...folders.values(), ...flat].sort((a, b) => a.name.localeCompare(b.name));
 };
 
@@ -276,6 +294,29 @@ export const createSheetInBase = async (baseId: string, rawTitle = 'Sheet'): Pro
   const content = `| ${headers.join(' | ')} |\n|${tpl.schema.map(() => '---').join('|')}|\n| ${tpl.schema.map(() => ' ').join(' | ')} |\n`;
   await vaultWrite({ path, content, frontmatter: { title, schema: tpl.schema } });
   return path;
+};
+
+/** Rename a data-table sheet = update its frontmatter `title` (the file path is
+ *  the stable id, so relations keep working). */
+export const renameSheet = async (path: string, rawTitle: string): Promise<void> => {
+  const title = rawTitle.trim();
+  if (!title) return;
+  const entry = await vaultRead(path);
+  const fm = (entry.frontmatter ?? {}) as Record<string, unknown>;
+  await vaultWrite({ path, content: entry.content, frontmatter: { ...fm, title } });
+};
+
+/** Persist the sheet order of a folder-base into `tables/<base>/_base.md`
+ *  (basenames, no extension). listBases reads it back. */
+export const reorderSheets = async (baseId: string, orderedPaths: string[]): Promise<void> => {
+  const order = orderedPaths.map((p) => p.split('/').pop()!.replace(/\.md$/i, ''));
+  const entry = await vaultRead(`tables/${baseId}/_base.md`).catch(() => null);
+  const fm = (entry?.frontmatter ?? {}) as Record<string, unknown>;
+  await vaultWrite({
+    path: `tables/${baseId}/_base.md`,
+    content: entry?.content ?? '',
+    frontmatter: { ...fm, sheet_order: order },
+  });
 };
 
 /** Create a new multi-sheet base (a folder) with a first data-table sheet. */

@@ -2,13 +2,14 @@
 // active sheet's grid/views. A Bitable IS a multi-sheet container (bao
 // 2026-07-03: a smart-table must be multi-sheet), so opening one shows its
 // data-tables as tabs — each a full SmartTableViewer with its own views.
-// plan-tables-workspace-ux.md multi-sheet section.
+// Tabs drag-reorder (persisted to tables/<base>/_base.md) + double-click rename
+// (writes the sheet's frontmatter title). plan-tables-workspace-ux.md.
 
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
-import { createSheetInBase, type Base } from '@/lib/smart-tables';
+import { createSheetInBase, renameSheet, reorderSheets, type Base } from '@/lib/smart-tables';
 import styles from './TablesPanel.module.css';
 
 interface BaseViewProps {
@@ -21,6 +22,10 @@ export function BaseView({ base, onActiveSheet }: BaseViewProps): ReactElement {
   const qc = useQueryClient();
   const [active, setActive] = useState<string | null>(base.sheets[0]?.path ?? null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<{ path: string; value: string } | null>(null);
+  const dragPath = useRef<string | null>(null);
+  const [dragOver, setDragOver] = useState<string | null>(null);
+  const multi = base.sheets.length > 1;
 
   // Keep the active sheet valid as the base's sheets change (add / switch base).
   useEffect(() => {
@@ -32,33 +37,94 @@ export function BaseView({ base, onActiveSheet }: BaseViewProps): ReactElement {
     return () => onActiveSheet?.(null);
   }, [active, onActiveSheet]);
 
+  const refresh = (): Promise<unknown> => qc.invalidateQueries({ queryKey: ['bases'] });
+
   const addSheet = async (): Promise<void> => {
     setAdding(true);
     try {
       const path = await createSheetInBase(base.id, `Table ${base.sheets.length + 1}`);
-      await qc.invalidateQueries({ queryKey: ['bases'] });
+      await refresh();
       setActive(path);
     } finally {
       setAdding(false);
     }
   };
 
+  const commitRename = async (): Promise<void> => {
+    if (!editing) return;
+    const { path, value } = editing;
+    setEditing(null);
+    const current = base.sheets.find((s) => s.path === path)?.title;
+    if (value.trim() && value.trim() !== current) {
+      await renameSheet(path, value.trim());
+      await refresh();
+    }
+  };
+
+  const onDrop = async (targetPath: string): Promise<void> => {
+    const from = dragPath.current;
+    dragPath.current = null;
+    setDragOver(null);
+    if (!from || from === targetPath) return;
+    const order = base.sheets.map((s) => s.path);
+    const fromIdx = order.indexOf(from);
+    const toIdx = order.indexOf(targetPath);
+    if (fromIdx < 0 || toIdx < 0) return;
+    order.splice(toIdx, 0, ...order.splice(fromIdx, 1));
+    await reorderSheets(base.id, order);
+    await refresh();
+  };
+
   return (
     <div className={styles.baseView}>
       <div className={styles.sheetTabs} role="tablist" aria-label={`${base.name} data tables`}>
-        {base.sheets.map((s) => (
-          <button
-            key={s.path}
-            type="button"
-            role="tab"
-            aria-selected={s.path === active}
-            className={styles.sheetTab}
-            data-active={s.path === active || undefined}
-            onClick={() => setActive(s.path)}
-          >
-            {s.title}
-          </button>
-        ))}
+        {base.sheets.map((s) =>
+          editing?.path === s.path ? (
+            <input
+              key={s.path}
+              className={styles.sheetRename}
+              value={editing.value}
+              autoFocus
+              onChange={(e) => setEditing({ path: s.path, value: e.target.value })}
+              onBlur={() => void commitRename()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void commitRename();
+                else if (e.key === 'Escape') setEditing(null);
+              }}
+              data-testid="sheet-rename"
+            />
+          ) : (
+            <button
+              key={s.path}
+              type="button"
+              role="tab"
+              aria-selected={s.path === active}
+              className={styles.sheetTab}
+              data-active={s.path === active || undefined}
+              data-dragover={dragOver === s.path || undefined}
+              draggable={multi}
+              onClick={() => setActive(s.path)}
+              onDoubleClick={() => setEditing({ path: s.path, value: s.title })}
+              onDragStart={() => {
+                dragPath.current = s.path;
+              }}
+              onDragOver={(e) => {
+                if (dragPath.current && multi) {
+                  e.preventDefault();
+                  setDragOver(s.path);
+                }
+              }}
+              onDragLeave={() => setDragOver((d) => (d === s.path ? null : d))}
+              onDrop={(e) => {
+                e.preventDefault();
+                void onDrop(s.path);
+              }}
+              title={multi ? 'Double-click to rename · drag to reorder' : 'Double-click to rename'}
+            >
+              {s.title}
+            </button>
+          ),
+        )}
         <button
           type="button"
           className={styles.sheetAdd}
