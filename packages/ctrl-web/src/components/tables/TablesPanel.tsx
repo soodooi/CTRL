@@ -8,17 +8,42 @@
 // AmbientHome beside Irisy (Irisy stays pinned).
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type ReactElement } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactElement } from 'react';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
 import { resourceFromVaultPath } from '@/lib/viewer-resource';
 import {
+  createSheet,
   createSmartTable,
   exportTableCsv,
   importCsv,
+  listSheets,
   listSmartTables,
   TEMPLATES,
 } from '@/lib/smart-tables';
 import styles from './TablesPanel.module.css';
+
+// Univer spreadsheet viewer is heavy (~5.6MB) — lazy-load it so it only enters
+// the bundle when a .sheet.md is actually opened (plan-univer-formula-augment.md).
+const UniverSheetViewer = lazy(() =>
+  import('@/components/viewers/UniverSheetViewer').then((m) => ({ default: m.UniverSheetViewer })),
+);
+
+/** A .sheet.md opens in Univer; every other tables/ file is a smart-table. */
+function renderTableDetail(selected: string | null): ReactElement {
+  if (!selected) {
+    return <div className={styles.detailEmpty}>Pick a table.</div>;
+  }
+  const resource = resourceFromVaultPath(selected);
+  if (selected.toLowerCase().endsWith('.sheet.md')) {
+    return (
+      <Suspense fallback={<div className={styles.detailEmpty}>Loading spreadsheet…</div>}>
+        <UniverSheetViewer key={selected} resource={resource} />
+      </Suspense>
+    );
+  }
+  // Key on the path so switching tables forces a clean remount.
+  return <SmartTableViewer key={selected} resource={resource} />;
+}
 
 interface TablesPanelProps {
   /** Lift the currently-open table path so the shell can feed it to Irisy as
@@ -33,6 +58,10 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
   const { data: tables, isLoading: tablesLoading } = useQuery({
     queryKey: ['smart-tables'],
     queryFn: listSmartTables,
+  });
+  const { data: sheets } = useQuery({
+    queryKey: ['sheets'],
+    queryFn: listSheets,
   });
   const [selected, setSelected] = useState<Selection>(null);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -53,6 +82,13 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
     const name = TEMPLATES[key]?.name ?? 'Untitled';
     const path = await createSmartTable(name, key);
     await qc.invalidateQueries({ queryKey: ['smart-tables'] });
+    setSelected(path);
+  };
+
+  const onNewSheet = async (): Promise<void> => {
+    setShowTemplates(false);
+    const path = await createSheet();
+    await qc.invalidateQueries({ queryKey: ['sheets'] });
     setSelected(path);
   };
 
@@ -82,7 +118,7 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
         >
           »
         </button>
-        <section className={styles.detail}>{renderDetail(selected)}</section>
+        <section className={styles.detail}>{renderTableDetail(selected)}</section>
       </div>
     );
   }
@@ -137,6 +173,16 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
 
         {showTemplates && (
           <div className={styles.templateMenu} data-testid="template-menu">
+            <button
+              type="button"
+              className={styles.templateItem}
+              onClick={() => void onNewSheet()}
+              data-testid="new-spreadsheet"
+            >
+              <span className={styles.templateIcon}>▦</span>
+              <span>Blank spreadsheet</span>
+              <span className={styles.templateFields}>Excel</span>
+            </button>
             {Object.entries(TEMPLATES).map(([key, t]) => (
               <button
                 key={key}
@@ -179,6 +225,28 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
             </div>
           )}
 
+          {sheets && sheets.length > 0 && (
+            <>
+              <div className={styles.sectionLabel}>Spreadsheets</div>
+              <ul className={styles.items}>
+                {sheets.map((s) => (
+                  <li key={s.path}>
+                    <button
+                      type="button"
+                      className={styles.item}
+                      data-active={selected === s.path}
+                      onClick={() => setSelected(s.path)}
+                    >
+                      <span className={styles.itemIcon}>▦</span>
+                      <span className={styles.itemTitle}>{s.title}</span>
+                      <span className={styles.itemMeta}>fx</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
           <div className={styles.sectionLabel}>Templates</div>
           <ul className={styles.items}>
             {Object.entries(TEMPLATES).map(([key, t]) => (
@@ -198,17 +266,8 @@ export const TablesPanel = ({ onActiveTable }: TablesPanelProps = {}): ReactElem
           </ul>
         </div>
       </aside>
-      <section className={styles.detail}>{renderDetail(selected)}</section>
+      <section className={styles.detail}>{renderTableDetail(selected)}</section>
     </div>
   );
 };
 
-function renderDetail(selected: Selection): ReactElement {
-  if (!selected) {
-    return <div className={styles.detailEmpty}>Pick a table.</div>;
-  }
-  const resource = resourceFromVaultPath(selected);
-  // Key on the path so switching tables forces a clean remount (no viewer
-  // state bleeds across a selection change).
-  return <SmartTableViewer key={selected} resource={resource} />;
-}

@@ -16,15 +16,27 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { createUniver, LocaleType, mergeLocales } from '@univerjs/presets';
 import { UniverSheetsCorePreset } from '@univerjs/presets/preset-sheets-core';
 import sheetsCoreEnUS from '@univerjs/presets/preset-sheets-core/locales/en-US';
+import { defaultTheme } from '@univerjs/themes';
 import type { IWorkbookData, Univer } from '@univerjs/core';
 import type { FUniver } from '@univerjs/core/facade';
 import '@univerjs/presets/lib/styles/preset-sheets-core.css';
+import './univer-ctrl-theme.css';
 import type { ViewerProps } from '@/lib/viewer-registry';
 import { readVault, writeVault, vaultRelativePath } from '@/lib/viewer-uri';
 import styles from './UniverSheetViewer.module.css';
 
 /** Content type for a Univer spreadsheet stored as `<name>.sheet.md`. */
 export const UNIVER_SHEET_CONTENT_TYPE = 'application/vnd.ctrl.univer-sheet';
+
+// CTRL teal primary ramp (600 = --color-primary #0D9488). Passed as Univer's JS
+// theme so CANVAS-drawn accents (cell selection border/fill, gridline highlights)
+// match CTRL too — the CSS-var bridge only reaches the DOM chrome. Together they
+// fully retint Univer's stock blue to CTRL teal (bao 2026-07-03).
+const CTRL_PRIMARY_RAMP = {
+  50: '#f0fdfa', 100: '#ccfbf1', 200: '#99f6e4', 300: '#5eead4', 400: '#2dd4bf',
+  500: '#14b8a6', 600: '#0d9488', 700: '#0f766e', 800: '#115e59', 900: '#134e4a',
+};
+const CTRL_THEME = { ...defaultTheme, primary: CTRL_PRIMARY_RAMP };
 
 /** Frontmatter marker written on save so the file self-identifies. */
 const SHEET_KIND = 'univer-sheet';
@@ -81,6 +93,7 @@ export function UniverSheetViewer({ resource }: ViewerProps): ReactElement {
         const { univer, univerAPI } = createUniver({
           locale: LocaleType.EN_US,
           locales: { [LocaleType.EN_US]: mergeLocales(sheetsCoreEnUS) },
+          theme: CTRL_THEME,
           presets: [UniverSheetsCorePreset({ container })],
         });
         univerRef.current = univer;
@@ -122,7 +135,7 @@ export function UniverSheetViewer({ resource }: ViewerProps): ReactElement {
   };
 
   return (
-    <div className={styles.wrap}>
+    <div className={styles.wrap} data-univer-ctrl-theme>
       <div className={styles.toolbar}>
         <span className={styles.title}>{relPath.split('/').pop()}</span>
         {resource.editable !== false && (

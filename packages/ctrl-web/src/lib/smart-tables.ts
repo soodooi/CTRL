@@ -149,6 +149,65 @@ export const createSmartTable = async (rawTitle: string, templateKey = 'blank'):
   return path;
 };
 
+// ── Univer spreadsheets (`tables/*.sheet.md`) — the Excel-style sibling of the
+// smart-table (plan-univer-formula-augment.md). Same tables/ home so the panel
+// is one tabular-data workspace; a .sheet.md carries no `schema:` block so
+// listSmartTables skips it and the two lists never overlap.
+export interface SheetEntry {
+  path: string;
+  title: string;
+}
+
+/** Scan the vault for Univer spreadsheets (`tables/<name>.sheet.md`). */
+export const listSheets = async (): Promise<SheetEntry[]> => {
+  let paths: string[];
+  try {
+    paths = await vaultList();
+  } catch {
+    return [];
+  }
+  return paths
+    .filter((p) => p.startsWith('tables/') && p.toLowerCase().endsWith('.sheet.md'))
+    .map((path) => ({ path, title: path.replace(/^tables\//, '').replace(/\.sheet\.md$/i, '') }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+};
+
+/** Pick a free `tables/<slug>.sheet.md` path (no silent overwrite). */
+const uniqueSheetPath = async (baseSlug: string): Promise<string> => {
+  let existing: Set<string>;
+  try {
+    existing = new Set(await vaultList());
+  } catch {
+    existing = new Set();
+  }
+  const slug = baseSlug || 'spreadsheet';
+  if (!existing.has(`tables/${slug}.sheet.md`)) return `tables/${slug}.sheet.md`;
+  for (let n = 2; ; n += 1) {
+    const candidate = `tables/${slug}-${n}.sheet.md`;
+    if (!existing.has(candidate)) return candidate;
+  }
+};
+
+/** Create a blank Univer spreadsheet and return its path (one-shot; no prompt,
+ *  rename via the title afterwards — mirrors createSmartTable). */
+export const createSheet = async (rawTitle = 'Spreadsheet'): Promise<string> => {
+  const title = rawTitle.trim() || 'Spreadsheet';
+  const slug = slugify(title);
+  const path = await uniqueSheetPath(slug);
+  const snapshot = {
+    id: slug || 'sheet',
+    name: title,
+    sheetOrder: ['sheet-01'],
+    sheets: { 'sheet-01': { id: 'sheet-01', name: 'Sheet1', cellData: {} } },
+  };
+  await vaultWrite({
+    path,
+    content: JSON.stringify(snapshot, null, 2),
+    frontmatter: { kind: 'univer-sheet' },
+  });
+  return path;
+};
+
 /** Trigger a browser download of a text blob — the local-first "export" (mirrors
  *  AmbientHome's artifact download). */
 const downloadTextFile = (filename: string, text: string, mime: string): void => {
