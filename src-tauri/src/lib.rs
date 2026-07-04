@@ -22,7 +22,7 @@
 
 mod asset_scheme;
 mod commands;
-mod kernel;
+pub mod kernel;
 mod shell;
 
 /// Export the kernel MCP endpoint spec (the authoritative `tools/list` JSON

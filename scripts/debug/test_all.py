@@ -51,6 +51,7 @@ class Gate:
 # ---- Part A: capabilities ----
 def part_a():
     g = Gate()
+    g.call("vault_write", {"path": "_fixture/seed.md", "body": "# Seed\nfixture body for reads.", "frontmatter": {"title": "seed", "tags": ["fixture"]}})
     g.call("smart_table_create", {"name": "captest", "fields": [{"key": "name", "label": "Name", "type": "text"}]})
     lr = g._rpc("tools/call", {"name": "vault_list", "arguments": {"subdir": "tables"}})
     tbl = None
@@ -58,10 +59,10 @@ def part_a():
         m = re.findall(r'"(tables/[^"]*captest[^"]*\.md)"', lr["result"]["content"][0]["text"])
         tbl = m[0] if m else None
     TESTS = [
-        ("vault_list", {}), ("vault_read", {"path": "AGENTS.md"}), ("vault_search", {"query": "ctrl"}),
-        ("vault_backlinks", {"path": "AGENTS.md"}), ("vault_tags", {}), ("vault_orphans", {}), ("vault_broken_links", {}),
+        ("vault_list", {}), ("vault_read", {"path": "_fixture/seed.md"}), ("vault_search", {"query": "ctrl"}),
+        ("vault_backlinks", {"path": "_fixture/seed.md"}), ("vault_tags", {}), ("vault_orphans", {}), ("vault_broken_links", {}),
         ("vault_write", {"path": "_captest/n.md", "body": "hi", "frontmatter": "title: T\ntags: [x]"}),
-        ("note_map", {"path": "AGENTS.md"}), ("note_periodic", {"period": "daily"}), ("note_recent_changes", {}),
+        ("note_map", {"path": "_fixture/seed.md"}), ("note_periodic", {"period": "daily"}), ("note_recent_changes", {}),
         ("smart_table_describe", {"path": tbl} if tbl else {}), ("smart_table_query", {"path": tbl} if tbl else {}),
         ("web_search", {"query": "tauri"}), ("market_quote", {"symbols": ["AAPL"]}), ("market_screen", {"screen": "day_gainers"}),
         ("discover_packs", {"query": "finance"}), ("discover_skills", {"query": "test"}), ("skill_list", {}),
@@ -73,7 +74,7 @@ def part_a():
     for t, a in TESTS:
         s, d = g.call(t, a); tally[s] = tally.get(s, 0) + 1
         print(f"  {t:<22} {s:<8} {d}")
-    for p in ["_captest/n.md", tbl]:
+    for p in ["_captest/n.md", "_fixture/seed.md", tbl]:
         if p: g.call("vault_delete", {"path": p})
     print(f"  -> {tally.get('PASS',0)} PASS  {tally.get('DEGRADE',0)} DEGRADE  {tally.get('FAIL',0)} FAIL")
     return tally.get("FAIL", 0) == 0
