@@ -72,6 +72,40 @@ struct StreamDelta {
     custom: Option<serde_json::Value>,
 }
 
+// ADR-005 irisy §8.6 (terminal-essence transparency): the engine streams its
+// WORK — each tool call + result — over ACP alongside the answer text. We relay
+// those on a parallel `chat-stream-tool` channel so the PWA can show the user
+// what Irisy is doing (read this table / wrote that note / ran that connector),
+// with drill-down to the raw input + output (§6 transparency by drill-down).
+#[derive(Debug, Serialize, Clone)]
+struct ToolStep {
+    request_id: String,
+    // Tool-call id from the engine; the `call` and its later `result` share it.
+    tool_call_id: String,
+    // "call" when the tool starts, "result" when it finishes.
+    phase: String,
+    // Human title, e.g. `mcp_ctrl_vault_search`.
+    title: String,
+    // "completed" / "failed" / "in_progress" — set on the `result` phase.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<String>,
+    // Compact JSON of the tool input (call phase).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input: Option<String>,
+    // Result text (result phase).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output: Option<String>,
+}
+
+// ADR-005 §8.6 — the engine's reasoning, streamed chunk by chunk on its own
+// channel so the PWA can show a "thinking" trace (terminal-essence: you watch it
+// reason, not just see the final answer) without polluting the answer text.
+#[derive(Debug, Serialize, Clone)]
+struct ThoughtStep {
+    request_id: String,
+    delta: String,
+}
+
 #[tauri::command]
 pub async fn irisy_chat_stream(
     args: IrisyChatStreamArgs,
@@ -428,17 +462,63 @@ async fn forward_to_provider(
                     .collect::<Vec<_>>()
                     .join("\n\n");
                 let result = client
-                    .prompt(&turns, Some(&system_preamble), |d: &str| {
-                        let _ = app2.emit(
-                            "chat-stream-delta",
-                            StreamDelta {
-                                request_id: rid.clone(),
-                                delta: d.to_string(),
-                                done: false,
-                                error: None,
-                                custom: None,
-                            },
-                        );
+                    .prompt(&turns, Some(&system_preamble), |e: crate::shell::acp_client::AcpEvent| {
+                        use crate::shell::acp_client::AcpEvent;
+                        match e {
+                            // The visible answer — the existing text channel.
+                            AcpEvent::Text(t) => {
+                                let _ = app2.emit(
+                                    "chat-stream-delta",
+                                    StreamDelta {
+                                        request_id: rid.clone(),
+                                        delta: t,
+                                        done: false,
+                                        error: None,
+                                        custom: None,
+                                    },
+                                );
+                            }
+                            // Reasoning — its own channel so the PWA renders it
+                            // as a dim "thinking" trace (never fabricated).
+                            AcpEvent::Thought(t) => {
+                                let _ = app2.emit(
+                                    "chat-stream-thought",
+                                    ThoughtStep {
+                                        request_id: rid.clone(),
+                                        delta: t,
+                                    },
+                                );
+                            }
+                            // The engine's work — the transparency channel (§8.6).
+                            AcpEvent::ToolCall { id, title, input } => {
+                                let _ = app2.emit(
+                                    "chat-stream-tool",
+                                    ToolStep {
+                                        request_id: rid.clone(),
+                                        tool_call_id: id,
+                                        phase: "call".to_string(),
+                                        title,
+                                        status: None,
+                                        input: Some(input),
+                                        output: None,
+                                    },
+                                );
+                            }
+                            AcpEvent::ToolResult { id, status, output } => {
+                                let _ = app2.emit(
+                                    "chat-stream-tool",
+                                    ToolStep {
+                                        request_id: rid.clone(),
+                                        tool_call_id: id,
+                                        phase: "result".to_string(),
+                                        title: String::new(),
+                                        status: Some(status),
+                                        input: None,
+                                        output: Some(output),
+                                    },
+                                );
+                            }
+                        }
                     })
                     .await;
                 match result {

@@ -130,6 +130,68 @@ interface Msg {
    *  when the turn is created so routing is shown BEFORE work starts, never
    *  hidden (§8.3 #1 anti-pattern). */
   route?: RouteHint;
+  /** ADR-005 §8.6 terminal-essence transparency — the tool calls the engine ran
+   *  during THIS turn, in order, each drill-down-able to raw input/output (§6). */
+  tools?: ToolStepView[];
+  /** ADR-005 §8.6 — the engine's accumulated reasoning for this turn, shown as a
+   *  collapsible "thinking" trace (see it think, not just the final answer). */
+  reasoning?: string;
+}
+
+/** Humanize an engine tool id for the step summary: `mcp_ctrl_vault_search` →
+ *  "vault search". The raw id stays available in the drill-down for power users. */
+function prettyToolTitle(t: string): string {
+  return t
+    .replace(/^mcp_ctrl_/, '')
+    .replace(/^mcp_/, '')
+    .replace(/_/g, ' ')
+    .trim();
+}
+
+/** A tool call folded from the engine's `call` + `result` steps (ADR-005 §8.6). */
+interface ToolStepView {
+  id: string;
+  title: string;
+  status: 'running' | 'completed' | 'failed';
+  input?: string;
+  output?: string;
+}
+
+/** Fold one streamed ToolStep into a turn's step list: `call` appends a running
+ *  step, `result` completes the matching one (by id). Pure — returns a new array. */
+function applyToolStep(
+  prev: ToolStepView[] | undefined,
+  step: {
+    tool_call_id: string;
+    phase: 'call' | 'result';
+    title: string;
+    status?: string;
+    input?: string;
+    output?: string;
+  },
+): ToolStepView[] {
+  const list = prev ? [...prev] : [];
+  const i = list.findIndex((s) => s.id === step.tool_call_id);
+  const cur = i >= 0 ? list[i] : undefined;
+  if (step.phase === 'call') {
+    const view: ToolStepView = {
+      id: step.tool_call_id,
+      title: step.title || 'tool',
+      status: 'running',
+      input: step.input,
+    };
+    if (cur) list[i] = { ...cur, ...view };
+    else list.push(view);
+    return list;
+  }
+  // result: complete the matching step (or create one if we missed the call).
+  const status: ToolStepView['status'] = step.status === 'failed' ? 'failed' : 'completed';
+  if (cur) {
+    list[i] = { ...cur, status, output: step.output };
+  } else {
+    list.push({ id: step.tool_call_id, title: step.title || 'tool', status, output: step.output });
+  }
+  return list;
 }
 
 type Surface = 'empty' | 'chat' | 'chat-part';
@@ -538,6 +600,31 @@ export function AmbientHome({
           streamError = true;
           break;
         }
+        // ADR-005 §8.6 — a tool step the engine streamed: fold it into THIS
+        // turn's step list so the user sees Irisy's work live (drill-down §6).
+        if (typeof chunk !== 'string' && chunk?.tool) {
+          const step = chunk.tool;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === asstId ? { ...m, tools: applyToolStep(m.tools, step) } : m,
+            ),
+          );
+          requestAnimationFrame(() => {
+            scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+          });
+          continue;
+        }
+        // ADR-005 §8.6 — a reasoning chunk: accumulate into THIS turn's thinking
+        // trace (see it think), kept separate from the answer text.
+        if (typeof chunk !== 'string' && chunk?.thought) {
+          const t = chunk.thought;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === asstId ? { ...m, reasoning: (m.reasoning ?? '') + t } : m,
+            ),
+          );
+          continue;
+        }
         const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
         if (!delta) continue;
         acc += delta;
@@ -928,6 +1015,47 @@ export function AmbientHome({
                 <span className={styles.routePill} data-kind={m.route.kind}>
                   {m.route.label}
                 </span>
+              )}
+              {/* ADR-005 §8.6 — the engine's REASONING, streamed live: a
+                  collapsible "thinking" trace (see it think), never the answer. */}
+              {m.reasoning && m.reasoning.trim() && (
+                <details className={styles.reasoning}>
+                  <summary>
+                    <span className={styles.reasoningGlyph} aria-hidden>
+                      {m.id === lastAssistantId && streaming ? '◐' : '✦'}
+                    </span>
+                    <span>{m.id === lastAssistantId && streaming ? 'Thinking…' : 'Thought process'}</span>
+                  </summary>
+                  <div className={styles.reasoningBody}>{m.reasoning.trim()}</div>
+                </details>
+              )}
+              {/* ADR-005 §8.6 — the engine's WORK, streamed live: each tool call
+                  as a step (running → done/failed), drill-down to raw I/O (§6). */}
+              {m.tools && m.tools.length > 0 && (
+                <div className={styles.toolSteps}>
+                  {m.tools.map((s) => (
+                    <details key={s.id} className={styles.toolStep} data-status={s.status}>
+                      <summary>
+                        <span className={styles.toolGlyph} aria-hidden>
+                          {s.status === 'running' ? '◐' : s.status === 'failed' ? '✗' : '✓'}
+                        </span>
+                        <span className={styles.toolTitle}>{prettyToolTitle(s.title)}</span>
+                      </summary>
+                      {s.input && (
+                        <pre className={styles.toolIo}>
+                          <span className={styles.toolIoLabel}>input</span>
+                          {s.input}
+                        </pre>
+                      )}
+                      {s.output && (
+                        <pre className={styles.toolIo}>
+                          <span className={styles.toolIoLabel}>output</span>
+                          {s.output}
+                        </pre>
+                      )}
+                    </details>
+                  ))}
+                </div>
               )}
               {m.content && (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>

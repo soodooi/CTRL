@@ -48,6 +48,98 @@ pub struct AcpClient {
     engine_id: String,
 }
 
+/// Structured streaming events from the ACP engine (ADR-005 §8.6 transparency).
+/// The read loop maps each `session/update` sub-type to one of these so the
+/// caller can surface the engine's WORK — its reasoning and each tool call /
+/// result — instead of only the final answer text (§6 transparency by drill-down).
+/// Owned strings: tool events are rare and text deltas are small, so the alloc
+/// per event is negligible and it keeps the callback free of lifetimes.
+pub enum AcpEvent {
+    /// `agent_message_chunk` — a chunk of the visible answer.
+    Text(String),
+    /// `agent_thought_chunk` — a chunk of the engine's reasoning.
+    Thought(String),
+    /// `tool_call` — the engine started a tool. `input` = compact JSON of rawInput.
+    ToolCall {
+        id: String,
+        title: String,
+        input: String,
+    },
+    /// `tool_call_update` — a tool finished (or changed status). `output` = its
+    /// result text; `status` = e.g. `completed` / `failed` / `in_progress`.
+    ToolResult {
+        id: String,
+        status: String,
+        output: String,
+    },
+}
+
+/// Extract plain text from an ACP `content` value — either an object `{type,text}`
+/// or an array of `{type:"content", content:{type,text}}` (or `{text}`) items.
+fn acp_content_text(content: &Value) -> String {
+    if let Some(t) = content.get("text").and_then(|t| t.as_str()) {
+        return t.to_string();
+    }
+    if let Some(arr) = content.as_array() {
+        let mut out = String::new();
+        for item in arr {
+            let inner = item.get("content").unwrap_or(item);
+            if let Some(t) = inner.get("text").and_then(|t| t.as_str()) {
+                out.push_str(t);
+            }
+        }
+        return out;
+    }
+    String::new()
+}
+
+/// Map one ACP `session/update` payload to an `AcpEvent`, or `None` for update
+/// kinds we don't surface yet (usage_update / available_commands_update / plan).
+fn parse_session_update(u: &Value) -> Option<AcpEvent> {
+    match u.get("sessionUpdate").and_then(|s| s.as_str())? {
+        "agent_message_chunk" => {
+            let t = acp_content_text(u.get("content")?);
+            (!t.is_empty()).then_some(AcpEvent::Text(t))
+        }
+        "agent_thought_chunk" => {
+            let t = acp_content_text(u.get("content")?);
+            (!t.is_empty()).then_some(AcpEvent::Thought(t))
+        }
+        "tool_call" => {
+            let id = u
+                .get("toolCallId")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            let title = u
+                .get("title")
+                .and_then(|s| s.as_str())
+                .unwrap_or("tool")
+                .to_string();
+            let input = match u.get("rawInput") {
+                Some(r) if !r.is_null() => serde_json::to_string(r).unwrap_or_default(),
+                _ => u.get("content").map(acp_content_text).unwrap_or_default(),
+            };
+            Some(AcpEvent::ToolCall { id, title, input })
+        }
+        "tool_call_update" => {
+            let id = u
+                .get("toolCallId")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            let status = u
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            let output = u.get("content").map(acp_content_text).unwrap_or_default();
+            Some(AcpEvent::ToolResult { id, status, output })
+        }
+        _ => None,
+    }
+}
+
 /// One-time capability brief prepended to the first turn so hermes KNOWS it can
 /// drive CTRL's tools (the user's notes vault is reachable via the `ctrl` MCP
 /// server passed in session/new; ADR-002 §1.9 v46 — notes are CTRL-native)
@@ -456,7 +548,7 @@ impl AcpClient {
             engine_id: engine.to_string(),
         };
 
-        let mut noop = |_: &str| {};
+        let mut noop = |_: AcpEvent| {};
         let init = s
             .request(
                 "initialize",
@@ -546,7 +638,7 @@ impl AcpClient {
         &self.engine_id
     }
 
-    /// Run one prompt turn; `on_delta` receives streamed text as it arrives.
+    /// Run one prompt turn; `on_event` receives streamed events as they arrive.
     /// `turns` is the conversation so far as `(role, content)` pairs (user /
     /// assistant, in order). The actual prompt = the last `user` turn; the
     /// earlier turns are used ONLY to re-hydrate a fresh session (§8.4).
@@ -555,7 +647,7 @@ impl AcpClient {
         &mut self,
         turns: &[(String, String)],
         system_preamble: Option<&str>,
-        mut on_delta: impl FnMut(&str) + Send,
+        mut on_event: impl FnMut(AcpEvent) + Send,
     ) -> Result<String> {
         let sid = self.session_id.clone();
         let last_user = turns
@@ -603,7 +695,7 @@ impl AcpClient {
             .request(
                 "session/prompt",
                 json!({ "sessionId": sid, "prompt": [{ "type": "text", "text": turn_text }] }),
-                &mut on_delta,
+                &mut on_event,
             )
             .await?;
         Ok(res
@@ -622,14 +714,14 @@ impl AcpClient {
     }
 
     /// Send a JSON-RPC request, then pump stdout until its response arrives,
-    /// streaming agent_message_chunk text to `on_delta` and answering any
-    /// agent->client requests (permission / fs) minimally so the turn never
-    /// stalls.
+    /// mapping each `session/update` to an `AcpEvent` for `on_event` (text,
+    /// reasoning, tool call / result) and answering any agent->client requests
+    /// (permission / fs) minimally so the turn never stalls.
     async fn request(
         &mut self,
         method: &str,
         params: Value,
-        on_delta: &mut (dyn FnMut(&str) + Send),
+        on_event: &mut (dyn FnMut(AcpEvent) + Send),
     ) -> Result<Value> {
         let id = self.next_id;
         self.next_id += 1;
@@ -663,18 +755,11 @@ impl AcpClient {
                 return Ok(v.get("result").cloned().unwrap_or(Value::Null));
             }
 
-            // session/update notification → stream chunk text.
+            // session/update notification → map to an AcpEvent (ADR-005 §8.6).
             if v.get("method").and_then(|m| m.as_str()) == Some("session/update") {
                 if let Some(u) = v.get("params").and_then(|p| p.get("update")) {
-                    if u.get("sessionUpdate").and_then(|s| s.as_str()) == Some("agent_message_chunk")
-                    {
-                        if let Some(t) = u
-                            .get("content")
-                            .and_then(|c| c.get("text"))
-                            .and_then(|t| t.as_str())
-                        {
-                            on_delta(t);
-                        }
+                    if let Some(ev) = parse_session_update(u) {
+                        on_event(ev);
                     }
                 }
                 continue;
@@ -759,6 +844,59 @@ mod tests {
         );
     }
 
+    // ADR-005 §8.6 — the read loop maps ACP session/update to AcpEvent. These
+    // payloads are the real shapes captured from hermes-acp 0.16.0 (2026-07-04).
+    #[test]
+    fn maps_tool_call_and_result_from_real_payloads() {
+        let call = json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "tc-1d09b052f3af",
+            "title": "mcp_ctrl_vault_search",
+            "kind": "other",
+            "rawInput": { "query": "ghostfolio" },
+            "content": [{ "type": "content", "content": { "type": "text", "text": "{}" } }]
+        });
+        match parse_session_update(&call) {
+            Some(AcpEvent::ToolCall { id, title, input }) => {
+                assert_eq!(id, "tc-1d09b052f3af");
+                assert_eq!(title, "mcp_ctrl_vault_search");
+                assert_eq!(input, r#"{"query":"ghostfolio"}"#);
+            }
+            _ => panic!("expected ToolCall"),
+        }
+
+        let update = json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "tc-1d09b052f3af",
+            "status": "completed",
+            "content": [{ "type": "content",
+                "content": { "type": "text", "text": "mcp_ctrl_vault_search result\n- **result:** []" } }]
+        });
+        match parse_session_update(&update) {
+            Some(AcpEvent::ToolResult { id, status, output }) => {
+                assert_eq!(id, "tc-1d09b052f3af");
+                assert_eq!(status, "completed");
+                assert!(output.contains("result"));
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn maps_text_and_thought_and_ignores_noise() {
+        let msg = json!({ "sessionUpdate": "agent_message_chunk",
+            "content": { "type": "text", "text": "hello" } });
+        assert!(matches!(parse_session_update(&msg), Some(AcpEvent::Text(t)) if t == "hello"));
+
+        let thought = json!({ "sessionUpdate": "agent_thought_chunk",
+            "content": { "type": "text", "text": "thinking" } });
+        assert!(matches!(parse_session_update(&thought), Some(AcpEvent::Thought(t)) if t == "thinking"));
+
+        // usage_update / available_commands_update are not surfaced yet.
+        let usage = json!({ "sessionUpdate": "usage_update", "tokens": 42 });
+        assert!(parse_session_update(&usage).is_none());
+    }
+
     /// Real end-to-end: spawn hermes-acp via the kernel client, run one
     /// streamed prompt turn. Network + uvx + a configured hermes provider.
     /// Run: `cargo test acp_smoke -- --ignored --nocapture`
@@ -772,7 +910,11 @@ mod tests {
         let mut answer = String::new();
         let turns = vec![("user".to_string(), "Reply with exactly: ACP OK".to_string())];
         let stop = client
-            .prompt(&turns, None, |d| answer.push_str(d))
+            .prompt(&turns, None, |e| {
+                if let AcpEvent::Text(t) = e {
+                    answer.push_str(&t)
+                }
+            })
             .await
             .expect("prompt turn");
         println!("\nANSWER: {answer:?}  stopReason={stop}");
