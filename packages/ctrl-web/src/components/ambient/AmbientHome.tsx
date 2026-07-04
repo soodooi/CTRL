@@ -24,7 +24,11 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { engineTransport, type LLMMessage } from '@/lib/llm-transport';
+import {
+  engineTransport,
+  respondToPermission,
+  type LLMMessage,
+} from '@/lib/llm-transport';
 import { classifyIntent, type RouteHint } from '@/lib/intent-routing';
 // Reply-correctness wiring (parity with the docked IrisyChat): the home
 // composer must ship the persona + brain_state system prompt and filter the
@@ -136,6 +140,19 @@ interface Msg {
   /** ADR-005 §8.6 — the engine's accumulated reasoning for this turn, shown as a
    *  collapsible "thinking" trace (see it think, not just the final answer). */
   reasoning?: string;
+  /** ADR-005 §8.6.2 — write-op permission prompts the engine paused on during this
+   *  turn (the review gate). Rendered as approve/deny cards. */
+  permissions?: PermissionView[];
+}
+
+/** A paused write-op approval prompt shown in the turn (ADR-005 §8.6.2). */
+interface PermissionView {
+  permissionId: number;
+  title: string;
+  input: string;
+  options: { id: string; label: string; kind: string }[];
+  /** Set once the user has answered — the label of the chosen option. */
+  decided?: string;
 }
 
 /** Humanize an engine tool id for the step summary: `mcp_ctrl_vault_search` →
@@ -625,6 +642,33 @@ export function AmbientHome({
           );
           continue;
         }
+        // ADR-005 §8.6.2 — a write-op permission prompt: the engine has PAUSED and
+        // is waiting for the user to approve/deny. Attach it to this turn.
+        if (typeof chunk !== 'string' && chunk?.permission) {
+          const p = chunk.permission;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === asstId
+                ? {
+                    ...m,
+                    permissions: [
+                      ...(m.permissions ?? []),
+                      {
+                        permissionId: p.permission_id,
+                        title: p.title,
+                        input: p.input,
+                        options: p.options,
+                      },
+                    ],
+                  }
+                : m,
+            ),
+          );
+          requestAnimationFrame(() => {
+            scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+          });
+          continue;
+        }
         const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
         if (!delta) continue;
         acc += delta;
@@ -690,6 +734,24 @@ export function AmbientHome({
     abortRef.current?.abort();
     setStreaming(false);
   }, []);
+
+  // ADR-005 §8.6.2 review gate — the user tapped an approve/deny choice on a
+  // paused write-op card. Send it to the engine (resolves the paused turn) and
+  // mark the card decided so its buttons freeze into the chosen label.
+  const decidePermission = useCallback(
+    (permissionId: number, optionId: string, label: string) => {
+      void respondToPermission(permissionId, optionId);
+      setMessages((prev) =>
+        prev.map((m) => ({
+          ...m,
+          permissions: m.permissions?.map((p) =>
+            p.permissionId === permissionId ? { ...p, decided: label } : p,
+          ),
+        })),
+      );
+    },
+    [],
+  );
 
   // Irisy capture/recall (bao 2026-06-12: the two AI chips under a reply).
   // Capture = append this reply to today's Irisy log note (vault is truth).
@@ -1057,6 +1119,47 @@ export function AmbientHome({
                   ))}
                 </div>
               )}
+              {/* ADR-005 §8.6.2 — the review gate: a write op the engine paused
+                  on. Approve/deny inline; the turn resumes on the user's choice. */}
+              {m.permissions?.map((p) => (
+                <div
+                  key={p.permissionId}
+                  className={styles.permCard}
+                  data-decided={p.decided ? 'yes' : 'no'}
+                >
+                  <div className={styles.permHead}>
+                    <span className={styles.permIcon} aria-hidden>
+                      ⚿
+                    </span>
+                    <span>
+                      Irisy wants to run <code>{prettyToolTitle(p.title)}</code>
+                    </span>
+                  </div>
+                  {p.input && (
+                    <details className={styles.permInput}>
+                      <summary>arguments</summary>
+                      <pre>{p.input}</pre>
+                    </details>
+                  )}
+                  {p.decided ? (
+                    <div className={styles.permDecided}>{p.decided}</div>
+                  ) : (
+                    <div className={styles.permBtns}>
+                      {p.options.map((o) => (
+                        <button
+                          key={o.id}
+                          type="button"
+                          className={styles.permBtn}
+                          data-kind={o.kind.startsWith('allow') ? 'allow' : 'reject'}
+                          onClick={() => decidePermission(p.permissionId, o.id, o.label)}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
               {m.content && (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {stripDetectedPart(cleanReplyText(m.content)) ||

@@ -52,6 +52,42 @@ export interface LLMChunk {
   /** ADR-005 §8.6 — a chunk of the engine's reasoning (see it think). `delta` is
    *  empty; the chat UI accumulates these into a collapsible "thinking" trace. */
   thought?: string;
+  /** ADR-005 §8.6.2 — a write-op permission prompt (the review gate). `delta` is
+   *  empty; the chat UI renders an approve/deny card and the turn stays paused in
+   *  the engine until the user answers via `respondToPermission`. */
+  permission?: PermissionCardData;
+}
+
+/** One approve/deny choice on a permission card (mirrors ACP PermissionOption). */
+export interface PermissionOptionData {
+  id: string;
+  label: string;
+  /** allow_once | allow_always | reject_once | reject_always */
+  kind: string;
+}
+
+/** A paused write-op permission request from the engine (ADR-005 §8.6.2), mirrors
+ *  the Rust `PermissionCard`. */
+export interface PermissionCardData {
+  request_id: string;
+  permission_id: number;
+  /** Tool the agent wants to run, e.g. mcp_ctrl_vault_write. */
+  title: string;
+  /** Pretty-printed tool arguments (drill-down / transparency). */
+  input: string;
+  options: PermissionOptionData[];
+}
+
+/** Answer a paused permission prompt: `optionId` = the ACP option the user chose
+ *  (approve-with-scope OR deny); resolves the paused turn in the engine. */
+export async function respondToPermission(
+  permissionId: number,
+  optionId: string,
+): Promise<void> {
+  await invoke('irisy_permission_respond', {
+    permissionId,
+    optionId,
+  });
 }
 
 /** One tool-call step from the engine (ADR-005 §8.6). Emitted twice per call:
@@ -206,7 +242,8 @@ export class ChatStreamTransport implements LLMTransport {
     type QueueItem =
       | { delta: ChatStreamDelta }
       | { tool: ToolStep }
-      | { thought: string };
+      | { thought: string }
+      | { permission: PermissionCardData };
     const queue: QueueItem[] = [];
     let resolveNext: (() => void) | null = null;
     const wakeWaiter = (): void => {
@@ -240,10 +277,19 @@ export class ChatStreamTransport implements LLMTransport {
       queue.push({ thought: event.payload.delta });
       wakeWaiter();
     });
+    const unlistenPermission: UnlistenFn = await listen<PermissionCardData>(
+      'chat-permission-request',
+      (event) => {
+        if (event.payload.request_id !== requestId) return;
+        queue.push({ permission: event.payload });
+        wakeWaiter();
+      },
+    );
     const unlisten: UnlistenFn = () => {
       unlistenDelta();
       unlistenTool();
       unlistenThought();
+      unlistenPermission();
     };
     // Abort listener wakes any pending Promise so the while-loop's
     // signal.aborted check fires immediately instead of hanging forever
@@ -291,6 +337,11 @@ export class ChatStreamTransport implements LLMTransport {
         // turn's "thinking" trace, never the answer text (ADR-005 §8.6).
         if ('thought' in item) {
           yield { delta: '', done: false, thought: item.thought };
+          continue;
+        }
+        // Review gate — a paused write-op prompt (ADR-005 §8.6.2).
+        if ('permission' in item) {
+          yield { delta: '', done: false, permission: item.permission };
           continue;
         }
         const next = item.delta;
