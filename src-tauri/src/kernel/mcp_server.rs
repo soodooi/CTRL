@@ -4317,6 +4317,7 @@ pub async fn serve(
     if cfg!(debug_assertions) || std::env::var("CTRL_DEBUG").as_deref() == Ok("1") {
         let rt_pending = runtime_dbg.clone();
         let rt_resolve = runtime_dbg.clone();
+        let rt_turn = runtime_dbg.clone();
         app = app
             .route(
                 "/debug/review/pending",
@@ -4336,8 +4337,23 @@ pub async fn serve(
                         axum::Json(serde_json::json!({ "resolved": ok }))
                     }
                 }),
+            )
+            .route(
+                // Drive one full Irisy turn end-to-end (message -> think -> tools ->
+                // review -> answer) on an isolated engine.
+                "/debug/irisy/turn",
+                axum::routing::post(move |axum::Json(body): axum::Json<serde_json::Value>| {
+                    let rt = rt_turn.clone();
+                    async move {
+                        let msg = body.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        match run_debug_irisy_turn(&rt, msg).await {
+                            Ok(j) => axum::Json(j),
+                            Err(e) => axum::Json(serde_json::json!({ "error": e })),
+                        }
+                    }
+                }),
             );
-        info!("kernel::mcp_server DEBUG endpoints enabled (/debug/review/*)");
+        info!("kernel::mcp_server DEBUG endpoints enabled (/debug/review/*, /debug/irisy/turn)");
     }
     let app = app.layer(auth_layer);
 
@@ -4800,6 +4816,46 @@ fn setup_hint(err: &str) -> Option<CallToolResult> {
              claim you performed the action."
         ))])
     })
+}
+
+/// Drive ONE full Irisy turn headlessly for the debug harness (bao 2026-07-04
+/// "chat-turn driver"): spawn an ISOLATED engine (never the shared singleton, so
+/// the user's live conversation is untouched), prompt it with `message`, and
+/// collect the streamed events — the answer text, the reasoning, and every tool
+/// call/result. Tool calls run through THIS gate as `caller=hermes`, so a write
+/// pauses on the review gate; the harness approves it via `/debug/review/resolve`,
+/// giving true end-to-end drive (message → think → tools → review → answer).
+async fn run_debug_irisy_turn(
+    runtime: &Arc<KernelRuntime>,
+    message: String,
+) -> Result<serde_json::Value, String> {
+    use crate::shell::acp_client::{AcpClient, AcpEvent};
+    let env = runtime.provider_registry.agent_env_injection();
+    let mut client = AcpClient::start("hermes", &env).await.map_err(|e| e.to_string())?;
+    let mut text = String::new();
+    let mut thoughts = String::new();
+    let mut tools: Vec<serde_json::Value> = Vec::new();
+    let turns = vec![("user".to_string(), message)];
+    let stop = client
+        .prompt(&turns, None, |ev| match ev {
+            AcpEvent::Text(t) => text.push_str(&t),
+            AcpEvent::Thought(t) => thoughts.push_str(&t),
+            AcpEvent::ToolCall { title, input, .. } => {
+                tools.push(serde_json::json!({ "call": title, "input": input }));
+            }
+            AcpEvent::ToolResult { status, output, .. } => {
+                let snip: String = output.chars().take(120).collect();
+                tools.push(serde_json::json!({ "result": status, "output": snip }));
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "stop_reason": stop,
+        "text": text,
+        "thoughts": thoughts.chars().take(400).collect::<String>(),
+        "tools": tools,
+    }))
 }
 
 /// Validate + URL-encode a ticker for the market.* tools. Rejects anything

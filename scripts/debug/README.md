@@ -11,3 +11,8 @@ gate token is read from `~/.ctrl/state/gate-token`.
 Review-gate E2E (brain write → pause → external approve/deny) uses the dev-only
 debug endpoints `GET /debug/review/pending` + `POST /debug/review/resolve`
 (kernel `mcp_server.rs`, on in `debug_assertions` builds).
+
+- **`chat_turn.py "message"`** — drives ONE full Irisy turn end-to-end via the
+  dev-only `/debug/irisy/turn` endpoint (isolated engine), auto-approving any
+  review the turn triggers. Verifies: think -> tool selection -> review pause ->
+  approve -> answer. `python3 scripts/debug/chat_turn.py "write a note saying hi"`
