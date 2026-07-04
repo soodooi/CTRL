@@ -77,6 +77,18 @@ related:
 ## 6. 顺序
 T1（左树，最大观感提升）→ T2（两区工具栏）→ T3（Univer 收敛）→ T4（Irisy 视图感知）→ T5（空态）。每片 Playwright 视觉验证。
 
+## 6.5 多 sheet base 修正（bao 2026-07-03「智能表格应该包括多sheet」）
+
+**根因**：T1 把 base→sheet→view 三层压成一层——每个 smart-table 文件当扁平叶子，缺了「base = 多数据表容器」这层。真正的多维表格（飞书 Bitable）= **base ⊃ 多个数据表(sheets) ⊃ 每表多视图**。而 Univer 那边 `.sheet.md` 已经是多 sheet workbook，反而 smart-table 缺 sheet 层 —— 不对称。
+
+**落地（bao 选：文件夹 = base）**：
+- `tables/<base>/<sheet>.md` = base 内的一张数据表(sheet)；`tables/<name>.md` = 扁平单 sheet base（向后兼容）；`tables/<name>.sheet.md` = Univer workbook base。
+- lib：`listBases()` 把 `tables/` 归成 base；`createBase()`（建文件夹 + 首表）、`createSheetInBase()`（base 内加数据表）。
+- UI：**左树列 bases**（不是 tables）；打开 smart base → `BaseView` 顶部 **sheet tabs**（数据表）+ 当前表的 `SmartTableViewer`（含 T2 视图/工具栏）；`+` 加数据表；Univer base → `UniverSheetViewer`（自带底部 sheet tab）。
+- 关联在 base 文件夹内按 path 链接（既有 link/lookup/rollup 复用）。
+- 三级导航清晰：**树(base) → 中部 tabs(sheets) → 视图切换(views)**，对齐飞书 + Univer。
+- 验收：`tables/crm/`（deals + contacts）打开 → 见 [Deals][Contacts] 顶部 tab，各有自己的视图。tsc + 191 tests + build 绿。
+
 ## 7. 一手来源（抄作业的作业本）
 - 飞书 Bitable：woshipm 5636346 / 5935411 / 5791246、feishu.cn/product/base、volcengine 7577300984067457034
 - Airtable：support.airtable.com tables-overview / views / omni-ai、airtable.com/guides

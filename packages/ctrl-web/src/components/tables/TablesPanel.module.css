@@ -212,6 +212,61 @@
   flex-direction: column;
   min-height: 0;
 }
+
+/* BaseView — a multi-sheet base opened: top data-table tabs + active sheet.
+   plan-tables-workspace-ux.md (multi-sheet). */
+.baseView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.sheetTabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  overflow-x: auto;
+  flex: none;
+}
+.sheetTab {
+  padding: 6px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text-2, #666);
+}
+.sheetTab:hover {
+  color: var(--text, #1a1a1a);
+}
+.sheetTab[data-active] {
+  color: var(--primary, #0d9488);
+  border-bottom-color: var(--primary, #0d9488);
+  font-weight: 600;
+}
+.sheetAdd {
+  margin-left: 4px;
+  padding: 4px 9px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text-subtle, #999);
+}
+.sheetAdd:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+  color: var(--primary, #0d9488);
+}
+.sheetBody {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 .detailEmpty {
   margin: auto;
   text-align: center;

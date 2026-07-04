@@ -200,6 +200,102 @@ const uniqueSheetPath = async (baseSlug: string): Promise<string> => {
   }
 };
 
+// ── Bases (multi-sheet containers) — a smart-table (Bitable) IS a base holding
+// multiple data-tables (sheets), each with its own views (bao 2026-07-03: a
+// smart-table must be multi-sheet). Plain-text realization (bao chose folder=base):
+//   tables/<base>/<sheet>.md  = a data-table sheet inside base <base>
+//   tables/<name>.md          = a flat single-sheet base (back-compat)
+//   tables/<name>.sheet.md    = a Univer workbook base (already multi-sheet)
+// plan-tables-workspace-ux.md multi-sheet section.
+export interface BaseSheet {
+  path: string;
+  title: string;
+}
+export interface Base {
+  /** Folder name for a multi-sheet base, or the file basename for a flat one. */
+  id: string;
+  name: string;
+  /** 'smart' = data-table sheets (this app renders sheet tabs); 'univer' =
+   *  a .sheet.md workbook (Univer owns its own bottom sheet tabs). */
+  kind: 'smart' | 'univer';
+  sheets: BaseSheet[];
+}
+
+const baseFolderOf = (path: string): string | null => {
+  const rel = path.slice('tables/'.length);
+  const slash = rel.indexOf('/');
+  return slash >= 0 ? rel.slice(0, slash) : null;
+};
+
+/** Group the vault's tables/ files into bases (multi-sheet containers). */
+export const listBases = async (): Promise<Base[]> => {
+  const [tables, sheets] = await Promise.all([listSmartTables(), listSheets()]);
+  const folders = new Map<string, Base>();
+  const flat: Base[] = [];
+  for (const t of tables) {
+    const folder = baseFolderOf(t.path);
+    if (folder) {
+      const b = folders.get(folder) ?? { id: folder, name: folder, kind: 'smart', sheets: [] };
+      b.sheets.push({ path: t.path, title: t.title });
+      folders.set(folder, b);
+    } else {
+      flat.push({
+        id: t.path.slice('tables/'.length).replace(/\.md$/i, ''),
+        name: t.title,
+        kind: 'smart',
+        sheets: [{ path: t.path, title: t.title }],
+      });
+    }
+  }
+  for (const s of sheets) {
+    // A Univer .sheet.md is its own base (Univer manages its internal sheets).
+    flat.push({
+      id: s.path.slice('tables/'.length).replace(/\.sheet\.md$/i, ''),
+      name: s.title,
+      kind: 'univer',
+      sheets: [{ path: s.path, title: s.title }],
+    });
+  }
+  return [...folders.values(), ...flat].sort((a, b) => a.name.localeCompare(b.name));
+};
+
+/** Add a new data-table sheet to an existing folder-base and return its path. */
+export const createSheetInBase = async (baseId: string, rawTitle = 'Sheet'): Promise<string> => {
+  const title = rawTitle.trim() || 'Sheet';
+  let existing: Set<string>;
+  try {
+    existing = new Set(await vaultList());
+  } catch {
+    existing = new Set();
+  }
+  const slug = slugify(title) || 'sheet';
+  let path = `tables/${baseId}/${slug}.md`;
+  for (let n = 2; existing.has(path); n += 1) path = `tables/${baseId}/${slug}-${n}.md`;
+  const tpl = TEMPLATES.blank as TableTemplate;
+  const headers = tpl.schema.map((c) => c.label);
+  const content = `| ${headers.join(' | ')} |\n|${tpl.schema.map(() => '---').join('|')}|\n| ${tpl.schema.map(() => ' ').join(' | ')} |\n`;
+  await vaultWrite({ path, content, frontmatter: { title, schema: tpl.schema } });
+  return path;
+};
+
+/** Create a new multi-sheet base (a folder) with a first data-table sheet. */
+export const createBase = async (rawTitle = 'Base'): Promise<{ baseId: string; sheetPath: string }> => {
+  const title = rawTitle.trim() || 'Base';
+  let existing: Set<string>;
+  try {
+    existing = new Set(await vaultList());
+  } catch {
+    existing = new Set();
+  }
+  const slug = slugify(title) || 'base';
+  const taken = (id: string): boolean =>
+    [...existing].some((p) => p.startsWith(`tables/${id}/`) || p === `tables/${id}.md`);
+  let baseId = slug;
+  for (let n = 2; taken(baseId); n += 1) baseId = `${slug}-${n}`;
+  const sheetPath = await createSheetInBase(baseId, 'Table 1');
+  return { baseId, sheetPath };
+};
+
 /** Create a blank Univer spreadsheet and return its path (one-shot; no prompt,
  *  rename via the title afterwards — mirrors createSmartTable). */
 export const createSheet = async (rawTitle = 'Spreadsheet'): Promise<string> => {
