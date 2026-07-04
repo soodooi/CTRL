@@ -4285,6 +4285,14 @@ pub async fn serve(
     let token = Arc::new(resolve_stable_gate_token());
     let token_for_mw = token.clone();
 
+    // Debug harness (bao 2026-07-04 "build a debug endpoint for Irisy"): behind
+    // CTRL_DEBUG=1, expose the review-gate pending/resolve over HTTP so an
+    // automated test can drive Irisy end-to-end — a brain write pauses on the
+    // gate (§8.6.2 moat) and the harness approves/denies it externally, no PWA
+    // click. Same Bearer auth as /mcp; localhost-only. Closes the last
+    // "desktop-only" gap in autonomous verification.
+    let runtime_dbg = runtime.clone();
+
     let router_factory = move || Ok(KernelMcpRouter::new(runtime.clone(), local_storage.clone()));
     let service = StreamableHttpService::new(
         router_factory,
@@ -4302,9 +4310,36 @@ pub async fn serve(
         }
     });
 
-    let app = axum::Router::new()
-        .nest_service(MCP_PATH, service)
-        .layer(auth_layer);
+    let mut app = axum::Router::new().nest_service(MCP_PATH, service);
+    // Dev-only debug endpoints for autonomous E2E of the review gate. On in debug
+    // builds (never in a shipped release — `debug_assertions` is off there), or
+    // force-on via CTRL_DEBUG=1. Localhost + Bearer-gated regardless.
+    if cfg!(debug_assertions) || std::env::var("CTRL_DEBUG").as_deref() == Ok("1") {
+        let rt_pending = runtime_dbg.clone();
+        let rt_resolve = runtime_dbg.clone();
+        app = app
+            .route(
+                "/debug/review/pending",
+                axum::routing::get(move || {
+                    let rt = rt_pending.clone();
+                    async move { axum::Json(rt.review_gate.list_pending()) }
+                }),
+            )
+            .route(
+                "/debug/review/resolve",
+                axum::routing::post(move |axum::Json(body): axum::Json<serde_json::Value>| {
+                    let rt = rt_resolve.clone();
+                    async move {
+                        let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let approved = body.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let ok = rt.review_gate.resolve(id, approved);
+                        axum::Json(serde_json::json!({ "resolved": ok }))
+                    }
+                }),
+            );
+        info!("kernel::mcp_server DEBUG endpoints enabled (/debug/review/*)");
+    }
+    let app = app.layer(auth_layer);
 
     let listener = TcpListener::bind(addr).await?;
     let listen_addr = listener.local_addr()?.to_string();
