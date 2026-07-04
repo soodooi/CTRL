@@ -1105,12 +1105,22 @@ impl KernelMcpRouter {
                 None,
             ));
         }
-        let arguments = match args.args {
+        // LLMs frequently STRINGIFY the nested args object, so accept a JSON
+        // string and parse it — not just a literal object (bao 2026-07-04: Irisy
+        // passed args as "{\"mcp_id\":...}" and gate_tool_call rejected it).
+        let args_val = match args.args {
+            serde_json::Value::String(s) if !s.trim().is_empty() => {
+                serde_json::from_str(&s).unwrap_or(serde_json::Value::String(s))
+            }
+            other => other,
+        };
+        let arguments = match args_val {
             serde_json::Value::Object(m) => Some(m),
             serde_json::Value::Null => None,
+            serde_json::Value::String(ref s) if s.trim().is_empty() => None,
             _ => {
                 return Err(McpError::invalid_params(
-                    "args must be an object (the target tool's arguments)",
+                    "args must be an object (or a JSON string encoding one)",
                     None,
                 ))
             }
