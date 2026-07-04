@@ -1528,6 +1528,47 @@
   font-weight: var(--weight-medium, 500);
 }
 
+/* ADR-005 §8.6.2 ambient chrome — a calm status line above the composer:
+   engine · model · state · version (glanceable, never demands attention). */
+.composerWrap {
+  display: flex;
+  flex-direction: column;
+}
+.statusLine {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 6px;
+  font-size: 11.5px;
+  color: var(--color-text-muted, #6e6e73);
+  user-select: none;
+}
+.statusItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.statusSep {
+  opacity: 0.4;
+}
+.statusGrow {
+  flex: 1;
+}
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-muted, #6e6e73);
+}
+.statusDot[data-state='working'] {
+  background: var(--color-primary, #0d9488);
+  animation: irisyThinking 1.2s infinite ease-in-out;
+}
+.statusDot[data-state='ready'] {
+  background: color-mix(in srgb, var(--color-primary, #0d9488) 55%, transparent);
+}
+
 /* ADR-005 §8.6 — the engine's reasoning trace (see it think), collapsed by
    default so the answer stays front-and-centre for non-technical users. */
 .reasoning {

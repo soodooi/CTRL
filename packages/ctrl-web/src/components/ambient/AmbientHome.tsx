@@ -97,12 +97,15 @@ import {
   vaultRead,
   vaultWrite,
   vaultSearch,
+  vaultList,
   captureScreenAndOcr,
   csStdin,
   listMcps,
   type IrisySessionTurn,
   type McpSummary,
 } from '@/lib/kernel';
+import { listSmartTables } from '@/lib/smart-tables';
+import { useActiveAgentStore } from '@/lib/active-agent';
 import { platform } from '@/lib/bridge';
 import { useCodingSession } from '@/lib/coding-session';
 import { extractRunnableBlocks } from '@/lib/runnable-blocks';
@@ -1032,6 +1035,31 @@ export function AmbientHome({
   // ADR-005 §8.6.2 terminal command surface — `/` slash menu + ↑/↓ history recall.
   const [slashSel, setSlashSel] = useState(0);
   const [histIdx, setHistIdx] = useState<number | null>(null);
+  // `@`-mention — reference a note / table (fetched once; filtered as you type).
+  const [mentionSel, setMentionSel] = useState(0);
+  const [mentionItems, setMentionItems] = useState<{ label: string; kind: string }[]>([]);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [paths, tables] = await Promise.all([vaultList(), listSmartTables()]);
+        const notes = paths
+          .filter((p) => p.endsWith('.md') && !p.endsWith('.sheet.md'))
+          .map((p) => ({ label: p.replace(/\.md$/, '').split('/').pop() ?? p, kind: 'note' }));
+        const tbls = tables.map((t) => ({ label: t.title || t.path, kind: 'table' }));
+        const seen = new Set<string>();
+        const merged = [...notes, ...tbls].filter((i) =>
+          seen.has(i.label) ? false : (seen.add(i.label), true),
+        );
+        setMentionItems(merged.slice(0, 400));
+      } catch {
+        /* browser/no-vault — mention menu stays empty */
+      }
+    })();
+  }, []);
+  // Status line data — engine + model + state (ADR-005 §8.6.2 ambient chrome).
+  const activeAgentId = useActiveAgentStore((s) => s.activeAgentId);
+  const drivers = useActiveAgentStore((s) => s.drivers);
+  const engineLabel = drivers.find((d) => d.id === activeAgentId)?.label ?? 'Hermes';
   const slashCommands: SlashCommand[] = [
     { cmd: '/new', label: 'New conversation', run: newChat },
     { cmd: '/table', label: 'Create a table', template: 'Create a table for ' },
@@ -1062,15 +1090,46 @@ export function AmbientHome({
       });
     }
   };
+  // `@`-mention: the trailing `@word` at the caret (never when the slash menu is up).
+  const mentionMatch = !slashOpen ? input.match(/@([^\s@]*)$/) : null;
+  const mentionQuery = mentionMatch ? (mentionMatch[1] ?? '').toLowerCase() : null;
+  const mentionMatches =
+    mentionQuery !== null
+      ? mentionItems.filter((i) => i.label.toLowerCase().includes(mentionQuery)).slice(0, 8)
+      : [];
+  const mentionOpen = mentionMatches.length > 0;
+  const mentionActive = Math.min(mentionSel, Math.max(0, mentionMatches.length - 1));
+  const applyMention = (label: string): void => {
+    setInput(input.replace(/@[^\s@]*$/, `@${label} `));
+    setMentionSel(0);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      autoGrow();
+    });
+  };
 
   const composer = (
-    <form
-      className={styles.composer}
-      onSubmit={(e) => {
-        e.preventDefault();
-        void send(input);
-      }}
-    >
+    <div className={styles.composerWrap}>
+      {/* Status line — engine · model · state · version (ADR-005 §8.6.2 chrome). */}
+      <div className={styles.statusLine}>
+        <span className={styles.statusItem}>
+          <span className={styles.statusDot} data-state={streaming ? 'working' : 'ready'} />
+          {streaming ? 'Working' : 'Ready'}
+        </span>
+        <span className={styles.statusSep}>·</span>
+        <span className={styles.statusItem}>{engineLabel}</span>
+        <span className={styles.statusSep}>·</span>
+        <span className={styles.statusItem}>{modelLabel}</span>
+        <span className={styles.statusGrow} />
+        <span className={styles.statusItem}>v{APP_VERSION}</span>
+      </div>
+      <form
+        className={styles.composer}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(input);
+        }}
+      >
       {/* `/` slash menu — filterable, teaches its own commands (ADR-005 §8.6.2). */}
       {slashOpen && (
         <div className={styles.slashMenu} role="listbox">
@@ -1092,6 +1151,27 @@ export function AmbientHome({
           ))}
         </div>
       )}
+      {/* `@`-mention menu — reference a note or table (ADR-005 §8.6.2). */}
+      {mentionOpen && (
+        <div className={styles.slashMenu} role="listbox">
+          {mentionMatches.map((it, i) => (
+            <button
+              type="button"
+              key={`${it.kind}:${it.label}`}
+              className={styles.slashItem}
+              data-sel={i === mentionActive ? 'yes' : 'no'}
+              onMouseEnter={() => setMentionSel(i)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applyMention(it.label);
+              }}
+            >
+              <span className={styles.slashCmd}>@{it.label}</span>
+              <span className={styles.slashLabel}>{it.kind}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <textarea
         ref={inputRef}
         className={styles.input}
@@ -1102,6 +1182,7 @@ export function AmbientHome({
           setInput(e.target.value);
           setHistIdx(null);
           setSlashSel(0);
+          setMentionSel(0);
           autoGrow();
         }}
         onKeyDown={(e) => {
@@ -1127,6 +1208,30 @@ export function AmbientHome({
             if (e.key === 'Escape') {
               e.preventDefault();
               setInput('');
+              return;
+            }
+          }
+          // `@`-mention menu navigation.
+          if (mentionOpen) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setMentionSel((s) => (s + 1) % mentionMatches.length);
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setMentionSel((s) => (s - 1 + mentionMatches.length) % mentionMatches.length);
+              return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              const chosen = mentionMatches[mentionActive];
+              if (chosen) applyMention(chosen.label);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setInput(input.replace(/@[^\s@]*$/, ''));
               return;
             }
           }
@@ -1177,7 +1282,8 @@ export function AmbientHome({
           ↑
         </button>
       )}
-    </form>
+      </form>
+    </div>
   );
 
   const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant')?.id;
