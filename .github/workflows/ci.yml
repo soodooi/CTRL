@@ -28,6 +28,8 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    env:
+      HUSKY: "0" # git-hook installer has no place in CI (npm ci runs `prepare`)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,7 +38,7 @@ jobs:
       - name: install + typecheck
         working-directory: packages/ctrl-web
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npx tsc --noEmit
 
   # --- live smoke: boot the headless kernel + run the master test's Part A ---
