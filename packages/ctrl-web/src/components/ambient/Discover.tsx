@@ -102,12 +102,16 @@ export function Discover({ installed = [], onOpenPack }: DiscoverProps): ReactEl
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // An installed pack already renders its own card above — drop any registry
+    // listing that shares its id so it doesn't show twice.
+    const installedIds = new Set(installed.map((p) => p.id));
     return listings.filter((p) => {
+      if (installedIds.has(p.id)) return false;
       if (cat !== 'All' && p.category !== cat) return false;
       if (!q) return true;
       return `${p.name} ${p.summary} ${p.category}`.toLowerCase().includes(q);
     });
-  }, [query, cat, listings]);
+  }, [query, cat, listings, installed]);
 
   const install = async (p: PackListing): Promise<void> => {
     setInstallingId(p.id);

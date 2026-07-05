@@ -4734,11 +4734,11 @@ fn resolve_pack_creds(source_id: &str, send_secret: &str) -> Option<(String, Str
     // Docker-less user who filled in a URL + token is resolved just the same.
     let cred = |field: &str| {
         let account = format!("mcp:{source_id}:{field}");
-        crate::shell::credential_vault::get(&account)
-            .ok()
-            .flatten()
-            .or_else(|| crate::shell::KeychainStore::get(&account).ok().flatten())
-            .filter(|v| !v.trim().is_empty())
+        // Filter non-empty PER store, before falling back: an empty entry in the
+        // first store must not shadow a real value in the second.
+        let non_empty = |v: Option<String>| v.filter(|s: &String| !s.trim().is_empty());
+        non_empty(crate::shell::credential_vault::get(&account).ok().flatten())
+            .or_else(|| non_empty(crate::shell::KeychainStore::get(&account).ok().flatten()))
     };
     let url = cred("_base_url").or_else(|| cred("base_url"))?;
     let token = cred(send_secret)?;
