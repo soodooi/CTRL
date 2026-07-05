@@ -74,23 +74,38 @@ fn service_dir(pack_id: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(home).join(".ctrl").join("services").join(pack_id))
 }
 
-/// The container-runtime base command: prefer `docker compose`, fall back to
-/// `podman compose`. Errs (with guidance) when neither is present.
-async fn compose_program() -> Result<&'static str, String> {
-    for prog in ["docker", "podman"] {
-        let ok = tokio::process::Command::new(prog)
-            .arg("version")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if ok {
-            return Ok(prog);
-        }
+/// Probe whether `<prog> <args...>` runs successfully (exit 0), silently.
+async fn probe(prog: &str, args: &[&str]) -> bool {
+    tokio::process::Command::new(prog)
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// The compose command PREFIX (program + any subcommand). Probes for a REAL
+/// compose, in order: `docker compose` (the v2 plugin), the standalone
+/// `docker-compose` binary (Homebrew installs THIS, not the plugin), then
+/// `podman compose`. Returns e.g. `["docker", "compose"]` or `["docker-compose"]`.
+/// Probing `docker version` alone is NOT enough — the compose plugin can be
+/// absent even when the docker CLI is present, which fails `docker compose -f …`
+/// with "unknown shorthand flag: 'f'" (real-machine finding 2026-07-05).
+async fn compose_command() -> Result<Vec<String>, String> {
+    if probe("docker", &["compose", "version"]).await {
+        return Ok(vec!["docker".into(), "compose".into()]);
     }
-    Err("no container runtime found — install Docker or Podman to run this pack".into())
+    if probe("docker-compose", &["version"]).await {
+        return Ok(vec!["docker-compose".into()]);
+    }
+    if probe("podman", &["compose", "version"]).await {
+        return Ok(vec!["podman".into(), "compose".into()]);
+    }
+    Err("no container compose found — install Docker (with the compose plugin) \
+         or docker-compose / podman to run this pack"
+        .into())
 }
 
 /// Provision the declared service: ensure secrets → write compose + .env →
@@ -122,9 +137,9 @@ pub async fn provision_service(pack_id: &str, service: &Value) -> Result<String,
     std::fs::write(&compose_path, compose).map_err(|e| format!("write compose: {e}"))?;
     std::fs::write(&env_path, env).map_err(|e| format!("write env: {e}"))?;
 
-    let prog = compose_program().await?;
-    let status = tokio::process::Command::new(prog)
-        .arg("compose")
+    let compose_cmd = compose_command().await?;
+    let status = tokio::process::Command::new(&compose_cmd[0])
+        .args(&compose_cmd[1..])
         .arg("-f")
         .arg(&compose_path)
         .arg("--env-file")
@@ -133,9 +148,9 @@ pub async fn provision_service(pack_id: &str, service: &Value) -> Result<String,
         .arg("-d")
         .status()
         .await
-        .map_err(|e| format!("{prog} compose up failed to start: {e}"))?;
+        .map_err(|e| format!("compose up failed to start: {e}"))?;
     if !status.success() {
-        return Err(format!("{prog} compose up exited with a non-zero status"));
+        return Err("compose up exited with a non-zero status".into());
     }
 
     let base_url = format!("http://127.0.0.1:{port_app}");
