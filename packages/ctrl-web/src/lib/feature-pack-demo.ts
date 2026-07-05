@@ -29,6 +29,9 @@ export const DEMO_GHOSTFOLIO: FeaturePack = {
   icon: '📊',
   summary: 'Your self-hosted portfolio, made AI-native',
   hasRecords: true,
+  // §7.5 v48: a dual-face pack — the connector's holdings (records) as the first
+  // tab, plus the user's own vault tables under this prefix (watchlists etc.).
+  workspace: { tablePrefix: 'tables/ctrl-ghostfolio-' },
   actions: [{ id: 'add', name: 'Record a trade', description: 'source_produce' }],
 };
 

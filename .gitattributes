@@ -1,0 +1,22 @@
+# Treat source + docs as text so git always produces line diffs — defense in
+# depth against a stray control byte (e.g. a NUL) flipping a source file to
+# "binary" in git's heuristic and silently killing its diff/review.
+*.ts     text
+*.tsx    text
+*.js     text
+*.mjs    text
+*.rs     text
+*.py     text
+*.md     text
+*.json   text
+*.jsonc  text
+*.css    text
+*.html   text
+*.toml   text
+*.yml    text
+*.yaml   text
+*.sh     text
+
+# Lockfiles: text but don't show in diffs by default (large, machine-owned).
+Cargo.lock       text
+package-lock.json text

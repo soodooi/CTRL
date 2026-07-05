@@ -906,10 +906,23 @@ export const McpManifest = z.object({
   /** Structured capability declaration; kernel enforces at run_mcp dispatch. */
   capabilities: Capabilities.optional(),
 
-  /** Workspace UI renderer for this mcp's output. */
+  /** Workspace = this pack's operating surface. Two halves, both optional:
+   *  `ui` (legacy) picks the output renderer for the mcp's result; `table_prefix`
+   *  (§7.5 v48, bao 2026-07-03) declares the pack's smart-table WORKSPACE — the
+   *  vault tables under `tables/<pack>-*` that ARE its UI. FeaturePackScene lists
+   *  them and renders one tab per table (the generic smart-table viewer, full
+   *  multi-view), so an Irisy-created table auto-joins with ZERO per-pack code.
+   *  Convention-enforced: prefix must be `tables/<pack>-` (trailing dash). */
   workspace: z
     .object({
       ui: WorkspaceUi.default('none'),
+      table_prefix: z
+        .string()
+        .regex(
+          /^tables\/[a-z0-9._-]+-$/,
+          'table_prefix must be "tables/<pack>-" (starts with tables/, trailing dash)',
+        )
+        .optional(),
     })
     .optional(),
 

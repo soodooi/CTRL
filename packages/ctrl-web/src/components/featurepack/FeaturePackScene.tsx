@@ -12,7 +12,7 @@
 // (onRunAction / loadRecords) so the scene renders/iterates independently of the
 // kernel wiring — and unit-tests + visually verifies with mock data.
 
-import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { type PackConfigField, provisionPack, publishPack } from '@/lib/feature-pack';
 import { vaultRead, vaultList } from '@/lib/kernel';
@@ -69,6 +69,10 @@ type RecordsState =
   | { status: 'ready'; data: SourceData }
   | { status: 'error'; message: string };
 
+// Sentinel tab id for a record_source pack's product-grade records tab, shown
+// FIRST in the workspace alongside the user's vault tables (§7.5 v48 dual-face).
+const RECORDS_TAB = '__records__';
+
 export function FeaturePackScene({
   pack,
   onRunAction,
@@ -103,11 +107,7 @@ export function FeaturePackScene({
     void vaultList()
       .then((paths) => {
         if (!alive) return;
-        const t = paths
-          .filter((p) => p.startsWith(wsPrefix) && p.endsWith('.md'))
-          .sort();
-        setWsTables(t);
-        setWsActive((cur) => (cur != null && t.includes(cur) ? cur : (t[0] ?? null)));
+        setWsTables(paths.filter((p) => p.startsWith(wsPrefix) && p.endsWith('.md')).sort());
       })
       .catch(() => {
         if (alive) setWsTables([]);
@@ -117,6 +117,19 @@ export function FeaturePackScene({
     };
   }, [wsPrefix]);
   const showsWorkspace = wsPrefix != null;
+  // §7.5 v48 dual-face: a pack with BOTH a §14 record_source AND a workspace
+  // (e.g. ctrl-ghostfolio) surfaces its product-grade records as the FIRST tab
+  // (read-only, live from the connector) alongside the user's own vault tables —
+  // Feishu Bitable-style, so declaring a workspace never HIDES the records.
+  const wsTabs = useMemo(
+    () => [...(showsRecords ? [RECORDS_TAB] : []), ...(wsTables ?? [])],
+    [showsRecords, wsTables],
+  );
+  const wsTabsKey = wsTabs.join('\n');
+  useEffect(() => {
+    setWsActive((cur) => (cur != null && wsTabs.includes(cur) ? cur : (wsTabs[0] ?? null)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsTabsKey]);
 
   // Tools-only packs (no record_source) lead with their intro.md — the
   // pack's own detail page (bao 2026-07-03: data-driven, not a blank scene;
@@ -275,10 +288,20 @@ export function FeaturePackScene({
       <ActionBar actions={pack.actions} runningId={runningId} onRun={run} />
 
       <div className={styles.output}>
+        {/* Action feedback (error/output) also surfaces in the workspace face — a
+            dual-face pack's action (e.g. ghostfolio "Record a trade") must not
+            fail silently behind the tabs (independent checker, §7.5 v48). */}
+        {showsWorkspace && error != null && <pre className={styles.error}>{error}</pre>}
+        {showsWorkspace && output != null && (
+          <>
+            {lastAction != null && <div className={styles.outputLabel}>{lastAction}</div>}
+            <pre className={styles.outputBody}>{output}</pre>
+          </>
+        )}
         {showsWorkspace ? (
-          wsTables == null ? (
+          wsTables == null && !showsRecords ? (
             <div className={styles.empty}>Loading {pack.name} workspace…</div>
-          ) : wsTables.length === 0 ? (
+          ) : wsTabs.length === 0 ? (
             <div className={styles.empty}>
               No tables yet — ask Irisy to create one (e.g. a watchlist), and it
               appears here as a tab.
@@ -286,8 +309,9 @@ export function FeaturePackScene({
           ) : (
             <div className={styles.workspace}>
               <div className={styles.wsTabs} role="tablist" aria-label={`${pack.name} tables`}>
-                {wsTables.map((t) => {
-                  const label = t.replace(wsPrefix ?? '', '').replace(/\.md$/, '');
+                {wsTabs.map((t) => {
+                  const label =
+                    t === RECORDS_TAB ? pack.name : t.replace(wsPrefix ?? '', '').replace(/\.md$/, '');
                   return (
                     <button
                       key={t}
@@ -304,9 +328,19 @@ export function FeaturePackScene({
                 })}
               </div>
               <div className={styles.wsBody}>
-                {wsActive != null && (
+                {wsActive === RECORDS_TAB ? (
+                  records.status === 'loading' ? (
+                    <div className={styles.empty}>Loading {pack.name} records…</div>
+                  ) : records.status === 'error' ? (
+                    <pre className={styles.error}>{records.message}</pre>
+                  ) : records.status === 'ready' ? (
+                    <SourceDataView data={records.data} title={pack.name} />
+                  ) : (
+                    <div className={styles.empty}>No records loaded.</div>
+                  )
+                ) : wsActive != null ? (
                   <SmartTableViewer resource={resourceFromVaultPath(wsActive)} />
-                )}
+                ) : null}
               </div>
             </div>
           )
