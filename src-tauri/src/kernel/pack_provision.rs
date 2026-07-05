@@ -176,6 +176,9 @@ pub fn container_runtime_guidance() -> Value {
         "steps": steps,
         "commands": commands,
         "docs_url": docs_url,
+        // When true, the card offers a one-click "Install it for me" that runs
+        // the commands above (macOS + Homebrew present); else guide-only.
+        "auto_installable": crate::shell::runtime_install::auto_installable(),
     })
 }
 

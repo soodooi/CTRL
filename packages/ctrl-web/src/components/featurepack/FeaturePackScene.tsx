@@ -12,7 +12,7 @@
 // (onRunAction / loadRecords) so the scene renders/iterates independently of the
 // kernel wiring — and unit-tests + visually verifies with mock data.
 
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { type PackConfigField, provisionPack, publishPack } from '@/lib/feature-pack';
 import { vaultRead, vaultList } from '@/lib/kernel';
@@ -22,6 +22,11 @@ import { ActionBar, type PackAction } from './ActionBar';
 import { PackConfigModal } from './PackConfigModal';
 import { SourceDataView, type SourceData } from './SourceDataView';
 import { parseRuntimeGuidance, type RuntimeGuidance } from './runtimeGuidance';
+import {
+  installContainerRuntime,
+  onRuntimeInstallProgress,
+  type RuntimeInstallStatus,
+} from '@/lib/runtime-install';
 import styles from './FeaturePackScene.module.css';
 
 export interface FeaturePack {
@@ -79,23 +84,66 @@ const RECORDS_TAB = '__records__';
 // not the raw JSON-RPC error (bao 2026-07-05 saw the raw -32602 on first open).
 const isNotConfigured = (msg: string): boolean => /not configured|credentials/i.test(msg);
 
-// The guided-install card: platform-aware steps + copy-pasteable commands. A
-// GUIDE, not an auto-installer — a container runtime is VM-class, too heavy to
-// install silently without consent (design: feature-pack-provision-auth-engine.md).
+// The guided-install card. When the platform supports it (macOS + Homebrew),
+// a one-click "Install it for me" runs the commands (streaming live output) and
+// auto-retries Set up on success — the auto-run half (bao 2026-07-05). Elsewhere
+// it stays a GUIDE: platform steps + copy-pasteable commands (Linux sudo /
+// Windows GUI installs aren't auto-run). Design: feature-pack-provision-auth-engine.md.
 function RuntimeGuidanceCard({
   guidance,
   onDismiss,
+  onInstalled,
 }: {
   guidance: RuntimeGuidance;
   onDismiss: () => void;
+  onInstalled: () => void;
 }): ReactElement {
   const [copied, setCopied] = useState<number | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [status, setStatus] = useState<RuntimeInstallStatus | null>(null);
+  const [installErr, setInstallErr] = useState<string | null>(null);
+  // Guard against the card unmounting (user dismisses) mid-install: drop the
+  // event listener and don't fire state/retry callbacks on a gone component.
+  const mountedRef = useRef(true);
+  const unlistenRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      unlistenRef.current();
+    };
+  }, []);
+
   const copy = (cmd: string, i: number): void => {
     void navigator.clipboard?.writeText(cmd).then(() => {
       setCopied(i);
       window.setTimeout(() => setCopied((c) => (c === i ? null : c)), 1500);
     });
   };
+
+  const runInstall = async (): Promise<void> => {
+    setInstalling(true);
+    setInstallErr(null);
+    setStatus(null);
+    try {
+      unlistenRef.current = await onRuntimeInstallProgress((s) => {
+        if (!mountedRef.current) return;
+        setStatus(s);
+        if (s.done) {
+          unlistenRef.current();
+          setInstalling(false);
+          if (s.ok) onInstalled();
+          else setInstallErr(s.error ?? 'Install failed — try the manual steps below.');
+        }
+      });
+      await installContainerRuntime();
+    } catch (e) {
+      unlistenRef.current();
+      if (!mountedRef.current) return;
+      setInstalling(false);
+      setInstallErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
     <div className={styles.guide} role="status">
       <div className={styles.guideHead}>
@@ -105,6 +153,26 @@ function RuntimeGuidanceCard({
         </button>
       </div>
       <p className={styles.guideText}>{guidance.headline}</p>
+
+      {guidance.auto_installable && (
+        <button
+          type="button"
+          className={styles.guidePrimary}
+          onClick={() => void runInstall()}
+          disabled={installing}
+        >
+          {installing ? 'Installing…' : 'Install it for me'}
+        </button>
+      )}
+
+      {status != null && (status.running || status.log_tail.length > 0) && (
+        <pre className={styles.guideLog}>
+          {status.current != null && status.running ? `▸ ${status.current}\n` : ''}
+          {status.log_tail.slice(-12).join('\n')}
+        </pre>
+      )}
+      {installErr != null && <p className={styles.guideErr}>{installErr}</p>}
+
       {guidance.steps.length > 0 && (
         <ol className={styles.guideSteps}>
           {guidance.steps.map((s, i) => (
@@ -365,6 +433,11 @@ export function FeaturePackScene({
           <RuntimeGuidanceCard
             guidance={runtimeGuidance}
             onDismiss={() => setRuntimeGuidance(null)}
+            onInstalled={() => {
+              // Runtime installed — clear the card and retry Set up automatically.
+              setRuntimeGuidance(null);
+              void setUp();
+            }}
           />
         )}
         {/* Action feedback (error/output) also surfaces in the workspace face — a

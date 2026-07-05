@@ -30,6 +30,7 @@ pub mod credential_vault;
 pub mod kernel_supervisor;
 pub mod lifecycle;
 pub mod ollama_install;
+pub mod runtime_install;
 pub mod tray;
 pub mod window;
 // ADR-002 §1 v19 (3-agent aggregator): lazy install + on-demand launch of

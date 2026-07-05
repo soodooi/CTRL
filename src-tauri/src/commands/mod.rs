@@ -143,6 +143,9 @@ macro_rules! pwa_invoke_handler {
             // ollama install / hermes3:8b auto-pull (Pi-first, bao 2026-06-05)
             $crate::commands::system::ollama_status,
             $crate::commands::system::ollama_pull_default,
+            // container-runtime one-click install (no-docker auto-run, 2026-07-05)
+            $crate::commands::system::runtime_install_status,
+            $crate::commands::system::install_container_runtime,
             // irisy — init status (kernel llm / Pi brain / mcp bridge)
             $crate::commands::irisy::irisy_init,
             // system — kernel health (PWA status bar Phase 1F)

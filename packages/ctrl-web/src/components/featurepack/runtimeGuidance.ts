@@ -11,6 +11,9 @@ export interface RuntimeGuidance {
   steps: string[];
   commands: string[];
   docs_url: string;
+  /** Kernel says this platform can one-click auto-run the commands (macOS +
+   *  Homebrew present). Off → guide-only, no "Install it for me" button. */
+  auto_installable: boolean;
 }
 
 /** Parse a `mcp_pack_provision` error into runtime guidance, or null when the
@@ -27,6 +30,7 @@ export function parseRuntimeGuidance(msg: string): RuntimeGuidance | null {
       steps?: unknown;
       commands?: unknown;
       docs_url?: unknown;
+      auto_installable?: unknown;
     };
     const strings = (v: unknown): string[] =>
       Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
@@ -36,6 +40,7 @@ export function parseRuntimeGuidance(msg: string): RuntimeGuidance | null {
       steps: strings(g.steps),
       commands: strings(g.commands),
       docs_url: typeof g.docs_url === 'string' ? g.docs_url : '',
+      auto_installable: g.auto_installable === true,
     };
   } catch {
     return null;
