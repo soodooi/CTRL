@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "id": "ctrl-ghostfolio",
   "name": "Ghostfolio",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "author": { "name": "soodooi" },
   "description": {
     "short": "Your self-hosted Ghostfolio portfolio, made AI-native — one-click install, silent auth, then Irisy reads holdings and records trades through the :17873 gate.",
@@ -34,6 +34,11 @@
       "send_secret": "ghostfolio_token",
       "as_body_field": "accessToken",
       "capture_bearer": "/authToken"
+    },
+    "capture_context": {
+      "path": "/api/v1/account",
+      "pointer": "/accounts/0/id",
+      "into_secret": "_account_id"
     }
   },
   "config_schema": {
@@ -67,16 +72,18 @@
       { "key": "currency", "label": "Currency", "type": "text", "from": ["currency"] }
     ],
     "produce": {
-      "endpoint": "/api/v1/order",
+      "endpoint": "/api/v1/activities",
       "label": "Record a trade",
       "body": [
+        { "field": "accountId", "from_secret": "_account_id" },
         { "field": "symbol", "from": "symbol" },
         { "field": "type", "from": "kind", "transform": "uppercase" },
         { "field": "quantity", "from": "quantity", "type": "number" },
         { "field": "unitPrice", "from": "unitPrice", "type": "number" },
         { "field": "currency", "from": "currency" },
         { "field": "date", "from": "date" },
-        { "field": "dataSource", "from": "dataSource" }
+        { "field": "dataSource", "from": "dataSource" },
+        { "field": "fee", "from": "fee", "type": "number" }
       ]
     }
   },

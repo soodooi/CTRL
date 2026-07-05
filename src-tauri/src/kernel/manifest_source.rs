@@ -92,8 +92,16 @@ pub struct ProduceSpec {
 pub struct BodyField {
     /// Target key in the outgoing request body.
     pub field: String,
-    /// Source key in the caller's input map.
-    pub from: String,
+    /// Source key in the caller's input map. `None` when the value comes from a
+    /// stored secret (`from_secret`) instead of caller input.
+    #[serde(default)]
+    pub from: Option<String>,
+    /// Take the value from a stored secret (`mcp:<id>:<from_secret>`) rather than
+    /// caller input — e.g. a connector's default account id captured at provision
+    /// time (`_account_id`), which a write must carry as context. Kernel-side;
+    /// never crosses the LLM boundary (ADR-006 decision 0004).
+    #[serde(default)]
+    pub from_secret: Option<String>,
     /// `uppercase` (string) — extend as connectors need.
     #[serde(default)]
     pub transform: Option<String>,
@@ -257,9 +265,10 @@ pub async fn produce(
     base_url: &str,
     security_token: &str,
     input: &Map<String, Value>,
+    secret_of: &(dyn Fn(&str) -> Option<String> + Send + Sync),
 ) -> Result<Value, SourceError> {
     let ps = spec.produce.as_ref().ok_or(SourceError::NoProduce)?;
-    let body = build_produce_body(&ps.body, input);
+    let body = build_produce_body(&ps.body, input, secret_of);
     let client = http_client()?;
     let jwt = bearer(&client, spec, base_url, security_token).await?;
     let url = join(base_url, &ps.endpoint);
@@ -414,11 +423,22 @@ fn dig<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
 }
 
 /// Build the produce request body from the field map over the caller's input.
-fn build_produce_body(map: &[BodyField], input: &Map<String, Value>) -> Map<String, Value> {
+fn build_produce_body(
+    map: &[BodyField],
+    input: &Map<String, Value>,
+    secret_of: &(dyn Fn(&str) -> Option<String> + Send + Sync),
+) -> Map<String, Value> {
     let mut body = Map::new();
     for bf in map {
-        let Some(raw) = input.get(&bf.from) else { continue };
-        let mut v = raw.clone();
+        // A field's value comes from a stored secret (context id) OR caller input.
+        let raw = if let Some(sk) = &bf.from_secret {
+            secret_of(sk).map(Value::String)
+        } else if let Some(from) = &bf.from {
+            input.get(from).cloned()
+        } else {
+            None
+        };
+        let Some(mut v) = raw else { continue };
         if bf.transform.as_deref() == Some("uppercase") {
             if let Some(s) = v.as_str() {
                 v = Value::String(s.to_uppercase());
@@ -565,7 +585,7 @@ mod tests {
         input.insert("quantity".into(), serde_json::json!("10")); // string → number
         input.insert("unitPrice".into(), serde_json::json!("190"));
         input.insert("currency".into(), serde_json::json!("USD"));
-        let body = build_produce_body(&spec.produce.unwrap().body, &input);
+        let body = build_produce_body(&spec.produce.unwrap().body, &input, &|_| None);
         assert_eq!(body["symbol"], "AAPL");
         assert_eq!(body["type"], "BUY"); // uppercase transform
         assert_eq!(body["quantity"], 10.0); // coerced to JSON number
@@ -643,7 +663,7 @@ mod tests {
         input.insert("date".into(), serde_json::json!("2026-07-01"));
         input.insert("dataSource".into(), serde_json::json!("YAHOO"));
 
-        let created = produce(&ghostfolio_spec(), &format!("http://{addr}"), "test-token", &input)
+        let created = produce(&ghostfolio_spec(), &format!("http://{addr}"), "test-token", &input, &|_| None)
             .await
             .unwrap();
         assert_eq!(created["symbol"], "AAPL");

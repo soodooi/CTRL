@@ -71,9 +71,14 @@ describe('ctrl-ghostfolio manifest', () => {
     const symbol = rs.fields.find((f) => f.key === 'symbol');
     expect(symbol?.from).toContain('SymbolProfile.symbol');
     // produce (write a trade) is a mapped body, incl. the uppercase transform.
-    expect(rs.produce?.endpoint).toBe('/api/v1/order');
+    // ghostfolio latest records trades at /api/v1/activities (real-machine
+    // finding: /api/v1/order was removed), needing the default accountId.
+    expect(rs.produce?.endpoint).toBe('/api/v1/activities');
     const typeField = rs.produce?.body.find((b) => b.field === 'type');
     expect(typeField?.transform).toBe('uppercase');
+    // accountId comes from a stored secret (captured at provision), not caller input.
+    const acct = rs.produce?.body.find((b) => b.field === 'accountId');
+    expect((acct as Record<string, unknown> | undefined)?.from_secret).toBe('_account_id');
     // Auth is NOT duplicated here — it reuses auth.token_exchange.
     expect((rs as Record<string, unknown>).token_exchange).toBeUndefined();
   });

@@ -2086,7 +2086,17 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let (spec, base_url, token) = load_source(&args.source_id)?;
         let input = args.input.as_object().cloned().unwrap_or_default();
-        let created = manifest_source::produce(&spec, &base_url, &token, &input)
+        // Resolve a produce body's `from_secret` field (e.g. a connector's default
+        // account id captured at provision) from the vault, kernel-side — never
+        // from the LLM. Keyed `mcp:<source_id>:<key>`.
+        let source_id = args.source_id.clone();
+        let secret_of = move |k: &str| {
+            crate::shell::credential_vault::get(&format!("mcp:{source_id}:{k}"))
+                .ok()
+                .flatten()
+                .filter(|v| !v.trim().is_empty())
+        };
+        let created = manifest_source::produce(&spec, &base_url, &token, &input, &secret_of)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let body = serde_json::to_string(&created).map_err(map_serde_err)?;
