@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "id": "ctrl-ghostfolio",
   "name": "Ghostfolio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": { "name": "soodooi" },
   "description": {
     "short": "Your self-hosted Ghostfolio portfolio, made AI-native — one-click install, silent auth, then Irisy reads holdings and records trades through the :17873 gate.",
