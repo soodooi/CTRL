@@ -41,7 +41,8 @@ export type OpKind =
   | 'mesh_mcp_added'
   | 'mesh_mcp_removed'
   | 'mesh_mcp_used_at'
-  | 'mesh_preference_updated';
+  | 'mesh_preference_updated'
+  | 'packs_changed';
 
 export interface CellRecord {
   type: 'cell';

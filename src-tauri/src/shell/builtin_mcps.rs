@@ -145,6 +145,29 @@ fn copy_tree_no_overwrite(src: &Path, dst: &Path) -> std::io::Result<usize> {
     copy_tree_inner(src, dst, 0)
 }
 
+/// Parse a manifest's `version` into comparable numeric parts (`"0.2.0"` →
+/// `[0, 2, 0]`). Tolerant: a missing/unreadable/unparseable manifest yields
+/// `None` so the caller can decide to leave the installed copy untouched.
+fn manifest_version(dir: &Path) -> Option<Vec<u32>> {
+    let bytes = fs::read(dir.join("manifest.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let s = v.get("version")?.as_str()?;
+    Some(s.split('.').map(|p| p.parse::<u32>().unwrap_or(0)).collect())
+}
+
+/// True when the BUNDLED builtin's manifest version is strictly greater than the
+/// INSTALLED copy's — i.e. the app shipped a newer builtin and the seeded pack
+/// should be upgraded. Tolerant: any read/parse miss returns false (never
+/// downgrade, never churn on a malformed manifest). The installed pack dir holds
+/// only the pack DEFINITION (manifest + immutable assets); user data lives in
+/// the vault + keychain (ADR-002 §7 cap_asset), so a re-seed loses nothing.
+fn builtin_is_newer(src_dir: &Path, dst_dir: &Path) -> bool {
+    match (manifest_version(src_dir), manifest_version(dst_dir)) {
+        (Some(src), Some(dst)) => src > dst,
+        _ => false,
+    }
+}
+
 fn copy_tree_inner(src: &Path, dst: &Path, depth: u8) -> std::io::Result<usize> {
     use std::io::ErrorKind;
 
@@ -408,6 +431,17 @@ pub fn ensure_builtins_installed() {
         }
         let dst_dir = dst_root.join(&id);
         let pre_existed = dst_dir.is_dir();
+        // Version-aware upgrade: when the bundled builtin is newer than the
+        // installed copy, re-seed it so manifest changes (e.g. a new `workspace`
+        // declaration) actually reach the user — the old copy_tree_no_overwrite
+        // alone would keep the stale manifest forever. Safe because the pack dir
+        // is pure definition (no user data — that's in the vault + keychain).
+        if pre_existed && builtin_is_newer(&src_dir, &dst_dir) {
+            match fs::remove_dir_all(&dst_dir) {
+                Ok(()) => tracing::info!(mcp = %id, "BuiltinMcps: bundled builtin is newer — re-seeding"),
+                Err(e) => tracing::warn!(error = %e, mcp = %id, "BuiltinMcps: re-seed remove failed; keeping installed"),
+            }
+        }
         match copy_tree_no_overwrite(&src_dir, &dst_dir) {
             Ok(n) => {
                 if n > 0 {
@@ -491,5 +525,43 @@ mod tests {
         assert_eq!(n, 0, "no files should be copied when destination already has them");
         let contents = fs::read_to_string(dst.join("persona.md")).unwrap();
         assert_eq!(contents, "USER_EDIT", "user edits must be preserved");
+    }
+
+    fn write_manifest(dir: &Path, version: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join("manifest.json"),
+            format!(r#"{{"id":"x","version":"{version}"}}"#),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn builtin_is_newer_only_when_bundled_version_is_greater() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        write_manifest(src.path(), "0.2.0");
+        write_manifest(dst.path(), "0.1.0");
+        assert!(builtin_is_newer(src.path(), dst.path()), "0.2.0 > 0.1.0 upgrades");
+
+        write_manifest(dst.path(), "0.2.0");
+        assert!(!builtin_is_newer(src.path(), dst.path()), "equal versions do not re-seed");
+
+        write_manifest(dst.path(), "0.3.0");
+        assert!(!builtin_is_newer(src.path(), dst.path()), "never downgrade");
+
+        // A missing/unreadable installed manifest is left untouched (tolerant).
+        let empty = TempDir::new().unwrap();
+        assert!(!builtin_is_newer(src.path(), empty.path()), "missing dst manifest => no re-seed");
+    }
+
+    #[test]
+    fn manifest_version_parses_and_tolerates_missing() {
+        let d = TempDir::new().unwrap();
+        write_manifest(d.path(), "1.4.2");
+        assert_eq!(manifest_version(d.path()), Some(vec![1, 4, 2]));
+        write_manifest(d.path(), "0.12");
+        assert_eq!(manifest_version(d.path()), Some(vec![0, 12]));
+        assert_eq!(manifest_version(TempDir::new().unwrap().path()), None);
     }
 }

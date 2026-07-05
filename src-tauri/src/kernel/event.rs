@@ -74,6 +74,12 @@ pub enum OpKind {
     AppFocusChanged,
     FileSaved,
     CursorMoved,
+    /// A feature pack was installed / upgraded / uninstalled kernel-side — a
+    /// builtin seed-upgrade or a gate `mcp_pack_install`/`mcp_pack_uninstall`
+    /// (e.g. by Irisy/brain). The PWA subscribes on :17872 and reloads its pack
+    /// list (+ can auto-open), so a brain-installed pack appears without a manual
+    /// refresh. payload = { action: "installed"|"uninstalled", id?: string }.
+    PacksChanged,
     // ADR-002 substrate mesh layer events — added in ctrl-mesh baseline before athena Sprint 2.
     // Emitted by the mesh sync layer when remote peers contribute Automerge
     // changes to a document; consumed by the same kernel event bus that all
