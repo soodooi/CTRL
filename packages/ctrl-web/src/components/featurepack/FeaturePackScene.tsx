@@ -21,6 +21,7 @@ import { resourceFromVaultPath } from '@/lib/viewer-resource';
 import { ActionBar, type PackAction } from './ActionBar';
 import { PackConfigModal } from './PackConfigModal';
 import { SourceDataView, type SourceData } from './SourceDataView';
+import { parseRuntimeGuidance, type RuntimeGuidance } from './runtimeGuidance';
 import styles from './FeaturePackScene.module.css';
 
 export interface FeaturePack {
@@ -78,6 +79,56 @@ const RECORDS_TAB = '__records__';
 // not the raw JSON-RPC error (bao 2026-07-05 saw the raw -32602 on first open).
 const isNotConfigured = (msg: string): boolean => /not configured|credentials/i.test(msg);
 
+// The guided-install card: platform-aware steps + copy-pasteable commands. A
+// GUIDE, not an auto-installer — a container runtime is VM-class, too heavy to
+// install silently without consent (design: feature-pack-provision-auth-engine.md).
+function RuntimeGuidanceCard({
+  guidance,
+  onDismiss,
+}: {
+  guidance: RuntimeGuidance;
+  onDismiss: () => void;
+}): ReactElement {
+  const [copied, setCopied] = useState<number | null>(null);
+  const copy = (cmd: string, i: number): void => {
+    void navigator.clipboard?.writeText(cmd).then(() => {
+      setCopied(i);
+      window.setTimeout(() => setCopied((c) => (c === i ? null : c)), 1500);
+    });
+  };
+  return (
+    <div className={styles.guide} role="status">
+      <div className={styles.guideHead}>
+        <span className={styles.guideTitle}>Set up needs a container runtime</span>
+        <button type="button" className={styles.guideClose} onClick={onDismiss} aria-label="Dismiss">
+          ×
+        </button>
+      </div>
+      <p className={styles.guideText}>{guidance.headline}</p>
+      {guidance.steps.length > 0 && (
+        <ol className={styles.guideSteps}>
+          {guidance.steps.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
+      )}
+      {guidance.commands.map((cmd, i) => (
+        <div key={i} className={styles.guideCmd}>
+          <code>{cmd}</code>
+          <button type="button" className={styles.guideCopy} onClick={() => copy(cmd, i)}>
+            {copied === i ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      ))}
+      {guidance.docs_url !== '' && (
+        <a className={styles.guideLink} href={guidance.docs_url} target="_blank" rel="noreferrer">
+          Installation docs →
+        </a>
+      )}
+    </div>
+  );
+}
+
 export function FeaturePackScene({
   pack,
   onRunAction,
@@ -89,6 +140,7 @@ export function FeaturePackScene({
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
+  const [runtimeGuidance, setRuntimeGuidance] = useState<RuntimeGuidance | null>(null);
   const [records, setRecords] = useState<RecordsState>({ status: 'idle' });
   const [publishing, setPublishing] = useState(false);
   const [publishMsg, setPublishMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -182,12 +234,17 @@ export function FeaturePackScene({
     setSettingUp(true);
     setError(null);
     setOutput(null);
+    setRuntimeGuidance(null);
     setLastAction('Set up');
     try {
       setOutput(await provisionPack(pack.id));
       if (showsRecords) void refreshRecords();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      // No container runtime → show the guided-install card, not a raw error.
+      const guidance = parseRuntimeGuidance(msg);
+      if (guidance != null) setRuntimeGuidance(guidance);
+      else setError(msg);
     } finally {
       setSettingUp(false);
     }
@@ -302,6 +359,14 @@ export function FeaturePackScene({
       <ActionBar actions={pack.actions} runningId={runningId} onRun={run} />
 
       <div className={styles.output}>
+        {/* No-docker guided install — sits above both faces so it's seen whether
+            the pack leads with records or a workspace (bao 2026-07-05). */}
+        {runtimeGuidance != null && (
+          <RuntimeGuidanceCard
+            guidance={runtimeGuidance}
+            onDismiss={() => setRuntimeGuidance(null)}
+          />
+        )}
         {/* Action feedback (error/output) also surfaces in the workspace face — a
             dual-face pack's action (e.g. ghostfolio "Record a trade") must not
             fail silently behind the tabs (independent checker, §7.5 v48). */}
