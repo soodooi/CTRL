@@ -18,10 +18,12 @@ describe('parseRuntimeGuidance', () => {
       steps: ['Install Homebrew', 'brew install colima'],
       commands: ['brew install colima docker docker-compose', 'colima start'],
       docs_url: 'https://github.com/abiosoft/colima#installation',
+      auto_installable: true,
     });
     const g = parseRuntimeGuidance(msg);
     expect(g).not.toBeNull();
     expect(g?.platform).toBe('macos');
+    expect(g?.auto_installable).toBe(true);
     expect(g?.commands).toEqual([
       'brew install colima docker docker-compose',
       'colima start',
@@ -49,5 +51,7 @@ describe('parseRuntimeGuidance', () => {
     expect(g?.steps).toEqual([]);
     expect(g?.commands).toEqual([]);
     expect(g?.docs_url).toBe('');
+    // auto_installable defaults to false unless the kernel explicitly says true.
+    expect(g?.auto_installable).toBe(false);
   });
 });

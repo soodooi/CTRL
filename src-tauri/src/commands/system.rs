@@ -435,3 +435,26 @@ pub fn ollama_pull_default(
     })?;
     Ok(crate::shell::ollama_install::current_status())
 }
+
+// ── Container-runtime one-click install (no-docker auto-run, bao 2026-07-05) ──
+// The auto-run half of the no-docker guided install. Human-only: reachable
+// solely via this Tauri command (the PWA), never the brain's :17873 gate. Runs
+// compile-time platform constants (macOS `brew install colima …` + `colima
+// start`), streaming progress to the card via `runtime-install-progress`.
+
+#[tauri::command]
+pub fn runtime_install_status() -> crate::shell::runtime_install::RuntimeInstallStatus {
+    crate::shell::runtime_install::current_status()
+}
+
+#[tauri::command]
+pub fn install_container_runtime(
+    app: tauri::AppHandle,
+) -> Result<crate::shell::runtime_install::RuntimeInstallStatus, String> {
+    use tauri::Emitter;
+    let app_for_cb = app.clone();
+    crate::shell::runtime_install::spawn_install(move |status| {
+        let _ = app_for_cb.emit("runtime-install-progress", status);
+    })?;
+    Ok(crate::shell::runtime_install::current_status())
+}
