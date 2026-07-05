@@ -234,6 +234,71 @@ pub async fn install_pack(pack_id: &str, manifest: &Value) -> Result<String, Str
         }
     }
 
+    // Post-auth CONTEXT capture: a write often needs a connector-side id the
+    // bootstrap doesn't return (e.g. ghostfolio's default account id, required
+    // to record a trade). Declare `auth.capture_context` = token-exchange for a
+    // bearer, GET an endpoint, pull a value by JSON pointer, store it kernel-side
+    // as a secret the produce body references via `from_secret`. Idempotent.
+    if let Some(ctx) = manifest.pointer("/auth/capture_context") {
+        let into = ctx
+            .pointer("/into_secret")
+            .and_then(Value::as_str)
+            .ok_or("auth.capture_context.into_secret missing")?;
+        let account = secret_account(pack_id, into);
+        let have = credential_vault::get(&account)?.is_some_and(|v| !v.trim().is_empty());
+        if !have {
+            let te = manifest
+                .pointer("/auth/token_exchange")
+                .ok_or("auth.capture_context needs auth.token_exchange for a bearer")?;
+            let te_path = te.get("path").and_then(Value::as_str).unwrap_or_default();
+            let send_field = te.get("as_body_field").and_then(Value::as_str).unwrap_or("accessToken");
+            let capture_bearer = te.get("capture_bearer").and_then(Value::as_str).unwrap_or("/authToken");
+            let send_secret = te.get("send_secret").and_then(Value::as_str).unwrap_or_default();
+            let security_token =
+                credential_vault::get(&secret_account(pack_id, send_secret))?.unwrap_or_default();
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .map_err(|e| e.to_string())?;
+            let bearer = crate::kernel::pack_auth::mint_bearer(
+                &client, &base_url, te_path, send_field, &security_token, capture_bearer,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            let path = ctx.get("path").and_then(Value::as_str).unwrap_or_default();
+            let pointer = ctx.get("pointer").and_then(Value::as_str).unwrap_or_default();
+            let method = ctx.get("method").and_then(Value::as_str).unwrap_or("GET");
+            let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+            // Honor the declared method (manifest=data): most context reads are
+            // GET, but a connector may POST to fetch its context.
+            let req = if method.eq_ignore_ascii_case("POST") {
+                client.post(&url)
+            } else {
+                client.get(&url)
+            };
+            let resp = req
+                .bearer_auth(&bearer)
+                .send()
+                .await
+                .map_err(|e| format!("capture_context {method} failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("capture_context GET {path} -> {}", resp.status()));
+            }
+            let json: Value = resp
+                .json()
+                .await
+                .map_err(|e| format!("capture_context parse: {e}"))?;
+            let val = json
+                .pointer(pointer)
+                .and_then(Value::as_str)
+                .ok_or_else(|| format!("capture_context pointer {pointer} not found in response"))?;
+            credential_vault::set(&account, val)?;
+            steps.push(format!("captured {into}"));
+        } else {
+            steps.push(format!("{into} already set"));
+        }
+    }
+
     Ok(if steps.is_empty() {
         "nothing to provision".into()
     } else {

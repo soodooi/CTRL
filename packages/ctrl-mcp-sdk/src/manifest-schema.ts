@@ -788,6 +788,19 @@ export const PackAuth = z
         capture_bearer: z.string().min(1),
       })
       .optional(),
+    /** After auth, capture a connector-side CONTEXT value a write needs but the
+     *  bootstrap doesn't return (e.g. Ghostfolio's default account id, required
+     *  to record a trade): token-exchange for a bearer, GET the endpoint, pull a
+     *  value by JSON pointer, store it kernel-side as a secret the produce body
+     *  references via `from_secret`. Idempotent. */
+    capture_context: z
+      .object({
+        method: z.enum(['GET', 'POST']).default('GET'),
+        path: z.string().min(1),
+        pointer: z.string().min(1),
+        into_secret: z.string().regex(/^[a-z0-9_]+$/),
+      })
+      .optional(),
     /** Last-resort: fall back to the config_schema wizard (manual entry). */
     manual: z.boolean().optional(),
   })
@@ -825,10 +838,18 @@ const RecordQuery = z.object({
   array_at: z.string().default(''),
 });
 
-/** One produce body-map entry: input[`from`] → request body[`field`]. */
+/** One produce body-map entry: input[`from`] (or a stored secret via
+ *  `from_secret`) → request body[`field`]. */
 const RecordProduceField = z.object({
   field: z.string().min(1),
-  from: z.string().min(1),
+  /** Source key in the caller's input. Absent when the value comes from a
+   *  stored secret (`from_secret`) instead of caller input. */
+  from: z.string().min(1).optional(),
+  /** Take the value from a stored secret (`mcp:<id>:<from_secret>`) rather than
+   *  caller input — e.g. a connector's default account id captured at provision
+   *  (`_account_id`), which a write must carry as context. Kernel-side; never
+   *  crosses the LLM boundary. */
+  from_secret: z.string().min(1).optional(),
   /** `uppercase` (string) — extend as connectors need. */
   transform: z.enum(['uppercase']).optional(),
   /** `number` → coerce a string input to a JSON number before sending. */
