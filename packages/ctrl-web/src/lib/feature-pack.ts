@@ -7,7 +7,8 @@
 // degrades to the WS transport instead of bypassing it through the raw
 // Tauri core import (desktop behavior unchanged).
 import { invoke } from './bridge';
-import { listMcps, gateInvoke, describeSource, querySource } from './kernel';
+import { decode } from 'cbor-x';
+import { listMcps, gateInvoke, describeSource, querySource, subscribe } from './kernel';
 import type { FeaturePack } from '@/components/featurepack/FeaturePackScene';
 import type { SourceData } from '@/components/featurepack/SourceDataView';
 
@@ -173,6 +174,80 @@ export async function uninstallPack(packId: string): Promise<void> {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(PACKS_CHANGED_EVENT));
   }
+}
+
+/** Payload of a kernel `packs_changed` op, surfaced as the CustomEvent detail. */
+export interface PacksChangedDetail {
+  action?: 'installed' | 'uninstalled';
+  id?: string;
+}
+
+/** Bridge kernel-side pack changes to the frontend (Gap-2). A pack installed
+ *  through the :17873 gate (Irisy/brain) or upgraded by the builtin seed emits a
+ *  `packs_changed` op on the :17872 event bridge — the PWA's own
+ *  PACKS_CHANGED_EVENT only fires for PWA-initiated installs, so without this a
+ *  brain-installed pack never appears until a manual refresh. Subscribes and
+ *  re-dispatches each `packs_changed` op as the same browser event the pack UI
+ *  already listens for, carrying the payload so a listener can auto-open the
+ *  new pack. Idempotent + self-reconnecting; returns a stop fn. */
+export function initKernelPackEventListener(): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+  let stopped = false;
+  let socket: WebSocket | null = null;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+
+  const scheduleReconnect = (): void => {
+    if (stopped || retry != null) return;
+    retry = setTimeout(() => {
+      retry = null;
+      void connect();
+    }, 3000);
+  };
+
+  const connect = async (): Promise<void> => {
+    if (stopped) return;
+    try {
+      // Any stream id works — the bridge fans out every op to all connections
+      // (no per-stream filter), and packs_changed is global (stream_id = null).
+      const handle = await subscribe('packs');
+      if (stopped) return;
+      socket = new WebSocket(handle.bridge_url);
+      socket.binaryType = 'arraybuffer';
+      socket.onmessage = (msg) => {
+        if (!(msg.data instanceof ArrayBuffer)) return;
+        try {
+          const ev = decode(new Uint8Array(msg.data)) as {
+            type?: string;
+            kind?: string;
+            payload?: PacksChangedDetail;
+          };
+          if (ev?.type === 'op' && ev?.kind === 'packs_changed') {
+            window.dispatchEvent(new CustomEvent(PACKS_CHANGED_EVENT, { detail: ev.payload }));
+          }
+        } catch {
+          // ignore malformed frames
+        }
+      };
+      socket.onerror = scheduleReconnect;
+      socket.onclose = scheduleReconnect;
+    } catch {
+      scheduleReconnect();
+    }
+  };
+
+  void connect();
+
+  return () => {
+    stopped = true;
+    if (retry != null) clearTimeout(retry);
+    if (socket != null && socket.readyState !== WebSocket.CLOSED) {
+      try {
+        socket.close(1000, 'listener stop');
+      } catch {
+        // ignore close errors
+      }
+    }
+  };
 }
 
 export interface SecretField {

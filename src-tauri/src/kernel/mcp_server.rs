@@ -96,6 +96,11 @@ pub struct KernelMcpRouter {
     /// it. None when the db can't open — every read falls back to the in-memory
     /// engine, so the gate works with or without it (markdown is the truth).
     st_index: Option<Arc<smart_table_index::SmartTableIndex>>,
+    /// kernel→PWA event bridge (:17872) — used to push a `PacksChanged` op when a
+    /// pack is installed/uninstalled through the gate (e.g. by Irisy/brain) so
+    /// the PWA auto-reloads its pack list. `None` in headless contexts (no PWA);
+    /// the emit is then a no-op (ADR-001 spine §3 event_ws, ADR-010 transports).
+    bridge: Option<crate::kernel::EventWsBridge>,
 }
 
 /// Registry of per-path write locks (lazily created). The outer mutex guards
@@ -990,7 +995,11 @@ pub struct SkillReadArgs {
 
 #[tool_router]
 impl KernelMcpRouter {
-    pub fn new(runtime: Arc<KernelRuntime>, local_storage: Option<Arc<LocalStorage>>) -> Self {
+    pub fn new(
+        runtime: Arc<KernelRuntime>,
+        local_storage: Option<Arc<LocalStorage>>,
+        bridge: Option<crate::kernel::EventWsBridge>,
+    ) -> Self {
         // Open the smart-table derived index (best-effort). A failure (or no
         // HOME) leaves it None and every read uses the in-memory engine.
         let st_index = smart_table_index::default_st_index_path()
@@ -1005,6 +1014,23 @@ impl KernelMcpRouter {
                 std::collections::HashMap::new(),
             )),
             st_index,
+            bridge,
+        }
+    }
+
+    /// Broadcast a `PacksChanged` op to the PWA (no-op when headless / no bridge).
+    /// Called after a kernel-side pack install/uninstall so the frontend reloads.
+    fn notify_packs_changed(&self, action: &str, id: &str) {
+        if let Some(bridge) = &self.bridge {
+            bridge.publish_op(crate::kernel::event::Op {
+                kind: crate::kernel::event::OpKind::PacksChanged,
+                ts_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0),
+                stream_id: None,
+                payload: serde_json::json!({ "action": action, "id": id }),
+            });
         }
     }
 
@@ -3194,6 +3220,11 @@ impl KernelMcpRouter {
         };
         let summary = crate::commands::kernel::install_into(&dir, &install_args)
             .map_err(|e| McpError::invalid_params(e, None))?;
+        // Notify the PWA so it reloads its pack list (+ can auto-open). A
+        // brain/gate install otherwise never reaches the frontend — its
+        // `PACKS_CHANGED_EVENT` is browser-only, fired only by PWA-side installs.
+        let installed_id = manifest.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+        self.notify_packs_changed("installed", installed_id);
         // mcp-server variant (ADR-002 §7 Pattern D): a manifest may declare a
         // `server` block — a local MCP server the pack IS. Consume it here:
         // register on the bus + connect, so the pack's tools surface as
@@ -3293,6 +3324,7 @@ impl KernelMcpRouter {
             .map_err(|e| McpError::internal_error(e, None))?;
         crate::commands::kernel::uninstall_from(&dir, &args.mcp_id)
             .map_err(|e| McpError::invalid_params(e, None))?;
+        self.notify_packs_changed("uninstalled", &args.mcp_id);
         let body = serde_json::to_string(&serde_json::json!({ "uninstalled": args.mcp_id }))
             .map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
@@ -4280,6 +4312,7 @@ fn resolve_stable_gate_token() -> String {
 pub async fn serve(
     runtime: Arc<KernelRuntime>,
     local_storage: Option<Arc<LocalStorage>>,
+    bridge: Option<crate::kernel::EventWsBridge>,
     addr: &str,
 ) -> Result<McpServerHandle> {
     let token = Arc::new(resolve_stable_gate_token());
@@ -4293,7 +4326,8 @@ pub async fn serve(
     // "desktop-only" gap in autonomous verification.
     let runtime_dbg = runtime.clone();
 
-    let router_factory = move || Ok(KernelMcpRouter::new(runtime.clone(), local_storage.clone()));
+    let router_factory =
+        move || Ok(KernelMcpRouter::new(runtime.clone(), local_storage.clone(), bridge.clone()));
     let service = StreamableHttpService::new(
         router_factory,
         LocalSessionManager::default().into(),
@@ -5890,7 +5924,7 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-401");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
         let url = handle.url();
 
         let resp = reqwest::Client::new()
@@ -5912,7 +5946,7 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-ok");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
         let url = handle.url();
         let token = handle.auth_token.as_ref().clone();
 
@@ -5957,7 +5991,7 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-intent");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
         let url = handle.url();
         let token = handle.auth_token.as_ref().clone();
         let client = reqwest::Client::new();
@@ -6027,7 +6061,7 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-tasks");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
         let url = handle.url();
         let token = handle.auth_token.as_ref().clone();
         let client = reqwest::Client::new();
@@ -6119,7 +6153,7 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-source");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
         let url = handle.url();
         let token = handle.auth_token.as_ref().clone();
         let client = reqwest::Client::new();

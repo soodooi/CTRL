@@ -116,10 +116,14 @@ impl KernelSupervisor {
         // and acp_client (passes them to a future ACP-aware driver). (v19
         // retired Pi / ctrl-pi-bridge / ctrl-pi-plugin; v27 = BYO-CLI driver.)
         let runtime_for_mcp = runtime.clone();
+        // The gate needs the event bridge so a brain/gate pack install can push
+        // PacksChanged to the PWA (Gap-2). Clone is cheap (Arc-backed sender).
+        let bridge_for_mcp = bridge.clone();
         tauri::async_runtime::spawn(async move {
             match crate::kernel::mcp_server::serve(
                 runtime_for_mcp,
                 None,
+                Some(bridge_for_mcp),
                 crate::kernel::MCP_SERVER_LISTEN_ADDR,
             )
             .await

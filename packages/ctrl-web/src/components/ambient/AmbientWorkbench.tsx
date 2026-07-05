@@ -19,6 +19,12 @@ import { AmbientHome, type ToolRequest, type PackRequest } from './AmbientHome';
 import { useActiveProvider, formatProviderLabel } from '@/hooks/useActiveProvider';
 import { useKernelStatus } from '@/hooks/useKernelStatus';
 import { isSeedingFirstRun } from '@/lib/kernel';
+import {
+  initKernelPackEventListener,
+  loadInstalledPacks,
+  PACKS_CHANGED_EVENT,
+  type PacksChangedDetail,
+} from '@/lib/feature-pack';
 import styles from './AmbientHome.module.css';
 
 export function AmbientWorkbench(): ReactElement {
@@ -102,6 +108,34 @@ export function AmbientWorkbench(): ReactElement {
     },
     [navigate, isHome],
   );
+
+  // Gap-2: subscribe to kernel-side pack changes on :17872 and bridge them to
+  // the browser PACKS_CHANGED_EVENT. A pack installed by Irisy/brain through the
+  // gate, or upgraded by the builtin seed, otherwise never reaches the PWA (its
+  // own PACKS_CHANGED_EVENT fires only for PWA-initiated installs). Mount-only:
+  // the WS connection stays stable across re-renders.
+  useEffect(() => initKernelPackEventListener(), []);
+
+  // Auto-open a pack the instant it's installed kernel-side — matching the PWA
+  // install flow's "appears + opens" (bao 2026-07-05: a brain/seed install
+  // should auto-open just like a Discover install does).
+  useEffect(() => {
+    const onPacksChanged = (e: Event): void => {
+      const detail = (e as CustomEvent<PacksChangedDetail>).detail;
+      if (detail?.action !== 'installed' || !detail.id) return;
+      const id = detail.id;
+      void loadInstalledPacks().then((packs) => {
+        const pack = packs.find((p) => p.id === id);
+        if (!pack) return;
+        if (!isHome) void navigate({ to: '/' });
+        setView('chat');
+        setNavSel(`pack.${pack.id}`);
+        setPackRequest({ pack, nonce: Date.now() });
+      });
+    };
+    window.addEventListener(PACKS_CHANGED_EVENT, onPacksChanged);
+    return () => window.removeEventListener(PACKS_CHANGED_EVENT, onPacksChanged);
+  }, [isHome, navigate]);
 
   // Only highlight a sidebar entry on home; routed pages own their own nav.
   const activeSection = isHome ? navSel : '';

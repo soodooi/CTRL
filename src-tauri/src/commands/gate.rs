@@ -126,7 +126,7 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-gate-invoke");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = mcp_server::serve(runtime.clone(), None, "127.0.0.1:0")
+        let handle = mcp_server::serve(runtime.clone(), None, None, "127.0.0.1:0")
             .await
             .expect("serve gate");
         let port = handle.listen_addr.rsplit_once(':').expect("addr has port").1;

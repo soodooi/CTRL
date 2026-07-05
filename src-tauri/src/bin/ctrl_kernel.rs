@@ -15,7 +15,9 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("kernel boot failed: {e:?}"))?,
     );
     let addr = std::env::var("CTRL_KERNEL_ADDR").unwrap_or_else(|_| "127.0.0.1:17873".to_string());
-    let handle = ctrl_lib::kernel::mcp_server::serve(runtime, None, &addr).await?;
+    // No event bridge in headless mode (no PWA to notify) — pass None; the
+    // PacksChanged emit is then a no-op.
+    let handle = ctrl_lib::kernel::mcp_server::serve(runtime, None, None, &addr).await?;
     eprintln!("headless kernel: gate on http://{addr}/mcp (kill the process to stop)");
     // Keep the process (and the served gate) alive until the process is killed.
     let _ = handle;
