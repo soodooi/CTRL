@@ -23,9 +23,19 @@ describe('ctrl-ghostfolio manifest', () => {
     expect(r.success, issues).toBe(true);
   });
 
-  it('is one-click + silent by declaration (no manual config_schema)', () => {
-    // No manual config wizard — the engine provisions + auto-auths.
-    expect(manifest.config_schema).toBeUndefined();
+  it('offers BOTH one-click Set up AND connect-existing (dual path)', () => {
+    // One-click: the engine provisions the Docker stack + auto-auths (below).
+    // Connect-existing: config_schema lets a Docker-less user point at an
+    // instance they already run — both write mcp:<id>:_base_url + token, the
+    // same keys resolve_pack_creds reads (bao 2026-07-05).
+    const cs = manifest.config_schema as
+      | { fields?: Array<{ key: string; kind: string; required?: boolean }> }
+      | undefined;
+    expect(cs?.fields).toBeDefined();
+    const urlField = cs?.fields?.find((f) => f.key === '_base_url');
+    expect(urlField?.kind).toBe('url');
+    const tokenField = cs?.fields?.find((f) => f.key === 'ghostfolio_token');
+    expect(tokenField?.kind).toBe('secret');
 
     const provision = manifest.provision as { service?: Record<string, unknown> };
     expect(provision.service?.runtime).toBe('compose');

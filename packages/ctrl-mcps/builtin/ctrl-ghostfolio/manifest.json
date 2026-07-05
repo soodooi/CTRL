@@ -36,6 +36,24 @@
       "capture_bearer": "/authToken"
     }
   },
+  "config_schema": {
+    "fields": [
+      {
+        "key": "_base_url",
+        "kind": "url",
+        "label": "Ghostfolio instance URL",
+        "description": "Connect an existing Ghostfolio you already run (cloud or self-hosted), e.g. https://ghostfolio.example.com — use this instead of one-click Set up if you don't want the Docker stack.",
+        "required": true
+      },
+      {
+        "key": "ghostfolio_token",
+        "kind": "secret",
+        "label": "Security token",
+        "description": "Your Ghostfolio security token (Account settings). Stored in your OS keychain, never sent to the model.",
+        "required": true
+      }
+    ]
+  },
   "record_source": {
     "kind": "record",
     "query": { "endpoint": "/api/v1/portfolio/holdings", "array_at": "holdings" },
