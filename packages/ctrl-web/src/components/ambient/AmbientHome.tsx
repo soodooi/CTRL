@@ -1857,7 +1857,15 @@ export function AmbientHome({
                     >
                       ✕
                     </button>
-                    <Discover onInstalled={() => onView('discover')} styles={styles} />
+                    <Discover
+                      onInstalled={() => onView('discover')}
+                      styles={styles}
+                      installed={installedPacks}
+                      onOpenPack={(p) => {
+                        onView('chat');
+                        setScene(p);
+                      }}
+                    />
                   </div>
                 ) : scene === 'today' ? (
                   <div className={styles.scenePane}>

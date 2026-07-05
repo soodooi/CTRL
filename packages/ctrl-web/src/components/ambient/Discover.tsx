@@ -18,6 +18,7 @@ import {
 } from '@/lib/feature-pack';
 import { loadDiscoverListings, connectRemoteMcp } from '@/lib/pack-registry';
 import type { ConnectorManifest } from '@/lib/connector';
+import type { FeaturePack } from '@/components/featurepack/FeaturePackScene';
 import { PackCreator } from './PackCreator';
 import { PackConfig } from './PackConfig';
 import styles from './Discover.module.css';
@@ -27,9 +28,15 @@ interface DiscoverProps {
   onInstalled: (m: ConnectorManifest) => void;
   /** Legacy shared style map — unused now (Discover owns Discover.module.css). */
   styles: Record<string, string>;
+  /** Installed packs (incl. builtins like ctrl-ghostfolio) — surfaced + searched
+   *  here so the Feature Packs library shows EVERYTHING, not just the registry
+   *  (bao 2026-07-05: a builtin pack must be findable in the library). */
+  installed?: FeaturePack[];
+  /** Open an installed pack's scene (the parent routes to chat + setScene). */
+  onOpenPack?: (pack: FeaturePack) => void;
 }
 
-export function Discover(_props: DiscoverProps): ReactElement {
+export function Discover({ installed = [], onOpenPack }: DiscoverProps): ReactElement {
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState('All');
   // Discover listings come from the MCP Registry (browsable remote servers) —
@@ -70,9 +77,28 @@ export function Discover(_props: DiscoverProps): ReactElement {
   }, []);
 
   const categories = useMemo(
-    () => ['All', ...Array.from(new Set(listings.map((p) => p.category)))],
-    [listings],
+    () => [
+      'All',
+      ...Array.from(
+        new Set([
+          ...installed.map((p) => p.category ?? 'Installed'),
+          ...listings.map((p) => p.category),
+        ]),
+      ),
+    ],
+    [installed, listings],
   );
+
+  // Installed packs (builtins + user-installed) matched against the same search
+  // + category — so a builtin like ctrl-ghostfolio is findable in the library.
+  const installedMatches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return installed.filter((p) => {
+      if (cat !== 'All' && (p.category ?? 'Installed') !== cat) return false;
+      if (!q) return true;
+      return `${p.name} ${p.summary ?? ''} ${p.category ?? ''}`.toLowerCase().includes(q);
+    });
+  }, [query, cat, installed]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -234,6 +260,26 @@ export function Discover(_props: DiscoverProps): ReactElement {
           <span className={styles.secTitle}>{cat === 'All' ? 'All packs' : cat}</span>
         </div>
         <div className={styles.grid}>
+          {installedMatches.map((p) => (
+            <div key={`inst.${p.id}`} className={styles.card}>
+              <div className={styles.cardTop}>
+                <span className={styles.cardIc}>{p.icon ?? '⚡'}</span>
+                <span className={styles.cardName}>{p.name}</span>
+              </div>
+              <div className={styles.cardDesc}>{p.summary ?? ''}</div>
+              <div className={styles.cardFoot}>
+                <span className={styles.cardMeta}>Installed</span>
+                <button
+                  type="button"
+                  className={styles.cardBtn}
+                  onClick={() => onOpenPack?.(p)}
+                  title={`Open ${p.name}`}
+                >
+                  Open
+                </button>
+              </div>
+            </div>
+          ))}
           {filtered.map((p) => {
             const got = installedIds.has(p.id);
             // Registry servers are remote MCP — browsable/openable, not yet
@@ -291,7 +337,7 @@ export function Discover(_props: DiscoverProps): ReactElement {
               </div>
             );
           })}
-          {filtered.length === 0 && (
+          {installedMatches.length === 0 && filtered.length === 0 && (
             <div className={styles.empty}>No packs match. Try "Create" above.</div>
           )}
         </div>
