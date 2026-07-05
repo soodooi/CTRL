@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "id": "ctrl-ghostfolio",
   "name": "Ghostfolio",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": { "name": "soodooi" },
   "description": {
     "short": "Your self-hosted Ghostfolio portfolio, made AI-native — one-click install, silent auth, then Irisy reads holdings and records trades through the :17873 gate.",
@@ -20,7 +20,7 @@
       "generated_secrets": ["POSTGRES_PASSWORD", "REDIS_PASSWORD", "ACCESS_TOKEN_SALT", "JWT_SECRET_KEY"],
       "ports": { "app": 3333 },
       "ready": { "url": "http://127.0.0.1:{port:app}/api/v1/health", "timeout_s": 240 },
-      "compose_inline": "services:\n  ghostfolio:\n    image: ghostfolio/ghostfolio:latest\n    restart: unless-stopped\n    depends_on:\n      postgres:\n        condition: service_healthy\n      redis:\n        condition: service_healthy\n    environment:\n      DATABASE_URL: postgresql://ghostfolio:${POSTGRES_PASSWORD}@postgres:5432/ghostfolio?connect_timeout=300&sslmode=prefer\n      REDIS_HOST: redis\n      REDIS_PORT: 6379\n      REDIS_PASSWORD: ${REDIS_PASSWORD}\n      ACCESS_TOKEN_SALT: ${ACCESS_TOKEN_SALT}\n      JWT_SECRET_KEY: ${JWT_SECRET_KEY}\n    ports:\n      - \"${PORT_APP}:3333\"\n  postgres:\n    image: postgres:15-alpine\n    restart: unless-stopped\n    environment:\n      POSTGRES_DB: ghostfolio\n      POSTGRES_USER: ghostfolio\n      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U ghostfolio\"]\n      interval: 5s\n      timeout: 5s\n      retries: 20\n    volumes:\n      - ghostfolio-postgres:/var/lib/postgresql/data\n  redis:\n    image: redis:7-alpine\n    restart: unless-stopped\n    command: [\"redis-server\", \"--requirepass\", \"${REDIS_PASSWORD}\"]\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"-a\", \"${REDIS_PASSWORD}\", \"ping\"]\n      interval: 5s\n      timeout: 5s\n      retries: 20\nvolumes:\n  ghostfolio-postgres:\n"
+      "compose_inline": "services:\n  ghostfolio:\n    image: ghostfolio/ghostfolio:latest\n    restart: unless-stopped\n    depends_on:\n      postgres:\n        condition: service_healthy\n      redis:\n        condition: service_healthy\n    environment:\n      DATABASE_URL: postgresql://ghostfolio:${POSTGRES_PASSWORD}@postgres:5432/ghostfolio?connect_timeout=300&sslmode=disable\n      REDIS_HOST: redis\n      REDIS_PORT: 6379\n      REDIS_PASSWORD: ${REDIS_PASSWORD}\n      ACCESS_TOKEN_SALT: ${ACCESS_TOKEN_SALT}\n      JWT_SECRET_KEY: ${JWT_SECRET_KEY}\n    ports:\n      - \"${PORT_APP}:3333\"\n  postgres:\n    image: postgres:15-alpine\n    restart: unless-stopped\n    environment:\n      POSTGRES_DB: ghostfolio\n      POSTGRES_USER: ghostfolio\n      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U ghostfolio\"]\n      interval: 5s\n      timeout: 5s\n      retries: 20\n    volumes:\n      - ghostfolio-postgres:/var/lib/postgresql/data\n  redis:\n    image: redis:7-alpine\n    restart: unless-stopped\n    command: [\"redis-server\", \"--requirepass\", \"${REDIS_PASSWORD}\"]\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"-a\", \"${REDIS_PASSWORD}\", \"ping\"]\n      interval: 5s\n      timeout: 5s\n      retries: 20\nvolumes:\n  ghostfolio-postgres:\n"
     }
   },
   "auth": {
