@@ -248,26 +248,35 @@ export function FeaturePackScene({
         >
           {publishing ? 'Publishing…' : 'Share'}
         </button>
-        {pack.needsProvision ? (
+        {/* A pack may offer BOTH: one-click provision (needs Docker) AND a
+            manual "connect existing" path (fill URL + token for an instance you
+            already run). ctrl-ghostfolio has both — a Docker-less user picks
+            Connect existing (bao 2026-07-05). No longer mutually exclusive. */}
+        {pack.needsProvision && (
           <button
             type="button"
             className={styles.configBtn}
             onClick={() => void setUp()}
             disabled={settingUp}
-            title={`Set up ${pack.name} (one-click, silent)`}
+            title={`Set up ${pack.name} (one-click, brings up its Docker stack)`}
           >
             {settingUp ? 'Setting up…' : 'Set up'}
           </button>
-        ) : configFields.length > 0 ? (
+        )}
+        {configFields.length > 0 && (
           <button
             type="button"
             className={styles.configBtn}
             onClick={() => setShowConfig(true)}
-            title={`Configure ${pack.name}`}
+            title={
+              pack.needsProvision
+                ? `Connect an existing ${pack.name} you already run (no Docker)`
+                : `Configure ${pack.name}`
+            }
           >
-            Configure
+            {pack.needsProvision ? 'Connect existing' : 'Configure'}
           </button>
-        ) : null}
+        )}
       </header>
 
       {publishMsg != null && (

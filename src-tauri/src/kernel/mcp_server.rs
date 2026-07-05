@@ -4726,11 +4726,19 @@ fn resolve_registry_creds(registry_override: Option<&str>) -> Option<(String, St
 /// `base_url`) + the security token stored under the manifest's declared
 /// `send_secret`. Kernel-side only; the token never crosses the LLM boundary.
 fn resolve_pack_creds(source_id: &str, send_secret: &str) -> Option<(String, String)> {
+    // Read a pack cred from EITHER secret store under the same `mcp:<id>:<key>`
+    // account: provision (§7.2) writes the encrypted credential_vault
+    // (`~/.ctrl/credentials.dat`), while the config wizard ("connect existing"
+    // for a user's own instance) writes the OS keychain via `store_key`. A
+    // connector reads whichever path the user set it up through — so a
+    // Docker-less user who filled in a URL + token is resolved just the same.
     let cred = |field: &str| {
-        crate::shell::credential_vault::get(&format!("mcp:{source_id}:{field}"))
-            .ok()
-            .flatten()
-            .filter(|v| !v.trim().is_empty())
+        let account = format!("mcp:{source_id}:{field}");
+        // Filter non-empty PER store, before falling back: an empty entry in the
+        // first store must not shadow a real value in the second.
+        let non_empty = |v: Option<String>| v.filter(|s: &String| !s.trim().is_empty());
+        non_empty(crate::shell::credential_vault::get(&account).ok().flatten())
+            .or_else(|| non_empty(crate::shell::KeychainStore::get(&account).ok().flatten()))
     };
     let url = cred("_base_url").or_else(|| cred("base_url"))?;
     let token = cred(send_secret)?;
