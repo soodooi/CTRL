@@ -73,6 +73,11 @@ type RecordsState =
 // FIRST in the workspace alongside the user's vault tables (§7.5 v48 dual-face).
 const RECORDS_TAB = '__records__';
 
+// A record_source pack's query fails with a gate "not configured" error until
+// the user connects it — show a friendly nudge to Set up / Connect existing,
+// not the raw JSON-RPC error (bao 2026-07-05 saw the raw -32602 on first open).
+const isNotConfigured = (msg: string): boolean => /not configured|credentials/i.test(msg);
+
 export function FeaturePackScene({
   pack,
   onRunAction,
@@ -341,7 +346,14 @@ export function FeaturePackScene({
                   records.status === 'loading' ? (
                     <div className={styles.empty}>Loading {pack.name} records…</div>
                   ) : records.status === 'error' ? (
-                    <pre className={styles.error}>{records.message}</pre>
+                    isNotConfigured(records.message) ? (
+                      <div className={styles.empty}>
+                        {pack.name} isn't connected yet — use the &quot;Connect existing&quot;
+                        or &quot;Set up&quot; button above to link a {pack.name} you already run.
+                      </div>
+                    ) : (
+                      <pre className={styles.error}>{records.message}</pre>
+                    )
                   ) : records.status === 'ready' ? (
                     <SourceDataView data={records.data} title={pack.name} />
                   ) : (
@@ -359,7 +371,14 @@ export function FeaturePackScene({
             {records.status === 'loading' ? (
               <div className={styles.empty}>Loading {pack.name} records…</div>
             ) : records.status === 'error' ? (
-              <pre className={styles.error}>{records.message}</pre>
+              isNotConfigured(records.message) ? (
+                <div className={styles.empty}>
+                  {pack.name} isn't connected yet — use the &quot;Connect existing&quot; or
+                  &quot;Set up&quot; button above to link a {pack.name} you already run.
+                </div>
+              ) : (
+                <pre className={styles.error}>{records.message}</pre>
+              )
             ) : records.status === 'ready' ? (
               <SourceDataView data={records.data} title={pack.name} />
             ) : (
