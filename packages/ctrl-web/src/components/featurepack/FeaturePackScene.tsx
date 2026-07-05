@@ -89,7 +89,7 @@ const isNotConfigured = (msg: string): boolean => /not configured|credentials/i.
 // auto-retries Set up on success — the auto-run half (bao 2026-07-05). Elsewhere
 // it stays a GUIDE: platform steps + copy-pasteable commands (Linux sudo /
 // Windows GUI installs aren't auto-run). Design: feature-pack-provision-auth-engine.md.
-function RuntimeGuidanceCard({
+export function RuntimeGuidanceCard({
   guidance,
   onDismiss,
   onInstalled,

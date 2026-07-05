@@ -9,7 +9,7 @@
 // NOT a production entry (bao 2026-06-12: see the scene UX before wiring).
 
 import { type ReactElement } from 'react';
-import { FeaturePackScene } from '@/components/featurepack/FeaturePackScene';
+import { FeaturePackScene, RuntimeGuidanceCard } from '@/components/featurepack/FeaturePackScene';
 import { PackEvals } from '@/components/ambient/PackEvals';
 import {
   DEMO_CF_WORKERS,
@@ -36,6 +36,29 @@ export function PackLabRoute(): ReactElement {
           />
         </div>
       </div>
+      {/* No-docker guided install card (§7.2 v52/v53) — the state a Docker-less
+          user hits on Set up: platform guidance + the one-click auto-run button. */}
+      <div style={{ maxWidth: 560, padding: 24, borderTop: '1px solid var(--border)' }}>
+        <RuntimeGuidanceCard
+          guidance={{
+            platform: 'macos',
+            headline:
+              'This pack runs a self-hosted service, which needs a container runtime (Docker or Podman). None was found on this machine.',
+            steps: [
+              "Install Homebrew if you don't have it (https://brew.sh).",
+              'Install a container runtime + the compose CLI.',
+              'Start the runtime — it stays up in the background.',
+              'Come back and press Set up again.',
+            ],
+            commands: ['brew install colima docker docker-compose', 'colima start'],
+            docs_url: 'https://github.com/abiosoft/colima#installation',
+            auto_installable: true,
+          }}
+          onDismiss={() => {}}
+          onInstalled={() => {}}
+        />
+      </div>
+
       {/* Pack-authoring evals (mcp_pack_validate) — the three report states. */}
       <div style={{ display: 'flex', gap: 24, padding: 24, borderTop: '1px solid var(--border)' }}>
         <PackEvals report={{ ok: true, issues: [], record_source_fields: 6 }} />
