@@ -86,26 +86,97 @@ async fn probe(prog: &str, args: &[&str]) -> bool {
         .unwrap_or(false)
 }
 
-/// The compose command PREFIX (program + any subcommand). Probes for a REAL
-/// compose, in order: `docker compose` (the v2 plugin), the standalone
+/// Detect a REAL container-compose command PREFIX (program + any subcommand),
+/// probing in order: `docker compose` (the v2 plugin), the standalone
 /// `docker-compose` binary (Homebrew installs THIS, not the plugin), then
-/// `podman compose`. Returns e.g. `["docker", "compose"]` or `["docker-compose"]`.
-/// Probing `docker version` alone is NOT enough — the compose plugin can be
-/// absent even when the docker CLI is present, which fails `docker compose -f …`
-/// with "unknown shorthand flag: 'f'" (real-machine finding 2026-07-05).
-async fn compose_command() -> Result<Vec<String>, String> {
+/// `podman compose`. Returns e.g. `["docker", "compose"]` or `["docker-compose"]`,
+/// or `None` when no runtime is present. Probing `docker version` alone is NOT
+/// enough — the compose plugin can be absent even when the docker CLI is present,
+/// which fails `docker compose -f …` with "unknown shorthand flag: 'f'"
+/// (real-machine finding 2026-07-05).
+pub async fn detect_compose() -> Option<Vec<String>> {
     if probe("docker", &["compose", "version"]).await {
-        return Ok(vec!["docker".into(), "compose".into()]);
+        return Some(vec!["docker".into(), "compose".into()]);
     }
     if probe("docker-compose", &["version"]).await {
-        return Ok(vec!["docker-compose".into()]);
+        return Some(vec!["docker-compose".into()]);
     }
     if probe("podman", &["compose", "version"]).await {
-        return Ok(vec!["podman".into(), "compose".into()]);
+        return Some(vec!["podman".into(), "compose".into()]);
     }
-    Err("no container compose found — install Docker (with the compose plugin) \
-         or docker-compose / podman to run this pack"
-        .into())
+    None
+}
+
+async fn compose_command() -> Result<Vec<String>, String> {
+    detect_compose()
+        .await
+        .ok_or_else(|| "no container compose found — install Docker (with the compose plugin) \
+             or docker-compose / podman to run this pack".to_string())
+}
+
+/// Error-message sentinel prefixing the JSON guidance payload returned when a
+/// pack needs `provision.service` but no container runtime is installed. The
+/// frontend strips this prefix, parses the JSON, and renders a friendly
+/// guided-install card instead of the raw error (bao 2026-07-05 "no-docker
+/// guided install"). Design: feature-pack-provision-auth-engine.md line 34
+/// (no runtime -> guide the install), line 77 (heavy auto-install orchestration
+/// deferred — we GUIDE, not silently `brew install` a VM-class runtime).
+pub const NEEDS_CONTAINER_RUNTIME: &str = "NEEDS_CONTAINER_RUNTIME";
+
+/// Platform-specific, copy-pasteable guidance for installing a container runtime.
+/// Returned (behind the sentinel) when provisioning needs Docker/Podman but none
+/// is present. A guide, not an auto-installer: a container runtime is a VM-class
+/// dependency (multi-package + a `start`), too heavy to `brew install` silently
+/// without consent — so CTRL hands the user the exact steps + commands to run.
+pub fn container_runtime_guidance() -> Value {
+    // macOS primary (bao's machine): Colima = the lightweight runtime we
+    // verified end-to-end (a Docker Desktop alternative, no license).
+    #[cfg(target_os = "macos")]
+    let (platform, steps, commands, docs_url) = (
+        "macos",
+        vec![
+            "Install Homebrew if you don't have it (https://brew.sh).",
+            "Install a container runtime + the compose CLI.",
+            "Start the runtime — it stays up in the background.",
+            "Come back and press Set up again.",
+        ],
+        vec!["brew install colima docker docker-compose", "colima start"],
+        "https://github.com/abiosoft/colima#installation",
+    );
+    #[cfg(target_os = "linux")]
+    let (platform, steps, commands, docs_url) = (
+        "linux",
+        vec![
+            "Install Docker (with the compose plugin) via your package manager.",
+            "Make sure your user can reach the Docker daemon (add yourself to the docker group, then re-login), or use rootless Podman.",
+            "Come back and press Set up again.",
+        ],
+        vec![
+            "sudo apt-get install -y docker.io docker-compose-v2",
+            "sudo usermod -aG docker \"$USER\"",
+        ],
+        "https://docs.docker.com/engine/install/",
+    );
+    #[cfg(target_os = "windows")]
+    let (platform, steps, commands, docs_url) = (
+        "windows",
+        vec![
+            "Install Docker Desktop (it bundles the compose plugin + a WSL2 backend).",
+            "Launch Docker Desktop once so the engine starts.",
+            "Come back and press Set up again.",
+        ],
+        vec!["winget install Docker.DockerDesktop"],
+        "https://www.docker.com/products/docker-desktop/",
+    );
+
+    serde_json::json!({
+        "kind": "needs_container_runtime",
+        "platform": platform,
+        "headline": "This pack runs a self-hosted service, which needs a container runtime (Docker or Podman). None was found on this machine.",
+        "steps": steps,
+        "commands": commands,
+        "docs_url": docs_url,
+    })
 }
 
 /// Provision the declared service: ensure secrets → write compose + .env →
@@ -194,6 +265,13 @@ async fn poll_ready(url: &str, timeout_s: u64) -> Result<(), String> {
 /// credential. Idempotent. `manifest` is the parsed manifest JSON.
 pub async fn install_pack(pack_id: &str, manifest: &Value) -> Result<String, String> {
     let mut steps: Vec<String> = Vec::new();
+
+    // No-docker guided install: if this pack brings up a container service but
+    // no runtime is installed, fail EARLY with structured guidance the frontend
+    // renders as a friendly card — not a deep raw compose error.
+    if manifest.pointer("/provision/service").is_some() && detect_compose().await.is_none() {
+        return Err(format!("{NEEDS_CONTAINER_RUNTIME} {}", container_runtime_guidance()));
+    }
 
     let base_url = if let Some(service) = manifest.pointer("/provision/service") {
         let url = provision_service(pack_id, service).await?;
@@ -341,5 +419,30 @@ mod tests {
     #[test]
     fn secret_account_is_namespaced() {
         assert_eq!(secret_account("ctrl-ghostfolio", "ghostfolio_token"), "mcp:ctrl-ghostfolio:ghostfolio_token");
+    }
+
+    #[test]
+    fn runtime_guidance_is_actionable_for_this_platform() {
+        let g = container_runtime_guidance();
+        assert_eq!(g["kind"], "needs_container_runtime");
+        // Non-empty ordered steps + at least one copy-pasteable command.
+        assert!(g["steps"].as_array().is_some_and(|a| !a.is_empty()));
+        let cmds = g["commands"].as_array().expect("commands array");
+        assert!(!cmds.is_empty());
+        assert!(cmds.iter().all(|c| c.as_str().is_some_and(|s| !s.trim().is_empty())));
+        // A docs link the card can point at.
+        assert!(g["docs_url"].as_str().is_some_and(|u| u.starts_with("https://")));
+    }
+
+    #[test]
+    fn guidance_error_is_sentinel_prefixed_parseable_json() {
+        // The frontend splits on the sentinel and JSON.parse's the remainder.
+        let msg = format!("{NEEDS_CONTAINER_RUNTIME} {}", container_runtime_guidance());
+        let rest = msg
+            .strip_prefix(NEEDS_CONTAINER_RUNTIME)
+            .expect("sentinel prefix")
+            .trim();
+        let parsed: Value = serde_json::from_str(rest).expect("guidance JSON parses");
+        assert_eq!(parsed["kind"], "needs_container_runtime");
     }
 }
