@@ -52,7 +52,28 @@ const CODING_ARGS: readonly string[] = ['-l'];
 
 const NOOP_ASYNC = async (): Promise<void> => undefined;
 
-export function CodingTerminal(): ReactElement {
+export interface CodingTerminalProps {
+  /** Program to run in the PTY (default `bash`). e.g. `opencode` for the
+   *  coding agent pane. */
+  command?: string;
+  /** Args for `command` (default `['-l']` — a login shell). */
+  args?: readonly string[];
+  /** Working directory. Defaults to the user's home; the coding module passes
+   *  the projected CTRL workspace (`~/Documents/CTRL`) so an MCP-aware CLI finds
+   *  `.mcp.json` (the gate) on launch. */
+  cwd?: string;
+  /** Publish this terminal to the resident Irisy companion (its eyes = recent
+   *  stdout, its hand = write commands). Default true. The coding-agent pane
+   *  (opencode) sets false — it drives itself, not Irisy's run-in-terminal. */
+  registerSession?: boolean;
+}
+
+export function CodingTerminal({
+  command = CODING_COMMAND,
+  args = CODING_ARGS,
+  cwd: cwdProp,
+  registerSession = true,
+}: CodingTerminalProps = {}): ReactElement {
   const [streamId, setStreamId] = useState<string | null>(null);
   const [spawnError, setSpawnError] = useState<string | null>(null);
 
@@ -77,17 +98,17 @@ export function CodingTerminal(): ReactElement {
 
     const start = async (): Promise<void> => {
       try {
-        // Open at the user's home, like a normal terminal — don't assume a
-        // working directory for them. They cd wherever they want.
-        const cwd = await homeDir().catch(() => undefined);
+        // cwd: caller-supplied (coding module → the CTRL workspace so an
+        // MCP-aware CLI finds `.mcp.json`), else the user's home.
+        const cwd = cwdProp ?? (await homeDir().catch(() => undefined));
         // Inject the dev-env vars (Settings → Env) so a CLI like Claude Code
         // picks up ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL without the user
         // pasting secrets into the shell.
         const env = await loadEnvMap().catch(() => ({}));
         if (cancelled) return;
         const reply = await csSpawn({
-          command: CODING_COMMAND,
-          args: [...CODING_ARGS],
+          command,
+          args: [...args],
           cwd,
           env,
         });
@@ -124,10 +145,10 @@ export function CodingTerminal(): ReactElement {
   // getter is its eyes, the streamId is where its hand writes commands. Clear
   // on unmount so Irisy stops seeing a dead terminal.
   useEffect(() => {
-    if (!streamId) return;
+    if (!streamId || !registerSession) return;
     setSession(streamId, termBuffer.getRecentText);
     return () => clearSession();
-  }, [streamId, setSession, clearSession, termBuffer.getRecentText]);
+  }, [streamId, registerSession, setSession, clearSession, termBuffer.getRecentText]);
 
   writeStdinRef.current = channel.writeStdin;
   resizeRef.current = channel.resize;
