@@ -1,7 +1,8 @@
 // CodingScene — the coding module's left work area (bao 2026-07-06, trial "B"):
 // TWO panes behind tabs — OpenCode (the coding agent) + a plain Terminal — both
-// opened in the projected CTRL workspace (`~/Documents/CTRL`, where the kernel
-// projector wrote `.mcp.json`, so an MCP-aware CLI auto-discovers the :17873
+// opened in the CONFIGURED vault root (via `vault_root_path`, wherever the user
+// points it — NOT a hardcoded path), where the kernel projector wrote
+// `.mcp.json` + `opencode.json`, so an MCP-aware CLI auto-discovers the :17873
 // gate). Irisy's chat stays pinned + resident in the RIGHT column (AmbientHome),
 // unchanged — this component owns only the left panes.
 //

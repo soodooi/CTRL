@@ -59,8 +59,8 @@ export interface CodingTerminalProps {
   /** Args for `command` (default `['-l']` — a login shell). */
   args?: readonly string[];
   /** Working directory. Defaults to the user's home; the coding module passes
-   *  the projected CTRL workspace (`~/Documents/CTRL`) so an MCP-aware CLI finds
-   *  `.mcp.json` (the gate) on launch. */
+   *  the configured vault root (via `vault_root_path`) so an MCP-aware CLI finds
+   *  the projected `.mcp.json` / `opencode.json` (the gate) on launch. */
   cwd?: string;
   /** Publish this terminal to the resident Irisy companion (its eyes = recent
    *  stdout, its hand = write commands). Default true. The coding-agent pane

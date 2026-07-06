@@ -1,11 +1,11 @@
 ---
-title: OpenCode 集成方案 —— CTRL 的 coding 引擎(开源 / 模型无关 / ACP)
+title: OpenCode 集成方案 —— CTRL 的 coding 引擎(开源 / 模型无关)
 kind: plan
 created_at: 2026-07-06
 owner: bao
 author: claude
-status: proposed
-purpose: 把 coding 模块的引擎定为 opencode(自有集成,不包 Claude Code/Codex 商业品),经现成 ACP 槽接入
+status: landed-v1-byo-driver
+purpose: 把 coding 模块的引擎定为 opencode(自有集成,不包 Claude Code/Codex 商业品)
 related:
   - "[[architecture-byo-cli-driver]]"       # ADR-001 spine §byo-cli-driver + §8.7 引擎槽
   - "[[capability-pack-map]]"                # coding = KOL 获客滩头
@@ -14,6 +14,8 @@ governing_adrs:
   - ADR-005 §8.7 (Irisy 引擎可选 hermes/Codex/Claude-Code → 加 opencode)
   - ADR-001 spine §byo-cli-driver (BYO-CLI driver 路径)
 ---
+
+> **⚠️ 已落地的是 BYO-driver 路(不是下面 § 架构/Slices 写的 ACP-engine 槽)。** 一次 plan review 后改选:coding 场景直接在**投影工作区(vault 根)跑 `opencode` 完整 TUI**,projector 已投 gate(`opencode.json`)—— 零 ACP 接线、opencode 体验完整、合 spine §4。下面的「ACP 引擎槽 + S1-S5」是**被否的备选**(留作以后「聊天内轻量 coding」的可选增强,非 v1)。真相以 ADR-001 spine v10 + ADR-005 §8.7 v18 为准。
 
 # 决策:coding 引擎 = OpenCode(不包商业 Claude Code/Codex)
 
