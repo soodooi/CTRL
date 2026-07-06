@@ -664,4 +664,47 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    // Hot-discovery contract: skill listing re-scans the filesystem on EVERY
+    // call — a skill created AFTER a first scan is found on the next scan with
+    // no restart and no cache invalidation. This locks the live-read_dir design
+    // so nobody silently introduces a boot-time cache (which would make a
+    // runtime-created skill — including one Irisy just built — invisible until
+    // an app restart).
+    #[test]
+    fn newly_created_skill_is_found_on_next_scan_no_cache() {
+        let root = fresh_tmp("hot");
+        std::fs::create_dir_all(root.join("first")).unwrap();
+        std::fs::write(
+            root.join("first").join("SKILL.md"),
+            "---\nname: first\ndescription: one\n---\nbody",
+        )
+        .unwrap();
+
+        // First scan sees only `first`.
+        let mut out1 = Vec::new();
+        let mut seen1 = std::collections::HashSet::new();
+        collect_skills_in(&root, &mut out1, &mut seen1);
+        assert_eq!(out1.len(), 1);
+        assert!(out1.iter().any(|s| s.name == "first"));
+
+        // A new skill is created at runtime (no process restart between scans).
+        std::fs::create_dir_all(root.join("second")).unwrap();
+        std::fs::write(
+            root.join("second").join("SKILL.md"),
+            "---\nname: second\ndescription: two\n---\nbody",
+        )
+        .unwrap();
+
+        // Second scan re-reads the directory and finds BOTH — proving the
+        // listing is live, not cached from the first call.
+        let mut out2 = Vec::new();
+        let mut seen2 = std::collections::HashSet::new();
+        collect_skills_in(&root, &mut out2, &mut seen2);
+        assert_eq!(out2.len(), 2);
+        assert!(out2.iter().any(|s| s.name == "first"));
+        assert!(out2.iter().any(|s| s.name == "second"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
