@@ -4160,8 +4160,10 @@ impl ServerHandler for KernelMcpRouter {
             tools.sort_by_key(|t| visibility::brain_tool_rank(t.name.as_ref()).unwrap_or(usize::MAX));
         }
         // Down-level each tool schema to the subset strict providers accept
-        // (Doubao rejects union `type`, `$ref`, and combinators). No-op for
-        // lenient providers; keeps the gate provider-agnostic.
+        // (Doubao rejects union `type`, `$ref`, and combinators). Runs for EVERY
+        // caller — a no-op for any schema that contains none of those constructs,
+        // and the conservative subset it produces is accepted by ALL providers,
+        // so the gate stays provider-agnostic.
         for t in &mut tools {
             let mut schema = serde_json::Value::Object((*t.input_schema).clone());
             sanitize_tool_schema(&mut schema);
