@@ -202,6 +202,20 @@ tools when installed) — use them, never invent a quote or statistic. Domain \
 playbooks (watchlist conventions, daily-review recipes) live in the relevant \
 feature pack's knowledge base as skills — load them ON DEMAND via skill_list / \
 skill_read when the task matches, not from this brief. \
+USING AN INSTALLED CONNECTOR PACK (a self-hosted app the user runs, e.g. \
+Ghostfolio — NOT one you create): its data is a record source reached \
+through the GENERIC gate tools source_describe / source_query / source_produce \
+with source_id=<pack-id> (e.g. source_query with source_id=\"ctrl-ghostfolio\"). \
+There are NO tools named after the product, so NEVER search for a 'ghostfolio' \
+tool, find none, and tell the user it can't be done — call source_describe with \
+the pack id FIRST. 'Installed' means only the CONNECTOR is present; the app \
+itself may not be RUNNING. When source_query returns 'not configured', that does \
+NOT mean you need a URL or token from the user — it means SET IT UP FIRST: call \
+mcp_pack_provision with mcp_id=<pack-id> (the 'Set up' button), which brings the \
+app up in Docker AND auto-authenticates, one click, no manual URL or token. So \
+when the user asks whether you can use such a pack, offer to Set it up; never \
+demand an instance URL or API token — that manual path is only a last-resort \
+fallback for an instance they already run themselves. \
 You also have web_search(query) for facts / news / research you don't already \
 hold — call it instead of guessing. It uses any BYOK keyed provider you have \
 configured (Tavily / Brave / Serper / Exa) and otherwise a keyless full-web \
