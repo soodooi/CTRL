@@ -183,6 +183,108 @@ fn project_gate_into_dir(
     Ok(true)
 }
 
+// --- OpenCode BYO-CLI driver projection ----------------------------------
+//
+// OpenCode (MIT, model-agnostic) is CTRL's CODING engine (plan:
+// plan-opencode-coding-engine.md). It reads its OWN `opencode.json` (`mcp` key,
+// `type: "remote"`) — NOT Claude Code's `.mcp.json` — so we project a second,
+// OpenCode-shaped file carrying the same gate. Launched in the workspace,
+// `opencode` then auto-discovers the CTRL gate.
+
+/// The intent a projected OpenCode config grants. OpenCode is the CODING engine,
+/// so unlike the narrow base BYO intent it needs the pack-BUILDING surface:
+/// `source` (§14 connectors), `discover`, `skill`, and `mcp` (the `mcp_pack_*`
+/// create/install/run tools classify into the `mcp` domain, `visibility.rs`).
+/// Still excludes `net` — the `http_*` exfiltration floor stays closed.
+const OPENCODE_CODING_INTENT: &str =
+    "vault,smart_table,tasks,notes,source,discover,skill,mcp,providers,registry,kv,llm,memory,calendar";
+
+/// The `ctrl-kernel` gate entry in OpenCode's config shape (`type: "remote"` +
+/// `enabled` + object `headers`), vs Claude Code's `.mcp.json` (`type: "http"`).
+fn opencode_entry(port: &str, token: &str, caller: &str, intent: Option<&str>) -> Value {
+    let mut headers = Map::new();
+    headers.insert("Authorization".to_string(), json!(format!("Bearer {token}")));
+    headers.insert(audit::CALLER_HEADER.to_string(), json!(caller));
+    if let Some(intent) = intent {
+        headers.insert(visibility::INTENT_HEADER.to_string(), json!(intent));
+    }
+    json!({
+        "type": "remote",
+        "url": format!("http://127.0.0.1:{port}/mcp"),
+        "enabled": true,
+        "headers": Value::Object(headers)
+    })
+}
+
+/// Upsert the gate into `<dir>/opencode.json` under the `mcp` key, preserving
+/// the user's other OpenCode config + unknown keys. Mirrors
+/// `project_gate_into_dir` but in OpenCode's format. Returns `Ok(true)` when
+/// written, `Ok(false)` when already current or skipped; a malformed existing
+/// file is left untouched.
+fn project_opencode_into_dir(
+    dir: &Path,
+    port: &str,
+    token: &str,
+    intent: Option<&str>,
+) -> std::io::Result<bool> {
+    let path = dir.join("opencode.json");
+
+    let mut root: Value = match fs::read(&path) {
+        Ok(bytes) => match serde_json::from_slice(&bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "Projector: existing opencode.json is malformed; leaving it untouched"
+                );
+                return Ok(false);
+            }
+        },
+        Err(_) => json!({ "$schema": "https://opencode.ai/config.json" }),
+    };
+
+    let Some(obj) = root.as_object_mut() else {
+        tracing::warn!(
+            path = %path.display(),
+            "Projector: opencode.json root is not an object; leaving it untouched"
+        );
+        return Ok(false);
+    };
+    obj.entry("$schema")
+        .or_insert_with(|| json!("https://opencode.ai/config.json"));
+
+    let mcp = obj.entry("mcp").or_insert_with(|| Value::Object(Map::new()));
+    let Some(mcp) = mcp.as_object_mut() else {
+        tracing::warn!(
+            path = %path.display(),
+            "Projector: opencode.json `mcp` is not an object; leaving it untouched"
+        );
+        return Ok(false);
+    };
+
+    let next = opencode_entry(port, token, BYO_CLI_CALLER, intent);
+    if mcp.get(KERNEL_SERVER_KEY) == Some(&next) {
+        return Ok(false);
+    }
+    mcp.insert(KERNEL_SERVER_KEY.to_string(), next);
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_file_name("opencode.json.tmp");
+    let serialized = serde_json::to_vec_pretty(&root)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(&serialized)?;
+        f.write_all(b"\n")?;
+        f.sync_all()?;
+    }
+    fs::rename(&tmp, &path)?;
+    Ok(true)
+}
+
 // --- Codex BYO-CLI driver projection -------------------------------------
 //
 // Codex is a second BYO-CLI driver (ADR-001 §4 projector; architecture
@@ -519,6 +621,22 @@ pub fn project_kernel_gate(port: &str, token: &str) {
             dir = %dir.display(),
             error = %e,
             "Projector: failed to project kernel gate into .mcp.json"
+        ),
+    }
+
+    // OpenCode (CTRL's coding engine) reads its own `opencode.json`, not
+    // `.mcp.json` — project the same gate in its shape, with the pack-building
+    // coding intent. Best-effort; never blocks boot.
+    match project_opencode_into_dir(&dir, port, token, Some(OPENCODE_CODING_INTENT)) {
+        Ok(true) => tracing::info!(
+            dir = %dir.display(),
+            "Projector: kernel gate projected into opencode.json (OpenCode auto-discovers on launch)"
+        ),
+        Ok(false) => { /* unchanged or skipped */ }
+        Err(e) => tracing::error!(
+            dir = %dir.display(),
+            error = %e,
+            "Projector: failed to project kernel gate into opencode.json"
         ),
     }
 

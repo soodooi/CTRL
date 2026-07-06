@@ -90,7 +90,7 @@ import {
 import { NotesSurface } from '@/components/notes/NotesSurface';
 import { TablesPanel } from '@/components/tables/TablesPanel';
 import { TodayView } from '@/components/today/TodayView';
-import { CodingTerminal } from '@/components/coding/CodingTerminal';
+import { CodingScene } from '@/components/coding/CodingScene';
 import { Sidebar, type SidebarSection } from './Sidebar';
 import { WorkspacePanel } from './WorkspacePanel';
 import {
@@ -1913,7 +1913,7 @@ export function AmbientHome({
                     >
                       ✕
                     </button>
-                    <CodingTerminal />
+                    <CodingScene />
                   </div>
                 ) : scene ? (
                   <div className={styles.scenePane}>

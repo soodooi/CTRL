@@ -87,7 +87,7 @@ bao 2026-05-25 进一步校准: **只 3 件事**:
 7. **CTRL 不自带通用 brain;两条并行路径,都经 `:17873` gate** *(ADR-001 spine § byo-cli-driver v9 + ADR-002 substrate § brain v38; 真相源 `vault/ctrl/architecture-byo-cli-driver.md`)*:
    - **Irisy(app 内助手)的脑 = Hermes Agent** (NousResearch). CTRL bundle + lazy-install + 启动它 (dashboard `:17890`, Irisy 嵌入). **hermes 不退役.**
    - **BYO-CLI driver(projection)= 附加并行路径** — CTRL 把资产投影 (materialize) 进用户自选本地 CLI (Claude Code 旗舰) 的原生落点, CLI 启动自动发现; CTRL 不 lazy-install / 不 supervise 该 CLI 的 agent loop. **实装现状 (`kernel/projector.rs`, 落点根 `~/Documents/CTRL/`)**: tools→`.mcp.json` (写 `ctrl-kernel` gate 指针, 非逐工具展开) + memory→`AGENTS.md` (刻意不写 `CLAUDE.md`, 保持 driver-agnostic) + Codex `~/.codex/config.toml`. **未落地 (设计目标, 待 slice)**: skills→`SKILL.md` (现改走 gate 工具 `skill_list`/`skill_read`/`skill_write`) + workflows→slash command.
-   - **Pi 已退役** (ADR-002 v19, 2026-06-09 PR — `@mariozechner/pi-coding-agent` + ctrl-pi-bridge / ctrl-pi-plugin / `~/.ctrl/pi/` 全删, 代码零接线). opencode 已下线 (2026-06-25, bao 裁决; 曾误接线, 已移除). ACP 降级为 future「ACP-aware CLI 增强通道」, 代码保留.
+   - **Pi 已退役** (ADR-002 v19, 2026-06-09 PR — `@mariozechner/pi-coding-agent` + ctrl-pi-bridge / ctrl-pi-plugin / `~/.ctrl/pi/` 全删, 代码零接线). opencode 2026-07-06 回归为 **coding 引擎 (仅 BYO-CLI driver, 非 v4 supervise 聚合)** — CTRL 在投影工作区跑用户自己的 opencode + gate 投进 opencode.json, 不 supervise (ADR-001 spine v10 + ADR-005 §8.7 v18); 2026-06-25 下线的是那次全栈 supervise 误接线, 已移除. ACP 降级为 future「ACP-aware CLI 增强通道」, 代码保留.
    - **调度权在 brain 手里** — CTRL 只「让 brain 看见资产 (projection)」+「调用回流经 `:17873` gate (权限/审计/可见性)」, 不编排决策 (符合 one-shot / AI-is-pipe).
 
 ### 几个具体推论
