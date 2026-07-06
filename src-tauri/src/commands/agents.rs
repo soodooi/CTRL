@@ -390,6 +390,22 @@ pub(crate) fn write_hermes_config_yaml(
         &["providers", "ctrl", "model"],
         serde_yaml::Value::String(model),
     );
+    // Tell hermes which WIRE PROTOCOL this endpoint speaks. Without it hermes
+    // defaults every `providers.ctrl` to openai_chat and POSTs OpenAI-format
+    // requests to an Anthropic endpoint → HTTP 404 (bao 2026-07-06: Claude
+    // Sonnet configured, Irisy 404'd — the missing piece). hermes reads a
+    // per-provider `transport` from config.yaml (runtime_provider.py:
+    // `api_mode|transport` → anthropic_messages | openai_chat).
+    use crate::kernel::provider::manifest::HttpShape;
+    let transport = match active_manifest.shape {
+        HttpShape::AnthropicMessages => "anthropic_messages",
+        HttpShape::OpenaiChatCompletions => "openai_chat",
+    };
+    set_mapping_path(
+        &mut doc,
+        &["providers", "ctrl", "transport"],
+        serde_yaml::Value::String(transport.into()),
+    );
 
     let serialized = serde_yaml::to_string(&doc)
         .map_err(|e| format!("serialize ~/.hermes/config.yaml: {e}"))?;

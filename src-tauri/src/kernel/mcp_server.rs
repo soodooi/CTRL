@@ -3990,6 +3990,84 @@ fn request_header<'a>(
         .and_then(|v| v.to_str().ok())
 }
 
+/// Rewrite a JSON-Schema tool definition into the conservative subset strict
+/// providers accept. Volc Doubao's ark API rejects anything richer with HTTP
+/// 400 "Invalid function format: 'type'"; OpenAI / Anthropic / Zhipu accept the
+/// rich form, so this down-level keeps the `:17873` gate provider-agnostic (bao
+/// 2026-07-05 "make providers comprehensive"). Three transforms, recursive:
+///   1. `"type": ["string","null"]` (schemars `Option<T>`) → `"type": "string"`
+///      (lossless — the field stays optional via `required`).
+///   2. `$ref` → inline the `$defs`/`definitions` target (lossless — Doubao has
+///      no `$ref` support; a ref node carries no `type`, hence the 'type' error).
+///   3. `oneOf`/`anyOf`/`allOf` (schemars enums) → a permissive `{"type":"object"}`
+///      (lossy but Doubao can't parse combinators; server-side handlers still
+///      validate the real shape on call).
+/// A depth cap breaks recursive-type `$ref` cycles.
+fn sanitize_tool_schema(schema: &mut serde_json::Value) {
+    let defs = schema
+        .get("$defs")
+        .or_else(|| schema.get("definitions"))
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    sanitize_node(schema, &defs, 0);
+    if let serde_json::Value::Object(m) = schema {
+        m.remove("$defs");
+        m.remove("definitions");
+    }
+}
+
+const SANITIZE_MAX_DEPTH: usize = 16;
+
+fn sanitize_node(node: &mut serde_json::Value, defs: &serde_json::Value, depth: usize) {
+    use serde_json::Value;
+    if depth > SANITIZE_MAX_DEPTH {
+        *node = serde_json::json!({ "type": "object" });
+        return;
+    }
+    // Inline a `$ref` against the root `$defs`, then keep sanitizing the body.
+    if let Value::Object(map) = node {
+        if let Some(Value::String(r)) = map.get("$ref").cloned() {
+            let name = r.rsplit('/').next().unwrap_or_default();
+            match defs.get(name) {
+                Some(target) => {
+                    *node = target.clone();
+                    sanitize_node(node, defs, depth + 1);
+                }
+                None => *node = serde_json::json!({ "type": "object" }),
+            }
+            return;
+        }
+    }
+    match node {
+        Value::Object(map) => {
+            // 1. Flatten a union `type` array to its first non-null member.
+            let flat = match map.get("type") {
+                Some(Value::Array(ts)) => ts.iter().find(|t| t.as_str() != Some("null")).cloned(),
+                _ => None,
+            };
+            if let Some(t) = flat {
+                map.insert("type".into(), t);
+            }
+            // 2. Neutralize enum combinators strict providers can't parse.
+            if ["oneOf", "anyOf", "allOf"].iter().any(|k| map.contains_key(*k)) {
+                map.remove("oneOf");
+                map.remove("anyOf");
+                map.remove("allOf");
+                map.entry("type").or_insert(Value::String("object".into()));
+            }
+            for v in map.values_mut() {
+                sanitize_node(v, defs, depth + 1);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                sanitize_node(v, defs, depth + 1);
+            }
+        }
+        _ => {}
+    }
+}
+
 impl KernelMcpRouter {
     /// Dispatch a tool call to either a downstream namespaced server or the
     /// static kernel tool router. Kept separate from the `ServerHandler`
@@ -4080,6 +4158,16 @@ impl ServerHandler for KernelMcpRouter {
         if visibility::is_capped_brain(&caller) {
             tools.retain(|t| visibility::brain_tool_rank(t.name.as_ref()).is_some());
             tools.sort_by_key(|t| visibility::brain_tool_rank(t.name.as_ref()).unwrap_or(usize::MAX));
+        }
+        // Down-level each tool schema to the subset strict providers accept
+        // (Doubao rejects union `type`, `$ref`, and combinators). No-op for
+        // lenient providers; keeps the gate provider-agnostic.
+        for t in &mut tools {
+            let mut schema = serde_json::Value::Object((*t.input_schema).clone());
+            sanitize_tool_schema(&mut schema);
+            if let serde_json::Value::Object(m) = schema {
+                t.input_schema = std::sync::Arc::new(m);
+            }
         }
         Ok(ListToolsResult {
             tools,
@@ -5598,6 +5686,63 @@ mod tests {
     use super::*;
     use crate::kernel::query::RecordSink;
     use crate::kernel::runtime::KernelRuntime;
+
+    #[test]
+    fn sanitize_tool_schema_downlevels_for_strict_providers() {
+        // Mirrors the real gate tools Doubao rejected: Option<T> union types,
+        // a $ref into $defs, and an enum oneOf.
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "limit": { "type": ["integer", "null"] },
+                "op":    { "$ref": "#/$defs/Op" },
+                "nested": {
+                    "type": "object",
+                    "properties": { "tags": { "type": ["array", "null"], "items": { "type": "string" } } }
+                }
+            },
+            "$defs": {
+                "Op": { "oneOf": [ { "properties": { "label": { "type": ["string", "null"] } } } ] }
+            }
+        });
+        sanitize_tool_schema(&mut schema);
+        // 1. Union types flattened.
+        assert_eq!(schema["properties"]["limit"]["type"], "integer");
+        assert_eq!(schema["properties"]["nested"]["properties"]["tags"]["type"], "array");
+        // 2. $ref inlined (the Op body replaced the ref) + its oneOf neutralized.
+        assert_eq!(schema["properties"]["op"]["type"], "object");
+        assert!(schema["properties"]["op"].get("$ref").is_none());
+        assert!(schema["properties"]["op"].get("oneOf").is_none());
+        // 3. Root $defs removed.
+        assert!(schema.get("$defs").is_none());
+        // Nothing Doubao rejects survives: no type-array, no $ref, no combinator.
+        fn clean(v: &serde_json::Value) -> bool {
+            match v {
+                serde_json::Value::Object(m) => {
+                    if matches!(m.get("type"), Some(serde_json::Value::Array(_))) { return false; }
+                    for k in ["$ref", "oneOf", "anyOf", "allOf", "$defs", "definitions"] {
+                        if m.contains_key(k) { return false; }
+                    }
+                    m.values().all(clean)
+                }
+                serde_json::Value::Array(a) => a.iter().all(clean),
+                _ => true,
+            }
+        }
+        assert!(clean(&schema));
+    }
+
+    #[test]
+    fn sanitize_tool_schema_breaks_recursive_ref_cycles() {
+        // A self-referential $ref must not infinitely inline (depth cap).
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "properties": { "child": { "$ref": "#/$defs/Node" } },
+            "$defs": { "Node": { "type": "object", "properties": { "next": { "$ref": "#/$defs/Node" } } } }
+        });
+        sanitize_tool_schema(&mut schema); // must terminate
+        assert!(schema.get("$defs").is_none());
+    }
 
     #[test]
     fn setup_hint_degrades_only_missing_setup_errors() {
