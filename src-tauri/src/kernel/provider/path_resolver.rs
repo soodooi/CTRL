@@ -44,6 +44,10 @@ const KNOWN_BIN_DIRS: &[&str] = &[
 /// Directories under `$HOME` that may contain a binary. Skipped if HOME
 /// is unavailable (CI / sandbox) or the dir doesn't exist.
 const HOME_BIN_SUFFIXES: &[&str] = &[
+    // CTRL bootstraps its own uv/uvx/node here (agent_installer::ensure_uvx) —
+    // needed so a portable pack manifest with a bare `uv` command resolves
+    // (ADR-002 substrate § composition §7.4 self-contained packs).
+    ".ctrl/bin",
     ".npm-global/bin",
     ".local/bin",
     ".cargo/bin",

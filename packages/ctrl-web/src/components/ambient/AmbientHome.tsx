@@ -57,12 +57,15 @@ import {
 // Code). ONE component across every surface, backed by the shared active-agent
 // store, so the agent axis is consistent everywhere.
 import { AgentSelector } from '@/components/agent/AgentSelector';
+import { FeedbackButton } from '@/components/ambient/FeedbackButton';
 // ADR-005 irisy §8.4/§8.6 — durable transcript: the ambient conversation
 // survives reload / engine crash and re-hydrates.
 import { loadTranscript, saveTranscript } from '@/lib/transcript-store';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
 import { type Capability } from '@/lib/capability-catalog';
+import { STOCK_CARD_TOOLS, type StockResult } from '@/components/featurepack/stock/StockCard';
+import { StockCockpit, type CockpitData } from '@/components/featurepack/stock/StockCockpit';
 import {
   detectPart,
   renderPart,
@@ -102,6 +105,7 @@ import {
   captureScreenAndOcr,
   csStdin,
   listMcps,
+  gateInvoke,
   type IrisySessionTurn,
   type McpSummary,
 } from '@/lib/kernel';
@@ -589,14 +593,18 @@ export function AmbientHome({
       if (kb) ambient.push({ role: 'system', content: kb });
       // Domain skills pointer (bao 2026-07-03: skills load ON DEMAND — inject
       // one line telling Irisy WHERE this pack's skills live, never their
-      // contents; it skill_list/skill_read only when the task matches).
+      // contents; it reads a skill only when the task matches). Pack skills
+      // live in the pack KB (vault), NOT ~/.claude/skills, so they are read
+      // via vault_read — the skill_read/skill_list gate tools only see
+      // ~/.claude/skills and cannot reach a pack KB (bao 2026-07-07 standard).
       if (scene && typeof scene === 'object' && scene.kbDir) {
         ambient.push({
           role: 'system',
           content:
             `This pack's domain skills live under "${scene.kbDir}/skills" in the vault. ` +
-            `When a task matches a skill's territory, load it on demand with skill_list / ` +
-            `skill_read (or vault_read on that path) — do not recite skills unprompted.`,
+            `When a task matches a skill's territory, load it on demand with ` +
+            `vault_read on that path (e.g. "${scene.kbDir}/skills/<name>.md") — ` +
+            `do not recite skills unprompted.`,
         });
       }
       if (scene === 'tables' && activeTablePath) {
@@ -692,6 +700,13 @@ export function AmbientHome({
               // Only when the write actually landed (approved, not denied/failed).
               const denied = /denied|declined|not approved|rejected/i.test(step.output ?? '');
               if (step.status !== 'failed' && !denied) openNoteInWorkspace(p);
+            }
+            // Stock feature-pack tool result -> verdict card in the workspace
+            // pane; the raw JSON stays in the chat tool drill-down (ADR-003
+            // output routing + drill-down transparency).
+            const stockTool = [...STOCK_CARD_TOOLS].find((t) => step.title?.includes(t));
+            if (stockTool && step.status !== 'failed' && step.output) {
+              setPart({ kind: 'stock', variant: stockTool, content: step.output, title: step.title });
             }
           }
           setMessages((prev) =>
@@ -928,6 +943,21 @@ export function AmbientHome({
   }, []);
 
   // Export an artifact as a file (download = the local-first "share": the user
+  // Today cockpit loader for the stock pack — calls its tools through the
+  // :17873 gate (gateInvoke returns each tool's native object incl. its `card`
+  // block). Memoized so the cockpit's effect fetches once, not every render.
+  // Live data needs the kernel + pack running (desktop) — the standing gap.
+  const loadStockCockpit = useCallback(async (): Promise<CockpitData> => {
+    const grab = (tool: string): Promise<StockResult | undefined> =>
+      gateInvoke<StockResult>(tool, {}).catch(() => undefined);
+    const [mood, ladder, leaders] = await Promise.all([
+      grab('market_mood'),
+      grab('limit_ladder'),
+      grab('leaders'),
+    ]);
+    return { mood, ladder, leaders };
+  }, []);
+
   // gets a real plain-text file they own and can send anywhere).
   const downloadPart = useCallback((p: PartSpec) => {
     const ext =
@@ -1084,9 +1114,6 @@ export function AmbientHome({
     })();
   }, []);
   // Status line data — engine + model + state (ADR-005 §8.6.2 ambient chrome).
-  const activeAgentId = useActiveAgentStore((s) => s.activeAgentId);
-  const drivers = useActiveAgentStore((s) => s.drivers);
-  const engineLabel = drivers.find((d) => d.id === activeAgentId)?.label ?? 'Hermes';
   // Run an installed pack's action inline; its output lands as an assistant turn.
   const runPackAction = (pack: FeaturePack, action: { id: string; name: string }): void => {
     const id = `a-${Date.now()}`;
@@ -1191,19 +1218,9 @@ export function AmbientHome({
 
   const composer = (
     <div className={styles.composerWrap}>
-      {/* Status line — engine · model · state · version (ADR-005 §8.6.2 chrome). */}
-      <div className={styles.statusLine}>
-        <span className={styles.statusItem}>
-          <span className={styles.statusDot} data-state={streaming ? 'working' : 'ready'} />
-          {streaming ? 'Working' : 'Ready'}
-        </span>
-        <span className={styles.statusSep}>·</span>
-        <span className={styles.statusItem}>{engineLabel}</span>
-        <span className={styles.statusSep}>·</span>
-        <span className={styles.statusItem}>{modelLabel}</span>
-        <span className={styles.statusGrow} />
-        <span className={styles.statusItem}>v{APP_VERSION}</span>
-      </div>
+      {/* Status line removed — state merged into the single personaRow line
+          above; version is on the CTRL wordmark; provider/model is in Settings
+          (bao 2026-07-07: only one line above the input). */}
       <form
         className={styles.composer}
         onSubmit={(e) => {
@@ -1659,7 +1676,7 @@ export function AmbientHome({
   const personaRow = (
     // Order (bao 2026-06-28): agent FIRST, then persona, then feature packs.
     <div className={styles.quickRow} role="group" aria-label="Irisy agent, persona, and feature packs">
-      <AgentSelector />
+      <AgentSelector showNote={false} />
       <div className={styles.roleSwitch}>
         <button
           type="button"
@@ -1718,6 +1735,14 @@ export function AmbientHome({
           ))}
         </div>
       )}
+      {/* State on this same single line, pushed right (bao 2026-07-07: only one
+          line above the input). Version lives on the CTRL wordmark. */}
+      <span className={styles.statusGrow} />
+      <FeedbackButton />
+      <span className={styles.statusItem}>
+        <span className={styles.statusDot} data-state={streaming ? 'working' : 'ready'} />
+        {streaming ? 'Working' : 'Ready'}
+      </span>
     </div>
   );
 
@@ -1931,6 +1956,12 @@ export function AmbientHome({
                       key={scene.id}
                       pack={scene}
                       onRunAction={(id) => runInstalledPackAction(scene.id, id)}
+                      onSendMessage={send}
+                      dashboard={
+                        scene.id === 'ctrl-stock-cn' ? (
+                          <StockCockpit load={loadStockCockpit} />
+                        ) : undefined
+                      }
                       loadRecords={
                         scene.hasRecords ? () => loadPackRecords(scene.id) : undefined
                       }

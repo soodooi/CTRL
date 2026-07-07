@@ -1,0 +1,338 @@
+<div class="page">
+<style>
+  :root{
+    --paper:#efece3; --panel:#e8e4d8; --panel-2:#e2ddce;
+    --ink:#20221d; --ink-2:#4a4d44; --mut:#7d8077; --line:#d7d2c3;
+    --seal:#bf3b2b; --seal-deep:#9c2f22;
+    --up:#c0362c; --down:#2f7d57; --gate:#2f5c86; --gate-soft:#e0e8f0;
+    --warn:#c98a2b;
+    --serif:"Songti SC","STSong","Noto Serif SC","SimSun",serif;
+    --sans:"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+    --mono:"SF Mono",ui-monospace,"Menlo","Cascadia Code",monospace;
+  }
+  *{box-sizing:border-box}
+  .page{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.62;
+    -webkit-font-smoothing:antialiased;max-width:1040px;margin:0 auto;padding:52px 30px 90px}
+  .page::selection,.page *::selection{background:rgba(191,59,43,.16)}
+  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--seal);font-weight:600}
+  h1{font-family:var(--serif);font-weight:600;font-size:38px;line-height:1.16;margin:.3em 0 .14em;text-wrap:balance}
+  h1 .mono{font-family:var(--mono);font-size:.52em;color:var(--mut);font-weight:400}
+  .thesis{font-size:18px;line-height:1.6;color:var(--ink-2);max-width:64ch;margin:.2em 0 0}
+  .thesis b{color:var(--ink);font-weight:600;box-shadow:inset 0 -.42em 0 rgba(191,59,43,.14)}
+  header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:8px}
+  .mono{font-family:var(--mono)}
+  .up{color:var(--up)} .down{color:var(--down)}
+
+  .rule{border:2px solid var(--seal);border-radius:12px;background:#fbeeea;padding:14px 18px;margin:30px 0 6px;
+    display:flex;gap:14px;align-items:flex-start}
+  .rule .b{flex:0 0 auto;width:34px;height:34px;border-radius:8px;background:var(--seal);color:#f4e2dc;
+    display:flex;align-items:center;justify-content:center;font-size:19px}
+  .rule p{margin:0;font-size:14.5px;color:var(--ink-2)} .rule b{color:var(--ink)}
+  .rule .sw{display:inline-block;width:.85em;height:.85em;border-radius:3px;vertical-align:-1px;margin:0 1px}
+
+  h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:52px 0 4px;display:flex;align-items:baseline;gap:.55em}
+  h2 .idx{font-family:var(--mono);font-size:14px;color:var(--seal);font-weight:400}
+  .sub{color:var(--mut);font-size:14px;margin:0 0 18px}
+
+  .surface{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:stretch;margin-top:14px}
+  @media(max-width:720px){.surface{grid-template-columns:1fr}}
+  .col{border:1px solid var(--line);border-radius:14px;padding:18px 18px 20px;background:var(--panel);display:flex;flex-direction:column}
+  .col.mock{background:#fff;border-color:#e6e1d3}
+  .col .lbl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .col.ref .lbl{color:var(--gate)} .col.mock .lbl{color:var(--seal)}
+  .col .lbl .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+  .patt{margin:0 0 12px;font-size:13.5px;color:var(--ink-2);line-height:1.55}
+  .patt b{color:var(--ink);font-weight:600}
+  .patt .src{display:block;font-size:11.5px;color:var(--mut);margin-top:2px}
+  .patt .src a{color:var(--gate);text-decoration:none;border-bottom:1px dotted var(--gate)}
+
+  /* ---- generic mock chrome ---- */
+  .card{background:#fff;border:1px solid #e6e1d3;border-radius:12px;padding:14px;box-shadow:0 1px 0 rgba(0,0,0,.02);margin-top:auto}
+  .verdict{font-family:var(--serif);font-size:20px;font-weight:600}
+  .chip{display:inline-block;font-family:var(--mono);font-size:11px;padding:.16em .5em;border-radius:5px;border:1px solid var(--line);color:var(--ink-2);background:var(--paper)}
+  .chip.inst{border-color:var(--gate);color:var(--gate);background:var(--gate-soft)}
+  .chip.hot{border-color:var(--up);color:var(--up);background:#fbeeea}
+  .chip.buy{border-color:var(--up);color:var(--up);background:#fbeeea}
+  .chip.sell{border-color:var(--down);color:var(--down);background:#e9f2ec}
+  .chip.neu{border-color:var(--mut);color:var(--mut)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  /* ---- thermometer ---- */
+  .thermo{display:flex;gap:16px;align-items:center}
+  .thermo .track{position:relative;flex:0 0 22px;width:22px;height:150px;border-radius:12px;
+    background:linear-gradient(to top,#2f7d57,#dfc98a 46%,#e0a05a 68%,#c0362c);overflow:hidden;border:1px solid #d9d3c4}
+  .thermo .fillmark{position:absolute;left:-4px;right:-4px;height:2px;background:var(--ink)}
+  .thermo .fillmark::after{content:"";position:absolute;right:-9px;top:-4px;border:5px solid transparent;border-right-color:var(--ink)}
+  .thermo .read .big{font-family:var(--mono);font-size:34px;font-weight:600;line-height:1}
+  .thermo .read .u{font-size:16px;color:var(--mut)}
+  .thermo .read .st{font-family:var(--serif);font-size:19px;font-weight:600;color:var(--warn);margin-top:2px}
+  .breadth{margin-top:14px}
+  .breadth .bar{display:flex;height:12px;border-radius:6px;overflow:hidden;margin-bottom:8px}
+  .breadth .bar .u{background:var(--up)} .breadth .bar .d{background:var(--down)}
+  .stats{display:flex;gap:8px;flex-wrap:wrap}
+  .stat{flex:1 1 auto;text-align:center;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:6px 4px;min-width:66px}
+  .stat .v{font-family:var(--mono);font-size:17px;font-weight:600} .stat .k{font-size:11px;color:var(--mut)}
+
+  /* ---- bar-in-cell rows ---- */
+  .rows{display:flex;flex-direction:column;gap:7px;margin-top:auto}
+  .row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;font-size:13px}
+  .row .nm{font-weight:600}.row .nm .cd{font-family:var(--mono);font-size:11px;color:var(--mut);margin-left:5px}
+  .row .cell{position:relative;height:22px;border-radius:5px;background:var(--paper);overflow:hidden;display:flex;align-items:center}
+  .row .cell .fill{position:absolute;inset:0 auto 0 0;background:rgba(192,54,44,.16)}
+  .row .cell .val{position:relative;font-family:var(--mono);font-size:12px;font-weight:600;padding-left:7px;color:var(--up)}
+  .row .tags{display:flex;gap:4px;justify-self:end}
+
+  /* ---- ladder ---- */
+  .ladder{display:flex;flex-direction:column;gap:6px;margin-top:auto}
+  .tabs{display:flex;gap:6px;margin-bottom:12px}
+  .tabs .t{font-size:12px;padding:.28em .7em;border-radius:7px;border:1px solid var(--line);color:var(--mut);background:var(--paper)}
+  .tabs .t.on{border-color:var(--up);color:var(--up);background:#fbeeea;font-weight:600}
+  .tier{display:grid;grid-template-columns:52px 1fr;gap:10px;align-items:center}
+  .tier .bd{font-family:var(--serif);font-weight:600;text-align:center;border-radius:7px;padding:6px 0;font-size:13px;color:#fff}
+  .tier .stk{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .tier .stk .s{font-size:12.5px;font-weight:600}
+  .tier .stk .s .cd{font-family:var(--mono);font-size:10.5px;color:var(--mut);font-weight:400;margin-left:3px}
+
+  /* ---- gauge ---- */
+  .gaugewrap{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .votes{display:flex;flex-direction:column;gap:5px;font-size:12px;font-family:var(--mono)}
+  .votes .v{display:flex;align-items:center;gap:7px}
+  .votes .v .d{width:9px;height:9px;border-radius:2px}
+  .ind{display:grid;grid-template-columns:1fr auto auto;gap:6px 10px;margin-top:14px;font-size:12.5px;align-items:center}
+  .ind .nm{color:var(--ink-2)} .ind .vl{font-family:var(--mono);color:var(--mut);text-align:right}
+  .faces{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+  .face{flex:1 1 0;min-width:74px;text-align:center;border:1px solid var(--line);border-radius:8px;padding:7px 4px;background:var(--paper)}
+  .face .k{font-size:11px;color:var(--mut)} .face .s{font-family:var(--mono);font-size:16px;font-weight:600}
+  .pct{font-size:12px;color:var(--mut);margin-top:10px}.pct b{color:var(--up)}
+
+  /* ---- AI answer ---- */
+  .ans .head{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .ans .head .v{font-family:var(--serif);font-size:19px;font-weight:600}
+  .ans p{margin:0 0 10px;font-size:13.5px;color:var(--ink-2);line-height:1.55}
+  .ans .mini{width:100%;height:44px;margin:2px 0 10px}
+  .followups{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .followups .f{font-size:12px;padding:.3em .7em;border-radius:14px;border:1px solid var(--gate);color:var(--gate);background:var(--gate-soft)}
+  .drill{font-size:11.5px;color:var(--mut);margin-top:10px;display:flex;align-items:center;gap:6px}
+  .drill .ic{font-size:13px}
+
+  .princ{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+  @media(max-width:720px){.princ{grid-template-columns:1fr}}
+  .princ .p{border-left:3px solid var(--seal);background:var(--panel);border-radius:0 9px 9px 0;padding:11px 15px}
+  .princ .p b{display:block;font-family:var(--serif);font-size:15px;margin-bottom:3px}
+  .princ .p span{font-size:13px;color:var(--ink-2)}
+
+  .verdictbox{border:2px solid var(--gate);border-radius:14px;overflow:hidden;margin-top:20px}
+  .verdictbox .bar{background:var(--gate);color:#eaf1f8;font-size:13.5px;padding:9px 16px;font-weight:600}
+  .verdictbox .body{padding:16px 18px;background:linear-gradient(180deg,var(--gate-soft),transparent 70%)}
+  .stage{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line);font-size:14px}
+  .stage:last-child{border-bottom:none}
+  .stage .n{font-family:var(--mono);font-weight:600;color:var(--gate);font-size:13px}
+  .stage b{color:var(--ink)} .stage .m{color:var(--mut);font-size:12.5px}
+  .foot{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--mut)}
+  .foot a{color:var(--gate);text-decoration:none}
+</style>
+
+<header>
+  <div class="eyebrow">ctrl-stock-cn · output ui reference</div>
+  <h1>股票功能包该给用户什么 <span class="mono">not JSON in a chat box</span></h1>
+  <p class="thesis">行业里成熟的炒股工具全在做同一件事:<b>替用户读</b> —— 前面给一句结论(温度计 / 表盘 / 颜色 / chip),原始数字收进 drill-down。CTRL 现在把工具的 JSON 堆在聊天里,靠 Irisy 转述 —— 这就是「不友好」的根。下面每个展示面:左 = 别人怎么展示(带出处),右 = CTRL 该长啥样(mockup)。</p>
+</header>
+
+<div class="rule">
+  <div class="b">色</div>
+  <p><b>承重规则:红涨绿跌 —— 和西方相反。</b>大陆 <span class="sw" style="background:var(--up)"></span>红 = 涨/买入/资金流入,<span class="sw" style="background:var(--down)"></span>绿 = 跌/卖出/流出(港股才用西方绿涨)。绝不能继承西方图表库默认色。CTRL 的 <span class="mono">--up / --down</span> token 已经是对的,所有卡片沿用。<span class="patt src" style="margin-top:6px">来源 · <a href="https://www.behavioraleconomics.com/when-red-means-go/">BehavioralEconomics — When Red Means Go</a></span></p>
+</div>
+
+<!-- SURFACE 1 -->
+<h2><span class="idx">01</span> 大盘情绪 / 强度</h2>
+<p class="sub">当前:<span class="mono">market_mood → {"up_count":3527,...}</span> 一坨 JSON。目标:一眼冷热 + 一句读法。</p>
+<div class="surface">
+  <div class="col ref">
+    <p class="lbl"><span class="dot"></span>别人怎么展示</p>
+    <p class="patt"><b>情绪温度计 0–100°</b> —— 同花顺「市场情绪温度」原生范式。&gt;80° 过热(卖区)、&lt;20° 冰点(买区),买冷卖热直接刻进刻度。比西方表盘更贴中文直觉。<span class="src">同花顺 情绪指数 883404 · <a href="https://m.10jqka.com.cn/20240712/c659767628.shtml">10jqka</a></span></p>
+    <p class="patt"><b>涨跌家数比例条 + 大数字块</b> —— EastMoney 把全市场拆成「涨停股池 / 炸板股池 / 强势股池」可导航池;一条涨/跌比例条 + 涨停/炸板率几个大数字,不用图就知道今天健不健康。<span class="src"><a href="https://quote.eastmoney.com/ztb/">EastMoney 涨停板行情</a></span></p>
+    <p class="patt"><b>半圆表盘 + 一词判定</b> —— CNN Fear &amp; Greed:色弧 + 指针 + 中心大数字 + 一个词。零指标素养可读。<span class="src"><a href="https://www.cnn.com/markets/fear-and-greed">CNN Fear &amp; Greed</a></span></p>
+  </div>
+  <div class="col mock">
+    <p class="lbl"><span class="dot"></span>CTRL 该长啥样</p>
+    <div class="card">
+      <div class="thermo">
+        <div class="track"><div class="fillmark" style="bottom:62%"></div></div>
+        <div class="read">
+          <div><span class="big">62</span><span class="u">°</span></div>
+          <div class="st">发酵期</div>
+          <div style="font-size:12px;color:var(--mut);margin-top:4px;line-height:1.4">有赚钱效应<br>但接力谨慎</div>
+        </div>
+      </div>
+      <div class="breadth">
+        <div class="bar"><div class="u" style="width:69%"></div><div class="d" style="width:31%"></div></div>
+        <div class="stats">
+          <div class="stat"><div class="v up">3527</div><div class="k">上涨</div></div>
+          <div class="stat"><div class="v down">1584</div><div class="k">下跌</div></div>
+          <div class="stat"><div class="v">108</div><div class="k">涨停池</div></div>
+          <div class="stat"><div class="v" style="color:var(--warn)">32.5%</div><div class="k">炸板率</div></div>
+          <div class="stat"><div class="v">4</div><div class="k">最高板</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SURFACE 2 -->
+<h2><span class="idx">02</span> 龙头 / 龙虎榜(聪明钱)</h2>
+<p class="sub">排名 + 一个核心指标(净买额)+ 谁在买。数字别裸奔。</p>
+<div class="surface">
+  <div class="col ref">
+    <p class="lbl"><span class="dot"></span>别人怎么展示</p>
+    <p class="patt"><b>格子内嵌条(bar-in-cell)</b> —— 每行主指标(净买额/涨幅)在单元格内画一条横条:长度=大小、颜色=正负。扫条长,不读数字。<span class="src">TradingView heatmaps · <a href="https://finviz.com/screener?v=111&s=ta_topgainers">Finviz top gainers</a></span></p>
+    <p class="patt"><b>带符号的颜色净额列</b> —— EastMoney 龙虎榜:净买正 <span class="up">红</span>、净卖 <span class="down">绿</span>。颜色本身就是信息:红行 = 钱在流入。<span class="src"><a href="https://data.eastmoney.com/stock/lhb.html">EastMoney 龙虎榜</a></span></p>
+    <p class="patt"><b>席位/资金身份 chip</b> —— 小标签标「机构席位 / 游资(带名号)」,把晦涩的席位数据变成一眼可读的「谁」。散户真正在意的是跟谁。<span class="src"><a href="https://zhuanlan.zhihu.com/p/337131490">游资席位 explainer</a></span></p>
+  </div>
+  <div class="col mock">
+    <p class="lbl"><span class="dot"></span>CTRL 该长啥样</p>
+    <div class="card">
+      <div class="rows">
+        <div class="row"><div class="nm">中际旭创<span class="cd">300308</span></div>
+          <div class="cell"><div class="fill" style="width:100%"></div><span class="val">+3.82亿</span></div>
+          <div class="tags"><span class="chip inst">机构</span></div></div>
+        <div class="row"><div class="nm">工业富联<span class="cd">601138</span></div>
+          <div class="cell"><div class="fill" style="width:71%"></div><span class="val">+2.71亿</span></div>
+          <div class="tags"><span class="chip hot">量化</span></div></div>
+        <div class="row"><div class="nm">兆易创新<span class="cd">603986</span></div>
+          <div class="cell"><div class="fill" style="width:48%"></div><span class="val">+1.83亿</span></div>
+          <div class="tags"><span class="chip hot">赵老哥</span></div></div>
+        <div class="row"><div class="nm">胜宏科技<span class="cd">300476</span></div>
+          <div class="cell"><div class="fill" style="width:33%"></div><span class="val">+1.24亿</span></div>
+          <div class="tags"><span class="chip inst">机构</span></div></div>
+      </div>
+      <div class="drill"><span class="ic">⌵</span>长按任一行 → 上榜原因 / 全席位明细 / K线</div>
+    </div>
+  </div>
+</div>
+
+<!-- SURFACE 3 -->
+<h2><span class="idx">03</span> 连板天梯(A股独有)</h2>
+<p class="sub">按连板高度分层,最高板钉在顶 —— 位置 = 强度排名。</p>
+<div class="surface">
+  <div class="col ref">
+    <p class="lbl"><span class="dot"></span>别人怎么展示</p>
+    <p class="patt"><b>竖向分层天梯,最高板置顶</b> —— 同花顺「连板天梯」:龙头/最高板在顶,逐层降到首板,「1板2板3板排得清清楚楚」,角上带「上一日/下一日」翻页。竖直位置本身就是强度序,零指标知识。<span class="src"><a href="https://xueqiu.com/7789473174/290570790">雪球 使用指南</a></span></p>
+    <p class="patt"><b>股池 tab 作顶层切换</b> —— 涨停 / 连板 / 炸板 分名字桶,按意图点 tab,不用筛。带汇总行「连板总数9只,三连板以上4只」。<span class="src"><a href="https://quote.eastmoney.com/ztb/">EastMoney ztb</a></span></p>
+    <p class="patt"><b>每档挂题材 tag</b> —— 韭研公社把题材强度→连板梯队合一,每个梯队标驱动题材,一档 = 一个题材簇(「3板全是机器人」)。题材才是决策输入。<span class="src"><a href="https://www.jiuyangongshe.com/">韭研公社</a></span></p>
+  </div>
+  <div class="col mock">
+    <p class="lbl"><span class="dot"></span>CTRL 该长啥样</p>
+    <div class="card">
+      <div class="tabs"><span class="t on">连板</span><span class="t">涨停</span><span class="t">炸板</span></div>
+      <div class="ladder">
+        <div class="tier"><div class="bd" style="background:var(--seal-deep)">4板</div>
+          <div class="stk"><span class="s">震安科技<span class="cd">300767</span></span><span class="chip hot">减震</span></div></div>
+        <div class="tier"><div class="bd" style="background:#b8382c">3板</div>
+          <div class="stk"><span class="s">兆龙互连<span class="cd">300913</span></span><span class="s">高澜股份<span class="cd">300499</span></span><span class="chip hot">机器人</span></div></div>
+        <div class="tier"><div class="bd" style="background:#c65a4d">2板</div>
+          <div class="stk"><span class="s">科森科技</span><span class="s">祥源新材</span><span class="s">泰嘉股份</span><span class="chip hot">机器人</span></div></div>
+        <div class="tier"><div class="bd" style="background:#d3897f">首板</div>
+          <div class="stk"><span class="s" style="color:var(--mut)">+17 只</span></div></div>
+      </div>
+      <div class="drill" style="margin-top:12px"><span class="ic">⌵</span>连板总数 9 · 三连板以上 4 · 主线 = 机器人</div>
+    </div>
+  </div>
+</div>
+
+<!-- SURFACE 4 -->
+<h2><span class="idx">04</span> 个股技术面</h2>
+<p class="sub">MA/MACD/KDJ/RSI/BOLL 一堆指标 → 给外行一个判定,不是一张公式表。</p>
+<div class="surface">
+  <div class="col ref">
+    <p class="lbl"><span class="dot"></span>别人怎么展示</p>
+    <p class="patt"><b>表盘 + 5 档判定弧(强卖→强买)</b> —— TradingView Technicals:半圆红→灰→绿,指针指向汇总,中心一个词。并列三表盘(振荡/汇总/均线)。<span class="src"><a href="https://www.tradingview.com/blog/en/meet-new-technicals-tab-gauges-never-looked-pretty-6808/">TradingView gauges</a></span></p>
+    <p class="patt"><b>买/中性/卖 计票</b> —— 表盘下三个计数「12 买 · 6 中性 · 8 卖」喂给指针:既是判定,又给了理由,不用盲信。<span class="src"><a href="https://www.webull.com/charts-tools">Webull charts</a></span></p>
+    <p class="patt"><b>多维诊断卡 + 百分位分「打败58%」</b> —— 同花顺牛叉诊股:技术/资金/消息/行业/基本五张面-卡各带分 + 综合评分;妙想把判定说成具体支撑/压力位。百分位把抽象分变成能感知的排名。<span class="src"><a href="https://doctor.10jqka.com.cn/">同花顺 牛叉诊股</a></span></p>
+  </div>
+  <div class="col mock">
+    <p class="lbl"><span class="dot"></span>CTRL 该长啥样</p>
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:10px">贵州茅台 <span class="num" style="font-size:12px;color:var(--mut)">600519</span></div>
+      <div class="gaugewrap">
+        <svg width="140" height="82" viewBox="0 0 140 82" aria-label="technical gauge">
+          <path d="M12 78 A58 58 0 0 1 26 37" fill="none" stroke="#2f7d57" stroke-width="11" stroke-linecap="round"/>
+          <path d="M30 33 A58 58 0 0 1 55 15" fill="none" stroke="#9fbf9a" stroke-width="11"/>
+          <path d="M60 13 A58 58 0 0 1 80 13" fill="none" stroke="#cfc7b2" stroke-width="11"/>
+          <path d="M85 15 A58 58 0 0 1 110 33" fill="none" stroke="#dd9a8f" stroke-width="11"/>
+          <path d="M114 37 A58 58 0 0 1 128 78" fill="none" stroke="#c0362c" stroke-width="11" stroke-linecap="round"/>
+          <line x1="70" y1="78" x2="102" y2="34" stroke="#20221d" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="70" cy="78" r="5" fill="#20221d"/>
+        </svg>
+        <div>
+          <div class="verdict up">偏多</div>
+          <div class="votes" style="margin-top:6px">
+            <div class="v"><span class="d" style="background:var(--up)"></span>买入 12</div>
+            <div class="v"><span class="d" style="background:var(--mut)"></span>中性 6</div>
+            <div class="v"><span class="d" style="background:var(--down)"></span>卖出 4</div>
+          </div>
+        </div>
+      </div>
+      <div class="ind">
+        <span class="nm">MACD</span><span class="vl">金叉·柱放大</span><span class="chip buy">多</span>
+        <span class="nm">KDJ</span><span class="vl">J 82 高位</span><span class="chip neu">中</span>
+        <span class="nm">均线</span><span class="vl">多头排列</span><span class="chip buy">多</span>
+        <span class="nm">RSI14</span><span class="vl">68</span><span class="chip neu">中</span>
+      </div>
+      <div class="pct">技术面强于 <b>78%</b> 的 A股 · 支撑 1412 / 压力 1505</div>
+    </div>
+  </div>
+</div>
+
+<!-- SURFACE 5 -->
+<h2><span class="idx">05</span> AI 解读(Irisy 回答)</h2>
+<p class="sub">结论先行 + 图内嵌 + 追问 chip + 一键看原始。这是「JSON 堆聊天」的直接解药。</p>
+<div class="surface">
+  <div class="col ref">
+    <p class="lbl"><span class="dot"></span>别人怎么展示</p>
+    <p class="patt"><b>人话提问 → 自动配列的可排序表</b> —— 问财 iWenCai 招牌:问题解析成筛选条件,<b>结果列跟着问题生成</b>(问估值出 PE,问技术出 MACD),渲染成可排序表。用户不学语法、不选列。<span class="src"><a href="https://www.iwencai.com/">同花顺 问财</a></span></p>
+    <p class="patt"><b>智能总结卡(因→果)</b> —— 东财妙想返回带推理的总结卡,文字 + 图内嵌,不是一串链接或裸行。<span class="src"><a href="https://ai.eastmoney.com/miaoxiang/dfcfapp">东方财富 妙想</a></span></p>
+    <p class="patt"><b>结论先行 + 来源可查 + 追问不丢上下文</b> —— Perplexity Finance / Bloomberg:一屏结论 + 内嵌图 + 每条断言挂来源,原始一键可验,自然多轮追问。<span class="src"><a href="https://www.perplexity.ai/finance">Perplexity Finance</a></span></p>
+  </div>
+  <div class="col mock">
+    <p class="lbl"><span class="dot"></span>CTRL 该长啥样</p>
+    <div class="card ans">
+      <div class="head"><span class="chip hot">偏多</span><span class="v">机器人是今天最强主线</span></div>
+      <p>连板梯队里 3 板及以上有 4 只,<b>全在机器人题材</b>;板块资金净流入居首,炸板率 32.5% 说明接力仍需选强。中际旭创机构净买 3.82 亿 = 聪明钱在这条线。</p>
+      <svg class="mini" viewBox="0 0 260 44" preserveAspectRatio="none">
+        <polyline points="0,34 40,30 80,31 120,22 160,18 200,10 260,6" fill="none" stroke="#c0362c" stroke-width="2"/>
+        <polygon points="0,34 40,30 80,31 120,22 160,18 200,10 260,6 260,44 0,44" fill="rgba(192,54,44,.10)"/>
+      </svg>
+      <div class="followups">
+        <span class="f">铺进监控表</span><span class="f">机器人题材全览</span><span class="f">中际旭创技术面</span>
+      </div>
+      <div class="drill"><span class="ic">⌵</span>长按 → 原始 dragon_tiger / market_mood JSON(三层视图)</div>
+    </div>
+  </div>
+</div>
+
+<!-- PRINCIPLES -->
+<h2><span class="idx">06</span> 五条贯穿原则</h2>
+<div class="princ">
+  <div class="p"><b>结论先行(BLUF)</b><span>每个回答第一行是判定(偏多/退潮),证据卡按重要性递减排下面。倒金字塔。</span></div>
+  <div class="p"><b>AI 回答要可扫,不是散文</b><span>直答 + 卡片/表/bullet + 留白 &gt; 段落。给追问 chip。这就是「JSON 转述」的正解。</span></div>
+  <div class="p"><b>颜色翻转:红涨绿跌</b><span>红=涨/买/流入,绿=跌/卖/流出(港股除外)。所有卡片用 --up/--down。</span></div>
+  <div class="p"><b>渐进披露 / 一键看原始</b><span>默认给总结卡,长按展开原始数字(~2 层)—— CTRL 早就主张的「三层视图」。</span></div>
+  <div class="p" style="grid-column:1/-1"><b>常驻看板 &gt; 每次都问</b><span>永真状态(情绪温度 / 自选 / 龙头)推到常驻可扫面板,用颜色/大小/位置的前注意属性;聊天只留给一次性 NL 提问 —— 别让用户「问」本该一直看得见的东西。</span></div>
+</div>
+
+<!-- VERDICT / PLAN -->
+<h2><span class="idx">07</span> 落地:最小 → 终态</h2>
+<div class="verdictbox">
+  <div class="bar">当前 = 聊天机器人 + 一张表 · 目标 = 炒股工作台(卡片替用户读)</div>
+  <div class="body">
+    <div class="stage"><span class="n">A</span><div><b>结构化输出渲染(先做,最止痛)</b> — Irisy 对 stock 工具的 JSON 统一渲染成上面这些卡片 + 一句读法。复用现有 smart-table viewer + 一个轻卡片组件。同时解决「输出太生 + 落点分散」。<div class="m">验证优先卡:情绪温度计 · 龙头 bar-in-cell · 天梯 · 技术表盘 · AI 总结卡。</div></div></div>
+    <div class="stage"><span class="n">B</span><div><b>起手 chips</b> — 开包即见「今天龙头 / 大盘情绪 / 今天复盘」,一点 → Irisy 跑 → 落工作区。复用 intro 里已有的例句表。<div class="m">解决「进门不知问啥」。更小,可与 A 并行。</div></div></div>
+    <div class="stage"><span class="n">C</span><div><b>今日驾驶舱(终态,先不做)</b> — 开包第一屏 = 常驻可扫面板(情绪温度 + 龙头表 + 天梯)。大工程,等 A/B 验证后再上。<div class="m">符合「常驻看板 &gt; 每次都问」,但按极简原则押后。</div></div></div>
+  </div>
+</div>
+
+<div class="foot">
+  ctrl-stock-cn · 输出 UI 参照 —— 研究多源交叉(TradingView/CNN/Webull/StockTwits/Perplexity/Finviz 已对活页面核验;同花顺/韭研/东财部分为 WAF/JS 门,依权威图文指南,信息架构可靠、非像素级)。
+  真相源:<a href="#">vault/ctrl/plan-ctrl-stock-cn-pack.md</a> · 语言 = 中文文档(代码零中文)。
+</div>
+</div>

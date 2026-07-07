@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CTRL 基建规划 — 功能包管理 / 反馈 / 分享需要什么服务器</title>
+</head>
+<body style="margin:0;background:#f5f5f7">
+<style>
+  :root{
+    --bg:#f5f5f7;--elev:#fff;--ink:#1d1d1f;--mut:#6e6e73;--sub:#98989d;
+    --line:rgba(0,0,0,.09);--line2:rgba(0,0,0,.14);
+    --cf:#f38020;--cf-soft:rgba(243,128,32,.10);
+    --aws:#e8912d;--aws-soft:rgba(232,145,45,.12);
+    --primary:#3b5bda;--soft:rgba(59,91,218,.09);
+    --local:#0ca678;--local-soft:rgba(12,166,120,.10);
+    --warn:#f59f00;
+    --sans:-apple-system,"Inter","PingFang SC","Source Han Sans SC",system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono","Menlo",monospace;
+  }
+  *{box-sizing:border-box}
+  .page{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .page ::selection{background:rgba(59,91,218,.16)}
+  .wrap{max-width:1000px;margin:0 auto;padding:52px 24px 72px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--primary);font-weight:600}
+  h1{font-size:38px;letter-spacing:-.025em;font-weight:700;margin:12px 0 10px;text-wrap:balance}
+  .lede{font-size:18px;color:var(--mut);max-width:60ch;margin:0}
+  h2{font-size:24px;letter-spacing:-.02em;font-weight:700;margin:0 0 6px;display:flex;align-items:baseline;gap:10px}
+  h2 .i{font-family:var(--mono);font-size:14px;color:var(--primary);font-weight:500}
+  section{margin:46px 0 0}
+  .sub{color:var(--mut);font-size:15px;margin:0 0 18px;max-width:64ch}
+
+  /* verdict */
+  .verdict{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:26px 0 0}
+  .vc{border-radius:16px;padding:20px 22px;border:1px solid var(--line)}
+  .vc.keep{background:var(--cf-soft);border-color:rgba(243,128,32,.3)}
+  .vc.aws{background:var(--aws-soft);border-color:rgba(232,145,45,.35)}
+  .vc .tag{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+  .vc.keep .tag{color:#c15f10}.vc.aws .tag{color:#a5641a}
+  .vc h3{font-size:19px;margin:8px 0 6px;font-weight:700;letter-spacing:-.01em}
+  .vc p{margin:0;font-size:14px;color:var(--ink);opacity:.85;line-height:1.55}
+  .vc .big{font-family:var(--mono);font-size:13px;margin-top:10px;font-weight:600}
+
+  /* zone map */
+  .map{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--line);border-radius:18px;overflow:hidden;margin:24px 0 0;background:var(--elev)}
+  .zone{padding:20px 18px;border-right:1px solid var(--line);position:relative}
+  .zone:last-child{border-right:none}
+  .zone .zh{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;margin-bottom:4px}
+  .zone .dot{width:10px;height:10px;border-radius:50%}
+  .zone.l .dot{background:var(--local)}.zone.c .dot{background:var(--cf)}.zone.a .dot{background:var(--aws)}
+  .zone .zt{font-family:var(--mono);font-size:11px;color:var(--sub);margin-bottom:14px}
+  .box{border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:7px;font-size:13px;background:var(--bg)}
+  .box b{font-weight:600}.box small{display:block;color:var(--mut);font-size:11.5px;font-family:var(--mono);margin-top:1px}
+  .zone.l .box{border-left:3px solid var(--local)}
+  .zone.c .box{border-left:3px solid var(--cf)}
+  .zone.a .box{border-left:3px solid var(--aws)}
+  .flowline{font-family:var(--mono);font-size:11px;color:var(--sub);text-align:center;padding:10px 8px 0}
+  .truthtag{position:absolute;top:14px;right:14px;font-family:var(--mono);font-size:10px;font-weight:600;color:var(--local);background:var(--local-soft);padding:2px 7px;border-radius:20px}
+
+  /* component table */
+  .tblwrap{overflow-x:auto;margin:20px 0 0;border:1px solid var(--line);border-radius:14px}
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
+  th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);font-weight:600;background:var(--bg)}
+  td:first-child{font-weight:600;white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  .pill{font-family:var(--mono);font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .pill.cf{background:var(--cf-soft);color:#c15f10}
+  .pill.aws{background:var(--aws-soft);color:#a5641a}
+  .cost{font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .free{color:var(--local);font-weight:600}
+  td .why{color:var(--mut);font-size:13px;display:block;margin-top:2px}
+
+  /* aws answer callout */
+  .answer{background:var(--ink);color:#f5f5f7;border-radius:18px;padding:26px 28px;margin:24px 0 0}
+  .answer .eyebrow{color:#f5a962}
+  .answer h3{color:#fff;font-size:22px;margin:10px 0 8px;font-weight:700}
+  .answer .spec{font-family:var(--mono);font-size:14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:14px 16px;margin:14px 0 0;line-height:1.7;color:#e6e6ea}
+  .answer .spec b{color:#f5a962}
+  .answer p{color:#a8a8b0;font-size:14px;margin:14px 0 0;line-height:1.6}
+  .answer p b{color:#fff}
+
+  /* share detail */
+  .share{border:1px solid var(--line);border-radius:16px;background:var(--elev);padding:22px;margin:20px 0 0}
+  .share .step{display:flex;gap:12px;align-items:baseline;padding:7px 0;font-size:14.5px}
+  .share .step .n{font-family:var(--mono);color:var(--primary);font-weight:600;flex:0 0 auto}
+  .share b{font-weight:600}
+
+  .note{margin-top:22px;font-size:13.5px;color:var(--mut);background:var(--elev);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:0 10px 10px 0;padding:13px 16px}
+  .note b{color:var(--ink)}
+  .callout{margin-top:18px;background:var(--soft);border-radius:12px;padding:14px 18px;font-size:14px;color:var(--ink)}
+  details{margin-top:18px;border:1px solid var(--line);border-radius:12px;background:var(--elev);padding:2px 18px}
+  summary{cursor:pointer;font-weight:600;font-size:15px;padding:14px 0;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸ ";color:var(--primary)}
+  details[open] summary::before{content:"▾ "}
+  details .body{padding:0 0 16px;font-size:14px;color:var(--mut)}
+  details .body table{min-width:520px}
+  .foot{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--sub);display:flex;flex-wrap:wrap;gap:6px 18px}
+  .foot code{font-family:var(--mono);color:var(--mut)}
+  @media(max-width:760px){.verdict{grid-template-columns:1fr}.map{grid-template-columns:1fr}.zone{border-right:none;border-bottom:1px solid var(--line)}h1{font-size:30px}}
+</style>
+
+<div class="page">
+  <div class="eyebrow">CTRL 基建规划 · Infra</div>
+  <h1>功能包管理 · 反馈 · 分享<br>需要什么服务器？</h1>
+  <p class="lede">结论先行：三件事绝大部分留在 <b style="color:#c15f10">Cloudflare</b>（你已在用的边缘栈，R2 出口免费、scale-to-zero）。<b style="color:#a5641a">AWS 只需 1 台小机</b>——给股票功能包做「中国可达出口代理」，CF 够不到 CN 金融站的那个洞。</p>
+
+  <div class="verdict">
+    <div class="vc keep">
+      <div class="tag">留在 Cloudflare</div>
+      <h3>包注册表 · 分发 · 反馈 · 分享</h3>
+      <p>Workers + D1 + R2。全是「薄端点 + 对象存储」，天生 serverless。R2 出口 0 收费 = 分享 HTML / 分发包再多也不烧钱。</p>
+      <div class="big" style="color:#c15f10">起步基本在免费档内</div>
+    </div>
+    <div class="vc aws">
+      <div class="tag">才需要 AWS</div>
+      <h3>中国数据出口代理（唯一一处）</h3>
+      <p>CF Workers 的出口地理够不到腾讯/东财的行情站。一台常驻小机放东京/香港，转发 CN 金融 host。</p>
+      <div class="big" style="color:#a5641a">1× Lightsail nano · $5/月</div>
+    </div>
+  </div>
+
+  <section>
+    <h2><span class="i">01</span> 三个区，各司其职</h2>
+    <p class="sub">本机是 truth，云是 mirror。CF 承接绝大部分云侧；AWS 只补一个 CF 补不了的洞。</p>
+    <div class="map">
+      <div class="zone l">
+        <span class="truthtag">TRUTH</span>
+        <div class="zh"><span class="dot"></span>本机</div>
+        <div class="zt">你的电脑 · 拔网可用</div>
+        <div class="box"><b>CTRL app + vault</b><small>markdown / keychain</small></div>
+        <div class="box"><b>:17873 治理门</b><small>审计 + 审批</small></div>
+        <div class="box"><b>event-store.db</b><small>audit_calls = 反馈真相源</small></div>
+        <div class="flowline">↕ 发布 / 拉取 / 分享 / 反馈</div>
+      </div>
+      <div class="zone c">
+        <div class="zh"><span class="dot"></span>Cloudflare 边缘</div>
+        <div class="zt">mirror / augmentation</div>
+        <div class="box"><b>Registry Worker + D1</b><small>包元数据 + 搜索</small></div>
+        <div class="box"><b>R2 对象存储</b><small>包 bundle · 分享 HTML · 截图</small></div>
+        <div class="box"><b>Feedback Worker</b><small>→ GitHub Issue</small></div>
+        <div class="box"><b>已在跑</b><small>auth / billing / relay / push</small></div>
+        <div class="flowline">→ 仅股票数据经代理</div>
+      </div>
+      <div class="zone a">
+        <div class="zh"><span class="dot"></span>AWS（1 台）</div>
+        <div class="zt">东京 / 香港 · 常驻</div>
+        <div class="box"><b>Lightsail nano</b><small>$5/月 · 含 1TB 流量</small></div>
+        <div class="box"><b>薄 HTTP 代理</b><small>token 鉴权 · 只转 CN host</small></div>
+        <div class="flowline">→ qt.gtimg.cn / 东财 push2his</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="i">02</span> 逐项：组件 · 平台 · 成本</h2>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>能力</th><th>组件</th><th>平台</th><th>成本（起步）</th></tr></thead>
+        <tbody>
+          <tr><td>功能包注册表 / 搜索<span class="why">list / search / pull，Discover 的后端</span></td><td>Registry Worker + D1</td><td><span class="pill cf">Cloudflare</span></td><td class="cost free">免费档内</td></tr>
+          <tr><td>功能包分发<span class="why">manifest + 打包的服务代码 / 资产</span></td><td>R2 对象存储</td><td><span class="pill cf">Cloudflare</span></td><td class="cost">$0.015/GB·月<br><span class="free">出口 $0</span></td></tr>
+          <tr><td>反馈收集<span class="why">截图 + 日志 + 审计轨迹 → 开 Issue</span></td><td>Feedback Worker + R2 + D1 + GitHub API</td><td><span class="pill cf">Cloudflare</span></td><td class="cost free">免费档内</td></tr>
+          <tr><td>分享 HTML / 产物<span class="why">用户把报告 / 面板 / 包介绍分享出链接</span></td><td>R2 + Worker（短链 + 私有默认）</td><td><span class="pill cf">Cloudflare</span></td><td class="cost">近乎 $0<br><span class="free">出口 $0</span></td></tr>
+          <tr><td>中国数据出口<span class="why">CN 金融 host CF 够不到，需地理可达出口</span></td><td>Lightsail nano + 薄代理</td><td><span class="pill aws">AWS</span></td><td class="cost">$5/月</td></tr>
+          <tr><td>auth / billing / relay / push<span class="why">身份 / 订阅 / mesh 中继 / 推送</span></td><td>Workers + D1 + Stripe</td><td><span class="pill cf">Cloudflare</span></td><td class="cost">已在跑</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout"><b>为什么不全上 AWS：</b>R2 出口免费 vs S3+CloudFront 出口收费（1TB ≈ $90/月）；Workers scale-to-zero、无服务器可管 vs Lambda+API Gateway 更重且 fork 掉你已有的 CF 栈。端侧优先的产品，云侧越薄越对。</div>
+  </section>
+
+  <section>
+    <h2><span class="i">03</span> 你要的 AWS 服务器 = 一台</h2>
+    <div class="answer">
+      <div class="eyebrow">直接回答</div>
+      <h3>1× AWS Lightsail nano</h3>
+      <div class="spec"><b>规格</b>　nano · 512MB / 2 vCPU / 20GB SSD · 含 1TB 流量<br><b>区域</b>　东京 ap-northeast-1（或香港，看哪个真通 CN）<br><b>价格</b>　$5/月（IPv4）· 或 $3.5/月（仅 IPv6）<br><b>跑什么</b>　一个 token 鉴权的薄 HTTP 代理，白名单只转发 CN 金融 host<br><b>为什么 Lightsail 不是 EC2</b>　EC2 出口 1TB≈$90；Lightsail 打包 1TB 进 $5</div>
+      <p><b>其余一切零 AWS。</b>诚实缺口：东京 / 香港到大陆金融站的可达性是经验问题，得先拿一台真机 probe 一下 qt.gtimg.cn / push2his 通不通，再定区域——不猜。全球可达的价量 + 指标层（Yahoo/EODHD）已经通，这台只是把「换手 / 资金流 / 龙虎榜」那层深数据补上。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="i">04</span> 用户分享 HTML / 产物</h2>
+    <p class="sub">你说的「用户能直接分享 html 或其他」——机制就是 R2 + Worker，跟我给你发 artifact 链接一个道理，且 R2 出口免费 = 分享再多不烧钱。</p>
+    <div class="share">
+      <div class="step"><span class="n">1</span><span>本机产出（报告 / 面板 / 包介绍 = HTML 或 markdown）—— 数据始终在你 vault。</span></div>
+      <div class="step"><span class="n">2</span><span>点「分享」→ 上传到 R2，Worker 发一个<b>短链</b>。</span></div>
+      <div class="step"><span class="n">3</span><span><b>私有默认</b>：链接带不可猜的 token；要更严就加口令 / 有效期 / 随时撤销。</span></div>
+      <div class="step"><span class="n">4</span><span>对方打开链接即看，无需装 CTRL、无需账号——符合「无账号系统」。</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="i">05</span> 反馈收集：薄且尊重主权</h2>
+    <p class="sub">opt-in、发送前用户审阅；只收够做决策的信息，不做监控档案。CTRL 独有的一招 —— 附上 <b>gate 审计轨迹</b>（<code style="font-family:var(--mono);font-size:12px">event-store.db</code> 的真实工具调用），你收到的是「实际发生了什么」而非用户转述。</p>
+    <div class="note"><b>崩溃单独路：</b>opt-in panic-hook → 写本地 crash 文件 → 下次启动提示「要发送吗」，绝不静默上报。截图走 Tauri 抓 webview，敏感内容审阅门里可删。</div>
+  </section>
+
+  <details>
+    <summary>若你就是想全上 AWS —— 对照表 + 代价</summary>
+    <div class="body">
+      <div class="tblwrap" style="margin-top:8px">
+        <table>
+          <thead><tr><th>CF 组件</th><th>AWS 等价</th><th>代价</th></tr></thead>
+          <tbody>
+            <tr><td>Registry / Feedback Worker</td><td>Lambda + API Gateway</td><td>冷启动 + 更重编排</td></tr>
+            <tr><td>R2（bundle / HTML / 截图）</td><td>S3 + CloudFront</td><td><b>出口收费</b>（1TB≈$90/月）</td></tr>
+            <tr><td>D1</td><td>DynamoDB / RDS</td><td>RDS 有常驻实例费</td></tr>
+            <tr><td>relay / push</td><td>API Gateway WS / SNS</td><td>fork 掉现有 CF 栈</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:14px">技术上都能做，但你会失去 R2 免费出口、scale-to-zero，还要管一堆服务器/权限——对「端侧优先、云侧越薄越好」的 CTRL 是净负。建议只在<b>确有 AWS 独占理由</b>（如这台 CN 出口代理）时用 AWS。</p>
+    </div>
+  </details>
+
+  <div class="foot">
+    <span>成本来源核对 2026-07：</span>
+    <span><code>Lightsail nano $5/mo</code></span>
+    <span><code>R2 egress $0</code></span>
+    <span><code>Workers/D1/R2 free tier</code></span>
+    <span>建议落 <code>ADR-002 §provider / §crypto(mesh)</code> + vault 基建文档</span>
+  </div>
+</div>
+</body>
+</html>

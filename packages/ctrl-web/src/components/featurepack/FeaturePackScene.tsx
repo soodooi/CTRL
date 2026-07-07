@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { type PackConfigField, provisionPack, publishPack } from '@/lib/feature-pack';
 import { vaultRead, vaultList } from '@/lib/kernel';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
@@ -63,6 +64,12 @@ interface FeaturePackSceneProps {
   /** Execute an action; resolves to output text/markdown to show. Thrown
    *  errors surface in the output area. */
   onRunAction: (actionId: string) => Promise<string>;
+  /** Send a natural-language prompt to Irisy (starter chips). Wired to the
+   *  ambient send() so a chip click runs a full pack-aware Irisy turn. */
+  onSendMessage?: (text: string) => void | Promise<void>;
+  /** Optional first-screen dashboard (e.g. the stock cockpit). When present it
+   *  leads the workspace as a "Today" tab — a glanceable snapshot on open. */
+  dashboard?: ReactElement;
   /** Fetch the pack's §14 records (describe + query through the gate). Injected
    *  so the scene is testable/visual without the live kernel. Present iff
    *  `pack.hasRecords`. */
@@ -78,6 +85,12 @@ type RecordsState =
 // Sentinel tab id for a record_source pack's product-grade records tab, shown
 // FIRST in the workspace alongside the user's vault tables (§7.5 v48 dual-face).
 const RECORDS_TAB = '__records__';
+const INTRO_TAB = '__intro__';
+const DASHBOARD_TAB = '__dashboard__';
+
+/** Drop the YAML frontmatter block so intro.md renders as clean prose, not raw
+ *  `title: … type: …` text at the top. */
+const stripFrontmatter = (md: string): string => md.replace(/^---\n[\s\S]*?\n---\n?/, '');
 
 // A record_source pack's query fails with a gate "not configured" error until
 // the user connects it — show a friendly nudge to Set up / Connect existing,
@@ -200,6 +213,8 @@ export function RuntimeGuidanceCard({
 export function FeaturePackScene({
   pack,
   onRunAction,
+  onSendMessage,
+  dashboard,
   loadRecords,
 }: FeaturePackSceneProps): ReactElement {
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -242,25 +257,50 @@ export function FeaturePackScene({
     };
   }, [wsPrefix]);
   const showsWorkspace = wsPrefix != null;
+  // Pack intro.md (its detail/how-to page). Declared here so the workspace can
+  // lead with a Guide tab; the fetch effect lives further down.
+  const [intro, setIntro] = useState<string | null>(null);
   // §7.5 v48 dual-face: a pack with BOTH a §14 record_source AND a workspace
   // (e.g. ctrl-ghostfolio) surfaces its product-grade records as the FIRST tab
   // (read-only, live from the connector) alongside the user's own vault tables —
   // Feishu Bitable-style, so declaring a workspace never HIDES the records.
+  // Lead a workspace pack with a "Guide" tab (its intro.md) so opening it lands
+  // on how-to-use-it, not a bare empty table (bao 2026-07-07). Records-first
+  // packs (ghostfolio) keep records leading; the guide slots in right after.
   const wsTabs = useMemo(
-    () => [...(showsRecords ? [RECORDS_TAB] : []), ...(wsTables ?? [])],
-    [showsRecords, wsTables],
+    () => [
+      ...(dashboard != null ? [DASHBOARD_TAB] : []),
+      ...(showsRecords ? [RECORDS_TAB] : []),
+      ...(intro != null ? [INTRO_TAB] : []),
+      ...(wsTables ?? []),
+    ],
+    [dashboard, showsRecords, intro, wsTables],
   );
+  // Starter prompts: the example phrases the pack's intro.md wraps in CJK corner
+  // brackets (U+300C … U+300D). Data-driven (single source = intro), so a chip
+  // click sends a proven prompt to Irisy — the user learns what to ask without
+  // typing. All prompt text lives in intro data, not this code.
+  const starters = useMemo(() => {
+    if (intro == null) return [];
+    const out: string[] = [];
+    const re = /\u300c(.+?)\u300d/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(intro)) !== null) {
+      const s = m[1]?.trim();
+      if (s && !out.includes(s)) out.push(s);
+      if (out.length >= 5) break;
+    }
+    return out;
+  }, [intro]);
+
   const wsTabsKey = wsTabs.join('\n');
   useEffect(() => {
     setWsActive((cur) => (cur != null && wsTabs.includes(cur) ? cur : (wsTabs[0] ?? null)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsTabsKey]);
 
-  // Tools-only packs (no record_source) lead with their intro.md — the
-  // pack's own detail page (bao 2026-07-03: data-driven, not a blank scene;
-  // any pack that declares knowledge_base + ships intro.md gets this, zero
-  // per-pack code).
-  const [intro, setIntro] = useState<string | null>(null);
+  // Fetch intro.md (state declared above so wsTabs can lead with a Guide tab;
+  // bao 2026-07-03: data-driven detail page, zero per-pack code).
   useEffect(() => {
     if (showsRecords || pack.kbDir == null) {
       setIntro(null);
@@ -269,7 +309,7 @@ export function FeaturePackScene({
     let alive = true;
     void vaultRead(`${pack.kbDir}/intro.md`)
       .then((e) => {
-        if (alive) setIntro(e.content ?? null);
+        if (alive) setIntro(e.content != null ? stripFrontmatter(e.content) : null);
       })
       .catch(() => {
         if (alive) setIntro(null);
@@ -426,6 +466,21 @@ export function FeaturePackScene({
 
       <ActionBar actions={pack.actions} runningId={runningId} onRun={run} />
 
+      {onSendMessage != null && starters.length > 0 && (
+        <div className={styles.starters}>
+          {starters.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={styles.starterChip}
+              onClick={() => void onSendMessage(s)}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className={styles.output}>
         {/* No-docker guided install — sits above both faces so it's seen whether
             the pack leads with records or a workspace (bao 2026-07-05). */}
@@ -463,7 +518,13 @@ export function FeaturePackScene({
               <div className={styles.wsTabs} role="tablist" aria-label={`${pack.name} tables`}>
                 {wsTabs.map((t) => {
                   const label =
-                    t === RECORDS_TAB ? pack.name : t.replace(wsPrefix ?? '', '').replace(/\.md$/, '');
+                    t === DASHBOARD_TAB
+                      ? 'Today'
+                      : t === RECORDS_TAB
+                        ? pack.name
+                        : t === INTRO_TAB
+                          ? 'Guide'
+                          : t.replace(wsPrefix ?? '', '').replace(/\.md$/, '');
                   return (
                     <button
                       key={t}
@@ -480,7 +541,9 @@ export function FeaturePackScene({
                 })}
               </div>
               <div className={styles.wsBody}>
-                {wsActive === RECORDS_TAB ? (
+                {wsActive === DASHBOARD_TAB ? (
+                  dashboard
+                ) : wsActive === RECORDS_TAB ? (
                   records.status === 'loading' ? (
                     <div className={styles.empty}>Loading {pack.name} records…</div>
                   ) : records.status === 'error' ? (
@@ -497,6 +560,12 @@ export function FeaturePackScene({
                   ) : (
                     <div className={styles.empty}>No records loaded.</div>
                   )
+                ) : wsActive === INTRO_TAB ? (
+                  <div className={styles.intro}>
+                    {intro != null ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{intro}</ReactMarkdown>
+                    ) : null}
+                  </div>
                 ) : wsActive != null ? (
                   <SmartTableViewer resource={resourceFromVaultPath(wsActive)} />
                 ) : null}
@@ -534,7 +603,7 @@ export function FeaturePackScene({
           </>
         ) : intro != null ? (
           <div className={styles.intro}>
-            <ReactMarkdown>{intro}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{intro}</ReactMarkdown>
           </div>
         ) : (
           <div className={styles.empty}>

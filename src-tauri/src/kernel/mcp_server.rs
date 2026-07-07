@@ -1087,20 +1087,48 @@ impl KernelMcpRouter {
         let q = args.query.to_lowercase();
         let terms: Vec<&str> = q.split_whitespace().collect();
         let limit = args.limit.unwrap_or(15).min(50);
-        let matches: Vec<serde_json::Value> = Self::tool_router()
-            .list_all()
+        // Static kernel tools PLUS every connected downstream pack server's tools
+        // (namespaced `<id>_<tool>`, mirroring list_tools). Without the downstream
+        // merge this escape hatch could only find static kernel tools, so an
+        // installed feature pack's tools (e.g. `stock-cn_stock_kline`) were
+        // undiscoverable by the capped brain — BRAIN_TOOLSET filters them out of
+        // the plain listing, leaving gate_tool_search the ONLY way in, and it
+        // couldn't see them either (the exact gap that left Irisy improvising
+        // A-share data from memory).
+        let mut all = Self::tool_router().list_all();
+        for desc in self.runtime.mcp_host.list_installed().await {
+            if let Ok(downstream) = self.runtime.mcp_host.list_tools(&desc.id).await {
+                for mut t in downstream {
+                    t.name = format!("{}_{}", desc.id, t.name).into();
+                    all.push(t);
+                }
+            }
+        }
+        // Match on ANY term, ranked by how many terms hit (most-relevant first),
+        // NOT ALL-terms-must-match: the brain passes verbose queries ("stock
+        // analysis market sentiment A-share") and an AND match silently returns
+        // nothing when one extra word isn't in the tool's name/description —
+        // exactly why Irisy searched for market sentiment, missed
+        // `stock-cn_market_mood`, and fell back to guessing. ANY + rank keeps the
+        // most-relevant tool at the head under the `limit` cap.
+        let mut scored: Vec<(usize, _)> = all
             .into_iter()
-            .filter(|t| {
+            .filter_map(|t| {
                 let hay = format!(
                     "{} {}",
                     t.name,
                     t.description.as_deref().unwrap_or("")
                 )
                 .to_lowercase();
-                terms.iter().all(|term| hay.contains(term))
+                let score = terms.iter().filter(|term| hay.contains(*term)).count();
+                (score > 0).then_some((score, t))
             })
+            .collect();
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        let matches: Vec<serde_json::Value> = scored
+            .into_iter()
             .take(limit)
-            .map(|t| {
+            .map(|(_, t)| {
                 serde_json::json!({
                     "name": t.name,
                     "description": t.description,
@@ -3269,10 +3297,15 @@ impl KernelMcpRouter {
                         .to_string(),
                     description: String::new(),
                     tools: Vec::new(),
-                    source: crate::kernel::mcp_host::McpServerSource::Local {
-                        command: command.to_string(),
-                        args: cmd_args,
-                    },
+                    // Portable manifests: substitute ${PACK_DIR} with the real
+                    // install dir + resolve a bare command, same as boot-time
+                    // reconnect (ADR-002 substrate § composition §7.4) — so a
+                    // freshly-installed shared pack spawns on this machine.
+                    source: crate::kernel::mcp_host::resolve_local_source(
+                        command,
+                        &cmd_args,
+                        &dir.join(installed_id),
+                    ),
                 };
                 self.runtime.mcp_host.register(desc).await;
                 match self.runtime.mcp_host.connect(&id).await {

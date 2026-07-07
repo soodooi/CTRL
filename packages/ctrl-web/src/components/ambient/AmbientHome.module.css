@@ -829,9 +829,12 @@
    composer, not a SaaS toolbar. The composer stays the protagonist. */
 .quickRow {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
   padding: 0 4px 8px;
+  overflow-x: auto;
+  min-width: 0;
 }
 
 .quickChip {
