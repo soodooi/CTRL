@@ -20,6 +20,7 @@ ALLOW = {
     "push2his.eastmoney.com", "1.push2his.eastmoney.com", "7.push2his.eastmoney.com",
     "push2.eastmoney.com", "push2delay.eastmoney.com",
     "hq.sinajs.cn",
+    "datacenter-web.eastmoney.com", "datacenter.eastmoney.com",
 }
 
 def _resp(code, body, ct="text/plain", b64=False):
