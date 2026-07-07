@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { type PackConfigField, provisionPack, publishPack } from '@/lib/feature-pack';
 import { vaultRead, vaultList } from '@/lib/kernel';
 import { SmartTableViewer } from '@/components/viewers/SmartTableViewer';
@@ -78,6 +79,11 @@ type RecordsState =
 // Sentinel tab id for a record_source pack's product-grade records tab, shown
 // FIRST in the workspace alongside the user's vault tables (§7.5 v48 dual-face).
 const RECORDS_TAB = '__records__';
+const INTRO_TAB = '__intro__';
+
+/** Drop the YAML frontmatter block so intro.md renders as clean prose, not raw
+ *  `title: … type: …` text at the top. */
+const stripFrontmatter = (md: string): string => md.replace(/^---\n[\s\S]*?\n---\n?/, '');
 
 // A record_source pack's query fails with a gate "not configured" error until
 // the user connects it — show a friendly nudge to Set up / Connect existing,
@@ -242,13 +248,23 @@ export function FeaturePackScene({
     };
   }, [wsPrefix]);
   const showsWorkspace = wsPrefix != null;
+  // Pack intro.md (its detail/how-to page). Declared here so the workspace can
+  // lead with a Guide tab; the fetch effect lives further down.
+  const [intro, setIntro] = useState<string | null>(null);
   // §7.5 v48 dual-face: a pack with BOTH a §14 record_source AND a workspace
   // (e.g. ctrl-ghostfolio) surfaces its product-grade records as the FIRST tab
   // (read-only, live from the connector) alongside the user's own vault tables —
   // Feishu Bitable-style, so declaring a workspace never HIDES the records.
+  // Lead a workspace pack with a "Guide" tab (its intro.md) so opening it lands
+  // on how-to-use-it, not a bare empty table (bao 2026-07-07). Records-first
+  // packs (ghostfolio) keep records leading; the guide slots in right after.
   const wsTabs = useMemo(
-    () => [...(showsRecords ? [RECORDS_TAB] : []), ...(wsTables ?? [])],
-    [showsRecords, wsTables],
+    () => [
+      ...(showsRecords ? [RECORDS_TAB] : []),
+      ...(intro != null ? [INTRO_TAB] : []),
+      ...(wsTables ?? []),
+    ],
+    [showsRecords, intro, wsTables],
   );
   const wsTabsKey = wsTabs.join('\n');
   useEffect(() => {
@@ -256,11 +272,8 @@ export function FeaturePackScene({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsTabsKey]);
 
-  // Tools-only packs (no record_source) lead with their intro.md — the
-  // pack's own detail page (bao 2026-07-03: data-driven, not a blank scene;
-  // any pack that declares knowledge_base + ships intro.md gets this, zero
-  // per-pack code).
-  const [intro, setIntro] = useState<string | null>(null);
+  // Fetch intro.md (state declared above so wsTabs can lead with a Guide tab;
+  // bao 2026-07-03: data-driven detail page, zero per-pack code).
   useEffect(() => {
     if (showsRecords || pack.kbDir == null) {
       setIntro(null);
@@ -269,7 +282,7 @@ export function FeaturePackScene({
     let alive = true;
     void vaultRead(`${pack.kbDir}/intro.md`)
       .then((e) => {
-        if (alive) setIntro(e.content ?? null);
+        if (alive) setIntro(e.content != null ? stripFrontmatter(e.content) : null);
       })
       .catch(() => {
         if (alive) setIntro(null);
@@ -463,7 +476,11 @@ export function FeaturePackScene({
               <div className={styles.wsTabs} role="tablist" aria-label={`${pack.name} tables`}>
                 {wsTabs.map((t) => {
                   const label =
-                    t === RECORDS_TAB ? pack.name : t.replace(wsPrefix ?? '', '').replace(/\.md$/, '');
+                    t === RECORDS_TAB
+                      ? pack.name
+                      : t === INTRO_TAB
+                        ? 'Guide'
+                        : t.replace(wsPrefix ?? '', '').replace(/\.md$/, '');
                   return (
                     <button
                       key={t}
@@ -497,6 +514,12 @@ export function FeaturePackScene({
                   ) : (
                     <div className={styles.empty}>No records loaded.</div>
                   )
+                ) : wsActive === INTRO_TAB ? (
+                  <div className={styles.intro}>
+                    {intro != null ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{intro}</ReactMarkdown>
+                    ) : null}
+                  </div>
                 ) : wsActive != null ? (
                   <SmartTableViewer resource={resourceFromVaultPath(wsActive)} />
                 ) : null}
@@ -534,7 +557,7 @@ export function FeaturePackScene({
           </>
         ) : intro != null ? (
           <div className={styles.intro}>
-            <ReactMarkdown>{intro}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{intro}</ReactMarkdown>
           </div>
         ) : (
           <div className={styles.empty}>
