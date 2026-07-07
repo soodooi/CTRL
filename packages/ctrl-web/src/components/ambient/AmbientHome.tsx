@@ -64,7 +64,8 @@ import { loadTranscript, saveTranscript } from '@/lib/transcript-store';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
 import { type Capability } from '@/lib/capability-catalog';
-import { STOCK_CARD_TOOLS } from '@/components/featurepack/stock/StockCard';
+import { STOCK_CARD_TOOLS, type StockResult } from '@/components/featurepack/stock/StockCard';
+import { StockCockpit, type CockpitData } from '@/components/featurepack/stock/StockCockpit';
 import {
   detectPart,
   renderPart,
@@ -104,6 +105,7 @@ import {
   captureScreenAndOcr,
   csStdin,
   listMcps,
+  gateInvoke,
   type IrisySessionTurn,
   type McpSummary,
 } from '@/lib/kernel';
@@ -941,6 +943,21 @@ export function AmbientHome({
   }, []);
 
   // Export an artifact as a file (download = the local-first "share": the user
+  // Today cockpit loader for the stock pack — calls its tools through the
+  // :17873 gate (gateInvoke returns each tool's native object incl. its `card`
+  // block). Memoized so the cockpit's effect fetches once, not every render.
+  // Live data needs the kernel + pack running (desktop) — the standing gap.
+  const loadStockCockpit = useCallback(async (): Promise<CockpitData> => {
+    const grab = (tool: string): Promise<StockResult | undefined> =>
+      gateInvoke<StockResult>(tool, {}).catch(() => undefined);
+    const [mood, ladder, leaders] = await Promise.all([
+      grab('market_mood'),
+      grab('limit_ladder'),
+      grab('leaders'),
+    ]);
+    return { mood, ladder, leaders };
+  }, []);
+
   // gets a real plain-text file they own and can send anywhere).
   const downloadPart = useCallback((p: PartSpec) => {
     const ext =
@@ -1940,6 +1957,11 @@ export function AmbientHome({
                       pack={scene}
                       onRunAction={(id) => runInstalledPackAction(scene.id, id)}
                       onSendMessage={send}
+                      dashboard={
+                        scene.id === 'ctrl-stock-cn' ? (
+                          <StockCockpit load={loadStockCockpit} />
+                        ) : undefined
+                      }
                       loadRecords={
                         scene.hasRecords ? () => loadPackRecords(scene.id) : undefined
                       }

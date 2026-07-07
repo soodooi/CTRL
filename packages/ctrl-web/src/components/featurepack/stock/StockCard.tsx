@@ -81,14 +81,14 @@ interface CardBlock {
   resist?: number | string | null;
 }
 
-interface StockResult {
+export interface StockResult {
   card?: CardBlock;
   error?: string;
   [k: string]: unknown;
 }
 
-/** Entry point: parse a stock tool's JSON output and render its card. Returns
- *  null when the payload has no card block (caller falls back to raw view). */
+/** Entry point: parse a stock tool's JSON output string and render its card.
+ *  Returns null when the payload has no card block (caller falls back to raw). */
 export function renderStockCard(variant: string, rawJson: string): ReactElement | null {
   let data: StockResult;
   try {
@@ -96,6 +96,12 @@ export function renderStockCard(variant: string, rawJson: string): ReactElement 
   } catch {
     return null;
   }
+  return renderStockCardData(variant, data);
+}
+
+/** Render a card from an already-parsed stock tool result (e.g. a gateInvoke
+ *  response, which arrives as the tool's native object). */
+export function renderStockCardData(variant: string, data: StockResult): ReactElement | null {
   if (data.error) return <ErrorCard message={String(data.error)} />;
   const card = data.card;
   if (!card || typeof card !== 'object') return null;

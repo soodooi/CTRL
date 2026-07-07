@@ -67,6 +67,9 @@ interface FeaturePackSceneProps {
   /** Send a natural-language prompt to Irisy (starter chips). Wired to the
    *  ambient send() so a chip click runs a full pack-aware Irisy turn. */
   onSendMessage?: (text: string) => void | Promise<void>;
+  /** Optional first-screen dashboard (e.g. the stock cockpit). When present it
+   *  leads the workspace as a "Today" tab — a glanceable snapshot on open. */
+  dashboard?: ReactElement;
   /** Fetch the pack's §14 records (describe + query through the gate). Injected
    *  so the scene is testable/visual without the live kernel. Present iff
    *  `pack.hasRecords`. */
@@ -83,6 +86,7 @@ type RecordsState =
 // FIRST in the workspace alongside the user's vault tables (§7.5 v48 dual-face).
 const RECORDS_TAB = '__records__';
 const INTRO_TAB = '__intro__';
+const DASHBOARD_TAB = '__dashboard__';
 
 /** Drop the YAML frontmatter block so intro.md renders as clean prose, not raw
  *  `title: … type: …` text at the top. */
@@ -210,6 +214,7 @@ export function FeaturePackScene({
   pack,
   onRunAction,
   onSendMessage,
+  dashboard,
   loadRecords,
 }: FeaturePackSceneProps): ReactElement {
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -264,11 +269,12 @@ export function FeaturePackScene({
   // packs (ghostfolio) keep records leading; the guide slots in right after.
   const wsTabs = useMemo(
     () => [
+      ...(dashboard != null ? [DASHBOARD_TAB] : []),
       ...(showsRecords ? [RECORDS_TAB] : []),
       ...(intro != null ? [INTRO_TAB] : []),
       ...(wsTables ?? []),
     ],
-    [showsRecords, intro, wsTables],
+    [dashboard, showsRecords, intro, wsTables],
   );
   // Starter prompts: the example phrases the pack's intro.md wraps in CJK corner
   // brackets (U+300C … U+300D). Data-driven (single source = intro), so a chip
@@ -512,11 +518,13 @@ export function FeaturePackScene({
               <div className={styles.wsTabs} role="tablist" aria-label={`${pack.name} tables`}>
                 {wsTabs.map((t) => {
                   const label =
-                    t === RECORDS_TAB
-                      ? pack.name
-                      : t === INTRO_TAB
-                        ? 'Guide'
-                        : t.replace(wsPrefix ?? '', '').replace(/\.md$/, '');
+                    t === DASHBOARD_TAB
+                      ? 'Today'
+                      : t === RECORDS_TAB
+                        ? pack.name
+                        : t === INTRO_TAB
+                          ? 'Guide'
+                          : t.replace(wsPrefix ?? '', '').replace(/\.md$/, '');
                   return (
                     <button
                       key={t}
@@ -533,7 +541,9 @@ export function FeaturePackScene({
                 })}
               </div>
               <div className={styles.wsBody}>
-                {wsActive === RECORDS_TAB ? (
+                {wsActive === DASHBOARD_TAB ? (
+                  dashboard
+                ) : wsActive === RECORDS_TAB ? (
                   records.status === 'loading' ? (
                     <div className={styles.empty}>Loading {pack.name} records…</div>
                   ) : records.status === 'error' ? (
