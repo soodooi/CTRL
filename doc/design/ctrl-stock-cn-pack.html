@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A股助手 · ctrl-stock-cn — CTRL 功能包架构</title>
+</head>
+<body style="margin:0;background:#efece3">
+<style>
+  :root{
+    --paper:#efece3; --panel:#e8e4d8; --panel-2:#e2ddce;
+    --ink:#20221d; --ink-2:#4a4d44; --mut:#7d8077; --line:#d7d2c3;
+    --seal:#bf3b2b; --seal-deep:#9c2f22;
+    --up:#c0362c; --down:#2f7d57; --gate:#2f5c86; --gate-soft:#e0e8f0;
+    --serif:"Songti SC","STSong","Noto Serif SC","SimSun",serif;
+    --sans:"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+    --mono:"SF Mono",ui-monospace,"Menlo","Cascadia Code",monospace;
+  }
+  *{box-sizing:border-box}
+  .page{
+    max-width:960px;margin:0 auto;padding:56px 28px 72px;
+    background:var(--paper);color:var(--ink);
+    font-family:var(--sans);font-size:16px;line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page::selection,.page *::selection{background:rgba(191,59,43,.16)}
+  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--seal);font-weight:600}
+  h1{font-family:var(--serif);font-weight:600;font-size:40px;line-height:1.15;margin:.28em 0 .12em;text-wrap:balance;letter-spacing:.01em}
+  h1 .mono{font-family:var(--mono);font-size:.6em;color:var(--mut);font-weight:400;letter-spacing:0}
+  h2{font-family:var(--serif);font-weight:600;font-size:25px;margin:0 0 .5em;letter-spacing:.01em;display:flex;align-items:baseline;gap:.5em}
+  h2 .idx{font-family:var(--mono);font-size:15px;color:var(--seal);font-weight:400}
+  .thesis{font-size:19px;line-height:1.6;color:var(--ink-2);max-width:60ch;margin:0}
+  .thesis b{color:var(--ink);font-weight:600;box-shadow:inset 0 -.42em 0 rgba(191,59,43,.14)}
+  header{display:flex;gap:22px;align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:30px;margin-bottom:42px}
+  .seal{flex:0 0 auto;width:74px;height:74px;border-radius:12px;background:
+      linear-gradient(150deg,var(--seal),var(--seal-deep));
+      color:#f4e9df;font-family:var(--serif);font-weight:600;font-size:34px;
+      display:flex;align-items:center;justify-content:center;
+      box-shadow:0 8px 22px -12px rgba(156,47,34,.7),inset 0 1px 0 rgba(255,255,255,.18);
+      position:relative}
+  .seal::after{content:"印";position:absolute;right:-7px;bottom:-7px;width:24px;height:24px;border-radius:5px;
+      background:var(--seal-deep);color:#f0d9cf;font-size:12px;display:flex;align-items:center;justify-content:center;
+      box-shadow:0 3px 8px -3px rgba(0,0,0,.4)}
+  section{margin:46px 0 0}
+  .lead{max-width:62ch}
+  .tag{display:inline-block;font-family:var(--mono);font-size:12.5px;padding:.15em .5em;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink-2)}
+  .callout{border-left:3px solid var(--seal);background:var(--panel);padding:14px 18px;border-radius:0 8px 8px 0;margin:22px 0 0;font-size:15px;color:var(--ink-2)}
+  .callout b{color:var(--ink)}
+
+  /* manifest snippet */
+  .code{font-family:var(--mono);font-size:13px;line-height:1.7;background:#211f1b;color:#dcd6c6;border-radius:10px;padding:18px 20px;overflow-x:auto;margin:20px 0 0}
+  .code .k{color:#e0a05a}.code .s{color:#8fbf8a}.code .c{color:#6f6a5c;font-style:italic}
+  .code .hl{color:#e78f80;font-weight:600}
+
+  /* four-layer diagram */
+  .gate{border:2px solid var(--gate);border-radius:14px;background:linear-gradient(180deg,var(--gate-soft),transparent 60%);padding:0;margin:26px 0 0;overflow:hidden}
+  .gate-bar{background:var(--gate);color:#eaf1f8;font-size:13.5px;padding:9px 16px;display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+  .gate-bar b{font-weight:600}
+  .gate-bar .idx{font-family:var(--mono)}
+  .gate-bar .mono{font-family:var(--mono);opacity:.85}
+  .layers{padding:16px;display:flex;flex-direction:column;gap:0;position:relative}
+  .layer{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:13px 16px;position:relative;z-index:1}
+  .layer + .flowc,.brain + .flowc{}
+  .flowc{display:flex;justify-content:center;color:var(--gate);font-size:18px;line-height:1;padding:5px 0;z-index:0}
+  .layer .lnum{font-family:var(--mono);color:var(--seal);font-weight:600;margin-right:.5em}
+  .layer .lname{font-family:var(--serif);font-weight:600;font-size:17px}
+  .layer .ldesc{color:var(--ink-2);font-size:14px;margin-top:3px}
+  .layer .chips{margin-top:9px;display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-family:var(--mono);font-size:11.5px;padding:.2em .5em;border-radius:5px;background:var(--paper);border:1px solid var(--line);color:var(--ink-2)}
+  .brain{border:1px dashed var(--seal);border-radius:10px;background:rgba(191,59,43,.05);padding:12px 16px;font-size:14.5px;color:var(--ink)}
+  .brain b{font-family:var(--serif);font-weight:600}
+  .l1{border-left:4px solid #9a8f6f}.l2{border-left:4px solid #6f8a6f}.l3{border-left:4px solid var(--gate)}
+
+  /* three modes */
+  .modes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:22px 0 0}
+  .mode{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px;display:flex;flex-direction:column;gap:8px}
+  .mode h3{margin:0;font-family:var(--serif);font-size:18px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .mode h3 .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .mode.talk .dot{background:var(--seal)}.mode.op .dot{background:var(--gate)}.mode.cron .dot{background:var(--down)}
+  .mode p{margin:0;font-size:14px;color:var(--ink-2)}
+  .mode .ex{font-size:13px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:7px;padding:8px 10px;margin-top:auto}
+  .mode .ex b{color:var(--seal)}
+
+  /* say-to-irisy table */
+  .say{width:100%;border-collapse:collapse;margin:20px 0 0;font-size:14.5px}
+  .say th,.say td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  .say th{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);font-weight:600}
+  .say td:first-child{color:var(--ink);font-weight:500;white-space:nowrap}
+  .say td .tag{font-size:11.5px}
+  .say tr:last-child td{border-bottom:none}
+  .tblwrap{overflow-x:auto}
+
+  /* open-path wireframe */
+  .wire{display:grid;grid-template-columns:54px 1fr;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:22px 0 0;background:var(--panel);min-height:230px}
+  .rail{background:#26241f;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px 0}
+  .rail .ic{width:32px;height:32px;border-radius:8px;background:#3a372f;color:#b8b2a2;display:flex;align-items:center;justify-content:center;font-size:14px;font-family:var(--sans)}
+  .rail .ic.on{background:var(--seal);color:#f4e9df;font-family:var(--serif);font-weight:600;box-shadow:0 0 0 3px rgba(191,59,43,.28)}
+  .split{display:grid;grid-template-columns:38% 1fr;min-width:0}
+  .pane{padding:14px 16px;min-width:0}
+  .pane.irisy{border-right:1px dashed var(--line);background:var(--paper)}
+  .pane h4{margin:0 0 8px;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut)}
+  .bubble{font-size:13px;background:var(--panel-2);border-radius:9px;padding:8px 11px;margin-bottom:7px;color:var(--ink-2)}
+  .bubble.me{background:rgba(47,92,134,.1);color:var(--ink);margin-left:14px}
+  .wstabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+  .wstab{font-size:12px;font-family:var(--mono);padding:.28em .6em;border-radius:6px 6px 0 0;background:var(--panel-2);border:1px solid var(--line);border-bottom:none;color:var(--ink-2)}
+  .wstab.on{background:var(--paper);color:var(--seal);font-weight:600}
+  .wsgrid{border:1px solid var(--line);border-radius:0 7px 7px 7px;overflow:hidden;font-size:12px}
+  .wsgrid .r{display:grid;grid-template-columns:1.4fr 1fr 1fr;border-bottom:1px solid var(--line)}
+  .wsgrid .r:last-child{border-bottom:none}
+  .wsgrid .r.h{background:var(--panel-2);color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  .wsgrid .cell{padding:6px 9px;border-right:1px solid var(--line);font-variant-numeric:tabular-nums}
+  .wsgrid .cell:last-child{border-right:none}
+  .up{color:var(--up)}.down{color:var(--down)}
+
+  /* tools grid + data */
+  .tools{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:20px 0 0}
+  .tool{display:flex;gap:11px;align-items:baseline;border:1px solid var(--line);border-radius:9px;padding:11px 13px;background:var(--panel)}
+  .tool code{font-family:var(--mono);font-size:13px;color:var(--seal);font-weight:600;white-space:nowrap}
+  .tool span{font-size:13.5px;color:var(--ink-2)}
+  .sample{font-family:var(--mono);font-size:13px;line-height:1.75;background:#211f1b;color:#dcd6c6;border-radius:10px;padding:16px 18px;overflow-x:auto;margin:18px 0 0}
+  .sample .n{color:#e0a05a}.sample .down{color:#e78f80}.sample .stage{color:#9fd0f0;font-weight:600}
+  .read{font-size:14.5px;color:var(--ink-2);margin:12px 0 0;max-width:60ch}
+  .read b{color:var(--ink)}
+
+  /* governance / footer */
+  .gov{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:9px}
+  .gov li{display:flex;gap:11px;font-size:14.5px;color:var(--ink-2);align-items:baseline}
+  .gov li b{color:var(--ink)}
+  .gov .m{color:var(--seal);font-family:var(--mono);font-size:12px;flex:0 0 auto;width:78px}
+  .foot{margin-top:52px;padding-top:22px;border-top:1px solid var(--line);font-size:13px;color:var(--mut);display:flex;flex-wrap:wrap;gap:6px 18px}
+  .foot code{font-family:var(--mono);color:var(--ink-2)}
+  @media(max-width:720px){
+    .modes{grid-template-columns:1fr}
+    .tools{grid-template-columns:1fr}
+    .split{grid-template-columns:1fr}
+    h1{font-size:32px}
+  }
+  @media(prefers-reduced-motion:no-preference){
+    .seal{animation:sink .6s cubic-bezier(.2,.7,.3,1) both}
+    @keyframes sink{from{opacity:0;transform:translateY(-6px) rotate(-3deg)}to{opacity:1;transform:none}}
+  }
+</style>
+
+<div class="page">
+  <header>
+    <div class="seal">S</div>
+    <div>
+      <div class="eyebrow">CTRL 功能包 · Feature Pack</div>
+      <h1>A股助手 <span class="mono">ctrl-stock-cn</span></h1>
+      <p class="thesis">一个 <b>manifest.json（纯数据）</b> + 四层能力，装上就是一个 L1 入口。CTRL runtime 通用，<b>加这个包写零行 kernel 代码</b>。</p>
+    </div>
+  </header>
+
+  <section>
+    <h2><span class="idx">00</span> 功能包是什么</h2>
+    <p class="lead">功能包不是一个 app，是一份声明 + 四层能力的组合。这个包的清单里全是<b>数据</b>——CTRL 读它、装它、渲染它，不为它写专门代码。作者字段写着 <span class="tag">irisy · agent</span>：它是 Irisy 按需求<b>现写的</b>，不是我手敲的。</p>
+    <div class="code"><span class="c"># manifest.json —— 全是数据，无一行为它定制的 kernel 代码</span>
+"id": <span class="s">"ctrl-stock-cn"</span>,  "name": <span class="s">"A-Share Assistant"</span>,  "icon": <span class="s">"S"</span>,
+"author": { "name": <span class="s">"irisy"</span>, "kind": <span class="s">"agent"</span> },       <span class="c">// Irisy 现写的</span>
+"variant": <span class="s">"mcp-server"</span>,  "server": { "command": <span class="s">"uv run service/main.py"</span> },
+<span class="hl">"ui_surface": "workspace"</span>,  <span class="hl">"workspace": { "table_prefix": "tables/stocks-" }</span>,  <span class="c">// ← 让它成为一个 L1</span>
+"knowledge_base": <span class="s">"projects/stock-cn"</span>,  "skills": [<span class="s">"stock-analysis-cn"</span>, <span class="s">"mood-cycle"</span>, <span class="s">"daily-review"</span>],
+"permissions": [<span class="s">"network"</span>],  <span class="c">// 免 key 公开源；无账号、无密钥、无下单</span></div>
+  </section>
+
+  <section>
+    <h2><span class="idx">01</span> 四层架构</h2>
+    <p class="lead">这是最该看清的一张图。底下两层是<b>能力</b>（工具 + 方法论），Irisy 把它们用起来、产出落到<b>智能表格</b>，而<b>每一次调用和写入都穿过 :17873 治理门</b>。数据自下而上流。</p>
+    <div class="gate" aria-label="四层架构图">
+      <div class="gate-bar"><span class="idx">④</span> <b>治理门</b> <span class="mono">:17873</span> —— 每次工具调用 + 每次写操作都穿过它（审计留痕 · 写入过人工审批门）</div>
+      <div class="layers">
+        <div class="layer l3">
+          <span class="lnum">③</span><span class="lname">智能表格层</span>
+          <div class="ldesc">Irisy 的产出落进本机 vault 真表（<code style="font-family:var(--mono);font-size:12px">tables/stocks-*</code>）；你在工作区直接排序 / 筛选 / 色阶操作，像用飞书多维表。</div>
+          <div class="chips"><span class="chip">stocks-watchlist 自选监控</span><span class="chip">stocks-review 复盘</span><span class="chip">stocks-screen 筛选结果</span></div>
+        </div>
+        <div class="flowc">▲</div>
+        <div class="brain"><b>Irisy（脑）</b> —— 先读②方法论（regime-first / 结构优先），再按需调①工具，结论带失效点、不堆指标。</div>
+        <div class="flowc">▲</div>
+        <div class="layer l2">
+          <span class="lnum">②</span><span class="lname">方法论层</span>
+          <div class="ldesc">3 个 skill（按需 vault_read），教 Irisy 怎么用工具——全从真实可用产品蒸馏，不是训练瞎编。</div>
+          <div class="chips"><span class="chip">stock-analysis-cn 缠论结构优先</span><span class="chip">mood-cycle 92科比四阶段</span><span class="chip">daily-review 日复盘</span></div>
+        </div>
+        <div class="flowc">▲</div>
+        <div class="layer l1">
+          <span class="lnum">①</span><span class="lname">数据 / 工具层</span>
+          <div class="ldesc">7 个 <code style="font-family:var(--mono);font-size:12px">stock-cn_*</code> 工具 = 一个本地跑的 mcp-server 服务（<code style="font-family:var(--mono);font-size:12px">service/main.py</code>），免 key、多源 failover。</div>
+          <div class="chips"><span class="chip">market_mood</span><span class="chip">limit_ladder</span><span class="chip">sector_strength</span><span class="chip">screen_strong</span><span class="chip">stock_quote</span><span class="chip">stock_kline</span><span class="chip">stock_technical</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="callout"><b>为什么是四层而不是「一个工具」：</b>裸工具只会返数字；方法论层让 Irisy 像个懂行的人那样先看市场 regime、再看结构、指标只当过滤器；智能表格层让结论可留存、可操作；治理门让每一步可审计、写入需你点头。<b>这套「raw 工具 → AI-native 提升层」正是功能包的护城河。</b></div>
+  </section>
+
+  <section>
+    <h2><span class="idx">02</span> 三种用法</h2>
+    <div class="modes">
+      <div class="mode talk">
+        <h3><span class="dot"></span>对话</h3>
+        <p>主用法。Irisy 是 pipe：你说需求，它调工具、把结果<b>路由进右侧工作区面板</b>。</p>
+        <div class="ex"><b>你：</b>今天市场情绪怎么样？<br>→ market_mood → 周期阶段 + 每个数字附原文</div>
+      </div>
+      <div class="mode op">
+        <h3><span class="dot"></span>直接操作</h3>
+        <p>打开股票 L1 = 多 Tab 智能表格工作区。自选 / 复盘 / 筛选表，直接排序、筛选、色阶。</p>
+        <div class="ex"><b>手动：</b>在自选表拖列、改条件、看板块色阶热力——不经 Irisy 也能干。</div>
+      </div>
+      <div class="mode cron">
+        <h3><span class="dot"></span>定时任务</h3>
+        <p>hermes 自带 cron。让它无人值守地按点跑。</p>
+        <div class="ex"><b>定时：</b>每天收盘后自动跑情绪总貌 + 复盘，写进当天笔记。</div>
+      </div>
+    </div>
+    <div class="tblwrap">
+    <table class="say">
+      <thead><tr><th>你对 Irisy 说</th><th>它做什么</th></tr></thead>
+      <tbody>
+        <tr><td>「今天市场情绪怎么样？」</td><td><span class="tag">market_mood</span> 情绪总貌 + 周期阶段判定（冰点 / 修复 / 发酵 / 高潮 / 退潮）</td></tr>
+        <tr><td>「连板天梯给我看」</td><td><span class="tag">limit_ladder</span> 最高板到 2 板全天梯，带板块归属</td></tr>
+        <tr><td>「筛量比&gt;2、换手&gt;5%、涨幅&gt;5% 的票」</td><td><span class="tag">screen_strong</span> 多维筛选，结果落<b>智能表格</b></td></tr>
+        <tr><td>「600519 的技术指标怎么样？」</td><td><span class="tag">stock_technical</span> 量比 / MACD / KDJ / RSI / BOLL（MyTT 公式，量价读法）</td></tr>
+        <tr><td>「把 600519 加进自选」</td><td>写进自选智能表格（带实时行情列，过审批门）</td></tr>
+        <tr><td>「今天复盘」</td><td>读 <span class="tag">daily-review</span> → 情绪面 + 强度面 + 自选归因 → 写进今天的 daily note</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="idx">03</span> 从哪打开（你问的：L1 通过哪个模块看）</h2>
+    <p class="lead">装好后，它出现在<b>最左侧的 L1 图标栏</b>里，就是那个 <b style="color:var(--seal)">「S」图标</b>（悬停显示 “A-Share Assistant”）。点它 → 右侧展开工作区，Irisy 陪聊留在左侧。三条打开路径都行：<b>① 点「S」图标</b> · ② 在输入框敲 <code style="font-family:var(--mono);font-size:13px">:a-share-assistant</code> · ③ 装包后自动打开。</p>
+    <div class="wire" aria-label="打开后的双栏布局示意">
+      <div class="rail" aria-label="L1 图标栏">
+        <div class="ic">✦</div><div class="ic">☰</div><div class="ic">▤</div>
+        <div class="ic on">S</div>
+        <div class="ic">＋</div><div class="ic">⚙</div>
+      </div>
+      <div class="split">
+        <div class="pane irisy">
+          <h4>Irisy 陪聊（左栏）</h4>
+          <div class="bubble me">今天情绪怎么样？</div>
+          <div class="bubble">发酵期：涨停池 108、炸板率 32.5%、最高 4 连板。有赚钱效应但接力谨慎。</div>
+          <div class="bubble me">筛量比&gt;2 的强势票</div>
+        </div>
+        <div class="pane">
+          <h4>A股工作区（右栏 · FeaturePackScene）</h4>
+          <div class="wstabs"><span class="wstab on">watchlist</span><span class="wstab">review</span><span class="wstab">screen</span></div>
+          <div class="wsgrid">
+            <div class="r h"><div class="cell">名称</div><div class="cell">现价</div><div class="cell">涨跌</div></div>
+            <div class="r"><div class="cell">贵州茅台</div><div class="cell">1512.0</div><div class="cell up">+1.8%</div></div>
+            <div class="r"><div class="cell">五粮液</div><div class="cell">73.76</div><div class="cell up">+0.8%</div></div>
+            <div class="r"><div class="cell">宁德时代</div><div class="cell">241.3</div><div class="cell down">−1.2%</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="callout">这个「模块」就是 <b>L1 图标栏本身</b>——它是常驻入口。点开后是<b>双栏</b>：左 Irisy、右工作区（<code style="font-family:var(--mono);font-size:12px">FeaturePackScene</code> 按 <code style="font-family:var(--mono);font-size:12px">table_prefix</code> 把 <code style="font-family:var(--mono);font-size:12px">tables/stocks-*</code> 每张表列成一个 Tab）。<span style="color:var(--down)">红涨绿跌</span>按 A股习惯。</div>
+  </section>
+
+  <section>
+    <h2><span class="idx">04</span> 七个工具 + 真实输出</h2>
+    <div class="tools">
+      <div class="tool"><code>market_mood</code><span>情绪总貌 + 周期阶段</span></div>
+      <div class="tool"><code>limit_ladder</code><span>连板天梯（带板块）</span></div>
+      <div class="tool"><code>sector_strength</code><span>板块强度（三源 failover）</span></div>
+      <div class="tool"><code>screen_strong</code><span>多维筛选器</span></div>
+      <div class="tool"><code>stock_quote</code><span>全列实时行情</span></div>
+      <div class="tool"><code>stock_kline</code><span>日 K 数据</span></div>
+      <div class="tool"><code>stock_technical</code><span>MyTT 衍生指标：量比 / MACD / KDJ / RSI / BOLL</span></div>
+    </div>
+    <div class="sample"><span class="stage">market_mood</span> → {
+  "up_count": <span class="n">3527</span>, "down_count": <span class="n">1584</span>,
+  "zt_pool": <span class="n">108</span>, "blown_boards": <span class="n">52</span>, "fried_rate": <span class="down">0.325</span>,
+  "max_streak": <span class="n">4</span>, "yesterday_zt_today_avg_pct": <span class="n">-0.0</span>,
+  "cycle_stage": <span class="stage">"ferment"</span>
+}   <span style="color:#6f6a5c">// 2026-07-03 实盘冒烟</span></div>
+    <p class="read"><b>读法：</b>3527 家上涨、涨停池 108 但炸板率 32.5%、最高只有 4 连板、昨日涨停股今天平均 −0.0%——情绪在<b>发酵期</b>：有赚钱效应但接力谨慎。<b>每个结论都附原始数字，有据可查、不编数。</b></p>
+  </section>
+
+  <section>
+    <h2><span class="idx">05</span> 治理 · 主权 · 它怎么长大</h2>
+    <ul class="gov">
+      <li><span class="m">现写的</span><span>源码就在 <b>service/main.py</b>（vim 能开、你能改）。想要新能力（比如龙虎榜筛选）直接跟 Irisy 说，它改代码加工具、重启即生效。</span></li>
+      <li><span class="m">数据主权</span><span>数据本来就是你的，落本机 vault 的 markdown 表；<b>免 key、无账号、拔网降级</b>。</span></li>
+      <li><span class="m">治理门</span><span>每次调用过 <b>:17873</b> 审计门；写操作（建表 / 写笔记）过<b>人工审批门</b>。</span></li>
+      <li><span class="m">不做</span><span><b>没有任何下单能力</b>——纯数据 + 管理工具，不是投资建议。</span></li>
+    </ul>
+  </section>
+
+  <div class="foot">
+    <span>真相源：<code>vault/ctrl/plan-ctrl-stock-cn-pack.md</code></span>
+    <span>包 KB：<code>~/Documents/pkm/projects/stock-cn/</code></span>
+    <span>介绍页：<code>intro.md</code></span>
+    <span>架构：<code>ADR-002 §7 composition</code></span>
+  </div>
+</div>
+</body>
+</html>
