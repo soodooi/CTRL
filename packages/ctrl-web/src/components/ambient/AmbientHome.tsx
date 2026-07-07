@@ -1084,9 +1084,6 @@ export function AmbientHome({
     })();
   }, []);
   // Status line data — engine + model + state (ADR-005 §8.6.2 ambient chrome).
-  const activeAgentId = useActiveAgentStore((s) => s.activeAgentId);
-  const drivers = useActiveAgentStore((s) => s.drivers);
-  const engineLabel = drivers.find((d) => d.id === activeAgentId)?.label ?? 'Hermes';
   // Run an installed pack's action inline; its output lands as an assistant turn.
   const runPackAction = (pack: FeaturePack, action: { id: string; name: string }): void => {
     const id = `a-${Date.now()}`;
@@ -1191,19 +1188,9 @@ export function AmbientHome({
 
   const composer = (
     <div className={styles.composerWrap}>
-      {/* Status line — engine · model · state · version (ADR-005 §8.6.2 chrome). */}
-      <div className={styles.statusLine}>
-        <span className={styles.statusItem}>
-          <span className={styles.statusDot} data-state={streaming ? 'working' : 'ready'} />
-          {streaming ? 'Working' : 'Ready'}
-        </span>
-        <span className={styles.statusSep}>·</span>
-        <span className={styles.statusItem}>{engineLabel}</span>
-        <span className={styles.statusSep}>·</span>
-        <span className={styles.statusItem}>{modelLabel}</span>
-        <span className={styles.statusGrow} />
-        <span className={styles.statusItem}>v{APP_VERSION}</span>
-      </div>
+      {/* Status line removed — state merged into the single personaRow line
+          above; version is on the CTRL wordmark; provider/model is in Settings
+          (bao 2026-07-07: only one line above the input). */}
       <form
         className={styles.composer}
         onSubmit={(e) => {
@@ -1659,7 +1646,7 @@ export function AmbientHome({
   const personaRow = (
     // Order (bao 2026-06-28): agent FIRST, then persona, then feature packs.
     <div className={styles.quickRow} role="group" aria-label="Irisy agent, persona, and feature packs">
-      <AgentSelector />
+      <AgentSelector showNote={false} />
       <div className={styles.roleSwitch}>
         <button
           type="button"
@@ -1718,6 +1705,13 @@ export function AmbientHome({
           ))}
         </div>
       )}
+      {/* State on this same single line, pushed right (bao 2026-07-07: only one
+          line above the input). Version lives on the CTRL wordmark. */}
+      <span className={styles.statusGrow} />
+      <span className={styles.statusItem}>
+        <span className={styles.statusDot} data-state={streaming ? 'working' : 'ready'} />
+        {streaming ? 'Working' : 'Ready'}
+      </span>
     </div>
   );
 
