@@ -96,3 +96,12 @@ viz: doc/design/ctrl-infra-plan.html
 - 成本:Lambda + API GW 此量级基本免费。**Lightsail $5/月 VM 可以删了**(已被替代)。
 
 **安全 follow-up**(非急):API GW 目前公开 + token + 白名单挡着;可加 API GW 限流 / 收窄。
+
+
+## distribute 实装 (2026-07-07) — 分享中心 registry 已上线 + 首个包已发布
+
+**功能包分享中心(pack registry)已部署**,ctrl-stock-cn 已发布进去 —— distribute 环走通。
+- **registry 后端** = AWS Lambda `ctrl-pack-registry` + API Gateway + S3(`infra/pack-registry/`,ap-east-1)。`GET /v0/servers` 按 Discover 的 MCP-Registry 格式列包;`POST /` 存 manifest。端点:`https://vwiq8ywski.execute-api.ap-east-1.amazonaws.com`。
+- **发布**:`mcp_pack_publish {mcp_id:ctrl-stock-cn, registry:<ep>}` → evals-first → POST → 返回 `{id,namespace:soodooi,url}`。GET 已返回「A-Share Assistant」。
+- **让 Discover 显示**:内核读 `CTRL_MCP_REGISTRY_URL`(env-only,默认官方 registry)。设 `CTRL_MCP_REGISTRY_URL=https://vwiq8ywski.execute-api.ap-east-1.amazonaws.com/v0/servers` 重启 app,Discover 即显示 ctrl-stock-cn。
+- **诚实 gap**:①包尚未自包含(manifest 是绝对路径)——别人浏览到可以,一键装+跑需 bundle 服务。②registry 现公开无鉴权,加 token 是 follow-up。③S3 存储,CF 可平替。
