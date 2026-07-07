@@ -64,6 +64,7 @@ import { loadTranscript, saveTranscript } from '@/lib/transcript-store';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
 import { type Capability } from '@/lib/capability-catalog';
+import { STOCK_CARD_TOOLS } from '@/components/featurepack/stock/StockCard';
 import {
   detectPart,
   renderPart,
@@ -697,6 +698,13 @@ export function AmbientHome({
               // Only when the write actually landed (approved, not denied/failed).
               const denied = /denied|declined|not approved|rejected/i.test(step.output ?? '');
               if (step.status !== 'failed' && !denied) openNoteInWorkspace(p);
+            }
+            // Stock feature-pack tool result -> verdict card in the workspace
+            // pane; the raw JSON stays in the chat tool drill-down (ADR-003
+            // output routing + drill-down transparency).
+            const stockTool = [...STOCK_CARD_TOOLS].find((t) => step.title?.includes(t));
+            if (stockTool && step.status !== 'failed' && step.output) {
+              setPart({ kind: 'stock', variant: stockTool, content: step.output, title: step.title });
             }
           }
           setMessages((prev) =>

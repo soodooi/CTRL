@@ -18,6 +18,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
+import { renderStockCard } from '@/components/featurepack/stock/StockCard';
 
 /** Discriminant for a renderable part. Open set — extend as parts grow. */
 export type PartKind =
@@ -28,6 +29,7 @@ export type PartKind =
   | 'table' // rows of records (CRM contacts, ERP inventory/orders)
   | 'record' // a single record's fields (one CRM/ERP entity)
   | 'mermaid' // diagrams / flowcharts / simple charts
+  | 'stock' // feature-pack verdict card (ctrl-stock-cn tool result)
   | 'text';
 
 export interface PartSpec {
@@ -38,6 +40,8 @@ export interface PartSpec {
   title?: string;
   /** Code language hint (kind === 'code'). */
   language?: string;
+  /** Sub-kind within a part kind (e.g. the stock tool name for kind==='stock'). */
+  variant?: string;
 }
 
 /** Layout intent per part kind — content drives panel sizing (research:
@@ -55,6 +59,7 @@ const LAYOUT: Record<PartKind, PartLayout> = {
   table: { preferredRatio: 0.55, wide: true },
   record: { preferredRatio: 0.4, wide: false },
   mermaid: { preferredRatio: 0.5, wide: true },
+  stock: { preferredRatio: 0.44, wide: false },
   text: { preferredRatio: 0.4, wide: false },
 };
 
@@ -163,6 +168,11 @@ export function renderPart(spec: PartSpec): ReactElement {
       );
     case 'mermaid':
       return <MermaidPart source={spec.content} />;
+    case 'stock': {
+      // Feature-pack verdict card; fall back to raw JSON if no card block.
+      const card = renderStockCard(spec.variant ?? '', spec.content);
+      return card ?? <pre className="part-code">{prettyJson(spec.content)}</pre>;
+    }
     case 'table': {
       const rows = safeJson<Array<Record<string, unknown>>>(spec.content, []);
       return <DataTable rows={Array.isArray(rows) ? rows : []} />;
