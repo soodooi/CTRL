@@ -92,8 +92,22 @@ impl AgentName {
 ///   ACP stdio server (`hermes-acp`), NOT an MCP `chat` tool.
 /// Notes/KB = CTRL's native NotesApp (ADR-002 §1.9 v46 — Obsidian connector
 /// retired; earlier the kairo/SilverBullet binary download was retired too).
-pub const HERMES_ACP_SPEC: &str = "hermes-agent[acp]==0.16.0";
-pub const HERMES_ONESHOT_SPEC: &str = "hermes-agent==0.16.0";
+/// Pinned hermes-agent version — single source of truth for both uvx specs AND
+/// the manifest version stamp. Bump this and both specs together; the
+/// `hermes_specs_match_version` test enforces they stay in sync. Existing
+/// installs auto-upgrade to this on next boot via `reconcile_hermes_pin`
+/// (install(force=false) + the persisted entry_cmd would otherwise pin a user
+/// to whatever version they first installed).
+///
+/// bao 2026-07-07: 0.16.0 -> 0.18.0. Upstream 0.17 ("Reach") + 0.18 ("Judgment")
+/// bring completion contracts (self-verify against evidence), `/learn`
+/// auto-skills, and no-cron Automation Blueprints; release notes flag NO
+/// breaking changes to the ACP stdio / `hermes acp` / OpenAI `/v1` / dashboard
+/// surfaces CTRL depends on, and 0.18 requires-python is still `<3.14,>=3.11`
+/// (HERMES_PYTHON=3.12 satisfies it). Verified against PyPI 2026-07-07.
+pub const HERMES_VERSION: &str = "0.18.0";
+pub const HERMES_ACP_SPEC: &str = "hermes-agent[acp]==0.18.0";
+pub const HERMES_ONESHOT_SPEC: &str = "hermes-agent==0.18.0";
 /// hermes-agent requires Python >=3.11,<3.14; pin one so uv fetches a managed
 /// CPython instead of the system Python (3.9 on macOS). See HERMES_ACP_SPEC use.
 pub const HERMES_PYTHON: &str = "3.12";
@@ -133,6 +147,34 @@ pub fn read_manifest(name: &AgentName) -> Option<AgentManifest> {
 
 pub fn is_installed(name: &AgentName) -> bool {
     read_manifest(name).is_some()
+}
+
+/// True if hermes is installed but its manifest records a different version than
+/// this build's `HERMES_VERSION` — i.e. the bundled pin was bumped since the
+/// user last installed. Needed because `install(force=false)` returns the cached
+/// manifest untouched and both the launcher and the dashboard replay the
+/// persisted `entry_cmd` (which bakes the old `==x.y.z` spec), so an existing
+/// install never picks up a pin bump on its own. Mirrors the builtin-pack
+/// `builtin_is_newer` re-seed. Any mismatch counts (a downgrade re-seeds too —
+/// the bundled pin always wins).
+pub fn hermes_needs_upgrade() -> bool {
+    matches!(read_manifest(&AgentName::Hermes), Some(m) if m.version != HERMES_VERSION)
+}
+
+/// Bring an already-installed hermes up to the current bundled pin by
+/// force-reinstalling (rewrites `manifest.json`'s `entry_cmd` + `version`).
+/// No-op when hermes is absent or already current. Cheap: `install_via_uvx`
+/// only rewrites the manifest — uvx resolves the new PyPI spec on next launch.
+/// Call at boot before anything reads the manifest (dashboard / acp_client).
+pub fn reconcile_hermes_pin() -> Result<()> {
+    if hermes_needs_upgrade() {
+        let from = read_manifest(&AgentName::Hermes)
+            .map(|m| m.version)
+            .unwrap_or_default();
+        install(AgentName::Hermes, true)?;
+        tracing::info!(from = %from, to = %HERMES_VERSION, "hermes pin bumped — manifest re-seeded");
+    }
+    Ok(())
 }
 
 /// Install or re-read the agent record. If already installed and force=false,
@@ -233,7 +275,7 @@ fn install_via_uvx(name: &AgentName) -> Result<AgentManifest> {
     let _ = agent_dir(name)?;
     Ok(AgentManifest {
         name: name.as_str().to_string(),
-        version: "0.16.0".into(),
+        version: HERMES_VERSION.into(),
         install_at: chrono::Utc::now().to_rfc3339(),
         endpoint_type: "acp-stdio".to_string(),
         // `--python 3.12`: hermes-agent[acp] requires Python >=3.11; without
@@ -412,5 +454,21 @@ mod e2e_tests {
     fn opencode_install_is_retired() {
         let err = install(AgentName::Opencode, false).unwrap_err();
         assert!(err.to_string().contains("retired"));
+    }
+
+    /// The two uvx specs and the manifest stamp must all carry HERMES_VERSION —
+    /// bumping the pin in one place but not another would silently install a
+    /// mismatched version or make reconcile_hermes_pin loop. Guards the "bump
+    /// all three together" contract (ADR-002 substrate § brain v59, 2026-07-07).
+    #[test]
+    fn hermes_specs_match_version() {
+        assert!(
+            HERMES_ACP_SPEC.ends_with(HERMES_VERSION),
+            "HERMES_ACP_SPEC {HERMES_ACP_SPEC} must pin =={HERMES_VERSION}"
+        );
+        assert!(
+            HERMES_ONESHOT_SPEC.ends_with(HERMES_VERSION),
+            "HERMES_ONESHOT_SPEC {HERMES_ONESHOT_SPEC} must pin =={HERMES_VERSION}"
+        );
     }
 }

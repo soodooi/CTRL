@@ -203,9 +203,20 @@ impl KernelSupervisor {
         // port is already taken (a dashboard from a previous boot), the spawn just
         // fails and is logged — the existing one keeps serving.
         tauri::async_runtime::spawn_blocking(|| {
-            use crate::shell::agent_installer::{is_installed, read_manifest, AgentName};
+            use crate::shell::agent_installer::{
+                is_installed, read_manifest, reconcile_hermes_pin, AgentName,
+            };
             if !is_installed(&AgentName::Hermes) {
                 return;
+            }
+            // ADR-002 substrate § brain v59 (2026-07-07): Irisy's brain = the
+            // bundled Hermes Agent, and CTRL "rides its upgrades". Upgrade an
+            // existing install to the current bundled pin BEFORE reading the
+            // manifest — both this dashboard launch and acp_client replay the
+            // persisted entry_cmd, so a pin bump (0.16.0 -> 0.18.0) only takes
+            // effect once the manifest is re-seeded.
+            if let Err(e) = reconcile_hermes_pin() {
+                tracing::warn!(error = %e, "hermes pin reconcile failed");
             }
             let Some(manifest) = read_manifest(&AgentName::Hermes) else {
                 return;
