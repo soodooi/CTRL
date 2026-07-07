@@ -589,14 +589,18 @@ export function AmbientHome({
       if (kb) ambient.push({ role: 'system', content: kb });
       // Domain skills pointer (bao 2026-07-03: skills load ON DEMAND — inject
       // one line telling Irisy WHERE this pack's skills live, never their
-      // contents; it skill_list/skill_read only when the task matches).
+      // contents; it reads a skill only when the task matches). Pack skills
+      // live in the pack KB (vault), NOT ~/.claude/skills, so they are read
+      // via vault_read — the skill_read/skill_list gate tools only see
+      // ~/.claude/skills and cannot reach a pack KB (bao 2026-07-07 standard).
       if (scene && typeof scene === 'object' && scene.kbDir) {
         ambient.push({
           role: 'system',
           content:
             `This pack's domain skills live under "${scene.kbDir}/skills" in the vault. ` +
-            `When a task matches a skill's territory, load it on demand with skill_list / ` +
-            `skill_read (or vault_read on that path) — do not recite skills unprompted.`,
+            `When a task matches a skill's territory, load it on demand with ` +
+            `vault_read on that path (e.g. "${scene.kbDir}/skills/<name>.md") — ` +
+            `do not recite skills unprompted.`,
         });
       }
       if (scene === 'tables' && activeTablePath) {
