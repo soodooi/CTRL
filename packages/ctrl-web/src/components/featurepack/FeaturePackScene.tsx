@@ -64,6 +64,9 @@ interface FeaturePackSceneProps {
   /** Execute an action; resolves to output text/markdown to show. Thrown
    *  errors surface in the output area. */
   onRunAction: (actionId: string) => Promise<string>;
+  /** Send a natural-language prompt to Irisy (starter chips). Wired to the
+   *  ambient send() so a chip click runs a full pack-aware Irisy turn. */
+  onSendMessage?: (text: string) => void | Promise<void>;
   /** Fetch the pack's §14 records (describe + query through the gate). Injected
    *  so the scene is testable/visual without the live kernel. Present iff
    *  `pack.hasRecords`. */
@@ -206,6 +209,7 @@ export function RuntimeGuidanceCard({
 export function FeaturePackScene({
   pack,
   onRunAction,
+  onSendMessage,
   loadRecords,
 }: FeaturePackSceneProps): ReactElement {
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -266,6 +270,23 @@ export function FeaturePackScene({
     ],
     [showsRecords, intro, wsTables],
   );
+  // Starter prompts: the example phrases the pack's intro.md wraps in CJK corner
+  // brackets (U+300C … U+300D). Data-driven (single source = intro), so a chip
+  // click sends a proven prompt to Irisy — the user learns what to ask without
+  // typing. All prompt text lives in intro data, not this code.
+  const starters = useMemo(() => {
+    if (intro == null) return [];
+    const out: string[] = [];
+    const re = /\u300c(.+?)\u300d/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(intro)) !== null) {
+      const s = m[1]?.trim();
+      if (s && !out.includes(s)) out.push(s);
+      if (out.length >= 5) break;
+    }
+    return out;
+  }, [intro]);
+
   const wsTabsKey = wsTabs.join('\n');
   useEffect(() => {
     setWsActive((cur) => (cur != null && wsTabs.includes(cur) ? cur : (wsTabs[0] ?? null)));
@@ -438,6 +459,21 @@ export function FeaturePackScene({
       )}
 
       <ActionBar actions={pack.actions} runningId={runningId} onRun={run} />
+
+      {onSendMessage != null && starters.length > 0 && (
+        <div className={styles.starters}>
+          {starters.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={styles.starterChip}
+              onClick={() => void onSendMessage(s)}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className={styles.output}>
         {/* No-docker guided install — sits above both faces so it's seen whether

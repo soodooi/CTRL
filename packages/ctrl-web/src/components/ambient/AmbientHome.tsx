@@ -1939,6 +1939,7 @@ export function AmbientHome({
                       key={scene.id}
                       pack={scene}
                       onRunAction={(id) => runInstalledPackAction(scene.id, id)}
+                      onSendMessage={send}
                       loadRecords={
                         scene.hasRecords ? () => loadPackRecords(scene.id) : undefined
                       }
