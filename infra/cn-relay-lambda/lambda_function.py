@@ -21,6 +21,7 @@ ALLOW = {
     "push2.eastmoney.com", "push2delay.eastmoney.com",
     "hq.sinajs.cn",
     "datacenter-web.eastmoney.com", "datacenter.eastmoney.com",
+    "push2ex.eastmoney.com",
 }
 
 def _resp(code, body, ct="text/plain", b64=False):
