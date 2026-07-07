@@ -203,3 +203,30 @@ related:
 
 1. P1 的服务形态：**Irisy 写 fastmcp+akshare 本地服务**（源码进 vault，provision 拉起）—— 对齐「Irisy 用 coding 开发」了吗？
 2. 优先序：P1 创造流 → P2 选股 → P3 复盘（两个重点提前），P4-P6 随后 —— OK？
+
+## 4. 架构参考:ChanStock(全栈缠论产品)+ 缠论参考栈(2026-07-06)
+
+bao 校准:「获取真实可用 skill/产品做参考」——不重造轮子,以真实产品为架构模板。
+
+### 架构参考 = `ChanStock`(TensorCode666/stock-chanlun,完全开源)
+一个活体缠论股票产品,形态就是 CTRL 股票包该有的样子:
+```
+数据(多源降级 新浪→腾讯→东财, AKShare)
+  → 缠论识别(5-K分型 → 笔 → 线段 → 中枢 → MACD面积背驰 → 三类买卖点)
+  → 指标(TA-Lib)+ 规则引擎(可无 LLM 运行)
+  → AI 可选(DeepSeek/Gemini 自然语言缠论 + SSE 流式对话)
+  → 前端 Vue3 + ECharts(LTTB 降采样扛 600+ K线)+ 自选/筛选
+```
+**对 CTRL 的映射**:数据层→pack 服务(Ashare/腾讯多源,已做,此机代理墙需真机)· 缠论识别→(未来 czsc 引擎或 AI 代理级)· 规则引擎兜底→one-shot gate 工具 · AI 层→Irisy · 前端→smart-table(自选监控 stocks-monitor)+ 未来 K线 viewer。**数据源级联(新浪→腾讯→东财)印证了可达源打法。**
+
+### 缠论参考栈(取两样 + 一避雷)
+- **纪律层 → `chanlun-trading-system`(MIT skill)**:结构优先门控(先定级别/先认结构/先写失效点;指标只是过滤器不定义买卖点)。**已吸收进 `stock-analysis-cn` skill 的个股分析(结构先行 → 指标过滤 → 决策带失效点)。**
+- **计算引擎 → `czsc`(Apache 5.4k★)/ `chan.py`**:自动 分型/笔/中枢/背驰 + 220 信号。做真结构识别时 crib/调它。
+- **⚠️ 避雷 `chanlun-pro`(yijixiuxin)**:名义 Apache 实则微信授权付费门。
+
+### skill 现状(股票功能包的知识层)
+包挂三个可发现 skill,各司其职、互不冲突:
+- **`stock-analysis-cn`** —— 个股深挖(结构优先 regime-framed:市场→缠论结构→指标过滤→决策)。已吸收缠论纪律。
+- **`mood-cycle`** —— 情绪周期(92科比四阶段判定 + 纪律)。
+- **`daily-review`** —— 日复盘(情绪+强度+归因三段)。
+方法论全部以真实可用产品为参考(92科比/缠论/板块轮动),不自造。
