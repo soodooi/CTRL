@@ -455,6 +455,20 @@ const MAX_LOCAL_SKILLS: usize = 40;
 
 #[tauri::command]
 pub async fn list_local_skills(query: Option<String>) -> Result<Vec<LocalSkill>, String> {
+    // The gate (:17873) serves this over the shared tokio runtime. The body is
+    // blocking fs — a deep, unbounded walk of ~/.claude/plugins/cache. Running
+    // it directly on an async worker starves the runtime's worker threads: with
+    // enough blocking calls in flight the SSE session can't read its next
+    // message, so even a trivial skill_read queued behind it hangs for minutes
+    // (only 20s heartbeats fire), while vault_read looks instant whenever the
+    // pool happens not to be saturated. Offload to the blocking pool so async
+    // workers stay free (bao 2026-07-07 gate skill_read concurrency hang).
+    tokio::task::spawn_blocking(move || list_local_skills_blocking(query))
+        .await
+        .map_err(|e| format!("skill list task panicked: {e}"))?
+}
+
+fn list_local_skills_blocking(query: Option<String>) -> Result<Vec<LocalSkill>, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
     let mut out: Vec<LocalSkill> = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -591,12 +605,19 @@ fn read_skill_under(allowed_roots: &[PathBuf], path: &str) -> Result<String, Str
 /// reusing it. Confined to the same roots list_local_skills scans
 /// (~/.claude/skills + ~/.claude/plugins/cache).
 pub async fn read_local_skill(path: String) -> Result<String, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let roots = [
-        PathBuf::from(&home).join(".claude").join("skills"),
-        PathBuf::from(&home).join(".claude").join("plugins").join("cache"),
-    ];
-    read_skill_under(&roots, &path)
+    // Blocking fs (canonicalize + read) — same runtime-starvation reasoning as
+    // list_local_skills: never run it on an async worker, or a saturated pool
+    // makes this trivial read hang on the gate. Offload to the blocking pool.
+    tokio::task::spawn_blocking(move || {
+        let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+        let roots = [
+            PathBuf::from(&home).join(".claude").join("skills"),
+            PathBuf::from(&home).join(".claude").join("plugins").join("cache"),
+        ];
+        read_skill_under(&roots, &path)
+    })
+    .await
+    .map_err(|e| format!("skill read task panicked: {e}"))?
 }
 
 #[cfg(test)]
