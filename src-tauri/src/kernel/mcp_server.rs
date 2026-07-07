@@ -3297,10 +3297,15 @@ impl KernelMcpRouter {
                         .to_string(),
                     description: String::new(),
                     tools: Vec::new(),
-                    source: crate::kernel::mcp_host::McpServerSource::Local {
-                        command: command.to_string(),
-                        args: cmd_args,
-                    },
+                    // Portable manifests: substitute ${PACK_DIR} with the real
+                    // install dir + resolve a bare command, same as boot-time
+                    // reconnect (ADR-002 substrate § composition §7.4) — so a
+                    // freshly-installed shared pack spawns on this machine.
+                    source: crate::kernel::mcp_host::resolve_local_source(
+                        command,
+                        &cmd_args,
+                        &dir.join(installed_id),
+                    ),
                 };
                 self.runtime.mcp_host.register(desc).await;
                 match self.runtime.mcp_host.connect(&id).await {

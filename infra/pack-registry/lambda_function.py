@@ -34,6 +34,26 @@ def handler(event, _ctx):
     method = (event.get("requestContext", {}).get("http", {}) or {}).get("method") \
         or event.get("httpMethod") or "GET"
     path = event.get("rawPath", "") or event.get("path", "") or ""
+    if method == "GET" and path.startswith("/bundle/"):
+        pid = path[len("/bundle/"):].strip("/")
+        pre = "bundles/%s/" % pid
+        files = {}
+        manifest = None
+        for o in S3.list_objects_v2(Bucket=BUCKET, Prefix=pre).get("Contents", []):
+            rel = o["Key"][len(pre):]
+            if not rel:
+                continue
+            body = S3.get_object(Bucket=BUCKET, Key=o["Key"])["Body"].read().decode("utf-8", "replace")
+            if rel == "manifest.json":
+                try:
+                    manifest = json.loads(body)
+                except Exception:
+                    manifest = None
+            else:
+                files[rel] = body
+        if manifest is None:
+            return _resp(404, {"error": "bundle not found: %s" % pid})
+        return _resp(200, {"id": pid, "manifest": manifest, "files": files})
     if method == "GET":
         servers = _list()
         q = (event.get("queryStringParameters") or {}).get("search", "")

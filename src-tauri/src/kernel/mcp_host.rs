@@ -75,6 +75,31 @@ pub enum McpServerSource {
     },
 }
 
+/// Resolve a pack manifest's Local server `command` + `args` into a runnable
+/// [`McpServerSource::Local`] (ADR-002 substrate § composition §7.4). A SHARED
+/// manifest stays machine-independent by using `${PACK_DIR}` (the pack's real
+/// install dir, substituted here) and a bare interpreter like `uv` (resolved
+/// via PATH + ~/.ctrl/bin). Absolute commands/args pass through unchanged
+/// (back-compat). Used by BOTH install-time connect and boot-time reconnect so
+/// a portable published pack runs on any machine.
+pub fn resolve_local_source(
+    command: &str,
+    args: &[String],
+    pack_dir: &std::path::Path,
+) -> McpServerSource {
+    let subst = |s: &str| s.replace("${PACK_DIR}", pack_dir.to_string_lossy().as_ref());
+    let command = subst(command);
+    let command = if std::path::Path::new(&command).is_absolute() {
+        command
+    } else {
+        crate::kernel::provider::path_resolver::resolve_binary_path(&command)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or(command)
+    };
+    let args = args.iter().map(|a| subst(a)).collect();
+    McpServerSource::Local { command, args }
+}
+
 /// Reconnect every installed feature pack that declares a `server` block
 /// (mcp-server variant, ADR-002 §7 Pattern D) — called at boot so pack tools
 /// return to the gate after a restart without a reinstall. Best-effort:
@@ -98,26 +123,10 @@ pub async fn reconnect_installed_pack_servers(host: &McpHost) {
             .to_string_lossy()
             .trim_start_matches("ctrl-")
             .to_string();
-        // Portability (ADR-002 substrate § composition §7.4): a SHARED manifest
-        // stays machine-independent by using `${PACK_DIR}` (the install dir) and
-        // a bare interpreter (e.g. `uv`) instead of absolute paths — so a
-        // published pack runs on any machine. Substitute the placeholder with
-        // this pack's real install dir, and resolve a bare command via PATH +
-        // ~/.ctrl/bin. Absolute commands/args pass through unchanged (back-compat).
-        let pack_dir = entry.path();
-        let subst = |s: &str| s.replace("${PACK_DIR}", pack_dir.to_string_lossy().as_ref());
-        let command_s = subst(command);
-        let command_s = if std::path::Path::new(&command_s).is_absolute() {
-            command_s
-        } else {
-            crate::kernel::provider::path_resolver::resolve_binary_path(&command_s)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or(command_s)
-        };
         let args: Vec<String> = server
             .get("args")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| subst(s))).collect())
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
             .unwrap_or_default();
         let desc = McpServerDescriptor {
             id: id.clone(),
@@ -125,7 +134,7 @@ pub async fn reconnect_installed_pack_servers(host: &McpHost) {
             version: m.get("version").and_then(|v| v.as_str()).unwrap_or("0.0.0").to_string(),
             description: String::new(),
             tools: Vec::new(),
-            source: McpServerSource::Local { command: command_s, args },
+            source: resolve_local_source(command, &args, &entry.path()),
         };
         host.register(desc).await;
         match host.connect(&id).await {

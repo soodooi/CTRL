@@ -105,3 +105,10 @@ viz: doc/design/ctrl-infra-plan.html
 - **发布**:`mcp_pack_publish {mcp_id:ctrl-stock-cn, registry:<ep>}` → evals-first → POST → 返回 `{id,namespace:soodooi,url}`。GET 已返回「A-Share Assistant」。
 - **让 Discover 显示**:内核读 `CTRL_MCP_REGISTRY_URL`(env-only,默认官方 registry)。设 `CTRL_MCP_REGISTRY_URL=https://vwiq8ywski.execute-api.ap-east-1.amazonaws.com/v0/servers` 重启 app,Discover 即显示 ctrl-stock-cn。
 - **诚实 gap**:①包尚未自包含(manifest 是绝对路径)——别人浏览到可以,一键装+跑需 bundle 服务。②registry 现公开无鉴权,加 token 是 follow-up。③S3 存储,CF 可平替。
+
+### distribute 端到端 (2026-07-07 续) — 一键远程装跑通
+
+registry 加 `GET /bundle/<id>`(返回 manifest + 所有包文件,存 S3 `bundles/<id>/`)。**一键远程装机制端到端验证**:模拟别人 → 从 registry 拉 bundle → gate `mcp_pack_install{manifest}` + `mcp_pack_write_file` 逐个写文件 → 内核 spawn → `stock-cn-remote_stock_quote 600519` 返真实数据(贵州茅台),干净卸载。
+- **内核修复(通用)**:抽 `mcp_host::resolve_local_source`(`${PACK_DIR}` 替换 + 裸命令解析),install-time connect **和** boot reconnect 两处都用——之前只 boot 有,导致新装的可移植包 spawn 失败。
+- **闭环**:发布(evals+bundle 上 S3)→ 发现(Discover 读 /v0/servers)→ 拉 bundle → 装(manifest+write_file)→ 跑。**别人真能装能跑。**
+- **剩最后一薄片**:Discover 的「安装」按钮编排(fetch bundle → install → write_files)是前端小活;机制已经过 gate 驱动证实。registry 仍公开无鉴权(follow-up)。
