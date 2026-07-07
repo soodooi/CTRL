@@ -15,6 +15,62 @@ use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::event_ws::EventWsBridge;
 use crate::kernel::EVENT_WS_LISTEN_ADDR;
 
+/// Fixed loopback port for hermes's own dashboard web UI (the PWA's Settings ->
+/// Irisy page embeds it, ADR-002 substrate § provider + § brain v59).
+const DASHBOARD_PORT: u16 = 17890;
+
+/// Best-effort kill of whatever is LISTENING on a loopback port. Used only on a
+/// hermes version upgrade to evict a stale dashboard from a prior boot that
+/// survived the kernel reboot and squats the fixed port (a detached child, not
+/// tracked by this process, so it can't be killed by handle). The port is a
+/// compile-time constant we own, so killing its listener is safe; shelling out
+/// keeps it dependency-free and the whole thing is best-effort (errors logged,
+/// never fatal — next boot retries).
+fn free_dashboard_port(port: u16) {
+    #[cfg(unix)]
+    let pids: Vec<String> = std::process::Command::new("lsof")
+        .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
+        .output()
+        .ok()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    #[cfg(windows)]
+    let pids: Vec<String> = std::process::Command::new("netstat")
+        .args(["-ano"])
+        .output()
+        .ok()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| l.contains(&format!(":{port}")) && l.contains("LISTENING"))
+                .filter_map(|l| l.split_whitespace().last().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    for pid in pids {
+        #[cfg(unix)]
+        let killed = std::process::Command::new("kill").arg(&pid).status();
+        #[cfg(windows)]
+        let killed = std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid])
+            .status();
+        match killed {
+            Ok(s) if s.success() => {
+                tracing::info!(port, pid = %pid, "evicted stale dashboard on port")
+            }
+            other => tracing::warn!(port, pid = %pid, ?other, "could not evict port listener"),
+        }
+    }
+}
+
 /// Shared kernel handle managed by Tauri. Commands pull this via `State`.
 ///
 /// `app` is plumbed in by `KernelSupervisor::start` so non-#[tauri::command]
@@ -215,23 +271,47 @@ impl KernelSupervisor {
             // manifest — both this dashboard launch and acp_client replay the
             // persisted entry_cmd, so a pin bump (0.16.0 -> 0.18.0) only takes
             // effect once the manifest is re-seeded.
-            if let Err(e) = reconcile_hermes_pin() {
-                tracing::warn!(error = %e, "hermes pin reconcile failed");
-            }
+            let upgraded = match reconcile_hermes_pin() {
+                Ok(u) => u,
+                Err(e) => {
+                    tracing::warn!(error = %e, "hermes pin reconcile failed");
+                    false
+                }
+            };
             let Some(manifest) = read_manifest(&AgentName::Hermes) else {
                 return;
             };
-            let entry = manifest.entry_cmd; // [<uvx>, --from, <spec>, hermes-acp]
+            let entry = manifest.entry_cmd; // ADR-002 substrate § brain v59 (2026-07-07)
+            // entry_cmd = [<uvx>, ...uvx flags (--python/--with/--from <spec>)...,
+            // hermes-acp]. The dashboard reuses the SAME uvx prefix but runs
+            // `hermes dashboard` in place of the trailing `hermes-acp`, so slice
+            // off that last arg and keep everything else. (A hardcoded
+            // `entry[1..3]` silently broke the launch when install_via_uvx
+            // injected --python/--with ahead of --from — the dashboard command
+            // lost its `--from <spec>` and uvx could no longer resolve hermes;
+            // it went unnoticed only because a stale dashboard kept squatting
+            // the port across reboots.)
             if entry.len() < 3 {
                 return;
             }
+            let uvx_prefix = &entry[1..entry.len() - 1]; // uvx flags, minus trailing hermes-acp
+            // Self-heal on upgrade: the previous boot's detached `hermes
+            // dashboard` outlives kernel reboots and squats :17890, so the
+            // just-upgraded (0.18.0) dashboard below would fail to bind and the
+            // old version would keep serving forever. Free the port first so the
+            // fresh-version dashboard takes it (best-effort; only on a real
+            // version change, never on a steady-state boot).
+            if upgraded {
+                free_dashboard_port(DASHBOARD_PORT);
+            }
+            let port_s = DASHBOARD_PORT.to_string();
             let status = std::process::Command::new(&entry[0])
-                .args(&entry[1..3]) // --from <spec>
+                .args(uvx_prefix)
                 .args([
                     "hermes",
                     "dashboard",
                     "--port",
-                    "17890",
+                    port_s.as_str(),
                     "--host",
                     "127.0.0.1",
                     "--no-open",

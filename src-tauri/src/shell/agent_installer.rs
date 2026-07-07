@@ -166,15 +166,21 @@ pub fn hermes_needs_upgrade() -> bool {
 /// No-op when hermes is absent or already current. Cheap: `install_via_uvx`
 /// only rewrites the manifest — uvx resolves the new PyPI spec on next launch.
 /// Call at boot before anything reads the manifest (dashboard / acp_client).
-pub fn reconcile_hermes_pin() -> Result<()> {
+///
+/// Returns `true` if an upgrade actually happened — the caller uses this to
+/// cycle the stale dashboard (a prior boot's detached `hermes dashboard`
+/// survives kernel reboots and squats :17890, so the fresh-version dashboard
+/// can't bind until the old one is killed).
+pub fn reconcile_hermes_pin() -> Result<bool> {
     if hermes_needs_upgrade() {
         let from = read_manifest(&AgentName::Hermes)
             .map(|m| m.version)
             .unwrap_or_default();
         install(AgentName::Hermes, true)?;
         tracing::info!(from = %from, to = %HERMES_VERSION, "hermes pin bumped — manifest re-seeded");
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }
 
 /// Install or re-read the agent record. If already installed and force=false,
