@@ -57,6 +57,7 @@ import {
 // Code). ONE component across every surface, backed by the shared active-agent
 // store, so the agent axis is consistent everywhere.
 import { AgentSelector } from '@/components/agent/AgentSelector';
+import { FeedbackButton } from '@/components/ambient/FeedbackButton';
 // ADR-005 irisy §8.4/§8.6 — durable transcript: the ambient conversation
 // survives reload / engine crash and re-hydrates.
 import { loadTranscript, saveTranscript } from '@/lib/transcript-store';
@@ -1712,6 +1713,7 @@ export function AmbientHome({
       {/* State on this same single line, pushed right (bao 2026-07-07: only one
           line above the input). Version lives on the CTRL wordmark. */}
       <span className={styles.statusGrow} />
+      <FeedbackButton />
       <span className={styles.statusItem}>
         <span className={styles.statusDot} data-state={streaming ? 'working' : 'ready'} />
         {streaming ? 'Working' : 'Ready'}

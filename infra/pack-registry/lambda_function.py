@@ -11,7 +11,7 @@ NS = os.environ.get("REGISTRY_NAMESPACE", "soodooi")
 PREFIX = "packs/"
 
 def _resp(code, obj):
-    return {"statusCode": code, "headers": {"Content-Type": "application/json"},
+    return {"statusCode": code, "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "content-type"},
             "body": json.dumps(obj, ensure_ascii=False)}
 
 def _list():
@@ -31,6 +31,9 @@ def _list():
     return out
 
 def handler(event, _ctx):
+    _m = (event.get("requestContext", {}).get("http", {}) or {}).get("method") or event.get("httpMethod") or "GET"
+    if _m == "OPTIONS":
+        return _resp(200, {"ok": True})
     method = (event.get("requestContext", {}).get("http", {}) or {}).get("method") \
         or event.get("httpMethod") or "GET"
     path = event.get("rawPath", "") or event.get("path", "") or ""
@@ -62,6 +65,19 @@ def handler(event, _ctx):
             servers = [s for s in servers
                        if ql in (s["server"]["name"] + s["server"]["description"]).lower()]
         return _resp(200, {"servers": servers})
+    if method == "POST" and path.startswith("/feedback"):
+        raw = event.get("body") or "{}"
+        if event.get("isBase64Encoded"):
+            raw = base64.b64decode(raw).decode()
+        try:
+            fb = json.loads(raw)
+        except Exception:
+            fb = {"text": raw}
+        import time as _t
+        key = "feedback/%d.json" % int(_t.time() * 1000)
+        S3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps(fb, ensure_ascii=False).encode(),
+                      ContentType="application/json")
+        return _resp(200, {"ok": True})
     if method == "POST":
         raw = event.get("body") or "{}"
         if event.get("isBase64Encoded"):
