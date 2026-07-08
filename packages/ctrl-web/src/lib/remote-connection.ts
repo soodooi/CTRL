@@ -51,6 +51,15 @@ export function parsePairing(search: string, hash: string): { room: string; key:
 
 const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi2018.workers.dev';
 
+// Public host of the CTRL PWA — where a phone loads the app from (the desktop's
+// local Tauri origin is unreachable from a phone). The pairing link points here;
+// the DATA still flows peer-to-peer over the relay, so this host only ever
+// serves the static shell (data sovereignty unchanged). Same for every user —
+// the PWA host + relay are shared multi-tenant infra; each session is isolated
+// by its random room id + E2E key.
+export const REMOTE_APP_BASE =
+  (import.meta.env.VITE_REMOTE_APP_BASE as string | undefined) ?? 'https://app.ctrlapplab.com';
+
 export class RemoteConnection {
   private ws: WebSocket | null = null;
   private key: CryptoKey | null = null;

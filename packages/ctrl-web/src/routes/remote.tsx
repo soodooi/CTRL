@@ -17,7 +17,7 @@ import {
 } from '@/lib/remote-config';
 import { RemoteHost } from '@/lib/remote-host';
 import { generateKeyBytes, toB64url } from '@/lib/remote-crypto';
-import type { RemoteAllowEntry, RemoteState } from '@/lib/remote-connection';
+import { REMOTE_APP_BASE, type RemoteAllowEntry, type RemoteState } from '@/lib/remote-connection';
 import styles from './remote.module.css';
 
 interface RemoteEntry {
@@ -147,7 +147,7 @@ function ConnectCard({ buildAllowlist }: { buildAllowlist: () => RemoteAllowEntr
   const start = (): void => {
     const room = toB64url(crypto.getRandomValues(new Uint8Array(12)));
     const keyB64 = toB64url(generateKeyBytes());
-    const url = `${window.location.origin}/?remote=${room}#k=${keyB64}`;
+    const url = `${REMOTE_APP_BASE}/?remote=${room}#k=${keyB64}`;
     const host = new RemoteHost(
       room,
       keyB64,
