@@ -37,6 +37,7 @@ import {
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { parsePairing } from '@/lib/remote-connection';
 import { StatusBar } from './components/StatusBar';
 import { ReviewGateHost } from './components/ReviewGateHost';
 import { OllamaSetupBanner } from './components/OllamaSetupBanner';
@@ -236,6 +237,9 @@ const NotesRoute = lazy(() =>
 );
 const RemoteRoute = lazy(() =>
   import('./routes/remote').then((m) => ({ default: m.RemoteRoute })),
+);
+const RemoteApp = lazy(() =>
+  import('./components/remote/RemoteApp').then((m) => ({ default: m.RemoteApp })),
 );
 const WorkbenchRoute = lazy(() =>
   import('./routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),
@@ -510,12 +514,24 @@ const queryClient = new QueryClient({
   },
 });
 
-export const App = (): ReactElement => (
-  <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      {/* Human-approval surface for the kernel review gate (ADR-002 §264). */}
-      <ReviewGateHost />
-    </QueryClientProvider>
-  </ErrorBoundary>
-);
+// Opened via a pairing link (`?remote=<room>#k=<key>`) → this is a phone joining
+// a desktop's remote window, not the normal app. Decided once at load from the
+// URL (ADR-005 §2, option B).
+const pairing = parsePairing(window.location.search, window.location.hash);
+
+export const App = (): ReactElement =>
+  pairing != null ? (
+    <ErrorBoundary>
+      <Suspense fallback={<LazyFallback />}>
+        <RemoteApp room={pairing.room} keyB64={pairing.key} />
+      </Suspense>
+    </ErrorBoundary>
+  ) : (
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+        {/* Human-approval surface for the kernel review gate (ADR-002 §264). */}
+        <ReviewGateHost />
+      </QueryClientProvider>
+    </ErrorBoundary>
+  );

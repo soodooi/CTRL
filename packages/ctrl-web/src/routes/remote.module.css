@@ -78,6 +78,31 @@
   opacity: 0.5;
   cursor: default;
 }
+.connectBtn[data-stop] {
+  color: var(--color-danger, #c0362c);
+  background: transparent;
+  border-color: var(--border);
+}
+.connectUrl {
+  display: inline-block;
+  margin-top: 4px;
+  max-width: 100%;
+  padding: 6px 10px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--primary, #3b5bda);
+  background: var(--surface-2, #f4f1ea);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.connectUrl:hover {
+  border-color: var(--primary-ring, #c7d2fe);
+}
 
 /* allowlist */
 .section {
