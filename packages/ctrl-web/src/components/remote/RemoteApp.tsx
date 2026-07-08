@@ -110,7 +110,11 @@ export function RemoteApp({ room, keyB64 }: { room: string; keyB64: string }): R
       {state !== 'paired' && (
         <div className={styles.banner}>Reconnecting…</div>
       )}
-      <MobileRemoteShell entries={navEntries} renderContent={renderContent} />
+      <MobileRemoteShell
+        entries={navEntries}
+        renderContent={renderContent}
+        onChat={(text, h) => connRef.current?.sendChat(text, h)}
+      />
     </>
   );
 }

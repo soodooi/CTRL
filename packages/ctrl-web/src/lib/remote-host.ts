@@ -11,12 +11,14 @@
 // Mirrors RemoteConnection's framing/crypto; the two are the two ends of a room.
 import { importKey, sealJson, openJson, fromB64url } from './remote-crypto';
 import { gateInvoke } from './kernel';
+import { engineTransport } from './llm-transport';
 import type { RemoteAllowEntry, RemoteState } from './remote-connection';
 import type { Surface } from '@/components/remote/SurfaceRenderer';
 
 type Inbound =
   | { t: 'hello'; pass?: string }
-  | { t: 'invoke'; id: number; tool: string; args: Record<string, unknown> };
+  | { t: 'invoke'; id: number; tool: string; args: Record<string, unknown> }
+  | { t: 'chat'; id: number; text: string };
 
 const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi2018.workers.dev';
 
@@ -110,6 +112,13 @@ export class RemoteHost {
       await this.send({ t: 'allow', entries });
       return;
     }
+    if (msg.t === 'chat') {
+      // The phone talking to Irisy: stream the desktop engine's reply back over
+      // the tunnel (the same assistant, ADR-005 §8 terminal-essence — the engine
+      // owns the loop + context, so we send just this turn's user text).
+      void this.streamChat(msg.id, msg.text);
+      return;
+    }
     if (msg.t === 'invoke') {
       // `remote_surface` = the phone asking a pack to describe its mobile surface
       // (the SDUI describe call). Answered here for now; the real design is that
@@ -190,6 +199,19 @@ export class RemoteHost {
       parts.push({ kind: 'tiers', id: 'ladder', title: ladderCard.verdict as string, data: { tiers } });
     }
     return { v: 1, pack, parts };
+  }
+
+  private async streamChat(id: number, text: string): Promise<void> {
+    try {
+      const stream = engineTransport().stream([{ role: 'user', content: text }], {});
+      for await (const chunk of stream) {
+        const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
+        if (delta) await this.send({ t: 'chat_chunk', id, delta });
+      }
+      await this.send({ t: 'chat_done', id });
+    } catch (e) {
+      await this.send({ t: 'chat_done', id, error: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   private async send(msg: unknown): Promise<void> {
