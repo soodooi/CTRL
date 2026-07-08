@@ -134,6 +134,9 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
     { key: 'notes', title: 'Notes', icon: <Ico d={NOTES_D} />, section: { kind: 'notes' } },
     { key: 'tables', title: 'Tables', icon: <TableIcon />, section: { kind: 'tables' } },
     { key: 'coding', title: 'Coding', icon: <CodeIcon />, section: { kind: 'coding' } },
+    // Mobile — the remote-window capability as a first-class L1 entry (bao
+    // 2026-07-08: it's a module like any other, not a settings-corner route).
+    { key: 'mobile', title: 'Mobile', icon: <RemoteIcon />, section: { kind: 'route', to: '/remote' } },
   ];
   const packEntries: L1Entry[] = packs.map((p) => ({
     key: `pack.${p.id}`,
@@ -202,14 +205,6 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
 
       <div className={styles.spacer} />
 
-      <button
-        type="button"
-        className={styles.ic}
-        onClick={() => onSelect({ kind: 'route', to: '/remote' })}
-        title="Remote Window"
-      >
-        <RemoteIcon />
-      </button>
       <button
         type="button"
         className={styles.ic}
