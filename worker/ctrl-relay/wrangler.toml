@@ -1,0 +1,20 @@
+# ctrl-relay — zero-knowledge WebSocket relay for CTRL remote windows.
+# (ADR-005 §2 remote co-view, option B.)
+# CLAUDE.md rule: no local `wrangler dev` — deploys go to *.workers.dev staging.
+
+name = "ctrl-relay"
+main = "src/index.ts"
+compatibility_date = "2026-06-04"
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "RELAY_ROOM"
+class_name = "RelayRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RelayRoom"]
+
+# Workers Logs (one-week retention) — enables `wrangler tail` after deploy.
+[observability]
+enabled = true
