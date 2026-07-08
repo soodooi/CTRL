@@ -12,6 +12,7 @@
 import { importKey, sealJson, openJson, fromB64url } from './remote-crypto';
 import { gateInvoke } from './kernel';
 import type { RemoteAllowEntry, RemoteState } from './remote-connection';
+import type { Surface } from '@/components/remote/SurfaceRenderer';
 
 type Inbound =
   | { t: 'hello'; pass?: string }
@@ -110,6 +111,18 @@ export class RemoteHost {
       return;
     }
     if (msg.t === 'invoke') {
+      // `remote_surface` = the phone asking a pack to describe its mobile surface
+      // (the SDUI describe call). Answered here for now; the real design is that
+      // each pack `describe`s its own surface (this desktop shim is transitional).
+      if (msg.tool === 'remote_surface') {
+        try {
+          const value = await this.buildSurface(String((msg.args as { pack?: string }).pack ?? ''));
+          await this.send({ t: 'result', id: msg.id, ok: true, value });
+        } catch (e) {
+          await this.send({ t: 'result', id: msg.id, ok: false, error: e instanceof Error ? e.message : String(e) });
+        }
+        return;
+      }
       // Enforce the allowlist at the gate boundary: a phone may only call a tool
       // if the pack it belongs to is allowed with canAct (deny-by-default). The
       // per-tool->pack mapping check is a follow-up; v1 gates on the tool call
@@ -121,6 +134,62 @@ export class RemoteHost {
         await this.send({ t: 'result', id: msg.id, ok: false, error: e instanceof Error ? e.message : String(e) });
       }
     }
+  }
+
+  // Build a pack's mobile Surface (a flat list of generic parts). TRANSITIONAL:
+  // the stock mapping lives here until packs describe their own surface; every
+  // OTHER pack already flows through unchanged (empty surface until it opts in).
+  // The phone stays 100% generic — it never knows a pack is "stock".
+  private async buildSurface(pack: string): Promise<Surface> {
+    if (!pack.includes('stock')) {
+      return { v: 1, pack, parts: [] };
+    }
+    const grab = (tool: string): Promise<Record<string, unknown> | undefined> =>
+      gateInvoke<Record<string, unknown>>(tool).catch(() => undefined);
+    const [mood, leaders, ladder] = await Promise.all([
+      grab('market_mood'),
+      grab('leaders'),
+      grab('limit_ladder'),
+    ]);
+    const parts: Surface['parts'] = [];
+    const moodCard = mood?.card as Record<string, unknown> | undefined;
+    if (moodCard != null) {
+      parts.push({
+        kind: 'gauge',
+        id: 'mood',
+        data: {
+          value: moodCard.temp,
+          verdict: moodCard.verdict,
+          tone: moodCard.tone,
+          read: moodCard.read,
+        },
+      });
+      if (moodCard.metrics != null) {
+        parts.push({ kind: 'metrics', id: 'breadth', data: { items: moodCard.metrics } });
+      }
+    }
+    const leadersCard = leaders?.card as Record<string, unknown> | undefined;
+    if (leadersCard != null) {
+      const rows = ((leadersCard.rows as Array<Record<string, unknown>>) ?? []).map((r) => ({
+        name: r.name,
+        sub: r.code,
+        value: r.value != null ? `${String(r.value)}${String(leadersCard.unit ?? '')}` : null,
+        ratio: r.ratio,
+        tone: r.tone,
+        tag: r.tag,
+      }));
+      parts.push({ kind: 'barlist', id: 'leaders', title: leadersCard.verdict as string, data: { rows } });
+    }
+    const ladderCard = ladder?.card as Record<string, unknown> | undefined;
+    if (ladderCard != null) {
+      const tiers = ((ladderCard.tiers as Array<Record<string, unknown>>) ?? []).map((t) => ({
+        label: t.label,
+        items: t.stocks,
+        tag: t.theme,
+      }));
+      parts.push({ kind: 'tiers', id: 'ladder', title: ladderCard.verdict as string, data: { tiers } });
+    }
+    return { v: 1, pack, parts };
   }
 
   private async send(msg: unknown): Promise<void> {
