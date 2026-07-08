@@ -14,7 +14,7 @@ import { gateInvoke } from './kernel';
 import type { RemoteAllowEntry, RemoteState } from './remote-connection';
 
 type Inbound =
-  | { t: 'hello' }
+  | { t: 'hello'; pass?: string }
   | { t: 'invoke'; id: number; tool: string; args: Record<string, unknown> };
 
 const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi2018.workers.dev';
@@ -23,10 +23,21 @@ export interface RemoteHostHandlers {
   onState?: (s: RemoteState) => void;
 }
 
+export interface RemoteHostOpts {
+  /** Access credential a phone must present after the E2E channel is up. */
+  passcode?: string;
+  /** Stay reachable: auto-reconnect the outbound relay link (unattended mode). */
+  keepAlive?: boolean;
+  relayBase?: string;
+}
+
 export class RemoteHost {
   private ws: WebSocket | null = null;
   private key: CryptoKey | null = null;
   private state: RemoteState = 'disconnected';
+  private stopped = false;
+  private retry = 0;
+  private relayBase: string;
 
   constructor(
     private room: string,
@@ -34,22 +45,46 @@ export class RemoteHost {
     /** The functions this device exposes to the phone (visible + canAct). */
     private resolveAllowlist: () => Promise<RemoteAllowEntry[]>,
     private handlers: RemoteHostHandlers = {},
-    private relayBase: string = DEFAULT_RELAY,
-  ) {}
+    private opts: RemoteHostOpts = {},
+  ) {
+    this.relayBase = opts.relayBase ?? DEFAULT_RELAY;
+  }
 
   async start(): Promise<void> {
+    this.stopped = false;
     this.key = await importKey(fromB64url(this.keyB64url));
+    this.dial();
+  }
+
+  private dial(): void {
     this.setState('connecting');
     const ws = new WebSocket(`${this.relayBase}/?room=${encodeURIComponent(this.room)}`);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
-    ws.onopen = () => this.setState('paired');
+    ws.onopen = () => {
+      this.retry = 0;
+      this.setState('paired');
+    };
     ws.onmessage = (ev) => void this.onMessage(ev);
-    ws.onclose = () => this.setState('disconnected');
-    ws.onerror = () => this.setState('disconnected');
+    ws.onclose = () => this.onDrop();
+    ws.onerror = () => this.onDrop();
+  }
+
+  private onDrop(): void {
+    this.setState('disconnected');
+    // Unattended "stay reachable": keep the outbound link alive (the RustDesk
+    // registration-heartbeat posture) with capped backoff so the phone can
+    // reconnect any time without the desktop being touched.
+    if (this.opts.keepAlive && !this.stopped) {
+      const delay = Math.min(1000 * 2 ** this.retry++, 30_000);
+      window.setTimeout(() => {
+        if (!this.stopped) this.dial();
+      }, delay);
+    }
   }
 
   stop(): void {
+    this.stopped = true;
     this.ws?.close();
     this.ws = null;
     this.setState('disconnected');
@@ -64,6 +99,12 @@ export class RemoteHost {
       return; // undecryptable — wrong key / tampered
     }
     if (msg.t === 'hello') {
+      // ID + password model: the E2E key gates the channel, the passcode gates
+      // ACCESS (verified here, after E2E — the relay never sees it).
+      if (this.opts.passcode != null && this.opts.passcode !== '' && msg.pass !== this.opts.passcode) {
+        await this.send({ t: 'denied', reason: 'passcode' });
+        return;
+      }
       const entries = await this.resolveAllowlist();
       await this.send({ t: 'allow', entries });
       return;
