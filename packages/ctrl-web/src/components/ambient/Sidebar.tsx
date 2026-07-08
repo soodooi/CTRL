@@ -83,6 +83,7 @@ export type SidebarSection =
   | { kind: 'notes' }
   | { kind: 'tables' }
   | { kind: 'coding' }
+  | { kind: 'mobile' }
   | { kind: 'discover' };
 
 interface SidebarProps {
@@ -136,7 +137,7 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
     { key: 'coding', title: 'Coding', icon: <CodeIcon />, section: { kind: 'coding' } },
     // Mobile — the remote-window capability as a first-class L1 entry (bao
     // 2026-07-08: it's a module like any other, not a settings-corner route).
-    { key: 'mobile', title: 'Mobile', icon: <RemoteIcon />, section: { kind: 'route', to: '/remote' } },
+    { key: 'mobile', title: 'Mobile', icon: <RemoteIcon />, section: { kind: 'mobile' } },
   ];
   const packEntries: L1Entry[] = packs.map((p) => ({
     key: `pack.${p.id}`,

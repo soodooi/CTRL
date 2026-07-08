@@ -80,6 +80,7 @@ import {
   type ConnectorManifest,
 } from '@/lib/connector';
 import { Discover } from './Discover';
+import { RemoteRoute } from '@/routes/remote';
 import {
   FeaturePackScene,
   type FeaturePack,
@@ -290,6 +291,8 @@ export interface AmbientHomeProps {
   openTablesNonce: number;
   /** Bumped to open the coding terminal alongside Irisy (same scenePane). */
   openCodingNonce: number;
+  /** Bumped to open the Mobile (remote window) scene alongside Irisy. */
+  openMobileNonce: number;
   /** Bumped by the shell when "Irisy" is selected, to reset the chat. */
   irisyNonce: number;
   /** Collapsed (display:none) while a route owns the main column. The
@@ -323,6 +326,7 @@ export function AmbientHome({
   openNotesNonce,
   openTablesNonce,
   openCodingNonce,
+  openMobileNonce,
   irisyNonce,
   hidden,
   onSidebarSelect,
@@ -351,7 +355,9 @@ export function AmbientHome({
   const [editing, setEditing] = useState(false);
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
-  const [scene, setScene] = useState<FeaturePack | 'today' | 'notes' | 'tables' | 'coding' | null>(
+  const [scene, setScene] = useState<
+    FeaturePack | 'today' | 'notes' | 'tables' | 'coding' | 'mobile' | null
+  >(
     null,
   );
   // The active Irisy role (ADR-003 §8.6): drives the persona shipped per turn.
@@ -1055,6 +1061,9 @@ export function AmbientHome({
   useEffect(() => {
     if (openCodingNonce > 0) setScene('coding');
   }, [openCodingNonce]);
+  useEffect(() => {
+    if (openMobileNonce > 0) setScene('mobile');
+  }, [openMobileNonce]);
 
   // L1 ↔ role linkage (ADR-003 §8.6 lock 5): opening an L1 scene auto-selects
   // its linked role (Notes/Tables -> Knowledge Base, Coding -> Code Companion).
@@ -1767,6 +1776,8 @@ export function AmbientHome({
       ? 'Smart Tables'
       : scene === 'coding'
       ? 'Coding'
+      : scene === 'mobile'
+      ? 'Mobile'
       : scene
       ? scene.name
       : part
@@ -1939,6 +1950,18 @@ export function AmbientHome({
                       ✕
                     </button>
                     <CodingScene />
+                  </div>
+                ) : scene === 'mobile' ? (
+                  <div className={styles.scenePane}>
+                    <button
+                      type="button"
+                      className={styles.sceneClose}
+                      onClick={() => setScene(null)}
+                      aria-label="Close Mobile"
+                    >
+                      ✕
+                    </button>
+                    <RemoteRoute />
                   </div>
                 ) : scene ? (
                   <div className={styles.scenePane}>
