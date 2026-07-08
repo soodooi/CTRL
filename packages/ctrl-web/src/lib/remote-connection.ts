@@ -69,7 +69,7 @@ const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi2018.workers.dev';
 // the PWA host + relay are shared multi-tenant infra; each session is isolated
 // by its random room id + E2E key.
 export const REMOTE_APP_BASE =
-  (import.meta.env.VITE_REMOTE_APP_BASE as string | undefined) ?? 'https://ctrl-app-8j8.pages.dev';
+  (import.meta.env.VITE_REMOTE_APP_BASE as string | undefined) ?? 'https://app.ctrlapplab.com';
 
 export class RemoteConnection {
   private ws: WebSocket | null = null;
