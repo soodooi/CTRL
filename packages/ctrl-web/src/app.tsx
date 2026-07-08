@@ -234,6 +234,9 @@ const PoolRoute = lazy(() =>
 const NotesRoute = lazy(() =>
   import('./routes/notes').then((m) => ({ default: m.NotesRoute })),
 );
+const RemoteRoute = lazy(() =>
+  import('./routes/remote').then((m) => ({ default: m.RemoteRoute })),
+);
 const WorkbenchRoute = lazy(() =>
   import('./routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),
 );
@@ -315,6 +318,15 @@ const notesRoute = createRoute({
   component: () => (
     <Suspense fallback={<LazyFallback />}>
       <NotesRoute />
+    </Suspense>
+  ),
+});
+const remoteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/remote',
+  component: () => (
+    <Suspense fallback={<LazyFallback />}>
+      <RemoteRoute />
     </Suspense>
   ),
 });
@@ -463,6 +475,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   poolRoute,
   notesRoute,
+  remoteRoute,
   workbenchRoute,
   workspaceRoute,
   settingsRoute,

@@ -40,6 +40,15 @@ function GearIcon(): ReactElement {
     </svg>
   );
 }
+// Remote Window — a phone glyph (mobile co-view config).
+function RemoteIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="7" y="3" width="10" height="18" rx="2" />
+      <path d="M11 18h2" />
+    </svg>
+  );
+}
 function CodeIcon(): ReactElement {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -193,6 +202,14 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
 
       <div className={styles.spacer} />
 
+      <button
+        type="button"
+        className={styles.ic}
+        onClick={() => onSelect({ kind: 'route', to: '/remote' })}
+        title="Remote Window"
+      >
+        <RemoteIcon />
+      </button>
       <button
         type="button"
         className={styles.ic}
