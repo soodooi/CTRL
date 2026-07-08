@@ -1,0 +1,202 @@
+/* Generic SDUI primitives. A-share convention kept as the semantic default
+   (red=up/green=down) but these are domain-agnostic: any pack composes them. */
+.surface {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.card {
+  --up: #c0362c;
+  --down: #2f7d57;
+  --warn: #c98a2b;
+  --gate: #2f5c86;
+  --gate-soft: #e0e8f0;
+  background: var(--bg-elev, #fff);
+  border: 1px solid var(--border, #e6e1d3);
+  border-radius: 12px;
+  padding: 12px 13px;
+  font-size: 13px;
+  color: var(--text, #20221d);
+}
+.cardTitle {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.up { color: var(--up); }
+.down { color: var(--down); }
+.warn { color: var(--warn); }
+.neutral { color: var(--text, #20221d); }
+.mono { font-family: var(--mono, ui-monospace, monospace); }
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.actProduce,
+.actQuery {
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.actProduce {
+  color: #fff;
+  background: var(--gate);
+  border: none;
+}
+.actQuery {
+  color: var(--gate);
+  background: var(--gate-soft);
+  border: 1px solid var(--gate);
+}
+
+/* gauge */
+.gauge { display: flex; gap: 14px; align-items: center; }
+.track {
+  position: relative;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 116px;
+  border-radius: 11px;
+  border: 1px solid #d9d3c4;
+  background: linear-gradient(to top, #2f7d57, #dfc98a 46%, #e0a05a 68%, #c0362c);
+}
+.mark { position: absolute; left: -3px; right: -3px; height: 2px; background: var(--text, #20221d); }
+.gaugeVal { display: flex; align-items: flex-end; line-height: 1; }
+.gaugeNum {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 30px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.gaugeUnit { font-size: 15px; color: var(--text-muted, #7d8077); margin-left: 2px; }
+.verdict { font-family: var(--serif, serif); font-size: 17px; font-weight: 600; margin-top: 3px; }
+.read { font-size: 11.5px; color: var(--text-muted, #7d8077); margin-top: 2px; }
+
+/* metrics */
+.metrics { display: flex; gap: 6px; flex-wrap: wrap; }
+.metric {
+  flex: 1 1 auto;
+  min-width: 54px;
+  text-align: center;
+  background: var(--surface-2, #f4f1ea);
+  border: 1px solid var(--border, #e6e1d3);
+  border-radius: 8px;
+  padding: 6px 4px;
+}
+.metricVal {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.metricKey { font-size: 10.5px; color: var(--text-muted, #7d8077); }
+
+/* barlist */
+.rows { display: flex; flex-direction: column; gap: 6px; }
+.barRow { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; font-size: 12.5px; }
+.barName { font-weight: 600; white-space: nowrap; }
+.barSub {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--text-muted, #7d8077);
+  margin-left: 4px;
+  font-weight: 400;
+}
+.cell {
+  position: relative;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--surface-2, #f4f1ea);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+.fill { position: absolute; inset: 0 auto 0 0; opacity: 0.16; }
+.fill.up { background: var(--up); }
+.fill.down { background: var(--down); }
+.fill.warn { background: var(--warn); }
+.fill.neutral { background: var(--gate); }
+.cval {
+  position: relative;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  padding-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.tag {
+  justify-self: end;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 10px;
+  padding: 0.15em 0.45em;
+  border-radius: 5px;
+  border: 1px solid var(--gate);
+  color: var(--gate);
+  background: var(--gate-soft);
+  white-space: nowrap;
+}
+
+/* tiers */
+.tiers { display: flex; flex-direction: column; gap: 6px; }
+.tier { display: grid; grid-template-columns: 46px 1fr; gap: 9px; align-items: center; }
+.tierBadge {
+  font-weight: 600;
+  text-align: center;
+  border-radius: 7px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: #fff;
+  background: var(--gate);
+}
+.tierItems { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.tierItem { font-size: 12px; font-weight: 600; }
+
+/* table */
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.table th {
+  text-align: left;
+  color: var(--text-muted, #7d8077);
+  font-weight: 500;
+  font-size: 10.5px;
+  padding: 3px 5px;
+  border-bottom: 1px solid var(--border, #e6e1d3);
+}
+.table td { padding: 5px; border-bottom: 1px solid #efeadd; white-space: nowrap; }
+
+/* record */
+.record { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 0; }
+.recRow { display: contents; }
+.record dt { color: var(--text-muted, #7d8077); }
+.record dd { margin: 0; font-weight: 500; text-align: right; }
+
+/* list */
+.list { display: flex; flex-direction: column; }
+.listRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 6px 0;
+  border-bottom: 1px solid #efeadd;
+}
+.listRow:last-child { border-bottom: none; }
+.listMeta { font-family: var(--mono, ui-monospace, monospace); color: var(--text-muted, #7d8077); }
+
+.text { font-size: 13px; line-height: 1.55; }
+.json {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted, #6e6e73);
+  background: var(--surface-2, #f4f1ea);
+  padding: 8px 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0;
+}
