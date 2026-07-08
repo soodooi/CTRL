@@ -1,0 +1,65 @@
+/* Full-viewport phone shell: scrollable content over a fixed bottom nav.
+   Respects the iOS home-indicator safe area. */
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--bg, #f4f1ea);
+  color: var(--text, #20221d);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 32px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-subtle, #7d8077);
+}
+
+.nav {
+  flex: none;
+  display: flex;
+  border-top: 1px solid var(--border, #d7d2c3);
+  background: var(--bg-elev, #fff);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.tab {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px 7px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-subtle, #7d8077);
+  min-width: 0;
+}
+.tab[data-active] {
+  color: var(--primary, #3b5bda);
+}
+.tabIcon {
+  font-size: 19px;
+  line-height: 1;
+}
+.tabLabel {
+  font-size: 10.5px;
+  font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
