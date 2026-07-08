@@ -241,6 +241,9 @@ const RemoteRoute = lazy(() =>
 const RemoteApp = lazy(() =>
   import('./components/remote/RemoteApp').then((m) => ({ default: m.RemoteApp })),
 );
+const RemoteLanding = lazy(() =>
+  import('./components/remote/RemoteLanding').then((m) => ({ default: m.RemoteLanding })),
+);
 const WorkbenchRoute = lazy(() =>
   import('./routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),
 );
@@ -518,15 +521,32 @@ const queryClient = new QueryClient({
 // a desktop's remote window, not the normal app. Decided once at load from the
 // URL (ADR-005 §2, option B).
 const pairing = parsePairing(window.location.search, window.location.hash);
+// The full app is a desktop Tauri app; a plain browser has no Tauri APIs, so
+// booting the router there crashes (raw invoke → transformCallback). The ONLY
+// browser purpose of the hosted PWA is the remote view, so a bare browser visit
+// (no pairing) shows a landing page instead of the full app.
+const inTauri = '__TAURI_INTERNALS__' in window;
 
-export const App = (): ReactElement =>
-  pairing != null ? (
-    <ErrorBoundary>
-      <Suspense fallback={<LazyFallback />}>
-        <RemoteApp room={pairing.room} keyB64={pairing.key} />
-      </Suspense>
-    </ErrorBoundary>
-  ) : (
+export const App = (): ReactElement => {
+  if (pairing != null) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<LazyFallback />}>
+          <RemoteApp room={pairing.room} keyB64={pairing.key} />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+  if (!inTauri) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<LazyFallback />}>
+          <RemoteLanding />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+  return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
@@ -535,3 +555,4 @@ export const App = (): ReactElement =>
       </QueryClientProvider>
     </ErrorBoundary>
   );
+};
