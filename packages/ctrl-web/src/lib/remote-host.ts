@@ -17,7 +17,7 @@ type Inbound =
   | { t: 'hello' }
   | { t: 'invoke'; id: number; tool: string; args: Record<string, unknown> };
 
-const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi.workers.dev';
+const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi2018.workers.dev';
 
 export interface RemoteHostHandlers {
   onState?: (s: RemoteState) => void;

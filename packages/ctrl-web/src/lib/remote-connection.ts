@@ -49,7 +49,7 @@ export function parsePairing(search: string, hash: string): { room: string; key:
   return { room, key };
 }
 
-const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi.workers.dev';
+const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi2018.workers.dev';
 
 export class RemoteConnection {
   private ws: WebSocket | null = null;
