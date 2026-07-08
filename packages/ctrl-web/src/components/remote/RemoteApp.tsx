@@ -5,8 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { RemoteConnection, type RemoteAllowEntry, type RemoteState } from '@/lib/remote-connection';
 import { MobileRemoteShell, type RemoteNavEntry } from './MobileRemoteShell';
-import { StockCockpit, type CockpitData } from '@/components/featurepack/stock/StockCockpit';
-import type { StockResult } from '@/components/featurepack/stock/StockCard';
+import { SurfaceView, type Action, type Surface } from './SurfaceRenderer';
 import styles from './RemoteApp.module.css';
 
 const rememberKey = (room: string): string => `ctrl.remote.pass.${room}`;
@@ -65,28 +64,13 @@ export function RemoteApp({ room, keyB64 }: { room: string; keyB64: string }): R
     [allow],
   );
 
+  // Generic — NO per-pack code. Every pack renders the same way: the phone asks
+  // the desktop for that pack's Surface (`describe`) and renders it through the
+  // generic PartKind registry (SurfaceView). Actions round-trip over the tunnel.
   const renderContent = (key: string): ReactNode => {
     const conn = connRef.current;
     if (conn == null) return null;
-    // Stock pack → the native cockpit, its data tunneled through the desktop gate.
-    if (key === 'pack.ctrl-stock-cn') {
-      const load = async (): Promise<CockpitData> => {
-        const grab = (tool: string): Promise<StockResult | undefined> =>
-          conn.invoke<StockResult>(tool).catch(() => undefined);
-        const [mood, ladder, leaders] = await Promise.all([
-          grab('market_mood'),
-          grab('limit_ladder'),
-          grab('leaders'),
-        ]);
-        return { mood, ladder, leaders };
-      };
-      return <StockCockpit load={load} />;
-    }
-    return (
-      <div className={styles.soon}>
-        {allow.find((e) => e.key === key)?.label ?? key} is available on the phone soon.
-      </div>
-    );
+    return <RemoteSurfaceTab conn={conn} packKey={key} />;
   };
 
   if (needPass && allow.length === 0) {
@@ -126,7 +110,56 @@ export function RemoteApp({ room, keyB64 }: { room: string; keyB64: string }): R
       {state !== 'paired' && (
         <div className={styles.banner}>Reconnecting…</div>
       )}
-      <MobileRemoteShell entries={navEntries} renderContent={renderContent} />
+      <MobileRemoteShell
+        entries={navEntries}
+        renderContent={renderContent}
+        onChat={(text, h) => connRef.current?.sendChat(text, h)}
+      />
     </>
   );
+}
+
+// One pack tab: fetch its Surface from the desktop (describe) + render generically.
+// No pack-specific code — the desktop decides the parts; this just renders them.
+function RemoteSurfaceTab({
+  conn,
+  packKey,
+}: {
+  conn: RemoteConnection;
+  packKey: string;
+}): ReactElement {
+  const [surface, setSurface] = useState<Surface | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const fetchSurface = (): void => {
+    setErr(null);
+    void conn
+      .invoke<Surface>('remote_surface', { pack: packKey })
+      .then(setSurface)
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)));
+  };
+
+  useEffect(() => {
+    fetchSurface();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packKey]);
+
+  const onAction = (a: Action): void => {
+    void conn
+      .invoke(a.op ?? a.id, a.args ?? {})
+      .then(() => fetchSurface())
+      .catch(() => {});
+  };
+
+  if (err != null) {
+    return <div className={styles.soon}>Couldn&apos;t load this function — {err}</div>;
+  }
+  if (surface == null) {
+    return (
+      <div className={styles.status} style={{ height: '60%' }}>
+        <div className={styles.spinner} />
+      </div>
+    );
+  }
+  return <SurfaceView surface={surface} onAction={onAction} />;
 }

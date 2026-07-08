@@ -16,7 +16,8 @@ export type RemoteState = 'connecting' | 'paired' | 'disconnected';
 /** Frames we send to the desktop. */
 type Outbound =
   | { t: 'hello'; pass?: string } // request allowlist; present the passcode
-  | { t: 'invoke'; id: number; tool: string; args: Record<string, unknown> };
+  | { t: 'invoke'; id: number; tool: string; args: Record<string, unknown> }
+  | { t: 'chat'; id: number; text: string }; // talk to Irisy on the desktop
 
 /** Frames the desktop sends back. */
 type Inbound =
@@ -24,7 +25,14 @@ type Inbound =
   | { t: 'denied'; reason: string }
   | { t: 'result'; id: number; ok: true; value: unknown }
   | { t: 'result'; id: number; ok: false; error: string }
-  | { t: 'event'; stream?: string; payload: unknown };
+  | { t: 'event'; stream?: string; payload: unknown }
+  | { t: 'chat_chunk'; id: number; delta: string }
+  | { t: 'chat_done'; id: number; error?: string };
+
+export interface ChatHandlers {
+  onChunk: (delta: string) => void;
+  onDone: (error?: string) => void;
+}
 
 export interface RemoteAllowEntry {
   key: string;
@@ -76,6 +84,7 @@ export class RemoteConnection {
   private key: CryptoKey | null = null;
   private seq = 1;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  private chats = new Map<number, ChatHandlers>();
   private state: RemoteState = 'disconnected';
 
   private relayBase: string;
@@ -150,6 +159,16 @@ export class RemoteConnection {
     });
   }
 
+  /** Talk to Irisy on the desktop — streams the reply back over the tunnel. */
+  sendChat(text: string, handlers: ChatHandlers): void {
+    const id = this.seq++;
+    this.chats.set(id, handlers);
+    void this.sendFrame({ t: 'chat', id, text }).catch((e: unknown) => {
+      this.chats.delete(id);
+      handlers.onDone(e instanceof Error ? e.message : String(e));
+    });
+  }
+
   private async sendFrame(msg: Outbound): Promise<void> {
     if (this.ws == null || this.key == null || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error('remote connection not open');
@@ -193,6 +212,15 @@ export class RemoteConnection {
         this.pending.delete(msg.id);
         if (msg.ok) p.resolve(msg.value);
         else p.reject(new Error(msg.error));
+        break;
+      }
+      case 'chat_chunk':
+        this.chats.get(msg.id)?.onChunk(msg.delta);
+        break;
+      case 'chat_done': {
+        const c = this.chats.get(msg.id);
+        this.chats.delete(msg.id);
+        c?.onDone(msg.error);
         break;
       }
     }
