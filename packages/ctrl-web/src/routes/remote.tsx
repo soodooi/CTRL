@@ -19,8 +19,9 @@ import { RemoteHost } from '@/lib/remote-host';
 import { generateKeyBytes, toB64url } from '@/lib/remote-crypto';
 import { getOrCreateIdentity, rotatePasscode, type RemoteIdentity } from '@/lib/remote-identity';
 import { REMOTE_APP_BASE, type RemoteAllowEntry, type RemoteState } from '@/lib/remote-connection';
-import { MobilePreview } from '@/components/remote/MobilePreview';
+import { MobilePreview, type PackTab } from '@/components/remote/MobilePreview';
 import { SAMPLE_TABS } from '@/components/remote/mobile-sample';
+import { loadLocalSurface } from '@/lib/remote-surface';
 import styles from './remote.module.css';
 
 interface RemoteEntry {
@@ -65,12 +66,35 @@ export function RemoteRoute(): ReactElement {
       .filter((e) => permFor(cfg, e.key).visible)
       .map((e) => ({ key: e.key, label: e.label, icon: e.icon, canAct: permFor(cfg, e.key).canAct }));
 
+  // Live preview: load each visible pack's REAL surface through the LOCAL gate
+  // (this desktop) so the phone-frame preview shows real data, no phone needed.
+  // Falls back to sample surfaces where the gate isn't reachable (e.g. browser).
+  const [liveTabs, setLiveTabs] = useState<PackTab[]>([]);
+  const packsKey = packs.map((p) => p.id).join(',');
+  useEffect(() => {
+    let alive = true;
+    const visible = entries.filter((e) => permFor(cfg, e.key).visible);
+    void Promise.all(
+      visible.map(async (e) => {
+        const surface = await loadLocalSurface(e.key);
+        return surface ? { key: e.key, label: e.label, icon: e.icon, surface } : null;
+      }),
+    ).then((tabs) => {
+      if (alive) setLiveTabs(tabs.filter((t): t is PackTab => t != null));
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packsKey]);
+  const previewTabs = liveTabs.length > 0 ? liveTabs : SAMPLE_TABS;
+
   return (
     <div className={styles.page}>
       <div className={styles.split}>
         <div className={styles.previewCol}>
           <div className={styles.previewLabel}>What your phone shows</div>
-          <MobilePreview tabs={SAMPLE_TABS} />
+          <MobilePreview tabs={previewTabs} />
           <div className={styles.previewNote}>
             The same app your phone renders remotely — swipe from the right (or tap ✦) for Irisy.
           </div>
