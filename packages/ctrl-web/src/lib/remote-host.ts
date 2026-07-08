@@ -12,6 +12,7 @@
 import { importKey, sealJson, openJson, fromB64url } from './remote-crypto';
 import { gateInvoke } from './kernel';
 import { engineTransport } from './llm-transport';
+import { surfaceToolFor } from './remote-surface';
 import type { RemoteAllowEntry, RemoteState } from './remote-connection';
 import type { Surface } from '@/components/remote/SurfaceRenderer';
 
@@ -145,60 +146,19 @@ export class RemoteHost {
     }
   }
 
-  // Build a pack's mobile Surface (a flat list of generic parts). TRANSITIONAL:
-  // the stock mapping lives here until packs describe their own surface; every
-  // OTHER pack already flows through unchanged (empty surface until it opts in).
-  // The phone stays 100% generic — it never knows a pack is "stock".
+  // A pack describes its OWN mobile Surface (§14 describe) via a `*_surface`
+  // gate tool — the parts composition lives in the pack, NOT here, so core has
+  // zero pack-specific rendering knowledge and the phone stays 100% generic.
+  // v1 resolves the stock pack's tool by convention; a manifest-declared surface
+  // tool is the full generalization (any pack opts in the same way).
   private async buildSurface(pack: string): Promise<Surface> {
-    if (!pack.includes('stock')) {
+    const tool = surfaceToolFor(pack);
+    if (tool == null) return { v: 1, pack, parts: [] };
+    try {
+      return await gateInvoke<Surface>(tool);
+    } catch {
       return { v: 1, pack, parts: [] };
     }
-    const grab = (tool: string): Promise<Record<string, unknown> | undefined> =>
-      gateInvoke<Record<string, unknown>>(tool).catch(() => undefined);
-    const [mood, leaders, ladder] = await Promise.all([
-      grab('market_mood'),
-      grab('leaders'),
-      grab('limit_ladder'),
-    ]);
-    const parts: Surface['parts'] = [];
-    const moodCard = mood?.card as Record<string, unknown> | undefined;
-    if (moodCard != null) {
-      parts.push({
-        kind: 'gauge',
-        id: 'mood',
-        data: {
-          value: moodCard.temp,
-          verdict: moodCard.verdict,
-          tone: moodCard.tone,
-          read: moodCard.read,
-        },
-      });
-      if (moodCard.metrics != null) {
-        parts.push({ kind: 'metrics', id: 'breadth', data: { items: moodCard.metrics } });
-      }
-    }
-    const leadersCard = leaders?.card as Record<string, unknown> | undefined;
-    if (leadersCard != null) {
-      const rows = ((leadersCard.rows as Array<Record<string, unknown>>) ?? []).map((r) => ({
-        name: r.name,
-        sub: r.code,
-        value: r.value != null ? `${String(r.value)}${String(leadersCard.unit ?? '')}` : null,
-        ratio: r.ratio,
-        tone: r.tone,
-        tag: r.tag,
-      }));
-      parts.push({ kind: 'barlist', id: 'leaders', title: leadersCard.verdict as string, data: { rows } });
-    }
-    const ladderCard = ladder?.card as Record<string, unknown> | undefined;
-    if (ladderCard != null) {
-      const tiers = ((ladderCard.tiers as Array<Record<string, unknown>>) ?? []).map((t) => ({
-        label: t.label,
-        items: t.stocks,
-        tag: t.theme,
-      }));
-      parts.push({ kind: 'tiers', id: 'ladder', title: ladderCard.verdict as string, data: { tiers } });
-    }
-    return { v: 1, pack, parts };
   }
 
   private async streamChat(id: number, text: string): Promise<void> {
