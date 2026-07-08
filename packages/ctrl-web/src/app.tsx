@@ -241,8 +241,8 @@ const RemoteRoute = lazy(() =>
 const RemoteApp = lazy(() =>
   import('./components/remote/RemoteApp').then((m) => ({ default: m.RemoteApp })),
 );
-const RemoteLanding = lazy(() =>
-  import('./components/remote/RemoteLanding').then((m) => ({ default: m.RemoteLanding })),
+const RemoteEntry = lazy(() =>
+  import('./components/remote/RemoteEntry').then((m) => ({ default: m.RemoteEntry })),
 );
 const WorkbenchRoute = lazy(() =>
   import('./routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),
@@ -541,7 +541,7 @@ export const App = (): ReactElement => {
     return (
       <ErrorBoundary>
         <Suspense fallback={<LazyFallback />}>
-          <RemoteLanding />
+          <RemoteEntry />
         </Suspense>
       </ErrorBoundary>
     );
