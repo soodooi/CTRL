@@ -38,3 +38,34 @@
   font-size: 14px;
   color: var(--text-subtle, #7d8077);
 }
+.passTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text, #20221d);
+}
+.passInput {
+  width: 200px;
+  padding: 12px 14px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 20px;
+  letter-spacing: 0.16em;
+  text-align: center;
+  border: 1px solid var(--border, #d7d2c3);
+  border-radius: 10px;
+  background: var(--bg-elev, #fff);
+  color: var(--text, #20221d);
+}
+.passInput:focus {
+  outline: none;
+  border-color: var(--primary, #3b5bda);
+}
+.passBtn {
+  padding: 11px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary, #3b5bda);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}

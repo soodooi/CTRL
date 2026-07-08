@@ -15,12 +15,13 @@ export type RemoteState = 'connecting' | 'paired' | 'disconnected';
 
 /** Frames we send to the desktop. */
 type Outbound =
-  | { t: 'hello' } // ask the desktop for the allowlist + initial state
+  | { t: 'hello'; pass?: string } // request allowlist; present the passcode
   | { t: 'invoke'; id: number; tool: string; args: Record<string, unknown> };
 
 /** Frames the desktop sends back. */
 type Inbound =
   | { t: 'allow'; entries: RemoteAllowEntry[] }
+  | { t: 'denied'; reason: string }
   | { t: 'result'; id: number; ok: true; value: unknown }
   | { t: 'result'; id: number; ok: false; error: string }
   | { t: 'event'; stream?: string; payload: unknown };
@@ -36,6 +37,16 @@ export interface RemoteHandlers {
   onState?: (s: RemoteState) => void;
   onAllowlist?: (entries: RemoteAllowEntry[]) => void;
   onEvent?: (stream: string | undefined, payload: unknown) => void;
+  /** Desktop rejected the passcode — prompt the user for it. */
+  onDenied?: (reason: string) => void;
+}
+
+export interface RemoteConnOpts {
+  /** Access passcode presented to the desktop after E2E (unattended model). */
+  passcode?: string;
+  /** Auto-reconnect when the desktop drops (reach an always-on desktop). */
+  keepAlive?: boolean;
+  relayBase?: string;
 }
 
 /** Parse a pairing URL/blob: `?remote=<room>` + `#k=<b64url key>`. Key rides in
@@ -51,6 +62,15 @@ export function parsePairing(search: string, hash: string): { room: string; key:
 
 const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi2018.workers.dev';
 
+// Public host of the CTRL PWA — where a phone loads the app from (the desktop's
+// local Tauri origin is unreachable from a phone). The pairing link points here;
+// the DATA still flows peer-to-peer over the relay, so this host only ever
+// serves the static shell (data sovereignty unchanged). Same for every user —
+// the PWA host + relay are shared multi-tenant infra; each session is isolated
+// by its random room id + E2E key.
+export const REMOTE_APP_BASE =
+  (import.meta.env.VITE_REMOTE_APP_BASE as string | undefined) ?? 'https://app.ctrlapplab.com';
+
 export class RemoteConnection {
   private ws: WebSocket | null = null;
   private key: CryptoKey | null = null;
@@ -58,31 +78,58 @@ export class RemoteConnection {
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private state: RemoteState = 'disconnected';
 
+  private relayBase: string;
+  private stopped = false;
+  private retry = 0;
+
   constructor(
     private room: string,
     private keyB64url: string,
     private handlers: RemoteHandlers = {},
-    private relayBase: string = DEFAULT_RELAY,
-  ) {}
+    private opts: RemoteConnOpts = {},
+  ) {
+    this.relayBase = opts.relayBase ?? DEFAULT_RELAY;
+  }
 
   async connect(): Promise<void> {
+    this.stopped = false;
     this.key = await importKey(fromB64url(this.keyB64url));
+    this.dial();
+  }
+
+  /** Update the passcode (after the user enters it on a `denied`) + retry. */
+  setPasscode(passcode: string): void {
+    this.opts = { ...this.opts, passcode };
+    if (this.ws?.readyState === WebSocket.OPEN) void this.sendFrame({ t: 'hello', pass: passcode });
+  }
+
+  private dial(): void {
     this.setState('connecting');
-    const url = `${this.relayBase}/?room=${encodeURIComponent(this.room)}`;
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(`${this.relayBase}/?room=${encodeURIComponent(this.room)}`);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
-
     ws.onopen = () => {
-      void this.sendFrame({ t: 'hello' });
+      this.retry = 0;
+      void this.sendFrame({ t: 'hello', pass: this.opts.passcode });
       this.setState('paired');
     };
     ws.onmessage = (ev: MessageEvent) => void this.onMessage(ev);
-    ws.onclose = () => this.setState('disconnected');
-    ws.onerror = () => this.setState('disconnected');
+    ws.onclose = () => this.onDrop();
+    ws.onerror = () => this.onDrop();
+  }
+
+  private onDrop(): void {
+    this.setState('disconnected');
+    if (this.opts.keepAlive && !this.stopped) {
+      const delay = Math.min(1000 * 2 ** this.retry++, 30_000);
+      window.setTimeout(() => {
+        if (!this.stopped) this.dial();
+      }, delay);
+    }
   }
 
   close(): void {
+    this.stopped = true;
     this.ws?.close();
     this.ws = null;
     for (const p of this.pending.values()) p.reject(new Error('connection closed'));
@@ -133,6 +180,9 @@ export class RemoteConnection {
     switch (msg.t) {
       case 'allow':
         this.handlers.onAllowlist?.(msg.entries);
+        break;
+      case 'denied':
+        this.handlers.onDenied?.(msg.reason);
         break;
       case 'event':
         this.handlers.onEvent?.(msg.stream, msg.payload);

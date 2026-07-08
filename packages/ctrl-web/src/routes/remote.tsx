@@ -17,7 +17,8 @@ import {
 } from '@/lib/remote-config';
 import { RemoteHost } from '@/lib/remote-host';
 import { generateKeyBytes, toB64url } from '@/lib/remote-crypto';
-import type { RemoteAllowEntry, RemoteState } from '@/lib/remote-connection';
+import { getOrCreateIdentity, rotatePasscode, type RemoteIdentity } from '@/lib/remote-identity';
+import { REMOTE_APP_BASE, type RemoteAllowEntry, type RemoteState } from '@/lib/remote-connection';
 import styles from './remote.module.css';
 
 interface RemoteEntry {
@@ -128,86 +129,157 @@ export function RemoteRoute(): ReactElement {
   );
 }
 
-// Connection card — starts a session: the desktop dials the relay room (0 open
-// ports) and serves the allowlist over an E2E channel; the phone joins via the
-// connect URL (room in the query, key in the fragment so it never hits a server
-// log). Reachable once the relay is deployed; the local host wiring is live.
-interface Session {
-  url: string;
-  host: RemoteHost;
-}
+// Connection card — the unattended "reach my own desktop anytime" model
+// (RustDesk/ToDesk parity, 2026-07-07 research). "Stay reachable" keeps a stable
+// device (persistent id + E2E key + passcode) registered on the relay in the
+// background, so the phone connects any time via a durable link — no trip to the
+// desktop. A separate one-time link covers the attended "share with someone
+// else" case. The relay stays zero-knowledge either way.
+const REACHABLE_KEY = 'ctrl.remote.reachable.v1';
 
 function ConnectCard({ buildAllowlist }: { buildAllowlist: () => RemoteAllowEntry[] }): ReactElement {
-  const [session, setSession] = useState<Session | null>(null);
+  const [reachable, setReachable] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(REACHABLE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [identity, setIdentity] = useState<RemoteIdentity | null>(null);
   const [state, setState] = useState<RemoteState>('disconnected');
   const [copied, setCopied] = useState(false);
+  const [share, setShare] = useState<string | null>(null);
+  const hostRef = useRef<RemoteHost | null>(null);
+  const shareHostRef = useRef<RemoteHost | null>(null);
   const allowRef = useRef(buildAllowlist);
   allowRef.current = buildAllowlist;
 
-  const start = (): void => {
-    const room = toB64url(crypto.getRandomValues(new Uint8Array(12)));
-    const keyB64 = toB64url(generateKeyBytes());
-    const url = `${window.location.origin}/?remote=${room}#k=${keyB64}`;
+  // Persistent host: runs whenever "stay reachable" is on (survives restarts via
+  // the stored flag). Re-runs when the identity's passcode rotates.
+  const idKey = `${identity?.deviceId ?? ''}:${identity?.passcode ?? ''}`;
+  useEffect(() => {
+    if (!reachable) {
+      hostRef.current?.stop();
+      hostRef.current = null;
+      setIdentity((cur) => cur ?? null);
+      setState('disconnected');
+      return;
+    }
+    const id = getOrCreateIdentity();
+    setIdentity(id);
     const host = new RemoteHost(
-      room,
-      keyB64,
+      id.deviceId,
+      id.keyB64,
       () => Promise.resolve(allowRef.current()),
       { onState: setState },
+      { passcode: id.passcode, keepAlive: true },
     );
+    hostRef.current = host;
     void host.start();
-    setSession({ url, host });
+    return () => host.stop();
+    // idKey re-triggers on passcode rotation so the host adopts the new passcode.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reachable, idKey]);
+
+  const toggle = (): void => {
+    const next = !reachable;
+    setReachable(next);
+    try {
+      localStorage.setItem(REACHABLE_KEY, next ? '1' : '0');
+    } catch {
+      /* best-effort */
+    }
   };
 
-  const stop = (): void => {
-    session?.host.stop();
-    setSession(null);
-    setState('disconnected');
-  };
-
-  const copy = (): void => {
-    if (session == null) return;
-    void navigator.clipboard?.writeText(session.url).then(() => {
+  const link =
+    identity != null ? `${REMOTE_APP_BASE}/?remote=${identity.deviceId}#k=${identity.keyB64}` : '';
+  const copy = (text: string): void => {
+    void navigator.clipboard?.writeText(text).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     });
   };
 
-  const dotState = state === 'paired' ? 'live' : 'idle';
-  const title =
-    session == null
-      ? 'No phone connected'
-      : state === 'paired'
-        ? 'Session live — open the link on your phone'
-        : 'Waiting for the relay…';
+  const startShare = (): void => {
+    const room = toB64url(crypto.getRandomValues(new Uint8Array(12)));
+    const keyB64 = toB64url(generateKeyBytes());
+    const host = new RemoteHost(room, keyB64, () => Promise.resolve(allowRef.current()), {}, {
+      keepAlive: false,
+    });
+    void host.start();
+    shareHostRef.current?.stop();
+    shareHostRef.current = host;
+    setShare(`${REMOTE_APP_BASE}/?remote=${room}#k=${keyB64}`);
+  };
+
+  const dotState = reachable && state === 'paired' ? 'live' : 'idle';
 
   return (
     <section className={styles.connect}>
       <div className={styles.connectMain}>
         <div className={styles.statusDot} data-state={dotState} />
-        <div>
-          <div className={styles.connectTitle}>{title}</div>
-          {session == null ? (
-            <div className={styles.connectHint}>
-              Start a session to get a one-time link. Open it on your phone — you&apos;ll see the
-              functions you allowed above. The link&apos;s key stays end-to-end; the relay never
-              reads your data.
-            </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className={styles.connectTitle}>
+            {reachable ? 'This desktop is reachable from your phone' : 'Phone access is off'}
+          </div>
+          {reachable && identity != null ? (
+            <>
+              <button
+                type="button"
+                className={styles.connectUrl}
+                onClick={() => copy(link)}
+                title="Copy the link — open it on your phone (bookmark it to reconnect anytime)"
+              >
+                {copied ? 'Copied' : link}
+              </button>
+              <div className={styles.passRow}>
+                <span className={styles.passLabel}>Passcode</span>
+                <span className={styles.passCode}>{identity.passcode}</span>
+                <button
+                  type="button"
+                  className={styles.passReset}
+                  onClick={() => setIdentity(rotatePasscode())}
+                  title="Rotate — remembered phones must re-enter it"
+                >
+                  Reset
+                </button>
+              </div>
+              <div className={styles.connectHint}>
+                Open the link on your phone and enter the passcode once — it&apos;ll reconnect any
+                time. The relay only ever forwards encrypted data.
+              </div>
+              {share != null && (
+                <button type="button" className={styles.shareUrl} onClick={() => copy(share)}>
+                  one-time share: {share}
+                </button>
+              )}
+            </>
           ) : (
-            <button type="button" className={styles.connectUrl} onClick={copy} title="Copy link">
-              {copied ? 'Copied' : session.url}
-            </button>
+            <div className={styles.connectHint}>
+              Turn this on to reach these functions from your phone at any time. Your desktop stays
+              connected in the background; data flows end-to-end, the relay can&apos;t read it.
+            </div>
           )}
         </div>
       </div>
-      {session == null ? (
-        <button type="button" className={styles.connectBtn} onClick={start}>
-          Start session
+      <div className={styles.connectActions}>
+        <button
+          type="button"
+          className={styles.toggle}
+          role="switch"
+          aria-checked={reachable}
+          data-on={reachable || undefined}
+          onClick={toggle}
+          title={reachable ? 'Reachable' : 'Off'}
+        >
+          <span className={styles.knob} />
         </button>
-      ) : (
-        <button type="button" className={styles.connectBtn} data-stop onClick={stop}>
-          End session
-        </button>
-      )}
+        {reachable && (
+          <button type="button" className={styles.shareBtn} onClick={startShare}>
+            Share once
+          </button>
+        )}
+      </div>
     </section>
   );
 }
