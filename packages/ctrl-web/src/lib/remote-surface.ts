@@ -6,12 +6,15 @@
 import { gateInvoke } from './kernel';
 import type { Surface } from '@/components/remote/SurfaceRenderer';
 
-/** The gate tool a pack exposes to describe its phone surface. v1 knows the
- *  stock pack by convention; the general form is a manifest-declared tool, so
- *  ANY pack opts in the same way (no core changes per pack). */
+/** The gate tool a pack exposes to describe its phone surface. Convention: a
+ *  pack that opts into mobile ships a tool named `surface`; the gate namespaces
+ *  it `<id>_surface` (the installed id drops the `ctrl-` prefix, e.g.
+ *  `ctrl-stock-cn` → `stock-cn` → `stock-cn_surface`). Fully generic — any pack
+ *  opts in the same way, no core change. Built-in faces have no surface (yet). */
 export function surfaceToolFor(pack: string): string | null {
-  if (pack.includes('stock')) return 'stock_surface';
-  return null;
+  if (!pack.startsWith('pack.')) return null;
+  const id = pack.slice('pack.'.length).replace(/^ctrl-/, '');
+  return `${id}_surface`;
 }
 
 /** Load a pack's Surface through the local gate; null if it has no surface. */

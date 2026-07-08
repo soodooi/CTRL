@@ -69,7 +69,13 @@ export function RemoteRoute(): ReactElement {
   // (this desktop) so the phone-frame preview shows real data, no phone needed.
   // Falls back to sample surfaces where the gate isn't reachable (e.g. browser).
   const [liveTabs, setLiveTabs] = useState<PackTab[]>([]);
-  const packsKey = packs.map((p) => p.id).join(',');
+  // WYSIWYG: re-load whenever the visible set changes (toggle a function → the
+  // preview + the phone both update), so what you configure is what the phone
+  // shows. Key = the visible entries (packs) driving the preview tabs.
+  const previewKey = entries
+    .filter((e) => permFor(cfg, e.key).visible)
+    .map((e) => e.key)
+    .join(',');
   useEffect(() => {
     let alive = true;
     const visible = entries.filter((e) => permFor(cfg, e.key).visible);
@@ -85,7 +91,7 @@ export function RemoteRoute(): ReactElement {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packsKey]);
+  }, [previewKey]);
   const previewTabs = liveTabs.length > 0 ? liveTabs : SAMPLE_TABS;
 
   return (
