@@ -27,6 +27,10 @@ interface MobileRemoteShellProps {
   initialKey?: string;
   /** Talk to Irisy on the desktop (enables the conversation sheet). */
   onChat?: (text: string, handlers: ChatHandlers) => void;
+  /** Fill the parent container (100%) instead of the viewport (100dvh). The
+   *  phone uses the viewport default; the desktop preview embeds this same shell
+   *  inside a fixed-height phone frame and sets this so it fills the bezel. */
+  fill?: boolean;
 }
 
 export function MobileRemoteShell({
@@ -34,6 +38,7 @@ export function MobileRemoteShell({
   renderContent,
   initialKey,
   onChat,
+  fill,
 }: MobileRemoteShellProps): ReactElement {
   const [active, setActive] = useState<string>(initialKey ?? entries[0]?.key ?? '');
   const [chatOpen, setChatOpen] = useState(false);
@@ -53,7 +58,7 @@ export function MobileRemoteShell({
 
   if (entries.length === 0) {
     return (
-      <div className={styles.shell}>
+      <div className={styles.shell} data-fill={fill || undefined}>
         <div className={styles.empty}>
           Nothing shared yet. On the desktop, open Remote Window and allow a function.
         </div>
@@ -70,7 +75,12 @@ export function MobileRemoteShell({
   }
 
   return (
-    <div className={styles.shell} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <div
+      className={styles.shell}
+      data-fill={fill || undefined}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
       <div className={styles.content} key={active}>
         {renderContent(active)}
       </div>

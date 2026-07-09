@@ -13,7 +13,11 @@ const pkg = JSON.parse(
 // default — protects against template look). framer-motion stayed in the
 // stack lock for future surfaces but is currently removed from the bundle
 // — McpCard is pure CSS, ClockStrip is static text.
-export default defineConfig({
+// The PWA service worker ships ONLY in production builds (the phone PWA at
+// app.ctrlapplab.com). In dev the Tauri webview must never register a SW: it
+// persists in the WKWebView data dir across restarts and serves a stale/blank
+// shell, which no amount of restarting clears. So gate VitePWA on `build`.
+export default defineConfig(({ command }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
@@ -42,7 +46,8 @@ export default defineConfig({
   },
   plugins: [
     react(),
-    VitePWA({
+    ...(command === 'build'
+      ? [VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
@@ -87,6 +92,7 @@ export default defineConfig({
           },
         ],
       },
-    }),
+    })]
+      : []),
   ],
-});
+}));

@@ -13,6 +13,28 @@ import { applyTheme, getStoredTheme } from './lib/theme';
 
 applyTheme(getStoredTheme());
 
+// The desktop Tauri webview must NEVER run a service worker — the SW exists only
+// for the phone PWA (app.ctrlapplab.com), where offline caching matters. Inside
+// the desktop shell a cached SW is pure harm: it serves a stale bundle across
+// app restarts (living in the WKWebView data dir, not cleared by relaunch),
+// which shows up as old code calling retired gate tools + stale kernel tokens.
+// So on the desktop, proactively unregister any SW + drop its caches on boot.
+// Do NOT reload here: in dev the plugin re-registers the SW on every load, so a
+// reload-on-found would loop forever (blank screen). Unregistering is enough —
+// vite already serves fresh modules, and the SW won't control the next load.
+if ('__TAURI_INTERNALS__' in window) {
+  void (async () => {
+    try {
+      const regs = await navigator.serviceWorker?.getRegistrations?.();
+      if (regs?.length) await Promise.all(regs.map((r) => r.unregister()));
+      const keys = await caches?.keys?.();
+      if (keys?.length) await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch {
+      /* best-effort — never block boot on cache cleanup */
+    }
+  })();
+}
+
 // ⌘R / Ctrl+R reloads the PWA. Tauri 2 doesn't bind this by default
 // (unlike a normal browser), so without this the user has no way to
 // recover from a stale bundle short of quitting. Tray menu "Reload PWA"

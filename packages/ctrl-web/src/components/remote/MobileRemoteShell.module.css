@@ -9,6 +9,10 @@
   color: var(--text, #20221d);
   overflow: hidden;
 }
+/* Embedded in the desktop preview's phone frame: fill the bezel, not the viewport. */
+.shell[data-fill] {
+  height: 100%;
+}
 .irisyFab {
   position: absolute;
   right: 14px;

@@ -44,9 +44,13 @@ export function SurfaceView({
   surface: Surface;
   onAction?: (a: Action) => void;
 }): ReactElement {
+  // Guard parts: a malformed / partial surface must degrade to empty, never
+  // crash the whole app (SDUI never-crash rule — same spirit as the json
+  // fallback for unknown kinds).
+  const parts = Array.isArray(surface?.parts) ? surface.parts : [];
   return (
     <div className={styles.surface}>
-      {surface.parts.map((p, i) => (
+      {parts.map((p, i) => (
         <PartCard key={p.id ?? i} part={p} onAction={onAction} />
       ))}
     </div>
