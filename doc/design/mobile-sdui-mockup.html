@@ -1,0 +1,240 @@
+<div class="page">
+<style>
+  :root{
+    --paper:#efece3; --panel:#e8e4d8; --ink:#20221d; --ink-2:#4a4d44; --mut:#7d8077;
+    --line:#d7d2c3; --seal:#bf3b2b; --seal-deep:#9c2f22;
+    --up:#c0362c; --down:#2f7d57; --warn:#c98a2b; --gate:#2f5c86; --gate-soft:#e0e8f0;
+    --serif:"Songti SC","STSong","Noto Serif SC",serif;
+    --sans:"PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
+    --mono:"SF Mono",ui-monospace,"Menlo",monospace;
+  }
+  *{box-sizing:border-box}
+  .page{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;
+    max-width:1080px;margin:0 auto;padding:48px 28px 96px;-webkit-font-smoothing:antialiased}
+  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--seal);font-weight:600}
+  h1{font-family:var(--serif);font-weight:600;font-size:36px;line-height:1.16;margin:.3em 0 .16em;text-wrap:balance}
+  h1 .m{font-family:var(--mono);font-size:.5em;color:var(--mut);font-weight:400}
+  .lede{font-size:18px;color:var(--ink-2);max-width:64ch;margin:.2em 0 0}
+  .lede b{color:var(--ink);box-shadow:inset 0 -.4em 0 rgba(191,59,43,.14)}
+  header{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:34px}
+  h2{font-family:var(--serif);font-weight:600;font-size:22px;margin:44px 0 4px;display:flex;align-items:baseline;gap:.5em}
+  h2 .idx{font-family:var(--mono);font-size:14px;color:var(--seal)}
+  .sub{color:var(--mut);font-size:14px;margin:0 0 18px}
+
+  /* phones row */
+  .phones{display:flex;gap:34px;flex-wrap:wrap;justify-content:center;margin-top:10px}
+  .phoneCol{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .phoneTag{font-size:12.5px;color:var(--mut)}
+  .phoneTag b{color:var(--ink)}
+  .phone{width:300px;height:620px;border-radius:38px;background:#111;padding:11px;box-shadow:0 24px 60px -22px rgba(0,0,0,.5)}
+  .screen{position:relative;width:100%;height:100%;border-radius:28px;overflow:hidden;background:#faf8f2;display:flex;flex-direction:column}
+  .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:120px;height:24px;background:#111;border-radius:0 0 14px 14px;z-index:5}
+  .appbar{flex:none;padding:26px 16px 8px;font-weight:700;font-size:15px;border-bottom:1px solid var(--line);background:#fff}
+  .appbar .kb{font-family:var(--mono);font-size:10px;color:var(--mut);font-weight:400;float:right;margin-top:3px}
+  .body{flex:1;overflow-y:auto;padding:12px 12px 14px;display:flex;flex-direction:column;gap:11px}
+  .nav{flex:none;display:flex;border-top:1px solid var(--line);background:#fff}
+  .nav .t{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px 9px;color:var(--mut)}
+  .nav .t.on{color:var(--gate)}
+  .nav .t .ic{font-size:18px}.nav .t .lb{font-size:10px;font-weight:500}
+
+  /* generic parts (rendered by the PartKind registry) */
+  .part{background:#fff;border:1px solid #e6e1d3;border-radius:12px;padding:12px}
+  .part .kind{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#b9b2a2;float:right}
+  .part .pt{font-weight:600;font-size:13px;margin-bottom:8px}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  /* stock: thermometer */
+  .thermo{display:flex;gap:12px;align-items:center}
+  .track{position:relative;flex:0 0 18px;width:18px;height:104px;border-radius:10px;border:1px solid #d9d3c4;
+    background:linear-gradient(to top,#2f7d57,#dfc98a 46%,#e0a05a 68%,#c0362c)}
+  .mark{position:absolute;left:-3px;right:-3px;height:2px;background:var(--ink)}
+  .tnum{font-family:var(--mono);font-size:26px;font-weight:600}.tu{font-size:13px;color:var(--mut)}
+  .verdict{font-family:var(--serif);font-size:16px;font-weight:600;color:var(--warn)}
+  .rnote{font-size:11px;color:var(--mut);margin-top:2px}
+  .stats{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}
+  .stat{flex:1 1 auto;min-width:44px;text-align:center;background:var(--paper);border:1px solid var(--line);border-radius:7px;padding:4px 3px}
+  .stat .v{font-family:var(--mono);font-size:14px;font-weight:600}.stat .k{font-size:9.5px;color:var(--mut)}
+  .stat .v.up{color:var(--up)}.stat .v.down{color:var(--down)}.stat .v.warn{color:var(--warn)}
+  /* bar-in-cell rows */
+  .rows{display:flex;flex-direction:column;gap:6px}
+  .row{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;font-size:12px}
+  .row .nm{font-weight:600}.row .cd{font-family:var(--mono);font-size:9.5px;color:var(--mut);margin-left:3px;font-weight:400}
+  .cell{position:relative;height:18px;border-radius:4px;background:var(--paper);overflow:hidden;display:flex;align-items:center}
+  .fill{position:absolute;inset:0 auto 0 0;background:rgba(192,54,44,.16)}
+  .cval{position:relative;font-family:var(--mono);font-size:10.5px;font-weight:600;padding-left:5px;color:var(--up)}
+  .chip{font-family:var(--mono);font-size:9.5px;padding:.1em .4em;border-radius:4px;border:1px solid var(--gate);color:var(--gate);background:var(--gate-soft);justify-self:end}
+  /* generic table */
+  table.tbl{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.tbl th{text-align:left;color:var(--mut);font-weight:500;font-size:10px;padding:2px 4px;border-bottom:1px solid var(--line)}
+  table.tbl td{padding:4px;border-bottom:1px solid #efeadd}
+  table.tbl td.n{font-family:var(--mono);text-align:right}
+  /* record */
+  .rec{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px}
+  .rec dt{color:var(--mut)}.rec dd{margin:0;font-weight:500}
+  /* action button */
+  .act{margin-top:2px;display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:12.5px;font-weight:600;
+    color:#fff;background:var(--gate);border-radius:8px;border:none}
+  .act.ghost{color:var(--gate);background:var(--gate-soft);border:1px solid var(--gate)}
+  .listrow{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid #efeadd}
+  .listrow .r{font-family:var(--mono);color:var(--down)}
+
+  /* flow strip */
+  .flow{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+  .fstep{flex:1 1 150px;border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:var(--panel)}
+  .fstep .n{font-family:var(--mono);font-size:11px;color:var(--seal);font-weight:600}
+  .fstep b{display:block;font-family:var(--serif);font-size:15px;margin:2px 0 3px}
+  .fstep span{font-size:12.5px;color:var(--ink-2)}
+  .arrow{align-self:center;color:var(--mut);font-size:20px}
+
+  .code{font-family:var(--mono);font-size:12px;line-height:1.65;background:#211f1b;color:#dcd6c6;border-radius:12px;padding:16px 18px;overflow-x:auto;margin-top:16px}
+  .code .k{color:#e0a05a}.code .s{color:#8fbf8a}.code .c{color:#6f6a5c;font-style:italic}.code .h{color:#e78f80}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+  @media(max-width:720px){.cols{grid-template-columns:1fr}}
+  .box{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--panel)}
+  .box.good{border-left:3px solid var(--down)}
+  .box.no{border-left:3px solid var(--seal)}
+  .box b{font-family:var(--serif);font-size:15px}
+  .box ul{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--ink-2)}
+  .box li{margin:3px 0}
+  .foot{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--mut)}
+</style>
+
+<header>
+  <div class="eyebrow">ctrl mobile · server-driven ui</div>
+  <h1>移动端 = 桌面功能包的通用投影 <span class="m">describe → parts → registry</span></h1>
+  <p class="lede">手机不为任何一个包写代码。功能包用 <b>describe</b> 自报一串「类型化 part」,手机用<b>已有的 PartKind 渲染器</b>通用渲染 —— 同一个渲染器,渲任何包。下面是同一个手机 app,切两个完全不同的包,零 bespoke 代码。</p>
+</header>
+
+<h2><span class="idx">01</span> 同一个 app,两个包,一个渲染器</h2>
+<p class="sub">左:股票包(卡片型 parts)。右:一个通用 CRM 包(table / record / action parts)—— 手机端没有一行「if pack===crm」。</p>
+
+<div class="phones">
+  <!-- PHONE A: stock -->
+  <div class="phoneCol">
+    <div class="phone"><div class="screen"><div class="notch"></div>
+      <div class="appbar">A股 · 今日 <span class="kb">describe:stock</span></div>
+      <div class="body">
+        <div class="part">
+          <span class="kind">stock</span><div class="pt">大盘情绪</div>
+          <div class="thermo">
+            <div class="track"><div class="mark" style="bottom:62%"></div></div>
+            <div><div><span class="tnum">62</span><span class="tu">°</span></div>
+              <div class="verdict">高位震荡</div><div class="rnote">分歧加大,选强不追高</div></div>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="v up">3527</div><div class="k">上涨</div></div>
+            <div class="stat"><div class="v down">1584</div><div class="k">下跌</div></div>
+            <div class="stat"><div class="v">108</div><div class="k">涨停</div></div>
+            <div class="stat"><div class="v warn">32.5%</div><div class="k">炸板</div></div>
+          </div>
+        </div>
+        <div class="part">
+          <span class="kind">stock</span><div class="pt">今日龙头</div>
+          <div class="rows">
+            <div class="row"><div class="nm">中际旭创<span class="cd">300308</span></div>
+              <div class="cell"><div class="fill" style="width:100%"></div><span class="cval">+3.82亿</span></div><span class="chip">机构</span></div>
+            <div class="row"><div class="nm">工业富联<span class="cd">601138</span></div>
+              <div class="cell"><div class="fill" style="width:71%"></div><span class="cval">+2.71亿</span></div><span></span></div>
+            <div class="row"><div class="nm">兆易创新<span class="cd">603986</span></div>
+              <div class="cell"><div class="fill" style="width:48%"></div><span class="cval">+1.83亿</span></div><span></span></div>
+          </div>
+          <button class="act ghost" style="margin-top:9px">↻ 刷新龙头 <span style="opacity:.6;font-family:var(--mono);font-size:10px">produce</span></button>
+        </div>
+      </div>
+      <div class="nav">
+        <div class="t on"><span class="ic">⚡</span><span class="lb">股票</span></div>
+        <div class="t"><span class="ic">✎</span><span class="lb">笔记</span></div>
+        <div class="t"><span class="ic">▦</span><span class="lb">表格</span></div>
+        <div class="t"><span class="ic">☎</span><span class="lb">CRM</span></div>
+      </div>
+    </div></div>
+    <div class="phoneTag"><b>股票包</b> · parts = <span class="num">stock</span> 卡片</div>
+  </div>
+
+  <!-- PHONE B: generic CRM -->
+  <div class="phoneCol">
+    <div class="phone"><div class="screen"><div class="notch"></div>
+      <div class="appbar">CRM · 客户 <span class="kb">describe:crm</span></div>
+      <div class="body">
+        <div class="part">
+          <span class="kind">record</span><div class="pt">本月概览</div>
+          <dl class="rec">
+            <dt>新增客户</dt><dd class="num">18</dd>
+            <dt>待跟进</dt><dd class="num" style="color:var(--warn)">7</dd>
+            <dt>本月成交</dt><dd class="num" style="color:var(--down)">¥ 42,800</dd>
+          </dl>
+        </div>
+        <div class="part">
+          <span class="kind">table</span><div class="pt">最近客户</div>
+          <table class="tbl">
+            <thead><tr><th>客户</th><th>阶段</th><th class="n">金额</th></tr></thead>
+            <tbody>
+              <tr><td>张伟 · 声远科技</td><td>报价</td><td class="n">28,000</td></tr>
+              <tr><td>李娜 · 明德教育</td><td>跟进</td><td class="n">12,500</td></tr>
+              <tr><td>王芳 · 恒益贸易</td><td>成交</td><td class="n">42,800</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="part">
+          <span class="kind">list</span><div class="pt">今日待办</div>
+          <div class="listrow"><span>回访 张伟 报价单</span><span class="r">10:30</span></div>
+          <div class="listrow"><span>发合同 恒益贸易</span><span class="r">14:00</span></div>
+          <button class="act" style="margin-top:9px">＋ 新建客户 <span style="opacity:.6;font-family:var(--mono);font-size:10px">produce</span></button>
+        </div>
+      </div>
+      <div class="nav">
+        <div class="t"><span class="ic">⚡</span><span class="lb">股票</span></div>
+        <div class="t"><span class="ic">✎</span><span class="lb">笔记</span></div>
+        <div class="t"><span class="ic">▦</span><span class="lb">表格</span></div>
+        <div class="t on"><span class="ic">☎</span><span class="lb">CRM</span></div>
+      </div>
+    </div></div>
+    <div class="phoneTag"><b>CRM 包</b> · parts = <span class="num">record</span> / <span class="num">table</span> / <span class="num">list</span>(通用,零专属代码)</div>
+  </div>
+</div>
+
+<h2><span class="idx">02</span> 一个 part 怎么来的(协议)</h2>
+<p class="sub">包的 <code>describe</code> 回一个 Surface;手机 <code>parts.map(p =&gt; registry[p.kind])</code> 渲染;点动作走同一条 gate 隧道。</p>
+
+<div class="flow">
+  <div class="fstep"><div class="n">1 · describe</div><b>包自报界面</b><span>返回 Surface = 有序 typed parts(kind + data + actions),就是 §14 describe 多回一个形状。</span></div>
+  <div class="arrow">→</div>
+  <div class="fstep"><div class="n">2 · query</div><b>灌数据</b><span>每个 part 的 data 从桌面 kernel 读(local-is-truth),经 relay 隧道到手机。</span></div>
+  <div class="arrow">→</div>
+  <div class="fstep"><div class="n">3 · registry</div><b>通用渲染</b><span>手机 registry[p.kind] 挑组件;不认识的 kind → 降级成 JSON,不崩。</span></div>
+  <div class="arrow">→</div>
+  <div class="fstep"><div class="n">4 · produce</div><b>动作回流</b><span>点「刷新/新建」→ 声明的 gate 调用(经隧道 + 审计)→ 重灌 → 重渲染。客户端不含逻辑。</span></div>
+</div>
+
+<div class="code"><span class="c">// 包 describe 回的 Surface —— 手机拿到就能渲,零专属代码</span>
+{ <span class="k">v</span>:1, <span class="k">pack</span>:<span class="s">"crm"</span>, <span class="k">title</span>:<span class="s">"客户"</span>, <span class="k">parts</span>:[
+  { <span class="k">kind</span>:<span class="h">"record"</span>, <span class="k">id</span>:<span class="s">"overview"</span>, <span class="k">data</span>:{ 新增客户:18, 待跟进:7, 本月成交:<span class="s">"¥42,800"</span> } },
+  { <span class="k">kind</span>:<span class="h">"table"</span>,  <span class="k">id</span>:<span class="s">"recent"</span>, <span class="k">data</span>:{ columns:[...], rows:[...] } },
+  { <span class="k">kind</span>:<span class="h">"list"</span>,   <span class="k">id</span>:<span class="s">"todo"</span>,
+    <span class="k">actions</span>:[ { <span class="k">id</span>:<span class="s">"new"</span>, <span class="k">label</span>:<span class="s">"新建客户"</span>, <span class="k">verb</span>:<span class="h">"produce"</span>, <span class="k">source</span>:<span class="s">"crm"</span>, <span class="k">op</span>:<span class="s">"contact.create"</span> } ] }
+]}
+</div>
+
+<h2><span class="idx">03</span> 前端显示上,这带来什么</h2>
+<div class="cols">
+  <div class="box good"><b>✓ 好处(前端)</b>
+    <ul>
+      <li><b>任何包立即上手机</b> —— 装了新包,describe 一回,手机自动出 tab + 渲染,不发版</li>
+      <li><b>一致的观感</b> —— 都走同一套 PartKind 组件(卡片/表/record/list),手机上不会各包各样式</li>
+      <li><b>桌面 = 手机同一份 UI</b> —— 同一个 registry,桌面预览和手机远程是同一个渲染</li>
+      <li><b>降级不崩</b> —— 老手机遇到新 kind → 显示 JSON,不白屏</li>
+    </ul>
+  </div>
+  <div class="box no"><b>✗ 边界(诚实)</b>
+    <ul>
+      <li><b>不是像素级自由</b> —— 包只能用 registry 里有的 kind 组合;要全新视觉得先加一个 PartKind(一次,全包共享)</li>
+      <li><b>竖排 parts,非任意布局</b> —— 手机就是卡片竖滚;复杂布局引擎不做(过度)</li>
+      <li><b>股票现有的富卡</b> —— 作为 <span class="num">stock</span> 这个 kind 保留;其余包用通用 kind,想要专属富卡就升级成新 kind</li>
+    </ul>
+  </div>
+</div>
+
+<div class="foot">
+  ctrl mobile SDUI mockup · 复用 PartKind registry + §14 describe/query/produce + gate 隧道 · 借 Airbnb SDUI 契约形状,拒绝 iframe/remote-dom/AG-UI 重传输 · 研究多源交叉(Airbnb Ghost / OpenAI Apps SDK / MCP-UI / Shopify remote-dom)
+</div>
+</div>

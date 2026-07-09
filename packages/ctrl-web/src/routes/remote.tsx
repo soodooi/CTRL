@@ -18,9 +18,8 @@ import {
 import { RemoteHost } from '@/lib/remote-host';
 import { deriveSession, loadAccount, DEV_ACCOUNT } from '@/lib/remote-account';
 import { type RemoteAllowEntry, type RemoteState } from '@/lib/remote-connection';
-import { MobilePreview, type PackTab } from '@/components/remote/MobilePreview';
-import { SAMPLE_TABS } from '@/components/remote/mobile-sample';
-import { loadLocalSurface } from '@/lib/remote-surface';
+import { MobileLocalPreview } from '@/components/remote/MobileLocalPreview';
+import { type RemoteNavEntry } from '@/components/remote/MobileRemoteShell';
 import styles from './remote.module.css';
 
 interface RemoteEntry {
@@ -65,41 +64,21 @@ export function RemoteRoute(): ReactElement {
       .filter((e) => permFor(cfg, e.key).visible)
       .map((e) => ({ key: e.key, label: e.label, icon: e.icon, canAct: permFor(cfg, e.key).canAct }));
 
-  // Live preview: load each visible pack's REAL surface through the LOCAL gate
-  // (this desktop) so the phone-frame preview shows real data, no phone needed.
-  // Falls back to sample surfaces where the gate isn't reachable (e.g. browser).
-  const [liveTabs, setLiveTabs] = useState<PackTab[]>([]);
-  // WYSIWYG: re-load whenever the visible set changes (toggle a function → the
-  // preview + the phone both update), so what you configure is what the phone
-  // shows. Key = the visible entries (packs) driving the preview tabs.
-  const previewKey = entries
+  // WYSIWYG preview: the visible functions become the phone's bottom-nav tabs.
+  // The preview embeds the REAL phone shell (MobileLocalPreview) fed by this
+  // machine's gate, so toggling a function here changes the phone's tabs live
+  // and each tab shows real local data — what you configure is what the phone
+  // shows, because it is literally the same shell.
+  const previewEntries: RemoteNavEntry[] = entries
     .filter((e) => permFor(cfg, e.key).visible)
-    .map((e) => e.key)
-    .join(',');
-  useEffect(() => {
-    let alive = true;
-    const visible = entries.filter((e) => permFor(cfg, e.key).visible);
-    void Promise.all(
-      visible.map(async (e) => {
-        const surface = await loadLocalSurface(e.key);
-        return surface ? { key: e.key, label: e.label, icon: e.icon, surface } : null;
-      }),
-    ).then((tabs) => {
-      if (alive) setLiveTabs(tabs.filter((t): t is PackTab => t != null));
-    });
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewKey]);
-  const previewTabs = liveTabs.length > 0 ? liveTabs : SAMPLE_TABS;
+    .map((e) => ({ key: e.key, label: e.label, icon: e.icon }));
 
   return (
     <div className={styles.page}>
       <div className={styles.split}>
         <div className={styles.previewCol}>
           <div className={styles.previewLabel}>What your phone shows</div>
-          <MobilePreview tabs={previewTabs} />
+          <MobileLocalPreview entries={previewEntries} />
           <div className={styles.previewNote}>
             The same app your phone renders remotely — swipe from the right (or tap ✦) for Irisy.
           </div>
