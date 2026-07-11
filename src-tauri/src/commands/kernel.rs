@@ -236,6 +236,11 @@ pub(crate) fn install_into(
             .map_err(|e| format!("write {server_filename}: {e}"))?;
     }
 
+    // A fresh install clears any uninstall tombstone so the builtin
+    // seeder's self-heal applies to this pack again (ADR-002 substrate
+    // § composition v62, 2026-07-11).
+    crate::shell::builtin_mcps::clear_uninstalled(&id);
+
     Ok(manifest_to_summary(&args.manifest, &id))
 }
 
@@ -1188,6 +1193,10 @@ pub(crate) fn uninstall_from(dir: &Path, mcp_id: &str) -> Result<(), String> {
         return Err(format!("mcp {mcp_id} not installed"));
     }
     fs::remove_dir_all(&target).map_err(|e| format!("remove {target:?}: {e}"))?;
+    // Tombstone a bundled builtin so the boot seeder respects the
+    // uninstall instead of resurrecting the pack next launch (ADR-002
+    // substrate § composition v62, 2026-07-11; no-op for user packs).
+    crate::shell::builtin_mcps::record_uninstalled(mcp_id);
     Ok(())
 }
 
