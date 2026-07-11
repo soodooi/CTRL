@@ -140,8 +140,9 @@ Detail moved to path-scoped `.claude/rules/` (auto-loads when editing the matchi
 
 ## Active goal
 
-单人极简模式: 当前目标见 `vault/ctrl/GOAL.md` (走 `goal` skill 读写), 推进用 `dev-loop` skill。
-handoff / fleet 机制已剥离 (`vault/ctrl/harness-minimal.md`)。
+当前目标见 `vault/ctrl/GOAL.md` (走 `goal` skill 读写), 推进用 `dev-loop` skill。
+**多窗口模式 (bao 2026-07-11)**: zeus 常驻窗口管理 (GOAL 切片 / PR review+merge / ADR / 环境规范), 开发在新开 worker 窗口 (athena 等) 各自 worktree 里做, 规范见 `vault/ctrl/team-workflow.md`。
+handoff / fleet 机制仍剥离 (`vault/ctrl/harness-minimal.md`) — 多窗口≠fleet 恢复。
 
 ---
 
