@@ -7,40 +7,48 @@
 
 ## 目标 (Goal)
 
-**证明功能包真命题 —— 把开源软件变 AI-native:端到端跑通 `ctrl-ghostfolio` 当活体证明。** 复用现成开源 Ghostfolio(自托管财务)+ 其社区 MCP → 经 `:17873` gate 治理(审计+可见性,比它自带的粗 `READ_ONLY_MODE` 开关细)→ §14 化(describe/query/produce)+「AI-native 提升层」(one-shot 原子 / 高信号,不是一 endpoint 一 tool)→ Irisy 能操作它。这一个种子把 create→govern→uplift→distribute 整条功能包链走通,同时打磨 substrate + Irisy 创作流(种子 = 创作流的活体测试 + 护城河示范)。
+**收尾 mobile / remote window 线 —— 把 §2 做成可交付的真·子产品,杀掉所有 drift。** bao 2026-07-09「继续 mobile/remote 线 + 收尾整条线」+ 保留 PR #166 的 account 登录方案。这条线 S1-S3 大半已落地(桌面 Mobile L1 配置页 + 手机 describe-driven SDUI shell + relay-only E2E 传输 + MobileLocalPreview = 真手机壳),但 Explore 摸出**结构性缺口**需收尾:
 
-bao 2026-07-01 校准:「你是不是不知道做功能包的意义 —— 把大量开源软件/MCP 编程成 AI-native 的,这方向你不懂,要调研」→ 深研落 `vault/ctrl/ai-native-feature-pack-research.md`(25/25 主张验证)→ bao 拍「从 ctrl-ghostfolio 端到端跑通」。
+1. **S4 ACL 完全没做(最大安全洞)** —— allowlist 只驱动手机导航 UI;手机直接发任意 gate 工具调用,桌面 `remote-host.ts:140` 无校验就执行。view-only 包的工具也会被执行。
+2. **ADR-vs-code drift(CLAUDE.md 保命线违反)** —— ADR-005 §2 header 写 SHIPPED,但 acceptance checkbox(`:899-900`)还说「v1.1+ scope」,as-built 段(`:19`)描述的是**已被 PR #166 删掉的** device-id/passcode/Reset 设备模型。account 方案(实际 as-built)没进 ADR。
+3. **account 方案跟 CLAUDE.md / ADR-006「无 CTRL 账号系统」哲学冲突** —— PR #166 的 username/password(`admin/898989` 硬编码 + 桌面默认填它)是 dev scheme,但 ADR-006 amendment 没做,硬编码默认值若上 prod 是碰撞/安全陷阱。
+4. **`mobile-remote-window` skill 设置流程描述的 QR/passcode/Reset 在代码里不存在** —— 会误导 Irisy 引导用户。
+5. **死码 + 假注释** —— `remote-identity.ts`/`RemoteLanding.tsx`/`REMOTE_APP_BASE` 是 PR #166 后的孤儿;`remote-crypto.ts:14-15` 说谎「desktop kernel does seal/open in Rust」(实际是 TS SubtleCrypto)。
 
-**调研定盘(governing)**:砖都有了,CTRL 拼装不重造 —— Agent Skills(SKILL.md)打包 · Anthropic `mcp-builder` 四阶段(含 evals)· AutoMCP OpenAPI→MCP(瓶颈是 spec 质量非 codegen)· 官方 MCP Registry + Smithery(6639)分发 · OpenAI Apps SDK generative UI(structuredContent/content/_meta)· Ghostfolio/Twenty MCP 已有前身 · AWS MCP Gateway = CTRL `:17873` gate 的形状(证明 gate 是行业标准)。**护城河 = ①「raw-wrap → AI-native 提升层」(one-shot/§14/per-call gate 治理,行业普遍欠缺)②「discovery→scaffold→govern→distribute→UI」整条链无统一玩家 = 白地**。CTRL local-first + Irisy + one-shot 哲学正好长在这。
+governing = `vault/ctrl/plan-remote-window.md`(plan B 语义远程真相源)+ ADR-005 §2(co-view)+ ADR-006(账号哲学)+ ADR-010 §transports ⑧(pixel 远程 = 独立未建模块,worktree spike 全是 plan-A,**不 merge**)+ `share/skills/mobile-remote-window/SKILL.md`(用户引导)。锁点不动:5 primitives / 三动词 / `:17873` gate / secret 不进 LLM / plain-text / 0 监听端口 relay-only。
 
-governing = `vault/ctrl/ai-native-feature-pack-research.md` + `vault/ctrl/capability-pack-map.md`(③ 长尾 connector = Irisy 造非 dev 手写)+ ADR-002 §7(composition)+ §7.4(系统化:manifest=数据/runtime=通用/加 pack 零代码)+ §14。锁点不动:5 primitives / 三动词 / `:17873` gate / secret 不进 LLM / plain-text。
+bao 关键裁决:**account 方案 = 零知识 rendezvous 凭据,不是「CTRL 账号」**(无 server / 无 DB / 无身份注册 / CTRL 团队不存)—— 对称派生 E2E 信道,跟「用户身份 = 本机 keychain 密钥」哲学调和而非破坏。amend ADR-006 澄清此边界。
 
 ## 成功标准 (Success criteria — 可验证)
 
-> 走 dev-loop(编译 + kernel/e2e 测试 + 视觉/独立 checker),绿了 commit。真实 Ghostfolio 连接需 bao 机器(跑着 Ghostfolio 实例 + token);CTRL 侧接线由 in-process 测试 + mock 验证(与所有 gate smoke 同一诚实 gap)。
+> 走 dev-loop(编译 + web vitest + Playwright 视觉 + 独立 checker),绿了 commit。真机手机↔桌面 round-trip 是 bao 的 standing gap,CTRL 侧 tsc + protocol-sim + mock 验证。
 
-1. **功能包 manifest**:`ctrl-ghostfolio` manifest(复用 `manifest-schema.ts`)声明连接 Ghostfolio(社区 MCP over HTTP,或其 REST)+ secret(URL+token 从 keychain,**永不进 LLM**)+ capabilities + actions。
-2. **连接 + 治理**:Ghostfolio 工具经 `:17873` gate 可达并**记审计 ledger + 受 intent 可见性裁剪**(caller 只在授权时见到);写操作过 review gate。kernel e2e(in-process HTTP 过 gate,mock Ghostfolio 上游)。
-3. **AI-native 提升层(护城河)**:把 Ghostfolio 组合暴露为 **§14 RecordSource**(`ghostfolio` describe/query 持仓·交易),Irisy 用统一契约查;+ 至少一个 **one-shot 原子动作**(如「记一笔交易」经 review gate),不是裸 endpoint 镜像。
-4. **pack 落地**:装进 `~/.ctrl/mcps/` 被 `loadInstalledPacks` 读到 + `FeaturePackScene` 渲染;Irisy 经 gate 查到组合(真机点或 e2e)。
-5. **ADR 对齐**:与实装对齐落 ADR-002 §7 amendment(把「reuse 行业砖 + AI-native 提升层」写实)。
+1. **S4 ACL enforcement**:`remote-host.ts` invoke 边界校验 —— 手机 invoke 必须 (a) 属于 allowlist 内 visible 的 function,(b) verb 为 produce 时必须 canAct。deny-by-default(修 `remote-config.ts:43-44` 当前默认 visible:true 的反向 bug)。单测覆盖:allow/view-only/deny 三态 + 越权工具被拒。
+2. **ADR-005 §2 as-built 对齐**:amend §2 描述成 account 方案(删 device-id/passcode/Reset 描述),flip acceptance checkbox(`:899-900`),清 MobilePreview→MobileLocalPreview 漂移。section amendment = bump version + changelog。
+3. **ADR-006 + CLAUDE.md account 边界**:amend ADR-006 澄清「remote rendezvous 凭据 ≠ CTRL 账号(零知识,无 server/DB/身份注册)」+ CLAUDE.md「无 CTRL 账号系统」行加 remote rendezvous 例外说明。
+4. **skill 设置流程重写**:`mobile-remote-window` SKILL.md 的 QR/passcode/Reset 段改成实际 account sign-in(desktop Mobile L1 页 + 手机 sign in 同账号)。
+5. **死码 + 假注释清理**:删 `remote-identity.ts`/`RemoteLanding.tsx`/`REMOTE_APP_BASE` 孤儿 + 修 `remote-crypto.ts:14-15` 假 Rust 注释。
+6. **dev creds 门控**:`admin/898989` 默认值只在 dev/staging 出现,prod 不暴露(避免碰撞/安全陷阱)。
 
-> **第一步(最小可验证)= SC1+SC2 的最小切片**:`ctrl-ghostfolio` manifest + kernel 侧连接一个 mock Ghostfolio MCP 经 gate 可达并记审计(照 Obsidian connector 先例)。
+> **第一步(最大安全洞)= SC1 S4 ACL**:`remote-host.ts` invoke 边界 + `remote-config.ts` 默认翻转。先做,纯技术不需 bao 拍。
 
 ## 候选目标 (next-up — 未激活, 待 bao 拍)
 
 > 不是当前活跃目标。记下来锚定,别丢。
 
-- **LifeOS Notes workspace**(bao 2026-07-01「note 的工作区可以根据 lifeos 来实现」):把 LifeOS 的日历 date-picker + PARA/periodic 树 + 笔记内嵌 §14 查询块**收进 Notes 这一个模块的 workspace**(不是 app 壳)。已起步:`LifeCalendar` 组件 + Task §14 Source 已落地(见进展日志)。设计 = `lifeos-layer-restructure.md`(注:§6.4 已更正「整个 app 变 LifeOS」是脑补;app 壳走 agent-native 那路)。**排在 ctrl-ghostfolio 之后**——功能包命题优先。
+- **功能包真命题 distribute 环**(原 active 目标,2026-07-07 ctrl-stock-cn 第二种子闭环达成后剩最后一环):证「distribute + 用户如何用」—— registry 发布到真实用户发现安装链路。P0-P3 substrate + ghostfolio 真机 §14 三动词 + ctrl-stock-cn 闭环已达成,只剩 distribute 端到端活体证明。governing = `ai-native-feature-pack-research.md` + `capability-pack-map.md` + ADR-002 §7/§14。
+- **LifeOS Notes workspace**(bao 2026-07-01「note 的工作区可以根据 lifeos 来实现」):把 LifeOS 的日历 date-picker + PARA/periodic 树 + 笔记内嵌 §14 查询块**收进 Notes 这一个模块的 workspace**(不是 app 壳)。已起步:`LifeCalendar` 组件 + Task §14 Source 已落地。设计 = `lifeos-layer-restructure.md`。
 - **国内 IM 接入 = 暴露 hermes 已有网关能力**(hermes 上游原生支持微信/企微/钉钉/飞书,CTRL 零接线,只做 wizard + gate 收口)。
 
 ## 非目标 / 范围外 (Non-goals)
 
-- **不手写长尾 connector**:③ 层 connector = Irisy 的 mcp-creator 流造(capability-pack-map 铁律);ghostfolio 种子 = **这条创作流的活体测试**,dev 打磨 substrate/流,不亲手写长尾。
-- **不重造行业砖**:不自造 manifest/bundle 格式(用 Agent Skills + mcpb)· 不写 codegen(用 AutoMCP 式 + 投 spec-repair)· 不自建 registry(拉官方 + Smithery)。
-- **不建整个能力市场**:先一个种子端到端,不铺市场全机制。
-- **不 big-bang / 不克隆界面**:功能包的意义是让 agent 原生操作开源工具,不是复刻某 app 的 UI(克隆 LifeOS 前端已判为跑偏)。
-- 不动 5 primitives / 三动词 / gate / secret 不进 LLM / plain-text。
+- **不做 pixel 远程桌面(A)**:plan-A = ADR-010 ⑧ 独立未建模块;worktree `feat/remote-window-share-spike` 全是 screen_capture/H.264/WebRTC/input_inject,**不 merge 任何东西到 plan B**。
+- **不做 WebRTC / P2P 打洞**:纯 JSON 不需要(Syncthing 证明);relay-only 严守 0 监听端口(bao 拍)。
+- **不做离线 LAN 直连**:bao 拍的取舍 —— 断网/relay 挂手机连不上,换取零本地监听(删 HA 最被吐槽的 SSID 切换子系统)。**禁止**以后加「在家走 LAN」开关。
+- **不做 vodozemac/Olm forward secrecy(本 session)**:`remote-crypto.ts:9-12` 文档化的升级,AES-GCM 对称密钥基线正确但无前向保密,deferred 到后续硬化。
+- **不做 Keychain 迁移(本 session)**:localStorage 是 plan-acknowledged gap,后续硬化。
+- **不做 ctrl-auth 零知识服务**:account 方案的 prod 形态是后续,本 session 保留 dev scheme + 门控 prod。
+- 不动 5 primitives / 三动词 / gate / secret 不进 LLM / plain-text / 0 监听端口。
 
 ## 进展日志 (Progress log — append-only)
 
@@ -137,3 +145,4 @@ governing = `vault/ctrl/ai-native-feature-pack-research.md` + `vault/ctrl/capabi
   - **关键 learnings**(bao 多轮校准,存 memory `reference-stock-methodology-research-corpus`):个股分析必须 regime-first(不孤立看单股)+ 结构优先(指标是过滤器不是买卖点)+ 方法论从 16 个 clone 的真实 skill **源码**蒸馏(不凭训练瞎编);数据只需交易实际数据(价量)+ 衍生指标(MyTT),不依赖付费基本面。
   - **诚实 gap**:换手率/资金流/龙虎榜/连板情绪等深度数据要国内端点(腾讯/东财),此机被本地 Clash fake-ip 墙 → 候选解:EODHD 付费 / 中国出口代理(AWS 东京中继)/ Clash 加 DIRECT 规则(全球可达的价量+指标层已全通)。
   - **意义**:create(Irisy 写服务)→ govern(gate)→ uplift(缠论 skill 让分析 AI-native)→ Irisy 自主端到端操作,四环齐。**下一步 = 证「distribute + 用户如何用」这最后一环**(见候选目标)。
+- 2026-07-09 **目标替换(功能包 distribute 环 → mobile/remote 收尾)。** bao「继续 mobile/remote 线 + 收尾整条线」+ 保留 PR #166 account 方案(不回退到 device-id/passcode 模型)。理由:近一周 main 实做全在 mobile/remote(PR #158-#168),功能包线 P0-P3 + ghostfolio 真机 + ctrl-stock-cn 闭环已达成,剩 distribute 环降级候选。**Explore 摸出结构性缺口**(代码实证非 commit-message 猜):① S4 ACL 完全没做(最大安全洞 —— allowlist 只驱动手机导航 UI,`remote-host.ts:140` 裸调 gate 不校验,view-only 包工具也执行)② ADR-005 §2 drift(header SHIPPED vs acceptance `:899-900` 「v1.1+ scope」+ as-built 段描述被 PR #166 删掉的 device-id 模型 = CLAUDE.md 保命线违反)③ account 方案跟 CLAUDE.md/ADR-006「无账号」哲学冲突(dev scheme admin/898989 硬编码 + 桌面默认填,amend 没做)④ mobile-remote-window skill 设置流程(QR/passcode/Reset)代码里不存在,误导 Irisy ⑤ 死码(remote-identity.ts/RemoteLanding.tsx/REMOTE_APP_BASE)+ 假注释(remote-crypto.ts:14-15 谎称 Rust seal/open,实际 TS)。worktree spike 全 plan-A(screen_capture/H.264/WebRTC),plan B 不 merge 任何。bao 裁决 **account = 零知识 rendezvous 凭据 ≠ CTRL 账号**(无 server/DB/身份注册),跟「无账号」哲学调和而非破坏。**下一步 = SC1 S4 ACL**(最大安全洞,纯技术不需拍)。

@@ -146,7 +146,7 @@ function RemoteSurfaceTab({
 
   const onAction = (a: Action): void => {
     void conn
-      .invoke(a.op ?? a.id, a.args ?? {})
+      .invoke(a.op ?? a.id, a.args ?? {}, { pack: packKey, verb: a.verb })
       .then(() => fetchSurface())
       .catch(() => {});
   };

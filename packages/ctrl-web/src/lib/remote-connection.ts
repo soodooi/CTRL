@@ -13,10 +13,24 @@ import { importKey, sealJson, openJson, fromB64url } from './remote-crypto';
 
 export type RemoteState = 'connecting' | 'paired' | 'disconnected';
 
+/** The verb a remote invoke declares — query (read) or produce (write/act).
+ *  Carried on every invoke so the desktop's RemoteHost can enforce the
+ *  allowlist (view-only packs can query but never produce). */
+export type Verb = 'query' | 'produce';
+
 /** Frames we send to the desktop. */
 type Outbound =
   | { t: 'hello'; pass?: string } // request allowlist; present the passcode
-  | { t: 'invoke'; id: number; tool: string; args: Record<string, unknown> }
+  | {
+      t: 'invoke';
+      id: number;
+      tool: string;
+      args: Record<string, unknown>;
+      /** Allowlist key this invoke acts as (the phone's current pack/function). */
+      pack?: string;
+      /** Declared verb — query (read) or produce (write). */
+      verb?: Verb;
+    }
   | { t: 'chat'; id: number; text: string }; // talk to Irisy on the desktop
 
 /** Frames the desktop sends back. */
@@ -146,12 +160,20 @@ export class RemoteConnection {
     this.setState('disconnected');
   }
 
-  /** Tunnel a gate tool call to the desktop; resolves with the tool's result. */
-  invoke<T = unknown>(tool: string, args: Record<string, unknown> = {}): Promise<T> {
+  /** Tunnel a gate tool call to the desktop; resolves with the tool's result.
+   *  `acl` declares the pack + verb so the desktop RemoteHost can enforce the
+   *  allowlist (deny-by-default — a view-only pack may query but not produce). */
+  invoke<T = unknown>(
+    tool: string,
+    args: Record<string, unknown> = {},
+    acl?: { pack: string; verb: Verb },
+  ): Promise<T> {
     const id = this.seq++;
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      void this.sendFrame({ t: 'invoke', id, tool, args }).catch(reject);
+      void this.sendFrame({ t: 'invoke', id, tool, args, pack: acl?.pack, verb: acl?.verb }).catch(
+        reject,
+      );
       // 20s ceiling so a dropped desktop peer doesn't hang the phone forever.
       window.setTimeout(() => {
         if (this.pending.delete(id)) reject(new Error(`remote invoke timed out: ${tool}`));

@@ -13,12 +13,20 @@ import { importKey, sealJson, openJson, fromB64url } from './remote-crypto';
 import { gateInvoke } from './kernel';
 import { engineTransport } from './llm-transport';
 import { surfaceToolFor } from './remote-surface';
-import type { RemoteAllowEntry, RemoteState } from './remote-connection';
+import { checkRemoteAcl, DESCRIBE_TOOL } from './remote-acl';
+import type { RemoteAllowEntry, RemoteState, Verb } from './remote-connection';
 import type { Surface } from '@/components/remote/SurfaceRenderer';
 
 type Inbound =
   | { t: 'hello'; pass?: string }
-  | { t: 'invoke'; id: number; tool: string; args: Record<string, unknown> }
+  | {
+      t: 'invoke';
+      id: number;
+      tool: string;
+      args: Record<string, unknown>;
+      pack?: string;
+      verb?: Verb;
+    }
   | { t: 'chat'; id: number; text: string };
 
 const DEFAULT_RELAY = 'wss://ctrl-relay.soodooi2018.workers.dev';
@@ -124,7 +132,7 @@ export class RemoteHost {
       // `remote_surface` = the phone asking a pack to describe its mobile surface
       // (the SDUI describe call). Answered here for now; the real design is that
       // each pack `describe`s its own surface (this desktop shim is transitional).
-      if (msg.tool === 'remote_surface') {
+      if (msg.tool === DESCRIBE_TOOL) {
         try {
           const value = await this.buildSurface(String((msg.args as { pack?: string }).pack ?? ''));
           await this.send({ t: 'result', id: msg.id, ok: true, value });
@@ -133,10 +141,21 @@ export class RemoteHost {
         }
         return;
       }
-      // Enforce the allowlist at the gate boundary: a phone may only call a tool
-      // if the pack it belongs to is allowed with canAct (deny-by-default). The
-      // per-tool->pack mapping check is a follow-up; v1 gates on the tool call
-      // succeeding through the local gate, which already audits + scopes.
+      // S4 ACL — enforce the allowlist at the gate boundary (deny-by-default).
+      // A phone may only call a tool if the pack it declares is allowed, and a
+      // produce is blocked when the pack is view-only. The allowlist is read
+      // live so a toggle during a session applies immediately.
+      const allow = await this.resolveAllowlist();
+      const decision = checkRemoteAcl(allow, msg.tool, msg.pack, msg.verb);
+      if (!decision.allow) {
+        await this.send({
+          t: 'result',
+          id: msg.id,
+          ok: false,
+          error: `denied: ${decision.reason ?? 'not allowed'}`,
+        });
+        return;
+      }
       try {
         const value = await gateInvoke(msg.tool, msg.args);
         await this.send({ t: 'result', id: msg.id, ok: true, value });
