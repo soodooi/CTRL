@@ -3,21 +3,30 @@
 > 唯一在跑的目标,锚定所有工作。由 `goal` skill 管理。
 > Plain markdown,local 是 truth,bao 拥有这个文件。
 
-## Status: CLOSED (2026-07-11, bao「先不要了 你能走通一个就不错了」)
+## Status: ACTIVE (2026-07-11, bao「开创建功能包的角色 我来开新窗口 你负责项目」)
 
-> 功能包命题以 `ctrl-stock-cn` 为活体证明收口(A股分析端到端真机验证过);
-> ctrl-ghostfolio 按 bao 指示已卸载(卸载墓碑 PR #170)。
-> **下一个 active goal 待 bao 定**;定下后按 `vault/ctrl/team-workflow.md`
-> 多窗口模式切片分派(zeus 管理,worker 窗口开发)。
->
-> 其他在册线:remote-window S4 ACL 半成品 park 在 `wip/remote-window-s4-acl`
-> 分支(tsc 过,行为未验),该线恢复时从此分支起。
+## 目标 (Goal)
+
+**功能包生产线:专职 pack-builder worker 窗口持续产出新功能包。** 以 `ctrl-stock-cn`
+为已验证模板(bao 2026-07-11「你能走通一个就不错了」),按
+`share/skills/create-feature-pack` 的强制流程(research → 确认 → manifest → install
+→ smoke)一个一个造。zeus 管切片/review/merge;每个包一个切片、一个分支、一个 PR。
+
+- 候选来源:`vault/ctrl/capability-pack-map.md`(Tier 表;ghostfolio 已按 bao 指示
+  卸载并从内置出厂里待撤,不做默认候选)
+- 锁点不动:manifest=数据 / runtime=通用 / 加 pack 零代码(ADR-002 §7.4)、
+  `:17873` gate 治理、secret 不进 LLM、one-shot 原子动作
+- 每个包的验收 = create-feature-pack Step 5:装进 `~/.ctrl/mcps/` 且 smoke 真跑通,
+  不是「写完 manifest」
+
+其他在册线:remote-window S4 ACL 半成品 park 在 `wip/remote-window-s4-acl`
+(tsc 过,行为未验),该线恢复时从此分支起。
 
 ## 切片分派 (zeus 唯一写入者)
 
 | # | 切片 | 窗口 | 分支 | 状态 |
 |---|---|---|---|---|
-| — | (待下一个 goal 定盘) | | | |
+| 1 | 第一个新功能包(worker 先调研提案 2-3 个候选,bao 在其窗口拍板后执行) | hephaestus(bao 开窗,名字可改) | feat/pack-\<id\>(定包后建) | assigned |
 
 ## 上一目标存档 (2026-07-01 → 2026-07-11, 原 status ACTIVE)
 
