@@ -3,7 +3,23 @@
 > 唯一在跑的目标,锚定所有工作。由 `goal` skill 管理。
 > Plain markdown,local 是 truth,bao 拥有这个文件。
 
-## Status: ACTIVE
+## Status: CLOSED (2026-07-11, bao「先不要了 你能走通一个就不错了」)
+
+> 功能包命题以 `ctrl-stock-cn` 为活体证明收口(A股分析端到端真机验证过);
+> ctrl-ghostfolio 按 bao 指示已卸载(卸载墓碑 PR #170)。
+> **下一个 active goal 待 bao 定**;定下后按 `vault/ctrl/team-workflow.md`
+> 多窗口模式切片分派(zeus 管理,worker 窗口开发)。
+>
+> 其他在册线:remote-window S4 ACL 半成品 park 在 `wip/remote-window-s4-acl`
+> 分支(tsc 过,行为未验),该线恢复时从此分支起。
+
+## 切片分派 (zeus 唯一写入者)
+
+| # | 切片 | 窗口 | 分支 | 状态 |
+|---|---|---|---|---|
+| — | (待下一个 goal 定盘) | | | |
+
+## 上一目标存档 (2026-07-01 → 2026-07-11, 原 status ACTIVE)
 
 ## 目标 (Goal)
 
