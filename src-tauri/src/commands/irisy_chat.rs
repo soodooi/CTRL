@@ -430,13 +430,20 @@ async fn forward_to_provider(
             // Auth reuse (ADR-005 §8.8): hermes gets the active Irisy provider;
             // a BYO engine gets ITS canonical BYOK credential from the keychain
             // (codex → openai key, claude-code → anthropic key) so the user
-            // never signs in twice. Empty when unconfigured → the CLI uses its
-            // own login. The key rides only into the adapter subprocess env.
+            // never signs in twice. The key rides only into the adapter
+            // subprocess env.
             let provider_env = if engine == "hermes" {
                 registry.agent_env_injection()
             } else {
                 registry.byo_engine_auth_env(engine)
             };
+            // Hard gate (ADR-002 substrate § provider v61, 2026-07-11): a BYO
+            // engine may ONLY run on a BYOK API key. Without one the wrapped
+            // CLI falls back to its own stored login — for claude-code that is
+            // Claude subscription OAuth, which Anthropic's usage policy
+            // forbids as a product LLM backend. No key → skip the agent path
+            // and answer via the provider router instead.
+            let byo_key_missing = engine != "hermes" && provider_env.is_empty();
             let mut guard = crate::shell::acp_client::singleton().lock().await;
             // Engine switch (§8.7): if a different engine is running, reset so we
             // restart with the chosen adapter.
@@ -445,7 +452,13 @@ async fn forward_to_provider(
                     *guard = None;
                 }
             }
-            let ready = if guard.is_none() {
+            let ready = if byo_key_missing {
+                eprintln!(
+                    "[acp] {engine} needs its BYOK API key (subscription login \
+                     is not allowed as a provider); using provider router"
+                );
+                false
+            } else if guard.is_none() {
                 match crate::shell::acp_client::AcpClient::start(engine, &provider_env).await {
                     Ok(c) => {
                         *guard = Some(c);

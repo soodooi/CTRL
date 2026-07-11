@@ -236,15 +236,18 @@ pub async fn run_skill(
     }))
 }
 
-/// Spawn the active brain CLI in agentic mode inside `workdir`: streaming JSON
-/// mode, auto-accept file edits, a multi-turn budget. We drop
-/// ANTHROPIC_API_KEY so a key injected for CTRL's HTTP providers never
-/// leaks into the external CLI — the CLI uses whatever auth the user
-/// configured in it themselves (ADR-002 substrate § provider v61,
-/// 2026-07-11: CTRL never selects subscription billing). Each
-/// assistant chunk is published as a Cell on `stream_id` so the workspace shows
-/// the run live instead of a frozen minute. Kills the child if it overruns the
-/// deadline (`kill_on_drop`).
+/// Spawn the brain CLI in agentic mode inside `workdir`: streaming JSON
+/// mode, auto-accept file edits, a multi-turn budget. This is a
+/// CTRL-initiated headless spawn (product feature, not the user opening
+/// a terminal), so it MUST run on the user's BYOK Anthropic API key —
+/// Anthropic's usage policy forbids a product driving the CLI on Claude
+/// subscription OAuth (ADR-002 substrate § provider v61, 2026-07-11).
+/// We first strip any inherited ANTHROPIC_API_KEY, then inject the BYOK
+/// key from the credential vault; no key → refuse with a clear setup
+/// pointer instead of silently falling back to the CLI's own login.
+/// Each assistant chunk is published as a Cell on `stream_id` so the
+/// workspace shows the run live instead of a frozen minute. Kills the
+/// child if it overruns the deadline (`kill_on_drop`).
 async fn run_brain_agentic(
     binary: &str,
     workdir: &Path,
@@ -273,6 +276,17 @@ async fn run_brain_agentic(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     cmd.env_remove("ANTHROPIC_API_KEY");
+    // BYOK-only (ADR-002 substrate § provider v61, 2026-07-11): inject the
+    // user's own Anthropic API key; without one, refuse — never let the
+    // CLI fall back to subscription OAuth for a CTRL-initiated run.
+    let byok_key = crate::kernel::provider::registry::read_credential("anthropic")
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| {
+            "skill run needs an Anthropic API key (Settings -> Providers); \
+             Claude subscription login cannot back CTRL features"
+                .to_string()
+        })?;
+    cmd.env("ANTHROPIC_API_KEY", byok_key);
 
     let mut child = cmd
         .spawn()
