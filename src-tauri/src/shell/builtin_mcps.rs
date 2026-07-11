@@ -116,6 +116,87 @@ fn install_root() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".ctrl").join("mcps"))
 }
 
+// ── Uninstall tombstones (ADR-002 substrate § composition v62, 2026-07-11) ──
+// `ensure_builtins_installed` self-heals missing builtins on every boot,
+// which used to RESURRECT a pack the user had deliberately uninstalled —
+// uninstall never stuck for bundled packs (bao 2026-07-11: ghostfolio came
+// back after every restart). A tombstone records the uninstall so the boot
+// seeder skips that id; a fresh install (Discover / gate mcp_pack_install)
+// clears it. Only bundled-builtin ids are recorded — nothing re-seeds a
+// user-installed pack, so it needs no tombstone.
+
+/// Tombstone file: `~/.ctrl/state/uninstalled-builtins.json` — JSON array
+/// of pack ids the user uninstalled and the boot seeder must not re-seed.
+fn tombstone_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
+    Some(
+        PathBuf::from(home)
+            .join(".ctrl")
+            .join("state")
+            .join("uninstalled-builtins.json"),
+    )
+}
+
+fn load_tombstones() -> Vec<String> {
+    let Some(p) = tombstone_path() else {
+        return Vec::new();
+    };
+    let Ok(bytes) = fs::read(&p) else {
+        return Vec::new();
+    };
+    serde_json::from_slice::<Vec<String>>(&bytes).unwrap_or_default()
+}
+
+/// Best-effort write — a failed tombstone write must never fail the
+/// uninstall itself; worst case the pack re-seeds next boot and the user
+/// uninstalls again (logged so it's diagnosable).
+fn save_tombstones(ids: &[String]) {
+    let Some(p) = tombstone_path() else { return };
+    if let Some(parent) = p.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    match serde_json::to_vec_pretty(ids) {
+        Ok(bytes) => {
+            if let Err(e) = fs::write(&p, bytes) {
+                tracing::warn!(error = %e, path = %p.display(), "BuiltinMcps: tombstone write failed");
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "BuiltinMcps: tombstone serialize failed"),
+    }
+}
+
+/// True when `id` ships in the bundled builtin source set (dev repo dir or
+/// .app Resources). Used to decide whether an uninstall needs a tombstone.
+pub fn is_bundled_builtin(id: &str) -> bool {
+    find_source_dir()
+        .map(|src| src.join(id).join("manifest.json").is_file())
+        .unwrap_or(false)
+}
+
+/// Record a user uninstall of a bundled builtin so the next boot's seeder
+/// respects it. No-op for non-builtin ids.
+pub fn record_uninstalled(id: &str) {
+    if !is_bundled_builtin(id) {
+        return;
+    }
+    let mut ids = load_tombstones();
+    if !ids.iter().any(|x| x == id) {
+        ids.push(id.to_string());
+        save_tombstones(&ids);
+        tracing::info!(mcp = %id, "BuiltinMcps: uninstall tombstone recorded");
+    }
+}
+
+/// Clear a tombstone on (re)install so the pack heals normally again.
+pub fn clear_uninstalled(id: &str) {
+    let ids = load_tombstones();
+    if ids.iter().any(|x| x == id) {
+        let next: Vec<String> = ids.into_iter().filter(|x| x != id).collect();
+        save_tombstones(&next);
+        tracing::info!(mcp = %id, "BuiltinMcps: uninstall tombstone cleared (reinstalled)");
+    }
+}
+
 /// Max recursion depth for copy_tree — bounds mcp layout. ECC review C1
 /// flagged that symlink cycles in source would stack-overflow without this.
 const COPY_MAX_DEPTH: u8 = 8;
@@ -414,6 +495,7 @@ pub fn ensure_builtins_installed() {
         }
     };
 
+    let tombstones = load_tombstones();
     let mut seeded: usize = 0;
     let mut copied_files: usize = 0;
     for entry in entries.flatten() {
@@ -431,6 +513,15 @@ pub fn ensure_builtins_installed() {
         }
         let dst_dir = dst_root.join(&id);
         let pre_existed = dst_dir.is_dir();
+        // Respect the user's uninstall (ADR-002 § composition v62,
+        // 2026-07-11): a tombstoned builtin that is absent on disk stays
+        // absent — self-heal is for accidental deletion, not for undoing a
+        // deliberate uninstall. A present dir wins over a stale tombstone
+        // (the user reinstalled), and install_into clears it anyway.
+        if !pre_existed && tombstones.iter().any(|t| t == &id) {
+            tracing::info!(mcp = %id, "BuiltinMcps: skipping seed — user uninstalled (tombstone)");
+            continue;
+        }
         // Version-aware upgrade: when the bundled builtin is newer than the
         // installed copy, re-seed it so manifest changes (e.g. a new `workspace`
         // declaration) actually reach the user — the old copy_tree_no_overwrite
@@ -563,5 +654,66 @@ mod tests {
         write_manifest(d.path(), "0.12");
         assert_eq!(manifest_version(d.path()), Some(vec![0, 12]));
         assert_eq!(manifest_version(TempDir::new().unwrap().path()), None);
+    }
+
+    /// Uninstall tombstone end-to-end (ADR-002 substrate § composition
+    /// v62, 2026-07-11): seed → uninstall(tombstone) → seed again must NOT
+    /// resurrect the pack; clearing the tombstone heals it again. Uses a
+    /// temp HOME + CTRL_BUILTIN_MCPS_DIR (same env-override pattern as
+    /// commands/cloud_catalog.rs tests) so nothing touches the real user
+    /// state; both vars restored at the end.
+    #[test]
+    fn tombstoned_builtin_is_not_reseeded_until_cleared() {
+        let src = TempDir::new().unwrap();
+        let pack_src = src.path().join("demo-builtin");
+        fs::create_dir_all(&pack_src).unwrap();
+        fs::write(
+            pack_src.join("manifest.json"),
+            r#"{"id":"demo-builtin","version":"0.1.0"}"#,
+        )
+        .unwrap();
+
+        let home = TempDir::new().unwrap();
+        let prev_home = std::env::var("HOME").ok();
+        let prev_src = std::env::var("CTRL_BUILTIN_MCPS_DIR").ok();
+        std::env::set_var("HOME", home.path());
+        std::env::set_var("CTRL_BUILTIN_MCPS_DIR", src.path());
+
+        let installed = home.path().join(".ctrl/mcps/demo-builtin");
+
+        // 1) First boot seeds the builtin.
+        ensure_builtins_installed();
+        assert!(installed.is_dir(), "first boot must seed the builtin");
+
+        // 2) User uninstalls: dir removed + tombstone recorded.
+        fs::remove_dir_all(&installed).unwrap();
+        record_uninstalled("demo-builtin");
+        assert!(
+            load_tombstones().iter().any(|t| t == "demo-builtin"),
+            "uninstall must record a tombstone for a bundled builtin"
+        );
+
+        // 3) Next boot must respect the uninstall — no resurrection.
+        ensure_builtins_installed();
+        assert!(
+            !installed.exists(),
+            "boot seeder must not resurrect an uninstalled builtin"
+        );
+
+        // 4) Reinstall clears the tombstone; seeding heals again.
+        clear_uninstalled("demo-builtin");
+        assert!(load_tombstones().is_empty(), "clear removes the tombstone");
+        ensure_builtins_installed();
+        assert!(installed.is_dir(), "cleared pack heals on next boot");
+
+        // Restore env for the rest of the test process.
+        match prev_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+        match prev_src {
+            Some(s) => std::env::set_var("CTRL_BUILTIN_MCPS_DIR", s),
+            None => std::env::remove_var("CTRL_BUILTIN_MCPS_DIR"),
+        }
     }
 }
