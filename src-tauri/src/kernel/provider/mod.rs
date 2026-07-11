@@ -13,9 +13,14 @@
 //   - verify.rs          1-token "hi" trial chat
 //   - adapter/
 //       cli/one_shot.rs           codex / gemini generic spawner
-//       cli/claude_persistent.rs  goose-style persistent claude CLI
 //       http_api.rs               openai-shape + anthropic-shape
-//   - builtin/*.toml     7 presets shipped (v2: added volc-byok)
+//   - builtin/*.toml     only `ollama` ships builtin (bao 2026-06-05);
+//                        users add BYOK providers via Settings.
+//
+// cli/claude_persistent.rs removed (ADR-002 substrate § provider v61,
+// 2026-07-11): Claude subscription OAuth may not back an LLM provider
+// per Anthropic's usage policy — Anthropic is BYOK API key only
+// (ADR-006 cross-cutting § byok-no-claude).
 //
 // v2 amendment (2026-05-31): role-aware routing replaces capability-
 // keyed active map. 2 roles only: irisy.primary (user CLI, 0 CTRL cost)

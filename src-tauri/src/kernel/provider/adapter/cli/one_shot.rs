@@ -2,9 +2,10 @@
 // gemini / any CLI that exposes a single-turn JSON I/O mode.
 //
 // ADR-002 substrate § provider v2 lock #5: "cli/one_shot.rs (codex/gemini, manifest-driven,
-// ~200 LOC)". Compared to claude_persistent.rs, this adapter is
-// stateless — one spawn per turn, no warm child to reuse, no NDJSON
-// control protocol. The trade-off is the ~80-150 ms node-cold-start
+// ~200 LOC)". This adapter is stateless — one spawn per turn, no warm
+// child to reuse, no NDJSON control protocol (the persistent-child
+// claude adapter it contrasted with was removed per ADR-002 substrate
+// § provider v61, 2026-07-11). The trade-off is the ~80-150 ms node-cold-start
 // per turn; for codex / gemini that's acceptable because they don't
 // expose a persistent stream-json mode.
 //

@@ -26,8 +26,8 @@ pub struct IrisyStatus {
     pub kernel_llm: KernelLlmStatus,
     pub mcp_bridge: McpBridgeStatus,
     /// Active IrisyPrimary provider's display label (matches the value
-    /// shown in the InfraBar ENGINE chip — e.g. "Claude" when
-    /// claude-oauth is active). Falls back to "none" when no provider is
+    /// shown in the InfraBar ENGINE chip — e.g. "Volcano Ark" when
+    /// volc-byok is active). Falls back to "none" when no provider is
     /// configured (ADR-002 substrate § brain v28: Irisy brain = Hermes;
     /// the provider router supplies the model label).
     pub active_brain: String,

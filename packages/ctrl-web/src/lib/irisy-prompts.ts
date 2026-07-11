@@ -517,7 +517,7 @@ export interface BrainEngine {
 /** Active provider snapshot for one role. */
 export interface BrainRoleProvider {
   id: string;
-  /** Brand-facing label (e.g. "Claude subscription" / "CTRL Cloud"). */
+  /** Brand-facing label (e.g. "Anthropic API" / "CTRL Cloud"). */
   label: string;
   endpoint: string | null;
   binary: string | null;

@@ -158,10 +158,11 @@ pub async fn run_skill(
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // Skill mcps need a CLI that can use tools + write files. Claude Code
-    // is the verified one. Resolve the binary path the same way the
-    // provider sub-system does — `claude-oauth` preset's manifest exposes
-    // the `claude` binary (ADR-002 substrate § provider v2). Fall back to plain `claude` on
-    // PATH if the preset isn't installed.
+    // is the verified one — this is the BYO-CLI surface (the user's own
+    // installed CLI doing agentic work), NOT an LLM provider; the
+    // claude-oauth provider preset was removed (ADR-002 substrate
+    // § provider v61, 2026-07-11). Resolve the `claude` binary from
+    // PATH directly.
     // Resolve `claude` binary path inline (no external crate dep). Splits
     // $PATH and returns the first matching executable, or falls back to the
     // bare name so std::process::Command's own PATH lookup still has a chance.
@@ -235,12 +236,18 @@ pub async fn run_skill(
     }))
 }
 
-/// Spawn the active brain CLI in agentic mode inside `workdir`: streaming JSON
-/// mode, auto-accept file edits, a multi-turn budget, subscription OAuth (we
-/// drop ANTHROPIC_API_KEY so it bills the plan, not the API account). Each
-/// assistant chunk is published as a Cell on `stream_id` so the workspace shows
-/// the run live instead of a frozen minute. Kills the child if it overruns the
-/// deadline (`kill_on_drop`).
+/// Spawn the brain CLI in agentic mode inside `workdir`: streaming JSON
+/// mode, auto-accept file edits, a multi-turn budget. This is a
+/// CTRL-initiated headless spawn (product feature, not the user opening
+/// a terminal), so it MUST run on the user's BYOK Anthropic API key —
+/// Anthropic's usage policy forbids a product driving the CLI on Claude
+/// subscription OAuth (ADR-002 substrate § provider v61, 2026-07-11).
+/// We first strip any inherited ANTHROPIC_API_KEY, then inject the BYOK
+/// key from the credential vault; no key → refuse with a clear setup
+/// pointer instead of silently falling back to the CLI's own login.
+/// Each assistant chunk is published as a Cell on `stream_id` so the
+/// workspace shows the run live instead of a frozen minute. Kills the
+/// child if it overruns the deadline (`kill_on_drop`).
 async fn run_brain_agentic(
     binary: &str,
     workdir: &Path,
@@ -269,6 +276,17 @@ async fn run_brain_agentic(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     cmd.env_remove("ANTHROPIC_API_KEY");
+    // BYOK-only (ADR-002 substrate § provider v61, 2026-07-11): inject the
+    // user's own Anthropic API key; without one, refuse — never let the
+    // CLI fall back to subscription OAuth for a CTRL-initiated run.
+    let byok_key = crate::kernel::provider::registry::read_credential("anthropic")
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| {
+            "skill run needs an Anthropic API key (Settings -> Providers); \
+             Claude subscription login cannot back CTRL features"
+                .to_string()
+        })?;
+    cmd.env("ANTHROPIC_API_KEY", byok_key);
 
     let mut child = cmd
         .spawn()

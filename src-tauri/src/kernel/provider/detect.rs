@@ -37,8 +37,11 @@ pub struct CliProviderEntry {
 }
 
 /// Static table of CLIs we know how to detect. Mirrors ADR-002
-/// substrate § provider v2 §3.6. Order is the first-boot priority
-/// when picking a default `irisy.primary` (claude first wins).
+/// substrate § provider v2 §3.6. Detection feeds the Settings UI
+/// (Available CLIs) and the BYO-CLI driver surface only — CLIs are
+/// NOT LLM providers (ADR-002 § provider v61, 2026-07-11: the
+/// claude-oauth subscription provider was removed for Anthropic
+/// policy compliance).
 const CLI_PROVIDERS: &[(&str, &str, &str)] = &[
     ("claude", "Claude", "claude"),
     ("codex", "Codex", "codex"),
@@ -89,13 +92,10 @@ fn scan_now() -> Vec<CliProviderEntry> {
 }
 
 /// BYOK REST manifest order for first-boot `irisy.primary` selection.
-/// ADR-002 substrate § provider v3 amendment 2026-06-04 (bao directive:
-/// claude cli is unreliable, switch to BYOK REST API as primary, move
-/// the CLI providers to fallback). First-boot scans keychain for the
-/// first REST adapter with a usable credential and binds it as primary;
-/// bypasses Claude OAuth token-expiry circus (Issue #36489) and the
-/// broader CLI-process reliability surface (stderr drain, goose-style
-/// NDJSON aborts, etc.) for users who already have a paid API key.
+/// ADR-002 substrate § provider v3 amendment 2026-06-04 (BYOK REST is
+/// primary), amended v61 (2026-07-11 — CLIs are no longer providers at
+/// all). First-boot scans keychain for the first REST adapter with a
+/// usable credential and binds it as primary.
 const BYOK_REST_MANIFEST_ORDER: &[(&str, &str)] = &[
     // (manifest_id, keychain_account). Account names match the
     // `legacy_account_aliases` resolver in registry.rs so an entry
@@ -108,34 +108,17 @@ const BYOK_REST_MANIFEST_ORDER: &[(&str, &str)] = &[
     ("google", "gemini"),
 ];
 
-/// CLI fallback order for first-boot `irisy.primary` when no BYOK REST
-/// credential exists. Same priority as the legacy v2 behavior; surfaced
-/// here so the registry's route_chain fallbacks list can reuse the same
-/// constant. ADR-002 § provider v3 §3.6.
-pub const CLI_FALLBACK_MANIFEST_ORDER: &[&str] = &[
-    "claude-oauth",
-    // Future: "codex", "aider"
-];
-
 /// Pick the highest-priority provider for first-boot `irisy.primary`
-/// auto-adoption. ADR-002 substrate § provider v3 amendment 2026-06-04:
-/// BYOK REST keychain scan first; CLI fallback only when no REST key
-/// is configured. Returns the manifest id to bind.
+/// auto-adoption. ADR-002 substrate § provider v3 amendment 2026-06-04,
+/// amended v47 (2026-07-11): BYOK REST keychain scan only. The CLI
+/// fallback tier (`claude-oauth` subscription) was removed — Claude
+/// subscription OAuth may not back an LLM provider per Anthropic's
+/// usage policy (ADR-006 § byok-no-claude). Returns the manifest id
+/// to bind, or None (the seeded `ollama` fallback covers the rest).
 pub fn first_boot_primary_choice() -> Option<&'static str> {
-    // 1) BYOK REST first — bypass CLI auth instability.
     for (manifest_id, account) in BYOK_REST_MANIFEST_ORDER {
         if has_keychain_secret(account) {
             return Some(*manifest_id);
-        }
-    }
-    // 2) CLI fallback — same priority as v2, claude-oauth top.
-    let detected = detect_cli_providers();
-    for manifest_id in CLI_FALLBACK_MANIFEST_ORDER {
-        let cli_id = manifest_id_to_cli(manifest_id);
-        if let Some(entry) = detected.iter().find(|e| e.provider_type == cli_id) {
-            if entry.available {
-                return Some(*manifest_id);
-            }
         }
     }
     None
@@ -153,17 +136,6 @@ fn has_keychain_secret(account: &str) -> bool {
     // REST provider never fired. Routes through the single credential
     // entry point so aliases (ark / doubao / gpt / claude) resolve too.
     super::registry::read_credential(account).is_some_and(|s| !s.is_empty())
-}
-
-/// Map a CLI manifest id back to its `provider_type` string used in
-/// `CLI_PROVIDERS`. Centralized so adding a new CLI builtin updates one
-/// table only.
-fn manifest_id_to_cli(manifest_id: &str) -> &'static str {
-    match manifest_id {
-        "claude-oauth" => "claude",
-        // Future: "codex" => "codex", "aider" => "aider"
-        _ => "",
-    }
 }
 
 #[cfg(test)]

@@ -14,10 +14,13 @@
 //!   commands let the broker gate `config.write` specifically.
 //!
 //! Amended 2026-05-28: ADR-006 cross-cutting § byok-no-claude v1's "Anthropic absent" lock only governed
-//! the default-shipped CTRL runtime — BYOK Anthropic + `claude` CLI
-//! subscription paths are first-class once the user opts in. This
-//! surface enumerates every provider the kernel's llm_adapters/mod.rs
-//! knows how to register; UI gates whether the user wants to fill any.
+//! the default-shipped CTRL runtime — BYOK Anthropic (user's own API
+//! key) is first-class once the user opts in. The `claude` CLI
+//! subscription path was removed (ADR-002 substrate § provider v61,
+//! 2026-07-11): subscription OAuth may not back an LLM provider per
+//! Anthropic's usage policy. This surface enumerates every provider
+//! the kernel knows how to register; UI gates whether the user wants
+//! to fill any.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -623,7 +626,8 @@ fn resolve_credentials(
         "deepseek" => cfg.providers.deepseek,
         "gemini" => cfg.providers.gemini,
         "groq" => cfg.providers.groq,
-        "claude-cli" => cfg.providers.claude_cli,
+        // "claude-cli" arm removed — ADR-002 substrate § provider v61
+        // (2026-07-11): Claude subscription OAuth is not a provider.
         _ => None,
     };
     let mut api_key = entry

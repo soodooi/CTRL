@@ -16,7 +16,6 @@ pub mod cli;
 pub mod http_api;
 pub mod rest;
 
-pub use cli::claude_persistent::ClaudePersistentProvider;
 pub use cli::one_shot::OneShotCliProvider;
 pub use http_api::HttpApiProvider;
 pub use rest::{

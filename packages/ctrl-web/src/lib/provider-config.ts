@@ -9,8 +9,11 @@
 import { invoke } from './bridge';
 import type { ProviderManagedBy } from './irisy-prompts';
 
-/** Mirrors Rust `ProviderKind` (manifest.rs). */
-export type ProviderKind = 'cli_one_shot' | 'cli_claude_persistent' | 'http_api';
+/** Mirrors Rust `ProviderKind` (manifest.rs). `cli_claude_persistent`
+ *  removed (ADR-002 substrate § provider v61, 2026-07-11): Claude
+ *  subscription OAuth may not back an LLM provider per Anthropic's
+ *  usage policy. */
+export type ProviderKind = 'cli_one_shot' | 'http_api';
 
 /** Where the manifest came from. PWA Settings groups by source —
  *  `builtin` = system-shipped (Ollama and future CLI manifests),

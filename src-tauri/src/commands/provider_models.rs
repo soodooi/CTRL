@@ -97,8 +97,9 @@ pub async fn provider_list_models(
     let static_models = manifest.models.clone();
 
     let Some(endpoint) = manifest.endpoint.as_deref() else {
-        // CLI-only providers (claude_persistent / one_shot) have no
-        // HTTP endpoint — fall straight to static catalog.
+        // CLI-only providers (one_shot) have no HTTP endpoint — fall
+        // straight to static catalog. (ADR-002 substrate § provider
+        // v47, 2026-07-11: claude_persistent removed.)
         return Ok(static_models);
     };
 

@@ -86,7 +86,7 @@ const NARRATION_LINE_RE = new RegExp(
 /** Replace internal codenames with the brand-label equivalent (or
  *  delete when no good label exists). Case-insensitive whole-word.
  *
- *  claude-oauth / volc / ollama / vault_write etc. should never
+ *  anthropic-api / volc / ollama / vault_write etc. should never
  *  leak — they're implementation detail. Replacements pick the
  *  closest user-facing word. */
 const CODENAME_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -96,7 +96,8 @@ const CODENAME_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
   // surface in a chat bubble. Not when preceded by `-` (CLI flags like
   // `lsof -Pi` were getting mangled into `lsof -the assistant`).
   [/(?<!-)\bPi\b/g, 'the assistant'],
-  [/\bclaude-oauth\b/gi, 'Claude (OAuth)'],
+  // claude-oauth mapping removed (ADR-002 substrate § provider v61,
+  // 2026-07-11): the subscription provider no longer exists.
   [/\banthropic-api\b/gi, 'Anthropic API'],
   [/\bopenai-api\b/gi, 'OpenAI API'],
   [/\bvolc(?:-byok)?\b/gi, 'CTRL Cloud'],

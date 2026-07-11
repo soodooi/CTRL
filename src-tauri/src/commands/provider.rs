@@ -256,8 +256,9 @@ pub async fn provider_set_active(
     // provider into ~/.hermes/config.yaml so Hermes (Irisy's brain)
     // picks it up. Without this Irisy kept answering with the previous
     // model because Hermes reads its own config, not CTRL's SSOT. Only
-    // HTTP providers carry endpoint+key; CLI providers (claude-oauth)
-    // own their auth and skip this projection.
+    // HTTP providers carry endpoint+key; CLI providers own their auth
+    // and skip this projection (claude-oauth itself removed per
+    // ADR-002 substrate § provider v61, 2026-07-11).
     if let Some(manifest) = registry.manifest_for(&args.provider_id) {
         if matches!(
             manifest.kind,
@@ -383,15 +384,17 @@ mod tests {
 
     #[test]
     fn failover_event_from_recorded_keeps_transition_fields() {
+        // Ids updated per ADR-002 substrate § provider v61 (2026-07-11):
+        // claude-oauth retired; any manifest id exercises the mapping.
         let rec = RecordedFailover {
-            from: "claude-oauth".to_string(),
+            from: "anthropic-api".to_string(),
             to: "volc".to_string(),
-            reason: "oauth expired".to_string(),
+            reason: "401 unauthorized".to_string(),
             at_unix_ms: 1_700_000_000_000,
         };
         let ev = FailoverEvent::from_recorded(rec);
-        assert_eq!(ev.from, "claude-oauth");
+        assert_eq!(ev.from, "anthropic-api");
         assert_eq!(ev.to, "volc");
-        assert_eq!(ev.reason, "oauth expired");
+        assert_eq!(ev.reason, "401 unauthorized");
     }
 }
