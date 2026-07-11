@@ -77,12 +77,13 @@ impl Capability {
     }
 }
 
-/// One concrete provider — claude_persistent / one_shot_cli / http_api.
+/// One concrete provider — one_shot_cli / http_api / rest_* (ADR-002
+/// substrate § provider v61, 2026-07-11: claude_persistent removed).
 /// Holds its own credentials + connection pool; constructed once per
 /// boot from a `ProviderManifest` and held in `ProviderRegistry`.
 #[async_trait]
 pub trait Provider: Send + Sync {
-    /// Manifest id, e.g. "claude-oauth" / "anthropic-api" / "volc".
+    /// Manifest id, e.g. "anthropic-api" / "volc" / "ollama".
     fn id(&self) -> &str;
 
     /// Capabilities this provider satisfies. The registry consults this

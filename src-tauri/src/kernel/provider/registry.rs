@@ -33,15 +33,15 @@ use std::time::SystemTime;
 /// primary candidate IF there is at least one fallback available, so we
 /// don't re-pay the failed primary's spawn/connect cost on every Pi turn.
 /// 5 minutes balances "react fast when user fixes auth" vs "don't waste
-/// 300 ms / 401 on every turn during a Claude OAuth outage". ADR-002
+/// 300 ms / 401 on every turn during a provider auth outage". ADR-002
 /// substrate § provider v2 §3.5 M2 amendment 2026-06-04.
 const PROVIDER_COOLDOWN_SECS: u64 = 300;
 
 use serde::{Deserialize, Serialize};
 
 use super::adapter::{
-    ClaudePersistentProvider, HttpApiProvider, OneShotCliProvider, RestAnthropicProvider,
-    RestGoogleProvider, RestOllamaProvider, RestOpenaiProvider,
+    HttpApiProvider, OneShotCliProvider, RestAnthropicProvider, RestGoogleProvider,
+    RestOllamaProvider, RestOpenaiProvider,
 };
 use super::manifest::{
     default_active_state_path, default_user_providers_dir, legacy_config_path, parse_file,
@@ -58,8 +58,8 @@ pub enum ProviderManagedBy {
     /// CTRL pays — credential owned by CTRL secrets pipeline (today the
     /// `volc` builtin is the occupier).
     Ctrl,
-    /// User pays — credential lives in the user keychain or the user
-    /// already owns the CLI subscription (claude-oauth etc.).
+    /// User pays — credential lives in the user keychain (BYOK) or the
+    /// user drives their own local CLI.
     User,
 }
 
@@ -182,9 +182,9 @@ pub struct ProviderRegistry {
     /// consulted via `is_in_cooldown` so subsequent Pi turns skip a
     /// known-bad primary while the cooldown window holds. Cleared on
     /// observed success via `clear_failure`. ADR-002 substrate §
-    /// provider v2 §3.5 M2 amendment 2026-06-04 — avoids re-paying the
-    /// ~300 ms claude CLI spawn (or REST 401) every turn during a
-    /// Claude OAuth outage.
+    /// provider v2 §3.5 M2 amendment 2026-06-04 (wording updated per
+    /// ADR-002 substrate § provider v61, 2026-07-11) — avoids re-paying
+    /// a failed REST 401 every turn during a provider auth outage.
     provider_health: RwLock<BTreeMap<String, HealthState>>,
 }
 
@@ -304,18 +304,17 @@ impl ProviderRegistry {
             .or_insert_with(|| CTRL_FALLBACK_PROVIDER_ID.to_string());
     }
 
-    /// First-boot single-CLI auto-adopt. ADR-002 substrate § provider
-    /// v2 §3.6: when no `IrisyPrimary` is configured (fresh install OR
-    /// explicit unset by user delete), if a known user CLI is detected
-    /// on PATH we silently bind it as the primary so the user does not
-    /// have to open Settings just to get their own Claude OAuth wired
-    /// up. The device-first fallback (`ollama`) seeded above already
-    /// handles the no-CLI case.
+    /// First-boot auto-adopt. ADR-002 substrate § provider v3 §3.6
+    /// (amended v47, 2026-07-11 — CLI-subscription fallback removed):
+    /// when no `IrisyPrimary` is configured (fresh install OR explicit
+    /// unset by user delete), scan the keychain for a BYOK REST
+    /// credential and silently bind the first match as primary so the
+    /// user does not have to open Settings. The device-first fallback
+    /// (`ollama`) seeded above already handles the no-key case.
     ///
-    /// Only fires when the chosen manifest is actually `ready` — if
-    /// `claude` is on PATH but `claude-oauth`'s adapter failed to
-    /// instantiate (binary path lookup quirk etc.), we leave the slot
-    /// unset and let the Settings UI surface the issue.
+    /// Only fires when the chosen manifest is actually `ready` —
+    /// otherwise we leave the slot unset and let the Settings UI
+    /// surface the issue.
     fn first_boot_auto_adopt(&self) {
         {
             let active = self.active.read().unwrap();
@@ -642,7 +641,7 @@ impl ProviderRegistry {
         };
         let m = &loaded.manifest;
         if m.kind != ProviderKind::HttpApi {
-            // CLI providers (claude-oauth) own their auth; don't inject.
+            // CLI providers own their auth; don't inject.
             return env;
         }
         let key = match resolve_auth(m) {
@@ -732,17 +731,15 @@ impl ProviderRegistry {
     /// Build the resolution chain for one consumer (primary + ordered
     /// fallbacks).
     ///
-    /// ADR-002 substrate § provider v3 amendment 2026-06-04 (bao
-    /// directive: claude cli is unreliable, switch to BYOK REST API as
-    /// primary, move CLI providers to fallback):
+    /// ADR-002 substrate § provider v3 amendment 2026-06-04, amended
+    /// v61 (2026-07-11 — the CLI-subscription fallback tier was
+    /// removed with claude-oauth):
     /// - IrisyPrimary: primary = user-configured id (default BYOK REST
-    ///   if any key exists; else first detected CLI). Fallbacks =
-    ///   [detected CLI manifests in priority order, then CTRL-managed
-    ///   fallback]. CLI providers thus serve as backup, not as primary
-    ///   default, so a Claude OAuth circuit-breaker (Issue #36489)
-    ///   never blocks first-message latency.
-    /// - IrisyFallback: primary = configured id (defaults "volc"), no
-    ///   further fallback (fallback of the fallback would loop).
+    ///   if any key exists). Fallbacks = [device-first default
+    ///   (`ollama`)].
+    /// - IrisyFallback: primary = configured id (defaults seeded
+    ///   fallback), no further fallback (fallback of the fallback
+    ///   would loop).
     /// - Custom(_): same shape as IrisyPrimary.
     pub fn route_chain(&self, consumer: &Consumer) -> RouteChain {
         let active = self.active.read().unwrap();
@@ -759,29 +756,12 @@ impl ProviderRegistry {
             Consumer::IrisyFallback => Vec::new(),
             _ => {
                 let mut chain: Vec<String> = Vec::new();
-                // 1) Detected CLI manifests as fallbacks (v3 amendment).
-                //    Skip the one already bound as primary so we don't
-                //    retry the same handle twice in a row.
-                for cli_manifest_id in super::detect::CLI_FALLBACK_MANIFEST_ORDER {
-                    let id = cli_manifest_id.to_string();
-                    if Some(&id) == primary.as_ref() {
-                        continue;
-                    }
-                    // Only push when the manifest is actually loaded
-                    // (`provider.is_some()` proxied via `get`). An
-                    // unloaded manifest would just consume a fallback
-                    // slot with no chance of answering.
-                    if self.get(&id).is_some() {
-                        chain.push(id);
-                    }
-                }
-                // 2) Device-first default fallback (ollama today; CF
-                //    Workers AI via ctrl-cloud proxy once the secrets
-                //    pipeline ships). Dedupe in case a CLI fallback above
-                //    shared the id (defensive forward-compat).
-                if primary.as_deref() != Some(fallback_id.as_str())
-                    && !chain.contains(&fallback_id)
-                {
+                // Device-first default fallback (ollama today; CF
+                // Workers AI via ctrl-cloud proxy once the secrets
+                // pipeline ships). The CLI-subscription fallback tier
+                // that used to precede this was removed (ADR-002
+                // § provider v61, 2026-07-11 — claude-oauth retired).
+                if primary.as_deref() != Some(fallback_id.as_str()) {
                     chain.push(fallback_id);
                 }
                 chain
@@ -1014,10 +994,8 @@ fn instantiate(manifest: Arc<ProviderManifest>) -> Result<ProviderHandle, Provid
             let provider = OneShotCliProvider::from_manifest(manifest, auth_secret)?;
             Ok(Arc::new(provider))
         }
-        ProviderKind::CliClaudePersistent => {
-            let provider = ClaudePersistentProvider::from_manifest(manifest)?;
-            Ok(Arc::new(provider))
-        }
+        // CliClaudePersistent arm removed — ADR-002 substrate § provider
+        // v47 (2026-07-11): Claude subscription OAuth is not a provider.
         // ADR-002 substrate § provider v2 §3.2 — verbatim VMark REST kinds.
         ProviderKind::RestAnthropic => {
             let provider = RestAnthropicProvider::from_manifest(manifest, auth_secret)?;
@@ -1173,8 +1151,8 @@ struct LegacyProviders {
     gemini: Option<LegacyEntry>,
     #[serde(default)]
     groq: Option<LegacyEntry>,
-    #[serde(default, alias = "claude-code", alias = "claude_code")]
-    claude_cli: Option<LegacyEntry>,
+    // claude_cli / claude-code field removed per ADR-002 substrate § provider v61 (2026-07-11)
+    // — a stale key in an old config.toml is silently ignored at parse time.
     #[serde(default)]
     ollama: Option<LegacyEntry>,
     #[serde(default, alias = "kimi-anthropic")]
@@ -1220,14 +1198,12 @@ fn apply_legacy_config(registry: &ProviderRegistry, legacy: &LegacyConfig) {
         ("anthropic-api", legacy.providers.anthropic.as_ref()),
         ("deepseek", legacy.providers.deepseek.as_ref()),
         ("kimi", legacy.providers.kimi.as_ref()),
-        ("claude-oauth", legacy.providers.claude_cli.as_ref()),
+        // ("claude-oauth", claude_cli) bridge removed — ADR-002
+        // substrate § provider v61 (2026-07-11).
     ];
     for (manifest_id, legacy_entry) in mappings {
         let Some(entry) = legacy_entry else { continue };
-        // claude-oauth doesn't need an api_key from the legacy entry —
-        // the OAuth lives in the CLI's own keychain. Still apply the
-        // override so the user's `default_model` is honored if set.
-        if !entry.has_key() && *manifest_id != "claude-oauth" {
+        if !entry.has_key() {
             continue;
         }
         let mut providers = registry.providers.write().unwrap();
@@ -1341,11 +1317,11 @@ mod tests {
         let reg = empty_registry();
         assert!(reg.last_failover_event().is_none());
 
-        reg.record_failover("claude-oauth", "volc", "oauth expired");
+        reg.record_failover("anthropic-api", "volc", "401 unauthorized");
         let ev = reg.last_failover_event().expect("event recorded");
-        assert_eq!(ev.from, "claude-oauth");
+        assert_eq!(ev.from, "anthropic-api");
         assert_eq!(ev.to, "volc");
-        assert_eq!(ev.reason, "oauth expired");
+        assert_eq!(ev.reason, "401 unauthorized");
 
         // Latest transition wins (no history kept).
         reg.record_failover("volc", "ollama", "rate limited");
@@ -1357,14 +1333,14 @@ mod tests {
     #[test]
     fn cooldown_marks_then_clears_and_unknown_is_never_cooling() {
         let reg = empty_registry();
-        assert!(!reg.is_in_cooldown("claude-oauth"));
+        assert!(!reg.is_in_cooldown("anthropic-api"));
 
-        reg.mark_failure("claude-oauth", "401 unauthorized");
+        reg.mark_failure("anthropic-api", "401 unauthorized");
         // Just-marked failure is within the cooldown window immediately.
-        assert!(reg.is_in_cooldown("claude-oauth"));
+        assert!(reg.is_in_cooldown("anthropic-api"));
 
-        reg.clear_failure("claude-oauth");
-        assert!(!reg.is_in_cooldown("claude-oauth"));
+        reg.clear_failure("anthropic-api");
+        assert!(!reg.is_in_cooldown("anthropic-api"));
 
         // A provider that never failed is never in cooldown.
         assert!(!reg.is_in_cooldown("never-seen"));

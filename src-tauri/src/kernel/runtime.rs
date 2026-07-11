@@ -68,11 +68,11 @@ impl KernelRuntime {
         let event_store =
             EventStore::open(&db_path).map_err(|e| KernelBootError::EventStoreOpenFailed(e.to_string()))?;
 
-        // ADR-002 substrate § provider v2 provider sub-system. Loads 6 builtin presets
-        // (claude-oauth / anthropic-api / openai-api / volc / kimi /
-        // deepseek) + scans ~/.ctrl/providers/ for user-installed +
-        // bridges legacy ~/.ctrl/config.toml so pre-PR users' keys
-        // keep working.
+        // ADR-002 substrate § provider v2 provider sub-system (builtin
+        // list slimmed to `ollama` 2026-06-05; claude-oauth removed per
+        // § provider v61, 2026-07-11). Loads builtin presets + scans
+        // ~/.ctrl/providers/ for user-installed + bridges legacy
+        // ~/.ctrl/config.toml so pre-PR users' keys keep working.
         let provider_registry = Arc::new(ProviderRegistry::load());
 
         // NOTE: HTTP endpoint (Pi-facing /text-chat + /tool/<name>) was

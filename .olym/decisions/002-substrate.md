@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 60
+version: 61
 status: accepted
-last_updated: 2026-07-07
+last_updated: 2026-07-11
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003, note: "v27 reframed: BYO-CLI driver brain — user-chosen local CLI (Claude Code etc.); CTRL never spawns/supervises a brain. Prior hermes-ACP/Pi/opencode-as-brain content retired, kept in changelog as provenance." }
@@ -23,6 +23,7 @@ sections:
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
   - { id: unified-operation-interface, source: new-2026-06-19, note: "§14 — describe/query/produce: one uniform interface over all content-type feature points (md/html/table/pdf/connector/…) projected on :17873 gate; type layer via describe, read(query)≠write(produce-through-gate); query = kernel service over QuerySource, feature packs + workflows are clients; smart-table = first impl. Research: GraphQL/Plan9/agentic-AI paper." }
 changelog:
+  - v61 2026-07-11: **§3 provider — `claude-oauth` subscription provider REMOVED for Anthropic usage-policy compliance (bao 2026-07-11「provider去掉claude订阅,不符合claude的政策」).** Routing chat through the `claude` CLI billed against a Claude Pro/Max subscription violates Anthropic's ToS (subscription OAuth is for Claude apps, not a backend LLM provider — already flagged in vault log 2026-06-11「Anthropic 2026 ToS 禁第三方用订阅」). Removed end-to-end: `adapter/cli/claude_persistent.rs` (~600 LOC bespoke adapter) deleted; `ProviderKind::CliClaudePersistent` variant deleted (a stale user manifest now fails parse with a logged warning — regression test added); detect.rs first-boot CLI fallback tier + `CLI_FALLBACK_MANIFEST_ORDER` deleted (first-boot auto-adopt = BYOK REST keychain scan only; route_chain fallback = seeded `ollama` only); legacy `~/.ctrl/config.toml` `claude_cli`/`claude-code` bridge deleted (stale keys silently ignored); PWA `ProviderKind` union + irisy-render-filter codename map + label examples updated. Anthropic access stays **BYOK API key only** (`anthropic-api` manifest, ADR-006 § byok-no-claude unchanged). NOT affected: BYO-CLI driver projection (ADR-001 spine — user's own Claude Code discovering projected assets is Claude Code used as Claude Code) and `commands/skills.rs` agentic spawn (user's own CLI doing agentic work; its ANTHROPIC_API_KEY env-strip is retained but reframed — CTRL never selects the CLI's billing, the CLI uses whatever auth the user configured in it). §3.4 example manifest / §3.5 state examples / §3.9 role-picker prose / Future-work bullets carry strikethrough-style amendment notes rather than history rewrites.
   - v60 2026-07-07: **§provider (+ §composition §7.4 registry, §crypto relay) — cloud-side infra topology for pack management / feedback / sharing decided; AWS scoped to ONE box (bao 2026-07-07「落 vault 基建文档 + ADR-002 §provider 修订」).** bao asked what servers pack management + feedback + sharing need. Decision: **stay on the existing Cloudflare stack (Workers + D1 + R2) for nearly everything; AWS is scoped to a single small box — a China-reachable egress proxy** that CF Workers' geography can't do (the ctrl-stock-cn deep-data gap: `qt.gtimg.cn` / EastMoney `push2his`). Rationale is moat-aligned, not industry-default: reflexively moving the backend to AWS forks the existing CF stack, loses R2's **free egress** (S3+CloudFront charges ~$90/TB), and adds servers to manage — wrong for a local-first, cloud-is-augmentation product (memory `feedback-jump-to-industry-default-not-ctrl-moat`). Component map: **pack registry/search** = Registry Worker + D1 (§7.4 already names Discover registry-pull; this pins the backend); **pack distribution** = R2 (manifest + bundled service code, egress free); **feedback collection** = Feedback Worker + R2 (screenshot/log blobs) + D1 + GitHub API, opt-in with a review gate, and — CTRL-unique — attaches the **gate audit trail** (`event-store.db` `audit_calls`, ground truth vs the brain's narration) so a report carries what actually happened (reuses existing infra); **user sharing of HTML/artifacts** = R2 + Worker short-link, private-by-default revocable token, recipient needs no account/no CTRL install (honors no-account philosophy). The **one AWS piece** = 1× Lightsail nano ($5/mo incl 1TB transfer, Tokyo ap-northeast-1 or HK; NOT EC2 — EC2 egress ~$90/TB) running a token-authed thin HTTP proxy whitelisting CN financial hosts. **Honest gap**: Tokyo/HK→mainland reachability is empirical — probe a real box before committing a region, don't guess (the globally-reachable price/volume + indicator layer via Yahoo/EODHD already works; this box only backfills 换手/资金流/龙虎榜 depth). Locks unchanged (local-is-truth / no-account / secret-not-in-LLM / edge-first / cloud = augmentation). Governing detail + cost table + sharing/feedback flows: `vault/ctrl/infra-plan.md` (+ viz `doc/design/ctrl-infra-plan.html`). Pricing verified 2026-07 (Lightsail nano $5/mo; R2 egress $0; Workers/D1/R2 free tiers). No code shipped — this is the topology decision; slices (registry / share / feedback / CN-proxy) follow.
   - v59 2026-07-07: **§brain — bundled hermes pin upgraded 0.16.0 → 0.18.0 + existing installs now auto-upgrade (bao 2026-07-07「干这三步，升到 0.18.0」).** CTRL "rides hermes upgrades" (v28/v38), but the pin had sat at 0.16.0 (2026-06-06) while upstream shipped 0.17 ("Reach") + 0.18 ("Judgment", 2026-07-01) — notable for CTRL: **completion contracts** (the brain verifies its own work against evidence, not vibes — directly targets Irisy fabricating outcomes), `/learn` auto-skills, no-cron **Automation Blueprints** (maps to the pack cron line). PyPI-verified 2026-07-07: 0.18 `requires-python` still `<3.14,>=3.11` (HERMES_PYTHON=3.12 holds), and `hermes-acp --help/--check` show the ACP stdio interface CTRL embeds is unchanged (no breaking CLI/`/v1`/dashboard change). **Three-step landing**: (1) `HERMES_VERSION`/`HERMES_ACP_SPEC`/`HERMES_ONESHOT_SPEC` bumped to a single-source-of-truth const + `hermes_specs_match_version` test guards drift. (2) **Existing installs never auto-upgraded** — `install(force=false)` returns the cached manifest and both `agent_launcher` + `acp_client` replay the persisted `entry_cmd` (which bakes `==0.16.0`), so a pin bump reached only NEW installs. New `reconcile_hermes_pin()` (mirrors builtin-pack `builtin_is_newer` re-seed) runs at boot in `kernel_supervisor`: manifest version != pin → force-reinstall → manifest `entry_cmd`+`version` rewritten. (3) Smoke on the real machine: `uvx --python 3.12 --with mcp>=1.24 --from hermes-agent[acp]==0.18.0 hermes-acp --check` → `Hermes ACP check OK`; `hermes --version` → `v0.18.0 (2026.7.1)`. **Live proof**: `tauri dev` rebuilt+rebooted the kernel on the edit and reconcile ran for real — `~/.ctrl/agents/hermes/manifest.json` re-seeded 0.16.0 → 0.18.0 (install_at matched the reboot). Verified: cargo `--lib` 442 pass (+ the sync-guard test). **(4) Dashboard self-heal + a latent bug it exposed** (bao 2026-07-07「正的，加 dashboard 循环自愈」): a prior boot's DETACHED `hermes dashboard` (:17890) outlives kernel reboots and squats the port, so a just-upgraded dashboard couldn't bind and the old version served forever. `reconcile_hermes_pin` now returns whether it upgraded; on upgrade the supervisor calls `free_dashboard_port(17890)` (best-effort cross-platform listener-kill: `lsof`/`netstat`, only on a real version change) before relaunching. Live-testing this (arm manifest→0.16 → `tauri dev` reboot → watch) surfaced a PRE-EXISTING latent bug: the dashboard command was built from a hardcoded `entry[1..3]` that assumed `entry_cmd = [uvx, --from, spec, hermes-acp]`, but `install_via_uvx` had since injected `--python/--with` ahead of `--from`, so the slice dropped `--from <spec>` and uvx couldn't resolve hermes — masked all along ONLY because the stale squatter meant a fresh dashboard never had to launch. Fixed to reuse the full uvx prefix (`entry[1..len-1]`, i.e. everything but the trailing `hermes-acp`). **Live-verified end-to-end on the real machine**: reconcile re-seeded 0.16→0.18, `free_dashboard_port` evicted the stale listener, and the kernel (`target/debug/ctrl`) relaunched the dashboard via `uvx …--from hermes-agent[acp]==0.18.0 hermes dashboard --port 17890` which bound the port — one hermes process left, spec `==0.18.0`, zero 0.16 leftovers. Locks unchanged (hermes stays the bundled default, ADR-005 §8.7 selectable engine unaffected).
   - v58 2026-07-06: **§7 pack-code — kline SOLVED on this host: Yahoo Finance is the reachable primary source; full per-stock analysis proven end-to-end (bao 2026-07-06 confirmed this machine can't open EastMoney's quote/kline hosts).** v57 established push2his is unreachable here; the fix is a source that IS reachable. The kernel's `market_quote` already proves Yahoo Finance (`query1/query2.finance.yahoo.com`) works from this network, and Yahoo's chart API returns full daily OHLCV for A-shares via the `.SS`/`.SZ` suffix — so `stock_kline`/`stock_quote` now try **Yahoo FIRST** (adjclose-preferred close for indicators, ×2 mirror hosts, 9s), then akshare (qfq), then EastMoney direct — whichever answers first. This also fixes the latency: Yahoo returns in ~1.4s where akshare's own retries against the blocked hosts hung the turn for minutes. **Ledger + answer verified end-to-end on the real machine**: `stock-cn_stock_kline 000858` → `source: yahoo`, 6 real bars (2026-07-06 close 73.76 +0.75%) in 1.36s; then Irisy (`/debug/irisy/turn`) `skill_read stock-analysis-cn` → `gate_tool_search` → `gate_tool_call stock-cn_stock_quote` + `stock_kline` → computed MA5/10/20/60 (73.80/73.92/76.25/87.14), RSI(14)=31.3, MACD, 量比 → a data-grounded decision (中线偏空 + short-term oversold bounce window, buy triggers + stop 71.50) and wrote an HTML report to the vault — every number sourced, none fabricated. So the 规范 now BITES fully: real per-stock A-share buy/sell analysis works on this host. `_yahoo_kline`/`_yahoo_quote` are live-verified from the machine (not just offline-parsed, unlike the EastMoney path). Locks unchanged (source order is pack config; secret-not-in-LLM holds — Yahoo is keyless). Service in the user's vault (committed there).
@@ -386,6 +387,8 @@ v1.1 promotion candidates (mcp-local until 2nd consumer): `process.spawn`, `netw
 
 ## §3 Provider router — role-aware routing + PATH detect + introspection (NEW v1)
 
+> **v61 amendment (2026-07-11): `claude-oauth` (Claude subscription via `claude` CLI) is REMOVED as a provider** — Anthropic's usage policy forbids backing an LLM provider with Claude Pro/Max subscription OAuth. Anthropic = BYOK API key only (`anthropic-api`). Every `claude-oauth` / `cli_claude_persistent` reference below is historical. BYO-CLI driver projection (ADR-001 spine) is unaffected — that is the user's own Claude Code being Claude Code, not a provider.
+
 **Why this section exists**: bao 2026-05-31 — "Irisy 不知道自己接的是什么 — 你在修补还是设计系统?". Earlier scattered `brain_config.rs` / `llm_port.rs` / `llm_adapters/*` retired; single sub-system below.
 
 ### §3.1 Module location
@@ -406,7 +409,7 @@ pub trait Provider: Send + Sync {
 
 Adapters:
 - `cli/one_shot.rs` (codex / gemini, manifest-driven, ~200 LOC)
-- `cli/claude_persistent.rs` (Goose-style `OnceCell<Mutex<CliProcess>>` + NDJSON, ~600 LOC — bespoke because `claude` doesn't fit generic spawner)
+- ~~`cli/claude_persistent.rs`~~ REMOVED v61 (2026-07-11, Anthropic policy — see §3 amendment note)
 - `rest/http_api.rs` (openai-shape, manifest-driven, ~400 LOC)
 - `rest/{anthropic,openai,google,ollama}.rs` (4 thin wrappers — ported verbatim from VMark `ai_provider/rest_providers.rs`, ISC)
 
@@ -419,18 +422,18 @@ Same trap fixed in 3 spawn sites (`claude_persistent.rs`, `brain_supervisor.rs`,
 ### §3.4 Manifest schema (TOML, drop-in extensible)
 
 ```toml
-id = "claude-oauth"
-label = "Claude (OAuth subscription)"
-kind = "cli_claude_persistent"   # cli_one_shot | cli_claude_persistent | rest_openai | rest_anthropic
-binary = "claude"                # CLI only
+id = "anthropic-api"
+label = "Anthropic Claude (BYOK)"
+kind = "http_api"                # cli_one_shot | http_api | rest_openai | rest_anthropic (cli_claude_persistent removed v61)
+binary = "codex"                 # CLI only
 endpoint = "https://api..."      # REST only
-auth = "none"                    # none | keychain:<key> | env:<var> | config:<key>
-env_strip = ["ANTHROPIC_API_KEY"]
-models = ["sonnet", "opus", "haiku"]
+auth = "keychain:anthropic"      # none | keychain:<key> | env:<var> | config:<key>
+env_strip = []
+models = ["claude-sonnet-4-6"]
 capabilities = ["text.chat"]
 ```
 
-6 builtin presets ship Day-1: `claude-oauth`, `anthropic-api`, `openai-api`, `volc`, `kimi`, `deepseek`. User additions go to `~/.ctrl/providers/<id>.toml`. CN Anthropic-shape endpoints (api.moonshot.cn/anthropic, api.deepseek.com/anthropic) supported via preset.
+6 builtin presets shipped Day-1: ~~`claude-oauth`~~ (removed v61), `anthropic-api`, `openai-api`, `volc`, `kimi`, `deepseek`. (bao 2026-06-05 later slimmed builtins to `ollama` only; users add BYOK providers via Settings.) User additions go to `~/.ctrl/providers/<id>.toml`. CN Anthropic-shape endpoints (api.moonshot.cn/anthropic, api.deepseek.com/anthropic) supported via preset.
 
 ### §3.5 Role routing — consumer-aware (NEW, replaces single `text.chat` bucket) — v2 2-role model (PARTIALLY RETRACTED in v9)
 
@@ -461,7 +464,7 @@ Persisted at `~/.ctrl/state/active-providers.json` (v2 schema):
 ```json
 {
   "roles": {
-    "irisy.primary":  "claude-oauth",
+    "irisy.primary":  "anthropic-api",
     "irisy.fallback": "volc"
   }
 }
@@ -501,7 +504,7 @@ Tauri command `brain_status()` (health view — NOT a routing-truth view; for ro
 {
   "engine": { "id": "Pi", "version": "0.73.1", "healthy": true, "last_token_ms": 142 },
   "providers": {
-    "irisy.primary":  { "id": "claude-oauth", "label": "Claude subscription", "binary": "/opt/homebrew/bin/claude", "healthy": true, "managed_by": "user" },
+    "irisy.primary":  { "id": "anthropic-api", "label": "Anthropic API", "endpoint": "https://api.anthropic.com", "healthy": true, "managed_by": "user" },
     "irisy.fallback": { "id": "volc",         "label": "CTRL Cloud",          "endpoint": "<ctrl-managed>",         "healthy": true, "managed_by": "ctrl" }
   },
   "last_failover": null
@@ -512,7 +515,7 @@ Tauri command `get_active_providers()` (v8 — routing truth, single SSOT projec
 ```json
 {
   "roles": {
-    "irisy.primary":  { "id": "claude-oauth", "label": "Claude subscription", "model_id": "claude-sonnet-4-20250514", "model_label": "Claude Sonnet 4", "managed_by": "user" },
+    "irisy.primary":  { "id": "anthropic-api", "label": "Anthropic API", "model_id": "claude-sonnet-4-20250514", "model_label": "Claude Sonnet 4", "managed_by": "user" },
     "irisy.fallback": { "id": "volc",         "label": "CTRL Cloud",          "model_id": "doubao-1-5-pro-32k-250115", "model_label": "Doubao Pro 32K", "managed_by": "ctrl" }
   },
   "override": null
@@ -526,7 +529,7 @@ Tauri command `get_active_providers()` (v8 — routing truth, single SSOT projec
 **Routing-truth read rules (v8 lock, supersedes earlier-draft v8)**:
 - PWA `ChatHeaderControls` calls `invoke('get_active_providers')` on mount + subscribes Tauri events `active-providers-changed` (SSOT mutation) + `provider:routing-override` / `provider:routing-restored` (transient failover). Cold-render = SSOT projection. Failover-render = overlay ⚠ badge with `override.active` label. **Never calls** `Pi.getState()` / `getAvailableModels()[0]` / reads `brain_state` for chip display.
 - ctrl-pi-bridge `runtimeTruthBlock` HTTP-fetches kernel `/api/active-providers` (mirror of `get_active_providers` Tauri command, same shape) at extension load + on SSOT-change webhook from kernel. **Never reads** `process.env.PI_PROVIDER` / `PI_MODEL` (both retired in §1.2).
-- Irisy system prompt v5 (ADR-005 § persona) injects `<brain_state>` block built from `get_active_providers()` output. Irisy answers "你用什么模型" with `roles["irisy.primary"].label + model_label` ("Claude 订阅 · Sonnet 4") — never RPC codename, never `Pi.getState().model.id`. During override, Irisy uses `roles[override.active].label` instead + says "Claude 暂时连不上, 我切到 CTRL Cloud 了" using the typed `provider:routing-override` payload.
+- Irisy system prompt v5 (ADR-005 § persona) injects `<brain_state>` block built from `get_active_providers()` output. Irisy answers "你用什么模型" with `roles["irisy.primary"].label + model_label` ("Anthropic API · Sonnet 4") — never RPC codename, never `Pi.getState().model.id`. During override, Irisy uses `roles[override.active].label` instead + says "Claude 暂时连不上, 我切到 CTRL Cloud 了" using the typed `provider:routing-override` payload.
 
 ### §3.8 Retirements
 
@@ -601,7 +604,7 @@ Switching across chips while the workspace is open just switches tabs (no collap
 
 **Settings — provider picker**
 
-`IRISY_ROLES` list extended to 3 rows: `irisy.primary` / `irisy.fallback` / `coding.primary`. The existing `ProviderRoleRow` component handles the new row unchanged because `providerSetActive({role, provider_id})` already accepts any role string. Users get a single Providers tab in Settings where they bind 3 roles to 3 (possibly different) providers — e.g. Volc → Irisy primary, CTRL Cloud → Irisy fallback, Claude (BYOK or OAuth) → Coding primary.
+`IRISY_ROLES` list extended to 3 rows: `irisy.primary` / `irisy.fallback` / `coding.primary`. The existing `ProviderRoleRow` component handles the new row unchanged because `providerSetActive({role, provider_id})` already accepts any role string. Users get a single Providers tab in Settings where they bind 3 roles to 3 (possibly different) providers — e.g. Volc → Irisy primary, CTRL Cloud → Irisy fallback, Claude (BYOK API key) → Coding primary.
 
 **Why on-demand process (not RPC)**
 
@@ -1194,11 +1197,11 @@ User can opt to "preserve all" in Settings (off by default — vault grows unbou
 
 - `kernel/provider/{trait.rs, registry.rs, detect.rs, path_resolver.rs}` exist with **2-role** table (irisy.primary + irisy.fallback) + RouteChain + auto-fallback (v2)
 - 4 REST adapters ported from VMark (`rest/{anthropic,openai,google,ollama}.rs`), ISC attribution
-- **7 builtin manifests** (v2): `claude-oauth`, `anthropic-api`, `openai-api`, `volc` (CTRL-managed fallback), `volc-byok` (user-elected), `kimi`, `deepseek` (+ implicit `ollama` if detected)
+- **7 builtin manifests** (v2, ~~`claude-oauth`~~ removed v61): `anthropic-api`, `openai-api`, `volc` (CTRL-managed fallback), `volc-byok` (user-elected), `kimi`, `deepseek` (+ implicit `ollama` if detected)
 - Tauri commands: `provider_detect` / `provider_set_active(role, id)` / `provider_active(role)` / `brain_status` (returns `managed_by` field per role, v2)
 - `/text-chat?consumer=<role>` honors 2-role routing; auto-fallback chains on error, emits `provider:failover { from, to, reason }` event
 - First-boot: irisy.primary = highest-priority detected CLI silently + Irisy toast; irisy.fallback = `volc` (CTRL-managed) always active without user action
-- Irisy prompt v5 wired (depends on ADR-005 § persona implementation) — brand labels only ("Claude 订阅" / "CTRL Cloud"), never codenames
+- Irisy prompt v5 wired (depends on ADR-005 § persona implementation) — brand labels only ("Anthropic API" / "CTRL Cloud"), never codenames
 - `/settings/providers` page rendered inside Settings workspace route (ADR-003 § nav-keyboard v2) — **2 role sections** × radio with Available/Not-found + [CTRL-managed] badges + REST API (BYOK) config below
 
 ## §13 Capability faces — 3-face SSOT (NEW v19 — 2026-06-09)

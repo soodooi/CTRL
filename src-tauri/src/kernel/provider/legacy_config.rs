@@ -66,14 +66,12 @@ pub struct ProvidersConfig {
     /// (~50ms on Llama 3.3 70B).
     #[serde(default)]
     pub groq: Option<ProviderEntry>,
-    /// `claude` CLI subprocess provider — uses the user's Claude
-    /// subscription via the CLI's stored OAuth token. `api_key` is
-    /// IGNORED for this entry (CLI manages its own auth); `base_url`
-    /// is IGNORED (binary path is resolved from PATH at boot). The
-    /// adapter loads iff the binary is present AND the user opted in
-    /// via this entry being non-None.
-    #[serde(default, alias = "claude-code", alias = "claude_code")]
-    pub claude_cli: Option<ProviderEntry>,
+    // The `claude_cli` / `claude-code` subscription entry was removed —
+    // a stale key in an old config.toml is silently ignored at parse
+    // time (serde skips unknown fields). Claude subscription OAuth may
+    // not back an LLM provider per Anthropic's usage policy (ADR-002
+    // substrate § provider v61, 2026-07-11 + ADR-006 § byok-no-claude).
+    // BYOK Anthropic lives under `anthropic` above.
 }
 
 #[derive(Debug, Deserialize, Clone)]

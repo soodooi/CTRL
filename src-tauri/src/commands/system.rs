@@ -54,7 +54,7 @@ pub struct KernelStatus {
     pub overall: &'static str,
     pub warnings: Vec<String>,
     /// Brain engine label. Surfaces the currently-active IrisyPrimary
-    /// provider's display label (e.g. "Claude" when claude-oauth is
+    /// provider's display label (e.g. "Volcano Ark" when volc-byok is
     /// active). Falls back to "pi" when no provider is configured —
     /// Pi is the agent runtime; the label here is the provider behind
     /// Pi's text-chat calls so the InfraBar ENGINE chip tells the user
@@ -64,7 +64,7 @@ pub struct KernelStatus {
 
 /// Compact form of a provider's display label for chips/status bars.
 /// Strips a trailing parenthetical (` (...)`) — e.g.
-/// `"Claude (OAuth subscription)"` → `"Claude"`. Leaves short labels
+/// `"Volcano Ark (Doubao)"` → `"Volcano Ark"`. Leaves short labels
 /// unchanged. Used by both `kernel_status` and `irisy_init` so the
 /// InfraBar ENGINE chip and the irisy boot log surface the same brand.
 pub fn short_label(label: &str) -> String {

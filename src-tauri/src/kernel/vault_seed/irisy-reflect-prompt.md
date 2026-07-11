@@ -18,7 +18,7 @@ You will receive:
 - `recent_turns`: the last 4-8 chat messages (user + assistant +
   tool-result), oldest first.
 - `active_provider_id`: the provider id that served the turns (e.g.
-  `claude-oauth`, `volc`).
+  `anthropic-api`, `volc`).
 - `existing_playbook`: the current `vault/irisy/playbook.md` body, so
   you don't repeat a tip that's already filed.
 

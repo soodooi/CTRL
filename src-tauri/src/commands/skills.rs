@@ -158,10 +158,11 @@ pub async fn run_skill(
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // Skill mcps need a CLI that can use tools + write files. Claude Code
-    // is the verified one. Resolve the binary path the same way the
-    // provider sub-system does — `claude-oauth` preset's manifest exposes
-    // the `claude` binary (ADR-002 substrate § provider v2). Fall back to plain `claude` on
-    // PATH if the preset isn't installed.
+    // is the verified one — this is the BYO-CLI surface (the user's own
+    // installed CLI doing agentic work), NOT an LLM provider; the
+    // claude-oauth provider preset was removed (ADR-002 substrate
+    // § provider v61, 2026-07-11). Resolve the `claude` binary from
+    // PATH directly.
     // Resolve `claude` binary path inline (no external crate dep). Splits
     // $PATH and returns the first matching executable, or falls back to the
     // bare name so std::process::Command's own PATH lookup still has a chance.
@@ -236,8 +237,11 @@ pub async fn run_skill(
 }
 
 /// Spawn the active brain CLI in agentic mode inside `workdir`: streaming JSON
-/// mode, auto-accept file edits, a multi-turn budget, subscription OAuth (we
-/// drop ANTHROPIC_API_KEY so it bills the plan, not the API account). Each
+/// mode, auto-accept file edits, a multi-turn budget. We drop
+/// ANTHROPIC_API_KEY so a key injected for CTRL's HTTP providers never
+/// leaks into the external CLI — the CLI uses whatever auth the user
+/// configured in it themselves (ADR-002 substrate § provider v61,
+/// 2026-07-11: CTRL never selects subscription billing). Each
 /// assistant chunk is published as a Cell on `stream_id` so the workspace shows
 /// the run live instead of a frozen minute. Kills the child if it overruns the
 /// deadline (`kill_on_drop`).

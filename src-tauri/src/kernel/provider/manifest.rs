@@ -28,10 +28,12 @@ use super::r#trait::Capability;
 pub enum ProviderKind {
     /// One-shot CLI subprocess (codex / gemini). Manifest-driven via
     /// `adapter::cli::one_shot`.
+    ///
+    /// The `cli_claude_persistent` kind was removed — Claude
+    /// subscription OAuth may not back an LLM provider per Anthropic's
+    /// usage policy; Anthropic is BYOK API key only (ADR-002 substrate
+    /// § provider v61, 2026-07-11 + ADR-006 § byok-no-claude).
     CliOneShot,
-    /// Persistent CLI subprocess (claude). Goose-style; bespoke at
-    /// `adapter::cli::claude_persistent`.
-    CliClaudePersistent,
     /// HTTP API — actual wire shape selected via `shape` field
     /// (`openai` or `anthropic`). Streaming SSE.
     HttpApi,
@@ -90,7 +92,7 @@ pub struct ProviderManifest {
     pub shape: HttpShape,
     pub auth: AuthSource,
 
-    // ── CLI path (kind = CliOneShot | CliClaudePersistent) ──────────
+    // ── CLI path (kind = CliOneShot) ─────────────────────────────────
     /// Absolute path or PATH-resolvable name of the CLI binary.
     #[serde(default)]
     pub binary: Option<String>,
@@ -99,8 +101,8 @@ pub struct ProviderManifest {
     /// spawning. Empty = use adapter defaults.
     #[serde(default)]
     pub args_template: Vec<String>,
-    /// Env vars to strip before spawning (e.g. claude-oauth must strip
-    /// `ANTHROPIC_API_KEY` so the CLI falls back to its OAuth token).
+    /// Env vars to strip before spawning, so a key injected for HTTP
+    /// providers never leaks into an external CLI's billing path.
     #[serde(default)]
     pub env_strip: Vec<String>,
     /// Env vars to inject before spawning. Values may reference the
@@ -174,7 +176,7 @@ pub fn default_user_providers_dir() -> Option<PathBuf> {
 
 /// Default per-capability active state file:
 /// `$HOME/.ctrl/state/active-providers.json`. Single JSON map
-/// `{ "text.chat": "claude-oauth" }`. Persisted by `set_active`.
+/// `{ "text.chat": "anthropic-api" }`. Persisted by `set_active`.
 pub fn default_active_state_path() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
     Some(
@@ -232,23 +234,42 @@ mod tests {
     }
 
     #[test]
-    fn parse_str_loads_cli_persistent_manifest() {
+    fn parse_str_loads_cli_one_shot_manifest() {
+        let src = r#"
+            id = "codex"
+            label = "Codex CLI"
+            kind = "cli_one_shot"
+            binary = "codex"
+            env_strip = ["OPENAI_API_KEY"]
+            models = ["gpt-5-codex"]
+
+            [auth]
+            source = "none"
+        "#;
+        let m = parse_str(src, "codex.toml").unwrap();
+        assert_eq!(m.kind, ProviderKind::CliOneShot);
+        assert_eq!(m.binary.as_deref(), Some("codex"));
+        assert_eq!(m.env_strip, vec!["OPENAI_API_KEY".to_string()]);
+        assert!(matches!(m.auth, AuthSource::None));
+    }
+
+    #[test]
+    fn parse_str_rejects_removed_claude_persistent_kind() {
+        // ADR-002 substrate § provider v61 (2026-07-11): the Claude
+        // subscription kind must not deserialize — a stale user manifest
+        // in ~/.ctrl/providers/ falls out at parse time with a logged
+        // warning instead of resurrecting the policy-violating path.
         let src = r#"
             id = "claude-oauth"
             label = "Claude (OAuth)"
             kind = "cli_claude_persistent"
             binary = "claude"
-            env_strip = ["ANTHROPIC_API_KEY"]
-            models = ["sonnet"]
 
             [auth]
             source = "none"
         "#;
-        let m = parse_str(src, "claude-oauth.toml").unwrap();
-        assert_eq!(m.kind, ProviderKind::CliClaudePersistent);
-        assert_eq!(m.binary.as_deref(), Some("claude"));
-        assert_eq!(m.env_strip, vec!["ANTHROPIC_API_KEY".to_string()]);
-        assert!(matches!(m.auth, AuthSource::None));
+        let err = parse_str(src, "claude-oauth.toml").unwrap_err();
+        assert!(matches!(err, ManifestError::Parse(_, _)));
     }
 
     #[test]
