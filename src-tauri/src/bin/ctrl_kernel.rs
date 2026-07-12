@@ -15,6 +15,10 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("kernel boot failed: {e:?}"))?,
     );
     let addr = std::env::var("CTRL_KERNEL_ADDR").unwrap_or_else(|_| "127.0.0.1:17873".to_string());
+    // Reconnect installed mcp-server packs (same boot hook the desktop app
+    // runs) so pack tools like stock-cn_* are on the headless gate too —
+    // without this, only first-party tools are testable headless.
+    ctrl_lib::kernel::mcp_host::reconnect_installed_pack_servers(&runtime.mcp_host).await;
     // No event bridge in headless mode (no PWA to notify) — pass None; the
     // PacksChanged emit is then a no-op.
     let handle = ctrl_lib::kernel::mcp_server::serve(runtime, None, None, &addr).await?;

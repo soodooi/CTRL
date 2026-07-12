@@ -107,6 +107,22 @@ fn is_secret_key(key: &str) -> bool {
     // only match the compound secret-ish names above, not bare "key".
 }
 
+/// Largest index `<= max` that lies on a char boundary of `s` (stable
+/// stand-in for the unstable `str::floor_char_boundary`). Used everywhere the
+/// ledger bounds a UTF-8 string: truncating at a raw byte offset panics
+/// mid-char, and a panic inside the gate's call path kills the tool task and
+/// leaves the client hanging with no audit row (stock-cn N2-0).
+pub fn floor_char_boundary(s: &str, max: usize) -> usize {
+    if max >= s.len() {
+        return s.len();
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
+}
+
 /// Redact secret values in the args, then serialize to a bounded JSON string —
 /// the ledger keeps WHAT was passed (for debugging) without leaking credentials
 /// or ballooning on a huge payload.
@@ -125,7 +141,7 @@ pub fn redact_args(args: Option<&serde_json::Map<String, serde_json::Value>>) ->
     }
     let mut s = serde_json::to_string(&serde_json::Value::Object(out)).unwrap_or_default();
     if s.len() > MAX {
-        s.truncate(MAX);
+        s.truncate(floor_char_boundary(&s, MAX));
         s.push_str("…<truncated>");
     }
     s
@@ -285,5 +301,29 @@ mod tests {
         assert_ne!(hash_args(Some(&a)), hash_args(Some(&b)));
         // None hashes to the empty-input digest, stably.
         assert_eq!(hash_args(None), hash_args(None));
+    }
+
+    #[test]
+    fn floor_char_boundary_lands_on_boundaries() {
+        let s = "a股b";
+        // Inside the 3-byte char (bytes 1..4): floor back to its start.
+        assert_eq!(floor_char_boundary(s, 2), 1);
+        assert_eq!(floor_char_boundary(s, 3), 1);
+        // On a boundary / beyond the end: unchanged / clamped.
+        assert_eq!(floor_char_boundary(s, 4), 4);
+        assert_eq!(floor_char_boundary(s, 99), s.len());
+    }
+
+    /// Regression (stock-cn N2-0): truncating the serialized args at a raw
+    /// byte offset panicked mid-UTF-8-char BEFORE dispatch — big CJK
+    /// vault_write bodies hung the gate and the write never landed.
+    #[test]
+    fn redact_args_truncates_multibyte_payload_without_panicking() {
+        let mut args = serde_json::Map::new();
+        args.insert("path".into(), serde_json::Value::String("a.md".into()));
+        args.insert("body".into(), serde_json::Value::String("股".repeat(3000)));
+        let s = redact_args(Some(&args));
+        assert!(s.ends_with("…<truncated>"), "marker missing: {}", &s[..60]);
+        assert!(s.len() <= 4000 + "…<truncated>".len());
     }
 }

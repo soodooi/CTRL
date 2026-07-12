@@ -67,10 +67,14 @@ impl EventStore {
     ) -> rusqlite::Result<()> {
         let ts_ms = chrono::Utc::now().timestamp_millis();
         // Bound the stored result so a big tool output doesn't bloat the ledger.
+        // Truncate on a char boundary: a raw byte slice panics mid-UTF-8-char,
+        // which killed the tool-call task and left the client hanging forever
+        // (stock-cn N2-0 — any >4KB CJK vault_read wedged the gate).
         const MAX_RESULT: usize = 4000;
         let result_trunc = result.map(|r| {
             if r.len() > MAX_RESULT {
-                let mut s = r[..MAX_RESULT].to_string();
+                let end = crate::kernel::audit::floor_char_boundary(r, MAX_RESULT);
+                let mut s = r[..end].to_string();
                 s.push_str("…<truncated>");
                 s
             } else {
@@ -224,5 +228,36 @@ mod tests {
         assert!(a.contains("<redacted>"), "secret must be redacted: {a}");
         assert!(!a.contains(placeholder), "secret value must not leak: {a}");
         assert_eq!(r, "created base");
+    }
+
+    /// Regression (stock-cn N2-0): a multibyte result whose byte 4000 falls
+    /// MID-CHAR used to panic on the raw byte slice, killing the tool-call
+    /// task — the client hung forever and no ledger row was written. The
+    /// truncation must land on a char boundary and still record the row.
+    #[test]
+    fn record_call_truncates_multibyte_result_without_panicking() {
+        let store = EventStore::open_memory().unwrap();
+        // Repeating 3-byte CJK chars guarantees byte 4000 is mid-char
+        // (4000 % 3 != 0), which is exactly the live-repro shape.
+        let big = "股".repeat(3000);
+        assert!(big.len() > 4000 && !big.is_char_boundary(4000));
+        store
+            .record_call(
+                &GateRequest::at_gate("irisy".into(), "vault_read", None),
+                "ok",
+                None,
+                Some(&big),
+            )
+            .unwrap();
+        let conn = store.conn.lock().unwrap();
+        let r: String = conn
+            .query_row(
+                "SELECT result FROM audit_calls ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(r.ends_with("…<truncated>"), "truncation marker missing: {r}");
+        assert!(r.len() < big.len(), "result must actually be bounded");
     }
 }
