@@ -4,7 +4,7 @@ kind: plan
 created_at: 2026-06-23
 owner: bao
 author: claude (优先级提案,bao 可否决)
-purpose: 把「CTRL 要实现哪些功能包」从散在三处(master-plan §二·五 / CLAUDE.md Top15 / marketplace plan)收成一张统管全局的图,并对种子 connector 拍优先级。
+purpose: 把「CTRL 要实现哪些功能包」从散在三处(master-plan §二·五 / `.kiro/steering/mcp-development.md` Top 15 / marketplace plan)收成一张统管全局的图,并对种子 connector 拍优先级。
 serves: 能力市场冷启动 + OPC「本地 AI 前端管业务系统」护城河
 related:
   - "[[master-plan]]"            # §二·五 模块版图
@@ -24,10 +24,10 @@ CTRL 的三层能力是三种不同的东西,实现主体不同。**术语校准
 | 层 | 是什么 | 是「功能包」吗 | 清单 | 谁实现 | 真相源 |
 |---|---|---|---|---|---|
 | **① 原生能力模块** | 按 Ctrl→intent 浮现的主能力,各对标一个成熟单点 | ✅ **产品级功能包** | **固定 4 个**:**Notes/PKM**(Obsidian,base 必含)· Coding(Codex terminal)· Smart-table(飞书 Bitable)· 远程桌面(ToDesk) | **CTRL 自建** | master-plan §二·五 B |
-| **② 内置工具 mcps** | 端侧原子工具(Top 15) | ❌ **工具/配料,非功能包** | **固定 ~15 个**:Clipboard/OCR/Translate/Text/Chat(P0)· 窗口/PDF/LaTeX/智识/屏幕录(P1)· Snippet/Code/Email/会议/同步 | **CTRL 自建** | CLAUDE.md mcp-llm-reference |
+| **② 内置工具 mcps** | 端侧原子工具(Top 15) | ❌ **工具/配料,非功能包** | **固定 ~15 个**:Clipboard/OCR/Translate/Text/Chat(P0)· 窗口/PDF/LaTeX/智识/屏幕录(P1)· Snippet/Code/Email/会议/同步 | **CTRL 自建** | `.kiro/steering/mcp-development.md` |
 | **③ 外部系统 connector** | 把 **OPC 自托管开源软件**(CRM/ERP/财务/…,用户自己跑的)包成能力接进来。**注:非飞书这类云 incumbent —— 那些 CTRL 原生替代(见 ① Smart-table=Bitable),不 connect**(纠正 2026-07-02) | ✅ **产品级功能包** | **故意无固定清单(长尾开放)** | **Irisy 创作流造 + 第三方造**(非 dev 手写) | 本文 + marketplace plan |
 
-**架构铁律(CLAUDE.md「What CTRL is NOT」):CTRL 不建 ③ 的长尾。** 「100+ 长尾 platform adapter → 给创作者自己接」。CTRL 只做 **substrate(gate / projector / manifest / 4 块安全)+ 能力市场**,让第三方造、用户一键装。
+**架构铁律(`.kiro/steering/development-philosophy.md`「Product Boundaries」):CTRL 不建 ③ 的长尾。** 「100+ 长尾 platform adapter → 给创作者自己接」。CTRL 只做 **substrate(gate / projector / manifest / 4 块安全)+ 能力市场**,让第三方造、用户一键装。
 
 **关键(bao 钦定 2026-06-23):③ 的 connector 不是 dev 手写 MCP wrapper —— 是 Irisy 来做。** CTRL 的命题就是「AI 创作助手从自然语言/API 生成能力,用户不写 JSON」。这个流**已存在**:`personas/irisy/mcp-creator.ts`(Irisy 访谈 → 填 manifest slot → emit 完整 manifest + `server.ts`,auto-infer「提到具体平台→oauth、提到 MCP server→mcp」)+ `feature-pack-create.ts`。**种子 connector = 用 Irisy 创作流造**,dev 的活是**确保/打磨这条流能造出能用的真实 connector**,不是亲手写 connector。**种子本身 = 这条创作流的活体测试 + 护城河示范**(「Irisy 把一个业务系统接进来」正是要证明的产品能力)。
 

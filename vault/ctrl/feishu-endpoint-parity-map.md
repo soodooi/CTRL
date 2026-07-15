@@ -17,7 +17,7 @@ related:
 # 飞书全端点面 × CTRL 建设规划图
 
 > **系统设计先行**：动手建端点前先把「飞书有什么 / CTRL 建哪些 / 哪些结构上不该建」想清楚。不逐个 debug 式凑。
-> 真相：飞书开放平台 **2,500+ 服务端 API 端点**，横跨 ~20 产品域。全建 = Quicker-8000 反模式 (CLAUDE.md「What CTRL is NOT」禁)。**正确解 = 按「CTRL 是不是这个产品」分桶，只建 CTRL 原生 IS 的那几个产品的全端点。**
+> 真相：飞书开放平台 **2,500+ 服务端 API 端点**，横跨 ~20 产品域。全建 = Quicker-8000 反模式（当前 Kiro Product Boundaries，见 `.kiro/steering/development-philosophy.md`）。**正确解 = 按「CTRL 是不是这个产品」分桶，只建 CTRL 原生 IS 的那几个产品的全端点。**
 
 ## 分桶原则（唯一判据）
 

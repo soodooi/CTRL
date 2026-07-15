@@ -2,8 +2,9 @@
 //
 // Spike scope (H-2026-05-14-001 lane-D): minimal façade just sufficient to
 // drive `tests/olm_pair_smoke.rs`. The full surface (PickleKey, pickle round-
-// trip, DH-validity check, replay error variant) is described in
-// `.olym/specs/mesh-comm/spec.md` §4 and lands in Sprint 2.
+// trip, DH-validity check, and replay error variant) remains planned for
+// Sprint 2; keep those contract details explicit here because the historical
+// mesh-comm spike specification is no longer a live repository authority.
 //
 // Only compiled when the `crypto` feature is enabled — keeps the default
 // build of ctrl-mesh free of the vodozemac dependency tree.
@@ -15,11 +16,11 @@ use vodozemac::Curve25519PublicKey;
 /// Errors surfaced by the spike-level session wrapper.
 ///
 /// Sprint 2 expands this to include `ReplayDetected`, `PickleKeyMismatch`,
-/// `ExpiredPairOffer`, and the wrapper-level `InvalidPrekey` (DH-validity
-/// check) per spec §4.3. Note: as of vodozemac 0.10 the `NonContributoryKey`
-/// rejection (Soatok disclosure fix) is enforced inside vodozemac itself
-/// and surfaces here as `Vodozemac(...)` — the §4.4 wrapper check becomes
-/// belt-and-braces rather than the sole defense.
+/// `ExpiredPairOffer`, and the wrapper-level `InvalidPrekey` DH-validity
+/// check. As of vodozemac 0.10, the `NonContributoryKey` rejection (Soatok
+/// disclosure fix) is enforced inside vodozemac itself and surfaces here as
+/// `Vodozemac(...)`; the wrapper check remains belt-and-braces rather than the
+/// sole defense.
 #[derive(Debug, Error)]
 pub enum SessionError {
     #[error("vodozemac error: {0}")]
@@ -29,7 +30,7 @@ pub enum SessionError {
 }
 
 /// Thin façade over a vodozemac Olm account. v1.0 spike only — Sprint 2
-/// replaces with the locked surface in spec §4.2.
+/// replaces it with the full pickle/replay/DH-validity surface described above.
 pub struct OlmAccount {
     inner: Account,
 }
@@ -102,8 +103,8 @@ impl OlmAccount {
     }
 }
 
-/// Thin façade over a vodozemac Olm session. Spike-level — Sprint 2 wraps
-/// pickle / unpickle and adds the replay-detection error path per spec §4.1.
+/// Thin façade over a vodozemac Olm session. Spike-level — Sprint 2 adds
+/// pickle/unpickle and replay detection as part of the full surface above.
 pub struct OlmSession {
     inner: Session,
     peer_identity_pub: Curve25519PublicKey,

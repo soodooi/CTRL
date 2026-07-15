@@ -33,14 +33,10 @@ out/
 
 # Ephemeral / scratch
 _temp/
-.claude/scheduled_tasks.lock
 packages/*/tsconfig.tsbuildinfo
 
-# Olym worktrees + restructure backups + sandbox experiments
+# Worktrees + sandbox experiments
 .worktrees/
-.claude/worktrees/
-.claude.bak/
-.olym.bak/
 experiments/
 .provider-research/
 

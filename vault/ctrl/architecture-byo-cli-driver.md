@@ -1,11 +1,9 @@
 # CTRL 架构换代 — BYO-CLI Driver Platform
 
-> **2026-06-17 · bao 钦定 · 新真相源 (authoritative)**
-> 本文是 CTRL 当前架构的权威基准。任何其他文档 / ADR / 代码与本文冲突时，以本文为准并立刻 amend 对应 ADR。
+> **Historical strategy snapshot (2026-06-17; non-authoritative).**
+> 本文保留 BYO-CLI 换代过程与 projection 设计的历史上下文，但不再是当前架构真相源。当前唯一架构权威是 `vault/ctrl/adrs/INDEX.md` 指向的 accepted module ADR；本文中的 Obsidian connector、license、ST-SS、brain 或工具数量若与 ADR/代码冲突，均视为历史状态，不得反向覆盖 ADR。
 >
-> **Audit**: 2026-06-18 bao 实查运行真相后做了一次纠偏（原稿把 brain 层写成
-> 「BYO-CLI driver 取代内置 brain、hermes 退役」，过激）。下方正文已 amend 到位，
-> 当前版本同时承认两条 brain 路径并存。要点见 §2「brain」、§不变项。
+> **Audit provenance**: 2026-06-18 bao 实查运行真相后做过一次纠偏（原稿把 brain 层写成「BYO-CLI driver 取代内置 brain、hermes 退役」，过激）。后续架构继续在 module ADR 中演进，本文不再同步更新。
 
 ---
 
@@ -194,4 +192,4 @@ CTRL 的层是 **projection + gate**，不是 brain/harness。所以 Pi (`@mario
 | ADR-001 spine | **→ v7** | 架构换代：3-agent aggregator → BYO-CLI driver platform |
 | ADR-002 substrate | **→ v27** | 新增 **§ projection**（资产物化到 CLI 原生落点 + intent 子集投影 + MCP gate 回流） |
 
-> amend 规则见 `.olym/decisions/PROCESS.md §1`：section amendment = bump `version:` + 加 changelog 行，不开新 ADR。
+> amend 规则见 `vault/ctrl/adrs/PROCESS.md §1`：section amendment = bump `version:` + 加 changelog 行，不开新 ADR。

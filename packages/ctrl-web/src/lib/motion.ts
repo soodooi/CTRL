@@ -1,6 +1,6 @@
 // Motion preference hook — single source for `prefers-reduced-motion`.
 //
-// Per .olym/skills/thorvg/SKILL.md §4.3: every Lottie surface must gate
+// Accessibility invariant: every Lottie surface must gate
 // its playback through this so the OS-level accessibility toggle wins
 // over any per-feature `playing` prop. Strategy: don't tear down the
 // canvas; pause + speed 0 keeps the first frame readable as a static

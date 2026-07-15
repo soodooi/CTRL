@@ -33,7 +33,7 @@
 | `--ctrl-blue-dark` | `oklch(0.32 0.16 264)` | `#16267D` | Hover/pressed states, bevels |
 | `--ctrl-blue-light` | `oklch(0.65 0.16 252)` | `#5A8AEF` | Hover surfaces, soft accents, focus halos |
 
-### Keycap colors (per `tool-manifest/spec.md` §2 `keycap_color` enum)
+### Keycap colors (per executable `McpColor` / `mcp_color` schema in `packages/ctrl-mcp-sdk/src/manifest-schema.ts`)
 
 | Token | OKLCH | Hex | Identity |
 |---|---|---|---|
@@ -220,7 +220,7 @@ Section spacing (per `web/coding-style.md`):
 |---|---|
 | **Lucide React** | UI icons (per `package.json` already pinned) |
 | **Logo mark** | App / tray / installer |
-| Keycap glyph | Per manifest (emoji / SVG URL — see `tool-manifest/spec.md` §2 `icon`) |
+| Keycap glyph | Per executable `McpIcon` / `icon` schema in `packages/ctrl-mcp-sdk/src/manifest-schema.ts` |
 
 Sizing: 14 / 16 / 20 / 24 / 32 px. Stroke width 1.5–2 px. Color = `currentColor` (inherits text).
 
@@ -238,7 +238,7 @@ Sizing: 14 / 16 / 20 / 24 / 32 px. Stroke width 1.5–2 px. Color = `currentColo
 
 ## 11. Anti-template guardrails (enforced)
 
-Per `CLAUDE.md` design-quality rule + `web/design-quality.md`:
+Per `.kiro/steering/development-philosophy.md` and the guardrails in this document:
 
 | Banned | Why |
 |---|---|
@@ -395,8 +395,8 @@ Mandatory per `web/testing.md` §2.
 - `doc/reference/logo-reference.png` — bao 's hand-off logo
 - ADR-001 §2 — visual direction lock (Linear / Cursor / OP-1 / Braun)
 - ADR-002 §5 — PWA stack + anti-template guardrails
-- `~/.claude/rules/web/coding-style.md` — token-driven CSS approach
-- `~/.claude/rules/web/design-quality.md` — anti-template + required qualities checklist
+- `.kiro/steering/development-philosophy.md` — system-design-first development contract
+- `packages/ctrl-web/src/styles/tokens.css` — executable token surface
 
 ---
 

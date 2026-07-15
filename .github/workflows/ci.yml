@@ -9,6 +9,22 @@ on:
     - cron: "0 6 * * *"
 
 jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: diff-aware secret and ADR-citation gate
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: node scripts/check-governance.mjs --base "$BASE_SHA" --head "$GITHUB_SHA"
+      - name: report accepted-ADR acceptance debt
+        run: bash scripts/check-adr-acceptance.sh --soft
+
   # --- deterministic per-push gate: unit tests + typecheck (no kernel/network) ---
   rust:
     runs-on: ubuntu-latest

@@ -7,7 +7,7 @@ updated: 2026-06-13
 # 0009 — 输入框上方「功能包栏」要履行哪些业务
 
 > bao 2026-06-13:「这样列举的方式不对,你要知道这个栏有哪些业务要履行。」
-> 锚点:[[0007-irisy-ambient-context]] · [[0008-ui-texture-pass]] · CLAUDE.md § mcp / § one-shot / § AI 是 pipe / § transparency · memory [[project-ctrl-modular-intent-platform]]
+> 锚点:[[0007-irisy-ambient-context]] · [[0008-ui-texture-pass]] · `.kiro/steering/development-philosophy.md` § one-shot / § AI is a pipe / § transparency · `.kiro/steering/mcp-development.md` · memory [[project-ctrl-modular-intent-platform]]
 
 ## 这栏是什么(定位)
 
@@ -17,7 +17,7 @@ updated: 2026-06-13
 ## 现状错在哪
 
 当前 `QUICK_HOOKS` = 5 个写死 chip(Translate/Polish/Summarize/Actions/Plan),平铺列举。错在:
-- **静态**:不管你装了哪些功能包(mcp),永远这 5 个 → 跟 mcp 生态脱节(CLAUDE.md: mcp = 用户装的原子能力)。
+- **静态**:不管你装了哪些功能包(mcp),永远这 5 个 → 跟 mcp 生态脱节(`.kiro/steering/mcp-development.md`:mcp = 用户装的原子能力)。
 - **无 ambient**:不管你现在选中了什么、打开了什么(0007 Irisy 读工作区),永远一样 → 浪费了 Irisy 的 context 感知。
 - **无对象**:不能指定「对什么处理」(选区/剪贴板/截图/当前文件) → 违背「AI 是 pipe,in-line 处理」(设计哲学 #5)。
 - **无扩展**:点不出「装更多 / 让 Irisy 造一个」→ 这栏本该是功能包生态入口,却是死路。
@@ -35,7 +35,7 @@ updated: 2026-06-13
 
 3. **ambient 排序(谁排前面)** — Irisy 读工作区 → 把当前最相关的动作推到最前:选中中文→翻译;打开 PDF→摘要/提取;看代码→解释/重构。**scale 在 registry,UI 只露 top-N + 「更多」**(intent platform:让 UI 更简单,长尾在注册表)。
 
-4. **扩展入口(还能装什么)** — 没有想要的能力时:去 Discover 装功能包 / 让 Irisy 用自然语言**现造一个 mcp**(CLAUDE.md: AI 创作助手 generates manifest)。这栏是生态入口,不是封闭列表。
+4. **扩展入口(还能装什么)** — 没有想要的能力时:去 Discover 装功能包 / 让 Irisy 用自然语言**现造一个 mcp**(`vault/ctrl/specs/connectors/spec.md`:AI 创作助手生成 manifest)。这栏是生态入口,不是封闭列表。
 
 5. **边界透明(状态)** — 当前用哪个 model(已落第一行,不重复)+ 隐私边界可见。
 

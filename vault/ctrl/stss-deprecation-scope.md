@@ -24,7 +24,7 @@
 |---|---|---|---|
 | `packages/ctrl-stss/` | 整包(`package.json` `@ctrl/stss` v0.1.0 private/UNLICENSED;~14 src + 8 test,≈84 测试) | PWA 不 import;Rust kernel 有自己的 `event.rs` mirror,**不**依赖此 TS 包 | **删整包** |
 | `packages/ctrl-memory/` | 整包(`@ctrl/memory`,16 测试;唯一 import `@ctrl/stss` 的包) | 无人 import(`grep @ctrl/memory packages/ctrl-web/src` = 空) | **删整包**(孤儿) |
-| topology 文档 `share/stss-spike` 条目 | `.claude/rules/stack-and-topology.md` | `share/stss-spike` **已不存在**(spike 早提升进 `stss_bridge.rs`),文档 stale | 删条目 |
+| former topology 文档（现已删除，仅作历史出处） `share/stss-spike` 条目 | former `.claude/rules/stack-and-topology.md`（已删除） | `share/stss-spike` **已不存在**(spike 早提升进 `stss_bridge.rs`),文档 stale | 删条目 |
 | topology「ctrl-stss 69 tests / 99 workspace」 | 同上 | 测试数 stale(实际 84/16/139) | 改数或删 |
 
 > 删半 A 工作区测试 239 → 139(只剩 ctrl-web 产品测试)。**无所谓** —— 掉的是协议参考测试,不是产品验证。
@@ -81,7 +81,7 @@
 ## 弃用计划(分两半,先零风险后守红线)
 
 **Phase 1 — 删半 A(死重,零产品风险)**
-- 删 `packages/ctrl-stss/` + `packages/ctrl-memory/`;改 topology 文档(stss-spike 条目 + 测试数)。
+- 删 `packages/ctrl-stss/` + `packages/ctrl-memory/`;改 former topology 文档（现已删除，仅作历史出处）(stss-spike 条目 + 测试数)。
 - 验证:`npm test` workspace 仍绿(掉的只是协议参考测试);tsc 全绿;ctrl-web 不受影响。
 - 这一步就**坐实了 GOAL SC6 的「`ctrl-stss` 移除」**,零回归。
 

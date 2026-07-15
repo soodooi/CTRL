@@ -1,6 +1,8 @@
 // Persistence — local event store + actor registry on SQLite (WAL mode).
 //
-// Schema follows .olym/specs/kernel/spec.md §5:
+// Executable schema SSOT: `SCHEMA` in this module.
+// Architecture context: vault/ctrl/adrs/001-spine.md and
+// vault/ctrl/adrs/002-substrate.md.
 //   events    — append-only with secondary indexes
 //   actors    — actor registry with capability + state snapshot
 //   manifests — cached mcp manifests

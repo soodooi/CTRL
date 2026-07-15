@@ -24,7 +24,7 @@ pub enum CapToken {
         path_glob: String,
     },
     // Storage — vault (Obsidian-compatible markdown, $HOME/.ctrl/vault/)
-    // Per CLAUDE.md design philosophy, vault is the user's data; this
+    // Per `.kiro/steering/development-philosophy.md` Design Philosophy, the vault is the user's data; this
     // token gates *which mcp* writes *which path prefix*, not whether
     // the data itself is private (the user always owns it).
     VaultRead {

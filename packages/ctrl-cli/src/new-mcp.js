@@ -201,8 +201,8 @@ ctrl dev .           # auto-registers + watches src/
 
 ## Manifest spec
 
-See [ADR-004 cap § execution v1](../../.claude/ADR/010-mcp-execution-model.md) for the
-mcp execution model (MCP outward, actor inward).
+See \`vault/ctrl/adrs/004-cap.md\` § execution in the CTRL repository for the
+MCP-outward, Actor-inward execution model.
 `);
 }
 

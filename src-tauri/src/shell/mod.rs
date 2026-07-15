@@ -1,6 +1,6 @@
 // L0 Tauri 2 native shell.
 //
-// Per ADR-003 frontend §6 + .olym/specs/pwa-shell/spec.md, the shell owns exactly four
+// Per vault/ctrl/adrs/003-frontend.md §6, the shell owns exactly four
 // responsibilities that the PWA cannot:
 //
 //   1. Global `Ctrl` hotkey (lone-modifier single-tap detection)

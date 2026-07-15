@@ -2,8 +2,9 @@
 // decks with inline JS + an in-page editor). Source-mode toggle drops to a
 // CodeMirror buffer for editing.
 //
-// Per CLAUDE.md derived-rule #3: viewers cover content type, not
-// platform. HTML is rendered locally — no third-party preview service.
+// Per `.kiro/steering/development-philosophy.md` Design Philosophy: viewers
+// cover content type, not platform. HTML is rendered locally — no third-party
+// preview service.
 
 import { useMemo, useState, type ReactElement } from 'react';
 import CodeMirror from '@uiw/react-codemirror';

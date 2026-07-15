@@ -1,6 +1,6 @@
 // Vault FTS5 index — full-text search backed by SQLite FTS5.
 //
-// Per CLAUDE.md ## Design Philosophy:
+// Per `.kiro/steering/development-philosophy.md` Design Philosophy:
 //   - vault files are the source of truth (plain markdown on disk)
 //   - this index is a *derivative* — derived from those files, can be
 //     deleted and rebuilt at any time without data loss

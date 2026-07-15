@@ -1,6 +1,6 @@
 // Vault — local-first markdown + frontmatter store, Obsidian-compatible.
 //
-// Per CLAUDE.md `## Design Philosophy` (Obsidian philosophy section):
+// Per .kiro/steering/development-philosophy.md `## Design Philosophy` (Obsidian philosophy section):
 //   - Data belongs to the user. Vault is plain markdown + YAML frontmatter
 //     on the filesystem; vim / Obsidian / any text editor can read it.
 //   - Local is truth, cloud is mirror — never the other way around.
@@ -66,7 +66,7 @@ fn config_path() -> Option<PathBuf> {
 
 /// The vault root the user pointed CTRL at (e.g. their EXISTING Obsidian vault).
 /// `None` until they pick one — the data belongs to the user, so CTRL operates on
-/// the user's own vault instead of imposing a folder (CLAUDE.md: vault layout is
+/// the user's own vault instead of imposing a folder (.kiro/steering/development-philosophy.md: vault layout is
 /// user-decided, not hardcoded). The first-run flow prompts for it.
 pub fn configured_vault_root() -> Option<PathBuf> {
     let body = fs::read_to_string(config_path()?).ok()?;
@@ -651,7 +651,7 @@ pub fn list(vault_root: &Path, subdir: Option<&str>) -> Result<Vec<String>, Vaul
 /// to substring scan if the index is unavailable or empty. The public
 /// signature stays stable so existing callers don't break.
 ///
-/// Fallback rationale: per CLAUDE.md design philosophy, the index is a
+/// Fallback rationale: per .kiro/steering/development-philosophy.md design philosophy, the index is a
 /// *derivative* of the vault, not the source of truth. A user can rm
 /// the index db at any time, or the daemon can boot before the first
 /// rebuild_index runs — neither should make search hard-fail.

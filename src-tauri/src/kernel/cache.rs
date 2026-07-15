@@ -6,7 +6,8 @@
 // LLM-embedding results, fetched HTTP responses, OCR'd image text,
 // thumbnail previews. Raycast's `Cache` equivalent.
 //
-// Storage shape (per CLAUDE.md design philosophy — public formats only):
+// Storage shape (per `.kiro/steering/development-philosophy.md` Design
+// Philosophy — public formats only):
 //   ~/.ctrl/state/cache/
 //     index.db                  ← LRU metadata (scope, key, size, last_used_ms)
 //     blobs/<scope>/<key-hash>  ← actual blob payload

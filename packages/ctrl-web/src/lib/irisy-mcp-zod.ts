@@ -1,10 +1,11 @@
-// [H-2026-05-18-001] Zod schema for mcp manifests (lane-B subset of
-// `.olym/specs/tool-manifest/spec.md` v0.1).
+// Legacy PWA subset of the MCP manifest contract, initially landed as the
+// v0.1 handoff implementation. Executable schema SSOT:
+// packages/ctrl-mcp-sdk/src/manifest-schema.ts.
 //
 // Permissive on capability tokens (string | object with single key) since
 // the kernel-side enum is authoritative; we only enforce structural shape.
-// When zeus ships Z1 (manifest spec v0.2), swap this for the upstream
-// schema export.
+// Replace this duplicate with the shared SDK schema when all PWA consumers
+// can adopt the current manifest version.
 
 import { z } from 'zod';
 

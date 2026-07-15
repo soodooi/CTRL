@@ -2,7 +2,7 @@
 
 - 状态:Accepted
 - 日期:2026-06-11
-- 关联:`.olym/decisions/005-irisy.md`(Irisy = persona shell + context injection)、`008-irisy-assistant.md`(vault-is-ledger)
+- 关联:`vault/ctrl/adrs/005-irisy.md`(Irisy = persona shell + context injection)、`vault/ctrl/adrs/008-irisy-assistant.md`(vault-is-ledger)
 
 ## Context
 bao:「不需要写代码,Claude/Codex 已经做得很好了。」
@@ -24,7 +24,7 @@ bao:「不需要写代码,Claude/Codex 已经做得很好了。」
 - **wedge**:vault 是真相 → 内容变化时**自动重新派生** context 文件 → 「CLAUDE.md 变陈旧」结构上不可能(这是没人解决的空位)。对齐「local is truth, derived is mirror」。
 - **泛化**:同一循环跑客户笔记 / 会议决策 / 研究 = 一人公司的大脑;软件项目是 beachhead(最痛、context 目标最清晰)。
 - **edge**:local + 你拥有知识(plain markdown,过 vim test,无导入导出)+ 跨工具中立(不是 agent 厂商,能平等喂所有 agent)。
-- **架构已就位**:ADR-005(Irisy=context injection)、ADR-008(vault-is-ledger + curator loop)、CLAUDE.md(FTS5+embeddings RAG)。新的只是**命名为产品** + ship「vault → AGENTS.md/MCP」供给步。
+- **架构已就位**:ADR-005(Irisy=context injection)、ADR-008(vault-is-ledger + curator loop)、ADR-002(FTS5+embeddings RAG)。新的只是**命名为产品** + ship「vault → AGENTS.md/MCP」供给步。
 
 ## Sources
 见 [research/project-brain-positioning.md](../research/project-brain-positioning.md);memory `project-ctrl-is-project-brain-context-layer`。

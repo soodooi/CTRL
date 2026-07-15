@@ -1,7 +1,7 @@
 // AI block metadata — frontmatter persistence for accepted Irisy ops.
 //
 // (ADR-002 substrate v5 §10 + product spec §6.4 / §8.7 transparency,
-// 2026-06-03 — brainstorm `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`.)
+// 2026-06-03 — brainstorm `vault/ctrl/history/brainstorm/vault-irisy-product-design-2026-06-03.md`.)
 //
 // Every time the user accepts a block AI op, the host note's
 // frontmatter `ai_blocks:` array gets a new entry. Format mirrors the

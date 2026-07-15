@@ -34,8 +34,7 @@ When Phase 1 lands the full ADR-024 loader, the kernel will read `cap_asset.file
 
 ## See also
 
-- `.olym/decisions/024-substrate-composition-model.md` — the law
-- `.olym/decisions/010-mcp-execution-model.md` — 7 patterns
-- `.olym/decisions/004-kernel-capability-surface.md` — 8 kernel namespaces
+- `vault/ctrl/adrs/002-substrate.md` § composition + § capability — manifest law and kernel namespaces
+- `vault/ctrl/adrs/004-cap.md` § execution — execution patterns
 - `src-tauri/src/commands/kernel.rs` — install_mcp + list_mcps
 - `doc/audit-2026-05-30-phase-1-readiness.md` — Phase 1 implementation plan

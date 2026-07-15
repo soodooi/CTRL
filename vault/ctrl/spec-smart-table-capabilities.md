@@ -5,7 +5,7 @@
 > bao 钦定 2026-06-19: 「接下来一个工作区页面,智能表格,实现飞书的一些功能,先整理能力清单」。
 >
 > 这是规划文档,不是实施。落地走 module 哲学 (per-L1 workspace + viewer registry)。
-> 真相源约束: ADR-001 spine § byo-cli-driver + ADR-006 cross-cutting § plain-text + 「不做清单」(CLAUDE.md What CTRL is NOT)。
+> 真相源约束: ADR-001 spine § byo-cli-driver + ADR-006 cross-cutting § plain-text + 「不做清单」(`.kiro/steering/development-philosophy.md` What CTRL is NOT)。
 
 ---
 
@@ -130,7 +130,7 @@
 1. **vim test** (ADR-006 § plain-text): 用户用 vim 打开本机文件,能拿到核心价值吗?
    → 表格数据必须是 plain markdown,任何结构都要 round-trip 回 `.md`。
    → **关系型 (关联/Lookup/Rollup) 在单文件 plain-text 下是硬张力** → v1 用「跨文件 `[[wikilink]]` 引用 + vault backlink」近似,不建数据库外键。
-2. **one-shot, not flows** (CLAUDE.md #4 + 不做清单): 无 wizard / 无 multi-step / 无 dialog tree。
+2. **one-shot, not flows** (`.kiro/steering/development-philosophy.md` #4 + 不做清单): 无 wizard / 无 multi-step / 无 dialog tree。
    → **飞书「自动化流程编辑器」直接出局** (Coze/n8n 已做)。「按钮字段」同理出局。
 3. **local 是 truth,云是 mirror**: 实时协同 = Automerge CRDT,是 ADR-002 v1.1+ scope。
    → **实时多人协同、评论、权限推到 v1.1+**,v1 单人本地编辑。

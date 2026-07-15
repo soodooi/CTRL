@@ -5,7 +5,7 @@ post-process filter in `messageEndHandler`. Bridge reads it at startup, parses
 each `## Section` header into a category, and builds regex from each `- bullet`.
 
 The `.md` location intentionally sidesteps the "all source code English"
-rule (CLAUDE.md) — patterns must include native-language LLM outputs to
+hard rule in `.kiro/steering/development-philosophy.md` — patterns must include native-language LLM outputs to
 catch them.
 
 Each pattern is a literal phrase. The handler builds an anchored regex

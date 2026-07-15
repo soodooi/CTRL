@@ -5,13 +5,13 @@
 //   - svg   → <img src> (browser-native SVG decode)
 //
 // Animated variants render via ThorVG WASM (via @lottiefiles/dotlottie-react).
-// Implements .olym/skills/thorvg/SKILL.md sections:
-//   §3.1 single primitive surface
-//   §3.2 lazy WASM import (static-only callers pay 0 bytes)
-//   §3.3 brand theme injection (CSS OKLCh tokens → setThemeData)
-//   §3.4 state machine pipe (stateMachineId + stateMachineInputs)
-//   §4.3 prefers-reduced-motion gate (pause + speed 0, keep first frame)
-//   §6   three backends: CPU default, WebGL auto ≥256px, Worker opt-in
+// Implementation invariants:
+//   - single primitive surface
+//   - lazy WASM import (static-only callers pay 0 bytes)
+//   - brand theme injection (CSS OKLCh tokens → setThemeData)
+//   - state machine pipe (stateMachineId + stateMachineInputs)
+//   - prefers-reduced-motion gate (pause + speed 0, keep first frame)
+//   - three backends: CPU default, WebGL auto ≥256px, Worker opt-in
 
 import {
   lazy,

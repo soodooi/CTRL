@@ -24,7 +24,8 @@ pub enum SignalingTransport {
     /// `wss://relay.ctrl.run/signal?identity=...&proof=...`
     ProductionWss,
     /// `ws://localhost:N` for tests + Sprint 2 local mock (Node http server
-    /// or miniflare; NEVER `wrangler dev` per CLAUDE.md global rule).
+    /// or miniflare; NEVER `wrangler dev` per
+    /// `.kiro/steering/development-philosophy.md` Hard Rules).
     LocalMock,
 }
 

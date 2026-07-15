@@ -9,58 +9,48 @@ decided_by: bao (AskUserQuestion 2026-06-19 — 选「激进剥离」)
 # 极简单人 harness — 砍 / 留 / 改 全局图
 
 > bao 2026-06-19 钦定：开发环境**全量升级到 110% 且极简**。
-> 路径 = **激进剥离** olym 多智能体重型层，只留单人极简 harness，核心循环升到天花板。
+> 路径 = **激进剥离** Olym 多智能体重型层，只留单人极简 harness，核心循环升到天花板。
 > 本文是 system-design-first 的统管全局图 —— 先有它再动手，不 debug 式逐个删。
+> 当前实现 runtime 已迁移到 Kiro；下面以 checked-in `.kiro/` 资产为准。
 
 ## 设计原则
 
-开发环境 = Claude Code 每次运行时**加载/执行**的东西（hook / 脚本 / skill / plugin）。
-极简针对**运行时 harness**，不是静态文档。判据：
+开发环境 = Kiro 每次运行时**加载/执行**的东西(steering / hook / skill) + repository hooks。
+极简针对**运行时 harness**，不是静态历史文档。判据：
 
-- **空转即砍** —— 单人模式下永不触发的多智能体机制（lane / handoff / fleet）。
-- **漂移即修** —— 引用退役物（Pi、`.kiro/` 旧路径、端口 17878）的代码。
+- **空转即砍** —— 单人模式下永不触发的多智能体机制(lane / handoff / fleet)。
+- **漂移即修** —— 引用退役的 Olym/Claude runtime、Pi 或旧端口 17878 的代码。
 - **保命线绝不动** —— 全英文、no-`--no-verify`、ADR 引用、验证门槛、secret 检查。
-- **SSOT 绝不删** —— `.olym/decisions/` 7 ADR、`vault/`、CLAUDE.md 架构指针。
+- **SSOT 绝不删** —— `vault/ctrl/adrs/`、`vault/ctrl/` 和 `.kiro/steering/development-philosophy.md`。
 
 ## 保留 (核心 + 保命线)
 
 | 部件 | 角色 |
 |---|---|
-| `/goal` + `/dev-loop` skill | 唯一入口；目标驱动循环 |
-| 内置 UI/debug skills | 按需触发、零空转，不砍 |
-| PreToolUse english+secret prompt hook | 保命：全英文 + 无硬编 secret |
-| `verification-gate.cjs` | 保命：ship 前强制验证证据（**升级**见下） |
-| `adr-cite-gate.cjs` | 保命：改架构强制引 ADR § |
-| `memory-load-injector.cjs` | 好资产：按话题注入必读 memory |
-| husky `pre-push-check.js` + commitlint | 保命：全英文 pre-push + conventional commit |
-| `scripts/`: bump-version / escape-cjk / git-new / release.sh | 日常工具 |
-| `.olym/decisions/` (7 ADR + INDEX/PROCESS/DRIFT) | **SSOT，绝不删** |
-| `code-reviewer` agent | **升级**为 independent checker |
+| `.kiro/skills/goal/SKILL.md` + `.kiro/skills/dev-loop/SKILL.md` | 唯一入口；目标驱动循环 |
+| `.kiro/steering/development-philosophy.md` | development contract + design philosophy + hard rules |
+| `.kiro/hooks/session-context.json` | SessionStart 注入 GOAL + Git truth |
+| Husky + CI | diff-aware 全英文、secret、ADR-citation、dual-surface 与编译/测试等 deterministic repository gates |
+| Release gate | accepted ADR acceptance 严格审计；CI 仅 soft-report 已有 acceptance debt |
+| Runtime/UI evidence | 由 Kiro `dev-loop` 按改动要求执行；`:17873` smoke 另有 nightly/manual CI，不伪装成每次 push 都能通用执行 |
+| `vault/ctrl/adrs/` (ADRs + INDEX/PROCESS/DRIFT) | **唯一架构 SSOT，绝不删** |
+| independent semantic reviewer | 非平凡变更的 maker/checker 分离 |
+| `scripts/`: governance / ADR acceptance / bump-version / escape-cjk / git-new / release.sh | 日常工具与发布 gate |
 
-## 升级到 110% (改)
+## 升级到 110% (当前落点)
 
-1. **`verification-gate.cjs`** — 删退役 `pi` 检查；端口 `17878`→`17873`（架构真相源 gate）；新增证据：`curl :17873` smoke + Playwright/`:5173` 视觉验证。
-2. **`dev-loop` skill** — verify 步加 `:17873` smoke + Playwright 视觉（UI 改动）；新增 **maker/checker** 独立核验步（implement 后 spawn `code-reviewer` 对照 GOAL+ADR）；停止条件加 `--max-turns` 预算。
-3. **`code-reviewer` agent** — 特化为对照 `GOAL.md` + ADR § acceptance + diff 的 PASS/FAIL checker。
-4. **session 注入** — `session-handoff-snapshot.js`（fleet/handoff）→ 极简 `session-context.cjs`（GOAL + git status，~15 行）。
+1. **Kiro steering** — `.kiro/steering/development-philosophy.md` 统一 hard rules、设计哲学、ADR-first 与 verification-before-completion。
+2. **dev-loop skill** — `.kiro/skills/dev-loop/SKILL.md` 要求 affected compiler/type check、targeted tests、`:17873` gate smoke、UI visual evidence(as applicable)和 independent semantic review。
+3. **goal skill** — `.kiro/skills/goal/SKILL.md` 锁 `vault/ctrl/GOAL.md` 为唯一 active goal;缺 goal 不擅自发明。
+4. **session context** — `.kiro/hooks/session-context.json` 运行 `.kiro/scripts/session-context.cjs`,只注入 active GOAL + Git truth，不恢复 fleet/handoff snapshot。
 
-## 剥离 (多智能体重型层 — git rm)
+## 已剥离 / 不恢复 (历史裁决)
 
-- hooks: `pretool-lane-guard.js`、`stop-handoffs-archive.js`、`scripts/hooks/*`（3 副本）
-- plugin: `.claude-plugin/`（空壳，`agents/skills/commands` 目录根本不存在）
-- commands/agents: `olym-doctor.md`、`comment-analyzer.md`
-- scripts: `audit-olym-*`、`audit-all`、`audit-olympus-health`、`auto-validate.sh`、`daily-digest`、`fleet-status`、`handoff-sync`、`handoffs-archive`、`handoffs-index`、`pre-push-dispatch-check`、`scratch-new`、`specs-archive`、`specs-index`、`check-adr-acceptance`、`adr-check.py`、`keycap-to-mcp-rename`、`olym-doctor.sh`、`olym-install.sh`、`worktree-new/remove`、`probes/`（pi/hermes/irisy 全退役）、`release.ps1`
-- husky: `commit-msg` 去 `[H-]` 强制（留 commitlint）；`pre-commit` 去 `.kiro/` 死代码；`pre-push` 去 dispatch 检查
-- `.olym/handoffs/`、`.olym/steering/`（纯多智能体机制；`specs/brainstorm/audits` 作内容资产保留）
+- Olym lane、persona、fleet、handoff dispatch 和 RFC 编排 runtime；历史 handoff 只在 `vault/ctrl/history/handoffs/` 保留。
+- Olym audit/brainstorm 的 runtime 角色；内容资产分别归档到 `vault/ctrl/history/audits/` 与 `vault/ctrl/history/brainstorm/`。
+- Claude-era project hooks、rules、skills 和 project-entry contract；当前 normative contract 是 `.kiro/steering/development-philosophy.md`。
+- 退役脚本族: `audit-olym-*`、`audit-all`、`audit-olympus-health`、`auto-validate.sh`、`daily-digest`、`fleet-status`、`handoff-sync`、`handoffs-archive`、`handoffs-index`、`pre-push-dispatch-check`、`scratch-new`、`specs-archive`、`specs-index`、`adr-check.py`、`keycap-to-mcp-rename`、`olym-doctor.sh`、`olym-install.sh`、`worktree-new/remove`、retired probes、`release.ps1`。
 
-## 恢复方法 (多人协作需要时)
+## 恢复方法 (若未来经新决策恢复多人编排)
 
-剥离走 `git rm`，全部在 git 历史中：
-
-```
-git log --oneline -- .claude-plugin/            # 找剥离前的 commit
-git checkout <sha>^ -- <path>                    # 单文件恢复
-```
-
-olym 多智能体框架本体是 marketplace plugin（`.olym/VERSION` 锁 `plugin_sha`），
-完整恢复 = 重装 `github.com/soodooi/hello-olym` plugin。
+剥离历史仍可从 Git 查阅；不要直接重新激活旧 runtime。先由 bao 建立新目标/ADR，明确 Kiro-compatible 的协作需求，再按最小机制实现。当前多会话开发只采用 `vault/ctrl/team-workflow.md` 的 worktree + PR 模式。

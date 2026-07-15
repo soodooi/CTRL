@@ -14,12 +14,12 @@
 Conflict resolution priority (top wins):
 
 1. **目标推进 / business intent** (this doc §1, §3)
-2. **Hard rules** (`CLAUDE.md` §Rules)
-3. **Design philosophy** (`CLAUDE.md` §Design Philosophy + `brand/brand-tokens.md`)
-4. **ADRs** (`.olym/decisions/`)
+2. **Hard rules** (`.kiro/steering/development-philosophy.md` § Hard Rules)
+3. **Design philosophy** (`.kiro/steering/development-philosophy.md` § Design Philosophy + `brand/brand-tokens.md`)
+4. **ADRs** (`vault/ctrl/adrs/`)
 5. **Implementation details / commits**
 
-Each requirement here lists the authoritative source in `(brackets)`. Memory keys reference `~/.claude/projects/-Users-mac-Documents-coding-CTRL/memory/`.
+Each requirement here lists its authoritative source in `(brackets)`. Historical memory keys retain their original names for provenance; current Kiro sessions load project context through `.kiro/hooks/session-context.json`.
 
 ---
 
@@ -31,7 +31,7 @@ It is **NOT** a "chat app". It is **NOT** a workflow editor. It is **NOT** a "fu
 
 > "Press Ctrl. Get any AI tool." — without leaving your current window.
 
-(source: `CLAUDE.md` §What is CTRL, `decision_ctrl_is_ai_workshop_not_chat`, session 2026-05-30 vision update)
+(source: `.kiro/steering/development-philosophy.md` § Goal and Authority, `decision_ctrl_is_ai_workshop_not_chat`, session 2026-05-30 vision update)
 
 ---
 
@@ -47,7 +47,7 @@ Global, English-first power users who work across many apps every day and pay fo
 
 Anti-persona: passive consumers, mobile-first users, anyone who never builds / writes / codes.
 
-(source: `decision_ctrl_is_global_english_first`, attic PRODUCT.md, `CLAUDE.md` §Stack)
+(source: `decision_ctrl_is_global_english_first`, attic PRODUCT.md, former `CLAUDE.md` §Stack)
 
 ---
 
@@ -112,7 +112,7 @@ HIDDEN ◀────────────────────▶ COMPAN
 
 - Window not visible, tray icon present.
 - Lone-Ctrl tap → COMPANION.
-- Per `.olym/decisions/001-system-architecture.md` lone-Ctrl is the only chord.
+- Per `vault/ctrl/adrs/001-spine.md`, lone-Ctrl is the only chord.
 
 ### 5.2 COMPANION (default first-launch state)
 
@@ -343,7 +343,7 @@ Per `decision_ai_providers_are_kernel_capabilities`:
 - Kernel exposes typed capabilities: `text.chat`, `image.generate`, `audio.tts`, …
 - Keycaps consume these capabilities, **never bind to a specific provider**.
 - v1 launch provider = Volc (1 BYOK unlocks 9 capabilities).
-- Pattern D (`CLAUDE.md`):
+- Pattern D (`vault/ctrl/adrs/006-cross-cutting.md`):
   - Default = subscription quota (Volc / Qwen / Llama via CF Workers AI)
   - BYOK advanced = Anthropic Claude / OpenAI GPT-4
   - Privacy tier = local Ollama
@@ -432,7 +432,7 @@ Anti-pattern: hex literals outside `tokens.css`. (impeccable audit 0.1.66 wiped 
 
 ## 17. Anti-references / out-of-scope
 
-From `CLAUDE.md` §What CTRL is NOT, locked:
+From `.kiro/steering/development-philosophy.md` and the governing ADRs:
 
 | Don't | Why |
 |---|---|
@@ -458,26 +458,26 @@ Plus this session (2026-05-30):
 
 | # | Rule | Source |
 |---|---|---|
-| NFR-1 | All product code (TS / Rust / CSS / JSX strings) is English; Chinese only in `.md` docs and chat with bao | `feedback_code_strings_english`, `CLAUDE.md` §Rules |
+| NFR-1 | All product code (TS / Rust / CSS / JSX strings) is English; Chinese only in `.md` docs and chat with bao | `feedback_code_strings_english`, `.kiro/steering/development-philosophy.md` § Hard Rules |
 | NFR-2 | No mock data on production paths; routes hit real backends | `feedback_no_mock_data_in_production` |
 | NFR-3 | One SSOT per concept; adding a replacement retires the old in the same PR | `feedback_no_redundancy_one_ssot` |
-| NFR-4 | No hardcoded secrets; Keychain / env only | `CLAUDE.md` §Rules + memory `reference_cf_api_token` |
-| NFR-5 | Cargo.lock + package-lock.json checked in | `CLAUDE.md` §Rules |
-| NFR-6 | Never `--no-verify` on git hooks | `CLAUDE.md` §Rules |
-| NFR-7 | No cross-D1 JOIN | `CLAUDE.md` §Rules |
-| NFR-8 | All `@ctrl/*` packages `private: true` + `license: UNLICENSED`; never publish to public npm | `CLAUDE.md` §Rules |
+| NFR-4 | No hardcoded secrets; Keychain / env only | `.kiro/steering/development-philosophy.md` § Hard Rules + memory `reference_cf_api_token` |
+| NFR-5 | Cargo.lock + package-lock.json checked in | `.kiro/steering/development-philosophy.md` § Hard Rules |
+| NFR-6 | Never `--no-verify` on git hooks | `.kiro/steering/development-philosophy.md` § Hard Rules |
+| NFR-7 | No cross-D1 JOIN | `.kiro/steering/development-philosophy.md` § Hard Rules |
+| NFR-8 | CTRL core is AGPL-3.0; shareable `ctrl-<name>` capability packs are MIT | `vault/ctrl/adrs/006-cross-cutting.md` §5.1, `.kiro/steering/development-philosophy.md` § Hard Rules |
 | NFR-9 | Tauri auto-updater path is the canonical upgrade; manual `cp -R` breaks AX permissions | `feedback_always_use_upgrade_path` |
 | NFR-10 | Pre-existing kernel capabilities reused before adding new ones | `feedback_reuse_existing_capability_first` |
 | NFR-11 | No planning / phasing language to bao ("v1 / v1.1 / 简版 / 完整版") | `feedback_no_planning_no_phasing` |
 | NFR-12 | No splitting one ship goal into ≥3 fine-grained sub-tasks | `feedback_dont_split_tasks_finely` |
-| NFR-13 | Lane discipline: stay in lane, no role switching | `feedback_stay_in_lane_dont_switch_roles` |
+| NFR-13 | Former Olym lane/role orchestration is retired; current work uses focused branches/worktrees and reviewed PRs | `.kiro/steering/development-philosophy.md` § Minimal Development Loop / Git |
 | NFR-14 | Light-theme default; dark opt-in via `[data-theme='dark']` | `decision_ctrl_light_theme_default` |
-| NFR-15 | 80 % test coverage minimum on new code (per ECC) | `~/.claude/rules/ecc/common/testing.md` |
+| NFR-15 | 80 % test coverage minimum on new code (per ECC) | this doc §18 (migrated from a former Claude Code ECC rule) |
 | NFR-16 | Window dimensions documented here, not invented in code | this doc §5 |
 
 ---
 
-## 19. Live tech stack (mirrors `CLAUDE.md`)
+## 19. Live tech stack (governed by `vault/ctrl/adrs/INDEX.md`)
 
 | Layer | Tech |
 |---|---|
@@ -514,9 +514,9 @@ ADRs and memories that supply requirements above; this list is non-exhaustive bu
 
 **ADRs**:
 
-- `.olym/decisions/001-system-architecture.md` — 5 kernel primitives + window roles
-- `.olym/decisions/002-pwa-pivot.md` — Tauri 2 + PWA UI layer
-- `.olym/decisions/003-mesh.md` — cross-device transport
+- `vault/ctrl/adrs/001-spine.md` — 5 kernel primitives + window roles
+- `vault/ctrl/adrs/003-frontend.md` — Tauri 2 + PWA UI layer
+- `vault/ctrl/adrs/002-substrate.md` — cross-device transport and crypto substrate
 
 **Locked memories**:
 
@@ -568,5 +568,5 @@ ADRs and memories that supply requirements above; this list is non-exhaustive bu
 
 | Date | Author | Change |
 |---|---|---|
-| 2026-05-30 | claude (with bao) | Initial consolidation — derived from CLAUDE.md, memories, attic PRODUCT.md, brand tokens, and session 2026-05-30 vision update (Irisy companion + COMPANION/EXPANDED states + text-input separation + external-app preference). §5, §6.6, §6.7, §8, §14 marked 🟡 pending bao sign-off. |
+| 2026-05-30 | claude (with bao) | Initial consolidation — derived from former CLAUDE.md, memories, attic PRODUCT.md, brand tokens, and session 2026-05-30 vision update (Irisy companion + COMPANION/EXPANDED states + text-input separation + external-app preference). §5, §6.6, §6.7, §8, §14 marked 🟡 pending bao sign-off. |
 | 2026-05-30 | claude (bao sign-off) | bao approved Q1-Q7 of shape v3: companion 494 × 100vh default ✓; L1 right side ✓; preserve all features 1-17 ✓; text input / chat split ✓; prefer user's own apps ✓; screen-share invisible v2 ✓; no code before sign-off ✓. Additional decisions: L1 width = 48 px (was 64); 副 nav lives on the LEFT side as a separate set from L1. §5 / §6.2 / §6.6 / §6.7 🟡 → confirmed. §8 / §14 stay 🟡 (mode list + external-app scope). |

@@ -96,8 +96,8 @@ pub trait Actor: Send + 'static {
     }
 }
 
-/// Manifest describing how to instantiate an actor. Loaded from
-/// tool manifest JSON (see .olym/specs/tool-manifest/spec.md).
+/// Manifest describing how to instantiate an actor. Loaded from tool manifest
+/// JSON (executable schema SSOT: packages/ctrl-mcp-sdk/src/manifest-schema.ts).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActorManifest {
     pub prototype: String,

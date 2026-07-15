@@ -1,7 +1,8 @@
 // Default-workspace layout — the number-row action panel that greets a user on
 // the home screen (the Quicker-style "what do you want to do" surface).
 //
-// Design law (CLAUDE.md plain-text philosophy + bao 2026-06-19): the layout is
+// Design law (`.kiro/steering/development-philosophy.md` plain-text
+// philosophy + bao 2026-06-19): the layout is
 // a small, serializable, user-owned plain object — one ordered list of action
 // ids that maps onto the keyboard's number row (slot 0 → key "1" … slot 9 →
 // key "0"). The UI only RENDERS it; add / remove / reorder are edits to this

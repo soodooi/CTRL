@@ -179,7 +179,7 @@ views:
 
 核实 Teable(开源飞书 Bitable)后,bao 钦定 **全量对标,零裁剪**。原先因 plain-text 哲学标的 non-goal(关系型用 wikilink 替代、自动化不做、字段类型砍、视图砍)**全部取消** —— 路线 C(SQLite 派生索引,markdown 仍 truth)正是为了「守哲学又能做全」。
 
-**全做(不再裁剪)**:全部 27 字段类型(含 link/Lookup/Rollup/公式/附件/人员/按钮…)· 全部视图(grid/kanban/gallery/calendar/gantt/form)· 多表 base + 表间关联 · 多级分组 + OR 筛选 · 公式(100+ 函数)· 统计栏 · 复选框选择列 + 列头字段类型图标 · 导入导出 · 仪表盘 · (自动化若撞 CLAUDE.md 不做清单,遇到时与 bao 确认)。
+**全做(不再裁剪)**:全部 27 字段类型(含 link/Lookup/Rollup/公式/附件/人员/按钮…)· 全部视图(grid/kanban/gallery/calendar/gantt/form)· 多表 base + 表间关联 · 多级分组 + OR 筛选 · 公式(100+ 函数)· 统计栏 · 复选框选择列 + 列头字段类型图标 · 导入导出 · 仪表盘 · (自动化若撞当前 Kiro Product Boundaries（`.kiro/steering/development-philosophy.md`）,遇到时与 bao 确认)。
 
 ---
 

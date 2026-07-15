@@ -15,7 +15,8 @@
 //   - No persistence (rooms vanish when both peers disconnect).
 //   - Hibernation API: idle sockets don't bill compute.
 //
-// CLAUDE.md: no local `wrangler dev` — deploys go to *.workers.dev staging.
+// `.kiro/steering/development-philosophy.md` Hard Rules: no local
+// `wrangler dev`; deploys go to *.workers.dev staging.
 
 export interface Env {
   RELAY_ROOM: DurableObjectNamespace;

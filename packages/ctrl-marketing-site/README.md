@@ -23,7 +23,7 @@ npm run build --workspace @ctrl/marketing-site
 
 ## Deploy
 
-Cloudflare Pages. Settings in `.olym/handoffs/H-2026-05-17-apollo-marketing-v0.md` §"CF Pages deployment settings".
+Cloudflare Pages. The original setup was recorded in a former Olym handoff that is not retained in this repository; current deployment settings live in the Cloudflare Pages project configuration.
 
 ## Constraints
 

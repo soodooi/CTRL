@@ -30,7 +30,7 @@ updated: 2026-06-13
 
 ## 锁定的组织模型
 
-1. **数据模型 = in-place 索引（抄 DEVONthink Index）**：SQLite 索引只存文件的**引用**（路径 + 稳定 ID + frontmatter + tags + FTS5），**文件留磁盘原地，不搬不导入**。索引是可丢弃的派生 —— 本地是 truth，索引是 mirror（对齐 CLAUDE.md）。
+1. **数据模型 = in-place 索引（抄 DEVONthink Index）**：SQLite 索引只存文件的**引用**（路径 + 稳定 ID + frontmatter + tags + FTS5），**文件留磁盘原地，不搬不导入**。索引是可丢弃的派生 —— 本地是 truth，索引是 mirror（对齐当前 Kiro Design Philosophy，见 `.kiro/steering/development-philosophy.md`）。
 2. **修掉 DEVONthink 的断链缺陷**：不拿绝对路径当唯一身份（DEVONthink 在 Finder 移动文件就断链）。给每个文件一个**稳定 ID**（frontmatter `id:` 或内容/inode 指纹），路径只是「当前位置」字段；文件移动用 FS watcher + 指纹**自动重关联**。
 3. **组织/呈现 = saved query 当虚拟文件夹（抄 Smart Folder）**：一条 query = 一行 SQLite WHERE（tag / 路径 glob / frontmatter 字段 / FTS5 全文），存成 vault 里一个普通 `.md`（frontmatter 描述查询）——可 git diff、vim 编辑（过 vim test）。打开时实时跑出结果。组织从「搬文件/建文件夹树」升级为「零移动、多重归属」。
 4. **folder 只当物理落点**（浅层），**不当主组织轴**；禁止用深层嵌套文件夹表达分类。

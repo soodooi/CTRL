@@ -4,7 +4,7 @@ date: 2026-06-27
 status: active-investigation
 relates:
   - vault/ctrl/architecture-byo-cli-driver.md
-  - .olym/decisions/002-substrate.md  # §1 brain = hermes
+  - vault/ctrl/adrs/002-substrate.md  # §1 brain = hermes
 ---
 
 # Irisy 工具调用诊断

@@ -1,5 +1,5 @@
 // Brand theme data hook — feeds CTRL OKLCh tokens into dotLottie's
-// `slot_*` color rules per .olym/skills/thorvg/SKILL.md §3.3 + §5.1.
+// `slot_*` color rules from the CSS tokens in `brand/brand-tokens.md`.
 //
 // Approach: resolve each CSS variable through a hidden probe element so
 // the browser does the OKLCh → sRGB conversion natively, then emit a

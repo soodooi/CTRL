@@ -16,17 +16,17 @@ Three things separate it from "yet another local AI client":
 
 The economy is **share & be shared**: package a tool as a plain-text definition, publish it to the Discover commons, one-click install what others share — only definitions travel; data and keys never leave any machine. CTRL sells the substrate; the commons stays free and is the moat.
 
-> Full positioning + architecture: [`.olym/decisions/006-cross-cutting.md`](./.olym/decisions/006-cross-cutting.md) §5 (positioning) + §6 (cold-start loop) · [`.olym/decisions/INDEX.md`](./.olym/decisions/INDEX.md) (7 module ADRs).
+> Full positioning + architecture: [`vault/ctrl/adrs/006-cross-cutting.md`](./vault/ctrl/adrs/006-cross-cutting.md) §5 (positioning) + §6 (cold-start loop) · [`vault/ctrl/adrs/INDEX.md`](./vault/ctrl/adrs/INDEX.md) (module ADR registry).
 
 Private repository. Single deliverable: this repo (`soodooi/CTRL`). All Rights Reserved (see [LICENSE](./LICENSE)).
 
 ## Required reading (in order)
 
-1. [`CLAUDE.md`](./CLAUDE.md) — project entry, rules, design philosophy, do-not-do list
-2. [`.olym/steering/ctrl-strategy.md`](./.olym/steering/ctrl-strategy.md) — 5-minute navigator: positioning, 15 v1 keycaps, phase plan
-3. [`.olym/decisions/INDEX.md`](./.olym/decisions/INDEX.md) — ADR registry (architectural decisions)
+1. [`.kiro/steering/development-philosophy.md`](./.kiro/steering/development-philosophy.md) — active development contract, hard rules, and design philosophy
+2. [`vault/ctrl/GOAL.md`](./vault/ctrl/GOAL.md) — single active development goal
+3. [`vault/ctrl/adrs/INDEX.md`](./vault/ctrl/adrs/INDEX.md) — ADR registry; then read ADR-001 and the owning module ADR
 
-The full stack table and architecture diagram live in [CLAUDE.md](./CLAUDE.md) — single source of truth. This file stays minimal on purpose.
+Kiro runs the checked-in `.kiro/skills/{goal,dev-loop}` workflow and `.kiro/hooks/session-context.json`. The architecture map lives in `vault/ctrl/adrs/`; legacy Claude/Olym development runtimes are archived outside the repository.
 
 ## Prerequisites
 
@@ -68,7 +68,7 @@ npm run dev
 npm run tauri:build
 ```
 
-Outputs (current binary budget per ADR-003 + CLAUDE.md Stack table):
+Outputs (current binary budget per `vault/ctrl/adrs/003-frontend.md` and governing ADRs):
 
 - macOS: `src-tauri/target/release/bundle/dmg/CTRL_*.dmg`
 - Win: `src-tauri/target/release/bundle/msi/CTRL_*_x64_en-US.msi`

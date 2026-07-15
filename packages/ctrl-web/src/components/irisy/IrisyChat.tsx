@@ -181,7 +181,7 @@ const AssistantBubble = memo(function AssistantBubble({
   // filter is the backstop. See `lib/irisy-render-filter.ts` for rules
   // + SOTA verbatim quotes (Cursor "NEVER refer to tool names", Cline
   // "STRICTLY FORBIDDEN from starting with 'Great'", Claude Code "less
-  // than 4 lines"). Brainstorm: `.olym/brainstorm/irisy-reply-specs-
+  // than 4 lines"). Brainstorm: `vault/ctrl/history/brainstorm/irisy-reply-specs-
   // 2026-06-04.md` §2.
   const cleaned = useMemo(
     () => cleanReplyText(message.content),

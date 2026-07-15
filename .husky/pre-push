@@ -1,6 +1,7 @@
-# All-English (CJK) gate only. Handoff dispatch check removed 2026-06-19
-# with the multi-agent layer (see vault/ctrl/harness-minimal.md).
+# Deterministic repository gates. Runtime and visual evidence remain part of
+# the Kiro dev-loop because they are change-specific, not safe generic hooks.
 node scripts/pre-push-check.js
+node scripts/check-governance.mjs
 # SC5 dual-surface ratchet (ADR-010 § diagnosis P1): blocks NEW capabilities
 # added as both an MCP tool and a Tauri command. Lower the baseline as you migrate.
 node scripts/ratchet-dual-surface.mjs

@@ -7,8 +7,8 @@
 //   - Channel   : typed pipe between actors (back-pressure)
 //   - Effect    : first-class side effect (returned from actor handlers)
 //
-// Architecture lock: see .olym/decisions/001-system-architecture.md
-// Spec detail:       see .olym/specs/kernel/spec.md
+// Architecture lock: see vault/ctrl/adrs/001-spine.md
+// Substrate detail:  see vault/ctrl/adrs/002-substrate.md
 //
 // `#[allow(dead_code)]` is retained here because several primitive
 // surfaces are publicly exported for the Tauri command layer / the TS

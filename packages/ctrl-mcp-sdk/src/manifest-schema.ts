@@ -2,8 +2,8 @@
 // shape across PWA, builtin mcp files, Irisy mcp-creator output, and
 // the kernel's run_mcp dispatch path.
 //
-// Per CLAUDE.md design philosophy: mcp manifest is markdown + JSON
-// frontmatter (or pure JSON for builtins). Schema is hand-versioned;
+// Per .kiro/steering/development-philosophy.md: mcp manifest is markdown +
+// JSON frontmatter (or pure JSON for builtins). Schema is hand-versioned;
 // breaking changes bump `manifest_version` so the kernel can detect +
 // migrate old mcps.
 //
@@ -34,35 +34,35 @@ export const McpColor = z.enum([
 ]);
 export type McpColor = z.infer<typeof McpColor>;
 
-export const McpVariant = z.enum([
+const ActiveMcpVariant = z.enum([
   'builtin',         // ships with CTRL, runs in-process via step engine
   'mcp-server',      // third-party MCP server (Pattern D)
   'oauth',           // big-platform OAuth (Feishu / Notion / Linear / Slack)
   'cli-wrapper',     // wraps an external CLI binary (Pattern B)
-  'stss-publisher',  // listens on ST-SS bridge for events (Pattern F)
   'local-agent',     // long-running local process (Pattern C)
   'skill',           // SKILL.md run by the active brain — the workbench's
                      // primary create path (source/SKILL.md → ctrl skill →
-                     // mcp). See ADR-007 workbench § canvas v1.
+                     // mcp). (ADR-002 substrate § composition v65)
                      // ADR-002 substrate § brain v17 (2026-06-07): keycap
                      // concept retired; collapses into mcp + skill.
 ]);
+
+/** @deprecated Parse-only compatibility for existing v1/v2 manifests.
+ *  Pattern F/ST-SS execution is retired; installers must surface the warning
+ *  from parseManifest and migrate or disable the pack, never dispatch it. */
+const RetiredMcpVariant = z.literal('stss-publisher');
+
+export const McpVariant = z.union([ActiveMcpVariant, RetiredMcpVariant]);
 export type McpVariant = z.infer<typeof McpVariant>;
 
-// Mcp target — orthogonal to `variant`. Declares the *role* a mcp
-// plays in the CTRL surface so the kernel can route requests correctly.
-// Introduced 2026-05-25 (H-2026-05-25-001) when bao approved Pi as default
-// brain — brain runtimes are mcps, not kernel-level primitives.
-//
-//   mcp-tool     — one-shot tool call. Default for ~90% of mcps.
-//   brain        — pluggable agent runtime that owns `text.chat` (or any
-//                  capability the mcp declares via `capability`). The
-//                  user's active brain mcp is the answer for any
-//                  inbound capability call from Irisy. Pi is the sole
-//                  brain (ADR-001 spine amendment 2026-05-25).
-//
-// See .olym/specs/tool-manifest/spec.md §13.
-export const McpTarget = z.enum(['mcp-tool', 'brain']);
+// Mcp target — legacy compatibility field retained for tolerant parsing.
+// The former `brain` target was retired when Pi exited the hot path; current
+// Irisy engines are configured through the ACP engine surface, while feature
+// packs declare `brain_capabilities` requirements instead. New manifests must
+// use `mcp-tool` or omit this field. (ADR-002 substrate § brain v19)
+export const McpTarget = z
+  .enum(['mcp-tool', 'brain'])
+  .describe('Deprecated compatibility field; brain is retired for new manifests');
 export type McpTarget = z.infer<typeof McpTarget>;
 
 export const Permission = z.enum([
@@ -462,10 +462,10 @@ export const Description = z.object({
   long: z.string().optional(),
 });
 
-// ── Source bindings (per ADR-004 cap § execution v1 5 source types) ─────────────────────────
-// Currently only `mcp` carries structured config (server_id + tool_name).
-// Builtin / cli-wrapper / oauth / stss leave `source` empty and rely on
-// the manifest's `variant` + step content.
+// ── Source bindings (ADR-001 spine § sources v9: 4 current source types) ────────
+// `mcp` carries structured server config. Builtin / cli-wrapper / oauth rely on
+// the manifest's `variant` + step content; the retired ST-SS source is rejected.
+// (ADR-001 spine § sources v9)
 
 export const McpSource = z.object({
   type: z.literal('mcp'),
@@ -624,10 +624,17 @@ export type DraftMeta = z.infer<typeof DraftMeta>;
 
 // ── ADR-002 substrate § composition v1 v2 axes (additive to v1; v1 manifests skip all of these) ────
 
-/** ADR-004 cap § execution v1 7-pattern axis — routes execution. G=builtin/StepEngine,
- *  D=3rd-party MCP, B=CLI wrapper, C=daemon RPC, E=OAuth, F=ST-SS,
- *  A=HTTP sink. Optional on v1 manifests (variant carries the same info). */
-export const McpPattern = z.enum(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+/** ADR-002 substrate § composition v65 routing axis — current patterns are
+ *  G=builtin/StepEngine, D=3rd-party MCP, B=CLI wrapper, C=daemon RPC,
+ *  E=OAuth, A=HTTP sink. Pattern F/ST-SS is retired from execution but remains
+ *  parseable solely to migrate existing v1/v2 manifests without silently
+ *  invalidating their declared schema version.
+ *  Optional on v1 manifests (`variant` carries the same information).
+ *  (ADR-002 substrate § composition v65) */
+const ActiveMcpPattern = z.enum(['A', 'B', 'C', 'D', 'E', 'G']);
+/** @deprecated Parse-only compatibility; never a live executor route. */
+const RetiredMcpPattern = z.literal('F');
+export const McpPattern = z.union([ActiveMcpPattern, RetiredMcpPattern]);
 export type McpPattern = z.infer<typeof McpPattern>;
 
 /** ADR-002 substrate § composition v1 brain capability requirement — declared per-capability with
@@ -967,27 +974,21 @@ export const McpManifest = z.object({
    *  connect-time. Optional — one-shot mcps that are never composed omit it. */
   io: McpIo.optional(),
 
-  /** Role of this mcp in the CTRL surface. Orthogonal to `variant`:
-   *  variant says *how* it runs, target says *what role* it plays.
-   *  Absent → `mcp-tool` (the default). `brain` is special — kernel's
-   *  brain router selects exactly one active brain mcp per user. */
+  /** @deprecated Legacy target is parsed only for old manifests. New manifests
+   *  omit it (or use `mcp-tool`); `brain` no longer selects a runtime.
+   *  (ADR-002 substrate § brain v19) */
   target: McpTarget.optional(),
 
-  /** Brain-mcp only: the kernel capability this brain answers
-   *  (`text.chat`, `text.embed`, `image.generate`, …). Read by the
-   *  kernel brain router to dispatch the right capability to the right
-   *  brain. Ignored for non-brain targets. */
+  /** @deprecated Former brain-manifest capability; ignored by current routing.
+   *  Use `brain_capabilities` for pack requirements. */
   capability: z.string().optional(),
 
-  /** Brain-mcp only: name of the npm bridge package the kernel
-   *  supervisor spawns to talk to this brain (e.g. `@ctrl/pi-plugin`).
-   *  Ignored for non-brain targets. */
+  /** @deprecated Former Pi-era bridge package name; parsed for migration only
+   *  and never spawned by the current kernel. */
   bridge: z.string().optional(),
 
-  /** Brain-mcp only: when true, CTRL does NOT proxy LLM credentials
-   *  — the brain runtime owns its own provider config (e.g. ~/.pi/config).
-   *  Default true for `target: brain` to preserve the Obsidian "no
-   *  second copy of user state" philosophy. */
+  /** @deprecated Former brain-owned credential switch; current provider/engine
+   *  credentials follow the provider registry and ACP engine policy. */
   provider_passthrough: z.boolean().optional(),
 
   /** Actions the user can invoke (step-engine mcps). `skill` / `mcp` /
@@ -1086,10 +1087,13 @@ export type McpManifest = z.infer<typeof McpManifest>;
 
 // ── Parse + validate ─────────────────────────────────────────────────────
 
+// Compatibility warnings are part of the migration contract for retired values.
+// (ADR-002 substrate § composition v65)
 export interface ValidationResult {
   ok: boolean;
   manifest?: McpManifest;
   errors: Array<{ path: string; message: string }>;
+  warnings: Array<{ path: string; message: string }>;
 }
 
 /**
@@ -1101,15 +1105,33 @@ export interface ValidationResult {
  *  - Irisy mcp-creator (live validation while user fills fields)
  */
 export function parseManifest(input: unknown): ValidationResult {
+  // Retired values remain observable for migration but never regain an executor.
+  // (ADR-002 substrate § composition v65)
   const result = McpManifest.safeParse(input);
   if (result.success) {
-    return { ok: true, manifest: result.data, errors: [] };
+    const warnings: ValidationResult['warnings'] = [];
+    if (result.data.variant === 'stss-publisher') {
+      warnings.push({
+        path: 'variant',
+        message: 'stss-publisher is retired compatibility data; migrate or disable this manifest before execution',
+      });
+    }
+    if (result.data.pattern === 'F') {
+      warnings.push({
+        path: 'pattern',
+        message: 'Pattern F/ST-SS is retired compatibility data and has no live executor route',
+      });
+    }
+    return { ok: true, manifest: result.data, errors: [], warnings };
   }
+  // Invalid manifests carry no compatibility warnings because no typed legacy
+  // value was recovered. (ADR-002 substrate § composition v65)
   return {
     ok: false,
     errors: result.error.issues.map((iss) => ({
       path: iss.path.join('.'),
       message: iss.message,
     })),
+    warnings: [],
   };
 }

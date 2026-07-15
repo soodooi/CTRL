@@ -67,8 +67,8 @@ export function isSeedingFirstRun(status: KernelStatus | null): boolean {
 }
 
 // `icon` is widened to `Icon | string` for forward-compat with the
-// kernel schema migration to a discriminated union (per
-// .olym/skills/thorvg/SKILL.md §1 / brand-tokens §12.2). Today the
+// kernel schema migration to the `McpIcon` discriminated union in
+// `packages/ctrl-mcp-sdk/src/manifest-schema.ts`. Today the
 // kernel ships single-glyph strings; consumers must run the value
 // through `normalizeIcon()` from `lib/icon.ts` before rendering.
 export interface McpSummary {

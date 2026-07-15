@@ -1,8 +1,7 @@
 //! 1:1 Olm pair smoke — v1.0 deliverable for H-2026-05-14-001 lane-D.
 //!
 //! Proves the vodozemac Olm 1:1 crypto core round-trips end-to-end against
-//! the minimal `session.rs` façade. Scope per
-//! `.olym/specs/mesh-comm/spec.md` §5:
+//! the minimal `session.rs` façade. This spike covers:
 //!
 //! - Two `OlmAccount`s (Device A "desktop", Device B "mobile") spawned in-process.
 //! - A advertises a one-time prekey; B builds an outbound session and sends

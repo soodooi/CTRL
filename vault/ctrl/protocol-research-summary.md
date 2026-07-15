@@ -34,7 +34,7 @@ related:
 
 | 文档 | 位置 | 是什么 | 权威性 |
 |---|---|---|---|
-| **ADR-010 communication** | `.olym/decisions/` | 通讯总纲(窄腰+8缝+内外哲学)| ★ **唯一真相源**(module ADR) |
+| **ADR-010 communication** | `vault/ctrl/adrs/` | 通讯总纲(窄腰+8缝+内外哲学)| ★ **唯一真相源**(module ADR) |
 | **research-protocol-2026.md** | `vault/ctrl/` | 协议选型 2026 事实(竞品/MCP增量/local-first)| 事实根基(deep-research) |
 | **protocol-opensource-strategy.md** | `vault/ctrl/` | 开源战略(竞品打法 + §14 不开源否定结论)| 战略结论 |
 | **本文 protocol-research-summary.md** | `vault/ctrl/` | 单一入口/导航 | 总览 |

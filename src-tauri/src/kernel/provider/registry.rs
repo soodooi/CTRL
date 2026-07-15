@@ -95,9 +95,10 @@ const KEYCHAIN_SERVICE_LEGACY: &str = "app.ctrl.spike";
 /// BUILTIN_MANIFESTS, so the slot pointed at a manifest that is never
 /// seeded (the default path was simply broken). Point it instead at the
 /// one builtin that runs key-free on the user's own machine: `ollama`
-/// (CTRL bootstrap ships hermes3:8b). This honors the device-first rule
-/// (CLAUDE.md derived rule #2: works offline, ctrl-cloud is
-/// augmentation not dependency). The CF Workers AI cloud default
+/// (CTRL bootstrap ships hermes3:8b). This honors
+/// `.kiro/steering/development-philosophy.md` derived rule #2: it works
+/// offline and ctrl-cloud is augmentation, not a dependency. The CF Workers
+/// AI cloud default
 /// (ADR-006 Pattern D) takes this slot once the ctrl-cloud secrets
 /// pipeline ships and a CTRL-brand cloud provider is seeded.
 const CTRL_FALLBACK_PROVIDER_ID: &str = "ollama";

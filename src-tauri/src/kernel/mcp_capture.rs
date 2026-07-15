@@ -1,7 +1,7 @@
 // kernel::mcp_capture — mcp output to SmartTable capture (§9).
 //
 // (ADR-002 substrate v5 §9 smart-table-output, 2026-06-03 — brainstorm
-// `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md` product
+// `vault/ctrl/history/brainstorm/vault-irisy-product-design-2026-06-03.md` product
 // decision P4 "smart table list shape per mcp".)
 //
 // Best-effort side effect — failures are warn-logged and never block

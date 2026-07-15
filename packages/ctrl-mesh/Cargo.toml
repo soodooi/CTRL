@@ -25,7 +25,7 @@ async-trait = "0.1"
 # Crypto — vodozemac (Olm 1:1), not libsignal-rust.
 # Opt-in via `crypto` feature; the v1.0 spike (H-2026-05-14-001 lane-D)
 # enables it for the in-memory pair smoke. Sprint 2 swaps in the vendored
-# copy + adds the DH-validity wrapper check (§4.4 of mesh-comm spec).
+# copy and adds the wrapper-level DH-validity check described below.
 # Pinned to =0.10.0 (themis review L): the post-2026-02 NonContributoryKey
 # fix is in 0.10.0; any future 0.10.x must be re-audited before bumping.
 vodozemac = { version = "=0.10.0", optional = true }

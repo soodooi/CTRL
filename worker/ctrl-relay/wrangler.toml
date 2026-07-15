@@ -1,6 +1,7 @@
 # ctrl-relay — zero-knowledge WebSocket relay for CTRL remote windows.
 # (ADR-005 §2 remote co-view, option B.)
-# CLAUDE.md rule: no local `wrangler dev` — deploys go to *.workers.dev staging.
+# `.kiro/steering/development-philosophy.md` Hard Rules: no local
+# `wrangler dev`; deploys go to *.workers.dev staging.
 
 name = "ctrl-relay"
 main = "src/index.ts"

@@ -1,5 +1,5 @@
 // Irisy synthesize — Layer 4 product surface (ADR-002 v5 §10 +
-// `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md` §5.3,
+// `vault/ctrl/history/brainstorm/vault-irisy-product-design-2026-06-03.md` §5.3,
 // §5.5 question-vault, §5.10 cross-note synth).
 //
 // Three Tauri commands:

@@ -625,7 +625,7 @@
    left; assistant lines render in primary text color with full
    markdown structure (lists, headings, code, tool cards). Turn
    separator (hairline) marks role boundary.
-   Sizes from .olym/brainstorm/chat-readability-2026-06-01.md
+   Sizes from vault/ctrl/history/brainstorm/chat-readability-2026-06-01.md
    (14.5/1.5 body, 0.35em paragraph gap, 10px scroller gap). */
 .userBubble,
 .assistantBubble {

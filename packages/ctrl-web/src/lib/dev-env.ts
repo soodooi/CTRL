@@ -1,7 +1,7 @@
 // Dev-environment variables — local development config (API keys, tokens,
 // endpoints) the user sets in Settings → Env. Stored in the OS keychain (never
-// plain text, per CLAUDE.md secrets rule) and injected into the Coding
-// terminal so a CLI like Claude Code picks up ANTHROPIC_API_KEY /
+// plain text, per `.kiro/steering/development-philosophy.md` Hard Rules) and
+// injected into the Coding terminal so a CLI like Claude Code picks up ANTHROPIC_API_KEY /
 // ANTHROPIC_BASE_URL without the user pasting secrets into the shell.
 //
 // Storage convention (keychain has no enumeration): each var is one entry

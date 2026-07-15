@@ -2,7 +2,7 @@
 // block-level rewrites in place.
 //
 // (Product spec §5.2 + decision P2 inline streaming + P7 dual trigger.
-// Brainstorm `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`.)
+// Brainstorm `vault/ctrl/history/brainstorm/vault-irisy-product-design-2026-06-03.md`.)
 //
 // Trigger surface:
 //   - `Cmd+K` (Mac) / `Ctrl+K` (Win/Linux) anywhere with a non-empty

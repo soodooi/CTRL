@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "CTRL Session Context",
+      "trigger": "SessionStart",
+      "description": "Inject the active CTRL goal and current Git truth at the start of every Kiro session.",
+      "action": {
+        "type": "command",
+        "command": "node .kiro/scripts/session-context.cjs",
+        "timeout": 10
+      }
+    }
+  ]
+}

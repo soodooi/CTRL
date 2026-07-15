@@ -5,7 +5,7 @@
 // between invocations: user preferences, last-used choices, draft text,
 // "did I onboard?" flags. Raycast's `LocalStorage` equivalent.
 //
-// Per CLAUDE.md design philosophy:
+// Per `.kiro/steering/development-philosophy.md` Design Philosophy:
 //   - SQLite is a public format; `sqlite3 ~/.ctrl/state/localstorage.db`
 //     inspects everything.
 //   - Per-mcp scoping prevents one mcp from snooping another's state

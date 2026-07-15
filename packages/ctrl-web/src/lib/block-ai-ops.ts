@@ -1,7 +1,7 @@
 // Block AI ops — selection-driven inline rewrite primitives.
 //
 // (ADR-002 substrate v5 §10 + product spec §5.2 / P2 / P7, 2026-06-03 —
-// brainstorm `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md`.)
+// brainstorm `vault/ctrl/history/brainstorm/vault-irisy-product-design-2026-06-03.md`.)
 //
 // 6 named actions plus a free-form "custom" path. Each action maps to a
 // system prompt that Pi (provider router default) executes against the

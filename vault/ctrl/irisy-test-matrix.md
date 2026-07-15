@@ -2,7 +2,7 @@
 
 > 我(Claude)承担 **测试能力**;Irisy 功能由**别人开发**。本文件 = 「Irisy 该做成什么」→「怎么验证它做对了」的真相源。
 > 测试 = 验证 Irisy 符合规格。未实装的能力 **不由我实装**,而是写成规格化 pending/blocked 测试(红灯,待开发者点绿)。
-> 真相源派生自:ADR-005(governing)+ ADR-008(retired,voice/acceptance 来源)+ PRODUCT.md + `.olym/brainstorm/irisy-*` + `capability-catalog.ts` + `irisy-prompts.ts` v10。
+> 真相源派生自:ADR-005(governing)+ ADR-008(retired,voice/acceptance 来源)+ PRODUCT.md + `vault/ctrl/history/brainstorm/irisy-*` + `capability-catalog.ts` + `irisy-prompts.ts` v10。
 
 ## Irisy 要做成什么 —— 三层时代(测当前层,别测退役层)
 
@@ -71,4 +71,4 @@
 
 - **Hermes 接线** = 最大 gap;C1–C7/reflect-subagent/coding 的工具行为测试全 blocked 在此。
 - **ADR-005 §6/§7(capability decomposition + pi-extension)** Pi 退役后失效,需 amend 标 superseded(否则 F6–F12 验收点悬空)。
-- **opencode vs hermes 不一致**:v10 prompt + catalog 说 coding face=opencode,CLAUDE.md 说 Irisy brain=hermes、opencode unwired。需钉死 running build 到底调谁(值得一个 pin-down 测试)。
+- **opencode vs hermes 不一致**:v10 prompt + catalog 说 coding face=opencode,former `CLAUDE.md` 说 Irisy brain=hermes、opencode unwired。需钉死 running build 到底调谁(值得一个 pin-down 测试)。

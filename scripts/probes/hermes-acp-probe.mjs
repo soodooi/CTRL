@@ -18,24 +18,34 @@ const PROMPT = process.argv[2] ?? 'Reply with exactly: ACP OK';
 const COLD_START_MS = 180_000; // first uvx run resolves the PyPI spec
 const TURN_MS = 120_000;
 
-// Entry command from the installed manifest (single SSOT — same cmd the
-// kernel launcher uses), fall back to the pinned spec.
-function entryCmd() {
-  try {
-    const m = JSON.parse(
-      readFileSync(join(homedir(), '.ctrl', 'agents', 'hermes', 'manifest.json'), 'utf8'),
-    );
-    if (Array.isArray(m.entry_cmd) && m.entry_cmd.length) return m.entry_cmd;
-  } catch {}
-  return [join(homedir(), '.ctrl', 'bin', 'uvx'), '--from', 'hermes-agent[acp]==0.16.0', 'hermes-acp'];
+// Read the build-owned Rust constants directly. The probe must validate the
+// exact Hermes distribution that this source tree will install, never a mutable
+// ~/.ctrl user manifest. (ADR-002 substrate §1.8.4 v62)
+const installerSource = readFileSync(
+  new URL('../../src-tauri/src/shell/agent_installer.rs', import.meta.url),
+  'utf8',
+);
+function rustStringConst(name) {
+  const match = installerSource.match(new RegExp(`pub const ${name}: &str = "([^"]+)";`));
+  if (!match) throw new Error(`missing ${name} in agent_installer.rs`);
+  return match[1];
 }
 
-let [cmd, ...args] = entryCmd();
-// hermes-agent[acp] needs Python >=3.11; pin it so uv fetches a managed
-// CPython instead of falling back to the (too-old) system Python.
-if (cmd.endsWith('uvx') && !args.includes('--python')) {
-  args = ['--python', '3.12', ...args];
+const hermesVersion = rustStringConst('HERMES_VERSION');
+const hermesSpec = rustStringConst('HERMES_ACP_SPEC');
+const hermesPython = rustStringConst('HERMES_PYTHON');
+if (!hermesSpec.endsWith(`==${hermesVersion}`)) {
+  throw new Error(`Hermes source pins disagree: version=${hermesVersion}, spec=${hermesSpec}`);
 }
+
+const cmd = process.env.CTRL_UVX_BIN ?? join(homedir(), '.ctrl', 'bin', 'uvx');
+const args = [
+  '--python', hermesPython,
+  '--with', 'mcp>=1.24',
+  '--from', hermesSpec,
+  'hermes-acp',
+];
+console.error(`[probe] source pin: Hermes ${hermesVersion}`);
 console.error(`[probe] spawning: ${cmd} ${args.join(' ')}`);
 const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
 

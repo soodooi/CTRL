@@ -8,15 +8,18 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-// Re-export manifest schema types + Zod parsers so consumers don't reach
-// into a deeper module path (`@ctrl/mcp-sdk/manifest-schema`). Keep
-// the surface flat: one package, one import path.
+// Re-export manifest schema types, parser, and Zod schemas so supported SDK
+// consumers can observe retired-value migration warnings without reaching into
+// a private module path. Retired values remain parse-only and have no executor.
+// (ADR-002 substrate § composition v65)
 export type {
   L2NavItem,
   WorkspaceTab,
   WorkspaceDeclaration,
   UiSurface,
   WorkspaceUi,
+  McpManifest,
+  ValidationResult,
 } from './manifest-schema';
 export {
   L2NavItem as L2NavItemSchema,
@@ -25,6 +28,9 @@ export {
   UiSurface as UiSurfaceSchema,
   WorkspaceUi as WorkspaceUiSchema,
   McpManifest as McpManifestSchema,
+  // Public migration warnings for retired values; no live route is restored.
+  // (ADR-002 substrate § composition v65)
+  parseManifest,
 } from './manifest-schema';
 
 /* ---------- Types ---------- */
@@ -35,8 +41,17 @@ export interface McpInfo {
   description?: string;
   /** Tools exposed by this mcp (MCP tool names). Empty = single-action mcp. */
   tools: McpToolInfo[];
-  /** What kind of mcp implementation backs this. */
-  variant: 'builtin' | 'mcp-server' | 'oauth' | 'cli-wrapper' | 'stss-publisher';
+  /** What kind of mcp implementation backs this.
+   *  `stss-publisher` is observable only for retired-manifest migration; it
+   *  has no supported dispatch route. (ADR-002 substrate § composition v65) */
+  variant:
+    | 'builtin'
+    | 'mcp-server'
+    | 'oauth'
+    | 'cli-wrapper'
+    | 'local-agent'
+    | 'skill'
+    | 'stss-publisher';
   /** Optional platform restriction. */
   platforms?: Array<'macos' | 'windows' | 'linux'>;
 }

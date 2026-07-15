@@ -52,8 +52,9 @@ fn manifest_to_summary(manifest: &serde_json::Value, id: &str) -> McpSummary {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
     };
-    // `source` lives under manifest.source.type (per .olym/specs/tool-manifest/spec.md),
-    // not at the top level — read both shapes so PWA gets a value either way.
+    // `source` lives under manifest.source.type (executable schema SSOT:
+    // packages/ctrl-mcp-sdk/src/manifest-schema.ts), not at the top level —
+    // read both shapes so PWA gets a value either way.
     let source = manifest
         .get("source")
         .and_then(|s| s.get("type"))

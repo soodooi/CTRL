@@ -7,7 +7,7 @@
 
 ## 0. 一句话结论(必须 bao 拍的根本决策)
 
-**飞书 Bitable 的灵魂 = 关系型(关联 / Lookup / Rollup / 跨表公式)。调研证明:这一层在纯 markdown 下做不到**(每次关联查询 = 遍历文件树 O(n²) I/O,无事务保证双向同步,无外键导致悬空指针,数万行不可用)。**要真正对标飞书 Bitable,必须引入结构化存储(SQLite)。** 这冲突 CLAUDE.md 钦定的「本地 markdown = truth, vim test」。
+**飞书 Bitable 的灵魂 = 关系型(关联 / Lookup / Rollup / 跨表公式)。调研证明:这一层在纯 markdown 下做不到**(每次关联查询 = 遍历文件树 O(n²) I/O,无事务保证双向同步,无外键导致悬空指针,数万行不可用)。**要真正对标飞书 Bitable,必须引入结构化存储(SQLite)。** 这冲突当前 Kiro Design Philosophy（`.kiro/steering/development-philosophy.md`）锁定的「本地 markdown = truth, vim test」。
 
 → 两条路线(详见 §4),只有 bao 能选:
 - **路线 A(守哲学)**:plain-text 不变 → 只能做「轻量单表智能表格」,关系型用 `[[wikilink]]` 软链,**对标不了 Bitable 的灵魂**。

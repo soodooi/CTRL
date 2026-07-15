@@ -4,7 +4,7 @@
 // `decision_vault_adr_002_section_8` — kernel exposes 21 primitive
 // endpoints; Daily Note / Sourcing routines live at the feature layer.)
 //
-// Per CLAUDE.md design philosophy:
+// Per `.kiro/steering/development-philosophy.md` Design Philosophy:
 //   - All paths are relative to vault root (portable, machine-independent)
 //   - Frontmatter is JSON over the wire; vault module renders/parses YAML on disk
 //   - No "export" command — files are on disk, vim / Obsidian / Finder open them

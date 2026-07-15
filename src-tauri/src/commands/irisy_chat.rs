@@ -12,7 +12,7 @@
 // install + chat surface, this command gains an agent-first branch:
 // route to hermes via the kernel MCP bus, fall back to the provider
 // router when the agent is not installed — offline / fresh installs
-// stay fully usable (CLAUDE.md derived rule #2).
+// stay fully usable (.kiro/steering/development-philosophy.md derived rule #2).
 //
 // Contract (unchanged — the PWA's ChatStreamTransport keeps working):
 //   invoke('irisy_chat_stream', { args: { request_id, messages, model?,
@@ -389,7 +389,7 @@ async fn forward_to_provider(
     // persona, persistent memory, skills) STREAMING over ACP. The bare provider
     // router answers as the raw vendor model with no Irisy identity (observed:
     // "I am Doubao"), so it is the FALLBACK only (offline / no hermes / hermes
-    // error, CLAUDE.md derived rule #2). A slow agent turn stays interruptible
+    // error, .kiro/steering/development-philosophy.md derived rule #2). A slow agent turn stays interruptible
     // via the Stop button + never-block input (IrisyChat). Coding -> opencode.
     let coding_mode = args.mode.as_deref() == Some("coding");
     // Routing (ADR-005 irisy § persona-shell v5 §6.2): tool/action turns ->

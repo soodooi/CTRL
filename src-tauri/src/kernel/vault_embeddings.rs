@@ -2,7 +2,7 @@
 //
 // (ADR-002 substrate v5 §10 embeddings, 2026-06-03 — memory
 // `decision_vault_adr_002_section_8`. Spec:
-// `.olym/brainstorm/vault-irisy-product-design-2026-06-03.md` §5.1 + P1.)
+// `vault/ctrl/history/brainstorm/vault-irisy-product-design-2026-06-03.md` §5.1 + P1.)
 //
 // Storage: a single SQLite table colocated with the existing kernel
 // sqlite file (rusqlite bundled). 768-d vector for each embedded note,
