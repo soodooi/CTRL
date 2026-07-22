@@ -2,7 +2,7 @@
   "name": "ctrl",
   "private": true,
   "license": "UNLICENSED",
-  "version": "0.1.1016",
+  "version": "0.1.1017",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -13,7 +13,7 @@
     "preview": "npm --workspace @ctrl/web run preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:build": "node scripts/tauri-build.mjs",
     "typecheck": "npm --workspace @ctrl/web run typecheck",
     "check:governance": "node scripts/check-governance.mjs --worktree",
     "check:adr": "bash scripts/check-adr-acceptance.sh",

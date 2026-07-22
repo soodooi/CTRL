@@ -278,6 +278,8 @@ export interface AmbientHomeProps {
   providerId?: string | null;
   onOpenPicker: () => void;
   onToggleDrawer: () => void;
+  /** Hide the native launcher without quitting its Accessory process. */
+  onHideLauncher: () => void;
   /** Tool the shell sidebar asked to run (null until a click). */
   toolRequest: ToolRequest | null;
   /** Feature pack to open in the scene panel alongside Irisy (null until a
@@ -320,6 +322,7 @@ export function AmbientHome({
   providerId,
   onOpenPicker,
   onToggleDrawer,
+  onHideLauncher,
   toolRequest,
   packRequest,
   openTodayNonce,
@@ -1303,6 +1306,7 @@ export function AmbientHome({
       <textarea
         ref={inputRef}
         className={styles.input}
+        data-workspace-shortcuts="when-empty"
         value={input}
         rows={1}
         placeholder="Ask Irisy, or pick something above…"
@@ -1862,6 +1866,15 @@ export function AmbientHome({
                 above the composer. Provider choice follows the L1 selection
                 there; this corner pill was redundant. onOpenPicker still fires
                 programmatically when no provider is connected (send path). */}
+            <button
+              type="button"
+              className={`${styles.statusBtn} ${styles.statusClose}`}
+              onClick={onHideLauncher}
+              title="Hide CTRL"
+              aria-label="Hide CTRL"
+            >
+              ×
+            </button>
           </div>
         </div>
       </div>

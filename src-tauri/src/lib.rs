@@ -85,14 +85,20 @@ pub fn run() {
     init_tracing();
 
     let builder = tauri::Builder::default()
-        // Single-instance lock — Spotlight / Dock re-launch reveals the
-        // existing CTRL window instead of spawning a second kernel that
-        // would race on ports 17872/17873. Fixes bao's "in the taskbar
-        // but just won't open" symptom.
+        // Single-instance lock — launching CTRL again from Applications,
+        // Launchpad, or Spotlight reveals the existing Accessory process instead
+        // of racing a second kernel on ports 17872/17873. The plugin callback
+        // runs asynchronously, so all AppKit presentation is dispatched to the
+        // main thread. (ADR-003 frontend §1.1 v24)
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tracing::info!("single-instance: second launch detected, revealing window");
-            if let Err(err) = shell::WindowController::reveal(app) {
-                tracing::error!(?err, "single-instance reveal failed");
+            let app_for_reveal = app.clone();
+            if let Err(err) = app.run_on_main_thread(move || {
+                if let Err(err) = shell::WindowController::reveal(&app_for_reveal) {
+                    tracing::error!(?err, "single-instance reveal failed");
+                }
+            }) {
+                tracing::error!(?err, "single-instance reveal dispatch failed");
             }
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -106,6 +112,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_nspanel::init())
         .setup(|app| {
+            // CTRL is a menu-bar ambient launcher on macOS. Fix the process as
+            // Accessory before shell boot; runtime policy switching is forbidden
+            // because it destabilizes Dock and full-screen Space behavior.
+            // (ADR-003 frontend §1.1 v24)
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
         })
@@ -114,15 +125,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    // macOS Dock click reveal: NSApplicationDelegate's
-    // applicationShouldHandleReopen fires RunEvent::Reopen. Default Tauri
-    // behavior does nothing on Reopen when all windows are hidden — we
-    // explicitly toggle cloak → reveal so Dock click works as "show CTRL".
+    // Accessory apps have no Dock entry, but LaunchServices can still emit a
+    // reopen event when the installed app is launched again. Keep that path
+    // equivalent to the single-instance callback: always reveal, never toggle.
+    // (ADR-003 frontend §1.1 v24)
     app.run(|app, event| match event {
         tauri::RunEvent::Reopen { .. } => {
-            tracing::info!("dock reopen: revealing window");
+            tracing::info!("macOS reopen: revealing window");
             if let Err(err) = shell::WindowController::reveal(app) {
-                tracing::error!(?err, "dock reopen reveal failed");
+                tracing::error!(?err, "macOS reopen reveal failed");
             }
         }
         // Launcher contract (mirrors the Windows path): closing the last

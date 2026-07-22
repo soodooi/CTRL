@@ -159,6 +159,20 @@
   color: var(--color-text);
 }
 
+.statusClose {
+  min-width: 26px;
+  padding: 3px 7px;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  font-weight: var(--weight-regular);
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+.statusClose:hover {
+  background: var(--destructive-soft, rgba(224, 49, 49, 0.08));
+  color: var(--destructive, #e03131);
+}
+
 /* Role switcher (ADR-003 §8.6) — the active Irisy role, shown + switchable
    directly above the chat box. The chip reads as a peer of the model chip;
    the dropdown lists the role pool with a one-line hint each. */
@@ -1172,6 +1186,10 @@
   color: var(--primary, #0d9488);
   border-color: var(--primary-ring, rgba(13, 148, 136, 0.2));
 }
+.routeClose {
+  margin-left: auto;
+}
+
 .routeBody { flex: 1; min-height: 0; overflow: auto; }
 
 .menuBtn {

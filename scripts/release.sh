@@ -546,7 +546,10 @@ export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
 # after each update. The cert lives in a dedicated keychain; unlock it so
 # codesign can use the identity non-interactively. See memory
 # troubleshoot_ctrl_hotkey for the full rationale.
-export APPLE_SIGNING_IDENTITY="CTRL Dev Signing"
+# identity is read from tauri.conf.json by the guarded npm build entry; do
+# not create a second signing authority in this release script.
+# (ADR-003 frontend §1.1 v24)
+export APPLE_SIGNING_IDENTITY="$(node -p "require('./src-tauri/tauri.conf.json').bundle.macOS.signingIdentity")"
 SIGN_KC="$HOME/Library/Keychains/ctrl-signing.keychain-db"
 if [[ -f "$SIGN_KC" ]]; then
     security unlock-keychain -p "ctrl-signing-local" "$SIGN_KC" 2>/dev/null || true

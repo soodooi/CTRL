@@ -1,19 +1,13 @@
 // System tray controller.
 //
-// Per ADR-003 frontend §6, tray uses Tauri 2's built-in tray icon API (no separate
-// plugin in 2.x). Menu items: Open Config / About / Quit.
+// The macOS Accessory shell has no Dock or regular application menu, so this
+// status item is the durable recovery surface. Every reveal action routes
+// through WindowController rather than direct window calls, keeping normal and
+// full-screen Spaces on one presentation path. (ADR-003 frontend §1.1 v24)
 //
-// Show/Hide are NOT in the menu — left-click on the tray icon already
-// toggles the window, and surfacing them as menu items is redundant
-// noise for a 3-state product. The menu is reserved for actions that
-// have no other path (open settings, see version info, exit).
-//
-// Tauri 2 click semantics (TrayIconEvent variants):
-//   - Click { button: MouseButton::Left,  button_state: Down/Up } — toggle window
-//   - Click { button: MouseButton::Right, ... }                   — menu
-// `show_menu_on_left_click(true)` makes left-click ALSO open the menu so
-// Win11 users (where right-click is sometimes hijacked by the OS) still
-// get the menu.
+// macOS menu items: Open CTRL / Open Config / Reload PWA / Quit. About is
+// omitted until it has a real product surface; a dead item is not a recovery
+// path. Other platforms preserve their existing tray menu and focus behavior.
 
 use anyhow::Result;
 use tauri::image::Image;
@@ -37,34 +31,69 @@ impl TrayController {
             MenuItem::with_id(app, "open-config", "Open Config", true, None::<&str>)?;
         let reload_pwa =
             MenuItem::with_id(app, "reload-pwa", "Reload PWA  ⌘R", true, None::<&str>)?;
-        let about = MenuItem::with_id(app, "about", "About CTRL", true, None::<&str>)?;
         let separator = PredefinedMenuItem::separator(app)?;
         let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-        let menu = Menu::with_items(
-            app,
-            &[
-                &open_config,
-                &separator,
-                &reload_pwa,
-                &separator,
-                &about,
-                &separator,
-                &quit,
-            ],
-        )?;
+
+        #[cfg(target_os = "macos")]
+        let menu = {
+            let open_ctrl =
+                MenuItem::with_id(app, "open-ctrl", "Open CTRL", true, None::<&str>)?;
+            Menu::with_items(
+                app,
+                &[
+                    &open_ctrl,
+                    &open_config,
+                    &separator,
+                    &reload_pwa,
+                    &separator,
+                    &quit,
+                ],
+            )?
+        };
+
+        #[cfg(not(target_os = "macos"))]
+        let menu = {
+            let about = MenuItem::with_id(app, "about", "About CTRL", true, None::<&str>)?;
+            Menu::with_items(
+                app,
+                &[
+                    &open_config,
+                    &separator,
+                    &reload_pwa,
+                    &separator,
+                    &about,
+                    &separator,
+                    &quit,
+                ],
+            )?
+        };
 
         // Embed the 32x32 icon bytes at compile time so the tray has a real
         // visual identity even before bundle-time icon resolution.
         let icon_bytes: &[u8] = include_bytes!("../../icons/32x32.png");
         let icon = Image::from_bytes(icon_bytes)?;
 
-        TrayIconBuilder::new()
+        // Explicitly retain the TrayIcon in app state for the full process
+        // lifetime instead of relying on backend-specific implicit ownership
+        // for the Accessory shell's only recovery surface.
+        // (ADR-003 frontend §1.1 v24)
+        let tray = TrayIconBuilder::new()
             .tooltip("CTRL")
             .icon(icon)
             .menu(&menu)
             .show_menu_on_left_click(true)
             .on_menu_event(|app, event| match event.id.as_ref() {
+                "open-ctrl" => {
+                    if let Err(err) = WindowController::reveal(app) {
+                        tracing::error!(?err, "tray: Open CTRL failed");
+                    }
+                }
                 "open-config" => {
+                    #[cfg(target_os = "macos")]
+                    if let Err(err) = WindowController::reveal(app) {
+                        tracing::error!(?err, "tray: Open Config reveal failed");
+                    }
+                    #[cfg(not(target_os = "macos"))]
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();
                         let _ = w.set_skip_taskbar(false);
@@ -75,13 +104,16 @@ impl TrayController {
                     }
                 }
                 "reload-pwa" => {
-                    // Tauri 2 doesn't bind ⌘R by default; tray menu is
-                    // the user-facing entry point. The PWA-side keydown
-                    // listener (kernel.ts) is a focused-window shortcut
-                    // — this tray item is the always-available fallback.
+                    #[cfg(target_os = "macos")]
+                    if let Err(err) = WindowController::reveal(app) {
+                        tracing::error!(?err, "tray: Reload PWA reveal failed");
+                    }
+                    #[cfg(not(target_os = "macos"))]
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();
                         let _ = w.set_focus();
+                    }
+                    if let Some(w) = app.get_webview_window("main") {
                         if let Err(err) = w.eval("window.location.reload()") {
                             tracing::warn!(?err, "tray: reload PWA eval failed");
                         } else {
@@ -112,7 +144,10 @@ impl TrayController {
             })
             .build(app)?;
 
-        tracing::info!("tray icon installed");
+        if !app.manage(tray) {
+            anyhow::bail!("tray icon state was already installed");
+        }
+        tracing::info!("tray icon installed and retained for process lifetime");
         Ok(())
     }
 }

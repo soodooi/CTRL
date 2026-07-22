@@ -83,7 +83,12 @@ mod macos_window {
         panel.set_floating_panel(true);
         panel.set_level(PanelLevel::Status.value());
         panel.set_hides_on_deactivate(false);
-        panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+        panel.set_style_mask(
+            StyleMask::empty()
+                .resizable()
+                .nonactivating_panel()
+                .into(),
+        );
         panel.set_collection_behavior(
             CollectionBehavior::new()
                 .can_join_all_spaces()
@@ -94,8 +99,9 @@ mod macos_window {
     }
 
     /// Keep the input-first launcher available in normal and full-screen
-    /// Spaces. A standard NSWindow cannot overlay another app's full-screen
-    /// Space, so the launcher is promoted to an NSPanel. (ADR-003 frontend §8.1 v23)
+    /// Spaces. The fixed Accessory process owns an input-capable NSPanel;
+    /// standard Regular NSWindows cannot reliably cross another app's
+    /// full-screen Space. (ADR-003 frontend §1.1 v24)
     pub(super) fn configure(window: &WebviewWindow) {
         let Some(_mtm) = LegacyMainThreadMarker::new() else {
             tracing::warn!("WindowController — configuration requested off the macOS main thread");
@@ -123,9 +129,9 @@ mod macos_window {
         };
         configure_panel(&panel);
 
-        // The non-activating panel becomes key without changing the owning
-        // application's Dock activation policy, avoiding duplicate Dock icons
-        // while preserving input-first focus. (ADR-003 frontend §8.2 v23)
+        // Accessory is fixed at process boot; this panel only performs the
+        // current-Space reveal and key-window handoff. It never mutates the
+        // activation policy. (ADR-003 frontend §1.1 v24)
         panel.show_and_make_key();
     }
 }
@@ -165,10 +171,10 @@ impl WindowController {
     }
 
     /// Always-reveal — bring the main window into view regardless of
-    /// current state. Used by single-instance + macOS Dock reopen handlers
-    /// so a second `open .app` or a Dock click consistently surfaces the
-    /// window (vs `toggle` which would hide it when already visible).
-    /// Per bao 2026-05-23: 'in the taskbar but just won't open'.
+    /// current state. Used by single-instance, LaunchServices reopen, and
+    /// menu-bar actions so an explicit open request consistently surfaces the
+    /// window instead of toggling an already-visible launcher closed.
+    /// (ADR-003 frontend §1.1 v24)
     pub fn reveal(app: &AppHandle) -> Result<()> {
         let Some(w) = Self::main(app) else {
             tracing::info!("WindowController::reveal — main missing, rebuilding");
