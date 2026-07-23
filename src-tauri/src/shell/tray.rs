@@ -1,9 +1,9 @@
 // System tray controller.
 //
-// The macOS Accessory shell has no Dock or regular application menu, so this
-// status item is the durable recovery surface. Every reveal action routes
-// through WindowController rather than direct window calls, keeping normal and
-// full-screen Spaces on one presentation path. (ADR-003 frontend §1.1 v24)
+// The tray is a convenience surface for open/config/reload/quit actions. The
+// regular macOS app also remains reachable from Dock and Command-Tab; launcher
+// presentation still routes through WindowController so tray and Ctrl use the
+// same NSPanel path. (ADR-003 frontend §1.1 v25)
 //
 // macOS menu items: Open CTRL / Open Config / Reload PWA / Quit. About is
 // omitted until it has a real product surface; a dead item is not a recovery
@@ -20,6 +20,45 @@ use super::WindowController;
 /// Event emitted to the webview when the user clicks the tray "Open Config"
 /// item. The PWA root listens for this and routes to `/settings`.
 const EVENT_OPEN_CONFIG: &str = "tray:open-config";
+
+#[cfg(target_os = "macos")]
+fn crop_transparent_margin(icon: Image<'static>) -> Image<'static> {
+    let width = icon.width() as usize;
+    let height = icon.height() as usize;
+    let rgba = icon.rgba();
+
+    let mut left = width;
+    let mut top = height;
+    let mut right = 0usize;
+    let mut bottom = 0usize;
+    for y in 0..height {
+        for x in 0..width {
+            if rgba[(y * width + x) * 4 + 3] > 8 {
+                left = left.min(x);
+                top = top.min(y);
+                right = right.max(x + 1);
+                bottom = bottom.max(y + 1);
+            }
+        }
+    }
+
+    if left >= right
+        || top >= bottom
+        || (left == 0 && top == 0 && right == width && bottom == height)
+    {
+        return icon;
+    }
+
+    let cropped_width = right - left;
+    let cropped_height = bottom - top;
+    let mut cropped = Vec::with_capacity(cropped_width * cropped_height * 4);
+    for y in top..bottom {
+        let row_start = (y * width + left) * 4;
+        let row_end = row_start + cropped_width * 4;
+        cropped.extend_from_slice(&rgba[row_start..row_end]);
+    }
+    Image::new_owned(cropped, cropped_width as u32, cropped_height as u32)
+}
 
 pub struct TrayController;
 
@@ -68,15 +107,19 @@ impl TrayController {
             )?
         };
 
-        // Embed the 32x32 icon bytes at compile time so the tray has a real
-        // visual identity even before bundle-time icon resolution.
+        // macOS always allocates an 18 pt status-item image, independent of
+        // the source PNG dimensions. Crop the app icon's transparent safe-area
+        // before handing it to AppKit so the keycap uses that full 18 pt slot;
+        // other platforms keep the bundle icon unchanged.
+        // (ADR-003 frontend §1.1 v25)
         let icon_bytes: &[u8] = include_bytes!("../../icons/32x32.png");
         let icon = Image::from_bytes(icon_bytes)?;
+        #[cfg(target_os = "macos")]
+        let icon = crop_transparent_margin(icon);
 
-        // Explicitly retain the TrayIcon in app state for the full process
-        // lifetime instead of relying on backend-specific implicit ownership
-        // for the Accessory shell's only recovery surface.
-        // (ADR-003 frontend §1.1 v24)
+        // Retain the TrayIcon in app state for the full process lifetime.
+        // It is a convenience surface, while Dock and Command-Tab remain the
+        // regular macOS recovery paths. (ADR-003 frontend §1.1 v25)
         let tray = TrayIconBuilder::new()
             .tooltip("CTRL")
             .icon(icon)

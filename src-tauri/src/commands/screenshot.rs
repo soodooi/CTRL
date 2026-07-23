@@ -25,7 +25,7 @@ pub async fn capture_screen_and_ocr(app: tauri::AppHandle) -> Result<ScreenshotO
     {
         // Hide CTRL first so it isn't sitting over — or captured inside — the
         // region the user is about to select (bao 2026-06-19). AppKit panel
-        // operations stay on the main thread. (ADR-003 frontend §1.1 v24)
+        // operations stay on the main thread. (ADR-003 frontend §1.1 v25)
         let hide_app = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
             if let Err(error) = crate::shell::WindowController::hide(&hide_app) {

@@ -2,9 +2,9 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 24
+version: 25
 status: accepted
-last_updated: 2026-07-20
+last_updated: 2026-07-22
 deciders: [bao, zeus, daedalus]
 sections:
   - { id: pwa,           source: orig-002 }
@@ -12,8 +12,9 @@ sections:
   - { id: vault-stack,   source: orig-020 — RETIRED in v5 (kairo replaces) }
   - { id: shell-4col,    source: new-2026-06-01 }
   - { id: agent-routes,  source: H-2026-06-09-002 校准 }
-  - { id: macos-shell,   source: bao-2026-07-20-accessory }
+  - { id: macos-shell,   source: bao-2026-07-22-minimal-regular-nspanel (amends v24 Accessory shell) }
 changelog:
+  - v25 2026-07-22: **§1.1 scope correction — Regular macOS app + full-screen NSPanel.** bao accepted the smaller boundary after reviewing two days of launcher work: CTRL keeps its normal Dock, Command-Tab, and application menu recovery paths; only the Ctrl-summoned launcher surface is converted to an input-capable `NSPanel` with `CanJoinAllSpaces + FullScreenAuxiliary`. The process no longer sets Accessory activation policy and `LSUIElement` is removed. The tray and in-window Hide control remain conveniences, not mandatory recovery infrastructure. Daily `tauri:build` explicitly skips code signing; stable identity enforcement belongs only to the release/update path governed by ADR-004. This retires v24's no-Dock Accessory behavior without changing the one-app/one-kernel boundary.
   - v24 2026-07-20: **§1.1 NEW — macOS fixed Accessory shell.** bao accepted a single installed `CTRL.app` with no Dock or Command-Tab presence: `LSUIElement=true` plus a fixed `NSApplicationActivationPolicyAccessory`, never runtime policy switching. The lone-Ctrl launcher is an input-capable `NSPanel` with `CanJoinAllSpaces + FullScreenAuxiliary`; the menu-bar icon is the recovery surface (`Open CTRL`, `Open Config`, `Reload PWA`, `Quit`). Spotlight/Application relaunch reveals the existing singleton. This preserves one PWA, one kernel, and one installer; a separate helper app is explicitly deferred unless future workspace usability proves Dock/Command-Tab indispensable.
   - v23 2026-07-13: **§2 is explicitly historical/non-binding.** Its Pi-era single-entry navigation is retained only as provenance; the current frontend authority is §8.5 Ambient/Irisy/Hermes navigation plus §8.6's role model. No runtime or layout change.
   - v22 2026-06-25: **§8.6 NEW — 对话框上方角色切换器 (bao 理念「每个功能 = 角色 + 功能包,灵活配置不焊死」,配对 ADR-005 v6).** home 两正交轴:**L1 rail (左) = 数据/模块导航**(notes/tables/coding/…,`Sidebar.tsx` 不变);**角色切换器 (对话框上方) = Irisy 当前功能角色 = 每个 L1 一份 `(persona, 功能包[])` 灵活配置**,显示 + 切换在对话框上方,切角色对话流持续(不重置会话)。锁:(1) **角色 = (persona, 功能包) 配置,非焊死单元** —— persona 池 (`lib/irisy-prompts.ts`+`personas/irisy/*`) ⊥ 功能包池 (`lib/feature-pack.ts`+ 已装 MCP actions),各自可选项池,L1 用声明式配置组合,换 persona/加包 = 改配置不动代码,跨 L1 可复用;(2) **L1 ≠ 角色** —— L1 比角色大(含数据 + workspace),角色只是 L1 的 persona 面;有些 L1 不挂角色(discover/settings = 纯导航);(3) **位置 = 对话框上方**(`AmbientHome.tsx` 形变列头部);(4) **单一品牌声音不变**(ADR-005 单一品牌锁),切角色 ≠ 多重人格(始终是 Irisy)。bao 同步拍板 3 决策:**L1↔角色联动 = 是**(输入框上方显示现行角色 + 可手动切,切角色不改对话);**角色 = (persona, 功能包[], 知识库)** 三维,同 persona 按功能包+知识库派生(默认 = 个人知识库助理,股票角色 = 同 KB persona + 股票包 + 股票库);**v1 不做新建角色**(注册表留接口)。设计 SSOT = `vault/ctrl/irisy-roles.md`。本节锁设计,实装 = 后续切片(v1 未发)。NOT 改 spine;NOT 改单一品牌锁。
@@ -50,15 +51,15 @@ UI layer = single `packages/ctrl-web` (React 18 + Vite 5 + TanStack Router/Query
 
 L0 native shell (`src-tauri/src/shell/`) stays ≤ ~500 LOC Rust — hotkey / tray / window / keychain / kernel_supervisor only. All UI / settings / mcp workspace live inside PWA — no native UI windows beyond shell-summoned WebView.
 
-## §1.1 macOS fixed Accessory shell
+## §1.1 macOS Regular shell + full-screen launcher panel
 
-macOS ships as one installed `CTRL.app`, not a user-visible main app plus helper. The process is an Accessory application from launch: the bundle declares `LSUIElement=true`, and the Tauri composition root fixes `NSApplicationActivationPolicyAccessory` before shell boot. Runtime `Regular ↔ Accessory` switching is forbidden because it causes Dock flicker, duplicate cached icons, and unreliable cross-Space presentation.
+macOS ships as one regular installed `CTRL.app`. The process keeps the normal Dock, Command-Tab, and application-menu recovery paths; `LSUIElement` and Accessory activation policy are not used. Runtime activation-policy switching remains forbidden because the process has no reason to mutate between Regular and Accessory modes.
 
-The lone-Ctrl surface is an input-capable nonactivating `NSPanel`: it can become key but not main, uses Status level, and joins every Space with `Stationary + FullScreenAuxiliary`. This is the macOS mechanism for §8.1's ambient launcher to appear over another application's full-screen Space. All panel configuration, show, hide, and focus operations run on the AppKit main thread.
+The lone-Ctrl surface is an input-capable nonactivating `NSPanel`: it can become key but not main, uses Status level, and joins every Space with `Stationary + FullScreenAuxiliary`. This is the focused mechanism that lets the launcher appear over another application's full-screen Space without turning the whole app into a menu-bar-only process. All panel configuration, show, hide, and focus operations run on the AppKit main thread.
 
-Accepted OS tradeoff: CTRL has no Dock icon, Command-Tab entry, or regular application menu while running. The menu-bar status item is the recovery surface and must expose working `Open CTRL`, `Open Config`, `Reload PWA`, and `Quit` actions; every action that reveals the launcher routes through the same `WindowController::reveal`/panel presentation path. Launching CTRL again from Applications, Launchpad, or Spotlight targets the existing singleton and reveals it. The PWA, kernel, resource packs, updater, local data, and workspace content remain in the same process.
+The tray (`Open CTRL`, `Open Config`, `Reload PWA`, `Quit`) and the in-window Hide control remain convenience surfaces. They are not the only recovery path: launching CTRL from Dock, Applications, Launchpad, or Spotlight targets the existing singleton and reveals the same panel. The PWA, kernel, resource packs, updater, local data, and workspace content remain in one process.
 
-A separate Accessory helper is not part of this decision. It requires a future amendment only if verified workspace usage makes Dock or Command-Tab recovery indispensable. Windows activation and taskbar behavior are unchanged.
+Daily development bundles must not depend on a machine-specific signing key. `npm run tauri:build` skips code signing; the stable identity needed to preserve macOS Input Monitoring trust across installed updates is a release-only concern under ADR-004. A separate helper app remains out of scope.
 
 ## §2 L1 navigation — historical Pi-era model (retired, non-binding)
 

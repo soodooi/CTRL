@@ -85,11 +85,11 @@ pub fn run() {
     init_tracing();
 
     let builder = tauri::Builder::default()
-        // Single-instance lock — launching CTRL again from Applications,
-        // Launchpad, or Spotlight reveals the existing Accessory process instead
-        // of racing a second kernel on ports 17872/17873. The plugin callback
-        // runs asynchronously, so all AppKit presentation is dispatched to the
-        // main thread. (ADR-003 frontend §1.1 v24)
+        // Single-instance lock — launching CTRL again from the Dock,
+        // Applications, Launchpad, or Spotlight reveals the existing process
+        // instead of racing a second kernel on ports 17872/17873. The callback
+        // dispatches AppKit presentation to the main thread.
+        // (ADR-003 frontend §1.1 v25)
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tracing::info!("single-instance: second launch detected, revealing window");
             let app_for_reveal = app.clone();
@@ -112,11 +112,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_nspanel::init())
         .setup(|app| {
-            // CTRL is a menu-bar ambient launcher on macOS. Fix the process as
-            // Accessory before shell boot; runtime policy switching is forbidden
-            // because it destabilizes Dock and full-screen Space behavior.
-            // (ADR-003 frontend §1.1 v24)
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             shell::ShellLifecycle::boot(app.handle())?;
             Ok(())
         })
@@ -125,10 +120,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    // Accessory apps have no Dock entry, but LaunchServices can still emit a
-    // reopen event when the installed app is launched again. Keep that path
-    // equivalent to the single-instance callback: always reveal, never toggle.
-    // (ADR-003 frontend §1.1 v24)
+    // Regular apps keep Dock and Command-Tab recovery. A Dock/Application
+    // reopen request uses the same NSPanel reveal path as Ctrl, never toggle.
+    // (ADR-003 frontend §1.1 v25)
     app.run(|app, event| match event {
         tauri::RunEvent::Reopen { .. } => {
             tracing::info!("macOS reopen: revealing window");
