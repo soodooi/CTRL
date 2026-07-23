@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 65
+version: 66
 status: accepted
-last_updated: 2026-07-13
+last_updated: 2026-07-20
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003, note: "v27 reframed: BYO-CLI driver brain — user-chosen local CLI (Claude Code etc.); CTRL never spawns/supervises a brain. Prior hermes-ACP/Pi/opencode-as-brain content retired, kept in changelog as provenance." }
@@ -23,6 +23,7 @@ sections:
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
   - { id: unified-operation-interface, source: new-2026-06-19, note: "§14 — describe/query/produce: one uniform interface over all content-type feature points (md/html/table/pdf/connector/…) projected on :17873 gate; type layer via describe, read(query)≠write(produce-through-gate); query = kernel service over QuerySource, feature packs + workflows are clients; smart-table = first impl. Research: GraphQL/Plan9/agentic-AI paper." }
 changelog:
+  - v66 2026-07-20: **§3.10 provider catalogue — explicit Z.AI + Z.AI Coding Plan without duplicating OpenCode's provider authority (bao:「z.ai没有在provider内，opencode支持的provider必须都支持，z.ai的coding plan要支持」).** The persisted `zhipu` template id stays stable for existing manifests, credentials, and active bindings, while its user-facing label becomes `Z.AI`; a distinct `zai-coding-plan` template uses the Coding Plan OpenAI endpoint (`https://api.z.ai/api/coding/paas/v4`) because Coding Plan keys are not interchangeable with general Z.AI keys. The catalogue is now 21 entries. OpenCode provider breadth remains owned by OpenCode's native `/connect` + Models.dev surface (OAuth, cloud profiles, local runtimes, and API keys); CTRL does not mirror that heterogeneous catalogue or write its credentials, and `project_opencode_into_dir` continues to preserve the user's `provider` object while only upserting `mcp.ctrl-kernel`.
   - v65 2026-07-13: **§7 composition manifest compatibility makes ST-SS retirement non-breaking for declared v1/v2 data.** `stss-publisher` and Pattern F remain parse-only deprecated values with explicit `parseManifest` warnings so previously valid manifests can be identified and migrated; neither value is a current source nor has a live executor route. New manifests use only the active variant/pattern sets. This preserves the hand-versioned compatibility contract without reviving ST-SS.
   - v64 2026-07-13: **§2/§6/§14.7 transport terminology reconciled with the current event stack.** The live capability candidate is `event.{publish,subscribe}`; the MCP bus is adjacent to the event WebSocket rather than an ST-SS bridge; `query{watch}` emits current event deltas over `event_ws.rs` CBOR-over-WebSocket for browser/mobile and Tauri Channels on desktop. ST-SS wording remains only in explicitly historical changelog/provenance. Pairs ADR-001 v11 and ADR-010's accepted transport retirement.
   - v63 2026-07-13: **Governance/runtime truth reconciliation (no new architecture).** Removed retired Pi paths from binding Acceptance: the historical §12 checklist is now explicitly non-binding, the deleted Pi RPC evaluator is replaced by the source-pinned Hermes ACP release probe, and current brain acceptance points at `agent_installer`/`acp_client` plus the provider-router fallback. Pairs ADR-001 v9 Pi/ST-SS retirement and ADR-005 v23 historical-section labeling.
@@ -614,9 +615,11 @@ Switching across chips while the workspace is open just switches tabs (no collap
 
 Pi's RPC mode (used by Irisy) wraps the agent loop and exposes 38 RpcClient methods, which is great for embedding chat in a PWA bubble — but it costs the native TUI affordances (live status line, slash commands rendering in-place, terminal-native scrollback, real PTY signals). Coding is a power-user surface; bao explicitly asked for "完全使用 PI" = the native Pi CLI experience. xterm + cs_spawn gives that for ~0 new code. Two Pi processes coexist cleanly because each has its own session dir under `~/.pi/agent/sessions/` and reads `~/.pi/agent/{models,settings}.json` for config.
 
-### §3.10 Provider template catalogue — 20 entries (v10 — 2026-06-07)
+### §3.10 Provider template catalogue — 21 entries (v66 — 2026-07-20)
 
-`src-tauri/src/kernel/provider/provider-templates.json` ships 20 entries (was 10 in v3): volc · openai · anthropic · deepseek · kimi · google · openrouter · groq · together · mistral · xai · perplexity · fireworks · azure-openai · vertex · bedrock · cloudflare · zhipu · qwen · custom (free-form). All use `protocol: openai` (OpenAI-compatible REST shape) except `anthropic` (`protocol: anthropic`). Settings → Providers Add wizard renders one row per entry with `keyHint` as inline help. User overrides at `~/.ctrl/provider-templates.json` (merge rule: matching `id` replaces, new `id` appends).
+`src-tauri/src/kernel/provider/provider-templates.json` ships 21 entries: volc · openai · anthropic · deepseek · kimi · google · openrouter · groq · together · mistral · xai · perplexity · fireworks · azure-openai · vertex · bedrock · cloudflare · **Z.AI** (stable persisted id `zhipu`) · **Z.AI Coding Plan** (`zai-coding-plan`) · qwen · custom (free-form). Z.AI Coding Plan is a separate template because its OpenAI-compatible endpoint and credentials are distinct from the general Z.AI API. All use `protocol: openai` (OpenAI-compatible REST shape) except `anthropic` (`protocol: anthropic`). Settings → Providers Add wizard renders one row per entry with `keyHint` as inline help. User overrides at `~/.ctrl/provider-templates.json` (merge rule: matching `id` replaces, new `id` appends).
+
+**OpenCode boundary:** CTRL's catalogue covers provider shapes its API-key form can represent. OpenCode remains authoritative for its complete coding-provider surface through native `/connect` and Models.dev, including OAuth, cloud profiles, local runtimes, and provider-specific authentication. CTRL never duplicates that catalogue or writes OpenCode credentials; projection only upserts `mcp.ctrl-kernel` into `opencode.json` and preserves the user's `provider` configuration.
 
 ## §4 Crypto — vodozemac (Matrix Olm) on all platforms
 

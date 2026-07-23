@@ -147,4 +147,25 @@ mod tests {
         merge_in_place(&mut base, vec![]);
         assert_eq!(base.len(), 1);
     }
+
+    #[test]
+    fn bundled_catalog_keeps_z_ai_general_and_coding_plan_distinct() {
+        // Coding Plan keys and endpoints are not interchangeable with the
+        // general Z.AI API. Keep separate template identities so higher-layer
+        // catalog overrides cannot collapse their credentials or routing.
+        // (ADR-002 substrate §3.10 v66)
+        let templates: Vec<ProviderTemplate> = serde_json::from_str(BUNDLED_TEMPLATES).unwrap();
+        let general = templates.iter().find(|t| t.id == "zhipu").unwrap();
+        let coding = templates
+            .iter()
+            .find(|t| t.id == "zai-coding-plan")
+            .unwrap();
+
+        assert_eq!(general.label, "Z.AI");
+        assert_eq!(coding.label, "Z.AI Coding Plan");
+        assert_eq!(general.base_url, "https://api.z.ai/api/paas/v4");
+        assert_eq!(coding.base_url, "https://api.z.ai/api/coding/paas/v4");
+        assert_ne!(general.id, coding.id);
+        assert_ne!(general.base_url, coding.base_url);
+    }
 }

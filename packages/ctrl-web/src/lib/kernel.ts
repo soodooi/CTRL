@@ -131,11 +131,13 @@ export interface ProviderTemplate {
 
 // Browser/dev fallback: outside Tauri (PWA dev preview) `invoke` rejects,
 // so serve a bundled subset and the provider UI still renders. The real,
-// full 20-template list comes from the kernel in the desktop app.
+// full 21-template list comes from the kernel in the desktop app.
+// (ADR-002 substrate §3.10 v66)
 const FALLBACK_PROVIDER_TEMPLATES: ProviderTemplate[] = [
   { id: 'anthropic', label: 'Anthropic Claude', defaultName: 'Claude', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com', defaultModel: 'claude-sonnet-4-6', keyHint: 'sk-ant-...; console.anthropic.com/settings/keys' },
   { id: 'volc', label: 'Volcano Ark / Doubao (ByteDance)', defaultName: 'Volc Doubao', protocol: 'openai', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-1-5-pro-32k-250115', keyHint: 'UUID; console.volcengine.com -> API Key Management' },
-  { id: 'zhipu', label: 'Zhipu GLM', defaultName: 'GLM', protocol: 'openai', baseUrl: 'https://api.z.ai/api/paas/v4', defaultModel: 'glm-5.2', keyHint: 'create an API key at z.ai → API Keys', models: ['glm-5.2', 'glm-5.1', 'glm-5', 'glm-5-turbo', 'glm-4.7', 'glm-4.6', 'glm-4.5-air', 'glm-4-long'] },
+  { id: 'zhipu', label: 'Z.AI', defaultName: 'Z.AI', protocol: 'openai', baseUrl: 'https://api.z.ai/api/paas/v4', defaultModel: 'glm-5.2', keyHint: 'create a general API key at z.ai → API Keys', models: ['glm-5.2', 'glm-5.1', 'glm-5', 'glm-5-turbo', 'glm-4.7', 'glm-4.6', 'glm-4.5-air', 'glm-4-long'] },
+  { id: 'zai-coding-plan', label: 'Z.AI Coding Plan', defaultName: 'Z.AI Coding Plan', protocol: 'openai', baseUrl: 'https://api.z.ai/api/coding/paas/v4', defaultModel: 'glm-4.7', keyHint: 'use your Individual or Team Coding Plan key; general Z.AI keys are not interchangeable', models: ['glm-4.7'] },
   { id: 'openai', label: 'OpenAI', defaultName: 'OpenAI', protocol: 'openai', baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini', keyHint: 'sk-...; platform.openai.com/api-keys' },
   { id: 'deepseek', label: 'DeepSeek', defaultName: 'DeepSeek', protocol: 'openai', baseUrl: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat', keyHint: 'sk-...; platform.deepseek.com' },
   { id: 'kimi', label: 'Moonshot Kimi', defaultName: 'Kimi', protocol: 'openai', baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k', keyHint: 'sk-...; platform.moonshot.cn' },

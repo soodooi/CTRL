@@ -34,13 +34,13 @@ interface ProviderHubProps {
 }
 
 // In the Add list, your common providers float to the top.
-const PRIORITY = ['anthropic', 'zhipu', 'volc'];
+const PRIORITY = ['anthropic', 'zhipu', 'zai-coding-plan', 'volc'];
 
-// 2026-06-19 (decision: overseas-only market) — the Zhipu region toggle
-// (intl z.ai / cn bigmodel.cn) is retired. CTRL targets the overseas
-// market where z.ai is the canonical endpoint. Zhipu now flows through
-// the same template-driven Add path as every other provider; no special
-// UI branch. If a user needs bigmodel.cn they edit Base URL in Advanced.
+// Z.AI's general API and Coding Plan use distinct endpoints and credentials.
+// Both stay template-driven; OpenCode's broader OAuth/profile/local-runtime
+// provider surface remains owned by its native `/connect` flow.
+// (ADR-002 substrate §3.10 v66)
+// (ADR-001 spine §4 v10)
 
 // Browser/dev demo so the "Your providers" section isn't empty outside Tauri.
 const DEMO_CONFIGURED: ProviderListRow[] = [

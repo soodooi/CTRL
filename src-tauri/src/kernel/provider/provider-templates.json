@@ -154,12 +154,12 @@
   },
   {
     "id": "zhipu",
-    "label": "Zhipu GLM",
-    "defaultName": "GLM",
+    "label": "Z.AI",
+    "defaultName": "Z.AI",
     "protocol": "openai",
     "baseUrl": "https://api.z.ai/api/paas/v4",
     "defaultModel": "glm-5.2",
-    "keyHint": "create an API key at z.ai → API Keys",
+    "keyHint": "create a general API key at z.ai → API Keys",
     "models": [
       "glm-5.2",
       "glm-5.1",
@@ -169,6 +169,18 @@
       "glm-4.6",
       "glm-4.5-air",
       "glm-4-long"
+    ]
+  },
+  {
+    "id": "zai-coding-plan",
+    "label": "Z.AI Coding Plan",
+    "defaultName": "Z.AI Coding Plan",
+    "protocol": "openai",
+    "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+    "defaultModel": "glm-4.7",
+    "keyHint": "use your Individual or Team Coding Plan key; general Z.AI keys are not interchangeable",
+    "models": [
+      "glm-4.7"
     ]
   },
   {

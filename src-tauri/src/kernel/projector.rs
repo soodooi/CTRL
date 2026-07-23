@@ -855,6 +855,52 @@ mod tests {
         );
     }
 
+    #[test]
+    fn opencode_projection_preserves_native_provider_configuration() {
+        // OpenCode remains authoritative for its full provider/auth surface;
+        // CTRL only upserts its governed MCP gate entry.
+        // (ADR-001 spine §4 v10)
+        let dir = TempDir::new().unwrap();
+        let existing = json!({
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {
+                "zai-coding-plan": {
+                    "npm": "@ai-sdk/openai-compatible",
+                    "options": { "baseURL": "https://api.z.ai/api/coding/paas/v4" },
+                    "models": { "glm-4.7": {} }
+                },
+                "local-runtime": {
+                    "npm": "@ai-sdk/openai-compatible",
+                    "options": { "baseURL": "http://127.0.0.1:11434/v1" }
+                }
+            },
+            "mcp": {
+                "user-server": { "type": "local", "command": ["user-server"] }
+            }
+        });
+        fs::write(
+            dir.path().join("opencode.json"),
+            serde_json::to_vec_pretty(&existing).unwrap(),
+        )
+        .unwrap();
+
+        assert!(project_opencode_into_dir(
+            dir.path(),
+            "17873",
+            FIXTURE_GATE_VALUE,
+            Some(OPENCODE_CODING_INTENT),
+        )
+        .unwrap());
+
+        let projected: Value = serde_json::from_slice(
+            &fs::read(dir.path().join("opencode.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(projected["provider"], existing["provider"]);
+        assert_eq!(projected["mcp"]["user-server"], existing["mcp"]["user-server"]);
+        assert_eq!(projected["mcp"][KERNEL_SERVER_KEY]["type"], "remote");
+    }
+
     fn read_agents(dir: &Path) -> String {
         fs::read_to_string(dir.join("AGENTS.md")).unwrap()
     }

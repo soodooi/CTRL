@@ -1,11 +1,33 @@
-# Irisy 整体架构 + 知识体系 — governing map (v2, 调研支撑)
+# Irisy 整体架构 + 知识体系 — planning map (v2, 调研支撑)
 
 > bao 2026-06-29: 「Irisy 要做什么他不清楚 → 得有一个整体架构和 Irisy 的整体知识体系」+「你还是做个调研吧」。
-> 本文是 Irisy 的**统管全局规划图**(系统设计先行),v2 把「魂 / 操作循环 / 知识栈」从拍脑袋换成 3 路调研支撑的版本(对标产品 + 工程 best-practice + 国内市场)。
+> 本文是 Irisy 的**非权威规划图**(系统设计先行),v2 把「魂 / 操作循环 / 知识栈」从拍脑袋换成 3 路调研支撑的版本(对标产品 + 工程 best-practice + 国内市场)。模块 ADR 语料库是唯一架构权威;本文不得覆盖 accepted ADR。
 > 收口现有散文档,不重复:角色轴见 [[irisy-roles.md]];脑/投影见 [[architecture-byo-cli-driver.md]]。
-> 确认后 amend ADR-005 (irisy) + 走 dev-loop。
+> 确认后 amend owning module ADR + 走 dev-loop。
 
 ## Status: 魂 LOCKED (bao 2026-06-29 拍「数字员工/运营官 调研版」) — §二/§三/§四 收口中,据此 amend ADR-005 + 走 dev-loop
+
+---
+
+## 〇、能力域镜头(5 capabilities — planning lens, 2026-07-22)
+
+> bao 2026-07-22:「一切都是为了建立 Irisy 的能力」。Irisy 整体架构以 **5 能力域**作为跨模块规划镜头 —— 每个能力 = Irisy 操作的东西 + 它的端点(经 `:17873` gate)+ 前端 surface + L1 模块(或横切)。
+>
+> **镜头模式(非替代)**:8 module ADR 是唯一架构权威(按代码归属划分);本镜头按「Irisy 操作什么」reframe 已接受决定,不自行创造或覆盖决定。实施时按 owning module ADR 原地 amend。
+
+| # | 能力域 | Irisy 做什么 | 端点(gate / §14) | 前端 surface | L1 |
+|---|---|---|---|---|---|
+| ① | **md 文档管理** | 知识库 / 笔记 / 功能包文档管理(记·找·用) | §14 `text::{describe,query,produce}` + `record::*`(notes/smart-table/pack-docs 统一)+ FTS5/embeddings | KB-view workspace | Notes/KB |
+| ② | **html** | 产出 HTML + 前端渲染展示 | §14 `produce` HTML artifact + viewer registry(12 类)+ FeaturePackScene | morphing output / pack workspace | 横切(嵌各 workspace) |
+| ③ | **coding** | 创建功能包 + coding | projection(opencode)+ `mcp_pack_{create,validate,publish}` + `source_*` | Coding scene + PackCreator | Coding |
+| ④ | **通讯** | 内部 + 外部通讯;给 Irisy 建端点 | gate `:17873` + MCP 插件 + 传输 + **物化 endpoint-spec** | Irisy dialog + Settings/connections | substrate |
+| ⑤ | **L1/L2** | 把能力摆成可导航模块 + role 切换 | nav 层 + role switcher `(persona,pack,kb)` | L1 rail + L2 sub-nav | nav 本身 |
+
+**异构性(重要)**:5 能力非全是 L1 模块 —— ①③ 是用户面模块(独立 L1 + workspace);②④ 是横切能力(渗透所有模块);⑤ 是导航层(meta,摆前 4 个)。**不强行让每个能力都成 L1。**
+
+**与现有架构的错位**(reframe 要收敛的债):现有 8 module ADR 是**代码归属边界**非能力边界。①md 的 §14 写侧 `RecordSink`/`ProduceOp` 已于 2026-07-02 实装;当前 Track 2 债务是退役 5 个冗余 bespoke 脑面写工具并验证统一 `produce` 路径。
+
+**收敛轨道**(6 track,地基→上层):`0 治理 → 2 md §14 写侧收敛 → 1 通讯[可并行] → 3 html → 4 coding → 5 L1/L2`;每一轨的约束和实施决定归 owning module ADR。
 
 ---
 

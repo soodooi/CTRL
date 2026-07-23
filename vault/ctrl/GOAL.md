@@ -3,9 +3,42 @@
 > 唯一在跑的目标,锚定所有工作。由 `goal` skill 管理。
 > Plain markdown,local 是 truth,bao 拥有这个文件。
 
-## Status: ACTIVE (2026-07-11, bao「开创建功能包的角色 我来开新窗口 你负责项目」)
+## Status: ACTIVE (2026-07-22, bao「架构重构,涉及模块/资源层/功能包/通讯的整体架构」→ scope change,以 Irisy 5 能力为镜头 reframe;功能包生产线存档)
 
 ## 目标 (Goal)
+
+**Irisy 能力中心架构重构 —— 以 Irisy 的 5 能力域为规划镜头,把现有架构(8 module ADR,按代码归属划分)reframe 成「Irisy 操作什么」的能力边界,收敛各能力债。**
+
+5 能力域(异构,非全是 L1 模块):① **md 文档管理**(知识库/笔记/功能包文档 → §14 `text`+`record` 面)· ② **html**(产出 HTML + 前端渲染,viewer registry/morphing)· ③ **coding**(创建功能包 + coding,projection + pack-create)· ④ **通讯**(内部+外部,`:17873` gate 给 Irisy 建端点)· ⑤ **L1/L2**(把能力摆成可导航模块 + role 切换)。
+
+**镜头模式(非替代)**:8 module ADR 是唯一架构权威;能力域只作为跨模块规划/审查镜头,不自行创造决定。实施时按 owning module ADR 原地 amend,不推倒重划。每能力 = (端点 §14/gate) + (前端 surface) + (L1 模块或横切)。
+
+- 锁点不动:5 primitives / 三动词 / `:17873` gate / secret 不进 LLM / plain-text / 收敛不推倒(~100 gate 工具 + 134 Tauri 在用)
+
+## 成功标准 (Success criteria — 可验证)
+
+1. **Track 0 治理**:GOAL 切换 + 5 能力规划镜头落进 `irisy-architecture.md §能力域`,且明确 module ADR 仍是唯一架构权威。
+2. **Track 2 md §14 写侧收敛**:`RecordSink`/`ProduceOp` + 4 源 impl + 统一 produce 动词**已建(2026-07-02,实测证实)**;真剩 = 退役 5 个冗余 bespoke 脑面写工具(`smart_table_update_cell/append_row/delete_row/add_field/create`→`smart_table_produce`,需 Irisy 真机验证)+ 清漂移设计 doc(`unified-productivity-suite-architecture.md` 标 retired)。
+3. **Track 1 通讯**:endpoint-spec 物化(MCP schema artifact + §14 describe schema);typed bus 生产接线;§14 produce review gate ADR 漂移消。
+4. **Track 3-5**(地基立稳后):html 渲染统一 / coding 两机制合一 / L1-L2 能力绑定 —— 分别按 owning module ADR 决定并实施。
+- 每片走 dev-loop(cargo + tsc + 测试 + `:17873` harness smoke + Playwright 视觉 + 独立 checker + git diff),无 fresh evidence 不报完成。
+
+## 非目标 / 范围外 (Non-goals)
+
+- **不推倒 ADR**:不重划模块、不另起 ADR 治理(镜头模式,按能力 amend)。
+- **不动 5 primitives / 三动词 / gate / secret / plain-text**。
+- **不一次性做 6 track**:地基(Track 0/2/1)先,上层(3/4/5)待地基立稳。
+- **不以本目标重定义 macOS shell**:该旁线由 ADR-003 §1.1 v25 独立治理。
+
+## 切片分派 (zeus 唯一写入者)
+
+| # | 切片 | track | 状态 |
+|---|---|---|---|
+| 1 | 退役 5 个冗余 `smart_table_*` 脑面写工具并验证 `smart_table_produce` 替代路径 | Track 2 | in-progress(本 session 起) |
+
+## 上一目标存档 (2026-07-11 → 2026-07-22, 原 status ACTIVE)
+
+### 目标 (Goal)
 
 **功能包生产线:专职 pack-builder worker 窗口持续产出新功能包。** 以 `ctrl-stock-cn`
 为已验证模板(bao 2026-07-11「你能走通一个就不错了」),按
@@ -22,11 +55,13 @@
 其他在册线:remote-window S4 ACL 半成品 park 在 `wip/remote-window-s4-acl`
 (tsc 过,行为未验),该线恢复时从此分支起。
 
-## 切片分派 (zeus 唯一写入者)
+### 切片分派
 
 | # | 切片 | 窗口 | 分支 | 状态 |
 |---|---|---|---|---|
-| 1 | 第一个新功能包(worker 先调研提案 2-3 个候选,bao 在其窗口拍板后执行) | athena(bao 已开窗 2026-07-12) | feat/pack-\<id\>(定包后建) | assigned |
+| 1 | 第一个新功能包(worker 先调研提案 2-3 个候选,bao 在其窗口拍板后执行) | athena(bao 已开窗 2026-07-12) | feat/pack-\<id\>(定包后建) | park(让位架构重构) |
+
+> **存档理由**:bao 2026-07-22「架构重构,涉及模块/资源层/功能包/通讯的整体架构」= 新方向(scope change,本 session 确认 A)。功能包命题已证成(P0-P3 全量 + ghostfolio/stock-cn 种子端到端),流水线机制就绪;暂停造新包,先立能力地基(§14 写侧等)让后续每个包自动对齐模型。恢复时从 athena 窗口续。
 
 ## 上一目标存档 (2026-07-01 → 2026-07-11, 原 status ACTIVE)
 
@@ -162,3 +197,4 @@ governing = `vault/ctrl/ai-native-feature-pack-research.md` + `vault/ctrl/capabi
   - **关键 learnings**(bao 多轮校准,存 memory `reference-stock-methodology-research-corpus`):个股分析必须 regime-first(不孤立看单股)+ 结构优先(指标是过滤器不是买卖点)+ 方法论从 16 个 clone 的真实 skill **源码**蒸馏(不凭训练瞎编);数据只需交易实际数据(价量)+ 衍生指标(MyTT),不依赖付费基本面。
   - **诚实 gap**:换手率/资金流/龙虎榜/连板情绪等深度数据要国内端点(腾讯/东财),此机被本地 Clash fake-ip 墙 → 候选解:EODHD 付费 / 中国出口代理(AWS 东京中继)/ Clash 加 DIRECT 规则(全球可达的价量+指标层已全通)。
   - **意义**:create(Irisy 写服务)→ govern(gate)→ uplift(缠论 skill 让分析 AI-native)→ Irisy 自主端到端操作,四环齐。**下一步 = 证「distribute + 用户如何用」这最后一环**(见候选目标)。
+- 2026-07-22 **目标替换(功能包生产线 → Irisy 能力中心架构重构)。** bao「架构重构,涉及模块、资源层、功能包等的整体架构」= 新方向(scope change,本 session 确认 A)。校准链:bao 戳破「开发架构(.kiro 治理)vs 项目架构重构(系统本身)是两回事」→ 点名 5 能力域(md 文档管理 / html / coding / 通讯 / L1-L2)→ 「一切都是为了建立 Irisy 的能力」。整理 + 对比落本 GOAL 与 `irisy-architecture.md` planning map(6 track:0 治理 / 1 通讯 / 2 md §14 写侧 / 3 html / 4 coding / 5 L1-L2)。**镜头模式校准**:以 Irisy 5 能力为规划镜头 reframe 现有 8 module ADR(按代码归属划分→按能力边界),不推倒重划;实施决定仍按 owning module ADR amend。核心发现:现有 ADR 模块是代码归属边界非能力边界;5 能力异构(md/coding=用户面模块,html/通讯=横切,L1/L2=导航);md §14 写侧(`RecordSink`/`ProduceOp`)已于 2026-07-02 实装,真剩债是退役 5 个冗余 bespoke 写工具。功能包生产线命题已证成(P0-P3 + 种子端到端),park 让位地基;恢复从 athena 续。**下一步 = Track 0(锁镜头边界)+ Track 2(退役 bespoke 写工具)**。
