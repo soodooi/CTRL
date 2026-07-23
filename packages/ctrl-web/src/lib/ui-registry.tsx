@@ -18,7 +18,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { renderStockCard } from '@/components/featurepack/stock/StockCard';
+import { renderStockCard } from '../components/featurepack/stock/StockCard';
 
 /** Discriminant for a renderable part. Open set — extend as parts grow. */
 export type PartKind =
