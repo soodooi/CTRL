@@ -278,7 +278,7 @@ export interface AmbientHomeProps {
   providerId?: string | null;
   onOpenPicker: () => void;
   onToggleDrawer: () => void;
-  /** Hide the native launcher without quitting its Accessory process. */
+  /** Hide the undecorated native launcher without quitting the app. */
   onHideLauncher: () => void;
   /** Tool the shell sidebar asked to run (null until a click). */
   toolRequest: ToolRequest | null;

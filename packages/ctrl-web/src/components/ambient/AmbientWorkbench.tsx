@@ -115,10 +115,10 @@ export function AmbientWorkbench(): ReactElement {
     [navigate, isHome],
   );
 
-  // Fixed Accessory has no Dock or Command-Tab entry, so every shell route
-  // retains one explicit hide control. This callback owns the native boundary;
-  // hosted PWA returns immediately instead of attempting a WS command.
-  // (ADR-003 frontend §1.1 v24)
+  // The launcher is intentionally undecorated, so every shell route retains
+  // one explicit hide control in addition to Ctrl/Esc and the regular Dock.
+  // This callback owns the native boundary; hosted PWA returns immediately
+  // instead of attempting a WS command. (ADR-003 frontend §1.1 v25)
   const hideLauncher = useCallback((): void => {
     if (platform() !== 'tauri') return;
     void invoke<void>('hide_window').catch(() => {
