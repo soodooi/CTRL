@@ -2,9 +2,9 @@
 adr_id: 005
 module: irisy
 title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down + §8 terminal-essence dialog (engine owns loop+context) + §9 mission + knowledge system (数字员工 operator)
-version: 24
+version: 25
 status: accepted
-last_updated: 2026-07-13
+last_updated: 2026-07-23
 deciders: [bao, zeus, hephaestus]
 sections:
   - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004) }
@@ -15,6 +15,7 @@ sections:
   - { id: capability-decomposition,   source: new-2026-06-04 — RETIRED in v5 (no Irisy system prompt — agents own their prompts) }
   - { id: pi-extension-integration,   source: new-2026-06-04 — RETIRED in v5 (Pi exited CTRL hot path, ctrl-pi-bridge deleted) }
 changelog:
+  - v25 2026-07-23: **§9 authority boundary reconciled with module ADR governance.** `irisy-architecture.md` remains a non-authoritative research/planning map for the accepted mission, knowledge-system detail, and the new five-capability planning lens; this ADR and the other owning module ADRs are the sole architectural authority. The lens may organize cross-module review but cannot create, override, or downgrade a decision; implementation still requires an in-place amendment to each owning module ADR. This supersedes v11's delegated "Governing SSOT" wording without changing the locked operator mission.
   - v24 2026-07-13: **§8 operational authority corrected to existing build-owned sources.** The nonexistent `.kiro/skills/hermes/SKILL.md` pointer is removed; engine pin/install truth is `shell/agent_installer.rs`, runtime ACP behavior is `shell/acp_client.rs`, and release evidence is `scripts/probes/hermes-acp-probe.mjs`. No runtime architecture change.
   - v23 2026-07-13: **Retired Pi-era §5-§7 governance is made explicitly non-binding (no new architecture).** Their prose remains as provenance, but headings/checklists now say retired and use `[~]`; live runtime verification is Hermes ACP plus the current §8/§9 model. Removes deleted `ctrl-pi-bridge`/Pi RPC work from accepted release debt and pairs ADR-002 v63.
   - v22 2026-07-08: **§2 mobile = describe-driven SDUI (generic, not stock) + Irisy conversation over the tunnel.** bao 2026-07-08「我们不仅仅是股票,不能拘泥于股票」+「对话没有了,这是个问题」+「通讯协议要抽象化通用化」. Researched server-driven-UI (Airbnb Ghost / OpenAI Apps SDK / MCP-UI / Shopify remote-dom, cross-verified): the right protocol = **describe-driven SDUI over the gate** — a pack `describe`s its mobile surface as a flat list of typed PARTS (kind + data + actions), the phone renders them through ONE registry with zero per-pack code; borrow the industry's *contract shape* (typed kind → registered renderer + declarative action + version + unknown-kind fallback), reject its heavyweight *transport* (iframes / remote-dom / AG-UI event stream) — matches local-first + gate-governed + JSON-semantic + the existing PartKind registry. **As-built (`feat/mobile-sdui`)**: `SurfaceRenderer` = domain-agnostic primitives (gauge/metrics/barlist/tiers/table/record/list + json fallback) — **no `stock` kind**, stock is just one composition; `Surface{v,pack,title,parts[]}` + `Action{verb:query|produce,source,op}`. Phone `RemoteApp` fetches each pack's Surface via `remote_surface` (describe) + renders generically + rounds actions back over the tunnel (deleted the `if(pack===stock)` hardcode). Desktop `RemoteHost` builds the Surface — the stock→parts mapping is a TRANSITIONAL desktop shim (real design: the pack describes its own surface via §14; every other pack flows through unchanged, the phone never knows a pack is "stock"). **Conversation**: `ChatSheet` slides in from the right edge / an Irisy button (maps the desktop's right chat column onto the phone); `sendChat` tunnels to the desktop, `RemoteHost` streams the engine reply (`engineTransport`, same assistant) back as chat_chunk/chat_done. Desktop Mobile (L1) page embeds a live phone preview (`MobilePreview`) beside the config so you see the app without a phone; "Mobile" is now a first-class L1 entry (not a settings-corner route). Verified: tsc + generic renderer render (2 packs, one renderer) + chat-tunnel protocol sim (send→stream→accumulate→done) + AES-GCM/passcode/surface sims. Honest gaps: move the stock shim into the pack (§14 describe); live phone↔desktop round-trip (engine stream + real data) = desktop+phone. Plan `vault/ctrl/plan-remote-window.md`.
@@ -893,7 +894,7 @@ user who pre-installed via brew/npm is detected too — CTRL never double-instal
 - [x] Strategic lock recorded — SOUL.md spec adopted verbatim, `x-ctrl:` namespace reserved for CTRL extensions, ecosystem stance documented in `vault/ctrl/history/brainstorm/openclaw-compat-2026-06-03.md` and memory `decision_openclaw_compat_layer`. Code follow-up tracked in **Future work** below (deferred batch, not a blocker for ongoing P0 fixes).
 ## §9 Mission + knowledge system (NEW v11, 2026-06-29)
 
-> Governing design SSOT = `vault/ctrl/irisy-architecture.md` (3-track research-backed map). This § records the DECISION; the doc holds the detail. Pairs with §3 persona-shell (§9 is the layer ABOVE persona: what Irisy is FOR) + [[irisy-roles.md]] (the role axis).
+> Architectural authority = this accepted module ADR plus the other owning module ADRs. `vault/ctrl/irisy-architecture.md` is the non-authoritative research/planning map holding supporting detail and the five-capability review lens; it cannot create or override a decision. This § records the DECISION. Pairs with §3 persona-shell (§9 is the layer ABOVE persona: what Irisy is FOR) + [[irisy-roles.md]] (the role axis).
 
 ### §9.1 The mission (LOCKED, bao 2026-06-29)
 
@@ -938,8 +939,8 @@ Audit finding: CTRL already DESIGNED all three, scattered + stale. `vault_seed/i
 
 ### §9.4 Acceptance (§9)
 
-- [x] Mission LOCKED by bao 2026-06-29 (数字员工/operator frame) — recorded here + in governing doc §一.
-- [x] Governing design SSOT written: `vault/ctrl/irisy-architecture.md` v2 (research-backed mission + 8-layer knowledge stack + operating loop + positioning), `vault/ctrl/irisy-roles.md` role axis.
+- [x] Mission LOCKED by bao 2026-06-29 (数字员工/operator frame) — recorded here + reflected in planning map §一.
+- [x] Module ADR authority reconciled: this ADR owns the accepted Irisy mission/knowledge decisions; `vault/ctrl/irisy-architecture.md` v2 retains non-authoritative research detail and the five-capability planning lens, while `vault/ctrl/irisy-roles.md` retains role-axis context.
 - [x] **Soul re-souled (§9.5 ③ + ②-jargon)**: `vault_seed/irisy-soul.md` `about` + `x-ctrl.identity` rewritten co-pilot/passenger → operator/back-office-of-your-one-person-company; retired jargon (`Pi`/`keycap`/`co-pilot`/`servant`) wiped. Seeds into `vault/irisy/SOUL.md` on next launch (`write_if_missing`, currently absent → writes the new soul). PWA chat path reads it via `irisy_soul_get`.
 - [x] **Mission in the PWA spine**: `irisy-prompts.ts` v13→v14 prepends mission + operating loop (layer 1).
 - [ ] **Close the drain (§9.5 ②)**: on hermes launch, sync `vault/irisy/SOUL.md` → `~/.hermes/SOUL.md` (or point hermes at the vault) so the engine path reads the SAME re-souled file as the PWA path; stop hermes double-writing its private `~/.hermes/memories/MEMORY.md` (land durable facts in the vault instead). ← needs on-device hermes verification.

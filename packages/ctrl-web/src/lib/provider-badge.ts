@@ -2,9 +2,10 @@
 //
 // Replaces the legacy `modelLabel.replace(/[^a-zA-Z]/g, '').slice(0, 2)`
 // which produced provider-initial ambiguities:
-//   "Zhipu GLM"      → "ZI"  (user expects "GL")
-//   "Anthropic Claude" → "AN"  (user expects "CL")
-//   "Volc Doubao"    → "VO"  ✓
+//   "Z.AI"            → "ZA"
+//   "Z.AI Coding Plan" → "ZC"
+//   "Anthropic Claude" → "CL"
+//   "Volc Doubao"      → "VO"
 //
 // Decision 0007 §display (2026-06-19): the badge carries provider
 // identity, not string-prefix chance. Unknown ids fall back to the
@@ -15,7 +16,8 @@ const PROVIDER_BADGES: Record<string, string> = {
   anthropic: 'CL',
   volc: 'VO',
   'volc-doubao': 'VO',
-  zhipu: 'GL',
+  zhipu: 'ZA',
+  'zai-coding-plan': 'ZC',
   openai: 'OA',
   deepseek: 'DS',
   kimi: 'KI',

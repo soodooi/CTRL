@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.1015"
+version = "0.1.1023"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -106,6 +106,10 @@ core-foundation = "0.10"
 objc2 = "0.5"
 objc2-foundation = { version = "0.2", features = ["NSGeometry", "NSThread"] }
 objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder", "NSApplication"] }
+# A standard NSWindow cannot reliably overlay another app's full-screen Space.
+# Convert only the launcher surface to an input-capable NSPanel while keeping
+# the owning macOS app Regular. (ADR-003 frontend §1.1 v25)
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e894383aa068ec5365a42994e3ac94ba1b6" }
 # Local OCR via the macOS Vision framework (ADR-002 substrate § OCR = on-device
 # Vision, no cloud). Drives screenshot text recognition in commands/screenshot.rs.
 objc2-vision = { version = "0.2", features = ["VNRequest", "VNRequestHandler", "VNRecognizeTextRequest", "VNObservation", "VNTypes"] }

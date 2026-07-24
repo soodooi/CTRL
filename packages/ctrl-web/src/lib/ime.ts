@@ -1,6 +1,6 @@
 // CJK IME guard for Enter-to-submit (and list-nav) inputs.
 //
-// ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): §7.6 generalized from
+// (ADR-003 frontend §7.6 v24) IME input, 2026-06-14: §7.6 generalized from
 // "IrisyChat.tsx handles IME" to ONE shared guard every Enter-handling input
 // reuses. Prior per-component state: 6 of 7 Enter inputs had zero IME guard,
 // so CJK candidate-confirm Enter mis-fired submit (bao report 2026-06-14).
@@ -17,9 +17,13 @@
 // Enter-handling input shares ONE guard instead of per-component patches.
 // system-design-first: one rule, not debug-driven patches.
 
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 
-export function isImeComposing(e: KeyboardEvent): boolean {
-  const native = e.nativeEvent as globalThis.KeyboardEvent;
+type ImeKeyboardEvent = ReactKeyboardEvent | globalThis.KeyboardEvent;
+
+export function isImeComposing(e: ImeKeyboardEvent): boolean {
+  const native = 'nativeEvent' in e
+    ? (e.nativeEvent as globalThis.KeyboardEvent)
+    : e;
   return native.isComposing || native.keyCode === 229;
 }

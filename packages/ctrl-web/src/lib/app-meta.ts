@@ -10,7 +10,7 @@
 // plugin import throws synchronously when `window.__TAURI_INTERNALS__` is
 // absent, so we guard via dynamic import + try/catch.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 import webPkg from '../../package.json';
 
@@ -39,6 +39,11 @@ export interface UpdateStatus {
 // bump this back to 15 min to be friendlier to GitHub + battery.
 const UPDATE_POLL_MS = 60 * 1000;
 
+// Serialize checks and installs across every mounted updater surface. Ambient
+// and Settings each poll independently, but only one operation may mutate the
+// signed app bundle at a time. (ADR-004 cap §3 v6)
+let activeUpdateOperation: 'idle' | 'checking' | 'installing' = 'idle';
+
 const isTauri = (): boolean =>
   typeof window !== 'undefined' &&
   '__TAURI_INTERNALS__' in window;
@@ -49,6 +54,31 @@ interface UpdateHandle {
   body?: string;
   downloadAndInstall: () => Promise<void>;
 }
+
+// One updater truth for every UI surface. Hooks subscribe to this snapshot
+// instead of racing with private copies of status/handle state.
+// (ADR-004 cap §3 v6)
+let sharedUpdateStatus: UpdateStatus = {
+  available: false,
+  checking: false,
+  installing: false,
+};
+let sharedUpdateHandle: UpdateHandle | null = null;
+const updateStatusListeners = new Set<() => void>();
+
+const publishUpdateStatus = (
+  next: UpdateStatus | ((current: UpdateStatus) => UpdateStatus),
+): void => {
+  sharedUpdateStatus = typeof next === 'function' ? next(sharedUpdateStatus) : next;
+  updateStatusListeners.forEach((listener) => listener());
+};
+
+const subscribeUpdateStatus = (listener: () => void): (() => void) => {
+  updateStatusListeners.add(listener);
+  return () => updateStatusListeners.delete(listener);
+};
+
+const getUpdateStatusSnapshot = (): UpdateStatus => sharedUpdateStatus;
 
 const checkForUpdate = async (): Promise<UpdateHandle | null> => {
   if (!isTauri()) return null;
@@ -86,27 +116,28 @@ const relaunchApp = async (): Promise<void> => {
 };
 
 interface UseUpdateStatusReturn extends UpdateStatus {
+  supported: boolean;
   checkNow: () => Promise<void>;
   installAndRestart: () => Promise<void>;
   checkAndInstall: () => Promise<void>;
 }
 
 export const useUpdateStatus = (): UseUpdateStatusReturn => {
-  const [status, setStatus] = useState<UpdateStatus>({
-    available: false,
-    checking: false,
-    installing: false,
-  });
-  const [handle, setHandle] = useState<UpdateHandle | null>(null);
+  const status = useSyncExternalStore(
+    subscribeUpdateStatus,
+    getUpdateStatusSnapshot,
+    getUpdateStatusSnapshot,
+  );
 
   const checkNow = async (): Promise<void> => {
-    if (!isTauri()) return;
-    setStatus((s) => ({ ...s, checking: true, error: undefined }));
+    if (!isTauri() || activeUpdateOperation !== 'idle') return;
+    activeUpdateOperation = 'checking';
+    publishUpdateStatus((s) => ({ ...s, checking: true, error: undefined }));
     try {
       const result = await checkForUpdate();
       if (result?.available) {
-        setHandle(result);
-        setStatus({
+        sharedUpdateHandle = result;
+        publishUpdateStatus({
           available: true,
           latestVersion: result.version,
           notes: result.body,
@@ -114,30 +145,41 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
           installing: false,
         });
       } else {
-        setHandle(null);
-        setStatus({ available: false, checking: false, installing: false });
+        sharedUpdateHandle = null;
+        publishUpdateStatus({ available: false, checking: false, installing: false });
       }
     } catch (err) {
-      setStatus((s) => ({
-        ...s,
+      // A failed check cannot authorize installation from an older response.
+      // Drop both the opaque updater handle and its visible metadata so every
+      // install is backed by the latest successful check.
+      // (ADR-004 cap § updater v6)
+      sharedUpdateHandle = null;
+      publishUpdateStatus({
+        available: false,
         checking: false,
+        installing: false,
         error: err instanceof Error ? err.message : 'check failed',
-      }));
+      });
+    } finally {
+      activeUpdateOperation = 'idle';
     }
   };
 
   const installAndRestart = async (): Promise<void> => {
-    if (!handle?.available) return;
-    setStatus((s) => ({ ...s, installing: true, error: undefined }));
+    if (!sharedUpdateHandle?.available || activeUpdateOperation !== 'idle') return;
+    activeUpdateOperation = 'installing';
+    publishUpdateStatus((s) => ({ ...s, installing: true, error: undefined }));
     try {
-      await handle.downloadAndInstall();
+      await sharedUpdateHandle.downloadAndInstall();
       await relaunchApp();
     } catch (err) {
-      setStatus((s) => ({
+      publishUpdateStatus((s) => ({
         ...s,
         installing: false,
         error: err instanceof Error ? err.message : 'install failed',
       }));
+    } finally {
+      activeUpdateOperation = 'idle';
     }
   };
 
@@ -148,21 +190,23 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
   // found we download + relaunch immediately — no second click, no Settings
   // detour. The whole point is "click the version → it upgrades".
   const checkAndInstall = async (): Promise<void> => {
-    if (!isTauri()) return;
-    if (handle?.available) {
+    if (!isTauri() || activeUpdateOperation !== 'idle') return;
+    if (sharedUpdateHandle?.available) {
       await installAndRestart();
       return;
     }
-    setStatus((s) => ({ ...s, checking: true, error: undefined }));
+    activeUpdateOperation = 'checking';
+    publishUpdateStatus((s) => ({ ...s, checking: true, error: undefined }));
     try {
       const result = await checkForUpdate();
       if (!result?.available) {
-        setHandle(null);
-        setStatus({ available: false, checking: false, installing: false });
+        sharedUpdateHandle = null;
+        publishUpdateStatus({ available: false, checking: false, installing: false });
         return;
       }
-      setHandle(result);
-      setStatus({
+      sharedUpdateHandle = result;
+      activeUpdateOperation = 'installing';
+      publishUpdateStatus({
         available: true,
         latestVersion: result.version,
         notes: result.body,
@@ -172,12 +216,14 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
       await result.downloadAndInstall();
       await relaunchApp();
     } catch (err) {
-      setStatus((s) => ({
+      publishUpdateStatus((s) => ({
         ...s,
         checking: false,
         installing: false,
         error: err instanceof Error ? err.message : 'update failed',
       }));
+    } finally {
+      activeUpdateOperation = 'idle';
     }
   };
 
@@ -188,5 +234,11 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { ...status, checkNow, installAndRestart, checkAndInstall };
+  return {
+    ...status,
+    supported: isTauri(),
+    checkNow,
+    installAndRestart,
+    checkAndInstall,
+  };
 };

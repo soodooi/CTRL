@@ -159,7 +159,22 @@ pub async fn kernel_status(
 /// an upgrade that changed the bundle hash).
 #[tauri::command]
 pub async fn hide_window(app: tauri::AppHandle) -> Result<(), String> {
-    crate::shell::WindowController::hide(&app).map_err(|e| e.to_string())
+    #[cfg(target_os = "macos")]
+    {
+        // NSPanel ordering is AppKit-main-thread-only. Async Tauri commands do
+        // not carry that guarantee, so dispatch the same controller path used
+        // by Ctrl, tray, and close interception. (ADR-003 frontend §1.1 v25)
+        let app_for_hide = app.clone();
+        app.run_on_main_thread(move || {
+            if let Err(error) = crate::shell::WindowController::hide(&app_for_hide) {
+                tracing::error!(?error, "hide_window: NSPanel hide failed");
+            }
+        })
+        .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    crate::shell::WindowController::hide(&app).map_err(|error| error.to_string())
 }
 
 /// Set the main window's height in logical pixels. Width and top-left

@@ -18,6 +18,7 @@ import { ProviderHub } from './ProviderHub';
 import { AmbientHome, type ToolRequest, type PackRequest } from './AmbientHome';
 import { useActiveProvider, formatProviderLabel } from '@/hooks/useActiveProvider';
 import { useKernelStatus } from '@/hooks/useKernelStatus';
+import { invoke, platform } from '@/lib/bridge';
 import { isSeedingFirstRun } from '@/lib/kernel';
 import {
   initKernelPackEventListener,
@@ -114,6 +115,17 @@ export function AmbientWorkbench(): ReactElement {
     [navigate, isHome],
   );
 
+  // The launcher is intentionally undecorated, so every shell route retains
+  // one explicit hide control in addition to Ctrl/Esc and the regular Dock.
+  // This callback owns the native boundary; hosted PWA returns immediately
+  // instead of attempting a WS command. (ADR-003 frontend §1.1 v25)
+  const hideLauncher = useCallback((): void => {
+    if (platform() !== 'tauri') return;
+    void invoke<void>('hide_window').catch(() => {
+      // Native close remains best-effort; tray and Ctrl are recovery paths.
+    });
+  }, []);
+
   // Gap-2: subscribe to kernel-side pack changes on :17872 and bridge them to
   // the browser PACKS_CHANGED_EVENT. A pack installed by Irisy/brain through the
   // gate, or upgraded by the builtin seed, otherwise never reaches the PWA (its
@@ -174,6 +186,7 @@ export function AmbientWorkbench(): ReactElement {
         onSidebarSelect={onSidebarSelect}
         activeSection={activeSection}
         settingUp={settingUp}
+        onHideLauncher={hideLauncher}
       />
       {!isHome && (
         <div className={styles.routeHost}>
@@ -189,6 +202,15 @@ export function AmbientWorkbench(): ReactElement {
             </button>
             <button type="button" className={styles.backBar} onClick={() => void navigate({ to: '/' })}>
               ← Irisy
+            </button>
+            <button
+              type="button"
+              className={`${styles.statusBtn} ${styles.statusClose} ${styles.routeClose}`}
+              onClick={hideLauncher}
+              title="Hide CTRL"
+              aria-label="Hide CTRL"
+            >
+              ×
             </button>
           </div>
           <div className={styles.routeBody}>

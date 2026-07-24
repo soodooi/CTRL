@@ -90,13 +90,11 @@ impl ShellLifecycle {
 
         tracing::info!("ShellLifecycle::boot — complete");
 
-        // Decision 0007 (2026-06-19): fire-and-forget cloud catalog refresh.
-        // No-op when `CTRL_CATALOG_URL` is unset; failure logs but never
-        // blocks boot — list_provider_templates falls back to bundled.
+        // Refresh the API-key-representable provider/model catalogue from
+        // Models.dev. Failure never blocks boot; the last cache or bundled
+        // floor remains available. (ADR-002 substrate §3.10 v67)
         let _ = tauri::async_runtime::spawn(async {
-            if let Err(e) =
-                crate::commands::provider_templates::refresh_provider_catalog().await
-            {
+            if let Err(e) = crate::commands::provider_templates::refresh_provider_catalog().await {
                 tracing::debug!(error = %e, "boot: cloud catalog refresh skipped");
             }
         });

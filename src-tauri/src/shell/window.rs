@@ -34,6 +34,125 @@
 use anyhow::Result;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
+#[cfg(target_os = "macos")]
+mod macos_window {
+    use objc2_app_kit::NSWindow as LegacyNSWindow;
+    use objc2_foundation::MainThreadMarker as LegacyMainThreadMarker;
+    use tauri::{Manager, WebviewWindow, Wry};
+    use tauri_nspanel::{
+        CollectionBehavior, ManagerExt, PanelHandle, PanelLevel, StyleMask, WebviewWindowExt,
+    };
+
+    tauri_nspanel::tauri_panel!(CtrlLauncherPanel {
+        config: {
+            can_become_key_window: true,
+            can_become_main_window: false,
+            is_floating_panel: true,
+        }
+    });
+
+    type LauncherPanelHandle = PanelHandle<Wry>;
+
+    fn native<'a>(
+        window: &'a WebviewWindow,
+        _main_thread: &LegacyMainThreadMarker,
+    ) -> Option<&'a LegacyNSWindow> {
+        let pointer = window.ns_window().ok()?;
+        // SAFETY: Tauri owns this NSWindow for at least as long as the
+        // WebviewWindow handle, and the marker proves this is the main thread.
+        unsafe { (pointer as *const LegacyNSWindow).as_ref() }
+    }
+
+    fn panel(window: &WebviewWindow) -> Option<LauncherPanelHandle> {
+        if let Ok(panel) = window
+            .app_handle()
+            .get_webview_panel(window.label())
+        {
+            return Some(panel);
+        }
+        match window.to_panel::<CtrlLauncherPanel>() {
+            Ok(panel) => Some(panel),
+            Err(error) => {
+                tracing::error!(?error, "WindowController — failed to convert launcher to NSPanel");
+                None
+            }
+        }
+    }
+
+    fn configure_panel(panel: &LauncherPanelHandle) {
+        panel.set_floating_panel(true);
+        panel.set_level(PanelLevel::Status.value());
+        panel.set_hides_on_deactivate(false);
+        panel.set_style_mask(
+            StyleMask::empty()
+                .resizable()
+                .nonactivating_panel()
+                .into(),
+        );
+        panel.set_collection_behavior(
+            CollectionBehavior::new()
+                .can_join_all_spaces()
+                .stationary()
+                .full_screen_auxiliary()
+                .into(),
+        );
+    }
+
+    /// Keep the input-first launcher available in normal and full-screen
+    /// Spaces. The regular app owns an input-capable NSPanel; standard
+    /// NSWindows cannot reliably cross another app's full-screen Space.
+    /// (ADR-003 frontend §1.1 v25)
+    pub(super) fn configure(window: &WebviewWindow) {
+        let Some(_mtm) = LegacyMainThreadMarker::new() else {
+            tracing::warn!("WindowController — configuration requested off the macOS main thread");
+            return;
+        };
+        let Some(panel) = panel(window) else {
+            return;
+        };
+        configure_panel(&panel);
+    }
+
+    pub(super) fn is_on_active_space(window: &WebviewWindow) -> Option<bool> {
+        let mtm = LegacyMainThreadMarker::new()?;
+        let window = native(window, &mtm)?;
+        Some(unsafe { window.isOnActiveSpace() })
+    }
+
+    pub(super) fn present(window: &WebviewWindow) {
+        let Some(_mtm) = LegacyMainThreadMarker::new() else {
+            tracing::warn!("WindowController — presentation requested off the macOS main thread");
+            return;
+        };
+        let Some(panel) = panel(window) else {
+            return;
+        };
+        configure_panel(&panel);
+
+        // Do not call WebviewWindow::show before this. Tao's generic show path
+        // can bind a Regular app window to the app's own Space before AppKit
+        // orders it, which prevents a Ctrl summon over another app's full-screen
+        // Space. orderFrontRegardless inside show_and_make_key is the single
+        // presentation authority for the all-Spaces NSPanel.
+        // (ADR-003 frontend §1.1 v25)
+        panel.show_and_make_key();
+        tracing::info!(
+            visible = panel.is_visible(),
+            active_space = is_on_active_space(window).unwrap_or(false),
+            "WindowController — launcher panel presented"
+        );
+    }
+
+    pub(super) fn hide(window: &WebviewWindow) {
+        let Some(_mtm) = LegacyMainThreadMarker::new() else {
+            tracing::warn!("WindowController — hide requested off the macOS main thread");
+            return;
+        };
+        if let Some(panel) = panel(window) {
+            panel.hide();
+        }
+    }
+}
 
 pub struct WindowController;
 
@@ -62,27 +181,30 @@ impl WindowController {
         // Accessibility prompt the hotkey thread raises on first launch.
         #[cfg(target_os = "macos")]
         {
-            let _ = w.hide();
+            macos_window::configure(&w);
+            macos_window::hide(&w);
             tracing::info!("WindowController::prewarm — main hidden at boot");
         }
         Ok(())
     }
 
     /// Always-reveal — bring the main window into view regardless of
-    /// current state. Used by single-instance + macOS Dock reopen handlers
-    /// so a second `open .app` or a Dock click consistently surfaces the
-    /// window (vs `toggle` which would hide it when already visible).
-    /// Per bao 2026-05-23: 'in the taskbar but just won't open'.
+    /// current state. Used by single-instance, LaunchServices reopen, and
+    /// menu-bar actions so an explicit open request consistently surfaces the
+    /// window instead of toggling an already-visible launcher closed.
+    /// (ADR-003 frontend §1.1 v25)
     pub fn reveal(app: &AppHandle) -> Result<()> {
         let Some(w) = Self::main(app) else {
             tracing::info!("WindowController::reveal — main missing, rebuilding");
-            let _w = Self::build_main(app)?;
+            let rebuilt = Self::build_main(app)?;
             #[cfg(target_os = "windows")]
-            cloak::set(&_w, false);
-            #[cfg(not(target_os = "windows"))]
+            cloak::set(&rebuilt, false);
+            #[cfg(target_os = "macos")]
+            macos_window::present(&rebuilt);
+            #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
             {
-                let _ = _w.show();
-                let _ = _w.set_focus();
+                let _ = rebuilt.show();
+                let _ = rebuilt.set_focus();
             }
             return Ok(());
         };
@@ -91,19 +213,12 @@ impl WindowController {
             cloak::set(&w, false);
             super::hotkey::HotkeyController::reset_state();
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(target_os = "macos")]
+        macos_window::present(&w);
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
         {
             let _ = w.show();
             let _ = w.set_focus();
-            // Same launcher contract as toggle() — see comment there.
-            #[cfg(target_os = "macos")]
-            unsafe {
-                use objc2_app_kit::NSApp;
-                use objc2_foundation::MainThreadMarker;
-                if let Some(mtm) = MainThreadMarker::new() {
-                    NSApp(mtm).activate();
-                }
-            }
         }
         tracing::info!("WindowController::reveal — main shown");
         Ok(())
@@ -118,11 +233,16 @@ impl WindowController {
     pub fn toggle(app: &AppHandle) -> Result<()> {
         let Some(w) = Self::main(app) else {
             tracing::info!("WindowController::toggle — main missing, rebuilding");
-            let _w = Self::build_main(app)?;
+            let rebuilt = Self::build_main(app)?;
             #[cfg(target_os = "windows")]
-            cloak::set(&_w, false);
-            // Don't set focus - this allows hotkey to work while window is visible
-            // let _ = w.set_focus();
+            cloak::set(&rebuilt, false);
+            #[cfg(target_os = "macos")]
+            macos_window::present(&rebuilt);
+            #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+            {
+                let _ = rebuilt.show();
+                let _ = rebuilt.set_focus();
+            }
             return Ok(());
         };
 
@@ -144,8 +264,17 @@ impl WindowController {
         #[cfg(not(target_os = "windows"))]
         {
             let visible = w.is_visible().unwrap_or(false);
-            if visible {
+            #[cfg(target_os = "macos")]
+            let visible_on_active_space =
+                visible && macos_window::is_on_active_space(&w).unwrap_or(false);
+            #[cfg(not(target_os = "macos"))]
+            let visible_on_active_space = visible;
+
+            if visible_on_active_space {
                 tracing::info!("WindowController::toggle — hide");
+                #[cfg(target_os = "macos")]
+                macos_window::hide(&w);
+                #[cfg(not(target_os = "macos"))]
                 let _ = w.hide();
                 // Sync hide for the input companion window so users don't
                 // see a stranded textarea floating on screen after Ctrl-hide
@@ -160,32 +289,17 @@ impl WindowController {
                     let _ = workspace.hide();
                 }
             } else {
-                tracing::info!("WindowController::toggle — show");
-                let _ = w.show();
-                let _ = w.set_focus();
+                tracing::info!("WindowController::toggle — show on active Space");
                 // Same — bring the input companion back up alongside main.
                 if let Some(input) = app.get_webview_window("input") {
                     let _ = input.show();
                 }
-                // CTRL = launcher popup (Raycast-style): set_focus only raises
-                // the window in z-order; it does NOT pull keyboard focus across
-                // app boundaries. NSApp.activate() is the launcher contract —
-                // hands focus to CTRL from whatever app is currently foreground
-                // (Chrome / Terminal / VSCode / etc.), and (combined with
-                // visibleOnAllWorkspaces:true in tauri.conf.json) brings the
-                // window across to the user's current Space.
-                //
-                // NOT calling: NSApp.hide() on the hide branch (would background
-                // the whole app and break the tray-resident architecture), and
-                // NOT setActivationPolicy(Regular) (would surface a Dock icon
-                // — CTRL is accessory-only).
                 #[cfg(target_os = "macos")]
-                unsafe {
-                    use objc2_app_kit::NSApp;
-                    use objc2_foundation::MainThreadMarker;
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        NSApp(mtm).activate();
-                    }
+                macos_window::present(&w);
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = w.show();
+                    let _ = w.set_focus();
                 }
             }
         }
@@ -193,7 +307,9 @@ impl WindowController {
     }
 
     /// Build the main launcher window. Recovery path; normally the window
-    /// comes pre-built from tauri.conf.json `windows: [...]`.
+    /// comes pre-built from tauri.conf.json `windows: [...]`. Keep this path
+    /// taskbar-visible so recovery preserves the Regular app contract.
+    /// (ADR-003 frontend §1.1 v25)
     pub fn build_main(app: &AppHandle) -> Result<WebviewWindow> {
         let w = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("/".into()))
             .title("CTRL")
@@ -204,12 +320,14 @@ impl WindowController {
             .shadow(true)
             .always_on_top(true)
             .visible_on_all_workspaces(true)
-            .skip_taskbar(true)
+            .skip_taskbar(false)
             .focused(true)
             .center()
             .resizable(true)
             .build()?;
         install_close_intercept(&w, app, "main");
+        #[cfg(target_os = "macos")]
+        macos_window::configure(&w);
         Ok(w)
     }
 
@@ -255,9 +373,13 @@ impl WindowController {
     }
 
     /// Hide the main window unless a modal child has been opened.
-    /// In the destroy + rebuild model, "hide" = "destroy".
+    /// macOS keeps the converted NSPanel alive so the panel manager and
+    /// WebviewWindow continue to reference the same launcher instance.
     pub fn hide_unless_modal(app: &AppHandle) -> Result<()> {
         if let Some(w) = Self::main(app) {
+            #[cfg(target_os = "macos")]
+            macos_window::hide(&w);
+            #[cfg(not(target_os = "macos"))]
             let _ = w.destroy();
         }
         Ok(())
@@ -276,7 +398,7 @@ impl WindowController {
             // (which would also kill the hotkey + Pi supervisor threads).
             // Mirrors toggle()'s hide branch.
             #[cfg(target_os = "macos")]
-            let _ = w.hide();
+            macos_window::hide(&w);
             #[cfg(not(target_os = "macos"))]
             let _ = w.destroy();
         }
@@ -363,7 +485,7 @@ pub(crate) fn install_close_intercept(w: &WebviewWindow, app: &AppHandle, label:
                         #[cfg(target_os = "windows")]
                         cloak::set(&w, true);
                         #[cfg(target_os = "macos")]
-                        let _ = w.hide();
+                        macos_window::hide(&w);
                     } else {
                         let _ = w.destroy();
                     }

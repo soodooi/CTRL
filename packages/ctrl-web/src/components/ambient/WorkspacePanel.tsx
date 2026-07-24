@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import type { Capability } from '@/lib/capability-catalog';
+import { isImeComposing } from '@/lib/ime';
 import {
   addAction,
   availableActions,
@@ -105,18 +106,24 @@ export function WorkspacePanel({ onRun, onConnectTools }: WorkspacePanelProps): 
     [layout],
   );
 
-  // Number-key shortcuts: the digit under a tile runs it. View mode only, and
-  // never while a digit is typed into a field (the composer).
+  // Number-key shortcuts: the digit under a tile runs it. View mode only.
+  // The empty launcher composer explicitly opts in so Ctrl → 1 can start
+  // Capture without first moving focus; populated or unrelated fields keep
+  // normal numeric input. (ADR-003 frontend §8.2A v24)
   useEffect(() => {
     if (editing) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (isImeComposing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target;
-      if (
+      const isEditable =
         t instanceof HTMLElement &&
-        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
-      ) {
-        return;
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (isEditable) {
+        const isEmptyLauncherComposer =
+          t instanceof HTMLTextAreaElement &&
+          t.dataset.workspaceShortcuts === 'when-empty' &&
+          t.value.length === 0;
+        if (!isEmptyLauncherComposer) return;
       }
       const idx = indexForKey(e.key);
       if (idx === null) return;

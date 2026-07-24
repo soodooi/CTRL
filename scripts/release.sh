@@ -14,6 +14,8 @@
 #   3. `gh` CLI authenticated (`gh auth login`)
 #   4. Public release repo: `gh repo create soodooi/CTRL-releases --public`
 #      (run once; the script doesn't create it)
+#   5. The configured macOS code-signing identity is installed and its
+#      keychain is unlocked before invoking this release-only script
 #
 # What it does:
 #   1. Verifies a clean committed tree with synchronized release versions
@@ -54,12 +56,27 @@ if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
 fi
 ROOT_VERSION="$(node -p "require('./package.json').version")"
 WEB_VERSION="$(node -p "require('./packages/ctrl-web/package.json').version")"
+NPM_LOCK_VERSION="$(node -p "require('./package-lock.json').version")"
+NPM_LOCK_ROOT_VERSION="$(node -p "require('./package-lock.json').packages[''].version")"
+NPM_LOCK_WEB_VERSION="$(node -p "require('./package-lock.json').packages['packages/ctrl-web'].version")"
 TAURI_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 CARGO_VERSION="$(awk '/^\[package\]/{in_package=1; next} in_package && /^version = /{gsub(/.*\"|\".*/, ""); print; exit}' src-tauri/Cargo.toml)"
+CARGO_LOCK_VERSION="$(awk '
+    /^\[\[package\]\]/{in_package=1; name=""; next}
+    in_package && /^name = "ctrl"$/{name="ctrl"; next}
+    in_package && name == "ctrl" && /^version = /{gsub(/.*"|".*/, ""); print; exit}
+' src-tauri/Cargo.lock)"
+# Validate every metadata target managed by bump-version.mjs before building.
+# A manifest-only check could publish from stale lockfile inputs.
+# (ADR-004 cap § updater v6)
 if [[ "$ROOT_VERSION" != "$VERSION" || "$WEB_VERSION" != "$VERSION" ||
-      "$TAURI_VERSION" != "$VERSION" || "$CARGO_VERSION" != "$VERSION" ]]; then
+      "$NPM_LOCK_VERSION" != "$VERSION" || "$NPM_LOCK_ROOT_VERSION" != "$VERSION" ||
+      "$NPM_LOCK_WEB_VERSION" != "$VERSION" || "$TAURI_VERSION" != "$VERSION" ||
+      "$CARGO_VERSION" != "$VERSION" || "$CARGO_LOCK_VERSION" != "$VERSION" ]]; then
     echo "error: requested version $VERSION is not committed consistently"
-    echo "       root=$ROOT_VERSION web=$WEB_VERSION tauri=$TAURI_VERSION cargo=$CARGO_VERSION"
+    echo "       root=$ROOT_VERSION web=$WEB_VERSION npm-lock=$NPM_LOCK_VERSION"
+    echo "       npm-lock-root=$NPM_LOCK_ROOT_VERSION npm-lock-web=$NPM_LOCK_WEB_VERSION"
+    echo "       tauri=$TAURI_VERSION cargo=$CARGO_VERSION cargo-lock=$CARGO_LOCK_VERSION"
     exit 1
 fi
 if ! command -v minisign >/dev/null 2>&1; then
@@ -539,22 +556,59 @@ export TAURI_SIGNING_PRIVATE_KEY="$KEY"
 # empty string so the signer accepts it without an interactive prompt.
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
 
-# Code-sign CTRL.app with the stable self-signed cert so its macOS
-# Designated Requirement stays CONSTANT across releases. Without this the
-# build is ad-hoc signed (DR = cdhash, changes every build) and macOS drops
-# the Input Monitoring grant on every upgrade — i.e. the Ctrl hotkey dies
-# after each update. The cert lives in a dedicated keychain; unlock it so
-# codesign can use the identity non-interactively. See memory
-# troubleshoot_ctrl_hotkey for the full rationale.
-export APPLE_SIGNING_IDENTITY="CTRL Dev Signing"
-SIGN_KC="$HOME/Library/Keychains/ctrl-signing.keychain-db"
-if [[ -f "$SIGN_KC" ]]; then
-    security unlock-keychain -p "ctrl-signing-local" "$SIGN_KC" 2>/dev/null || true
-else
-    echo "error: signing keychain $SIGN_KC missing — the released app would be"
-    echo "       ad-hoc signed and lose Input Monitoring on upgrade. Aborting."
+# Code-sign release artifacts with one stable identity so the macOS
+# Designated Requirement remains constant across updates. Daily developer
+# bundles use `npm run tauri:build` and explicitly skip signing; only this
+# release path requires the provisioned identity. The release operator unlocks
+# its keychain before running this script; no keychain password belongs in the
+# repository. (ADR-004 cap § updater v6)
+export APPLE_SIGNING_IDENTITY="$(node -p "require('./src-tauri/tauri.conf.json').bundle.macOS.signingIdentity")"
+BUNDLE_IDENTIFIER="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
+if [[ -z "$APPLE_SIGNING_IDENTITY" || -z "$BUNDLE_IDENTIFIER" ]]; then
+    echo "error: bundle.macOS.signingIdentity and identifier are required for release builds"
     exit 1
 fi
+SIGNING_MATCH="$(security find-identity -v -p codesigning 2>/dev/null | awk -v requested="$APPLE_SIGNING_IDENTITY" '
+    BEGIN { requested = tolower(requested) }
+    {
+        fingerprint = tolower($2)
+        label = $0
+        sub(/^[[:space:]]*[0-9]+\)[[:space:]]+[0-9A-Fa-f]+[[:space:]]+"/, "", label)
+        sub(/"[[:space:]]*$/, "", label)
+        if (fingerprint == requested || tolower(label) == requested) print $0
+    }
+')"
+if [[ "$(wc -l <<< "$SIGNING_MATCH" | tr -d ' ')" -ne 1 || -z "$SIGNING_MATCH" ]]; then
+    echo "error: configured macOS signing identity is unavailable or ambiguous: $APPLE_SIGNING_IDENTITY"
+    exit 1
+fi
+SIGNING_FINGERPRINT="$(awk '{print tolower($2)}' <<< "$SIGNING_MATCH")"
+SIGNING_LABEL="$(sed -E 's/^[[:space:]]*[0-9]+\)[[:space:]]+[0-9A-Fa-f]+[[:space:]]+"(.*)"[[:space:]]*$/\1/' <<< "$SIGNING_MATCH")"
+
+verify_macos_code_signature() {
+    local app_bundle="$1" details requirement normalized_requirement normalized_identifier
+    if [[ ! -d "$app_bundle" ]]; then
+        echo "error: expected signed app bundle was not produced: $app_bundle"
+        return 1
+    fi
+    codesign --verify --deep --strict --verbose=4 "$app_bundle"
+    details="$(codesign -dv --verbose=4 "$app_bundle" 2>&1)"
+    if [[ "$details" != *"Authority=${SIGNING_LABEL}"* || "$details" == *"Signature=adhoc"* ]]; then
+        echo "error: built app is not signed by $SIGNING_LABEL"
+        return 1
+    fi
+    requirement="$(codesign -d -r- "$app_bundle" 2>&1)"
+    normalized_requirement="$(tr '[:upper:]' '[:lower:]' <<< "$requirement")"
+    normalized_identifier="$(tr '[:upper:]' '[:lower:]' <<< "$BUNDLE_IDENTIFIER")"
+    if [[ "$normalized_requirement" != *"identifier \"${normalized_identifier}\""* ||
+          "$normalized_requirement" != *"certificate root = h\"${SIGNING_FINGERPRINT}\""* ||
+          "$normalized_requirement" == *"cdhash"* ]]; then
+        echo "error: built app Designated Requirement is not stable or does not match the configured identity"
+        echo "$requirement"
+        return 1
+    fi
+    echo "macOS signing verified: $SIGNING_LABEL; stable Designated Requirement"
+}
 
 echo "==> [3/9] committed version metadata verified at $VERSION"
 # The source tree remains byte-for-byte identical to SOURCE_COMMIT through the
@@ -566,15 +620,18 @@ echo "==> [4/9] build for $TARGET (app-only bundle; DMG step is flaky on this ma
 # stale tarball/signature pair from another source commit.
 # (ADR-004 cap § updater v5)
 BUNDLE_DIR="src-tauri/target/$TARGET/release/bundle/macos"
-TARBALL="$BUNDLE_DIR/CTRL.app.tar.gz"
+APP_BUNDLE="$BUNDLE_DIR/CTRL.app"
+TARBALL="$APP_BUNDLE.tar.gz"
 SIGFILE="$TARBALL.sig"
+rm -rf "$APP_BUNDLE"
 rm -f "$TARBALL" "$SIGFILE"
 
 # bundle_dmg.sh has intermittently failed on this dev box (rw.NNNNN.dmg
 # leftover from a prior aborted run blocks DMG creation). The updater
 # only needs .app + .app.tar.gz + .sig, so restrict to `app` bundle —
 # DMG is a developer convenience, not a ship artifact.
-npm run tauri:build -- --target "$TARGET" --bundles app
+npm run tauri -- build --target "$TARGET" --bundles app
+verify_macos_code_signature "$APP_BUNDLE"
 
 if [[ ! -f "$TARBALL" || ! -f "$SIGFILE" ]]; then
     echo "error: updater artifacts missing — check tauri.conf.json bundle.createUpdaterArtifacts: true"

@@ -1,7 +1,8 @@
 ---
-title: CTRL 本地生产力套件 — 统一 §14 系统架构图 (governing)
-kind: plan
+title: CTRL 本地生产力套件 — 统一 §14 系统架构图 (retired provenance)
+kind: history
 created_at: 2026-07-02
+retired_at: 2026-07-22
 owner: bao
 author: claude
 purpose: bao「你架构弄清楚了吗？是在建立整套系统吗？…好，做」—— 停止逐端点手写(accretion)，把整套生产力套件当一个统一 §14 系统设计
@@ -14,6 +15,8 @@ related:
 ---
 
 # 统一 §14 系统架构 — 一次建成整套生产力套件
+
+> ⚠️ **RETIRED / SUPERSEDED (2026-07-22)** — 本设计 doc 是 2026-07-02 的「建系统」提案,标的「RecordSink/ProduceOp 未建」**已过期漂移**:实装**当日全量落地**(GOAL log 2026-07-02 line 134 + ADR-002 §14.13 v45)——`RecordSink` trait + `ProduceOp` union(`query.rs:191,309`)+ `impl RecordSink` for SmartTable/DocBody/TaskSource/CalendarSource + 统一 produce 动词(`smart_table_produce`/`task_produce`/`calendar_produce`/`doc_produce`,`mcp_server.rs:1494/1847/1922/1949`)全 shipped;「加产品 = 两 trait 零 gate 工具」命题已验证(91 tools / 393 测试)。**唯一架构权威 = ADR-002 §14.13;运行代码是实现证据**。本文仅保留作历史设计 provenance,**勿再据它判断「未建」**。真剩债(退役 5 冗余 bespoke 脑面写工具)见 `vault/ctrl/GOAL.md` Track 2。
 
 > **诚实起点**（bao 2026-07-02 戳破）：我此前在 smart-table 一个产品上**逐端点手写** produce 工具（add_field/delete_row/batch…~10 个）= accretion，不是「建系统」。照此加 Sheets/Docs 会把每操作**再手写一遍**。这张图 = 把写侧统一，让整套套件共享一套 §14，**加产品 = 实现两个 trait + 声明形状，零新 gate 工具**。
 

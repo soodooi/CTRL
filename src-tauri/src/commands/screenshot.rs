@@ -24,9 +24,16 @@ pub async fn capture_screen_and_ocr(app: tauri::AppHandle) -> Result<ScreenshotO
     #[cfg(target_os = "macos")]
     {
         // Hide CTRL first so it isn't sitting over — or captured inside — the
-        // region the user is about to select (bao 2026-06-19). The crosshair
-        // overlay is screencapture's own UI, independent of our window.
-        let _ = crate::shell::WindowController::hide(&app);
+        // region the user is about to select (bao 2026-06-19). AppKit panel
+        // operations stay on the main thread. (ADR-003 frontend §1.1 v25)
+        let hide_app = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) = crate::shell::WindowController::hide(&hide_app) {
+                tracing::warn!(?error, "screenshot OCR failed to hide CTRL");
+            }
+        }) {
+            tracing::warn!(?error, "screenshot OCR failed to dispatch hide");
+        }
         // Let the compositor actually remove the window before the overlay opens.
         tokio::time::sleep(std::time::Duration::from_millis(220)).await;
 
@@ -35,7 +42,14 @@ pub async fn capture_screen_and_ocr(app: tauri::AppHandle) -> Result<ScreenshotO
             .map_err(|e| format!("ocr task join: {e}"));
 
         // Bring CTRL back regardless of how the capture went.
-        let _ = crate::shell::WindowController::reveal(&app);
+        let reveal_app = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) = crate::shell::WindowController::reveal(&reveal_app) {
+                tracing::warn!(?error, "screenshot OCR failed to reveal CTRL");
+            }
+        }) {
+            tracing::warn!(?error, "screenshot OCR failed to dispatch reveal");
+        }
         result?
     }
     #[cfg(not(target_os = "macos"))]
