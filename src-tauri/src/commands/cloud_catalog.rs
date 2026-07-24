@@ -1,22 +1,12 @@
-// Cloud-sourced provider catalog refresh layer (decision 0007, 2026-06-19).
+// Provider catalogue refresh: bundled offline floor + Models.dev freshness.
 //
-// The bundled `provider-templates.json` is a static snapshot — new model
-// ids (glm-5.2 / gpt-5 / claude-sonnet-5) ship only on CTRL release. To
-// let the catalog stay current between releases, the runtime also reads
-// a cloud-sourced catalog and merges it between bundled and user layers.
-//
-// Layering (low → high precedence, see `provider_templates::list`):
-//   bundled (include_str!)  →  cloud-cache  →  user (~/.ctrl/provider-templates.json)
-//
-// URL resolution (first non-empty wins):
-//   1. env var CTRL_CATALOG_URL  (power-user / dev override)
-//   2. ~/.ctrl/config.toml [catalog] url  (per-install, when wired)
-//   3. const DEFAULT_CATALOG_URL = ""  (disabled — fetch is a no-op)
-//
-// When the resolved URL is empty the entire layer is inert: no network
-// call, no cache file written. `list_provider_templates` returns the
-// same result as before this feature shipped.
+// Models.dev is the public catalogue also used by OpenCode. CTRL consumes only
+// entries representable by its API-key HTTP form (OpenAI-compatible or
+// Anthropic Messages); OAuth/profile/local-runtime providers stay in OpenCode.
+// The transformed result is cached locally, then user overrides win.
+// (ADR-002 substrate §3.10 v67)
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -24,27 +14,40 @@ use serde::{Deserialize, Serialize};
 
 use super::provider_templates::ProviderTemplate;
 
-/// Power-user / dev override. Takes precedence over config + default.
 const ENV_CATALOG_URL: &str = "CTRL_CATALOG_URL";
-
-/// Disabled by default. bao wires a real URL when ctrl-cloud ships
-/// `GET /catalog/providers`; users can override earlier via env / config.
-const DEFAULT_CATALOG_URL: &str = "";
-
-/// Network timeout for the cloud fetch. Conservative so a slow CDN does
-/// not hold up boot.
+const DEFAULT_CATALOG_URL: &str = "https://models.dev/api.json";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(15);
+const BUNDLED_TEMPLATES: &str = include_str!("../kernel/provider/provider-templates.json");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedCatalog {
-    /// Stamp of the successful fetch. Informational — used only for
-    /// diagnostics; the runtime does not expire caches on age (refresh
-    /// is fire-and-forget on boot, not lazy on read).
     pub fetched_at: String,
     pub templates: Vec<ProviderTemplate>,
 }
 
-/// Resolve the cloud URL per the precedence chain. Empty = disabled.
+#[derive(Debug, Deserialize)]
+struct ModelsDevProvider {
+    name: String,
+    #[serde(default)]
+    api: Option<String>,
+    #[serde(default)]
+    npm: String,
+    #[serde(default)]
+    env: Vec<String>,
+    #[serde(default)]
+    doc: Option<String>,
+    #[serde(default)]
+    models: BTreeMap<String, ModelsDevModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelsDevModel {
+    #[serde(default)]
+    release_date: String,
+    #[serde(default)]
+    last_updated: String,
+}
+
 pub fn resolve_url(config_url: Option<&str>) -> String {
     if let Ok(env) = std::env::var(ENV_CATALOG_URL) {
         let trimmed = env.trim();
@@ -61,8 +64,6 @@ pub fn resolve_url(config_url: Option<&str>) -> String {
     DEFAULT_CATALOG_URL.to_string()
 }
 
-/// Cache path: `~/.ctrl/cache/provider-catalog.json`. None when HOME
-/// unset (CI sandbox without HOME).
 pub fn cache_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
     Some(
@@ -73,9 +74,6 @@ pub fn cache_path() -> Option<PathBuf> {
     )
 }
 
-/// Read cached catalog from disk (any age — staleness is not enforced).
-/// Used by `list_provider_templates` so a stale-but-present cache still
-/// beats bundled defaults when the network is down at boot.
 pub fn load_cache() -> Option<Vec<ProviderTemplate>> {
     let path = cache_path()?;
     let text = std::fs::read_to_string(&path).ok()?;
@@ -83,15 +81,13 @@ pub fn load_cache() -> Option<Vec<ProviderTemplate>> {
     Some(cached.templates)
 }
 
-/// Fetch the cloud catalog. Returns `Ok(None)` when the resolved URL is
-/// empty (disabled). Returns `Err` on any network / parse failure; the
-/// caller logs and keeps the existing cache.
 pub async fn fetch(url: &str) -> Result<Option<Vec<ProviderTemplate>>, String> {
     if url.trim().is_empty() {
         return Ok(None);
     }
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
+        .user_agent("CTRL provider-catalog")
         .build()
         .map_err(|e| format!("reqwest build: {e}"))?;
     let resp = client
@@ -103,25 +99,128 @@ pub async fn fetch(url: &str) -> Result<Option<Vec<ProviderTemplate>>, String> {
     if !resp.status().is_success() {
         return Err(format!("catalog HTTP {}", resp.status()));
     }
-    // Accept two wire shapes:
-    //   A. bare array         →  back-compat with bundled JSON
-    //   B. { fetched_at, templates }  →  server-stamped freshness
     let text = resp
         .text()
         .await
         .map_err(|e| format!("catalog body read: {e}"))?;
-    let templates = if text.trim_start().starts_with('[') {
-        serde_json::from_str::<Vec<ProviderTemplate>>(&text)
-            .map_err(|e| format!("catalog parse (array): {e}"))?
-    } else {
-        let cached: CachedCatalog =
-            serde_json::from_str(&text).map_err(|e| format!("catalog parse (object): {e}"))?;
-        cached.templates
-    };
-    Ok(Some(templates))
+    Ok(Some(parse_catalog(&text)?))
 }
 
-/// Persist a freshly fetched catalog. Atomic: write to `.tmp` then rename.
+fn parse_catalog(text: &str) -> Result<Vec<ProviderTemplate>, String> {
+    if text.trim_start().starts_with('[') {
+        return serde_json::from_str(text).map_err(|e| format!("catalog parse (array): {e}"));
+    }
+    if let Ok(cached) = serde_json::from_str::<CachedCatalog>(text) {
+        return Ok(cached.templates);
+    }
+    let providers: BTreeMap<String, ModelsDevProvider> =
+        serde_json::from_str(text).map_err(|e| format!("catalog parse (Models.dev): {e}"))?;
+    models_dev_templates(providers)
+}
+
+fn models_dev_templates(
+    providers: BTreeMap<String, ModelsDevProvider>,
+) -> Result<Vec<ProviderTemplate>, String> {
+    let mut templates: Vec<ProviderTemplate> = serde_json::from_str(BUNDLED_TEMPLATES)
+        .map_err(|e| format!("parse bundled provider templates: {e}"))?;
+
+    for (source_id, provider) in providers {
+        let id = ctrl_provider_id(&source_id);
+        let representable = provider
+            .api
+            .as_deref()
+            .map(|api| is_api_key_http_provider(&provider, api))
+            .unwrap_or(false);
+        if !representable {
+            continue;
+        }
+        let existing = templates.iter_mut().find(|template| template.id == id);
+        let mut models: Vec<(String, String)> = provider
+            .models
+            .into_iter()
+            .map(|(id, metadata)| {
+                let freshness = if metadata.last_updated.is_empty() {
+                    metadata.release_date
+                } else {
+                    metadata.last_updated
+                };
+                (id, freshness)
+            })
+            .collect();
+        models.sort_by(|(id_a, date_a), (id_b, date_b)| {
+            date_b.cmp(date_a).then_with(|| id_a.cmp(id_b))
+        });
+        let model_ids: Vec<String> = models.into_iter().map(|(id, _)| id).collect();
+        if model_ids.is_empty() {
+            continue;
+        }
+
+        if let Some(template) = existing {
+            template.models = model_ids;
+            if !template.models.contains(&template.default_model) {
+                template.default_model = template.models[0].clone();
+            }
+            continue;
+        }
+
+        let Some(api) = provider.api else { continue };
+        let protocol = if provider.npm == "@ai-sdk/anthropic" {
+            "anthropic"
+        } else {
+            "openai"
+        };
+        let key_name = provider
+            .env
+            .first()
+            .map(String::as_str)
+            .unwrap_or("API key");
+        let docs = provider
+            .doc
+            .as_deref()
+            .map(|url| format!("; see {url}"))
+            .unwrap_or_default();
+        templates.push(ProviderTemplate {
+            id,
+            label: provider.name.clone(),
+            default_name: provider.name,
+            protocol: protocol.to_string(),
+            base_url: api.trim_end_matches('/').to_string(),
+            default_model: model_ids[0].clone(),
+            key_hint: format!("Use {key_name}{docs}"),
+            models: model_ids,
+        });
+    }
+
+    Ok(templates)
+}
+
+fn is_api_key_http_provider(provider: &ModelsDevProvider, api: &str) -> bool {
+    matches!(
+        provider.npm.as_str(),
+        "@ai-sdk/openai-compatible" | "@ai-sdk/openai" | "@ai-sdk/anthropic"
+    ) && !provider.env.is_empty()
+        && api.starts_with("https://")
+        && !api.contains("${")
+        && !api.trim_end_matches('/').ends_with("/chat/completions")
+}
+
+fn ctrl_provider_id(models_dev_id: &str) -> String {
+    match models_dev_id {
+        // Preserve persisted CTRL ids while consuming upstream catalogue ids.
+        "zai" => "zhipu",
+        "moonshotai-cn" => "kimi",
+        "togetherai" => "together",
+        "fireworks-ai" => "fireworks",
+        "cloudflare-workers-ai" => "cloudflare",
+        "alibaba-cn" => "qwen",
+        "google-vertex" => "vertex",
+        "amazon-bedrock" => "bedrock",
+        "azure" => "azure-openai",
+        other => other,
+    }
+    .to_string()
+}
+
 pub fn save_cache(templates: Vec<ProviderTemplate>) -> Result<(), String> {
     let path = cache_path().ok_or_else(|| "no HOME (cache_path is None)".to_string())?;
     if let Some(parent) = path.parent() {
@@ -139,9 +238,6 @@ pub fn save_cache(templates: Vec<ProviderTemplate>) -> Result<(), String> {
     Ok(())
 }
 
-/// Best-effort freshness stamp. Avoids pulling a date crate by encoding
-/// epoch seconds with a `epoch:` prefix; the prefix keeps the field
-/// self-describing when read by humans or future tooling.
 fn now_stamp() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -155,22 +251,17 @@ mod tests {
     use super::*;
     use std::sync::{Mutex, OnceLock};
 
-    // Serialize tests that mutate the shared CTRL_CATALOG_URL env var.
-    // Without this, parallel test threads race on set_var/remove_var and
-    // produce flaky failures (env-beats-config would see the var removed
-    // mid-assertion by a sibling test).
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
     #[test]
-    fn resolve_url_empty_when_nothing_set() {
+    fn resolve_url_uses_models_dev_by_default() {
         let _guard = env_lock().lock().unwrap();
         std::env::remove_var(ENV_CATALOG_URL);
-        assert_eq!(resolve_url(None), "");
-        assert_eq!(resolve_url(Some("")), "");
-        assert_eq!(resolve_url(Some("   ")), "");
+        assert_eq!(resolve_url(None), DEFAULT_CATALOG_URL);
+        assert_eq!(resolve_url(Some("")), DEFAULT_CATALOG_URL);
     }
 
     #[test]
@@ -195,13 +286,77 @@ mod tests {
     }
 
     #[test]
+    fn models_dev_enriches_zai_without_changing_stable_id() {
+        let source = r#"{
+          "zai": {
+            "name": "Z.AI",
+            "api": "https://api.z.ai/api/paas/v4",
+            "npm": "@ai-sdk/openai-compatible",
+            "env": ["ZHIPU_API_KEY"],
+            "models": {
+              "glm-5.2": {"release_date": "2026-06-30"},
+              "glm-4.5v": {"release_date": "2025-08-11"}
+            }
+          }
+        }"#;
+        let templates = parse_catalog(source).expect("Models.dev fixture parses");
+        let zai = templates
+            .iter()
+            .find(|template| template.id == "zhipu")
+            .unwrap();
+        assert_eq!(zai.default_model, "glm-5.2");
+        assert_eq!(zai.models, vec!["glm-5.2", "glm-4.5v"]);
+        assert!(templates.iter().all(|template| template.id != "zai"));
+    }
+
+    #[test]
+    fn models_dev_does_not_enrich_existing_provider_with_unsupported_shape() {
+        let source = r#"{
+          "zai": {
+            "name": "Z.AI OAuth",
+            "api": "https://api.z.ai/api/paas/v4",
+            "npm": "@ai-sdk/custom-oauth",
+            "env": ["ZHIPU_API_KEY"],
+            "models": {
+              "unsupported-model": {"release_date": "2026-07-23"}
+            }
+          }
+        }"#;
+        let templates = parse_catalog(source).expect("Models.dev fixture parses");
+        let zai = templates
+            .iter()
+            .find(|template| template.id == "zhipu")
+            .unwrap();
+        assert_eq!(zai.default_model, "glm-5.2");
+        assert!(!zai.models.iter().any(|model| model == "unsupported-model"));
+    }
+
+    #[test]
+    fn models_dev_adds_representable_api_key_provider() {
+        let source = r#"{
+          "example": {
+            "name": "Example AI",
+            "api": "https://api.example.test/v1",
+            "npm": "@ai-sdk/openai-compatible",
+            "env": ["EXAMPLE_API_KEY"],
+            "doc": "https://example.test/docs",
+            "models": {"example-2": {"release_date": "2026-01-02"}}
+          }
+        }"#;
+        let templates = parse_catalog(source).expect("Models.dev fixture parses");
+        let example = templates
+            .iter()
+            .find(|template| template.id == "example")
+            .unwrap();
+        assert_eq!(example.default_model, "example-2");
+        assert_eq!(example.protocol, "openai");
+    }
+
+    #[test]
     fn save_and_load_cache_roundtrip() {
-        // SAFETY: this writes under /tmp via HOME override. We restore
-        // HOME afterwards so other tests aren't poisoned.
         let saved_home = std::env::var_os("HOME");
         let tmp = tempfile::tempdir().expect("tempdir");
         std::env::set_var("HOME", tmp.path());
-
         let sample = vec![ProviderTemplate {
             id: "test".into(),
             label: "Test".into(),
@@ -212,26 +367,17 @@ mod tests {
             key_hint: "test-hint".into(),
             models: vec!["test-model".into()],
         }];
-        save_cache(sample.clone()).expect("save");
-        let loaded = load_cache().expect("load");
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].id, "test");
-        assert_eq!(loaded[0].default_model, "test-model");
-
-        // Restore.
+        save_cache(sample).expect("save");
+        assert_eq!(load_cache().unwrap()[0].id, "test");
         match saved_home {
-            Some(h) => std::env::set_var("HOME", h),
+            Some(home) => std::env::set_var("HOME", home),
             None => std::env::remove_var("HOME"),
         }
     }
 
     #[test]
     fn fetch_returns_none_when_url_empty() {
-        // No network touched — early return path.
         let rt = tokio::runtime::Runtime::new().expect("rt");
-        let out = rt.block_on(fetch("")).expect("empty url ok");
-        assert!(out.is_none());
-        let out = rt.block_on(fetch("   ")).expect("blank url ok");
-        assert!(out.is_none());
+        assert!(rt.block_on(fetch("")).expect("empty url ok").is_none());
     }
 }

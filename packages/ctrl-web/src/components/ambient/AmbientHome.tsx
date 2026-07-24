@@ -116,7 +116,7 @@ import { platform } from '@/lib/bridge';
 import { useCodingSession } from '@/lib/coding-session';
 import { extractRunnableBlocks } from '@/lib/runnable-blocks';
 import { SessionHistory } from './SessionHistory';
-import { APP_VERSION } from '@/lib/app-meta';
+import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { getVersion } from '@tauri-apps/api/app';
 import styles from './AmbientHome.module.css';
 
@@ -1765,9 +1765,30 @@ export function AmbientHome({
   // the brand appears exactly once and L1 stays a pure icon rail). Runtime
   // version from Tauri in the app; APP_VERSION (live in dev) as the fallback.
   const [version, setVersion] = useState(APP_VERSION);
+  const update = useUpdateStatus();
   useEffect(() => {
     void getVersion().then(setVersion).catch(() => {});
   }, []);
+  const updateBusy = update.checking || update.installing;
+  const updateDisabled = !update.supported || updateBusy;
+  const versionLabel = update.installing
+    ? 'Installing…'
+    : update.checking
+      ? 'Checking…'
+      : update.error
+        ? 'Update failed'
+        : update.available
+          ? `${version} ↑`
+          : version;
+  const versionTitle = !update.supported
+    ? `CTRL v${version} · updates are available in the desktop app`
+    : update.error
+    ? `Update failed: ${update.error}`
+    : update.installing
+      ? 'Installing update and restarting CTRL…'
+      : update.available
+        ? `Update to CTRL v${update.latestVersion ?? 'latest'}`
+        : `CTRL v${version} · click to check for updates`;
 
   const contextLabel =
     view === 'discover'
@@ -1804,13 +1825,28 @@ export function AmbientHome({
           <span className={styles.wordmark} data-tauri-drag-region>
             CTRL
           </span>
-          <span
+          {/* Layer-1 updater entry: background polling exposes availability;
+              one click checks, installs, and safely relaunches CTRL.
+              (ADR-004 cap §3 v6) */}
+          <button
+            type="button"
             className={styles.statusVersion}
-            data-tauri-drag-region
-            title={`CTRL v${version}`}
+            onClick={() => void update.checkAndInstall()}
+            disabled={updateDisabled}
+            data-busy={updateBusy || undefined}
+            aria-busy={updateBusy}
+            aria-label={versionTitle}
+            title={versionTitle}
           >
-            {version}
-          </span>
+            <span aria-live="polite">{versionLabel}</span>
+            {(update.available || update.error) && !update.installing ? (
+              <span
+                className={styles.updateIndicator}
+                data-error={update.error ? '' : undefined}
+                aria-hidden="true"
+              />
+            ) : null}
+          </button>
           <span className={styles.statusSep} data-tauri-drag-region aria-hidden="true" />
           <span className={styles.statusContext} data-tauri-drag-region>
             {contextLabel}

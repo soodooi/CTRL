@@ -2,9 +2,9 @@
 adr_id: 010
 module: communication
 title: CTRL communication architecture — 统一窄腰 (§14 契约 + :17873 治理 + MCP 插件协议) over 多元传输
-version: 9
+version: 10
 status: accepted
-last_updated: 2026-06-26
+last_updated: 2026-07-24
 deciders: [bao, zeus]
 sections:
   - { id: positioning,       source: new-2026-06-22, note: "定位:CTRL = 普通用户的通用平台,不是 Claude Code 壳。协议服务平台/能力市场,coding 只是一类能力。" }
@@ -17,8 +17,9 @@ sections:
   - { id: transports,        source: new-2026-06-22, amended: v5-2026-06-23, note: "8 条缝多元传输选型表。v5:③⑥ ST-SS 弃用→Tauri Channels+WS(SC6 实施);⑧ 远程桌面转独立能力模块(对标 ToDesk/RustDesk)。" }
   - { id: internal-external, source: new-2026-06-22, amended: v5-2026-06-23, note: "内部自研轻量(Tauri/actor/CBOR)/ 外部拥抱标准(MCP/ACP/A2A/AG-UI)。v5 调研修正:二进制流帧走 Channels 原生,protobuf 仅 scope 跨设备腿;单一 wire 横跨本机+跨设备=未验证赌注。" }
   - { id: future,            source: new-2026-06-22, note: "WASM 插件 / A2A peer / AG-UI 对齐 / Beelay·Keyhive 均叠加在窄腰上,不替代。" }
-  - { id: endpoint-spec,     source: new-2026-06-24-v6, note: "端点 spec = 形式化机器可读契约,不自造 IDL:wire 标准点名(工具=MCP JSON-RPC+JSON Schema / 流=AsyncAPI / 跨设备=protobuf);权威端点 spec = MCP tools/list schema 导出 artifact + §14 describe schema;catalog 从 schema 生成不爬源。补「协议无物化端点 spec」欠账。" }
+  - { id: endpoint-spec,     source: new-2026-06-24-v6, amended: v10-2026-07-24, note: "端点 spec = 从运行真相生成的机器可读契约:工具=MCP tools/list JSON Schema;§14=describe schema;本机 command/event=Rust typed schemas + Tauri IPC/Channels/WS binding registry;跨设备=protobuf。AsyncAPI 于 v10 退役,不再作为 runtime 或 artifact,避免第二份 schema/binding 真相。catalog 从 artifacts 生成,不爬源。" }
 changelog:
+  - v10 2026-07-24: **§ endpoint-spec amend — AsyncAPI 退役，端点 spec 收敛为运行真相的生成物（bao 确认）.** 八条缝及其实际 transport 不变：工具/插件继续 MCP，实时流继续 Tauri Channels + authenticated WS，跨设备腿继续 protobuf。流端点不再维护 AsyncAPI 这一第二套描述层；改由 Rust typed command/external-event schemas 生成 JSON Schema/TS types，并由 transport adapter registry 生成版本化 `stream-bindings`（endpoint、Channel/WS binding、auth、protocol version、degradation）。完整 artifact 集 = MCP `tools/list` dump + §14 `describe` schema + command/event schemas + stream binding registry + 仅缝⑧ protobuf。catalog 只消费这些生成物，不爬 Rust 源码。此 amendment 只改变 endpoint-spec 的描述/物化方式；不改 §14 三动词、`:17873` gate、两信任域、八缝 transport、五 primitives 或 executable UI 边界。
   - v9 2026-06-26: **§ trust-domains amend — 第二个受控 domain `websearch`(bao「做 web search 受控工具」钦定).** 兑现 v8 预告的 web search follow-up,同 v8 market 思路:不开 `net`,加受控工具。gate 新增 `web_search(query)`(`kernel/mcp_server.rs`):只调固定 search 后端 —— 有 Tavily key(keychain account `tavily`,BYOK)走 Tavily 全网,无 key 自动降级到免 key Wikipedia search API(百科类、可靠),装了就能用、配 key 升级;reqwest query builder 编码 query 不能逃逸 URL,不能 POST 用户数据到任意处。`visibility.rs` 新 `websearch` domain(exact-match `web_search`,故未来 raw `web_fetch` 不会继承)进 `FIRST_PARTY_DOMAINS`,`net` 保持关。capability brief 登记 web_search。真机验证(caller=hermes 经 gate):web_search 可见、http 不可见、免 key Wikipedia 路径返回真实结果(Claude/Anthropic title+url+snippet)、note 提示配 Tavily 升级。免 key 通用源(DuckDuckGo)实测被 block 故不用。NOT 开 net;NOT 改三动词集;收敛不推倒。
   - v8 2026-06-26: **§ trust-domains amend — 受控 `market` domain 进 first-party 默认集 + 修 gate caller bug(bao「受控 market 工具」钦定).** 需求:Irisy 缺数据来源(选股/盯盘/每日复盘),要它能取实时行情。端到端验证(经 gate MCP 协议以 caller=hermes 实探)暴露两个事实:(1) **bug** —— `acp_client::build_mcp_servers` 连 gate 只发 Authorization、**没 stamp `x-ctrl-caller`** → gate normalize 成 `external` → minimal scope → Irisy 只见 2 工具(kernel_status/vault_root_path),连 vault.* 都够不着(而注释承诺 FULL toolset)。修:stamp `x-ctrl-caller: hermes` → first-party scope(57 工具)。(2) **net 仍是头号外泄面** —— v5/v7 已把 `net`(raw http_get/post)排除在 first-party 默认外(vault-read+net-write 可外泄 vault),不动。**方案 = 不开 net,加受控工具**:gate 新增 `market_quote(symbols)` / `market_screen(day_gainers|day_losers|most_actives)`(`kernel/mcp_server.rs`),只 GET 固定 Yahoo Finance 端点(浏览器 UA、免 key)、白名单 screen id、sanitize 每个 ticker,**不能访问任意 URL / 不能 POST** → 无 exfil 风险,故 `visibility.rs` 新 `market` domain 安全置于 `FIRST_PARTY_DOMAINS`(`net` 保持关)。Irisy 从此能选股/盯盘/复盘而不打开外泄面;capability brief 指向这两个工具,`turn_needs_agent` 路由 stock/watchlist/daily-review 意图(英文 + 中文 code-point)走 agent 路径。真机验证(caller=hermes 经 gate):market 工具可见、http 工具不可见、真实行情返回(AAPL/茅台/标普)、注入 screen 被拒。残留:hermes LLM 是否照 brief 主动调 market_* 依赖 LLM 行为,待 app 内实测;web search 作同样受控工具(BYOK)后续。NOT 改三动词集;NOT 开 net;收敛不推倒。
   - v7 2026-06-25: **实装对齐 — 两信任域重构 SC1/3/5/6 全量落地(bao「全量重构」).** 本轮把 v5 标的「诚实缺口 + 待办」收口,与运行真相对齐(harness 真机验证后再退 fallback,不裸退):(1) **SC1 完整体** —— 新增 `InternalMsg` 正类型(`kernel/audit.rs`):Internal-by-construction、包 `Event`+origin `ActorId`、与 `GateRequest` **双向无 From/Into**;`EventBus.publish` 改为只收 `InternalMsg`(`kernel/event.rs`,内部总线类型化,broadcast 落地),`GateRequest`(External)无路进内部总线 —— 编译器在两端(gate=GateRequest / bus=InternalMsg)挡跨域混用。v5「编译期隔离尚未做」缺口 substantially 关闭;残留 = 各 actor handler 签名 retyping(窄)。(2) **SC3 关默认敞口** —— 无/空 intent header 不再 = 全工具:gate 按 caller 默认 scope 解析(第一方 pwa/irisy/hermes→宽集减 net,未知→minimal 仅 system);`visibility.rs` 加 `default_for_caller`/`minimal`/`scoped_to`,`mcp_server.rs` list+call 两处接。真机验证:未知 caller 被拒 vault_read 且 tools/list 只剩 system,pwa 见 54 工具。(3) **SC5 收敛 + 修 bug** —— `irisy_soul_read/write` Tauri 命令退到 gate `irisy_soul_get/set`(同构 shape 验证);修 3 处孤儿 `invoke('vault_read'/'vault_write')`(打退役命令,SOUL 提示词 bootstrap/load 本来是坏的)→ 走 gate 包装器;**修关键 bug:前端 vault_write 送 `content` 但 gate 要 `body`,切断所有写(新建智能表格/存 note)** → 映射 content→body + 回归契约测试。命令面 106→101。(4) **SC6 Phase 2** —— ST-SS 作协议抽象 de-brand 为 plain CBOR-over-WS(wire 本就是,header 对齐);退死的 publish/list_streams/get_bridge_token 命令(0 caller),保留载重 subscribe + 流 wire(useCellStream/useSubprocessChannel/code_space 不回归)。NOT 改三动词集;NOT 改 spine 5 primitive;收敛不推倒。残留(诚实):SC4 handler 签名 retyping、SC6 符号改名(churn,待视觉验证)、§14 produce review gate。
@@ -122,7 +123,7 @@ gate 只守**跨域**,不守全部 —— 这是 v2 没切清的边界(把「所
 
 > **v5 修正(调研)**:二进制流帧走 Tauri Channels 原生路径(非 ctrl-wire),**protobuf 仅 scope 跨设备腿(⑧)**;「单一 wire 横跨本机 IPC + 跨设备 P2P」**零先例 = 未验证赌注** → 正解 = **三动词语义契约 = SSOT(有先例),wire framing 按传输适配**。事实源 `vault/ctrl/comms-interface-spec.md` §1·§4。
 
-> **v6 wire 标准(点名,见 § endpoint-spec)**:工具缝③④⑤⑦ = **MCP**(JSON-RPC + JSON Schema,`tools/list` = 端点 spec)· 流缝①⑥ = **AsyncAPI** describe over WS/Channels · 跨设备⑧ = **protobuf**。端点 spec = MCP schema 导出 artifact,不自造 IDL,catalog 从 schema 生成不爬源。
+> **v10 endpoint artifact 标准（见 § endpoint-spec）**：工具缝④⑤及⑦的工具面 = **MCP**（JSON-RPC + JSON Schema，`tools/list` = 工具端点 spec）；本机命令/流缝①③⑥ = **Rust typed command/event schemas + Tauri IPC/Channels/WS binding registry**；跨设备⑧ = **protobuf**。端点 catalog 从运行时 schema 与 adapter registry 生成，不爬源、不维护 AsyncAPI 第二真相。
 
 ### § internal-external — 内外协议哲学不同,别混
 - **内部**(①②⑥)= 自研轻量(两端自控、local-first、vim-test);类型安全交给「Rust 当权威源自动导出」,不交给跨语言 IDL;**不引入重 codegen(Protobuf/gRPC/Cap'n Proto)做内部流**。二进制流帧走 **Tauri Channels 原生路径**(v5 调研:无一手背书 protobuf 作内部流 SSOT;Channels 已原生二进制)。
@@ -132,31 +133,47 @@ gate 只守**跨域**,不守全部 —— 这是 v2 没切清的边界(把「所
 - 注:③ 横跨内外 —— 内部用 **Channels + WS**(v5 起,原 ST-SS 弃用),词汇向 **AG-UI 标准对齐**,兼得轻量与未来互通。
 - **反赌注(v5)**:「单一 wire 横跨本机 IPC + 跨设备 P2P」= 零先例,不赌 —— **统一的是三动词语义契约(SSOT,有先例),wire framing 按传输各自适配**。
 
-### § endpoint-spec — 端点 spec 形式化 + wire 标准点名(v6 新增)
+### § endpoint-spec — 从运行真相生成端点 spec（v6 新增，v10 收敛）
 
-> bao 质疑(2026-06-24):「完整通讯协议难道不含端点?有没有规范?是没按规范走还是不会建?」—— 戳中真欠账。调研核实(OpenAPI/AsyncAPI/gRPC-protobuf/GraphQL-SDL/MCP 都**形式化定义端点**;MCP 2026 spec 的 tool inputSchema/outputSchema = **JSON Schema 2020-12**)。
+> bao 质疑（2026-06-24）：「完整通讯协议难道不含端点？有没有规范？是没按规范走还是不会建？」—— 欠账不是缺少另一套协议，而是没有把真实端点与 binding 物化成版本化、机器可读的 artifact。
 
-**诚实定性**:CTRL **wire 层按 MCP 走了**(54 gate 工具经 rmcp `#[tool]` 宏自带 JSON Schema,`tools/list` 返回 name+description+inputSchema),**但**:① 端点 spec 从没**物化**成版本化 artifact(埋在 Rust 宏);② §14 停在**散文**(ADR 里架构思路,非形式化 IDL);③ 流缝 / 134 Tauri command 面**零形式化**;④ 端点清单靠**爬 Rust 源**拼(`endpoint-catalog.md`)= 症状:spec 不是 artifact。
+**诚实定性**：CTRL 的工具 wire 已按 MCP 运行（gate 工具由 rmcp `#[tool]` 宏产生 JSON Schema，`tools/list` 返回 name/description/inputSchema），本机命令与事件也已有 Rust 类型及 Tauri IPC/Channels/WS adapter；但这些真相尚未完整生成版本化 artifact，§14 `describe` 仍未全面形式化，旧 catalog 还会爬 Rust 源码。v6 选择 AsyncAPI 描述流，但它不承载实际流量，并会在 Rust 类型与 transport adapter 之外形成第二份 schema/binding 真相；v10 将其退役。
 
-**协议模型(三层,收紧 v1-v5):**
+**协议模型（三层）**：
 
-```
-① 语义契约 (SSOT,唯一) = §14 describe/query/produce   ← 形式化成 schema,非散文
+```text
+① 语义契约（SSOT）= §14 describe/query/produce
         │ 实现一次
-        ├─ 工具调用  → MCP (JSON-RPC + JSON Schema;tools/list = 端点 spec)   缝③④⑤⑦
-        ├─ 实时流    → AsyncAPI describe over WS/Tauri Channels (Cell/Op)     缝①⑥
-        └─ 跨设备    → protobuf over WebRTC + E2EE                           缝⑧
-        每个跨域调用 ↓
-② 治理门 (唯一收口) = :17873 gate:鉴权/审计/可见性裁剪/写审批   ← 护城河,标准里没有
+        ├─ 工具/插件 → MCP JSON-RPC + JSON Schema                 缝④⑤及⑦工具面
+        ├─ 本机命令  → typed Rust command schema + Tauri IPC binding   缝①
+        ├─ 实时流    → typed external-event schema + Channels/WS binding 缝③⑥
+        └─ 跨设备    → protobuf over WebRTC + E2EE                     缝⑧
+        每个跨域调用/订阅 ↓
+② 治理门 = :17873 gate：鉴权、审计、可见性、写审批、watch session 授权/撤销
+③ 物化层 = 从 schema owners 与 adapter registry 生成版本化 endpoint artifacts
 ```
 
-**定案:**
-1. **wire 标准点名,绝不自造 wire/IDL**(CORBA/SOAP/ESB 死因):工具=**MCP**(JSON-RPC + JSON Schema)/ 流=**AsyncAPI**(event-driven,OpenAPI 描述不了)/ 跨设备=**protobuf**(唯一需稳定跨机 schema 的腿)/ 端点类型=**JSON Schema**。
-2. **权威端点 spec = 导出物,不是另写的东西** = MCP **`tools/list` 的 JSON Schema dump**(版本化 artifact)+ **§14 `describe` 的 schema**。**catalog 从此 schema 生成,不再爬源码。**
-3. **§14.10 版本协商**(spec 已写)→ gate 按 `protocol_version` 路由/降级(实装待)。
-4. **标准 ~90% / 自创 ~10%**:标准 = MCP + AsyncAPI + protobuf + JSON Schema(别自造);自创 = **§14 语义 SSOT + :17873 治理门**——这两块**无现成标准覆盖**(没有标准做「content-type 无关统一操作接口 + 治理门」),自创正当;**红线 = 不自造 wire/IDL**。
+**定案**：
 
-> 完整协议 = 语义契约 SSOT(形式化)+ 三标准 wire 分缝 + 治理门 + **物化端点 spec**。**接口达产品标准 = 端点 spec 物化 + §14 盖全(迁 39 bespoke)+ SC5 消双表面(31 重叠)。** 事实源:WebSearch(OpenAPI/AsyncAPI/MCP spec)+ `vault/ctrl/endpoint-catalog.md` + `vault/ctrl/comms-interface-spec.md`。
+1. **不自造 wire，不强求单一 wire**：工具/插件使用 MCP；桌面/浏览器实时流使用既定 Tauri Channels + authenticated WS；跨设备稳定 wire 只在缝⑧使用 protobuf。AsyncAPI 不再是 runtime、wire、IDL 或 generated artifact。
+2. **每个概念只有一个 schema owner**：MCP 工具以 `tools/list` 为事实；§14 能力以 `describe` schema 为事实；本机命令与 external events 以 Rust typed definitions 为事实；transport adapter registry 只记录这些类型如何绑定到 Tauri IPC/Channels/WS，不复制业务 schema。
+3. **端点 spec 是生成物，不是手写平行规范**：
+
+   ```text
+   endpoint-catalog/
+     mcp-tools.json          <- MCP tools/list input/output schemas
+     source-describe.json    <- §14 describe schema
+     commands.schema.json    <- typed Rust command definitions
+     events.schema.json      <- typed external-event definitions
+     stream-bindings.json    <- event × endpoint × Channel/WS × auth/version/degradation
+     cross-device/*.proto    <- 仅缝⑧
+   ```
+
+4. **catalog 只消费 artifacts，不爬源码**；CI 比较生成结果与真实 tool/schema/adapter registry，发现名称、版本、auth、binding 或 degradation drift 即失败。
+5. **内部/外部事件分离**：`InternalMsg` 不进入 endpoint artifacts；只有经 subscription authorization、projection 与 redaction 后的 external-event schema 可绑定 Channels/WS。
+6. **版本协商**：沿用 §14.10 `protocol_version`；gate/adapter 按版本路由或诚实降级，不以无版本 envelope 静默兼容。
+
+> 完整协议 = §14 语义契约 + 八缝实际 transport + `:17873` 治理门 + 从运行真相生成的端点 artifacts。v10 只替换 endpoint-spec 的描述/物化方式，不改变八缝传输选择。
 
 ### § future — 叠加档(不替代窄腰)
 WASM Component Model/Extism(高频·强沙箱不可信插件)· A2A Agent Card(CTRL 当自治 peer agent,对应 share-and-be-shared)· AG-UI 完整采用(若开放第三方 agent 入前端)· **Beelay/Keyhive**(Automerge 原生 E2EE+capability sync,取代手搓 Olm)。均叠加在 MCP/§14 窄腰上。
@@ -175,6 +192,7 @@ WASM Component Model/Extism(高频·强沙箱不可信插件)· A2A Agent Card(C
 - [x] 通讯架构有单一「统管全局」总纲(本 ADR),决策不再散在 001/002/003。
 - [x] 窄腰三件明确:契约(§14 三动词 describe/query/produce,subscribe = query{watch})+ 治理(:17873 gate,仅守跨域)+ 插件协议(MCP)。
 - [x] 8 条缝各有明确最终协议(§ transports)+ 内外哲学分离声明(§ internal-external)。
+- [x] endpoint spec 只有运行真相的生成链：MCP/§14/Rust typed schemas + adapter bindings；AsyncAPI 已于 v10 退役，不保留第二份 schema/binding truth。
 - [x] 与 002 §14 / § mcp-bus / § crypto 的真相边界写清(§ Relationship),无双真相源。
 - [x] 「驱动 Claude Code」定位为第⑦条外部缝、非中心,符合「通用平台」校准。
 - [x] 2026 协议选型有深度调研事实根基(`research-protocol-2026.md`,多源 + 对抗验证),3 处校准(AG-UI 对齐 / ACP 有据采用 / Beelay 跟踪)已并入。
@@ -189,7 +207,7 @@ WASM Component Model/Extism(高频·强沙箱不可信插件)· A2A Agent Card(C
 1. **契约盖全** — `query` 加 `watch` 修饰落地;`describe` 声明 stream 形态 + `watchable` + 降级行为;watch 传输 = Channels+WS(SC6,原 ST-SS 弃用)+ 授权回 :17873(§ trust-domains)+ 词汇向 AG-UI 对齐。
 2. **消双表面** — vault 52 命令 → 三动词(读走 query、CRUD 收进 produce action),一个 Source 实现一次 → 三传输自动暴露(派生宏 + 棘轮 lint),parity 测试后旧表面退役。
 3. **插件协议确立** — 能力插件 = MCP server 写成平台契约 + 参照实现 + 发现/审计闭环。
-4. **类型真相自动化** — tauri-specta/ts-rs 从 Rust 导出 TS,消前后端漂移。
+4. **端点物化 + 类型真相自动化** — 导出 MCP `tools/list` 与 §14 `describe` artifacts；从 Rust command/external-event types 生成 JSON Schema/TS；从 adapter registry 生成 `stream-bindings`；CI 禁止爬源码 catalog 与 schema/binding drift。
 5. **外部驱动** — coding 缝补 ACP(对接 ACP Registry 生态:claude --acp 等;diff/permission/流式 turn = 提议-批准)。
 - **Future** — WASM 插件 / A2A peer / AG-UI 完整采用 / Beelay·Keyhive 迁移,按需叠加。
 

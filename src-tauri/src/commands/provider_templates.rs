@@ -8,18 +8,21 @@
 //   3. user override (~/.ctrl/provider-templates.json) — community-
 //      contributable, highest precedence, no rebuild required.
 //
-// Merge rule: same-`id` entries from a higher layer replace lower ones;
-// new ids extend the list at the end. Empty/missing layers are fine.
+// Cache merge rule: a cached entry enriches only the model ids of a current
+// bundled provider, while remote-only ids extend the list. This prevents an
+// older offline snapshot from replacing release-updated endpoints/defaults.
+// User override rule: same-id entries replace every lower-layer field.
+// Empty/missing layers are fine.
 //
 // bao 2026-06-06: provider preset list is data, not code.
-// bao 2026-06-19 (decision 0007): catalog moves to cloud-sourced so new
-// model ids (glm-5.2 / gpt-5 / claude-sonnet-5) arrive without a CTRL
-// release.
+// Models.dev supplies the complete refreshable API-key provider/model layer;
+// bundled data remains the offline floor and user overrides remain highest.
+// (ADR-002 substrate §3.10 v67)
 
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
-const BUNDLED_TEMPLATES: &str =
-    include_str!("../kernel/provider/provider-templates.json");
+const BUNDLED_TEMPLATES: &str = include_str!("../kernel/provider/provider-templates.json");
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProviderTemplate {
@@ -49,15 +52,20 @@ pub fn list_provider_templates() -> Result<Vec<ProviderTemplate>, String> {
     let mut merged: Vec<ProviderTemplate> = serde_json::from_str(BUNDLED_TEMPLATES)
         .map_err(|e| format!("parse bundled provider-templates.json: {e}"))?;
 
-    // Layer 2: cloud catalog cache. Stale-but-present beats bundled —
-    // worst case the user sees yesterday's catalog, never release-stale.
+    // Layer 2: cloud catalog cache enriches current bundled providers with
+    // model ids and appends remote-only providers. It must not replace a newer
+    // release's endpoint or default with an older offline cache snapshot.
+    // (ADR-002 substrate §3.10 v67)
     if let Some(cloud) = super::cloud_catalog::load_cache() {
-        merge_in_place(&mut merged, cloud);
+        merge_cloud_cache(&mut merged, cloud);
     }
 
-    // Layer 3: user override at ~/.ctrl/provider-templates.json.
+    // Layer 3: user override at ~/.ctrl/provider-templates.json; this is the
+    // highest-precedence catalogue layer. (ADR-002 substrate §3.10 v67)
     if let Some(home) = std::env::var_os("HOME") {
-        let path = std::path::PathBuf::from(home).join(".ctrl").join("provider-templates.json");
+        let path = std::path::PathBuf::from(home)
+            .join(".ctrl")
+            .join("provider-templates.json");
         if path.exists() {
             match std::fs::read_to_string(&path) {
                 Ok(text) => match serde_json::from_str::<Vec<ProviderTemplate>>(&text) {
@@ -75,20 +83,26 @@ pub fn list_provider_templates() -> Result<Vec<ProviderTemplate>, String> {
     Ok(merged)
 }
 
+fn catalog_refresh_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
 /// Trigger a cloud catalog refresh. Fire-and-forget on boot; the PWA
 /// may also call this from Settings → Providers (Refresh button).
+/// Concurrent boot/UI calls serialize fetch + cache publication so an older
+/// response cannot overwrite a newer cache. (ADR-002 substrate §3.10 v67)
 ///
 /// Returns the number of templates fetched, or 0 when cloud is disabled.
 /// Errors are returned but the existing cache (if any) is preserved.
 #[tauri::command]
 pub async fn refresh_provider_catalog() -> Result<usize, String> {
+    let _refresh_guard = catalog_refresh_lock().lock().await;
     let url = super::cloud_catalog::resolve_url(None);
     match super::cloud_catalog::fetch(&url).await {
         Ok(Some(templates)) => {
             let n = templates.len();
-            if let Err(e) = super::cloud_catalog::save_cache(templates) {
-                tracing::warn!(error = %e, "provider-templates: cloud cache write failed");
-            }
+            super::cloud_catalog::save_cache(templates)?;
             tracing::info!(count = n, url = %url, "provider-templates: cloud catalog refreshed");
             Ok(n)
         }
@@ -99,6 +113,22 @@ pub async fn refresh_provider_catalog() -> Result<usize, String> {
         Err(e) => {
             tracing::warn!(error = %e, url = %url, "provider-templates: cloud catalog fetch failed; keeping existing cache");
             Err(e)
+        }
+    }
+}
+
+fn merge_cloud_cache(base: &mut Vec<ProviderTemplate>, cached: Vec<ProviderTemplate>) {
+    // Cached catalogue data may enrich models but cannot replace release-owned
+    // provider identity, endpoint, protocol, or default metadata.
+    // (ADR-002 substrate §3.10 v67)
+    for remote in cached {
+        if let Some(current) = base.iter_mut().find(|template| template.id == remote.id) {
+            current.models = remote.models;
+            if !current.models.contains(&current.default_model) {
+                current.models.insert(0, current.default_model.clone());
+            }
+        } else {
+            base.push(remote);
         }
     }
 }
@@ -153,7 +183,7 @@ mod tests {
         // Coding Plan keys and endpoints are not interchangeable with the
         // general Z.AI API. Keep separate template identities so higher-layer
         // catalog overrides cannot collapse their credentials or routing.
-        // (ADR-002 substrate §3.10 v66)
+        // (ADR-002 substrate §3.10 v67)
         let templates: Vec<ProviderTemplate> = serde_json::from_str(BUNDLED_TEMPLATES).unwrap();
         let general = templates.iter().find(|t| t.id == "zhipu").unwrap();
         let coding = templates

@@ -19,7 +19,7 @@
 
 1. **Track 0 治理**:GOAL 切换 + 5 能力规划镜头落进 `irisy-architecture.md §能力域`,且明确 module ADR 仍是唯一架构权威。
 2. **Track 2 md §14 写侧收敛**:`RecordSink`/`ProduceOp` + 4 源 impl + 统一 produce 动词**已建(2026-07-02,实测证实)**;真剩 = 退役 5 个冗余 bespoke 脑面写工具(`smart_table_update_cell/append_row/delete_row/add_field/create`→`smart_table_produce`,需 Irisy 真机验证)+ 清漂移设计 doc(`unified-productivity-suite-architecture.md` 标 retired)。
-3. **Track 1 通讯**:endpoint-spec 物化(MCP schema artifact + §14 describe schema);typed bus 生产接线;§14 produce review gate ADR 漂移消。
+3. **Track 1 通讯**:endpoint-spec 物化（MCP `tools/list` + §14 `describe` + Rust typed command/external-event schemas + Tauri IPC/Channels/WS binding registry；AsyncAPI 已由 ADR-010 v10 退役）；typed bus 生产接线；§14 produce review gate ADR 漂移消。
 4. **Track 3-5**(地基立稳后):html 渲染统一 / coding 两机制合一 / L1-L2 能力绑定 —— 分别按 owning module ADR 决定并实施。
 - 每片走 dev-loop(cargo + tsc + 测试 + `:17873` harness smoke + Playwright 视觉 + 独立 checker + git diff),无 fresh evidence 不报完成。
 
@@ -198,3 +198,4 @@ governing = `vault/ctrl/ai-native-feature-pack-research.md` + `vault/ctrl/capabi
   - **诚实 gap**:换手率/资金流/龙虎榜/连板情绪等深度数据要国内端点(腾讯/东财),此机被本地 Clash fake-ip 墙 → 候选解:EODHD 付费 / 中国出口代理(AWS 东京中继)/ Clash 加 DIRECT 规则(全球可达的价量+指标层已全通)。
   - **意义**:create(Irisy 写服务)→ govern(gate)→ uplift(缠论 skill 让分析 AI-native)→ Irisy 自主端到端操作,四环齐。**下一步 = 证「distribute + 用户如何用」这最后一环**(见候选目标)。
 - 2026-07-22 **目标替换(功能包生产线 → Irisy 能力中心架构重构)。** bao「架构重构,涉及模块、资源层、功能包等的整体架构」= 新方向(scope change,本 session 确认 A)。校准链:bao 戳破「开发架构(.kiro 治理)vs 项目架构重构(系统本身)是两回事」→ 点名 5 能力域(md 文档管理 / html / coding / 通讯 / L1-L2)→ 「一切都是为了建立 Irisy 的能力」。整理 + 对比落本 GOAL 与 `irisy-architecture.md` planning map(6 track:0 治理 / 1 通讯 / 2 md §14 写侧 / 3 html / 4 coding / 5 L1-L2)。**镜头模式校准**:以 Irisy 5 能力为规划镜头 reframe 现有 8 module ADR(按代码归属划分→按能力边界),不推倒重划;实施决定仍按 owning module ADR amend。核心发现:现有 ADR 模块是代码归属边界非能力边界;5 能力异构(md/coding=用户面模块,html/通讯=横切,L1/L2=导航);md §14 写侧(`RecordSink`/`ProduceOp`)已于 2026-07-02 实装,真剩债是退役 5 个冗余 bespoke 写工具。功能包生产线命题已证成(P0-P3 + 种子端到端),park 让位地基;恢复从 athena 续。**下一步 = Track 0(锁镜头边界)+ Track 2(退役 bespoke 写工具)**。
+- 2026-07-24 **Track 1 authority 对齐（bao 确认移除 AsyncAPI）。** `ADR-010 communication § endpoint-spec` 原地 amendment v9→v10：八缝实际 transport 不变（工具/插件=MCP，实时流=Tauri Channels + authenticated WS，跨设备=protobuf），AsyncAPI 作为第二套流描述层退役。端点 spec 改为从运行真相生成：MCP `tools/list`、§14 `describe`、Rust typed command/external-event schemas、Tauri IPC/Channels/WS binding registry、仅缝⑧ protobuf；catalog 不爬源码。同步 ADR frontmatter/changelog/sections、INDEX、当前 GOAL criterion、历史执行图与两份非权威 `.kilo` plans。Track 1 的 authority blocker 已解除；下一实现切片 = generated endpoint artifacts + typed bus production wiring。

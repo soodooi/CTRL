@@ -2,7 +2,8 @@
 // on the outside, the rest behind Add"). The outer surface shows only YOUR
 // configured providers (one-click switch); everything else is folded behind
 // "+ Add a provider" — pick a template, fill ONLY the API key (endpoint +
-// model fold into Advanced; Zhipu gets an International/China region toggle).
+// model fold into Advanced). The complete refreshable catalogue comes from
+// the kernel; the UI contains no provider-specific model inventory.
 // Compact, sectioned, no wall of cards.
 //
 // Two surfaces: modal (first-run / Connect-AI) and inline (Settings → Providers).
@@ -13,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import {
   listProviderTemplates,
+  refreshProviderCatalog,
   setProviderKey,
   deleteProvider,
   queryProviderModels,
@@ -39,7 +41,7 @@ const PRIORITY = ['anthropic', 'zhipu', 'zai-coding-plan', 'volc'];
 // Z.AI's general API and Coding Plan use distinct endpoints and credentials.
 // Both stay template-driven; OpenCode's broader OAuth/profile/local-runtime
 // provider surface remains owned by its native `/connect` flow.
-// (ADR-002 substrate §3.10 v66)
+// (ADR-002 substrate §3.10 v67)
 // (ADR-001 spine §4 v10)
 
 // Browser/dev demo so the "Your providers" section isn't empty outside Tauri.
@@ -80,27 +82,41 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
   // ids the provider actually exposes today. Failures fall through to
   // an empty list (the input stays free-text).
   const debounceRef = useRef<number | null>(null);
+  const liveModelsGeneration = useRef(0);
+  const catalogReloadGeneration = useRef(0);
   useEffect(() => {
+    const generation = ++liveModelsGeneration.current;
     const tpl = selectedId ? templates.find((t) => t.id === selectedId) : null;
     if (!tpl) {
       setLiveModels([]);
+      setModelsLoading(false);
       return;
     }
     const effectiveBase = baseUrl || tpl.baseUrl;
     const trimmedKey = apiKey.trim();
     if (!effectiveBase || !trimmedKey) {
       setLiveModels([]);
+      setModelsLoading(false);
       return;
     }
     if (debounceRef.current !== null) {
       window.clearTimeout(debounceRef.current);
     }
     const handle = window.setTimeout(() => {
+      if (liveModelsGeneration.current !== generation) return;
       setModelsLoading(true);
+      // Ignore stale results after input/catalogue changes or unmount.
+      // (ADR-002 substrate §3.10 v67)
       void queryProviderModels(effectiveBase, trimmedKey)
-        .then(setLiveModels)
-        .catch(() => setLiveModels([]))
-        .finally(() => setModelsLoading(false));
+        .then((models) => {
+          if (liveModelsGeneration.current === generation) setLiveModels(models);
+        })
+        .catch(() => {
+          if (liveModelsGeneration.current === generation) setLiveModels([]);
+        })
+        .finally(() => {
+          if (liveModelsGeneration.current === generation) setModelsLoading(false);
+        });
     }, 400);
     debounceRef.current = handle;
     return () => {
@@ -108,19 +124,41 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
         window.clearTimeout(debounceRef.current);
         debounceRef.current = null;
       }
+      if (liveModelsGeneration.current === generation) liveModelsGeneration.current += 1;
     };
   }, [selectedId, templates, apiKey, baseUrl]);
 
   const reload = useCallback(() => {
-    void listProviderTemplates().then(setTemplates).catch(() => setTemplates([]));
+    const generation = ++catalogReloadGeneration.current;
+    // Publish the cache/bundled floor first, then the refreshed catalogue in
+    // sequence. A generation guard prevents an older reload (or an unmounted
+    // hub) from replacing newer state. (ADR-002 substrate §3.10 v67)
+    void (async () => {
+      try {
+        const floor = await listProviderTemplates();
+        if (catalogReloadGeneration.current === generation) setTemplates(floor);
+        await refreshProviderCatalog();
+        const refreshed = await listProviderTemplates();
+        if (catalogReloadGeneration.current === generation) setTemplates(refreshed);
+      } catch {
+        // Keep the already-published cache/bundled floor on refresh failure.
+      }
+    })();
     // Outside Tauri providerList rejects — show a small demo set so the
     // "Your providers" section renders (real app uses the real list).
-    void providerList().then(setConfigured).catch(() => setConfigured(DEMO_CONFIGURED));
+    void providerList().then((rows) => {
+      if (catalogReloadGeneration.current === generation) setConfigured(rows);
+    }).catch(() => {
+      if (catalogReloadGeneration.current === generation) setConfigured(DEMO_CONFIGURED);
+    });
     // Active provider state is owned by useActiveProvider() above — no
     // more local invoke here. reload() just refreshes the catalog +
     // configured list (templates + configuredRows drive the picker).
   }, []);
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    reload();
+    return () => { catalogReloadGeneration.current += 1; };
+  }, [reload]);
 
   const finish = useCallback(
     (label: string, modelId: string) => {

@@ -1,5 +1,5 @@
 # Auto-bump version on every commit so the running window always shows a fresh
-# build number (memory feedback-bump-version-every-change / bao 2026-06-11).
-# Keeps the 4 version files in lockstep and re-stages them into this commit.
+# build number. Keep release manifests and both lockfiles synchronized in the
+# same committed tree. (ADR-004 cap § updater v6)
 node scripts/bump-version.mjs
-git add package.json packages/ctrl-web/package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+git add package.json packages/ctrl-web/package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock

@@ -56,12 +56,27 @@ if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
 fi
 ROOT_VERSION="$(node -p "require('./package.json').version")"
 WEB_VERSION="$(node -p "require('./packages/ctrl-web/package.json').version")"
+NPM_LOCK_VERSION="$(node -p "require('./package-lock.json').version")"
+NPM_LOCK_ROOT_VERSION="$(node -p "require('./package-lock.json').packages[''].version")"
+NPM_LOCK_WEB_VERSION="$(node -p "require('./package-lock.json').packages['packages/ctrl-web'].version")"
 TAURI_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 CARGO_VERSION="$(awk '/^\[package\]/{in_package=1; next} in_package && /^version = /{gsub(/.*\"|\".*/, ""); print; exit}' src-tauri/Cargo.toml)"
+CARGO_LOCK_VERSION="$(awk '
+    /^\[\[package\]\]/{in_package=1; name=""; next}
+    in_package && /^name = "ctrl"$/{name="ctrl"; next}
+    in_package && name == "ctrl" && /^version = /{gsub(/.*"|".*/, ""); print; exit}
+' src-tauri/Cargo.lock)"
+# Validate every metadata target managed by bump-version.mjs before building.
+# A manifest-only check could publish from stale lockfile inputs.
+# (ADR-004 cap § updater v6)
 if [[ "$ROOT_VERSION" != "$VERSION" || "$WEB_VERSION" != "$VERSION" ||
-      "$TAURI_VERSION" != "$VERSION" || "$CARGO_VERSION" != "$VERSION" ]]; then
+      "$NPM_LOCK_VERSION" != "$VERSION" || "$NPM_LOCK_ROOT_VERSION" != "$VERSION" ||
+      "$NPM_LOCK_WEB_VERSION" != "$VERSION" || "$TAURI_VERSION" != "$VERSION" ||
+      "$CARGO_VERSION" != "$VERSION" || "$CARGO_LOCK_VERSION" != "$VERSION" ]]; then
     echo "error: requested version $VERSION is not committed consistently"
-    echo "       root=$ROOT_VERSION web=$WEB_VERSION tauri=$TAURI_VERSION cargo=$CARGO_VERSION"
+    echo "       root=$ROOT_VERSION web=$WEB_VERSION npm-lock=$NPM_LOCK_VERSION"
+    echo "       npm-lock-root=$NPM_LOCK_ROOT_VERSION npm-lock-web=$NPM_LOCK_WEB_VERSION"
+    echo "       tauri=$TAURI_VERSION cargo=$CARGO_VERSION cargo-lock=$CARGO_LOCK_VERSION"
     exit 1
 fi
 if ! command -v minisign >/dev/null 2>&1; then
