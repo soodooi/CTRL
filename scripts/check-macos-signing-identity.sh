@@ -41,6 +41,8 @@ IDENTITY_MATCH="$(security find-identity -v -p codesigning "$LOGIN_KEYCHAIN" 2>/
 if [[ "$(grep -c . <<< "$IDENTITY_MATCH" || true)" -ne 1 ||
       "$IDENTITY_MATCH" != *"\"$POLICY_LABEL\""* ]]; then
     echo "error: configured macOS signing identity is not uniquely available in the login Keychain with the tracked label"
+    echo "available login-Keychain code-signing identities (fingerprints and labels only):"
+    security find-identity -p codesigning "$LOGIN_KEYCHAIN" 2>/dev/null || true
     exit 1
 fi
 
