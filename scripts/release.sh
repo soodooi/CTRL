@@ -662,7 +662,7 @@ if [[ "$(wc -l <<< "$SIGNING_MATCH" | tr -d ' ')" -ne 1 || -z "$SIGNING_MATCH" ]
     exit 1
 fi
 SIGNING_FINGERPRINT="$(awk '{print tolower($2)}' <<< "$SIGNING_MATCH")"
-SIGNING_LABEL="$(sed -E 's/^[[:space:]]*[0-9]+\)[[:space:]]+[0-9A-Fa-f]+[[:space:]]+"(.*)"[[:space:]]*$/\1/' <<< "$SIGNING_MATCH")"
+SIGNING_LABEL="$(sed -E 's/^[^"]*"([^"]+)".*$/\1/' <<< "$SIGNING_MATCH")"
 
 # Verify the exact release identity and certificate-bound Designated
 # Requirement for the active identity epoch, not merely that some signature
