@@ -77,7 +77,7 @@ chmod 600 "$TMP_DIR/import-identity.p12"
 security import "$TMP_DIR/import-identity.p12" -k "$LOGIN_KEYCHAIN" -P "ctrl-transient-import-v1" \
     -T /usr/bin/codesign >/dev/null
 RESTORED=1
-security add-trusted-cert -r trustAsRoot -p codeSign -k "$LOGIN_KEYCHAIN" \
+security add-trusted-cert -r trustRoot -p codeSign -k "$LOGIN_KEYCHAIN" \
     "$TMP_DIR/certificate.pem" >/dev/null
 bash scripts/check-macos-signing-identity.sh
 
