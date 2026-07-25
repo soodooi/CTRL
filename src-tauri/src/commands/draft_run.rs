@@ -303,6 +303,7 @@ async fn run_llm_step(
     let opts = crate::kernel::provider::ChatOpts {
         model: model.clone(),
         deadline_ms: 30_000,
+        disable_reasoning: false,
     };
     let mut rx = match adapter.chat_stream(&llm_prompt, &opts).await {
         Ok(rx) => rx,

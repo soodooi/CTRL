@@ -106,9 +106,14 @@ impl HttpApiProvider {
         &self,
         model: &str,
         prompt: &ChatPrompt,
+        opts: &ChatOpts,
     ) -> Result<mpsc::Receiver<Result<ChatChunk, ProviderError>>, ProviderError> {
         let url = format!("{}/chat/completions", self.endpoint);
-        let body = build_openai_body(model, prompt);
+        // Z.AI exposes an OpenAI-compatible thinking control. Activation
+        // trials disable it so hidden reasoning cannot exhaust the tiny probe
+        // budget; ordinary chat and unrelated endpoints omit the extension.
+        // (ADR-002 substrate § provider v69)
+        let body = build_openai_body_for_endpoint(model, prompt, &self.endpoint, opts);
         let mut req = self
             .client
             .post(&url)
@@ -172,8 +177,11 @@ impl Provider for HttpApiProvider {
         opts: &ChatOpts,
     ) -> Result<mpsc::Receiver<Result<ChatChunk, ProviderError>>, ProviderError> {
         let model = self.resolve_model(&opts.model).to_string();
+        // Carry the trial-only reasoning policy into the OpenAI-compatible
+        // request builder; Anthropic remains unchanged.
+        // (ADR-002 substrate § provider v69)
         match self.shape {
-            HttpShape::OpenaiChatCompletions => self.stream_openai(&model, prompt).await,
+            HttpShape::OpenaiChatCompletions => self.stream_openai(&model, prompt, opts).await,
             HttpShape::AnthropicMessages => self.stream_anthropic(&model, prompt).await,
         }
     }
@@ -199,6 +207,34 @@ impl Provider for HttpApiProvider {
 
 fn endpoint_is_loopback(endpoint: &str) -> bool {
     endpoint.contains("127.0.0.1") || endpoint.contains("localhost")
+}
+
+/// Z.AI's OpenAI-compatible API explicitly supports
+/// `thinking: { type: "disabled" }`. Keep that vendor extension scoped to
+/// the documented host so generic OpenAI-compatible endpoints never receive
+/// an unknown field. (ADR-002 substrate § provider v69)
+fn is_zai_endpoint(endpoint: &str) -> bool {
+    reqwest::Url::parse(endpoint)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| host == "api.z.ai")
+}
+
+/// Combine call intent and endpoint compatibility in the same policy function
+/// used by the live request path. This prevents a trial-only vendor extension
+/// from leaking into ordinary chat or unrelated compatible endpoints.
+/// (ADR-002 substrate § provider v69)
+fn build_openai_body_for_endpoint<'a>(
+    model: &'a str,
+    prompt: &'a ChatPrompt,
+    endpoint: &str,
+    opts: &ChatOpts,
+) -> OpenAIChatRequest<'a> {
+    build_openai_body(
+        model,
+        prompt,
+        opts.disable_reasoning && is_zai_endpoint(endpoint),
+    )
 }
 
 // ── SSE plumbing (shape-agnostic) ───────────────────────────────────────
@@ -305,6 +341,17 @@ struct OpenAIChatRequest<'a> {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    /// Vendor-compatible control emitted only for a supported trial request.
+    /// (ADR-002 substrate § provider v69)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<OpenAIThinkingControl>,
+}
+
+/// Z.AI's documented OpenAI-compatible thinking object.
+/// (ADR-002 substrate § provider v69)
+#[derive(Serialize)]
+struct OpenAIThinkingControl {
+    r#type: &'static str,
 }
 
 #[derive(Serialize)]
@@ -332,7 +379,14 @@ struct OpenAIDelta {
     content: Option<String>,
 }
 
-fn build_openai_body<'a>(model: &'a str, prompt: &'a ChatPrompt) -> OpenAIChatRequest<'a> {
+/// Build an OpenAI-compatible body. `disable_reasoning` is opt-in and must
+/// already be scoped to a provider that documents the extension.
+/// (ADR-002 substrate § provider v69)
+fn build_openai_body<'a>(
+    model: &'a str,
+    prompt: &'a ChatPrompt,
+    disable_reasoning: bool,
+) -> OpenAIChatRequest<'a> {
     let mut messages: Vec<OpenAIMessage<'a>> = Vec::with_capacity(prompt.messages.len() + 1);
     if let Some(sys) = &prompt.system {
         messages.push(OpenAIMessage {
@@ -352,6 +406,9 @@ fn build_openai_body<'a>(model: &'a str, prompt: &'a ChatPrompt) -> OpenAIChatRe
         stream: true,
         temperature: prompt.temperature,
         max_tokens: prompt.max_tokens,
+        // The field is absent for every ordinary chat request.
+        // (ADR-002 substrate § provider v69)
+        thinking: disable_reasoning.then_some(OpenAIThinkingControl { r#type: "disabled" }),
     }
 }
 
@@ -499,11 +556,90 @@ mod tests {
             temperature: Some(0.5),
             max_tokens: None,
         };
-        let body = build_openai_body("m", &prompt);
+        // Ordinary OpenAI-compatible requests omit vendor thinking controls.
+        // (ADR-002 substrate § provider v69)
+        let body = build_openai_body("m", &prompt, false);
         assert_eq!(body.messages.len(), 2);
         assert_eq!(body.messages[0].role, "system");
         assert_eq!(body.messages[0].content, "be terse");
         assert!(body.stream);
+        assert!(body.thinking.is_none());
+    }
+
+    /// Proves trial and ordinary chat serialize differently without exposing
+    /// hidden reasoning as visible output. (ADR-002 substrate § provider v69)
+    #[test]
+    fn openai_trial_body_can_disable_reasoning_without_changing_normal_chat() {
+        let prompt = ChatPrompt {
+            system: None,
+            messages: vec![ChatMessage {
+                role: "user".into(),
+                content: "hi".into(),
+            }],
+            temperature: None,
+            max_tokens: Some(8),
+        };
+        let trial = serde_json::to_value(build_openai_body("glm-5.2", &prompt, true)).unwrap();
+        let chat = serde_json::to_value(build_openai_body("glm-5.2", &prompt, false)).unwrap();
+
+        assert_eq!(
+            trial.pointer("/thinking/type").and_then(|v| v.as_str()),
+            Some("disabled")
+        );
+        assert!(chat.get("thinking").is_none());
+    }
+
+    /// Prevents a lookalike host from receiving the vendor extension.
+    /// (ADR-002 substrate § provider v69)
+    #[test]
+    fn zai_thinking_control_is_scoped_to_the_documented_host() {
+        assert!(is_zai_endpoint("https://api.z.ai/api/coding/paas/v4"));
+        assert!(is_zai_endpoint("https://api.z.ai/api/paas/v4"));
+        assert!(!is_zai_endpoint("https://api.openai.com/v1"));
+        assert!(!is_zai_endpoint("https://api.z.ai.evil.example/v1"));
+        assert!(!is_zai_endpoint("not a url"));
+    }
+
+    /// Exercises the exact endpoint + call-intent policy used by stream_openai.
+    /// (ADR-002 substrate § provider v69)
+    #[test]
+    fn openai_request_policy_disables_reasoning_only_for_zai_trials() {
+        let prompt = ChatPrompt {
+            system: None,
+            messages: vec![ChatMessage {
+                role: "user".into(),
+                content: "hi".into(),
+            }],
+            temperature: None,
+            max_tokens: Some(8),
+        };
+        let trial_opts = ChatOpts {
+            disable_reasoning: true,
+            ..ChatOpts::default()
+        };
+        let chat_opts = ChatOpts::default();
+        let serialize = |endpoint: &str, opts: &ChatOpts| {
+            serde_json::to_value(build_openai_body_for_endpoint(
+                "glm-5.2",
+                &prompt,
+                endpoint,
+                opts,
+            ))
+            .unwrap()
+        };
+
+        assert_eq!(
+            serialize("https://api.z.ai/api/coding/paas/v4", &trial_opts)
+                .pointer("/thinking/type")
+                .and_then(|v| v.as_str()),
+            Some("disabled")
+        );
+        assert!(serialize("https://api.z.ai/api/coding/paas/v4", &chat_opts)
+            .get("thinking")
+            .is_none());
+        assert!(serialize("https://api.openai.com/v1", &trial_opts)
+            .get("thinking")
+            .is_none());
     }
 
     #[test]

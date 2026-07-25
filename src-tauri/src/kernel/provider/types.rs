@@ -41,15 +41,20 @@ pub struct ChatChunk {
     pub finish_reason: Option<String>,
 }
 
-/// Per-call options. Today only `model` + `deadline_ms`; extended as
-/// adapters grow shared options. Kept distinct from `ChatPrompt` so the
-/// prompt body stays serializable / cacheable without the runtime knobs.
+/// Per-call options. Runtime controls stay distinct from `ChatPrompt` so the
+/// prompt body remains serializable and cacheable while adapters can apply
+/// provider-compatible request policy.
 #[derive(Debug, Clone, Default)]
 pub struct ChatOpts {
     /// Override the provider's default model. Empty string = use default.
     pub model: String,
     /// Wall-clock deadline. `0` = adapter default (typically 30-120s).
     pub deadline_ms: u64,
+    /// Request a direct answer without hidden reasoning when the adapter
+    /// explicitly supports such a control. Used only by activation trials;
+    /// ordinary chat leaves provider reasoning behavior unchanged.
+    /// (ADR-002 substrate § provider v69)
+    pub disable_reasoning: bool,
 }
 
 /// Typed provider failure. Keeps the same buckets the old `LlmError` had

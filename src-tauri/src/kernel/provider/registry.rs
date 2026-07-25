@@ -861,9 +861,10 @@ impl ProviderRegistry {
                 consumer.id()
             )));
         }
-        // The production 1-token trial must produce first output within one
-        // absolute setup-to-stream budget before the binding can commit.
-        // (ADR-002 substrate § provider v68)
+        // The production-adapter trial must produce visible output within one
+        // absolute setup-to-stream budget before the binding can commit. A
+        // compatible adapter may disable hidden reasoning for this trial only.
+        // (ADR-002 substrate § provider v69)
         let reply = trial_chat(provider.as_ref()).await?;
         {
             let mut active = self.active.write().unwrap();

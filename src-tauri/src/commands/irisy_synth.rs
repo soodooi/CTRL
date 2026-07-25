@@ -58,9 +58,12 @@ async fn pi_complete(
         temperature: Some(0.4),
         max_tokens: Some(2048),
     };
+    // Synthesis is ordinary chat and must not override model reasoning.
+    // (ADR-002 substrate § provider v69)
     let opts = ChatOpts {
         model: String::new(),
         deadline_ms: 120_000,
+        disable_reasoning: false,
     };
     let mut rx = adapter
         .chat_stream(&prompt, &opts)

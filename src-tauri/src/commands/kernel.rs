@@ -1034,9 +1034,12 @@ async fn run_text_chat(
         max_tokens: None,
     };
 
+    // Kernel completions are ordinary chat and preserve model reasoning.
+    // (ADR-002 substrate § provider v69)
     let opts = crate::kernel::provider::ChatOpts {
         model: String::new(),
         deadline_ms: 30_000,
+        disable_reasoning: false,
     };
     let mut rx = adapter
         .chat_stream(&prompt, &opts)

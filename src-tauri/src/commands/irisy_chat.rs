@@ -601,9 +601,13 @@ async fn forward_to_provider(
     // fall through to its manifest models[0].
     let model_raw = args.model.unwrap_or_default();
     let model = if model_raw == "default" { String::new() } else { model_raw };
+    // Ordinary chat preserves the provider's reasoning behavior; only the
+    // activation trial requests a direct response.
+    // (ADR-002 substrate § provider v69)
     let opts = ChatOpts {
         model,
         deadline_ms: 120_000,
+        disable_reasoning: false,
     };
 
     let (_provider_id, mut rx) =

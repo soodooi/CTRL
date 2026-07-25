@@ -3170,9 +3170,12 @@ impl KernelMcpRouter {
             temperature: args.temperature,
             max_tokens: args.max_tokens,
         };
+        // MCP llm.chat is ordinary chat and preserves model reasoning.
+        // (ADR-002 substrate § provider v69)
         let opts = crate::kernel::provider::ChatOpts {
             model,
             deadline_ms: 60_000,
+            disable_reasoning: false,
         };
         // Provider trait is streaming-only; drain to a single string for
         // non-streaming MCP tool surface.

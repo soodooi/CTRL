@@ -191,9 +191,12 @@ pub async fn complete_row(
         temperature: None,
         max_tokens: None,
     };
+    // AI-column generation is ordinary chat and preserves model reasoning.
+    // (ADR-002 substrate § provider v69)
     let opts = ChatOpts {
         model: String::new(),
         deadline_ms: 60_000,
+        disable_reasoning: false,
     };
     let mut rx = adapter.chat_stream(&prompt, &opts).await?;
     let mut out = String::new();

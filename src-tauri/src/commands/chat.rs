@@ -116,6 +116,7 @@ pub async fn chat_stream(
         let opts = crate::kernel::provider::ChatOpts {
             model: model.clone(),
             deadline_ms: 30_000,
+            disable_reasoning: false,
         };
         let result = adapter.chat_stream(&prompt, &opts).await;
         let mut rx = match result {
