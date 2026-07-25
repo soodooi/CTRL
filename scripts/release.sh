@@ -60,11 +60,11 @@ NPM_LOCK_VERSION="$(node -p "require('./package-lock.json').version")"
 NPM_LOCK_ROOT_VERSION="$(node -p "require('./package-lock.json').packages[''].version")"
 NPM_LOCK_WEB_VERSION="$(node -p "require('./package-lock.json').packages['packages/ctrl-web'].version")"
 TAURI_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
-CARGO_VERSION="$(awk '/^\[package\]/{in_package=1; next} in_package && /^version = /{gsub(/.*\"|\".*/, ""); print; exit}' src-tauri/Cargo.toml)"
+CARGO_VERSION="$(awk '/^\[package\]/{in_package=1; next} in_package && /^version = /{sub(/^[^\"]*\"/, ""); sub(/\".*$/, ""); print; exit}' src-tauri/Cargo.toml)"
 CARGO_LOCK_VERSION="$(awk '
     /^\[\[package\]\]/{in_package=1; name=""; next}
     in_package && /^name = "ctrl"$/{name="ctrl"; next}
-    in_package && name == "ctrl" && /^version = /{gsub(/.*"|".*/, ""); print; exit}
+    in_package && name == "ctrl" && /^version = /{sub(/^[^"]*"/, ""); sub(/".*$/, ""); print; exit}
 ' src-tauri/Cargo.lock)"
 # Validate every metadata target managed by bump-version.mjs before building.
 # A manifest-only check could publish from stale lockfile inputs.
