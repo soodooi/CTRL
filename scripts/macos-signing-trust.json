@@ -1,8 +1,8 @@
 {
-  "epoch": 1,
-  "activeFingerprint": "CB9E3C25CAF5B378D5311ED641C61DBE2F6F18F1",
-  "activeLabel": "CTRL Dev Signing",
-  "previousFingerprint": null,
-  "resetReason": null,
-  "resetAt": null
+  "epoch": 2,
+  "activeFingerprint": "A22C98DCAF15B0C48E57CD7D7FC384598B4772F1",
+  "activeLabel": "CTRL Dev Signing Epoch 2",
+  "previousFingerprint": "CB9E3C25CAF5B378D5311ED641C61DBE2F6F18F1",
+  "resetReason": "private-key-inaccessible",
+  "resetAt": "2026-07-25T06:12:29Z"
 }
