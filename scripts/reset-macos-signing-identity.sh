@@ -220,14 +220,14 @@ trap cleanup EXIT
 cp "$CONFIG_FILE" "$TMP_DIR/original-tauri.conf.json"
 cp "$POLICY_FILE" "$TMP_DIR/original-macos-signing-trust.json"
 
-cat > "$TMP_DIR/openssl.cnf" <<'EOF'
+cat > "$TMP_DIR/openssl.cnf" <<EOF
 [req]
 distinguished_name = subject
 prompt = no
 x509_extensions = codesign
 
 [subject]
-CN = CTRL Dev Signing
+CN = $NEW_LABEL
 O = CTRL Development
 
 [codesign]
@@ -241,8 +241,7 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$TMP_DIR/priv
 chmod 600 "$TMP_DIR/private-key.pem"
 openssl req -new -x509 -sha256 -days 3650 \
     -key "$TMP_DIR/private-key.pem" -out "$TMP_DIR/certificate.pem" \
-    -config "$TMP_DIR/openssl.cnf" -extensions codesign \
-    -subj "/CN=$NEW_LABEL/O=CTRL Development" >/dev/null 2>&1
+    -config "$TMP_DIR/openssl.cnf" -extensions codesign >/dev/null 2>&1
 NEW_FINGERPRINT="$(openssl x509 -in "$TMP_DIR/certificate.pem" -noout -fingerprint -sha1 | \
     sed 's/.*=//; s/://g' | tr '[:lower:]' '[:upper:]')"
 if ! [[ "$NEW_FINGERPRINT" =~ ^[0-9A-F]{40}$ ]] || [[ "$NEW_FINGERPRINT" = "$OLD_FINGERPRINT" ]]; then
