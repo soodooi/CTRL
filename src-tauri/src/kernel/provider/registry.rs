@@ -640,36 +640,37 @@ impl ProviderRegistry {
             .collect()
     }
 
-    /// Unified provider injection (ADR-002 §1.3): resolve the active
-    /// `irisy.primary` provider into the standard env vars the external
-    /// agents (opencode, hermes) honor, so all three faces share ONE
-    /// BYOK config — configure once in CTRL, every face uses it.
-    ///
-    /// Maps the active provider's shape to the convention:
-    ///   anthropic-shape -> ANTHROPIC_API_KEY (+ ANTHROPIC_BASE_URL)
-    ///   openai-shape     -> OPENAI_API_KEY    (+ OPENAI_BASE_URL)
-    /// (openai-compatible covers doubao / deepseek / kimi / qwen / etc.)
-    /// Returns an empty map when no HTTP provider is active or the key is
-    /// not resolvable — agents then fall back to their own config.
-    pub fn agent_env_injection(&self) -> BTreeMap<String, String> {
-        let mut env = BTreeMap::new();
+    /// Resolve only the active HTTP provider environment for a release probe.
+    /// This reuses the production credential and provider-shape resolution, but
+    /// deliberately skips Hermes config projection and optional web credentials:
+    /// the values exist only in the exact probe subprocess environment.
+    /// (ADR-002 substrate § provider v68)
+    pub fn agent_probe_env(&self) -> BTreeMap<String, String> {
+        self.active_http_agent_env(false)
+    }
 
-        // Light up hermes's BUILT-IN web tools for Irisy (ADR-002 § brain:
-        // ride hermes, don't rebuild). The `hermes-acp` toolset (enabled by
-        // default in ACP mode) includes `web_search` + `web_extract`; hermes
-        // auto-selects the Tavily backend from `TAVILY_API_KEY` (verified vs
-        // hermes-agent 0.16.0 `web_tools._get_backend` fallback + the upstream
-        // web-search docs). This is the SINGLE env source for every hermes
-        // spawn — ACP launch, one-shot, and `~/.hermes/.env` via
-        // write_hermes_dotenv — so it lands on all paths. Independent of the
-        // LLM provider: Irisy gets web search + URL fetch whenever a Tavily
-        // key is stored. bao 2026-06-27.
+    /// Unified provider injection. Configure once in CTRL and every Irisy
+    /// launch uses the same active BYOK provider.
+    /// (ADR-002 substrate § provider v68)
+    pub fn agent_env_injection(&self) -> BTreeMap<String, String> {
+        let mut env = self.active_http_agent_env(true);
+
+        // Hermes's built-in web tools use the independently configured Tavily
+        // credential. Release probes intentionally exclude it because they only
+        // prove the active LLM provider contract.
         if let Some(key) = read_credential("tavily") {
             if !key.is_empty() {
                 env.insert("TAVILY_API_KEY".into(), key);
             }
         }
+        env
+    }
 
+    fn active_http_agent_env(&self, project_hermes_config: bool) -> BTreeMap<String, String> {
+        let mut env = BTreeMap::new();
+        // Resolve the same active binding and encrypted-vault credential used by
+        // production, without creating a second provider truth.
+        // (ADR-002 substrate § provider v68)
         let id = {
             let active = self.active.read().unwrap();
             match active.get(&Consumer::IrisyPrimary) {
@@ -683,45 +684,67 @@ impl ProviderRegistry {
         };
         let m = &loaded.manifest;
         if m.kind != ProviderKind::HttpApi {
-            // CLI providers own their auth; don't inject.
             return env;
         }
         let key = match resolve_auth(m) {
             Ok(k) if !k.is_empty() => k,
             _ => return env,
         };
-        // ADR-002 substrate §1.3: hermes (Irisy's brain) reads
-        // ANTHROPIC_API_KEY / OPENAI_API_KEY (+ BASE_URL) directly, so we
-        // inject only those. The opencode-specific
-        // OPENCODE_CONFIG_CONTENT block retired 2026-06-25 alongside
-        // opencode itself (DRIFT D8).
+
+        // Shape the exact provider wire contract for the Hermes subprocess.
+        // (ADR-002 substrate § provider v68)
         match m.shape {
             HttpShape::AnthropicMessages => {
+                env.insert("HERMES_INFERENCE_PROVIDER".into(), "anthropic".into());
                 env.insert("ANTHROPIC_API_KEY".into(), key.clone());
                 if let Some(ep) = &m.endpoint {
                     env.insert("ANTHROPIC_BASE_URL".into(), ep.clone());
                 }
             }
             HttpShape::OpenaiChatCompletions => {
-                env.insert("OPENAI_API_KEY".into(), key.clone());
+                let is_openrouter = m.id == "openrouter";
+                env.insert(
+                    "HERMES_INFERENCE_PROVIDER".into(),
+                    if is_openrouter { "openrouter" } else { "custom" }.into(),
+                );
+                env.insert(
+                    if is_openrouter {
+                        "OPENROUTER_API_KEY"
+                    } else {
+                        "OPENAI_API_KEY"
+                    }
+                    .into(),
+                    key.clone(),
+                );
                 if let Some(ep) = &m.endpoint {
                     if !ep.is_empty() {
-                        env.insert("OPENAI_BASE_URL".into(), ep.clone());
+                        if is_openrouter {
+                            env.insert("OPENROUTER_BASE_URL".into(), ep.clone());
+                        } else {
+                            // Hermes 0.18 uses CUSTOM_BASE_URL for custom
+                            // endpoints; OPENAI_BASE_URL remains compatible
+                            // with production launchers and newer runtimes.
+                            // (ADR-002 substrate § provider v68)
+                            env.insert("OPENAI_BASE_URL".into(), ep.clone());
+                            env.insert("CUSTOM_BASE_URL".into(), ep.clone());
+                            if let Some(vendor_key_env) = hermes_custom_key_env(ep) {
+                                env.insert(vendor_key_env, key.clone());
+                            }
+                        }
                     }
                 }
             }
         }
-        // ADR-002 substrate § provider §1.3 v9 + Decision 0007 §hermes-sync v1
-        // (bao 2026-06-30): keep hermes's OWN config.yaml model in lockstep with
-        // the active provider. The caller mirrors only the KEY via
-        // write_hermes_dotenv, but hermes resolves its MODEL from config.yaml —
-        // so without this the model drifted (config stuck on a stale default like
-        // gemini while the active provider was switched to glm).
-        // write_hermes_config_yaml was only wired to the Settings provider-switch
-        // command, so editing active-providers.json directly never synced.
-        // Hanging it on this unified injection point lands it on EVERY hermes
-        // spawn (ACP launch + one-shot), same path as the key.
-        let _ = crate::commands::agents::write_hermes_config_yaml(m, &key);
+        if let Some(model) = m.models.first().filter(|model| !model.is_empty()) {
+            env.insert("HERMES_MODEL".into(), model.clone());
+        }
+
+        // Durable Hermes projection remains a production-launch behavior only;
+        // the release probe passes false and keeps the key process-scoped.
+        // (ADR-002 substrate § provider v68)
+        if project_hermes_config {
+            let _ = crate::commands::agents::write_hermes_config_yaml(m, &key);
+        }
         env
     }
 
@@ -838,7 +861,9 @@ impl ProviderRegistry {
                 consumer.id()
             )));
         }
-        // 1-token trial — first chunk inside 5s → commit, else surface.
+        // The production 1-token trial must produce first output within one
+        // absolute setup-to-stream budget before the binding can commit.
+        // (ADR-002 substrate § provider v68)
         let reply = trial_chat(provider.as_ref()).await?;
         {
             let mut active = self.active.write().unwrap();
@@ -1078,6 +1103,47 @@ fn instantiate(manifest: Arc<ProviderManifest>) -> Result<ProviderHandle, Provid
             Ok(Arc::new(provider))
         }
     }
+}
+
+// Hermes 0.18 accepts custom endpoint secrets only through a host-derived
+// `<VENDOR>_API_KEY`; mirror its resolver so the secret remains process-scoped
+// instead of requiring a persisted Hermes config file.
+// (ADR-002 substrate § provider v68)
+fn hermes_custom_key_env(endpoint: &str) -> Option<String> {
+    let host = reqwest::Url::parse(endpoint)
+        .ok()?
+        .host_str()?
+        .to_ascii_lowercase();
+    let mut labels: Vec<&str> = host.split('.').filter(|label| !label.is_empty()).collect();
+    if host == "localhost"
+        || host.contains(':')
+        || labels.last()?.chars().any(|ch| ch.is_ascii_digit())
+    {
+        return None;
+    }
+    while matches!(labels.first(), Some(&"api" | &"www")) {
+        labels.remove(0);
+    }
+    if labels.len() < 2 {
+        return None;
+    }
+    let vendor = labels[labels.len() - 2];
+    let sanitized: String = vendor
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if !sanitized.starts_with(|ch: char| ch.is_ascii_alphabetic())
+        || matches!(sanitized.as_str(), "OPENAI" | "OPENROUTER" | "OLLAMA")
+    {
+        return None;
+    }
+    Some(format!("{sanitized}_API_KEY"))
 }
 
 fn resolve_auth(manifest: &ProviderManifest) -> Result<String, ProviderError> {

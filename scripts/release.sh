@@ -750,14 +750,15 @@ WORK=$(mktemp -d)
 cp "$TARBALL" "$WORK/$RENAMED_TARBALL"
 ARCHIVE_SHA256="$(shasum -a 256 "$WORK/$RENAMED_TARBALL" | awk '{print $1}')"
 
-# Current brain runtime probe: verify the bundled Hermes ACP contract before
-# publishing. A release must prove the active brain can initialize, create a
-# session, and stream a response; compilation alone is insufficient.
-# (ADR-004 cap § updater v5)
+# Current brain runtime probe: resolve the active BYOK provider through the
+# production registry, then inject it only into the exact Node/Hermes probe
+# subprocess. The launcher never prints, argv-passes, or persists the secret.
+# (ADR-004 cap § updater v9; ADR-002 substrate § provider v68)
 echo "==> [5/9] runtime probe — Hermes ACP handshake + streaming"
-if ! node scripts/probes/hermes-acp-probe.mjs "Reply with exactly: ACP OK"; then
+if ! cargo run --quiet --manifest-path src-tauri/Cargo.toml \
+        --bin hermes_acp_release_probe -- "Reply with exactly: ACP OK"; then
     echo "error: Hermes ACP runtime probe failed — refusing to publish ${VERSION}"
-    echo "       configure the bundled Hermes runtime/provider, then retry."
+    echo "       configure the active Irisy BYOK provider, then retry."
     exit 1
 fi
 

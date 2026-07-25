@@ -1,10 +1,10 @@
 // Trial-chat verification — the real-roundtrip "set_active" gate.
 //
-// ADR-002 substrate § provider v2 lock #4: `set_active(provider_id, capability)` MUST send
-// a real 1-token `"hi"` chat with a 5 s deadline. First chunk arriving
-// inside the deadline ⇒ commit + persist; timeout / error ⇒ keep the
-// previous selection + surface the specific error (auth / network /
-// model-not-found).
+// The production 1-token `"hi"` round trip must produce its first output within
+// one absolute 30-second budget spanning adapter setup and stream reception.
+// Success commits the binding; timeout or provider error preserves the previous
+// selection and surfaces the specific failure.
+// (ADR-002 substrate § provider v68)
 //
 // This replaces the pre-PR conflation of `healthz` / `binary-exists`
 // checks with "the provider works". Some failure modes (Anthropic
@@ -17,8 +17,10 @@ use std::time::Duration;
 use crate::kernel::provider::r#trait::Provider;
 use crate::kernel::provider::types::{ChatMessage, ChatOpts, ChatPrompt, ProviderError};
 
-/// Wall-clock limit per ADR-002 substrate § provider v2 lock #4.
-const TRIAL_DEADLINE_MS: u64 = 5_000;
+/// Absolute setup-to-first-output limit. A single budget avoids nested timeout
+/// windows while accommodating valid remote providers with slower first tokens.
+/// (ADR-002 substrate § provider v68)
+const TRIAL_FIRST_OUTPUT_DEADLINE_MS: u64 = 30_000;
 
 /// 1-token probe — single user turn "hi" with a tiny token budget. We
 /// only care about the FIRST chunk; subsequent chunks are drained off
@@ -35,34 +37,46 @@ pub async fn trial_chat(provider: &dyn Provider) -> Result<String, ProviderError
         temperature: None,
         max_tokens: Some(8),
     };
+    // The model option and the outer timeout share the same absolute budget;
+    // no nested timeout can accidentally double or truncate activation.
+    // (ADR-002 substrate § provider v68)
     let opts = ChatOpts {
         model: String::new(),
-        deadline_ms: TRIAL_DEADLINE_MS,
+        deadline_ms: TRIAL_FIRST_OUTPUT_DEADLINE_MS,
     };
-    let stream = tokio::time::timeout(
-        Duration::from_millis(TRIAL_DEADLINE_MS),
-        provider.chat_stream(&prompt, &opts),
+    let (mut rx, first) = tokio::time::timeout(
+        Duration::from_millis(TRIAL_FIRST_OUTPUT_DEADLINE_MS),
+        async {
+            let mut rx = provider.chat_stream(&prompt, &opts).await?;
+            // Ignore role/metadata chunks. Only non-empty model text proves the
+            // provider produced output; a finish-only stream fails closed.
+            // (ADR-002 substrate § provider v68)
+            let first = loop {
+                match rx.recv().await {
+                    Some(Ok(chunk)) if !chunk.delta.is_empty() => break chunk,
+                    Some(Ok(chunk)) if chunk.finish_reason.is_some() => {
+                        return Err(ProviderError::ProviderError(
+                            "trial chat: stream finished before first output".into(),
+                        ))
+                    }
+                    Some(Ok(_)) => continue,
+                    Some(Err(error)) => return Err(error),
+                    None => {
+                        return Err(ProviderError::ProviderError(
+                            "trial chat: stream closed before first output".into(),
+                        ))
+                    }
+                }
+            };
+            Ok::<_, ProviderError>((rx, first))
+        },
     )
+    // Timeout remains fail-closed and leaves the prior binding untouched.
+    // (ADR-002 substrate § provider v68)
     .await
-    .map_err(|_| ProviderError::DeadlineExceeded(TRIAL_DEADLINE_MS))??;
-    let mut rx = stream;
+    .map_err(|_| ProviderError::DeadlineExceeded(TRIAL_FIRST_OUTPUT_DEADLINE_MS))??;
 
     // First chunk decides outcome.
-    let first = match tokio::time::timeout(
-        Duration::from_millis(TRIAL_DEADLINE_MS),
-        rx.recv(),
-    )
-    .await
-    {
-        Ok(Some(Ok(chunk))) => chunk,
-        Ok(Some(Err(e))) => return Err(e),
-        Ok(None) => {
-            return Err(ProviderError::ProviderError(
-                "trial chat: stream closed before first chunk".into(),
-            ))
-        }
-        Err(_) => return Err(ProviderError::DeadlineExceeded(TRIAL_DEADLINE_MS)),
-    };
     let mut reply = first.delta.clone();
     let mut saw_finish = first.finish_reason.is_some();
 

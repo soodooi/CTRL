@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // hermes-acp-probe — minimal ACP client spike + upgrade contract probe
-// (ADR-002 substrate §1.8.4). Drives hermes-acp over newline-delimited
+// (ADR-002 substrate § provider v68; ADR-004 cap § updater v9).
 // JSON-RPC on stdio: initialize -> session/new -> session/prompt, and
 // prints streamed agent_message_chunk text. Exit 0 = ACP contract intact
 // (handshake + streaming). Exit non-zero = broken/blocked (logged).
@@ -123,15 +123,25 @@ try {
   const sessionId = ns.sessionId ?? ns.session_id;
   console.error(`[probe] session/new OK — ${sessionId}`);
 
+  const provider = process.env.HERMES_INFERENCE_PROVIDER;
+  const model = process.env.HERMES_MODEL;
+  if (!provider || !model) throw new Error('launcher did not provide Hermes provider/model selection');
+  await send('session/set_model', { sessionId, modelId: `${provider}:${model}` });
+  console.error(`[probe] model selected — ${provider}:${model}`);
+
   console.error(`[probe] prompting: "${PROMPT}"\n---`);
   const turnGuard = setTimeout(() => fail(`prompt turn exceeded ${TURN_MS}ms`), TURN_MS);
   const stop = await send('session/prompt', { sessionId, prompt: [{ type: 'text', text: PROMPT }] });
   clearTimeout(turnGuard);
   clearTimeout(guard);
   console.error(`\n---\n[probe] turn done — stopReason=${stop.stopReason ?? JSON.stringify(stop)}`);
-  console.error(answer.trim() ? '[PROBE PASS] ACP handshake + streaming OK' : '[PROBE WARN] handshake OK but no text streamed (model/key?)');
+  const normalizedAnswer = answer.trim();
+  if (normalizedAnswer !== 'ACP OK') {
+    fail(`expected streamed assistant text "ACP OK", received ${JSON.stringify(normalizedAnswer)}`);
+  }
+  console.error('[PROBE PASS] ACP handshake + streaming OK');
   child.kill('SIGTERM');
-  process.exit(answer.trim() ? 0 : 2);
+  process.exit(0);
 } catch (e) {
   fail(e.message);
 }

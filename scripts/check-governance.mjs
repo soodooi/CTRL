@@ -394,14 +394,17 @@ for (const [file, lines] of citationFiles) {
     const start = Math.max(0, firstLine - ADR_PROXIMITY_LINES - 1);
     const end = Math.min(contentLines.length, lastLine + ADR_PROXIMITY_LINES);
 
-    // A deletion may remove the only nearby citation or the entire file. Resolve
-    // against both the surviving current-file window and every raw changed line
-    // in the hunk, including removed comments.
-    const citationText = [
-      contentLines.slice(start, end).join('\n'),
-      hunkLines.map(({ text }) => text).join('\n'),
-    ].filter(Boolean).join('\n');
-    const resolution = citationResolution(citationText);
+    // Prefer the surviving source as the citation authority. Removed comments are
+    // a fallback only when the current window contains no valid citation; this
+    // lets a malformed legacy citation be corrected instead of poisoning its
+    // valid replacement forever.
+    // (ADR-004 cap § Release governance baselines v7)
+    const currentCitationText = contentLines.slice(start, end).join('\n');
+    const currentResolution = citationResolution(currentCitationText);
+    const changedCitationText = hunkLines.map(({ text }) => text).join('\n');
+    const resolution = currentResolution.valid
+      ? currentResolution
+      : citationResolution([currentCitationText, changedCitationText].filter(Boolean).join('\n'));
     if (!resolution.valid) {
       missingHunks.push({
         hunk,
