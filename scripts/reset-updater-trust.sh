@@ -36,9 +36,12 @@ apply_public_key() {
       const fs = require("fs");
       const path = process.argv[1];
       const publicKey = process.argv[2];
-      const config = JSON.parse(fs.readFileSync(path, "utf8"));
-      config.plugins.updater.pubkey = publicKey;
-      fs.writeFileSync(path, JSON.stringify(config, null, 2) + "\n");
+      const source = fs.readFileSync(path, "utf8");
+      const config = JSON.parse(source);
+      const needle = `"pubkey": ${JSON.stringify(config.plugins.updater.pubkey)}`;
+      const replacement = `"pubkey": ${JSON.stringify(publicKey)}`;
+      if (source.split(needle).length !== 2) process.exit(1);
+      fs.writeFileSync(path, source.replace(needle, replacement));
     ' "$CONFIG_FILE" "$public_key"
 }
 
@@ -162,10 +165,13 @@ node -e '
   const configPath = process.argv[1];
   const publicPath = process.argv[2];
   const outputPath = process.argv[3];
-  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const source = fs.readFileSync(configPath, "utf8");
+  const config = JSON.parse(source);
   const publicKey = fs.readFileSync(publicPath, "utf8").trim();
-  config.plugins.updater.pubkey = publicKey;
-  fs.writeFileSync(outputPath, JSON.stringify(config, null, 2) + "\n");
+  const needle = `"pubkey": ${JSON.stringify(config.plugins.updater.pubkey)}`;
+  const replacement = `"pubkey": ${JSON.stringify(publicKey)}`;
+  if (source.split(needle).length !== 2) process.exit(1);
+  fs.writeFileSync(outputPath, source.replace(needle, replacement));
 ' "$CONFIG_FILE" "$TMP_DIR/ctrl.key.pub" "$TMP_DIR/new-tauri.conf.json"
 jq \
     --argjson epoch "$NEW_EPOCH" \

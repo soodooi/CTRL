@@ -1,7 +1,8 @@
 {
   "schemaVersion": 1,
-  "epoch": 1,
-  "activeKeyId": "69F215AEDAA4A4A2",
-  "previousKeyId": null,
-  "resetReason": null
+  "epoch": 2,
+  "activeKeyId": "4D33D00A2EE52765",
+  "previousKeyId": "69F215AEDAA4A4A2",
+  "resetReason": "private-key-loss",
+  "resetAt": "2026-07-25T03:50:30Z"
 }
