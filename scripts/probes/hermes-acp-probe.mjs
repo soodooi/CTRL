@@ -10,13 +10,31 @@
 // over ACP) before the kernel Rust client is built.
 
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const PROMPT = process.argv[2] ?? 'Reply with exactly: ACP OK';
 const COLD_START_MS = 180_000; // first uvx run resolves the PyPI spec
 const TURN_MS = 120_000;
+const provider = process.env.HERMES_INFERENCE_PROVIDER;
+const model = process.env.HERMES_MODEL;
+if (!provider || !model) throw new Error('launcher did not provide Hermes provider/model selection');
+
+// Hermes 0.18's ACP model resolver auto-detects custom model names against the
+// OpenRouter catalogue even when `custom:` is explicit. Seed the isolated
+// config so session creation owns the exact custom endpoint/model; no secret is
+// written because runtime credentials remain process environment only.
+// (ADR-002 substrate § provider v71; ADR-004 cap § updater v9)
+if (provider === 'custom') {
+  const hermesHome = process.env.HERMES_HOME;
+  if (!hermesHome) throw new Error('launcher did not provide an isolated Hermes home');
+  writeFileSync(
+    join(hermesHome, 'config.yaml'),
+    `model:\n  default: ${JSON.stringify(model)}\n  provider: custom\n`,
+    { mode: 0o600 },
+  );
+}
 
 // Read the build-owned Rust constants directly. The probe must validate the
 // exact Hermes distribution that this source tree will install, never a mutable
@@ -123,11 +141,15 @@ try {
   const sessionId = ns.sessionId ?? ns.session_id;
   console.error(`[probe] session/new OK — ${sessionId}`);
 
-  const provider = process.env.HERMES_INFERENCE_PROVIDER;
-  const model = process.env.HERMES_MODEL;
-  if (!provider || !model) throw new Error('launcher did not provide Hermes provider/model selection');
-  await send('session/set_model', { sessionId, modelId: `${provider}:${model}` });
-  console.error(`[probe] model selected — ${provider}:${model}`);
+  if (provider === 'custom') {
+    // The isolated config selected this model during session creation. Calling
+    // set_model would trigger Hermes 0.18's incorrect OpenRouter auto-detection.
+    console.error(`[probe] model selected from isolated config — custom:${model}`);
+  } else {
+    const modelId = `${provider}:${model}`;
+    await send('session/set_model', { sessionId, modelId });
+    console.error(`[probe] model selected — ${modelId}`);
+  }
 
   console.error(`[probe] prompting: "${PROMPT}"\n---`);
   const turnGuard = setTimeout(() => fail(`prompt turn exceeded ${TURN_MS}ms`), TURN_MS);
