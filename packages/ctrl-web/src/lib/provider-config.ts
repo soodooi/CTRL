@@ -9,6 +9,27 @@
 import { invoke } from './bridge';
 import type { ProviderManagedBy } from './irisy-prompts';
 
+/**
+ * Canonical identity used when comparing catalogue entries with persisted
+ * provider manifests. The kernel-returned id remains authoritative for writes.
+ * (ADR-002 substrate §3.10 v67)
+ */
+export function canonicalProviderId(raw: string): string {
+  let canonical = '';
+  let previousWasReplacementDash = true;
+  for (const char of raw) {
+    const lower = char.toLowerCase();
+    if (/^[a-z0-9_-]$/.test(lower)) {
+      canonical += lower;
+      previousWasReplacementDash = lower === '-';
+    } else if (!previousWasReplacementDash) {
+      canonical += '-';
+      previousWasReplacementDash = true;
+    }
+  }
+  return canonical.replace(/-+$/, '');
+}
+
 /** Mirrors Rust `ProviderKind` (manifest.rs). `cli_claude_persistent`
  *  removed (ADR-002 substrate § provider v61, 2026-07-11): Claude
  *  subscription OAuth may not back an LLM provider per Anthropic's
@@ -25,6 +46,9 @@ export interface ProviderListRow {
   id: string;
   label: string;
   kind: ProviderKind;
+  /** Persisted HTTP wire shape; preserves custom-provider edits.
+   * (ADR-002 substrate § provider v67) */
+  shape: 'openai_chat_completions' | 'anthropic_messages';
   /** bao 2026-06-06: endpoint URL exposed so AddModal Edit mode can
    *  prefill the Base URL field. */
   endpoint: string | null;

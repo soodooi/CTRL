@@ -122,10 +122,10 @@ export interface ProviderTemplate {
   baseUrl: string;
   defaultModel: string;
   keyHint: string;
-  /** Recommended model ids — <datalist> fallback before the user types
-   *  their key (decision 0007 §per-provider-models). Optional: older
-   *  catalog snapshots / user overrides without the field keep the
-   *  free-text-only behaviour. */
+  /** Current catalogue model ids. The add/edit UI renders an explicit
+   *  selector and keeps a free-text model-id escape hatch. Optional:
+   *  older catalogue snapshots / user overrides without the field retain
+   *  the free-text-only behaviour. */
   models?: string[];
 }
 
@@ -209,8 +209,10 @@ export interface SetProviderKeyArgs {
   models?: string[];
 }
 
-export const setProviderKey = (args: SetProviderKeyArgs): Promise<void> =>
-  invoke('config_set_provider_key', { args });
+/** Returns the canonical provider id persisted by the kernel.
+ * (ADR-002 substrate § provider v67) */
+export const setProviderKey = (args: SetProviderKeyArgs): Promise<string> =>
+  invoke<string>('config_set_provider_key', { args });
 
 export interface TestProviderResult {
   success: boolean;

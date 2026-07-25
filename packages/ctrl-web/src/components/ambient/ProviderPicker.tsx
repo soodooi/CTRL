@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { listProviderTemplates, setProviderKey, type ProviderTemplate } from '@/lib/kernel';
-import { providerSetActive } from '@/lib/provider-config';
+import { canonicalProviderId, providerSetActive } from '@/lib/provider-config';
 import { useActiveProvider } from '@/hooks/useActiveProvider';
 import styles from './ProviderPicker.module.css';
 
@@ -59,7 +59,7 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
     setBusy(true);
     setError(null);
     try {
-      await setProviderKey({
+      const providerId = await setProviderKey({
         provider: selected.id,
         api_key: apiKey, // empty = keep existing keychain entry
         base_url: (baseUrl.trim() || selected.baseUrl).replace(/\/$/, ''),
@@ -67,7 +67,9 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
         display_name: selected.defaultName,
         api_protocol: selected.protocol,
       });
-      const reply = await providerSetActive({ role: 'irisy.primary', provider_id: selected.id });
+      // Use the persisted id rather than the catalogue id because the kernel
+      // canonicalizes user-provider slugs. (ADR-002 substrate § provider v67)
+      const reply = await providerSetActive({ role: 'irisy.primary', provider_id: providerId });
       onActivated?.(selected.defaultName, reply.model_id ?? model);
       onClose();
     } catch (e) {
@@ -103,19 +105,23 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
 
         <div className={styles.list}>
           {filtered.map((t) => {
-            const isActive = active?.id === t.id;
+            const isActive = active != null
+              && canonicalProviderId(active.id) === canonicalProviderId(t.id);
             const isSel = selected?.id === t.id;
             return (
               <div key={t.id} className={styles.rowWrap}>
                 <button
                   type="button"
-                  className={`${styles.row} ${isSel ? styles.rowSel : ''}`}
+                  className={`${styles.row} ${isSel ? styles.rowSel : ''} ${isActive ? styles.rowActive : ''}`}
+                  aria-current={isActive ? 'true' : undefined}
                   onClick={() => pick(t)}
                 >
                   <span className={styles.rowName}>{t.label}</span>
                   <span className={styles.rowMeta}>
-                    {isActive && <span className={styles.activeTag}>active</span>}
-                    <span className={styles.rowModel}>{t.defaultModel}</span>
+                    {isActive && <span className={styles.activeTag}>✓ In use</span>}
+                    <span className={styles.rowModel} title={t.defaultModel}>
+                      {t.defaultModel}
+                    </span>
                   </span>
                 </button>
                 {isSel && (
@@ -152,7 +158,7 @@ export function ProviderPicker({ onClose, onActivated }: ProviderPickerProps): R
                       type="button"
                       className={styles.use}
                       onClick={() => void apply()}
-                      disabled={busy || (!apiKey.trim() && active?.id !== t.id)}
+                      disabled={busy || (!apiKey.trim() && !isActive)}
                     >
                       {busy ? 'Verifying…' : 'Use this provider'}
                     </button>

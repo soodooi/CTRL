@@ -1,42 +1,33 @@
-// useTheme — React wrapper around `lib/theme.ts`. Reads the stored
-// preference once at mount, applies it, re-applies whenever the OS
-// `prefers-color-scheme` flips while preference = 'system'.
+// useTheme — synchronized React view of the shared theme store.
+// Every consumer observes the same persisted preference and effective theme;
+// lib/theme.ts owns the single OS appearance listener.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  applyTheme,
   getStoredTheme,
-  setTheme as persistTheme,
-  watchSystemTheme,
+  resolveEffectiveTheme,
+  setTheme,
+  subscribeTheme,
   type ThemePreference,
 } from '@/lib/theme';
 
 interface UseTheme {
   theme: ThemePreference;
+  effectiveTheme: 'light' | 'dark';
   setTheme: (next: ThemePreference) => void;
 }
 
 export const useTheme = (): UseTheme => {
-  const [theme, setLocalTheme] = useState<ThemePreference>(() =>
-    getStoredTheme(),
+  const initialTheme = getStoredTheme();
+  const [theme, setLocalTheme] = useState<ThemePreference>(initialTheme);
+  const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>(
+    () => resolveEffectiveTheme(initialTheme),
   );
 
-  // Apply on mount (covers the case where the boot script in main.tsx
-  // hasn't run yet, e.g. SSR / dev HMR remounts) and on every change.
-  useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
-
-  // While preference = 'system', re-evaluate when OS theme flips.
-  useEffect(() => {
-    if (theme !== 'system') return undefined;
-    return watchSystemTheme(() => applyTheme('system'));
-  }, [theme]);
-
-  const setTheme = useCallback((next: ThemePreference): void => {
-    persistTheme(next);
+  useEffect(() => subscribeTheme((next) => {
     setLocalTheme(next);
-  }, []);
+    setEffectiveTheme(resolveEffectiveTheme(next));
+  }), []);
 
-  return { theme, setTheme };
+  return { theme, effectiveTheme, setTheme };
 };

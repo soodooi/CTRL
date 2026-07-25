@@ -11,6 +11,7 @@ import { loadConnectors } from '@/lib/connector';
 import { providerBadge } from '@/lib/provider-badge';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
 import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
+import { useTheme } from '@/hooks/useTheme';
 import styles from './Sidebar.module.css';
 
 // Unified line-icon set (bao 2026-06-16: L1 icons must all be the SAME size).
@@ -32,6 +33,15 @@ const IRISY_D = 'M12 3l1.9 5.6L19.5 10l-5.6 1.4L12 17l-1.9-5.6L4.5 10l5.6-1.4z';
 const TOOL_D = 'M9 6l6 6-6 6';
 const NOTES_D = 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4';
 const DISCOVER_D = 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8v8M8 12h8';
+function ThemeIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 4a8 8 0 010 16z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 function GearIcon(): ReactElement {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -100,6 +110,14 @@ interface SidebarProps {
 
 export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: SidebarProps): ReactElement {
   const connectors = loadConnectors();
+  const { effectiveTheme, setTheme } = useTheme();
+  const isDarkTheme = effectiveTheme === 'dark';
+  // Flip the effective theme rather than the stored preference so `system`
+  // users always see an immediate visual change. The shared theme store remains
+  // the persistence and DOM SSOT. (ADR-003 frontend §8.5 v25)
+  const toggleTheme = (): void => {
+    setTheme(isDarkTheme ? 'light' : 'dark');
+  };
   // Installed feature packs (mcps whose manifest declares actions).
   const [packs, setPacks] = useState<FeaturePack[]>([]);
   useEffect(() => {
@@ -111,7 +129,11 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
     return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
   }, []);
 
+  const hasActiveProvider = Boolean(providerId && modelLabel);
   const modelBadge = providerBadge(providerId ?? '', modelLabel);
+  const modelTitle = hasActiveProvider
+    ? `Provider: ${modelLabel}`
+    : 'Choose AI provider';
 
   // One unified L1 feature-pack list (bao 2026-06-26: a single pack list, no
   // hardcoded faces interleaved with packs). Built-in faces (Notes / Tables /
@@ -209,12 +231,28 @@ export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: S
       <button
         type="button"
         className={styles.ic}
+        onClick={toggleTheme}
+        title={`Switch to ${isDarkTheme ? 'light' : 'dark'} theme`}
+        aria-label={`Switch to ${isDarkTheme ? 'light' : 'dark'} theme`}
+        aria-pressed={isDarkTheme}
+      >
+        <ThemeIcon />
+      </button>
+      <button
+        type="button"
+        className={styles.ic}
         onClick={() => onSelect({ kind: 'route', to: '/settings' })}
         title="Settings"
       >
         <GearIcon />
       </button>
-      <button type="button" className={styles.model} onClick={onModel} title={`Model: ${modelLabel}`}>
+      <button
+        type="button"
+        className={`${styles.model} ${hasActiveProvider ? styles.modelActive : ''}`}
+        onClick={onModel}
+        title={modelTitle}
+        aria-label={modelTitle}
+      >
         {modelBadge}
       </button>
     </aside>

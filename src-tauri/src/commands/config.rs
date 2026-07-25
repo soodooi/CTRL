@@ -198,26 +198,29 @@ pub struct SetProviderKeyArgs {
 ///
 /// Replaces the old "pick from 7 hardcoded KNOWN_PROVIDERS" flow that
 /// matched no industry pattern. Users now add OpenRouter / Together /
-/// Anyscale / their internal proxy / etc with no kernel changes.
+/// Anyscale / their internal proxy / etc with no kernel changes. Returns the
+/// canonical persisted id so callers bind the exact registry entry rather than
+/// the unsanitized catalogue id. (ADR-002 substrate § provider v67)
 #[tauri::command]
 pub async fn config_set_provider_key(
     app: tauri::AppHandle,
     kernel: tauri::State<'_, crate::shell::KernelHandle>,
     args: SetProviderKeyArgs,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let slug = sanitize_slug(&args.provider)?;
     // bao 2026-06-06 UX: in Edit mode the user may leave the api_key
     // field empty to keep the existing keychain entry. Only require a
     // value when no entry exists for this slug yet (= Add) or when the
     // user typed something to replace it.
     let key_provided = !args.api_key.trim().is_empty();
-    if !key_provided {
-        let existing = crate::shell::credential_vault::get(&slug)?;
-        if existing.is_none() {
-            return Err("api_key is required for a new provider".into());
-        }
-        // Else: keep the existing key, only rewrite the manifest below.
-    }
+    let existing_key = crate::shell::credential_vault::get(&slug)?;
+    let effective_key = if key_provided {
+        args.api_key.clone()
+    } else {
+        existing_key
+            .clone()
+            .ok_or_else(|| "api_key is required for a new provider".to_string())?
+    };
     let display_name = args
         .display_name
         .as_deref()
@@ -242,22 +245,9 @@ pub async fn config_set_provider_key(
         _ => "openai_chat_completions",
     };
 
-    // 1) Keychain via `security` subprocess helper (works in signed CTRL.app).
-    if key_provided {
-        crate::shell::credential_vault::set(&slug, &args.api_key)?;
-        let readback = crate::shell::credential_vault::get(&slug)?;
-        if readback.as_deref() != Some(args.api_key.as_str()) {
-            return Err(format!(
-                "keychain readback mismatch: wrote {} bytes, read back {}",
-                args.api_key.len(),
-                readback.as_deref().map(|s| s.len()).unwrap_or(0)
-            ));
-        }
-    }
-
-    // 2) User manifest TOML at ~/.ctrl/providers/<slug>.toml. The kernel
-    //    registry scans this dir at boot + on demand, so the manifest
-    //    becomes visible without a separate "install" step.
+    // Resolve the user manifest path before building and verifying the
+    // candidate. No persistent state changes until an active replacement has
+    // passed the real-roundtrip gate.
     let providers_dir = match crate::kernel::provider::manifest::default_user_providers_dir() {
         Some(p) => p,
         None => return Err("HOME unavailable — cannot resolve ~/.ctrl/providers/".into()),
@@ -310,7 +300,55 @@ pub async fn config_set_provider_key(
         base_url = base_url,
         models_line = models_line,
     );
-    write_atomic(&manifest_path, &manifest_body)?;
+
+    // Editing the manifest behind an active role must not replace the live
+    // provider before the candidate proves it can answer. Verify against an
+    // in-memory manifest carrying the proposed secret, then persist and reload.
+    // A failed trial leaves the prior manifest, key, registry entry, and role
+    // binding untouched. (ADR-002 substrate § provider v2 lock #4)
+    if kernel.runtime.provider_registry.is_active_provider(&slug) {
+        let candidate = crate::kernel::provider::manifest::parse_str(
+            &manifest_body,
+            &format!("candidate/{slug}.toml"),
+        )
+        .map_err(|e| format!("candidate manifest: {e}"))?;
+        crate::kernel::provider::registry::trial_manifest_with_secret(
+            candidate,
+            effective_key.clone(),
+        )
+        .await
+        .map_err(|e| format!("provider verification failed: {e}"))?;
+    }
+
+    // Persist the credential only after candidate verification. If the
+    // manifest write fails, restore the prior credential best-effort so a
+    // failed edit cannot poison the next launch.
+    if key_provided {
+        crate::shell::credential_vault::set(&slug, &effective_key)?;
+        let readback = crate::shell::credential_vault::get(&slug)?;
+        if readback.as_deref() != Some(effective_key.as_str()) {
+            if let Some(previous) = existing_key.as_deref() {
+                let _ = crate::shell::credential_vault::set(&slug, previous);
+            } else {
+                let _ = crate::shell::credential_vault::delete(&slug);
+            }
+            return Err(format!(
+                "keychain readback mismatch: wrote {} bytes, read back {}",
+                effective_key.len(),
+                readback.as_deref().map(|s| s.len()).unwrap_or(0)
+            ));
+        }
+    }
+    if let Err(error) = write_atomic(&manifest_path, &manifest_body) {
+        if key_provided {
+            if let Some(previous) = existing_key.as_deref() {
+                let _ = crate::shell::credential_vault::set(&slug, previous);
+            } else {
+                let _ = crate::shell::credential_vault::delete(&slug);
+            }
+        }
+        return Err(error);
+    }
 
     // Hot-reload: make the new/edited manifest visible to provider_list
     // immediately, and notify the PWA so it can re-fetch + the user sees
@@ -325,30 +363,7 @@ pub async fn config_set_provider_key(
     }
 
     tracing::info!(provider = %slug, "config_set_provider_key ok");
-    let _ = default_model; // suppress unused warning when model line empty
-    return Ok(());
-
-    // Dead code below intentionally retained to keep the existing
-    // legacy update_config_toml signature compiling without further
-    // edits this turn. None of the lines after the explicit `return`
-    // above can run.
-    #[allow(unreachable_code)]
-    update_config_toml(&args.provider, |entry_table| {
-        entry_table.insert(
-            "api_key".to_string(),
-            toml::Value::String(args.api_key.clone()),
-        );
-        entry_table.insert("base_url".to_string(), toml::Value::String(base_url.clone()));
-        entry_table.insert(
-            "default_model".to_string(),
-            toml::Value::String(default_model.clone()),
-        );
-        // `enabled` is deprecated (see local_config.rs ProviderEntry doc);
-        // we explicitly do NOT write it so the user's file stays clean.
-    })?;
-
-    tracing::info!(provider = %args.provider, "config_set_provider_key ok");
-    Ok(())
+    Ok(slug)
 }
 
 #[derive(Debug, Deserialize)]
@@ -515,8 +530,18 @@ pub async fn config_delete_provider(
     // routing to a missing manifest until the user manually picks a
     // replacement. The next chat turn walks the route_chain fallback
     // or surfaces "no provider" honestly.
+    // (ADR-002 substrate § provider v67)
+    kernel.runtime.provider_registry.remove_user_provider(&slug);
     kernel.runtime.provider_registry.reload_user_dir();
-    let cleared_roles = kernel.runtime.provider_registry.clear_active(&slug);
+    // A deleted user manifest may have overridden a same-id builtin. Keep the
+    // active role when removal restored a usable builtin under that identity;
+    // only clear bindings whose provider truly disappeared.
+    // (ADR-002 substrate § provider v67)
+    let cleared_roles = if kernel.runtime.provider_registry.get(&slug).is_some() {
+        Vec::new()
+    } else {
+        kernel.runtime.provider_registry.clear_active(&slug)
+    };
     if !cleared_roles.is_empty() {
         tracing::info!(
             provider = %slug,
@@ -554,9 +579,9 @@ fn read_user_manifest_endpoint(slug: &str) -> Option<String> {
         .map(|s| s.trim_end_matches('/').to_string())
 }
 
-/// Sanitize a user-supplied provider id. Accepts lowercased alphanumeric +
-/// `-` `_`. Replaces other chars with `-`, collapses runs, trims edges.
-/// Empty after sanitization = error.
+/// Sanitize a user-supplied provider id. ASCII alphanumeric, `-`, and `_`
+/// are preserved after lowercasing. Other runs become one `-`; leading
+/// replacement dashes and trailing dashes are removed. Empty is rejected.
 fn sanitize_slug(raw: &str) -> Result<String, String> {
     let mut out = String::with_capacity(raw.len());
     let mut prev_dash = true; // suppresses leading dashes
@@ -646,45 +671,6 @@ fn resolve_credentials(
             .unwrap_or_default();
     }
     Ok((api_key, base_url))
-}
-
-/// Round-trip `~/.ctrl/config.toml`, applying `mutator` to the named
-/// provider's table. Creates the file (and `[providers]` table) if
-/// missing. Atomic write via tmp + rename.
-fn update_config_toml(
-    provider: &str,
-    mutator: impl FnOnce(&mut toml::map::Map<String, toml::Value>),
-) -> Result<(), String> {
-    let path = default_config_path().ok_or_else(|| "HOME env var not set".to_string())?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {parent:?}: {e}"))?;
-    }
-    let raw = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut doc: toml::Value = if raw.trim().is_empty() {
-        toml::Value::Table(toml::map::Map::new())
-    } else {
-        toml::from_str(&raw).map_err(|e| format!("parse config.toml: {e}"))?
-    };
-
-    let root = doc
-        .as_table_mut()
-        .ok_or_else(|| "config.toml root is not a table".to_string())?;
-    let providers = root
-        .entry("providers".to_string())
-        .or_insert(toml::Value::Table(toml::map::Map::new()))
-        .as_table_mut()
-        .ok_or_else(|| "config.toml [providers] is not a table".to_string())?;
-    let entry_table = providers
-        .entry(provider.to_string())
-        .or_insert(toml::Value::Table(toml::map::Map::new()))
-        .as_table_mut()
-        .ok_or_else(|| format!("config.toml [providers.{provider}] is not a table"))?;
-    mutator(entry_table);
-
-    let serialized =
-        toml::to_string_pretty(&doc).map_err(|e| format!("serialize config.toml: {e}"))?;
-    write_atomic(&path, &serialized)?;
-    Ok(())
 }
 
 fn write_atomic(path: &PathBuf, content: &str) -> Result<(), String> {

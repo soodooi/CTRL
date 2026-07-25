@@ -15,6 +15,7 @@
   width: min(640px, 94vw);
   max-height: 86vh;
   overflow-y: auto;
+  container-type: inline-size;
   background: var(--card, #fff);
   border-radius: 16px;
   padding: 20px 20px 22px;
@@ -158,6 +159,32 @@
   background: rgba(204, 0, 0, 0.06);
 }
 
+/* Settings can host this surface inside a narrow L2 pane. Keep provider
+   identity on its own row before model/status/actions consume horizontal
+   space. (ADR-003 frontend §8; ADR-002 substrate §3.10 v67) */
+@container (max-width: 420px) {
+  .providerRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 8px;
+  }
+  .providerName {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .providerModel {
+    grid-column: 1;
+    max-width: 100%;
+  }
+  .providerStatus {
+    grid-column: 2;
+  }
+  .providerActions {
+    grid-column: 1 / -1;
+    margin-left: 0;
+  }
+}
+
 /* ── Add a provider (collapsed; everything else lives here) ───── */
 .addBtn {
   margin-top: 8px;
@@ -184,6 +211,30 @@
   flex-direction: column;
   gap: 8px;
 }
+
+.catalogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.catalogRefresh {
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary, #0d9488);
+  background: transparent;
+  border: 1px solid var(--primary-ring, rgba(13, 148, 136, 0.25));
+  border-radius: 6px;
+  cursor: pointer;
+}
+.catalogRefresh:disabled { opacity: 0.55; cursor: default; }
+.catalogStatus,
+.catalogWarning {
+  font-size: 11px;
+  color: var(--text-subtle, #98989d);
+}
+.catalogWarning { color: var(--color-danger, #dc2626); }
 
 .search {
   padding: 9px 11px;
@@ -285,6 +336,27 @@
   box-shadow: 0 0 0 3px var(--primary-ring, rgba(13, 148, 136, 0.18));
 }
 .keyHint { font-size: 11px; color: var(--text-subtle, #98989d); }
+
+.modelField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 12px;
+}
+.modelField select,
+.modelField input {
+  width: 100%;
+  padding: 9px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border-strong, rgba(0, 0, 0, 0.14));
+  border-radius: 8px;
+  background: var(--card, #fff);
+  color: var(--text, #1d1d1f);
+  outline: none;
+  font-family: var(--font-mono, 'SF Mono', monospace);
+}
+.modelField select:focus,
+.modelField input:focus { border-color: var(--primary, #0d9488); }
 
 .advToggle {
   margin-top: 10px;

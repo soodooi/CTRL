@@ -135,15 +135,6 @@
     "keyHint": "OAuth access token; gcloud auth print-access-token"
   },
   {
-    "id": "bedrock",
-    "label": "AWS Bedrock",
-    "defaultName": "Bedrock",
-    "protocol": "openai",
-    "baseUrl": "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1",
-    "defaultModel": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-    "keyHint": "AWS access key/secret pair via SigV4 (preview shape)"
-  },
-  {
     "id": "cloudflare",
     "label": "Cloudflare Workers AI",
     "defaultName": "Cloudflare AI",

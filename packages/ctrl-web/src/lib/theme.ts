@@ -27,7 +27,7 @@ export const getStoredTheme = (): ThemePreference => {
   }
 };
 
-const resolveEffective = (pref: ThemePreference): 'light' | 'dark' => {
+export const resolveEffectiveTheme = (pref: ThemePreference): 'light' | 'dark' => {
   if (pref === 'light' || pref === 'dark') return pref;
   if (typeof window === 'undefined') return 'light';
   return window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -37,12 +37,32 @@ const resolveEffective = (pref: ThemePreference): 'light' | 'dark' => {
 
 export const applyTheme = (pref: ThemePreference): void => {
   if (typeof document === 'undefined') return;
-  const effective = resolveEffective(pref);
+  const effective = resolveEffectiveTheme(pref);
   const root = document.documentElement;
   if (effective === 'dark') {
     root.setAttribute('data-theme', DARK_ATTR);
   } else {
     root.removeAttribute('data-theme');
+  }
+};
+
+type ThemeListener = (preference: ThemePreference) => void;
+const listeners = new Set<ThemeListener>();
+let stopSystemWatch: (() => void) | null = null;
+
+const notifyThemeListeners = (preference: ThemePreference): void => {
+  for (const listener of listeners) listener(preference);
+};
+
+const syncSystemWatch = (preference: ThemePreference): void => {
+  if (preference === 'system' && stopSystemWatch == null) {
+    stopSystemWatch = watchSystemTheme(() => {
+      applyTheme('system');
+      notifyThemeListeners('system');
+    });
+  } else if (preference !== 'system' && stopSystemWatch != null) {
+    stopSystemWatch();
+    stopSystemWatch = null;
   }
 };
 
@@ -55,12 +75,30 @@ export const setTheme = (pref: ThemePreference): void => {
     }
   }
   applyTheme(pref);
+  syncSystemWatch(pref);
+  notifyThemeListeners(pref);
 };
 
-/** Subscribe to OS preference changes — call once at boot. The returned
- *  unsubscribe is provided for symmetry but boot-time subscription
- *  lives for the app's lifetime. */
-export const watchSystemTheme = (onChange: () => void): (() => void) => {
+/** Subscribe React consumers to the one shared preference and OS listener.
+ *  This prevents the persistent shell and Settings from owning divergent
+ *  theme state. (ADR-003 frontend §8.5 v25) */
+export const subscribeTheme = (listener: ThemeListener): (() => void) => {
+  listeners.add(listener);
+  const preference = getStoredTheme();
+  syncSystemWatch(preference);
+  listener(preference);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && stopSystemWatch != null) {
+      stopSystemWatch();
+      stopSystemWatch = null;
+    }
+  };
+};
+
+/** Subscribe to OS preference changes. The shared store above owns the single
+ *  live subscription while the preference is `system`. */
+const watchSystemTheme = (onChange: () => void): (() => void) => {
   if (typeof window === 'undefined') return () => undefined;
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
   const listener = (): void => onChange();

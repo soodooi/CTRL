@@ -20,7 +20,12 @@ import {
   queryProviderModels,
   type ProviderTemplate,
 } from '@/lib/kernel';
-import { providerSetActive, providerList, type ProviderListRow } from '@/lib/provider-config';
+import {
+  canonicalProviderId,
+  providerSetActive,
+  providerList,
+  type ProviderListRow,
+} from '@/lib/provider-config';
 import { useActiveProvider } from '@/hooks/useActiveProvider';
 import { ConfirmDialog } from '@/components/primitives/ConfirmDialog';
 import styles from './ProviderHub.module.css';
@@ -66,6 +71,7 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedOverride, setSelectedOverride] = useState<ProviderTemplate | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -73,6 +79,9 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
   const [liveModels, setLiveModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingRemove, setPendingRemove] = useState<ProviderListRow | null>(null);
 
@@ -80,13 +89,14 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
   // picks a template + types their key, debounce-query the provider's
   // /models endpoint so the model <input> shows a <datalist> of real
   // ids the provider actually exposes today. Failures fall through to
-  // an empty list (the input stays free-text).
+  // the catalogue selector while the model id remains free-text editable.
   const debounceRef = useRef<number | null>(null);
   const liveModelsGeneration = useRef(0);
   const catalogReloadGeneration = useRef(0);
   useEffect(() => {
     const generation = ++liveModelsGeneration.current;
-    const tpl = selectedId ? templates.find((t) => t.id === selectedId) : null;
+    const tpl = selectedOverride
+      ?? (selectedId ? templates.find((t) => t.id === selectedId) : null);
     if (!tpl) {
       setLiveModels([]);
       setModelsLoading(false);
@@ -126,10 +136,12 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
       }
       if (liveModelsGeneration.current === generation) liveModelsGeneration.current += 1;
     };
-  }, [selectedId, templates, apiKey, baseUrl]);
+  }, [selectedId, selectedOverride, templates, apiKey, baseUrl]);
 
   const reload = useCallback(() => {
     const generation = ++catalogReloadGeneration.current;
+    setCatalogRefreshing(true);
+    setCatalogError(null);
     // Publish the cache/bundled floor first, then the refreshed catalogue in
     // sequence. A generation guard prevents an older reload (or an unmounted
     // hub) from replacing newer state. (ADR-002 substrate §3.10 v67)
@@ -140,8 +152,15 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
         await refreshProviderCatalog();
         const refreshed = await listProviderTemplates();
         if (catalogReloadGeneration.current === generation) setTemplates(refreshed);
-      } catch {
-        // Keep the already-published cache/bundled floor on refresh failure.
+      } catch (e) {
+        // Keep the already-published cache/bundled floor on refresh failure,
+        // but make the degraded catalogue visible instead of silently looking
+        // complete. (ADR-002 substrate §3.10 v67)
+        if (catalogReloadGeneration.current === generation) {
+          setCatalogError(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        if (catalogReloadGeneration.current === generation) setCatalogRefreshing(false);
       }
     })();
     // Outside Tauri providerList rejects — show a small demo set so the
@@ -166,6 +185,7 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
       if (inline) {
         setShowAdd(false);
         setSelectedId(null);
+        setSelectedOverride(null);
         setApiKey('');
         reload();
       } else {
@@ -175,24 +195,34 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
     [inline, onActivated, onClose, reload],
   );
 
-  const configuredRows = configured.filter((c) => c.ready);
+  // Keep every persisted manifest visible. A non-ready provider is a
+  // repairable configuration state, not an absent provider.
+  // (ADR-002 substrate § provider v67)
+  const configuredRows = configured;
 
   // Add-list templates: hide ones already configured, prioritize your common,
   // filter by search.
   const addTemplates = useMemo(() => {
-    const cfgIds = new Set(configuredRows.map((c) => c.id));
+    const cfgIds = new Set(configured.map((c) => c.id));
     const q = search.trim().toLowerCase();
     return [...templates]
-      .filter((t) => t.id === 'custom' || !cfgIds.has(t.id))
-      .filter((t) => !q || t.label.toLowerCase().includes(q) || t.id.toLowerCase().includes(q))
+      .filter((t) => t.id === 'custom' || !cfgIds.has(canonicalProviderId(t.id)))
+      .filter((t) => {
+        if (!q) return true;
+        return t.label.toLowerCase().includes(q)
+          || t.id.toLowerCase().includes(q)
+          || t.defaultModel.toLowerCase().includes(q)
+          || (t.models ?? []).some((modelId) => modelId.toLowerCase().includes(q));
+      })
       .sort((a, b) => {
         const pa = PRIORITY.indexOf(a.id);
         const pb = PRIORITY.indexOf(b.id);
         return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
       });
-  }, [templates, configuredRows, search]);
+  }, [templates, configured, search]);
 
   const pick = (t: ProviderTemplate): void => {
+    setSelectedOverride(null);
     setSelectedId(t.id);
     setApiKey('');
     setModel(t.defaultModel);
@@ -203,7 +233,14 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
     setError(null);
   };
 
-  const selectedTpl = templates.find((t) => t.id === selectedId) ?? null;
+  const selectedTpl = selectedOverride ?? templates.find((t) => t.id === selectedId) ?? null;
+  const availableModels = Array.from(new Set([
+    ...(liveModels.length > 0 ? liveModels : selectedTpl?.models ?? []),
+    ...(selectedTpl?.defaultModel ? [selectedTpl.defaultModel] : []),
+  ]));
+  const isEditingProvider = selectedId != null && configured.some(
+    (c) => c.id === canonicalProviderId(selectedId),
+  );
 
   const apply = async (t: ProviderTemplate): Promise<void> => {
     setBusy(true);
@@ -217,11 +254,11 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
       // registry.first_model_for reads for the chip display).
       const chosen = model.trim() || t.defaultModel;
       const carry: string[] = chosen
-        ? [chosen, ...(t.models ?? [])].filter(
+        ? [chosen, ...availableModels].filter(
             (m, i, arr) => m && arr.indexOf(m) === i,
           )
-        : t.models ?? [];
-      await setProviderKey({
+        : availableModels;
+      const providerId = await setProviderKey({
         provider: t.id,
         api_key: apiKey,
         base_url: effectiveBase.replace(/\/$/, ''),
@@ -230,7 +267,19 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
         api_protocol: t.protocol,
         models: carry,
       });
-      const reply = await providerSetActive({ role: 'irisy.primary', provider_id: t.id });
+      // Active-provider edits are verified transactionally by the save command
+      // before it replaces the live manifest. The role id is unchanged, so a
+      // second trial would only duplicate the locked gate.
+      // (ADR-002 substrate § provider v2 lock #4)
+      if (isEditingProvider && active != null
+        && canonicalProviderId(active.id) === providerId) {
+        finish(t.defaultName, chosen);
+        return;
+      }
+      // Activate the canonical id returned by the manifest writer; catalogue
+      // ids may contain characters normalized by sanitize_slug.
+      // (ADR-002 substrate § provider v67)
+      const reply = await providerSetActive({ role: 'irisy.primary', provider_id: providerId });
       finish(t.defaultName, reply.model_id ?? model);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -240,8 +289,9 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
   };
 
   const switchTo = async (id: string, label: string): Promise<void> => {
-    if (active?.id === id) return;
+    if (active != null && canonicalProviderId(active.id) === canonicalProviderId(id)) return;
     setBusy(true);
+    setSwitchingId(id);
     setError(null);
     try {
       const reply = await providerSetActive({ role: 'irisy.primary', provider_id: id });
@@ -250,6 +300,7 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+      setSwitchingId(null);
     }
   };
 
@@ -263,12 +314,13 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
       id: c.id,
       label: c.label,
       defaultName: c.label,
-      protocol: 'openai',
+      protocol: c.shape === 'anthropic_messages' ? 'anthropic' : 'openai',
       baseUrl: endpoint,
       defaultModel: c.models[0] ?? '',
       keyHint: '',
       models: c.models,
     };
+    setSelectedOverride(tpl);
     setShowAdd(true);
     setSelectedId(tpl.id);
     setApiKey('');
@@ -306,6 +358,7 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
   const closeAdd = (): void => {
     setShowAdd(false);
     setSelectedId(null);
+    setSelectedOverride(null);
     setSearch('');
     setError(null);
   };
@@ -341,53 +394,73 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
         <div className={styles.section}>
           <div className={styles.sectionLabel}>Your providers</div>
           {configuredRows.map((c) => {
-            const isActive = active?.id === c.id;
+            const isActive = active != null
+              && canonicalProviderId(active.id) === canonicalProviderId(c.id);
             return (
               <div
                 key={c.id}
                 className={styles.providerRow}
                 data-active={isActive || undefined}
-                onClick={busy ? undefined : () => void switchTo(c.id, c.label)}
-                title={isActive ? 'Currently used by Irisy' : 'Switch Irisy to this'}
+                onClick={busy || !c.ready ? undefined : () => void switchTo(c.id, c.label)}
+                title={
+                  !c.ready
+                    ? c.load_error ?? 'Edit this provider to finish setup'
+                    : isActive
+                      ? 'Currently used by Irisy'
+                      : 'Switch Irisy to this'
+                }
               >
                 <span className={styles.providerName}>{c.label}</span>
                 <span className={styles.providerModel}>{c.models[0] ?? '—'}</span>
                 <span className={styles.providerStatus} data-active={isActive || undefined}>
-                  {isActive ? '★ in use' : '● switch'}
+                  {switchingId === c.id
+                    ? 'Verifying…'
+                    : !c.ready
+                      ? 'Needs setup'
+                      : isActive
+                        ? '★ in use'
+                        : '● switch'}
                 </span>
                 {/* Edit / Remove — bao 2026-06-19: prior art had no way to
                     fix a misconfigured provider (wrong region / dead key)
                     short of editing ~/.ctrl/providers/<slug>.toml by hand.
                     Edit reuses the +Add form pre-filled; Remove calls
                     config_delete_provider (clears keychain + toml). */}
-                <div className={styles.providerActions}>
-                  <button
-                    type="button"
-                    className={styles.providerActionBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      editProvider(c);
-                    }}
-                    title="Edit credentials / model / region"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.providerActionBtn}
-                    data-danger
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void removeProvider(c);
-                    }}
-                    title="Remove manifest + keychain entry"
-                  >
-                    Remove
-                  </button>
-                </div>
+                {c.source === 'user' && (
+                  <div className={styles.providerActions}>
+                    <button
+                      type="button"
+                      className={styles.providerActionBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        editProvider(c);
+                      }}
+                      title="Edit credentials / model / region"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.providerActionBtn}
+                      data-danger
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void removeProvider(c);
+                      }}
+                      title="Remove manifest + keychain entry"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+      {error && !showAdd && (
+        <div className={styles.error} role="alert">
+          Provider switch failed: {error}
         </div>
       )}
 
@@ -398,7 +471,26 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
         </button>
       ) : (
         <div className={styles.addPanel}>
-          <div className={styles.sectionLabel}>Add a provider</div>
+          <div className={styles.catalogHeader}>
+            <div className={styles.sectionLabel}>Add a provider</div>
+            <button
+              type="button"
+              className={styles.catalogRefresh}
+              onClick={reload}
+              disabled={catalogRefreshing}
+            >
+              {catalogRefreshing ? 'Refreshing…' : 'Refresh catalog'}
+            </button>
+          </div>
+          {catalogError ? (
+            <div className={styles.catalogWarning} role="status">
+              Catalog refresh failed; showing the offline provider set.
+            </div>
+          ) : (
+            <div className={styles.catalogStatus}>
+              {catalogRefreshing ? 'Loading current providers and models…' : `${templates.length} providers loaded`}
+            </div>
+          )}
 
           {!selectedTpl ? (
             <>
@@ -418,7 +510,11 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
                     onClick={() => pick(t)}
                   >
                     <span className={styles.templateName}>{t.label}</span>
-                    <span className={styles.templateModel}>{t.defaultModel || 'custom endpoint'}</span>
+                    <span className={styles.templateModel}>
+                      {(t.models?.length ?? 0) > 1
+                        ? `${t.models!.length} models`
+                        : t.defaultModel || 'custom endpoint'}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -442,54 +538,44 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
                 )}
               </label>
 
+              <label className={styles.modelField}>
+                <span className={styles.keyLabel}>
+                  Model{' '}
+                  {modelsLoading
+                    ? '(loading live list…)'
+                    : liveModels.length > 0
+                      ? `(${liveModels.length} live)`
+                      : availableModels.length > 0
+                        ? `(${availableModels.length} available)`
+                        : ''}
+                </span>
+                {availableModels.length > 0 && (
+                  <select
+                    value={availableModels.includes(model) ? model : ''}
+                    onChange={(e) => setModel(e.target.value)}
+                  >
+                    <option value="" disabled>Choose a model…</option>
+                    {availableModels.map((id) => (
+                      <option key={id} value={id}>{id}</option>
+                    ))}
+                  </select>
+                )}
+                <input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={selectedTpl.defaultModel || 'Enter a model id'}
+                  autoComplete="off"
+                />
+                <span className={styles.keyHint}>
+                  Choose from the catalogue or enter any model id supported by this endpoint.
+                </span>
+              </label>
+
               <button type="button" className={styles.advToggle} onClick={() => setShowAdvanced((v) => !v)}>
-                {showAdvanced ? '▾' : '▸'} Advanced — endpoint &amp; model
+                {showAdvanced ? '▾' : '▸'} Advanced — endpoint
               </button>
               {showAdvanced && (
                 <div className={styles.adv}>
-                  <label className={styles.advField}>
-                    <span>
-                      Model{' '}
-                      {modelsLoading
-                        ? '(loading live list…)'
-                        : liveModels.length > 0
-                          ? `(${liveModels.length} live)`
-                          : (selectedTpl.models?.length ?? 0) > 0
-                            ? `(${selectedTpl.models!.length} recommended)`
-                            : selectedTpl.defaultModel
-                              ? `(default: ${selectedTpl.defaultModel})`
-                              : ''}
-                    </span>
-                    <input
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      placeholder={selectedTpl.defaultModel}
-                      list="provider-models-datalist"
-                      autoComplete="off"
-                    />
-                    {/* Live <datalist> from /models — opencode-style. When
-                        live list isn't fetched yet (no key) or fails, fall
-                        back to the catalog's recommended `models` array so
-                        the user still sees the current lineup (glm-5.2 etc.)
-                        without typing a key. Empty list = input stays
-                        free-text. Id is stable across renders so React
-                        doesn't recreate the node and lose focus. */}
-                    <datalist id="provider-models-datalist">
-                      {(liveModels.length > 0
-                        ? liveModels
-                        : selectedTpl.models ?? []
-                      ).map((id) => (
-                        <option key={id} value={id} />
-                      ))}
-                      {selectedTpl.defaultModel &&
-                        !(liveModels.length > 0
-                          ? liveModels
-                          : selectedTpl.models ?? []
-                        ).includes(selectedTpl.defaultModel) && (
-                          <option value={selectedTpl.defaultModel} />
-                        )}
-                    </datalist>
-                  </label>
                   <label className={styles.advField}>
                     <span>Base URL</span>
                     <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={selectedTpl.baseUrl} />
@@ -499,16 +585,19 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
 
               {error && <div className={styles.error}>{error}</div>}
               <div className={styles.actions}>
-                <button type="button" className={styles.ghost} onClick={() => setSelectedId(null)}>
+                <button type="button" className={styles.ghost} onClick={() => {
+                  setSelectedId(null);
+                  setSelectedOverride(null);
+                }}>
                   ← Back
                 </button>
                 <button
                   type="button"
                   className={styles.connect}
                   onClick={() => void apply(selectedTpl)}
-                  disabled={busy || !apiKey.trim()}
+                  disabled={busy || (!isEditingProvider && !apiKey.trim())}
                 >
-                  {busy ? 'Connecting…' : 'Connect'}
+                  {busy ? 'Connecting…' : isEditingProvider ? 'Save & use' : 'Connect'}
                 </button>
               </div>
             </div>

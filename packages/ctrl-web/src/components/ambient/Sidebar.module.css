@@ -66,3 +66,8 @@
   border-color: var(--color-primary, #0d9488);
   color: var(--color-primary, #0d9488);
 }
+.modelActive {
+  border-color: var(--color-primary, #0d9488);
+  background: var(--color-primary-soft, #e0f2f0);
+  color: var(--color-primary, #0d9488);
+}

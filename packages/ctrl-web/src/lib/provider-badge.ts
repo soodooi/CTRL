@@ -43,12 +43,13 @@ const PROVIDER_BADGES: Record<string, string> = {
 /**
  * Get the 2-letter badge for a provider id. Returns the semantic map
  * entry when known, else falls back to the first 2 letters of the
- * label (uppercased) — never returns an empty string (caller renders
- * '··' for fully-unknown state).
+ * label (uppercased). A fully unknown state renders the neutral `AI`
+ * affordance; callers must label it as unconfigured rather than implying a
+ * provider is active.
  */
 export function providerBadge(providerId: string, label: string): string {
   const mapped = PROVIDER_BADGES[providerId.toLowerCase()];
   if (mapped) return mapped;
   const fallback = label.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase();
-  return fallback || '··';
+  return fallback || 'AI';
 }

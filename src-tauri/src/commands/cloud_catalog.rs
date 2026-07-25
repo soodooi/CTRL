@@ -123,6 +123,11 @@ fn models_dev_templates(
 ) -> Result<Vec<ProviderTemplate>, String> {
     let mut templates: Vec<ProviderTemplate> = serde_json::from_str(BUNDLED_TEMPLATES)
         .map_err(|e| format!("parse bundled provider templates: {e}"))?;
+    // The Settings form can execute only single-key OpenAI/Anthropic HTTP
+    // shapes. Keep preview templates with extra signing contracts out of the
+    // selectable catalogue until their adapter exists.
+    // (ADR-002 substrate §3.10 v67; ADR-006 cross-cutting § byok-no-claude v2)
+    templates.retain(super::provider_templates::is_executable_catalog_provider);
 
     for (source_id, provider) in providers {
         let id = ctrl_provider_id(&source_id);
@@ -131,9 +136,6 @@ fn models_dev_templates(
             .as_deref()
             .map(|api| is_api_key_http_provider(&provider, api))
             .unwrap_or(false);
-        if !representable {
-            continue;
-        }
         let existing = templates.iter_mut().find(|template| template.id == id);
         let mut models: Vec<(String, String)> = provider
             .models
@@ -155,6 +157,10 @@ fn models_dev_templates(
             continue;
         }
 
+        // Release-owned templates already define a wire shape and endpoint.
+        // Models.dev remains authoritative for their model inventory even when
+        // its npm adapter is provider-specific or its API URL is SDK-owned.
+        // (ADR-002 substrate §3.10 v67)
         if let Some(template) = existing {
             template.models = model_ids;
             if !template.models.contains(&template.default_model) {
@@ -163,6 +169,11 @@ fn models_dev_templates(
             continue;
         }
 
+        // Remote-only providers are safe to expose only when the generic CTRL
+        // API-key form can execute them through an existing HTTP wire shape.
+        if !representable {
+            continue;
+        }
         let Some(api) = provider.api else { continue };
         let protocol = if provider.npm == "@ai-sdk/anthropic" {
             "anthropic"
@@ -310,25 +321,63 @@ mod tests {
     }
 
     #[test]
-    fn models_dev_does_not_enrich_existing_provider_with_unsupported_shape() {
+    fn models_dev_enriches_release_owned_provider_with_provider_specific_adapter() {
         let source = r#"{
-          "zai": {
-            "name": "Z.AI OAuth",
-            "api": "https://api.z.ai/api/paas/v4",
+          "anthropic": {
+            "name": "Anthropic",
+            "npm": "@ai-sdk/anthropic",
+            "env": ["ANTHROPIC_API_KEY"],
+            "models": {
+              "claude-opus-4-6": {"release_date": "2026-02-05"},
+              "claude-sonnet-4-6": {"release_date": "2026-02-17"}
+            }
+          }
+        }"#;
+        let templates = parse_catalog(source).expect("Models.dev fixture parses");
+        let anthropic = templates
+            .iter()
+            .find(|template| template.id == "anthropic")
+            .unwrap();
+        assert_eq!(
+            anthropic.models,
+            vec!["claude-sonnet-4-6", "claude-opus-4-6"]
+        );
+    }
+
+    #[test]
+    fn models_dev_keeps_unsupported_bedrock_preview_out_of_catalogue() {
+        let source = r#"{
+          "amazon-bedrock": {
+            "name": "Amazon Bedrock",
+            "api": "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1",
+            "npm": "@ai-sdk/amazon-bedrock",
+            "env": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+            "models": {
+              "anthropic.claude-sonnet": {"release_date": "2026-01-01"}
+            }
+          }
+        }"#;
+        let templates = parse_catalog(source).expect("Models.dev fixture parses");
+        assert!(templates.iter().all(|template| template.id != "bedrock"));
+    }
+
+    #[test]
+    fn models_dev_excludes_remote_only_provider_with_unsupported_shape() {
+        let source = r#"{
+          "example-oauth": {
+            "name": "Example OAuth",
+            "api": "https://api.example.test/v1",
             "npm": "@ai-sdk/custom-oauth",
-            "env": ["ZHIPU_API_KEY"],
+            "env": ["EXAMPLE_API_KEY"],
             "models": {
               "unsupported-model": {"release_date": "2026-07-23"}
             }
           }
         }"#;
         let templates = parse_catalog(source).expect("Models.dev fixture parses");
-        let zai = templates
+        assert!(templates
             .iter()
-            .find(|template| template.id == "zhipu")
-            .unwrap();
-        assert_eq!(zai.default_model, "glm-5.2");
-        assert!(!zai.models.iter().any(|model| model == "unsupported-model"));
+            .all(|template| template.id != "example-oauth"));
     }
 
     #[test]

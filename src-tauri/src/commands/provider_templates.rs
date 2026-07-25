@@ -24,6 +24,36 @@ use std::sync::OnceLock;
 
 const BUNDLED_TEMPLATES: &str = include_str!("../kernel/provider/provider-templates.json");
 
+/// Whether the current single-key HTTP form and provider adapter can execute
+/// this catalogue entry. The form supports only the two declared HTTP wire
+/// shapes; native AWS Bedrock endpoints additionally require SigV4 signing and
+/// remain unavailable until that governed adapter exists. Compatibility
+/// gateways using an executable wire shape remain valid regardless of label or
+/// model names. (ADR-002 substrate §3.10 v67)
+pub(crate) fn is_executable_catalog_provider(template: &ProviderTemplate) -> bool {
+    let protocol = template.protocol.trim().to_ascii_lowercase();
+    let supported_shape = matches!(
+        protocol.as_str(),
+        "openai" | "openai_chat_completions" | "anthropic" | "anthropic_messages"
+    );
+    let native_bedrock = reqwest::Url::parse(template.base_url.trim())
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| {
+            let host = host.trim_end_matches('.');
+            let aws_domain = host.ends_with(".amazonaws.com") || host.ends_with(".api.aws");
+            let bedrock_service = host.split('.').any(|label| {
+                label == "bedrock-runtime" || label.starts_with("bedrock-runtime-fips")
+            });
+            aws_domain && bedrock_service
+        });
+    supported_shape && !native_bedrock
+}
+
+fn retain_executable_templates(templates: &mut Vec<ProviderTemplate>) {
+    templates.retain(is_executable_catalog_provider);
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProviderTemplate {
     pub id: String,
@@ -37,11 +67,10 @@ pub struct ProviderTemplate {
     pub default_model: String,
     #[serde(rename = "keyHint")]
     pub key_hint: String,
-    /// Recommended model ids for this provider (decision 0007
-    /// §per-provider-models, 2026-06-19). Surfaced as a <datalist>
-    /// fallback in the model <input> when the user hasn't typed a key
-    /// yet (live `/models` fetch needs auth). Empty array = old
-    /// behavior, free-text input only.
+    /// Current catalogue model ids for this provider (decision 0007
+    /// §per-provider-models, 2026-06-19). Rendered as an explicit model
+    /// selector, with free-text input retained for endpoint-specific ids.
+    /// Empty array keeps the free-text-only behavior.
     #[serde(default)]
     pub models: Vec<String>,
 }
@@ -80,6 +109,7 @@ pub fn list_provider_templates() -> Result<Vec<ProviderTemplate>, String> {
             }
         }
     }
+    retain_executable_templates(&mut merged);
     Ok(merged)
 }
 
@@ -158,6 +188,70 @@ mod tests {
             key_hint: "".into(),
             models: vec![],
         }
+    }
+
+    // Catalogue execution support follows the declared wire contract rather
+    // than provider branding or model names. (ADR-002 substrate § provider v67)
+    #[test]
+    fn executable_filter_uses_wire_contract_not_provider_name() {
+        let mut templates = vec![
+            tpl("safe", "safe-model"),
+            ProviderTemplate {
+                id: "amazon-bedrock".into(),
+                label: "Amazon foundation models".into(),
+                default_name: "Amazon".into(),
+                protocol: "openai".into(),
+                base_url: "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1".into(),
+                default_model: "model".into(),
+                key_hint: "AWS credentials".into(),
+                models: vec!["model".into()],
+            },
+            ProviderTemplate {
+                id: "bedrock-fips".into(),
+                label: "AWS FIPS".into(),
+                default_name: "AWS FIPS".into(),
+                protocol: "openai".into(),
+                base_url: "https://bedrock-runtime-fips.us-east-1.amazonaws.com./openai/v1".into(),
+                default_model: "model".into(),
+                key_hint: "AWS credentials".into(),
+                models: vec!["model".into()],
+            },
+            ProviderTemplate {
+                id: "bedrock-dualstack".into(),
+                label: "AWS Dual Stack".into(),
+                default_name: "AWS Dual Stack".into(),
+                protocol: "openai".into(),
+                base_url: "https://bedrock-runtime.us-east-1.api.aws./openai/v1".into(),
+                default_model: "model".into(),
+                key_hint: "AWS credentials".into(),
+                models: vec!["model".into()],
+            },
+            ProviderTemplate {
+                id: "aws-signed".into(),
+                label: "AWS signed endpoint".into(),
+                default_name: "AWS".into(),
+                protocol: "sigv4".into(),
+                base_url: "https://example.test".into(),
+                default_model: "model".into(),
+                key_hint: "AWS credentials".into(),
+                models: vec!["model".into()],
+            },
+            ProviderTemplate {
+                id: "bedrock-proxy".into(),
+                label: "Bedrock compatibility gateway".into(),
+                default_name: "Gateway".into(),
+                protocol: "openai".into(),
+                base_url: "https://gateway.example.test/v1".into(),
+                default_model: "bedrock/model".into(),
+                key_hint: "Single gateway API key".into(),
+                models: vec!["bedrock/model".into()],
+            },
+        ];
+        retain_executable_templates(&mut templates);
+        assert_eq!(
+            templates.iter().map(|template| template.id.as_str()).collect::<Vec<_>>(),
+            vec!["safe", "bedrock-proxy"]
+        );
     }
 
     #[test]

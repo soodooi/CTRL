@@ -15,7 +15,6 @@
     "core:tray:default",
     "core:menu:default",
     "global-shortcut:default",
-    "updater:default",
     "process:default",
     "dialog:allow-open",
     "core:webview:allow-create-webview-window",

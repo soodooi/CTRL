@@ -507,6 +507,9 @@ impl ProviderRegistry {
                 id: p.manifest.id.clone(),
                 label: p.manifest.label.clone(),
                 kind: p.manifest.kind.clone(),
+                // Preserve the authoritative wire shape across PWA edits.
+                // (ADR-002 substrate § provider v67)
+                shape: p.manifest.shape.clone(),
                 endpoint: p.manifest.endpoint.clone(),
                 models: p.manifest.models.clone(),
                 description: p.manifest.description.clone(),
@@ -533,6 +536,17 @@ impl ProviderRegistry {
         self.get(&id)
     }
 
+    /// Whether any persisted role currently resolves through this provider id.
+    /// Configuration edits use this to verify a replacement before exposing it
+    /// to the live registry. (ADR-002 substrate § provider v2 lock #4)
+    pub fn is_active_provider(&self, provider_id: &str) -> bool {
+        self.active
+            .read()
+            .unwrap()
+            .values()
+            .any(|active_id| active_id == provider_id)
+    }
+
     /// Lookup by id regardless of active state.
     pub fn get(&self, id: &str) -> Option<ProviderHandle> {
         let providers = self.providers.read().unwrap();
@@ -544,18 +558,45 @@ impl ProviderRegistry {
     /// (`CTRL_MANAGED_PROVIDER_IDS`) — when CTRL adds a ctrl-brand
     /// manifest, its id goes in that const and snapshot() reports it as
     /// `Ctrl` without touching the manifest schema.
-    /// Re-scan `~/.ctrl/providers/*.toml` and merge any new manifests
-    /// into the in-memory registry. bao 2026-06-06: PWA's
-    /// config_set_provider_key writes new user TOMLs but the registry
-    /// only scanned the dir once at boot, so newly added providers
-    /// did not show up in `provider_list` until restart. Calling this
-    /// before list() in the Tauri command makes saves visible
-    /// instantly. Idempotent + non-destructive (re-parsing the same
-    /// file replaces the manifest but keeps the loaded state shape).
+    /// Re-scan `~/.ctrl/providers/*.toml` and merge new or changed manifests.
+    /// Explicit deletion uses `remove_user_provider` before this scan so a
+    /// malformed file never erases the last usable in-memory snapshot.
+    /// (ADR-002 substrate § provider v67)
     pub fn reload_user_dir(&self) {
         if let Some(dir) = default_user_providers_dir() {
             if dir.exists() {
                 load_user_manifests(&dir, self);
+            }
+        }
+    }
+
+    /// Remove one user manifest from the live snapshot after its local file is
+    /// deleted, restoring a same-id builtin override when present.
+    /// (ADR-002 substrate § provider v67)
+    pub fn remove_user_provider(&self, id: &str) {
+        let removed = {
+            let mut providers = self.providers.write().unwrap();
+            if providers
+                .get(id)
+                .is_some_and(|loaded| loaded.source == ProviderSource::User)
+            {
+                providers.remove(id);
+                true
+            } else {
+                false
+            }
+        };
+        if !removed {
+            return;
+        }
+        if let Some((_, src)) = BUILTIN_MANIFESTS.iter().find(|(builtin_id, _)| *builtin_id == id) {
+            match parse_str(src, &format!("builtin/{id}.toml")) {
+                Ok(manifest) => self.install_manifest(manifest, ProviderSource::Builtin),
+                Err(e) => tracing::warn!(
+                    provider = %id,
+                    error = %e,
+                    "provider: builtin restore failed after user removal"
+                ),
             }
         }
     }
@@ -979,6 +1020,25 @@ struct ActiveStateV2 {
     roles: BTreeMap<String, String>,
 }
 
+/// Verify an edited active-provider candidate without replacing the live
+/// registry entry. The secret exists only in this temporary in-memory manifest;
+/// persistence happens after the locked real-roundtrip gate succeeds.
+/// (ADR-002 substrate § provider v2 lock #4)
+pub(crate) async fn trial_manifest_with_secret(
+    mut manifest: ProviderManifest,
+    secret: String,
+) -> Result<String, ProviderError> {
+    const TRIAL_SECRET_FIELD: &str = "trial_api_key";
+    manifest
+        .config
+        .insert(TRIAL_SECRET_FIELD.to_string(), secret);
+    manifest.auth = AuthSource::ConfigKey {
+        field: TRIAL_SECRET_FIELD.to_string(),
+    };
+    let provider = instantiate(Arc::new(manifest))?;
+    trial_chat(provider.as_ref()).await
+}
+
 /// Construct the adapter for a manifest. Looks up credentials per
 /// `AuthSource`. Returns Err with a typed `ProviderError::NotConfigured`
 /// when the manifest is well-formed but credentials are absent — the
@@ -1245,6 +1305,9 @@ pub struct ProviderListEntry {
     pub id: String,
     pub label: String,
     pub kind: ProviderKind,
+    /// Authoritative HTTP wire shape used when the PWA edits a manifest that
+    /// is absent from the current catalogue. (ADR-002 substrate § provider v67)
+    pub shape: HttpShape,
     /// HTTP endpoint URL (when `kind = HttpApi`). Surfaces the manifest
     /// `endpoint` so the PWA Edit modal can prefill the Base URL field
     /// — bao 2026-06-06: previously empty in Edit, forcing user to
@@ -1311,6 +1374,20 @@ mod tests {
             routing_override: RwLock::new(None),
             provider_health: RwLock::new(BTreeMap::new()),
         }
+    }
+
+    // Role bindings remain the source of active-provider identity after
+    // catalogue enrichment. (ADR-002 substrate § provider v67)
+    #[test]
+    fn active_provider_identity_tracks_role_bindings() {
+        let reg = empty_registry();
+        assert!(!reg.is_active_provider("openai"));
+        reg.active
+            .write()
+            .unwrap()
+            .insert(Consumer::IrisyPrimary, "openai".to_string());
+        assert!(reg.is_active_provider("openai"));
+        assert!(!reg.is_active_provider("anthropic"));
     }
 
     #[test]

@@ -200,9 +200,11 @@ macro_rules! pwa_invoke_handler {
             // ADR-002 substrate § provider v11 §3.11 (2026-06-07): L1
             // chip click-toggle counterpart.
             $crate::commands::system::collapse_workspace_window,
-            // updater — safe macOS relaunch after auto-update (Chrome-style
-            // detached helper, sidesteps the Tauri 2 race)
-            $crate::commands::updater::safe_relaunch_after_update,
+            // updater — native-only production check/install boundary. The
+            // WebView has no direct updater-plugin permission.
+            // (ADR-004 cap § updater v6)
+            $crate::commands::updater::check_app_update,
+            $crate::commands::updater::install_app_update,
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::open_workspace,
