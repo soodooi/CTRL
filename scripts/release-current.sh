@@ -93,6 +93,22 @@ else
     echo "release worktree: created $RELEASE_WORKTREE"
 fi
 
+# Capture the old marker before checkout so the first dependency-fingerprint
+# release can migrate a valid whole-lock marker without reinstalling packages.
+# A changed dependency graph still fails this comparison and runs npm ci.
+# (ADR-004 cap § updater v9)
+CACHE_MARKER="$RELEASE_WORKTREE/node_modules/.ctrl-package-lock.sha256"
+LEGACY_DEPENDENCY_HASH=""
+if [[ -d "$RELEASE_WORKTREE/node_modules" && -f "$CACHE_MARKER" &&
+      -f "$RELEASE_WORKTREE/package-lock.json" ]]; then
+    PRIOR_CACHED_HASH="$(cat "$CACHE_MARKER")"
+    PRIOR_WHOLE_LOCK_HASH="$(shasum -a 256 "$RELEASE_WORKTREE/package-lock.json" | awk '{print $1}')"
+    if [[ "$PRIOR_CACHED_HASH" == "$PRIOR_WHOLE_LOCK_HASH" ]]; then
+        LEGACY_DEPENDENCY_HASH="$(node "$SOURCE_ROOT/scripts/hash-npm-dependencies.mjs" \
+            "$RELEASE_WORKTREE/package-lock.json")"
+    fi
+fi
+
 # Checkout only after cleanliness and purpose ownership are proven. Ignored
 # node_modules and Cargo target content remain available for incremental builds.
 # (ADR-004 cap § updater v9)
@@ -105,23 +121,25 @@ if [[ "$WORKTREE_COMMIT" != "$SOURCE_COMMIT" || "$WORKTREE_VERSION" != "$VERSION
     exit 1
 fi
 
-LOCK_HASH="$(shasum -a 256 "$RELEASE_WORKTREE/package-lock.json" | awk '{print $1}')"
-LOCK_MARKER="$RELEASE_WORKTREE/node_modules/.ctrl-package-lock.sha256"
+DEPENDENCY_HASH="$(node "$RELEASE_WORKTREE/scripts/hash-npm-dependencies.mjs" \
+    "$RELEASE_WORKTREE/package-lock.json")"
 CACHED_HASH=""
-if [[ -f "$LOCK_MARKER" ]]; then
-    CACHED_HASH="$(cat "$LOCK_MARKER")"
+if [[ -f "$CACHE_MARKER" ]]; then
+    CACHED_HASH="$(cat "$CACHE_MARKER")"
 fi
 
-if [[ ! -d "$RELEASE_WORKTREE/node_modules" || "$CACHED_HASH" != "$LOCK_HASH" ]]; then
+if [[ ! -d "$RELEASE_WORKTREE/node_modules" ||
+      ( "$CACHED_HASH" != "$DEPENDENCY_HASH" &&
+        "$LEGACY_DEPENDENCY_HASH" != "$DEPENDENCY_HASH" ) ]]; then
     echo "npm dependencies: cache miss; running npm ci"
     (
         cd "$RELEASE_WORKTREE"
         npm ci
     )
-    printf '%s\n' "$LOCK_HASH" > "$LOCK_MARKER"
 else
-    echo "npm dependencies: cache hit ($LOCK_HASH)"
+    echo "npm dependencies: cache hit (dependency graph $DEPENDENCY_HASH)"
 fi
+printf '%s\n' "$DEPENDENCY_HASH" > "$CACHE_MARKER"
 
 echo "Cargo cache: persistent at $RELEASE_WORKTREE/src-tauri/target"
 echo "prepared commit: $SOURCE_COMMIT"
