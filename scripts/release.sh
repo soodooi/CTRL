@@ -6,15 +6,13 @@
 # Usage:   scripts/release.sh <version>    e.g.  scripts/release.sh 0.1.1
 #
 # Prereqs (one-time per machine):
-#   1. Tauri signing key in ~/.tauri/ctrl.key (generated via
-#      `npx tauri signer generate -w ~/.tauri/ctrl.key --ci --password ""`)
-#   2. Private key copied into macOS Keychain:
-#        security add-generic-password -s tauri-sign -a ctrl-updater \
-#          -w "$(cat ~/.tauri/ctrl.key)" -U
-#   3. `gh` CLI authenticated (`gh auth login`)
-#   4. Public release repo: `gh repo create soodooi/CTRL-releases --public`
+#   1. Active Tauri signing key plus encrypted-backup evidence provisioned in
+#      macOS Keychain. For irrecoverable loss, use the explicit trust-reset
+#      procedure in scripts/reset-updater-trust.sh; never generate a key inline.
+#   2. `gh` CLI authenticated (`gh auth login`)
+#   3. Public release repo: `gh repo create soodooi/CTRL-releases --public`
 #      (run once; the script doesn't create it)
-#   5. The configured macOS code-signing identity is installed and its
+#   4. The configured macOS code-signing identity is installed and its
 #      keychain is unlocked before invoking this release-only script
 #
 # What it does:
@@ -93,6 +91,12 @@ if [[ ! "$UPDATER_MINISIGN_PUBKEY" =~ ^[A-Za-z0-9+/=]+$ ]]; then
     echo "error: updater public key in tauri.conf.json is not a valid minisign key"
     exit 1
 fi
+
+# Fail before governance work or public mutation unless the active private key,
+# pinned public key, trust epoch, and encrypted recovery copy agree exactly.
+# A lost key is handled only by the explicit reinstall epoch protocol.
+# (ADR-004 cap § updater v8)
+bash scripts/check-updater-trust.sh
 
 # Release provenance is measured from a verified previously-published source,
 # never @{u}: synchronized main would otherwise produce an empty diff. Secret
@@ -552,6 +556,29 @@ node scripts/check-governance.mjs --worktree
 npm run typecheck
 cargo test --lib --manifest-path src-tauri/Cargo.toml
 
+# Capture and re-prove the exact private key that this build will use after the
+# potentially long local gates, before the first public mutation. A later
+# Keychain replacement cannot change the captured build key.
+# (ADR-004 cap § updater v8)
+KEY="$(security find-generic-password -s tauri-sign -a ctrl-updater -w 2>/dev/null || true)"
+if [[ -z "$KEY" ]]; then
+    echo "error: preflight-verified tauri-sign keychain entry disappeared during release"
+    exit 1
+fi
+KEY_CHECK_DIR="$(mktemp -d)"
+chmod 700 "$KEY_CHECK_DIR"
+printf '%s' "$KEY" > "$KEY_CHECK_DIR/private.key"
+chmod 600 "$KEY_CHECK_DIR/private.key"
+if ! CTRL_UPDATER_PRIVATE_KEY_FILE="$KEY_CHECK_DIR/private.key" \
+        bash scripts/check-updater-trust.sh; then
+    rm -rf "$KEY_CHECK_DIR"
+    echo "error: captured updater build key no longer matches the trust epoch"
+    exit 1
+fi
+rm -rf "$KEY_CHECK_DIR"
+export TAURI_SIGNING_PRIVATE_KEY="$KEY"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+
 # First-migration public provenance is the first side effect, and only occurs
 # after all deterministic local release gates above pass. Retries read and
 # verify already-published state instead of rewriting it.
@@ -592,16 +619,9 @@ if [[ "$BOOTSTRAP_MUTATION_PENDING" -eq 1 ]]; then
     fi
 fi
 
-echo "==> [2/9] pull Tauri signing key from Keychain"
-KEY=$(security find-generic-password -s tauri-sign -a ctrl-updater -w 2>/dev/null || true)
-if [[ -z "$KEY" ]]; then
-    echo "error: tauri-sign keychain entry missing — see prereqs at top of this script"
-    exit 1
-fi
-export TAURI_SIGNING_PRIVATE_KEY="$KEY"
-# Password may be optional (key generated with empty password); export
-# empty string so the signer accepts it without an interactive prompt.
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+# The exact build key was captured and re-proved before any public mutation.
+# (ADR-004 cap § updater v8)
+echo "==> [2/9] use captured preflight-verified Tauri signing key"
 
 # Code-sign release artifacts with one stable identity so the macOS
 # Designated Requirement remains constant across updates. Daily developer
@@ -687,6 +707,22 @@ if [[ ! -f "$TARBALL" || ! -f "$SIGFILE" ]]; then
     echo "       expected: $TARBALL + $SIGFILE"
     exit 1
 fi
+
+# Prove the local archive/signature pair before any source tag, release shell,
+# or asset can be published. Public read-back later repeats this verification.
+# (ADR-004 cap § updater v8)
+LOCAL_SIGNATURE_DIR="$(mktemp -d)"
+if ! node -e '
+  const fs = require("fs");
+  fs.writeFileSync(process.argv[2], Buffer.from(fs.readFileSync(process.argv[1], "utf8").trim(), "base64"));
+' "$SIGFILE" "$LOCAL_SIGNATURE_DIR/archive.minisig" ||
+   ! minisign -Vm "$TARBALL" -P "$UPDATER_MINISIGN_PUBKEY" \
+        -x "$LOCAL_SIGNATURE_DIR/archive.minisig" -q >/dev/null 2>&1; then
+    rm -rf "$LOCAL_SIGNATURE_DIR"
+    echo "error: local updater archive is not signed by the pinned trust-epoch key"
+    exit 1
+fi
+rm -rf "$LOCAL_SIGNATURE_DIR"
 
 RENAMED_TARBALL="CTRL_${VERSION}_aarch64.app.tar.gz"
 WORK=$(mktemp -d)
