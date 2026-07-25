@@ -508,13 +508,10 @@ impl AcpClient {
         let engine = if engine.is_empty() { "hermes" } else { engine };
         let argv = engine_argv(engine)?;
 
-        // Mirror CTRL's active provider into ~/.hermes/.env BEFORE spawn —
-        // hermes reads it at startup, not from process env (ADR-002 §1.3).
-        // Merge, never clobber; no managed key -> file untouched. BYO adapters
-        // read process env, so their key arrives via cmd.env below (§8.8), not
-        // here.
+        // Provider projection is synchronized by ProviderRegistry under its
+        // mutation lock before this launch. ACP owns only the Hermes soul here.
+        // (ADR-002 substrate § provider v71)
         if engine == "hermes" {
-            let _ = crate::commands::agents::write_hermes_dotenv(provider_env);
             ensure_hermes_soul();
         }
 

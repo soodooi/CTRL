@@ -1,17 +1,7 @@
-// Provider commands — ADR-002 substrate § provider v2 §3.7 introspection.
-//
-// `brain_status` is the first command in the v2 surface; it closes the
-// "Irisy does not know its own stack" gap (bao 2026-05-31). Returns the
-// engine (Hermes; Pi retired ADR-002 substrate § brain v19) version +
-// healthy flag plus, per Irisy role, the active
-// provider's manifest snapshot (id / brand label / endpoint or binary /
-// healthy / managed_by). The Irisy system prompt v5 (ADR-005 § persona)
-// injects this block as `<brain_state>` so Irisy can answer "what model
-// are you on" with a brand label, not an RPC codename.
-//
-// `last_failover` is `null` today — the failover event source lands in
-// the http_endpoint follow-up commit; this command already accepts the
-// shape so the PWA can render the field once events flow.
+// Provider commands expose explicit role bindings and typed provider facts.
+// `brain_status` reports engine health separately from provider configuration
+// and verification; it never derives provider readiness from catalogue presence
+// or adapter construction. (ADR-002 substrate § provider v71)
 
 // ADR-002 substrate § provider v9 §3.7 (2026-06-06): retract v8 SSOT
 // projection surface (get_active_providers + ActiveProvidersView +
@@ -75,9 +65,13 @@ pub struct RoleProvider {
     pub label: String,
     pub endpoint: Option<String>,
     pub binary: Option<String>,
-    /// Mirrors `ProviderSnapshot::ready` — credential resolved + adapter
-    /// constructed without error.
-    pub healthy: bool,
+    /// Credentials/config resolved and the adapter was constructed.
+    /// (ADR-002 substrate § provider v71)
+    pub configured: bool,
+    /// Whether current manifest and credential fingerprint matches persisted
+    /// production-trial evidence; independent from role intent.
+    /// (ADR-002 substrate § provider v71)
+    pub verified: bool,
     pub managed_by: ProviderManagedBy,
 }
 
@@ -118,29 +112,39 @@ pub(crate) fn brain_status_inner(
 
     let registry = &kernel.runtime.provider_registry;
     let mut providers: BTreeMap<String, RoleProvider> = BTreeMap::new();
-    // ADR-002 substrate § provider v11 §3.11 (2026-06-07): include
-    // coding.primary so PWA Settings + chip see all 3 roles.
-    // ADR-002 substrate § brain v13 (2026-06-07): CodingPrimary retracted.
+    // Introspection projects explicit role intent even when verification is
+    // absent or stale. (ADR-002 substrate § provider v71)
+    let active = registry.active_state();
     for role in [Consumer::IrisyPrimary, Consumer::IrisyFallback] {
-        let chain = registry.route_chain(&role);
-        if let Some(active_id) = chain.primary.as_ref() {
-            if let Some(snap) = registry.snapshot(active_id) {
+        if let Some(active_id) = active.get(&role.id()) {
+            let role_provider = if let Some(snap) = registry.snapshot(active_id) {
                 let label = match snap.managed_by {
                     ProviderManagedBy::Ctrl => CTRL_MANAGED_BRAND_LABEL.to_string(),
                     ProviderManagedBy::User => snap.label.clone(),
                 };
-                providers.insert(
-                    role.id(),
-                    RoleProvider {
-                        id: snap.id,
-                        label,
-                        endpoint: snap.endpoint,
-                        binary: snap.binary,
-                        healthy: snap.ready,
-                        managed_by: snap.managed_by,
-                    },
-                );
-            }
+                RoleProvider {
+                    id: snap.id,
+                    label,
+                    endpoint: snap.endpoint,
+                    binary: snap.binary,
+                    configured: snap.configured,
+                    verified: registry.is_verified(active_id),
+                    managed_by: snap.managed_by,
+                }
+            } else {
+                // Preserve unresolved role intent after a manifest disappears.
+                // (ADR-002 substrate § provider v71)
+                RoleProvider {
+                    id: active_id.clone(),
+                    label: active_id.clone(),
+                    endpoint: None,
+                    binary: None,
+                    configured: false,
+                    verified: false,
+                    managed_by: ProviderManagedBy::User,
+                }
+            };
+            providers.insert(role.id(), role_provider);
         }
     }
 
@@ -188,15 +192,15 @@ pub struct ProviderListRow {
 /// load + managed_by status. Powers the role section radio rows in
 /// /settings/providers. ADR-002 substrate § provider v2 §3.6.
 #[tauri::command]
-pub fn provider_list(
+pub async fn provider_list(
     kernel: State<'_, KernelHandle>,
 ) -> Result<Vec<ProviderListRow>, String> {
     let registry = &kernel.runtime.provider_registry;
     // bao 2026-06-06: rescan ~/.ctrl/providers/*.toml so that user
     // providers added via config_set_provider_key are visible without
     // a CTRL restart. ~10 ms scan cost is acceptable for Settings UI.
-    registry.reload_user_dir();
-    let entries = registry.list();
+    registry.reload_user_dir().await;
+    let entries = registry.list(true).await;
     let rows = entries
         .into_iter()
         .map(|entry| {
@@ -242,10 +246,11 @@ pub async fn provider_set_active(
     kernel: State<'_, KernelHandle>,
     args: ProviderSetActiveArgs,
 ) -> Result<ProviderSetActiveReply, String> {
-    // ADR-002 substrate § provider v10 §3.9 (2026-06-07): SSOT mutation +
-    // resolve the manifest's first model so the PWA can immediately call
-    // Pi `setModel(provider_id, model_id)` for in-place swap.
+    // Activation always records role intent plus evidence; only a verified
+    // primary is projected into bundled Hermes. A fallback must not replace
+    // Hermes's primary model. (ADR-002 substrate § provider v71)
     let consumer = Consumer::from_id(&args.role);
+    let project_to_hermes = matches!(consumer, Consumer::IrisyPrimary);
     let registry = &kernel.runtime.provider_registry;
     let trial_reply = registry
         .set_active(&args.provider_id, consumer)
@@ -259,36 +264,57 @@ pub async fn provider_set_active(
     // HTTP providers carry endpoint+key; CLI providers own their auth
     // and skip this projection (claude-oauth itself removed per
     // ADR-002 substrate § provider v61, 2026-07-11).
-    if let Some(manifest) = registry.manifest_for(&args.provider_id) {
-        if matches!(
-            manifest.kind,
-            crate::kernel::provider::manifest::ProviderKind::HttpApi
-        ) {
-            let api_key = match &manifest.auth {
-                crate::kernel::provider::manifest::AuthSource::Keychain { account } => {
-                    crate::kernel::provider::registry::read_credential(account)
+    // Re-enter the same mutation boundary before reading the projection
+    // snapshot. A newer edit may be projected only if its own fingerprint is
+    // verified; mixed unverified state is rejected. (ADR-002 substrate § provider v71)
+    let _projection_guard = if project_to_hermes {
+        Some(registry.lock_mutation().await)
+    } else {
+        None
+    };
+    let remains_primary = project_to_hermes
+        && registry
+            .active_state()
+            .get(&Consumer::IrisyPrimary.id())
+            .is_some_and(|provider_id| provider_id == &args.provider_id);
+    if remains_primary && registry.is_verified(&args.provider_id) {
+        if let Some(manifest) = registry.manifest_for(&args.provider_id) {
+            if matches!(
+                manifest.kind,
+                crate::kernel::provider::manifest::ProviderKind::HttpApi
+            ) {
+                let api_key = match &manifest.auth {
+                    crate::kernel::provider::manifest::AuthSource::Keychain { account } => {
+                        crate::kernel::provider::registry::read_credential(account)
+                    }
+                    crate::kernel::provider::manifest::AuthSource::ConfigKey { field } => {
+                        manifest.config.get(field).cloned()
+                    }
+                    crate::kernel::provider::manifest::AuthSource::Env { var } => {
+                        std::env::var(var).ok()
+                    }
+                    crate::kernel::provider::manifest::AuthSource::None => None,
+                };
+                if let Some(key) = api_key {
+                    if let Err(e) =
+                        crate::commands::agents::write_hermes_config_yaml(&manifest, &key)
+                    {
+                        tracing::warn!(error = %e, "hermes config.yaml projection failed");
+                    }
+                } else {
+                    tracing::debug!(
+                        provider = %args.provider_id,
+                        "hermes config.yaml projection skipped: no api_key resolved"
+                    );
                 }
-                crate::kernel::provider::manifest::AuthSource::ConfigKey { field } => {
-                    manifest.config.get(field).cloned()
-                }
-                crate::kernel::provider::manifest::AuthSource::Env { var } => {
-                    std::env::var(var).ok()
-                }
-                crate::kernel::provider::manifest::AuthSource::None => None,
-            };
-            if let Some(key) = api_key {
-                if let Err(e) =
-                    crate::commands::agents::write_hermes_config_yaml(&manifest, &key)
-                {
-                    tracing::warn!(error = %e, "hermes config.yaml projection failed");
-                }
-            } else {
-                tracing::debug!(
-                    provider = %args.provider_id,
-                    "hermes config.yaml projection skipped: no api_key resolved"
-                );
             }
         }
+    }
+    drop(_projection_guard);
+    if project_to_hermes {
+        // Synchronize every Hermes-owned durable provider surface from the same
+        // verified primary generation. (ADR-002 substrate § provider v71)
+        registry.agent_env_injection().await;
     }
     // ADR-002 substrate § provider v8 §3.5 (2026-06-06): SSOT
     // (~/.ctrl/state/active-providers.json) mutated; emit
@@ -308,7 +334,40 @@ pub async fn provider_set_active(
     })
 }
 
-// ── ADR-002 substrate § provider v9 §3.7 (2026-06-06) — SSOT INTENT projection
+#[derive(Debug, Deserialize)]
+pub struct ProviderClearActiveArgs {
+    pub role: String,
+}
+
+/// Clear one routing role while retaining provider configuration. This is the
+/// explicit `No fallback` operation; absence of a binding is valid state, not a
+/// request to synthesize a default provider.
+/// (ADR-002 substrate § provider v71)
+#[tauri::command]
+pub async fn provider_clear_active(
+    app: tauri::AppHandle,
+    kernel: State<'_, KernelHandle>,
+    args: ProviderClearActiveArgs,
+) -> Result<bool, String> {
+    let consumer = Consumer::from_id(&args.role);
+    let registry = &kernel.runtime.provider_registry;
+    let removed = registry.clear_role(&consumer).await;
+    if removed {
+        // Immediately remove stale durable Hermes state after clearing primary;
+        // fallback-only state remains non-projectable.
+        // (ADR-002 substrate § provider v71)
+        registry.agent_env_injection().await;
+        use tauri::Emitter;
+        app.emit(
+            "active-providers-changed",
+            serde_json::json!({ "op": "clear_active", "role": args.role }),
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(removed)
+}
+
+// ── ADR-002 substrate § provider v71 — SSOT intent projection
 //
 // Per v9 retract: PWA *chip* now reads `pi_rpc('getState')` (Pi truth).
 // `get_active_providers` is kept as the **Settings INTENT** projection —
@@ -345,30 +404,37 @@ pub fn get_active_providers(
 ) -> Result<ActiveProvidersView, String> {
     let registry = &kernel.runtime.provider_registry;
     let mut roles: BTreeMap<String, ActiveRoleProvider> = BTreeMap::new();
-    // ADR-002 substrate § provider v11 §3.11 (2026-06-07): include
-    // coding.primary so PWA Settings + chip see all 3 roles.
-    // ADR-002 substrate § brain v13 (2026-06-07): CodingPrimary retracted.
+    // Introspection projects explicit role intent even when verification is
+    // absent or stale. (ADR-002 substrate § provider v71)
+    let active = registry.active_state();
     for role in [Consumer::IrisyPrimary, Consumer::IrisyFallback] {
-        let chain = registry.route_chain(&role);
-        if let Some(active_id) = chain.primary.as_ref() {
-            if let Some(snap) = registry.snapshot(active_id) {
+        if let Some(active_id) = active.get(&role.id()) {
+            let role_provider = if let Some(snap) = registry.snapshot(active_id) {
                 let label = match snap.managed_by {
                     _ProviderManagedByForView::Ctrl => CTRL_MANAGED_BRAND_LABEL_VIEW.to_string(),
                     _ProviderManagedByForView::User => snap.label.clone(),
                 };
                 let model_id = registry.first_model_for(active_id);
                 let model_label = model_id.clone();
-                roles.insert(
-                    role.id(),
-                    ActiveRoleProvider {
-                        id: snap.id,
-                        label,
-                        model_id,
-                        model_label,
-                        managed_by: snap.managed_by,
-                    },
-                );
-            }
+                ActiveRoleProvider {
+                    id: snap.id,
+                    label,
+                    model_id,
+                    model_label,
+                    managed_by: snap.managed_by,
+                }
+            } else {
+                // Persisted intent stays visible even if its manifest cannot load.
+                // (ADR-002 substrate § provider v71)
+                ActiveRoleProvider {
+                    id: active_id.clone(),
+                    label: active_id.clone(),
+                    model_id: None,
+                    model_label: None,
+                    managed_by: _ProviderManagedByForView::User,
+                }
+            };
+            roles.insert(role.id(), role_provider);
         }
     }
     Ok(ActiveProvidersView { roles })

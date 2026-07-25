@@ -30,6 +30,11 @@ pub(super) trait AiSink: Send + Sync {
     fn done(&self);
     /// Signal failure (called exactly once, in place of `done`).
     fn error(&self, msg: &str);
+    /// Preserve authentication failure as a typed terminal error.
+    /// (ADR-002 substrate § provider v71)
+    fn auth_error(&self, msg: &str) {
+        self.error(msg);
+    }
 }
 
 /// Forwards AiSink calls into the kernel's `Provider::chat_stream`
@@ -85,5 +90,11 @@ impl AiSink for CtrlChannelSink {
         let _ = self
             .sender
             .try_send(Err(ProviderError::ProviderError(msg.to_string())));
+    }
+
+    fn auth_error(&self, _msg: &str) {
+        // Keep authentication typed across the adapter channel boundary.
+        // (ADR-002 substrate § provider v71)
+        let _ = self.sender.try_send(Err(ProviderError::AuthFailed));
     }
 }

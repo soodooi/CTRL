@@ -168,6 +168,7 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::provider::get_active_providers,
             $crate::commands::provider::provider_list,
             $crate::commands::provider::provider_set_active,
+            $crate::commands::provider::provider_clear_active,
             $crate::commands::provider::provider_detect,
             $crate::commands::provider_templates::list_provider_templates,
             // cloud-sourced catalog refresh — fire-and-forget on boot +

@@ -1,20 +1,15 @@
-// Shared text.chat route resolution — ADR-002 substrate § provider v9
-// §3.5 (2026-06-06) semantics, extracted 2026-06-10 so the HTTP endpoint
-// (/text-chat) and the in-process Irisy chat command share ONE
-// implementation of candidate walking + cooldown + first-chunk peek
-// (`feedback_no_redundancy_one_ssot`).
-//
-// Per v9: only the consumer's primary is attempted (`chain.fallbacks`
-// intentionally ignored); failure surfaces to the caller and the user
-// re-picks in Settings. The loop still handles N candidates so a future
-// fallback re-enable is a one-line change at the call site.
+// Shared text.chat route resolution. The router consumes the exact explicit
+// `RouteChain`: primary first, then the separately bound fallback. Catalogue
+// entries and adapter construction never enter routing by themselves. Every
+// production text-chat caller uses this router or its completion drain helper.
+// (ADR-002 substrate § provider v71)
 
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
 use super::registry::ProviderRegistry;
-use super::r#trait::Consumer;
+use super::r#trait::{Consumer, ProviderRuntimeStatus};
 use super::types::{ChatChunk, ChatOpts, ChatPrompt, ProviderError};
 
 pub type ChunkRx = mpsc::Receiver<Result<ChatChunk, ProviderError>>;
@@ -28,30 +23,23 @@ pub async fn route_text_chat(
     consumer: &Consumer,
     prompt: &ChatPrompt,
     opts: &ChatOpts,
-) -> Result<(String, ChunkRx), String> {
+) -> Result<(String, ChunkRx), ProviderError> {
     let chain = registry.route_chain(consumer);
 
-    let mut candidates: Vec<String> = Vec::new();
-    if let Some(primary) = chain.primary.clone() {
-        candidates.push(primary);
-    }
+    // Only user-bound intent enters the hot path; catalogue/configuration do
+    // not synthesize candidates. (ADR-002 substrate § provider v71)
+    let mut candidates: Vec<String> = chain.primary.clone().into_iter().collect();
+    candidates.extend(chain.fallbacks);
     if candidates.is_empty() {
-        // No primary configured for this consumer — last-resort backstop
-        // (primary_text_chat walks primary → fallbacks → IrisyFallback →
-        // any ready provider). No first-chunk peek on this path, matching
-        // the pre-extraction /text-chat behaviour.
-        let provider = registry
-            .primary_text_chat()
-            .ok_or_else(|| "no provider configured for text.chat".to_string())?;
-        let rx = provider
-            .chat_stream(prompt, opts)
-            .await
-            .map_err(|e| format!("provider chat_stream failed: {e}"))?;
-        return Ok((provider.id().to_string(), rx));
+        return Err(ProviderError::ProviderError(
+            "no provider is explicitly bound for text.chat".to_string(),
+        ));
     }
 
     let primary_id = candidates.first().cloned();
     let mut primary_error: Option<(String, ProviderError)> = None;
+    let mut last_error: Option<ProviderError> = None;
+    let mut auth_error: Option<ProviderError> = None;
     let n_candidates = candidates.len();
 
     for (i, manifest_id) in candidates.iter().enumerate() {
@@ -59,24 +47,45 @@ pub async fn route_text_chat(
         // fallback left to try (saves the ~300 ms claude CLI spawn while
         // an OAuth outage holds). ADR-002 § provider v2 §3.5 M2.
         if i == 0 && n_candidates > 1 && registry.is_in_cooldown(manifest_id) {
-            primary_error = Some((
-                manifest_id.clone(),
-                ProviderError::ProviderError(format!(
-                    "{manifest_id}: in cooldown after recent failure"
-                )),
+            let error = ProviderError::ProviderError(format!(
+                "{manifest_id}: in cooldown after recent failure"
             ));
+            primary_error = Some((manifest_id.clone(), error.clone()));
+            last_error = Some(error);
             continue;
         }
         let Some(provider) = registry.get(manifest_id) else {
             continue;
         };
+        // Local runtime unavailability skips only this explicit candidate;
+        // it never causes a catalogue scan. (ADR-002 substrate § provider v71)
+        let runtime = provider.runtime_availability().await;
+        if runtime.status == ProviderRuntimeStatus::Unavailable {
+            let error = ProviderError::ProviderError(
+                runtime
+                    .detail
+                    .unwrap_or_else(|| format!("{manifest_id}: runtime unavailable")),
+            );
+            registry.mark_failure(manifest_id, &error.to_string());
+            if i == 0 {
+                primary_error = Some((manifest_id.clone(), error.clone()));
+            }
+            last_error = Some(error);
+            continue;
+        }
+        // Keep each candidate's typed failure so fallback exhaustion can return
+        // policy-relevant authentication state. (ADR-002 substrate § provider v71)
         let mut rx = match provider.chat_stream(prompt, opts).await {
             Ok(rx) => rx,
             Err(e) => {
                 registry.mark_failure(manifest_id, &e.to_string());
-                if i == 0 {
-                    primary_error = Some((manifest_id.clone(), e));
+                if matches!(e, ProviderError::AuthFailed) {
+                    auth_error = Some(e.clone());
                 }
+                if i == 0 {
+                    primary_error = Some((manifest_id.clone(), e.clone()));
+                }
+                last_error = Some(e);
                 continue;
             }
         };
@@ -88,7 +97,11 @@ pub async fn route_text_chat(
                 let (tx_bridge, rx_bridge) =
                     mpsc::channel::<Result<ChatChunk, ProviderError>>(64);
                 if tx_bridge.send(Ok(first_chunk)).await.is_err() {
-                    return Err("client closed before first chunk forwarded".to_string());
+                    // Bridge closure is a typed provider-route failure.
+                    // (ADR-002 substrate § provider v71)
+                    return Err(ProviderError::ProviderError(
+                        "client closed before first chunk forwarded".to_string(),
+                    ));
                 }
                 tokio::spawn(async move {
                     while let Some(item) = rx.recv().await {
@@ -119,10 +132,16 @@ pub async fn route_text_chat(
                 return Ok((manifest_id.clone(), rx_bridge));
             }
             Some(Err(e)) => {
+                // First-output failures preserve their typed category across
+                // candidate walking. (ADR-002 substrate § provider v71)
                 registry.mark_failure(manifest_id, &e.to_string());
-                if i == 0 {
-                    primary_error = Some((manifest_id.clone(), e));
+                if matches!(e, ProviderError::AuthFailed) {
+                    auth_error = Some(e.clone());
                 }
+                if i == 0 {
+                    primary_error = Some((manifest_id.clone(), e.clone()));
+                }
+                last_error = Some(e);
                 continue;
             }
             None => {
@@ -131,15 +150,42 @@ pub async fn route_text_chat(
                 ));
                 registry.mark_failure(manifest_id, &synthetic.to_string());
                 if i == 0 {
-                    primary_error = Some((manifest_id.clone(), synthetic));
+                    primary_error = Some((manifest_id.clone(), synthetic.clone()));
                 }
+                last_error = Some(synthetic);
                 continue;
             }
         }
     }
 
-    let detail = primary_error
-        .map(|(_, e)| e.to_string())
-        .unwrap_or_else(|| "all providers in route chain refused".to_string());
-    Err(format!("provider chat_stream failed: {detail}"))
+    // Preserve authentication as a typed terminal failure even when it came
+    // from the explicit fallback; display strings are not routing policy.
+    // (ADR-002 substrate § provider v71)
+    Err(auth_error
+        .or(last_error)
+        .or_else(|| primary_error.map(|(_, error)| error))
+        .unwrap_or_else(|| {
+            ProviderError::ProviderError("all providers in route chain refused".to_string())
+        }))
+}
+
+/// Route through the same production chain and drain the selected stream into
+/// one string. Candidate walking remains exclusively in `route_text_chat`.
+/// (ADR-002 substrate § provider v71)
+pub async fn route_text_completion(
+    registry: &Arc<ProviderRegistry>,
+    consumer: &Consumer,
+    prompt: &ChatPrompt,
+    opts: &ChatOpts,
+) -> Result<(String, String), ProviderError> {
+    let (provider_id, mut rx) = route_text_chat(registry, consumer, prompt, opts).await?;
+    let mut output = String::new();
+    while let Some(item) = rx.recv().await {
+        let chunk = item?;
+        output.push_str(&chunk.delta);
+        if chunk.finish_reason.is_some() {
+            break;
+        }
+    }
+    Ok((provider_id, output))
 }

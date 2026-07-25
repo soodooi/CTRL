@@ -24,7 +24,9 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::kernel::provider::{LlmMessage, LlmPrompt};
+use crate::kernel::provider::{
+    routing::route_text_completion, Consumer, LlmMessage, LlmPrompt,
+};
 use crate::shell::KernelHandle;
 
 #[derive(Debug, Deserialize)]
@@ -227,15 +229,6 @@ async fn run_llm_step(
     bindings: &HashMap<String, String>,
     kernel: &State<'_, KernelHandle>,
 ) -> StepOutcome {
-    let adapter = match kernel.runtime.provider_registry.primary_text_chat() {
-        Some(a) => a,
-        None => {
-            return StepOutcome::Error(
-                "no text.chat provider available — open Settings → Brain to pick one"
-                    .into(),
-            );
-        }
-    };
     let model = step
         .get("model")
         .and_then(|v| v.as_str())
@@ -305,29 +298,20 @@ async fn run_llm_step(
         deadline_ms: 30_000,
         disable_reasoning: false,
     };
-    let mut rx = match adapter.chat_stream(&llm_prompt, &opts).await {
-        Ok(rx) => rx,
-        Err(e) => return StepOutcome::Error(format!("chat_stream: {e}")),
-    };
-
-    // Drain to a single string — draft preview shows the final output;
-    // streaming UI is the production runtime path (chat_stream).
-    let mut accum = String::new();
-    loop {
-        let item = tokio::time::timeout(Duration::from_secs(60), rx.recv()).await;
-        match item {
-            Ok(Some(Ok(chunk))) => {
-                accum.push_str(&chunk.delta);
-                if chunk.finish_reason.is_some() {
-                    break;
-                }
-            }
-            Ok(Some(Err(e))) => return StepOutcome::Error(format!("stream err: {e}")),
-            Ok(None) => break,
-            Err(_) => return StepOutcome::Error("timeout after 60s waiting for LLM".into()),
-        }
+    // Draft preview remains non-streaming, but its full routed completion is
+    // bounded by the caller's existing 60-second wait budget.
+    // (ADR-002 substrate § provider v71)
+    let routed = route_text_completion(
+        &kernel.runtime.provider_registry,
+        &Consumer::IrisyPrimary,
+        &llm_prompt,
+        &opts,
+    );
+    match tokio::time::timeout(Duration::from_secs(60), routed).await {
+        Ok(Ok((_provider_id, output))) => StepOutcome::Real(serde_json::Value::String(output)),
+        Ok(Err(e)) => StepOutcome::Error(format!("text completion: {e}")),
+        Err(_) => StepOutcome::Error("timeout after 60s waiting for LLM".into()),
     }
-    StepOutcome::Real(serde_json::Value::String(accum))
 }
 
 fn run_template_step(

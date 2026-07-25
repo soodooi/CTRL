@@ -26,9 +26,15 @@ use crate::kernel::review_gate;
 use crate::kernel::local_storage::LocalStorage;
 use crate::kernel::visibility::{self, Intent};
 use crate::kernel::runtime::KernelRuntime;
+// Production LLM tools share the explicit verified provider router.
+// (ADR-002 substrate § provider v71)
 use crate::kernel::{
-    ai_column, calendar_source, manifest_source, provider::LlmPrompt, query, runtime_sources,
-    smart_table_index, tasks_source, vault, vault_doc, vault_notes_source, vault_smart_table,
+    ai_column, calendar_source, manifest_source,
+    provider::{
+        routing::route_text_completion, ChatOpts, Consumer, LlmMessage, LlmPrompt,
+    },
+    query, runtime_sources, smart_table_index, tasks_source, vault, vault_doc,
+    vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
 use axum::body::Body;
@@ -1199,14 +1205,20 @@ impl KernelMcpRouter {
     async fn kernel_status(&self) -> Result<CallToolResult, McpError> {
         let uptime = self.runtime.booted_at.elapsed();
         let installed = self.runtime.mcp_host.list_installed().await;
+        // Internal status exposes only explicit, independently verified role
+        // intent; catalogue rows never become a production chain by inspection.
+        // (ADR-002 substrate § provider v71)
+        let registry = &self.runtime.provider_registry;
+        let active = registry.active_state();
+        let provider_chain = [Consumer::IrisyPrimary, Consumer::IrisyFallback]
+            .into_iter()
+            .filter_map(|consumer| active.get(&consumer.id()))
+            .filter(|provider_id| registry.is_verified(provider_id))
+            .cloned()
+            .collect::<Vec<_>>();
         let body = serde_json::json!({
             "uptime_ms": uptime.as_millis() as u64,
-            "provider_chain": self.runtime
-                .provider_registry
-                .list()
-                .iter()
-                .map(|e| e.id.clone())
-                .collect::<Vec<_>>(),
+            "provider_chain": provider_chain,
             "mcp_servers_installed": installed.len(),
         });
         Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
@@ -2265,19 +2277,45 @@ impl KernelMcpRouter {
             ));
         }
 
-        let adapter = self
-            .runtime
-            .provider_registry
-            .primary_text_chat()
-            .ok_or_else(|| McpError::internal_error("no text.chat provider available", None))?;
         let system = args.op.system_instruction();
+        // Production AI-column work uses the shared explicit verified route.
+        // (ADR-002 substrate § provider v71)
+        let opts = ChatOpts {
+            model: String::new(),
+            deadline_ms: 60_000,
+            disable_reasoning: false,
+        };
 
         let mut results: Vec<(usize, query::Row, String)> = Vec::new();
         let mut errors: Vec<ai_column::RowError> = Vec::new();
         for item in &plan {
-            match ai_column::complete_row(adapter.as_ref(), system, &item.prompt).await {
-                Ok(value) => results.push((item.index, item.snapshot.clone(), value)),
-                Err(e) => errors.push(ai_column::RowError { row: item.index, message: e.to_string() }),
+            let prompt = LlmPrompt {
+                system: Some(system.to_string()),
+                messages: vec![LlmMessage {
+                    role: "user".to_string(),
+                    content: item.prompt.clone(),
+                }],
+                temperature: None,
+                max_tokens: None,
+            };
+            // Production AI columns use the same explicit verified route as
+            // every other text completion. Unit tests retain complete_row(fake).
+            // (ADR-002 substrate § provider v71)
+            match route_text_completion(
+                &self.runtime.provider_registry,
+                &Consumer::IrisyPrimary,
+                &prompt,
+                &opts,
+            )
+            .await
+            {
+                Ok((_provider_id, value)) => {
+                    results.push((item.index, item.snapshot.clone(), value.trim().to_string()))
+                }
+                Err(e) => errors.push(ai_column::RowError {
+                    row: item.index,
+                    message: e.to_string(),
+                }),
             }
         }
 
@@ -2348,31 +2386,53 @@ impl KernelMcpRouter {
         let jobs_for_cleanup = self.ai_jobs.clone();
         let job_id_for_cleanup = job_id.clone();
         tokio::spawn(async move {
-            let adapter = match runtime.provider_registry.primary_text_chat() {
-                Some(a) => a,
-                None => {
-                    state.write().await.phase = ai_column::JobPhase::Failed;
-                    return;
-                }
-            };
             // Bounded concurrency: process the plan in chunks of MAX_CONCURRENCY
             // (ADR-003 §6.5.4 — unbounded fan-out hits provider rate limits).
             // Cancel + AuthFailed are checked between chunks (AuthFailed stops
             // the whole job — the key is broken, retrying every row is waste).
             const MAX_CONCURRENCY: usize = 6;
             let mut results: Vec<(usize, query::Row, String)> = Vec::new();
+            // Missing routes and terminal authentication failures fail the job.
+            // (ADR-002 substrate § provider v71)
+            let mut terminal_failure = false;
             'outer: for chunk in plan.chunks(MAX_CONCURRENCY) {
                 if state.read().await.cancelled {
                     break;
                 }
                 let outcomes = futures::future::join_all(chunk.iter().map(|item| {
-                    let adapter = adapter.clone();
+                    // Every row resolves against the current governed chain.
+                    // (ADR-002 substrate § provider v71)
+                    let registry = runtime.provider_registry.clone();
                     let system = system.clone();
                     let index = item.index;
                     let snapshot = item.snapshot.clone();
-                    let prompt = item.prompt.clone();
+                    let prompt = LlmPrompt {
+                        system: Some(system),
+                        messages: vec![LlmMessage {
+                            role: "user".to_string(),
+                            content: item.prompt.clone(),
+                        }],
+                        temperature: None,
+                        max_tokens: None,
+                    };
+                    let opts = ChatOpts {
+                        model: String::new(),
+                        deadline_ms: 60_000,
+                        disable_reasoning: false,
+                    };
                     async move {
-                        (index, snapshot, ai_column::complete_row(adapter.as_ref(), &system, &prompt).await)
+                        // Route each production row independently so failover,
+                        // cooldown, and selected-provider accounting stay shared.
+                        // (ADR-002 substrate § provider v71)
+                        let outcome = route_text_completion(
+                            &registry,
+                            &Consumer::IrisyPrimary,
+                            &prompt,
+                            &opts,
+                        )
+                        .await
+                        .map(|(_provider_id, value)| value.trim().to_string());
+                        (index, snapshot, outcome)
                     }
                 }))
                 .await;
@@ -2384,16 +2444,25 @@ impl KernelMcpRouter {
                         match outcome {
                             Ok(value) => results.push((idx, snapshot, value)),
                             Err(e) => {
+                                // Authentication remains typed through adapter,
+                                // router, and async job policy.
+                                // (ADR-002 substrate § provider v71)
                                 if matches!(e, crate::kernel::provider::ProviderError::AuthFailed) {
                                     auth_failed = true;
                                 }
-                                s.errors.push(ai_column::RowError { row: idx, message: e.to_string() });
+                                s.errors.push(ai_column::RowError {
+                                    row: idx,
+                                    message: e.to_string(),
+                                });
                             }
                         }
                         s.rows_done += 1;
                     }
                 }
                 if auth_failed {
+                    // Typed authentication failure is a terminal job outcome.
+                    // (ADR-002 substrate § provider v71)
+                    terminal_failure = true;
                     break 'outer;
                 }
             }
@@ -2418,6 +2487,11 @@ impl KernelMcpRouter {
             let mut s = state.write().await;
             s.phase = if s.cancelled {
                 ai_column::JobPhase::Cancelled
+            } else if terminal_failure || (!plan.is_empty() && results.is_empty()) {
+                // A missing verified route (or a terminal authentication error)
+                // must not report a successful job with only row errors.
+                // (ADR-002 substrate § provider v71)
+                ai_column::JobPhase::Failed
             } else {
                 ai_column::JobPhase::Done
             };
@@ -2575,9 +2649,11 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
-    /// providers.describe — the provider catalogue's type layer (ADR-002 §14).
+    /// providers.describe — typed provider facts exposed through §14 without
+    /// inferring readiness from catalogue presence or adapter construction.
+    /// (ADR-002 substrate § provider v71)
     #[tool(
-        description = "Describe the LLM provider catalogue as a queryable RecordSource (fields: id/label/kind/models/ready/capabilities). Call before providers.query."
+        description = "Describe the LLM provider catalogue as a queryable RecordSource (fields: id/label/kind/models/configured/runtime_status/verified/active_roles/capabilities). Call before providers.query."
     )]
     async fn providers_describe(&self) -> Result<CallToolResult, McpError> {
         let desc = query::Describe {
@@ -2589,16 +2665,16 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
-    /// providers.query — query the provider catalogue (ADR-002 §14) via the
-    /// shared engine: "ready providers with embed capability", etc.
+    /// providers.query — query independent provider state dimensions through
+    /// the shared §14 engine. (ADR-002 substrate § provider v71)
     #[tool(
-        description = "Query configured LLM providers by id/kind/ready/capabilities with a structured filter/sort/group request. Call providers.describe first."
+        description = "Query configured LLM providers by id/kind/configured/runtime_status/verified/active_roles/capabilities with a structured filter/sort/group request. Call providers.describe first."
     )]
     async fn providers_query(
         &self,
         Parameters(args): Parameters<RuntimeQueryArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let entries = self.runtime.provider_registry.list();
+        let entries = self.runtime.provider_registry.list(false).await;
         let rows: Vec<query::Row> = entries
             .iter()
             .map(|e| {
@@ -2611,7 +2687,16 @@ impl KernelMcpRouter {
                     .unwrap_or_default();
                 r.insert("kind".into(), kind);
                 r.insert("models".into(), e.models.len().to_string());
-                r.insert("ready".into(), if e.ready { "x".into() } else { String::new() });
+                // The §14 row mirrors provider-list facts without collapsing
+                // them into a ready bit. (ADR-002 substrate § provider v71)
+                r.insert("configured".into(), if e.configured { "x".into() } else { String::new() });
+                let runtime_status = serde_json::to_value(&e.runtime_status)
+                    .ok()
+                    .and_then(|value| value.as_str().map(str::to_string))
+                    .unwrap_or_default();
+                r.insert("runtime_status".into(), runtime_status);
+                r.insert("verified".into(), if e.verified { "x".into() } else { String::new() });
+                r.insert("active_roles".into(), e.active_roles.join(", "));
                 r.insert("capabilities".into(), e.capabilities.join(", "));
                 r
             })
@@ -3142,7 +3227,8 @@ impl KernelMcpRouter {
         ))]))
     }
 
-    /// llm.chat — non-streaming chat completion via kernel's LLM port.
+    /// llm.chat — non-streaming chat completion through the shared explicit,
+    /// verified provider route. (ADR-002 substrate § provider v71)
     /// (Streaming variant lives on Tauri's `chat_stream` event channel;
     /// MCP tool surface is non-streaming for now — agents that need
     /// streams should hit the Tauri command directly.)
@@ -3151,11 +3237,8 @@ impl KernelMcpRouter {
         &self,
         Parameters(args): Parameters<LlmChatArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let adapter = self
-            .runtime
-            .provider_registry
-            .primary_text_chat()
-            .ok_or_else(|| McpError::internal_error("no text.chat provider available", None))?;
+        // Build this completion for the shared explicit verified route.
+        // (ADR-002 substrate § provider v71)
         let model = args.model.unwrap_or_default();
         let prompt = LlmPrompt {
             system: None,
@@ -3177,29 +3260,19 @@ impl KernelMcpRouter {
             deadline_ms: 60_000,
             disable_reasoning: false,
         };
-        // Provider trait is streaming-only; drain to a single string for
-        // non-streaming MCP tool surface.
-        let mut rx = adapter
-            .chat_stream(&prompt, &opts)
-            .await
-            .map_err(|e| McpError::internal_error(format!("llm.chat: {e}"), None))?;
-        let mut out = String::new();
-        while let Some(item) = rx.recv().await {
-            match item {
-                Ok(chunk) => {
-                    out.push_str(&chunk.delta);
-                    if chunk.finish_reason.is_some() {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    return Err(McpError::internal_error(
-                        format!("llm.chat stream: {e}"),
-                        None,
-                    ));
-                }
-            }
-        }
+        // MCP llm.chat is non-streaming at its tool surface, so drain the
+        // shared production route through the completion helper.
+        // (ADR-002 substrate § provider v71)
+        let (_provider_id, out) = route_text_completion(
+            &self.runtime.provider_registry,
+            &Consumer::IrisyPrimary,
+            &prompt,
+            &opts,
+        )
+        .await
+        .map_err(|e| McpError::internal_error(format!("llm.chat: {e}"), None))?;
+        // The MCP result came from the governed explicit verified route.
+        // (ADR-002 substrate § provider v71)
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
@@ -3208,9 +3281,9 @@ impl KernelMcpRouter {
     #[tool(description = "List external MCP servers the kernel has registered (proxy view)")]
     async fn mcp_list_servers(&self) -> Result<CallToolResult, McpError> {
         let installed = self.runtime.mcp_host.list_installed().await;
-        // Redact downstream auth headers — a connected server's credential must
-        // never be handed to an MCP client (ADR-006 cross-cutting § policy v1,
-        // secrets never leak). The gate proxies auth on the client's behalf.
+        // Redact downstream auth headers: a connected server's credential must
+        // never be handed to an MCP client. The gate proxies auth on the
+        // client's behalf.
         let redacted: Vec<serde_json::Value> = installed
             .iter()
             .map(|d| {
@@ -5029,7 +5102,9 @@ async fn run_debug_irisy_turn(
     message: String,
 ) -> Result<serde_json::Value, String> {
     use crate::shell::acp_client::{AcpClient, AcpEvent};
-    let env = runtime.provider_registry.agent_env_injection();
+    // Debug Hermes launch reads and projects one verified provider generation.
+    // (ADR-002 substrate § provider v71)
+    let env = runtime.provider_registry.agent_env_injection().await;
     let mut client = AcpClient::start("hermes", &env).await.map_err(|e| e.to_string())?;
     let mut text = String::new();
     let mut thoughts = String::new();

@@ -433,7 +433,7 @@ async fn forward_to_provider(
             // never signs in twice. The key rides only into the adapter
             // subprocess env.
             let provider_env = if engine == "hermes" {
-                registry.agent_env_injection()
+                registry.agent_env_injection().await
             } else {
                 registry.byo_engine_auth_env(engine)
             };
@@ -611,7 +611,9 @@ async fn forward_to_provider(
     };
 
     let (_provider_id, mut rx) =
-        route_text_chat(&registry, &Consumer::IrisyPrimary, &prompt, &opts).await?;
+        route_text_chat(&registry, &Consumer::IrisyPrimary, &prompt, &opts)
+            .await
+            .map_err(|error| error.to_string())?;
 
     while let Some(item) = rx.recv().await {
         match item {

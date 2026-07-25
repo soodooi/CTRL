@@ -37,8 +37,8 @@ pub struct KernelStatus {
     pub first_run_state: FirstRunState,
     /// LLM adapters registered at boot. Empty = no provider configured.
     pub llm_adapters: Vec<String>,
-    /// Name of the adapter chosen by `LlmPortRouter::primary_adapter`,
-    /// or None when no adapter is registered.
+    /// Explicit, verified `irisy.primary` provider id, or None when the role
+    /// is unbound or its current configuration lacks verification evidence.
     pub primary_adapter: Option<String>,
     /// Number of MCP server descriptors persisted to the registry. Not
     /// the same as connected — connections lazy-establish on first
@@ -96,15 +96,20 @@ pub async fn kernel_status(
 
     let llm_adapters: Vec<String> = runtime
         .provider_registry
-        .list()
+        .list(false)
+        .await
         .into_iter()
         .filter(|e| e.load_error.is_none())
         .map(|e| e.id)
         .collect();
-    let primary_adapter = runtime
-        .provider_registry
-        .primary_text_chat()
-        .map(|p| p.id().to_string());
+    // Status reports explicit role intent plus its independent verification
+    // fact; introspection never selects a live adapter.
+    // (ADR-002 substrate § provider v71)
+    let active_state = runtime.provider_registry.active_state();
+    let primary_adapter = active_state
+        .get(&crate::kernel::provider::Consumer::IrisyPrimary.id())
+        .filter(|provider_id| runtime.provider_registry.is_verified(provider_id))
+        .cloned();
 
     let mcp_servers_installed = runtime.mcp_host.list_installed().await.len();
 

@@ -2,9 +2,9 @@
 adr_id: 006
 module: cross-cutting
 title: CTRL cross-cutting — BYOK aggregator-first + global English first + plain-text philosophy + policy envelope
-version: 11
+version: 12
 status: accepted
-last_updated: 2026-07-02
+last_updated: 2026-07-25
 deciders: [bao, zeus]
 sections:
   - { id: byok-aggregator,   source: orig-005 + H-2026-06-09-002 校准 }
@@ -13,6 +13,7 @@ sections:
   - { id: policy-envelope,   source: new-2026-06-04, note: "L3/L4/L5 autonomy ladder + blast-radius limit + typed-ISA validation — invariants reused across all 6 self-evolution loops (ADR-001 §8)." }
   - { id: cold-start-loop,   source: new-2026-06-19, note: "End-to-end download→install→first-run→BYOK→first-value loop. Aggregates §1 onboarding + ADR-003 §8 home + ADR-004 §2 distribution into one verified line; fixes the §1 ADR-vs-impl drift (misleading 'Irisy is connecting' stub)." }
 changelog:
+  - v12 2026-07-25: **§1 provider cold start reconciles the v3 `none` lock with the erroneous v8 automatic Ollama fallback (bao:「有没有 Ollama 是系统问题」「重整」).** First launch has no primary and no fallback binding. A bundled/local-runtime manifest is catalogue data, not evidence that software, daemon, or model exists on the machine. Ollama remains a BYOK/local privacy option and may become available only after its adapter probes the configured daemon and selected model; it becomes primary or fallback only after explicit activation passes the production trial. CTRL does not silently install, start, pull, bind, or route to it. If CTRL later owns an Ollama bootstrap, that installer remains a separate consented system capability and successful installation still does not imply role binding. This supersedes v8's claim that `hermes3:8b` ships universally and pairs ADR-002 §3 v70.
   - v11 2026-07-02: **§5.1.1 NEW — scoped AGPL-vendoring exception: Tolaria notes frontend (bao「前端就用 tolaria」).** The §5.1 "AGPL deps reference-only" rule gets ONE contained exception: vendor the Tolaria FRONTEND (AGPL-3.0, refactoringhq/tolaria) as `packages/ctrl-notes-ui` — the notes-module UI; CTRL kernel stays the only backend (adapter over its ~49-command surface; its Rust/CLI layer NOT taken). Cost accepted: that one package is permanently AGPL (no dual-license option for it); containment: never spreads to kernel / other packages / MIT packs; upstream LICENSE + notices kept, trademarks stripped, UPSTREAM.md pins the forked commit; snapshot + cherry-pick posture. Pairs ADR-002 §1.9 v47.
   - v10 2026-07-02: **§5 correction — Feishu is the incumbent CTRL REPLACES, NOT a connect target (bao 2026-07-02「我们是飞书而非集成飞书吧?」).** CTRL IS the local/private/AI-native Feishu — its core (Bitable/docs) is CTRL's NATIVE Smart-table + Notes; you do not integrate the incumbent whose core capability you natively provide. Connect targets = the OPC's OWN products CTRL does NOT replace (CRM/ERP/Ghostfolio/Twenty). **Fixed**: §5 body line "The CRM/ERP/**Feishu** examples are connectors an OPC plugs in" → dropped Feishu + added the correction note; §5.1 naming example `ctrl-feishu` → `ctrl-twenty`. **Kept (correct as-is)**: Feishu as the COMPETITOR/incumbent CONTRAST (moat "Feishu structurally can't be local", "Feishu's shell is ByteDance's cloud", "vs Feishu/Coze where data lives in their cloud") — that framing is right and stays. **Distinct legit axis (kept)**: §2 Integration-priority "CN IM (微信/企微/钉钉/飞书) via hermes gateway" = IM-REACH to contacts on their platform (you reach people where they are; you cannot replace where the OTHER person is) — a separate axis from replacing Feishu-the-data-app, so it is NOT the same error and stays. Root cause of the recurring mistake (I autocompleted to the industry-default "integrate the SaaS" instead of CTRL's anti-default "BE the local sovereign alternative"): memories `feedback-ctrl-is-feishu-not-integrate-feishu` + `feedback-connectors-built-by-irisy-not-dev` (corrected) + `feedback-jump-to-industry-default-not-ctrl-moat`. Vault docs `capability-pack-map.md` + `feishu-mcp-research.md` corrected in the same pass. No architecture change — a positioning/framing correction, single source of truth.
   - v9 2026-06-25: **NEW §5.1 开源 & license 模型 — CTRL 主体 AGPL-3.0 + 功能包 MIT + open-core (bao 2026-06-25).** 战略转向: CTRL 与功能包开源, 但是 §5「monetize substrate, commons free」的 **open-core 形态, 非推翻**。CTRL core = **AGPL-3.0** (copyleft 护城河: 改了对外提供服务必须开源, 大厂无法闭源 fork; 自托管/个人完全自由, 同 Ghostfolio/GitLab CE; 取代旧 All Rights Reserved)。功能包 = **MIT** (commons definitions §5 share-and-be-shared, 宽松促共享/采用)。命名 `ctrl-<name>` (如 `ctrl-ghostfolio`, 各独立 repo `soodooi/ctrl-<name>`, 自带 LICENSE; **非 scoped** 因 npm `@ctrl` 已被第三方占, `ctrl-<name>` 保 repo/Discover/npm 名一致无冲突)。商业不变 = **open-core** (付费云/托管/sync/premium = substrate; 开源 core + 免费 commons = 网络效应护城河; copyleft 防 core 被闭源拿走)。**Supersedes former CLAUDE.md hard rules** (All Rights Reserved / 子包 private:true+UNLICENSED / 禁 npm publish @ctrl/*)。第三方依赖各保 license (AGPL 兼容 MIT/Apache/BSD; AGPL 依赖如 Teable 仅参考不 vendoring, 守 ADR-002 v30)。REST 调用用户自托管 AGPL 服务 (如 Ghostfolio) 非衍生作品, 无 AGPL 传染。
@@ -36,14 +37,14 @@ CTRL production runtime **only** calls AI through user-configured provider (ADR-
 - **First-launch default** = `none`. User onboarding shows provider catalogue (fal.ai aggregator card highlighted) and asks user to pick / fill BYOK key.
 - **fal.ai (NEW v3, flagship aggregator)** — single BYOK key unlocks 985 endpoints across image (FLUX 2 / Seedream / Recraft / Nano Banana Pro / etc., 406 total) / video (Kling 3.0 / Veo 3.1 / Hunyuan Video / etc., 450 total) / audio / 3D / speech. Adapter loads only when user fills fal.ai key in Settings → Providers. This is the v19 战术 differentiator vs Codex single-brand gpt-image-2 lock-in. Spec: ADR-002 §13.4.
 - **Single-brand BYOK** = Anthropic / OpenAI / Hunyuan / DeepSeek / xAI / Mistral / etc. Each adapter loads only when user fills that brand's key. Settings → Providers lists 20 templates (ADR-002 §3.10 v10).
-- **Local Ollama** = privacy tier; runs on user machine, 0 CTRL cost, 0 vendor key. Already wired (ADR-002 §10 embeddings).
+- **Local Ollama** = optional privacy tier; runs on the user machine, 0 CTRL cost, 0 vendor key. Its builtin manifest is catalogue data only: daemon reachability and selected-model presence are runtime-probed, and no role is bound until the user explicitly activates it through the production trial (ADR-002 §3 v70).
 - **Dev-time only** = `claude-code` / `aider` etc. as Code Space environment presets are NOT a violation — user choice, not CTRL-bundled.
 
 **Rules**:
 - ANY single-brand provider SDK (Anthropic / OpenAI / Tencent Yuanbao / xAI) MUST NOT load on the production hot path.
 - They MAY load only when user has filled that vendor's key in Settings → Providers.
 - **Aggregator adapters are exceptions** — fal.ai (image/video/audio aggregator), OpenRouter-pattern (LLM aggregator), LiteLLM-style proxy. These load on user BYOK to the aggregator endpoint, NOT on the upstream vendor key. The aggregator brokerage IS the value-add — same exemption logic as MCP server registry.
-- CTRL never auto-fallbacks user requests to a CTRL-paid endpoint. The "irisy.fallback = CTRL volc" path (memory `decision_irisy_fallback_is_ctrl_paid_volc_now` 2026-05-31) IS RETIRED in v3 — no CTRL-paid fallback at all. User who picks no provider gets a clear "no provider configured" message + onboarding link.
+- CTRL never auto-fallbacks user requests to any provider. First launch binds neither `irisy.primary` nor `irisy.fallback`; an explicit fallback is user intent committed only after the same production trial as primary. Catalogue/configuration/runtime availability/verification/binding remain distinct (ADR-002 §3 v70). User who picks no provider gets a clear "no provider configured" message + onboarding link.
 - CN users open-box-usable via fal.ai aggregator (proxied via Cloudflare/Tokyo) + Volc BYOK option.
 
 **Why aggregator-first**: 4 friend products (Claude Desktop / Codex / WorkBuddy / CodeBuddy) all brand-lock the API face — that's their billing model. CTRL doesn't sell brains; it sells the **stitching layer** (Ctrl hotkey + ambient workspace + 3-capability-face). Aggregator API face is the商业模式上 differentiator: 4 友商 商业模式上做不出来 (他们靠卖自家脑回本). Memory `feedback_no_claude_in_production` 🔒 + memory `decision_ctrl_repositioned_as_aggregator` (2026-06-03) 🔒.
@@ -79,7 +80,7 @@ CTRL = user-augmentation, NOT knowledge intermediary. Memory `decision_ctrl_obsi
 
 5. **端侧化优先 (client-side first)**:
    - OAuth: macOS Keychain loopback callback (`http://127.0.0.1:NNN/callback`), NOT ctrl-cloud proxy
-   - LLM: Volc Ark default + Ollama local fallback; cloud calls user-configured outbound only
+   - LLM: explicitly bound BYOK or local provider; no automatic cloud or local fallback
    - Sync: P2P mesh (ADR-002 § crypto + WebRTC); `ctrl-relay` Worker = NAT-traversal helper, never reads payload
    - RAG / embeddings: local SQLite FTS5 + WASM embeddings, NOT vector DB SaaS
    - OCR: macOS Vision framework / Windows OCR API, NOT cloud OCR
@@ -253,7 +254,7 @@ This section is **aggregation + acceptance, not new direction** — each gate's 
 - [x] `grep -rn 'anthropic' src-tauri/Cargo.toml` → 0 hits. Closed.
 - [x] BYOK UI — `ProvidersBlock` in `packages/ctrl-web/src/routes/settings.tsx` exposes key management (ADR-002 § provider §3.6 supersedes with role-routing). Closed.
 - [x] former CLAUDE.md `## LLM Pattern D` references BYOK lock. Closed v0.1.126.
-- [x] `CTRL_FALLBACK_PROVIDER_ID` = local `ollama` (registry.rs), NOT CTRL-paid volc — completes v3's "no CTRL-paid fallback". The volc remnant pointed at an unseeded manifest (dropped from BUILTIN_MANIFESTS), so the out-of-box fallback was broken. Credential reads unified through `registry::read_credential` (vault, not keyring — keyring failed silently under the signed app). Closed v8 2026-06-25.
+- [x] First launch binds no fallback; provider catalogue presence never implies runtime availability. Ollama is runtime-probed for daemon + selected model and can enter `irisy.primary` or `irisy.fallback` only through explicit trial-gated activation. The legacy automatic Ollama binding migrates once to `No fallback`. Closed v12 2026-07-25.
 
 ### Global English (§2)
 - [x] former CLAUDE.md line 9 amended → "global ambient AI workbench + creator substrate". Closed v0.1.126.

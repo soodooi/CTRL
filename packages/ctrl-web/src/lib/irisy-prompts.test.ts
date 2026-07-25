@@ -69,7 +69,10 @@ describe('formatBrainStateBlock (P3 — brain_state injection)', () => {
         label: 'CTRL Cloud',
         endpoint: null,
         binary: null,
-        healthy: true,
+        // Active-role facts are trial-gated, not inferred from construction.
+        // (ADR-002 substrate § provider v71)
+        configured: true,
+        verified: true,
         managed_by: 'ctrl',
       },
     },
@@ -152,7 +155,10 @@ describe('composeSystemPrompt (P3 — shared assembly, brain_state re-wired)', (
         label: 'CTRL Cloud',
         endpoint: null,
         binary: null,
-        healthy: true,
+        // Active-role facts are trial-gated, not inferred from construction.
+        // (ADR-002 substrate § provider v71)
+        configured: true,
+        verified: true,
         managed_by: 'ctrl',
       },
     },

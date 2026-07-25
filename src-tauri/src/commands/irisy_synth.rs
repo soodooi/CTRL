@@ -13,8 +13,9 @@
 //
 // All three follow the same shape: collect context → wrap in a
 // system+user message pair → drain the provider stream → return the
-// resulting markdown. Pi (provider_registry.primary_text_chat()) is
-// the substrate; we never bind to a specific model id here.
+// resulting markdown. Production text chat resolves through the shared
+// explicit, verified IrisyPrimary route; no callsite selects an adapter.
+// (ADR-002 substrate § provider v71)
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -22,7 +23,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::kernel::provider::{ChatOpts, LlmMessage, LlmPrompt};
+use crate::kernel::provider::{
+    routing::route_text_completion, ChatOpts, Consumer, LlmMessage, LlmPrompt,
+};
 use crate::kernel::vault;
 use crate::kernel::vault_embeddings::{content_hash, VaultEmbeddings};
 use crate::kernel::provider::ollama_embed::OllamaEmbedClient;
@@ -42,13 +45,6 @@ async fn pi_complete(
     system_prompt: &str,
     user_prompt: &str,
 ) -> Result<String, String> {
-    let adapter = kernel
-        .runtime
-        .provider_registry
-        .primary_text_chat()
-        .ok_or_else(|| {
-            "No text.chat provider available. Open Settings → Brain.".to_string()
-        })?;
     let prompt = LlmPrompt {
         system: Some(system_prompt.to_string()),
         messages: vec![LlmMessage {
@@ -65,22 +61,16 @@ async fn pi_complete(
         deadline_ms: 120_000,
         disable_reasoning: false,
     };
-    let mut rx = adapter
-        .chat_stream(&prompt, &opts)
-        .await
-        .map_err(|e| format!("Pi chat start: {e}"))?;
-    let mut out = String::new();
-    while let Some(item) = rx.recv().await {
-        match item {
-            Ok(chunk) => {
-                out.push_str(&chunk.delta);
-                if chunk.finish_reason.is_some() {
-                    break;
-                }
-            }
-            Err(e) => return Err(format!("Pi chat stream: {e}")),
-        }
-    }
+    // Non-streaming synthesis drains the same governed production route used
+    // by streaming chat. (ADR-002 substrate § provider v71)
+    let (_provider_id, out) = route_text_completion(
+        &kernel.runtime.provider_registry,
+        &Consumer::IrisyPrimary,
+        &prompt,
+        &opts,
+    )
+    .await
+    .map_err(|e| format!("Pi chat completion: {e}"))?;
     Ok(out)
 }
 

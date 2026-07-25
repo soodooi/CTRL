@@ -514,14 +514,17 @@ export interface BrainEngine {
   last_token_ms: number | null;
 }
 
-/** Active provider snapshot for one role. */
+/** Active provider snapshot for one explicitly bound role. */
 export interface BrainRoleProvider {
   id: string;
   /** Brand-facing label (e.g. "Anthropic API" / "CTRL Cloud"). */
   label: string;
   endpoint: string | null;
   binary: string | null;
-  healthy: boolean;
+  /** Configuration and trial verification are separate provider facts. */
+  // (ADR-002 substrate § provider v71)
+  configured: boolean;
+  verified: boolean;
   managed_by: ProviderManagedBy;
 }
 
@@ -556,7 +559,7 @@ export function formatBrainStateBlock(state: BrainState): string {
     const prov = state.providers[role];
     if (prov) {
       lines.push(
-        `${role}: ${prov.label} (id=${prov.id}, managed_by=${prov.managed_by}, healthy=${prov.healthy})`,
+        `${role}: ${prov.label} (id=${prov.id}, managed_by=${prov.managed_by}, configured=${prov.configured}, verified=${prov.verified})`,
       );
     } else {
       lines.push(`${role}: (unconfigured)`);

@@ -18,14 +18,18 @@ pub fn mcp_fields() -> Vec<FieldSpec> {
     ]
 }
 
-/// Schema for the provider-catalogue RecordSource.
+/// Schema for the provider catalogue with independent configuration, runtime,
+/// verification, and role-binding facts. (ADR-002 substrate § provider v71)
 pub fn provider_fields() -> Vec<FieldSpec> {
     vec![
         field("id", "Id", CellType::Text),
         field("label", "Label", CellType::Text),
         field("kind", "Kind", CellType::Text),
         field("models", "Models", CellType::Number),
-        field("ready", "Ready", CellType::Checkbox),
+        field("configured", "Configured", CellType::Checkbox),
+        field("runtime_status", "Runtime status", CellType::Text),
+        field("verified", "Verified", CellType::Checkbox),
+        field("active_roles", "Active roles", CellType::Tags),
         field("capabilities", "Capabilities", CellType::Tags),
     ]
 }
@@ -76,28 +80,39 @@ mod tests {
         assert_eq!(out.rows[0]["id"], "obsidian");
     }
 
+    // The provider schema intentionally keeps all authoritative facts independent.
+    // (ADR-002 substrate § provider v71)
     fn provider_rows() -> Vec<Row> {
-        let mk = |id: &str, ready: &str, caps: &str| {
+        let mk = |id: &str, configured: &str, runtime: &str, caps: &str| {
             let mut r = Row::new();
             r.insert("id".into(), id.into());
-            r.insert("ready".into(), ready.into());
+            r.insert("configured".into(), configured.into());
+            // Runtime and configuration remain independently queryable.
+            // (ADR-002 substrate § provider v71)
+            r.insert("runtime_status".into(), runtime.into());
             r.insert("capabilities".into(), caps.into());
             r
         };
-        vec![mk("volc", "x", "text.chat, embed"), mk("anthropic", "", "text.chat")]
+        vec![
+            mk("ollama", "x", "available", "text.chat, embed"),
+            mk("anthropic", "x", "unknown", "text.chat"),
+        ]
     }
 
     #[test]
-    fn query_ready_providers_and_capability() {
+    fn query_configured_runtime_available_providers_and_capability() {
         let req = QueryRequest {
+            // Configuration and runtime status remain separate filters.
+            // (ADR-002 substrate § provider v71)
             filters: vec![
-                Filter { field: "ready".into(), op: Operator::Is, value: "true".into() },
+                Filter { field: "configured".into(), op: Operator::Is, value: "true".into() },
+                Filter { field: "runtime_status".into(), op: Operator::Eq, value: "available".into() },
                 Filter { field: "capabilities".into(), op: Operator::HasTag, value: "embed".into() },
             ],
             ..Default::default()
         };
         let out = run_query(&provider_fields(), &provider_rows(), &req, now()).unwrap();
         assert_eq!(out.match_count, 1);
-        assert_eq!(out.rows[0]["id"], "volc");
+        assert_eq!(out.rows[0]["id"], "ollama");
     }
 }

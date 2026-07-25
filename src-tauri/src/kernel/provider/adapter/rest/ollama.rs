@@ -16,7 +16,11 @@ use super::common::{flatten_prompt, read_body_capped, PROMPT_REQUEST_TIMEOUT};
 use super::http_client;
 use super::sink::{AiSink, CtrlChannelSink};
 use crate::kernel::provider::manifest::ProviderManifest;
-use crate::kernel::provider::r#trait::{Capability, Provider};
+use crate::kernel::provider::r#trait::{
+    Capability, Provider, ProviderRuntimeAvailability, ProviderRuntimeStatus,
+};
+// Ollama availability is a probed system fact, never a builtin assumption.
+// (ADR-002 substrate § provider v70)
 use crate::kernel::provider::types::{ChatChunk, ChatOpts, ChatPrompt, ProviderError};
 
 const OLLAMA_DEFAULT_ENDPOINT: &str = "http://localhost:11434";
@@ -108,6 +112,21 @@ async fn run_rest_ollama(
     Ok(())
 }
 
+/// Match the exact configured model tag; catalogue presence cannot prove that
+/// a local model is installed. (ADR-002 substrate § provider v70)
+fn payload_has_model(payload: &serde_json::Value, selected_model: &str) -> bool {
+    payload
+        .get("models")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|models| {
+            models.iter().any(|entry| {
+                entry.get("name").and_then(serde_json::Value::as_str) == Some(selected_model)
+                    || entry.get("model").and_then(serde_json::Value::as_str)
+                        == Some(selected_model)
+            })
+        })
+}
+
 pub struct RestOllamaProvider {
     manifest: Arc<ProviderManifest>,
 }
@@ -178,7 +197,84 @@ impl Provider for RestOllamaProvider {
         Ok(rx)
     }
 
+    /// Probe the actual local daemon and selected model with a bounded request;
+    /// adapter construction alone is not runtime availability.
+    /// (ADR-002 substrate § provider v70)
+    async fn runtime_availability(&self) -> ProviderRuntimeAvailability {
+        let client = match http_client::shared() {
+            Ok(client) => client,
+            Err(error) => {
+                return ProviderRuntimeAvailability {
+                    status: ProviderRuntimeStatus::Unavailable,
+                    detail: Some(format!("HTTP client unavailable: {error}")),
+                };
+            }
+        };
+        let response = match client
+            .get(format!("{}/api/tags", self.endpoint().trim_end_matches('/')))
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(_) => {
+                return ProviderRuntimeAvailability {
+                    status: ProviderRuntimeStatus::Unavailable,
+                    detail: Some("Ollama daemon is not reachable".into()),
+                };
+            }
+        };
+        if !response.status().is_success() {
+            return ProviderRuntimeAvailability {
+                status: ProviderRuntimeStatus::Unavailable,
+                detail: Some(format!("Ollama daemon returned HTTP {}", response.status())),
+            };
+        }
+        let payload: serde_json::Value = match response.json().await {
+            Ok(payload) => payload,
+            Err(_) => {
+                return ProviderRuntimeAvailability {
+                    status: ProviderRuntimeStatus::Unavailable,
+                    detail: Some("Ollama model list is invalid".into()),
+                };
+            }
+        };
+        let selected_model = self.model(&ChatOpts::default());
+        let has_model = payload_has_model(&payload, &selected_model);
+        if !has_model {
+            return ProviderRuntimeAvailability {
+                status: ProviderRuntimeStatus::Unavailable,
+                detail: Some(format!("Ollama model {selected_model} is not installed")),
+            };
+        }
+        ProviderRuntimeAvailability {
+            status: ProviderRuntimeStatus::Available,
+            detail: Some(format!("Ollama model {selected_model} is available")),
+        }
+    }
+
     fn trial_verify(&self) -> Result<(), ProviderError> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::payload_has_model;
+
+    #[test]
+    fn runtime_model_probe_requires_exact_selected_tag() {
+        // Exact selected-model presence governs local availability.
+        // (ADR-002 substrate § provider v70)
+        let payload = serde_json::json!({
+            "models": [
+                { "name": "hermes3:8b" },
+                { "model": "llama3.2:latest" }
+            ]
+        });
+        assert!(payload_has_model(&payload, "hermes3:8b"));
+        assert!(payload_has_model(&payload, "llama3.2:latest"));
+        assert!(!payload_has_model(&payload, "llama3.2"));
+        assert!(!payload_has_model(&payload, "qwen2.5:7b"));
     }
 }

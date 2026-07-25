@@ -2,7 +2,7 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 69
+version: 71
 status: accepted
 last_updated: 2026-07-25
 deciders: [bao, zeus]
@@ -23,6 +23,8 @@ sections:
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
   - { id: unified-operation-interface, source: new-2026-06-19, note: "§14 — describe/query/produce: one uniform interface over all content-type feature points (md/html/table/pdf/connector/…) projected on :17873 gate; type layer via describe, read(query)≠write(produce-through-gate); query = kernel service over QuerySource, feature packs + workflows are clients; smart-table = first impl. Research: GraphQL/Plan9/agentic-AI paper." }
 changelog:
+  - v71 2026-07-25: **§3 verification becomes persisted evidence, and every production text completion uses one router.** `~/.ctrl/state/active-providers.json` upgrades in place to v4: role intent and verification evidence are independent maps. Evidence stores only a SHA-256 fingerprint of the behavior-relevant manifest plus the resolved credential; no raw secret is persisted or logged. A provider is verified only when current configuration reproduces that fingerprint after the real production trial. v0/v2/v3 bindings migrate as bound-but-unverified; pre-v3 automatic `irisy.fallback = ollama` is still removed fail-closed. Clearing a role preserves reusable verification evidence, while deleting or replacing configuration invalidates it by removal or fingerprint mismatch. `RouteChain` admits only explicit bindings whose current fingerprint is verified. All production text-chat callers drain the shared router, preserving runtime probe, cooldown, first-chunk validation, failover recording, and explicit fallback semantics; direct primary/fallback adapter selection is retired. Settings displays configuration, runtime, verification, and role bindings as orthogonal facts, so unavailable runtime never hides a bound role. Ordinary configuration Test remains non-mutating and does not create production verification evidence.
+  - v70 2026-07-25: **§3 provider state and fallback are runtime facts, not builtin assumptions (bao:「重整」).** Provider catalogue presence, saved configuration, runtime availability, production verification, and role binding are distinct authoritative states. Adapter construction no longer means `Ready`: each adapter may report a typed runtime probe; Ollama specifically probes its configured daemon and requires the selected model tag before it is `available`. First launch binds neither primary nor fallback, and the legacy unconditional `ollama` fallback seed is retired; v2 state carrying that automatic binding migrates once to an unbound fallback. `provider_set_active(role,id)` remains the only binding path and still requires the real 30-second production first-output trial. `irisy.primary` may route only to its explicitly bound primary and then its explicitly bound fallback; the router must consume the same `RouteChain` rather than ignore it, and no unbound/first-ready provider scan is permitted. Settings renders the typed states (`Needs configuration`, `Runtime unavailable`, `Available`, `Configured`, `Primary`, `Fallback`) and exposes both role bindings; no fallback is displayed as `No fallback`. This supersedes §3.5/§3.6 v2/v8/v9 fallback contradictions and pairs ADR-006 v12.
   - v69 2026-07-25: **§3 provider activation trial separates connectivity proof from model reasoning.** The mandatory `"hi"` trial remains a real production-adapter request under the single 30-second setup-to-first-visible-output deadline and still commits no binding on failure. For OpenAI-compatible providers that explicitly support a thinking control, the trial requests reasoning disabled so a tiny verification output budget cannot be consumed entirely by hidden `reasoning_content` before `finish_reason=length`; ordinary chat omits this override and preserves the provider/model's configured or default reasoning behavior. The generic adapter must not send vendor-specific thinking fields to endpoints that do not declare that compatibility. This closes the GLM-5.2 Coding Plan false negative (`stream finished before first output`) without treating hidden chain-of-thought as user-visible output or weakening fail-closed activation.
   - v68 2026-07-25: **§3 provider activation trial uses one realistic first-output budget instead of rejecting valid providers at 5 seconds.** `provider_set_active` still performs the production 1-token `"hi"` round trip and persists nothing unless the first output succeeds, but setup plus first chunk now share one absolute 30-second deadline. The prior 5-second lock rejected a correctly configured Z.AI Coding Plan provider whose production adapter returned `Hello!` at 7.35 seconds, leaving no active binding while the UI still showed the configured manifest. A single absolute budget prevents the former nested 5s+5s ambiguity, keeps failures fail-closed, and preserves the previous binding on timeout/auth/network/model errors. Provider presence, credential readiness, and active binding remain distinct states.
   - v67 2026-07-23: **§3.10 provider/model catalogue becomes complete and refreshable instead of a hand-maintained shortlist (bao:「provider还不完整，譬如z.ai没有全部模型；要做完整的provider和模型」).** CTRL now refreshes [Models.dev](https://models.dev/api.json) on boot and whenever Settings → Providers opens, caches the transformed result under `~/.ctrl/cache/provider-catalog.json`, and keeps the 21 bundled templates as an offline floor plus user overrides as highest precedence. The transform imports every API-key provider representable by CTRL's existing OpenAI-compatible or Anthropic Messages HTTP shapes and every advertised model id; OAuth/profile-only, local-runtime, templated multi-credential, and provider-specific wire shapes remain authoritative in OpenCode `/connect` and are not falsely presented as compatible. Existing CTRL ids are preserved through explicit aliases (`zai` → `zhipu`, etc.). Z.AI's offline floor is corrected to the full current public catalogue (14 general models); Coding Plan remains a separate credential/endpoint and carries its six catalogue models, with `glm-5.2` as default. Live provider `/models` still wins after a key is entered; Models.dev/cache is the no-key and offline model source. No secret enters the catalogue request or cache.
@@ -395,6 +397,8 @@ v1.1 promotion candidates (mcp-local until 2nd consumer): `process.spawn`, `netw
 
 ## §3 Provider router — role-aware routing + PATH detect + introspection (NEW v1)
 
+> **v71 governing state model (2026-07-25):** The provider subsystem reports five separate facts: **catalogued** (manifest known), **configured** (credentials/config can construct the adapter), **runtime availability** (adapter-specific probe; `unknown | available | unavailable`), **verified** (persisted production-trial evidence matches the current behavior manifest and resolved credential), and **bound** (`irisy.primary` or `irisy.fallback`). No earlier fact implies a later one, and binding does not imply verification. Builtin Ollama means only catalogued; it is available only when its configured daemon answers and contains the selected model. First launch binds no role. `provider_set_active` is the binding path and commits both exact verification evidence and role intent only after the v69 real trial. Primary routing consumes exactly the verified explicit primary followed by the verified explicit fallback; no hardcoded provider id, automatic seed, ignored fallback chain, direct adapter bypass, or first-ready scan is permitted. Legacy v0/v2/v3 bindings remain intent but migrate unverified; pre-v3 state whose fallback was automatically seeded to Ollama migrates once to an unbound fallback. Settings exposes both roles and renders configuration, runtime, verification, and bindings as orthogonal facts. This paragraph supersedes conflicting v2/v8/v9/v70 prose below; historical text remains provenance. (ADR-002 substrate § provider v71)
+
 > **v61 amendment (2026-07-11): `claude-oauth` (Claude subscription via `claude` CLI) is REMOVED as a provider** — Anthropic's usage policy forbids backing an LLM provider with Claude Pro/Max subscription OAuth. Anthropic = BYOK API key only (`anthropic-api`). Every `claude-oauth` / `cli_claude_persistent` reference below is historical. BYO-CLI driver projection (ADR-001 spine) is unaffected — that is the user's own Claude Code being Claude Code, not a provider.
 
 **Why this section exists**: bao 2026-05-31 — "Irisy 不知道自己接的是什么 — 你在修补还是设计系统?". Earlier scattered `brain_config.rs` / `llm_port.rs` / `llm_adapters/*` retired; single sub-system below.
@@ -443,101 +447,50 @@ capabilities = ["text.chat"]
 
 6 builtin presets shipped Day-1: ~~`claude-oauth`~~ (removed v61), `anthropic-api`, `openai-api`, `volc`, `kimi`, `deepseek`. (bao 2026-06-05 later slimmed builtins to `ollama` only; users add BYOK providers via Settings.) User additions go to `~/.ctrl/providers/<id>.toml`. CN Anthropic-shape endpoints (api.moonshot.cn/anthropic, api.deepseek.com/anthropic) supported via preset.
 
-### §3.5 Role routing — consumer-aware (NEW, replaces single `text.chat` bucket) — v2 2-role model (PARTIALLY RETRACTED in v9)
+### §3.5 Explicit role routing
 
-> **PARTIAL RETRACT v9 2026-06-06** — see changelog. The `RouteChain.fallbacks` walking loop, `record_failover`, `RoutingOverride`, `provider:routing-override` / `provider:routing-restored` events, and `ctrl-bridge` `streamSimple` interception are ALL RETIRED. Pi has no public fallback surface; CTRL does not invent a parallel one. SSOT (`active-providers.json`) is now used to **prepare Pi's models.json + child env at spawn time** (so Pi sees the real provider directly), not to mediate per-request routing inside CTRL. Section body below preserved for history; v9 implementation reads SSOT only at spawn / `setModel` switch time.
-
-
-
-**v2 amendment (bao 2026-05-31)**: dropped `mcp.default` role (mcp binds provider via manifest `brain_capabilities`, not via substrate-wide default). `irisy.primary` MUST be a detected user CLI — no auto-fallback to a paid provider. `irisy.fallback` is the CTRL-managed slot (paid by CTRL).
+`Consumer` has two first-class text-chat roles: `irisy.primary` and `irisy.fallback`. Both are unset on first launch. A role enters versioned active state only through `provider_set_active(role, provider_id)` after the production first-output trial succeeds; clearing a role removes only routing intent and leaves provider configuration intact.
 
 ```rust
-pub enum Consumer { IrisyPrimary, IrisyFallback, Custom(String) }  // v2: dropped McpDefault
+pub enum Consumer { IrisyPrimary, IrisyFallback, Custom(String) }
 
 pub struct RouteChain {
-    primary: ProviderId,
+    primary: Option<ProviderId>,
     fallbacks: Vec<ProviderId>,
 }
 ```
 
-Default config (v2):
-- `irisy.primary` = first detected user CLI in priority order `claude > codex > gemini > aider`. **No CLI detected → unset** (Irisy toasts "Configure a provider in Settings → Providers"). Never auto-falls-back to a paid provider for primary slot. *Reason: augmentation philosophy — CTRL does not silently spend money on the user's behalf for the primary path.*
-- `irisy.fallback` = `volc` (CTRL-managed credential, CTRL pays the Volc Doubao bill; future replaces with ctrl-brand provider). Always present, always healthy — first-boot users without any CLI still get a working AI via this fallback. *This is the substrate-level CTRL business guarantee.*
+For `irisy.primary`, `RouteChain` contains the explicitly bound primary followed by the separately and explicitly bound fallback, excluding a duplicate id. For `irisy.fallback`, the chain contains only that role's binding and never recurses. An empty chain returns a typed unbound-provider error. Runtime routing probes adapter-owned availability, skips `Unavailable`, then uses the existing first-output stream check; `Unknown` remains eligible for the production call because remote availability cannot be proven cheaply. Catalogue entries, configured adapters, and arbitrary first-ready scans never create candidates.
 
-**Volc has two manifest ids** to disambiguate the dual identity:
-- `volc` = CTRL-managed fallback (credential from CTRL secrets pipeline / ctrl-cloud worker, never from user keychain). Used by `irisy.fallback` only.
-- `volc-byok` = user BYOK Volc (credential from user keychain). Listed in `/settings/providers` REST section, user-elected.
+Persisted state is versioned v4 and keeps role intent separate from verification evidence:
 
-Persisted at `~/.ctrl/state/active-providers.json` (v2 schema):
 ```json
 {
+  "version": 4,
   "roles": {
-    "irisy.primary":  "anthropic-api",
-    "irisy.fallback": "volc"
+    "irisy.primary": "zhipu",
+    "irisy.fallback": "ollama"
+  },
+  "verifications": {
+    "zhipu": { "fingerprint": "<sha256>" },
+    "ollama": { "fingerprint": "<sha256>" }
   }
 }
 ```
 
-v1 → v2 migration: if file has the old single bucket `{"text.chat": "<id>"}`, the loader writes `roles.irisy.primary = <id>` and `roles.irisy.fallback = "volc"`. If file has v1 `roles.mcp.default`, the loader drops that key.
+A fingerprint covers the serialized behavior-relevant manifest and the resolved credential. Only the digest is persisted; raw credentials never enter this file or logs. A provider is verified iff its stored digest equals the digest recomputed from the current manifest and credential. Successful `provider_set_active` and a successful transactional edit of an already active provider record evidence after the persisted manifest and credential are reloaded. Ordinary Test is non-mutating. Clearing a role preserves evidence; deleting a provider removes it; any configuration replacement naturally invalidates stale evidence by fingerprint mismatch.
 
-`/text-chat` SSE endpoint (port 17878) accepts `?consumer=<role>` query param. Pi bridge sets `consumer=irisy.primary`; on stream error/timeout, kernel auto-falls-back through `RouteChain.fallbacks` (default: `["volc"]`) + emits `provider:failover { from, to, reason }` event.
+The example fallback exists only because the user explicitly activated it. Migration from v0/v2/v3 preserves role intent as bound-but-unverified, removes the pre-v3 automatically seeded `irisy.fallback = "ollama"` once, and persists v4. Transient failover records what happened but never mutates role bindings or verification evidence. Production routing accepts only explicit bindings with matching current evidence, and every text-chat caller uses the shared router. (ADR-002 substrate § provider v71)
 
-**SSOT lock (v8 2026-06-06)**: `~/.ctrl/state/active-providers.json` is the SINGLE source of truth for routed provider/model. There is no `last_routed` mirror register, no router-internal routing-state cache for display. The router reads SSOT per `/text-chat` request (mtime-watched in-memory cache invalidated on file change + on `provider_set_active()`); the file IS the answer. Tauri command `get_active_providers()` returns the parsed SSOT (with full provider descriptors from `provider_list()` joined in) for chip + Irisy self-report. SSOT changes emit Tauri event `active-providers-changed { roles }` so subscribers refresh without polling.
+### §3.6 Catalogue, configuration, runtime, verification, and binding UX
 
-**Failover is transient override, not state mutation (v8)**: on primary call failure the router routes the SAME request to fallback + emits Tauri event `provider:routing-override { active, reason, ts }`. SSOT file is NOT written (user intent is not stolen by transient failure). On the next successful primary call, router emits `provider:routing-restored`. Chip overlays a ⚠ badge with the fallback label during the override window; cold display always reads SSOT directly.
+`provider_list` reports independent facts for every manifest: `configured`, `runtime_status`, `runtime_detail`, `verified`, and `active_roles`. `provider_detect` may report system discovery but does not bind a role. Opening Settings performs bounded adapter-owned probes; Ollama calls its configured `/api/tags` endpoint with a two-second timeout and is `available` only when the exact selected model tag exists. Remote providers normally remain runtime `unknown` until the user activates one through the real trial.
 
-**Retired (was earlier v8 draft, removed as patch-style)**: `provider:routed` per-request truth event, `last_routed` register, `brain_status.last_routed` field. Adding a 4th routing state on top of 3 racing ones (SSOT / Pi spawn intent / setModel target / proposed last_routed) does not fix the race — it extends it. The system-level fix is to retire 2 of the 3 racing states (Pi spawn intent + setModel target — see §1.2) and treat SSOT as both intent AND truth.
+Settings renders four orthogonal badge groups for each provider: configuration (`Needs configuration` or `Configured`), runtime (`Runtime unavailable`, `Available`, or `Runtime unknown`), verification (`Verified` or `Not verified`), and zero or more roles (`Primary`, `Fallback`). A bound role remains visible when runtime is unavailable. It provides separate `Use primary` and `Use fallback` actions plus `Clear fallback`; an unbound fallback is displayed as `No fallback`. No row displays composite `Ready`, and deleting a bound provider leaves its role unassigned rather than selecting another provider. (ADR-002 substrate § provider v71; ADR-003 frontend § pwa v25)
 
-### §3.6 Detect + auto-adopt UX (mirrors VMark detect + role assignment is CTRL-new) — v2
+### §3.7 Introspection
 
-**v2 amendment**: page renders **2 role sections** (not 3); `irisy.fallback` defaults `volc` at first boot without user action (CTRL-managed).
-
-- Tauri command `provider_detect()` → `Vec<ProviderEntry { id, label, kind, binary_path, version, available }>`. Scans PATH for `claude` / `codex` / `gemini` / `aider` / `ollama`; pings REST endpoints for configured keys. Cached in `OnceLock<Mutex<...>>` (ported from VMark `detection.rs`).
-- First boot + no `active-providers.json`:
-  - `irisy.primary` = highest-priority detected CLI (`claude > codex > gemini > aider`), silent — Irisy one-line toast "Using <label> — change in Settings". **No CLI detected → primary stays unset**, Irisy toasts "Tip: install Claude CLI for free use, or your Volc fallback is already active" (still functional via fallback).
-  - `irisy.fallback` = `volc` always — CTRL-managed credential, no user action needed.
-- Tauri command `provider_set_active(role, provider_id)` runs `trial_verify()` using the production adapter and a tiny `"hi"` response before committing. Provider setup plus first visible output share one absolute 30-second deadline; failure keeps the previous binding and surfaces the specific timeout/auth/network/model error. The trial may disable reasoning only for an OpenAI-compatible provider that explicitly supports that control, preventing hidden reasoning tokens from exhausting the verification budget; ordinary chat preserves normal reasoning behavior, and hidden chain-of-thought is never accepted as visible output. Configured presence, credential readiness, and active binding are separate states. (v69)
-- `/settings/providers` page — **2 role sections** (Irisy primary / Irisy fallback) × radio rows with Available/Not-found badges. CLI providers listed first within each section, then `volc` (the CTRL fallback option, always shown as Available with "[CTRL-managed]" badge in fallback section). REST API (BYOK) section below — Anthropic / OpenAI / Google / Volc-BYOK / Kimi / DeepSeek / Ollama with Configure→ buttons. BYOK Volc is a separate row from CTRL-managed volc (different manifest id `volc-byok`).
-
-### §3.7 Introspection — Irisy self-awareness (closes bao 2026-05-31 root issue) — v2 (chip data source RETRACTED in v9)
-
-> **CHIP DATA SOURCE RETRACTED v9 2026-06-06** — see changelog. PWA `ChatHeaderControls` MUST read `pi_rpc('getState')` (Pi's rpc.md-documented authoritative API) for the displayed provider+model. With Pi bound to the real provider directly at spawn (§1.2 v9), `getState().model.{provider, id}` IS the truth — there is no longer a wrapper-side router to disagree with Pi. `get_active_providers` Tauri command remains as SETTINGS INTENT projection (Settings UI consumes it for "what did the user pick"); the chip uses Pi truth. `runtimeTruthBlock` in ctrl-pi-bridge reads `Context.model` (Pi's already-resolved current model) rather than fetching CTRL HTTP. Section body below preserved for history.
-
-
-
-**v2 amendment**: dropped `mcp.default` from the providers map. Fallback `volc` label = `"CTRL Cloud"` (brand-facing), not `"Volc Doubao"` (codename) — keeps user-facing layer abstracted so the future ctrl-brand swap is invisible.
-
-Tauri command `brain_status()` (health view — NOT a routing-truth view; for routing-truth see `get_active_providers()`):
-```json
-{
-  "engine": { "id": "Pi", "version": "0.73.1", "healthy": true, "last_token_ms": 142 },
-  "providers": {
-    "irisy.primary":  { "id": "anthropic-api", "label": "Anthropic API", "endpoint": "https://api.anthropic.com", "healthy": true, "managed_by": "user" },
-    "irisy.fallback": { "id": "volc",         "label": "CTRL Cloud",          "endpoint": "<ctrl-managed>",         "healthy": true, "managed_by": "ctrl" }
-  },
-  "last_failover": null
-}
-```
-
-Tauri command `get_active_providers()` (v8 — routing truth, single SSOT projection):
-```json
-{
-  "roles": {
-    "irisy.primary":  { "id": "anthropic-api", "label": "Anthropic API", "model_id": "claude-sonnet-4-20250514", "model_label": "Claude Sonnet 4", "managed_by": "user" },
-    "irisy.fallback": { "id": "volc",         "label": "CTRL Cloud",          "model_id": "doubao-1-5-pro-32k-250115", "model_label": "Doubao Pro 32K", "managed_by": "ctrl" }
-  },
-  "override": null
-}
-```
-
-`override` is non-null only during a transient failover window: `{ active: "irisy.fallback", reason: "<error>", ts: "..." }`. Cleared by `provider:routing-restored` event on next successful primary call.
-
-`managed_by` field (v2): `"user"` = user-owned CLI or user BYOK key; `"ctrl"` = CTRL-paid fallback. Settings UI surfaces this so the user understands who pays for each path.
-
-**Routing-truth read rules (v8 lock, supersedes earlier-draft v8)**:
-- PWA `ChatHeaderControls` calls `invoke('get_active_providers')` on mount + subscribes Tauri events `active-providers-changed` (SSOT mutation) + `provider:routing-override` / `provider:routing-restored` (transient failover). Cold-render = SSOT projection. Failover-render = overlay ⚠ badge with `override.active` label. **Never calls** `Pi.getState()` / `getAvailableModels()[0]` / reads `brain_state` for chip display.
-- ctrl-pi-bridge `runtimeTruthBlock` HTTP-fetches kernel `/api/active-providers` (mirror of `get_active_providers` Tauri command, same shape) at extension load + on SSOT-change webhook from kernel. **Never reads** `process.env.PI_PROVIDER` / `PI_MODEL` (both retired in §1.2).
-- Irisy system prompt v5 (ADR-005 § persona) injects `<brain_state>` block built from `get_active_providers()` output. Irisy answers "你用什么模型" with `roles["irisy.primary"].label + model_label` ("Anthropic API · Sonnet 4") — never RPC codename, never `Pi.getState().model.id`. During override, Irisy uses `roles[override.active].label` instead + says "Claude 暂时连不上, 我切到 CTRL Cloud 了" using the typed `provider:routing-override` payload.
+`brain_status` keeps engine process health separate from provider facts. Each explicitly bound role reports provider identity plus `configured` and `verified`; verification is queried from current fingerprint evidence and is never inferred from the binding. Introspection surfaces may report whether a verified primary binding exists, but must not choose an adapter. `providers.describe/query` exposes the same typed dimensions through the §14 RecordSource schema. `get_active_providers` remains the projection of explicit role intent used by chips and Settings. None of these surfaces may infer routing intent, verification, or runtime availability from manifest presence. (ADR-002 substrate § provider v71)
 
 ### §3.8 Retirements
 
@@ -1191,7 +1144,7 @@ User can opt to "preserve all" in Settings (off by default — vault grows unbou
 - [~] Historical Pi-turn SOUL injection retired with Pi in v19. Current Hermes SOUL ownership/drain acceptance is tracked in ADR-005 §9.5.
 
 ### Layer 4 synthesize (product brainstorm §5.3 / §5.5 / §5.10 — satisfied here)
-- [x] `commands/irisy_synth.rs` — 3 Tauri commands using `provider_registry.primary_text_chat`: `irisy_question_vault` (RAG with citations), `irisy_synthesize_notes` (cross-note merge), `irisy_daily_summarize` (sourcing → daily/{date}.md). v0.1.158.
+- [x] `commands/irisy_synth.rs` — 3 Tauri synthesis commands (`irisy_question_vault`, `irisy_synthesize_notes`, `irisy_daily_summarize`) now drain the shared explicit+verified provider router; the former direct `provider_registry.primary_text_chat` path is retired under §3 v71. Originally shipped v0.1.158.
 
 ### Block AI ops (product brainstorm §5.2 / P2 / P7 — satisfied here)
 - [x] `lib/block-ai-ops.ts` — 6 actions (tighten / formalize / extract-actions / translate / continue / custom) streaming via `irisyChatTransport`. v0.1.158.

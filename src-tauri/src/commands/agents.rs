@@ -42,10 +42,13 @@ pub async fn launch_agent(
     kernel: State<'_, KernelHandle>,
 ) -> Result<AgentEndpoint, String> {
     let agent = AgentName::from_str(&name).map_err(|e| e.to_string())?;
-    // Unified provider injection (ADR-002 §1.3): feed the active CTRL
-    // provider into the agent so opencode/hermes use the same BYOK config
-    // the user picked — configure once, every face uses it.
-    let provider_env = kernel.runtime.provider_registry.agent_env_injection();
+    // Unified provider injection uses the same verified provider generation as
+    // routing and durable Hermes projection. (ADR-002 substrate § provider v71)
+    let provider_env = kernel
+        .runtime
+        .provider_registry
+        .agent_env_injection()
+        .await;
     // The child handle is dropped here; on Unix the child inherits SIGHUP
     // and is reaped when the parent exits. For long-lived launches we'll
     // hold the handle in a process registry, but for the initial wire we
@@ -260,9 +263,9 @@ pub async fn connect_agent_mcp(
 /// 2026-06-11 — it reports "No inference provider configured" and points to
 /// ~/.hermes/.env), so CTRL's unified provider injection (ADR-002 §1.3) is
 /// written there instead. Only the key + base_url vars are mirrored;
-/// existing user lines are preserved (merge, not clobber). No active HTTP
-/// provider -> leave the file untouched so the user's own hermes setup
-/// survives.
+/// existing user lines are preserved (merge, not clobber). When CTRL has no
+/// verified HTTP primary, managed provider keys are removed so Hermes cannot
+/// reuse stale credentials. (ADR-002 substrate § provider v71)
 pub(crate) fn write_hermes_dotenv(
     env: &std::collections::BTreeMap<String, String>,
 ) -> Result<(), String> {
@@ -277,9 +280,8 @@ pub(crate) fn write_hermes_dotenv(
         "OPENAI_BASE_URL",
         "TAVILY_API_KEY",
     ];
-    if MANAGED.iter().all(|k| !env.contains_key(*k)) {
-        return Ok(());
-    }
+    // Even an empty provider environment rewrites the file to remove stale
+    // CTRL-managed credentials. (ADR-002 substrate § provider v71)
     let base =
         directories::BaseDirs::new().ok_or_else(|| "could not resolve home dir".to_string())?;
     let dir = base.home_dir().join(".hermes");
@@ -420,6 +422,46 @@ pub(crate) fn write_hermes_config_yaml(
     Ok(())
 }
 
+/// Remove only CTRL-managed provider selection from Hermes while preserving all
+/// unrelated user configuration. (ADR-002 substrate § provider v71)
+pub(crate) fn clear_hermes_provider_projection() -> Result<(), String> {
+    let base =
+        directories::BaseDirs::new().ok_or_else(|| "could not resolve home dir".to_string())?;
+    let path = base.home_dir().join(".hermes/config.yaml");
+    if !path.exists() {
+        return Ok(());
+    }
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|error| format!("read ~/.hermes/config.yaml: {error}"))?;
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .map_err(|error| format!("parse ~/.hermes/config.yaml: {error}"))?;
+
+    let ctrl_owned_model = doc
+        .get("model")
+        .and_then(|model| model.get("provider"))
+        .and_then(serde_yaml::Value::as_str)
+        == Some("ctrl");
+    if ctrl_owned_model {
+        if let Some(model) = doc.get_mut("model").and_then(serde_yaml::Value::as_mapping_mut) {
+            model.remove(serde_yaml::Value::String("default".into()));
+            model.remove(serde_yaml::Value::String("provider".into()));
+        }
+    }
+    if let Some(providers) = doc
+        .get_mut("providers")
+        .and_then(serde_yaml::Value::as_mapping_mut)
+    {
+        providers.remove(serde_yaml::Value::String("ctrl".into()));
+    }
+
+    let serialized = serde_yaml::to_string(&doc)
+        .map_err(|error| format!("serialize ~/.hermes/config.yaml: {error}"))?;
+    let tmp = path.with_extension("yaml.tmp");
+    std::fs::write(&tmp, serialized).map_err(|error| format!("write tmp: {error}"))?;
+    std::fs::rename(&tmp, &path).map_err(|error| format!("rename: {error}"))?;
+    Ok(())
+}
+
 /// Walk a serde_yaml::Value as nested mappings, creating intermediate
 /// maps when missing, then set `path[..last] -> last` to `value`.
 fn set_mapping_path(doc: &mut serde_yaml::Value, path: &[&str], value: serde_yaml::Value) {
@@ -525,13 +567,10 @@ pub async fn run_hermes_oneshot(
     // provider the user picked in CTRL. hermes reads it from ~/.hermes/.env
     // (not process env), so mirror it there; the process env below stays as
     // a fallback for hermes builds that do read it.
-    let provider_env = registry.agent_env_injection();
-    write_hermes_dotenv(&provider_env)?;
-    // Pin the web backend (default ddgs, or tavily when a key exists).
-    // Best-effort: a config-write hiccup must never sink the chat turn.
-    if let Err(e) = write_hermes_web_belt() {
-        tracing::warn!(error = %e, "hermes web belt write failed; Irisy web search may be off");
-    }
+    // `agent_env_injection` already synchronized `.env`, provider config, and
+    // web backend under the provider mutation lock.
+    // (ADR-002 substrate § provider v71)
+    let provider_env = registry.agent_env_injection().await;
 
     let mut cmd = tokio::process::Command::new(uvx);
     // `--with ddgs` makes the free DuckDuckGo backend importable inside the

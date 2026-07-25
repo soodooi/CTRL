@@ -17,7 +17,9 @@
 
 use crate::kernel::capability::{CapToken, CapabilityBroker};
 use crate::kernel::capability_resolver;
-use crate::kernel::provider::{LlmMessage, LlmPrompt};
+use crate::kernel::provider::{
+    routing::route_text_chat, Consumer, LlmMessage, LlmPrompt,
+};
 use crate::shell::KernelHandle;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
@@ -79,16 +81,7 @@ pub async fn chat_stream(
         })?;
     }
 
-    let adapter = kernel
-        .runtime
-        .provider_registry
-        .primary_text_chat()
-        .ok_or_else(|| {
-            "No text.chat provider available. Open Settings → Brain to \
-             pick a provider (Claude Pro via CLI, Anthropic API key, \
-             Volc, Kimi, DeepSeek...)."
-                .to_string()
-        })?;
+    let registry = kernel.runtime.provider_registry.clone();
 
     let prompt = LlmPrompt {
         // PWA bakes the system prompt into the messages array; we pass
@@ -118,9 +111,18 @@ pub async fn chat_stream(
             deadline_ms: 30_000,
             disable_reasoning: false,
         };
-        let result = adapter.chat_stream(&prompt, &opts).await;
-        let mut rx = match result {
-            Ok(rx) => rx,
+        // The shared router is the only production text-chat candidate walker;
+        // retain this command's event-stream surface after route selection.
+        // (ADR-002 substrate § provider v71)
+        let result = route_text_chat(
+            &registry,
+            &Consumer::IrisyPrimary,
+            &prompt,
+            &opts,
+        )
+        .await;
+        let (_provider_id, mut rx) = match result {
+            Ok(routed) => routed,
             Err(e) => {
                 emit_done(&app, &request_id, Some(e.to_string()));
                 return;

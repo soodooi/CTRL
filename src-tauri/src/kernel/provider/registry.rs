@@ -1,32 +1,24 @@
-// ProviderRegistry — load manifests, instantiate adapters, hold the
-// per-role active state.
+// ProviderRegistry — load provider manifests, instantiate configured adapters,
+// probe adapter-owned runtime facts, and persist explicit role bindings.
 //
-// ADR-002 substrate § provider v2 lock #3:
-//   - `ProviderRegistry::load()` reads builtin/*.toml at startup +
-//     scans `~/.ctrl/providers/`.
-//   - `active_for_consumer(role) -> ProviderHandle` lookup is the hot
-//     path the chat commands hit (replaces v1 `active_provider(capability)`).
-//   - active state persists to `~/.ctrl/state/active-providers.json`
-//     (role-keyed map under "roles" top-level key, v2 schema).
+// Catalogue, configuration, runtime availability, production verification, and
+// binding are independent facts. Builtin manifests never create bindings;
+// `provider_set_active` commits a role only after the production first-output
+// trial. Active state persists as versioned v4 under
+// `~/.ctrl/state/active-providers.json`, with role intent and verification
+// fingerprints stored as independent maps. Legacy automatic Ollama fallback
+// state is removed once while prior role intent remains bound but unverified.
+// (ADR-002 substrate § provider v71)
 //
-// v2 amendment (2026-05-31): switched from capability-keyed to role-keyed
-// active map (Consumer enum). 2 roles only: irisy.primary (user CLI,
-// 0 CTRL cost) + irisy.fallback (CTRL-managed paid `volc` by default).
-// Boot seeds irisy.fallback = "volc" so a fresh install without any
-// detected CLI still has a working AI path.
-// Migration: v0 file `{"text.chat":"<id>"}` -> roles.irisy.primary = <id>;
-// v1 file with `mcp.default` -> drop that key.
-//
-// Builtin TOMLs are embedded via `include_str!` so a packaged release
-// always has them even if the user's `~/.ctrl/providers/` is empty.
-// User-installed manifests (or builtins re-saved into the user dir
-// with an edited `endpoint` / `models[]`) WIN — last loaded wins so a
-// custom manifest can override a builtin without code change.
+// Builtin TOMLs are embedded via `include_str!` so a packaged release can show
+// known integrations even when `~/.ctrl/providers/` is empty. User manifests
+// win by id, allowing endpoint/model overrides without code changes.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
+use tokio::sync::{Mutex, MutexGuard};
 
 /// Cooldown window after a provider's chat_stream / first-chunk peek fails.
 /// While inside the window, `http_endpoint` skips this provider as the
@@ -38,6 +30,9 @@ use std::time::SystemTime;
 const PROVIDER_COOLDOWN_SECS: u64 = 300;
 
 use serde::{Deserialize, Serialize};
+// Verification fingerprints bind evidence to current provider behavior.
+// (ADR-002 substrate § provider v71)
+use sha2::{Digest, Sha256};
 
 use super::adapter::{
     HttpApiProvider, OneShotCliProvider, RestAnthropicProvider, RestGoogleProvider,
@@ -47,7 +42,9 @@ use super::manifest::{
     default_active_state_path, default_user_providers_dir, legacy_config_path, parse_file,
     parse_str, AuthSource, HttpShape, ProviderKind, ProviderManifest,
 };
-use super::r#trait::{Capability, Consumer, Provider, RouteChain};
+use super::r#trait::{
+    Capability, Consumer, Provider, ProviderRuntimeAvailability, ProviderRuntimeStatus, RouteChain,
+};
 
 /// Who pays for a provider's calls. Surfaced by `snapshot()` so the
 /// Settings UI + brain_status response can mark CTRL-billed paths
@@ -63,10 +60,9 @@ pub enum ProviderManagedBy {
     User,
 }
 
-/// Snapshot of a single provider's externally-relevant state. Used by
-/// `commands/provider::brain_status` to compose the role status block
-/// without exposing the internal `LoadedProvider` / `ProviderManifest`
-/// types to the command layer. ADR-002 substrate § provider v2 §3.7.
+/// Snapshot of a single provider's externally relevant configuration fact.
+/// Runtime availability, verification, and role binding remain separate.
+/// (ADR-002 substrate § provider v71)
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderSnapshot {
     pub id: String,
@@ -74,9 +70,8 @@ pub struct ProviderSnapshot {
     pub kind: ProviderKind,
     pub endpoint: Option<String>,
     pub binary: Option<String>,
-    /// True iff the credential resolved AND the adapter was instantiated.
-    /// False = manifest known but not usable (user needs to set a key).
-    pub ready: bool,
+    /// True iff credentials/config resolved and the adapter was constructed.
+    pub configured: bool,
     pub managed_by: ProviderManagedBy,
 }
 use super::types::ProviderError;
@@ -85,23 +80,10 @@ use super::verify::trial_chat;
 const KEYCHAIN_SERVICE_PRIMARY: &str = "app.ctrl";
 const KEYCHAIN_SERVICE_LEGACY: &str = "app.ctrl.spike";
 
-/// Manifest id seeded into the `IrisyFallback` slot at boot when no
-/// persisted state overrides it. ADR-002 substrate § provider v2 lock
-/// #3 + ADR-006 cross-cutting § byok-no-claude v2 (2026-06-25, bao
-/// directive: "you're designing a system — not every user has a Volc
-/// key"): the default fallback must run out of the box for every user,
-/// with zero BYOK and zero cloud dependency. `volc` was wrong here — it
-/// needs a user-supplied key and was already dropped from
-/// BUILTIN_MANIFESTS, so the slot pointed at a manifest that is never
-/// seeded (the default path was simply broken). Point it instead at the
-/// one builtin that runs key-free on the user's own machine: `ollama`
-/// (CTRL bootstrap ships hermes3:8b). This honors
-/// `.kiro/steering/development-philosophy.md` derived rule #2: it works
-/// offline and ctrl-cloud is augmentation, not a dependency. The CF Workers
-/// AI cloud default
-/// (ADR-006 Pattern D) takes this slot once the ctrl-cloud secrets
-/// pipeline ships and a CTRL-brand cloud provider is seeded.
-const CTRL_FALLBACK_PROVIDER_ID: &str = "ollama";
+/// Provider role bindings are never seeded from a builtin id. Catalogue
+/// presence is not evidence that a runtime exists; only explicit activation
+/// after the production trial may create a binding.
+/// (ADR-002 substrate § provider v70; ADR-006 cross-cutting § BYOK v12)
 
 /// Manifest ids whose credential pipeline is owned by CTRL (CTRL pays
 /// the bill). Used by `snapshot()` to set `managed_by`. ADR-002
@@ -111,20 +93,9 @@ const CTRL_FALLBACK_PROVIDER_ID: &str = "ollama";
 /// the ctrl-cloud secrets pipeline ships (ADR-006 § byok-no-claude v2).
 const CTRL_MANAGED_PROVIDER_IDS: &[&str] = &[];
 
-/// Embedded builtin manifests — single source of truth for the 9
-/// presets ADR-002 substrate § provider v2 §3.2 + lock #6 mandate.
-/// v2 added `volc-byok` (separate slot from the CTRL-managed `volc`
-/// fallback) plus `google` + `ollama` (verbatim VMark REST adapters).
-// bao 2026-06-05 e: BYOK builtins (openai-api / volc-byok / kimi /
-// deepseek / google) removed from BUILTIN_MANIFESTS. Hardcoded preset
-// list was anti-pattern (industry default: user adds free-form custom
-// providers via `~/.ctrl/providers/<slug>.toml`, no preset clutter).
-// Only `ollama` (works without a key — local) stays builtin so a fresh
-// install has at least one runnable substrate. `volc` (CTRL-managed
-// fallback) also dropped — without a baked CTRL key it cannot chat,
-// so listing it just creates a confusing "not ready" row.
-// Users add providers via PWA AddModal -> config_set_provider_key
-// (which writes a user-owned .toml + keychain entry).
+/// Embedded builtin manifests are catalogue integrations only. Their presence
+/// proves neither local installation nor role binding. Ollama runtime status is
+/// adapter-probed before display/routing. (ADR-002 substrate § provider v71)
 const BUILTIN_MANIFESTS: &[(&str, &str)] = &[
     ("ollama", include_str!("builtin/ollama.toml")),
 ];
@@ -151,6 +122,14 @@ struct LoadedProvider {
     source: ProviderSource,
 }
 
+/// Persisted proof that the exact provider configuration completed the
+/// production first-output trial. Only the digest is stored.
+/// (ADR-002 substrate § provider v71)
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+struct VerificationEvidence {
+    fingerprint: String,
+}
+
 pub struct ProviderRegistry {
     /// All known manifests by id. `provider` is Some when the
     /// credential resolution + adapter construction succeeded; None
@@ -161,6 +140,15 @@ pub struct ProviderRegistry {
     /// `Capability` in v1). Mirrors `~/.ctrl/state/active-providers.json`
     /// `"roles"` map on every mutation.
     active: RwLock<BTreeMap<Consumer, String>>,
+    /// Production-trial evidence keyed by provider id. Evidence is valid only
+    /// while its digest matches the current behavior manifest and resolved
+    /// credential; role binding never implies verification.
+    /// (ADR-002 substrate § provider v71)
+    verifications: RwLock<BTreeMap<String, VerificationEvidence>>,
+    /// Serializes provider definition/credential mutation with production
+    /// verification so compare-and-commit cannot observe mixed generations.
+    /// (ADR-002 substrate § provider v71)
+    mutation_lock: Mutex<()>,
     /// Path the active-state file is persisted to. None when HOME is
     /// unavailable (CI) — in-memory active map still works, just isn't
     /// saved across boots.
@@ -238,6 +226,10 @@ impl ProviderRegistry {
         let registry = Self {
             providers: RwLock::new(BTreeMap::new()),
             active: RwLock::new(BTreeMap::new()),
+            // Role intent and trial evidence are independent persisted facts.
+            // (ADR-002 substrate § provider v71)
+            verifications: RwLock::new(BTreeMap::new()),
+            mutation_lock: Mutex::new(()),
             active_state_path: default_active_state_path(),
             last_failover: RwLock::new(None),
             routing_override: RwLock::new(None),
@@ -279,73 +271,15 @@ impl ProviderRegistry {
         // 4. Restore active selections (with v0/v1 -> v2 schema migration).
         registry.restore_active_state();
 
-        // 5. ADR-002 substrate § provider v2 lock #3: seed CTRL-managed
-        //    fallback if user hasn't overridden. Guarantees a fresh install
-        //    without any detected CLI still has a working AI path.
-        registry.seed_default_fallback();
-
-        // 6. ADR-002 substrate § provider v2 §3.6 first-boot auto-adopt:
-        //    if IrisyPrimary is unset AND a known user CLI is on PATH,
-        //    silently bind it. Persists immediately so subsequent boots
-        //    skip the detection cost.
-        registry.first_boot_auto_adopt();
+        // First launch intentionally leaves both roles unbound. Catalogue
+        // entries become bindings only through the real production trial in
+        // `set_active`; runtime presence is never inferred at boot.
+        // (ADR-002 substrate § provider v71)
 
         registry
     }
 
-    /// Ensure `Consumer::IrisyFallback` is bound to the CTRL-managed
-    /// provider when the persisted state did not specify one. Idempotent
-    /// and never overwrites a user choice. Does NOT persist — the seeded
-    /// default is recomputed at next boot unless the user explicitly
-    /// `set_active` something else.
-    fn seed_default_fallback(&self) {
-        let mut active = self.active.write().unwrap();
-        active
-            .entry(Consumer::IrisyFallback)
-            .or_insert_with(|| CTRL_FALLBACK_PROVIDER_ID.to_string());
-    }
-
-    /// First-boot auto-adopt. ADR-002 substrate § provider v3 §3.6
-    /// (amended v47, 2026-07-11 — CLI-subscription fallback removed):
-    /// when no `IrisyPrimary` is configured (fresh install OR explicit
-    /// unset by user delete), scan the keychain for a BYOK REST
-    /// credential and silently bind the first match as primary so the
-    /// user does not have to open Settings. The device-first fallback
-    /// (`ollama`) seeded above already handles the no-key case.
-    ///
-    /// Only fires when the chosen manifest is actually `ready` —
-    /// otherwise we leave the slot unset and let the Settings UI
-    /// surface the issue.
-    fn first_boot_auto_adopt(&self) {
-        {
-            let active = self.active.read().unwrap();
-            if active.contains_key(&Consumer::IrisyPrimary) {
-                return;
-            }
-        }
-        let Some(manifest_id) = super::detect::first_boot_primary_choice() else {
-            return;
-        };
-        let providers = self.providers.read().unwrap();
-        let Some(loaded) = providers.get(manifest_id) else {
-            return;
-        };
-        if loaded.provider.is_none() {
-            return;
-        }
-        drop(providers);
-        {
-            let mut active = self.active.write().unwrap();
-            active.insert(Consumer::IrisyPrimary, manifest_id.to_string());
-        }
-        self.persist_active_state();
-        tracing::info!(
-            manifest = %manifest_id,
-            "provider: first-boot auto-adopted IrisyPrimary from detected user CLI"
-        );
-    }
-
-    /// Record a failover transition observed by `http_endpoint` when
+    /// Record a failover transition observed by `route_text_chat` when
     /// the primary provider failed and the request was routed through
     /// a fallback. The last transition wins; reads via
     /// `last_failover_event()`. ADR-002 substrate § provider v2 §3.5.
@@ -450,6 +384,19 @@ impl ProviderRegistry {
         }
     }
 
+    /// Remove one explicit role binding without touching provider configuration.
+    /// This is how Settings represents `No fallback`; routing intent remains
+    /// independent from catalogue and runtime facts.
+    /// (ADR-002 substrate § provider v71)
+    pub async fn clear_role(&self, consumer: &Consumer) -> bool {
+        let _mutation_guard = self.lock_mutation().await;
+        let removed = self.active.write().unwrap().remove(consumer).is_some();
+        if removed {
+            self.persist_active_state();
+        }
+        removed
+    }
+
     /// Remove `provider_id` from every active-role slot it occupies.
     /// Called by `config_delete_provider` so the SSOT doesn't keep
     /// pointing at a manifest the registry just dropped — without this
@@ -497,43 +444,72 @@ impl ProviderRegistry {
             .unwrap_or(false)
     }
 
-    /// Snapshot of all manifests + their load status for the Settings
-    /// UI. Sorted by manifest id for stable display order.
-    pub fn list(&self) -> Vec<ProviderListEntry> {
-        let providers = self.providers.read().unwrap();
-        let mut out: Vec<_> = providers
-            .values()
-            .map(|p| ProviderListEntry {
-                id: p.manifest.id.clone(),
-                label: p.manifest.label.clone(),
-                kind: p.manifest.kind.clone(),
-                // Preserve the authoritative wire shape across PWA edits.
-                // (ADR-002 substrate § provider v67)
-                shape: p.manifest.shape.clone(),
-                endpoint: p.manifest.endpoint.clone(),
-                models: p.manifest.models.clone(),
-                description: p.manifest.description.clone(),
-                ready: p.provider.is_some(),
-                load_error: p.load_error.clone(),
-                source: p.source,
-                capabilities: p
-                    .manifest
+    /// Snapshot all manifests with typed configuration, runtime, verification,
+    /// and binding facts. Runtime probes are adapter-owned and bounded; no UI
+    /// state is inferred from adapter construction alone.
+    /// (ADR-002 substrate § provider v71)
+    pub async fn list(&self, probe_runtime: bool) -> Vec<ProviderListEntry> {
+        let active = self.active.read().unwrap().clone();
+        let snapshots: Vec<_> = {
+            let providers = self.providers.read().unwrap();
+            providers
+                .values()
+                .map(|loaded| {
+                    let active_roles = active
+                        .iter()
+                        .filter_map(|(role, id)| {
+                            (id == &loaded.manifest.id).then(|| role.id())
+                        })
+                        .collect::<Vec<_>>();
+                    (
+                        loaded.manifest.clone(),
+                        loaded.provider.clone(),
+                        loaded.load_error.clone(),
+                        loaded.source,
+                        active_roles,
+                    )
+                })
+                .collect()
+        };
+
+        let mut out = Vec::with_capacity(snapshots.len());
+        for (manifest, provider, load_error, source, active_roles) in snapshots {
+            // Keep configuration, runtime availability, verification, and
+            // binding independent in every row.
+            // (ADR-002 substrate § provider v71)
+            let configured = provider.is_some();
+            let runtime = match (probe_runtime, provider) {
+                (true, Some(provider)) => provider.runtime_availability().await,
+                _ => ProviderRuntimeAvailability::unknown(),
+            };
+            // Serialize each independent provider fact without inferring a
+            // composite readiness state. (ADR-002 substrate § provider v71)
+            out.push(ProviderListEntry {
+                id: manifest.id.clone(),
+                label: manifest.label.clone(),
+                kind: manifest.kind.clone(),
+                shape: manifest.shape.clone(),
+                endpoint: manifest.endpoint.clone(),
+                models: manifest.models.clone(),
+                description: manifest.description.clone(),
+                configured,
+                // Typed runtime and verification facts remain independent.
+                // (ADR-002 substrate § provider v71)
+                runtime_status: runtime.status,
+                runtime_detail: runtime.detail,
+                verified: self.is_verified(&manifest.id),
+                active_roles,
+                load_error,
+                source,
+                capabilities: manifest
                     .capabilities
                     .iter()
-                    .map(|c| c.id().to_string())
+                    .map(|capability| capability.id().to_string())
                     .collect(),
-            })
-            .collect();
-        out.sort_by(|a, b| a.id.cmp(&b.id));
+            });
+        }
+        out.sort_by(|left, right| left.id.cmp(&right.id));
         out
-    }
-
-    /// Lookup the active provider for a consumer role (v2).
-    pub fn active_for_consumer(&self, consumer: &Consumer) -> Option<ProviderHandle> {
-        let active = self.active.read().unwrap();
-        let id = active.get(consumer)?.clone();
-        drop(active);
-        self.get(&id)
     }
 
     /// Whether any persisted role currently resolves through this provider id.
@@ -558,16 +534,27 @@ impl ProviderRegistry {
     /// (`CTRL_MANAGED_PROVIDER_IDS`) — when CTRL adds a ctrl-brand
     /// manifest, its id goes in that const and snapshot() reports it as
     /// `Ctrl` without touching the manifest schema.
-    /// Re-scan `~/.ctrl/providers/*.toml` and merge new or changed manifests.
-    /// Explicit deletion uses `remove_user_provider` before this scan so a
-    /// malformed file never erases the last usable in-memory snapshot.
-    /// (ADR-002 substrate § provider v67)
-    pub fn reload_user_dir(&self) {
+    /// Serialize provider definition and credential mutations with verification.
+    /// Callers holding this guard must use `reload_user_dir_locked`.
+    /// (ADR-002 substrate § provider v71)
+    pub(crate) async fn lock_mutation(&self) -> MutexGuard<'_, ()> {
+        self.mutation_lock.lock().await
+    }
+
+    /// Re-scan while the caller holds `lock_mutation`.
+    pub(crate) fn reload_user_dir_locked(&self) {
         if let Some(dir) = default_user_providers_dir() {
             if dir.exists() {
                 load_user_manifests(&dir, self);
             }
         }
+    }
+
+    /// Re-scan `~/.ctrl/providers` without racing a production trial commit.
+    /// (ADR-002 substrate § provider v71)
+    pub async fn reload_user_dir(&self) {
+        let _guard = self.lock_mutation().await;
+        self.reload_user_dir_locked();
     }
 
     /// Remove one user manifest from the live snapshot after its local file is
@@ -611,6 +598,8 @@ impl ProviderRegistry {
     }
 
     pub fn snapshot(&self, id: &str) -> Option<ProviderSnapshot> {
+        // Snapshot reports configuration only; runtime and verification live on
+        // their authoritative surfaces. (ADR-002 substrate § provider v71)
         let providers = self.providers.read().unwrap();
         let loaded = providers.get(id)?;
         let m = &loaded.manifest;
@@ -625,7 +614,9 @@ impl ProviderRegistry {
             kind: m.kind.clone(),
             endpoint: m.endpoint.clone(),
             binary: m.binary.clone(),
-            ready: loaded.provider.is_some(),
+            // Adapter construction is configuration, not readiness.
+            // (ADR-002 substrate § provider v71)
+            configured: loaded.provider.is_some(),
             managed_by,
         })
     }
@@ -640,6 +631,87 @@ impl ProviderRegistry {
             .collect()
     }
 
+    /// Whether persisted trial evidence still matches the provider's current
+    /// behavior manifest and resolved credential. No role inference is used.
+    /// (ADR-002 substrate § provider v71)
+    pub fn is_verified(&self, provider_id: &str) -> bool {
+        let Some(current) = self.current_verification_fingerprint(provider_id) else {
+            return false;
+        };
+        self.verifications
+            .read()
+            .unwrap()
+            .get(provider_id)
+            .is_some_and(|evidence| evidence.fingerprint == current)
+    }
+
+    /// Record evidence for the exact currently loaded provider after an
+    /// independently completed production trial, then persist state v4.
+    /// (ADR-002 substrate § provider v71)
+    pub fn record_current_verification(&self, provider_id: &str) -> Result<(), ProviderError> {
+        let fingerprint = self
+            .current_verification_fingerprint(provider_id)
+            .ok_or_else(|| ProviderError::ProviderError(format!(
+                "provider {provider_id} is not configured"
+            )))?;
+        self.verifications.write().unwrap().insert(
+            provider_id.to_string(),
+            VerificationEvidence { fingerprint },
+        );
+        self.persist_active_state();
+        Ok(())
+    }
+
+    /// Record evidence only when the currently loaded configuration still
+    /// matches the fingerprint that completed the production trial.
+    /// (ADR-002 substrate § provider v71)
+    pub fn record_verification_if_current(
+        &self,
+        provider_id: &str,
+        expected_fingerprint: &str,
+    ) -> Result<(), ProviderError> {
+        let current = self
+            .current_verification_fingerprint(provider_id)
+            .ok_or_else(|| ProviderError::ProviderError(format!(
+                "provider {provider_id} is not configured"
+            )))?;
+        if current != expected_fingerprint {
+            return Err(ProviderError::ProviderError(format!(
+                "provider {provider_id} configuration changed during verification"
+            )));
+        }
+        self.verifications.write().unwrap().insert(
+            provider_id.to_string(),
+            VerificationEvidence {
+                fingerprint: current,
+            },
+        );
+        self.persist_active_state();
+        Ok(())
+    }
+
+    /// Remove stale evidence when a provider definition is deleted. Clearing a
+    /// role deliberately does not call this method.
+    /// (ADR-002 substrate § provider v71)
+    pub fn clear_verification(&self, provider_id: &str) -> bool {
+        let removed = self
+            .verifications
+            .write()
+            .unwrap()
+            .remove(provider_id)
+            .is_some();
+        if removed {
+            self.persist_active_state();
+        }
+        removed
+    }
+
+    fn current_verification_fingerprint(&self, provider_id: &str) -> Option<String> {
+        let manifest = self.manifest_for(provider_id)?;
+        let credential = resolve_auth(&manifest).ok()?;
+        Some(verification_fingerprint(&manifest, &credential))
+    }
+
     /// Resolve only the active HTTP provider environment for a release probe.
     /// This reuses the production credential and provider-shape resolution, but
     /// deliberately skips Hermes config projection and optional web credentials:
@@ -652,7 +724,10 @@ impl ProviderRegistry {
     /// Unified provider injection. Configure once in CTRL and every Irisy
     /// launch uses the same active BYOK provider.
     /// (ADR-002 substrate § provider v68)
-    pub fn agent_env_injection(&self) -> BTreeMap<String, String> {
+    pub async fn agent_env_injection(&self) -> BTreeMap<String, String> {
+        // Launch-time environment and durable Hermes projection must observe one
+        // verified provider generation. (ADR-002 substrate § provider v71)
+        let _mutation_guard = self.lock_mutation().await;
         let mut env = self.active_http_agent_env(true);
 
         // Hermes's built-in web tools use the independently configured Tavily
@@ -662,6 +737,19 @@ impl ProviderRegistry {
             if !key.is_empty() {
                 env.insert("TAVILY_API_KEY".into(), key);
             }
+        }
+
+        let has_verified_http_primary = env.contains_key("HERMES_INFERENCE_PROVIDER");
+        if !has_verified_http_primary {
+            if let Err(error) = crate::commands::agents::clear_hermes_provider_projection() {
+                tracing::warn!(%error, "failed to clear stale Hermes provider projection");
+            }
+        }
+        if let Err(error) = crate::commands::agents::write_hermes_dotenv(&env) {
+            tracing::warn!(%error, "failed to synchronize Hermes environment");
+        }
+        if let Err(error) = crate::commands::agents::write_hermes_web_belt() {
+            tracing::warn!(%error, "failed to synchronize Hermes web backend");
         }
         env
     }
@@ -678,6 +766,11 @@ impl ProviderRegistry {
                 None => return env,
             }
         };
+        // Bundled Hermes may receive only the same explicitly verified primary
+        // admitted by the shared production router. (ADR-002 substrate § provider v71)
+        if !self.is_verified(&id) {
+            return env;
+        }
         let providers = self.providers.read().unwrap();
         let Some(loaded) = providers.get(&id) else {
             return env;
@@ -793,44 +886,28 @@ impl ProviderRegistry {
         env
     }
 
-    /// Build the resolution chain for one consumer (primary + ordered
-    /// fallbacks).
-    ///
-    /// ADR-002 substrate § provider v3 amendment 2026-06-04, amended
-    /// v61 (2026-07-11 — the CLI-subscription fallback tier was
-    /// removed with claude-oauth):
-    /// - IrisyPrimary: primary = user-configured id (default BYOK REST
-    ///   if any key exists). Fallbacks = [device-first default
-    ///   (`ollama`)].
-    /// - IrisyFallback: primary = configured id (defaults seeded
-    ///   fallback), no further fallback (fallback of the fallback
-    ///   would loop).
-    /// - Custom(_): same shape as IrisyPrimary.
+    /// Build the exact verified explicit resolution chain for one consumer. No
+    /// provider id is synthesized: catalogue presence, configuration, runtime
+    /// availability, and unverified legacy bindings never create candidates.
+    /// Primary requests may use the separately bound verified fallback; the
+    /// fallback role itself never recurses.
+    /// (ADR-002 substrate § provider v71)
     pub fn route_chain(&self, consumer: &Consumer) -> RouteChain {
-        let active = self.active.read().unwrap();
-        let primary = active.get(consumer).cloned();
-        let fallback_id = active
-            .get(&Consumer::IrisyFallback)
-            .cloned()
-            .unwrap_or_else(|| CTRL_FALLBACK_PROVIDER_ID.to_string());
-        drop(active);
-        // ADR-002 substrate § brain v13 (2026-06-07, retracts v11 §3.11):
-        // coding.primary slot removed — no separate CTRL routing slot for
-        // a coding agent (Pi retired v19; opencode retired 2026-06-25).
-        let fallbacks = match consumer {
-            Consumer::IrisyFallback => Vec::new(),
-            _ => {
-                let mut chain: Vec<String> = Vec::new();
-                // Device-first default fallback (ollama today; CF
-                // Workers AI via ctrl-cloud proxy once the secrets
-                // pipeline ships). The CLI-subscription fallback tier
-                // that used to precede this was removed (ADR-002
-                // § provider v61, 2026-07-11 — claude-oauth retired).
-                if primary.as_deref() != Some(fallback_id.as_str()) {
-                    chain.push(fallback_id);
-                }
-                chain
-            }
+        let active = self.active.read().unwrap().clone();
+        let primary = active
+            .get(consumer)
+            .filter(|provider_id| self.is_verified(provider_id))
+            .cloned();
+        let fallbacks = if matches!(consumer, Consumer::IrisyFallback) {
+            Vec::new()
+        } else {
+            active
+                .get(&Consumer::IrisyFallback)
+                .filter(|fallback_id| primary.as_ref() != Some(*fallback_id))
+                .filter(|fallback_id| self.is_verified(fallback_id))
+                .cloned()
+                .into_iter()
+                .collect()
         };
         RouteChain { primary, fallbacks }
     }
@@ -845,12 +922,22 @@ impl ProviderRegistry {
         provider_id: &str,
         consumer: Consumer,
     ) -> Result<String, ProviderError> {
+        // Keep manifest/credential mutation out of the entire trial-to-commit
+        // transaction. (ADR-002 substrate § provider v71)
+        let _mutation_guard = self.lock_mutation().await;
         let provider = self
             .get(provider_id)
             .ok_or_else(|| ProviderError::ProviderNotFound(provider_id.to_string()))?;
-        // Both Irisy roles serve text.chat today; Custom(_) consumers skip
-        // the check (they own their own capability contract).
-        // ADR-002 substrate § brain v13 (2026-06-07, retracts CodingPrimary).
+        // Evidence may only describe the exact configuration exercised by the
+        // production trial. Capture it before awaiting and require it to remain
+        // unchanged through commit. (ADR-002 substrate § provider v71)
+        let fingerprint_before = self
+            .current_verification_fingerprint(provider_id)
+            .ok_or_else(|| ProviderError::ProviderError(format!(
+                "provider {provider_id} is not configured"
+            )))?;
+        // Both Irisy roles serve text.chat; verification and binding use the
+        // same provider contract. (ADR-002 substrate § provider v71)
         let needs_text_chat = matches!(
             consumer,
             Consumer::IrisyPrimary | Consumer::IrisyFallback
@@ -866,7 +953,25 @@ impl ProviderRegistry {
         // compatible adapter may disable hidden reasoning for this trial only.
         // (ADR-002 substrate § provider v69)
         let reply = trial_chat(provider.as_ref()).await?;
+        // Reject a successful reply if the loaded manifest or credential changed
+        // while the trial was in flight. (ADR-002 substrate § provider v71)
+        let fingerprint_after = self
+            .current_verification_fingerprint(provider_id)
+            .ok_or_else(|| ProviderError::ProviderError(format!(
+                "provider {provider_id} configuration changed during verification"
+            )))?;
+        if fingerprint_after != fingerprint_before {
+            return Err(ProviderError::ProviderError(format!(
+                "provider {provider_id} configuration changed during verification"
+            )));
+        }
         {
+            self.verifications.write().unwrap().insert(
+                provider_id.to_string(),
+                VerificationEvidence {
+                    fingerprint: fingerprint_before,
+                },
+            );
             let mut active = self.active.write().unwrap();
             active.insert(consumer.clone(), provider_id.to_string());
         }
@@ -886,43 +991,10 @@ impl ProviderRegistry {
         Ok(reply)
     }
 
-    /// Backstop for chat commands (8 callsites). Resolves the
-    /// IrisyPrimary handle first; on miss walks the IrisyPrimary
-    /// `route_chain` fallbacks; on miss falls through to any ready
-    /// provider that advertises text.chat. Lets a fresh install with
-    /// no detected CLI still answer once the seeded fallback loads.
-    pub fn primary_text_chat(&self) -> Option<ProviderHandle> {
-        // 1. IrisyPrimary if configured + ready
-        if let Some(p) = self.active_for_consumer(&Consumer::IrisyPrimary) {
-            return Some(p);
-        }
-        // 2. Walk IrisyPrimary fallback chain
-        for fallback_id in self.route_chain(&Consumer::IrisyPrimary).fallbacks {
-            if let Some(p) = self.get(&fallback_id) {
-                return Some(p);
-            }
-        }
-        // 3. IrisyFallback direct (seeded to "volc" at boot)
-        if let Some(p) = self.active_for_consumer(&Consumer::IrisyFallback) {
-            return Some(p);
-        }
-        // 4. Last-resort scan — first ready provider with text.chat.
-        let providers = self.providers.read().unwrap();
-        providers
-            .values()
-            .find(|p| {
-                p.provider.is_some()
-                    && p.manifest
-                        .capabilities
-                        .iter()
-                        .any(|c| *c == Capability::TextChat)
-            })
-            .and_then(|p| p.provider.clone())
-    }
-
     /// Install (or replace) one manifest. Resolves credentials, builds
     /// the matching adapter, stores both the live provider and the
-    /// manifest itself for the Settings UI.
+    /// manifest itself for the Settings UI. This does not bind or verify it.
+    /// (ADR-002 substrate § provider v71)
     fn install_manifest(&self, manifest: ProviderManifest, source: ProviderSource) {
         let id = manifest.id.clone();
         let arc = Arc::new(manifest);
@@ -945,8 +1017,9 @@ impl ProviderRegistry {
         );
     }
 
-    /// Persist the role-keyed active map under the `"roles"` top-level
-    /// key (v2 schema). ADR-002 substrate § provider v2 lock #3.
+    /// Persist explicit role intent and matching production-trial evidence in
+    /// the version-4 active-provider envelope.
+    /// (ADR-002 substrate § provider v71)
     fn persist_active_state(&self) {
         let Some(path) = self.active_state_path.as_ref() else {
             return;
@@ -958,7 +1031,14 @@ impl ProviderRegistry {
             }
         }
         let roles = self.active_state();
-        let envelope = ActiveStateV2 { roles };
+        // Persist evidence beside, but never derive it from, role intent.
+        // (ADR-002 substrate § provider v71)
+        let verifications = self.verifications.read().unwrap().clone();
+        let envelope = ActiveStateV4 {
+            version: 4,
+            roles,
+            verifications,
+        };
         match serde_json::to_vec_pretty(&envelope) {
             Ok(bytes) => {
                 if let Err(e) = std::fs::write(path, bytes) {
@@ -969,20 +1049,9 @@ impl ProviderRegistry {
         }
     }
 
-    /// Read persisted active selections. Accepts three on-disk formats
-    /// for migration safety (ADR-002 substrate § provider v2 lock #3):
-    ///
-    /// - **v0** (pre-roles, capability-keyed flat): `{"text.chat": "<id>"}`
-    ///   -> migrates to `roles.irisy.primary = <id>` (the lone bucket
-    ///   becomes the new primary; IrisyFallback gets seeded separately).
-    /// - **v1** (3-role): `{"roles": {"irisy.primary":..., "irisy.fallback":...,
-    ///   "mcp.default":...}}` -> drops `mcp.default`, keeps the rest.
-    /// - **v2** (2-role): `{"roles": {"irisy.primary":..., "irisy.fallback":...}}`
-    ///   -> loaded as-is.
-    ///
-    /// After successful migration the in-memory state is the v2 shape;
-    /// the next mutation (`set_active` or `seed_default_fallback`) will
-    /// rewrite the file in v2 schema and the old shape disappears.
+    /// Restore role intent and verification evidence across legacy schemas.
+    /// v0/v2/v3 bindings migrate as unverified; pre-v3 automatic Ollama
+    /// fallback is removed fail-closed. (ADR-002 substrate § provider v71)
     fn restore_active_state(&self) {
         let Some(path) = self.active_state_path.as_ref() else {
             return;
@@ -996,20 +1065,19 @@ impl ProviderRegistry {
                 return;
             }
         };
-        // Try v2 / v1 envelope first; on failure fall through to v0 flat map.
+
+        // Legacy bindings remain user intent but gain no synthetic evidence.
+        // (ADR-002 substrate § provider v71)
         let mut roles: BTreeMap<String, String> = BTreeMap::new();
+        let mut verifications: BTreeMap<String, VerificationEvidence> = BTreeMap::new();
         let mut migrated_from: Option<&'static str> = None;
-        if let Ok(envelope) = serde_json::from_str::<ActiveStateV2>(&raw) {
-            roles = envelope.roles;
-            // v1 -> v2: drop `mcp.default` if present.
-            if roles.remove("mcp.default").is_some() {
-                migrated_from = Some("v1 (3-role with mcp.default)");
-            }
-        } else if let Ok(flat) = serde_json::from_str::<BTreeMap<String, String>>(&raw) {
-            // v0 single-bucket: `{"text.chat": "<id>"}` -> roles.irisy.primary
+        // Try the legacy flat shape first because ActiveStateV4 deliberately
+        // defaults missing fields and would otherwise accept it as an empty
+        // envelope. (ADR-002 substrate § provider v71)
+        if let Ok(flat) = serde_json::from_str::<BTreeMap<String, String>>(&raw) {
             if let Some(primary_id) = flat.get("text.chat") {
                 roles.insert(Consumer::IrisyPrimary.id(), primary_id.clone());
-                migrated_from = Some("v0 (single text.chat bucket)");
+                migrated_from = Some("v0 single text.chat bucket");
             } else {
                 tracing::warn!(
                     ?path,
@@ -1017,33 +1085,88 @@ impl ProviderRegistry {
                 );
                 return;
             }
+        } else if let Ok(envelope) = serde_json::from_str::<ActiveStateV4>(&raw) {
+            // Only a genuine versioned envelope may restore verification evidence.
+            // (ADR-002 substrate § provider v71)
+            let version = envelope.version;
+            roles = envelope.roles;
+            if version >= 4 {
+                verifications = envelope.verifications;
+            } else {
+                migrated_from = Some("legacy role envelope");
+            }
+            if roles.remove("mcp.default").is_some() {
+                migrated_from = Some("legacy role envelope");
+            }
+            // Pre-v3 Ollama fallback was automatic, not explicit user intent.
+            // (ADR-002 substrate § provider v71)
+            if version < 3
+                && roles.get("irisy.fallback").map(String::as_str) == Some("ollama")
+            {
+                roles.remove("irisy.fallback");
+                migrated_from = Some("legacy automatic Ollama fallback");
+            }
         } else {
             tracing::warn!(?path, "provider: parse active-state failed — skipping");
             return;
         }
-        let mut active = self.active.write().unwrap();
-        for (role_id, provider_id) in &roles {
-            active.insert(Consumer::from_id(role_id), provider_id.clone());
+
+        {
+            // Restore intent and evidence independently.
+            // (ADR-002 substrate § provider v71)
+            let mut active = self.active.write().unwrap();
+            for (role_id, provider_id) in &roles {
+                active.insert(Consumer::from_id(role_id), provider_id.clone());
+            }
         }
-        drop(active);
+        *self.verifications.write().unwrap() = verifications;
         if let Some(from) = migrated_from {
             tracing::info!(
                 ?path,
                 from = %from,
-                "provider: active-state migrated to v2 schema; next persist will rewrite the file"
+                "provider: active-state migrated to verification-evidence v4 schema"
             );
-            // Force-rewrite so the file matches the in-memory v2 shape.
             self.persist_active_state();
         }
     }
 }
 
-/// On-disk shape for `~/.ctrl/state/active-providers.json` v2 schema:
-/// `{"roles": {"irisy.primary": "...", "irisy.fallback": "..."}}`.
+/// Versioned on-disk role intent and verification evidence.
+/// (ADR-002 substrate § provider v71)
 #[derive(Debug, Serialize, Deserialize)]
-struct ActiveStateV2 {
+struct ActiveStateV4 {
+    #[serde(default)]
+    version: u8,
     #[serde(default)]
     roles: BTreeMap<String, String>,
+    #[serde(default)]
+    verifications: BTreeMap<String, VerificationEvidence>,
+}
+
+/// Hash only behavior-relevant manifest fields plus the resolved credential.
+/// Serialization is deterministic because all maps are BTreeMap. The raw
+/// credential never leaves this function. (ADR-002 substrate § provider v71)
+fn verification_fingerprint(manifest: &ProviderManifest, credential: &str) -> String {
+    let behavior = serde_json::json!({
+        "id": manifest.id,
+        "kind": manifest.kind,
+        "shape": manifest.shape,
+        "auth": manifest.auth,
+        "binary": manifest.binary,
+        "args_template": manifest.args_template,
+        "env_strip": manifest.env_strip,
+        "env_inject": manifest.env_inject,
+        "endpoint": manifest.endpoint,
+        "headers": manifest.headers,
+        "capabilities": manifest.capabilities,
+        "models": manifest.models,
+        "config": manifest.config,
+        "credential": credential,
+    });
+    let bytes = serde_json::to_vec(&behavior).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
 }
 
 /// Verify an edited active-provider candidate without replacing the live
@@ -1053,7 +1176,10 @@ struct ActiveStateV2 {
 pub(crate) async fn trial_manifest_with_secret(
     mut manifest: ProviderManifest,
     secret: String,
-) -> Result<String, ProviderError> {
+) -> Result<(String, String), ProviderError> {
+    // Fingerprint the persisted candidate shape before replacing its auth source
+    // with the temporary in-memory trial secret. (ADR-002 substrate § provider v71)
+    let expected_fingerprint = verification_fingerprint(&manifest, &secret);
     const TRIAL_SECRET_FIELD: &str = "trial_api_key";
     manifest
         .config
@@ -1062,7 +1188,8 @@ pub(crate) async fn trial_manifest_with_secret(
         field: TRIAL_SECRET_FIELD.to_string(),
     };
     let provider = instantiate(Arc::new(manifest))?;
-    trial_chat(provider.as_ref()).await
+    let reply = trial_chat(provider.as_ref()).await?;
+    Ok((reply, expected_fingerprint))
 }
 
 /// Construct the adapter for a manifest. Looks up credentials per
@@ -1382,10 +1509,15 @@ pub struct ProviderListEntry {
     pub endpoint: Option<String>,
     pub models: Vec<String>,
     pub description: String,
-    /// True iff credentials resolved AND adapter constructed without
-    /// error. False = manifest known but unusable (Settings UI shows
-    /// "set api key").
-    pub ready: bool,
+    /// Configuration can construct the adapter; it does not imply that a
+    /// runtime or endpoint is currently reachable.
+    pub configured: bool,
+    pub runtime_status: ProviderRuntimeStatus,
+    pub runtime_detail: Option<String>,
+    /// True only when persisted production-trial evidence matches the current
+    /// behavior manifest and resolved credential.
+    pub verified: bool,
+    pub active_roles: Vec<String>,
     pub load_error: Option<String>,
     /// Where the manifest came from — drives Settings UI grouping
     /// (Available [system] vs. Your providers [user-added]).
@@ -1436,6 +1568,8 @@ mod tests {
         ProviderRegistry {
             providers: RwLock::new(BTreeMap::new()),
             active: RwLock::new(BTreeMap::new()),
+            verifications: RwLock::new(BTreeMap::new()),
+            mutation_lock: Mutex::new(()),
             active_state_path: None,
             last_failover: RwLock::new(None),
             routing_override: RwLock::new(None),
@@ -1473,6 +1607,130 @@ mod tests {
         let ev2 = reg.last_failover_event().unwrap();
         assert_eq!(ev2.from, "volc");
         assert_eq!(ev2.to, "ollama");
+    }
+
+    #[test]
+    fn route_chain_contains_only_verified_explicit_bindings() {
+        // Catalogue presence and an unverified legacy binding both leave the
+        // chain empty. (ADR-002 substrate § provider v71)
+        let reg = empty_registry();
+        let empty = reg.route_chain(&Consumer::IrisyPrimary);
+        assert!(empty.primary.is_none());
+        assert!(empty.fallbacks.is_empty());
+
+        let primary = parse_str(BUILTIN_MANIFESTS[0].1, "primary.toml").unwrap();
+        let mut fallback = primary.clone();
+        fallback.id = "fallback".into();
+        reg.install_manifest(primary, ProviderSource::Builtin);
+        reg.install_manifest(fallback, ProviderSource::Builtin);
+        {
+            let mut active = reg.active.write().unwrap();
+            active.insert(Consumer::IrisyPrimary, "ollama".into());
+            active.insert(Consumer::IrisyFallback, "fallback".into());
+        }
+        assert!(reg.route_chain(&Consumer::IrisyPrimary).primary.is_none());
+
+        reg.record_current_verification("ollama").unwrap();
+        reg.record_current_verification("fallback").unwrap();
+        let chain = reg.route_chain(&Consumer::IrisyPrimary);
+        assert_eq!(chain.primary.as_deref(), Some("ollama"));
+        assert_eq!(chain.fallbacks, vec!["fallback"]);
+        assert!(reg.route_chain(&Consumer::IrisyFallback).fallbacks.is_empty());
+    }
+
+    #[test]
+    fn v4_active_state_keeps_roles_and_evidence_independent() {
+        let encoded = serde_json::to_string(&ActiveStateV4 {
+            version: 4,
+            roles: BTreeMap::from([("irisy.primary".into(), "configured".into())]),
+            verifications: BTreeMap::from([(
+                "configured".into(),
+                VerificationEvidence {
+                    fingerprint: "digest".into(),
+                },
+            )]),
+        })
+        .unwrap();
+        let decoded: ActiveStateV4 = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.version, 4);
+        assert_eq!(decoded.roles.get("irisy.primary").map(String::as_str), Some("configured"));
+        assert_eq!(
+            decoded.verifications.get("configured").map(|e| e.fingerprint.as_str()),
+            Some("digest")
+        );
+
+        let legacy: ActiveStateV4 = serde_json::from_str(
+            r#"{"version":3,"roles":{"irisy.primary":"configured"}}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy.version, 3);
+        assert!(legacy.verifications.is_empty());
+    }
+
+    #[test]
+    fn legacy_state_migrates_bound_but_unverified_and_drops_pre_v3_ollama() {
+        let root = std::env::temp_dir().join(format!(
+            "ctrl-provider-state-v4-{}-{}",
+            std::process::id(),
+            now_unix_ms()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let v0_path = root.join("v0.json");
+        std::fs::write(&v0_path, r#"{"text.chat":"legacy-flat"}"#).unwrap();
+        let mut v0 = empty_registry();
+        v0.active_state_path = Some(v0_path.clone());
+        v0.restore_active_state();
+        assert_eq!(
+            v0.active_state().get("irisy.primary").map(String::as_str),
+            Some("legacy-flat")
+        );
+        assert!(!v0.is_verified("legacy-flat"));
+        let persisted_v0: ActiveStateV4 =
+            serde_json::from_str(&std::fs::read_to_string(&v0_path).unwrap()).unwrap();
+        assert_eq!(persisted_v0.version, 4);
+        assert_eq!(
+            persisted_v0.roles.get("irisy.primary").map(String::as_str),
+            Some("legacy-flat")
+        );
+        assert!(persisted_v0.verifications.is_empty());
+
+        let v2_path = root.join("v2.json");
+        std::fs::write(
+            &v2_path,
+            r#"{"version":2,"roles":{"irisy.primary":"legacy","irisy.fallback":"ollama"}}"#,
+        )
+        .unwrap();
+        let mut v2 = empty_registry();
+        v2.active_state_path = Some(v2_path.clone());
+        v2.restore_active_state();
+        assert_eq!(
+            v2.active_state().get("irisy.primary").map(String::as_str),
+            Some("legacy")
+        );
+        assert!(!v2.active_state().contains_key("irisy.fallback"));
+        assert!(!v2.is_verified("legacy"));
+        let persisted: ActiveStateV4 =
+            serde_json::from_str(&std::fs::read_to_string(&v2_path).unwrap()).unwrap();
+        assert_eq!(persisted.version, 4);
+        assert!(persisted.verifications.is_empty());
+
+        let v3_path = root.join("v3.json");
+        std::fs::write(
+            &v3_path,
+            r#"{"version":3,"roles":{"irisy.primary":"legacy","irisy.fallback":"ollama"}}"#,
+        )
+        .unwrap();
+        let mut v3 = empty_registry();
+        v3.active_state_path = Some(v3_path);
+        v3.restore_active_state();
+        assert_eq!(
+            v3.active_state().get("irisy.fallback").map(String::as_str),
+            Some("ollama")
+        );
+        assert!(!v3.is_verified("ollama"));
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

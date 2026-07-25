@@ -1,7 +1,7 @@
 // ProviderHub is the single provider configuration surface for Settings and
-// the ambient model badge. It mirrors OpenCode's provider-first drill-down
-// while preserving CTRL's manifest, Keychain, readiness, and activation gates.
-// (ADR-002 substrate §3.10 v68; ADR-003 frontend §8.5 v25)
+// the ambient model badge. It renders configuration, runtime availability,
+// verification evidence, and explicit roles as orthogonal facts.
+// (ADR-002 substrate § provider v71; ADR-003 frontend § pwa v25)
 
 import {
   useCallback,
@@ -22,8 +22,10 @@ import {
 } from '@/lib/kernel';
 import {
   canonicalProviderId,
+  providerClearActive,
   providerList,
   providerSetActive,
+  type IrisyRole,
   type ProviderListRow,
 } from '@/lib/provider-config';
 import { useActiveProvider } from '@/hooks/useActiveProvider';
@@ -41,11 +43,17 @@ const PRIORITY = ['anthropic', 'zhipu', 'zai-coding-plan', 'volc'];
 export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHubProps): ReactElement {
   const [templates, setTemplates] = useState<ProviderTemplate[]>([]);
   const [configured, setConfigured] = useState<ProviderListRow[]>([]);
-  const { active: activeFromHook, loading: activeLoading } = useActiveProvider();
-  const active = activeFromHook && {
-    id: activeFromHook.id,
-    label: activeFromHook.label,
-    model_id: activeFromHook.model_id,
+  const { active: primaryFromHook, loading: primaryLoading } = useActiveProvider('irisy.primary');
+  const { active: fallbackFromHook, loading: fallbackLoading } = useActiveProvider('irisy.fallback');
+  const active = primaryFromHook && {
+    id: primaryFromHook.id,
+    label: primaryFromHook.label,
+    model_id: primaryFromHook.model_id,
+  };
+  const fallback = fallbackFromHook && {
+    id: fallbackFromHook.id,
+    label: fallbackFromHook.label,
+    model_id: fallbackFromHook.model_id,
   };
 
   const [showAdd, setShowAdd] = useState(false);
@@ -290,19 +298,43 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
     }
   };
 
-  const switchTo = async (id: string, label: string): Promise<void> => {
-    if (active != null && canonicalProviderId(active.id) === canonicalProviderId(id)) return;
+  const switchTo = async (role: IrisyRole, id: string, label: string): Promise<void> => {
+    const current = role === 'irisy.primary' ? active : fallback;
+    const target = configured.find(
+      (row) => canonicalProviderId(row.id) === canonicalProviderId(id),
+    );
+    // A migrated binding remains selected but must repeat the production trial
+    // until it owns current verification evidence. (ADR-002 substrate § provider v71)
+    if (
+      current != null
+      && canonicalProviderId(current.id) === canonicalProviderId(id)
+      && target?.verified === true
+    ) return;
     setBusy(true);
-    setSwitchingId(id);
+    setSwitchingId(`${role}:${id}`);
     setError(null);
     try {
-      const reply = await providerSetActive({ role: 'irisy.primary', provider_id: id });
-      finishActivation(label, reply.model_id ?? '');
+      const reply = await providerSetActive({ role, provider_id: id });
+      if (role === 'irisy.primary') finishActivation(label, reply.model_id ?? '');
+      else reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
       setSwitchingId(null);
+    }
+  };
+
+  const clearFallback = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await providerClearActive('irisy.fallback');
+      reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -354,11 +386,13 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
     }
   };
 
-  const connectionStatus = activeLoading
-    ? 'Loading active provider…'
-    : active
-      ? `Irisy uses ${active.label}${active.model_id ? ` · ${active.model_id}` : ''}`
-      : 'No active provider';
+  const connectionStatus = primaryLoading || fallbackLoading
+    ? 'Loading provider bindings…'
+    : `Primary: ${active
+      ? `${active.label}${active.model_id ? ` · ${active.model_id}` : ''}`
+      : 'No primary'} · Fallback: ${fallback
+      ? `${fallback.label}${fallback.model_id ? ` · ${fallback.model_id}` : ''}`
+      : 'No fallback'}`;
 
   const inner = (
     <div
@@ -393,32 +427,79 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
             ) : (
               <div className={styles.providerList}>
                 {configured.map((row) => {
-                  const isActive = active != null
-                    && canonicalProviderId(active.id) === canonicalProviderId(row.id);
-                  const state = !row.ready ? 'setup' : isActive ? 'active' : 'ready';
-                  const status = switchingId === row.id
-                    ? 'Verifying…'
-                    : state === 'setup'
-                      ? 'Needs setup'
-                      : state === 'active'
-                        ? 'Active'
-                        : 'Ready';
+                  const isPrimary = row.active_roles.includes('irisy.primary');
+                  const isFallback = row.active_roles.includes('irisy.fallback');
+                  const isSwitching = switchingId?.endsWith(`:${row.id}`) ?? false;
+                  const rowState = isPrimary || isFallback ? 'bound' : 'default';
+                  const configurationFact = row.configured
+                    ? { label: 'Configured', state: 'configured' }
+                    : { label: 'Needs configuration', state: 'setup' };
+                  const runtimeFact = row.runtime_status === 'unavailable'
+                    ? { label: 'Runtime unavailable', state: 'unavailable' }
+                    : row.runtime_status === 'available'
+                      ? { label: 'Available', state: 'available' }
+                      : { label: 'Runtime unknown', state: 'unknown' };
+                  const verificationFact = row.verified
+                    ? { label: 'Verified', state: 'verified' }
+                    : { label: 'Not verified', state: 'unverified' };
+                  const roleFacts = [
+                    ...(isPrimary ? [{ label: 'Primary', state: 'role' }] : []),
+                    ...(isFallback ? [{ label: 'Fallback', state: 'role' }] : []),
+                  ];
+                  const facts = [configurationFact, runtimeFact, verificationFact, ...roleFacts];
+                  const canActivate = row.configured && row.runtime_status !== 'unavailable';
                   return (
-                    <div key={row.id} className={styles.providerRow} data-state={state}>
+                    <div key={row.id} className={styles.providerRow} data-state={rowState}>
                       <div className={styles.providerCopy}>
                         <span className={styles.providerName}>{row.label}</span>
                         <span className={styles.providerModel}>{row.models[0] ?? 'No model selected'}</span>
+                        {row.runtime_detail && (
+                          <span className={styles.providerDetail}>{row.runtime_detail}</span>
+                        )}
                       </div>
-                      <span className={styles.providerStatus} data-state={state}>{status}</span>
+                      <div className={styles.providerFacts} aria-label="Provider status">
+                        {isSwitching && (
+                          <span className={styles.providerStatus} data-state="verifying">Verifying…</span>
+                        )}
+                        {facts.map((fact) => (
+                          <span
+                            key={`${fact.state}:${fact.label}`}
+                            className={styles.providerStatus}
+                            data-state={fact.state}
+                          >
+                            {fact.label}
+                          </span>
+                        ))}
+                      </div>
                       <div className={styles.providerActions}>
-                        {row.ready && !isActive && (
+                        {canActivate && (!isPrimary || !row.verified) && (
                           <button
                             type="button"
                             className={styles.useButton}
-                            onClick={() => void switchTo(row.id, row.label)}
+                            onClick={() => void switchTo('irisy.primary', row.id, row.label)}
                             disabled={busy}
                           >
-                            Use
+                            {isPrimary ? 'Verify primary' : 'Use primary'}
+                          </button>
+                        )}
+                        {canActivate && (!isFallback || !row.verified) && (
+                          <button
+                            type="button"
+                            className={styles.useButton}
+                            onClick={() => void switchTo('irisy.fallback', row.id, row.label)}
+                            disabled={busy}
+                          >
+                            {isFallback ? 'Verify fallback' : 'Use fallback'}
+                          </button>
+                        )}
+                        {isFallback && (
+                          <button
+                            type="button"
+                            className={styles.providerActionButton}
+                            onClick={() => void clearFallback()}
+                            disabled={busy}
+                          >
+                            Clear fallback
                           </button>
                         )}
                         {row.source === 'user' && (
@@ -647,7 +728,7 @@ export function ProviderHub({ inline = false, onClose, onActivated }: ProviderHu
         open={pendingRemove != null}
         title="Remove provider?"
         body={pendingRemove
-          ? `Remove ${pendingRemove.label}? This deletes its manifest and Keychain entry. Irisy falls back to the next configured provider.`
+          ? `Remove ${pendingRemove.label}? This deletes its manifest and Keychain entry. Any role bound to it becomes unassigned.`
           : ''}
         confirmLabel="Remove"
         destructive

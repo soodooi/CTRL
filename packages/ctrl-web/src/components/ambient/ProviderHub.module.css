@@ -1,5 +1,6 @@
-/* Single provider configuration surface.
-   (ADR-003 frontend §8.5 v25; ADR-002 substrate §3.10 v68) */
+/* Provider facts remain visually orthogonal: configuration, runtime,
+   verification, and roles can coexist on one row.
+   (ADR-002 substrate § provider v71; ADR-003 frontend § pwa v25) */
 
 .backdrop {
   position: fixed;
@@ -108,7 +109,7 @@
   border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
   border-radius: 10px;
 }
-.providerRow[data-state='active'] {
+.providerRow[data-state='bound'] {
   border-color: var(--primary-ring, rgba(13, 148, 136, 0.42));
   background: var(--primary-soft, rgba(13, 148, 136, 0.04));
 }
@@ -126,7 +127,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.providerModel {
+.providerModel,
+.providerDetail {
   overflow: hidden;
   max-width: 260px;
   color: var(--text-subtle, #98989d);
@@ -134,6 +136,19 @@
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.providerDetail {
+  color: var(--text-muted, #6e6e73);
+  font-family: var(--font-ui, -apple-system, 'Inter', system-ui, sans-serif);
+  font-size: 10.5px;
+}
+.providerFacts {
+  display: flex;
+  max-width: 250px;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
 }
 .providerStatus {
   flex: none;
@@ -143,14 +158,26 @@
   border-radius: 999px;
   font-size: 11px;
   font-weight: 650;
+  white-space: nowrap;
 }
-.providerStatus[data-state='active'] {
-  color: var(--primary, #0d9488);
-  background: var(--primary-soft, rgba(13, 148, 136, 0.1));
-}
-.providerStatus[data-state='setup'] {
+.providerStatus[data-state='setup'],
+.providerStatus[data-state='unavailable'] {
   color: var(--color-danger, #b42318);
   background: rgba(180, 35, 24, 0.08);
+}
+.providerStatus[data-state='unverified'] {
+  color: #9a6700;
+  background: rgba(154, 103, 0, 0.09);
+}
+.providerStatus[data-state='available'],
+.providerStatus[data-state='verified'],
+.providerStatus[data-state='role'] {
+  color: var(--primary, #0d9488);
+  background: var(--primary-soft, rgba(13, 148, 136, 0.08));
+}
+.providerStatus[data-state='verifying'] {
+  color: var(--text, #1d1d1f);
+  background: var(--primary-soft, rgba(13, 148, 136, 0.12));
 }
 .providerActions { flex: none; gap: 3px; }
 
@@ -331,7 +358,11 @@
     gap: 7px 8px;
   }
   .providerCopy { grid-column: 1; }
-  .providerStatus { grid-column: 2; grid-row: 1; }
+  .providerFacts {
+    grid-column: 2;
+    grid-row: 1;
+    max-width: 220px;
+  }
   .providerActions { grid-column: 1 / -1; }
   .providerModel { max-width: 100%; }
   .templateMeta { max-width: 130px; }

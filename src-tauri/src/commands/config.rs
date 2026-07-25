@@ -208,6 +208,11 @@ pub async fn config_set_provider_key(
     args: SetProviderKeyArgs,
 ) -> Result<String, String> {
     let slug = sanitize_slug(&args.provider)?;
+    // Serialize credential snapshot, candidate trial, persistence, reload, and
+    // evidence commit as one provider generation.
+    // (ADR-002 substrate § provider v71)
+    let registry = &kernel.runtime.provider_registry;
+    let _mutation_guard = registry.lock_mutation().await;
     // bao 2026-06-06 UX: in Edit mode the user may leave the api_key
     // field empty to keep the existing keychain entry. Only require a
     // value when no entry exists for this slug yet (= Add) or when the
@@ -306,19 +311,24 @@ pub async fn config_set_provider_key(
     // in-memory manifest carrying the proposed secret, then persist and reload.
     // A failed trial leaves the prior manifest, key, registry entry, and role
     // binding untouched. (ADR-002 substrate § provider v2 lock #4)
-    if kernel.runtime.provider_registry.is_active_provider(&slug) {
+    let was_active = registry.is_active_provider(&slug);
+    let verified_fingerprint = if was_active {
         let candidate = crate::kernel::provider::manifest::parse_str(
             &manifest_body,
             &format!("candidate/{slug}.toml"),
         )
         .map_err(|e| format!("candidate manifest: {e}"))?;
-        crate::kernel::provider::registry::trial_manifest_with_secret(
-            candidate,
-            effective_key.clone(),
-        )
-        .await
-        .map_err(|e| format!("provider verification failed: {e}"))?;
-    }
+        let (_reply, fingerprint) =
+            crate::kernel::provider::registry::trial_manifest_with_secret(
+                candidate,
+                effective_key.clone(),
+            )
+            .await
+            .map_err(|e| format!("provider verification failed: {e}"))?;
+        Some(fingerprint)
+    } else {
+        None
+    };
 
     // Persist the credential only after candidate verification. If the
     // manifest write fails, restore the prior credential best-effort so a
@@ -353,7 +363,20 @@ pub async fn config_set_provider_key(
     // Hot-reload: make the new/edited manifest visible to provider_list
     // immediately, and notify the PWA so it can re-fetch + the user sees
     // the row update without a manual refresh. bao 2026-06-06 Lock #6.
-    kernel.runtime.provider_registry.reload_user_dir();
+    registry.reload_user_dir_locked();
+    // The candidate trial ran before persistence; record evidence only after
+    // the exact manifest + credential have been reloaded successfully. An
+    // inactive edit remains unverified until explicit activation.
+    // (ADR-002 substrate § provider v71)
+    if let Some(expected_fingerprint) = verified_fingerprint.as_deref() {
+        kernel
+            .runtime
+            .provider_registry
+            .record_verification_if_current(&slug, expected_fingerprint)
+            .map_err(|e| format!("persist provider verification: {e}"))?;
+    }
+    drop(_mutation_guard);
+    registry.agent_env_injection().await;
     use tauri::Emitter;
     if let Err(e) = app.emit(
         "active-providers-changed",
@@ -401,7 +424,7 @@ pub async fn config_test_provider(
     let started = Instant::now();
 
     let registry = &kernel.runtime.provider_registry;
-    registry.reload_user_dir();
+    registry.reload_user_dir().await;
     let provider = match registry.get(&slug) {
         Some(p) => p,
         None => {
@@ -477,6 +500,10 @@ pub async fn config_delete_provider(
     //      so the registry's reload_user_dir resurrected them on next
     //      provider_list call. Delete the manifest file too.
     let slug = sanitize_slug(&args.provider)?;
+    // Deletion and registry reload share the same mutation boundary as
+    // activation trials. (ADR-002 substrate § provider v71)
+    let registry = &kernel.runtime.provider_registry;
+    let _mutation_guard = registry.lock_mutation().await;
 
     // 1) Keychain via `security` CLI subprocess (idempotent: helper treats
     //    "not found" as Ok).
@@ -532,7 +559,11 @@ pub async fn config_delete_provider(
     // or surfaces "no provider" honestly.
     // (ADR-002 substrate § provider v67)
     kernel.runtime.provider_registry.remove_user_provider(&slug);
-    kernel.runtime.provider_registry.reload_user_dir();
+    registry.reload_user_dir_locked();
+    // Verification belongs to the deleted exact definition. A same-id builtin
+    // restore may keep role intent, but it must be re-verified independently.
+    // (ADR-002 substrate § provider v71)
+    kernel.runtime.provider_registry.clear_verification(&slug);
     // A deleted user manifest may have overridden a same-id builtin. Keep the
     // active role when removal restored a usable builtin under that identity;
     // only clear bindings whose provider truly disappeared.
@@ -549,6 +580,8 @@ pub async fn config_delete_provider(
             "config_delete_provider: cleared active SSOT slots"
         );
     }
+    drop(_mutation_guard);
+    registry.agent_env_injection().await;
     use tauri::Emitter;
     if let Err(e) = app.emit(
         "active-providers-changed",

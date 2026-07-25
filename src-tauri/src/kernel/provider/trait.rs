@@ -1,35 +1,42 @@
 // Provider trait — the single contract every LLM backend implements.
 //
-// ADR-002 substrate § provider v2 lock #1:
-//   - chat_stream(prompt, opts) -> Stream<Chunk>
-//   - trial_verify() -> Result
-//   - capabilities() -> Set<Capability>
-//
-// Stream is `mpsc::Receiver<Result<ChatChunk, ProviderError>>` to match
-// what existing Tauri commands already consume (chat.rs, irisy_chat.rs,
-// draft_run.rs). Wrapping it in a futures::Stream + Pin<Box<...>> would
-// force every caller into a one-PR rewrite — we postpone that until
-// there is a second-consumer reason.
-//
-// `trial_verify()` is a SHALLOW liveness probe — does NOT actually send
-// chat. The full 1-token "hi" round trip lives in `verify::trial_chat`,
-// which uses `chat_stream` under the hood. Keeping the two separated lets
-// adapters implement a cheap "binary exists / keychain key present" check
-// without having to spawn the network path.
-//
-// v2 amendment (ADR-002 substrate § provider v2, 2026-05-31): adds
-// `Consumer` enum + `RouteChain` for the role-aware routing model that
-// replaces the v1 capability-keyed active map. 2 roles only:
-// `irisy.primary` (user CLI, 0 CTRL cost — augmentation) and
-// `irisy.fallback` (CTRL-managed paid slot, currently `volc`).
-// `mcp.default` dropped — mcps bind providers via manifest
-// `brain_capabilities`, not via a substrate-wide role.
+// Runtime availability is an adapter-owned bounded probe and remains separate
+// from configuration, the real production trial, and explicit role binding.
+// Remote providers default to `Unknown`; local adapters may report a concrete
+// system fact. (ADR-002 substrate § provider v70)
 
 use async_trait::async_trait;
 use std::collections::BTreeSet;
 use tokio::sync::mpsc;
 
 use super::types::{ChatChunk, ChatOpts, ChatPrompt, ProviderError};
+
+/// Adapter-owned runtime fact. `Unknown` is honest for remote providers that
+/// cannot prove availability without the production trial; local runtimes may
+/// return `Available` or `Unavailable` from a bounded dependency probe.
+/// (ADR-002 substrate § provider v70)
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderRuntimeStatus {
+    Unknown,
+    Available,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProviderRuntimeAvailability {
+    pub status: ProviderRuntimeStatus,
+    pub detail: Option<String>,
+}
+
+impl ProviderRuntimeAvailability {
+    pub fn unknown() -> Self {
+        Self {
+            status: ProviderRuntimeStatus::Unknown,
+            detail: None,
+        }
+    }
+}
 
 /// Stable capability tokens. Today we ship `text.chat` only; the others
 /// reserve namespace for v1.1+ (image generation, transcription) so a
@@ -100,6 +107,15 @@ pub trait Provider: Send + Sync {
         opts: &ChatOpts,
     ) -> Result<mpsc::Receiver<Result<ChatChunk, ProviderError>>, ProviderError>;
 
+    /// Bounded, adapter-specific runtime dependency probe. The default is
+    /// `Unknown`: remote providers are verified only by the real production
+    /// trial. Local-runtime adapters override this to report system facts such
+    /// as daemon reachability and selected-model presence.
+    /// (ADR-002 substrate § provider v70)
+    async fn runtime_availability(&self) -> ProviderRuntimeAvailability {
+        ProviderRuntimeAvailability::unknown()
+    }
+
     /// Shallow liveness — "are credentials present, binary executable
     /// reachable, endpoint URL syntactically OK". Does NOT issue any
     /// network or subprocess call; full 1-token chat is the registry's
@@ -116,14 +132,12 @@ pub trait Provider: Send + Sync {
 /// per-consumer overrides without re-bumping the enum.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Consumer {
-    /// `irisy.primary` — augmentation slot. Defaults to highest-priority
-    /// detected user CLI (claude > codex > gemini > aider). Never auto-
-    /// falls back to a paid provider; user pays nothing (they own the CLI).
+    /// Explicit `irisy.primary` binding. Unset until the user activates a
+    /// provider through the production trial.
     IrisyPrimary,
-    /// `irisy.fallback` — CTRL-managed paid slot. Defaults to `volc`
-    /// (CTRL pays the Volc Doubao bill; future = ctrl-brand provider).
-    /// Always seeded at boot so a fresh install without any CLI still
-    /// has a working AI path.
+    /// Explicit `irisy.fallback` binding. Unset until separately activated;
+    /// catalogue or local-runtime presence never seeds this role.
+    /// (ADR-002 substrate § provider v70)
     IrisyFallback,
     /// Free-form consumer id — reserved for mcps / future modes that
     /// declare their own routing slot without an enum bump.
@@ -161,20 +175,15 @@ impl Consumer {
     }
 }
 
-/// Resolution order for one consumer: try `primary`, on failure walk
-/// `fallbacks` in order. The hot path in `http_endpoint` consults this
-/// when the active stream errors out, then emits `provider:failover`.
-///
-/// Empty `primary` = consumer not configured; caller should surface a
-/// "configure provider" prompt rather than spending the fallback quota
-/// silently for the primary path.
+/// Explicit verified route chain. For `IrisyPrimary`, the router tries only
+/// the user-bound primary and separately bound fallback whose current evidence
+/// still matches. Empty means no routable intent; callers must not scan the
+/// catalogue. (ADR-002 substrate § provider v71)
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct RouteChain {
-    /// Manifest id of the primary provider, or `None` when unconfigured.
+    /// Explicit provider id for this role, or `None` when unbound.
     pub primary: Option<String>,
-    /// Ordered fallback manifest ids. Conventionally `["volc"]` for
-    /// `IrisyPrimary` (so a primary outage still answers) and `[]` for
-    /// `IrisyFallback` itself (fallback of the fallback would loop).
+    /// Explicit fallback ids; at most the separately bound Irisy fallback today.
     pub fallbacks: Vec<String>,
 }
 

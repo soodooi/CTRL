@@ -1,5 +1,5 @@
-// ADR-002 substrate § provider v2 §3.6 — PWA bridge for the providers
-// surface. Mirrors the Rust `commands::provider` Tauri commands.
+// ADR-002 substrate § provider v71 — PWA bridge for explicit provider roles
+// and orthogonal configuration/runtime/verification facts.
 //
 // - providerList() → all known manifests with managed_by status
 // - providerSetActive(role, provider_id) → switch a role with trial verify
@@ -34,7 +34,13 @@ export function canonicalProviderId(raw: string): string {
  *  removed (ADR-002 substrate § provider v61, 2026-07-11): Claude
  *  subscription OAuth may not back an LLM provider per Anthropic's
  *  usage policy. */
-export type ProviderKind = 'cli_one_shot' | 'http_api';
+export type ProviderKind =
+  | 'cli_one_shot'
+  | 'http_api'
+  | 'rest_anthropic'
+  | 'rest_openai'
+  | 'rest_google'
+  | 'rest_ollama';
 
 /** Where the manifest came from. PWA Settings groups by source —
  *  `builtin` = system-shipped (Ollama and future CLI manifests),
@@ -54,8 +60,15 @@ export interface ProviderListRow {
   endpoint: string | null;
   models: string[];
   description: string;
-  /** True iff credentials resolved + adapter constructed without error. */
-  ready: boolean;
+  /** Saved configuration can construct the adapter; runtime availability and
+   * verification remain separate facts. (ADR-002 substrate § provider v71) */
+  configured: boolean;
+  runtime_status: 'unknown' | 'available' | 'unavailable';
+  runtime_detail: string | null;
+  /** Current manifest and credential match persisted production-trial evidence;
+   * role intent is reported independently in active_roles. */
+  verified: boolean;
+  active_roles: string[];
   load_error: string | null;
   source: ProviderSource;
   capabilities: string[];
@@ -99,4 +112,9 @@ export async function providerSetActive(
   args: ProviderSetActiveArgs,
 ): Promise<ProviderSetActiveReply> {
   return invoke<ProviderSetActiveReply>('provider_set_active', { args });
+}
+
+/** Remove one role binding while retaining the provider configuration. */
+export async function providerClearActive(role: IrisyRole): Promise<boolean> {
+  return invoke<boolean>('provider_clear_active', { args: { role } });
 }

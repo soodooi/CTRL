@@ -88,11 +88,15 @@ pub async fn irisy_init(
 }
 
 fn probe_kernel_llm(kernel: &State<'_, KernelHandle>) -> KernelLlmStatus {
-    let adapter = kernel
-        .runtime
-        .provider_registry
-        .primary_text_chat()
-        .map(|p| p.id().to_string());
+    let registry = &kernel.runtime.provider_registry;
+    // Status reads explicit role intent and its independent verification fact;
+    // it never selects or constructs a production adapter.
+    // (ADR-002 substrate § provider v71)
+    let adapter = registry
+        .active_state()
+        .get(&crate::kernel::provider::Consumer::IrisyPrimary.id())
+        .filter(|provider_id| registry.is_verified(provider_id))
+        .cloned();
     KernelLlmStatus {
         ready: adapter.is_some(),
         adapter,

@@ -67,7 +67,14 @@ async fn run_rest_anthropic(
             .text()
             .await
             .unwrap_or_else(|e| format!("<failed to read body: {}>", e));
-        sink.error(&format!("Anthropic API error {}: {}", status, text));
+        if matches!(status.as_u16(), 401 | 403) {
+            // Preserve the canonical authentication classification consumed by
+            // shared routing and async job termination.
+            // (ADR-002 substrate § provider v71)
+            sink.auth_error(&format!("Anthropic API error {status}"));
+        } else {
+            sink.error(&format!("Anthropic API error {status}: {text}"));
+        }
         return Ok(());
     }
 

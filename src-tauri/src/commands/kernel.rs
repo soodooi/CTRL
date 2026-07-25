@@ -975,9 +975,10 @@ fn classify_seed(mcp_id: &str) -> McpDispatch {
     }
 }
 
-/// Run a text.chat dispatch: pull text from input, call the LLM port's
-/// primary adapter with streaming, publish each chunk as a LlmResponse
-/// cell on `mcp-<id>`, return accumulated content as the output.
+/// Run a text.chat dispatch through the explicit verified provider route,
+/// publish each streamed chunk as a LlmResponse cell on `mcp-<id>`, and
+/// return accumulated content as the output.
+/// (ADR-002 substrate § provider v71)
 async fn run_text_chat(
     kernel: &KernelHandle,
     args: &RunMcpArgs,
@@ -985,17 +986,11 @@ async fn run_text_chat(
     system: &'static str,
 ) -> Result<serde_json::Value, String> {
     use crate::kernel::event::{Cell, CellKind};
-    use crate::kernel::provider::{LlmMessage, LlmPrompt};
+    use crate::kernel::provider::{
+        routing::route_text_chat, Consumer, LlmMessage, LlmPrompt,
+    };
 
     let runtime = &kernel.runtime;
-    let adapter = runtime
-        .provider_registry
-        .primary_text_chat()
-        .ok_or_else(|| {
-            "No text.chat provider available. Open Settings → Brain to pick a provider \
-             (Claude Pro via CLI, Volc, Kimi, DeepSeek, Anthropic API key, OpenAI API key)."
-                .to_string()
-        })?;
 
     // Accept either input.text (simple shape PWA Irisy sends) or
     // input.messages (full multi-turn). The text shape gets wrapped as
@@ -1041,10 +1036,16 @@ async fn run_text_chat(
         deadline_ms: 30_000,
         disable_reasoning: false,
     };
-    let mut rx = adapter
-        .chat_stream(&prompt, &opts)
-        .await
-        .map_err(|e| format!("llm chat_stream failed: {e}"))?;
+    // Preserve bridge-cell streaming after the shared router selects the
+    // explicit verified route. (ADR-002 substrate § provider v71)
+    let (provider_id, mut rx) = route_text_chat(
+        &runtime.provider_registry,
+        &Consumer::IrisyPrimary,
+        &prompt,
+        &opts,
+    )
+    .await
+    .map_err(|e| format!("llm route failed: {e}"))?;
 
     let mut accumulated = String::new();
     while let Some(item) = rx.recv().await {
@@ -1083,7 +1084,9 @@ async fn run_text_chat(
 
     Ok(serde_json::json!({
         "content": accumulated,
-        "adapter": adapter.id(),
+        // Report the provider selected by the governed route.
+        // (ADR-002 substrate § provider v71)
+        "adapter": provider_id,
     }))
 }
 
