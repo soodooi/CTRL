@@ -310,9 +310,11 @@ const UPDATE_LOG: ReadonlyArray<UpdateLogEntry> = [
 export const SettingsProvidersPage = (): ReactElement => (
   <SettingsShell activeTab="providers">
     <Section
-      title="Irisy provider"
-      description="Pick the model Irisy uses. Paste your API key once — Volc, Zhipu, Claude and more — and switch anytime."
+      title="Providers"
+      description="Connect providers, choose their models, and control which one Irisy uses. Credentials stay in your system Keychain."
     >
+      {/* ProviderHub is the single Settings and ambient provider surface.
+          (ADR-002 substrate §3.10 v68; ADR-003 frontend §8.5 v25) */}
       <ProviderHub inline />
     </Section>
   </SettingsShell>
