@@ -36,8 +36,11 @@ if ! [[ "$EPOCH" =~ ^[1-9][0-9]*$ && "$POLICY_FINGERPRINT" =~ ^[0-9A-F]{40}$ ]] 
     exit 1
 fi
 
-IDENTITY_MATCH="$(security find-identity -v -p codesigning "$LOGIN_KEYCHAIN" 2>/dev/null | \
-    awk -v requested="$POLICY_FINGERPRINT" 'toupper($2) == requested { print $0 }')"
+IDENTITY_MATCH="$(security find-identity -p codesigning "$LOGIN_KEYCHAIN" 2>/dev/null | \
+    awk -v requested="$POLICY_FINGERPRINT" '
+        /Valid identities only/ { exit }
+        toupper($2) == requested { print $0 }
+    ')"
 if [[ "$(grep -c . <<< "$IDENTITY_MATCH" || true)" -ne 1 ||
       "$IDENTITY_MATCH" != *"\"$POLICY_LABEL\""* ]]; then
     echo "error: configured macOS signing identity is not uniquely available in the login Keychain with the tracked label"

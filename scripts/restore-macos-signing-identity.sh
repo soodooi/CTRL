@@ -16,7 +16,7 @@ fi
 LOGIN_KEYCHAIN="$ACCOUNT_HOME/Library/Keychains/login.keychain-db"
 FINGERPRINT="$(jq -r '.activeFingerprint' "$POLICY_FILE")"
 EPOCH="$(jq -r '.epoch' "$POLICY_FILE")"
-if security find-identity -v -p codesigning "$LOGIN_KEYCHAIN" 2>/dev/null | \
+if security find-identity -p codesigning "$LOGIN_KEYCHAIN" 2>/dev/null | \
         awk -v requested="$FINGERPRINT" 'toupper($2) == requested { found = 1 } END { exit !found }'; then
     echo "error: active macOS signing identity already exists; refusing to overwrite it"
     exit 1
@@ -77,8 +77,6 @@ chmod 600 "$TMP_DIR/import-identity.p12"
 security import "$TMP_DIR/import-identity.p12" -k "$LOGIN_KEYCHAIN" -P "ctrl-transient-import-v1" \
     -T /usr/bin/codesign >/dev/null
 RESTORED=1
-security add-trusted-cert -r trustRoot -p codeSign -k "$LOGIN_KEYCHAIN" \
-    "$TMP_DIR/certificate.pem" >/dev/null
 bash scripts/check-macos-signing-identity.sh
 
 echo "macOS signing identity restored: epoch=$EPOCH fingerprint=$FINGERPRINT"

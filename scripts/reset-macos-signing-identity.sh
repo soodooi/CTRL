@@ -316,8 +316,9 @@ openssl pkcs12 -export -name "$NEW_LABEL" \
 chmod 600 "$TMP_DIR/import-identity.p12"
 security import "$TMP_DIR/import-identity.p12" -k "$LOGIN_KEYCHAIN" -P "ctrl-transient-import-v1" \
     -T /usr/bin/codesign >/dev/null
-security add-trusted-cert -r trustRoot -p codeSign -k "$LOGIN_KEYCHAIN" \
-    "$TMP_DIR/certificate.pem" >/dev/null
+# Do not mutate user trust settings for a self-signed local-development
+# identity; the bounded codesign probe below is the usability authority.
+# (ADR-004 cap § updater v9)
 write_transaction_phase identity-imported
 
 durable_install "$TMP_DIR/new-tauri.conf.json" "$CONFIG_FILE" 644

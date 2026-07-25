@@ -644,8 +644,9 @@ if [[ -z "$APPLE_SIGNING_IDENTITY" || -z "$BUNDLE_IDENTIFIER" ]]; then
     echo "error: bundle.macOS.signingIdentity and identifier are required for release builds"
     exit 1
 fi
-SIGNING_MATCH="$(security find-identity -v -p codesigning 2>/dev/null | awk -v requested="$APPLE_SIGNING_IDENTITY" '
+SIGNING_MATCH="$(security find-identity -p codesigning 2>/dev/null | awk -v requested="$APPLE_SIGNING_IDENTITY" '
     BEGIN { requested = tolower(requested) }
+    /Valid identities only/ { exit }
     {
         fingerprint = tolower($2)
         label = $0
