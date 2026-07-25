@@ -22,10 +22,10 @@ if security find-identity -v -p codesigning "$LOGIN_KEYCHAIN" 2>/dev/null | \
     exit 1
 fi
 
-BACKUP_PASSPHRASE="$(security find-generic-password \
-    -s ctrl-codesign-backup-passphrase -a ctrl-macos-signing -w 2>/dev/null || true)"
-BACKUP_RECEIPT="$(security find-generic-password \
-    -s ctrl-codesign-backup-receipt -a ctrl-macos-signing -w 2>/dev/null || true)"
+BACKUP_PASSPHRASE="$(scripts/keychain-secret.swift read \
+    ctrl-codesign-backup-passphrase ctrl-macos-signing 2>/dev/null || true)"
+BACKUP_RECEIPT="$(scripts/keychain-secret.swift read \
+    ctrl-codesign-backup-receipt ctrl-macos-signing 2>/dev/null || true)"
 if [[ -z "$BACKUP_PASSPHRASE" || -z "$BACKUP_RECEIPT" ]]; then
     echo "error: macOS signing encrypted-backup evidence is missing"
     exit 1
