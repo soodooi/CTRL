@@ -307,14 +307,15 @@ printf '%s' "$BACKUP_RECEIPT" | scripts/keychain-secret.swift add \
     ctrl-codesign-backup-receipt ctrl-macos-signing >/dev/null
 write_transaction_phase backup-evidence-written
 
-# Import a temporary empty-passphrase PKCS#12 so no recovery secret appears in
-# argv; only the encrypted durable backup uses the independent secret.
+# Import a temporary mode-0600 PKCS#12 with a non-secret compatibility password
+# so no recovery secret appears in argv. The temporary container is deleted;
+# only the encrypted durable backup uses the independent random secret.
 # (ADR-004 cap § updater v9)
 openssl pkcs12 -export -name "$NEW_LABEL" \
     -inkey "$TMP_DIR/private-key.pem" -in "$TMP_DIR/certificate.pem" \
-    -out "$TMP_DIR/import-identity.p12" -passout pass: >/dev/null 2>&1
+    -out "$TMP_DIR/import-identity.p12" -passout pass:ctrl-transient-import-v1 >/dev/null 2>&1
 chmod 600 "$TMP_DIR/import-identity.p12"
-security import "$TMP_DIR/import-identity.p12" -k "$LOGIN_KEYCHAIN" -P "" \
+security import "$TMP_DIR/import-identity.p12" -k "$LOGIN_KEYCHAIN" -P "ctrl-transient-import-v1" \
     -T /usr/bin/codesign >/dev/null
 security add-trusted-cert -r trustAsRoot -p codeSign -k "$LOGIN_KEYCHAIN" \
     "$TMP_DIR/certificate.pem" >/dev/null

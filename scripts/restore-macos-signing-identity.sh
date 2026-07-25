@@ -72,9 +72,9 @@ BACKUP_PASSPHRASE="$BACKUP_PASSPHRASE" openssl pkcs12 -in "$BACKUP_FILE" -nocert
 chmod 600 "$TMP_DIR/private-key.pem"
 openssl pkcs12 -export -name "$(jq -r '.activeLabel' "$POLICY_FILE")" \
     -inkey "$TMP_DIR/private-key.pem" -in "$TMP_DIR/certificate.pem" \
-    -out "$TMP_DIR/import-identity.p12" -passout pass: >/dev/null 2>&1
+    -out "$TMP_DIR/import-identity.p12" -passout pass:ctrl-transient-import-v1 >/dev/null 2>&1
 chmod 600 "$TMP_DIR/import-identity.p12"
-security import "$TMP_DIR/import-identity.p12" -k "$LOGIN_KEYCHAIN" -P "" \
+security import "$TMP_DIR/import-identity.p12" -k "$LOGIN_KEYCHAIN" -P "ctrl-transient-import-v1" \
     -T /usr/bin/codesign >/dev/null
 RESTORED=1
 security add-trusted-cert -r trustAsRoot -p codeSign -k "$LOGIN_KEYCHAIN" \
