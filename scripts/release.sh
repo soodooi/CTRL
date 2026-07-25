@@ -586,9 +586,11 @@ if ! CTRL_UPDATER_PRIVATE_KEY_FILE="$KEY_CHECK_DIR/private.key" \
     exit 1
 fi
 
-# Keep the captured key in a mode-0600 file and expose only its path to the
-# single Tauri build process. Git, gh, probes, and unrelated children never
-# inherit updater private-key material. (ADR-004 cap § updater v9)
+# Keep the captured key in a mode-0600 file until the build boundary. Tauri's
+# artifact signer accepts only key content, so load it immediately before and
+# expose it only to the single command-scoped build process, then unset it.
+# Git, gh, probes, and publication commands never inherit it.
+# (ADR-004 cap § updater v9)
 
 # First-migration public provenance is the first side effect, and only occurs
 # after all deterministic local release gates above pass. Retries read and
@@ -710,9 +712,14 @@ rm -f "$TARBALL" "$SIGFILE"
 # leftover from a prior aborted run blocks DMG creation). The updater
 # only needs .app + .app.tar.gz + .sig, so restrict to `app` bundle —
 # DMG is a developer convenience, not a ship artifact.
-TAURI_SIGNING_PRIVATE_KEY_PATH="$KEY_CHECK_DIR/private.key" \
-TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
-    npm run tauri -- build --target "$TARGET" --bundles app
+BUILD_KEY="$(cat "$KEY_CHECK_DIR/private.key")"
+if ! TAURI_SIGNING_PRIVATE_KEY="$BUILD_KEY" \
+     TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+        npm run tauri -- build --target "$TARGET" --bundles app; then
+    unset BUILD_KEY
+    exit 1
+fi
+unset BUILD_KEY
 cleanup_release_key
 verify_macos_code_signature "$APP_BUNDLE"
 
