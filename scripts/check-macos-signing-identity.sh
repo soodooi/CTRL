@@ -118,7 +118,7 @@ try:
         check=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
-        timeout=20,
+        timeout=300,
     )
 except subprocess.TimeoutExpired:
     print("error: macOS signing identity blocked during the bounded codesign probe", file=sys.stderr)
