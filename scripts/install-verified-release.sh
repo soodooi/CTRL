@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Perform the one verified canonical-path replacement required when an older
-# installation cannot authenticate a new updater trust epoch.
-# (ADR-004 cap § updater v8)
+# installation cannot authenticate a new updater trust epoch. The replacement
+# must also match the tracked macOS release-identity epoch.
+# (ADR-004 cap § updater v9)
 
 set -euo pipefail
 VERSION="${1:-}"
@@ -127,7 +128,16 @@ if [[ ! -d "$STAGED_APP" ]]; then
     exit 1
 fi
 EXPECTED_ID="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
-EXPECTED_FINGERPRINT="$(node -p "require('./src-tauri/tauri.conf.json').bundle.macOS.signingIdentity.toLowerCase()")"
+CONFIGURED_FINGERPRINT="$(node -p "require('./src-tauri/tauri.conf.json').bundle.macOS.signingIdentity.toUpperCase()")"
+POLICY_FINGERPRINT="$(jq -r '.activeFingerprint' scripts/macos-signing-trust.json)"
+if [[ ! "$POLICY_FINGERPRINT" =~ ^[0-9A-F]{40}$ ||
+      "$CONFIGURED_FINGERPRINT" != "$POLICY_FINGERPRINT" ]]; then
+    echo "error: configured macOS signing identity does not match the tracked identity epoch"
+    exit 1
+fi
+EXPECTED_FINGERPRINT="$(tr '[:upper:]' '[:lower:]' <<< "$POLICY_FINGERPRINT")"
+# Verify independently constructed identifier + certificate-root requirements;
+# never trust signer-controlled embedded requirement text. (ADR-004 cap § updater v9)
 verify_app_identity() {
     local app="$1" details requirement normalized_requirement expected_requirement
     expected_requirement="=identifier \"${EXPECTED_ID}\" and certificate root = H\"${EXPECTED_FINGERPRINT}\""

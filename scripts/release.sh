@@ -92,11 +92,12 @@ if [[ ! "$UPDATER_MINISIGN_PUBKEY" =~ ^[A-Za-z0-9+/=]+$ ]]; then
     exit 1
 fi
 
-# Fail before governance work or public mutation unless the active private key,
-# pinned public key, trust epoch, and encrypted recovery copy agree exactly.
-# A lost key is handled only by the explicit reinstall epoch protocol.
-# (ADR-004 cap § updater v8)
+# Fail before governance work or public mutation unless both independent release
+# trust boundaries are recoverable and usable: updater epoch plus macOS identity
+# epoch. Lost material is handled only by its explicit reset protocol.
+# (ADR-004 cap § updater v9)
 bash scripts/check-updater-trust.sh
+bash scripts/check-macos-signing-identity.sh
 
 # Release provenance is measured from a verified previously-published source,
 # never @{u}: synchronized main would otherwise produce an empty diff. Secret
@@ -567,17 +568,27 @@ if [[ -z "$KEY" ]]; then
 fi
 KEY_CHECK_DIR="$(mktemp -d)"
 chmod 700 "$KEY_CHECK_DIR"
-printf '%s' "$KEY" > "$KEY_CHECK_DIR/private.key"
+cleanup_release_key() {
+    unset KEY
+    if [[ -n "${KEY_CHECK_DIR:-}" ]]; then
+        rm -rf "$KEY_CHECK_DIR"
+        KEY_CHECK_DIR=""
+    fi
+}
+trap cleanup_release_key EXIT
+: > "$KEY_CHECK_DIR/private.key"
 chmod 600 "$KEY_CHECK_DIR/private.key"
+printf '%s' "$KEY" > "$KEY_CHECK_DIR/private.key"
+unset KEY
 if ! CTRL_UPDATER_PRIVATE_KEY_FILE="$KEY_CHECK_DIR/private.key" \
         bash scripts/check-updater-trust.sh; then
-    rm -rf "$KEY_CHECK_DIR"
     echo "error: captured updater build key no longer matches the trust epoch"
     exit 1
 fi
-rm -rf "$KEY_CHECK_DIR"
-export TAURI_SIGNING_PRIVATE_KEY="$KEY"
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+
+# Keep the captured key in a mode-0600 file and expose only its path to the
+# single Tauri build process. Git, gh, probes, and unrelated children never
+# inherit updater private-key material. (ADR-004 cap § updater v9)
 
 # First-migration public provenance is the first side effect, and only occurs
 # after all deterministic local release gates above pass. Retries read and
@@ -623,12 +634,10 @@ fi
 # (ADR-004 cap § updater v8)
 echo "==> [2/9] use captured preflight-verified Tauri signing key"
 
-# Code-sign release artifacts with one stable identity so the macOS
-# Designated Requirement remains constant across updates. Daily developer
-# bundles use `npm run tauri:build` and explicitly skip signing; only this
-# release path requires the provisioned identity. The release operator unlocks
-# its keychain before running this script; no keychain password belongs in the
-# repository. (ADR-004 cap § updater v6)
+# Code-sign release artifacts with the identity pinned by the verified active
+# identity epoch. Daily developer bundles use `npm run tauri:build` and skip
+# signing; only this release path requires the recoverable login-Keychain
+# identity. Silent identity replacement is forbidden. (ADR-004 cap § updater v9)
 export APPLE_SIGNING_IDENTITY="$(node -p "require('./src-tauri/tauri.conf.json').bundle.macOS.signingIdentity")"
 BUNDLE_IDENTIFIER="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
 if [[ -z "$APPLE_SIGNING_IDENTITY" || -z "$BUNDLE_IDENTIFIER" ]]; then
@@ -653,7 +662,8 @@ SIGNING_FINGERPRINT="$(awk '{print tolower($2)}' <<< "$SIGNING_MATCH")"
 SIGNING_LABEL="$(sed -E 's/^[[:space:]]*[0-9]+\)[[:space:]]+[0-9A-Fa-f]+[[:space:]]+"(.*)"[[:space:]]*$/\1/' <<< "$SIGNING_MATCH")"
 
 # Verify the exact release identity and certificate-bound Designated
-# Requirement, not merely that some signature exists. (ADR-004 cap § updater v6)
+# Requirement for the active identity epoch, not merely that some signature
+# exists. (ADR-004 cap § updater v9)
 verify_macos_code_signature() {
     local app_bundle="$1" details requirement normalized_requirement normalized_identifier
     if [[ ! -d "$app_bundle" ]]; then
@@ -699,7 +709,10 @@ rm -f "$TARBALL" "$SIGFILE"
 # leftover from a prior aborted run blocks DMG creation). The updater
 # only needs .app + .app.tar.gz + .sig, so restrict to `app` bundle —
 # DMG is a developer convenience, not a ship artifact.
-npm run tauri -- build --target "$TARGET" --bundles app
+TAURI_SIGNING_PRIVATE_KEY_PATH="$KEY_CHECK_DIR/private.key" \
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+    npm run tauri -- build --target "$TARGET" --bundles app
+cleanup_release_key
 verify_macos_code_signature "$APP_BUNDLE"
 
 if [[ ! -f "$TARBALL" || ! -f "$SIGFILE" ]]; then
