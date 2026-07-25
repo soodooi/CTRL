@@ -94,11 +94,19 @@ if [[ ! "$UPDATER_MINISIGN_PUBKEY" =~ ^[A-Za-z0-9+/=]+$ ]]; then
     exit 1
 fi
 
-# Release governance is measured from a verified previously-published source,
-# never @{u}: synchronized main would otherwise produce an empty diff.
-# (ADR-004 cap § updater v5)
+# Release provenance is measured from a verified previously-published source,
+# never @{u}: synchronized main would otherwise produce an empty diff. Secret
+# coverage uses that full delta, while citations use the tracked activation
+# epoch only when the published source predates executable governance.
+# (ADR-004 cap § Release governance baselines v7)
 SOURCE_COMMIT="$(git rev-parse HEAD)"
 SOURCE_TAG="v${VERSION}-release"
+CITATION_GOVERNANCE_EPOCH="$(node -p "require('./scripts/governance-policy.json').citationActivationCommit")"
+if [[ ! "$CITATION_GOVERNANCE_EPOCH" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "error: scripts/governance-policy.json has an invalid citationActivationCommit"
+    exit 1
+fi
+BOOTSTRAP_MUTATION_PENDING=0
 
 verify_source_state() {
     local current_commit
@@ -440,34 +448,12 @@ if [[ -n "${GOVERNANCE_BASE:-}" ]]; then
             echo "error: remote bootstrap tag $BOOTSTRAP_SOURCE_TAG conflicts with $GOVERNANCE_BASE_COMMIT"
             exit 1
         fi
-        if [[ -z "$BOOTSTRAP_LOCAL_COMMIT" ]]; then
-            git tag "$BOOTSTRAP_SOURCE_TAG" "$GOVERNANCE_BASE_COMMIT"
-        fi
-        if [[ -z "$BOOTSTRAP_REMOTE_COMMIT" ]]; then
-            git push origin "$BOOTSTRAP_SOURCE_TAG"
-        fi
-        BOOTSTRAP_REMOTE_COMMIT="$(git ls-remote --tags --refs origin "refs/tags/${BOOTSTRAP_SOURCE_TAG}" | awk 'NR == 1 { print $1 }')"
-        if [[ "$BOOTSTRAP_REMOTE_COMMIT" != "$GOVERNANCE_BASE_COMMIT" ]]; then
-            echo "error: remote bootstrap tag $BOOTSTRAP_SOURCE_TAG was not published at $GOVERNANCE_BASE_COMMIT"
-            exit 1
-        fi
-
-        if [[ "$BOOTSTRAP_HAS_PROVENANCE" -eq 0 ]]; then
-            BOOTSTRAP_DIR="$(mktemp -d)"
-            jq -n \
-                --arg source_commit "$GOVERNANCE_BASE_COMMIT" \
-                --arg source_tag "$BOOTSTRAP_SOURCE_TAG" \
-                '{source_commit: $source_commit, source_tag: $source_tag}' \
-                > "$BOOTSTRAP_DIR/source-provenance.json"
-            gh release upload "$GOVERNANCE_BOOTSTRAP_RELEASE" --repo "$REPO_RELEASES" \
-                "$BOOTSTRAP_DIR/source-provenance.json"
-            rm -rf "$BOOTSTRAP_DIR"
-        fi
-        if ! BOOTSTRAP_PUBLISHED_COMMIT="$(published_release_source_commit \
-                "$GOVERNANCE_BOOTSTRAP_RELEASE" "$BOOTSTRAP_SOURCE_TAG" source-provenance.json)" ||
-           [[ "$BOOTSTRAP_PUBLISHED_COMMIT" != "$GOVERNANCE_BASE_COMMIT" ]]; then
-            echo "error: bootstrap provenance could not be read back from $GOVERNANCE_BOOTSTRAP_RELEASE"
-            exit 1
+        # Public bootstrap mutation is deferred until all deterministic local
+        # release gates pass. Existing evidence was already read and checked;
+        # only missing state is queued here. (ADR-004 cap § Release governance baselines v7)
+        if [[ -z "$BOOTSTRAP_LOCAL_COMMIT" || -z "$BOOTSTRAP_REMOTE_COMMIT" ||
+              "$BOOTSTRAP_HAS_PROVENANCE" -eq 0 ]]; then
+            BOOTSTRAP_MUTATION_PENDING=1
         fi
     else
         echo "error: GOVERNANCE_BASE must be a full 40-char commit SHA or vX.Y.Z-release tag"
@@ -488,6 +474,18 @@ if ! git merge-base --is-ancestor "$GOVERNANCE_BASE_COMMIT" "$SOURCE_COMMIT"; th
     echo "error: governance base $GOVERNANCE_BASE_COMMIT is not an ancestor of $SOURCE_COMMIT"
     exit 1
 fi
+if ! CITATION_GOVERNANCE_EPOCH="$(git rev-parse --verify "${CITATION_GOVERNANCE_EPOCH}^{commit}" 2>/dev/null)"; then
+    echo "error: tracked citation governance epoch does not resolve"
+    exit 1
+fi
+if ! git merge-base --is-ancestor "$CITATION_GOVERNANCE_EPOCH" "$SOURCE_COMMIT"; then
+    echo "error: citation governance epoch is not an ancestor of $SOURCE_COMMIT"
+    exit 1
+fi
+# The checker derives citation scope from the same tracked policy: if the epoch
+# is already in the previous published source, both gates ratchet from that
+# source; otherwise only citation scanning starts at the epoch.
+# (ADR-004 cap § Release governance baselines v7)
 
 SOURCE_TAG_PENDING=0
 RELEASE_RESUME=0
@@ -526,8 +524,14 @@ fi
 echo "==> [0/9] ADR Release Acceptance audit — block ship on open release-scoped [ ] items"
 # Strict mode enforces only bounded Release Acceptance / 发布验收 contracts;
 # long-horizon design debt remains visible through the soft CI/development audit.
-# ADR_AUDIT_SOFT=1 is reserved for an approved emergency hotfix override.
+# ADR_AUDIT_SOFT=1 is reserved for an approved emergency hotfix override;
+# it cannot authorize first-migration public state. (ADR-004 cap § Release governance baselines v7)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ "$BOOTSTRAP_MUTATION_PENDING" -eq 1 && "${ADR_AUDIT_SOFT:-0}" = "1" ]]; then
+    echo "error: first-migration provenance mutation requires strict Release Acceptance"
+    echo "       ADR_AUDIT_SOFT cannot authorize a bootstrap source tag or sidecar"
+    exit 1
+fi
 if [[ "${ADR_AUDIT_SOFT:-0}" = "1" ]]; then
     bash "$SCRIPT_DIR/check-adr-acceptance.sh" --soft || true
 else
@@ -538,12 +542,55 @@ else
 fi
 
 echo "==> [1/9] deterministic governance + compiler/test evidence"
-# Check the immutable previously-published → current source range, then any
-# local edits that the build would consume. (ADR-004 cap § updater v5)
-node scripts/check-governance.mjs --base "$GOVERNANCE_BASE_COMMIT" --head "$SOURCE_COMMIT"
+# Added-secret scanning keeps the complete previous-public-source delta. ADR
+# citations use the tracked activation epoch only for the first governed
+# migration, then ratchet from the previous release. (ADR-004 cap § Release governance baselines v7)
+node scripts/check-governance.mjs \
+    --release-provenance-base "$GOVERNANCE_BASE_COMMIT" \
+    --head "$SOURCE_COMMIT"
 node scripts/check-governance.mjs --worktree
 npm run typecheck
 cargo test --lib --manifest-path src-tauri/Cargo.toml
+
+# First-migration public provenance is the first side effect, and only occurs
+# after all deterministic local release gates above pass. Retries read and
+# verify already-published state instead of rewriting it.
+# (ADR-004 cap § Release governance baselines v7)
+if [[ "$BOOTSTRAP_MUTATION_PENDING" -eq 1 ]]; then
+    if ! verify_source_state; then
+        echo "error: source changed before bootstrap provenance publication"
+        exit 1
+    fi
+    if [[ -z "$BOOTSTRAP_LOCAL_COMMIT" ]]; then
+        git tag "$BOOTSTRAP_SOURCE_TAG" "$GOVERNANCE_BASE_COMMIT"
+    fi
+    if [[ -z "$BOOTSTRAP_REMOTE_COMMIT" ]]; then
+        git push origin "$BOOTSTRAP_SOURCE_TAG"
+    fi
+    BOOTSTRAP_REMOTE_COMMIT="$(git ls-remote --tags --refs origin "refs/tags/${BOOTSTRAP_SOURCE_TAG}" | awk 'NR == 1 { print $1 }')"
+    if [[ "$BOOTSTRAP_REMOTE_COMMIT" != "$GOVERNANCE_BASE_COMMIT" ]]; then
+        echo "error: remote bootstrap tag $BOOTSTRAP_SOURCE_TAG was not published at $GOVERNANCE_BASE_COMMIT"
+        exit 1
+    fi
+
+    if [[ "$BOOTSTRAP_HAS_PROVENANCE" -eq 0 ]]; then
+        BOOTSTRAP_DIR="$(mktemp -d)"
+        jq -n \
+            --arg source_commit "$GOVERNANCE_BASE_COMMIT" \
+            --arg source_tag "$BOOTSTRAP_SOURCE_TAG" \
+            '{source_commit: $source_commit, source_tag: $source_tag}' \
+            > "$BOOTSTRAP_DIR/source-provenance.json"
+        gh release upload "$GOVERNANCE_BOOTSTRAP_RELEASE" --repo "$REPO_RELEASES" \
+            "$BOOTSTRAP_DIR/source-provenance.json"
+        rm -rf "$BOOTSTRAP_DIR"
+    fi
+    if ! BOOTSTRAP_PUBLISHED_COMMIT="$(published_release_source_commit \
+            "$GOVERNANCE_BOOTSTRAP_RELEASE" "$BOOTSTRAP_SOURCE_TAG" source-provenance.json)" ||
+       [[ "$BOOTSTRAP_PUBLISHED_COMMIT" != "$GOVERNANCE_BASE_COMMIT" ]]; then
+        echo "error: bootstrap provenance could not be read back from $GOVERNANCE_BOOTSTRAP_RELEASE"
+        exit 1
+    fi
+fi
 
 echo "==> [2/9] pull Tauri signing key from Keychain"
 KEY=$(security find-generic-password -s tauri-sign -a ctrl-updater -w 2>/dev/null || true)
@@ -585,6 +632,8 @@ fi
 SIGNING_FINGERPRINT="$(awk '{print tolower($2)}' <<< "$SIGNING_MATCH")"
 SIGNING_LABEL="$(sed -E 's/^[[:space:]]*[0-9]+\)[[:space:]]+[0-9A-Fa-f]+[[:space:]]+"(.*)"[[:space:]]*$/\1/' <<< "$SIGNING_MATCH")"
 
+# Verify the exact release identity and certificate-bound Designated
+# Requirement, not merely that some signature exists. (ADR-004 cap § updater v6)
 verify_macos_code_signature() {
     local app_bundle="$1" details requirement normalized_requirement normalized_identifier
     if [[ ! -d "$app_bundle" ]]; then

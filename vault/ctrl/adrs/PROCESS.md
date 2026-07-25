@@ -62,7 +62,7 @@ related:
 - 日常开发 / CI：`bash scripts/check-adr-acceptance.sh --soft` 扫描任意 level 2-6、标题含 `Acceptance` 或 `验收` 的作用域，完整暴露 inherited design debt，但不把所有 push 永久置红
 - Release：`scripts/release.sh` 步骤 `[0/9]` 严格模式只扫描显式 `Release Acceptance` / `发布验收` 作用域；其中任一 `[ ]` 阻断 ship
 - 长周期设计/平台 backlog 必须放在 `Design Acceptance (non-release)` 等普通 Acceptance scope，不得伪造为 `[x]`；真正 ship contract 才进入 Release Acceptance
-- `ADR_AUDIT_SOFT=1` 仅限经批准的 emergency hotfix，release 会明确打印 override 语义
+- `ADR_AUDIT_SOFT=1` 仅限经批准的 emergency hotfix，release 会明确打印 override 语义；它只降级 Acceptance 报告，**不得**跳过 provenance、secret、ADR citation、compiler/test、签名或公开资产回验
 
 ## 5. 代码引用与 executable governance
 
@@ -77,6 +77,8 @@ related:
 - 不写 `(ADR-XXX)` 单引；必须带 module slug、section、version
 - section amendment 后更新受影响代码引用
 - `INDEX.md` module map 必须覆盖真实 owner 路径
+- executable governance 向前生效：规则启用前的 citation 债务可由 accepted module ADR 固定一个不可由环境变量移动的 activation epoch；exact commit 只存于受跟踪的 `scripts/governance-policy.json`，旧债持续可见但不伪造历史追认
+- Release 的 provenance、secret、citation 基线分责：provenance 绑定真实公开 source，secret 覆盖完整公开版本 delta，citation 首次从 activation epoch、此后从上一受验证公开 source 增量推进；所有 base 必须是 target ancestor
 
 ## 6. INDEX.md 维护
 
@@ -109,5 +111,5 @@ INDEX 的历史 provenance 不删除。旧实现只可作为明确标注的 hist
 
 ---
 
-**Process version**: 0.6 (2026-07-13)
-**Last process change**: strict release audit now checks only explicit Release Acceptance / 发布验收 scopes, while soft mode continues to report all inherited design Acceptance debt。
+**Process version**: 0.7 (2026-07-24)
+**Last process change**: executable governance now separates immutable release provenance, full-delta secret scanning, and forward-effective citation enforcement; emergency Acceptance soft mode cannot bypass them。

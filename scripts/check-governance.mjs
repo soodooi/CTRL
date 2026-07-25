@@ -10,6 +10,12 @@
  *   node scripts/check-governance.mjs
  *   node scripts/check-governance.mjs --worktree
  *   node scripts/check-governance.mjs --base <sha> --head <sha>
+ *   node scripts/check-governance.mjs --release-provenance-base <sha> --head <sha>
+ *
+ * Release mode derives full-delta secret coverage and the forward-effective
+ * citation range from one proven source plus the tracked governance policy;
+ * callers cannot choose the two ranges independently.
+ * (ADR-004 cap § Release governance baselines v7)
  */
 
 import { execFileSync } from 'node:child_process';
@@ -17,13 +23,54 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, join } from 'node:path';
 
 const args = process.argv.slice(2);
-const option = (name) => {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
-};
-const worktree = args.includes('--worktree');
-const requestedBase = option('--base');
-const requestedHead = option('--head') ?? 'HEAD';
+const valueOptions = new Set(['--base', '--head', '--release-provenance-base']);
+const parsedOptions = new Map();
+let worktree = false;
+for (let index = 0; index < args.length; index += 1) {
+  const arg = args[index];
+  if (arg === '--worktree') {
+    if (worktree) {
+      console.error('[BLOCKED] duplicate option: --worktree');
+      process.exit(2);
+    }
+    worktree = true;
+    continue;
+  }
+  if (!valueOptions.has(arg)) {
+    console.error(`[BLOCKED] unknown governance option: ${arg}`);
+    process.exit(2);
+  }
+  if (parsedOptions.has(arg)) {
+    console.error(`[BLOCKED] duplicate governance option: ${arg}`);
+    process.exit(2);
+  }
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) {
+    console.error(`[BLOCKED] missing value for governance option: ${arg}`);
+    process.exit(2);
+  }
+  parsedOptions.set(arg, value);
+  index += 1;
+}
+
+const requestedBase = parsedOptions.get('--base');
+const releaseProvenanceBase = parsedOptions.get('--release-provenance-base');
+const requestedHead = parsedOptions.get('--head') ?? 'HEAD';
+if (worktree && parsedOptions.size > 0) {
+  console.error('[BLOCKED] --worktree cannot be combined with commit-range options');
+  process.exit(2);
+}
+if (requestedBase && releaseProvenanceBase) {
+  console.error('[BLOCKED] --base cannot be combined with --release-provenance-base');
+  process.exit(2);
+}
+
+const governancePolicy = JSON.parse(readFileSync(join(process.cwd(), 'scripts', 'governance-policy.json'), 'utf8'));
+const citationActivationCommit = governancePolicy.citationActivationCommit;
+if (!/^[0-9a-f]{40}$/.test(citationActivationCommit ?? '')) {
+  console.error('[BLOCKED] scripts/governance-policy.json has an invalid citationActivationCommit');
+  process.exit(2);
+}
 
 function git(gitArgs, options = {}) {
   return execFileSync('git', gitArgs, {
@@ -34,8 +81,14 @@ function git(gitArgs, options = {}) {
   }).trimEnd();
 }
 
-function resolveBase(head) {
-  if (requestedBase && !/^0+$/.test(requestedBase)) return requestedBase;
+function resolveBase(head, explicitBase) {
+  if (explicitBase !== undefined) {
+    if (!explicitBase || /^0+$/.test(explicitBase)) {
+      console.error(`[BLOCKED] explicit governance base is invalid: ${explicitBase || '<empty>'}`);
+      process.exit(2);
+    }
+    return explicitBase;
+  }
   try {
     return git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { quiet: true });
   } catch {}
@@ -49,11 +102,33 @@ function resolveBase(head) {
   }
 }
 
-function diffText() {
+function resolveCommit(revision, label) {
+  try {
+    return git(['rev-parse', '--verify', `${revision}^{commit}`], { quiet: true });
+  } catch {
+    console.error(`[BLOCKED] ${label} does not resolve to a commit: ${revision}`);
+    process.exit(2);
+  }
+}
+
+function diffText(explicitBase, label) {
   if (worktree) return git(['diff', '--unified=0', '--no-ext-diff', 'HEAD', '--']);
-  const base = resolveBase(requestedHead);
+  const base = resolveBase(requestedHead, explicitBase);
   if (!base) return git(['show', '--format=', '--unified=0', '--no-ext-diff', requestedHead, '--']);
-  return git(['diff', '--unified=0', '--no-ext-diff', `${base}...${requestedHead}`, '--']);
+  const baseCommit = resolveCommit(base, `${label} governance base`);
+  const headCommit = resolveCommit(requestedHead, 'governance head');
+  if (baseCommit === headCommit) {
+    console.error(`[BLOCKED] ${label} governance base resolves to head: ${baseCommit}`);
+    process.exit(2);
+  }
+  try {
+    git(['merge-base', '--is-ancestor', baseCommit, headCommit], { quiet: true });
+  } catch {
+    console.error(`[BLOCKED] ${label} governance base is not an ancestor of head: ${baseCommit} !< ${headCommit}`);
+    process.exit(2);
+  }
+  console.log(`[INFO] resolved ${label} governance range: ${baseCommit}...${headCommit}`);
+  return git(['diff', '--unified=0', '--no-ext-diff', `${baseCommit}...${headCommit}`, '--']);
 }
 
 function parseChangedLines(diff) {
@@ -248,11 +323,32 @@ function substantive(lines) {
   });
 }
 
-const files = parseChangedLines(diffText());
+const releaseMode = Boolean(releaseProvenanceBase);
+let secretFiles;
+let citationFiles;
+if (releaseMode) {
+  const provenanceCommit = resolveCommit(releaseProvenanceBase, 'release provenance base');
+  const epochCommit = resolveCommit(citationActivationCommit, 'citation activation commit');
+  const citationBase = (() => {
+    try {
+      git(['merge-base', '--is-ancestor', epochCommit, provenanceCommit], { quiet: true });
+      return provenanceCommit;
+    } catch {
+      return epochCommit;
+    }
+  })();
+  secretFiles = parseChangedLines(diffText(provenanceCommit, 'secret'));
+  citationFiles = parseChangedLines(diffText(citationBase, 'citation'));
+} else {
+  const combinedFiles = parseChangedLines(diffText(requestedBase, 'combined'));
+  secretFiles = combinedFiles;
+  citationFiles = combinedFiles;
+}
+const changedFiles = new Set([...secretFiles.keys(), ...citationFiles.keys()]);
 const secretFindings = [];
 const adrFindings = [];
 
-for (const [file, lines] of files) {
+for (const [file, lines] of secretFiles) {
   if (LOCKFILE.test(file)) continue;
 
   // Secrets are meaningful only on newly introduced text. Removed literals are
@@ -266,7 +362,10 @@ for (const [file, lines] of files) {
       secretFindings.push({ file, ...added, kind: `literal ${assignment[1]}` });
     }
   }
+}
 
+for (const [file, lines] of citationFiles) {
+  if (LOCKFILE.test(file)) continue;
   if (!SOURCE_EXTENSIONS.has(extname(file))) continue;
   if (!ARCHITECTURE_PATHS.some((pattern) => pattern.test(file))) continue;
 
@@ -334,4 +433,4 @@ if (adrFindings.length) {
 }
 
 if (secretFindings.length || adrFindings.length) process.exit(1);
-console.log(`[OK] Governance gate passed for ${files.size} changed file(s): no added secrets; architecture hunks cite resolvable ADRs.`);
+console.log(`[OK] Governance gate passed for ${changedFiles.size} changed file(s): no added secrets; architecture hunks cite resolvable ADRs.`);
