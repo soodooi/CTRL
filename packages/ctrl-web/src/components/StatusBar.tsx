@@ -40,17 +40,17 @@ export const StatusBar = (): ReactElement => {
     });
   }, []);
 
-  const versionLabel = update.installing
+  const versionLabel = update.updating
     ? 'Updating…'
     : update.checking
       ? 'Checking…'
       : `v${APP_VERSION}`;
-  const versionTitle = update.installing
-    ? 'Installing…'
+  const versionTitle = update.updating
+    ? 'Updating…'
     : update.checking
       ? 'Checking…'
       : update.available
-        ? `Click to install v${update.latestVersion ?? ''} & restart`
+        ? `Update to v${update.latestVersion ?? ''} & restart`
         : `CTRL v${APP_VERSION} · click to check`;
 
   return (
@@ -95,8 +95,8 @@ export const StatusBar = (): ReactElement => {
             type="button"
             className={`${styles.versionChip} ${styles.chipButton}`}
             title={versionTitle}
-            onClick={() => void update.checkAndInstall()}
-            disabled={update.checking || update.installing}
+            onClick={() => void update.checkAndUpdate()}
+            disabled={update.checking || update.updating}
           >
             <span className={styles.chipValue}>{versionLabel}</span>
             {update.available && (

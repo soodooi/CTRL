@@ -1769,10 +1769,10 @@ export function AmbientHome({
   useEffect(() => {
     void getVersion().then(setVersion).catch(() => {});
   }, []);
-  const updateBusy = update.checking || update.installing;
+  const updateBusy = update.checking || update.updating;
   const updateDisabled = !update.supported || updateBusy;
-  const versionLabel = update.installing
-    ? 'Installing…'
+  const versionLabel = update.updating
+    ? 'Updating…'
     : update.checking
       ? 'Checking…'
       : update.error
@@ -1784,8 +1784,8 @@ export function AmbientHome({
     ? `CTRL v${version} · updates are available in the desktop app`
     : update.error
     ? `Update failed: ${update.error}`
-    : update.installing
-      ? 'Installing update and restarting CTRL…'
+    : update.updating
+      ? 'Updating CTRL and restarting…'
       : update.available
         ? `Update to CTRL v${update.latestVersion ?? 'latest'}`
         : `CTRL v${version} · click to check for updates`;
@@ -1826,12 +1826,12 @@ export function AmbientHome({
             CTRL
           </span>
           {/* Layer-1 updater entry: background polling exposes availability;
-              one click checks, installs, and safely relaunches CTRL.
-              (ADR-004 cap §3 v6) */}
+              one click checks, atomically updates, and safely relaunches CTRL.
+              (ADR-004 cap § auto-update v10) */}
           <button
             type="button"
             className={styles.statusVersion}
-            onClick={() => void update.checkAndInstall()}
+            onClick={() => void update.checkAndUpdate()}
             disabled={updateDisabled}
             data-busy={updateBusy || undefined}
             aria-busy={updateBusy}
@@ -1839,7 +1839,7 @@ export function AmbientHome({
             title={versionTitle}
           >
             <span aria-live="polite">{versionLabel}</span>
-            {(update.available || update.error) && !update.installing ? (
+            {(update.available || update.error) && !update.updating ? (
               <span
                 className={styles.updateIndicator}
                 data-error={update.error ? '' : undefined}
@@ -2114,7 +2114,7 @@ export function AmbientHome({
                     <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
                     {settingUp && (
                       <p className={styles.setupHint} role="status">
-                        Setting up CTRL… installing your tools.
+                        Setting up CTRL… updating your tools.
                       </p>
                     )}
                     {!hasProvider && (

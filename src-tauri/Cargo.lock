@@ -1040,7 +1040,7 @@ dependencies = [
 
 [[package]]
 name = "ctrl"
-version = "0.1.1052"
+version = "0.1.1053"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -1054,10 +1054,12 @@ dependencies = [
  "core-foundation 0.10.1",
  "core-graphics 0.24.0",
  "directories",
+ "flate2",
  "futures",
  "hostname",
  "jsonschema",
  "keyring",
+ "libc",
  "notify",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
@@ -1074,6 +1076,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2 0.10.9",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-nspanel",

@@ -738,15 +738,15 @@ export const SettingsEnvPage = (): ReactElement => (
 
 export const SettingsLogsPage = (): ReactElement => {
   const update = useUpdateStatus();
-  const buttonLabel = update.installing
-    ? 'Installing…'
+  const buttonLabel = update.updating
+    ? 'Updating…'
     : update.checking
       ? 'Checking…'
       : update.available
-        ? `Install v${update.latestVersion ?? ''} & restart`
+        ? `Update to v${update.latestVersion ?? ''} & restart`
         : 'Check for Updates';
-  const onClick = update.available ? update.installAndRestart : update.checkNow;
-  const disabled = update.checking || update.installing;
+  const onClick = update.available ? update.applyAndRestart : update.checkNow;
+  const disabled = update.checking || update.updating;
   return (
     <SettingsShell activeTab="logs">
       <div className={styles.versionBadge}>

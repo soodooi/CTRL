@@ -36,6 +36,14 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "error: version must be semver MAJOR.MINOR.PATCH (got: $VERSION)"
     exit 1
 fi
+if [[ -n "${CTRL_UPDATER_DEBUG_ENDPOINT:-}" || -n "${CTRL_UPDATER_DEBUG_VERSION:-}" ||
+      -n "${CTRL_UPDATER_DEBUG_PORT:-}" ]]; then
+    echo "error: production release rejects local updater debug-channel environment"
+    exit 1
+fi
+# The release command below intentionally omits `--features updater-debug-channel`.
+# Debug endpoint/version/fault paths therefore do not exist in production apps.
+# (ADR-004 cap § updater v11)
 
 REPO_SRC="soodooi/CTRL"
 REPO_RELEASES="soodooi/CTRL-releases"

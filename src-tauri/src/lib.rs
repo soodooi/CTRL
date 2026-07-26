@@ -25,6 +25,12 @@ mod commands;
 pub mod kernel;
 mod shell;
 
+/// Handle the signed old-bundle updater helper before Tauri acquires the
+/// single-instance lock. (ADR-004 cap § updater v11)
+pub fn run_updater_helper_from_args() -> bool {
+    commands::updater::run_updater_helper_from_args()
+}
+
 /// Export the kernel MCP endpoint spec (the authoritative `tools/list` JSON
 /// Schema) as a JSON value. Thin re-export so the `dump_mcp_schema` bin can
 /// produce the artifact without making the whole `kernel` module public
@@ -106,13 +112,17 @@ pub fn run() {
         // tauri.conf.json -> plugins.updater. Signed release pipeline:
         // scripts/release.sh produces .app.tar.gz + .sig + latest.json
         // and uploads to the public soodooi/CTRL-releases sibling repo.
-        // ADR-004 cap § updater v1 / 018 — Layer 1 of 4 of the auto-update strategy.
+        // (ADR-004 cap § updater v11)
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_nspanel::init())
         .setup(|app| {
+            commands::updater::record_pending_update_process_start()
+                .map_err(std::io::Error::other)?;
             shell::ShellLifecycle::boot(app.handle())?;
+            commands::updater::acknowledge_pending_update_launch()
+                .map_err(std::io::Error::other)?;
             Ok(())
         })
         .invoke_handler(pwa_invoke_handler!());

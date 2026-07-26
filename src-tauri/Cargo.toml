@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.1052"
+version = "0.1.1053"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -8,6 +8,12 @@ default-run = "ctrl"
 [lib]
 name = "ctrl_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# Compile-only isolation for signed localhost A/B updater debugging. Production
+# release builds never enable this feature or contain endpoint/fault overrides.
+# (ADR-004 cap § updater v11)
+updater-debug-channel = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -22,6 +28,12 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
+# macOS updater staging uses the same archive format emitted by Tauri, but CTRL
+# verifies the staged release identity before an atomic bundle swap.
+# (ADR-004 cap § updater v11)
+flate2 = "=1.1.9"
+tar = "=0.4.45"
+libc = "=0.2.186"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

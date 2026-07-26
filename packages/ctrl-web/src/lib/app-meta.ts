@@ -1,8 +1,8 @@
 // App metadata — PWA-side version + update detection.
 //
 // Version is injected at build time from package.json via vite.config.ts
-// (`__APP_VERSION__`). Native Tauri commands own update check/install so the
-// WebView cannot bypass the canonical installed-app boundary. Browser mode
+// (`__APP_VERSION__`). Native Tauri commands own update check/apply so the
+// WebView cannot bypass the canonical app boundary. Browser mode
 // (mobile / dev outside Tauri) falls back to no-op.
 
 import { useEffect, useSyncExternalStore } from 'react';
@@ -25,7 +25,7 @@ export interface UpdateStatus {
   latestVersion?: string;
   notes?: string;
   checking: boolean;
-  installing: boolean;
+  updating: boolean;
   error?: string;
 }
 
@@ -34,10 +34,10 @@ export interface UpdateStatus {
 // bump this back to 15 min to be friendlier to GitHub + battery.
 const UPDATE_POLL_MS = 60 * 1000;
 
-// Serialize checks and installs across every mounted updater surface. Ambient
+// Serialize checks and updates across every mounted updater surface. Ambient
 // and Settings each poll independently, but only one operation may mutate the
-// signed app bundle at a time. (ADR-004 cap §3 v6)
-let activeUpdateOperation: 'idle' | 'checking' | 'installing' = 'idle';
+// signed app bundle at a time. (ADR-004 cap § auto-update v10)
+let activeUpdateOperation: 'idle' | 'checking' | 'updating' = 'idle';
 
 const isTauri = (): boolean =>
   typeof window !== 'undefined' &&
@@ -47,16 +47,16 @@ interface UpdateHandle {
   available: boolean;
   version?: string;
   body?: string;
-  downloadAndInstall: () => Promise<boolean>;
+  downloadAndApply: () => Promise<boolean>;
 }
 
 // One updater truth for every UI surface. Hooks subscribe to this snapshot
 // instead of racing with private copies of status/handle state.
-// (ADR-004 cap §3 v6)
+// (ADR-004 cap § auto-update v10)
 let sharedUpdateStatus: UpdateStatus = {
   available: false,
   checking: false,
-  installing: false,
+  updating: false,
 };
 let sharedUpdateHandle: UpdateHandle | null = null;
 const updateStatusListeners = new Set<() => void>();
@@ -75,9 +75,19 @@ const subscribeUpdateStatus = (listener: () => void): (() => void) => {
 
 const getUpdateStatusSnapshot = (): UpdateStatus => sharedUpdateStatus;
 
+// Tauri commands reject with serializable strings as well as Error objects.
+// Preserve the native updater diagnosis instead of collapsing it to a generic
+// UI failure, while retaining a stable fallback for unknown rejection values.
+// (ADR-004 cap § updater v11)
+const updateErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  return fallback;
+};
+
 // WebView code receives metadata only; the native command owns endpoint access,
-// archive signature verification, canonical installation, and macOS relaunch.
-// (ADR-004 cap § updater v6)
+// archive signature verification, canonical in-place transaction, and macOS relaunch.
+// (ADR-004 cap § updater v10)
 const checkForUpdate = async (): Promise<UpdateHandle | null> => {
   if (!isTauri()) return null;
   const { invoke } = await import('@tauri-apps/api/core');
@@ -87,7 +97,7 @@ const checkForUpdate = async (): Promise<UpdateHandle | null> => {
     available: true,
     version: update.version,
     body: update.body,
-    downloadAndInstall: () => invoke<boolean>('install_app_update', {
+    downloadAndApply: () => invoke<boolean>('apply_app_update', {
       expectedVersion: update.version,
     }),
   };
@@ -102,8 +112,8 @@ const relaunchApp = async (): Promise<void> => {
 interface UseUpdateStatusReturn extends UpdateStatus {
   supported: boolean;
   checkNow: () => Promise<void>;
-  installAndRestart: () => Promise<void>;
-  checkAndInstall: () => Promise<void>;
+  applyAndRestart: () => Promise<void>;
+  checkAndUpdate: () => Promise<void>;
 }
 
 export const useUpdateStatus = (): UseUpdateStatusReturn => {
@@ -126,57 +136,55 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
           latestVersion: result.version,
           notes: result.body,
           checking: false,
-          installing: false,
+          updating: false,
         });
       } else {
         sharedUpdateHandle = null;
-        publishUpdateStatus({ available: false, checking: false, installing: false });
+        publishUpdateStatus({ available: false, checking: false, updating: false });
       }
     } catch (err) {
-      // A failed check cannot authorize installation from an older response.
+      // A failed check cannot authorize an update from an older response.
       // Drop both the opaque updater handle and its visible metadata so every
-      // install is backed by the latest successful check.
-      // (ADR-004 cap § updater v6)
+      // apply is backed by the latest successful check.
+      // (ADR-004 cap § updater v10)
       sharedUpdateHandle = null;
       publishUpdateStatus({
         available: false,
         checking: false,
-        installing: false,
-        error: err instanceof Error ? err.message : 'check failed',
+        updating: false,
+        error: updateErrorMessage(err, 'check failed'),
       });
     } finally {
       activeUpdateOperation = 'idle';
     }
   };
 
-  const installAndRestart = async (): Promise<void> => {
+  const applyAndRestart = async (): Promise<void> => {
     if (!sharedUpdateHandle?.available || activeUpdateOperation !== 'idle') return;
-    activeUpdateOperation = 'installing';
-    publishUpdateStatus((s) => ({ ...s, installing: true, error: undefined }));
+    activeUpdateOperation = 'updating';
+    publishUpdateStatus((s) => ({ ...s, updating: true, error: undefined }));
     try {
-      const relaunchScheduled = await sharedUpdateHandle.downloadAndInstall();
+      const relaunchScheduled = await sharedUpdateHandle.downloadAndApply();
       if (!relaunchScheduled) await relaunchApp();
     } catch (err) {
       publishUpdateStatus((s) => ({
         ...s,
-        installing: false,
-        error: err instanceof Error ? err.message : 'install failed',
+        updating: false,
+        error: updateErrorMessage(err, 'update failed'),
       }));
     } finally {
       activeUpdateOperation = 'idle';
     }
   };
 
-  // One-click upgrade for the version row: a single click checks AND
-  // installs in one shot, so the user never has to click twice (once to
-  // discover the update, once to install it). If we already hold a pending
-  // update handle we install it directly; otherwise we check, and if one is
-  // found we download + relaunch immediately — no second click, no Settings
-  // detour. The whole point is "click the version → it upgrades".
-  const checkAndInstall = async (): Promise<void> => {
+  // One-click update for the version row: a single click checks AND
+  // applies the update in one shot, so the user never has to click twice. If
+  // we already hold pending metadata we apply it directly; otherwise we check,
+  // then download, atomically update, and relaunch without a Settings detour.
+  const checkAndUpdate = async (): Promise<void> => {
     if (!isTauri() || activeUpdateOperation !== 'idle') return;
     if (sharedUpdateHandle?.available) {
-      await installAndRestart();
+      await applyAndRestart();
       return;
     }
     activeUpdateOperation = 'checking';
@@ -185,26 +193,26 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
       const result = await checkForUpdate();
       if (!result?.available) {
         sharedUpdateHandle = null;
-        publishUpdateStatus({ available: false, checking: false, installing: false });
+        publishUpdateStatus({ available: false, checking: false, updating: false });
         return;
       }
       sharedUpdateHandle = result;
-      activeUpdateOperation = 'installing';
+      activeUpdateOperation = 'updating';
       publishUpdateStatus({
         available: true,
         latestVersion: result.version,
         notes: result.body,
         checking: false,
-        installing: true,
+        updating: true,
       });
-      const relaunchScheduled = await result.downloadAndInstall();
+      const relaunchScheduled = await result.downloadAndApply();
       if (!relaunchScheduled) await relaunchApp();
     } catch (err) {
       publishUpdateStatus((s) => ({
         ...s,
         checking: false,
-        installing: false,
-        error: err instanceof Error ? err.message : 'update failed',
+        updating: false,
+        error: updateErrorMessage(err, 'update failed'),
       }));
     } finally {
       activeUpdateOperation = 'idle';
@@ -222,7 +230,7 @@ export const useUpdateStatus = (): UseUpdateStatusReturn => {
     ...status,
     supported: isTauri(),
     checkNow,
-    installAndRestart,
-    checkAndInstall,
+    applyAndRestart,
+    checkAndUpdate,
   };
 };
