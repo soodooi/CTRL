@@ -9,18 +9,21 @@ use crate::kernel::diagnostics::{
     DiagnosticsStatus, DiagnosticsTrace,
 };
 
+// Transport-scoped names keep the typed app-shell controls distinct from the
+// read-only MCP tool names while both delegate to one kernel composer.
+// (ADR-003 frontend § diagnostics-surface v26)
 #[tauri::command]
-pub fn diagnostics_status(module: DiagnosticsModule) -> DiagnosticsStatus {
+pub fn app_diagnostics_status(module: DiagnosticsModule) -> DiagnosticsStatus {
     diagnostics::status(module)
 }
 
 #[tauri::command]
-pub fn diagnostics_smoke(module: DiagnosticsModule) -> DiagnosticsSmoke {
+pub fn app_diagnostics_smoke(module: DiagnosticsModule) -> DiagnosticsSmoke {
     diagnostics::smoke(module)
 }
 
 #[tauri::command]
-pub fn diagnostics_trace(
+pub fn app_diagnostics_trace(
     module: DiagnosticsModule,
     correlation_id: Option<String>,
     limit: Option<usize>,

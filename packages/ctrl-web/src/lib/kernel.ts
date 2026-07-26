@@ -139,18 +139,24 @@ export interface DiagnosticsExportPreview {
   estimated_bytes: number;
 }
 
+// App-shell transport name; shared implementation remains kernel-owned.
+// (ADR-003 frontend § diagnostics-surface v26)
 export const diagnosticsStatus = (module: DiagnosticsModule): Promise<DiagnosticsStatus> =>
-  invoke<DiagnosticsStatus>('diagnostics_status', { module });
+  invoke<DiagnosticsStatus>('app_diagnostics_status', { module });
 
+// App-shell transport name; MCP keeps the protocol-level diagnostics_smoke.
+// (ADR-003 frontend § diagnostics-surface v26)
 export const diagnosticsSmoke = (module: DiagnosticsModule): Promise<DiagnosticsSmoke> =>
-  invoke<DiagnosticsSmoke>('diagnostics_smoke', { module });
+  invoke<DiagnosticsSmoke>('app_diagnostics_smoke', { module });
 
+// App-shell transport name; both surfaces delegate to one Rust composer.
+// (ADR-003 frontend § diagnostics-surface v26)
 export const diagnosticsTrace = (
   module: DiagnosticsModule,
   correlationId?: string,
   limit?: number,
 ): Promise<DiagnosticsTrace> =>
-  invoke<DiagnosticsTrace>('diagnostics_trace', {
+  invoke<DiagnosticsTrace>('app_diagnostics_trace', {
     module,
     correlation_id: correlationId ?? null,
     limit: limit ?? null,

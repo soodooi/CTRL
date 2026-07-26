@@ -256,9 +256,9 @@ macro_rules! pwa_invoke_handler {
             // Unified first-party diagnostics controls. Capture/export preview
             // remain Tauri-only; Gate exposes the read-only subset.
             // (ADR-003 frontend §9 v26)
-            $crate::commands::diagnostics::diagnostics_status,
-            $crate::commands::diagnostics::diagnostics_smoke,
-            $crate::commands::diagnostics::diagnostics_trace,
+            $crate::commands::diagnostics::app_diagnostics_status,
+            $crate::commands::diagnostics::app_diagnostics_smoke,
+            $crate::commands::diagnostics::app_diagnostics_trace,
             $crate::commands::diagnostics::diagnostics_capture_start,
             $crate::commands::diagnostics::diagnostics_capture_stop,
             $crate::commands::diagnostics::diagnostics_export_preview,
