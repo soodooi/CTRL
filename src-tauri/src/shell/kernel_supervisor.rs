@@ -333,7 +333,9 @@ impl KernelSupervisor {
         // control SubprocessActor instances. Independent from KernelHandle so
         // the registry lifetime is tied to the app, not to a specific kernel
         // boot cycle.
-        app.manage(crate::commands::code_space::CodeSpaceRegistry::new());
+        // Tauri commands and diagnostics clone the same owner handle; no
+        // parallel Coding registry exists. (ADR-002 substrate § diagnostics-projection v72)
+        app.manage(crate::commands::code_space::CodeSpaceRegistry::shared());
 
         // Spawn the WS bridge on the Tauri tokio runtime. The on_op callback
         // is currently a no-op log; sub-PR d/2 routes it to scheduler::dispatch.

@@ -25,6 +25,9 @@ use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU8, Ordering};
+// Non-blocking owner-state projection for diagnostics.
+// (ADR-005 irisy §8.6.1 v26)
 use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -241,54 +244,21 @@ comparison, a structured guide). Never make the user name a format or repeat \
 you DO build one, write it to the vault (Research/<topic>.html) and leave only a \
 one-line pointer in the chat (it opens in the workspace — good-looking, \
 editable, auto-saved; the dialog stays for conversation). Pick the skill by need \
-(skills_list / skill_view): render-html for a simple report / long-page (static \
+(skill_list / skill_read; ADR-002 substrate § 7.4 v34): render-html for a simple report / long-page (static \
 inline CSS) is the lighter default; frontend-slides-editable is ONLY for an \
 actual slide deck or visual dashboard the user wants to present, never for plain \
 findings. Either way the document must be FULLY self-contained — never load from \
 a CDN, never inline a secret. \
-You can also CREATE feature packs for the user — a feature pack is a tool that \
-appears in their workbench and runs when triggered. CRITICAL: describing a pack \
-in prose creates NOTHING. There is NO `add key`, `keycap`, or `create tool` \
-function — never call or mention one. The ONLY way to create a pack is to \
-actually INVOKE two real tools, in order: mcp_pack_install (pass a manifest), \
-then mcp_pack_run (smoke one action). If you write text about what you 'will' or \
-'would' create instead of CALLING these tools, you have created nothing and \
-FAILED. When the user asks for a new tool / button / shortcut / connector / data \
-tracker / \u{529F}\u{80FD}\u{5305}, do this — keep calling tools, do not narrate: \
-(1) RESEARCH FIRST — first open a knowledge base for this pack: read any prior \
-notes under its vault folder (e.g. Packs/<name>/) with the vault tools so you do \
-not start cold, then call discover_packs (MCP Registry + Smithery), \
-discover_skills, and web_search for the real source/API; never invent an \
-endpoint. Write each candidate source you find back into that vault folder, and \
-later declare it as the manifest's knowledge_base so the pack ships with its \
-dossier. Keyless endpoints exist for most data — 'free data needs an API key' \
-is almost always WRONG. For A-share quotes, Tencent is keyless: \
-http://qt.gtimg.cn/q=sh600519,sz000001 . Screening (e.g. top gainers) = fetch a \
-keyless market-wide list (research how akshare/efinance do it), then filter it in \
-the shell step with jq/awk/python. \
-(2) REPORT + CONFIRM what you found, which source you will use, and what the pack \
-will do; if a source needs a key, ask for it (it goes to the keychain — you \
-NEVER see its value). Wait for the user's go-ahead. \
-(3) COMPOSE a manifest and INSTALL it by actually CALLING mcp_pack_install. A \
-working manifest needs only a string `id` plus an `actions[]` array where each \
-action has an `id` and a `steps[]` array; a shell step is \
-{ \"type\": \"shell\", \"command\": \"...\" } and the action returns its stdout. \
-Minimal copy-ready manifest — adapt the command, then CALL mcp_pack_install with \
-it: { \"id\": \"a-share-quote\", \"name\": \"A-Share Quote\", \"actions\": [ \
-{ \"id\": \"quote\", \"name\": \"Quote\", \"steps\": [ { \"type\": \"shell\", \
-\"command\": \"curl -s 'http://qt.gtimg.cn/q=sh600519,sz000001'\" } ] } ] } . A \
-comprehensive workbench is ONE pack with MULTIPLE actions (quote, screen, \
-add-to-watchlist, log-trade), not many separate things; stateful lists \
-(watchlist, trade log) are Markdown the action appends into the vault. For a \
-secret, add config_schema.fields[] with a kind \"secret\" field and map it in \
-provision.env as { \"VAR\": \"{{secret:key}}\" } — never inline a secret value. \
-(4) SMOKE by CALLING mcp_pack_run on one action; a pack is NOT done until an \
-action returns real green output (not lint-clean). If it errors, fix the \
-manifest and CALL mcp_pack_install + mcp_pack_run again. \
-(5) Only after a green run, tell the user in plain words what you made and the \
-real result it produced (never say manifest / variant / schema). mcp_pack_list \
-shows what is already installed; a deeper create-feature-pack skill exists \
-(skills_list / skill_view) if you need more detail. \
+FEATURE-PACK CREATION: when the user asks for a reusable tool, connector, data \
+tracker, shortcut, or pack, first call skill_list with query \
+\"create feature pack\", then skill_read the returned create-feature-pack SKILL.md and FOLLOW it as the \
+active authoring authority. The release-owned CTRL copy is the governed baseline; \
+a same-name user skill is an explicit local override and therefore wins discovery. \
+Keep every lifecycle operation on the :17873 gate, keep secrets out of manifests/chat/logs, \
+never use a networked shell action, and claim creation only from a real installed-capability smoke. \
+Publish only when the user explicitly asks to share. The skill owns the lifecycle \
+and pack-form details; do not reproduce or improvise them here. \
+(ADR-002 substrate § 7.4 v34; ADR-005 irisy §9 v25) \
 Your long-term memory is the user's SOUL.md (ADR-005 irisy v5 §6.3): read it and \
 persist durable facts THERE via the ctrl soul/memory tools, not in your own \
 private store, so the chat and agent paths share one memory and never drift. \
@@ -305,6 +275,100 @@ pub fn singleton() -> &'static Mutex<Option<AcpClient>> {
     ACP.get_or_init(|| Mutex::new(None))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AcpDiagnosticsState {
+    Idle = 0,
+    Starting = 1,
+    Busy = 2,
+    Ready = 3,
+    Failed = 4,
+}
+
+static ACP_DIAGNOSTICS_STATE: AtomicU8 = AtomicU8::new(AcpDiagnosticsState::Idle as u8);
+
+fn set_diagnostics_state(state: AcpDiagnosticsState) {
+    ACP_DIAGNOSTICS_STATE.store(state as u8, Ordering::Release);
+}
+
+fn current_diagnostics_state() -> AcpDiagnosticsState {
+    match ACP_DIAGNOSTICS_STATE.load(Ordering::Acquire) {
+        1 => AcpDiagnosticsState::Starting,
+        2 => AcpDiagnosticsState::Busy,
+        3 => AcpDiagnosticsState::Ready,
+        4 => AcpDiagnosticsState::Failed,
+        _ => AcpDiagnosticsState::Idle,
+    }
+}
+
+struct AcpStartupDiagnostics {
+    engine: String,
+    started: std::time::Instant,
+    completed: bool,
+}
+
+impl Drop for AcpStartupDiagnostics {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+        set_diagnostics_state(AcpDiagnosticsState::Failed);
+        crate::kernel::diagnostics::record(crate::kernel::diagnostics::RecordEvent {
+            module: crate::kernel::diagnostics::DiagnosticsModule::Irisy,
+            session_id: None,
+            correlation_id: None,
+            kind: "acp_lifecycle",
+            phase: "startup",
+            severity: "error",
+            outcome: "failed",
+            duration_ms: Some(self.started.elapsed().as_millis() as u64),
+            capture_only: false,
+            attributes: serde_json::json!({ "engine": self.engine.as_str() }),
+        });
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AcpDiagnosticsSnapshot {
+    pub state: AcpDiagnosticsState,
+    pub engine: Option<String>,
+}
+
+/// Observe the live ACP singleton without starting it or waiting behind a turn.
+/// Owner activity is projected atomically while its lock is held, so a healthy
+/// active turn remains distinguishable from startup or failure. No prompt,
+/// thought, tool payload, or process path crosses this boundary.
+/// (ADR-005 irisy §8.6.1 v26)
+pub fn diagnostics_snapshot() -> AcpDiagnosticsSnapshot {
+    let Ok(mut guard) = singleton().try_lock() else {
+        return AcpDiagnosticsSnapshot {
+            state: current_diagnostics_state(),
+            engine: None,
+        };
+    };
+    let Some(client) = guard.as_mut() else {
+        set_diagnostics_state(AcpDiagnosticsState::Idle);
+        return AcpDiagnosticsSnapshot {
+            state: AcpDiagnosticsState::Idle,
+            engine: None,
+        };
+    };
+    let engine = Some(client.engine_id.clone());
+    let state = if client.is_alive() {
+        let state = current_diagnostics_state();
+        if matches!(state, AcpDiagnosticsState::Idle | AcpDiagnosticsState::Failed) {
+            set_diagnostics_state(AcpDiagnosticsState::Ready);
+            AcpDiagnosticsState::Ready
+        } else {
+            state
+        }
+    } else {
+        set_diagnostics_state(AcpDiagnosticsState::Failed);
+        AcpDiagnosticsState::Failed
+    };
+    AcpDiagnosticsSnapshot { state, engine }
+}
+
 /// Best-effort kill of the persistent hermes-acp process at app shutdown
 /// (RunEvent::ExitRequested with an explicit code). try_lock so a turn in
 /// flight never blocks exit; the OS reclaims the child either way.
@@ -312,6 +376,9 @@ pub fn shutdown() {
     if let Ok(mut g) = singleton().try_lock() {
         if let Some(mut c) = g.take() {
             let _ = c.child.start_kill();
+            // Shutdown updates only ACP-owned lifecycle metadata.
+            // (ADR-005 irisy §8.6.1 v26)
+            set_diagnostics_state(AcpDiagnosticsState::Idle);
         }
     }
 }
@@ -506,6 +573,24 @@ impl AcpClient {
     /// user already configured in CTRL instead of a second sign-in (§8.8).
     pub async fn start(engine: &str, provider_env: &BTreeMap<String, String>) -> Result<Self> {
         let engine = if engine.is_empty() { "hermes" } else { engine };
+        set_diagnostics_state(AcpDiagnosticsState::Starting);
+        let mut startup_diagnostics = AcpStartupDiagnostics {
+            engine: engine.to_string(),
+            started: std::time::Instant::now(),
+            completed: false,
+        };
+        crate::kernel::diagnostics::record(crate::kernel::diagnostics::RecordEvent {
+            module: crate::kernel::diagnostics::DiagnosticsModule::Irisy,
+            session_id: None,
+            correlation_id: None,
+            kind: "acp_lifecycle",
+            phase: "startup",
+            severity: "info",
+            outcome: "starting",
+            duration_ms: None,
+            capture_only: false,
+            attributes: serde_json::json!({ "engine": engine }),
+        });
         let argv = engine_argv(engine)?;
 
         // Provider projection is synchronized by ProviderRegistry under its
@@ -653,6 +738,22 @@ impl AcpClient {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("session/new returned no sessionId"))?
             .to_string();
+        // Project only lifecycle metadata after session creation; never prompt
+        // or tool payloads. (ADR-005 irisy §8.6.1 v26)
+        crate::kernel::diagnostics::record(crate::kernel::diagnostics::RecordEvent {
+            module: crate::kernel::diagnostics::DiagnosticsModule::Irisy,
+            session_id: Some(&s.session_id),
+            correlation_id: None,
+            kind: "acp_lifecycle",
+            phase: "startup",
+            severity: "info",
+            outcome: "ready",
+            duration_ms: None,
+            capture_only: false,
+            attributes: serde_json::json!({ "engine": engine }),
+        });
+        set_diagnostics_state(AcpDiagnosticsState::Ready);
+        startup_diagnostics.completed = true;
         Ok(s)
     }
 
@@ -726,13 +827,43 @@ impl AcpClient {
             }
             format!("{head}\n\n{last_user}")
         };
-        let res = self
+        // Record only turn timing and owner health after the existing ACP request.
+        // (ADR-005 irisy §8.6.1 v26)
+        let started = std::time::Instant::now();
+        set_diagnostics_state(AcpDiagnosticsState::Busy);
+        let result = self
             .request(
                 "session/prompt",
                 json!({ "sessionId": sid, "prompt": [{ "type": "text", "text": turn_text }] }),
                 &mut on_event,
             )
-            .await?;
+            .await;
+        let alive = self.is_alive();
+        let (severity, outcome) = if result.is_ok() {
+            ("info", "ok")
+        } else if alive {
+            ("warn", "degraded")
+        } else {
+            ("error", "failed")
+        };
+        set_diagnostics_state(if alive {
+            AcpDiagnosticsState::Ready
+        } else {
+            AcpDiagnosticsState::Failed
+        });
+        crate::kernel::diagnostics::record(crate::kernel::diagnostics::RecordEvent {
+            module: crate::kernel::diagnostics::DiagnosticsModule::Irisy,
+            session_id: Some(&self.session_id),
+            correlation_id: None,
+            kind: "acp_lifecycle",
+            phase: "turn",
+            severity,
+            outcome,
+            duration_ms: Some(started.elapsed().as_millis() as u64),
+            capture_only: true,
+            attributes: serde_json::json!({ "engine": self.engine_id }),
+        });
+        let res = result?;
         Ok(res
             .get("stopReason")
             .and_then(|v| v.as_str())
@@ -930,6 +1061,57 @@ mod tests {
         // usage_update / available_commands_update are not surfaced yet.
         let usage = json!({ "sessionUpdate": "usage_update", "tokens": 42 });
         assert!(parse_session_update(&usage).is_none());
+    }
+
+    #[test]
+    fn failed_startup_guard_closes_the_diagnostic_span() {
+        let engine = "diagnostics-startup-failure-test";
+        {
+            let _guard = AcpStartupDiagnostics {
+                engine: engine.to_string(),
+                started: std::time::Instant::now(),
+                completed: false,
+            };
+        }
+        assert_eq!(current_diagnostics_state(), AcpDiagnosticsState::Failed);
+        let trace = crate::kernel::diagnostics::trace(
+            crate::kernel::diagnostics::DiagnosticsModule::Irisy,
+            None,
+            Some(200),
+        );
+        assert!(trace.events.iter().any(|event| {
+            event.phase == "startup"
+                && event.outcome == "failed"
+                && event.attributes["engine"] == engine
+        }));
+    }
+
+    // Irisy must route pack creation through one accepted local playbook rather
+    // than duplicating its lifecycle in the capability brief.
+    // (ADR-002 substrate § 7.4 v34)
+    #[test]
+    fn pack_creation_brief_routes_to_the_governed_skill_without_duplication() {
+        for required in ["create-feature-pack", "skill_list", "skill_read", ":17873"] {
+            assert!(
+                CTRL_CAPABILITY_BRIEF.contains(required),
+                "capability brief must contain {required}"
+            );
+        }
+
+        for duplicated_or_stale in [
+            "mcp_pack_validate",
+            "mcp_pack_install",
+            "The required lifecycle is",
+            "skills_list / skill_view",
+            "ONLY way to create a pack",
+            "two real tools",
+            "curl -s",
+        ] {
+            assert!(
+                !CTRL_CAPABILITY_BRIEF.contains(duplicated_or_stale),
+                "duplicated or stale pack guidance remains: {duplicated_or_stale}"
+            );
+        }
     }
 
     /// Real end-to-end: spawn hermes-acp via the kernel client, run one

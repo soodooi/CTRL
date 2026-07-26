@@ -25,6 +25,9 @@ pub mod calendar_source;
 pub mod capability;
 pub mod capability_resolver;
 pub mod channel;
+// One Rust-owned metadata composer; no parallel owner runtime.
+// (ADR-010 communication § diagnostics v11)
+pub mod diagnostics;
 pub mod effect;
 pub mod event;
 pub mod local_storage;

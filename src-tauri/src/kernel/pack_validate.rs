@@ -1,33 +1,27 @@
-//! Feature-pack evals — the review + evals phases of the pack-authoring pipeline
-//! (Anthropic `mcp-builder` Phase 3 review / Phase 4 evals; research
-//! `vault/ctrl/ai-native-feature-pack-research.md`: "Phase 4 evals is the step
-//! home-grown pipelines skip" = the quality moat). The brain (hermes / Irisy /
-//! BYO-CLI) authors a candidate manifest with its OWN model, then calls the gate
-//! tool `mcp_pack_validate` to check it BEFORE install — getting structured,
-//! machine-actionable feedback (§14.11 shape: field + severity + fix) it can
-//! self-correct from, instead of installing a broken pack.
+//! Feature-pack review and evals for the pack-authoring pipeline.
 //!
-//! Pure over a parsed manifest Value (no I/O), so it unit-tests exhaustively and
-//! the gate tool is a thin wrapper. It validates the SHAPE a pack must have to be
-//! product-grade (§7.5): it must DO something (actions or a §14 record_source),
-//! and if it declares a record_source that source must be coherent enough for the
-//! generic engine (`manifest_source`) to describe/query it.
+//! Structural validation is compiled from the shipped draft-2020-12 schema.
+//! This module adds only product/install semantics after that schema succeeds:
+//! a pack must do something, a declared record source must project a positive
+//! describe, and migration/auth concerns are surfaced as warnings.
+//! (ADR-002 substrate § 7 v73)
 
+// Manifest protocol: (ADR-002 substrate § 7 v73)
 use crate::kernel::manifest_source::{self, ManifestConnectorSource};
 use serde::Serialize;
 use serde_json::Value;
+use std::sync::OnceLock;
 
+// Manifest protocol: (ADR-002 substrate § 7 v73)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
-    /// Blocks install — the pack would not work.
     Error,
-    /// Installs, but the author probably wants to fix it.
     Warn,
 }
 
-/// One machine-actionable finding (§14.11 error contract: what + where + how to
-/// fix), so the authoring brain self-corrects rather than dumping a raw error.
+// Manifest protocol: (ADR-002 substrate § 7 v73)
+/// One machine-actionable finding (§14.11 error contract: what, where, and fix).
 #[derive(Debug, Clone, Serialize)]
 pub struct Issue {
     pub field: String,
@@ -37,196 +31,370 @@ pub struct Issue {
     pub fix: Option<String>,
 }
 
+// Manifest protocol: (ADR-002 substrate § 7 v73)
 impl Issue {
     fn error(field: &str, message: impl Into<String>, fix: &str) -> Issue {
-        Issue { field: field.into(), severity: Severity::Error, message: message.into(), fix: Some(fix.into()) }
+        Issue {
+            field: field.into(),
+            severity: Severity::Error,
+            message: message.into(),
+            fix: Some(fix.into()),
+        }
     }
+
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     fn warn(field: &str, message: impl Into<String>, fix: &str) -> Issue {
-        Issue { field: field.into(), severity: Severity::Warn, message: message.into(), fix: Some(fix.into()) }
+        Issue {
+            field: field.into(),
+            severity: Severity::Warn,
+            message: message.into(),
+            fix: Some(fix.into()),
+        }
     }
 }
 
-/// The evals report the gate returns to the authoring brain.
+// Manifest protocol: (ADR-002 substrate § 7 v73)
 #[derive(Debug, Clone, Serialize)]
 pub struct ValidationReport {
-    /// True iff there are no `Error`-severity issues (warnings still allow install).
     pub ok: bool,
     pub issues: Vec<Issue>,
-    /// When a coherent `record_source` is declared, the describe the generic
-    /// engine would advertise — a positive eval (the §14 type layer resolves).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub record_source_fields: Option<usize>,
 }
 
-const ID_RE_HINT: &str = "id must be lowercase alphanumeric plus . - _ (e.g. ctrl-ghostfolio)";
+// Manifest protocol: (ADR-002 substrate § 7 v73)
+const MANIFEST_SCHEMA: &str =
+    include_str!("../../../packages/ctrl-mcp-sdk/schema/manifest-v2.schema.json");
 
-fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-' | '_'))
+// Manifest protocol: (ADR-002 substrate § 7 v73)
+fn manifest_validator() -> Result<&'static jsonschema::Validator, String> {
+    static VALIDATOR: OnceLock<Result<jsonschema::Validator, String>> = OnceLock::new();
+    VALIDATOR
+        .get_or_init(|| {
+            let schema: Value = serde_json::from_str(MANIFEST_SCHEMA)
+                .map_err(|error| format!("embedded manifest schema is invalid JSON: {error}"))?;
+            jsonschema::options()
+                .with_draft(jsonschema::Draft::Draft202012)
+                .build(&schema)
+                .map_err(|error| format!("embedded manifest schema could not compile: {error}"))
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
-/// Validate a candidate feature-pack manifest. Pure: same input → same report.
+// Manifest protocol: (ADR-002 substrate § 7 v73)
+fn pointer_to_field(pointer: &str) -> String {
+    pointer
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .map(|part| part.replace("~1", "/").replace("~0", "~"))
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+// Manifest protocol: (ADR-002 substrate § 7 v73)
+fn required_property(message: &str) -> Option<&str> {
+    message
+        .strip_prefix('"')?
+        .split_once("\" is a required property")
+        .map(|(property, _)| property)
+}
+
+// Manifest protocol: (ADR-002 substrate § 7 v73)
+/// Apply only the shared structural protocol contract. Consumers may format
+/// errors, but may not add field-shape rejection rules.
+/// (ADR-002 substrate § 7 v73)
+fn validate_schema(manifest: &Value) -> Vec<Issue> {
+    let validator = match manifest_validator() {
+        Ok(validator) => validator,
+        Err(message) => {
+            return vec![Issue::error(
+                "$schema",
+                message,
+                "restore the shipped manifest schema and rebuild CTRL",
+            )]
+        }
+    };
+
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
+    validator
+        .iter_errors(manifest)
+        .map(|error| {
+            let message = error.to_string();
+            let pointer = error.instance_path.to_string();
+            let field = if pointer.is_empty() {
+                required_property(&message).unwrap_or("$").to_owned()
+            } else {
+                pointer_to_field(&pointer)
+            };
+            Issue::error(
+                &field,
+                message,
+                "make this value conform to manifest-v2.schema.json",
+            )
+        })
+        .collect()
+}
+
+// Manifest protocol: (ADR-002 substrate § 7 v73)
+fn compatibility_warnings(manifest: &Value) -> Vec<Issue> {
+    let mut warnings = Vec::new();
+    if manifest.get("variant").and_then(Value::as_str) == Some("stss-publisher") {
+        warnings.push(Issue::warn(
+            "variant",
+            "stss-publisher is retired compatibility data and has no live executor",
+            "migrate the pack to a current variant or disable it",
+        ));
+    }
+    if manifest.get("pattern").and_then(Value::as_str) == Some("F") {
+        warnings.push(Issue::warn(
+            "pattern",
+            "Pattern F/ST-SS is retired compatibility data and has no live executor",
+            "migrate the pack to a current execution pattern or disable it",
+        ));
+    }
+    warnings
+}
+
+// Manifest protocol: (ADR-002 substrate § 7 v73)
+/// Validate a candidate manifest. Shared structure runs first and fails closed;
+/// product semantics run only for structurally valid data.
 pub fn validate_manifest(manifest: &Value) -> ValidationReport {
-    let mut issues = Vec::new();
-
-    // ── id ────────────────────────────────────────────────────────────────
-    match manifest.get("id").and_then(Value::as_str) {
-        None => issues.push(Issue::error("id", "manifest has no id", ID_RE_HINT)),
-        Some(id) if !valid_id(id) => {
-            issues.push(Issue::error("id", format!("invalid id '{id}'"), ID_RE_HINT))
-        }
-        Some(_) => {}
+    let schema_issues = validate_schema(manifest);
+    if !schema_issues.is_empty() {
+        return ValidationReport {
+            ok: false,
+            issues: schema_issues,
+            record_source_fields: None,
+        };
     }
 
-    // ── manifest_version ──────────────────────────────────────────────────
-    if let Some(v) = manifest.get("manifest_version") {
-        let ok = v.as_u64().map(|n| n == 1 || n == 2).unwrap_or(false);
-        if !ok {
-            issues.push(Issue::error(
-                "manifest_version",
-                "manifest_version must be 1 or 2",
-                "set manifest_version to 2 for the current composition model",
-            ));
-        }
-    }
-
-    // ── a pack must DO something (§7.5 product-grade): actions or a source ──
-    let has_actions = manifest
-        .get("actions")
-        .and_then(Value::as_array)
-        .map(|a| !a.is_empty())
-        .unwrap_or(false);
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
+    let mut issues = compatibility_warnings(manifest);
+    let has_actions = manifest.get("actions").is_some();
     let has_record_source = manifest.get("record_source").is_some();
-    // A `server` block (mcp-server variant, ADR-002 §7 Pattern D) IS a
-    // capability surface — its tools ARE what the pack does. A tools-only pack
-    // (an Irisy-written service) must validate WITHOUT a fake action (bao
-    // 2026-07-03: no hardcoded workaround to satisfy the validator).
-    let has_server = manifest
-        .get("server")
-        .and_then(Value::as_object)
-        .map(|o| o.get("command").and_then(Value::as_str).is_some_and(|c| !c.is_empty()))
-        .unwrap_or(false);
+    let has_server = manifest.get("server").is_some();
+
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     if !has_actions && !has_record_source && !has_server {
         issues.push(Issue::error(
             "actions",
-            "a feature pack must declare a server (mcp-server tools), actions[], or a §14 record_source — otherwise it does nothing",
-            "add a server{command,args} block, an actions[] entry, or a record_source declaration",
+            "a feature pack must declare a server, actions[], or a §14 record_source",
+            "add a server block, an actions[] entry, or a record_source declaration",
         ));
     }
 
-    // ── §14 record_source coherence (the evals that make it product-grade) ──
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     let mut record_source_fields = None;
     if has_record_source {
         match manifest_source::spec_from_manifest(manifest) {
             None => issues.push(Issue::error(
                 "record_source",
-                "record_source is present but could not be parsed (missing query/fields, or a bad type/operator enum)",
-                "ensure query.endpoint + a non-empty fields[] with valid type/operator enum values",
+                "record_source is structurally valid but cannot project a connector describe",
+                "align the connector projection with the governing manifest schema",
             )),
             Some(spec) => {
-                if spec.fields.is_empty() {
-                    issues.push(Issue::error(
-                        "record_source.fields",
-                        "record_source declares no fields — the describe/query type layer would be empty",
-                        "declare at least one field {key,label,type,from}",
-                    ));
-                }
-                if spec.query.endpoint.trim().is_empty() {
-                    issues.push(Issue::error(
-                        "record_source.query.endpoint",
-                        "record_source.query.endpoint is empty — nothing to fetch",
-                        "set the read endpoint, e.g. /api/v1/portfolio/holdings",
-                    ));
-                }
-                if let Some(p) = &spec.produce {
-                    if p.body.is_empty() {
-                        issues.push(Issue::error(
-                            "record_source.produce.body",
-                            "produce is declared with an empty body map — the write would send nothing",
-                            "map at least one {field,from} into the request body",
-                        ));
-                    }
-                }
-                // Connector reads usually need auth — warn if none is declared.
                 let has_auth = manifest.pointer("/auth/token_exchange").is_some()
                     || manifest.pointer("/auth/bootstrap").is_some()
                     || spec.token_exchange.is_some();
                 if !has_auth {
                     issues.push(Issue::warn(
                         "auth",
-                        "record_source has no auth (token_exchange/bootstrap) — a self-hosted connector usually needs one",
-                        "add auth.token_exchange, or ignore if the endpoint is unauthenticated",
+                        "record_source has no auth declaration; a connector usually needs one",
+                        "add auth.token_exchange, or ignore this warning for an unauthenticated endpoint",
                     ));
                 }
-                // Positive eval: the §14 describe resolves (type layer coherent).
-                if !spec.fields.is_empty() {
-                    let describe = ManifestConnectorSource::describe_spec(&spec);
+
+                // Manifest protocol: (ADR-002 substrate § 7 v73)
+                let describe = ManifestConnectorSource::describe_spec(&spec);
+                if describe.fields.is_empty() {
+                    issues.push(Issue::error(
+                        "record_source.fields",
+                        "record_source produced an empty connector describe",
+                        "declare fields that project into the generic describe contract",
+                    ));
+                } else {
                     record_source_fields = Some(describe.fields.len());
                 }
             }
         }
     }
 
-    let ok = !issues.iter().any(|i| i.severity == Severity::Error);
-    ValidationReport { ok, issues, record_source_fields }
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
+    let ok = !issues.iter().any(|issue| issue.severity == Severity::Error);
+    ValidationReport {
+        ok,
+        issues,
+        record_source_fields,
+    }
 }
 
+// Manifest protocol: (ADR-002 substrate § 7 v73)
+/// Reuse the same schema-first eval report at every install boundary.
+/// (ADR-002 substrate § 7 v73)
+pub fn validate_for_install(manifest: &Value) -> Result<(), ValidationReport> {
+    let mut report = validate_manifest(manifest);
+    let retired_variant = manifest.get("variant").and_then(Value::as_str) == Some("stss-publisher");
+    let retired_pattern = manifest.get("pattern").and_then(Value::as_str) == Some("F");
+
+    // Retired values remain readable for migration, but installation must not
+    // make their actions reachable through the variant-agnostic runner.
+    // (ADR-002 substrate § 7 v73)
+    if report.ok && (retired_variant || retired_pattern) {
+        report.ok = false;
+        report.issues.push(Issue::error(
+            if retired_variant {
+                "variant"
+            } else {
+                "pattern"
+            },
+            "retired ST-SS manifests cannot be installed or executed",
+            "migrate the manifest to a current variant and execution pattern",
+        ));
+    }
+
+    if report.ok {
+        Ok(())
+    } else {
+        Err(report)
+    }
+}
+
+// Manifest protocol: (ADR-002 substrate § 7 v73)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
+    use std::path::PathBuf;
 
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ConformanceCase {
+        name: String,
+        file: Option<String>,
+        input: Option<Value>,
+        valid: bool,
+        #[serde(default)]
+        warning_paths: Vec<String>,
+    }
+
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
+    #[derive(Deserialize)]
+    struct ConformanceCorpus {
+        cases: Vec<ConformanceCase>,
+    }
+
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
+    fn repository_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    }
+
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     fn ghostfolio_manifest() -> Value {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../packages/ctrl-mcps/builtin/ctrl-ghostfolio/manifest.json"
-        );
+        let path =
+            repository_root().join("packages/ctrl-mcps/builtin/ctrl-ghostfolio/manifest.json");
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
     }
 
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
+    #[test]
+    fn shared_conformance_corpus_matches_the_embedded_schema() {
+        let path = repository_root().join("packages/ctrl-mcp-sdk/schema/manifest-conformance.json");
+        let corpus: ConformanceCorpus =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+
+        // Manifest protocol: (ADR-002 substrate § 7 v73)
+        for test_case in corpus.cases {
+            let input = match (test_case.file, test_case.input) {
+                (Some(file), _) => {
+                    serde_json::from_slice(&std::fs::read(repository_root().join(file)).unwrap())
+                        .unwrap()
+                }
+                (None, Some(input)) => input,
+                (None, None) => panic!("conformance case has no input: {}", test_case.name),
+            };
+            let schema_issues = validate_schema(&input);
+            assert_eq!(
+                schema_issues.is_empty(),
+                test_case.valid,
+                "conformance mismatch for {}: {:?}",
+                test_case.name,
+                schema_issues
+            );
+            if test_case.valid {
+                let warning_paths = compatibility_warnings(&input)
+                    .into_iter()
+                    .map(|issue| issue.field)
+                    .collect::<Vec<_>>();
+                assert_eq!(warning_paths, test_case.warning_paths, "{}", test_case.name);
+            }
+        }
+    }
+
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     #[test]
     fn server_only_pack_validates_without_actions() {
-        // A tools-only mcp-server pack (an Irisy-written service) is valid on
-        // its server block alone — no fake action needed (bao 2026-07-03).
-        let m = serde_json::json!({
+        let manifest = serde_json::json!({
             "id": "ctrl-stock-cn",
             "name": "A-Share Assistant",
             "version": "0.1.0",
-            "server": { "command": "/x/uv", "args": ["run", "main.py"] }
+            "variant": "mcp-server",
+            "server": { "type": "local", "command": "/x/uv", "args": ["run", "main.py"] }
         });
-        let r = validate_manifest(&m);
-        assert!(r.ok, "server-only pack should validate: {:?}", r.issues);
-        // And a pack with none of {server, actions, record_source} still fails.
-        let bare = serde_json::json!({"id": "ctrl-x", "name": "X", "version": "0.1.0"});
-        assert!(!validate_manifest(&bare).ok);
+        let report = validate_manifest(&manifest);
+        assert!(
+            report.ok,
+            "server-only pack should validate: {:?}",
+            report.issues
+        );
     }
 
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
+    #[test]
+    fn legacy_server_forms_remain_readable() {
+        let implicit_local = serde_json::json!({
+            "id": "ctrl-legacy", "variant": "mcp-server",
+            "server": { "command": "uv", "args": ["run"] }
+        });
+        assert!(validate_manifest(&implicit_local).ok);
+
+        // Manifest protocol: (ADR-002 substrate § 7 v73)
+        let code_backed = serde_json::json!({
+            "id": "ctrl-legacy-code", "variant": "mcp-server",
+            "actions": [{ "id": "a", "name": "A" }]
+        });
+        assert!(validate_manifest(&code_backed).ok);
+    }
+
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     #[test]
     fn real_ghostfolio_manifest_passes_with_a_positive_describe_eval() {
         let report = validate_manifest(&ghostfolio_manifest());
-        assert!(report.ok, "shipped manifest should validate: {:?}", report.issues);
-        // The §14 describe resolved to the six holding fields (positive eval).
+        assert!(
+            report.ok,
+            "shipped manifest should validate: {:?}",
+            report.issues
+        );
         assert_eq!(report.record_source_fields, Some(6));
     }
 
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     #[test]
-    fn missing_id_and_no_action_or_source_are_errors() {
+    fn missing_id_fails_shared_schema_validation() {
         let report = validate_manifest(&serde_json::json!({ "name": "x" }));
         assert!(!report.ok);
-        assert!(report.issues.iter().any(|i| i.field == "id" && i.severity == Severity::Error));
-        assert!(report.issues.iter().any(|i| i.field == "actions" && i.severity == Severity::Error));
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.severity == Severity::Error));
     }
 
-    #[test]
-    fn bad_id_is_flagged() {
-        let report = validate_manifest(&serde_json::json!({
-            "id": "Not Valid ID", "actions": [{ "id": "a", "name": "A" }]
-        }));
-        assert!(!report.ok);
-        assert!(report.issues.iter().any(|i| i.field == "id"));
-    }
-
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     #[test]
     fn actions_only_pack_is_valid() {
         let report = validate_manifest(&serde_json::json!({
@@ -237,19 +405,19 @@ mod tests {
         assert_eq!(report.record_source_fields, None);
     }
 
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     #[test]
-    fn record_source_without_fields_is_an_error() {
+    fn bare_pack_fails_product_semantics() {
         let report = validate_manifest(&serde_json::json!({
-            "id": "ctrl-x", "manifest_version": 2,
-            "record_source": { "query": { "endpoint": "/x" }, "fields": [] }
+            "id": "ctrl-x", "name": "X", "version": "0.1.0"
         }));
         assert!(!report.ok);
-        // fields:[] parses to an empty Vec → trips the fields.is_empty() branch.
-        assert!(report.issues.iter().any(|i| i.field.starts_with("record_source")));
+        assert!(report.issues.iter().any(|issue| issue.field == "actions"));
     }
 
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     #[test]
-    fn record_source_without_auth_warns_but_still_ok() {
+    fn record_source_without_auth_warns_but_still_passes() {
         let report = validate_manifest(&serde_json::json!({
             "id": "ctrl-x", "manifest_version": 2,
             "record_source": {
@@ -258,23 +426,36 @@ mod tests {
             }
         }));
         assert!(report.ok, "warnings should not block: {:?}", report.issues);
-        assert!(report.issues.iter().any(|i| i.field == "auth" && i.severity == Severity::Warn));
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.field == "auth" && issue.severity == Severity::Warn));
         assert_eq!(report.record_source_fields, Some(1));
     }
 
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
     #[test]
-    fn bad_operator_enum_fails_closed_as_a_record_source_error() {
-        // 'bogus' is not a valid operator → serde parse fails → structured error,
-        // never a silently-accepted manifest (§14.1 anti-hallucination).
+    fn retired_values_warn_without_restoring_an_executor() {
         let report = validate_manifest(&serde_json::json!({
-            "id": "ctrl-x", "manifest_version": 2,
-            "record_source": {
-                "query": { "endpoint": "/x" },
-                "operators": ["bogus"],
-                "fields": [{ "key": "name", "label": "Name", "type": "text" }]
-            }
+            "id": "ctrl-retired", "variant": "stss-publisher", "pattern": "F",
+            "actions": [{ "id": "inspect", "name": "Inspect" }]
         }));
+        assert!(report.ok);
+        assert!(report.issues.iter().any(|issue| issue.field == "variant"));
+        assert!(report.issues.iter().any(|issue| issue.field == "pattern"));
+    }
+
+    // Manifest protocol: (ADR-002 substrate § 7 v73)
+    #[test]
+    fn retired_values_are_blocked_at_the_install_boundary() {
+        let manifest = serde_json::json!({
+            "id": "ctrl-retired", "variant": "stss-publisher", "pattern": "F",
+            "actions": [{ "id": "inspect", "name": "Inspect" }]
+        });
+        let report = validate_for_install(&manifest).unwrap_err();
         assert!(!report.ok);
-        assert!(report.issues.iter().any(|i| i.field == "record_source"));
+        assert!(report.issues.iter().any(|issue| {
+            issue.severity == Severity::Error && issue.message.contains("cannot be installed")
+        }));
     }
 }

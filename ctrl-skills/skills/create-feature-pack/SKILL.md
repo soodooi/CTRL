@@ -1,12 +1,10 @@
 ---
 name: create-feature-pack
 description: >
-  Build a CTRL feature pack — a tool the user triggers in their workbench that
-  connects an app / API / MCP server or runs custom logic, governed by the
-  :17873 gate. Use when the user asks to "connect X", "build a tool for Y", "make
-  an integration", "track Z from <service>", or add a capability CTRL does not
-  have yet. Research-first: understand the need, find the REAL source, then build.
-version: 1.0.0
+  Create a governed CTRL feature pack from a user's intent: research and
+  confirm the real source, author the correct pack form, validate it, install
+  it, and prove it with a real smoke through the :17873 gate.
+version: 1.1.0
 author: CTRL
 metadata:
   hermes:
@@ -15,75 +13,107 @@ metadata:
 
 # Create a CTRL feature pack
 
-A feature pack turns an external capability (an app, an API, an MCP server, or
-custom logic) into a tool in the user's CTRL workbench. **The most important part
-is the RESEARCH — a pack is only as good as understanding the need and finding
-the real source. Do NOT jump to a manifest.**
+A feature pack turns an external capability, API, MCP server, or local action
+into a reusable CTRL capability. The user owns the intent; you research and
+author the pack with your model. The kernel validates, installs, governs, and
+runs it. Generated JSON or prose alone is not a created pack.
 
-Some tools below are not in your default list; find them with
-`gate_tool_search("keywords")` and run them with `gate_tool_call(name, args)`.
+Some lifecycle tools are outside your default tool list. Find them with
+`gate_tool_search` and invoke them with `gate_tool_call`. Keep all lifecycle
+operations on the `:17873` gate.
 
-## The flow — research-first, not build-first
+## Required lifecycle
 
-### A. Understand the need — propose, don't demand
-The user asks vaguely ("connect my Ghostfolio", "track A-share sentiment"). Pin
-down: who uses it, the ONE real job, their ability. Propose what the pack would
-do and confirm; ask only the 1-2 genuinely ambiguous bits. Never a questionnaire,
-never demand a spec.
+### 1. Understand and research
 
-### B. Research the real source — NEVER invent
-Find the real thing that will power the pack:
-- `discover_packs("<domain>")` — search the MCP Registry + Smithery (2000+) for an
-  existing MCP / pack that already does it. Prefer reusing over rebuilding.
-- `web_search("<service> API docs")` and read the real endpoints, auth, and data
-  shape — never guess an API. To read a page deeply, `gate_tool_search` for a
-  browser / extract tool.
-- Cross-verify: a real endpoint + a real auth model + a real data shape before
-  you design anything.
+Identify the user's one real job and the smallest useful pack boundary. Ask only
+about genuinely ambiguous details.
 
-### C. Pick the form — from what you researched
+Research before authoring:
 
-**CRITICAL — how packs reach the network:** the pack `shell` sandbox is
-network-DENIED (ADR-004 §1). A `shell` action that `curl`s a URL WILL be blocked
-— never build a connector as a shell-curl action. The network front doors are:
-(1) a `record_source` (the kernel fetches it server-side, and it legitimately
-reaches your OWN self-hosted instance incl. `localhost` / private IPs — it is NOT
-egress-guarded); (2) a `server` you write (fastmcp service).
+- Use `discover_packs` to look for an existing pack or MCP server. Prefer reuse
+  when it satisfies the job.
+- Use `discover_skills` when a reusable authoring or domain skill may exist.
+- Use `web_search` to verify official API documentation, authentication, real
+  endpoints, and response shape. Never invent any of them.
+- Read relevant local vault notes when the user already has project knowledge.
 
-- **app** — an EXISTING self-hosted product with a REST API (Ghostfolio, Twenty
-  CRM). Declare a **`record_source`** in the manifest: `query.endpoint` +
-  `fields[]` (key/label/type/from json-path) + `auth` (token_exchange or a stored
-  Bearer). The kernel fetches the user's configured instance live — reaches
-  `http://127.0.0.1:3333` fine. **Do NOT use a shell `actions[]` curl (sandbox
-  denies network).** Scaffold it from the API's OpenAPI with `mcp_pack_scaffold`
-  (gate_tool_search); test with `source_describe` / `source_query`.
-- **MCP** — an existing MCP server: a manifest `server` block; the gate connects
-  it. Install-and-wire: `discover_packs` → `mcp_pack_install`.
-- **API / no server** — raw data or custom logic (akshare, any REST with no ready
-  product). You WRITE a small local service (fastmcp + the data lib) and declare
-  it as the manifest `server`; its source lives in `projects/<pack>/service/`
-  (vim-readable, git-attributed, user-editable). An API integration is a SERVICE
-  you write, not a fetch script.
+### 2. Propose and confirm
 
-### D. Build
-- `mcp_pack_scaffold` (gate_tool_search) scaffolds the pack skeleton, or
-  `mcp_pack_write_file` writes the manifest + assets.
-- Secrets (API keys / private URLs) go in `config_schema` as `kind: secret` →
-  they land in the keychain, NEVER in a command, a manifest, or the chat.
-- A data-backed pack gets a workspace of smart-tables (see the
-  `vault-smart-tables` skill; build its base with `smart_table_base_scaffold`).
+Tell the user what the pack will do, which verified source or existing server it
+will use, what pack form you chose, and whether configuration or secrets are
+required. Wait for explicit confirmation before installing or changing the
+user's capability set.
 
-### E. Validate → smoke → distribute
-- `mcp_pack_validate` (gate_tool_search) — EVALS FIRST; never ship a pack with
-  errors (it returns the issues to fix).
-- `mcp_pack_install` + `mcp_pack_run` — smoke a REAL call; copy its actual output
-  into the pack's intro page (never invent output).
-- `mcp_pack_publish` (gate_tool_search) — publish to the commons (optional,
-  share-and-be-shared).
+Do not ask the user to write a technical specification and do not expose secret
+values in chat. Secret configuration belongs in `config_schema` with
+`kind: secret`; CTRL stores it in the OS keychain.
+
+### 3. Choose and author one pack form
+
+Choose from evidence, not convenience:
+
+- **Action pack:** use `actions[]` for local deterministic logic. The action
+  shell sandbox has no network access, so never use `curl`, `wget`, or another
+  network client in a shell step.
+- **Record source:** use `record_source` for a researched REST/OpenAPI data
+  source. If an OpenAPI operation exists, call `mcp_pack_scaffold` with the
+  OpenAPI document, path, and method. It returns a `record_source` fragment;
+  it does not create a generic pack skeleton. Complete the surrounding manifest
+  yourself and verify the generated fields and authentication against the docs.
+- **MCP server pack:** reuse a verified existing MCP server or author a small
+  local service when custom network or library logic is required. Declare
+  `"variant": "mcp-server"` and a top-level
+  `"server": {"type": "local", "command": "...", "args": [...]}` block.
+  For authored code, pass `server_code` and `server_code_filename` to
+  `mcp_pack_install`. Keep source plain-text and user-editable.
+
+Author the manifest as the input to the validation and installation tools.
+`mcp_pack_write_file` is not a manifest authoring or installation tool: it only
+writes an asset inside an already installed pack.
+
+For data-backed workspaces, use the `vault-smart-tables` skill and its governed
+record/text surfaces instead of bespoke UI code.
+
+### 4. Validate and repair before install
+
+Call `mcp_pack_validate` with the complete manifest. Read the report, repair
+every reported error, and validate again until it passes. Do not install first
+and do not treat generated structure as evidence of validity.
+
+### 5. Install and run a form-specific smoke
+
+Call `mcp_pack_install` only after validation passes. Then prove the installed
+capability through its real public face:
+
+- Action pack: call `mcp_pack_run` for at least one representative action and
+  inspect its actual result.
+- Record source: call `source_describe`, then `source_query` or
+  `source_produce`, and inspect real records.
+- MCP server pack: call one namespaced server tool returned or discovered after
+  installation and inspect its actual result.
+
+If installation or smoke fails, diagnose the evidence, repair the pack, validate
+again, reinstall, and repeat the smoke. A successful tool invocation with real
+output—not lint, prose, or a manifest—is the completion criterion.
+
+After a green smoke, explain plainly what was created and report the observed
+result. Use `mcp_pack_write_file` only now if the installed pack needs additional
+plain-text assets.
+
+### 6. Publish only on explicit share intent
+
+`mcp_pack_publish` is optional. Invoke it only after the user explicitly asks to
+share or publish the validated, smoke-tested pack.
 
 ## Red lines
-- **Research before manifest.** Never invent an API / endpoint — find the real one.
-- Secrets only via `config_schema` (keychain); never inline, never to the LLM.
-- Propose + confirm; never demand a spec or dump a questionnaire.
-- The pack front end = CTRL endpoints (smart-tables / notes / html); zero bespoke
-  UI code.
+
+- Research real sources before authoring; never invent endpoints, auth, or data.
+- Confirm the product boundary before installation.
+- Validate and repair before every install attempt.
+- Keep secrets out of manifests, source, commands, logs, and chat.
+- Never use a networked shell action.
+- Keep user content and authored service assets plain-text and locally readable.
+- Do not claim creation until the installed pack passes its form-specific smoke.
+
+(ADR-002 substrate § 7.4 v34; ADR-002 substrate § 7 v55; ADR-004 cap §1 v9; ADR-005 irisy §9 v25)

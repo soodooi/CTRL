@@ -1,0 +1,122 @@
+{
+  "description": "Cross-language structural conformance cases for the CTRL feature-pack manifest schema. (ADR-002 substrate § 7 v73)",
+  "cases": [
+    {
+      "name": "shipped Ghostfolio manifest",
+      "file": "packages/ctrl-mcps/builtin/ctrl-ghostfolio/manifest.json",
+      "valid": true
+    },
+    {
+      "name": "shipped builtin Irisy manifest",
+      "file": "packages/ctrl-mcps/builtin/builtin-irisy/manifest.json",
+      "valid": true
+    },
+    {
+      "name": "minimal legacy actions-only manifest",
+      "input": {
+        "id": "ctrl-legacy-actions",
+        "actions": [{ "id": "run", "name": "Run" }]
+      },
+      "valid": true
+    },
+    {
+      "name": "legacy local server with implicit type",
+      "input": {
+        "id": "ctrl-legacy-server",
+        "variant": "mcp-server",
+        "server": { "command": "uv", "args": ["run", "main.py"] }
+      },
+      "valid": true
+    },
+    {
+      "name": "retired ST-SS values remain parseable",
+      "input": {
+        "id": "ctrl-retired-stss",
+        "variant": "stss-publisher",
+        "pattern": "F",
+        "actions": [{ "id": "inspect", "name": "Inspect" }]
+      },
+      "valid": true,
+      "warningPaths": ["variant", "pattern"]
+    },
+    {
+      "name": "reject zero LLM token budget",
+      "input": {
+        "id": "ctrl-invalid-tokens",
+        "actions": [{ "id": "run", "name": "Run", "steps": [{ "type": "llm", "max_tokens": 0 }] }]
+      },
+      "valid": false
+    },
+    {
+      "name": "reject malformed author email",
+      "input": {
+        "id": "ctrl-invalid-email",
+        "author": { "email": "not-an-email" },
+        "actions": [{ "id": "run", "name": "Run" }]
+      },
+      "valid": false
+    },
+    {
+      "name": "reject unknown local server field",
+      "input": {
+        "id": "ctrl-invalid-server-key",
+        "variant": "mcp-server",
+        "server": { "command": "uv", "unknown": true }
+      },
+      "valid": false
+    },
+    {
+      "name": "reject empty local server command",
+      "input": {
+        "id": "ctrl-invalid-empty-command",
+        "variant": "mcp-server",
+        "server": { "command": "" }
+      },
+      "valid": false
+    },
+    {
+      "name": "reject padded local server command",
+      "input": {
+        "id": "ctrl-invalid-padded-command",
+        "variant": "mcp-server",
+        "server": { "command": " uv " }
+      },
+      "valid": false
+    },
+    {
+      "name": "reject current MCP server without server block",
+      "input": {
+        "id": "ctrl-invalid-v2-server",
+        "manifest_version": 2,
+        "variant": "mcp-server",
+        "actions": [{ "id": "run", "name": "Run" }]
+      },
+      "valid": false
+    },
+    {
+      "name": "reject server block for non-server variant",
+      "input": {
+        "id": "ctrl-invalid-variant",
+        "variant": "builtin",
+        "server": { "command": "uv" }
+      },
+      "valid": false
+    },
+    {
+      "name": "reject shell step without command",
+      "input": {
+        "id": "ctrl-invalid-shell-step",
+        "actions": [{ "id": "run", "name": "Run", "steps": [{ "type": "shell" }] }]
+      },
+      "valid": false
+    },
+    {
+      "name": "reject MCP invoke step without tool",
+      "input": {
+        "id": "ctrl-invalid-mcp-invoke-step",
+        "actions": [{ "id": "run", "name": "Run", "steps": [{ "type": "mcp-invoke", "server": "local" }] }]
+      },
+      "valid": false
+    }
+  ]
+}

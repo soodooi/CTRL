@@ -61,6 +61,48 @@ struct WatchState {
 }
 
 static STATE: OnceLock<WatchState> = OnceLock::new();
+static LAST_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn last_error() -> &'static Mutex<Option<String>> {
+    LAST_ERROR.get_or_init(|| Mutex::new(None))
+}
+
+fn set_last_error(error: Option<String>) {
+    let mut guard = last_error().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    *guard = error;
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WatchDiagnosticsSnapshot {
+    pub started: bool,
+    pub event_count: usize,
+    pub last_event_at_ms: Option<i64>,
+    pub last_error: Option<String>,
+}
+
+/// Read watcher health without creating a watcher or exposing the vault root.
+/// (ADR-002 substrate § diagnostics-projection v72)
+pub fn diagnostics_snapshot() -> WatchDiagnosticsSnapshot {
+    let last_error = last_error()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let Some(state) = STATE.get() else {
+        return WatchDiagnosticsSnapshot {
+            started: false,
+            event_count: 0,
+            last_event_at_ms: None,
+            last_error,
+        };
+    };
+    let buffer = state.buffer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    WatchDiagnosticsSnapshot {
+        started: true,
+        event_count: buffer.len(),
+        last_event_at_ms: buffer.back().map(|event| event.ts_ms),
+        last_error,
+    }
+}
 
 /// Start the watcher rooted at `vault_root`. Idempotent — second call
 /// is a no-op even with a different root (first call wins). Callers
@@ -78,16 +120,30 @@ pub fn start(vault_root: &Path) -> Result<(), WatchError> {
     }
     let buffer: Mutex<VecDeque<EventEntry>> = Mutex::new(VecDeque::with_capacity(RING_CAPACITY));
     let root_clone = vault_root.to_path_buf();
+    // Watcher failures and lifecycle are projected as metadata without exposing
+    // roots or creating a second watcher. (ADR-002 substrate § diagnostics-projection v72)
     let mut watcher: RecommendedWatcher = notify::recommended_watcher(
         move |res: Result<Event, notify::Error>| match res {
             Ok(ev) => push_event(&ev, &root_clone),
-            Err(e) => tracing::warn!(error = %e, "vault_watch: watcher error"),
+            Err(e) => {
+                set_last_error(Some(e.to_string()));
+                tracing::warn!(error = %e, "vault_watch: watcher error");
+            }
         },
     )
-    .map_err(|e| WatchError::Notify(e.to_string()))?;
+    .map_err(|e| {
+        set_last_error(Some(e.to_string()));
+        WatchError::Notify(e.to_string())
+    })?;
     watcher
         .watch(vault_root, RecursiveMode::Recursive)
-        .map_err(|e| WatchError::Notify(e.to_string()))?;
+        .map_err(|e| {
+            set_last_error(Some(e.to_string()));
+            WatchError::Notify(e.to_string())
+        })?;
+    // Clear only the metadata error projection after the existing watcher owns
+    // the root. (ADR-002 substrate § diagnostics-projection v72)
+    set_last_error(None);
 
     let state = WatchState {
         buffer,
@@ -101,6 +157,20 @@ pub fn start(vault_root: &Path) -> Result<(), WatchError> {
         );
         return Ok(());
     }
+    // Publish metadata-only watcher readiness after the existing owner starts.
+    // (ADR-002 substrate § diagnostics-projection v72)
+    crate::kernel::diagnostics::record(crate::kernel::diagnostics::RecordEvent {
+        module: crate::kernel::diagnostics::DiagnosticsModule::Notes,
+        session_id: None,
+        correlation_id: None,
+        kind: "watcher_lifecycle",
+        phase: "startup",
+        severity: "info",
+        outcome: "ready",
+        duration_ms: None,
+        capture_only: false,
+        attributes: serde_json::json!({}),
+    });
     tracing::info!(root = %vault_root.display(), "vault_watch: started");
     Ok(())
 }
@@ -157,6 +227,23 @@ fn push_event(ev: &Event, root: &Path) {
     if entries.is_empty() {
         return;
     }
+    // Record event kind and count only; paths remain in the watcher owner.
+    // (ADR-002 substrate § diagnostics-projection v72)
+    crate::kernel::diagnostics::record(crate::kernel::diagnostics::RecordEvent {
+        module: crate::kernel::diagnostics::DiagnosticsModule::Notes,
+        session_id: None,
+        correlation_id: None,
+        kind: "watcher_lifecycle",
+        phase: "filesystem_event",
+        severity: "info",
+        outcome: "observed",
+        duration_ms: None,
+        capture_only: true,
+        attributes: serde_json::json!({
+            "event_kind": format!("{kind:?}").to_ascii_lowercase(),
+            "changed_paths": entries.len(),
+        }),
+    });
     let mut buf = match state.buffer.lock() {
         Ok(b) => b,
         Err(p) => {

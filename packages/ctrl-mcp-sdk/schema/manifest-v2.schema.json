@@ -1,0 +1,296 @@
+{
+  "\u0024schema": "https:\u002f\u002fjson-schema.org\u002fdraft\u002f2020-12\u002fschema",
+  "\u0024id": "https:\u002f\u002fctrl.app\u002fschemas\u002fmanifest-v2.schema.json",
+  "title": "CTRL feature-pack manifest",
+  "description": "The sole cross-language structural authority for CTRL feature-pack manifests. (ADR-002 substrate § 7 v73)",
+  "type": "object",
+  "required": ["id"],
+  "properties": {
+    "\u0024schema": { "type": "string", "minLength": 1 },
+    "id": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9._-]+$" },
+    "manifest_version": { "enum": [1, 2], "default": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[a-z0-9.-]+)?$" },
+    "author": { "$ref": "#/$defs/author" },
+    "description": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "$ref": "#/$defs/description" }
+      ]
+    },
+    "icon": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "required": ["kind", "src"],
+          "properties": {
+            "kind": { "enum": ["lucide", "unicode", "svg", "lottie", "dotlottie"] },
+            "src": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "mcp_color": { "enum": ["amber", "jade", "cobalt", "platinum", "graphite"] },
+    "category": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "permissions": {
+      "type": "array",
+      "items": { "enum": ["clipboard", "network", "screen", "filesystem", "audio", "camera", "notification", "hotkey", "mcp", "vault", "oauth"] }
+    },
+    "capabilities": { "type": "object" },
+    "workspace": {
+      "type": "object",
+      "properties": {
+        "ui": { "enum": ["none", "notification", "modal", "clipboard", "html-output", "chat-stream", "picker", "form", "canvas"], "default": "none" },
+        "table_prefix": { "type": "string", "pattern": "^tables/[a-z0-9._-]+-$" }
+      },
+      "additionalProperties": true
+    },
+    "config_schema": {
+      "type": "object",
+      "required": ["fields"],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["key", "kind", "label"],
+            "properties": {
+              "key": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+              "kind": { "enum": ["string", "url", "secret", "integer", "boolean", "enum", "oauth"] },
+              "label": { "type": "string", "minLength": 1 },
+              "required": { "type": "boolean", "default": true }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "platforms": { "type": "array", "items": { "enum": ["macos", "windows", "linux"] } },
+    "variant": {
+      "enum": ["builtin", "mcp-server", "mcp-tool", "oauth", "cli-wrapper", "local-agent", "skill", "stss-publisher"],
+      "default": "builtin"
+    },
+    "server": { "$ref": "#/$defs/localServer" },
+    "source": { "type": "object" },
+    "io": { "type": "object" },
+    "target": { "enum": ["mcp-tool", "brain"] },
+    "capability": { "type": "string" },
+    "bridge": { "type": "string" },
+    "provider_passthrough": { "type": "boolean" },
+    "actions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/action" } },
+    "triggers": { "type": "array", "items": { "type": "object" } },
+    "license": { "type": "string" },
+    "draft": { "type": "object" },
+    "lineage": { "type": "object" },
+    "builtin": { "type": "boolean" },
+    "pattern": { "enum": ["A", "B", "C", "D", "E", "F", "G"] },
+    "brain_capabilities": { "type": "object" },
+    "ui_surface": {
+      "oneOf": [
+        { "enum": ["none", "notification", "modal", "clipboard", "html-output", "chat-stream", "picker", "form", "canvas"] },
+        { "type": "object" }
+      ]
+    },
+    "skills": { "type": "array", "items": { "type": "string" } },
+    "cap_asset": { "type": "object" },
+    "provision": { "type": "object" },
+    "auth": { "type": "object" },
+    "record_source": { "$ref": "#/$defs/recordSource" },
+    "knowledge_base": { "type": "string", "minLength": 1 },
+    "tools": { "type": "array", "items": { "type": "object" } }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "required": ["server"],
+        "properties": { "server": true }
+      },
+      "then": {
+        "required": ["variant"],
+        "properties": { "variant": { "const": "mcp-server" } }
+      }
+    },
+    {
+      "if": {
+        "required": ["manifest_version", "variant"],
+        "properties": {
+          "manifest_version": { "const": 2 },
+          "variant": { "const": "mcp-server" }
+        }
+      },
+      "then": { "required": ["server"] }
+    }
+  ],
+  "$defs": {
+    "author": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "github": { "type": "string" },
+        "url": { "type": "string", "minLength": 1 },
+        "email": { "type": "string", "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" }
+      },
+      "additionalProperties": true
+    },
+    "description": {
+      "type": "object",
+      "required": ["short"],
+      "properties": {
+        "short": { "type": "string", "minLength": 1 },
+        "long": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "localServer": {
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "type": { "const": "local", "default": "local" },
+        "command": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
+        "args": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "input": { "enum": ["clipboard", "selection", "screen", "none", "prompt"] },
+        "output": { "enum": ["clipboard", "modal", "notification", "workspace", "silent"] },
+        "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } }
+      },
+      "additionalProperties": true
+    },
+    "step": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["capture-clipboard", "write-clipboard", "llm", "template", "transform", "notify", "open-url", "mcp-invoke", "vault-write", "invoke", "shell"] },
+        "as": { "type": "string" },
+        "notes": { "type": "string" },
+        "recorded_io": { "type": "object" },
+        "value": { "type": "string" },
+        "system": { "type": "string" },
+        "system_ref": { "type": "string" },
+        "prompt": { "type": "string" },
+        "prompt_ref": { "type": "string" },
+        "model": { "type": "string" },
+        "max_tokens": { "type": "integer", "minimum": 1 },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "template": { "type": "string" },
+        "op": { "enum": ["base64encode", "base64decode", "urlencode", "urldecode", "uppercase", "lowercase", "jsonpretty", "wordcount"] },
+        "input": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "url": { "type": "string" },
+        "server": { "type": "string" },
+        "tool": { "type": "string" },
+        "args": true,
+        "path": { "type": "string" },
+        "content": { "type": "string" },
+        "frontmatter": { "type": "object" },
+        "target": {
+          "type": "object",
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "const": "mcp" },
+            "id": { "type": "string", "minLength": 1 },
+            "action": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "inputs": { "type": "object", "additionalProperties": { "type": "string" } },
+        "command": { "type": "string", "minLength": 1 }
+      },
+      "oneOf": [
+        { "properties": { "type": { "const": "capture-clipboard" } } },
+        { "required": ["value"], "properties": { "type": { "const": "write-clipboard" }, "value": true } },
+        { "properties": { "type": { "const": "llm" } } },
+        { "required": ["template"], "properties": { "type": { "const": "template" }, "template": true } },
+        { "required": ["op"], "properties": { "type": { "const": "transform" }, "op": true } },
+        { "required": ["message"], "properties": { "type": { "const": "notify" }, "message": true } },
+        { "required": ["url"], "properties": { "type": { "const": "open-url" }, "url": true } },
+        { "required": ["server", "tool"], "properties": { "type": { "const": "mcp-invoke" }, "server": true, "tool": true } },
+        { "required": ["path", "content"], "properties": { "type": { "const": "vault-write" }, "path": true, "content": true } },
+        { "required": ["target"], "properties": { "type": { "const": "invoke" }, "target": true } },
+        { "required": ["command"], "properties": { "type": { "const": "shell" }, "command": true } }
+      ],
+      "additionalProperties": true
+    },
+    "recordSource": {
+      "type": "object",
+      "required": ["query", "fields"],
+      "properties": {
+        "kind": { "enum": ["record", "text", "blob"], "default": "record" },
+        "query": {
+          "type": "object",
+          "required": ["endpoint"],
+          "properties": {
+            "endpoint": { "type": "string", "minLength": 1 },
+            "method": { "enum": ["GET", "POST"], "default": "GET" },
+            "array_at": { "type": "string", "default": "" }
+          },
+          "additionalProperties": true
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["key", "label", "type"],
+            "properties": {
+              "key": { "type": "string", "minLength": 1 },
+              "label": { "type": "string", "minLength": 1 },
+              "type": { "enum": ["text", "number", "date", "checkbox", "tags", "select", "url"] },
+              "from": { "type": "array", "items": { "type": "string" }, "default": [] }
+            },
+            "additionalProperties": true
+          }
+        },
+        "operators": {
+          "type": "array",
+          "items": { "enum": ["eq", "neq", "contains", "gt", "lt", "gte", "lte", "before", "after", "within", "is", "has_tag"] }
+        },
+        "produce": {
+          "type": "object",
+          "required": ["endpoint", "body"],
+          "properties": {
+            "endpoint": { "type": "string", "minLength": 1 },
+            "method": { "enum": ["GET", "POST"], "default": "POST" },
+            "label": { "type": "string", "default": "" },
+            "body": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["field"],
+                "properties": {
+                  "field": { "type": "string", "minLength": 1 },
+                  "from": { "type": "string", "minLength": 1 },
+                  "from_secret": { "type": "string", "minLength": 1 },
+                  "transform": { "const": "uppercase" },
+                  "type": { "const": "number" }
+                },
+                "anyOf": [
+                  { "required": ["from"], "properties": { "from": true } },
+                  { "required": ["from_secret"], "properties": { "from_secret": true } }
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

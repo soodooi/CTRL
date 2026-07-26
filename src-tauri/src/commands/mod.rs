@@ -39,6 +39,7 @@ pub mod code_space;
 pub mod config;
 pub mod draft;
 pub mod draft_run;
+pub mod diagnostics;
 pub mod gate;
 // ADR-002 substrate § vault v1 §8.6 v5 (2026-06-01) — vault-side git via git CLI
 // (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
@@ -252,6 +253,15 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::code_space::cs_resize,
             $crate::commands::code_space::cs_kill,
             $crate::commands::code_space::cs_list,
+            // Unified first-party diagnostics controls. Capture/export preview
+            // remain Tauri-only; Gate exposes the read-only subset.
+            // (ADR-003 frontend §9 v26)
+            $crate::commands::diagnostics::diagnostics_status,
+            $crate::commands::diagnostics::diagnostics_smoke,
+            $crate::commands::diagnostics::diagnostics_trace,
+            $crate::commands::diagnostics::diagnostics_capture_start,
+            $crate::commands::diagnostics::diagnostics_capture_stop,
+            $crate::commands::diagnostics::diagnostics_export_preview,
             // vault — plain-text markdown store. ADR-002 § vault v1 §8.3, 2026-06-01.
             // §8 expanded the surface from 8 → 21 commands; the first 8 keep their
             // original signatures, the remaining 13 expose the link/tag/mention/

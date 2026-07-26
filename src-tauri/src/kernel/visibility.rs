@@ -83,6 +83,9 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
     // files. First-party so Irisy can reuse a skill the user already has when
     // building a pack.
     "skill",
+    // Read-only metadata diagnostics. Capture and export controls remain on the
+    // typed Tauri first-party surface. (ADR-010 communication § diagnostics v11)
+    "diagnostics",
 ];
 
 /// Callers treated as first-party (in-process app surfaces). The PWA bridge
@@ -256,6 +259,9 @@ pub fn tool_domain(tool: &str) -> &'static str {
         ("market_", "market"),
         ("discover_", "discover"),
         ("skill_", "skill"),
+        // Gate diagnostics remain in their dedicated least-privilege domain.
+        // (ADR-010 communication § diagnostics v11)
+        ("diagnostics_", "diagnostics"),
         ("http_", "net"),
         ("mcp_", "mcp"),
     ];
@@ -428,6 +434,9 @@ mod tests {
         assert_eq!(tool_domain("discover_skills"), "discover");
         assert_eq!(tool_domain("skill_list"), "skill");
         assert_eq!(tool_domain("skill_read"), "skill");
+        assert_eq!(tool_domain("diagnostics_status"), "diagnostics"); // (ADR-010 communication § diagnostics v11)
+        assert_eq!(tool_domain("diagnostics_smoke"), "diagnostics");
+        assert_eq!(tool_domain("diagnostics_trace"), "diagnostics");
         assert_eq!(tool_domain("mcp_proxy_call_tool"), "mcp");
         assert_eq!(tool_domain("irisy_soul_get"), "memory");
         // Downstream namespaced tool falls under the mcp group.
@@ -522,6 +531,7 @@ mod tests {
         assert!(intent.allows_tool("market_quote"));
         assert!(intent.allows_tool("market_screen"));
         assert!(intent.allows_tool("web_search"));
+        assert!(intent.allows_tool("diagnostics_status")); // (ADR-010 communication § diagnostics v11)
         // Irisy/hermes are first-party too.
         assert!(Intent::default_for_caller("irisy").allows_tool("vault_read"));
         assert!(Intent::default_for_caller("hermes").allows_tool("market_quote"));

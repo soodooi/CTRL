@@ -124,6 +124,26 @@ pub struct VaultReadArgs {
     pub path: String,
 }
 
+// Diagnostics Gate schemas are the read-only external projection; capture and
+// export controls remain Tauri-only. (ADR-010 communication § diagnostics v11)
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DiagnosticsModuleArgs {
+    /// First-party module to inspect: `irisy`, `coding`, or `notes`.
+    pub module: crate::kernel::diagnostics::DiagnosticsModule,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DiagnosticsTraceArgs {
+    /// First-party module to inspect: `irisy`, `coding`, or `notes`.
+    pub module: crate::kernel::diagnostics::DiagnosticsModule,
+    /// Optional live/recent correlation identifier.
+    #[serde(default)]
+    pub correlation_id: Option<String>,
+    /// Maximum metadata events to return (1-200, default 100).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
 /// smart_table.query — a structured read over a smart-table RecordSource
 /// (ADR-002 §14 / ADR-003 §6.5). Fill the parameter object; do NOT write a
 /// query string. Call `smart_table.describe` first to learn the valid fields.
@@ -1224,6 +1244,46 @@ impl KernelMcpRouter {
         Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
     }
 
+    /// diagnostics.status — read-only module health projection.
+    /// (ADR-010 communication § diagnostics v11)
+    #[tool(description = "Read metadata-only health for Irisy, Coding, or Notes. Does not start, stop, or rebuild any owner.")]
+    async fn diagnostics_status(
+        &self,
+        Parameters(args): Parameters<DiagnosticsModuleArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let body = crate::kernel::diagnostics::status(args.module);
+        let text = serde_json::to_string(&body).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(text)]))
+    }
+
+    /// diagnostics.smoke — one-shot non-mutating owner probe.
+    /// (ADR-010 communication § diagnostics v11)
+    #[tool(description = "Run a non-mutating metadata-only smoke probe for Irisy, Coding, or Notes. Never sends a prompt, spawns a process, starts a watcher, or rebuilds an index.")]
+    async fn diagnostics_smoke(
+        &self,
+        Parameters(args): Parameters<DiagnosticsModuleArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let body = crate::kernel::diagnostics::smoke(args.module);
+        let text = serde_json::to_string(&body).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(text)]))
+    }
+
+    /// diagnostics.trace — bounded correlated lifecycle breadcrumbs.
+    /// (ADR-010 communication § diagnostics v11)
+    #[tool(description = "Read a bounded metadata-only lifecycle timeline for Irisy, Coding, or Notes, optionally filtered by correlation_id. Raw prompts, tool data, PTY I/O, note bodies, secrets, and absolute paths are never returned.")]
+    async fn diagnostics_trace(
+        &self,
+        Parameters(args): Parameters<DiagnosticsTraceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let body = crate::kernel::diagnostics::trace(
+            args.module,
+            args.correlation_id.as_deref(),
+            args.limit,
+        );
+        let text = serde_json::to_string(&body).map_err(map_serde_err)?;
+        Ok(CallToolResult::success(vec![Content::text(text)]))
+    }
+
     /// vault.read — read a markdown file from the user's vault.
     #[tool(description = "Read a markdown file from the user's vault")]
     async fn vault_read(
@@ -2171,9 +2231,11 @@ impl KernelMcpRouter {
     /// manifest BEFORE install (mcp-builder review + evals; §7.4/§7.5). Returns a
     /// structured report (ok + issues{field,severity,fix} + a positive
     /// record_source describe eval) the authoring brain self-corrects from — the
-    /// quality step home-grown pipelines skip. Read-only: validates, never writes.
+    /// quality step home-grown pipelines skip. A pack may expose a local
+    /// mcp-server, actions, or a §14 record source. Read-only: validates, never
+    /// writes. (ADR-002 substrate § 7 v55)
     #[tool(
-        description = "Evaluate a candidate feature-pack manifest BEFORE install: checks id/version, that it declares actions[] or a §14 record_source, and that any record_source is coherent (parses, has fields + a read endpoint, describe resolves). Returns { ok, issues[{field,severity,fix}] } to self-correct. Call before mcp_pack_install."
+        description = "Evaluate a candidate feature-pack manifest BEFORE install: checks id/version, that it declares a local server, actions[], or a §14 record_source, and that any record_source is coherent (parses, has fields + a read endpoint, describe resolves). Returns { ok, issues[{field,severity,fix}] } to self-correct. Call before mcp_pack_install."
     )]
     async fn mcp_pack_validate(
         &self,
@@ -3318,12 +3380,21 @@ impl KernelMcpRouter {
 
     /// mcp.pack_install — install a feature pack from its manifest (+ optional
     /// server code) so the brain can set up a tool it needs (bao 2026-06-25:
-    /// Irisy installs feature packs). Same install path the PWA uses; idempotent.
+    /// Irisy installs feature packs). Validation is enforced inside the gate
+    /// before any filesystem mutation; the playbook is guidance, not the trust
+    /// boundary. (ADR-002 substrate § 7.4 v34)
     #[tool(description = "Install a feature pack from its manifest (+ optional server code)")]
     async fn mcp_pack_install(
         &self,
         Parameters(args): Parameters<McpPackInstallArgs>,
     ) -> Result<CallToolResult, McpError> {
+        if let Err(report) = crate::kernel::pack_validate::validate_for_install(&args.manifest) {
+            let data = serde_json::to_value(&report).map_err(map_serde_err)?;
+            return Err(McpError::invalid_params(
+                "feature pack validation failed",
+                Some(data),
+            ));
+        }
         let dir = crate::commands::kernel::mcp_dir()
             .map_err(|e| McpError::internal_error(e, None))?;
         let manifest = args.manifest.clone();
@@ -5799,6 +5870,37 @@ mod tests {
     use super::*;
     use crate::kernel::query::RecordSink;
     use crate::kernel::runtime::KernelRuntime;
+
+    #[test]
+    fn diagnostics_gate_surface_is_read_only() {
+        let spec = KernelMcpRouter::export_tool_schemas();
+        let names: Vec<&str> = spec["tools"]
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|tool| tool["name"].as_str())
+            .collect();
+        for required in ["diagnostics_status", "diagnostics_smoke", "diagnostics_trace"] {
+            assert!(names.contains(&required), "missing read-only diagnostics tool {required}");
+        }
+        for forbidden in ["diagnostics_capture_start", "diagnostics_capture_stop", "diagnostics_export_preview"] {
+            assert!(!names.contains(&forbidden), "Tauri-only control leaked into Gate: {forbidden}");
+        }
+    }
+
+    // The gate must reject an invalid manifest before resolving or mutating the
+    // install path. (ADR-002 substrate § 7.4 v34)
+    #[test]
+    fn pack_install_validation_fails_before_the_install_path() {
+        let invalid = serde_json::json!({
+            "id": "ctrl-invalid",
+            "manifest_version": 2
+        });
+        let report = crate::kernel::pack_validate::validate_for_install(&invalid)
+            .expect_err("a pack with no capability surface must be rejected");
+        assert!(!report.ok);
+        assert!(report.issues.iter().any(|issue| issue.field == "actions"));
+    }
 
     #[test]
     fn sanitize_tool_schema_downlevels_for_strict_providers() {

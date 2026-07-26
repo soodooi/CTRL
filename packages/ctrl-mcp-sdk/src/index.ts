@@ -8,10 +8,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-// Re-export manifest schema types, parser, and Zod schemas so supported SDK
-// consumers can observe retired-value migration warnings without reaching into
-// a private module path. Retired values remain parse-only and have no executor.
-// (ADR-002 substrate § composition v65)
+// Re-export the shared manifest parser and its generated TypeScript view. The
+// compatibility safeParse adapter delegates to the same Ajv consumer; the
+// shipped JSON Schema remains the only structural authority.
+// (ADR-002 substrate § 7 v73)
 export type {
   L2NavItem,
   WorkspaceTab,
@@ -22,14 +22,7 @@ export type {
   ValidationResult,
 } from './manifest-schema';
 export {
-  L2NavItem as L2NavItemSchema,
-  WorkspaceTab as WorkspaceTabSchema,
-  WorkspaceDeclaration as WorkspaceDeclarationSchema,
-  UiSurface as UiSurfaceSchema,
-  WorkspaceUi as WorkspaceUiSchema,
-  McpManifest as McpManifestSchema,
-  // Public migration warnings for retired values; no live route is restored.
-  // (ADR-002 substrate § composition v65)
+  McpManifestSchema,
   parseManifest,
 } from './manifest-schema';
 

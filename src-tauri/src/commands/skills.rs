@@ -470,6 +470,83 @@ pub struct LocalSkill {
 /// them all into the brain's context is slow + useless. Irisy passes a query
 /// to narrow; this bounds the worst case.
 const MAX_LOCAL_SKILLS: usize = 40;
+const CREATE_FEATURE_PACK_SKILL: &str =
+    include_str!("../../../ctrl-skills/skills/create-feature-pack/SKILL.md");
+
+fn ctrl_skills_root(home: &Path) -> PathBuf {
+    home.join(".ctrl").join("skills")
+}
+
+/// Materialize CTRL-owned skills as ordinary Markdown before discovery. User
+/// skills are scanned first and therefore override an identically named builtin;
+/// the builtin copy is refreshed from the release so Irisy always has the
+/// accepted pack-authoring playbook available offline.
+/// (ADR-002 substrate § 7.4 v34; ADR-005 irisy §9 v25)
+fn ensure_bundled_ctrl_skills(root: &Path) -> Result<(), String> {
+    static REFRESH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = REFRESH_LOCK
+        .lock()
+        .map_err(|_| "bundled CTRL skill refresh lock poisoned".to_string())?;
+
+    let dir = root.join("create-feature-pack");
+    let path = dir.join("SKILL.md");
+    let backup = dir.join("SKILL.md.backup");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create CTRL skills dir: {e}"))?;
+
+    // A prior Windows replacement may have crashed after moving the old file
+    // aside. Recover the last known-good copy before attempting a new refresh.
+    // (ADR-002 substrate § 7.4 v34; ADR-005 irisy §9 v25)
+    if !path.exists() && backup.exists() {
+        std::fs::rename(&backup, &path)
+            .map_err(|e| format!("recover bundled CTRL skill backup: {e}"))?;
+    }
+    if std::fs::read_to_string(&path).ok().as_deref() == Some(CREATE_FEATURE_PACK_SKILL) {
+        let _ = std::fs::remove_file(&backup);
+        return Ok(());
+    }
+
+    static NEXT_TMP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp_id = NEXT_TMP_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!("SKILL.md.tmp-{}-{tmp_id}", std::process::id()));
+    let mut tmp_file = std::fs::File::create(&tmp)
+        .map_err(|e| format!("create bundled CTRL skill temp file: {e}"))?;
+    std::io::Write::write_all(&mut tmp_file, CREATE_FEATURE_PACK_SKILL.as_bytes())
+        .and_then(|_| tmp_file.sync_all())
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("write bundled CTRL skill: {e}")
+        })?;
+    drop(tmp_file);
+
+    // Unix rename replaces atomically. Windows does not replace an existing
+    // destination, so move the known-good file to a recoverable backup first;
+    // never delete the only durable copy before the new bytes are in place.
+    if let Err(first_error) = std::fs::rename(&tmp, &path) {
+        if !path.exists() {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("install bundled CTRL skill: {first_error}"));
+        }
+        let _ = std::fs::remove_file(&backup);
+        std::fs::rename(&path, &backup).map_err(|backup_error| {
+            let _ = std::fs::remove_file(&tmp);
+            format!(
+                "stage bundled CTRL skill backup after rename failed ({first_error}): {backup_error}"
+            )
+        })?;
+        if let Err(retry_error) = std::fs::rename(&tmp, &path) {
+            let restore_result = std::fs::rename(&backup, &path);
+            let _ = std::fs::remove_file(&tmp);
+            return match restore_result {
+                Ok(()) => Err(format!("replace bundled CTRL skill: {retry_error}")),
+                Err(restore_error) => Err(format!(
+                    "replace bundled CTRL skill ({retry_error}); restore backup failed: {restore_error}"
+                )),
+            };
+        }
+        let _ = std::fs::remove_file(&backup);
+    }
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn list_local_skills(query: Option<String>) -> Result<Vec<LocalSkill>, String> {
@@ -487,19 +564,24 @@ pub async fn list_local_skills(query: Option<String>) -> Result<Vec<LocalSkill>,
 }
 
 fn list_local_skills_blocking(query: Option<String>) -> Result<Vec<LocalSkill>, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    // The creation playbook is release-pinned local truth, while user skills
+    // retain first-hit precedence. (ADR-002 substrate § 7.4 v34)
+    let home = PathBuf::from(std::env::var("HOME").map_err(|_| "HOME not set".to_string())?);
     let mut out: Vec<LocalSkill> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    // 1. User skills: ~/.claude/skills/<name>/SKILL.md
-    let user_skills = PathBuf::from(&home).join(".claude").join("skills");
+    // User skills override builtins with the same frontmatter name.
+    let user_skills = home.join(".claude").join("skills");
     collect_skills_in(&user_skills, &mut out, &mut seen);
 
-    // 2. Installed plugin skills: ~/.claude/plugins/cache/<mkt>/<plugin>/<ver>/skills/<name>/SKILL.md
-    let cache = PathBuf::from(&home)
-        .join(".claude")
-        .join("plugins")
-        .join("cache");
+    // CTRL-owned, release-pinned playbooks are local Markdown too. Materialize
+    // before every live scan so upgrades refresh them without a restart.
+    let ctrl_skills = ctrl_skills_root(&home);
+    ensure_bundled_ctrl_skills(&ctrl_skills)?;
+    collect_skills_in(&ctrl_skills, &mut out, &mut seen);
+
+    // Installed plugin skills: ~/.claude/plugins/cache/<mkt>/<plugin>/<ver>/skills/<name>/SKILL.md
+    let cache = home.join(".claude").join("plugins").join("cache");
     if let Ok(markets) = std::fs::read_dir(&cache) {
         for m in markets.flatten() {
             let Ok(plugins) = std::fs::read_dir(m.path()) else {
@@ -621,16 +703,18 @@ fn read_skill_under(allowed_roots: &[PathBuf], path: &str) -> Result<String, Str
 
 /// Read a local skill's SKILL.md so the brain can see HOW a skill works before
 /// reusing it. Confined to the same roots list_local_skills scans
-/// (~/.claude/skills + ~/.claude/plugins/cache).
+/// (~/.claude/skills + ~/.ctrl/skills + ~/.claude/plugins/cache).
+/// (ADR-002 substrate § 7.4 v34)
 pub async fn read_local_skill(path: String) -> Result<String, String> {
     // Blocking fs (canonicalize + read) — same runtime-starvation reasoning as
     // list_local_skills: never run it on an async worker, or a saturated pool
     // makes this trivial read hang on the gate. Offload to the blocking pool.
     tokio::task::spawn_blocking(move || {
-        let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+        let home = PathBuf::from(std::env::var("HOME").map_err(|_| "HOME not set".to_string())?);
         let roots = [
-            PathBuf::from(&home).join(".claude").join("skills"),
-            PathBuf::from(&home).join(".claude").join("plugins").join("cache"),
+            home.join(".claude").join("skills"),
+            home.join(".claude").join("plugins").join("cache"),
+            ctrl_skills_root(&home),
         ];
         read_skill_under(&roots, &path)
     })
@@ -702,6 +786,86 @@ mod tests {
         assert_eq!(out[0].description.as_deref(), Some("does X"));
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // The bundled playbook remains local, readable, and overridable while
+    // preserving one release-owned fallback. (ADR-002 substrate § 7.4 v34)
+    #[test]
+    fn bundled_skill_is_materialized_and_stale_copy_is_refreshed() {
+        let root = fresh_tmp("bundled");
+        ensure_bundled_ctrl_skills(&root).expect("materialize bundled skill");
+        let skill_md = root.join("create-feature-pack").join("SKILL.md");
+        assert_eq!(
+            std::fs::read_to_string(&skill_md).expect("read materialized skill"),
+            CREATE_FEATURE_PACK_SKILL
+        );
+
+        std::fs::write(&skill_md, "stale release copy").unwrap();
+        ensure_bundled_ctrl_skills(&root).expect("refresh bundled skill");
+        assert_eq!(
+            std::fs::read_to_string(&skill_md).expect("read refreshed skill"),
+            CREATE_FEATURE_PACK_SKILL
+        );
+        assert!(
+            std::fs::read_dir(skill_md.parent().unwrap())
+                .unwrap()
+                .flatten()
+                .all(|entry| !entry.file_name().to_string_lossy().contains(".tmp-")),
+            "refresh must clean temporary skill files"
+        );
+
+        // Simulate a crash in the Windows replacement window: the old file was
+        // moved to backup but the new file was not promoted. The next scan must
+        // recover and then refresh without losing the playbook.
+        std::fs::write(&skill_md, "last known good").unwrap();
+        let backup = skill_md.parent().unwrap().join("SKILL.md.backup");
+        std::fs::rename(&skill_md, &backup).unwrap();
+        ensure_bundled_ctrl_skills(&root).expect("recover interrupted refresh");
+        assert_eq!(
+            std::fs::read_to_string(&skill_md).unwrap(),
+            CREATE_FEATURE_PACK_SKILL
+        );
+        assert!(!backup.exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn user_skill_with_same_name_precedes_bundled_skill() {
+        let root = fresh_tmp("override");
+        let user_root = root.join("user");
+        let bundled_root = root.join("bundled");
+        let user_dir = user_root.join("custom");
+        let bundled_dir = bundled_root.join("create-feature-pack");
+        std::fs::create_dir_all(&user_dir).unwrap();
+        std::fs::create_dir_all(&bundled_dir).unwrap();
+        let metadata = "---\nname: create-feature-pack\ndescription: test\n---\n";
+        std::fs::write(user_dir.join("SKILL.md"), format!("{metadata}user")).unwrap();
+        std::fs::write(bundled_dir.join("SKILL.md"), format!("{metadata}bundled")).unwrap();
+
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        collect_skills_in(&user_root, &mut out, &mut seen);
+        collect_skills_in(&bundled_root, &mut out, &mut seen);
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].path.starts_with(user_root.to_str().unwrap()));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bundled_ctrl_root_is_an_allowed_skill_read_boundary() {
+        let home = fresh_tmp("read-bundled");
+        let root = ctrl_skills_root(&home);
+        ensure_bundled_ctrl_skills(&root).expect("materialize bundled skill");
+        let skill_md = root.join("create-feature-pack").join("SKILL.md");
+
+        let body = read_skill_under(&[root], skill_md.to_str().unwrap())
+            .expect("read skill under CTRL root");
+        assert_eq!(body, CREATE_FEATURE_PACK_SKILL);
+
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     // Hot-discovery contract: skill listing re-scans the filesystem on EVERY

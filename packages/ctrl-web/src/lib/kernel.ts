@@ -66,6 +66,119 @@ export function isSeedingFirstRun(status: KernelStatus | null): boolean {
   return status?.first_run_state === 'copying';
 }
 
+// === Unified local diagnostics ===
+// Direct typed Tauri controls are the first-party surface. Only the read-only
+// status/smoke/trace subset is projected through :17873; capture and export
+// preview never become agent tools. (ADR-003 frontend § diagnostics-surface v26)
+export type DiagnosticsModule = 'irisy' | 'coding' | 'notes';
+export type DiagnosticsStartup = 'idle' | 'starting' | 'ready' | 'failed';
+export type DiagnosticsHealth = 'ok' | 'degraded' | 'failed';
+
+export interface DiagnosticsEvent {
+  timestamp_ms: number;
+  module: DiagnosticsModule;
+  trace_id: string;
+  session_id?: string;
+  correlation_id?: string;
+  kind: string;
+  phase: string;
+  severity: string;
+  outcome: string;
+  duration_ms?: number;
+  attributes: Record<string, unknown>;
+}
+
+export interface DiagnosticsStatus {
+  observed_at_ms: number;
+  module: DiagnosticsModule;
+  startup: DiagnosticsStartup;
+  live: boolean;
+  ready: boolean;
+  health: DiagnosticsHealth;
+  summary: string;
+  capture_active: boolean;
+  capture_expires_at_ms?: number;
+  retained_events: number;
+  attributes: Record<string, unknown>;
+}
+
+export interface DiagnosticsSmokeCheck {
+  name: string;
+  health: DiagnosticsHealth;
+  summary: string;
+}
+
+export interface DiagnosticsSmoke {
+  observed_at_ms: number;
+  module: DiagnosticsModule;
+  health: DiagnosticsHealth;
+  checks: DiagnosticsSmokeCheck[];
+}
+
+export interface DiagnosticsTrace {
+  module: DiagnosticsModule;
+  correlation_id?: string;
+  retention_seconds: number;
+  capacity: number;
+  events: DiagnosticsEvent[];
+}
+
+export interface DiagnosticsCaptureReply {
+  module: DiagnosticsModule;
+  active: boolean;
+  expires_at_ms?: number;
+}
+
+export interface DiagnosticsExportPreview {
+  generated_at_ms: number;
+  module: DiagnosticsModule;
+  status: DiagnosticsStatus;
+  trace: DiagnosticsTrace;
+  metadata_only: true;
+  destination: 'local_user_selected_file';
+  estimated_bytes: number;
+}
+
+export const diagnosticsStatus = (module: DiagnosticsModule): Promise<DiagnosticsStatus> =>
+  invoke<DiagnosticsStatus>('diagnostics_status', { module });
+
+export const diagnosticsSmoke = (module: DiagnosticsModule): Promise<DiagnosticsSmoke> =>
+  invoke<DiagnosticsSmoke>('diagnostics_smoke', { module });
+
+export const diagnosticsTrace = (
+  module: DiagnosticsModule,
+  correlationId?: string,
+  limit?: number,
+): Promise<DiagnosticsTrace> =>
+  invoke<DiagnosticsTrace>('diagnostics_trace', {
+    module,
+    correlation_id: correlationId ?? null,
+    limit: limit ?? null,
+  });
+
+export const diagnosticsCaptureStart = (
+  module: DiagnosticsModule,
+  durationSeconds: number,
+): Promise<DiagnosticsCaptureReply> =>
+  invoke<DiagnosticsCaptureReply>('diagnostics_capture_start', {
+    module,
+    duration_seconds: durationSeconds,
+  });
+
+export const diagnosticsCaptureStop = (
+  module: DiagnosticsModule,
+): Promise<DiagnosticsCaptureReply> =>
+  invoke<DiagnosticsCaptureReply>('diagnostics_capture_stop', { module });
+
+export const diagnosticsExportPreview = (
+  module: DiagnosticsModule,
+  correlationId?: string,
+): Promise<DiagnosticsExportPreview> =>
+  invoke<DiagnosticsExportPreview>('diagnostics_export_preview', {
+    module,
+    correlation_id: correlationId ?? null,
+  });
+
 // `icon` is widened to `Icon | string` for forward-compat with the
 // kernel schema migration to the `McpIcon` discriminated union in
 // `packages/ctrl-mcp-sdk/src/manifest-schema.ts`. Today the

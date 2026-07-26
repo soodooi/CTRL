@@ -62,7 +62,9 @@ impl Default for EnvLifeStatus {
 ///
 /// Z2: forwarder also updates `status` when it sees SubprocessExit so the
 /// CodeSpaceRegistry envelope is in sync with reality without a separate
-/// callback channel.
+/// callback channel. Diagnostics observes this owner lifecycle without reading
+/// PTY content or creating another process owner.
+/// (ADR-002 substrate § diagnostics-projection v72)
 pub async fn forward_subprocess_outbox(
     mut outbox: mpsc::Receiver<Event>,
     bridge: EventWsBridge,
@@ -71,7 +73,7 @@ pub async fn forward_subprocess_outbox(
 ) {
     debug!(stream_id = %stream_id, "subprocess_channel_adapter: forwarder started");
     while let Some(event) = outbox.recv().await {
-        update_status_from_exit(&event, &status).await;
+        update_status_from_exit(&event, &status, &stream_id).await;
         translate_and_publish(event, &bridge, &stream_id);
     }
     debug!(stream_id = %stream_id, "subprocess_channel_adapter: forwarder ended (outbox closed)");
@@ -82,6 +84,9 @@ pub async fn forward_subprocess_outbox(
     // Without this fixup the registry would report the env as Running
     // forever and cs_list would serve stale state to the PWA. Promote to
     // Crashed so the UI surfaces the failure.
+    // Owner lifecycle projection only; PTY bytes remain outside diagnostics.
+    // (ADR-002 substrate § diagnostics-projection v72)
+    let mut ended_without_exit = false;
     {
         let mut guard = status.lock().await;
         if matches!(*guard, EnvLifeStatus::Running) {
@@ -94,13 +99,24 @@ pub async fn forward_subprocess_outbox(
                 exit_code: None,
                 detail: Some("forwarder exited without exit event".into()),
             };
+            ended_without_exit = true;
         }
+    }
+    // Preserve the existing process owner and emit only its terminal lifecycle.
+    // (ADR-002 substrate § diagnostics-projection v72)
+    if ended_without_exit {
+        crate::kernel::diagnostics::coding_finished(&stream_id, "failed", None);
     }
 }
 
 /// Inspect the event and, when it is a SubprocessExit op, update the env's
 /// status. Exit code 0 (or None) is treated as Stopped; non-zero is Crashed.
-async fn update_status_from_exit(event: &Event, status: &Arc<Mutex<EnvLifeStatus>>) {
+/// (ADR-002 substrate § diagnostics-projection v72)
+async fn update_status_from_exit(
+    event: &Event,
+    status: &Arc<Mutex<EnvLifeStatus>>,
+    stream_id: &str,
+) {
     let Event::Op(op) = event else { return };
     if !matches!(op.kind, OpKind::SubprocessExit) {
         return;
@@ -138,6 +154,20 @@ async fn update_status_from_exit(event: &Event, status: &Arc<Mutex<EnvLifeStatus
             detail: None,
         },
     };
+    // Map only owner status and exit code into bounded diagnostics metadata.
+    // (ADR-002 substrate § diagnostics-projection v72)
+    let (diagnostic_outcome, diagnostic_exit_code) = match &new_status {
+        EnvLifeStatus::Stopped { exit_code } => ("stopped", *exit_code),
+        EnvLifeStatus::Crashed { exit_code, .. } => ("failed", *exit_code),
+        EnvLifeStatus::Running => ("running", None),
+    };
+    if !stream_id.is_empty() {
+        crate::kernel::diagnostics::coding_finished(
+            stream_id,
+            diagnostic_outcome,
+            diagnostic_exit_code,
+        );
+    }
     let mut guard = status.lock().await;
     *guard = new_status;
 }
@@ -347,7 +377,7 @@ mod tests {
             OpKind::SubprocessExit,
             serde_json::json!({"actor": "x", "pid": 42, "code": 0}),
         ));
-        update_status_from_exit(&ev, &status).await;
+        update_status_from_exit(&ev, &status, "test-stream").await; // (ADR-002 substrate § diagnostics-projection v72)
         assert_eq!(*status.lock().await, EnvLifeStatus::Stopped { exit_code: Some(0) });
     }
 
@@ -358,7 +388,7 @@ mod tests {
             OpKind::SubprocessExit,
             serde_json::json!({"actor": "x", "pid": 42, "code": 137}),
         ));
-        update_status_from_exit(&ev, &status).await;
+        update_status_from_exit(&ev, &status, "test-stream").await; // (ADR-002 substrate § diagnostics-projection v72)
         assert_eq!(
             *status.lock().await,
             EnvLifeStatus::Crashed { exit_code: Some(137), detail: None }
@@ -372,7 +402,7 @@ mod tests {
             OpKind::SubprocessExit,
             serde_json::json!({"actor": "x", "code": null, "spawn_error": "command not found"}),
         ));
-        update_status_from_exit(&ev, &status).await;
+        update_status_from_exit(&ev, &status, "test-stream").await; // (ADR-002 substrate § diagnostics-projection v72)
         assert_eq!(
             *status.lock().await,
             EnvLifeStatus::Crashed {
@@ -392,7 +422,7 @@ mod tests {
             OpKind::SubprocessExit,
             serde_json::json!({"actor": "x", "pid": 42, "code": null}),
         ));
-        update_status_from_exit(&ev, &status).await;
+        update_status_from_exit(&ev, &status, "test-stream").await; // (ADR-002 substrate § diagnostics-projection v72)
         assert_eq!(
             *status.lock().await,
             EnvLifeStatus::Crashed { exit_code: None, detail: None }
@@ -406,7 +436,7 @@ mod tests {
             OpKind::SubprocessStdout,
             serde_json::json!({"data_b64": "aGk="}),
         ));
-        update_status_from_exit(&ev, &status).await;
+        update_status_from_exit(&ev, &status, "test-stream").await; // (ADR-002 substrate § diagnostics-projection v72)
         assert_eq!(*status.lock().await, EnvLifeStatus::Running);
     }
 }

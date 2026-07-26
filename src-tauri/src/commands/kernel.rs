@@ -173,8 +173,10 @@ fn sanitize_server_filename(raw: &str) -> String {
     }
 }
 
-/// pub(crate) for kernel::provider::http_endpoint /tool/<name>
-/// dispatcher reuse (ADR-002 substrate § brain v7 §1.1, 2026-06-04).
+/// Persist an already-governed manifest. Feature-pack entry points validate
+/// before calling this primitive; `install_mcp_from_mcp` instead synthesizes a
+/// controlled MCP-proxy adapter manifest and never accepts a feature-pack
+/// manifest from its caller. (ADR-002 substrate § 7.4 v34)
 pub(crate) fn install_into(
     dir: &Path,
     args: &InstallMcpArgs,
@@ -245,11 +247,22 @@ pub(crate) fn install_into(
     Ok(manifest_to_summary(&args.manifest, &id))
 }
 
+fn validate_feature_pack_install(manifest: &serde_json::Value) -> Result<(), String> {
+    crate::kernel::pack_validate::validate_for_install(manifest).map_err(|report| {
+        let details = serde_json::to_string(&report)
+            .unwrap_or_else(|_| "feature pack validation failed".to_string());
+        format!("feature pack validation failed: {details}")
+    })
+}
+
 #[tauri::command]
 pub async fn install_mcp(
     args: InstallMcpArgs,
     _kernel: State<'_, KernelHandle>,
 ) -> Result<McpSummary, String> {
+    // Legacy callers still enter here, but they no longer bypass the evals
+    // enforced by the :17873 feature-pack gate. (ADR-002 substrate § 7.4 v34)
+    validate_feature_pack_install(&args.manifest)?;
     let dir = mcp_dir()?;
     let summary = install_into(&dir, &args)?;
     tracing::info!(mcp_id = %summary.id, "install_mcp ok");
@@ -308,13 +321,29 @@ fn bundle_sha256(mcpb_path: &Path) -> Result<String, String> {
     Ok(format!("{digest:x}"))
 }
 
+struct RemoveStagingDir(std::path::PathBuf);
+
+impl Drop for RemoveStagingDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn fresh_mcpb_staging_path() -> PathBuf {
+    static NEXT_STAGING_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = NEXT_STAGING_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!("ctrl-mcpb-staging-{}-{id}", std::process::id()))
+}
+
 fn install_mcpb_blocking(mcpb_path: &Path, dir: &Path) -> Result<InstallMcpbResult, String> {
     // 0. integrity floor — hash the bundle before we trust anything in it.
     let bundle_sha256 = bundle_sha256(mcpb_path)?;
 
-    // 1. unpack the .mcpb (zip) into a staging dir.
-    let staging = dir.join(".mcpb-staging");
-    let _ = fs::remove_dir_all(&staging);
+    // 1. Unpack outside the install root. The manifest is validated before any
+    // path under ~/.ctrl/mcps is mutated, and the guard cleans every error path.
+    // (ADR-002 substrate § 7.4 v34)
+    let staging = fresh_mcpb_staging_path();
+    let _staging_cleanup = RemoveStagingDir(staging.clone());
     fs::create_dir_all(&staging).map_err(|e| format!("create staging: {e}"))?;
     let unzip = std::process::Command::new("unzip")
         .arg("-o")
@@ -336,6 +365,12 @@ fn install_mcpb_blocking(mcpb_path: &Path, dir: &Path) -> Result<InstallMcpbResu
         .map_err(|e| format!("read manifest.json from mcpb: {e}"))?;
     let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
         .map_err(|e| format!("parse manifest.json: {e}"))?;
+    // Bundle installs share the same fail-closed write boundary as gate and
+    // legacy manifest installs. (ADR-002 substrate § 7.4 v34)
+    if let Err(error) = validate_feature_pack_install(&manifest) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
 
     // 3. install (writes manifest into ~/.ctrl/mcps/<id>/) — reuse install_into.
     let install_args = InstallMcpArgs {
@@ -439,6 +474,11 @@ pub(crate) fn run_action_blocking(dir: &Path, mcp_id: &str, action_id: &str) -> 
         .map_err(|e| format!("read manifest for '{mcp_id}': {e}"))?;
     let manifest: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|e| format!("parse manifest: {e}"))?;
+
+    // Revalidate persisted manifests before provisioning or execution so a
+    // manually restored legacy pack cannot bypass the install boundary.
+    // (ADR-002 substrate § 7 v73)
+    validate_feature_pack_install(&manifest)?;
 
     // Ensure tools + resolve secret env (cheap when already provisioned —
     // each tool's `check` passes and skips reinstall).
@@ -1360,6 +1400,19 @@ mod tests {
         assert_eq!(sanitize_server_filename("ok name.ts"), "okname.ts");
     }
 
+    // Legacy Tauri installs use the same fail-closed validation floor as the
+    // governed gate. (ADR-002 substrate § 7.4 v34)
+    #[test]
+    fn legacy_install_boundary_rejects_invalid_feature_pack() {
+        let invalid = serde_json::json!({
+            "id": "ctrl-invalid",
+            "manifest_version": 2
+        });
+        let error = validate_feature_pack_install(&invalid)
+            .expect_err("legacy install entry must share the gate validation floor");
+        assert!(error.contains("feature pack validation failed"));
+    }
+
     #[test]
     fn install_then_list_roundtrip() {
         let dir = fresh_tmp("roundtrip");
@@ -1441,6 +1494,43 @@ mod tests {
         // smoke-probes by id and must get a degradable result.
         let err = run_action_blocking(&dir, "smoke-echo", "nope").unwrap_err();
         assert!(err.contains("not found"), "expected not-found error, got: {err}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // Persisted manifests are revalidated so manually restored retired packs
+    // cannot bypass install policy and reach the generic shell runner.
+    // (ADR-002 substrate § 7 v73)
+    #[test]
+    fn action_runner_rejects_restored_retired_manifest() {
+        let dir = fresh_tmp("retired-run");
+        let pack_dir = dir.join("retired-pack");
+        fs::create_dir_all(&pack_dir).unwrap();
+        let manifest = serde_json::json!({
+            "id": "retired-pack",
+            "variant": "stss-publisher",
+            "pattern": "F",
+            "actions": [{
+                "id": "run",
+                "name": "Run",
+                "steps": [{ "type": "shell", "command": "echo must-not-run" }]
+            }]
+        });
+        fs::write(
+            pack_dir.join("manifest.json"),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let error = run_action_blocking(&dir, "retired-pack", "run").unwrap_err();
+        assert!(
+            error.contains("feature pack validation failed"),
+            "got: {error}"
+        );
+        assert!(
+            error.contains("cannot be installed or executed"),
+            "got: {error}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -157,12 +157,11 @@ const packManifest = (
   actions,
 });
 
-/** Install a feature pack from its manifest (writes to ~/.ctrl/mcps via
- *  install_mcp), then signals the sidebar to reload its pack list. */
+/** Install a feature pack through the governed gate, then signal the sidebar
+ *  to reload its pack list. The gate re-validates immediately before writing.
+ *  (ADR-002 substrate § 7.4 v34) */
 export async function installPack(manifest: Record<string, unknown>): Promise<void> {
-  await invoke('install_mcp', {
-    args: { manifest, server_code: '', server_code_filename: '' },
-  });
+  await gateInvoke('mcp_pack_install', { manifest });
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(PACKS_CHANGED_EVENT));
   }

@@ -2,9 +2,9 @@
 adr_id: 001
 module: spine
 title: CTRL spine — 4-layer kernel + 5 primitives + 4 mcp sources + BYO-CLI driver platform + 3-capability-face + 6 self-evolution loops
-version: 11
+version: 12
 status: accepted
-last_updated: 2026-07-13
+last_updated: 2026-07-25
 deciders: [bao, zeus]
 sections:
   - { id: layers,         source: orig-001-§3 }
@@ -15,6 +15,7 @@ sections:
   - { id: philosophy,     source: orig-001-§6 }
   - { id: self-evolution, source: brainstorm system-self-evolution-2026-06-04 }
 changelog:
+  - v12 2026-07-25: **§5 manifest contract moves from a TypeScript/Zod implementation to a versioned JSON Schema protocol authority (bao approved方案 3).** A shipped draft-2020-12 schema is the sole cross-language structural contract for plain-text feature-pack manifests. TypeScript/Ajv and Rust/jsonschema are consumers; neither may add field-shape rejection rules. Defaults and normalization are consumer behavior declared by the schema, while contextual product/install evals remain in the owning runtime. Legacy v1/pre-v55 forms and retired ST-SS values stay parseable with explicit migration warnings; current v2 constraints fail closed at every install boundary. Pairs ADR-002 §7 v73.
   - v11 2026-07-13: **Retired transport/runtime terminology removed from governing sections.** §1 now names the current `event_ws.rs` CBOR-over-WebSocket/Tauri Channels event transport instead of ST-SS; §4.1 no longer lists ST-SS among live MCP sources; §8 self-healing uses the selected current engine and typed gate actions instead of the retired Pi runtime. Historical changelog/provenance remains unchanged. Pairs ADR-002 v64, ADR-003 v23, and ADR-007 v2.
   - v10 2026-07-06: **§4 — OpenCode un-retired as the CODING engine (BYO-CLI driver), superseding v4/v7's "opencode retired" (bao 2026-07-06 钦定 coding 引擎).** The v4 3-agent-aggregator wired opencode as a kernel-supervised coding brain; v7 retracted that aggregator and retired opencode along with it (correctly — CTRL supervises no brain). This amendment does NOT revive the aggregator: opencode returns ONLY as a **BYO-CLI driver** (spine §4 projection path) — CTRL runs the user's `opencode` in the projected workspace (Coding scene PTY, cwd = configured vault root), projects the gate into `opencode.json`, and does NOT supervise its loop. It is the CODING engine specifically because (a) hermes is an assistant harness weak at raw coding (stays the ASSISTANT brain), (b) wrapping a commercial CLI (Claude Code/Codex) = vendor dependency + ToS gray area + not-everyone-has-an-account, (c) OpenCode is MIT + model-agnostic (free/local floor → BYOK) so CTRL owns the integration (byok-no-Claude, sell-tools-not-models). Updates invariant #11 (the retired-opencode clause) + `architecture-byo-cli-driver.md` opencode status line + CLAUDE.md line 90. Full decision + slices: ADR-005 §8.7 v18 + `vault/ctrl/plan-opencode-coding-engine.md`. No primitive / face / plain-text change; still projection-not-supervision.
   - v9 2026-06-25: **§3 mcp sources 5 → 4 — ST-SS retired as a source (bao "彻底了结 ST-SS").** Spatio-Temporal Semantic Stream was a one-way semantic broadcast; it cannot carry multi-end remote control, so it is dropped as a capability source (GOAL: remote desktop goes the WebRTC route instead, separate module). What survives is ONLY the local kernel→PWA event stream it once named — now a plain CBOR-over-WS, renamed `stss_bridge.rs` → `event_ws.rs` (load-bearing: smart-table cell updates + terminal output flow over it). Removed: the `stss` mcp source type + its manifest schema (`irisy-mcp-zod.ts`) + capability tokens (`StssEmit`/`StssSubscribe`) + UI source category (pool.tsx) + viewer kind (`stss-stream`). Renamed: `subprocess_stss_adapter.rs` → `subprocess_channel_adapter.rs`, `commands/stss.rs` → `commands/event_stream.rs`, `STSS_LISTEN_ADDR` → `EVENT_WS_LISTEN_ADDR`. Code is now stss-free (grep-clean). Also fixes §1 L2-SDK diagram drift (the `@ctrl/stss` + `@ctrl/memory` packages were already deleted 2026-06-23). No primitive / face / self-evolution / plain-text change. Pairs ADR-010 § transports v5/v8.
@@ -159,7 +160,7 @@ Projection is **intent-scoped** (project the relevant subset, don't blast full c
 3. `~/.ctrl/state/` is derivative (event-log / notes-index / cache). Out of backup scope.
 4. Prompts are markdown (vim-editable, git-diffable, agentskills.io standard).
 5. Secrets → macOS Keychain. `~/.ctrl/config.toml` non-sensitive only.
-6. Manifest = YAML/TOML frontmatter. Zod-validated, plain text.
+6. Manifest = readable JSON or YAML/TOML frontmatter. Its versioned JSON Schema is the sole cross-language structural authority; plain text remains truth.
 7. Mobile = IndexedDB queue + LRU evict + soft quota.
 8. Backup source = `~/Documents/CTRL/Notes/` + `~/.ctrl/{mcps,agents,skills,config.toml,mesh/identity}`.
 9. Skills truth model — `~/.ctrl/skills/<id>/SKILL.md` is SSOT (Claude Code Skills schema). Skills are **projected** into the user's CLI-driver skills dir (v7 — portable across any BYO driver; was "cross-agent invoke" pre-v7). Was "`~/.ctrl/mcps/<id>/skills/`" pre-v4 — uplifted to top-level because Skills is now a peer capability face (§4.1).

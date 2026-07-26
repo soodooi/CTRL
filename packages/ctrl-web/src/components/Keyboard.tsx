@@ -36,7 +36,7 @@ import {
 } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listMcps, type McpSummary } from '@/lib/kernel';
+import { gateInvoke, listMcps, type McpSummary } from '@/lib/kernel';
 import { normalizeIcon } from '@/lib/icon';
 import { useWorkspaceStore } from '@/lib/workspace-store';
 import { invoke } from '@/lib/bridge';
@@ -277,9 +277,7 @@ export const Keyboard = (): ReactElement => {
   const installManifest = useCallback(
     async (manifest: Record<string, unknown>): Promise<void> => {
       try {
-        const summary = await invoke<McpSummary>('install_mcp', {
-          args: { manifest, server_code: '', server_code_filename: '' },
-        });
+        const summary = await gateInvoke<McpSummary>('mcp_pack_install', { manifest });
         await queryClient.invalidateQueries({ queryKey: ['mcps'] });
         showSuccess(`Installed ${summary.name}`);
       } catch (err: unknown) {

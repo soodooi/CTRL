@@ -2,9 +2,9 @@
 adr_id: 005
 module: irisy
 title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down + §8 terminal-essence dialog (engine owns loop+context) + §9 mission + knowledge system (数字员工 operator)
-version: 25
+version: 26
 status: accepted
-last_updated: 2026-07-23
+last_updated: 2026-07-25
 deciders: [bao, zeus, hephaestus]
 sections:
   - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004) }
@@ -15,6 +15,7 @@ sections:
   - { id: capability-decomposition,   source: new-2026-06-04 — RETIRED in v5 (no Irisy system prompt — agents own their prompts) }
   - { id: pi-extension-integration,   source: new-2026-06-04 — RETIRED in v5 (Pi exited CTRL hot path, ctrl-pi-bridge deleted) }
 changelog:
+  - v26 2026-07-25: **§8.6.1 diagnostics projection for the live Irisy engine.** Irisy exposes content-free ACP owner metadata and lifecycle breadcrumbs to the single ADR-010 §diagnostics composer: engine/session identity, startup/live/ready state, phase/outcome/duration, and gate reachability. It never exports prompts, completions, thoughts, tool arguments/results, credentials, absolute paths, or raw ACP/InternalMsg payloads. Smoke checks the existing owner/transport without sending a model prompt; diagnostics cannot create, reset, replay, or supervise a second engine loop.
   - v25 2026-07-23: **§9 authority boundary reconciled with module ADR governance.** `irisy-architecture.md` remains a non-authoritative research/planning map for the accepted mission, knowledge-system detail, and the new five-capability planning lens; this ADR and the other owning module ADRs are the sole architectural authority. The lens may organize cross-module review but cannot create, override, or downgrade a decision; implementation still requires an in-place amendment to each owning module ADR. This supersedes v11's delegated "Governing SSOT" wording without changing the locked operator mission.
   - v24 2026-07-13: **§8 operational authority corrected to existing build-owned sources.** The nonexistent `.kiro/skills/hermes/SKILL.md` pointer is removed; engine pin/install truth is `shell/agent_installer.rs`, runtime ACP behavior is `shell/acp_client.rs`, and release evidence is `scripts/probes/hermes-acp-probe.mjs`. No runtime architecture change.
   - v23 2026-07-13: **Retired Pi-era §5-§7 governance is made explicitly non-binding (no new architecture).** Their prose remains as provenance, but headings/checklists now say retired and use `[~]`; live runtime verification is Hermes ACP plus the current §8/§9 model. Removes deleted `ctrl-pi-bridge`/Pi RPC work from accepted release debt and pairs ADR-002 v63.
@@ -628,6 +629,12 @@ shell") — every advantage lands under the approachable skin, drill-down option
 Empirical basis: hermes-acp 0.16.0 `initialize` advertises `{fork,list,resume,
 loadSession, image}` + emits all of `agent_thought_chunk`/`tool_call`/`tool_call_
 update`/`available_commands_update`/`usage_update` (captured 2026-07-04).
+
+#### §8.6.1a Live diagnostics projection (NEW v26, 2026-07-25)
+
+The live ACP owner emits content-free lifecycle metadata into ADR-010 § diagnostics: engine/session opaque identifiers, startup/live/ready state, request phase, outcome, duration, and Gate reachability. This is an observation of the same singleton and session described by §8.3; it is not another client or replay path. Irisy smoke checks the current process/session/transport without sending a model prompt and cannot create, reset, or supervise a session.
+
+The projection never includes prompts, completions, thoughts, tool arguments/results, credentials, subprocess environment, absolute paths, or raw ACP/InternalMsg payloads. A time-boxed enhanced capture may add lifecycle phases only; the content prohibition cannot be disabled.
 
 #### §8.6.2 The terminal FRONTEND advantages + the reference to copy (NEW v14, 2026-07-04)
 

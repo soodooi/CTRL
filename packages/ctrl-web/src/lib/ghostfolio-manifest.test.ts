@@ -1,11 +1,11 @@
-// Validates the ctrl-ghostfolio seed against the Zod SSOT (via @ctrl/mcp-sdk)
-// and guards that it is fully DECLARATIVE — one-click install + silent auth by
-// data, zero manual config (bao 2026-07-01): the generic provision+auth engine
-// runs the declared compose + bootstrap + token-exchange. Design:
-// feature-pack-provision-auth-engine.md.
+// Validates the ctrl-ghostfolio seed against the shared JSON Schema through
+// the SDK Ajv consumer and guards that it is fully DECLARATIVE: one-click
+// install plus silent auth by data, zero manual config (bao 2026-07-01). The
+// generic provision/auth engine runs the declared compose, bootstrap, and
+// token-exchange. Design: feature-pack-provision-auth-engine.md.
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { McpManifestSchema } from '@ctrl/mcp-sdk';
+import { parseManifest } from '@ctrl/mcp-sdk';
 
 // Read the manifest via fs (not a cross-package TS import, which would break
 // ctrl-web's rootDir) — it lives in packages/ctrl-mcps/, outside src/.
@@ -17,10 +17,9 @@ const manifest = JSON.parse(
 ) as Record<string, unknown>;
 
 describe('ctrl-ghostfolio manifest', () => {
-  it('validates against the McpManifest schema', () => {
-    const r = McpManifestSchema.safeParse(manifest);
-    const issues = r.success ? '' : JSON.stringify(r.error.issues);
-    expect(r.success, issues).toBe(true);
+  it('validates against the shared manifest schema', () => {
+    const result = parseManifest(manifest);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   });
 
   it('offers BOTH one-click Set up AND connect-existing (dual path)', () => {

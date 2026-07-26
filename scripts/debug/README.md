@@ -14,6 +14,11 @@ gate token is read from `~/.ctrl/state/gate-token`.
   and asserts a correct return. Exit 0 = all green (DEGRADE = a correct
   setup-needed reply). `python3 scripts/debug/capabilities.py`
 
+- **`diagnostics_smoke.py`** — reads metadata-only status, smoke, and bounded
+  trace summaries for Irisy, Coding, and Notes through the authorized
+  `diagnostics` Gate intent. It never starts capture or an observed owner.
+  `python3 scripts/debug/diagnostics_smoke.py`
+
 Review-gate E2E (brain write → pause → external approve/deny) uses the dev-only
 debug endpoints `GET /debug/review/pending` + `POST /debug/review/resolve`
 (kernel `mcp_server.rs`, on in `debug_assertions` builds).

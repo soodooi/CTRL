@@ -2,9 +2,9 @@
 adr_id: 010
 module: communication
 title: CTRL communication architecture — 统一窄腰 (§14 契约 + :17873 治理 + MCP 插件协议) over 多元传输
-version: 10
+version: 11
 status: accepted
-last_updated: 2026-07-24
+last_updated: 2026-07-25
 deciders: [bao, zeus]
 sections:
   - { id: positioning,       source: new-2026-06-22, note: "定位:CTRL = 普通用户的通用平台,不是 Claude Code 壳。协议服务平台/能力市场,coding 只是一类能力。" }
@@ -18,7 +18,9 @@ sections:
   - { id: internal-external, source: new-2026-06-22, amended: v5-2026-06-23, note: "内部自研轻量(Tauri/actor/CBOR)/ 外部拥抱标准(MCP/ACP/A2A/AG-UI)。v5 调研修正:二进制流帧走 Channels 原生,protobuf 仅 scope 跨设备腿;单一 wire 横跨本机+跨设备=未验证赌注。" }
   - { id: future,            source: new-2026-06-22, note: "WASM 插件 / A2A peer / AG-UI 对齐 / Beelay·Keyhive 均叠加在窄腰上,不替代。" }
   - { id: endpoint-spec,     source: new-2026-06-24-v6, amended: v10-2026-07-24, note: "端点 spec = 从运行真相生成的机器可读契约:工具=MCP tools/list JSON Schema;§14=describe schema;本机 command/event=Rust typed schemas + Tauri IPC/Channels/WS binding registry;跨设备=protobuf。AsyncAPI 于 v10 退役,不再作为 runtime 或 artifact,避免第二份 schema/binding 真相。catalog 从 artifacts 生成,不爬源。" }
+  - { id: diagnostics,       source: new-2026-07-25-v11, note: "Irisy/Coding/Notes 共用一个 Rust-owned 诊断组合层；typed Tauri 是第一方控制面，:17873 仅投影授权的只读 status/smoke/trace；元数据最小化、递归脱敏、内存限时留存、无默认磁盘或云导出。" }
 changelog:
+  - v11 2026-07-25: **NEW § diagnostics — Irisy/Coding/Notes 统一诊断契约（bao 批准）.** 一个 Rust-owned diagnostics composer 只观察既有 ACP、SubprocessActor、vault watcher/index 和 gate audit owner，不启动第二个 agent/process/watcher/index。第一方通过 typed Tauri 使用 status/smoke/trace/capture/export-preview；`:17873` 只向授权 caller 投影只读 status/smoke/trace。健康模型固定为 startup + live + ready + `ok|degraded|failed`；默认只留 metadata breadcrumb，每模块 200 条且最长 15 分钟；增强 capture 最长 5 分钟且不能解除内容禁令。递归 redaction 在进入内存或导出前执行；token/Authorization/env/raw prompt-completion-thought/tool args-results/PTY I/O/note body/绝对路径/InternalMsg 永不暴露。默认不写磁盘、不上传云；本地导出必须先 preview 后由用户显式保存。trace/session/correlation id 只关联 live/recent 观测，不提供执行回放。
   - v10 2026-07-24: **§ endpoint-spec amend — AsyncAPI 退役，端点 spec 收敛为运行真相的生成物（bao 确认）.** 八条缝及其实际 transport 不变：工具/插件继续 MCP，实时流继续 Tauri Channels + authenticated WS，跨设备腿继续 protobuf。流端点不再维护 AsyncAPI 这一第二套描述层；改由 Rust typed command/external-event schemas 生成 JSON Schema/TS types，并由 transport adapter registry 生成版本化 `stream-bindings`（endpoint、Channel/WS binding、auth、protocol version、degradation）。完整 artifact 集 = MCP `tools/list` dump + §14 `describe` schema + command/event schemas + stream binding registry + 仅缝⑧ protobuf。catalog 只消费这些生成物，不爬 Rust 源码。此 amendment 只改变 endpoint-spec 的描述/物化方式；不改 §14 三动词、`:17873` gate、两信任域、八缝 transport、五 primitives 或 executable UI 边界。
   - v9 2026-06-26: **§ trust-domains amend — 第二个受控 domain `websearch`(bao「做 web search 受控工具」钦定).** 兑现 v8 预告的 web search follow-up,同 v8 market 思路:不开 `net`,加受控工具。gate 新增 `web_search(query)`(`kernel/mcp_server.rs`):只调固定 search 后端 —— 有 Tavily key(keychain account `tavily`,BYOK)走 Tavily 全网,无 key 自动降级到免 key Wikipedia search API(百科类、可靠),装了就能用、配 key 升级;reqwest query builder 编码 query 不能逃逸 URL,不能 POST 用户数据到任意处。`visibility.rs` 新 `websearch` domain(exact-match `web_search`,故未来 raw `web_fetch` 不会继承)进 `FIRST_PARTY_DOMAINS`,`net` 保持关。capability brief 登记 web_search。真机验证(caller=hermes 经 gate):web_search 可见、http 不可见、免 key Wikipedia 路径返回真实结果(Claude/Anthropic title+url+snippet)、note 提示配 Tavily 升级。免 key 通用源(DuckDuckGo)实测被 block 故不用。NOT 开 net;NOT 改三动词集;收敛不推倒。
   - v8 2026-06-26: **§ trust-domains amend — 受控 `market` domain 进 first-party 默认集 + 修 gate caller bug(bao「受控 market 工具」钦定).** 需求:Irisy 缺数据来源(选股/盯盘/每日复盘),要它能取实时行情。端到端验证(经 gate MCP 协议以 caller=hermes 实探)暴露两个事实:(1) **bug** —— `acp_client::build_mcp_servers` 连 gate 只发 Authorization、**没 stamp `x-ctrl-caller`** → gate normalize 成 `external` → minimal scope → Irisy 只见 2 工具(kernel_status/vault_root_path),连 vault.* 都够不着(而注释承诺 FULL toolset)。修:stamp `x-ctrl-caller: hermes` → first-party scope(57 工具)。(2) **net 仍是头号外泄面** —— v5/v7 已把 `net`(raw http_get/post)排除在 first-party 默认外(vault-read+net-write 可外泄 vault),不动。**方案 = 不开 net,加受控工具**:gate 新增 `market_quote(symbols)` / `market_screen(day_gainers|day_losers|most_actives)`(`kernel/mcp_server.rs`),只 GET 固定 Yahoo Finance 端点(浏览器 UA、免 key)、白名单 screen id、sanitize 每个 ticker,**不能访问任意 URL / 不能 POST** → 无 exfil 风险,故 `visibility.rs` 新 `market` domain 安全置于 `FIRST_PARTY_DOMAINS`(`net` 保持关)。Irisy 从此能选股/盯盘/复盘而不打开外泄面;capability brief 指向这两个工具,`turn_needs_agent` 路由 stock/watchlist/daily-review 意图(英文 + 中文 code-point)走 agent 路径。真机验证(caller=hermes 经 gate):market 工具可见、http 工具不可见、真实行情返回(AAPL/茅台/标普)、注入 screen 被拒。残留:hermes LLM 是否照 brief 主动调 market_* 依赖 LLM 行为,待 app 内实测;web search 作同样受控工具(BYOK)后续。NOT 改三动词集;NOT 开 net;收敛不推倒。
@@ -174,6 +176,16 @@ gate 只守**跨域**,不守全部 —— 这是 v2 没切清的边界(把「所
 6. **版本协商**：沿用 §14.10 `protocol_version`；gate/adapter 按版本路由或诚实降级，不以无版本 envelope 静默兼容。
 
 > 完整协议 = §14 语义契约 + 八缝实际 transport + `:17873` 治理门 + 从运行真相生成的端点 artifacts。v10 只替换 endpoint-spec 的描述/物化方式，不改变八缝传输选择。
+
+### § diagnostics — one local observer, no second runtime (v11)
+
+One Rust-owned diagnostics composer aggregates the live owners for `irisy | coding | notes`. It exposes typed status, a one-shot non-mutating smoke, and recent correlated event summaries. It observes ACP, SubprocessActor/CodeSpace, vault watcher/index, and Gate audit boundaries; it never starts, resets, supervises, replays, or replaces them. The health contract is `startup: idle|starting|ready|failed`, `live`, `ready`, and aggregate `health: ok|degraded|failed`, so starting, alive-but-not-ready, and degraded remain distinguishable.
+
+First-party app code uses typed Tauri commands for status/smoke/trace plus explicit capture start/stop and export preview. `:17873` projects only authorized read-only `diagnostics_status`, `diagnostics_smoke`, and `diagnostics_trace`; capture and export controls are not agent tools. Trace vocabulary is `trace_id`, optional `session_id`, and optional `correlation_id` over content-free event summaries. `live` means current owner state, `recent` means the in-memory bounded timeline, and export means a user-requested redacted local copy; v1 provides no execution replay.
+
+Default recording is metadata-only breadcrumbs, held in memory for at most 15 minutes and 200 events per module. Enhanced capture requires an explicit user action, expires after at most five minutes, and only increases lifecycle-event granularity. Recursive minimization/redaction runs before any event enters memory or an export preview. Tokens, Authorization/cookies/keychain values, subprocess environment, raw prompts/completions/thoughts, raw tool arguments/results, PTY input/output, note bodies, absolute paths/usernames, and `InternalMsg` or raw kernel Event payloads are forbidden in every mode.
+
+Diagnostics writes no telemetry file and performs no cloud export by default. An export must first show the redacted preview and then be explicitly saved to a user-selected local destination. Gate authorization, caller/intent visibility, and audit remain the existing `:17873` governance path; diagnostics adds no bypass and no new execution authority.
 
 ### § future — 叠加档(不替代窄腰)
 WASM Component Model/Extism(高频·强沙箱不可信插件)· A2A Agent Card(CTRL 当自治 peer agent,对应 share-and-be-shared)· AG-UI 完整采用(若开放第三方 agent 入前端)· **Beelay/Keyhive**(Automerge 原生 E2EE+capability sync,取代手搓 Olm)。均叠加在 MCP/§14 窄腰上。

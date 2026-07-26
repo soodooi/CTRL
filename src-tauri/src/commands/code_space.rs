@@ -22,7 +22,7 @@ use crate::kernel::subprocess_channel_adapter::{forward_subprocess_outbox, EnvLi
 use crate::shell::kernel_supervisor::KernelHandle;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tauri::State;
 use tokio::sync::{mpsc, Mutex};
 
@@ -51,14 +51,71 @@ pub(crate) struct EnvEntry {
 /// On `cs_kill` we remove the entry; the actor's mailbox closes, its
 /// on_shutdown runs (closes PTY, kills child), and the forwarder task
 /// exits naturally.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct CodeSpaceRegistry {
     inner: Arc<Mutex<HashMap<String, EnvEntry>>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CodeSpaceDiagnosticsSnapshot {
+    pub owner_busy: bool,
+    pub total_processes: usize,
+    pub running_processes: usize,
+    pub stopped_processes: usize,
+    pub crashed_processes: usize,
 }
 
 impl CodeSpaceRegistry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Process-wide owner handle shared by Tauri commands and diagnostics.
+    /// Clones retain the same registry; diagnostics never creates a second
+    /// process owner. (ADR-002 substrate § diagnostics-projection v72)
+    pub fn shared() -> Self {
+        static REGISTRY: OnceLock<CodeSpaceRegistry> = OnceLock::new();
+        REGISTRY.get_or_init(Self::new).clone()
+    }
+
+    /// Read owner lifecycle state without waiting for registry or process locks.
+    /// Commands, PTY mailboxes, cwd, environment, and output never cross this
+    /// projection. (ADR-002 substrate § diagnostics-projection v72)
+    pub fn diagnostics_snapshot(&self) -> CodeSpaceDiagnosticsSnapshot {
+        let Ok(guard) = self.inner.try_lock() else {
+            return CodeSpaceDiagnosticsSnapshot {
+                owner_busy: true,
+                total_processes: 0,
+                running_processes: 0,
+                stopped_processes: 0,
+                crashed_processes: 0,
+            };
+        };
+        let statuses: Vec<_> = guard
+            .values()
+            .map(|entry| Arc::clone(&entry.status))
+            .collect();
+        drop(guard);
+
+        let mut snapshot = CodeSpaceDiagnosticsSnapshot {
+            owner_busy: false,
+            total_processes: statuses.len(),
+            running_processes: 0,
+            stopped_processes: 0,
+            crashed_processes: 0,
+        };
+        for status in statuses {
+            let Ok(status) = status.try_lock() else {
+                snapshot.owner_busy = true;
+                continue;
+            };
+            match &*status {
+                EnvLifeStatus::Running => snapshot.running_processes += 1,
+                EnvLifeStatus::Stopped { .. } => snapshot.stopped_processes += 1,
+                EnvLifeStatus::Crashed { .. } => snapshot.crashed_processes += 1,
+            }
+        }
+        snapshot
     }
 }
 
@@ -198,6 +255,10 @@ pub async fn cs_spawn(
         );
     }
 
+    // Publish content-free lifecycle metadata to the shared diagnostics
+    // composer; the registry remains the sole process owner.
+    // (ADR-002 substrate § diagnostics-projection v72)
+    crate::kernel::diagnostics::coding_spawned(&stream_id);
     tracing::info!(stream_id = %stream_id, command = %args.command, "cs_spawn ok");
     Ok(SpawnReply { stream_id })
 }
@@ -292,6 +353,8 @@ pub async fn cs_kill(
     if guard.remove(&args.stream_id).is_none() {
         return Err(format!("unknown stream_id: {}", args.stream_id));
     }
+    crate::kernel::diagnostics::coding_activity(&args.stream_id, "kill");
+    crate::kernel::diagnostics::coding_finished(&args.stream_id, "stopped", None);
     tracing::info!(stream_id = %args.stream_id, "cs_kill ok");
     Ok(())
 }
@@ -347,6 +410,12 @@ async fn post_op(
         .clone();
     drop(guard); // release lock before the await on send
 
+    let diagnostic_phase = match kind {
+        OpKind::SubprocessStdin => Some("input"),
+        OpKind::SubprocessSignal => Some("signal"),
+        OpKind::SubprocessResize => Some("resize"),
+        _ => None,
+    };
     let op = Op {
         kind,
         ts_ms: now_ms(),
@@ -357,6 +426,11 @@ async fn post_op(
         .send(Event::Op(op))
         .await
         .map_err(|e| format!("mailbox send failed: {e}"))?;
+    if let Some(phase) = diagnostic_phase {
+        // Explicit capture adds control lifecycle granularity without retaining
+        // payloads. (ADR-002 substrate § diagnostics-projection v72)
+        crate::kernel::diagnostics::coding_activity(stream_id, phase);
+    }
     Ok(())
 }
 
@@ -371,6 +445,26 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn cloned_registry_snapshot_reads_the_same_owner_state() {
+        let registry = CodeSpaceRegistry::new();
+        let observer = registry.clone();
+        let (mailbox, _receiver) = mpsc::channel(1);
+        registry.inner.lock().await.insert(
+            "diagnostics-test".to_string(),
+            EnvEntry {
+                mailbox,
+                command: "test".to_string(),
+                spawned_at_ms: 0,
+                status: Arc::new(Mutex::new(EnvLifeStatus::Running)),
+            },
+        );
+        let snapshot = observer.diagnostics_snapshot();
+        assert!(!snapshot.owner_busy);
+        assert_eq!(snapshot.total_processes, 1);
+        assert_eq!(snapshot.running_processes, 1);
+    }
 
     #[test]
     fn now_iso_epoch_zero() {

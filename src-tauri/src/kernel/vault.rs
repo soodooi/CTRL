@@ -47,6 +47,17 @@ fn try_global_index() -> Option<&'static vault_index::VaultIndex> {
         .as_ref()
 }
 
+/// Observe only an already-initialized index. `Ok(None)` means no owner has
+/// opened it yet; this function never creates the database or its directories.
+/// (ADR-002 substrate § diagnostics-projection v72)
+pub fn existing_index_count() -> Result<Option<usize>, String> {
+    match GLOBAL_INDEX.get() {
+        None => Ok(None),
+        Some(None) => Err("vault index owner is unavailable".to_string()),
+        Some(Some(index)) => index.count().map(Some).map_err(|error| error.to_string()),
+    }
+}
+
 /// Default vault path: `$HOME/Documents/CTRL`. Plain-text philosophy + invariant
 /// #2 (vault = sibling structure visible to Finder / vim / VMark / Obsidian
 /// without dotfile burying). Users may override via `~/.ctrl/config.toml`'s

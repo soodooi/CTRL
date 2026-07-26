@@ -2,9 +2,9 @@
 adr_id: 003
 module: frontend
 title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 25
+version: 26
 status: accepted
-last_updated: 2026-07-22
+last_updated: 2026-07-25
 deciders: [bao, zeus, daedalus]
 sections:
   - { id: pwa,           source: orig-002 }
@@ -13,7 +13,9 @@ sections:
   - { id: shell-4col,    source: new-2026-06-01 }
   - { id: agent-routes,  source: H-2026-06-09-002 校准 }
   - { id: macos-shell,   source: bao-2026-07-22-minimal-regular-nspanel (amends v24 Accessory shell) }
+  - { id: diagnostics-surface, source: new-2026-07-25-v26, note: "Developer-facing local diagnostics client for Irisy/Coding/Notes; typed Tauri only for capture/export controls, no duplicate runtime or raw log console." }
 changelog:
+  - v26 2026-07-25: **NEW § diagnostics-surface — minimal local developer harness.** The PWA may render one module selector plus status, non-mutating smoke results, and a bounded correlated timeline from ADR-010 §diagnostics. Capture controls are explicit and time-boxed; export first renders a redacted preview and only then allows the user to save locally. The surface is not a raw log viewer, does not expose content, and never starts or supervises ACP/PTY/watcher/index work.
   - v25 2026-07-22: **§1.1 scope correction — Regular macOS app + full-screen NSPanel.** bao accepted the smaller boundary after reviewing two days of launcher work: CTRL keeps its normal Dock, Command-Tab, and application menu recovery paths; only the Ctrl-summoned launcher surface is converted to an input-capable `NSPanel` with `CanJoinAllSpaces + FullScreenAuxiliary`. The process no longer sets Accessory activation policy and `LSUIElement` is removed. The tray and in-window Hide control remain conveniences, not mandatory recovery infrastructure. Daily `tauri:build` explicitly skips code signing; stable identity enforcement belongs only to the release/update path governed by ADR-004. This retires v24's no-Dock Accessory behavior without changing the one-app/one-kernel boundary.
   - v24 2026-07-20: **§1.1 NEW — macOS fixed Accessory shell.** bao accepted a single installed `CTRL.app` with no Dock or Command-Tab presence: `LSUIElement=true` plus a fixed `NSApplicationActivationPolicyAccessory`, never runtime policy switching. The lone-Ctrl launcher is an input-capable `NSPanel` with `CanJoinAllSpaces + FullScreenAuxiliary`; the menu-bar icon is the recovery surface (`Open CTRL`, `Open Config`, `Reload PWA`, `Quit`). Spotlight/Application relaunch reveals the existing singleton. This preserves one PWA, one kernel, and one installer; a separate helper app is explicitly deferred unless future workspace usability proves Dock/Command-Tab indispensable.
   - v23 2026-07-13: **§2 is explicitly historical/non-binding.** Its Pi-era single-entry navigation is retained only as provenance; the current frontend authority is §8.5 Ambient/Irisy/Hermes navigation plus §8.6's role model. No runtime or layout change.
@@ -604,6 +606,12 @@ Locks:
 ## Dependencies
 
 `@tiptap/react`, `@tiptap/starter-kit`, `@tiptap/pm`, `@uiw/react-codemirror`, `@codemirror/{lang-json, lang-yaml, lang-html, lang-markdown, lang-css, legacy-modes, state, view}`, `mermaid`, `@tanstack/react-table`. All in lazy chunks per content-type. VMark is NOT a dependency.
+
+## §9 Diagnostics surface (NEW v26, 2026-07-25)
+
+The developer-facing diagnostics harness is one local PWA surface over ADR-010 § diagnostics. It selects `irisy | coding | notes` and renders the typed status model, non-mutating smoke checks, and a bounded correlated event timeline. Capture start/stop is explicit and capped at five minutes; it increases lifecycle-event granularity but never unlocks raw content. Export first renders the recursively redacted JSON preview, then requires an explicit user-selected local save action. There is no automatic disk persistence or network upload.
+
+This is not a raw log console and not a runtime controller. It cannot send an Irisy prompt, spawn or write to a PTY, rebuild Notes, or create another watcher/index. First-party capture/export controls remain typed Tauri commands; agents receive only the authorized read-only Gate projection.
 
 ## Acceptance
 
