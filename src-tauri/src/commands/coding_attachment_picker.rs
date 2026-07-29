@@ -18,23 +18,28 @@ pub struct CodingAttachmentSelection {
 }
 
 #[cfg(target_os = "macos")]
-fn pick_paths() -> Result<CodingAttachmentSelection, String> {
-    use objc2_app_kit::NSOpenPanel;
-    use objc2_foundation::{MainThreadMarker, NSString};
+type PickerSender = tokio::sync::oneshot::Sender<Result<CodingAttachmentSelection, String>>;
 
-    let marker = MainThreadMarker::new()
-        .ok_or_else(|| "native picker must run on the macOS main thread".to_string())?;
-    let panel = unsafe { NSOpenPanel::openPanel(marker) };
-    unsafe {
-        panel.setCanChooseFiles(true);
-        panel.setCanChooseDirectories(true);
-        panel.setAllowsMultipleSelection(true);
-        panel.setTitle(Some(&NSString::from_str("Add files or folders")));
+#[cfg(target_os = "macos")]
+fn send_once(
+    sender: &std::sync::Arc<std::sync::Mutex<Option<PickerSender>>>,
+    result: Result<CodingAttachmentSelection, String>,
+) {
+    let sender = sender
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+    if let Some(sender) = sender {
+        let _ = sender.send(result);
     }
+}
 
-    // NSModalResponseOK is the documented AppKit response value (1). objc2
-    // exposes NSModalResponse as its Objective-C integer type in this version.
-    if unsafe { panel.runModal() } != 1 {
+#[cfg(target_os = "macos")]
+fn selection_from_panel(
+    panel: &objc2_app_kit::NSOpenPanel,
+    response: objc2_app_kit::NSModalResponse,
+) -> Result<CodingAttachmentSelection, String> {
+    if response != 1 {
         return Ok(CodingAttachmentSelection {
             files: Vec::new(),
             directories: Vec::new(),
@@ -63,12 +68,60 @@ fn pick_paths() -> Result<CodingAttachmentSelection, String> {
     Ok(CodingAttachmentSelection { files, directories })
 }
 
+#[cfg(target_os = "macos")]
+fn present_picker_sheet(
+    app: &tauri::AppHandle,
+    sender: std::sync::Arc<std::sync::Mutex<Option<PickerSender>>>,
+) -> Result<(), String> {
+    use block2::RcBlock;
+    use objc2_app_kit::NSOpenPanel;
+    use objc2_foundation::{MainThreadMarker, NSString};
+
+    crate::shell::WindowController::begin_native_sheet(app).map_err(|error| error.to_string())?;
+    let result = crate::shell::WindowController::with_main_native_window(app, |parent| {
+        let marker = MainThreadMarker::new()
+            .ok_or_else(|| "native picker must run on the macOS main thread".to_string())?;
+        let panel = unsafe { NSOpenPanel::openPanel(marker) };
+        unsafe {
+            panel.setCanChooseFiles(true);
+            panel.setCanChooseDirectories(true);
+            panel.setAllowsMultipleSelection(true);
+            panel.setTitle(Some(&NSString::from_str("Add files or folders")));
+        }
+
+        let panel_for_completion = panel.clone();
+        let sender_for_completion = sender.clone();
+        let completion = RcBlock::new(move |response| {
+            let selection = selection_from_panel(&panel_for_completion, response);
+            let ended = crate::shell::WindowController::end_native_sheet()
+                .map_err(|error| error.to_string());
+            let result = match (selection, ended) {
+                (Ok(selection), Ok(())) => Ok(selection),
+                (Err(error), _) | (_, Err(error)) => Err(error),
+            };
+            send_once(&sender_for_completion, result);
+        });
+        // A sheet stays ordered above its parent NSPanel, so the configured
+        // Status-level launcher remains visible on the active full-screen
+        // Space instead of obscuring or disappearing behind an independent
+        // modal. (ADR-003 frontend §1.1 v29; §8.5 v37)
+        unsafe { panel.beginSheetModalForWindow_completionHandler(parent, &completion) };
+        Ok(())
+    })
+    .map_err(|error| error.to_string())?;
+
+    if result.is_err() {
+        let _ = crate::shell::WindowController::end_native_sheet();
+    }
+    result
+}
+
 /// Open one native picker that accepts files and directories together.
 ///
-/// The Status-level launcher must yield while AppKit runs its modal chooser;
-/// otherwise the nonactivating NSPanel stays above the selection UI and makes
-/// the app look frozen. Both transitions remain in WindowController so the
-/// launcher resumes through its sole NSPanel presentation path. (ADR-003 frontend §1.1 v29; §8.5 v37)
+/// AppKit attaches the picker to CTRL's configured launcher NSPanel instead
+/// of opening an independent modal. The launcher therefore remains visible in
+/// the active full-screen Space while the native sheet owns selection input.
+/// (ADR-003 frontend §1.1 v29; §8.5 v37)
 #[tauri::command]
 pub async fn pick_coding_attachments(
     app: tauri::AppHandle,
@@ -76,22 +129,13 @@ pub async fn pick_coding_attachments(
     #[cfg(target_os = "macos")]
     {
         let (send, receive) = tokio::sync::oneshot::channel();
+        let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(send)));
         let app_for_picker = app.clone();
+        let sender_for_picker = sender.clone();
         app.run_on_main_thread(move || {
-            let result = match crate::shell::WindowController::begin_native_modal(&app_for_picker)
-            {
-                Ok(()) => {
-                    let selection = pick_paths();
-                    let restored = crate::shell::WindowController::end_native_modal(&app_for_picker)
-                        .map_err(|error| error.to_string());
-                    match (selection, restored) {
-                        (Ok(selection), Ok(())) => Ok(selection),
-                        (Err(error), _) | (_, Err(error)) => Err(error),
-                    }
-                }
-                Err(error) => Err(error.to_string()),
-            };
-            let _ = send.send(result);
+            if let Err(error) = present_picker_sheet(&app_for_picker, sender_for_picker.clone()) {
+                send_once(&sender_for_picker, Err(error));
+            }
         })
         .map_err(|error| format!("cannot schedule native picker: {error}"))?;
         receive

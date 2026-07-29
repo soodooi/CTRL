@@ -130,6 +130,15 @@ mod macos_window {
         Some(unsafe { window.isOnActiveSpace() })
     }
 
+    pub(super) fn with_native<T>(
+        window: &WebviewWindow,
+        action: impl FnOnce(&LegacyNSWindow) -> T,
+    ) -> Option<T> {
+        let mtm = LegacyMainThreadMarker::new()?;
+        let window = native(window, &mtm)?;
+        Some(action(window))
+    }
+
     pub(super) fn present(window: &WebviewWindow) {
         let Some(mtm) = LegacyMainThreadMarker::new() else {
             tracing::warn!("WindowController — presentation requested off the macOS main thread");
@@ -167,40 +176,23 @@ mod macos_window {
 
 #[cfg(target_os = "macos")]
 #[derive(Default)]
-struct NativeModalState {
+struct NativeSheetState {
     active: bool,
-    restore_launcher: bool,
 }
 
 #[cfg(target_os = "macos")]
-fn native_modal_state() -> &'static std::sync::Mutex<NativeModalState> {
-    static STATE: std::sync::OnceLock<std::sync::Mutex<NativeModalState>> =
+fn native_sheet_state() -> &'static std::sync::Mutex<NativeSheetState> {
+    static STATE: std::sync::OnceLock<std::sync::Mutex<NativeSheetState>> =
         std::sync::OnceLock::new();
-    STATE.get_or_init(|| std::sync::Mutex::new(NativeModalState::default()))
+    STATE.get_or_init(|| std::sync::Mutex::new(NativeSheetState::default()))
 }
 
 #[cfg(target_os = "macos")]
-fn defer_modal_presentation(visible: bool) -> bool {
-    let mut state = native_modal_state()
+fn native_sheet_active() -> bool {
+    native_sheet_state()
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if !state.active {
-        return false;
-    }
-    state.restore_launcher = visible;
-    true
-}
-
-#[cfg(target_os = "macos")]
-fn toggle_deferred_modal_presentation() -> Option<bool> {
-    let mut state = native_modal_state()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if !state.active {
-        return None;
-    }
-    state.restore_launcher = !state.restore_launcher;
-    Some(state.restore_launcher)
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .active
 }
 
 pub struct WindowController;
@@ -210,50 +202,52 @@ impl WindowController {
         app.get_webview_window("main")
     }
 
-    /// Begin a native modal session that must remain above the Status-level
-    /// launcher. Presentation requests made by nested AppKit event loops are
-    /// deferred as user intent until the session ends. (ADR-003 frontend §1.1 v29; §8.5 v37)
+    /// Mark CTRL's one AppKit picker sheet active without changing the
+    /// launcher visibility. AppKit keeps a sheet above its parent panel, so
+    /// hiding the Status-level launcher is both unnecessary and disruptive.
+    /// (ADR-003 frontend §1.1 v29; §8.5 v37)
     #[cfg(target_os = "macos")]
-    pub fn begin_native_modal(app: &AppHandle) -> Result<()> {
-        {
-            let mut state = native_modal_state()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if state.active {
-                anyhow::bail!("a native modal session is already active");
-            }
-            state.active = true;
-            state.restore_launcher = true;
+    pub fn begin_native_sheet(app: &AppHandle) -> Result<()> {
+        if Self::main(app).is_none() {
+            anyhow::bail!("launcher window is unavailable for native picker sheet");
         }
-        if let Some(window) = Self::main(app) {
-            macos_window::hide(&window);
+        let mut state = native_sheet_state()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.active {
+            anyhow::bail!("a native picker sheet is already active");
         }
-        if let Some(input) = app.get_webview_window("input") {
-            let _ = input.hide();
-        }
+        state.active = true;
         Ok(())
     }
 
-    /// End the native modal session and apply only its most recent requested
-    /// launcher visibility, preventing a modal-time hide from being undone.
+    /// End CTRL's native picker sheet without restoring or hiding the parent;
+    /// AppKit leaves the existing launcher presentation unchanged.
     /// (ADR-003 frontend §1.1 v29; §8.5 v37)
     #[cfg(target_os = "macos")]
-    pub fn end_native_modal(app: &AppHandle) -> Result<()> {
-        let restore_launcher = {
-            let mut state = native_modal_state()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if !state.active {
-                anyhow::bail!("no native modal session is active");
-            }
-            state.active = false;
-            std::mem::take(&mut state.restore_launcher)
-        };
-        if restore_launcher {
-            Self::reveal(app)
-        } else {
-            Self::hide(app)
+    pub fn end_native_sheet() -> Result<()> {
+        let mut state = native_sheet_state()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !state.active {
+            anyhow::bail!("no native picker sheet is active");
         }
+        state.active = false;
+        Ok(())
+    }
+
+    /// Access the launcher’s existing NSPanel as the parent for an AppKit
+    /// sheet without exposing a second macOS presentation path.
+    /// (ADR-003 frontend §1.1 v29; §8.5 v37)
+    #[cfg(target_os = "macos")]
+    pub fn with_main_native_window<T>(
+        app: &AppHandle,
+        action: impl FnOnce(&objc2_app_kit::NSWindow) -> T,
+    ) -> Result<T> {
+        let window =
+            Self::main(app).ok_or_else(|| anyhow::anyhow!("launcher window is unavailable"))?;
+        macos_window::with_native(&window, action)
+            .ok_or_else(|| anyhow::anyhow!("native launcher window is unavailable"))
     }
 
     /// Boot prewarm. The window comes pre-built from tauri.conf.json with
@@ -290,8 +284,8 @@ impl WindowController {
     /// (ADR-003 frontend §1.1 v25)
     pub fn reveal(app: &AppHandle) -> Result<()> {
         #[cfg(target_os = "macos")]
-        if defer_modal_presentation(true) {
-            tracing::info!("WindowController::reveal — deferred during native modal session");
+        if native_sheet_active() {
+            tracing::info!("WindowController::reveal — suppressed during native picker sheet");
             return Ok(());
         }
         let Some(w) = Self::main(app) else {
@@ -332,16 +326,8 @@ impl WindowController {
     /// No destroy, no rebuild, no event-loop queueing.
     pub fn toggle(app: &AppHandle) -> Result<()> {
         #[cfg(target_os = "macos")]
-        if let Some(restore_launcher) = toggle_deferred_modal_presentation() {
-            tracing::info!(
-                restore_launcher,
-                "WindowController::toggle — deferred during native modal session"
-            );
-            if !restore_launcher {
-                if let Some(input) = app.get_webview_window("input") {
-                    let _ = input.hide();
-                }
-            }
+        if native_sheet_active() {
+            tracing::info!("WindowController::toggle — suppressed during native picker sheet");
             return Ok(());
         }
         let Some(w) = Self::main(app) else {
@@ -505,11 +491,8 @@ impl WindowController {
     /// module header for why CTRL uses destroy + rebuild on macOS).
     pub fn hide(app: &AppHandle) -> Result<()> {
         #[cfg(target_os = "macos")]
-        if defer_modal_presentation(false) {
-            tracing::info!("WindowController::hide — deferred during native modal session");
-            if let Some(input) = app.get_webview_window("input") {
-                let _ = input.hide();
-            }
+        if native_sheet_active() {
+            tracing::info!("WindowController::hide — suppressed during native picker sheet");
             return Ok(());
         }
         if let Some(w) = Self::main(app) {

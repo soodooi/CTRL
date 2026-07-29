@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.1060"
+version = "0.1.1062"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -118,7 +118,10 @@ core-graphics = "0.24"
 core-foundation = "0.10"
 objc2 = "0.5"
 objc2-foundation = { version = "0.2", features = ["NSArray", "NSGeometry", "NSThread"] }
-objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder", "NSApplication", "NSPanel", "NSSavePanel", "NSOpenPanel"] }
+objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder", "NSApplication", "NSPanel", "NSSavePanel", "NSOpenPanel", "block2"] }
+# AppKit sheet completion handler for Coding's one native NSOpenPanel.
+# (ADR-003 frontend §1.1 v29; §8.5 v37)
+block2 = "=0.5.1"
 # A standard NSWindow cannot reliably overlay another app's full-screen Space.
 # Convert only the launcher surface to an input-capable NSPanel while keeping
 # the owning macOS app Regular. (ADR-003 frontend §1.1 v25)
