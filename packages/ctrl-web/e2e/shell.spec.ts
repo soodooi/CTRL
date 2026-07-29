@@ -36,11 +36,43 @@ async function readCellWidths(
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    try {
-      window.localStorage.clear();
-    } catch {
-      // Some browsers throw in private mode — irrelevant for our chromium project.
-    }
+    window.localStorage.clear();
+    window.localStorage.setItem('ctrl:legacy-shell', '1');
+    (window as unknown as { __ctrlInvokeMock: (command: string) => unknown }).__ctrlInvokeMock =
+      (command) => {
+        if (command === 'coding_launcher_status') {
+          return {
+            workspaces: [{ id: 'root', label: 'CTRL', path: '/tmp/ctrl', opencodeConfigPresent: true }],
+            terminals: [],
+            editors: [],
+            opencodeAvailable: false,
+            launchCommand: null,
+          };
+        }
+        if (command === 'irisy_init') {
+          return {
+            app_version: 'e2e',
+            kernel_llm: { adapter: 'e2e', ready: true },
+            mcp_bridge: { handshake_written: true, handshake_path: '/tmp/ctrl' },
+            active_brain: 'e2e',
+          };
+        }
+        if (command === 'kernel_status') {
+          return {
+            uptime_ms: 1,
+            first_run_state: 'ready',
+            llm_adapters: [],
+            primary_adapter: null,
+            mcp_servers_installed: 0,
+            vault_files: 0,
+            event_ws_addr: '127.0.0.1:17872',
+            overall: 'ok',
+            warnings: [],
+            active_brain: 'e2e',
+          };
+        }
+        return null;
+      };
   });
 });
 

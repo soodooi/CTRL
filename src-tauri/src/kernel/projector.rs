@@ -530,12 +530,18 @@ OUTSIDE the markers — that content is preserved.\n\
     )
 }
 
-/// Project a PER-PACK scope (ADR-002 §1B.8; the feature-pack = project analog,
-/// §7.5): materialize a pack-scoped `.mcp.json` (the pack's OWN `intent` domain,
-/// NOT the global default) + a pack-context `AGENTS.md` into
-/// `~/Documents/CTRL/<pack_id>/`, so a BYO-CLI driver launched there sees exactly
-/// that pack's capability subset + context. Best-effort; an empty token (gate not
-/// up) is a no-op. Returns whether anything was written.
+/// Project a PER-PACK scope (ADR-002 substrate §1B.8 v74; the feature-pack =
+/// project analog, §7.5): materialize a pack-scoped `.mcp.json` +
+/// `opencode.json` (both carry the pack's OWN `intent` domain, NOT the global
+/// default) + a pack-context `AGENTS.md` into `~/Documents/CTRL/<pack_id>/`,
+/// so a driver launched there sees exactly that pack's capability subset +
+/// context. `opencode.json` is projected too (ADR-001 spine §4 v14) so a pack
+/// scope is a full OpenCode launch target, not just a generic BYO-CLI
+/// `.mcp.json` scope — a feature pack is a project-scope and OpenCode is
+/// CTRL's coding engine, so the two must agree: any pack a driver can be
+/// launched in must actually be launchable with OpenCode. Best-effort; an
+/// empty token (gate not up) is a no-op. Returns whether anything was
+/// written.
 pub fn project_pack(
     pack_id: &str,
     name: &str,
@@ -552,8 +558,12 @@ pub fn project_pack(
     };
     let dir = root.join(pack_id);
     let gate = project_gate_into_dir(&dir, port, token, Some(intent))?;
+    // opencode.json alongside .mcp.json, same pack intent (ADR-002 substrate
+    // §1B.8 v74; ADR-001 spine §4 v14) — a pack scope must be a real OpenCode
+    // launch target, not just a Claude-Code-shaped BYO-CLI scope.
+    let opencode = project_opencode_into_dir(&dir, port, token, Some(intent))?;
     let agents = project_agents_block(&dir, &pack_agents_block(name, kb, intent))?;
-    Ok(gate || agents)
+    Ok(gate || opencode || agents)
 }
 
 /// At boot, project a PER-PACK scope for each installed pack that declares a §14
@@ -736,6 +746,27 @@ mod tests {
             !BYO_CLI_DEFAULT_INTENT.split(',').any(|d| d == "source"),
             "precondition: `source` is not in the global default, so this proves per-pack scope"
         );
+    }
+
+    #[test]
+    fn per_pack_scope_also_gets_opencode_json_with_its_own_intent() {
+        // ADR-002 substrate §1B.8 v74 / ADR-001 spine §4 v14: a pack scope
+        // must be launchable with OpenCode, not just a generic BYO-CLI
+        // .mcp.json scope — project_pack projects BOTH gate shapes, and
+        // opencode.json carries the pack's own intent (not the global
+        // OPENCODE_CODING_INTENT default).
+        let dir = TempDir::new().unwrap();
+        let wrote =
+            project_opencode_into_dir(dir.path(), "17873", FIXTURE_GATE_VALUE, Some("source"))
+                .unwrap();
+        assert!(wrote);
+        let v: Value = serde_json::from_slice(
+            &fs::read(dir.path().join("opencode.json")).unwrap(),
+        )
+        .unwrap();
+        let h = &v["mcp"][KERNEL_SERVER_KEY]["headers"];
+        assert_eq!(h[visibility::INTENT_HEADER], "source");
+        assert_eq!(v["mcp"][KERNEL_SERVER_KEY]["type"], "remote");
     }
 
     #[test]

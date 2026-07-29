@@ -2,9 +2,9 @@
 adr_id: 005
 module: irisy
 title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down + §8 terminal-essence dialog (engine owns loop+context) + §9 mission + knowledge system (数字员工 operator)
-version: 26
+version: 32
 status: accepted
-last_updated: 2026-07-25
+last_updated: 2026-07-27
 deciders: [bao, zeus, hephaestus]
 sections:
   - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004) }
@@ -15,6 +15,12 @@ sections:
   - { id: capability-decomposition,   source: new-2026-06-04 — RETIRED in v5 (no Irisy system prompt — agents own their prompts) }
   - { id: pi-extension-integration,   source: new-2026-06-04 — RETIRED in v5 (Pi exited CTRL hot path, ctrl-pi-bridge deleted) }
 changelog:
+  - v32 2026-07-27: **§8.7 the RIGHT-region Irisy surface gains Kiro-parity Session and Attachments modules, closing v31's "not wired to any Irisy UI" gap for attachments and adding multi-session tabs (bao "Irisy的页面，清修改成跟kiro一样...session，model，attachments等等模块都要"; explicitly out of scope this round: token/credit usage stats and checkpoint/restore).** Before this amendment `IrisyChat.tsx` persisted exactly ONE conversation per mode under a single localStorage key — there was no way to hold multiple parallel conversations the way Kiro's screenshot shows (a row of session tabs across the top). New `lib/irisy-sessions.ts` (zustand + persist, same convention as `workspace-store.ts`) replaces that with a LIST of sessions the user creates/switches/closes/renames, rendered by a new `SessionTabs.tsx` tab bar mounted just below `ChatHeaderControls`; a one-time `migrateLegacySingleSession` folds an upgrading user's existing single conversation into the first new session rather than dropping it. Session tabs auto-title from the first user message (`deriveSessionLabel`, truncated) exactly as Kiro's own tabs do, and stay user-renamable via double-click. Attachments (v31's gap): `IrisyChat`'s composer now shares the SAME native-drop mechanism Coding uses — the underlying Tauri drag-drop hook was extracted to `lib/native-file-drop.ts` (`coding-drop.ts` becomes a thin re-export so `CodingScene.tsx` needed no change) — and the disk-reading/ContentBlock-classification logic (`ChatAttachmentWire`/`read_from_disk`, formerly private to `coding_chat.rs`) moved to a new shared `commands/chat_attachment.rs` both `coding_chat.rs` and `irisy_chat.rs` now call, so `irisy_chat_stream`'s ACP path (only the ACP path — the provider-router fallback has no attachment support) resolves a dropped file into an `Image`/`EmbeddedResource` ContentBlock via the SAME `AcpClient::prompt` capability negotiation Coding already exercises (ADR-002 substrate §1.8.6 v75). Model module: the existing `AgentSelector` (unchanged logic) moves from a row above the composer to a bottom toolbar row below it, matching Kiro's bottom bar position — position/styling only, no new engine-selection behavior. Deliberately NOT built, per bao's explicit scope cut: Kiro's credit/token usage counter (no CTRL-side token metering exists to back it — a real number, not a placeholder, or nothing) and the checkpoint/restore timeline (a distinct, separately-scoped message-snapshot-rollback feature). Coding mode (`forceMode==='coding'`) keeps its dormant legacy single-conversation code path untouched — CodingScene.tsx already owns Coding's own workspace-keyed conversations, so this redesign only touches the Personal ("assistant") surface. Verified: `cargo test --lib` 523/523 (chat_attachment.rs's disk-reading tests relocated + a new `read_all` test); `vitest run` 243/243 (22 new: `irisy-sessions.test.ts` covering create/close-fallback-ordering/rename/label-derivation/legacy-migration); `npm run typecheck` clean. Pairs ADR-003 frontend §8.6 v36 (SessionTabs/AgentSelector placement) and ADR-002 substrate §1.8.6 v75 (the attachment capability this consumes).
+  - v31 2026-07-27: **§8.7 the shared `AcpClient` gains capability-negotiated multi-modal attachments (ADR-002 substrate §1.8.6 v75), available to Irisy's right-region engine but NOT wired to any Irisy UI by this amendment.** This turn only touched the protocol layer both engines drive; Irisy's own drag-drop semantic (attaching data to feed an *installed* feature pack, distinct from Coding's authoring-reference-material use) remains unscoped and unbuilt — recorded here so the capability's availability doesn't get mistaken for it being wired. Pairs ADR-001 spine §4 v18 (the Coding side that DOES consume it this turn).
+  - v30 2026-07-27: **§8.7 left-region Coding drives opencode over ACP instead of an embedded PTY (v29, same session) — the LEFT/RIGHT shape is unchanged, only the mechanism inside LEFT changes (pairs ADR-001 §4 v16, ADR-003 §8.5 v32).** v29's embedded PTY hit a real, reproducible rendering failure on the actual machine (a black terminal area despite a confirmed-alive `opencode` process) — root-caused via a direct capability probe against the installed binary rather than patched again: `opencode acp` speaks genuine Agent Client Protocol, the SAME protocol CTRL already drives Irisy's own engine (hermes/codex/claude-code) with over `shell/acp_client.rs`. Coding now reuses that exact machinery through a second, independent `AcpClient` singleton (`coding_singleton()`) rooted at the selected workspace, so switching Irisy's engine can never evict a live Coding session and vice versa. The LEFT work area renders the engine's structured events (answer/reasoning/tool-call/tool-result) as native React — no PTY, no xterm, no terminal emulation anywhere in the Coding module — while the RIGHT Irisy column remains completely untouched: no fold, no collapse, no narrowing, exactly as v29 already established and v28/v27 before it. The v27/v28/v29 external-launch mechanism is retained as a secondary "Open externally instead" action, not deleted.
+  - v29 2026-07-27: **§8.7 left-region Coding returns to an embedded PTY, restoring product cohesion with every other module's [LEFT work area | RIGHT Irisy] shape (bao: Coding is not exempt from that shape; pairs ADR-001 §4 v15, ADR-003 §8.5 v31).** v27/v28's external-terminal launcher solved a real problem (v18's embedded PTY had unfixed stability bugs) but created a worse one bao flagged directly: the launched OpenCode window floats outside CTRL, visually overlapping the always-on-top launcher panel (§1.1), with Irisy nowhere near it. `CodingTerminal` is now mounted directly in the LEFT work area running `opencode`, with the RIGHT Irisy column completely unchanged — no fold, no collapse, no narrowing; Irisy is always-resident, and this amendment does not touch that. The v27/v28 external-launch mechanism is retained as a secondary "Open externally instead" action, not deleted. The v18 PTY stability bugs are fixed this time (PTY effect keyed by value not array reference; confirm-before-kill on workspace switch) rather than ducked by going external again.
+  - v28 2026-07-26: **§8.7 left-region Coding gains multi-workspace launch — installed feature-pack scopes join the configured root, correcting v27's "not advertised as OpenCode workspaces" (bao "A").** An independent review of the shipped v27 launcher confirmed the prior restriction was a dead end: a feature pack (§7.5's product-grade project unit) had its own projection scope (ADR-002 §1B.8) but no `opencode.json`, so it could never be an OpenCode target even though the launcher's own discovery could be extended to list it. Fix: `projector::project_pack` (ADR-002 §1B.8 v74) now writes `opencode.json` into each pack scope; the left-region launcher discovers + validates the configured root plus every such pack scope as separate, independently selected workspaces (ADR-003 §8.5 v30). CTRL still opens an allowlisted external terminal only after a user click for whichever workspace is selected, then hands process/TUI/error/recovery/agent-loop ownership to the user's OpenCode; nothing about supervision changes. RIGHT-region ACP engine behavior is unchanged. Pairs ADR-001 §4 v14 and ADR-003 §8.5 v30.
+  - v27 2026-07-25: **§8.7 left-region Coding becomes an explicit external-terminal-first launcher (bao approved option A), superseding v18's PTY-first presentation.** The configured CTRL root is the sole OpenCode launch scope and carries `opencode.json`, `AGENTS.md`, the create-feature-pack Skill, and the `:17873` gate. CTRL opens an allowlisted external terminal only after a user click, then hands process/TUI/error/recovery/agent-loop ownership to the user's OpenCode. Feature-pack directories remain generic projected scopes and are not advertised as OpenCode workspaces. The embedded `CodingTerminal` remains a click-to-mount Quick Terminal fallback, never auto-starts, and remounts on cwd changes. RIGHT-region ACP engine behavior is unchanged. Pairs ADR-001 §4 v13 and ADR-003 §8.5 v27.
   - v26 2026-07-25: **§8.6.1 diagnostics projection for the live Irisy engine.** Irisy exposes content-free ACP owner metadata and lifecycle breadcrumbs to the single ADR-010 §diagnostics composer: engine/session identity, startup/live/ready state, phase/outcome/duration, and gate reachability. It never exports prompts, completions, thoughts, tool arguments/results, credentials, absolute paths, or raw ACP/InternalMsg payloads. Smoke checks the existing owner/transport without sending a model prompt; diagnostics cannot create, reset, replay, or supervise a second engine loop.
   - v25 2026-07-23: **§9 authority boundary reconciled with module ADR governance.** `irisy-architecture.md` remains a non-authoritative research/planning map for the accepted mission, knowledge-system detail, and the new five-capability planning lens; this ADR and the other owning module ADRs are the sole architectural authority. The lens may organize cross-module review but cannot create, override, or downgrade a decision; implementation still requires an in-place amendment to each owning module ADR. This supersedes v11's delegated "Governing SSOT" wording without changing the locked operator mission.
   - v24 2026-07-13: **§8 operational authority corrected to existing build-owned sources.** The nonexistent `.kiro/skills/hermes/SKILL.md` pointer is removed; engine pin/install truth is `shell/agent_installer.rs`, runtime ACP behavior is `shell/acp_client.rs`, and release evidence is `scripts/probes/hermes-acp-probe.mjs`. No runtime architecture change.
@@ -706,10 +712,23 @@ engine round-trip (approval modal, auto-open, fork re-hydrate) verify on desktop
 **The workspace is TWO regions** (bao: 「你分开一下,左边区域和右边区域」):
 
 - **LEFT — workspace / output.** Each L1 module's own workspace (notes, tables,
-  KB, coding). The **coding module's** workspace is a real terminal (PTY,
-  `CodingTerminal`) running a **coding agent the USER drives**: Claude Code /
-  Codex / plain shell. CTRL **projects** its arsenal in (gate `.mcp.json` +
-  `AGENTS.md`, §projector) and **does NOT supervise** it.
+  KB, coding). The **coding module's** primary surface (v30) drives the user's
+  own `opencode` over Agent Client Protocol — its native `acp` subcommand,
+  the SAME protocol driving Irisy's own engine on the RIGHT, but through a
+  SECOND, independent `AcpClient` singleton so the two engines can never evict
+  each other. No PTY, no terminal emulation: CTRL renders the engine's
+  structured events (answer text, reasoning, tool calls/results) as native
+  React, over a **selectable workspace**: CTRL spawns the process and relays
+  its ACP events, leaving OpenCode's agent loop, error handling, and recovery
+  to the user-owned CLI. A workspace is selectable when it is the configured
+  root OR a direct child of it carrying `opencode.json` — the configured root
+  plus every installed feature-pack scope (ADR-002 §1B.8 v74 projects
+  `opencode.json` into each pack scope alongside `.mcp.json` + `AGENTS.md`),
+  now also the engine's cwd. Switching workspaces while a session is live
+  shows a confirm step first (restarting the ACP session ends the running
+  one). Opening a separate OS terminal/editor remains available as a
+  secondary, collapsed action. CTRL **projects** its arsenal in (gate config +
+  `AGENTS.md` + Skill) and **does NOT supervise** OpenCode.
 - **RIGHT — Irisy (the assistant).** ONE brand persona (§3 single-brand lock).
   Irisy's **engine is selectable** — Hermes / Codex / Claude Code — and CTRL
   **DRIVES** the chosen one as Irisy's brain (bao: 「Irisy 不是可以选择是 Hermes
@@ -748,10 +767,11 @@ whichever ACP agent backs it.
 **Corrections to §8.6** (§8.7 governs on conflict):
 
 1. §8.6's "every surface routes through ONE engine" was an overclaim. The LEFT
-   coding terminal is NOT the Irisy engine — it's a user-driven coding agent.
-   Only the RIGHT (Irisy) surfaces share the ACP engine. `coding_mode`
-   legitimately bypasses the Irisy engine (`irisy_chat.rs`:
-   `use_agent = !coding_mode`); that is correct, not a bug.
+   Coding launcher and optional Quick Terminal are NOT the Irisy engine — they
+   hand control to a user-driven coding CLI or shell. Only the RIGHT (Irisy)
+   surfaces share the ACP engine. `coding_mode` legitimately bypasses the Irisy
+   engine (`irisy_chat.rs`: `use_agent = !coding_mode`); that is correct, not a
+   bug.
 2. The "BYO = honest hand-off, don't fake a stream" device in `engineTransport`
    was a STOPGAP that conflated left/right. With ACP, picking Codex/Claude as
    Irisy's engine **really drives it** and streams a real answer — no dead-end.

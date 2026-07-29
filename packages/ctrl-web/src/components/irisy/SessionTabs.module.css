@@ -1,0 +1,119 @@
+/* SessionTabs — Kiro-style session tab bar (ADR-003 frontend §8.6 v36).
+   CTRL's own chrome (existing chip/pill/border tokens), not a copy of Kiro's
+   dark IDE panel — same STRUCTURE (tabs + close + "+"), CTRL's skin. */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 0;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l0);
+  flex: none;
+  overflow: hidden;
+}
+
+.tabScroller {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  min-width: 0;
+  flex: 1;
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 8px 8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  flex: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.tab:hover {
+  background: var(--color-bg-l1);
+  color: var(--color-text);
+}
+
+.tabActive {
+  background: var(--color-bg-l1);
+  color: var(--color-text);
+  border-bottom: 2px solid var(--color-primary);
+}
+
+.tabLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.renameInput {
+  width: 120px;
+  padding: 1px 3px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-l0);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.tab:hover .closeBtn,
+.tabActive .closeBtn {
+  opacity: 1;
+}
+
+.closeBtn:hover {
+  background: var(--color-border-soft);
+  color: var(--color-text);
+}
+
+.newTabBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  margin: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.newTabBtn:hover {
+  background: var(--color-bg-l1);
+  color: var(--color-text);
+}

@@ -19,6 +19,8 @@ import { invoke } from '@/lib/bridge';
 import {
   engineTransport,
   type IrisyCustomMessage,
+  // Attachments module (ADR-002 substrate §1.8.6 v75; ADR-005 irisy §8.7 v32).
+  type LLMAttachment,
   type LLMMessage,
 } from '@/lib/llm-transport';
 import { IrisyCustomMessageView } from './IrisyCustomMessage';
@@ -41,7 +43,7 @@ import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
 // the single governed surface).
 // ADR-002 substrate § vault v1 §8.3 (2026-06-01): saveReplyToVault writes via
 // the vaultWrite wrapper (maps content→body for the gate's VaultWriteArgs).
-import { gateInvoke, vaultWrite, listMcps, type McpSummary } from '@/lib/kernel';
+import { gateInvoke, resetEngine, vaultWrite, listMcps, type McpSummary } from '@/lib/kernel';
 import { useSessionStateStore, sessionLabel } from '@/lib/session-state';
 // bao 2026-06-05 Pi-first cleanup: PWA-side XML tool dispatch
 // (`dispatchAllCalls` / `formatResultsAsUserTurn` /
@@ -59,7 +61,7 @@ import {
   runReflection,
   type ReflectTurn,
 } from '@/lib/irisy-reflection';
-// ADR-005 irisy § persona-shell v5 (2026-06-09): humanizePiError shared with
+// ADR-005 irisy § persona v5 (2026-06-09): humanizePiError shared with
 // AmbientHome so both surfaces show the same friendly brain-error line.
 import { cleanReplyText, humanizePiError } from '@/lib/irisy-render-filter';
 // ADR-002 substrate §1 v19 (2026-06-09): Pi RPC rail controls (sessions /
@@ -67,6 +69,22 @@ import { cleanReplyText, humanizePiError } from '@/lib/irisy-render-filter';
 // the local-state affordances (new chat, clear).
 import { ChatHeaderControls } from './ChatHeaderControls';
 import { CapabilityFloor } from './CapabilityFloor';
+// Kiro-style redesign — Session module (ADR-005 irisy §8.7 v32; ADR-003
+// frontend §8.6 v36): multi-session store replaces the single localStorage
+// conversation this component used to own directly.
+import {
+  deriveSessionLabel,
+  ensureActiveIrisySession,
+  migrateLegacySingleSession,
+  useIrisySessionsStore,
+  type IrisySessionMessage,
+} from '@/lib/irisy-sessions';
+// (ADR-005 irisy §8.7 v32; ADR-003 frontend §8.6 v36)
+import { SessionTabs } from './SessionTabs';
+// Kiro-style redesign — Attachments module (ADR-002 substrate §1.8.6 v75;
+// ADR-005 irisy §8.7 v32): the same native-drop mechanism Coding uses,
+// reading dropped files server-side rather than via browser File APIs.
+import { useNativeFileDrop } from '@/lib/native-file-drop';
 import styles from './IrisyChat.module.css';
 
 /** Base storage key. ADR-002 substrate § brain v15 (2026-06-07): Coding L1
@@ -110,28 +128,45 @@ interface IrisyStatus {
   active_brain?: string;
 }
 
-interface TextDisplayMessage {
-  id: string;
-  role: 'user' | 'assistant';
+// TextDisplayMessage / CustomDisplayMessage / DisplayMessage now live in
+// `lib/irisy-sessions.ts` as `IrisyTextMessage` / `IrisyCustomDisplayMessage`
+// / `IrisySessionMessage` — one shape shared by the store and this
+// component instead of a locally-duplicated one (Kiro-style Session module,
+// ADR-005 irisy §8.7 v32). Local aliases kept so the rest of this file's
+// existing `TextDisplayMessage`/`DisplayMessage` references don't all need
+// renaming in this change.
+type TextDisplayMessage = Extract<IrisySessionMessage, { role: 'user' | 'assistant' }>;
+type CustomDisplayMessage = Extract<IrisySessionMessage, { role: 'custom' }>;
+type DisplayMessage = IrisySessionMessage;
+
+// ADR-002 substrate §14 v45 + ADR-005 irisy §8.7 v32.
+interface ImportedSource {
+  path: string;
+  name: string;
   content: string;
-  streaming: boolean;
 }
 
-/** Custom (Pi role=custom) message rendered as an inline chip/banner.
- *  Lives in chat history alongside text messages but is NOT sent back
- *  to Pi as context (filtered out in the history map below), since
- *  Pi already has its own session log entry for it. ADR-005 irisy v5 (custom-message relay; orig ADR-009 retired). */
-interface CustomDisplayMessage {
-  id: string;
-  role: 'custom';
-  custom: IrisyCustomMessage;
-  // streaming kept for shape uniformity with TextDisplayMessage so the
-  // restore-from-localStorage map (`{ ...m, streaming: false }`) stays
-  // a one-liner.
-  streaming: boolean;
+interface ImportSourcesReply {
+  files: ImportedSource[];
+  skipped: string[];
 }
 
-type DisplayMessage = TextDisplayMessage | CustomDisplayMessage;
+function importSlug(value: string): string {
+  return value
+    .replace(/\.[^.]+$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'source';
+}
+
+function importedMarkdown(source: ImportedSource): string {
+  return `# ${source.name}\n\n> Imported from: \`${source.path}\`\n\n---\n\n${source.content.trim()}\n`;
+}
+
+// ADR-002 substrate §14 v45 + ADR-005 irisy §8.7 v32: selected local files
+// become plain Markdown notes, not transient ACP attachments, so the result
+// remains readable and searchable after the conversation ends.
 
 // ADR-002 substrate § provider v9 §3.6 (2026-06-06). RETIRED: PWA-side
 // `<call name="X">{...}</call>` XML parser + ToolCard split-render.
@@ -144,7 +179,7 @@ type DisplayMessage = TextDisplayMessage | CustomDisplayMessage;
 // CustomDisplayMessage render path, not into AssistantBubble.
 // AssistantBubble now renders assistant text as straight markdown.
 
-// ADR-005 irisy § persona-shell v5 (2026-06-09): humanizePiError moved to
+// ADR-005 irisy § persona v5 (2026-06-09): humanizePiError moved to
 // lib/irisy-render-filter.ts (shared with AmbientHome's homepage composer).
 
 interface AssistantBubbleProps {
@@ -263,6 +298,39 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   // the chat reactive to store changes for the no-forceMode case.
   const persistKey = chatStorageKey(forceMode ?? readInitialMode());
 
+  // Kiro-style redesign — Session module (ADR-005 irisy §8.7 v32; ADR-003
+  // frontend §8.6 v36): Coding mode (`forceMode==='coding'`) keeps its own,
+  // separate persistence entirely (this legacy single-conversation key is
+  // untouched for that mode — CodingScene.tsx owns Coding's own workspace-
+  // keyed conversations now anyway, so this component's Coding rendering
+  // path is effectively dormant, but we don't disturb it in this change).
+  // Only the Personal ("assistant") surface gets multi-session tabs.
+  const sessionsEnabled = forceMode !== 'coding';
+  useEffect(() => {
+    if (!sessionsEnabled) return;
+    migrateLegacySingleSession(persistKey);
+    ensureActiveIrisySession();
+    // Runs once per mount — the legacy-key migration and "ensure a session
+    // exists" logic are both idempotent no-ops on every subsequent call, so
+    // this intentionally does not re-run on persistKey changes (forceMode
+    // does not change after mount in practice).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const sessions = useIrisySessionsStore((s) => s.sessions);
+  const activeSessionId = useIrisySessionsStore((s) => s.activeSessionId);
+  const setSessionMessages = useIrisySessionsStore((s) => s.setMessages);
+  const clearSessionMessages = useIrisySessionsStore((s) => s.clearSessionMessages);
+  const renameSession = useIrisySessionsStore((s) => s.renameSession);
+  const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
+
+  // A visible session tab and the ACP engine must move together. Resetting
+  // here makes the next prompt re-prime from the newly active transcript
+  // instead of leaking context from the previous tab. (ADR-005 irisy §8.7 v32)
+  useEffect(() => {
+    if (!sessionsEnabled || !activeSessionId) return;
+    void resetEngine();
+  }, [activeSessionId, sessionsEnabled]);
+
   const [status, setStatus] = useState<IrisyStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [mcps, setMcps] = useState<McpSummary[]>([]);
@@ -271,12 +339,15 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_DEFAULT);
   const [brainState, setBrainState] = useState<BrainState | null>(null);
 
-  // `?fresh=1` from the homepage's "New chat" hand-off clears the
-  // persisted conversation before this component reads it. Folded into
-  // the useState initializer so it runs exactly once (Strict Mode-safe);
-  // a previous version ran the flush in the render body and would wipe
-  // a valid chat on a double render (review P1).
-  const [messages, setMessages] = useState<DisplayMessage[]>(() => {
+  // Coding mode (dormant path, see above) keeps its OWN local `messages`
+  // state exactly as before — restored from the legacy single-conversation
+  // key. The Personal surface instead reads/writes through the session
+  // store (`activeSession.messages`); `setMessages` below is a small shim so
+  // the rest of this file's existing `setMessages(...)` call sites don't all
+  // need rewriting to know which mode they're in.
+  // (ADR-005 irisy §8.7 v32)
+  const [codingModeMessages, setCodingModeMessages] = useState<DisplayMessage[]>(() => {
+    if (sessionsEnabled) return [];
     if (typeof window === 'undefined') return [];
     try {
       const params = new URLSearchParams(window.location.search);
@@ -303,6 +374,23 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       return [];
     }
   });
+  // (ADR-005 irisy §8.7 v32)
+  const messages: DisplayMessage[] = sessionsEnabled
+    ? activeSession?.messages ?? []
+    : codingModeMessages;
+  const setMessages = useCallback(
+    (updater: DisplayMessage[] | ((prev: DisplayMessage[]) => DisplayMessage[])): void => {
+      const apply = (prev: DisplayMessage[]): DisplayMessage[] =>
+        typeof updater === 'function' ? updater(prev) : updater;
+      if (sessionsEnabled) {
+        if (!activeSessionId) return;
+        setSessionMessages(activeSessionId, apply);
+      } else {
+        setCodingModeMessages(apply);
+      }
+    },
+    [sessionsEnabled, activeSessionId, setSessionMessages],
+  );
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sendingStartedAt, setSendingStartedAt] = useState<number | null>(null);
@@ -310,6 +398,8 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const [chatError, setChatError] = useState<{ summary: string; detail: string } | null>(null);
   const [errorExpanded, setErrorExpanded] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // bao 2026-06-04 (3-mode full): session state is global (persisted to
   // localStorage via zustand) so Coding mode can be entered from L1
@@ -344,6 +434,36 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   }, []);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Kiro-style redesign — Attachments module (ADR-002 substrate §1.8.6 v75;
+  // ADR-005 irisy §8.7 v32). Same mechanism Coding's composer uses: files
+  // dropped anywhere in the chat root are read server-side from their
+  // absolute path, never via the browser File API. Cleared once a turn is
+  // sent.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<LLMAttachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const handleFileDrop = useCallback((paths: string[]): void => {
+    setPendingAttachments((prev) => {
+      const existing = new Set(prev.map((a) => a.path));
+      const added = paths
+        .filter((p) => !existing.has(p))
+        .map((p) => ({ path: p, name: p.split(/[\\/]/).pop() ?? p }));
+      return added.length > 0 ? [...prev, ...added] : prev;
+    });
+    setDragOver(false);
+  }, []);
+  const dropHandlers = useMemo(
+    () => ({
+      onDrop: handleFileDrop,
+      onDragOver: () => setDragOver(true),
+      onDragLeave: () => setDragOver(false),
+    }),
+    [handleFileDrop],
+  );
+  useNativeFileDrop(rootRef, dropHandlers);
+  const removeAttachment = useCallback((path: string): void => {
+    setPendingAttachments((prev) => prev.filter((a) => a.path !== path));
+  }, []);
   // bao 2026-06-01: IME composition flag. React's controlled `value` + the
   // onChange round-trip break Chinese / Japanese / Korean IME composition
   // (the popup closes mid-keystroke). Track compositionstart/end and skip
@@ -364,8 +484,13 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   }, [sendingStartedAt]);
 
   // Persist message history on every change so a tab close / reload
-  // doesn't lose the conversation.
+  // doesn't lose the conversation. Only for the dormant Coding-mode path —
+  // the Personal surface's session store already persists itself via
+  // zustand's `persist` middleware (irisy-sessions.ts), so writing here too
+  // would just be a second, redundant write of the same data.
+  // (ADR-005 irisy §8.7 v32)
   useEffect(() => {
+    if (sessionsEnabled) return;
     if (typeof window === 'undefined') return;
     try {
       if (messages.length === 0) {
@@ -379,7 +504,28 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
     } catch {
       // Quota errors are silent — the chat works, persistence just lapses.
     }
-  }, [messages]);
+  }, [messages, sessionsEnabled, persistKey]);
+
+  // (ADR-005 irisy §8.7 v32; ADR-003 frontend §8.6 v36)
+  // Auto-title a fresh "New Session" tab from the first user message —
+  // matches Kiro's own tab-titling-from-the-prompt behavior. Only fires
+  // once per session (the label stays user-editable via double-click
+  // afterward; this effect never overwrites a rename).
+  const autoLabeledSessionsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!sessionsEnabled || !activeSession) return;
+    if (autoLabeledSessionsRef.current.has(activeSession.id)) return;
+    if (activeSession.label !== 'New Session') {
+      autoLabeledSessionsRef.current.add(activeSession.id);
+      return;
+    }
+    const firstUser = activeSession.messages.find(
+      (m): m is TextDisplayMessage => m.role === 'user',
+    );
+    if (!firstUser) return;
+    autoLabeledSessionsRef.current.add(activeSession.id);
+    renameSession(activeSession.id, deriveSessionLabel(firstUser.content));
+  }, [sessionsEnabled, activeSession, renameSession]);
 
   // Pi is THE brain (ADR-002 substrate). irisyChatTransport routes through Pi.
   // When Pi isn't reachable, the chat surface flips to a "being upgraded"
@@ -394,10 +540,15 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const upgradeStub = statusError != null;
   void activeBrain;
 
+  // (ADR-005 irisy §8.7 v32)
   const clearConversation = useCallback((): void => {
-    setMessages([]);
+    if (sessionsEnabled && activeSessionId) {
+      clearSessionMessages(activeSessionId);
+    } else {
+      setMessages([]);
+    }
     setChatError(null);
-  }, []);
+  }, [sessionsEnabled, activeSessionId, clearSessionMessages, setMessages]);
 
   const lastUserMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -410,7 +561,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
   // Per-turn abort handle — drives the Stop button + interrupt-and-redirect so
   // the user is never blocked from sending while a turn streams
-  // (ADR-005 irisy § persona-shell v5 (2026-06-09); memory
+  // (ADR-005 irisy § persona v5 (2026-06-09); memory
   // feedback-irisy-never-block-input-and-be-fast).
   const abortRef = useRef<AbortController | null>(null);
 
@@ -529,7 +680,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         return;
       }
 
-      // Interrupt-and-redirect (ADR-005 irisy § persona-shell v5 (2026-06-09)):
+      // Interrupt-and-redirect (ADR-005 irisy § persona v5 (2026-06-09)):
       // never block a send while a turn streams — abort the in-flight turn and
       // start the new one. The finally guard (abortRef.current === ac) keeps the
       // aborted turn from clobbering the new turn's `sending` state.
@@ -541,15 +692,21 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       setSendingStartedAt(Date.now());
       setChatError(null);
       setErrorExpanded(false);
-      // ADR-005 irisy § persona-shell v5 (2026-06-09): random suffix so
+      // ADR-005 irisy § persona v5 (2026-06-09): random suffix so
       // same-millisecond sends (interrupt-redirect / ?text= prefill / double
       // Enter) don't collide into one id and misroute deltas / dup React keys.
       const turnSuffix = Math.random().toString(36).slice(2, 8);
       const userId = `u-${Date.now()}-${turnSuffix}`;
+      // (ADR-002 substrate §1.8.6 v75; ADR-005 irisy §8.7 v32)
+      const attachmentsForTurn = pendingAttachments;
+      setPendingAttachments([]);
+      const attachmentSuffix = attachmentsForTurn.length > 0
+        ? `\n\n[Attached: ${attachmentsForTurn.map((a) => a.name).join(', ')}]`
+        : '';
       const userMsg: DisplayMessage = {
         id: userId,
         role: 'user',
-        content: trimmed,
+        content: `${trimmed}${attachmentSuffix}`,
         streaming: false,
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -587,7 +744,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       // through `transport.stream`. PWA observes one stream, accepts
       // text + custom-message chunks, fires sleep-time reflection.
       try {
-        // ADR-005 irisy § persona-shell v5 (2026-06-09): share the turn's
+        // ADR-005 irisy § persona v5 (2026-06-09): share the turn's
         // random suffix so the assistant id can't collide with the user id.
         const assistantId = `a-${Date.now()}-${turnSuffix}`;
         setMessages((prev) => [
@@ -602,10 +759,12 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
 
         let assistantText = '';
         let aborted = false;
+        // (ADR-002 substrate §1.8.6 v75; ADR-005 irisy §8.7 v32)
         for await (const chunk of transport.stream(history, {
           mode: wireMode,
           project_dir: projectDir ?? undefined,
           signal: ac.signal,
+          attachments: attachmentsForTurn,
         })) {
           if (chunk.error === 'aborted') {
             // User pressed Stop or sent a new message — end quietly, no banner.
@@ -702,7 +861,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt },
                 ],
-                // ADR-005 irisy § persona-shell v5 §5 (2026-06-09): tie
+                // ADR-005 irisy § persona v5 §5 (2026-06-09): tie
                 // reflection to the turn's AbortController so Stop / a new
                 // turn cancels the sleep-time stream too (was leaking past
                 // abort).
@@ -737,7 +896,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
     // ADR-002 substrate § brain v17 (2026-06-07): currentSkillId removed
     // from session-state along with the retired cap mode; deps shrink.
     [
-      // ADR-005 irisy § persona-shell v5 (2026-06-09): activeBrain feeds
+      // ADR-005 irisy § persona v5 (2026-06-09): activeBrain feeds
       // humanizePiError, so it must be a dep or error copy names a stale
       // provider after a brain switch.
       activeBrain,
@@ -747,7 +906,10 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       longTermMemory,
       messages,
       mode,
+      // (ADR-005 irisy §8.7 v32)
+      pendingAttachments,
       projectDir,
+      setMessages,
       systemBase,
       transport,
       upgradeStub,
@@ -758,7 +920,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
 
-  // ADR-005 irisy § persona-shell v5 (2026-06-09): abort any in-flight turn
+  // ADR-005 irisy § persona v5 (2026-06-09): abort any in-flight turn
   // on unmount so a streaming request doesn't outlive the component (no
   // setState-after-unmount, no orphaned stream).
   useEffect(
@@ -820,6 +982,70 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
     }
   };
 
+  // ADR-002 substrate §14 v45 + ADR-005 irisy §8.7 v32.
+  // This is a local import flow, so it writes Markdown through the existing
+  // governed vault capability instead of sending selected content to the chat engine.
+  const importSelectedSources = useCallback(
+    async (paths: string[] = [], folder: string | null = null): Promise<void> => {
+      setImportMenuOpen(false);
+      setImporting(true);
+      try {
+        const result = await invoke<ImportSourcesReply>('read_import_sources', { paths, folder });
+        if (result.files.length === 0) {
+          const detail = result.skipped[0] ?? 'No readable UTF-8 text files were found.';
+          throw new Error(detail);
+        }
+        const now = new Date();
+        const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
+          now.getDate(),
+        ).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(
+          now.getMinutes(),
+        ).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        for (const [index, source] of result.files.entries()) {
+          const suffix = result.files.length > 1 ? `-${String(index + 1).padStart(2, '0')}` : '';
+          await vaultWrite({
+            path: `irisy/imports/${stamp}-${importSlug(source.name)}${suffix}.md`,
+            content: importedMarkdown(source),
+            frontmatter: {
+              kind: 'irisy-import',
+              imported_at: now.toISOString(),
+              source_name: source.name,
+              source_path: source.path,
+            },
+          });
+        }
+        const skippedText = result.skipped.length > 0 ? `; skipped ${result.skipped.length}` : '';
+        setStatusMessage(`Imported ${result.files.length} file${result.files.length === 1 ? '' : 's'} to vault/irisy/imports${skippedText}`);
+        window.setTimeout(() => setStatusMessage(null), 5000);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        setChatError({ summary: `Import failed: ${message.slice(0, 120)}`, detail: message });
+      } finally {
+        setImporting(false);
+      }
+    },
+    [],
+  );
+  const chooseImportFiles = useCallback(async (): Promise<void> => {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      directory: false,
+      multiple: true,
+      title: 'Choose files to import as Markdown',
+    });
+    if (Array.isArray(selected)) await importSelectedSources(selected, null);
+    else if (typeof selected === 'string') await importSelectedSources([selected], null);
+  }, [importSelectedSources]);
+  const chooseImportFolder = useCallback(async (): Promise<void> => {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: 'Choose a folder to import as Markdown',
+    });
+    if (typeof selected === 'string') await importSelectedSources([], selected);
+  }, [importSelectedSources]);
+
   const saveReplyToVault = useCallback(
     async (assistantId: string, body: string): Promise<void> => {
       const ts = new Date();
@@ -828,9 +1054,9 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       ).padStart(2, '0')}-${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}`;
       const path = `irisy/replies/${stamp}-${assistantId.slice(-6)}.md`;
       try {
-        // ADR-002 substrate § vault v1 §8.3 (2026-06-01): vaultWrite maps
-        // content→body for the gate's VaultWriteArgs (raw gate_invoke with a
-        // `content` field serde-fails on the required `body`).
+        // ADR-002 substrate §14 v45: vaultWrite maps content→body for the
+        // gate's VaultWriteArgs (raw gate_invoke with a `content` field
+        // serde-fails on the required `body`).
         await vaultWrite({
           path,
           content: body,
@@ -887,7 +1113,12 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   }
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} ref={rootRef} data-drag-over={dragOver ? 'true' : undefined}>
+      {dragOver && (
+        <div className={styles.dropOverlay} aria-hidden>
+          Drop to attach
+        </div>
+      )}
       {/* Mode banner — ADR-002 substrate § brain v17 (2026-06-07).
           Cap mode + keycap concept retired; banner now only fires for
           coding mode with a project dir set. Personal mode hides
@@ -911,6 +1142,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         </div>
       )}
       <ChatHeaderControls />
+      {sessionsEnabled && <SessionTabs />}
       <div className={styles.scrollerWrap}>
         {/* Right-rail control stack — vertical, 22x22 each. ADR-002
             substrate §1 v19: the Pi RPC controls (history / compact /
@@ -921,7 +1153,17 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
             type="button"
             className={styles.railButton}
             onClick={() => {
-              setMessages([]);
+              // Kiro-style redesign (ADR-005 irisy §8.7 v32): on the Personal
+              // surface, "new" means a new SESSION TAB (SessionTabs already
+              // renders its own "+" for this, but the rail button stays as a
+              // second entry point — matches most tabbed apps offering both
+              // a keyboard-adjacent control and an explicit tab-bar button).
+              // Coding mode (dormant path) keeps its old in-place clear.
+              if (sessionsEnabled) {
+                useIrisySessionsStore.getState().createSession();
+              } else {
+                setMessages([]);
+              }
               setChatError(null);
               setStatusMessage('Started new chat.');
               window.setTimeout(() => setStatusMessage(null), 2500);
@@ -950,7 +1192,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
               </svg>
             </button>
           )}
-          {/* Stop — abort the in-flight turn (ADR-005 irisy § persona-shell v5
+          {/* Stop — abort the in-flight turn (ADR-005 irisy § persona v5
               (2026-06-09); memory feedback-irisy-never-block-input). Only shown
               while streaming. */}
           {sending && (
@@ -1068,11 +1310,24 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         </button>
       )}
 
-      {/* ADR-005 irisy §8.6 — the shared agent ("shell") selector sits just
-          above the composer, the same control every surface carries. */}
-      <div className={styles.agentRow}>
-        <AgentSelector />
-      </div>
+      {/* (ADR-002 substrate §1.8.6 v75; ADR-005 irisy §8.7 v32) */}
+      {pendingAttachments.length > 0 && (
+        <div className={styles.attachmentChips} role="list" aria-label="Attached files">
+          {pendingAttachments.map((a) => (
+            <span key={a.path} className={styles.attachmentChip} role="listitem">
+              <span className={styles.attachmentChipName}>{a.name}</span>
+              <button
+                type="button"
+                className={styles.attachmentChipRemove}
+                onClick={() => removeAttachment(a.path)}
+                aria-label={`Remove ${a.name}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Composer — input + dialog merged into one column (bao 2026-05-31).
           The previous design hid this textarea off-screen and ran the
@@ -1116,6 +1371,46 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
           rows={1}
           aria-label="Message Irisy"
         />
+      </div>
+
+      {/* Kiro-style redesign — Model module (ADR-005 irisy §8.7 v32): the
+          engine/model picker moves from above the composer to a bottom
+          toolbar row alongside it, matching Kiro's bottom bar. Same
+          `AgentSelector` component/logic — position + styling only change. */}
+      <div className={styles.bottomToolbar}>
+        <div className={styles.composerActions}>
+          <div className={styles.importMenuWrap}>
+            {importMenuOpen && (
+              <div className={styles.importMenu} role="menu" aria-label="Add to Irisy">
+                <button type="button" className={styles.importMenuItem} onClick={() => void chooseImportFiles()} disabled={importing}>
+                  <span>Images and files</span>
+                  <span className={styles.importShortcut}>⌘U</span>
+                </button>
+                <button type="button" className={styles.importMenuItem} onClick={() => void chooseImportFolder()} disabled={importing}>
+                  <span>Folder</span>
+                  <span className={styles.importShortcut}>⌘⇧U</span>
+                </button>
+                <div className={styles.importMenuDivider} />
+                <div className={styles.importMenuDisabled}>Commands</div>
+                <div className={styles.importMenuDisabled}>Context <span className={styles.importShortcut}>@</span></div>
+                <div className={styles.importMenuDisabled}>Shell command <span className={styles.importShortcut}>!</span></div>
+              </div>
+            )}
+            <button
+              type="button"
+              className={styles.addButton}
+              onClick={() => setImportMenuOpen((open) => !open)}
+              disabled={importing}
+              aria-label={importing ? 'Importing files' : 'Add files or folder'}
+              aria-expanded={importMenuOpen}
+              title="Add files or folder"
+            >
+              {importing ? '…' : '+'}
+            </button>
+          </div>
+          {importing && <span className={styles.importStatus}>Importing…</span>}
+        </div>
+        <AgentSelector />
       </div>
     </div>
   );

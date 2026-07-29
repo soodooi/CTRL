@@ -50,6 +50,161 @@ pub struct AcpClient {
     /// the user switches engine the caller resets the singleton so it restarts
     /// with the chosen adapter.
     engine_id: String,
+    /// The connected engine's negotiated multi-modal prompt capabilities, read
+    /// from `initialize`'s response (ADR-002 substrate §1.8.6 v75). Shared by
+    /// every ACP-driven engine (Irisy's selectable engine AND Coding's
+    /// opencode) — `prompt()` consults this before ever emitting an `Image` or
+    /// `EmbeddedResource` ContentBlock, since sending one the engine did not
+    /// advertise is a protocol violation the engine may reject the whole turn
+    /// over.
+    prompt_caps: PromptCapsSnapshot,
+}
+
+/// The connected engine's negotiated multi-modal prompt capabilities
+/// (ADR-002 substrate §1.8.6 v75) — read once from `initialize`'s
+/// `agentCapabilities.promptCapabilities` and held for the life of the
+/// session. `Text` and `ResourceLink` are baseline (every ACP agent MUST
+/// accept them per the spec) so they need no capability bit here.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PromptCapsSnapshot {
+    pub image: bool,
+    pub embedded_context: bool,
+}
+
+fn parse_prompt_caps(init: &Value) -> PromptCapsSnapshot {
+    let caps = init
+        .get("agentCapabilities")
+        .and_then(|c| c.get("promptCapabilities"));
+    PromptCapsSnapshot {
+        image: caps
+            .and_then(|c| c.get("image"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        embedded_context: caps
+            .and_then(|c| c.get("embeddedContext"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    }
+}
+
+/// One dropped/attached file, ready to become an ACP `ContentBlock`
+/// (ADR-002 substrate §1.8.6 v75). The caller (e.g. `coding_chat.rs`) reads
+/// the file and classifies it into ONE of these three shapes; `AcpClient`
+/// decides, per the connected engine's negotiated capabilities, whether it
+/// becomes an inline `Image`/`EmbeddedResource` block or degrades to a text
+/// notice.
+#[derive(Debug, Clone)]
+pub enum AttachmentContent {
+    /// Plain UTF-8 text (e.g. a dropped `.md`/`.txt`/`.json` file) — becomes
+    /// an `EmbeddedResource` `TextResourceContents` when the engine supports
+    /// `embeddedContext`.
+    Text(String),
+    /// Base64-encoded image bytes (e.g. a dropped `.png`/`.jpg`) — becomes an
+    /// `Image` ContentBlock when the engine supports `image`.
+    ImageBase64(String),
+    /// Base64-encoded arbitrary binary (e.g. a dropped `.pdf`) — becomes an
+    /// `EmbeddedResource` `BlobResourceContents` when the engine supports
+    /// `embeddedContext`.
+    BlobBase64(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct Attachment {
+    /// Display name (e.g. the original filename) — surfaced in the
+    /// unsupported-capability text notice and as the embedded resource's URI.
+    pub name: String,
+    pub mime_type: String,
+    pub content: AttachmentContent,
+}
+
+/// Base64-length ceiling for an inlined image (ADR-002 §1.8.6 v75), applied
+/// AFTER any client-side downscale — a hard backstop against an oversized
+/// single stdio JSON-RPC line (§1.8.1 has no multipart framing to absorb an
+/// unbounded attachment). Matches the general chat-attachment industry
+/// ceiling of a few MB raw (base64 inflates size ~4/3) rather than inventing
+/// a bespoke number.
+const MAX_IMAGE_BASE64_CHARS: usize = 8_000_000;
+/// Character ceiling for an inlined text resource; beyond this we truncate
+/// with an explicit notice rather than silently cutting content or letting
+/// the stdio line balloon unbounded.
+const MAX_TEXT_RESOURCE_CHARS: usize = 100_000;
+
+/// Build the ContentBlocks for one turn: the text prompt plus any attachment
+/// that the connected engine's negotiated capabilities actually admit
+/// (ADR-002 substrate §1.8.6 v75). An attachment whose required capability is
+/// NOT advertised degrades to a plain text notice — never a silent drop and
+/// never an attempt to send a block type the engine didn't opt into (which it
+/// may reject the whole turn over).
+fn build_prompt_blocks(text: &str, attachments: &[Attachment], caps: PromptCapsSnapshot) -> Vec<Value> {
+    let mut blocks = vec![json!({ "type": "text", "text": text })];
+    for att in attachments {
+        let unsupported_notice = || {
+            json!({
+                "type": "text",
+                "text": format!(
+                    "[User attached '{}' ({}) but the connected engine does not accept inline attachments of this kind.]",
+                    att.name, att.mime_type
+                )
+            })
+        };
+        let block = match &att.content {
+            AttachmentContent::ImageBase64(base64) => {
+                if !caps.image {
+                    unsupported_notice()
+                } else if base64.len() > MAX_IMAGE_BASE64_CHARS {
+                    json!({
+                        "type": "text",
+                        "text": format!(
+                            "[User attached image '{}' but it exceeds the inline size limit and was not sent.]",
+                            att.name
+                        )
+                    })
+                } else {
+                    json!({ "type": "image", "data": base64, "mimeType": att.mime_type })
+                }
+            }
+            AttachmentContent::Text(text) => {
+                if !caps.embedded_context {
+                    unsupported_notice()
+                } else {
+                    let (body, truncated) = if text.chars().count() > MAX_TEXT_RESOURCE_CHARS {
+                        (text.chars().take(MAX_TEXT_RESOURCE_CHARS).collect::<String>(), true)
+                    } else {
+                        (text.clone(), false)
+                    };
+                    let body = if truncated {
+                        format!("{body}\n\n[...truncated, file exceeds the inline size limit...]")
+                    } else {
+                        body
+                    };
+                    json!({
+                        "type": "resource",
+                        "resource": { "uri": att.name.clone(), "text": body, "mimeType": att.mime_type }
+                    })
+                }
+            }
+            AttachmentContent::BlobBase64(base64) => {
+                if !caps.embedded_context {
+                    unsupported_notice()
+                } else if base64.len() > MAX_IMAGE_BASE64_CHARS {
+                    json!({
+                        "type": "text",
+                        "text": format!(
+                            "[User attached '{}' but it exceeds the inline size limit and was not sent.]",
+                            att.name
+                        )
+                    })
+                } else {
+                    json!({
+                        "type": "resource",
+                        "resource": { "uri": att.name.clone(), "blob": base64, "mimeType": att.mime_type }
+                    })
+                }
+            }
+        };
+        blocks.push(block);
+    }
+    blocks
 }
 
 /// Structured streaming events from the ACP engine (ADR-005 §8.6 transparency).
@@ -275,6 +430,17 @@ pub fn singleton() -> &'static Mutex<Option<AcpClient>> {
     ACP.get_or_init(|| Mutex::new(None))
 }
 
+/// A SECOND, independent persistent client for the Coding module's `opencode`
+/// engine (ADR-001 spine §4 v16). Deliberately separate from `singleton()` — that
+/// one is Irisy's right-region engine (hermes/codex/claude-code) rooted at the
+/// vault; this one is the Coding scene's engine rooted at whichever workspace
+/// the user selected. The two must never share a slot: switching Irisy's
+/// engine must not kill a live Coding session and vice versa.
+pub fn coding_singleton() -> &'static Mutex<Option<AcpClient>> {
+    static ACP: OnceLock<Mutex<Option<AcpClient>>> = OnceLock::new();
+    ACP.get_or_init(|| Mutex::new(None))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AcpDiagnosticsState {
@@ -381,6 +547,11 @@ pub fn shutdown() {
             set_diagnostics_state(AcpDiagnosticsState::Idle);
         }
     }
+    if let Ok(mut g) = coding_singleton().try_lock() {
+        if let Some(mut c) = g.take() {
+            let _ = c.child.start_kill();
+        }
+    }
 }
 
 fn notes_dir() -> Result<PathBuf> {
@@ -422,11 +593,11 @@ fn ensure_hermes_soul() {
     let _ = std::fs::write(&soul, HERMES_SOUL);
 }
 
-/// MCP-bus passthrough (ADR-002 §1.8.2): expose CTRL's kernel MCP server
+/// MCP-bus passthrough (ADR-002 substrate §1.8 v23): expose CTRL's kernel MCP server
 /// (:17873, streamable-http + bearer) to hermes so the 3 faces (MCP / API /
 /// Skills) reach the agent. Gated on the kernel having published its port +
 /// token (set by kernel_supervisor); absent in unit tests -> no passthrough.
-fn build_mcp_servers() -> Vec<Value> {
+fn build_mcp_servers(caller: &str) -> Vec<Value> {
     let token = match std::env::var("CTRL_KERNEL_MCP_TOKEN") {
         Ok(t) if !t.is_empty() => t,
         _ => return Vec::new(),
@@ -436,21 +607,21 @@ fn build_mcp_servers() -> Vec<Value> {
         "type": "http",
         "name": "ctrl",
         "url": format!("http://127.0.0.1:{port}/mcp"),
-        // Stamp the caller so the gate recognizes Irisy as first-party and
-        // projects the broad first-party toolset (vault/smart_table/notes/...).
-        // Without this header the gate normalizes the caller to "external" and
-        // applies the minimal scope (system tools only — 2 tools), so Irisy
-        // could not reach vault.* at all (ADR-010 communication § trust-domains
-        // v3, SC3 — intent-scoped projection; default_for_caller("hermes")).
+        // Stamp the caller so the gate recognizes it as first-party and
+        // projects the matching toolset. Without this header the gate
+        // normalizes the caller to "external" and applies the minimal scope
+        // (system tools only), so the engine could not reach vault.*/coding
+        // tools at all (ADR-010 communication § trust-domains v3, SC3 —
+        // intent-scoped projection; visibility::default_for_caller).
         "headers": [
             { "name": "Authorization", "value": format!("Bearer {token}") },
-            { "name": "x-ctrl-caller", "value": "hermes" }
+            { "name": "x-ctrl-caller", "value": caller }
         ]
     })]
 }
 
 /// Pick an "allow" outcome for an ACP `session/request_permission` request by
-/// scanning the offered `options` (ADR-002 substrate §1.8.2 v23 — single door):
+/// scanning the offered `options` (ADR-002 substrate §1.8 v23 — single door):
 /// prefer `allow_once`, then `allow_always`, then any non-`reject` option;
 /// cancel only when no allow option is offered. Without this the client
 /// cancelled every tool permission, so hermes could never execute a tool call —
@@ -488,12 +659,17 @@ fn select_allow_outcome(req: &Value) -> Value {
     }
 }
 
-/// Build the spawn argv for an Irisy engine (ADR-005 irisy §8.7). All three
-/// engines speak ACP; only the launch command differs. hermes is the bundled
-/// default (uvx, with the Python pin + `--with mcp` the adapter needs); Codex
-/// and Claude Code are driven via their npm-distributed ACP adapters (npx
-/// fetches on first use), which wrap the user's OWN installed CLI — the UI only
-/// offers a BYO engine once `list_byo_drivers` has detected it.
+/// Build the spawn argv for an Irisy engine (ADR-005 irisy §8.7). All engines
+/// speak ACP; only the launch command differs. hermes is the bundled default
+/// (uvx, with the Python pin + `--with mcp` the adapter needs); Codex and
+/// Claude Code are driven via their npm-distributed ACP adapters (npx fetches
+/// on first use), which wrap the user's OWN installed CLI — the UI only offers
+/// a BYO engine once `list_byo_drivers` has detected it. `opencode` (the Coding
+/// module's engine, ADR-001 spine §4 v16) speaks ACP NATIVELY via its own `acp`
+/// subcommand — verified directly against the user's installed binary
+/// (`opencode acp` completes `initialize` -> `session/new` ->
+/// `session/prompt`, streaming `agent_thought_chunk` / `agent_message_chunk`
+/// exactly like hermes/codex/claude-code) — so it needs no wrapper adapter.
 fn engine_argv(engine: &str) -> Result<Vec<String>> {
     use crate::shell::agent_installer::{read_manifest, AgentName, HERMES_PYTHON};
     match engine {
@@ -537,6 +713,9 @@ fn engine_argv(engine: &str) -> Result<Vec<String>> {
             "-y".to_string(),
             "@zed-industries/claude-code-acp".to_string(),
         ]),
+        // ADR-001 spine §4 v16: opencode speaks ACP natively via its own
+        // `acp` subcommand — no wrapper adapter needed.
+        "opencode" => Ok(vec!["opencode".to_string(), "acp".to_string()]),
         other => Err(anyhow!("unknown Irisy engine: {other}")),
     }
 }
@@ -551,6 +730,9 @@ fn resolve_engine_binary(engine: &str) -> Option<PathBuf> {
     let agent = match engine {
         "codex" => AgentName::Codex,
         "claude-code" => AgentName::ClaudeCode,
+        // opencode is always the user's own PATH install (never CTRL-managed —
+        // it is the Coding module's BYO-CLI, ADR-001 §4), so it never has a
+        // ~/.ctrl/agents/<id> dir to check first.
         _ => return None,
     };
     if let Ok(dir) = agent_dir(&agent) {
@@ -572,6 +754,17 @@ impl AcpClient {
     /// into the adapter subprocess env below so Codex / Claude reuse the key the
     /// user already configured in CTRL instead of a second sign-in (§8.8).
     pub async fn start(engine: &str, provider_env: &BTreeMap<String, String>) -> Result<Self> {
+        Self::start_in(engine, provider_env, None).await
+    }
+
+    /// Like `start`, but with an explicit working directory instead of the
+    /// vault root — the Coding module's `opencode` engine runs in whichever
+    /// workspace the user selected (ADR-001 spine §4 v16), not Irisy's vault dir.
+    pub async fn start_in(
+        engine: &str,
+        provider_env: &BTreeMap<String, String>,
+        cwd_override: Option<&std::path::Path>,
+    ) -> Result<Self> {
         let engine = if engine.is_empty() { "hermes" } else { engine };
         set_diagnostics_state(AcpDiagnosticsState::Starting);
         let mut startup_diagnostics = AcpStartupDiagnostics {
@@ -600,7 +793,10 @@ impl AcpClient {
             ensure_hermes_soul();
         }
 
-        let cwd = notes_dir()?;
+        let cwd = match cwd_override {
+            Some(p) => p.to_path_buf(),
+            None => notes_dir()?,
+        };
         let mut cmd = Command::new(&argv[0]);
         cmd.args(&argv[1..]);
         for (k, v) in provider_env {
@@ -666,6 +862,9 @@ impl AcpClient {
             next_id: 0,
             primed: false,
             engine_id: engine.to_string(),
+            // Filled in below once `initialize` responds.
+            // (ADR-002 substrate § Multi-modal prompt attachments v75)
+            prompt_caps: PromptCapsSnapshot::default(),
         };
 
         let mut noop = |_: AcpEvent| {};
@@ -680,6 +879,10 @@ impl AcpClient {
             )
             .await
             .context("ACP initialize")?;
+        // Capture the engine's negotiated multi-modal capabilities
+        // (ADR-002 substrate §1.8.6 v75) — `prompt()` consults this before
+        // ever emitting an Image/EmbeddedResource block.
+        s.prompt_caps = parse_prompt_caps(&init);
 
         // ACP authenticate (ADR-005 §8.8, verified vs codex-acp 1.0.1 2026-06-29):
         // some engines REQUIRE an explicit `authenticate` before `session/new` —
@@ -706,10 +909,18 @@ impl AcpClient {
             }
         }
 
-        // §1.8.2: try with the MCP-bus passthrough; if hermes rejects the
-        // entry (format / transport), retry WITHOUT it so the agent still runs
-        // (worst case = no CTRL tools, never a disabled hermes).
-        let mcp_servers = build_mcp_servers();
+        // §1.8 (ADR-002 substrate §1.8 v23): try with the MCP-bus passthrough;
+        // if hermes rejects the entry (format / transport), retry WITHOUT it
+        // so the agent still runs (worst case = no CTRL tools, never a
+        // disabled hermes).
+        // Caller stamp for gate visibility scoping (ADR-010 § trust-domains v3
+        // SC3): every ACP-driven engine (hermes/codex/claude-code/opencode,
+        // ADR-001 spine §4 v16) gets the SAME "hermes" stamp, granting
+        // `FIRST_PARTY_DOMAINS` — this is a superset of the Coding-specific
+        // `OPENCODE_CODING_INTENT` used by the file-projected
+        // `.mcp.json`/`opencode.json` path (ADR-002 §1B.1), so opencode-over-
+        // ACP needs no new first-party caller id.
+        let mcp_servers = build_mcp_servers("hermes");
         let had_mcp = !mcp_servers.is_empty();
         let cwd_str = cwd.to_string_lossy().to_string();
         let ns = match s
@@ -774,15 +985,27 @@ impl AcpClient {
         &self.engine_id
     }
 
+    /// The connected engine's negotiated multi-modal prompt capabilities
+    /// (ADR-002 substrate §1.8.6 v75) — a caller UI (e.g. CodingScene's
+    /// drag-drop) may use this to decide whether to even offer an attachment
+    /// affordance, though `prompt()` degrades gracefully regardless.
+    pub fn prompt_caps(&self) -> PromptCapsSnapshot {
+        self.prompt_caps
+    }
+
     /// Run one prompt turn; `on_event` receives streamed events as they arrive.
     /// `turns` is the conversation so far as `(role, content)` pairs (user /
     /// assistant, in order). The actual prompt = the last `user` turn; the
     /// earlier turns are used ONLY to re-hydrate a fresh session (§8.4).
-    /// Returns the ACP stopReason.
+    /// `attachments` are files dropped alongside the LATEST user turn only
+    /// (ADR-002 substrate §1.8.6 v75) — never replayed for prior turns, since
+    /// they were already sent (or degraded to a text notice) when originally
+    /// submitted. Returns the ACP stopReason.
     pub async fn prompt(
         &mut self,
         turns: &[(String, String)],
         system_preamble: Option<&str>,
+        attachments: &[Attachment],
         mut on_event: impl FnMut(AcpEvent) + Send,
     ) -> Result<String> {
         let sid = self.session_id.clone();
@@ -831,10 +1054,11 @@ impl AcpClient {
         // (ADR-005 irisy §8.6.1 v26)
         let started = std::time::Instant::now();
         set_diagnostics_state(AcpDiagnosticsState::Busy);
+        let prompt_blocks = build_prompt_blocks(&turn_text, attachments, self.prompt_caps);
         let result = self
             .request(
                 "session/prompt",
-                json!({ "sessionId": sid, "prompt": [{ "type": "text", "text": turn_text }] }),
+                json!({ "sessionId": sid, "prompt": prompt_blocks }),
                 &mut on_event,
             )
             .await;
@@ -956,6 +1180,152 @@ mod tests {
 
     fn perm_req(options: Value) -> Value {
         json!({ "params": { "options": options } })
+    }
+
+    // ADR-001 spine §4 v16: opencode speaks ACP NATIVELY via its own `acp`
+    // subcommand (verified directly against the installed binary), so its
+    // spawn argv is just `opencode acp` — no npx wrapper adapter like
+    // codex/claude-code.
+    #[test]
+    fn opencode_engine_argv_is_native_acp_subcommand() {
+        let argv = engine_argv("opencode").expect("opencode argv");
+        assert_eq!(argv, vec!["opencode".to_string(), "acp".to_string()]);
+    }
+
+    #[test]
+    fn resolve_engine_binary_never_looks_up_opencode() {
+        // opencode is always the user's own PATH install (never a
+        // CTRL-managed ~/.ctrl/agents/<id> dir) — resolve_engine_binary must
+        // return None for it so callers fall through to their own discovery.
+        assert!(resolve_engine_binary("opencode").is_none());
+    }
+
+    // §1.8.6 (ADR-002 substrate v75) — capability negotiation from a real
+    // `initialize` response shape (image/embeddedContext booleans, matching
+    // the ACP `PromptCapabilities` schema).
+    #[test]
+    fn parses_prompt_caps_from_initialize_response() {
+        let init = json!({
+            "agentCapabilities": {
+                "promptCapabilities": { "image": true, "embeddedContext": false }
+            }
+        });
+        let caps = parse_prompt_caps(&init);
+        assert!(caps.image);
+        assert!(!caps.embedded_context);
+    }
+
+    #[test]
+    fn missing_prompt_caps_default_to_unsupported() {
+        // An engine that advertises no promptCapabilities at all (or omits
+        // the field) must default to "supports nothing beyond baseline" —
+        // never silently assume image/embeddedContext support.
+        let caps = parse_prompt_caps(&json!({}));
+        assert!(!caps.image);
+        assert!(!caps.embedded_context);
+    }
+
+    // §1.8.6 — build_prompt_blocks decides ContentBlock shape from negotiated
+    // capabilities, never sends an unsupported block type, and degrades to a
+    // text notice rather than dropping the attachment silently.
+    #[test]
+    fn image_becomes_image_block_when_capability_present() {
+        let att = Attachment {
+            name: "screenshot.png".to_string(),
+            mime_type: "image/png".to_string(),
+            content: AttachmentContent::ImageBase64("Zm9v".to_string()),
+        };
+        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot { image: true, embedded_context: false });
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[1]["type"], "image");
+        assert_eq!(blocks[1]["data"], "Zm9v");
+        assert_eq!(blocks[1]["mimeType"], "image/png");
+    }
+
+    #[test]
+    fn image_degrades_to_text_notice_when_capability_absent() {
+        let att = Attachment {
+            name: "screenshot.png".to_string(),
+            mime_type: "image/png".to_string(),
+            content: AttachmentContent::ImageBase64("Zm9v".to_string()),
+        };
+        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot::default());
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[1]["type"], "text");
+        let notice = blocks[1]["text"].as_str().unwrap();
+        assert!(notice.contains("screenshot.png"));
+        assert!(notice.contains("does not accept"));
+    }
+
+    #[test]
+    fn text_attachment_becomes_embedded_resource_when_capability_present() {
+        let att = Attachment {
+            name: "notes.md".to_string(),
+            mime_type: "text/markdown".to_string(),
+            content: AttachmentContent::Text("# competitor notes".to_string()),
+        };
+        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot { image: false, embedded_context: true });
+        assert_eq!(blocks[1]["type"], "resource");
+        assert_eq!(blocks[1]["resource"]["text"], "# competitor notes");
+        assert_eq!(blocks[1]["resource"]["uri"], "notes.md");
+    }
+
+    #[test]
+    fn text_attachment_degrades_to_notice_when_embedded_context_absent() {
+        let att = Attachment {
+            name: "notes.md".to_string(),
+            mime_type: "text/markdown".to_string(),
+            content: AttachmentContent::Text("# competitor notes".to_string()),
+        };
+        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot::default());
+        assert_eq!(blocks[1]["type"], "text");
+        assert!(blocks[1]["text"].as_str().unwrap().contains("notes.md"));
+    }
+
+    #[test]
+    fn oversized_text_attachment_is_truncated_with_explicit_notice() {
+        let big = "x".repeat(MAX_TEXT_RESOURCE_CHARS + 500);
+        let att = Attachment {
+            name: "huge.txt".to_string(),
+            mime_type: "text/plain".to_string(),
+            content: AttachmentContent::Text(big),
+        };
+        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot { image: false, embedded_context: true });
+        let text = blocks[1]["resource"]["text"].as_str().unwrap();
+        assert!(text.len() < MAX_TEXT_RESOURCE_CHARS + 500);
+        assert!(text.contains("truncated"));
+    }
+
+    #[test]
+    fn oversized_image_is_rejected_with_explicit_notice_not_sent_raw() {
+        let huge_base64 = "A".repeat(MAX_IMAGE_BASE64_CHARS + 10);
+        let att = Attachment {
+            name: "huge.png".to_string(),
+            mime_type: "image/png".to_string(),
+            content: AttachmentContent::ImageBase64(huge_base64),
+        };
+        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot { image: true, embedded_context: false });
+        assert_eq!(blocks[1]["type"], "text");
+        assert!(blocks[1]["text"].as_str().unwrap().contains("exceeds the inline size limit"));
+    }
+
+    #[test]
+    fn no_attachments_yields_only_the_text_block() {
+        let blocks = build_prompt_blocks("hi", &[], PromptCapsSnapshot::default());
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[0]["text"], "hi");
+    }
+
+    // singleton() and coding_singleton() must be genuinely independent slots —
+    // switching Irisy's engine must never evict a live Coding session and
+    // vice versa (ADR-005 irisy §8.7 v30 / ADR-001 spine §4 v16).
+    #[test]
+    fn irisy_and_coding_singletons_are_independent_slots() {
+        assert!(!std::ptr::eq(
+            singleton() as *const _ as *const u8,
+            coding_singleton() as *const _ as *const u8
+        ));
     }
 
     #[test]
@@ -1114,6 +1484,36 @@ mod tests {
         }
     }
 
+    /// Real end-to-end: spawn `opencode acp` via the kernel client (the SAME
+    /// AcpClient::start_in path coding_chat.rs uses), run one streamed prompt
+    /// turn in a temp workspace. Requires `opencode` on PATH + a configured
+    /// model. Verified manually 2026-07-27 against opencode 1.18.5 before this
+    /// test was written (initialize -> session/new -> session/prompt streamed
+    /// agent_thought_chunk then agent_message_chunk then stopReason=end_turn).
+    /// Run: `cargo test opencode_acp_smoke -- --ignored --nocapture`
+    // (ADR-001 spine §4 v16; ADR-003 frontend §8.5 v32; ADR-005 irisy §8.7 v30)
+    #[tokio::test]
+    #[ignore]
+    async fn opencode_acp_smoke() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let env = BTreeMap::new();
+        let mut client = AcpClient::start_in("opencode", &env, Some(dir.path()))
+            .await
+            .expect("start opencode acp");
+        let mut answer = String::new();
+        let turns = vec![("user".to_string(), "Say hello in exactly 3 words.".to_string())];
+        let stop = client
+            .prompt(&turns, None, &[], |e| {
+                if let AcpEvent::Text(t) = e {
+                    answer.push_str(&t)
+                }
+            })
+            .await
+            .expect("prompt turn");
+        println!("\nANSWER: {answer:?}  stopReason={stop}");
+        assert!(!answer.trim().is_empty(), "no streamed text from opencode");
+    }
+
     /// Real end-to-end: spawn hermes-acp via the kernel client, run one
     /// streamed prompt turn. Network + uvx + a configured hermes provider.
     /// Run: `cargo test acp_smoke -- --ignored --nocapture`
@@ -1126,8 +1526,9 @@ mod tests {
             .expect("start hermes-acp");
         let mut answer = String::new();
         let turns = vec![("user".to_string(), "Reply with exactly: ACP OK".to_string())];
+        // No attachments in this smoke (ADR-002 substrate §1.8.6 v75).
         let stop = client
-            .prompt(&turns, None, |e| {
+            .prompt(&turns, None, &[], |e| {
                 if let AcpEvent::Text(t) = e {
                     answer.push_str(&t)
                 }

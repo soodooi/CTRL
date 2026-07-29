@@ -26,6 +26,9 @@ pub mod agents;
 // CTRL's NotesApp is the full native notes surface; Obsidian is a
 // format-compatible neighbor with zero wiring (vault stays plain markdown).
 pub mod chat;
+// Shared dropped-file attachment reader for ACP-driven chat commands
+// (coding_chat.rs + irisy_chat.rs). (ADR-002 substrate §1.8.6 v75)
+pub mod chat_attachment;
 // Adapter for the vendored Tolaria notes frontend (ADR-002 §1.9 v47 F2):
 // serves its exact command names from CTRL's kernel.
 pub mod notes_ui;
@@ -36,6 +39,13 @@ pub mod notes_ui_scan;
 pub mod image;
 pub mod screenshot;
 pub mod code_space;
+// Human-triggered external Coding Launcher Effect. OpenCode remains a
+// user-owned BYO-CLI process; CTRL only opens the projected workspace.
+// (ADR-001 spine §4 v13; ADR-003 frontend §8.5 v27;
+// ADR-005 irisy §8.7 v27)
+pub mod coding_attachment_picker;
+pub mod coding_chat;
+pub mod coding_launcher;
 pub mod config;
 pub mod draft;
 pub mod draft_run;
@@ -104,11 +114,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::pack_registry::fetch_pack_registry,
             // chat — raw streaming LLM via Tauri events (mcp-internal use)
             $crate::commands::chat::chat_stream,
-            // irisy_chat — Irisy persona PWA shell streaming endpoint.
-            // ADR-005 v5: Irisy = persona shell, not brain. Routes to whichever
-            // agent matches the active L1 chip (default hermes via /assistant).
+            // Shared local source reader for Irisy's Markdown import.
+            $crate::commands::chat_attachment::read_import_sources,
+            // One macOS picker for Coding files (ACP attachments) and folders
+            // (explicit OpenCode references). (ADR-003 frontend §8.5 v37)
+            $crate::commands::coding_attachment_picker::pick_coding_attachments,
+            // Irisy chat stream and engine reset (ADR-005 irisy §8.7 v32).
             $crate::commands::irisy_chat::irisy_chat_stream,
-            // Reset the engine session on new-chat / resume / fork (ADR-005 §8.4).
             $crate::commands::irisy_chat::irisy_reset_engine,
             // Irisy conversation history (reads hermes session store) — vault 0013
             $crate::commands::hermes_acp::irisy_session_list,
@@ -253,6 +265,17 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::code_space::cs_resize,
             $crate::commands::code_space::cs_kill,
             $crate::commands::code_space::cs_list,
+            // External-first Coding Launcher (secondary path, ADR-003 §8.5
+            // v32). This is an explicit PWA→shell Effect, not an OpenCode
+            // supervisor or a second projection path.
+            $crate::commands::coding_launcher::coding_launcher_status,
+            $crate::commands::coding_launcher::launch_coding_workspace,
+            // Coding scene's primary surface: opencode driven over ACP
+            // (ADR-001 spine §4 v16), the same AcpClient machinery Irisy's
+            // engine uses, in a separate singleton rooted at the selected
+            // workspace.
+            $crate::commands::coding_chat::coding_chat_stream,
+            $crate::commands::coding_chat::coding_reset_engine,
             // Unified first-party diagnostics controls. Capture/export preview
             // remain Tauri-only; Gate exposes the read-only subset.
             // (ADR-003 frontend §9 v26)

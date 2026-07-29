@@ -1,4 +1,5 @@
 .root {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -682,18 +683,99 @@
 /* Bubble fills + alignment overrides retired 2026-05-31 P0.
    .userBubble + .assistantBubble share the editorial layout above. */
 
-/* Agent ("shell") selector row above the composer — ADR-005 irisy §8.6, the
-   same control every surface carries. */
+/* Agent ("shell") selector row — legacy position, kept unused for the
+   dormant Coding-mode render path's `.agentRow` reference in this file's
+   history; the Personal surface now uses `.bottomToolbar` below
+   (ADR-005 irisy §8.7 v32, Kiro-style Model module repositioning). */
 .agentRow {
   display: flex;
   align-items: center;
   padding: 0 12px 6px;
 }
 
+/* Kiro-style redesign — Model module (ADR-005 irisy §8.7 v32): the
+   engine/model selector moves BELOW the composer into its own toolbar row,
+   matching Kiro's bottom bar (model/mode/autopilot). CTRL's increment: only
+   the engine selector lives here today (mode/autopilot have no CTRL-side
+   semantic yet — not faked as inert controls). */
+.bottomToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+}
+
 .composer {
   padding: 10px 12px 12px;
   border-top: 1px solid var(--color-border-soft);
   background: var(--color-bg-l1);
+}
+
+/* Drag-drop file attachment affordance (ADR-002 substrate §1.8.6 v75;
+   ADR-005 irisy §8.7 v32) — mirrors CodingScene's own drop overlay + chip
+   chrome so the two surfaces read as one visual family. */
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary, var(--color-accent));
+  font-family: var(--font-display, inherit);
+  font-size: 13px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-bg-l1) 85%, transparent);
+  border: 2px dashed var(--color-primary, var(--color-accent));
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.attachmentChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+
+.attachmentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  background: var(--color-bg-l0);
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+.attachmentChipName {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  color: var(--color-text-faint);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.attachmentChipRemove:hover {
+  background: var(--color-border-soft);
+  color: var(--color-text);
 }
 
 /* Transient confirmation pill rendered above the composer when a reply
@@ -810,4 +892,113 @@
   border-radius: 50%;
   background: currentColor;
   animation: thinkingPulse 1.2s infinite ease-in-out;
+}
+
+.composerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.importMenuWrap {
+  position: relative;
+}
+
+.addButton {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 7px;
+  background: var(--color-bg-l2);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.addButton:hover:not(:disabled),
+.addButton[aria-expanded='true'] {
+  color: var(--color-text);
+  background: var(--color-bg-l0);
+  border-color: var(--color-accent);
+}
+
+.addButton:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.importMenu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 9px;
+  background: var(--color-bg-l0);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+.importMenuTitle {
+  padding: 6px 9px 5px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.importMenuItem {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.importMenuItem:hover:not(:disabled) {
+  background: var(--color-bg-l2);
+}
+
+.importMenuItem:disabled {
+  cursor: progress;
+  opacity: 0.5;
+}
+
+.importStatus {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.importShortcut {
+  margin-left: auto;
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.importMenuDivider {
+  height: 1px;
+  margin: 5px 3px;
+  background: var(--color-border-soft);
+}
+
+.importMenuDisabled {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 7px 9px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  opacity: 0.72;
 }

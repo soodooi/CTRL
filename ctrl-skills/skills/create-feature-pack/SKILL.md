@@ -4,7 +4,7 @@ description: >
   Create a governed CTRL feature pack from a user's intent: research and
   confirm the real source, author the correct pack form, validate it, install
   it, and prove it with a real smoke through the :17873 gate.
-version: 1.1.0
+version: 1.2.0
 author: CTRL
 metadata:
   hermes:
@@ -37,13 +37,38 @@ Research before authoring:
 - Use `web_search` to verify official API documentation, authentication, real
   endpoints, and response shape. Never invent any of them.
 - Read relevant local vault notes when the user already has project knowledge.
+- Before starting fresh research, check whether `Research/feature-packs/`
+  already holds a note for a similar pack (`vault_search` that folder) — reuse
+  its findings instead of re-researching from scratch.
+
+Record the research as you go, in a single vault note at
+`Research/feature-packs/<pack-id-or-topic-slug>.md` (create with `doc_produce`
+or `vault_write`; the slug matches the pack `id` you will author, or your best
+candidate name if not yet decided). This is the durable, user-readable record
+of what the pack is built on — the manifest itself carries none of it. Use
+these sections, populated only as they apply (omit an empty one rather than
+leaving a stub):
+
+- `## Job` — the user's real need, one line.
+- `## Sources` — every reference you actually used: API docs, verified
+  endpoints, an existing MCP server, or a dropped attachment (a screenshot, a
+  spec) — link or name each one plainly.
+- `## Comparable products` — any product/pack you found doing something
+  similar, and how (only when the research turned any up).
+- `## User signals` — direct quotes or paraphrases of what the user asked for
+  or corrected, when they clarified the boundary.
+- `## Decision` — the pack form you chose and why.
+
+Update this note if the boundary or source changes mid-conversation; it is a
+working record, not a one-shot snapshot taken only at the end.
 
 ### 2. Propose and confirm
 
 Tell the user what the pack will do, which verified source or existing server it
 will use, what pack form you chose, and whether configuration or secrets are
-required. Wait for explicit confirmation before installing or changing the
-user's capability set.
+required. Point them at the `Research/feature-packs/` note instead of
+re-explaining everything you already wrote there. Wait for explicit
+confirmation before installing or changing the user's capability set.
 
 Do not ask the user to write a technical specification and do not expose secret
 values in chat. Secret configuration belongs in `config_schema` with
@@ -116,4 +141,4 @@ share or publish the validated, smoke-tested pack.
 - Keep user content and authored service assets plain-text and locally readable.
 - Do not claim creation until the installed pack passes its form-specific smoke.
 
-(ADR-002 substrate § 7.4 v34; ADR-002 substrate § 7 v55; ADR-004 cap §1 v9; ADR-005 irisy §9 v25)
+(ADR-002 substrate § 7.4 v34; ADR-002 substrate § 7 v55; ADR-002 substrate § Composition v76; ADR-004 cap §1 v9; ADR-005 irisy §9 v25)

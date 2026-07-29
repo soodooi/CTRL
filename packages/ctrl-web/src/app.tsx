@@ -525,7 +525,9 @@ const pairing = parsePairing(window.location.search, window.location.hash);
 // booting the router there crashes (raw invoke → transformCallback). The ONLY
 // browser purpose of the hosted PWA is the remote view, so a bare browser visit
 // (no pairing) shows a landing page instead of the full app.
-const inTauri = '__TAURI_INTERNALS__' in window;
+const inTauri =
+  '__TAURI_INTERNALS__' in window ||
+  (import.meta.env.DEV && '__ctrlInvokeMock' in window);
 
 export const App = (): ReactElement => {
   if (pairing != null) {

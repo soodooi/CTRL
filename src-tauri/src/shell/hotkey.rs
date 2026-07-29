@@ -391,18 +391,19 @@ mod mac_impl {
         //      app must RESTART for the tap to see events; the stable DR then
         //      keeps it granted forever. The poll below is defensive (covers a
         //      preflight that does update); the normal path is boot-after-grant.
-        if !preflight_input_monitoring() {
+        let input_monitoring_granted = preflight_input_monitoring();
+        if !input_monitoring_granted {
             tracing::warn!(
-                "hotkey: Input Monitoring not granted — added CTRL to the list + prompting. \
-                 Grant it under System Settings > Privacy & Security > Input Monitoring, \
-                 then RESTART CTRL (TCC does not apply the grant to a running process)."
+                "hotkey: Input Monitoring preflight is false — requesting access and creating the \
+                 tap without blocking. macOS may report stale TCC state to a newly launched \
+                 development process; event delivery is the authoritative check."
             );
             request_input_monitoring();
-            while !preflight_input_monitoring() {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
         }
-        tracing::info!("hotkey: Input Monitoring granted — creating CGEventTap");
+        tracing::info!(
+            input_monitoring_granted,
+            "hotkey: creating CGEventTap without waiting for preflight"
+        );
 
         // ListenOnly: we observe events but never consume them, so other apps
         // see Ctrl exactly as the user pressed it.

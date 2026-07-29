@@ -15,6 +15,14 @@ const isTauri = (): boolean =>
   // @ts-expect-error — Tauri injects this at runtime
   Boolean(window.__TAURI_INTERNALS__);
 
+type BrowserInvokeMock = (command: string, args: InvokeArgs | undefined) => unknown | Promise<unknown>;
+
+const browserInvokeMock = (): BrowserInvokeMock | null => {
+  if (typeof window === 'undefined' || !import.meta.env.DEV) return null;
+  const candidate = (window as unknown as { __ctrlInvokeMock?: unknown }).__ctrlInvokeMock;
+  return typeof candidate === 'function' ? candidate as BrowserInvokeMock : null;
+};
+
 let wsBridgeUrl: string | null = null;
 export const configureWsBridge = (url: string): void => {
   wsBridgeUrl = url;
@@ -32,6 +40,8 @@ export const invoke = async <T = unknown>(
   command: string,
   args?: InvokeArgs,
 ): Promise<T> => {
+  const mock = browserInvokeMock();
+  if (mock) return mock(command, args) as Promise<T>;
   if (isTauri()) {
     const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
     return tauriInvoke<T>(command, args);
@@ -128,6 +138,18 @@ const wsInvoke = async <T>(command: string, args?: InvokeArgs): Promise<T> => {
 };
 
 export const platform = (): 'tauri' | 'web' => (isTauri() ? 'tauri' : 'web');
+
+/** Result of Coding's native macOS mixed file and directory picker.
+ * Files are ACP attachments; directories remain explicit OpenCode references.
+ * (ADR-003 frontend §8.5 v37) */
+export interface CodingAttachmentSelection {
+  files: string[];
+  directories: string[];
+}
+
+/** Open Coding's one native picker for multiple files and directories. */
+export const pickCodingAttachments = (): Promise<CodingAttachmentSelection> =>
+  invoke<CodingAttachmentSelection>('pick_coding_attachments');
 
 // Best-effort cleanup so mobile browsers (and Tauri WebView reloads) don't
 // accumulate WebSocket connections on tab close / hide. Tauri intra-process

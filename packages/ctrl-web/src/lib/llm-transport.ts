@@ -67,11 +67,24 @@ export interface ToolStep {
   output?: string;
 }
 
+/** One file dropped into a composer alongside a turn (ADR-002 substrate
+ *  §1.8.6 v75; ADR-005 irisy §8.7 v32). Mirrors Coding's `CodingAttachment`
+ *  (coding-chat.ts) — the kernel reads the file server-side from `path`;
+ *  the frontend never reads file bytes. */
+export interface LLMAttachment {
+  path: string;
+  name: string;
+}
+
 export interface LLMStreamOptions {
   model?: string;
   temperature?: number;
   max_tokens?: number;
   signal?: AbortSignal;
+  /** Files dropped alongside this turn — only meaningful on the ACP engine
+   *  path (irisy_chat_stream); the provider-router fallback has no
+   *  attachment support. */
+  attachments?: LLMAttachment[];
   // ADR-002 substrate § brain v17 (2026-06-07): kept as an optional
   // per-prompt parameter so a future slash-command flow can prepend a
   // skill's SKILL.md as a system message for one turn. The cap-mode UX
@@ -266,6 +279,7 @@ export class ChatStreamTransport implements LLMTransport {
           mode: opts.mode,
           project_dir: opts.project_dir,
           agent: opts.agent,
+          attachments: opts.attachments ?? [],
         },
       });
       while (true) {

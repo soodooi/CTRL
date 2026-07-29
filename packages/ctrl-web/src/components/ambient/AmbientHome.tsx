@@ -104,7 +104,6 @@ import {
   vaultList,
   resetEngine,
   captureScreenAndOcr,
-  csStdin,
   listMcps,
   gateInvoke,
   type IrisySessionTurn,
@@ -113,8 +112,6 @@ import {
 import { listSmartTables } from '@/lib/smart-tables';
 import { useActiveAgentStore } from '@/lib/active-agent';
 import { platform } from '@/lib/bridge';
-import { useCodingSession } from '@/lib/coding-session';
-import { extractRunnableBlocks } from '@/lib/runnable-blocks';
 import { SessionHistory } from './SessionHistory';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { getVersion } from '@tauri-apps/api/app';
@@ -387,21 +384,6 @@ export function AmbientHome({
   // the user naming the file. Stable callback so TablesPanel's effect is calm.
   const [activeTablePath, setActiveTablePath] = useState<string | null>(null);
   const onActiveTable = useCallback((p: string | null) => setActiveTablePath(p), []);
-  // Coding companion (P0): the resident Irisy reads the live Coding terminal
-  // — getRecentStdout is its eyes (ambient context), runInTerminal is its hand
-  // (writes an approved command to the PTY via cs_stdin, connection ①).
-  const codingStreamId = useCodingSession((s) => s.streamId);
-  const getRecentStdout = useCodingSession((s) => s.getRecentStdout);
-  const runInTerminal = useCallback((code: string): void => {
-    const sid = useCodingSession.getState().streamId;
-    if (!sid) return;
-    const bytes = new TextEncoder().encode(`${code}\n`);
-    let bin = '';
-    bytes.forEach((b) => {
-      bin += String.fromCharCode(b);
-    });
-    void csStdin(sid, btoa(bin)).catch(() => undefined);
-  }, []);
   const [isNarrow, setIsNarrow] = useState(false);
   // Irisy column width — a fixed default the user can drag via the divider
   // between Irisy and the output bar (bao 2026-06-13). Window resizing keeps
@@ -638,24 +620,11 @@ export function AmbientHome({
           });
         }
       }
-      // Coding companion (A1/A2 eyes + B0/C1/C2): when the Coding terminal is
-      // open, Irisy can SEE its recent output and should propose shell commands
-      // as fenced bash blocks — each gets a one-click "Run in terminal" button
-      // the user approves (B0: propose → approve → run; never auto-run).
-      if (scene === 'coding' && codingStreamId) {
-        const recent = (getRecentStdout?.() ?? '').slice(-2000);
-        ambient.push({
-          role: 'system',
-          content:
-            `The user is in the Coding terminal and you are their coding companion. ` +
-            `You can SEE its recent output below. Help debug errors, explain output, and ` +
-            `PROPOSE shell commands as fenced \`\`\`bash blocks — each gets a one-click ` +
-            `"Run in terminal" button the user approves; you never auto-run. To install ` +
-            `Claude Code, prefer the China mirror: ` +
-            `npm i -g @anthropic-ai/claude-code --registry=https://registry.npmmirror.com\n\n` +
-            `Recent terminal output:\n\`\`\`\n${recent}\n\`\`\``,
-        });
-      }
+      // Coding companion note: the Coding scene now talks to opencode
+      // directly over ACP (its own chat surface, ADR-001 §4 v16) rather than
+      // through a PTY Irisy watches — so there is no terminal-stdout ambient
+      // context to inject here anymore. Irisy stays available alongside the
+      // Coding scene for everything else (questions, notes, other modules).
       const history: LLMMessage[] = [
         {
           role: 'system',
@@ -796,7 +765,7 @@ export function AmbientHome({
         abortRef.current = null;
       }
     }
-  }, [messages, streaming, hasProvider, onOpenPicker, scene, roleId, activeTablePath, codingStreamId, getRecentStdout]);
+  }, [messages, streaming, hasProvider, onOpenPicker, scene, roleId, activeTablePath]);
 
   // Stop the in-flight turn (composer Stop button / Esc). Aborts the transport's
   // stream; the textarea stays editable throughout so the user never loses input.
@@ -1569,64 +1538,7 @@ export function AmbientHome({
                   </button>
                 </div>
               )}
-              {codingStreamId && m.content
-                ? (() => {
-                    const blocks = extractRunnableBlocks(m.content);
-                    if (blocks.length === 0) return null;
-                    return (
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 6,
-                          marginTop: 8,
-                        }}
-                      >
-                        {blocks.map((b, bi) => (
-                          <div
-                            key={bi}
-                            style={{
-                              border: '1px solid var(--color-border, #2a2a2a)',
-                              borderRadius: 8,
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <pre
-                              style={{
-                                margin: 0,
-                                padding: '8px 10px',
-                                fontSize: 12,
-                                overflowX: 'auto',
-                                whiteSpace: 'pre',
-                                background: 'rgba(0,0,0,0.25)',
-                              }}
-                            >
-                              {b.code}
-                            </pre>
-                            <button
-                              type="button"
-                              onClick={() => runInTerminal(b.code)}
-                              style={{
-                                display: 'block',
-                                width: '100%',
-                                padding: '6px 10px',
-                                border: 'none',
-                                borderTop: '1px solid var(--color-border, #2a2a2a)',
-                                background: 'transparent',
-                                color: 'var(--color-primary, #7aa2ff)',
-                                cursor: 'pointer',
-                                fontSize: 12,
-                                textAlign: 'left',
-                              }}
-                            >
-                              ▶ Run in terminal
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()
-                : null}
+
             </>
           ) : (
             <>

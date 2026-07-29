@@ -23,6 +23,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::chat::MessageWire;
+// Shared attachment reader (ADR-002 substrate §1.8.6 v75; ADR-005 irisy §8.7 v32).
+use crate::commands::chat_attachment::ChatAttachmentWire;
 use crate::kernel::provider::routing::route_text_chat;
 use crate::kernel::provider::r#trait::Consumer;
 use crate::kernel::provider::types::{ChatMessage, ChatOpts, ChatPrompt};
@@ -57,6 +59,14 @@ pub struct IrisyChatStreamArgs {
     // is the embedded engine; recorded for audit/telemetry + future routing.
     #[serde(default)]
     pub agent: Option<String>,
+    /// Files dropped into Irisy's composer alongside this turn (ADR-002
+    /// substrate §1.8.6 v75; ADR-005 irisy §8.7 v32). Only meaningful on the
+    /// engine (ACP) path below — the provider-router fallback path has no
+    /// attachment support (it is a plain text completion, not an ACP
+    /// session), so an attachment dropped while on that path is silently
+    /// unavailable rather than erroring the turn.
+    #[serde(default)]
+    pub attachments: Vec<ChatAttachmentWire>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -485,8 +495,13 @@ async fn forward_to_provider(
                     .map(|m| m.content.as_str())
                     .collect::<Vec<_>>()
                     .join("\n\n");
+                // ADR-002 substrate §1.8.6 v75; ADR-005 irisy §8.7 v32 — read
+                // any dropped files once per turn (only the LATEST user turn
+                // ever carries attachments; replayed prior turns do not).
+                let attachments =
+                    crate::commands::chat_attachment::read_all(args.attachments, "irisy_chat");
                 let result = client
-                    .prompt(&turns, Some(&system_preamble), |e: crate::shell::acp_client::AcpEvent| {
+                    .prompt(&turns, Some(&system_preamble), &attachments, |e: crate::shell::acp_client::AcpEvent| {
                         use crate::shell::acp_client::AcpEvent;
                         match e {
                             // The visible answer — the existing text channel.

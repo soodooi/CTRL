@@ -5181,8 +5181,10 @@ async fn run_debug_irisy_turn(
     let mut thoughts = String::new();
     let mut tools: Vec<serde_json::Value> = Vec::new();
     let turns = vec![("user".to_string(), message)];
+    // Keep the debug driver on the shared ACP attachment contract, even though this path has no attachments.
+    // (ADR-001 spine § 4 v18)
     let stop = client
-        .prompt(&turns, None, |ev| match ev {
+        .prompt(&turns, None, &[], |ev| match ev {
             AcpEvent::Text(t) => text.push_str(&t),
             AcpEvent::Thought(t) => thoughts.push_str(&t),
             AcpEvent::ToolCall { title, input, .. } => {
