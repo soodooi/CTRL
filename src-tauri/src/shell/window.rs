@@ -165,11 +165,95 @@ mod macos_window {
     }
 }
 
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct NativeModalState {
+    active: bool,
+    restore_launcher: bool,
+}
+
+#[cfg(target_os = "macos")]
+fn native_modal_state() -> &'static std::sync::Mutex<NativeModalState> {
+    static STATE: std::sync::OnceLock<std::sync::Mutex<NativeModalState>> =
+        std::sync::OnceLock::new();
+    STATE.get_or_init(|| std::sync::Mutex::new(NativeModalState::default()))
+}
+
+#[cfg(target_os = "macos")]
+fn defer_modal_presentation(visible: bool) -> bool {
+    let mut state = native_modal_state()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !state.active {
+        return false;
+    }
+    state.restore_launcher = visible;
+    true
+}
+
+#[cfg(target_os = "macos")]
+fn toggle_deferred_modal_presentation() -> Option<bool> {
+    let mut state = native_modal_state()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !state.active {
+        return None;
+    }
+    state.restore_launcher = !state.restore_launcher;
+    Some(state.restore_launcher)
+}
+
 pub struct WindowController;
 
 impl WindowController {
     pub fn main(app: &AppHandle) -> Option<WebviewWindow> {
         app.get_webview_window("main")
+    }
+
+    /// Begin a native modal session that must remain above the Status-level
+    /// launcher. Presentation requests made by nested AppKit event loops are
+    /// deferred as user intent until the session ends. (ADR-003 frontend §1.1 v29; §8.5 v37)
+    #[cfg(target_os = "macos")]
+    pub fn begin_native_modal(app: &AppHandle) -> Result<()> {
+        {
+            let mut state = native_modal_state()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if state.active {
+                anyhow::bail!("a native modal session is already active");
+            }
+            state.active = true;
+            state.restore_launcher = true;
+        }
+        if let Some(window) = Self::main(app) {
+            macos_window::hide(&window);
+        }
+        if let Some(input) = app.get_webview_window("input") {
+            let _ = input.hide();
+        }
+        Ok(())
+    }
+
+    /// End the native modal session and apply only its most recent requested
+    /// launcher visibility, preventing a modal-time hide from being undone.
+    /// (ADR-003 frontend §1.1 v29; §8.5 v37)
+    #[cfg(target_os = "macos")]
+    pub fn end_native_modal(app: &AppHandle) -> Result<()> {
+        let restore_launcher = {
+            let mut state = native_modal_state()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !state.active {
+                anyhow::bail!("no native modal session is active");
+            }
+            state.active = false;
+            std::mem::take(&mut state.restore_launcher)
+        };
+        if restore_launcher {
+            Self::reveal(app)
+        } else {
+            Self::hide(app)
+        }
     }
 
     /// Boot prewarm. The window comes pre-built from tauri.conf.json with
@@ -205,6 +289,11 @@ impl WindowController {
     /// window instead of toggling an already-visible launcher closed.
     /// (ADR-003 frontend §1.1 v25)
     pub fn reveal(app: &AppHandle) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        if defer_modal_presentation(true) {
+            tracing::info!("WindowController::reveal — deferred during native modal session");
+            return Ok(());
+        }
         let Some(w) = Self::main(app) else {
             tracing::info!("WindowController::reveal — main missing, rebuilding");
             let rebuilt = Self::build_main(app)?;
@@ -242,6 +331,19 @@ impl WindowController {
     /// state updates on the next DWM composition tick (~8ms at 120Hz).
     /// No destroy, no rebuild, no event-loop queueing.
     pub fn toggle(app: &AppHandle) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        if let Some(restore_launcher) = toggle_deferred_modal_presentation() {
+            tracing::info!(
+                restore_launcher,
+                "WindowController::toggle — deferred during native modal session"
+            );
+            if !restore_launcher {
+                if let Some(input) = app.get_webview_window("input") {
+                    let _ = input.hide();
+                }
+            }
+            return Ok(());
+        }
         let Some(w) = Self::main(app) else {
             tracing::info!("WindowController::toggle — main missing, rebuilding");
             let rebuilt = Self::build_main(app)?;
@@ -402,6 +504,14 @@ impl WindowController {
     /// destroy-the-window mechanism as hide_unless_modal (see the
     /// module header for why CTRL uses destroy + rebuild on macOS).
     pub fn hide(app: &AppHandle) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        if defer_modal_presentation(false) {
+            tracing::info!("WindowController::hide — deferred during native modal session");
+            if let Some(input) = app.get_webview_window("input") {
+                let _ = input.hide();
+            }
+            return Ok(());
+        }
         if let Some(w) = Self::main(app) {
             tracing::info!("WindowController::hide — explicit user request");
             // macOS: hide (not destroy) so the launcher stays tray-resident.
@@ -496,7 +606,15 @@ pub(crate) fn install_close_intercept(w: &WebviewWindow, app: &AppHandle, label:
                         #[cfg(target_os = "windows")]
                         cloak::set(&w, true);
                         #[cfg(target_os = "macos")]
-                        macos_window::hide(&w);
+                        {
+                            let _ = w;
+                            // Route the close intent through the controller so a
+                            // nested native picker cannot restore the launcher.
+                            // (ADR-003 frontend §1.1 v29; §8.5 v37)
+                            if let Err(error) = WindowController::hide(&app_for_closure) {
+                                tracing::error!(?error, "main close hide failed");
+                            }
+                        }
                     } else {
                         let _ = w.destroy();
                     }

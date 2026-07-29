@@ -65,10 +65,10 @@ fn pick_paths() -> Result<CodingAttachmentSelection, String> {
 
 /// Open one native picker that accepts files and directories together.
 ///
-/// The AppKit modal runs on the main thread and returns through an async
-/// one-shot response. Awaiting rather than blocking keeps the event loop free
-/// to service the queued panel when this command originates from the WebView.
-/// (ADR-003 frontend §8.5 v37)
+/// The Status-level launcher must yield while AppKit runs its modal chooser;
+/// otherwise the nonactivating NSPanel stays above the selection UI and makes
+/// the app look frozen. Both transitions remain in WindowController so the
+/// launcher resumes through its sole NSPanel presentation path. (ADR-003 frontend §1.1 v29; §8.5 v37)
 #[tauri::command]
 pub async fn pick_coding_attachments(
     app: tauri::AppHandle,
@@ -76,8 +76,22 @@ pub async fn pick_coding_attachments(
     #[cfg(target_os = "macos")]
     {
         let (send, receive) = tokio::sync::oneshot::channel();
+        let app_for_picker = app.clone();
         app.run_on_main_thread(move || {
-            let _ = send.send(pick_paths());
+            let result = match crate::shell::WindowController::begin_native_modal(&app_for_picker)
+            {
+                Ok(()) => {
+                    let selection = pick_paths();
+                    let restored = crate::shell::WindowController::end_native_modal(&app_for_picker)
+                        .map_err(|error| error.to_string());
+                    match (selection, restored) {
+                        (Ok(selection), Ok(())) => Ok(selection),
+                        (Err(error), _) | (_, Err(error)) => Err(error),
+                    }
+                }
+                Err(error) => Err(error.to_string()),
+            };
+            let _ = send.send(result);
         })
         .map_err(|error| format!("cannot schedule native picker: {error}"))?;
         receive
