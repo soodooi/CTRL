@@ -79,7 +79,11 @@ mod macos_window {
         }
     }
 
-    fn configure_panel(panel: &LauncherPanelHandle) {
+    fn configure_panel(
+        window: &WebviewWindow,
+        panel: &LauncherPanelHandle,
+        main_thread: &LegacyMainThreadMarker,
+    ) {
         panel.set_floating_panel(true);
         panel.set_level(PanelLevel::Status.value());
         panel.set_hides_on_deactivate(false);
@@ -96,21 +100,28 @@ mod macos_window {
                 .full_screen_auxiliary()
                 .into(),
         );
+
+        // The frameless launcher has no native titlebar. Let its existing
+        // PWA drag region move the converted panel without changing the
+        // Status-level all-Spaces presentation contract. (ADR-003 frontend §1.1 v29)
+        if let Some(native_window) = native(window, main_thread) {
+            native_window.setMovableByWindowBackground(true);
+        }
     }
 
     /// Keep the input-first launcher available in normal and full-screen
     /// Spaces. The regular app owns an input-capable NSPanel; standard
     /// NSWindows cannot reliably cross another app's full-screen Space.
-    /// (ADR-003 frontend §1.1 v25)
+    /// (ADR-003 frontend §1.1 v29)
     pub(super) fn configure(window: &WebviewWindow) {
-        let Some(_mtm) = LegacyMainThreadMarker::new() else {
+        let Some(mtm) = LegacyMainThreadMarker::new() else {
             tracing::warn!("WindowController — configuration requested off the macOS main thread");
             return;
         };
         let Some(panel) = panel(window) else {
             return;
         };
-        configure_panel(&panel);
+        configure_panel(window, &panel, &mtm);
     }
 
     pub(super) fn is_on_active_space(window: &WebviewWindow) -> Option<bool> {
@@ -120,21 +131,21 @@ mod macos_window {
     }
 
     pub(super) fn present(window: &WebviewWindow) {
-        let Some(_mtm) = LegacyMainThreadMarker::new() else {
+        let Some(mtm) = LegacyMainThreadMarker::new() else {
             tracing::warn!("WindowController — presentation requested off the macOS main thread");
             return;
         };
         let Some(panel) = panel(window) else {
             return;
         };
-        configure_panel(&panel);
+        configure_panel(window, &panel, &mtm);
 
         // Do not call WebviewWindow::show before this. Tao's generic show path
         // can bind a Regular app window to the app's own Space before AppKit
         // orders it, which prevents a Ctrl summon over another app's full-screen
         // Space. orderFrontRegardless inside show_and_make_key is the single
         // presentation authority for the all-Spaces NSPanel.
-        // (ADR-003 frontend §1.1 v25)
+        // (ADR-003 frontend §1.1 v29)
         panel.show_and_make_key();
         tracing::info!(
             visible = panel.is_visible(),

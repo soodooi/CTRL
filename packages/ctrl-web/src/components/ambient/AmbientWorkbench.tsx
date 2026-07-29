@@ -126,6 +126,16 @@ export function AmbientWorkbench(): ReactElement {
     });
   }, []);
 
+  // Escape is a shell-level exit route. Local controls can retain Escape by
+  // preventing its default before this bubbling listener runs. (ADR-003 frontend §1.1 v29)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !event.isComposing && !event.defaultPrevented) hideLauncher();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [hideLauncher]);
+
   // Gap-2: subscribe to kernel-side pack changes on :17872 and bridge them to
   // the browser PACKS_CHANGED_EVENT. A pack installed by Irisy/brain through the
   // gate, or upgraded by the builtin seed, otherwise never reaches the PWA (its

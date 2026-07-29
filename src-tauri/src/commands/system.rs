@@ -168,15 +168,17 @@ pub async fn hide_window(app: tauri::AppHandle) -> Result<(), String> {
     {
         // NSPanel ordering is AppKit-main-thread-only. Async Tauri commands do
         // not carry that guarantee, so dispatch the same controller path used
-        // by Ctrl, tray, and close interception. (ADR-003 frontend §1.1 v25)
+        // by Ctrl, tray, and close interception. (ADR-003 frontend §1.1 v29)
         let app_for_hide = app.clone();
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         app.run_on_main_thread(move || {
-            if let Err(error) = crate::shell::WindowController::hide(&app_for_hide) {
-                tracing::error!(?error, "hide_window: NSPanel hide failed");
-            }
+            let _ = result_tx.send(crate::shell::WindowController::hide(&app_for_hide));
         })
         .map_err(|error| error.to_string())?;
-        Ok(())
+        result_rx
+            .await
+            .map_err(|_| "hide_window main-thread dispatch was interrupted".to_string())?
+            .map_err(|error| error.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     crate::shell::WindowController::hide(&app).map_err(|error| error.to_string())
