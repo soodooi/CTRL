@@ -1,7 +1,8 @@
 // SessionTabs — the Kiro-style session tab bar for Irisy's chat surface.
 //
 // (ADR-003 frontend §8.6 v36; ADR-005 irisy §8.7 v32 — Session module of the
-// Kiro-parity redesign, bao "session...都要"). Renders one tab per
+// Kiro-parity redesign; the product requirement includes full session tabs).
+// Renders one tab per
 // `IrisySession` (irisy-sessions.ts) plus a trailing "+" to start a new one.
 // Deliberately CTRL's own visual language (existing chip/pill chrome, not a
 // pixel copy of Kiro's dark IDE panel) — the redesign borrows the STRUCTURE

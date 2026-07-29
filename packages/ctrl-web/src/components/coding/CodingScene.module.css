@@ -9,7 +9,7 @@
    overflow:hidden only). flex:1 does nothing outside a flex parent, so
    .root never actually filled scenePane's height; long assistant replies
    then overflowed past scenePane's `overflow:hidden` and were clipped with
-   no visible scrollbar (bao report 2026-07-27 — "没法看到下方的内容").
+   no visible scrollbar (user report, 2026-07-27: lower content was unreachable).
    Mirrors FeaturePackScene.module.css's `.scene` (the sibling component that
    mounts in the exact same slot), which already uses height:100% for this
    reason. (ADR-003 frontend §8.5 v34) */
